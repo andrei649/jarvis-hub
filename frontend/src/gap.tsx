@@ -3,7 +3,7 @@
    degrades to an offline/empty state — never blocks. Admin-guarded calls work on
    localhost; on a network they surface the 401 via the client's token prompt. */
 import React, { useState, useEffect, useCallback } from 'react';
-import { apiGet, apiPost, apiPut, apiDelete } from './api/client';
+import { apiGet, apiPost, apiPut, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
 import { localModelStatus } from './api/live';
 import { OperatorPanel } from './operator-panel';
 
@@ -73,7 +73,14 @@ const Row = ({ children }) => <div style={{ display: 'flex', gap: 8, alignItems:
 const Tag = ({ c, children }: { c?: any; children?: any }) => <span style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: c || 'var(--ink-3)' }}>{children}</span>;
 const Btn = ({ onClick, children }) => <button className="tool-btn" onClick={onClick} style={{ marginLeft: 'auto' }}>{children}</button>;
 const act = (p, body, then?) => apiPost(p, body).then(then || (() => {})).catch(() => {});
-const actA = (p, body, then) => apiPost(p, body, { admin: true }).then(then || (() => {})).catch(() => {});
+// `onErr` is OPTIONAL but matters: without it a failed admin action is invisible. Engaging
+// the kill-switch is kernel-mediated and answers 403 "kernel denied" without a capability
+// token, so the 2026-07-27 QA run pressed HALT ALL, got no error, no state change and no
+// hint it had been refused — the card kept reading "ARMED · operational". Any call site
+// that drives a safety or governance control MUST pass onErr and show it.
+const actA = (p, body, then, onErr?) => apiPost(p, body, { admin: true })
+  .then(then || (() => {}))
+  .catch((err) => { if (onErr) onErr(err); });
 const inpS = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11 };
 const taS = { width: '100%', minHeight: 64, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono };
 const Json = ({ v, max = 220 }) => (v == null ? null
@@ -351,17 +358,29 @@ function SecretsPanel() {
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>just-in-time {'{{secret:NAME}}'} injection at approval time</div>
   </Card>;
 }
-function KillSwitchPanel() {
+export function KillSwitchPanel() {
   const { d, e, loading, reload } = useApi('/api/security/kill-switch');
   // /api/security/kill-switch returns {global: bool, halted: {agent: reason}}. `halted`
   // is a MAP, not a bool — `d?.halted ?? d?.engaged` returned {} (truthy) and showed a
   // false "ENGAGED · all agents halted" alarm (2026-07-24 QA finding). Derive it: engaged
   // iff the global switch is on OR at least one agent is in the halted map.
   const halted = !!(d?.global || Object.keys(d?.halted || {}).length || d?.engaged);
+  // A halt that silently fails is worse than no button: the operator believes the system
+  // is stopped. Always re-read state after the attempt, and say so loudly if it was refused.
+  const [actErr, setActErr] = useState('');
+  const toggle = () => {
+    setActErr('');
+    actA('/api/security/kill-switch', { engage: !halted, scope: 'global', reason: 'hud' },
+      reload,
+      (err) => { setActErr(String(err?.message || err || 'request failed')); reload(); });
+  };
   return <Card title="KILL-SWITCH" live={asLive(d)} onReload={reload}>
     <State e={e} loading={loading} n={1} />
     <Row><span style={{ color: halted ? 'var(--red)' : 'var(--green)' }}>{halted ? 'ENGAGED · all agents halted' : 'ARMED · operational'}</span>
-      <Btn onClick={() => actA('/api/security/kill-switch', { engage: !halted, scope: 'global', reason: 'hud' }, reload)}>{halted ? 'disengage' : 'HALT ALL'}</Btn></Row>
+      <Btn onClick={toggle}>{halted ? 'disengage' : 'HALT ALL'}</Btn></Row>
+    {actErr && <Row><span role="alert" style={{ ...mono, color: 'var(--red)' }}>
+      {halted ? 'DISENGAGE' : 'HALT'} REFUSED · {actErr} · the switch did NOT change state
+    </span></Row>}
   </Card>;
 }
 /* HUD-v3 (0.42 Security Skills pack) — browse the curated, offline ATT&CK knowledge.
@@ -2853,6 +2872,33 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],
 ];
 
+/* Renders the failed-mutation sink from api/client.ts. This is the one place that makes
+   a swallowed admin action visible: the HUD has 27 `.catch(() => {})` sites, so a fix at
+   any single call site would leave the rest silent. Empty (renders nothing) until a
+   mutation actually fails, so it costs nothing on the happy path. */
+export function ActionFailureBanner() {
+  const [fails, setFails] = useState(actionFailures());
+  useEffect(() => onActionFailure(setFails), []);
+  if (!fails.length) return null;
+  return (
+    <div role="alert" style={{ border: '1px solid var(--red)', borderRadius: 4, padding: '8px 10px', marginBottom: 12, background: 'rgba(255,0,0,.06)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: fails.length ? 6 : 0 }}>
+        <span style={{ ...mono, color: 'var(--red)' }}>
+          {fails.length} action{fails.length > 1 ? 's' : ''} FAILED — the change did not happen
+        </span>
+        <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => { clearActionFailures(); setFails([]); }}>dismiss</button>
+      </div>
+      {fails.slice(0, 5).map((f, i) => (
+        <div key={i} style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>
+          {f.method} {f.path} → <span style={{ color: 'var(--red)' }}>{f.status}</span>
+          {f.status === 403 ? ' · refused (kernel denial or missing admin token)' : ''}
+          {f.status === 401 ? ' · not authorised' : ''}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ConsoleOverlay({ onClose }) {
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose(); };
@@ -2867,6 +2913,7 @@ export function ConsoleOverlay({ onClose }) {
           <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>net-new capability surfaces (P4c) · live + mock-tolerant</span>
           <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={onClose}>esc ✕</button>
         </div>
+        <ActionFailureBanner />
         {SECTIONS.map(([label, panels]) => (
           <div key={label} style={{ marginBottom: 18 }}>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.18em', color: 'var(--ink-3)', margin: '0 0 8px' }}>{String(label).toUpperCase()}</div>

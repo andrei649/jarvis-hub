@@ -8,7 +8,7 @@
 > actually read by the code, local/cloud model-backend detection and the hybrid router's
 > `llm_backend` string, the readiness/version truth surfaces (`/healthz`, `/readyz`, `/status`,
 > `/api/status`, `/metrics`, `/api/health/components`), the `product.posture` flip through the
-> ~30-second settings watcher, the build's own integrity counters (pytest 5,411 · vitest 373 · jest 96
+> ~30-second settings watcher, the build's own integrity counters (pytest · vitest · jest, each against `project-status.json`
 > · `status_sync.py` · `release_gate.py` · the `hud-v2-build` freshness gate), the data lifecycle
 > (`JARVIS_HOME`, backup/verify/export/forget, cold start, upgrade preserving data), and every
 > degraded boot the owner can realistically hit.
@@ -354,7 +354,7 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 - **Why it matters:** run 1 could not run it (Python 3.10 shell + a 45 s per-command cap) and had to quote CI. §J makes a locally-green suite at the pinned count part of sign-off.
 - **Prereq:** a **persistent** Python 3.12 shell with no per-command timeout; `pip install -r requirements-beta.txt` done.
 - **Steps:** 1) `python --version` → must be ≥3.12. 2) `python -m pytest -q 2>&1 | tail -30`. 3) Compare the collected count with `project-status.json` → `tests.backend`.
-- **Expected:** collected **5,411** — the authoritative figure is `project-status.json` → `tests.backend`, which `scripts/status_sync.py` generates from `pytest --collect-only`; note that `MANUAL_TESTING.md`'s preamble still says 5,406 while its own §J says 5,411, so trust the JSON. All passing; every declared skip explained in the output. `pytest.ini` already applies `-q --timeout=30 --timeout-method=thread --allow-hosts=127.0.0.1,::1,localhost`, so a stray real outbound call fails fast with `SocketConnectBlockedError` rather than hanging.
+- **Expected:** the collected count **equals `project-status.json` → `tests.backend` on the revision under test** — which `scripts/status_sync.py` generates from `pytest --collect-only`; note that `MANUAL_TESTING.md`'s preamble still says 5,406 while its own §J says 5,411, so trust the JSON. All passing; every declared skip explained in the output. `pytest.ini` already applies `-q --timeout=30 --timeout-method=thread --allow-hosts=127.0.0.1,::1,localhost`, so a stray real outbound call fails fast with `SocketConnectBlockedError` rather than hanging.
 - **Also acceptable:** a small count drift — but per `COWORK_QA_RUNBOOK` §3, *a count differing from `project-status.json` is itself a finding.*
 - **FAIL if:** any test fails → **BLOCKER** for the release gate. If the suite cannot run on the tester's Python → record as an **environment limitation**, not a pass.
 - **Evidence:** the tail of the run including the summary line, and `python --version`.
@@ -540,8 +540,8 @@ poller of the second instance must not open a tab pointed at the first).
    exactly this (its shell had 3.10 and could not run the suite).
 4. **Three different backend test counts are in circulation.** `install.sh:53-54` says "The full
    ~3,800-test offline suite runs with `--dev`"; `docs/MANUAL_TESTING.md`'s preamble says **5,406**
-   while its own §J says **5,411**; `project-status.json` → `tests.backend` (the generated,
-   `status_sync.py`-owned figure) says **5,411**. Cosmetic doc drift, but it is exactly the kind of
+   while its own §J and `project-status.json` → `tests.backend` (the generated,
+   `status_sync.py`-owned figure) both moved on. Cosmetic doc drift, but it is exactly the kind of
    number a tester compares against and then files as a finding. ENV-086 pins the JSON as authority.
 5. **`docker-compose.yml` requires a `.env` file to exist** (`env_file: - .env`) yet nothing in the
    repo ships one and `MANUAL_TESTING.md` §A does not mention copying `.env.example` first —
@@ -610,7 +610,7 @@ poller of the second instance must not open a tab pointed at the first).
     Windows (`INSTALL.bat`, `START.bat`, `UPDATE.bat`, `install.ps1`, `smoke.ps1`,
     `deploy/windows/install-service.ps1`), an NVIDIA GPU (`_sys_info`'s `nvidia-smi` branch), real LM
     Studio/Ollama probes, `docker compose` behaviour, the PyInstaller build in `packaging/nerva.spec`
-    + `scripts/build_exe.py`, and the actual test counts (5,411 / 373 / 96 were read from
+    + `scripts/build_exe.py`, and the actual test counts (the counts were read from
     `project-status.json`, not re-collected here — the authoring environment is below the project's own
     Python floor, which is itself why ENV-086 insists on a persistent 3.12 shell).
 19. **Line numbers move.** Every `file:line` pointer in this section was read at the working-tree

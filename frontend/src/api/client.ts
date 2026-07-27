@@ -50,6 +50,50 @@ async function request(
   return res;
 }
 
+/* ── Failed-mutation sink (2026-07-27 QA, finding F-02) ───────────────────────
+   The HUD swallows rejections in 27 places (`.catch(() => {})` in gap.tsx, app.tsx,
+   modes.tsx, voice.ts) plus inline catches on direct apiPost/apiPut/apiDelete calls.
+   The run pressed HALT ALL, the kernel answered 403 "kernel denied", the catch ate it
+   and the card kept reading "ARMED · operational" — an operator told the emergency stop
+   was fine when it had been refused.
+
+   Patching call sites cannot fix this class: a new one is one `.catch(() => {})` away.
+   So the failure is recorded HERE, where it is created, before it is thrown — every
+   downstream swallow still leaves a trace, and the Console renders it (see
+   ActionFailureBanner in gap.tsx). GETs are deliberately NOT recorded: panels already
+   surface those via <State e={e}/>, and polling failures would drown the signal.        */
+
+export type ActionFailure = { method: string; path: string; status: number; message: string; at: number };
+
+const MAX_FAILURES = 20;
+const _failures: ActionFailure[] = [];
+const _failureSubs = new Set<(f: ActionFailure[]) => void>();
+
+export function actionFailures(): ActionFailure[] { return _failures.slice(); }
+
+export function onActionFailure(fn: (f: ActionFailure[]) => void): () => void {
+  _failureSubs.add(fn);
+  return () => { _failureSubs.delete(fn); };
+}
+
+export function clearActionFailures(): void {
+  _failures.length = 0;
+  _failureSubs.forEach((fn) => fn(actionFailures()));
+}
+
+function reportActionFailure(method: string, path: string, status: number, message: string): void {
+  _failures.unshift({ method, path, status, message, at: Date.now() });
+  if (_failures.length > MAX_FAILURES) _failures.length = MAX_FAILURES;
+  _failureSubs.forEach((fn) => { try { fn(actionFailures()); } catch { /* a bad subscriber must not eat the report */ } });
+}
+
+/** Record a mutation failure, then rethrow so existing callers behave unchanged. */
+function failMutation(method: string, path: string, status: number): never {
+  const message = `${method} ${path} -> ${status}`;
+  reportActionFailure(method, path, status, message);
+  throw Object.assign(new Error(message), { status });
+}
+
 export async function apiGet<T = unknown>(path: string, opts?: { admin?: boolean }): Promise<T> {
   const res = await request('GET', path, undefined, opts);
   if (!res.ok) throw Object.assign(new Error(`GET ${path} -> ${res.status}`), { status: res.status });
@@ -58,7 +102,7 @@ export async function apiGet<T = unknown>(path: string, opts?: { admin?: boolean
 
 export async function apiPost<T = unknown>(path: string, body?: unknown, opts?: { admin?: boolean }): Promise<T> {
   const res = await request('POST', path, body, opts);
-  if (!res.ok) throw Object.assign(new Error(`POST ${path} -> ${res.status}`), { status: res.status });
+  if (!res.ok) failMutation('POST', path, res.status);
   return res.json() as Promise<T>;
 }
 
@@ -98,11 +142,11 @@ export async function postStream(
 
 export async function apiPut<T = unknown>(path: string, body?: unknown, opts?: { admin?: boolean }): Promise<T> {
   const res = await request('PUT', path, body, opts);
-  if (!res.ok) throw Object.assign(new Error(`PUT ${path} -> ${res.status}`), { status: res.status });
+  if (!res.ok) failMutation('PUT', path, res.status);
   return res.json() as Promise<T>;
 }
 export async function apiDelete<T = unknown>(path: string, opts?: { admin?: boolean }): Promise<T> {
   const res = await request('DELETE', path, undefined, opts);
-  if (!res.ok) throw Object.assign(new Error(`DELETE ${path} -> ${res.status}`), { status: res.status });
+  if (!res.ok) failMutation('DELETE', path, res.status);
   return res.json() as Promise<T>;
 }

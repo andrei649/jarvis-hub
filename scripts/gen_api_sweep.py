@@ -116,7 +116,9 @@ def build() -> str:
     w("# 14. API surface sweep — every route, every tier")
     w("")
     w("> **Scope.** A complete, generated enumeration of the HTTP surface: "
-      f"**{len(surface)}** app routes (+{len(doc_only)} FastAPI doc routes) across "
+      f"**{len(surface)} app routes** (the figure `project-status.json` → `routes` reports) "
+      f"**plus {len(doc_only)} FastAPI doc routes** = **{len(surface) + len(doc_only)} enumerated "
+      f"below** — the two numbers are not a contradiction, they count different things. Across "
       f"**{len(groups)}** groups, each with its guard tier and a copy-pasteable probe. "
       "This chapter proves a route **exists and is guarded correctly**; the *owning section* "
       "proves it **behaves correctly** — follow the §-pointer in each group heading.")

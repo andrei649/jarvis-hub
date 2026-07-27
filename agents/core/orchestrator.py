@@ -1210,7 +1210,7 @@ class Orchestrator:
         )
         plugin_block = self._format_plugin_data(plugin_data)
         recall_block = await self._recall_block(text)
-        runtime_block = self._runtime_state_block() + self._data_grounding_block(plugin_data)
+        runtime_block = self._runtime_state_block() + self._language_block() + self._data_grounding_block(plugin_data)
         synthesized = ""
         # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
         # `target` is empty (e.g. _route_candidates returns nothing).
@@ -1477,6 +1477,24 @@ class Orchestrator:
             f"- Active model: {model}\n\n"
         )
 
+    def _language_block(self) -> str:
+        """Mirror the owner's language, for EVERY agent.
+
+        The rule "Romanian in, Romanian out" lived only in `agents/jarvis/SOUL.md`, so an
+        agent-pinned turn never saw it: the 2026-07-27 QA run asked Steve
+        "dă-mi un raport de sănătate a sistemului" and got a wholly English reply, while
+        Gecko happened to mirror correctly. Per-persona wording cannot hold a
+        cross-cutting rule — so it joins the runtime and data rails, which every agent
+        receives regardless of routing."""
+        return (
+            "Language (applies to every agent, whatever your persona says):\n"
+            "- Reply in the SAME language the owner just used. Romanian in → Romanian "
+            "out; English in → English out. Do not switch language mid-conversation "
+            "unless asked.\n"
+            "- Keep technical identifiers (route paths, model names, env vars, code) "
+            "verbatim — translate the prose around them, never the identifier.\n\n"
+        )
+
     def _data_grounding_block(self, plugin_data: dict) -> str:
         """Ground truth for *data* — the counterpart to `_runtime_state_block`'s
         ground truth for *model identity*. Injected every turn so an agent can't
@@ -1501,7 +1519,13 @@ class Orchestrator:
             "If asked for something with no live data here, say plainly it is not "
             "connected — never fabricate a value, and never claim you performed an "
             "action (saved, sent, booked, logged, blocked, briefed) that you did "
-            "not actually perform.\n\n"
+            "not actually perform.\n"
+            "- This applies to actions in ANY tense. Do not say a check, connection, "
+            "sync or hand-off is in progress, queued, being verified, or will report "
+            "back later — nothing runs between turns, so a promised follow-up can "
+            "never arrive. If a connector is missing, say it is not connected and "
+            "state what the owner must do; do not describe work happening on their "
+            "behalf.\n\n"
         )
 
     def _control_master_enabled(self) -> bool:
@@ -1987,7 +2011,7 @@ class Orchestrator:
         plugin_block = self._format_plugin_data(plugin_data or {})
         recall_block = await self._recall_block(text)
         agent_timeout = self._agent_call_timeout()  # CDX-6: tunable, not a hard-coded 120s
-        runtime_block = self._runtime_state_block() + self._data_grounding_block(plugin_data or {})
+        runtime_block = self._runtime_state_block() + self._language_block() + self._data_grounding_block(plugin_data or {})
 
         async def _run_agent(agent_id: str) -> tuple[str, str, float]:
             enriched_text = await self._build_agent_turn_text(
