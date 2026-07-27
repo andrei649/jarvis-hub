@@ -71,7 +71,7 @@ def test_spend_persists_across_a_restart(tmp_path, monkeypatch):
     # simulate a reboot: drop every in-process counter, then read again
     cost_tracker._usage.clear()
     cost_tracker._daily.clear()
-    cost_tracker._loaded = False
+    cost_tracker._state["loaded"] = False
 
     assert cost_tracker.spend_today_usd() == pytest.approx(3.0), (
         "spend reset at boot — 'what did this cost me last month' is unanswerable"

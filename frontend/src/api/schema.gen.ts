@@ -293,6 +293,9 @@ export interface paths {
         /**
          * Wyoming Status
          * @description Wyoming protocol support status (H12.4).
+         *
+         *     Reports ``enabled`` (the setting) and ``listening`` (measured) separately, because
+         *     they were conflated and only the first was ever true.
          */
         get: operations["wyoming_status_api_voice_wyoming_get"];
         put?: never;
@@ -2044,6 +2047,13 @@ export interface paths {
          *
          *     'Tamper-evident' is only real if the chain is actually checked — this is the
          *     check. Returns the first broken row id when integrity fails.
+         *
+         *     Reports `tamper_evident` separately from `valid`, because they are different claims:
+         *     an UNKEYED chain that verifies proves only that nobody edited a row without also
+         *     recomputing its hash, which anyone with file access can do. `reason` says which
+         *     situation you are in, in plain English — including the case where a key was
+         *     configured on a chain that predates it, which is a false verdict with a very
+         *     different remedy from an actual rewrite (adversarial audit 2026-07-25, AUDIT-1).
          */
         get: operations["audit_verify_api_security_audit_verify_get"];
         put?: never;

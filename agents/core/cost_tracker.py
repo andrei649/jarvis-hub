@@ -41,7 +41,11 @@ _usage: dict[str, dict] = defaultdict(
 )
 # Spend per UTC day, so a daily cap has something to read and last month is answerable.
 _daily: dict[str, float] = defaultdict(float)
-_loaded = False
+# Mutable holder rather than a bare module boolean rebound from two functions via
+# `global`. Same behaviour, one place that owns the flag, no rebinding — and it drops a
+# CodeQL py/unused-global-variable alert on the old pattern. (The old variable WAS read;
+# the alert was a false positive on the rebind, but the container reads better anyway.)
+_state: dict[str, bool] = {"loaded": False}
 # Bounded: ~13 months of daily rows. The file is a rollup, not a log — it must not grow
 # without limit on a box that runs for years.
 _MAX_DAYS = 400
@@ -57,10 +61,11 @@ def _today() -> str:
 
 
 def _load_unlocked() -> None:
-    global _loaded
-    if _loaded:
+    if _state["loaded"]:
         return
-    _loaded = True
+    # Set BEFORE reading: a corrupt or unreadable rollup must not be re-parsed on every
+    # single record() call for the life of the process.
+    _state["loaded"] = True
     try:
         raw = json.loads(_store_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -193,8 +198,9 @@ def apm_summary() -> dict:
 
 def reset():
     """Reset all counters (for testing)."""
-    global _loaded
     with _lock:
         _usage.clear()
         _daily.clear()
-        _loaded = True      # do not re-read the on-disk rollup after an explicit reset
+        # Do not re-read the on-disk rollup after an explicit reset — an isolated test
+        # that resets and then records must not inherit another run's spend.
+        _state["loaded"] = True
