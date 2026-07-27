@@ -2,9 +2,8 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional
-
 from pathlib import Path
+from typing import Optional
 
 from agents.core.paths import data_root
 
