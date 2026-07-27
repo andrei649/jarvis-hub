@@ -171,10 +171,26 @@ def _purge_db(path: Path) -> dict:
 
     Table names come from the SQLite catalog (never caller input), so no external value
     reaches the SQL text. Returns ``{table: rows_deleted}``.
+
+    **The VACUUM is not housekeeping — it is the erasure.** ``DELETE`` only unlinks rows;
+    the bytes stay in freed pages until something rewrites the file, so the content of a
+    "deleted" row is still readable in a hex editor. Whether that is true depends on how
+    the local SQLite was COMPILED: with ``SQLITE_SECURE_DELETE`` on (the Linux build here)
+    freed pages are zeroed and the data really is gone; on the Windows build it is not.
+
+    So before this, ``POST /api/admin/forget`` genuinely erased on one operating system
+    and left recoverable personal data on another — and the owner's machine is the one
+    where it did not. It surfaced as a Windows-only CI failure of the byte-level test
+    added with the KEEP inversion, which is exactly what that test was for: it looks for
+    the marker in the FILE, not for a row count.
+
+    ``secure_delete`` is set as well as VACUUMing. It is a no-op where the compile-time
+    default already covers it, and belt-and-braces where it does not.
     """
     deleted: dict[str, int] = {}
     conn = sqlite3.connect(str(path))
     try:
+        conn.execute("PRAGMA secure_delete = ON")
         tables = [r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         ).fetchall()]
@@ -183,6 +199,10 @@ def _purge_db(path: Path) -> dict:
             conn.execute(_delete_all_rows_sql(table))
             deleted[table] = conn.total_changes - before
         conn.commit()
+        # Must follow the commit: VACUUM cannot run inside a transaction. It rebuilds the
+        # file from the live pages only, so nothing from a deleted row survives in the
+        # freelist regardless of how this SQLite was built.
+        conn.execute("VACUUM")
     finally:
         conn.close()
     return deleted

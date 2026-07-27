@@ -545,3 +545,46 @@ async def test_forget_route_backup_first_is_settable(monkeypatch):
 
     resp = await backup_router.forget_data(_Req({"confirm": "FORGET", "backup_first": "no"}))
     assert resp.status_code == 400
+
+
+def test_purged_databases_are_rewritten_so_deleted_bytes_cannot_survive(tmp_path):
+    """DELETE unlinks rows; it does not remove their bytes from the file.
+
+    Freed pages keep the deleted content until something rewrites the file — and whether
+    SQLite zeroes them depends on how the local build was COMPILED
+    (``SQLITE_SECURE_DELETE``). So a forget genuinely erased on a build with it on and
+    left recoverable personal data on a build without it. This surfaced as a
+    Windows-ONLY failure of `test_forget_erases_the_stores_the_allowlist_used_to_miss`,
+    which looks for the marker in the file rather than counting rows — the whole reason
+    that test reads bytes.
+
+    `freelist_count` is the platform-independent proxy: it is non-zero after a bare DELETE
+    of any real volume of data and zero after a VACUUM, on every build. The byte-level
+    test above is the property; this one fails on Linux too if the VACUUM is dropped.
+    """
+    root = tmp_path / "data"
+    root.mkdir()
+    db = root / "bulky.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, body TEXT)")
+        conn.executemany("INSERT INTO items (body) VALUES (?)",
+                         [(f"MARKER-{i}" * 50,) for i in range(200)])
+        conn.commit()
+    finally:
+        conn.close()
+
+    dp.purge_data(source_root=str(root), backup_first=False, memory=True)
+
+    conn = sqlite3.connect(str(db))
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
+        free = conn.execute("PRAGMA freelist_count").fetchone()[0]
+    finally:
+        conn.close()
+    assert free == 0, (
+        f"{free} freed pages still hold the deleted rows' bytes — on a SQLite built "
+        "without SQLITE_SECURE_DELETE (the Windows runner, and the owner's box) that "
+        "content is recoverable from the file after a 'forget'"
+    )
+    assert b"MARKER-" not in db.read_bytes()
