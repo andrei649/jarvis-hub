@@ -4,13 +4,34 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+from pathlib import Path
+
 from agents.core.paths import data_root
 
 from .persistence import list_sessions, load_memory, save_memory
 
 logger = logging.getLogger("jarvis.memory.conversation")
 
-MEMORY_DIR = data_root()
+# Resolved LAZILY, not at import. `MEMORY_DIR = data_root()` bound the repo's
+# memory_logs/ before a caller could redirect JARVIS_HOME, so scripts/install_smoke.py
+# — which DOES set JARVIS_HOME to a temp dir — still wrote its fixture session into the
+# live store, and every later boot restored "install_smoke" as the owner's session
+# (2026-07-27 QA finding). Same class, and same fix, as the autonomy.db leak in #723.
+# `MEMORY_DIR = None` means "ask data_root() each time". It stays a module attribute
+# because tests pin it directly (monkeypatch.setattr(persistence, "MEMORY_DIR", tmp)),
+# and that seam is worth keeping — it is how the traversal tests get a sandbox.
+MEMORY_DIR: Path | None = None
+
+
+def memory_dir() -> Path:
+    """Where session state lives, resolved NOW — honors an explicit MEMORY_DIR override
+    first, then the current JARVIS_HOME. Public because callers legitimately need the
+    path (tests, the KG writing beside a snapshot); read it through this, never through
+    a value captured at import."""
+    return MEMORY_DIR if MEMORY_DIR is not None else data_root()
+
+
+_memory_dir = memory_dir   # internal alias, kept so use sites read tersely
 
 
 class Turn:
@@ -152,8 +173,8 @@ class ConversationMemory:
 
     def _append_log_dict(self, session_id: str, turn_dict: dict):
         try:
-            MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-            log_path = MEMORY_DIR / f"{session_id}.jsonl"
+            _memory_dir().mkdir(parents=True, exist_ok=True)
+            log_path = _memory_dir() / f"{session_id}.jsonl"
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(turn_dict, ensure_ascii=False) + "\n")
         except Exception as e:

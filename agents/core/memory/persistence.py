@@ -5,11 +5,32 @@ persistence.py — Memory persistence: saves/loads conversation history across r
 import json
 import logging
 
+from pathlib import Path
+
 from agents.core.paths import data_root
 from agents.core.session_files import is_session_stem, looks_like_session_snapshot
 from agents.core.validation import is_valid_session_id
 
-MEMORY_DIR = data_root()
+# Resolved LAZILY, not at import. `MEMORY_DIR = data_root()` bound the repo's
+# memory_logs/ before a caller could redirect JARVIS_HOME, so scripts/install_smoke.py
+# — which DOES set JARVIS_HOME to a temp dir — still wrote its fixture session into the
+# live store, and every later boot restored "install_smoke" as the owner's session
+# (2026-07-27 QA finding). Same class, and same fix, as the autonomy.db leak in #723.
+# `MEMORY_DIR = None` means "ask data_root() each time". It stays a module attribute
+# because tests pin it directly (monkeypatch.setattr(persistence, "MEMORY_DIR", tmp)),
+# and that seam is worth keeping — it is how the traversal tests get a sandbox.
+MEMORY_DIR: Path | None = None
+
+
+def memory_dir() -> Path:
+    """Where session state lives, resolved NOW — honors an explicit MEMORY_DIR override
+    first, then the current JARVIS_HOME. Public because callers legitimately need the
+    path (tests, the KG writing beside a snapshot); read it through this, never through
+    a value captured at import."""
+    return MEMORY_DIR if MEMORY_DIR is not None else data_root()
+
+
+_memory_dir = memory_dir   # internal alias, kept so use sites read tersely
 
 logger = logging.getLogger("jarvis.persistence")
 
@@ -21,8 +42,8 @@ def save_memory(session_id: str, turns: list[dict]):
     if not is_valid_session_id(session_id):
         logger.warning("refusing to save memory for invalid session_id")
         return
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-    path = MEMORY_DIR / f"{session_id}.json"
+    _memory_dir().mkdir(parents=True, exist_ok=True)
+    path = _memory_dir() / f"{session_id}.json"
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump({"session_id": session_id, "turns": turns}, f, ensure_ascii=False, indent=2)
@@ -35,7 +56,7 @@ def load_memory(session_id: str) -> list[dict]:
     if not is_valid_session_id(session_id):
         logger.warning("refusing to load memory for invalid session_id")
         return []
-    path = MEMORY_DIR / f"{session_id}.json"
+    path = _memory_dir() / f"{session_id}.json"
     if not path.exists():
         return []
     try:
@@ -60,7 +81,7 @@ def list_sessions() -> list[str]:
     flag involved. Candidates are now filtered by name and confirmed by payload
     shape (`agents.core.session_files`).
     """
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    _memory_dir().mkdir(parents=True, exist_ok=True)
     sessions = []
     # Sort by nanosecond mtime (finer than float-seconds st_mtime) with the stem as
     # a deterministic tiebreak: when two sessions are written within one filesystem
@@ -69,7 +90,7 @@ def list_sessions() -> list[str]:
     # On a tie, alphabetically-last wins, which matches "most recent" for both the
     # timestamp session names and sequentially-named ones.
     for f in sorted(
-        MEMORY_DIR.glob("*.json"),
+        _memory_dir().glob("*.json"),
         key=lambda p: (p.stat().st_mtime_ns, p.stem),
         reverse=True,
     ):
@@ -91,7 +112,7 @@ def delete_memory(session_id: str):
     if not is_valid_session_id(session_id):
         logger.warning("refusing to delete memory for invalid session_id")
         return
-    path = MEMORY_DIR / f"{session_id}.json"
+    path = _memory_dir() / f"{session_id}.json"
     if path.exists():
         path.unlink()
         logger.info(f"Memory deleted: {path}")

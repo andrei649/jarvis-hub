@@ -118,3 +118,52 @@ def test_chat_request_rejects_unknown_fields():
         "client believe its turns were scoped when they shared one transcript "
         "(QA 2026-07-27)"
     )
+
+
+# ── the test/prod bleeds and the shared rails they exposed ────────────────────
+
+def test_memory_dir_is_resolved_lazily_not_at_import():
+    """RUN 2 found `install_smoke` restored as the owner's live session every boot.
+
+    `scripts/install_smoke.py` DOES redirect JARVIS_HOME to a temp dir, but
+    `memory/{conversation,persistence}.py` bound `MEMORY_DIR = data_root()` at import —
+    before the redirect — so the fixture session was written into the live store and
+    reloaded forever after. Same class as the autonomy.db leak fixed in #723.
+    """
+    for mod in ("agents/core/memory/conversation.py", "agents/core/memory/persistence.py"):
+        src = (REPO / mod).read_text(encoding="utf-8")
+        # anchored to column 0 so the explanatory comment (which quotes the old
+        # binding) does not trip this — a naive substring match did exactly that.
+        assert not re.search(r"^MEMORY_DIR = data_root\(\)", src, re.M), (
+            f"{mod} binds the memory root at import — a caller redirecting JARVIS_HOME "
+            "afterwards (install_smoke, any test) still writes into the live store"
+        )
+        assert "def memory_dir()" in src, f"{mod} must expose a lazily-resolved memory_dir()"
+
+
+def test_install_smoke_state_stays_out_of_the_live_store(tmp_path, monkeypatch):
+    """With JARVIS_HOME redirected, a session must land there — not in the repo."""
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    from agents.core.memory import persistence
+
+    monkeypatch.setattr(persistence, "MEMORY_DIR", None)   # no override: follow the env
+    assert persistence.memory_dir() == tmp_path, (
+        f"memory_dir() ignored JARVIS_HOME: {persistence.memory_dir()} != {tmp_path}"
+    )
+
+
+def test_language_mirroring_is_a_shared_rail_not_a_persona_line():
+    """RUN 2 finding CHT-070: a Romanian prompt to Steve came back entirely in English.
+
+    "Romanian in, Romanian out" lived only in agents/jarvis/SOUL.md, so an agent-pinned
+    turn never saw it. A cross-cutting rule cannot live in one persona.
+    """
+    src = (REPO / "agents/core/orchestrator.py").read_text(encoding="utf-8")
+    assert "def _language_block" in src, "no shared language rail on the prompt path"
+    start = src.index("def _language_block")
+    block = src[start: src.index("def _data_grounding_block")]
+    assert "SAME language" in block, "the language rail must require mirroring"
+    # and it must actually be injected, at every assembly site
+    assert src.count("self._language_block()") >= 2, (
+        "the language rail is defined but not wired into every runtime_block assembly"
+    )

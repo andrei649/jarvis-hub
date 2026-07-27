@@ -1210,7 +1210,7 @@ class Orchestrator:
         )
         plugin_block = self._format_plugin_data(plugin_data)
         recall_block = await self._recall_block(text)
-        runtime_block = self._runtime_state_block() + self._data_grounding_block(plugin_data)
+        runtime_block = self._runtime_state_block() + self._language_block() + self._data_grounding_block(plugin_data)
         synthesized = ""
         # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
         # `target` is empty (e.g. _route_candidates returns nothing).
@@ -1475,6 +1475,24 @@ class Orchestrator:
             "or backend you run on; never invent model names or hardware):\n"
             f"- LLM backend: {backend}\n"
             f"- Active model: {model}\n\n"
+        )
+
+    def _language_block(self) -> str:
+        """Mirror the owner's language, for EVERY agent.
+
+        The rule "Romanian in, Romanian out" lived only in `agents/jarvis/SOUL.md`, so an
+        agent-pinned turn never saw it: the 2026-07-27 QA run asked Steve
+        "dă-mi un raport de sănătate a sistemului" and got a wholly English reply, while
+        Gecko happened to mirror correctly. Per-persona wording cannot hold a
+        cross-cutting rule — so it joins the runtime and data rails, which every agent
+        receives regardless of routing."""
+        return (
+            "Language (applies to every agent, whatever your persona says):\n"
+            "- Reply in the SAME language the owner just used. Romanian in → Romanian "
+            "out; English in → English out. Do not switch language mid-conversation "
+            "unless asked.\n"
+            "- Keep technical identifiers (route paths, model names, env vars, code) "
+            "verbatim — translate the prose around them, never the identifier.\n\n"
         )
 
     def _data_grounding_block(self, plugin_data: dict) -> str:
@@ -1993,7 +2011,7 @@ class Orchestrator:
         plugin_block = self._format_plugin_data(plugin_data or {})
         recall_block = await self._recall_block(text)
         agent_timeout = self._agent_call_timeout()  # CDX-6: tunable, not a hard-coded 120s
-        runtime_block = self._runtime_state_block() + self._data_grounding_block(plugin_data or {})
+        runtime_block = self._runtime_state_block() + self._language_block() + self._data_grounding_block(plugin_data or {})
 
         async def _run_agent(agent_id: str) -> tuple[str, str, float]:
             enriched_text = await self._build_agent_turn_text(

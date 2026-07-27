@@ -126,7 +126,9 @@ async def test_restart_restores_history_with_kg_state_present(tmp_path, monkeypa
     await m.add_turn(sid, "assistant", "reținut")
 
     # The KG writes entities.json into the same root, after the session snapshot.
-    root = persistence.MEMORY_DIR
+    # resolved now, not at import — with the old import-time binding this pointed at
+    # the real repo memory_logs/ and this test wrote entities.json into it.
+    root = persistence.memory_dir()
     root.mkdir(parents=True, exist_ok=True)
     (root / "entities.json").write_text('{"entities": {"Andrei": {}}}', encoding="utf-8")
 

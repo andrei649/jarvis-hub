@@ -3,7 +3,7 @@
    degrades to an offline/empty state — never blocks. Admin-guarded calls work on
    localhost; on a network they surface the 401 via the client's token prompt. */
 import React, { useState, useEffect, useCallback } from 'react';
-import { apiGet, apiPost, apiPut, apiDelete } from './api/client';
+import { apiGet, apiPost, apiPut, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
 import { localModelStatus } from './api/live';
 import { OperatorPanel } from './operator-panel';
 
@@ -2872,6 +2872,33 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],
 ];
 
+/* Renders the failed-mutation sink from api/client.ts. This is the one place that makes
+   a swallowed admin action visible: the HUD has 27 `.catch(() => {})` sites, so a fix at
+   any single call site would leave the rest silent. Empty (renders nothing) until a
+   mutation actually fails, so it costs nothing on the happy path. */
+export function ActionFailureBanner() {
+  const [fails, setFails] = useState(actionFailures());
+  useEffect(() => onActionFailure(setFails), []);
+  if (!fails.length) return null;
+  return (
+    <div role="alert" style={{ border: '1px solid var(--red)', borderRadius: 4, padding: '8px 10px', marginBottom: 12, background: 'rgba(255,0,0,.06)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: fails.length ? 6 : 0 }}>
+        <span style={{ ...mono, color: 'var(--red)' }}>
+          {fails.length} action{fails.length > 1 ? 's' : ''} FAILED — the change did not happen
+        </span>
+        <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => { clearActionFailures(); setFails([]); }}>dismiss</button>
+      </div>
+      {fails.slice(0, 5).map((f, i) => (
+        <div key={i} style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>
+          {f.method} {f.path} → <span style={{ color: 'var(--red)' }}>{f.status}</span>
+          {f.status === 403 ? ' · refused (kernel denial or missing admin token)' : ''}
+          {f.status === 401 ? ' · not authorised' : ''}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ConsoleOverlay({ onClose }) {
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose(); };
@@ -2886,6 +2913,7 @@ export function ConsoleOverlay({ onClose }) {
           <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>net-new capability surfaces (P4c) · live + mock-tolerant</span>
           <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={onClose}>esc ✕</button>
         </div>
+        <ActionFailureBanner />
         {SECTIONS.map(([label, panels]) => (
           <div key={label} style={{ marginBottom: 18 }}>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.18em', color: 'var(--ink-3)', margin: '0 0 8px' }}>{String(label).toUpperCase()}</div>
