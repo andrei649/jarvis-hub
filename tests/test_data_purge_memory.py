@@ -438,3 +438,110 @@ def test_json_stores_keep_their_container_type(tmp_path):
 
     assert json.loads((root / "listy.json").read_text()) == []
     assert json.loads((root / "dicty.json").read_text()) == {}
+
+
+# ── AUDIT-2c: the pre-forget archive ───────────────────────────────
+def test_pre_forget_archive_lands_outside_the_purged_root(tmp_path, monkeypatch):
+    """A forget must not leave a full copy inside the folder it just cleaned.
+
+    The old default put it in <data_root>/backups, so a forget CONCENTRATED what was
+    scattered across the root into one grab-and-go file and left it in place. The
+    adversarial audit recovered every planted marker from it, including a settings.db
+    token.
+    """
+    from agents.core import backup as _backup
+
+    root = tmp_path / "data"
+    root.mkdir()
+    monkeypatch.delenv("JARVIS_FORGET_ARCHIVE_DIR", raising=False)
+    monkeypatch.setenv("JARVIS_KEY_DIR", str(tmp_path / "keys"))
+    _seed_survivors(root)
+
+    report = dp.purge_data(source_root=str(root), backup_first=True, memory=True)
+
+    archive = Path(report["backup"]["archive"])
+    assert archive.exists()
+    assert root not in archive.parents and archive.parent != root, (
+        f"the pre-forget archive is inside the purged root: {archive}"
+    )
+    assert archive.parent == _backup.pre_forget_dir(root)
+    # and nothing archive-shaped was left behind inside the data root
+    assert list(root.rglob("*.tar.gz")) == []
+    assert list(root.rglob("*.tar.gz.enc")) == []
+
+
+def test_pre_forget_archive_is_encrypted_even_with_no_key_configured(tmp_path, monkeypatch):
+    """Unconditional, because this archive is the most concentrated copy that will exist."""
+    root = tmp_path / "data"
+    root.mkdir()
+    monkeypatch.delenv("JARVIS_BACKUP_KEY", raising=False)
+    monkeypatch.delenv("JARVIS_FORGET_ARCHIVE_DIR", raising=False)
+    monkeypatch.setenv("JARVIS_KEY_DIR", str(tmp_path / "keys"))
+    (root / "notes.json").write_text('{"body": "MARKER-notes"}', encoding="utf-8")
+
+    report = dp.purge_data(source_root=str(root), backup_first=True, memory=True)
+
+    archive = Path(report["backup"]["archive"])
+    assert archive.name.endswith(".enc"), f"pre-forget archive is plaintext: {archive.name}"
+    assert report["backup"]["encrypted"] is True
+    assert b"MARKER-notes" not in archive.read_bytes(), (
+        "the marker is readable in the archive bytes — it is not actually encrypted"
+    )
+    # the key lives outside the archive, so a stolen archive does not ship its own key
+    assert (tmp_path / "keys").is_dir()
+
+
+def test_pre_forget_archives_are_pruned(tmp_path, monkeypatch):
+    """Retaining N full copies of data the owner asked to delete is not a safety net."""
+    root = tmp_path / "data"
+    root.mkdir()
+    monkeypatch.delenv("JARVIS_FORGET_ARCHIVE_DIR", raising=False)
+    monkeypatch.setenv("JARVIS_KEY_DIR", str(tmp_path / "keys"))
+    monkeypatch.setenv("JARVIS_FORGET_ARCHIVE_KEEP", "1")
+
+    from agents.core import backup as _backup
+
+    for i in range(3):
+        (root / "notes.json").write_text(f'{{"n": {i}}}', encoding="utf-8")
+        dp.purge_data(source_root=str(root), backup_first=True, memory=True)
+
+    kept = list(_backup.pre_forget_dir(root).glob("*.tar.gz.enc"))
+    assert len(kept) == 1, f"pre-forget archives accumulate unbounded: {len(kept)}"
+
+
+async def test_forget_route_backup_first_is_settable(monkeypatch):
+    from agents.core.routers import backup as backup_router
+
+    seen = {}
+
+    async def _clear(_orch):
+        return ([], [])
+
+    def _purge(**kw):
+        seen.update(kw)
+        return {"ok": True, "backup": None, "purged": {}, "total_rows": 0}
+
+    monkeypatch.setattr(backup_router._purge, "clear_live_memory", _clear)
+    monkeypatch.setattr(backup_router._purge, "purge_data", _purge)
+    monkeypatch.setattr(backup_router._purge, "purge_contract_denial", lambda **_k: None)
+    monkeypatch.setattr(backup_router, "get_orch", lambda: None)
+
+    class _Req:
+        def __init__(self, body):
+            self._body = body
+
+        async def json(self):
+            return self._body
+
+    # default stays backup-first — an accidental forget with no way back is worse
+    await backup_router.forget_data(_Req({"confirm": "FORGET"}))
+    assert seen["backup_first"] is True
+
+    await backup_router.forget_data(_Req({"confirm": "FORGET", "backup_first": False}))
+    assert seen["backup_first"] is False, (
+        "the route still hardcodes backup_first — a user who wants deletion cannot get "
+        "deletion through the product"
+    )
+
+    resp = await backup_router.forget_data(_Req({"confirm": "FORGET", "backup_first": "no"}))
+    assert resp.status_code == 400

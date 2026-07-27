@@ -441,13 +441,33 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
     report: dict = {"ok": True, "backup": None, "purged": {}, "total_rows": 0}
 
     if backup_first:
-        snap = _backup.create_backup(source_root=str(root), label="pre-forget")
+        # AUDIT-2c. Three deliberate changes from the old call, each closing a way the
+        # safety net worked against the user:
+        #   out_dir=  the archive lands OUTSIDE the data root, so purging the root cannot
+        #             leave a full copy of everything sitting inside the folder it just
+        #             cleaned (it used to default to <data_root>/backups);
+        #   encrypt=  unconditional. This archive is, by construction, the most
+        #             concentrated copy of the user's data that will ever exist — every
+        #             marker the audit planted was recoverable from the plaintext one,
+        #             including a settings.db token. The cipher key resolves under
+        #             $JARVIS_KEY_DIR, outside the archive, and is generated if unset;
+        #   prune     old pre-forget archives are removed, because retaining N full copies
+        #             of data the owner asked to be deleted is not a safety net.
+        out_dir = _backup.pre_forget_dir(root)
+        snap = _backup.create_backup(source_root=str(root), out_dir=str(out_dir),
+                                     label="pre-forget", encrypt=True)
         verdict = _backup.verify_backup(snap["archive"])
         if not verdict.get("ok"):
             raise PurgeError(
                 f"pre-forget backup failed verification ({snap['archive']}); aborting purge"
             )
-        report["backup"] = {"archive": snap["archive"], "verified": True}
+        report["backup"] = {
+            "archive": snap["archive"],
+            "verified": True,
+            "encrypted": True,
+            "outside_data_root": True,
+            "pruned": _backup.prune_pre_forget_archives(source_root=root),
+        }
 
     for name in PURGE_DBS:
         p = root / name

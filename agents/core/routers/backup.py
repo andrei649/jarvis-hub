@@ -117,6 +117,15 @@ async def forget_data(req: Request):
             {"error": 'forget requires confirmation — send {"confirm": "FORGET"}'},
             status_code=400,
         )
+    # AUDIT-2c: the API's equivalent of the CLI's --no-backup. The route used to hardcode
+    # backup_first=True, so a user who wanted deletion could not get deletion through the
+    # product — the one path that matters for someone handing the box back. Still defaults
+    # to True: an accidental forget with no way back is the worse failure.
+    backup_first = (body or {}).get("backup_first", True)
+    if not isinstance(backup_first, bool):
+        return JSONResponse(
+            {"error": "backup_first must be true or false"}, status_code=400,
+        )
     # Capture known session ids and clear live memory before the file purge.
     orch = get_orch()
     session_ids: list[str] = []
@@ -129,7 +138,7 @@ async def forget_data(req: Request):
                 session_ids = []
     denied = _purge.purge_contract_denial(
         source="api.admin.forget",
-        backup_first=True,
+        backup_first=backup_first,
         memory=True,
         session_count=len(session_ids),
     )
@@ -142,7 +151,8 @@ async def forget_data(req: Request):
     try:
         # Backs up then deletes across the data root — blocking file/DB I/O.
         result = await asyncio.to_thread(
-            _purge.purge_data, backup_first=True, memory=True, session_ids=session_ids
+            _purge.purge_data, backup_first=backup_first, memory=True,
+            session_ids=session_ids
         )
     except (OSError, ValueError, _purge.PurgeError) as e:
         logger.warning("forget purge failed: %s", e)
