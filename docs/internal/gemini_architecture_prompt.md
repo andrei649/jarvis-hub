@@ -131,8 +131,7 @@ cabinet/
 │   ├── health/                      # Hercules health
 │   ├── pm/                          # Hephaestus project management
 │   ├── spotify/                     # Jerome Spotify
-│   ├── weather/                     # Weather skill
-│   └── user_greeting_055711/        # Auto-generated skill example
+│   └── weather/                     # Weather skill
 ├── tests/                           # 181 pytest tests (pytest-asyncio, auto mode)
 │   ├── conftest.py
 │   ├── test_hybrid_router.py

@@ -19,7 +19,7 @@
 
 ---
 
-## ✅ Pattern REAL de skill (din `skills/user_greeting_055711/`)
+## ✅ Pattern REAL de skill (din `skills/pm/`)
 
 Un skill = un **director** `skills/<name>/` cu două fișiere:
 
@@ -43,18 +43,31 @@ Reguli parser (verificate `loader.py:133-159`):
 
 ### 2. `skills/<name>/main.py` (modul Python)
 ```python
-async def handle(cmd: str, args: str, context: dict) -> str:
+async def play_focus(args: str, context: dict | None = None) -> str:
     ...
     return "text răspuns"
 
 def get_commands() -> list[str]:
     return ["play_focus"]
 
+async def handle(cmd: str, args: str, context: dict | None = None) -> str:
+    """Fallback la nivel de modul, pentru comenzi neînregistrate."""
+    if cmd == "play_focus":
+        return await play_focus(args, context)
+    return f"[skill:...] unknown command: {cmd}"
+
 def register(skill):
-    skill.register_command("play_focus", handle)
+    skill.register_command("play_focus", play_focus)
 ```
-Loader-ul (`loader.py:102-117`): importă `main.py`, cheamă `register(skill)` dacă
-există, altfel mapează fiecare nume din `get_commands()` la atributul cu acel nume.
+Loader-ul importă `main.py`, cheamă `register(skill)` dacă există **și** mapează fiecare
+nume din `get_commands()` la atributul cu acel nume (`getattr`) — ambele, nu „ori/ori".
+
+**Contract obligatoriu (`loader.py`, verificat de `tests/test_generated_skill_contract.py`):**
+- o funcție de comandă ia `(args, context=None)` — `Skill.execute()` apelează
+  `cmd_fn(args, context)` sau `cmd_fn(args)`, **niciodată** `(cmd, args, context)`;
+- fiecare nume din `get_commands()` trebuie să existe la nivel de modul, altfel `getattr`
+  ridică `AttributeError` și tot blocul de încărcare cade;
+- `handle(cmd, args, context)` rămâne fallback-ul de modul (3 argumente), nu funcție de comandă.
 
 ### 3. Invocare (orchestrator)
 `orchestrator.py:255` → `self.skills.parse_command(text)` returnează
