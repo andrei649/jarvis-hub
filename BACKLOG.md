@@ -304,6 +304,43 @@ python -m pytest tests/ -v          # ~5,430 collected (counter synced via scrip
   central `PluginHTTPClient` don't route through `resolve_and_validate` with pinning (rebinding TOCTOU).
 - [ ] 🟡 **SEC-B5 — taint by dataflow, not just declared origin.** Proactive/recall/ambient payloads
   rebuilt outside an inbound turn drop ingress taint (worst confirmed case is READ_ONLY-bounded).
+**Adversarial audit, 2026-07-25 (26 agents · 18 findings tested · 2 confirmed · 10 corrected down ·
+6 refuted · 3 new from the completeness critic).** Its headline is a compliment: independent agents
+trying hard to embarrass this codebase mostly re-discovered SEC-B1…B6 above. Two need owner triage
+because they are **not** on that list:
+
+- [ ] 🔴 **AUDIT-1 (High, confirmed) — the audit chain is forgeable in hardened mode.** `verify_chain`
+  recomputes each row with *the row's own* `hash_algo`, and `_digest` demands the key only when that
+  column says `hmac-sha256`. Downgrade every row to `sha256` and the chain re-links cleanly with
+  `JARVIS_AUDIT_KEY` set and `hardened.enforce()` returning clean — reproduced independently while
+  writing chapter 15 (`sqlite3` + `hashlib` only; the key is never read). The shipped regression
+  passes because it downgrades **one** row, so the break surfaces at the next row whose `prev_hash`
+  is still an HMAC. Fix: pin the algorithm per install and treat a post-legacy `sha256` row as
+  tampering when a key is configured — the fail-closed shape the blank-row guard (SEC-A2) already
+  uses. Extend the regression to a full-table rewrite in the same commit. Same root cause as SEC-B2.
+- [ ] 🔴 **AUDIT-2 (High, confirmed) — `POST /api/admin/forget` does not erase, it copies.** Three
+  independent failures: twelve user-content stores sit outside the `PURGE_*` allowlists (including
+  per-agent run previews and full inbound message bodies, two of them on a denylist that also stops
+  the session path deleting them, so nothing removes them ever); the vector/KG wipe is dead code —
+  no `VectorStore`/`KnowledgeGraph` implementation defines `clear()` and the call is `hasattr`-guarded,
+  so under the documented qdrant/neo4j backends every embedding and triple survives permanently while
+  the purge reports `ok`; and the forced pre-forget archive lands **inside** the data root it just
+  purged, unencrypted unless a backup key is set, with no API equivalent of the CLI's `--no-backup`
+  and nothing pruning it. `docs/PRIVACY.md` promises erasure and AUD-2 is ticked done. Contradicts
+  the A7 design-partner gate directly: a partner asked to delete their data before returning the box
+  currently cannot. Fix: invert to a KEEP allowlist, make `clear()` abstract, move and encrypt the
+  archive. The purge's *engineering* is sound (verified snapshot before any delete, SQLite
+  online-backup API, Zip-Slip guard) — the bug is the allowlist.
+
+The systemic finding is not a bug at all: five of six lenses independently found **a gate that checks
+the shape of a claim rather than its substance** — a parity test matching a URL prefix, a capability
+probe registering its own lambda, a safety pack whose `ungoverned_actions` counter is the literal
+`0`, a signature verifier accepting an unkeyed hash. Verification protocol for all 18 findings, the
+six refuted ones (so nobody chases them), the never-measured surfaces, and a **38-row
+missing-code/missing-feature gap ledger**: [`docs/test-manual/15-audit-gap-verification.md`](docs/test-manual/15-audit-gap-verification.md)
+(160 cases, `ADV` prefix) + `scripts/qa_audit_probes.py`, which reproduces nine of the claims on the
+owner's machine in 30 seconds, read-only.
+
 - [ ] **SEC-B6 — gate hardening.** Extend `test_route_auth_matrix.py` to require classification of
   *read* routes touching personal data, so the theme-B read/write asymmetry can't regress open.
 
@@ -439,7 +476,7 @@ python -m pytest tests/ -v          # ~5,430 collected (counter synced via scrip
 
 | # | Item | Status |
 |---|------|--------|
-| A1 | ⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box. **Instrument ready (#728):** `docs/TEST_MANUAL.md` — 14 chapters / 2,693 cases giving the step-by-step depth behind every checklist row, plus `docs/COWORK_QA_RUNBOOK.md` §3b carrying the R1–R9 regression pass from the 2026-07-24 run. Written from source; **no case has been executed against a running system yet**. | ⬜ **the gate** |
+| A1 | ⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box. **Instrument ready (#728):** `docs/TEST_MANUAL.md` — 15 chapters giving the step-by-step depth behind every checklist row, plus `docs/COWORK_QA_RUNBOOK.md` §3b (the R1–R9 pass from the 2026-07-24 run) and **§3c (S1–S6, the 2026-07-27 run-2 findings)**. **Run 2 executed (2026-07-27, RTX box)** — findings fixed, re-proof pending on the box. **Chapter 15 (`ADV`) is new and unexecuted:** adversarial-audit verification + a missing-code/missing-feature ledger; §8a of the runbook is its launch prompt. | ⬜ **the gate** |
 | A2 | 72h soak (0.63) + record AUD-0 / H23.23 | ⬜ |
 | A3 | Dependabot re-triage — 19 open alerts on main (4 high, 2026-07-07) | 🟢 agent half done in #634 — local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees now 0 vulns with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface — the device gate is real). Owner tail: worldview 2 moderates (in-next postcss, wait for next 16.3), mobile Expo SDK upgrade on a device, dismiss stale alerts in UI |
 | A4 | GitHub settings batch (SEC-4 required checks · CQ-2 dismissals · CQ-3 paste · repo metadata) | ⬜ |

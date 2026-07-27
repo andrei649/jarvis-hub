@@ -168,7 +168,7 @@
   "open_release_gates": [
     {
       "id": "A1",
-      "name": "⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box. **Instrument ready (#728):** `docs/TEST_MANUAL.md` — 14 chapters / 2,693 cases giving the step-by-step depth behind every checklist row, plus `docs/COWORK_QA_RUNBOOK.md` §3b carrying the R1–R9 regression pass from the 2026-07-24 run. Written from source; **no case has been executed against a running system yet**.",
+      "name": "⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box. **Instrument ready (#728):** `docs/TEST_MANUAL.md` — 15 chapters giving the step-by-step depth behind every checklist row, plus `docs/COWORK_QA_RUNBOOK.md` §3b (the R1–R9 pass from the 2026-07-24 run) and **§3c (S1–S6, the 2026-07-27 run-2 findings)**. **Run 2 executed (2026-07-27, RTX box)** — findings fixed, re-proof pending on the box. **Chapter 15 (`ADV`) is new and unexecuted:** adversarial-audit verification + a missing-code/missing-feature ledger; §8a of the runbook is its launch prompt.",
       "status": "⬜ **the gate**"
     },
     {
@@ -214,7 +214,7 @@
   ],
   "routes": 404,
   "tests": {
-    "backend": 5450,
+    "backend": 5463,
     "frontend": 386,
     "mobile": 96
   },

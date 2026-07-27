@@ -28,7 +28,7 @@ KNOWN_PATHS = {r.split(' ', 1)[1] for r in KNOWN}
 EXPECTED_PREFIX = {
     '01': 'ENV', '02': 'CHT', '03': 'SHL', '04': 'PNL', '05': 'PNB', '06': 'PGE',
     '07': 'GOV', '08': 'SEC', '09': 'MEM', '10': 'WFL', '11': 'CHN', '12': 'AIO',
-    '13': ('JRN', 'CHA'), '14': 'API',
+    '13': ('JRN', 'CHA'), '14': 'API', '15': 'ADV',
 }
 
 # "GET /api/foo" / "POST /chat" style citations in prose, code or tables

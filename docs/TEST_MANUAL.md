@@ -19,7 +19,7 @@ waste of a test session.
 
 | I want to… | Open | Size |
 |---|---|---|
-| **Test everything, deeply, once** — every button/route/state, scenarios, chaos | **this manual** (§3 index) | 14 chapters |
+| **Test everything, deeply, once** — every button/route/state, scenarios, chaos | **this manual** (§3 index) | 15 chapters |
 | Gate a release / tag a version — tick the critical areas and sign off | [`MANUAL_TESTING.md`](MANUAL_TESTING.md) | 1 checklist |
 | Feel the product as a human in a couple of hours | [`OWNER_TEST_DRIVE.md`](OWNER_TEST_DRIVE.md) | 6 sessions |
 | Hand the run to a Cowork agent (setup, priorities, regressions, reporting) | [`COWORK_QA_RUNBOOK.md`](COWORK_QA_RUNBOOK.md) | 1 brief |
@@ -117,7 +117,8 @@ Record what you **exercised**, not what you read. A short honest run beats a ful
 | 12 | AI-OS owner-host (A8 gate) | 72 | | | | |
 | 13 | Scenarios, chaos & soak | 204 | | | | |
 | 14 | API surface sweep | 409 | | | | |
-| — | **Total** | **2,693** | | | | |
+| 15 | Adversarial-audit verification & gap ledger | 160 | | | | |
+| — | **Total** | **2,853** | | | | |
 
 ### 2.2 Blocker log
 
@@ -130,6 +131,7 @@ Record what you **exercised**, not what you read. A short honest run beats a ful
 ☐ Every **BLOCKER** closed or explicitly accepted as out-of-scope (say which)
 ☐ Chapter 12 (A8 owner-host) passed **or** honestly recorded as `skipped — owner-host gate`
 ☐ Chapters 01, 02, 07, 08 fully exercised (the truth, governance and security core)
+☐ Chapter 15's §15.1 and §15.2 run, with a verdict recorded for each (they need no hardware)
 ☐ The offline suite green locally, matching `project-status.json` → `tests.*`
 ☐ Every 🔑/🖥/🌐 skip carries a written reason
 
@@ -144,8 +146,9 @@ expected results, a **degraded & honest-state matrix**, a **negative/adversarial
 coverage ledger and an open-gaps list. Case IDs are stable — cite them in findings (`CHT-014`, not
 "the Pepper thing").
 
-> **Status: complete — all 14 chapters, 2,693 cases, 10,930 lines.** Every chapter is linted
-> against the repo by `scripts/check_test_manual.py` (see below). Chapter 14 is generated.
+> **Status: complete — all 15 chapters, 2,853 cases, 12,811 lines.** Every chapter is linted
+> against the repo by `scripts/check_test_manual.py` (see below). Chapter 14 is generated;
+> chapter 15 is the adversarial-audit pass and is run *in addition to* 01–14, not instead of them.
 
 | § | Chapter | Prefix | Cases | What it proves | Needs |
 |---|---|---|---|---|---|
@@ -163,6 +166,7 @@ coverage ledger and an open-gaps list. Case IDs are stable — cite them in find
 | ✅ [12](test-manual/12-aios-owner-host.md) | AI-OS owner-host proof (the A8 1.0 gate) | `AIO` | 72 | Real browser/desktop/house/camera/media actuation, safely | 🖥 |
 | ✅ [13](test-manual/13-scenarios-and-chaos.md) | End-to-end scenarios, chaos & soak | `JRN` `CHA` | 204 | The product as a lived experience — then deliberately broken | ⏱ |
 | ✅ [14](test-manual/14-api-surface-sweep.md) | API surface sweep — all 404 app routes + 4 doc routes | `API` | 409 | Nothing on the wire is unguarded or unaccounted for (generated) | 🌐 |
+| ✅ [15](test-manual/15-audit-gap-verification.md) | Adversarial-audit verification & gap ledger | `ADV` | 160 | Whether the **gates that grade the rails** hold — plus what has no code at all | 🔑 ⏱ |
 
 **Keeping the chapters honest.** `python scripts/check_test_manual.py` lints every chapter against
 reality: each cited route must exist in the route snapshot (concrete instantiations of templated
@@ -190,7 +194,8 @@ it front-loads the cases that invalidate everything downstream if they fail.
 
 ### Smoke — ~2 hours, "is this build sane?"
 Chapter 01 (boot + version truth + suite) → 02's fabrication protocol on **three** agents (Pepper,
-Steve, Gecko — the known-risky ones) → 07's ⭐B0 governed demo → 14 Pass A.
+Steve, Gecko — the known-risky ones) → 07's ⭐B0 governed demo → 14 Pass A →
+`python scripts/qa_audit_probes.py` (30 s, gives you 15's nine source-level verdicts).
 Stop on the first BLOCKER; a broken boot or a live fabrication makes the rest meaningless.
 
 ### Standard — ~12 hours, the normal full pass (one working day)
@@ -203,13 +208,18 @@ Stop on the first BLOCKER; a broken boot or a live fabrication makes the rest me
 7. **14** the API sweep, Pass A + B
 8. **11** channels (whatever tokens exist; skip the rest honestly)
 9. **13** journeys 1–5 and the CHA chaos matrix
-10. Leave the server running overnight for **13**'s soak, sampling every 1–2 h
-11. **12** only if the hardware is present and the owner opts in
+10. **15.1** and **15.2** — the two confirmed audit breaks (the chain forgery and the forget
+    that copies). They need no hardware and no keys, and 15.1 invalidates every governance
+    claim downstream if it reproduces
+11. Leave the server running overnight for **13**'s soak, sampling every 1–2 h
+12. **12** only if the hardware is present and the owner opts in
 
 ### Full — multi-day, the 1.0 gate
 Everything, plus: 13's cross-day and upgrade journeys (⏱ need real day boundaries), the complete 12
-A8 proof with hardware, 14 Pass C's full leak hunt, and the 24 h soak. This is the only mode that can
-clear the `v1.0.0` sign-off in `MANUAL_TESTING.md`.
+A8 proof with hardware, 14 Pass C's full leak hunt, the 24 h soak, and **all of 15** — including
+15.12, the surfaces no audit lens ever touched (WorldView, mobile, desktop, voice, the MCP server,
+CI, upgrade/migration). This is the only mode that can clear the `v1.0.0` sign-off in
+`MANUAL_TESTING.md`.
 
 ### 4.1 Before you start
 1. Read the previous run report in [`qa-runs/`](qa-runs/) — you are re-measuring against it.
