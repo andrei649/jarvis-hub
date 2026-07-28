@@ -215,7 +215,7 @@
   "routes": 404,
   "tests": {
     "backend": 5657,
-    "frontend": 386,
+    "frontend": 403,
     "mobile": 96
   },
   "version": "0.11.0"
