@@ -4058,6 +4058,12 @@ export interface paths {
         /**
          * Memory Stats
          * @description Live memory stats for SystemsPanel.
+         *
+         *     Every failure path here reports *unavailable* rather than zero. It used to do
+         *     the opposite: an unbounded `get_session_stats()` await hung when the backend
+         *     was down, and the broad `except Exception` around it returned a body of zeros
+         *     that the panel drew as "0 vectors, 0 entities" — a dead store rendered as an
+         *     empty one, with nothing logged.
          */
         get: operations["memory_stats_memory_stats_get"];
         put?: never;
@@ -6837,7 +6843,18 @@ export interface paths {
         };
         /**
          * Get Cognition
-         * @description Return the last dynamic routing/cognition context.
+         * @description Return the last dynamic routing/cognition context, or an honest empty.
+         *
+         *     Before any request has been routed there is nothing to show. This used to
+         *     manufacture one: the first five entries of ``INTENT_RULES`` were returned as
+         *     ``scoring`` — so the panel drew weight bars for keywords the owner had never
+         *     typed — alongside a ``decision`` with ``confidence: 1.0`` and
+         *     ``agents_selected: ["jarvis"]`` for a routing decision that never happened.
+         *     Nothing marked any of it synthetic, so the HUD rendered "ROUTING DECISION /
+         *     STANDBY / Confidence 100%" as though the router had actually decided that.
+         *
+         *     Now the empty case is returned as empty, with ``live: false`` and a ``state``
+         *     the UI can render as "nothing routed yet".
          */
         get: operations["get_cognition_api_cognition_get"];
         put?: never;
