@@ -345,6 +345,71 @@ owner's machine in 30 seconds, read-only.
 - [ ] **SEC-B6 — gate hardening.** Extend `test_route_auth_matrix.py` to require classification of
   *read* routes touching personal data, so the theme-B read/write asymmetry can't regress open.
 
+**Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
+3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source
+and, where the defect was reproducible, reproduced before being fixed. The verification stage
+required 2 of 3 independent skeptics to fail to refute a claim, each with a different lens
+(does-it-reproduce / already-handled-elsewhere / is-the-severity-honest).
+
+The theme is the same one the 2026-07-25 audit named — a claim whose shape is checked but whose
+substance is not — and it turned out to be much wider than the gates. It runs through the *display*
+layer end to end: **twelve surfaces asserted something they had never measured.**
+
+Fixed, all with regression tests that fail when the defect is reintroduced:
+
+- [x] ✅ **Privacy: a forget kept a plaintext copy of everything it erased.** `backups` sat on
+  `KEEP_DIRS`, justified as holding the pre-forget archive — but AUDIT-2c had already moved that
+  archive *outside* the data root. What the entry actually retained was ordinary owner snapshots,
+  and `POST /api/admin/backup` passes no key, so those are unencrypted tarballs of the whole root.
+  Back up Monday, forget Friday, and `purge_data` returned `ok:true` while a cleartext copy sat in
+  the folder it had just cleaned.
+- [x] ✅ **Data loss: every forget destroyed `settings.db`.** The sweep unlinked SQLite `-wal`/`-shm`
+  sidecars, including those of the KEPT databases (`Path("settings.db-wal").suffix` is `.db-wal`, so
+  it matched no branch and fell through to `unlink()`). Deleting the `-wal` of a live WAL database
+  leaves it unopenable — reproduced as `disk I/O error`.
+- [x] ✅ **Money: the runway figure was computed from mock bank balances.** With ING configured and
+  failing, `_total_balance()` summed the hardcoded `MOCK_BALANCES` to 16000.32 and divided real
+  monthly spend by it, returning `"mock": false`.
+- [x] ✅ **Two lost-write races on the secret store.** Key/salt creation was check-then-act, reachable
+  from the two backup routes that each build a `SecretStore` in a worker thread — the loser's archive
+  becomes permanently undecryptable. Writing the tests surfaced a second race the finders missed: a
+  shared `.tmp` filename plus a read-modify-write over a per-instance cache, which silently dropped
+  credentials.
+- [x] ✅ **Privacy assurance from missing data.** The legacy HUD computed strict-local as
+  `!trust || trust.strict_local`, so a HUD that could not reach `/api/trust/status` displayed a
+  padlock reading "nothing leaves this machine".
+- [x] ✅ **The HUD synthesized its own telemetry.** `useLiveSys` layered sine waves and
+  `Math.random()` onto RAM/VRAM/GPU/latency every 1.4s and rendered the result as live host state,
+  seeded from a hardcoded 42/192 GB machine. Numbers that drift are more convincing than static ones.
+- [x] ✅ **`/security/status` was entirely static** — mode always `WARN`, every counter `0`, pattern
+  counts hand-written and wrong. Guardrails now actually count; what is still unmeasured says so.
+- [x] ✅ **`/readyz` published a configured backend NAME inside a dict called `checks`.**
+- [x] ✅ **`/api/cognition` fabricated a routing decision** (confidence 1.0, zeroed timings) when
+  nothing had been routed. Its test asserted the fabrication.
+- [x] ✅ **`/learning/stats` had never once worked** — `list()` over an int count, TypeError on every
+  call, swallowed into a body of zeros. Its test asserted only "ints and lists", which zeros satisfy.
+- [x] ✅ **`/ticker` read a key the observer has never emitted**, so every unhealthy probe was
+  silently dropped. Its test stubbed the same fictional key, so test and code agreed while both
+  disagreed with the class.
+- [x] ✅ **OBSERVE rendered the demo seed under a LIVE badge** — `/api/quality` nests under `stats`
+  and `/api/resilience` emits none of uptime/errors/redactions, so four fabricated numbers showed
+  with a green chip.
+- [x] ✅ **XSS in the public widget snippet** (`color`/`position` unescaped into `innerHTML`) and
+  **path traversal in skill import** (`replace(" ", "-")` left `..` and `/` intact).
+- [x] ✅ **The four hanging routes, root-caused.** A blocking Qdrant read inside an async handler
+  under a lock froze the whole event loop, so handlers with no I/O of their own hung too; plus a
+  heavy ML import on the loop and an unbounded memory await.
+- [x] ✅ **Shutdown released nothing** — autonomy worker and learning loop never cancelled, two
+  sqlite handles never closed (which is what makes a data directory undeletable on Windows).
+- [x] ✅ **Cypher property names could hijack node identity** — a relation property called `source`
+  rewired the relation to a different node.
+
+Still open from that run (verified real, not yet fixed): blocking DNS/HTTP on the request path in
+`browser.py`, `codeintel.py`, `house.py`, `onvif.py`, `memory_kg.py`; the unauthenticated full-chain
+re-verify in `security.py`; `north_star.py` reporting an all-time aggregate as the 7-day counter
+metric; the seeded ADMIN/OBSERVE corpora in `modes3.tsx`/`modes2.tsx`; and the dead `arr() || fallback`
+in two `gap.tsx` panels.
+
 ---
 
 ## 🔌 Live-vs-Plumbing Remediation — mock → real (owner request 2026-07-18)
