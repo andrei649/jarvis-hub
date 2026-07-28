@@ -223,14 +223,23 @@ class Neo4jGraph(KnowledgeGraph):
         # the query. Property *keys* are interpolated as map keys too, so drop
         # any that aren't bare identifiers.
         label = coerce_kg_label(entity_type)
-        props = properties or {}
-        all_props = {
-            k: v for k, v in {"name": name, **props}.items()
-            if k == "name" or is_safe_property_key(k)
-        }
-        prop_pairs = ", ".join(f"{k}: ${k}" for k in all_props)
-        cypher = f"MERGE (n:{label} {{name: $name}}) SET n += {{{prop_pairs}}} RETURN n"
-        results = self._call_neo4j([{"statement": cypher, "parameters": all_props}])
+        # Property parameters are namespaced `p_<key>`; the structural ones are not.
+        # They used to share one flat namespace — `{"name": name, **props}` — so a
+        # property literally called `name` REPLACED the entity's own name in both the
+        # MERGE pattern and the SET, silently creating or updating a different node
+        # than the caller asked for. Property keys come from LLM extraction and from
+        # ingested content, so "nobody would send that" is not an argument.
+        # `key -> "p_" + key` is injective, so no two properties can collide either.
+        props = {k: v for k, v in (properties or {}).items() if is_safe_property_key(k)}
+        if "name" in props:
+            logger.warning(
+                "add_entity(%r): dropping a 'name' property — the entity's own name "
+                "is structural and cannot be overridden by a property", name)
+            props.pop("name")
+        pairs = ["name: $name"] + [f"{k}: $p_{k}" for k in props]
+        cypher = f"MERGE (n:{label} {{name: $name}}) SET n += {{{', '.join(pairs)}}} RETURN n"
+        params = {"name": name, **{f"p_{k}": v for k, v in props.items()}}
+        results = self._call_neo4j([{"statement": cypher, "parameters": params}])
         return len(results) > 0
 
     def add_relation(self, source: str, relation: str, target: str, properties: dict = None) -> bool:
@@ -240,7 +249,13 @@ class Neo4jGraph(KnowledgeGraph):
         # RELATED_TO). Drop property keys that aren't bare identifiers.
         rel = coerce_kg_rel_type(relation)
         props = {k: v for k, v in (properties or {}).items() if is_safe_property_key(k)}
-        prop_pairs = ", ".join(f"{k}: ${k}" for k in props)
+        # Same namespacing as add_entity, and the same reason. `{"source": source,
+        # "target": target, **props}` let a relation property named `source` or
+        # `target` override the NODE IDENTITY: the MERGE patterns bind
+        # `{name: $source}` / `{name: $target}`, so the relation was silently
+        # attached between two entirely different nodes. Under `p_<key>` such a
+        # property is stored on the relation, which is what it was meant to be.
+        prop_pairs = ", ".join(f"{k}: $p_{k}" for k in props)
         set_clause = f" SET r += {{{prop_pairs}}}" if props else ""
         cypher = (
             f"MERGE (a {{name: $source}}) "
@@ -248,7 +263,8 @@ class Neo4jGraph(KnowledgeGraph):
             f"MERGE (a)-[r:{rel} {{}}]->(b){set_clause} "
             f"RETURN a, r, b"
         )
-        params = {"source": source, "target": target, **props}
+        params = {"source": source, "target": target,
+                  **{f"p_{k}": v for k, v in props.items()}}
         results = self._call_neo4j([{"statement": cypher, "parameters": params}])
         return len(results) > 0
 

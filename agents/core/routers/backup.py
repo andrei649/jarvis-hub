@@ -163,12 +163,26 @@ async def forget_data(req: Request):
     # that did not complete) on the one operation where the user cannot check for
     # themselves. `ok` now reflects the whole forget, not just the file half.
     result["live_stores_cleared"] = live_cleared
-    result["not_erased"] = live_failed
-    if live_failed:
+    # MERGE, don't overwrite. `purge_data` already puts the files its sweep could not
+    # erase into `not_erased` (and sets ok:false). This line used to assign
+    # `live_failed` straight over that, so a run where the FILE sweep failed but the
+    # live stores cleared cleanly reported `ok: false` with an empty `not_erased`
+    # and no warning — the user was told something survived but not what, on the one
+    # operation where they cannot go and check for themselves. That is the same
+    # defect the comment above this block was written about, one line further down.
+    file_failed = list(result.get("not_erased") or [])
+    not_erased = file_failed + [s for s in live_failed if s not in file_failed]
+    result["not_erased"] = not_erased
+    if not_erased:
         result["ok"] = False
+        parts = []
+        if file_failed:
+            parts.append("files the sweep could not erase")
+        if live_failed:
+            parts.append("live stores that could not be cleared")
         result["warning"] = (
-            "SOME DATA WAS NOT ERASED — see not_erased. The file purge completed, but "
-            "the listed live stores could not be cleared and still hold your content."
+            "SOME DATA WAS NOT ERASED — see not_erased (" + " and ".join(parts) + "). "
+            "The listed items still hold your content."
         )
-        logger.error("forget completed with surviving stores: %s", live_failed)
+        logger.error("forget completed with surviving data: %s", not_erased)
     return nocache_json(result)

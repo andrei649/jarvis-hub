@@ -310,6 +310,94 @@ async def test_forget_route_reports_what_it_could_not_erase(monkeypatch):
     assert "NOT ERASED" in body["warning"]
 
 
+async def test_forget_route_does_not_hide_files_the_sweep_could_not_erase(monkeypatch):
+    """The route assigned `live_failed` straight over `not_erased`.
+
+    `purge_data` already puts the files ITS sweep could not erase there (and sets
+    ok:false). So a run where the file sweep failed but the live stores cleared
+    cleanly reported `ok: false` with an EMPTY `not_erased` and no warning at all:
+    the user was told something survived, but not what — on the one operation
+    where they cannot go and look for themselves.
+    """
+    from agents.core.routers import backup as backup_router
+
+    async def _clear(_orch):
+        return (["conversation", "vectors"], [])       # live half fine
+
+    def _purge(**_kw):
+        return {"ok": False, "backup": None, "purged": {}, "total_rows": 0,
+                "not_erased": ["run_history.json", "tokens/gmail.json"]}
+
+    monkeypatch.setattr(backup_router._purge, "clear_live_memory", _clear)
+    monkeypatch.setattr(backup_router._purge, "purge_data", _purge)
+    monkeypatch.setattr(backup_router._purge, "purge_contract_denial", lambda **_k: None)
+    monkeypatch.setattr(backup_router, "get_orch", lambda: object())
+
+    class _Req:
+        async def json(self):
+            return {"confirm": "FORGET"}
+
+    body = json.loads((await backup_router.forget_data(_Req())).body)
+
+    assert body["ok"] is False
+    assert body["not_erased"] == ["run_history.json", "tokens/gmail.json"]
+    assert "NOT ERASED" in body["warning"]
+    assert "files the sweep could not erase" in body["warning"]
+
+
+async def test_forget_route_reports_both_halves_when_both_fail(monkeypatch):
+    """Files AND live stores surviving must both be listed, without duplicates."""
+    from agents.core.routers import backup as backup_router
+
+    async def _clear(_orch):
+        return ([], ["graph: Neo4j unreachable"])
+
+    def _purge(**_kw):
+        return {"ok": False, "backup": None, "purged": {}, "total_rows": 0,
+                "not_erased": ["notes.json"]}
+
+    monkeypatch.setattr(backup_router._purge, "clear_live_memory", _clear)
+    monkeypatch.setattr(backup_router._purge, "purge_data", _purge)
+    monkeypatch.setattr(backup_router._purge, "purge_contract_denial", lambda **_k: None)
+    monkeypatch.setattr(backup_router, "get_orch", lambda: object())
+
+    class _Req:
+        async def json(self):
+            return {"confirm": "FORGET"}
+
+    body = json.loads((await backup_router.forget_data(_Req())).body)
+
+    assert body["not_erased"] == ["notes.json", "graph: Neo4j unreachable"]
+    assert "files the sweep could not erase" in body["warning"]
+    assert "live stores that could not be cleared" in body["warning"]
+
+
+async def test_forget_route_stays_clean_when_everything_really_was_erased(monkeypatch):
+    """The honest success path must survive the merge — no empty warning."""
+    from agents.core.routers import backup as backup_router
+
+    async def _clear(_orch):
+        return (["conversation", "vectors", "graph"], [])
+
+    def _purge(**_kw):
+        return {"ok": True, "backup": None, "purged": {}, "total_rows": 42}
+
+    monkeypatch.setattr(backup_router._purge, "clear_live_memory", _clear)
+    monkeypatch.setattr(backup_router._purge, "purge_data", _purge)
+    monkeypatch.setattr(backup_router._purge, "purge_contract_denial", lambda **_k: None)
+    monkeypatch.setattr(backup_router, "get_orch", lambda: object())
+
+    class _Req:
+        async def json(self):
+            return {"confirm": "FORGET"}
+
+    body = json.loads((await backup_router.forget_data(_Req())).body)
+
+    assert body["ok"] is True
+    assert body["not_erased"] == []
+    assert "warning" not in body
+
+
 # ── AUDIT-2: the twelve stores that used to survive a forget ───────────────
 _SURVIVORS = {
     # the audit's list, each seeded with a recognisable marker
