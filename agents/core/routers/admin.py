@@ -375,6 +375,12 @@ async def admin_prompt_ab_set(agent_id: str, req: Request):
         ab = svs.set_experiment(agent_id, int(body["a"]), int(body["b"]), float(body.get("split", 0.5)))
     except KeyError:
         return JSONResponse({"error": "a and b must be existing versions"}, status_code=400)
+    except (TypeError, ValueError):
+        # KeyError alone covered a MISSING field but not a malformed one, so a
+        # non-numeric version id or split fell through int()/float() as a 500.
+        return JSONResponse(
+            {"error": "a and b must be integer version ids and split a number"},
+            status_code=400)
     return nocache_json({"ok": True, "experiment": ab})
 
 

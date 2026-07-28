@@ -2130,7 +2130,16 @@ export interface paths {
         };
         /**
          * Security Status
-         * @description Return security system status.
+         * @description Live security system status.
+         *
+         *     Every number here used to be a literal. `mode` was always "WARN", the redact
+         *     and block counts were always 0, the pattern counts were hand-written (10 and
+         *     6 — both wrong), and the SSRF counters were 0. The Console renders these as
+         *     measured security activity, so a hub running in BLOCK mode that had redacted
+         *     forty PII spans reported a clean, untriggered system with the wrong mode.
+         *
+         *     The engine now counts what it does; anything still unmeasured is reported as
+         *     null with `available: false`, never as a zero that reads like a measurement.
          */
         get: operations["security_status_security_status_get"];
         put?: never;
@@ -7826,7 +7835,7 @@ export interface components {
             limit: number;
             /** Weights */
             weights?: {
-                [key: string]: unknown;
+                [key: string]: number;
             } | null;
         };
         /** EvidenceItem */

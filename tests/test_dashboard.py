@@ -410,24 +410,57 @@ def test_ticker_returns_ticker_key(monkeypatch):
 
 
 def test_ticker_observer_unhealthy_signal_appears(monkeypatch):
+    """Uses the shape `ProactiveObserver.status()` ACTUALLY returns.
+
+    This test used to stub a `signals` dict — a key the real observer has never
+    emitted — and the handler read that same fictional key. Test and code agreed
+    with each other and both disagreed with the class, so the ticker silently
+    dropped every unhealthy probe and the suite stayed green. See
+    `test_the_ticker_reads_a_key_the_observer_really_emits` below, which pins the
+    contract against the real class instead of against a mock.
+    """
     mock = _simple_orch()
     mock.observer = MagicMock()
     mock.observer.status.return_value = {
-        "signals": {
-            "disk": {"healthy": False, "detail": "Disk 95% full", "agent": "steve", "severity": "CRITICAL"}
-        }
+        "probes": 5, "tracked": 5,
+        "unhealthy": [{"key": "disk", "detail": "Disk 95% full", "severity": "CRITICAL"}],
     }
     monkeypatch.setattr(web, "orch", mock)
     client = TestClient(web.app)
     items = client.get("/ticker").json()["ticker"]
-    assert any(it.get("verb") == "WARNING" for it in items)
+    warnings = [it for it in items if it.get("verb") == "WARNING"]
+    assert warnings, "an unhealthy probe never reached the ticker"
+    assert warnings[0]["obj"] == "Disk 95% full"
+    assert warnings[0]["pri"] == "high"      # CRITICAL -> high
 
 
 def test_ticker_healthy_only_signals_use_fallback(monkeypatch):
     mock = _simple_orch()
     mock.observer = MagicMock()
-    mock.observer.status.return_value = {"signals": {}}
+    mock.observer.status.return_value = {"probes": 5, "tracked": 5, "unhealthy": []}
     monkeypatch.setattr(web, "orch", mock)
     client = TestClient(web.app)
     resp = client.get("/ticker")
     assert resp.status_code == 200
+    assert not [it for it in resp.json()["ticker"] if it.get("verb") == "WARNING"]
+
+
+def test_the_ticker_reads_a_key_the_observer_really_emits():
+    """Pin the contract against the REAL class, not a mock.
+
+    A mock will happily return whatever key the handler asks for, which is how a
+    handler reading a nonexistent key stayed green for as long as it did.
+    """
+    from agents.core.autonomy.observer import ProactiveObserver
+
+    obs = ProactiveObserver.__new__(ProactiveObserver)
+    obs.probes = []
+    obs._state = {}
+    obs._last_signals = {}
+    status = obs.status()
+
+    assert "unhealthy" in status, "the handler reads `unhealthy`; the observer must emit it"
+    assert "signals" not in status, (
+        "if the observer ever grows a `signals` key, revisit /ticker — it used to "
+        "read that key exclusively, and it never existed"
+    )
