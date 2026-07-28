@@ -15,6 +15,7 @@ so they move here with the domain. No orchestrator dependency.
 import asyncio
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -150,6 +151,13 @@ async def tts_stream_endpoint(req: TTSRequest):
 # with an install hint — never a fabricated transcript.
 
 _STT_ENGINE = None
+# Guards the lazy build below. While `_stt_engine()` was called directly from an
+# async handler, the check-then-act was accidentally safe: nothing between the
+# `is None` test and the assignment awaits, so the event loop could not interleave
+# another request. Moving the call to `asyncio.to_thread` — which is what stops it
+# freezing the loop — made it genuinely concurrent, and two simultaneous STT
+# requests would each see None and load a SECOND Whisper model onto the GPU.
+_STT_ENGINE_LOCK = threading.Lock()
 
 
 def _stt_engine():
@@ -161,12 +169,18 @@ def _stt_engine():
     the first spoken word freezes every other request for the length of a model
     load. Stays synchronous so the existing `patch.object(..., "_stt_engine")`
     test seams keep working unchanged.
+
+    Exactly one engine is ever built: the double-checked lock means concurrent
+    callers pay for one model load, not one each.
     """
     global _STT_ENGINE
-    if _STT_ENGINE is None:
-        from core.settings_db import get_value
-        from core.voice.stt import STTEngine
-        _STT_ENGINE = STTEngine(model_size=get_value("voice", "stt_model_size", "medium"))
+    if _STT_ENGINE is not None:
+        return _STT_ENGINE
+    with _STT_ENGINE_LOCK:
+        if _STT_ENGINE is None:
+            from core.settings_db import get_value
+            from core.voice.stt import STTEngine
+            _STT_ENGINE = STTEngine(model_size=get_value("voice", "stt_model_size", "medium"))
     return _STT_ENGINE
 
 

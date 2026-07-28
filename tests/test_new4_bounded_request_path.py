@@ -484,3 +484,93 @@ def test_memory_stats_route_renders_an_unknown_vector_count_as_unknown(monkeypat
 
 async def _stats_with_no_vector_count():
     return {"sessions": 3, "current_session": "s", "vectors": None, "agent_contexts": []}
+
+
+def test_only_one_whisper_model_is_ever_loaded(monkeypatch):
+    """Moving `_stt_engine()` onto a worker thread made its lazy init racy.
+
+    Called directly from an async handler the check-then-act was accidentally
+    safe — nothing between the `is None` test and the assignment awaits, so the
+    loop could not interleave. `asyncio.to_thread`, which is what stops it
+    freezing the loop, removed that accident: two simultaneous STT requests would
+    each see None and load a SECOND Whisper model onto the GPU.
+    """
+    import threading
+
+    from agents.core.routers import voice
+
+    builds = []
+
+    class _FakeEngine:
+        def __init__(self, **kw):
+            builds.append(1)
+            time.sleep(0.05)      # a model load is slow — widen the window
+
+    monkeypatch.setattr(voice, "_STT_ENGINE", None)
+    monkeypatch.setitem(
+        __import__("sys").modules, "core.settings_db",
+        SimpleNamespace(get_value=lambda *a, **k: "medium"))
+    monkeypatch.setitem(
+        __import__("sys").modules, "core.voice.stt",
+        SimpleNamespace(STTEngine=_FakeEngine, HAS_WHISPER=True))
+
+    ready = threading.Barrier(6)
+    engines = []
+
+    def build():
+        ready.wait(timeout=5)
+        engines.append(voice._stt_engine())
+
+    threads = [threading.Thread(target=build) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert len(builds) == 1, f"loaded {len(builds)} Whisper models instead of 1"
+    assert len({id(e) for e in engines}) == 1, "callers got different engines"
+
+
+@pytest.mark.asyncio
+async def test_observer_probes_run_off_the_event_loop():
+    """`observe()` called `_gather()` synchronously.
+
+    The liveness probes do `socket.create_connection` — one blocking TCP connect
+    per service, up to `timeout` each. `default_probes()` covers Qdrant, Neo4j,
+    n8n, LM Studio and Ollama, so sampling a box where they are down froze the
+    loop for ~5 seconds. `POST /autonomy/observer/run` awaits this straight from a
+    request handler.
+    """
+    import threading
+
+    from agents.core.autonomy.observer import ProactiveObserver
+
+    loop_thread = threading.current_thread().name
+    seen = {}
+
+    def slow_probe():
+        seen["thread"] = threading.current_thread().name
+        time.sleep(0.15)          # stands in for a TCP connect against a dead host
+        return []
+
+    obs = ProactiveObserver.__new__(ProactiveObserver)
+    obs.probes = [slow_probe]
+    obs._state = {}
+    obs._last_signals = {}
+    obs.evaluate = lambda signals: []
+    obs._gather = lambda: [s for p in obs.probes for s in p()]
+
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            ticks += 1
+            await asyncio.sleep(0.01)
+
+    task = asyncio.create_task(ticker())
+    await obs.observe()
+    task.cancel()
+
+    assert seen["thread"] != loop_thread, "the probes ran on the event loop"
+    assert ticks > 3, f"the loop was starved while probing (ticks={ticks})"
