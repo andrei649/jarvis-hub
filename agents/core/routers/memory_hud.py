@@ -106,12 +106,24 @@ async def memory_stats():
                 kg_last = g.last_seed if hasattr(g, 'last_seed') else ""
             except Exception:
                 pass
-        return nocache_json({
+        # `vectors` is None when the vector backend could not be reached. That is not
+        # zero — zero says "nothing is stored" — so it is passed through as null and
+        # flagged, and the panel renders it as unknown.
+        stored = stats.get("vectors")
+        body = {
             "sessions": {"total": stats.get("sessions", 0), "current": stats.get("current_session", ""), "active": stats.get("active", stats.get("sessions", 0))},
-            "vectors": {"stored": stats.get("vectors", 0), "dimension": 768 if stats.get("vectors", 0) > 0 else 0, "backend": "in-memory" if stats.get("vectors", 0) > 0 else ""},
+            "vectors": {
+                "stored": stored,
+                "dimension": 768 if (stored or 0) > 0 else 0,
+                "backend": "in-memory" if (stored or 0) > 0 else "",
+                "available": stored is not None,
+            },
             "knowledge_graph": {"entities": kg_entities, "relations": kg_relations, "last_seed": kg_last},
             "agent_contexts": contexts,
-        })
+        }
+        if stored is None:
+            body["degraded"] = {"source": "vector-store", "reason": "unreachable"}
+        return nocache_json(body)
     except BackendTimeout as exc:
         return degraded(dict(_EMPTY_STATS), what=exc.what, reason="timeout")
     except Exception:

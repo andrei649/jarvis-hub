@@ -388,3 +388,99 @@ def test_the_gate_reports_separator_independent_paths():
     assert paths, "scanner found nothing — it cannot be validating anything"
     assert all("\\" not in p for p in paths), f"non-posix path separators: {paths}"
     assert all(p.startswith("agents/") for p in paths), paths
+
+
+# ── the ROOT CAUSE: a blocking vector-store read inside the async handler ──────
+
+@pytest.mark.asyncio
+async def test_session_stats_counts_vectors_off_the_event_loop():
+    """`get_session_stats` had a plain `len(self.vectors)` inside `async with
+    self._lock`.
+
+    With a networked backend that is blocking httpx: `QdrantVectorStore.__len__`
+    calls `_ensure_collection()` (GET, then possibly PUT) and then POSTs
+    `/points/count`, on a synchronous client, and `_collection_ready` is only set
+    on success — so while Qdrant is down it is re-probed every single call. Three
+    sequential 10s timeouts with the event loop frozen is precisely the "four
+    routes hang" symptom: handlers that do no I/O of their own hang because this
+    one stopped the loop.
+
+    Its three neighbours (store_embedding / search_similar / hybrid_search) all
+    wrap the same store in asyncio.to_thread with comments about this hazard.
+    """
+    import threading
+
+    from agents.core.memory.manager import MemoryManager
+
+    loop_thread = threading.current_thread().name
+    seen = {}
+
+    class _SlowStore:
+        def __len__(self):
+            seen["thread"] = threading.current_thread().name
+            time.sleep(0.2)          # a blocking backend call
+            return 7
+
+    mgr = MemoryManager.__new__(MemoryManager)
+    mgr._lock = asyncio.Lock()
+    mgr.vectors = _SlowStore()
+    mgr.agent_contexts = {}
+    mgr.conversation = SimpleNamespace(sessions={"s": [1, 2]}, current_session_id="s")
+
+    # The loop must stay responsive while the count is in flight.
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            ticks += 1
+            await asyncio.sleep(0.01)
+
+    tick_task = asyncio.create_task(ticker())
+    stats = await mgr.get_session_stats()
+    tick_task.cancel()
+
+    assert stats["vectors"] == 7
+    assert seen["thread"] != loop_thread, "the blocking count ran on the event loop"
+    assert ticks > 3, f"the event loop was starved during the count (ticks={ticks})"
+
+
+@pytest.mark.asyncio
+async def test_session_stats_reports_an_unreachable_vector_store_as_unknown():
+    """None, not 0. Zero is a claim — "nothing is stored" — and the panel draws it
+    as one. The session counts, which ARE known, still come back."""
+    from agents.core.memory.manager import MemoryManager
+
+    class _DeadStore:
+        def __len__(self):
+            raise ConnectionError("qdrant unreachable")
+
+    mgr = MemoryManager.__new__(MemoryManager)
+    mgr._lock = asyncio.Lock()
+    mgr.vectors = _DeadStore()
+    mgr.agent_contexts = {}
+    mgr.conversation = SimpleNamespace(sessions={"s": [1, 2]}, current_session_id="s")
+
+    stats = await mgr.get_session_stats()
+    assert stats["vectors"] is None
+    assert stats["sessions"] == 1          # partial truth beats no truth
+    assert stats["total_turns"] == 2
+
+
+def test_memory_stats_route_renders_an_unknown_vector_count_as_unknown(monkeypatch):
+    """End to end: null reaches the panel flagged, not silently as zero."""
+    orch = SimpleNamespace(
+        memory=SimpleNamespace(
+            get_session_stats=lambda: _stats_with_no_vector_count(),
+            agent_contexts={}, graph=None),
+        session_id="s", agents={}, channels={})
+    monkeypatch.setattr(web, "orch", orch)
+
+    body = TestClient(web.app).get("/memory/stats").json()
+    assert body["vectors"]["stored"] is None
+    assert body["vectors"]["available"] is False
+    assert body["degraded"]["source"] == "vector-store"
+
+
+async def _stats_with_no_vector_count():
+    return {"sessions": 3, "current_session": "s", "vectors": None, "agent_contexts": []}
