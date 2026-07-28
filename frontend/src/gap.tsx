@@ -365,6 +365,12 @@ export function KillSwitchPanel() {
   // false "ENGAGED · all agents halted" alarm (2026-07-24 QA finding). Derive it: engaged
   // iff the global switch is on OR at least one agent is in the halted map.
   const halted = !!(d?.global || Object.keys(d?.halted || {}).length || d?.engaged);
+  // Whether we actually READ the state. Without this, `halted` is false while the
+  // status is still in flight or the read failed outright, and the row below
+  // rendered a green "ARMED · operational" — telling the operator the safety
+  // system is fine on the strength of a request that never came back. For a
+  // kill-switch that is the worst possible default.
+  const known = !!d && !e;
   // A halt that silently fails is worse than no button: the operator believes the system
   // is stopped. Always re-read state after the attempt, and say so loudly if it was refused.
   const [actErr, setActErr] = useState('');
@@ -375,8 +381,13 @@ export function KillSwitchPanel() {
       (err) => { setActErr(String(err?.message || err || 'request failed')); reload(); });
   };
   return <Card title="KILL-SWITCH" live={asLive(d)} onReload={reload}>
-    <State e={e} loading={loading} n={1} />
-    <Row><span style={{ color: halted ? 'var(--red)' : 'var(--green)' }}>{halted ? 'ENGAGED · all agents halted' : 'ARMED · operational'}</span>
+    <State e={e} loading={loading} n={known ? 1 : 0} />
+    <Row><span style={{ color: !known ? 'var(--amber)' : halted ? 'var(--red)' : 'var(--green)' }}>
+      {!known ? 'UNKNOWN · could not read kill-switch state'
+        : halted ? 'ENGAGED · all agents halted' : 'ARMED · operational'}</span>
+      {/* The button stays live even when the state is unknown: with `halted` false
+          it sends engage=true, and halting on an unknown state is the safe
+          direction. Only the claim about current state is withheld. */}
       <Btn onClick={toggle}>{halted ? 'disengage' : 'HALT ALL'}</Btn></Row>
     {actErr && <Row><span role="alert" style={{ ...mono, color: 'var(--red)' }}>
       {halted ? 'DISENGAGE' : 'HALT'} REFUSED · {actErr} · the switch did NOT change state
@@ -602,7 +613,16 @@ export function PosturePanel() {
         <>
           <Row><span style={mono}>secrets at rest</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-              <Tag c={sec.encrypted_at_rest ? 'var(--green)' : 'var(--red)'}>{sec.encrypted_at_rest ? 'encrypted' : 'plain'}</Tag>
+              {/* Three states. `encrypted_at_rest` is null when the secret store
+                  could not be opened — rendering that as "plain" would be its own
+                  false claim (we do not know the secrets are in plaintext, we know
+                  we could not look). It used to be neither: the endpoint returned a
+                  hardcoded `true`, so this tag was always green. */}
+              <Tag c={sec.encrypted_at_rest == null ? 'var(--amber)'
+                      : sec.encrypted_at_rest ? 'var(--green)' : 'var(--red)'}>
+                {sec.encrypted_at_rest == null ? 'unknown'
+                  : sec.encrypted_at_rest ? 'encrypted' : 'plain'}
+              </Tag>
               <Tag>{sec.backend || '—'}</Tag>
             </span>
           </Row>

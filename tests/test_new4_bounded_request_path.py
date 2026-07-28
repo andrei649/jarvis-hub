@@ -291,12 +291,19 @@ _WARMED_FIRST = {
 
 
 def _heavy_imports_in_async_functions():
+    """Returns (posix_path, function_name, imported_module, lineno) tuples.
+
+    Paths are `.as_posix()`, not `str()`: on Windows `str(Path(...))` yields
+    backslashes, so the forward-slash literals in `_WARMED_FIRST` matched nothing
+    and every allowlisted handler was reported as an offender — this gate went red
+    on windows-latest while passing on Linux for exactly that reason.
+    """
     import ast
     import pathlib
 
     found = []
     for path in sorted(pathlib.Path("agents").rglob("*.py")):
-        if "__pycache__" in str(path):
+        if "__pycache__" in path.as_posix():
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -314,7 +321,7 @@ def _heavy_imports_in_async_functions():
                     continue
                 for name in names:
                     if name.split(".")[0] in _HEAVY_ROOTS or name in _HEAVY_LOCAL:
-                        found.append((str(path), node.name, name, inner.lineno))
+                        found.append((path.as_posix(), node.name, name, inner.lineno))
     return found
 
 
@@ -367,3 +374,17 @@ def test_the_allowlisted_handlers_actually_warm_before_importing():
         assert min(warm_lines) < min(heavy_lines), (
             f"{fn_name} imports the heavy module before warming it off the loop"
         )
+
+
+def test_the_gate_reports_separator_independent_paths():
+    """Catch the Windows path bug from Linux, where it is otherwise invisible.
+
+    `_WARMED_FIRST` holds forward-slash literals. If the scanner ever goes back to
+    `str(path)`, matching silently breaks on Windows only — every allowlisted
+    handler gets reported as an offender and this gate goes red on windows-latest
+    while staying green here. Asserting the returned form pins it from either OS.
+    """
+    paths = {path for path, _, _, _ in _heavy_imports_in_async_functions()}
+    assert paths, "scanner found nothing — it cannot be validating anything"
+    assert all("\\" not in p for p in paths), f"non-posix path separators: {paths}"
+    assert all(p.startswith("agents/") for p in paths), paths

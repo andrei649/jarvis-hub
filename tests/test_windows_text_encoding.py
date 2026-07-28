@@ -34,7 +34,7 @@ def _unencoded_text_io():
     offenders = []
     for root in _SHIPPED_ROOTS:
         for path in sorted(pathlib.Path(root).rglob("*.py")):
-            if "__pycache__" in str(path):
+            if "__pycache__" in path.as_posix():
                 continue
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -48,7 +48,7 @@ def _unencoded_text_io():
 
                 name = getattr(node.func, "attr", None)
                 if name in _TEXT_IO_METHODS:
-                    offenders.append((str(path), node.lineno, f"{name}()"))
+                    offenders.append((path.as_posix(), node.lineno, f"{name}()"))
                     continue
 
                 # open(...) — binary mode carries no encoding, so it is exempt.
@@ -60,7 +60,7 @@ def _unencoded_text_io():
                         if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
                             mode = str(kw.value.value)
                     if "b" not in mode:
-                        offenders.append((str(path), node.lineno, "open()"))
+                        offenders.append((path.as_posix(), node.lineno, "open()"))
     return offenders
 
 

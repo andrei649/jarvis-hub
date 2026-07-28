@@ -6,6 +6,7 @@ attribution, and the packaged security posture.
 """
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
@@ -14,6 +15,8 @@ from agents.core.routers._deps import admin_guard, user_guard
 
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
+
+logger = logging.getLogger("jarvis.web")
 
 
 router = APIRouter(tags=["security"])
@@ -289,12 +292,34 @@ async def security_posture():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
 
-    # Secrets at-rest backend.
+    # Secrets at-rest backend. `encrypted_at_rest` is DERIVED from it below, never
+    # asserted: it used to be the literal `True`, so a box where the secret store
+    # could not even be constructed still got a green "encrypted" badge on the
+    # security posture page — the one screen whose whole job is to not do that.
     try:
         from core.secrets import SecretStore
         secret_backend = SecretStore().backend
     except Exception:
+        logger.warning("secret store unavailable — posture reports unknown", exc_info=True)
         secret_backend = "unavailable"
+    # "fernet"  → AES via the cryptography package.
+    # "hmac-fallback" → the pure-Python HMAC-keystream + HMAC-tag cipher used when
+    #   cryptography is absent. Genuinely encrypted and authenticated, but not a
+    #   vetted AEAD, so it is reported as encrypted AND flagged as the weaker path
+    #   rather than being silently equated with fernet.
+    # anything else → we could not open the store, so we do not know.
+    secrets_posture: dict = {"backend": secret_backend}
+    if secret_backend in ("fernet", "hmac-fallback"):
+        secrets_posture["encrypted_at_rest"] = True
+        secrets_posture["strength"] = "aead" if secret_backend == "fernet" else "fallback-cipher"
+        if secret_backend == "hmac-fallback":
+            secrets_posture["note"] = (
+                "the 'cryptography' package is not installed — secrets use the "
+                "pure-Python fallback cipher; install it for AES-based Fernet"
+            )
+    else:
+        secrets_posture["encrypted_at_rest"] = None  # unknown, not false and not true
+        secrets_posture["note"] = "secret store could not be opened — at-rest state unknown"
 
     # Skill signing posture.
     from core.skills import signing as _signing
@@ -310,12 +335,15 @@ async def security_posture():
         sandbox_sec = orch.sandbox.security_status()
     except Exception:
         # Sandbox is optional; absence just means posture reports an unavailable
-        # backend rather than failing the security-posture endpoint.
-        sandbox_sec = {"backend": "unavailable", "isolated": False,
-                       "insecure_host_exec": False, "docker": False}
+        # backend rather than failing the security-posture endpoint. `isolated` and
+        # `insecure_host_exec` are None rather than False — False would be a claim
+        # ("nothing runs unisolated") made from a status read that failed.
+        sandbox_sec = {"backend": "unavailable", "isolated": None,
+                       "insecure_host_exec": None, "docker": False,
+                       "note": "sandbox status could not be read"}
 
     return nocache_json({
-        "secrets": {"encrypted_at_rest": True, "backend": secret_backend},
+        "secrets": secrets_posture,
         "skills": {
             # signing_posture() rather than require_signed(): the latter raises on a
             # misconfigured gate (enforcement on, no key), which is correct for the
