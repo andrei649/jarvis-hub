@@ -643,6 +643,35 @@ def run(names: list[str]) -> dict:
     return out
 
 
+def _means_lines(means: str, verdict: str) -> list[str]:
+    """Render the `means` legend so it cannot be misread AS the verdict.
+
+    `means` explains what each outcome would signify, so it often opens with
+    "OPEN: ...". Printed directly under a verdict line it read as a contradiction —
+    a probe reporting CLOSED was immediately followed by a line beginning "OPEN:",
+    and a reader scanning output could not tell which was current. That is the same
+    class of defect these probes exist to find, in the probe tool itself.
+
+    When the legend covers both outcomes, the half matching the ACTUAL verdict is
+    shown first and labelled; the other half is kept, indented, as context.
+    """
+    marker = "CLOSED:"
+    if marker in means and means.lstrip().startswith("OPEN:"):
+        open_half, closed_half = means.split(marker, 1)
+        halves = {
+            "OPEN": open_half.strip().removeprefix("OPEN:").strip(),
+            "CLOSED": closed_half.strip(),
+        }
+        other = "CLOSED" if verdict == "OPEN" else "OPEN"
+        lines = [f"→ {verdict}: {halves.get(verdict) or means}"]
+        if halves.get(other):
+            lines.append(f"  (would have meant, {other}: {halves[other]})")
+        return lines
+    # A single-outcome legend. Label it as a legend rather than a conclusion, so a
+    # CLOSED probe whose note only describes the OPEN case cannot be misread.
+    return [f"→ what a verdict means here: {means}"]
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("probes", nargs="*", help=f"one or more of: {', '.join(PROBES)} (default: all)")
@@ -674,7 +703,8 @@ def main(argv: list[str]) -> int:
         print(f"── {r['case']} · {name} — {r['verdict']}")
         for key, value in r["detail"].items():
             print(f"     {key}: {value}")
-        print(f"     → {r['means']}")
+        for line in _means_lines(r["means"], r["verdict"]):
+            print(f"     {line}")
         print()
     print("A verdict is a lead, not a finding. Cross-check each OPEN against the live "
           "surface named in the case before you file it (docs/test-manual/15-audit-gap-verification.md).")
