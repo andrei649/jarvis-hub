@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..http_client import PluginHTTPClient
-from .degradation import degraded
+from .degradation import degraded, is_degraded
 
 logger = logging.getLogger("jarvis.gecko.balance")
 
@@ -225,12 +225,28 @@ class BalanceReaderPlugin:
                 })
         return txns
 
-    async def _total_balance(self) -> float:
-        """Best-effort sum of numeric balances across sources (currency-agnostic)."""
+    async def _total_balance(self) -> float | None:
+        """Sum of numeric balances across sources, or None if they aren't real.
+
+        Returns None — not 0.0 — when the balances could not actually be read.
+        Zero is a claim about the owner's money ("you have nothing"); None is the
+        absence of one, and only None keeps a fabricated runway from being
+        computed downstream.
+
+        This used to sum whatever `_raw_balances()` handed back, ignoring the
+        `_mock`/`_degraded` markers that `degraded()` stamps on it. So a
+        configured-but-failing ING/Libra source fell through to
+        `degraded(MOCK_BALANCES)` and this summed the hardcoded 12450.32 + 350.00
+        + 3200.00 into a real-looking 16000.32.
+        """
         try:
             raw = await self._raw_balances()
         except Exception:
-            return 0.0
+            logger.warning("balance read failed — reporting unknown, not zero", exc_info=True)
+            return None
+        if is_degraded(raw):
+            # Placeholder figures. Summing them invents money.
+            return None
         total = 0.0
         for accounts in raw.values():
             if not isinstance(accounts, list):
@@ -276,21 +292,39 @@ class BalanceReaderPlugin:
             for k, v in sorted(cats.items(), key=lambda kv: kv[1], reverse=True)[:4]
         }
 
-        have_real_balances = bool(self.ing_client_id or self.libra_token or self.csv_path)
-        total_balance = await self._total_balance() if have_real_balances else 0.0
-        runway = (round(total_balance / monthly_spend, 1)
-                  if have_real_balances and monthly_spend > 0 else None)
+        # CONFIGURED is not the same as READ. This used to gate on "is a balance
+        # source set up?", so an ING/Libra source that was configured but failing
+        # still produced a runway — computed from the mock balances the failed read
+        # fell through to, and returned with "mock": False.
+        balance_configured = bool(self.ing_client_id or self.libra_token or self.csv_path)
+        total_balance = await self._total_balance() if balance_configured else None
 
-        return {
+        result = {
             "monthly_spend": monthly_spend,
             "monthly_income": monthly_income,
-            "runway_months": runway,
+            # Only ever from real money. None means "not known", and every caller
+            # already treats None as "don't show a runway".
+            "runway_months": (
+                round(total_balance / monthly_spend, 1)
+                if total_balance is not None and monthly_spend > 0
+                else None
+            ),
             "top_categories": top_categories,
+            # The spend/income/categories above ARE real — they come from the
+            # transactions CSV, which was read successfully to get here.
             "mock": False,
             "window_days": days,
             "transactions": len(window),
             "source": "csv",
         }
+        if total_balance is None:
+            # Say why there is no runway, so the gap reads as a known gap rather
+            # than as a number the owner failed to notice was missing.
+            result["runway_unavailable"] = (
+                "balances unavailable" if balance_configured
+                else "no balance source configured"
+            )
+        return result
 
     async def close(self):
         await self.client.close()
