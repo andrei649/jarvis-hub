@@ -358,6 +358,11 @@ class HybridRouter(LLMRouter):
         else:
             logger.warning("Ollama not available — Howard will fall back to default backend")
 
+        # Re-stamp: `super().detect()` stamped after the LOCAL probe, but the cloud,
+        # Claude and Ollama flags above were measured after that. The age reported by
+        # `/readyz` must cover every flag this method sets, not just the first.
+        self._mark_probed()
+
     def get_agent_policy(self, agent_id: str) -> str:
         # Security floor first: code-enforced, the registry cannot override it.
         if agent_id in LOCAL_ONLY_AGENTS:
