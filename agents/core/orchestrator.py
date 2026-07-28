@@ -382,6 +382,9 @@ class Orchestrator:
         # Proactive Event Watcher — personal event trigger layer.
         self.event_watcher = None
         self._autonomy_task: Optional[asyncio.Task] = None
+        # The learning loop was created as a bare local in start_channels() and
+        # dropped, so nothing could ever stop it. Held here like its siblings.
+        self._learning_task: Optional[asyncio.Task] = None
         self._warmup_task: Optional[asyncio.Task] = None
         self._drive_ai_task: Optional[asyncio.Task] = None
         self.last_cognition = None
@@ -872,16 +875,51 @@ class Orchestrator:
             self.oracle_bridge.start_watcher()
         if not env_flag("JARVIS_TESTING"):
             from agents.core.learning_loop import run_learning_loop
-            _ll = asyncio.create_task(run_learning_loop(self))
-            _ll.add_done_callback(_log_task_result)
+            self._learning_task = asyncio.create_task(run_learning_loop(self))
+            self._learning_task.add_done_callback(_log_task_result)
         logger.info(f"Channels started: {list(self.channels.keys())}")
         logger.info("Components: %s", self.components.summary())  # A8: startup health report
+
+    async def _cancel_task(self, name: str):
+        """Cancel a background task and WAIT for it to actually stop.
+
+        `task.cancel()` only requests cancellation — it does not wait. Without the
+        await, `stop_channels()` returns while the loop is still mid-iteration, so
+        a caller that shuts down and then wipes the data directory (the forget /
+        purge path) races a worker that is still writing to it.
+        """
+        task = getattr(self, name, None)
+        if task is None:
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass  # expected — we asked for it. Not an Exception subclass, so it
+            # needs its own clause; a bare `except Exception` would miss it.
+        except Exception as e:
+            logger.warning("Error stopping %s: %s", name, e)
+        finally:
+            setattr(self, name, None)
 
     async def stop_channels(self):
         await self.channel_manager.stop_all()
         self.heartbeat_scheduler.stop()
-        if self._settings_watcher_task:
-            self._settings_watcher_task.cancel()
+        # Every long-lived loop started in start_channels(). The autonomy worker and
+        # the learning loop were previously never cancelled at all — they kept
+        # ticking after shutdown, against a hub that had closed its backends. The
+        # settings watcher was cancelled but not awaited, so it could still be
+        # running when this returned.
+        for _task_attr in ("_settings_watcher_task", "_autonomy_task", "_learning_task"):
+            await self._cancel_task(_task_attr)
+        # The Oracle GitHub watcher polls every 30s when enabled; nothing stopped it.
+        bridge = getattr(self, "oracle_bridge", None)
+        stop_watcher = getattr(bridge, "stop_watcher", None)
+        if stop_watcher is not None:
+            try:
+                await stop_watcher()
+            except Exception as e:
+                logger.warning(f"Error stopping Oracle watcher: {e}")
         # Close all active plugins gracefully (CLN-2: owned by PluginManager).
         await self.plugin_manager.close_all()
         logger.info("Channels stopped")
@@ -2421,6 +2459,20 @@ class Orchestrator:
                 await closer()
             except Exception as e:
                 logger.warning(f"Error closing channel '{cid}': {e}")
+        # The two sqlite connections opened at boot. Both classes have had a close()
+        # all along; shutdown simply never called either, so the handles lived until
+        # process exit. That is not merely untidy here:
+        #   * on Windows an open handle makes the enclosing directory undeletable,
+        #     which is exactly what the forget/purge path needs to do;
+        #   * a WAL left un-checkpointed is a recovery step the next boot has to do.
+        for _attr, _label in (("audit", "audit log"), ("checkpoints", "checkpoint store")):
+            _closer = getattr(getattr(self, _attr, None), "close", None)
+            if _closer is None:
+                continue
+            try:
+                _closer()
+            except Exception as e:
+                logger.warning(f"Error closing {_label}: {e}")
 
     async def get_status(self) -> dict:
         return {
