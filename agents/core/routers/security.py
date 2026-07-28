@@ -298,21 +298,21 @@ async def security_posture():
     # security posture page — the one screen whose whole job is to not do that.
     try:
         from core.secrets import SecretStore
-        secret_backend = SecretStore().backend
+        at_rest_cipher = SecretStore().backend
     except Exception:
         logger.warning("secret store unavailable — posture reports unknown", exc_info=True)
-        secret_backend = "unavailable"
+        at_rest_cipher = "unavailable"
     # "fernet"  → AES via the cryptography package.
     # "hmac-fallback" → the pure-Python HMAC-keystream + HMAC-tag cipher used when
     #   cryptography is absent. Genuinely encrypted and authenticated, but not a
     #   vetted AEAD, so it is reported as encrypted AND flagged as the weaker path
     #   rather than being silently equated with fernet.
     # anything else → we could not open the store, so we do not know.
-    secrets_posture: dict = {"backend": secret_backend}
-    if secret_backend in ("fernet", "hmac-fallback"):
+    secrets_posture: dict = {"backend": at_rest_cipher}
+    if at_rest_cipher in ("fernet", "hmac-fallback"):
         secrets_posture["encrypted_at_rest"] = True
-        secrets_posture["strength"] = "aead" if secret_backend == "fernet" else "fallback-cipher"
-        if secret_backend == "hmac-fallback":
+        secrets_posture["strength"] = "aead" if at_rest_cipher == "fernet" else "fallback-cipher"
+        if at_rest_cipher == "hmac-fallback":
             secrets_posture["note"] = (
                 "the 'cryptography' package is not installed — secrets use the "
                 "pure-Python fallback cipher; install it for AES-based Fernet"
