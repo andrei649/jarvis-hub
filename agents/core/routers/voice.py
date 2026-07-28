@@ -42,6 +42,9 @@ class TTSRequest(BaseModel):
 async def tts_endpoint(req: TTSRequest):
     """Synthesize text to speech and return MP3 audio."""
     try:
+        # Warm the optional voice stack off the event loop first (see
+        # `_voice_engines`). After it, this import is a sys.modules hit.
+        await _voice_engines()
         from core.voice.tts import HAS_EDGE, TTSEngine
         if not HAS_EDGE:
             return JSONResponse(
@@ -89,6 +92,7 @@ async def tts_stream_endpoint(req: TTSRequest):
     """Stream sentence-by-sentence TTS audio frames (opt-in). See module comment."""
     import json as _json
 
+    await _voice_engines()  # heavy import off the loop; see `_voice_engines`
     from core.voice.tts import HAS_EDGE, TTSEngine
 
     if not _tts_stream_enabled():
@@ -149,7 +153,15 @@ _STT_ENGINE = None
 
 
 def _stt_engine():
-    """Lazily build and cache one Whisper engine (model load is expensive)."""
+    """Lazily build and cache one Whisper engine (model load is expensive).
+
+    BLOCKING, and expensively so: `STTEngine.__init__` calls `_init_model()`,
+    which imports torch, probes CUDA, and loads the whole Whisper model onto the
+    GPU. Call it through `asyncio.to_thread` from async code — never directly, or
+    the first spoken word freezes every other request for the length of a model
+    load. Stays synchronous so the existing `patch.object(..., "_stt_engine")`
+    test seams keep working unchanged.
+    """
     global _STT_ENGINE
     if _STT_ENGINE is None:
         from core.settings_db import get_value
@@ -168,6 +180,7 @@ async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
     """
     import tempfile
 
+    await _voice_engines()  # heavy import off the loop; see `_voice_engines`
     from core.voice.stt import HAS_WHISPER
     if not HAS_WHISPER:
         return JSONResponse(
@@ -184,7 +197,9 @@ async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
         with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
             f.write(data)
             tmp = f.name
-        text = await _stt_engine().transcribe_async(tmp, language=lang)
+        # Off the loop: the first call here loads Whisper onto the GPU.
+        engine = await asyncio.to_thread(_stt_engine)
+        text = await engine.transcribe_async(tmp, language=lang)
         # 0.24 — opt-in dictation cleanup: strip fillers/stutters + apply spoken
         # punctuation. Sentinel transcripts ([silence], [STT unavailable]) pass
         # through untouched, and the removal counts stay inspectable.
@@ -205,13 +220,25 @@ async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
                 pass
 
 
-@router.get("/api/voice/capabilities")
-async def voice_capabilities():
-    """What the voice loop can ACTUALLY do on this host — drives the HUD honestly.
+# Which server-side voice engines this process has. Derived purely from module
+# imports, so it cannot change while the process runs — probe once, then serve
+# from here.
+#
+# It used to be probed inline, per request. `core.voice.stt` does
+# `from faster_whisper import WhisperModel` at module scope, which drags in
+# ctranslate2 and the CUDA runtime; `core.voice.tts` similarly pulls edge-tts and
+# kokoro. On a box where those ARE installed (the GPU host this ships for — not
+# CI, where the ImportError returns in milliseconds and hides the cost) that
+# import is seconds of synchronous work executed directly on the event loop.
+# Nothing else can run during it: a single first hit on this route stalls every
+# other in-flight request, which is why routes with no I/O of their own were
+# observed hanging alongside it.
+_caps_cache: dict | None = None
+_caps_lock = asyncio.Lock()
 
-    (The browser always has a fully-local `speechSynthesis` fallback for TTS, which the
-    HUD knows about; this reports only the server-side engines.)
-    """
+
+def _probe_voice_engines() -> dict:
+    """Import the optional voice stacks and report what is present. BLOCKING."""
     from core.voice.stt import HAS_WHISPER
     try:
         from core.voice.tts import HAS_EDGE, voice_persona_consent_status
@@ -222,21 +249,53 @@ async def voice_capabilities():
         from core.voice.tts import HAS_KOKORO
     except Exception:
         HAS_KOKORO = False
+    return {
+        "has_whisper": bool(HAS_WHISPER),
+        "has_edge": bool(HAS_EDGE),
+        "has_kokoro": bool(HAS_KOKORO),
+        # Kept as a callable, not a value: consent is revocable, so it must be
+        # read fresh on every request even though the import result is cached.
+        "consent_fn": voice_persona_consent_status,
+    }
+
+
+async def _voice_engines() -> dict:
+    """`_probe_voice_engines()` off the event loop, once per process."""
+    global _caps_cache
+    if _caps_cache is None:
+        async with _caps_lock:  # concurrent first hits pay for one import, not N
+            if _caps_cache is None:
+                _caps_cache = await asyncio.to_thread(_probe_voice_engines)
+    return _caps_cache
+
+
+@router.get("/api/voice/capabilities")
+async def voice_capabilities():
+    """What the voice loop can ACTUALLY do on this host — drives the HUD honestly.
+
+    (The browser always has a fully-local `speechSynthesis` fallback for TTS, which the
+    HUD knows about; this reports only the server-side engines.)
+    """
+    engines = await _voice_engines()
+    has_whisper = engines["has_whisper"]
+    has_edge = engines["has_edge"]
+    has_kokoro = engines["has_kokoro"]
+    consent_fn = engines["consent_fn"]
     xtts = bool(os.getenv("XTTS_SERVER_URL"))
     eleven = bool(os.getenv("ELEVENLABS_API_KEY"))
     fish = bool(os.getenv("FISH_AUDIO_API_KEY"))
     return nocache_json({
-        "stt": bool(HAS_WHISPER),                       # local Whisper available
-        "tts": bool(HAS_EDGE or HAS_KOKORO or xtts or eleven or fish),
-        "tts_local": bool(xtts or HAS_KOKORO),          # an on-device TTS path exists
+        "stt": has_whisper,                             # local Whisper available
+        "tts": bool(has_edge or has_kokoro or xtts or eleven or fish),
+        "tts_local": bool(xtts or has_kokoro),          # an on-device TTS path exists
         "persona_voice": (
-            voice_persona_consent_status()
-            if voice_persona_consent_status else
+            consent_fn()
+            if consent_fn else
             {"required": True, "granted": False, "allowed": False, "message": "voice consent status unavailable"}
         ),
         "providers": {
-            "stt": "faster-whisper" if HAS_WHISPER else None,
+            "stt": "faster-whisper" if has_whisper else None,
             "xtts": xtts, "elevenlabs": eleven, "fish_audio": fish,
-            "edge_tts": bool(HAS_EDGE), "kokoro": bool(HAS_KOKORO),
+            "edge_tts": has_edge, "kokoro": has_kokoro,
         },
     })
