@@ -33,6 +33,7 @@ to a SQLite ``notes.db``; on main notes is still ``notes.json``, hence ``PURGE_J
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import shutil
@@ -73,8 +74,26 @@ KEEP_FILES: frozenset[str] = frozenset({
 })
 KEEP_DIRS: frozenset[str] = frozenset({
     "security",         # append-only audit chain + intent log: compliance evidence
-    "backups",          # includes the pre-forget archive; deleting it mid-purge is absurd
 })
+# `backups` used to be on that list, justified as "includes the pre-forget archive;
+# deleting it mid-purge is absurd". That rationale was already stale when it was
+# written: AUDIT-2c moved the pre-forget archive OUT of the data root — it is
+# `<root>.parent / "<root.name>-forget-archives"` (backup.pre_forget_dir), a sibling
+# directory the sweep never walks, so the purge's own recovery path was never at risk.
+#
+# What the entry actually retained was ordinary owner-triggered snapshots.
+# `POST /api/admin/backup` calls create_backup() with no key, so unless
+# JARVIS_BACKUP_KEY happens to be set the archive is an UNENCRYPTED .tar.gz of the whole
+# data root — notes, canvas, session transcripts, run-history previews, tokens/,
+# settings.db — written to `<root>/backups`.
+#
+# Net effect: back up on Monday, forget on Friday, and purge_data reported ok:true with a
+# row count while a cleartext copy of everything it had just erased sat inside the folder
+# it had just cleaned. The sibling path already drew the line correctly — data_export
+# writes to `<root>/exports/*.json` and the sweep DOES purge those.
+#
+# So backups are purged like any other user content. The recovery archive lives outside
+# the root and is untouched.
 
 # Retained for callers and tests that name specific stores, and because the DB/JSON passes
 # below still describe *how* each kind is erased. They are no longer the definition of
@@ -203,6 +222,13 @@ def _purge_db(path: Path) -> dict:
         # file from the live pages only, so nothing from a deleted row survives in the
         # freelist regardless of how this SQLite was built.
         conn.execute("VACUUM")
+        # And empty the write-ahead log, which is where the pre-DELETE rows would
+        # otherwise still be sitting. The sweep deliberately does not unlink sidecars
+        # (that corrupts a live database), so the erasure has to reach them through the
+        # connection. TRUNCATE checkpoints every frame into the db and zeroes the -wal.
+        # Harmless on a journal-mode database, where this is simply a no-op.
+        with contextlib.suppress(sqlite3.Error):
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     finally:
         conn.close()
     return deleted
@@ -214,14 +240,42 @@ def _delete_all_rows_sql(table: str) -> str:
     return " ".join(("DELETE", "FROM", quoted))
 
 
+# SQLite writes these alongside a database in WAL mode. They are part of the database,
+# not separate files: deleting the -wal of a LIVE database discards every committed but
+# un-checkpointed transaction and leaves the db unopenable ("disk I/O error"). The sweep
+# used to unlink them, because `Path("settings.db-wal").suffix` is ".db-wal" — it matched
+# none of the .db/.json/.jsonl branches and fell through to `path.unlink()`, and
+# `_is_kept` compared the full name against KEEP_FILES so the sidecars of settings.db and
+# marketplace.db were not kept either. Every forget therefore destroyed the config and
+# OAuth store it was explicitly written to preserve. (backup.py already knew this class
+# of file existed and skipped it.)
+_SQLITE_SIDECARS: tuple[str, ...] = ("-wal", "-shm", "-journal")
+
+
+def _sqlite_base_name(name: str) -> str:
+    """`settings.db-wal` → `settings.db`; anything else unchanged."""
+    for suffix in _SQLITE_SIDECARS:
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _is_sqlite_sidecar(name: str) -> bool:
+    return name.endswith(_SQLITE_SIDECARS)
+
+
 def _is_kept(rel: Path) -> bool:
-    """True when *rel* (relative to the data root) is on the KEEP allowlist."""
+    """True when *rel* (relative to the data root) is on the KEEP allowlist.
+
+    A sidecar inherits its base database's status, so the sidecars of a kept DB are
+    kept too.
+    """
     parts = rel.parts
     if not parts:
         return True
     if parts[0] in KEEP_DIRS:
         return True
-    return rel.name in KEEP_FILES
+    return _sqlite_base_name(rel.name) in KEEP_FILES
 
 
 def _reset_json_preserving_shape(path: Path) -> str:
@@ -262,6 +316,12 @@ def _purge_everything_but_keep(root: Path) -> dict:
             continue
         rel = path.relative_to(root)
         if _is_kept(rel):
+            continue
+        # Never unlink a sidecar, even of a database we ARE purging. Its content is
+        # erased through the connection by `_purge_db` (DELETE + VACUUM + a TRUNCATE
+        # checkpoint), which is the safe way; removing the file out from under a live
+        # database corrupts it instead.
+        if _is_sqlite_sidecar(rel.name):
             continue
         name = rel.as_posix()
         try:

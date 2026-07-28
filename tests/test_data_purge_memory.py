@@ -380,9 +380,7 @@ def test_forget_keeps_exactly_what_the_keep_list_names(tmp_path):
     """The inversion must not erase config, credentials or the audit chain."""
     root = tmp_path / "data"
     (root / "security").mkdir(parents=True)
-    (root / "backups").mkdir()
     (root / "security" / "audit.db").write_text("KEEP-audit", encoding="utf-8")
-    (root / "backups" / "pre-forget.tar.gz").write_text("KEEP-archive", encoding="utf-8")
     (root / "marketplace.db").write_text("KEEP-marketplace", encoding="utf-8")
     conn = sqlite3.connect(str(root / "settings.db"))
     try:
@@ -397,7 +395,6 @@ def test_forget_keeps_exactly_what_the_keep_list_names(tmp_path):
 
     assert _surviving_markers(root) == []                      # user content gone
     assert (root / "security" / "audit.db").read_text() == "KEEP-audit"
-    assert (root / "backups" / "pre-forget.tar.gz").read_text() == "KEEP-archive"
     assert (root / "marketplace.db").read_text() == "KEEP-marketplace"
     conn = sqlite3.connect(str(root / "settings.db"))
     try:
@@ -588,3 +585,126 @@ def test_purged_databases_are_rewritten_so_deleted_bytes_cannot_survive(tmp_path
         "content is recoverable from the file after a 'forget'"
     )
     assert b"MARKER-" not in db.read_bytes()
+
+
+# ── a forget must not leave a plaintext copy of what it erased ────────────────
+
+def test_forget_erases_owner_backups_left_inside_the_data_root(tmp_path):
+    """`backups` was on KEEP_DIRS, justified as "includes the pre-forget archive".
+
+    That rationale was stale: AUDIT-2c moved the pre-forget archive OUT of the data
+    root, to a sibling `<root>-forget-archives`. What the entry actually retained
+    was ordinary owner snapshots — and `POST /api/admin/backup` passes no key, so
+    unless JARVIS_BACKUP_KEY is set those are UNENCRYPTED tarballs of the whole data
+    root. Back up on Monday, forget on Friday, and purge_data reported ok:true while
+    a cleartext copy of everything sat in the folder it had just cleaned.
+    """
+    root = tmp_path / "data"
+    (root / "backups").mkdir(parents=True)
+    snapshot = root / "backups" / "jarvis-backup-2026-07-20.tar.gz"
+    snapshot.write_bytes(b"PLAINTEXT-TARBALL-OF-EVERYTHING")
+    _seed_survivors(root)
+
+    dp.purge_data(source_root=str(root), backup_first=False, memory=True)
+
+    assert _surviving_markers(root) == []
+    assert not snapshot.exists(), (
+        "a forget kept an unencrypted snapshot of the data it just erased"
+    )
+
+
+def test_the_pre_forget_recovery_archive_lives_outside_the_purged_root(tmp_path):
+    """Why dropping `backups` from KEEP_DIRS is safe: the archive the purge relies
+    on for recovery was never inside the root to begin with."""
+    from agents.core import backup as _backup
+
+    root = tmp_path / "data"
+    root.mkdir()
+    archive_dir = Path(_backup.pre_forget_dir(root)).resolve()
+    # A plain string prefix would NOT prove this: the archive dir is
+    # "<root>-forget-archives", which startswith("<root>") while being a sibling.
+    # Containment is the question, so ask relative_to().
+    inside = True
+    try:
+        archive_dir.relative_to(root.resolve())
+    except ValueError:
+        inside = False
+    assert not inside, f"the recovery archive sits inside the purged root: {archive_dir}"
+
+
+# ── sidecars are part of the database, not separate files ─────────────────────
+
+def test_forget_does_not_destroy_a_kept_wal_database(tmp_path):
+    """The sweep unlinked `settings.db-wal`/`-shm`.
+
+    `Path("settings.db-wal").suffix` is ".db-wal", so it matched none of the
+    .db/.json/.jsonl branches and fell through to `path.unlink()`; `_is_kept`
+    compared the full name against KEEP_FILES, so the sidecars of a KEPT database
+    were not kept either. Deleting the -wal of a live WAL database discards every
+    committed-but-uncheckpointed write and leaves it unopenable — so every forget
+    destroyed the config/OAuth store it was explicitly written to preserve.
+    """
+    root = tmp_path / "data"
+    root.mkdir()
+    db = root / "settings.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("CREATE TABLE settings (k TEXT, v TEXT)")
+        conn.execute("INSERT INTO settings VALUES ('oauth_token', 'KEEP-secret')")
+        conn.commit()
+        assert (root / "settings.db-wal").exists(), "test needs a real WAL sidecar"
+        _seed_survivors(root)
+
+        # Purge with the database still OPEN — which is the real situation:
+        # /api/admin/forget runs inside the live server, which holds settings.db.
+        dp.purge_data(source_root=str(root), backup_first=False, memory=True)
+
+        # Read from a SECOND connection while the writer is still open. This is the
+        # sequence that actually bites, and reading only after closing the writer
+        # hides it: on POSIX the unlinked -wal inode stays alive behind the open fd,
+        # so close() can still checkpoint through it and the data appears to survive.
+        fresh = sqlite3.connect(str(db))
+        try:
+            assert fresh.execute("SELECT v FROM settings").fetchone()[0] == "KEEP-secret"
+        finally:
+            fresh.close()
+    finally:
+        conn.close()
+
+    assert _surviving_markers(root) == []
+
+
+def test_is_kept_covers_the_sidecars_of_every_kept_database():
+    for base in dp.KEEP_FILES:
+        assert dp._is_kept(Path(base)), base
+        for suffix in ("-wal", "-shm", "-journal"):
+            assert dp._is_kept(Path(base + suffix)), f"{base}{suffix} must inherit KEEP"
+
+
+def test_purging_a_database_empties_its_wal_rather_than_unlinking_it(tmp_path):
+    """A purged DB's sidecar is left in place — removing it from under a live
+    database corrupts it — so the erasure has to reach the WAL through the
+    connection. After the purge the -wal must hold none of the deleted rows.
+    """
+    root = tmp_path / "data"
+    root.mkdir()
+    db = root / "missions.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("CREATE TABLE m (id INTEGER, body TEXT)")
+        conn.execute("INSERT INTO m VALUES (1, 'MARKER-private-mission-text')")
+        conn.commit()
+        wal = root / "missions.db-wal"
+        assert wal.exists() and b"MARKER-private-mission-text" in wal.read_bytes()
+    finally:
+        conn.close()
+
+    dp.purge_data(source_root=str(root), backup_first=False, memory=True)
+
+    for path in (db, root / "missions.db-wal"):
+        if path.exists():
+            assert b"MARKER-private-mission-text" not in path.read_bytes(), (
+                f"the purged row is still readable in {path.name}"
+            )
