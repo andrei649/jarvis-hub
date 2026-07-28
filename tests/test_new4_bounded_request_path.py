@@ -299,7 +299,7 @@ def _heavy_imports_in_async_functions():
         if "__pycache__" in str(path):
             continue
         try:
-            tree = ast.parse(path.read_text())
+            tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:
             continue
         for node in ast.walk(tree):
@@ -346,7 +346,7 @@ def test_the_allowlisted_handlers_actually_warm_before_importing():
     import ast
     import pathlib
 
-    tree = ast.parse(pathlib.Path("agents/core/routers/voice.py").read_text())
+    tree = ast.parse(pathlib.Path("agents/core/routers/voice.py").read_text(encoding="utf-8"))
     by_name = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef)}
     for _, fn_name in _WARMED_FIRST:
         fn = by_name[fn_name]

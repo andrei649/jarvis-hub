@@ -189,6 +189,13 @@
     box-shadow: inset 0 0 8px rgba(255,69,58,0.12);
   }
   .trust-chip.is-off.trust-local .trust-chip-val { color: var(--red-alert); }
+  /* Routing mode not reported. Deliberately neither the reassuring green of
+     STRICT nor the alarm red of CLOUD — the honest signal is "we don't know". */
+  .trust-chip.is-unknown.trust-local {
+    border-color: rgba(255,176,32,0.45);
+    box-shadow: inset 0 0 8px rgba(255,176,32,0.10);
+  }
+  .trust-chip.is-unknown.trust-local .trust-chip-val { color: #ffb020; }
 
   /* ── main grid ──────────────────────────────────────────── */
   .hud-main {
