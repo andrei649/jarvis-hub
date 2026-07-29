@@ -20,7 +20,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~5,430 collected (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~5,657 collected (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -409,6 +409,25 @@ Still open from that run (verified real, not yet fixed): blocking DNS/HTTP on th
 re-verify in `security.py`; `north_star.py` reporting an all-time aggregate as the 7-day counter
 metric; the seeded ADMIN/OBSERVE corpora in `modes3.tsx`/`modes2.tsx`; and the dead `arr() || fallback`
 in two `gap.tsx` panels.
+
+**The phone surface — open question, owner call (2026-07-29).** The scheduled e2e run fails 9
+`mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button "intercept pointer events" at
+the 393×851 Pixel 5 viewport). Nothing regressed: `E2E_BROWSER_MATRIX` is set only on `schedule`
+events, and **all 26 scheduled runs since 2026-07-04 have failed — none has ever passed.** The matrix
+was switched on over a layout that was never made responsive. Two facts frame the decision:
+
+- [ ] 🟡 **The web HUD is not reachable from a phone today, by design.** `serve.py:66` defaults
+  `JARVIS_HOST` to `127.0.0.1`, and `assert_safe_bind()` (`boot_guards.py:25`) **exits** on a
+  non-loopback bind unless `JARVIS_USER_TOKEN`/`JARVIS_ADMIN_TOKEN` is set (or
+  `JARVIS_ALLOW_INSECURE_BIND=1`); even then `_user_guard` (`web.py:192`) 403s every non-localhost
+  client without a `USER_TOKEN`. The guards are right — but **the supported LAN path is documented
+  nowhere**: a `docs/` grep for LAN/remote-access guidance returns nothing. Write it down regardless
+  of the decision below.
+- [ ] 🟡 **`mobile/` already assumes this topology** — a React Native app whose client takes a
+  configured `baseUrl` (`mobile/src/api/client.ts`). If the app is the phone story, the web HUD is a
+  desktop surface and `mobile-chrome` should come **out** of the matrix rather than stay permanently
+  red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
+  (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
 
 ---
 
