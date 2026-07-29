@@ -11,17 +11,45 @@ def client():
         yield c
 
 
-def test_cognition_endpoint_fallback(client):
+def test_cognition_endpoint_is_honestly_empty_before_any_request(client):
+    """No request routed yet → empty, and SAID to be empty.
+
+    This endpoint used to manufacture a cognition context out of the first five
+    ``INTENT_RULES`` entries plus a ``decision`` with ``confidence: 1.0`` and
+    ``agents_selected: ["jarvis"]``. The HUD rendered that as "ROUTING DECISION /
+    STANDBY / Confidence 100%" with weight bars for keywords the owner had never
+    typed — a routing decision the router never made. The previous version of this
+    test asserted that fabrication (``confidence == 1.0``), so the gate protected
+    the bug.
+    """
     resp = client.get("/api/cognition")
     assert resp.status_code == 200
     data = resp.json()
-    assert "scoring" in data
-    assert "decision" in data
-    assert "trace" in data
-    assert isinstance(data["scoring"], list)
-    assert isinstance(data["decision"], dict)
-    assert data["decision"]["source"] == "standby"
-    assert data["decision"]["confidence"] == 1.0
+
+    assert data["scoring"] == []
+    assert data["decision"] is None
+    assert data["trace"] == []
+    # The two fields that let a caller tell "nothing happened" from "here is what happened".
+    assert data["live"] is False
+    assert data["state"] in ("no-request-routed-yet", "starting")
+
+
+def test_cognition_endpoint_marks_a_real_context_live(client, monkeypatch):
+    """A real recorded context passes through untouched, flagged live."""
+    real = {
+        "scoring": [{"keyword": "weather", "weight": 0.8, "agents": ["jarvis"],
+                     "category": "info"}],
+        "decision": {"source": "keyword", "confidence": 0.8,
+                     "agents_selected": ["jarvis"], "alternatives": [],
+                     "timing": {"classify": 3, "route": 1, "total": 4}},
+        "trace": [{"step": "classify", "duration_ms": 3, "result": "keyword"}],
+    }
+    monkeypatch.setattr(web.orch, "last_cognition", real, raising=False)
+    data = client.get("/api/cognition").json()
+    assert data["live"] is True
+    assert data["state"] == "last-request"
+    assert data["decision"]["confidence"] == 0.8
+    assert data["scoring"] == real["scoring"]
 
 
 def test_oauth_status_endpoint(client):

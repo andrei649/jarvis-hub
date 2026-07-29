@@ -4,6 +4,7 @@ Tries LM Studio first (GPU), falls back to Ollama (CPU).
 """
 
 import logging
+import time
 from typing import Optional
 
 import httpx
@@ -32,6 +33,27 @@ class LLMRouter:
         self.backend_type: str = "auto"           # auto | lm-studio | ollama
         self.lm_studio_url: str = "http://localhost:1234"
         self.ollama_url: str = "http://localhost:11434"
+        # When the availability flags below were last actually MEASURED. `detect()`
+        # runs at boot and on an admin reconnect — never on a timer — so everything
+        # it sets goes stale silently. Readiness/status surfaces report this age so
+        # a stale measurement is labelled stale instead of read as a live check
+        # (`/readyz` used to publish the configured backend NAME inside a dict called
+        # `checks`, which a monitor reads as "the LLM check passed").
+        # Wall clock for display, monotonic for the age — a clock adjustment must
+        # not make a measurement look fresher than it is.
+        self._probed_at: Optional[float] = None
+        self._probed_at_monotonic: Optional[float] = None
+
+    def _mark_probed(self) -> None:
+        """Stamp the availability flags as measured *now*."""
+        self._probed_at = time.time()
+        self._probed_at_monotonic = time.monotonic()
+
+    def probe_age_seconds(self) -> Optional[float]:
+        """Seconds since the availability flags were measured, or None if never."""
+        if self._probed_at_monotonic is None:
+            return None
+        return max(0.0, time.monotonic() - self._probed_at_monotonic)
 
     async def detect(self):
         """Try LM Studio (GPU) first, fall back to Ollama.
@@ -55,6 +77,7 @@ class LLMRouter:
                 f"{lm_url}/v1/models", "lmstudio")
             logger.info("LLM backend online: lm-studio (%s), loaded model=%s",
                         lm_url, self._detected_model or "unknown")
+            self._mark_probed()
             return
         if bt in ("auto", "ollama") and await self._check(f"{ol_url}/api/tags"):
             self._backend = OllamaBackend(base_url=ol_url)
@@ -63,8 +86,10 @@ class LLMRouter:
                 f"{ol_url}/api/tags", "ollama")
             logger.info("LLM backend online: ollama (%s), loaded model=%s",
                         ol_url, self._detected_model or "unknown")
+            self._mark_probed()
             return
         self._backend_name = "none"
+        self._mark_probed()
         logger.warning("No LLM backend detected (backend_type=%s) — start LM Studio (%s) or Ollama (%s)",
                        bt, lm_url, ol_url)
 

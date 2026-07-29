@@ -83,3 +83,74 @@ def mask_secret(value: str) -> str:
     if len(value) <= 8:
         return "****"
     return f"{value[:4]}…{value[-2:]}"
+
+
+# ── Bounded backend reads on the request path (NEW-4) ─────────────────────────
+#
+# A manual QA run against a live box found four HUD routes that hung INDEFINITELY
+# when the memory/graph backends (Qdrant, Neo4j) were down: the handler awaited a
+# backend call with no deadline, the backend never answered, and the request never
+# returned. The HUD spinner span forever with no error — the worst failure mode,
+# because it is indistinguishable from "still loading".
+#
+# Two rules follow, and the helpers below exist to make both cheap:
+#   1. Every backend reach on a request path gets a deadline.
+#   2. A timeout is REPORTED, never absorbed into a plausible-looking zero. A
+#      handler that catches the timeout and returns `{"entities": 0}` has turned a
+#      dead backend into a confident wrong answer — the fabrication this codebase
+#      keeps having to root out. Use `degraded()` so the body says it does not know.
+
+# Default deadline for a backend read on the request path. Long enough that a
+# healthy local Qdrant/Neo4j/sqlite call never trips it, short enough that a HUD
+# panel reports a problem instead of hanging.
+BACKEND_TIMEOUT_S = 5.0
+
+
+class BackendTimeout(Exception):
+    """A backend on the request path did not answer within its budget.
+
+    Carries `what` so the handler can name the backend in its degraded response
+    without interpolating anything request-controlled.
+    """
+
+    def __init__(self, what: str, seconds: float):
+        self.what = what
+        self.seconds = seconds
+        super().__init__(f"{what} did not answer within {seconds}s")
+
+
+async def bounded(awaitable, *, what: str, seconds: float = BACKEND_TIMEOUT_S):
+    """Await `awaitable` with a hard deadline, raising `BackendTimeout` past it.
+
+    Prefer this over a bare `await` for anything that leaves the process: a memory
+    store, a graph, a model server, a subprocess. `asyncio.wait_for` cancels the
+    inner task on expiry, so a wedged backend cannot keep the handler's slot.
+
+    Raises `BackendTimeout` (not `asyncio.TimeoutError`) so a caller's existing
+    broad `except Exception` cannot silently reclassify a dead backend as an empty
+    one — the distinction has to reach the response body.
+    """
+    import asyncio
+
+    try:
+        return await asyncio.wait_for(awaitable, timeout=seconds)
+    except TimeoutError as exc:  # asyncio.TimeoutError is an alias of this on 3.11+
+        logger.warning("backend read timed out after %.1fs: %s", seconds, logsafe(what))
+        raise BackendTimeout(what, seconds) from exc
+
+
+def degraded(body: dict, *, what: str, reason: str, status_code: int = 200) -> JSONResponse:
+    """A response whose values could not be measured, and which says so.
+
+    The keys the client expects are still present (so a panel does not crash on a
+    missing field), but `available: false` and `degraded` tell it these are
+    placeholders, not readings. Render them as unknown — never as zero.
+    """
+    return nocache_json(
+        {
+            **body,
+            "available": False,
+            "degraded": {"source": what, "reason": reason},
+        },
+        status_code=status_code,
+    )

@@ -89,7 +89,77 @@ def test_readyz_200_when_loaded(monkeypatch):
     assert body["ready"] is True
     assert body["checks"]["agents_loaded"] == 2
     assert body["checks"]["channels"] == 1
-    assert body["checks"]["llm_backend"] == "lmstudio"
+    # The backend NAME is configuration, not a check. It must not appear under
+    # `checks`, where a monitor would read it as a passing probe.
+    assert "llm_backend" not in body["checks"]
+    assert body["llm"]["configured_backend"] == "lmstudio"
+
+
+def test_readyz_does_not_present_a_configured_name_as_a_measurement(monkeypatch):
+    """The regression this endpoint shipped with: a router that has NEVER been
+    probed must not produce anything that reads as a passing LLM check.
+
+    `SimpleNamespace(name="lmstudio")` is exactly what an unreachable-but-configured
+    backend looks like — the name is set the moment the owner picks a backend.
+    """
+    orch = SimpleNamespace(
+        agents={"jarvis": object()}, channels={},
+        llm_router=SimpleNamespace(name="lmstudio"),
+    )
+    monkeypatch.setattr(web, "orch", orch)
+    body = TestClient(web.app).get("/readyz").json()
+
+    # Nothing under `checks` may carry the backend's identity.
+    assert not any("llm" in k for k in body["checks"]), body["checks"]
+    # And the LLM block must say plainly that nothing was measured.
+    assert body["llm"]["measured"] is None
+    assert "never been probed" in body["llm"]["note"]
+
+
+def test_readyz_labels_a_stale_availability_reading_as_stale(monkeypatch):
+    """`detect()` runs at boot and on admin reconnect — never on a timer. An old
+    reading must be reported with its age and marked stale, not as live health."""
+    from agents.core.routers import ops
+
+    llm = SimpleNamespace(name="lmstudio", _local_available=True)
+    llm.probe_age_seconds = lambda: ops._LLM_PROBE_STALE_AFTER + 60
+    orch = SimpleNamespace(agents={"jarvis": object()}, channels={}, llm_router=llm)
+    monkeypatch.setattr(web, "orch", orch)
+    body = TestClient(web.app).get("/readyz").json()
+
+    measured = body["llm"]["measured"]
+    assert measured["local_backend_reachable"] is True
+    assert measured["stale"] is True
+    assert measured["age_seconds"] >= ops._LLM_PROBE_STALE_AFTER
+    assert "startup reading" in body["llm"]["note"]
+
+
+def test_readyz_reports_a_fresh_reading_without_a_stale_warning(monkeypatch):
+    """The honest happy path: recently probed and up → measured, fresh, no note."""
+    llm = SimpleNamespace(name="lmstudio", _local_available=True)
+    llm.probe_age_seconds = lambda: 2.0
+    orch = SimpleNamespace(agents={"jarvis": object()}, channels={}, llm_router=llm)
+    monkeypatch.setattr(web, "orch", orch)
+    body = TestClient(web.app).get("/readyz").json()
+
+    assert body["llm"]["measured"] == {
+        "local_backend_reachable": True, "age_seconds": 2.0, "stale": False,
+    }
+    assert "note" not in body["llm"]
+
+
+def test_readyz_reports_an_unreachable_backend_as_unreachable(monkeypatch):
+    """A configured-but-down backend: the name is still reported, the measurement
+    says false. Readiness stays 200 — availability does not gate it."""
+    llm = SimpleNamespace(name="lmstudio", _local_available=False)
+    llm.probe_age_seconds = lambda: 1.0
+    orch = SimpleNamespace(agents={"jarvis": object()}, channels={}, llm_router=llm)
+    monkeypatch.setattr(web, "orch", orch)
+    resp = TestClient(web.app).get("/readyz")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["llm"]["configured_backend"] == "lmstudio"
+    assert body["llm"]["measured"]["local_backend_reachable"] is False
 
 
 def test_readyz_ready_even_with_llm_offline(monkeypatch):

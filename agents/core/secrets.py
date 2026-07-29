@@ -39,12 +39,18 @@ import logging
 import os
 import secrets as _secrets
 import stat
+import threading
 from pathlib import Path
 from typing import Optional
 
 from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.secrets")
+
+# Serializes key/salt CREATION across threads in this process. `O_CREAT | O_EXCL`
+# already makes it atomic against other processes; this closes the same race for the
+# two worker threads `asyncio.to_thread` hands the backup routes.
+_KEY_MATERIAL_LOCK = threading.Lock()
 
 DEFAULT_STORE = data_path("security", "secrets.enc")
 
@@ -111,26 +117,54 @@ class SecretStore:
         # No configured key → generate + persist a random key (0600).
         return self._load_or_create_keyfile()
 
+    def _read_or_create_atomically(self, path: Path, mint) -> bytes:
+        """Return *path*'s bytes, creating it from ``mint()`` iff it does not exist.
+
+        First writer wins, and every loser reads what the winner wrote. Both call
+        sites used to be `if path.exists(): read` / else `generate; write`, which is
+        a check-then-act on key material — the worst place for one. Two callers that
+        interleave each mint DIFFERENT material and each write it; the last write
+        wins, and anything the loser already encrypted with its own key can never be
+        decrypted again.
+
+        That is reachable: `POST /api/admin/backup` and `/api/admin/backup/verify`
+        both offload to real worker threads via `asyncio.to_thread`, and each builds
+        a fresh SecretStore. On a first backup with JARVIS_BACKUP_KEY set as a
+        passphrase, two concurrent requests race for the salt — and the archive
+        written by the loser is unrecoverable, permanently, with verify reporting
+        failure on it forever.
+
+        `O_CREAT | O_EXCL` makes creation atomic against other processes; the
+        module lock serializes threads within this one. On the losing branch we
+        RE-READ rather than re-generate, which is the whole point.
+        """
+        with _KEY_MATERIAL_LOCK:
+            try:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                return path.read_bytes()
+            try:
+                material = mint()
+                os.write(fd, material)
+            finally:
+                os.close(fd)
+            _chmod_600(path)  # belt and braces: O_EXCL's mode is subject to umask
+            return material
+
     def _load_or_create_salt(self) -> bytes:
-        sp = self._salt_path()
-        if sp.exists():
-            return sp.read_bytes()
-        salt = _secrets.token_bytes(16)
-        sp.write_bytes(salt)
-        _chmod_600(sp)
-        return salt
+        return self._read_or_create_atomically(
+            self._salt_path(), lambda: _secrets.token_bytes(16))
 
     def _load_or_create_keyfile(self) -> bytes:
         kp = self._keyfile_path()
-        if kp.exists():
-            return kp.read_bytes().strip()
-        key = base64.urlsafe_b64encode(_secrets.token_bytes(32))
-        kp.write_bytes(key)
-        _chmod_600(kp)
-        # FP: logs the key file path (kp), not the key bytes; the rule matches the message text.
-        # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
-        logger.info("Generated new secret-store key at %s (0600)", kp)
-        return key
+        existed = kp.exists()
+        key = self._read_or_create_atomically(
+            kp, lambda: base64.urlsafe_b64encode(_secrets.token_bytes(32)))
+        if not existed:
+            # FP: logs the key file path (kp), not the key bytes; the rule matches the message text.
+            # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+            logger.info("Generated new secret-store key at %s (0600)", kp)
+        return key.strip()
 
     # ── encryption backends ───────────────────────────────────────
     def _encrypt(self, plaintext: str) -> str:
@@ -230,17 +264,59 @@ class SecretStore:
         return self._cache
 
     def _flush(self) -> None:
-        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-        tmp.write_text(json.dumps(self._cache, ensure_ascii=False), encoding="utf-8")
-        _chmod_600(tmp)
-        tmp.replace(self.path)
+        # A UNIQUE temp file per write. This used to be one shared
+        # `secrets.enc.tmp`: two concurrent writers both created it, the first
+        # `replace()` consumed it, and the second raised
+        # `FileNotFoundError: secrets.enc.tmp -> secrets.enc`, losing that write
+        # entirely. mkstemp also creates at 0600, so the plaintext-free invariant
+        # holds even in the window before the chmod.
+        import tempfile
+
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(self.path.parent), prefix=self.path.name + ".", suffix=".tmp")
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(self._cache, fh, ensure_ascii=False)
+            _chmod_600(tmp)
+            tmp.replace(self.path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)   # never leave a stray secrets file behind
+            raise
         _chmod_600(self.path)
+
+    def _mutate(self, apply) -> bool:
+        """Run a read-modify-write against the store under the process-wide lock.
+
+        `set`/`delete` were read-modify-write over a PER-INSTANCE cache: each
+        SecretStore loaded the file once, mutated its own dict, and wrote the whole
+        thing back. Two instances writing different names therefore raced, and the
+        last writer's file silently lacked the other's secret — a lost credential
+        with no error anywhere. Re-reading from disk inside the lock is what makes
+        the two writes compose instead of clobbering.
+
+        Scope is this process, which is where the concurrency is (the backup routes
+        hand `asyncio.to_thread` two worker threads that each build a store). A
+        second *process* writing the same file concurrently would still need an OS
+        file lock; nothing in the hub does that today.
+        """
+        with _KEY_MATERIAL_LOCK:
+            self._loaded = False          # discard the cache; another writer may have won
+            store = self._load()
+            changed = apply(store)
+            if changed:
+                self._flush()
+            return changed
 
     # ── public API ────────────────────────────────────────────────
     def set(self, name: str, value: str) -> None:
-        store = self._load()
-        store[name] = self._encrypt(value)
-        self._flush()
+        token = self._encrypt(value)      # encrypt outside the lock; it is pure
+
+        def _apply(store):
+            store[name] = token
+            return True
+
+        self._mutate(_apply)
 
     def get(self, name: str, default: Optional[str] = None) -> Optional[str]:
         store = self._load()
@@ -250,12 +326,10 @@ class SecretStore:
         return self._decrypt(token)
 
     def delete(self, name: str) -> bool:
-        store = self._load()
-        if name in store:
-            del store[name]
-            self._flush()
-            return True
-        return False
+        def _apply(store):
+            return store.pop(name, None) is not None
+
+        return self._mutate(_apply)
 
     def names(self) -> list[str]:
         return sorted(self._load().keys())

@@ -1,5 +1,12 @@
-// Second-wave HUD components (enhancements.js): the situation ticker, the
-// command palette, and the numeric clamp/round helpers.
+// Second-wave HUD components (enhancements.js): the situation ticker and the
+// command palette.
+//
+// The clamp/round1/round2 helpers this file used to cover are gone. They existed
+// only to shape the synthetic telemetry `useLiveSys` layered onto the host
+// readings — sine waves plus Math.random() jitter, rendered as live RAM/VRAM/GPU
+// load. That synthesis was removed, and the helpers with it. What replaced these
+// tests is tests/frontend/no-fabricated-telemetry.test.js, which asserts the
+// values no longer move on their own.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadHud } from './harness.js';
 
@@ -7,24 +14,12 @@ let env, h;
 beforeEach(() => {
   env = loadHud({
     files: ['i18n', 'data', 'components', 'enhancements'],
-    expose: ['SituationTicker', 'CommandPalette', 'clamp', 'round1', 'round2'],
+    expose: ['SituationTicker', 'CommandPalette'],
     lang: 'ro',
   });
   h = env.React.createElement;
 });
 afterEach(() => env.cleanup());
-
-describe('numeric helpers', () => {
-  it('clamp bounds a value', () => {
-    expect(env.hud.clamp(5, 0, 10)).toBe(5);
-    expect(env.hud.clamp(-3, 0, 10)).toBe(0);
-    expect(env.hud.clamp(99, 0, 10)).toBe(10);
-  });
-  it('round1 / round2 round to 1 and 2 decimals', () => {
-    expect(env.hud.round1(3.146)).toBe(3.1);
-    expect(env.hud.round2(3.14159)).toBe(3.14);
-  });
-});
 
 describe('SituationTicker', () => {
   const agentMap = { gecko: { name: 'Gecko', glyph: 'M0,0' } };

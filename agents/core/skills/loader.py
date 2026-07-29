@@ -287,6 +287,9 @@ class SkillLoader:
         # are flagged untrusted; when JARVIS_REQUIRE_SIGNED_SKILLS=1 their Python
         # module is not exec'd in-process (sandboxed/flagged instead).
         skill.trusted, skill.signature_reason = signing.verify_skill(path)
+        # SEC-B2: raises when enforcement is on with no signing key — a gate that cannot
+        # tell an attacker's signature from ours must stop the load rather than wave it
+        # through. Deliberately NOT caught here: the operator has to see it.
         require_signed = signing.require_signed()
 
         py_file = path / "main.py"

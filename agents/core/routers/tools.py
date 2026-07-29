@@ -48,7 +48,10 @@ class DigestRunBody(BaseModel):
     topic: str = Field("", max_length=200)
     sources: Optional[list[str]] = Field(None, max_length=10)
     limit: int = Field(10, ge=1, le=50)
-    weights: Optional[dict] = None
+    # Typed, so a non-numeric weight is a 422 from the framework rather than a
+    # ValueError out of `float(weight)` deep in DigestSource.__init__ — which
+    # surfaced to the caller as an opaque 500.
+    weights: Optional[dict[str, float]] = None
 
 
 @router.post("/api/digest/run", dependencies=[Depends(user_guard)])

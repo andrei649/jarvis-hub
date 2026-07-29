@@ -192,10 +192,18 @@ async def mcp_issue_token(req: Request):
         body = {}
     resource = _mcp_resource(req)
     scopes = (body or {}).get("scopes") or ["mcp"]
+    # A typo'd ttl is a client error, not a server error. Bare int() on request
+    # data raised ValueError/TypeError straight out of the handler as a 500.
+    try:
+        ttl = int((body or {}).get("ttl", 3600))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "ttl must be an integer number of seconds"},
+                            status_code=400)
+    if ttl <= 0:
+        return JSONResponse({"error": "ttl must be positive"}, status_code=400)
     token = _web()._get_mcp_rs().issue_token(
         subject=(body or {}).get("subject", "local-client"),
-        resource=resource, scopes=scopes,
-        ttl=int((body or {}).get("ttl", 3600)))
+        resource=resource, scopes=scopes, ttl=ttl)
     return nocache_json({"ok": True, "token": token, "resource": resource, "scopes": scopes})
 
 

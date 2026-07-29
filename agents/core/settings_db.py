@@ -130,6 +130,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="control_enabled",  value=True,                  label="LM Studio control (start/load/unload)", kind="toggle"),
     dict(category="llm",     key="chat_control",     value=True,                  label="LM Studio control via chat",            kind="toggle"),
     dict(category="llm",     key="hybrid_local_max", value=131072,                 label="Local routing threshold — prompts up to N input tokens stay local (0 = unlimited)", kind="number"),
+    dict(category="llm",     key="daily_cost_cap_usd", value=0,                 label="Daily cloud spend cap (USD, 0 = no cap) — over it, routing degrades to local", kind="number"),
     dict(category="llm",     key="hybrid_flash_max", value=1000000,                label="Cloud Flash routing threshold — above N input tokens escalates to Pro (0 = unlimited)", kind="number"),
     dict(category="llm",     key="tool_loop_enabled", value=False,                  label="Agent tool loop (experimental)", kind="toggle"),
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),

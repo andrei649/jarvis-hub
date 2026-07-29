@@ -45,11 +45,24 @@ class AnalyticsPlugin:
         except (json.JSONDecodeError, TypeError):
             return None
 
+    @property
+    def configured(self) -> bool:
+        """True always: local analytics needs no key and returns real data.
+
+        ``honesty.plugin_configured`` prefers ``configured`` over ``available``, and
+        conflating the two badged this plugin amber — "NEEDS SETUP", with an EMPTY needs
+        list, because it declares no required config and has none. It told the owner to
+        configure something and could not say what, for the one keyless capability here
+        that reads real SQLite. ``available()`` keeps its narrow meaning below.
+        """
+        return True
+
     def available(self) -> bool:
         """True only when the (disabled-by-default) GA4 remote path is wired.
 
         Local analytics is always available — this flag is solely about whether
-        the optional GA4 mirror could be queried."""
+        the optional GA4 mirror could be queried. NOT the honesty signal: see
+        ``configured`` above."""
         return self.ga4_enabled and self._sa is not None and bool(self.property_id)
 
     async def get_kpis(self, days: int = 30) -> dict:

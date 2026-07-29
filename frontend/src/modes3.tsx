@@ -121,24 +121,31 @@ function CommsMode({ t }){
    until the owner supplies the config named in the tooltip. Rows without a verdict
    (seeded demo plugins) stay unbadged. */
 type Honesty = { status?: string; reason?: string; needs?: string[] } | null;
+const HONESTY_CHIP: Record<string, { label: string; colour: string }> = {
+  live:         { label: 'LIVE',        colour: 'var(--green)' },
+  needs_config: { label: 'NEEDS SETUP', colour: 'var(--amber)' },
+  // A plugin that exposes no configuration contract and declares no required config.
+  // Deliberately NOT green: "I don't know" and "this returns real data" are different
+  // claims, and the adversarial audit found the second being made on behalf of the first.
+  unknown:      { label: 'UNKNOWN',     colour: 'var(--muted, #888)' },
+};
 function HonestyBadge({ h }: { h?: Honesty }){
-  const status = h && h.status;
-  if (status !== 'live' && status !== 'needs_config') return null;
-  const isLive = status === 'live';
-  const c = isLive ? 'var(--green)' : 'var(--amber)';
+  const status = (h && h.status) || '';
+  const chip = HONESTY_CHIP[status];
+  if (!chip) return null;
   const needs = (h && h.needs) || [];
-  const title = isLive
-    ? (h && h.reason) || 'live'
-    : 'mock/degraded until configured' + (needs.length ? ' — needs: ' + needs.join(', ') : '');
+  const title = status === 'needs_config'
+    ? 'mock/degraded until configured' + (needs.length ? ' — needs: ' + needs.join(', ') : '')
+    : (h && h.reason) || chip.label.toLowerCase();
   return (
     <span
       title={title}
       style={{ display:'inline-flex', alignItems:'center', gap:4, marginLeft:6,
-        fontFamily:'var(--font-mono)', fontSize:8.5, letterSpacing:'.08em', color:c,
-        border:`1px solid ${c}`, borderRadius:3, padding:'0 4px', verticalAlign:'middle' }}
+        fontFamily:'var(--font-mono)', fontSize:8.5, letterSpacing:'.08em', color:chip.colour,
+        border:`1px solid ${chip.colour}`, borderRadius:3, padding:'0 4px', verticalAlign:'middle' }}
     >
-      <span style={{ width:5, height:5, borderRadius:'50%', background:c }} />
-      {isLive ? 'LIVE' : 'NEEDS SETUP'}
+      <span style={{ width:5, height:5, borderRadius:'50%', background:chip.colour }} />
+      {chip.label}
     </span>
   );
 }

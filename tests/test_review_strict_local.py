@@ -54,7 +54,7 @@ async def test_purge_drops_frozen_core_block_cache():
         _core_block_cache = (("session-1", "2026-07-06"), "[core memory]\n- fact")
 
     orch = _Orch()
-    cleared = await clear_live_memory(orch)
+    cleared, _failed = await clear_live_memory(orch)
     assert "core_block_cache" in cleared
     assert orch._core_block_cache is None
 
@@ -63,5 +63,5 @@ async def test_purge_without_cache_is_noop_for_cache_entry():
     class _Orch:
         pass
 
-    cleared = await clear_live_memory(_Orch())
+    cleared, _failed = await clear_live_memory(_Orch())
     assert "core_block_cache" not in cleared

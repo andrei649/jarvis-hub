@@ -113,13 +113,56 @@ class AutonomyCoordinator:
         )
 
     async def _on_callback(self, task_id: int, action: str, **kwargs):
-        """Handle a decision-inbox button tap from Telegram."""
+        """Handle a decision-inbox button tap from Telegram, bound to the owner.
+
+        SEC-B3. This used to discard the ``user_id`` and ``chat_id`` the channel passes
+        and apply the decision unconditionally — an approval with no owner check at all.
+        The blast radius was genuinely narrow (the card sender has one caller and targets
+        the configured owner chat, and a callback query cannot be synthesised by someone
+        who cannot see the button), but "narrow" was an accident of the surrounding wiring
+        rather than a property of this function, and approving an autonomy task is the
+        single most privileged thing a channel can do.
+
+        Both dimensions are checked, because either alone is weak: the chat proves the
+        button came from the conversation we sent it to, and the user proves it was tapped
+        by the owner rather than by another member if that chat is a group.
+        """
+        chat_id = kwargs.get("chat_id")
+        user_id = kwargs.get("user_id")
+        if not self._callback_is_owner(chat_id, user_id):
+            logger.warning(
+                "Rejected Telegram decision for task #%s: sender is not the owner", task_id,
+            )
+            return None
         try:
             await self._orch.autonomy.apply_decision(task_id, action, decided_by="telegram")
             return f"Task #{task_id}: {action}"
         except Exception as e:
             logger.warning(f"Autonomy decision callback failed: {e}")
             return None
+
+    def _callback_is_owner(self, chat_id, user_id) -> bool:
+        """Is this button tap the owner's?
+
+        Fails CLOSED when nothing identifies the owner. An approval surface with no owner
+        binding configured should not approve — declining costs the owner one settings
+        entry, whereas allowing costs them the guarantee that only they can approve.
+        """
+        owner_chat = str(self._orch.get_setting("autonomy.owner_chat_id", "") or "").strip()
+        allowed_users = {
+            str(u) for u in (getattr(self._telegram_channel(), "allowed_users", None) or [])
+        }
+        if not owner_chat and not allowed_users:
+            return False
+        if owner_chat and str(chat_id or "") != owner_chat:
+            return False
+        return not (allowed_users and str(user_id or "") not in allowed_users)
+
+    def _telegram_channel(self):
+        for channel in (getattr(self._orch, "channels", {}) or {}).values():
+            if getattr(channel, "name", "") == "telegram" or type(channel).__name__ == "TelegramChannel":
+                return channel
+        return None
 
     async def loop(self):
         """Periodically run approved autonomy tasks (the self-tasking worker).
