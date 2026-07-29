@@ -410,6 +410,17 @@ re-verify in `security.py`; `north_star.py` reporting an all-time aggregate as t
 metric; the seeded ADMIN/OBSERVE corpora in `modes3.tsx`/`modes2.tsx`; and the dead `arr() || fallback`
 in two `gap.tsx` panels.
 
+- [x] ✅ **Follow-up: the secret-store race fix corrupted key material on Windows.** The new
+  `_read_or_create_atomically` opened its descriptor without `O_BINARY`, so the CRT ran it in TEXT
+  mode and expanded every `0x0A` to `0x0D 0x0A`: the creator returned the 16 salt bytes it minted
+  while every later reader read 17 different ones, deriving a different key for the same store. ~6%
+  per salt (`1 - (255/256)**16`), silent, and reported only as "cannot decrypt secret (wrong key or
+  corrupted)" against data written correctly. It surfaced as three unrelated Windows failures on a
+  docs-only PR (`test_secrets`, `test_h30_presence`, `test_oauth_token_key`), which is the honest
+  version of "the Windows run was green last time" — it was, by luck. `vault.py` has always ORed the
+  flag in; `secrets.py` was the one `os.open` in the repo that did not. +3 tests, one of which pins
+  the flag by giving POSIX an `O_BINARY`, so a Linux-only run can still catch its removal.
+
 **The phone surface — open question, owner call (2026-07-29).** The scheduled e2e run fails 9
 `mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button "intercept pointer events" at
 the 393×851 Pixel 5 viewport). Nothing regressed: `E2E_BROWSER_MATRIX` is set only on `schedule`

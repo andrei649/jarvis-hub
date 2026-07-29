@@ -179,3 +179,74 @@ def test_the_key_file_is_owner_only(tmp_path, monkeypatch):
     assert key_file.exists()
     if os.name != "nt":  # POSIX permissions are meaningless on Windows
         assert _stat.S_IMODE(key_file.stat().st_mode) == 0o600
+
+
+# ── the Windows text-mode corruption of the very key material above ──────────
+#
+# `_read_or_create_atomically` opened the descriptor with O_WRONLY|O_CREAT|O_EXCL
+# and no O_BINARY. On Windows the CRT then opens it in TEXT mode and expands every
+# 0x0A byte to 0x0D 0x0A on write, so the creator returned the 16 random salt bytes
+# it minted while every later reader read 17 different ones off disk — two different
+# derived keys for the same store, ~6% of the time, reported only as
+# "cannot decrypt secret (wrong key or corrupted)". Caught by three unrelated
+# Windows CI failures on a docs-only PR; `vault.py` has always ORed O_BINARY in.
+
+
+def test_the_creator_returns_exactly_what_lands_on_disk(tmp_path, monkeypatch):
+    """The invariant the two halves of the function must agree on.
+
+    Deterministic here (a salt forced to contain 0x0A); on Windows without
+    O_BINARY the on-disk bytes come back one byte longer and different.
+    """
+    import agents.core.secrets as secrets_mod
+
+    monkeypatch.setattr(
+        secrets_mod._secrets, "token_bytes", lambda n: b"\x00\n\r\n\x1a" + b"A" * (n - 5)
+    )
+    store = secrets_mod.SecretStore(tmp_path / "s.enc", key="a-passphrase")
+    salt_path = tmp_path / "s.enc.salt"
+
+    returned = store._load_or_create_salt()          # re-read: file now exists
+    assert returned == salt_path.read_bytes()
+    assert b"\r\n\r\n" not in salt_path.read_bytes()  # no CRLF expansion
+    assert len(salt_path.read_bytes()) == 16
+
+
+def test_a_newline_bearing_salt_still_round_trips_across_instances(tmp_path, monkeypatch):
+    """The consequence, as the owner meets it: a stored secret must decrypt later."""
+    import agents.core.secrets as secrets_mod
+
+    monkeypatch.setenv("JARVIS_SECRET_KEY", "a-passphrase-not-a-fernet-key")
+    monkeypatch.setattr(
+        secrets_mod._secrets, "token_bytes", lambda n: b"\n" * n
+    )
+    path = tmp_path / "s.enc"
+    secrets_mod.SecretStore(path).set("X", "QAFAKE-value-x")
+
+    assert secrets_mod.SecretStore(path).get("X") == "QAFAKE-value-x"
+
+
+def test_the_binary_flag_is_requested_when_the_platform_has_one(tmp_path, monkeypatch):
+    """Pins the fix itself, so a Linux-only run can still catch its removal.
+
+    POSIX has no O_BINARY, so the round-trip tests above are green here whether or
+    not the flag is passed — only Windows CI would notice. This asserts the flag is
+    actually ORed in, by giving the platform one.
+    """
+    import agents.core.secrets as secrets_mod
+
+    sentinel = 0x8000
+    monkeypatch.setattr(os, "O_BINARY", sentinel, raising=False)
+    seen: list[int] = []
+    real_open = os.open
+
+    def _spy(path, flags, *rest):
+        seen.append(flags)
+        return real_open(path, flags & ~sentinel, *rest)
+
+    monkeypatch.setattr(os, "open", _spy)
+    monkeypatch.delenv("JARVIS_SECRET_KEY", raising=False)
+    secrets_mod.SecretStore(tmp_path / "s.enc")
+
+    assert seen, "key material was created without going through os.open"
+    assert all(f & sentinel for f in seen), "O_BINARY was not requested"

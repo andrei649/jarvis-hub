@@ -137,17 +137,30 @@ class SecretStore:
         `O_CREAT | O_EXCL` makes creation atomic against other processes; the
         module lock serializes threads within this one. On the losing branch we
         RE-READ rather than re-generate, which is the whole point.
+
+        `O_BINARY` is not optional on Windows. Without it the CRT opens the
+        descriptor in TEXT mode and rewrites every 0x0A byte to 0x0D 0x0A on the
+        way out — so the creator returns the 16 random bytes it minted while every
+        later reader reads 17 different ones, and the two derive different keys.
+        A random salt trips it ~6% of the time (1 - (255/256)**16), silently, and
+        the only symptom is "cannot decrypt secret (wrong key or corrupted)"
+        against data that was written correctly. The read side is already binary
+        (`read_bytes`), which is exactly what makes the halves disagree.
         """
         with _KEY_MATERIAL_LOCK:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
             try:
-                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                fd = os.open(path, flags, 0o600)
             except FileExistsError:
                 return path.read_bytes()
             try:
                 material = mint()
-                os.write(fd, material)
+                with os.fdopen(fd, "wb") as fh:   # os.write may write short; this may not
+                    fd = None                     # fdopen owns it now — no double close
+                    fh.write(material)
             finally:
-                os.close(fd)
+                if fd is not None:
+                    os.close(fd)
             _chmod_600(path)  # belt and braces: O_EXCL's mode is subject to umask
             return material
 
