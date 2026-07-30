@@ -7,7 +7,7 @@ repo-local marketplace declared in `.claude/settings.json`
 
 ## superpowers/ (BACKLOG H22.7)
 - **Source:** https://github.com/obra/superpowers
-- **Version:** 6.0.3 (vendored 2026-06-20)
+- **Version:** 6.2.0 (vendored 2026-08-06)
 - **License:** MIT © Jesse Vincent — see `superpowers/LICENSE` and
   `LICENSES/superpowers-MIT.txt`.
 - **What:** the full superpowers methodology + 14 core skills (TDD, debugging,
