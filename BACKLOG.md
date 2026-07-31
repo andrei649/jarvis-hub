@@ -1333,6 +1333,19 @@ never broken — routes served + appeared in OpenAPI). **Fixed:** `tests/_route_
 with `starlette>=0.46,<1.0`. Root cause + repro:
 [`docs/research/2026-06-19-fastapi-0.137-include-router-regression.md`](docs/research/2026-06-19-fastapi-0.137-include-router-regression.md).
 
+**2026-07-31 — python-deps bump, verified rather than assumed.** `fastapi 0.139.2 → 0.140.13`
+(+ `uvicorn 0.51.0 → 0.52.0`, `annotated-doc 0.0.4 → 0.0.5` transitively) and the `ruff` floor to
+`>=0.16.0`. Dependabot's #740 edited the three `requirements*.txt` **without regenerating the
+hash-pinned locks**, so its `in-sync` gate was red and — worse — the other 17 checks were green
+against the *old* pins: CI installs `--require-hashes` from the lock, so nothing in that run ever
+exercised the new fastapi. Locks regenerated with `./scripts/lock_deps.sh`; the upgrade then verified
+locally under fastapi 0.140.13 — route-parity, auth-matrix, OpenAPI-parity, route-guard-contract,
+release-gate and typegen guards all green, then the full backend suite green. **ruff 0.16's breaking
+change does not reach us**: the "413 default rules, up from 59" expansion applies only without an
+explicit selection, and `pyproject.toml` pins `select = ["E","F","W","I","B","UP","SIM","C4"]`; the
+dev lock had in fact already resolved 0.16.0, so the floor raise is bookkeeping. `ruff check .` clean
+on 0.16.1.
+
 ---
 
 ## 🔍 CodeQL & secret-scanning alerts (2026-06-17 — code fixes shipped; dismissals + ~12 triage pending)
