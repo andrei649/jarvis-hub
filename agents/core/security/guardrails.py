@@ -8,6 +8,7 @@ import hashlib
 import inspect
 import json
 import logging
+import threading
 from typing import Any, Callable, Sequence
 
 from ..llm.base import LLMBackend
@@ -48,6 +49,7 @@ class GuardrailsEngine:
         scan_input: bool = True,
         scan_output: bool = True,
         scanners: Sequence[BaseScanner] | None = None,
+        counters: dict | None = None,
     ) -> None:
         self._backend = backend
         self._scanners = tuple(scanners) if scanners is not None else (
@@ -57,6 +59,19 @@ class GuardrailsEngine:
         self._mode = mode
         self._scan_input = scan_input
         self._scan_output = scan_output
+        # Real activity counters. /security/status used to publish literal zeros
+        # for redact_count / block_count / findings, which the Console renders as
+        # measured security activity — so a hub that had redacted forty PII spans
+        # and blocked six outbound requests still reported a clean, untriggered
+        # system. Nothing was counting; these are the counters.
+        #
+        # SHARED with every engine produced by bind(): the HUD wants the process
+        # total, and bind() makes a fresh instance per backend, so per-instance
+        # counters would each report a fraction.
+        self._counters = counters if counters is not None else {
+            "scanned": 0, "findings": 0, "warned": 0, "redacted": 0, "blocked": 0,
+        }
+        self._counters_lock = threading.Lock()
 
     def bind(self, backend: LLMBackend) -> "GuardrailsEngine":
         return GuardrailsEngine(
@@ -65,7 +80,30 @@ class GuardrailsEngine:
             scan_input=self._scan_input,
             scan_output=self._scan_output,
             scanners=self._scanners,
+            counters=self._counters,   # share, don't fork
         )
+
+    def _bump(self, key: str, n: int = 1) -> None:
+        with self._counters_lock:
+            self._counters[key] = self._counters.get(key, 0) + n
+
+    def stats(self) -> dict:
+        """Live guardrail activity + the real scanner rulesets, for /security/status."""
+        with self._counters_lock:
+            counters = dict(self._counters)
+        return {
+            "mode": self._mode.value if hasattr(self._mode, "value") else str(self._mode),
+            "scan_input": self._scan_input,
+            "scan_output": self._scan_output,
+            "counters": counters,
+            # Pattern counts come from the compiled ruleset, not a hand-written
+            # number — the route claimed 10 secret and 6 PII patterns, and both
+            # were wrong.
+            "scanners": {
+                s.scanner_id: {"patterns": len(getattr(s, "_compiled", ()) or ())}
+                for s in self._scanners
+            },
+        }
 
     def _bound_backend(self) -> LLMBackend:
         if self._backend is None:
@@ -81,6 +119,9 @@ class GuardrailsEngine:
         for scanner in self._scanners:
             result = scanner.scan(text)
             merged.findings.extend(result.findings)
+        self._bump("scanned")
+        if merged.findings:
+            self._bump("findings", len(merged.findings))
         return merged
 
     def _redact_text(self, text: str) -> str:
@@ -108,16 +149,19 @@ class GuardrailsEngine:
         ]
 
         if self._mode == RedactionMode.WARN:
+            self._bump("warned")
             if result.critical_count > 0:
                 logger.warning(f"Security WARN [{direction}]: {finding_info}")
             return text
 
         if self._mode == RedactionMode.REDACT:
+            self._bump("redacted")
             if result.findings:
                 logger.info(f"Security REDACT [{direction}]: {finding_info}")
             return self._redact_text(text)
 
         if self._mode == RedactionMode.BLOCK:
+            self._bump("blocked")
             logger.warning(f"Security BLOCK [{direction}]: {finding_info}")
             raise SecurityBlockError(
                 f"Security scan blocked {direction}: {len(result.findings)} finding(s)"

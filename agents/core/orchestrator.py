@@ -382,6 +382,9 @@ class Orchestrator:
         # Proactive Event Watcher — personal event trigger layer.
         self.event_watcher = None
         self._autonomy_task: Optional[asyncio.Task] = None
+        # The learning loop was created as a bare local in start_channels() and
+        # dropped, so nothing could ever stop it. Held here like its siblings.
+        self._learning_task: Optional[asyncio.Task] = None
         self._warmup_task: Optional[asyncio.Task] = None
         self._drive_ai_task: Optional[asyncio.Task] = None
         self.last_cognition = None
@@ -816,6 +819,7 @@ class Orchestrator:
             # so the /admin knobs actually govern routing live. 0 = unlimited.
             if router is not None and hasattr(router, "set_local_max"):
                 router.set_local_max(flat.get("llm.hybrid_local_max"))
+                router.set_daily_cost_cap(flat.get("llm.daily_cost_cap_usd"))
                 router.set_flash_max(flat.get("llm.hybrid_flash_max"))
         except Exception as e:
             log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
@@ -871,16 +875,51 @@ class Orchestrator:
             self.oracle_bridge.start_watcher()
         if not env_flag("JARVIS_TESTING"):
             from agents.core.learning_loop import run_learning_loop
-            _ll = asyncio.create_task(run_learning_loop(self))
-            _ll.add_done_callback(_log_task_result)
+            self._learning_task = asyncio.create_task(run_learning_loop(self))
+            self._learning_task.add_done_callback(_log_task_result)
         logger.info(f"Channels started: {list(self.channels.keys())}")
         logger.info("Components: %s", self.components.summary())  # A8: startup health report
+
+    async def _cancel_task(self, name: str):
+        """Cancel a background task and WAIT for it to actually stop.
+
+        `task.cancel()` only requests cancellation — it does not wait. Without the
+        await, `stop_channels()` returns while the loop is still mid-iteration, so
+        a caller that shuts down and then wipes the data directory (the forget /
+        purge path) races a worker that is still writing to it.
+        """
+        task = getattr(self, name, None)
+        if task is None:
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass  # expected — we asked for it. Not an Exception subclass, so it
+            # needs its own clause; a bare `except Exception` would miss it.
+        except Exception as e:
+            logger.warning("Error stopping %s: %s", name, e)
+        finally:
+            setattr(self, name, None)
 
     async def stop_channels(self):
         await self.channel_manager.stop_all()
         self.heartbeat_scheduler.stop()
-        if self._settings_watcher_task:
-            self._settings_watcher_task.cancel()
+        # Every long-lived loop started in start_channels(). The autonomy worker and
+        # the learning loop were previously never cancelled at all — they kept
+        # ticking after shutdown, against a hub that had closed its backends. The
+        # settings watcher was cancelled but not awaited, so it could still be
+        # running when this returned.
+        for _task_attr in ("_settings_watcher_task", "_autonomy_task", "_learning_task"):
+            await self._cancel_task(_task_attr)
+        # The Oracle GitHub watcher polls every 30s when enabled; nothing stopped it.
+        bridge = getattr(self, "oracle_bridge", None)
+        stop_watcher = getattr(bridge, "stop_watcher", None)
+        if stop_watcher is not None:
+            try:
+                await stop_watcher()
+            except Exception as e:
+                logger.warning(f"Error stopping Oracle watcher: {e}")
         # Close all active plugins gracefully (CLN-2: owned by PluginManager).
         await self.plugin_manager.close_all()
         logger.info("Channels stopped")
@@ -2057,10 +2096,43 @@ class Orchestrator:
 
         results = {}
         self._last_latencies = {}
+        # Per-agent routes, alongside the per-agent latencies that already live here.
+        # Before this, ONE route_name was computed from target_agents[0] and recorded for
+        # every agent that answered — so a turn where stark answered locally and athena
+        # answered on cloud was recorded as two local runs, and
+        # GET /api/metrics/north-star reported 100% local. `local_pct` gates a 50% floor
+        # on the release, and docs/METRICS.md defines it as "% served on-device", so the
+        # error was both systematic and in the flattering direction.
+        # The streaming path was never affected: it selects the backend inside its own
+        # per-agent loop. This is the non-streaming half (Telegram, Discord, voice,
+        # /chat, MCP, rooms, webhooks, eval, workflows).
+        self._last_routes = {}
         for agent_id, resp, latency in results_list:
             results[agent_id] = resp
             self._last_latencies[agent_id] = latency
+            route = self._route_for_agent(agent_id, text)
+            if route:
+                self._last_routes[agent_id] = route
         return results
+
+    def _route_for_agent(self, agent_id: str, text: str) -> str:
+        """The route this agent's backend actually resolved to, or "" if unknowable.
+
+        Asks the router the same question the agent's own generation asked. Returning ""
+        rather than guessing matters: ``RunHistory.locality`` excludes unrouted rows from
+        the percentage instead of counting them as local, so an honest blank keeps the
+        meter from fabricating a split — which is the behaviour this fix is protecting.
+        """
+        router = getattr(self, "llm_router", None)
+        if router is None:
+            return ""
+        try:
+            res = router.select_backend(agent_id, text)
+        except Exception:
+            return ""
+        if isinstance(res, tuple) and len(res) == 3:
+            return res[2] or ""
+        return ""
 
     async def _synthesize(self, responses: dict[str, str], intent) -> str:
         jarvis = self.agents.get("jarvis")
@@ -2180,6 +2252,9 @@ class Orchestrator:
                 # that merely mentions the word "error:"; anchor to the marker.
                 success = not _is_failed_agent_reply(agent_id, resp)
                 latency = getattr(self, "_last_latencies", {}).get(agent_id, 0.0)
+                # Prefer THIS agent's route over the turn-level scalar, which is computed
+                # from target_agents[0] and is only right for the primary responder.
+                agent_route = getattr(self, "_last_routes", {}).get(agent_id) or route_name
                 metadata = {
                     # CDX-2: record the real origin (web/telegram/discord/voice/
                     # autonomy/…) instead of always "web", so the %-local/cloud
@@ -2198,15 +2273,33 @@ class Orchestrator:
                     latency=latency,
                     error=resp if not success else None,
                     metadata=metadata,
-                    route_name=route_name,
+                    route_name=agent_route,
                 )
+                agent_model = self.agents[agent_id].config.get("model", "")
                 self.bench.record(
                     agent_id=agent_id,
                     latency=latency,
                     success=success,
                     output_length=len(resp),
-                    model=self.agents[agent_id].config.get("model", ""),
+                    model=agent_model,
                 )
+                # ADV-078: feed the cost meter. GET /api/cost, /api/analytics/cost and
+                # /api/admin/apm all read cost_tracker and NOTHING wrote to it, so every
+                # one of them rendered a confident 0.00 forever. This is the natural
+                # producer: the token counts are already in `metadata` above, and the
+                # model that actually ran is right here. A local route prices at zero, so
+                # a local-only install still reads 0.00 — but now because it measured
+                # nothing spent, not because nobody was counting.
+                try:
+                    from agents.core import cost_tracker
+                    cost_tracker.record(
+                        agent_id,
+                        metadata["input_tokens"],
+                        metadata["output_tokens"],
+                        model=agent_model or agent_route or "default",
+                    )
+                except Exception:
+                    logger.debug("cost record skipped", exc_info=True)
                 # H10.17: append to the per-agent run-history timeline.
                 if getattr(self, "run_history", None) is not None:
                     try:
@@ -2216,7 +2309,7 @@ class Orchestrator:
                             output_text=resp,
                             latency_ms=latency * 1000,
                             ok=success,
-                            route=route_name,
+                            route=agent_route,
                         )
                     except Exception:
                         logger.debug("run_history record skipped", exc_info=True)
@@ -2366,6 +2459,20 @@ class Orchestrator:
                 await closer()
             except Exception as e:
                 logger.warning(f"Error closing channel '{cid}': {e}")
+        # The two sqlite connections opened at boot. Both classes have had a close()
+        # all along; shutdown simply never called either, so the handles lived until
+        # process exit. That is not merely untidy here:
+        #   * on Windows an open handle makes the enclosing directory undeletable,
+        #     which is exactly what the forget/purge path needs to do;
+        #   * a WAL left un-checkpointed is a recovery step the next boot has to do.
+        for _attr, _label in (("audit", "audit log"), ("checkpoints", "checkpoint store")):
+            _closer = getattr(getattr(self, _attr, None), "close", None)
+            if _closer is None:
+                continue
+            try:
+                _closer()
+            except Exception as e:
+                logger.warning(f"Error closing {_label}: {e}")
 
     async def get_status(self) -> dict:
         return {

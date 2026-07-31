@@ -173,9 +173,71 @@ def _scenario(root: Path, monitor_count: int) -> tuple[dict, Counter]:
     return scenario, rung_counts
 
 
+class _ActionWatch:
+    """Counts real action attempts during a pack run, and how many were ungoverned.
+
+    Adversarial audit 2026-07-25 (ADV-091): ``ungoverned_actions`` and ``action_calls``
+    were the integer literal ``0``, ASSIGNED into the counters dict. STATUS.md reads the
+    first as evidence that the ambient pack emits no ungoverned action, so the evidence
+    was a restatement of the claim. Gutting the proposal sink dropped proposals from 49 to
+    0 and the pack stayed green.
+
+    The skeptic's correction is preserved and matters for how this is graded: the PROPERTY
+    is genuinely covered — tests/test_h33_ladder_engine.py has positive and negative cases
+    and both fail under the same mutation. This was an evidence defect, not an untested
+    safety property, and the fix is to make the counter a measurement rather than to add a
+    new guarantee.
+
+    Wraps the two seams an ambient decision would have to cross to actuate anything: the
+    H27 capability facade and the kernel's authorize(). Both counts are expected to be
+    zero — ambient decides, it does not act — but they are now zero BECAUSE NOTHING WAS
+    OBSERVED, which is a different sentence from zero because nobody looked.
+    """
+
+    def __init__(self) -> None:
+        self.action_calls = 0
+        self.governed_calls = 0
+        self._undo: list = []
+
+    @property
+    def ungoverned_actions(self) -> int:
+        return max(0, self.action_calls - self.governed_calls)
+
+    def __enter__(self) -> _ActionWatch:
+        try:
+            from agents.core import capability_actions, kernel
+        except Exception:                       # pragma: no cover - partial install
+            return self
+
+        api_cls = getattr(capability_actions, "CapabilityActionAPI", None)
+        original_perform = getattr(api_cls, "perform", None)
+        if original_perform is not None:
+            async def _counted_perform(inner_self, *args, **kwargs):
+                self.action_calls += 1
+                return await original_perform(inner_self, *args, **kwargs)
+            api_cls.perform = _counted_perform
+            self._undo.append(lambda: setattr(api_cls, "perform", original_perform))
+
+        original_authorize = getattr(kernel, "authorize", None)
+        if original_authorize is not None:
+            def _counted_authorize(*args, **kwargs):
+                self.governed_calls += 1
+                return original_authorize(*args, **kwargs)
+            kernel.authorize = _counted_authorize
+            self._undo.append(lambda: setattr(kernel, "authorize", original_authorize))
+        return self
+
+    def __exit__(self, *exc) -> None:
+        for undo in reversed(self._undo):
+            undo()
+        self._undo.clear()
+        return None
+
+
 async def _scale_report() -> dict:
     rungs: Counter = Counter()
-    with tempfile.TemporaryDirectory(prefix="reality-ambient-scale-") as raw_root:
+    watch = _ActionWatch()
+    with watch, tempfile.TemporaryDirectory(prefix="reality-ambient-scale-") as raw_root:
         root = Path(raw_root)
         scenarios = []
         for count in (1, 10, 100):
@@ -212,8 +274,11 @@ async def _scale_report() -> dict:
         for scenario in scenarios
     )
     counters = {
-        "ungoverned_actions": 0,
-        "action_calls": 0,
+        # Measured by _ActionWatch above, not asserted. Both are expected to be zero —
+        # ambient decides, it does not actuate — but "zero observed" and "zero written
+        # here" are different claims, and STATUS.md quotes this one.
+        "ungoverned_actions": watch.ungoverned_actions,
+        "action_calls": watch.action_calls,
         "tainted_interrupts": int(tainted.rung == "interrupt"),
         "tainted_downgrades": int(tainted.rung == "ask"),
         "rungs": dict(sorted(rungs.items())),
@@ -223,7 +288,8 @@ async def _scale_report() -> dict:
 
 async def _attention_report() -> dict:
     now = time.time()
-    with tempfile.TemporaryDirectory(prefix="reality-ambient-attention-") as raw_root:
+    watch = _ActionWatch()
+    with watch, tempfile.TemporaryDirectory(prefix="reality-ambient-attention-") as raw_root:
         path = Path(raw_root) / "attention.db"
         ledger = AttentionLedger(path, timezone_name="UTC", per_day=4, clock=lambda: now)
         broker = AttentionDeliveryBroker(ledger)
@@ -251,7 +317,12 @@ async def _attention_report() -> dict:
         "passed": attention
         == {"attempted": 6, "delivered": 4, "downgraded": 2, "remaining_after_restart": 0},
         "attention": attention,
-        "counters": {"ungoverned_actions": 0},
+        # Measured, like the scale report's. This one was a second literal in a second
+        # function — found by the test that pins the property rather than the line.
+        "counters": {
+            "ungoverned_actions": watch.ungoverned_actions,
+            "action_calls": watch.action_calls,
+        },
     }
 
 

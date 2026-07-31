@@ -232,14 +232,79 @@ async def test_synthesis_uses_selected_backend_not_boot_backend():
     agent._gen_params = lambda route_name: (128, 0.0)
     agent.guardrails = GuardrailsEngine(backend=boot_backend)
 
+    # Contributors are deliberately NOT strict-local. This test is about route
+    # preservation (the selected backend wins over the boot one), and it used to pass
+    # frigga + ultron — which meant it was also asserting that jarvis may synthesize a
+    # strict-local agent's raw output through a cloud-eligible backend. That was the
+    # SEC-B1 hole, encoded as expected behaviour. The floor is covered on its own below.
     result = await agent.synthesize(
-        {"frigga": "family report", "ultron": "systems report"},
+        {"stark": "engineering report", "athena": "strategy report"},
         intent=None,
     )
 
     assert result == "selected synthesis"
     assert len(selected.calls) == 1
     assert boot_backend.calls == []
+
+
+@pytest.mark.asyncio
+async def test_synthesis_pins_local_when_any_contributor_is_strict_local():
+    """SEC-B1: the floor is over CONTRIBUTORS, not over the synthesizing agent.
+
+    `Agent.synthesize` embeds every responder's raw text in its prompt and then routed as
+    `self.id` — "jarvis" — so LOCAL_ONLY_AGENTS was enforced on the agent that *answered*
+    and never on the merge. A family agent's output could leave the box inside a synthesis
+    prompt, which breaks the one rule the documentation calls non-negotiable.
+    """
+    local = RecordingBackend("local synthesis")
+    routed = RecordingBackend("routed synthesis")
+
+    class _RouterWithLocal(StaticRouter):
+        active_model = "local-model"
+
+        def __init__(self, cloudish, local_backend):
+            super().__init__(cloudish, route="cloud")
+            self._local = local_backend
+
+        @property
+        def local_backend(self):
+            return self._local
+
+    agent = Agent("jarvis", {"name": "Jarvis"}, _RouterWithLocal(routed, local))
+    agent.soul = {"content": "test policy"}
+    agent._gen_params = lambda route_name: (128, 0.0)
+
+    result = await agent.synthesize(
+        {"frigga": "family report", "stark": "engineering report"},
+        intent=None,
+    )
+
+    assert result == "local synthesis"
+    assert len(local.calls) == 1
+    assert routed.calls == [], (
+        "a strict-local contributor's raw text was merged through the routed "
+        "(cloud-eligible) backend"
+    )
+
+
+@pytest.mark.asyncio
+async def test_synthesis_falls_back_to_the_join_when_no_local_backend_exists():
+    """Fail-closed: no strict-local backend must mean no model call at all.
+
+    Falling through to select_backend here would recreate the hole exactly.
+    """
+    routed = RecordingBackend("routed synthesis")
+    agent = Agent("jarvis", {"name": "Jarvis"}, StaticRouter(routed))   # no local_backend
+    agent.soul = {"content": "test policy"}
+    agent._gen_params = lambda route_name: (128, 0.0)
+
+    result = await agent.synthesize(
+        {"frigga": "family report", "ultron": "systems report"},
+        intent=None,
+    )
+
+    assert routed.calls == []
+    assert result == "[frigga]: family report | [ultron]: systems report"
 
 
 @pytest.mark.asyncio

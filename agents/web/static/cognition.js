@@ -3,14 +3,28 @@
 
 // useState, useEffect, useMemo, h sunt deja definite global în components.js
 
-function IntentClassification({ scoring, message }) {
+function IntentClassification({ scoring, message, state }) {
   if (!scoring || scoring.length === 0) {
+    // Two different empties, and they must not look the same. "NO MATCH" means a
+    // request WAS classified and nothing scored; "STANDBY" means nothing has been
+    // routed yet. The backend used to hide the second case by inventing scoring
+    // rows from the intent table, so the panel drew weight bars for keywords the
+    // owner had never typed.
+    var failed = state === 'unavailable';
+    var pending = state === 'no-request-routed-yet' || state === 'starting';
     return h('div', { className: 'cog-section' },
       h('div', { className: 'cog-section-head' },
         h('span', { className: 'cog-label' }, 'INTENT CLASSIFICATION'),
-        h('span', { className: 'cog-status dim' }, 'NO MATCH')
+        h('span', { className: 'cog-status ' + (failed ? 'err' : 'dim') },
+          failed ? 'UNAVAILABLE' : (pending ? 'STANDBY' : 'NO MATCH'))
       ),
-      h('div', { className: 'cog-empty' }, 'No keywords matched. Routing to Jarvis (general).')
+      h('div', { className: 'cog-empty' },
+        failed ? 'Could not reach /api/cognition — this panel is not showing live data.'
+        : pending
+          ? (state === 'starting'
+              ? 'Hub still starting — no routing decision recorded yet.'
+              : 'No request routed yet. Send a message to see how it is classified.')
+          : 'No keywords matched. Routing to Jarvis (general).')
     );
   }
 
@@ -118,7 +132,7 @@ function OrchestrationTrace({ trace }) {
   );
 }
 
-function CognitionPanel({ scoring, decision, trace, message, onRefresh }) {
+function CognitionPanel({ scoring, decision, trace, message, state, onRefresh }) {
   const [collapsed, setCollapsed] = useState(false);
 
   return h('div', { className: 'cognition-panel' + (collapsed ? ' collapsed' : '') },
@@ -148,7 +162,7 @@ function CognitionPanel({ scoring, decision, trace, message, onRefresh }) {
       )
     ),
     !collapsed && h('div', { className: 'cognition-body' },
-      h(IntentClassification, { scoring, message }),
+      h(IntentClassification, { scoring, message, state }),
       h(RoutingDecision, { decision }),
       h(OrchestrationTrace, { trace })
     )

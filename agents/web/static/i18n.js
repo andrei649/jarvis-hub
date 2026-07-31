@@ -147,6 +147,7 @@ const LOCALES = {
     'comp.agent_network':   'REȚEA AGENȚI',
     'comp.system':          'SISTEM',
     'comp.nominal':         'NOMINAL',
+    'comp.unmeasured':      'NEMĂSURAT',
     'comp.gpu_load':        'INCARCARE GPU',
     'comp.backend':         'BACKEND',
     'comp.model':           'MODEL',
@@ -173,6 +174,7 @@ const LOCALES = {
     'comp.trust_mic_on_hint':    'Microfon activ — se poate capta audio',
     'comp.trust_local_on_hint':  'Strict-local: niciun apel cloud, nimic nu pleacă de pe mașină',
     'comp.trust_local_off_hint': 'Routing cloud disponibil — unele cereri pot pleca de pe mașină',
+    'comp.trust_local_unknown_hint': 'Mod de routing necunoscut — hub-ul nu l-a raportat',
 
     'data.city':            'București',
     'data.loading':         'Se încarcă…',
@@ -339,6 +341,7 @@ const LOCALES = {
     'comp.agent_network':   'AGENT NETWORK',
     'comp.system':          'SYSTEM',
     'comp.nominal':         'NOMINAL',
+    'comp.unmeasured':      'UNMEASURED',
     'comp.gpu_load':        'GPU LOAD',
     'comp.backend':         'BACKEND',
     'comp.model':           'MODEL',
@@ -365,6 +368,7 @@ const LOCALES = {
     'comp.trust_mic_on_hint':    'Microphone live — audio can be captured',
     'comp.trust_local_on_hint':  'Strict-local: no cloud calls, nothing leaves this machine',
     'comp.trust_local_off_hint': 'Cloud routing available — some requests may leave this machine',
+    'comp.trust_local_unknown_hint': 'Routing mode unknown — the hub did not report it',
 
     'data.city':            'Bucharest',
     'data.loading':         'Loading…',

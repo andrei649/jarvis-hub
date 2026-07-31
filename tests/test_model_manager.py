@@ -412,6 +412,13 @@ def _agent(router):
     return agent
 
 
+# These three exercise the model-manager residency hook inside synthesize, which is
+# orthogonal to routing policy. They used `howard` as the contributor — and howard is in
+# LOCAL_ONLY_AGENTS, so under the SEC-B1 floor every one of them would now be pinned local
+# and the "cloud route" case could not exist. `stark` is not strict-local, so the route
+# under test is the one the router is configured to return, which is the point.
+
+
 async def test_synthesize_hook_noop_when_killswitch_off():
     # Manager attached but disabled → ensure_resident is a no-op, using() doesn't
     # ref-count, and synthesize still produces a reply (today's behavior).
@@ -421,7 +428,7 @@ async def test_synthesize_hook_noop_when_killswitch_off():
     router = _FakeRouter(backend, "local-deep", mgr)
     agent = _agent(router)
 
-    out = await agent.synthesize({"jarvis": "", "howard": "fact A"}, intent=None)
+    out = await agent.synthesize({"jarvis": "", "stark": "fact A"}, intent=None)
     assert out == "synthesized reply"
     assert backend.calls == ["deep-local-model"]
     # Disabled: nothing loaded, nothing tracked.
@@ -448,7 +455,7 @@ async def test_synthesize_hook_refcounts_model_when_enabled():
     router = _FakeRouter(backend, "local-deep", mgr)
     agent = _agent(router)
 
-    out = await agent.synthesize({"jarvis": "", "howard": "fact A"}, intent=None)
+    out = await agent.synthesize({"jarvis": "", "stark": "fact A"}, intent=None)
     assert out == "synthesized reply"
     assert ctrl.loads == ["deep-local-model"]
     assert seen_refs["refs"] == 1            # pinned during generate
@@ -465,7 +472,7 @@ async def test_synthesize_hook_noop_on_cloud_route_when_enabled():
     router = _FakeRouter(backend, "cloud-flash", mgr)
     agent = _agent(router)
 
-    out = await agent.synthesize({"jarvis": "", "howard": "fact A"}, intent=None)
+    out = await agent.synthesize({"jarvis": "", "stark": "fact A"}, intent=None)
     assert out == "synthesized reply"
     assert ctrl.loads == []
     assert mgr.resident_models == []

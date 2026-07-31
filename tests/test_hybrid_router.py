@@ -863,3 +863,46 @@ def test_unlimited_local_keeps_long_prompt_on_local():
     router.set_local_max(0)
     _, _, route_unlimited = router.select_backend("jarvis", long_prompt)
     assert route_unlimited in ("local", "local-deep")
+
+
+# ── Availability flags carry the time they were measured (NEW-1) ──────────────
+#
+# `detect()` runs at boot and on an admin reconnect — never on a timer — so every
+# flag it sets goes stale silently. `/readyz` used to publish the configured
+# backend NAME inside a dict called `checks`, which a monitor reads as "the LLM
+# check passed" whether or not anything is up. The endpoint can only tell fresh
+# from stale if the router records when it last actually probed.
+
+@pytest.mark.asyncio
+async def test_probe_age_is_none_before_the_first_detect():
+    """Never probed must be distinguishable from probed-and-found-nothing."""
+    router = HybridRouter(gemini_api_key="")
+    assert router.probe_age_seconds() is None
+
+
+@pytest.mark.asyncio
+async def test_detect_stamps_the_probe_time_when_a_backend_is_found(monkeypatch):
+    monkeypatch.delenv("JARVIS_LM_STUDIO_URL", raising=False)
+    monkeypatch.delenv("JARVIS_OLLAMA_URL", raising=False)
+    router = HybridRouter(gemini_api_key="")
+    monkeypatch.setattr(router, "_admin_setting", lambda key, default: default)
+    _mock_net(monkeypatch, router, respond=lambda u: "1234" in u)
+    await router.detect()
+    assert router._local_available is True
+    age = router.probe_age_seconds()
+    assert age is not None and age < 5.0
+
+
+@pytest.mark.asyncio
+async def test_detect_stamps_the_probe_time_when_nothing_is_up(monkeypatch):
+    """The case that matters: no backend found is still a MEASUREMENT, and must
+    be stamped. Otherwise a box with the LLM down looks 'never probed' forever."""
+    monkeypatch.delenv("JARVIS_LM_STUDIO_URL", raising=False)
+    monkeypatch.delenv("JARVIS_OLLAMA_URL", raising=False)
+    router = HybridRouter(gemini_api_key="")
+    monkeypatch.setattr(router, "_admin_setting", lambda key, default: default)
+    _mock_net(monkeypatch, router, respond=lambda u: False)
+    await router.detect()
+    assert router._local_available is False
+    age = router.probe_age_seconds()
+    assert age is not None and age < 5.0

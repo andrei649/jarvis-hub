@@ -189,6 +189,13 @@
     box-shadow: inset 0 0 8px rgba(255,69,58,0.12);
   }
   .trust-chip.is-off.trust-local .trust-chip-val { color: var(--red-alert); }
+  /* Routing mode not reported. Deliberately neither the reassuring green of
+     STRICT nor the alarm red of CLOUD — the honest signal is "we don't know". */
+  .trust-chip.is-unknown.trust-local {
+    border-color: rgba(255,176,32,0.45);
+    box-shadow: inset 0 0 8px rgba(255,176,32,0.10);
+  }
+  .trust-chip.is-unknown.trust-local .trust-chip-val { color: #ffb020; }
 
   /* ── main grid ──────────────────────────────────────────── */
   .hud-main {
@@ -1180,6 +1187,9 @@
 .cog-status.active { background: var(--accent-faint); color: var(--accent-light); }
 .cog-status.ok { background: rgba(57, 255, 139, 0.1); color: var(--green-active); }
 .cog-status.dim { background: var(--bg-glass); color: var(--text-dim); }
+/* The panel could not reach the API. Must not be dim like a legitimate empty —
+   "no data" and "we don't know" have to look different. */
+.cog-status.err { background: rgba(255, 69, 58, 0.12); color: var(--red-alert); }
 .cog-empty {
   padding: 20px;
   text-align: center;
