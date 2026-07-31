@@ -19,6 +19,19 @@ class TelegramBotPlugin:
         self.api_base = f"https://api.telegram.org/bot{token}" if token else ""
         self.client = PluginHTTPClient.for_plugin("telegram")
 
+    @property
+    def configured(self) -> bool:
+        """Whether a bot token is present — the honesty contract the badge reads.
+
+        Without this the class exposed none of configured/available/_configured, so
+        ``plugin_configured`` fell through to ``(True, "loaded")`` and the HUD rendered a
+        green LIVE chip for a plugin that every send path here refuses ("Telegram token
+        not configured"). It also had no ``degradation_info()``, so there was no amber
+        MOCK chip beside the green to contradict it — a clean, silent misstatement, and
+        the sharpest instance the adversarial audit found (2026-07-25).
+        """
+        return bool(self.token)
+
     async def send_message(self, chat_id: int, text: str,
                            parse_mode: str = "Markdown",
                            disable_preview: bool = True) -> bool:

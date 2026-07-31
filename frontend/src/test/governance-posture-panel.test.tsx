@@ -58,3 +58,35 @@ describe('PosturePanel — packaged security posture is live', () => {
     expect(screen.getByText('isolated')).toBeTruthy();
   });
 });
+
+describe('PosturePanel — an unreadable secret store is not reported as encrypted', () => {
+  it('shows "unknown" in amber, not "encrypted", when the backend is unavailable', async () => {
+    // The endpoint used to return a hardcoded `encrypted_at_rest: true`, so this
+    // tag was green whether or not the store could be opened — on the one screen
+    // whose entire purpose is to report security posture honestly.
+    mockFetch({
+      secrets: { encrypted_at_rest: null, backend: 'unavailable',
+                 note: 'secret store could not be opened — at-rest state unknown' },
+      skills: { require_signed: true, total: 0, trusted: 0, untrusted: 0, untrusted_names: [] },
+      sandbox: { isolated: null, docker_available: false },
+      guardrails: { mode: 'BLOCK' },
+    });
+    render(<PosturePanel />);
+    await waitFor(() => expect(screen.getByText('unknown')).toBeTruthy());
+    expect(screen.queryByText('encrypted')).toBeNull();
+    // "plain" would be its own false claim — we did not observe plaintext, we
+    // failed to look.
+    expect(screen.queryByText('plain')).toBeNull();
+  });
+
+  it('still says "plain" when the store genuinely reports no encryption', async () => {
+    mockFetch({
+      secrets: { encrypted_at_rest: false, backend: 'none' },
+      skills: { require_signed: false, total: 0, trusted: 0, untrusted: 0, untrusted_names: [] },
+      sandbox: { isolated: false, docker_available: false },
+      guardrails: { mode: 'OFF' },
+    });
+    render(<PosturePanel />);
+    await waitFor(() => expect(screen.getByText('plain')).toBeTruthy());
+  });
+});

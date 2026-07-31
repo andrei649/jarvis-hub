@@ -110,7 +110,9 @@ def test_add_entity_label_injection_is_neutralised():
     stmt = sent[-1]["statement"]
     assert "DROP" not in stmt and "//" not in stmt
     assert "(n:Entity " in stmt                       # label coerced
-    assert sent[-1]["parameters"].get("city") == "Bucharest"   # real prop survives
+    # Property params are namespaced `p_<key>` so they cannot collide with the
+    # structural `$name` / `$source` / `$target`.
+    assert sent[-1]["parameters"].get("p_city") == "Bucharest"   # real prop survives
 
 
 def test_add_relation_reltype_injection_is_neutralised():
@@ -132,7 +134,7 @@ def test_hostile_property_key_is_dropped():
     g.add_entity("x", "Person", {"city": "B", "evil}) DETACH DELETE (n) //": 1})
     stmt = sent[-1]["statement"]
     assert "DETACH" not in stmt and "//" not in stmt
-    assert "city: $city" in stmt
+    assert "city: $p_city" in stmt
     # the hostile key reaches neither the query nor the parameters
     assert all("DETACH" not in k for k in sent[-1]["parameters"])
 
@@ -177,3 +179,74 @@ def test_direct_api_rejects_injection_with_400():
         r = c.post("/api/kg/relations",
                    json={"source": "Andrei", "relation": "KNOWS", "target": "Bob"})
         assert r.status_code == 200 and r.json()["ok"] is True
+
+
+# ── property names must not be able to hijack the structural parameters ───────
+#
+# Property params shared one flat namespace with the structural ones:
+#   add_entity   -> {"name": name, **props}
+#   add_relation -> {"source": source, "target": target, **props}
+# so `**props` could REPLACE the values the MERGE patterns bind. Property keys
+# come from LLM extraction and from ingested content, so a key called `name` or
+# `source` is not an exotic input — and the corruption is silent: the write
+# succeeds, against the wrong node.
+
+def test_a_property_named_source_cannot_rewire_the_relation():
+    g, sent = _capturing_graph()
+    g.add_relation("Andrei", "KNOWS", "Maria",
+                   {"source": "ATTACKER-NODE", "since": "2020"})
+    params = sent[-1]["parameters"]
+
+    assert params["source"] == "Andrei", "the relation was rewired to a different node"
+    assert params["target"] == "Maria"
+    # The property is still stored — it is a legitimate relation property, just not
+    # one that is allowed to mean "which node".
+    assert params["p_source"] == "ATTACKER-NODE"
+    assert params["p_since"] == "2020"
+    assert "source: $p_source" in sent[-1]["statement"]
+
+
+def test_a_property_named_target_cannot_rewire_the_relation():
+    g, sent = _capturing_graph()
+    g.add_relation("Andrei", "KNOWS", "Maria", {"target": "ATTACKER-NODE"})
+    params = sent[-1]["parameters"]
+    assert params["target"] == "Maria"
+    assert params["p_target"] == "ATTACKER-NODE"
+
+
+def test_a_property_named_name_cannot_rename_the_entity():
+    g, sent = _capturing_graph()
+    g.add_entity("Andrei", "Person", {"name": "SOMEONE-ELSE", "city": "Bucharest"})
+    params = sent[-1]["parameters"]
+
+    assert params["name"] == "Andrei", "the entity was written under a different name"
+    assert params["p_city"] == "Bucharest"
+    # A `name` property is dropped rather than namespaced: the entity's name is
+    # structural, and emitting both `name: $name` and `name: $p_name` would be a
+    # duplicate key in the Cypher map.
+    assert "p_name" not in params
+    assert sent[-1]["statement"].count("name: $name") == 2   # MERGE pattern + SET
+
+
+def test_the_property_namespace_mapping_cannot_collide_with_itself():
+    """`key -> "p_" + key` is injective, so `x` and `p_x` stay distinct."""
+    g, sent = _capturing_graph()
+    g.add_entity("Andrei", "Person", {"city": "A", "p_city": "B"})
+    params = sent[-1]["parameters"]
+    assert params["p_city"] == "A"
+    assert params["p_p_city"] == "B"
+
+
+def test_every_parameter_in_the_statement_is_actually_bound():
+    """A namespacing slip would leave a `$p_foo` in the Cypher with nothing bound
+    to it — Neo4j would reject the whole statement at runtime."""
+    import re
+
+    g, sent = _capturing_graph()
+    g.add_entity("Andrei", "Person", {"city": "Bucharest", "age": 30})
+    g.add_relation("Andrei", "KNOWS", "Maria", {"since": "2020", "source": "x"})
+    for msg in sent:
+        referenced = set(re.findall(r"\$([A-Za-z_][A-Za-z0-9_]*)", msg["statement"]))
+        assert referenced <= set(msg["parameters"]), (
+            f"unbound parameters {referenced - set(msg['parameters'])} in {msg['statement']}"
+        )

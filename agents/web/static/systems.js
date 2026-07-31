@@ -370,11 +370,22 @@ function HeartbeatsTab({ agents, heartbeatStatus, onStart, onStop, onRunNow, onR
   );
 }
 
+// A counter the backend could not measure arrives as null. Render it as "—", never
+// as 0: /security/status used to return literal zeros for every counter, and this
+// panel drew them as measured security activity — a hub in BLOCK mode that had
+// redacted forty PII spans showed "Mode WARN · Redacted 0 · Blocked 0".
+function _num(v) { return (v === null || v === undefined) ? '—' : v; }
+
 function SecurityBenchTab({ security, bench, onRefresh }) {
   if (!security || !bench) return h('div', { className: 'sys-loading' }, 'Loading security & bench data...');
 
   const { guardrails, scanners, ssrf } = security;
   const { latency, throughput, by_agent } = bench;
+  // Scanner ids come from the engine now (`secrets`, `pii`); the old static payload
+  // used `secret`. Accept either so this renders on both shapes.
+  const sec = (scanners && (scanners.secrets || scanners.secret)) || {};
+  const pii = (scanners && scanners.pii) || {};
+  const mode = guardrails && guardrails.mode ? guardrails.mode : null;
 
   return h('div', { className: 'sys-tab-content' },
     h('div', { className: 'sys-card wide' },
@@ -385,15 +396,16 @@ function SecurityBenchTab({ security, bench, onRefresh }) {
       h('div', { className: 'sys-grid-3' },
         h('div', { className: 'sys-stat-row' },
           h('span', { className: 'sys-stat-key' }, 'Mode'),
-          h('span', { className: 'sys-stat-val guardrail-' + guardrails.mode.toLowerCase() }, guardrails.mode)
+          h('span', { className: 'sys-stat-val ' + (mode ? 'guardrail-' + mode.toLowerCase() : 'sys-unknown') },
+            mode || '—')
         ),
         h('div', { className: 'sys-stat-row' },
           h('span', { className: 'sys-stat-key' }, 'Redacted'),
-          h('span', { className: 'sys-stat-val' }, guardrails.redact_count)
+          h('span', { className: 'sys-stat-val' }, _num(guardrails.redact_count))
         ),
         h('div', { className: 'sys-stat-row' },
           h('span', { className: 'sys-stat-key' }, 'Blocked'),
-          h('span', { className: 'sys-stat-val' }, guardrails.block_count)
+          h('span', { className: 'sys-stat-val' }, _num(guardrails.block_count))
         )
       )
     ),
@@ -404,19 +416,19 @@ function SecurityBenchTab({ security, bench, onRefresh }) {
         ),
         h('div', { className: 'sys-stat-row' },
           h('span', { className: 'sys-stat-key' }, 'Secret patterns'),
-          h('span', { className: 'sys-stat-val' }, scanners.secret.patterns)
+          h('span', { className: 'sys-stat-val' }, _num(sec.patterns))
         ),
         h('div', { className: 'sys-stat-row' },
           h('span', { className: 'sys-stat-key' }, 'Secret findings'),
-          h('span', { className: 'sys-stat-val' + (scanners.secret.findings > 0 ? ' warn' : '') }, scanners.secret.findings)
+          h('span', { className: 'sys-stat-val' + (sec.findings > 0 ? ' warn' : '') }, _num(sec.findings))
         ),
         h('div', { className: 'sys-stat-row' },
           h('span', { className: 'sys-stat-key' }, 'PII patterns'),
-          h('span', { className: 'sys-stat-val' }, scanners.pii.patterns)
+          h('span', { className: 'sys-stat-val' }, _num(pii.patterns))
         ),
         h('div', { className: 'sys-stat-row' },
           h('span', { className: 'sys-stat-key' }, 'PII findings'),
-          h('span', { className: 'sys-stat-val' + (scanners.pii.findings > 0 ? ' warn' : '') }, scanners.pii.findings)
+          h('span', { className: 'sys-stat-val' + (pii.findings > 0 ? ' warn' : '') }, _num(pii.findings))
         )
       ),
       h('div', { className: 'sys-card' },
@@ -429,7 +441,7 @@ function SecurityBenchTab({ security, bench, onRefresh }) {
         ),
         h('div', { className: 'sys-stat-row' },
           h('span', { className: 'sys-stat-key' }, 'Blocked requests'),
-          h('span', { className: 'sys-stat-val' }, ssrf.blocked_requests)
+          h('span', { className: 'sys-stat-val' }, _num(ssrf.blocked_requests))
         ),
         h('div', { className: 'sys-stat-row' },
           h('span', { className: 'sys-stat-key' }, 'Max redirects'),

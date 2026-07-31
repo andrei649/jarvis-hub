@@ -33,6 +33,7 @@ to a SQLite ``notes.db``; on main notes is still ``notes.json``, hence ``PURGE_J
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import shutil
@@ -49,9 +50,55 @@ from agents.core.validation import is_valid_session_id
 
 logger = logging.getLogger("jarvis.purge")
 
-# User-content SQLite DBs — every row in every (non-internal) table is deleted, schema kept.
+# ── AUDIT-2: KEEP, not PURGE ─────────────────────────────────────────────────
+# The adversarial audit (2026-07-25) found that a forget left twelve user-content stores
+# untouched — run_history.json (per-agent input/output previews), channel_inbox.json (full
+# inbound message bodies from other people), feedback.db, review_queue.json, rooms.json,
+# passive_capture.json, autonomy_journal.jsonl, problems.jsonl, data_spaces.json,
+# arena.json, checkpoints.db and notes.db. Two of them sit on NON_SESSION_STEMS, which
+# stops the transcript pass treating them as sessions, so NOTHING deleted them ever.
+#
+# That is not a list of oversights; it is the allowlist shape failing as designed. Every
+# store added to this repo — and stores get added often — is retained by default and only
+# erased if somebody remembers to extend a tuple here. The list was stale within weeks and
+# would be stale again by the next release.
+#
+# So the polarity is inverted: everything under the data root is user content and gets
+# purged, EXCEPT what is named below. A new store is now forgotten by default, and the
+# failure mode of forgetting to update this file flips from "silently retains personal
+# data" to "erases something we meant to keep" — which is loud, testable, and recoverable
+# from the pre-forget archive.
+KEEP_FILES: frozenset[str] = frozenset({
+    "settings.db",      # config + OAuth secrets; the export draws the same boundary
+    "marketplace.db",   # installed-skill catalogue — software inventory, not user content
+})
+KEEP_DIRS: frozenset[str] = frozenset({
+    "security",         # append-only audit chain + intent log: compliance evidence
+})
+# `backups` used to be on that list, justified as "includes the pre-forget archive;
+# deleting it mid-purge is absurd". That rationale was already stale when it was
+# written: AUDIT-2c moved the pre-forget archive OUT of the data root — it is
+# `<root>.parent / "<root.name>-forget-archives"` (backup.pre_forget_dir), a sibling
+# directory the sweep never walks, so the purge's own recovery path was never at risk.
+#
+# What the entry actually retained was ordinary owner-triggered snapshots.
+# `POST /api/admin/backup` calls create_backup() with no key, so unless
+# JARVIS_BACKUP_KEY happens to be set the archive is an UNENCRYPTED .tar.gz of the whole
+# data root — notes, canvas, session transcripts, run-history previews, tokens/,
+# settings.db — written to `<root>/backups`.
+#
+# Net effect: back up on Monday, forget on Friday, and purge_data reported ok:true with a
+# row count while a cleartext copy of everything it had just erased sat inside the folder
+# it had just cleaned. The sibling path already drew the line correctly — data_export
+# writes to `<root>/exports/*.json` and the sweep DOES purge those.
+#
+# So backups are purged like any other user content. The recovery archive lives outside
+# the root and is untouched.
+
+# Retained for callers and tests that name specific stores, and because the DB/JSON passes
+# below still describe *how* each kind is erased. They are no longer the definition of
+# WHAT is erased — the KEEP sets above are.
 PURGE_DBS: tuple[str, ...] = ("missions.db", "autonomy.db", "analytics.db")
-# User-content JSON stores — reset to an empty object (their top-level shape is a dict).
 # canvas.json holds explicitly saved assistant replies (Canvas artifacts) — user content;
 # CanvasStore._deserialize({}) loads the reset file as an empty store.
 PURGE_JSON: tuple[str, ...] = ("notes.json", "canvas.json")
@@ -143,10 +190,26 @@ def _purge_db(path: Path) -> dict:
 
     Table names come from the SQLite catalog (never caller input), so no external value
     reaches the SQL text. Returns ``{table: rows_deleted}``.
+
+    **The VACUUM is not housekeeping — it is the erasure.** ``DELETE`` only unlinks rows;
+    the bytes stay in freed pages until something rewrites the file, so the content of a
+    "deleted" row is still readable in a hex editor. Whether that is true depends on how
+    the local SQLite was COMPILED: with ``SQLITE_SECURE_DELETE`` on (the Linux build here)
+    freed pages are zeroed and the data really is gone; on the Windows build it is not.
+
+    So before this, ``POST /api/admin/forget`` genuinely erased on one operating system
+    and left recoverable personal data on another — and the owner's machine is the one
+    where it did not. It surfaced as a Windows-only CI failure of the byte-level test
+    added with the KEEP inversion, which is exactly what that test was for: it looks for
+    the marker in the FILE, not for a row count.
+
+    ``secure_delete`` is set as well as VACUUMing. It is a no-op where the compile-time
+    default already covers it, and belt-and-braces where it does not.
     """
     deleted: dict[str, int] = {}
     conn = sqlite3.connect(str(path))
     try:
+        conn.execute("PRAGMA secure_delete = ON")
         tables = [r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         ).fetchall()]
@@ -155,6 +218,17 @@ def _purge_db(path: Path) -> dict:
             conn.execute(_delete_all_rows_sql(table))
             deleted[table] = conn.total_changes - before
         conn.commit()
+        # Must follow the commit: VACUUM cannot run inside a transaction. It rebuilds the
+        # file from the live pages only, so nothing from a deleted row survives in the
+        # freelist regardless of how this SQLite was built.
+        conn.execute("VACUUM")
+        # And empty the write-ahead log, which is where the pre-DELETE rows would
+        # otherwise still be sitting. The sweep deliberately does not unlink sidecars
+        # (that corrupts a live database), so the erasure has to reach them through the
+        # connection. TRUNCATE checkpoints every frame into the db and zeroes the -wal.
+        # Harmless on a journal-mode database, where this is simply a no-op.
+        with contextlib.suppress(sqlite3.Error):
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     finally:
         conn.close()
     return deleted
@@ -164,6 +238,117 @@ def _delete_all_rows_sql(table: str) -> str:
     # Table names come from sqlite_master. Quote defensively anyway.
     quoted = '"' + table.replace('"', '""') + '"'
     return " ".join(("DELETE", "FROM", quoted))
+
+
+# SQLite writes these alongside a database in WAL mode. They are part of the database,
+# not separate files: deleting the -wal of a LIVE database discards every committed but
+# un-checkpointed transaction and leaves the db unopenable ("disk I/O error"). The sweep
+# used to unlink them, because `Path("settings.db-wal").suffix` is ".db-wal" — it matched
+# none of the .db/.json/.jsonl branches and fell through to `path.unlink()`, and
+# `_is_kept` compared the full name against KEEP_FILES so the sidecars of settings.db and
+# marketplace.db were not kept either. Every forget therefore destroyed the config and
+# OAuth store it was explicitly written to preserve. (backup.py already knew this class
+# of file existed and skipped it.)
+_SQLITE_SIDECARS: tuple[str, ...] = ("-wal", "-shm", "-journal")
+
+
+def _sqlite_base_name(name: str) -> str:
+    """`settings.db-wal` → `settings.db`; anything else unchanged."""
+    for suffix in _SQLITE_SIDECARS:
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _is_sqlite_sidecar(name: str) -> bool:
+    return name.endswith(_SQLITE_SIDECARS)
+
+
+def _is_kept(rel: Path) -> bool:
+    """True when *rel* (relative to the data root) is on the KEEP allowlist.
+
+    A sidecar inherits its base database's status, so the sidecars of a kept DB are
+    kept too.
+    """
+    parts = rel.parts
+    if not parts:
+        return True
+    if parts[0] in KEEP_DIRS:
+        return True
+    return _sqlite_base_name(rel.name) in KEEP_FILES
+
+
+def _reset_json_preserving_shape(path: Path) -> str:
+    """Empty a JSON store without changing the container type its loader expects.
+
+    A store whose file holds a list must come back as ``[]``, not ``{}`` — several of
+    these are read straight into code that indexes or iterates without a type check, and
+    handing back the wrong container turns a forget into a crash on next boot.
+    """
+    try:
+        head = path.read_text(encoding="utf-8").lstrip()[:1]
+    except (OSError, UnicodeDecodeError):
+        head = ""
+    empty = "[]" if head == "[" else "{}"
+    path.write_text(empty, encoding="utf-8")
+    return empty
+
+
+def _purge_everything_but_keep(root: Path) -> dict:
+    """Erase every user-content file under *root* except the KEEP allowlist (AUDIT-2).
+
+    Erasure is by *kind*, chosen so a running process reads back empty rather than
+    tripping over a missing file:
+
+      ``*.db``     rows deleted from every non-internal table, schema kept
+      ``*.json``   reset to an empty container of the same type
+      ``*.jsonl``  truncated
+      anything else  unlinked (the encrypted house graph and its salt live here)
+
+    Conversation transcripts still go through ``_purge_memory_at_rest``'s confirmed-session
+    path, which runs first; whatever it leaves behind is caught here as a plain file.
+    """
+    report: dict = {"dbs": {}, "json": [], "jsonl": [], "files": [], "rows": 0}
+    if not root.is_dir():
+        return report
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root)
+        if _is_kept(rel):
+            continue
+        # Never unlink a sidecar, even of a database we ARE purging. Its content is
+        # erased through the connection by `_purge_db` (DELETE + VACUUM + a TRUNCATE
+        # checkpoint), which is the safe way; removing the file out from under a live
+        # database corrupts it instead.
+        if _is_sqlite_sidecar(rel.name):
+            continue
+        name = rel.as_posix()
+        try:
+            if path.suffix == ".db":
+                deleted = _purge_db(path)
+                report["dbs"][name] = deleted
+                report["rows"] += sum(deleted.values())
+            elif path.suffix == ".json":
+                _reset_json_preserving_shape(path)
+                report["json"].append(name)
+            elif path.suffix == ".jsonl":
+                path.write_text("", encoding="utf-8")
+                report["jsonl"].append(name)
+            else:
+                path.unlink()
+                report["files"].append(name)
+        except OSError:
+            # A store we cannot erase must be visible, not skipped — this is the whole
+            # point of the finding. Surfaced through purge_data's `not_erased`.
+            logger.warning("purge: could not erase %s", name, exc_info=True)
+            report.setdefault("failed", []).append(name)
+    # Derived caches are directories; drop them wholesale so no empty tree is left behind.
+    for name in PURGE_MEMORY_DIRS:
+        d = root / name
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
+    return report
 
 
 def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> dict:
@@ -207,33 +392,57 @@ def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> d
     return report
 
 
-async def clear_live_memory(orch) -> list[str]:
-    """Best-effort clear of the orchestrator's in-memory stores before a purge, so a
-    running process doesn't re-persist what the file purge removes. Never raises."""
+async def clear_live_memory(orch) -> tuple[list[str], list[str]]:
+    """Clear the orchestrator's stores before a purge. Returns ``(cleared, failed)``.
+
+    AUDIT-2 (adversarial audit 2026-07-25). This used to return only ``cleared`` and
+    swallow everything, and the vector/KG branch was guarded by ``hasattr(store,
+    "clear")`` against stores where **no implementation defined clear()** — so under the
+    documented qdrant/neo4j backends the wipe was unreachable, silent, and the purge
+    still reported ``ok: true``. Every embedding and every triple survived a forget
+    permanently.
+
+    Two changes. ``clear()`` is now abstract on ``VectorStore``/``KnowledgeGraph``, so a
+    missing implementation is an import error rather than a no-op. And a failure here is
+    **carried out to the caller** instead of being logged and forgotten, so
+    ``POST /api/admin/forget`` can say what it could not erase rather than claiming
+    success over surviving data. It still does not raise — a failed KG wipe must not
+    abort the file purge — but it can no longer be invisible.
+    """
     cleared: list[str] = []
+    failed: list[str] = []
+
+    def _note_failure(what: str, exc: BaseException) -> None:
+        logger.warning("clear_live_memory: %s clear failed: %s", what, exc, exc_info=True)
+        failed.append(f"{what}: {exc}")
+
     mem = getattr(orch, "memory", None)
     if mem is not None and hasattr(mem, "clear"):
         try:
             await mem.clear()
             cleared.append("conversation")
-        except Exception:  # pragma: no cover - defensive
-            logger.warning("clear_live_memory: conversation clear failed", exc_info=True)
+        except Exception as exc:
+            _note_failure("conversation", exc)
+        # No hasattr guard: the ABCs guarantee clear() exists. If one of these is a
+        # duck-typed double without it, the AttributeError is a real defect and is
+        # reported as a failure rather than skipped.
         for attr in ("graph", "vectors"):
             store = getattr(mem, attr, None)
-            if store is not None and hasattr(store, "clear"):
-                try:
-                    store.clear()
-                    cleared.append(attr)
-                except Exception:  # pragma: no cover - defensive
-                    logger.warning("clear_live_memory: %s clear failed", attr, exc_info=True)
+            if store is None:
+                continue
+            try:
+                store.clear()
+                cleared.append(attr)
+            except Exception as exc:
+                _note_failure(attr, exc)
     for attr in ("entities", "decay"):
         store = getattr(orch, attr, None)
         if store is not None and hasattr(store, "clear"):
             try:
                 store.clear()
                 cleared.append(attr)
-            except Exception:  # pragma: no cover - defensive
-                logger.warning("clear_live_memory: %s clear failed", attr, exc_info=True)
+            except Exception as exc:
+                _note_failure(attr, exc)
     # Canvas artifacts are explicitly saved user replies: clear the LIVE store
     # too, so a running orchestrator can't re-persist forgotten elements over the
     # PURGE_JSON reset on its next save. Use the in-memory-only clear so this does
@@ -248,28 +457,28 @@ async def clear_live_memory(orch) -> list[str]:
             elif hasattr(canvas, "clear"):
                 canvas.clear(keep_pinned=False)
                 cleared.append("canvas")
-        except Exception:  # pragma: no cover - defensive
-            logger.warning("clear_live_memory: canvas clear failed", exc_info=True)
+        except Exception as exc:
+            _note_failure("canvas", exc)
     cognition = getattr(orch, "cognition", None)
     living = None
     if cognition is not None and hasattr(cognition, "module"):
         try:
             living = cognition.module("memory")
-        except Exception:  # pragma: no cover - defensive
-            logger.warning("clear_live_memory: cognition memory lookup failed", exc_info=True)
+        except Exception as exc:
+            _note_failure("cognition_memory_lookup", exc)
     if living is not None and hasattr(living, "clear"):
         try:
             living.clear()
             cleared.append("cognition_memory")
-        except Exception:  # pragma: no cover - defensive
-            logger.warning("clear_live_memory: cognition memory clear failed", exc_info=True)
+        except Exception as exc:
+            _note_failure("cognition_memory", exc)
     # H20: drop the frozen core-block prompt snapshot — a purge is exactly the
     # case where snapshot staleness is unacceptable (forgotten facts must not
     # keep being injected until the session/day cache key rolls).
     if getattr(orch, "_core_block_cache", None) is not None:
         orch._core_block_cache = None
         cleared.append("core_block_cache")
-    return cleared
+    return cleared, failed
 
 
 def _json_entries(path: Path) -> int:
@@ -312,13 +521,33 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
     report: dict = {"ok": True, "backup": None, "purged": {}, "total_rows": 0}
 
     if backup_first:
-        snap = _backup.create_backup(source_root=str(root), label="pre-forget")
+        # AUDIT-2c. Three deliberate changes from the old call, each closing a way the
+        # safety net worked against the user:
+        #   out_dir=  the archive lands OUTSIDE the data root, so purging the root cannot
+        #             leave a full copy of everything sitting inside the folder it just
+        #             cleaned (it used to default to <data_root>/backups);
+        #   encrypt=  unconditional. This archive is, by construction, the most
+        #             concentrated copy of the user's data that will ever exist — every
+        #             marker the audit planted was recoverable from the plaintext one,
+        #             including a settings.db token. The cipher key resolves under
+        #             $JARVIS_KEY_DIR, outside the archive, and is generated if unset;
+        #   prune     old pre-forget archives are removed, because retaining N full copies
+        #             of data the owner asked to be deleted is not a safety net.
+        out_dir = _backup.pre_forget_dir(root)
+        snap = _backup.create_backup(source_root=str(root), out_dir=str(out_dir),
+                                     label="pre-forget", encrypt=True)
         verdict = _backup.verify_backup(snap["archive"])
         if not verdict.get("ok"):
             raise PurgeError(
                 f"pre-forget backup failed verification ({snap['archive']}); aborting purge"
             )
-        report["backup"] = {"archive": snap["archive"], "verified": True}
+        report["backup"] = {
+            "archive": snap["archive"],
+            "verified": True,
+            "encrypted": True,
+            "outside_data_root": True,
+            "pruned": _backup.prune_pre_forget_archives(source_root=root),
+        }
 
     for name in PURGE_DBS:
         p = root / name
@@ -338,6 +567,18 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
 
     if memory:
         report["purged"]["memory"] = _purge_memory_at_rest(root, sessions)
+
+    # AUDIT-2: the named passes above handle the stores whose erasure has a *specific*
+    # shape (schema-preserving row deletes, the confirmed-session transcript rule). This
+    # sweep then catches everything else under the data root that is not explicitly kept —
+    # which is where the twelve surviving stores were, and where the thirteenth would have
+    # been. It runs last so the specific rules win where they apply.
+    sweep = _purge_everything_but_keep(root)
+    report["purged"]["sweep"] = sweep
+    report["total_rows"] += sweep["rows"]
+    if sweep.get("failed"):
+        report["ok"] = False
+        report["not_erased"] = sweep["failed"]
 
     logger.info("forget purge complete: %s rows across %s targets (memory=%s, backup=%s)",
                 report["total_rows"], len(report["purged"]), memory,

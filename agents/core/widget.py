@@ -10,6 +10,8 @@ widget without ever holding an admin credential.
 
 from __future__ import annotations
 
+import html
+import json
 import secrets
 from pathlib import Path
 from string import Template
@@ -83,8 +85,8 @@ class WidgetStore(JsonStore):
 # JS braces are doubled where needed via the Template ($$ would escape, but this
 # template uses no literal $ so plain braces are fine).
 _SNIPPET = Template("""(function(){
-  var T="$token", BASE="$base", TITLE="$title", COLOR="$color",
-      POS="$position", GREET="$greeting";
+  var T=$token, BASE=$base, TITLE=$title, COLOR=$color,
+      POS=$position, GREET=$greeting;
   var side = POS.indexOf("left")>=0 ? "left" : "right";
   var btn=document.createElement("div");
   btn.textContent="💬";
@@ -122,13 +124,44 @@ _SNIPPET = Template("""(function(){
 })();""")
 
 
+def _js_literal(value: object) -> str:
+    """A safe JavaScript string literal for *value*, quotes included.
+
+    `json.dumps` escapes quotes, backslashes and control characters — the previous
+    code did `.replace('"', "'")` on two of the six values and nothing at all on the
+    rest, so a trailing backslash escaped the closing quote and a newline broke the
+    statement outright.
+
+    Then `</` is neutralized. This snippet is served to third-party pages and
+    embedded in their `<script>` context, where the HTML parser looks for the
+    literal `</script>` BEFORE JavaScript sees any string — no amount of JS-level
+    escaping helps, only breaking up the sequence does. `<\\/` is the standard
+    remedy and is identical to `</` once JS parses it.
+    """
+    return json.dumps("" if value is None else str(value)).replace("</", "<\\/")
+
+
 def render_snippet(config: dict, base_url: str = "") -> str:
-    """Render the embeddable JS for a widget config."""
+    """Render the embeddable JS for a widget config.
+
+    Every interpolated value goes through `_js_literal`, and the two that reach
+    `innerHTML` are HTML-escaped first. Before this, `color` and `position` were
+    substituted raw into a JS string that is then concatenated into `innerHTML`, so
+    a color of `red;"></div><img src=x onerror=…>` executed on whatever site had
+    embedded the widget. `GET /api/widget/{token}` is public and unauthenticated,
+    and its output runs in the embedding page's origin, so the blast radius is that
+    page rather than the hub.
+    """
+    def _html(value: object) -> str:
+        return html.escape(str(value), quote=True)
+
     return _SNIPPET.substitute(
-        token=config.get("token", ""),
-        base=base_url,
-        title=config.get("title", _DEFAULTS["title"]).replace('"', "'"),
-        color=config.get("color", _DEFAULTS["color"]),
-        position=config.get("position", _DEFAULTS["position"]),
-        greeting=config.get("greeting", _DEFAULTS["greeting"]).replace('"', "'"),
+        token=_js_literal(config.get("token", "")),
+        base=_js_literal(base_url),
+        # TITLE and COLOR are concatenated into panel.innerHTML, so they must be
+        # inert as HTML as well as as JavaScript.
+        title=_js_literal(_html(config.get("title", _DEFAULTS["title"]))),
+        color=_js_literal(_html(config.get("color", _DEFAULTS["color"]))),
+        position=_js_literal(config.get("position", _DEFAULTS["position"])),
+        greeting=_js_literal(config.get("greeting", _DEFAULTS["greeting"])),
     )

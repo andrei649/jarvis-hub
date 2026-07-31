@@ -428,9 +428,29 @@ class AutonomyWorker:
     def _record_capability_outcome(
         self, task: Task, *, success: bool, result: dict | None = None,
     ) -> None:
-        """Record one terminal real execution; ignore no-op and unknown actions."""
-        if success and isinstance(result, dict) and result.get("status") == "noop":
-            return
+        """Record one terminal REAL execution; ignore no-ops, mocks and unknown actions.
+
+        ADV-094 (adversarial audit 2026-07-25): this skipped only a literal
+        ``status == "noop"``, while ``is_degraded()`` — which recognises the ``_mock`` /
+        ``_degraded`` markers every mock-falling-back plugin stamps on its return — had
+        zero production callers. So a capability that returned a MOCK recorded a success,
+        and ``GET /api/capabilities`` showed ``success_rate: 1.0`` and rising confidence
+        for capabilities that had never delivered anything.
+
+        Grade it as the audit did, and the correction matters: this is a misleading
+        dashboard, NOT a live loosening of governance. The claimed autonomy escalation
+        does not occur — every degraded seam hardcodes ``autonomy_level = "ask"`` and
+        ``govern_enqueue`` takes the stricter of the two — so a rising score could not
+        widen what an agent may do. It could only mislead the human reading the board.
+        """
+        if success and isinstance(result, dict):
+            if result.get("status") == "noop":
+                return
+            from agents.core.plugins.degradation import is_degraded
+            if is_degraded(result):
+                logger.debug("capability outcome skipped: degraded/mock result for %s",
+                             task.kind)
+                return
         try:
             from agents.core.capability_manifests import manifest_for_action
 

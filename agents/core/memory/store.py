@@ -62,6 +62,19 @@ class VectorStore(ABC):
         ...
 
     @abstractmethod
+    def clear(self) -> None:
+        """Remove every record. Backs ``POST /api/admin/forget`` (AUDIT-2).
+
+        Abstract on purpose. ``data_purge.clear_live_memory`` used to call this behind
+        ``if hasattr(store, "clear")``, and no implementation defined it — so the wipe was
+        unreachable, failed silently, and the purge still reported ``ok``. Under the
+        documented qdrant/neo4j backends that meant every embedding survived a forget
+        permanently, with no code path that could remove it. Declaring it here makes a
+        missing implementation an import error instead of a silent no-op.
+        """
+        ...
+
+    @abstractmethod
     def __len__(self):
         ...
 
@@ -159,6 +172,11 @@ class InMemoryVectorStore(VectorStore):
             if idx is not None:
                 return self.records[idx]
             return None
+
+    def clear(self) -> None:
+        with self._lock:
+            self.records.clear()
+            self._id_index.clear()
 
     def remove(self, record_id: str):
         with self._lock:

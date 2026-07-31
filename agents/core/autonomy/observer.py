@@ -26,6 +26,7 @@ offline in unit tests without psutil, sockets, or a live LM.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 from dataclasses import dataclass, field
@@ -249,7 +250,13 @@ class ProactiveObserver:
 
     # ── full tick (sample → evaluate → submit) ────────────────────
     async def observe(self) -> dict:
-        signals = self._gather()
+        # `_gather()` runs every probe synchronously, and the liveness probes do
+        # `socket.create_connection` — one blocking TCP connect per service, each up
+        # to `timeout` seconds. `default_probes()` covers Qdrant, Neo4j, n8n, LM
+        # Studio and Ollama, so a sample against a box where they are down froze the
+        # event loop for ~5s. `POST /autonomy/observer/run` awaits this from a
+        # request handler, and the nightly loop calls it too.
+        signals = await asyncio.to_thread(self._gather)
         findings = self.evaluate(signals)
         submitted = 0
         for finding in findings:
