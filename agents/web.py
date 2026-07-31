@@ -265,6 +265,33 @@ orch: Orchestrator = None
 gateway: Gateway = None
 
 
+def _telegram_allowed_user_ids() -> list[int]:
+    """Owner Telegram user ids from TELEGRAM_ALLOWED_USER_IDS (comma-separated).
+
+    An empty list is a real and correct configuration — pairing (H12.19) is the mechanism
+    that admits senders, and this is the belt to its braces. What was NOT correct is the
+    previous state, in which the list could never be populated at all, so the guards
+    consulting it were decorative.
+
+    A non-numeric entry is dropped with a warning rather than raising: a typo in one id
+    must not silently widen the allowlist to everyone, and must not take the bot down
+    either.
+    """
+    raw = os.environ.get("TELEGRAM_ALLOWED_USER_IDS", "").strip()
+    if not raw:
+        return []
+    ids: list[int] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.append(int(part))
+        except ValueError:
+            logger.warning("TELEGRAM_ALLOWED_USER_IDS: ignoring a non-numeric entry")
+    return ids
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global orch, gateway
@@ -328,7 +355,15 @@ async def lifespan(application: FastAPI):
 
     tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     if tg_token:
-        telegram_ch = TelegramChannel(token=tg_token, handler=gateway.route)
+        # SEC-B3 (adversarial audit 2026-07-25): this was constructed with no
+        # allowed_user_ids, so `self.allowed_users == []` and BOTH `if self.allowed_users
+        # and ...` guards inside the channel were unreachable no-ops. The security-wave
+        # plan specified TELEGRAM_ALLOWED_USER_IDS parsing; it was never implemented, so
+        # the code read as guarded and was not.
+        telegram_ch = TelegramChannel(
+            token=tg_token, handler=gateway.route,
+            allowed_user_ids=_telegram_allowed_user_ids(),
+        )
         await orch.register_channel(telegram_ch)
         logger.info("Telegram channel wired with bot token")
     else:

@@ -197,27 +197,21 @@ function CommandPalette({ open, onClose, agents, tasks, projects, onAction }) {
   );
 }
 
+// This used to SYNTHESIZE the host telemetry it displayed. Every 1400ms it took
+// the last real sample and layered sine waves plus `Math.random()` jitter onto
+// ram_used, vram_used, gpu_load and latency, then rendered the result as the
+// machine's live state. Because the numbers moved, they were more convincing
+// than a static readout — the owner watched a sine wave and read it as GPU load.
+// And since `sys` starts at the hardcoded JARVIS_FALLBACK_SYS, a box whose
+// /status poll never succeeded still showed 42/192 GB RAM and 30% GPU, drifting
+// plausibly, forever.
+//
+// The real telemetry arrives on the 10s /status poll. Between polls the honest
+// display is the last measured value, unchanged. A number that sits still is
+// correct; a number that moves on its own is a lie.
 function useLiveSys(baseSys) {
-  const [s, setS] = useState(baseSys);
-  useEffect(() => {
-    let t = 0;
-    const id = setInterval(() => {
-      t += 1;
-      const n = () => (Math.random() - 0.5) * 0.6;
-      const ram_used  = clamp(baseSys.ram_used  + Math.sin(t * 0.21) * 6  + n(), 60, baseSys.ram_total - 8);
-      const vram_used = clamp(baseSys.vram_used + Math.sin(t * 0.37) * 1.8 + n() * 0.3, 8, baseSys.vram_total - 1);
-      const gpu_load  = clamp(baseSys.gpu_load  + Math.sin(t * 0.55) * 18 + n() * 6, 5, 96);
-      const latency   = clamp(baseSys.latency   + Math.sin(t * 0.18) * 0.9 + n() * 0.2, 1.6, 7.2);
-      setS((prev) => ({ ...prev, ram_used: round1(ram_used), vram_used: round2(vram_used), gpu_load: Math.round(gpu_load), latency: round1(latency) }));
-    }, 1400);
-    return () => clearInterval(id);
-  }, [baseSys]);
-  return s;
+  return baseSys;
 }
-
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-function round1(v) { return Math.round(v * 10) / 10; }
-function round2(v) { return Math.round(v * 100) / 100; }
 
 function useHotkey(combo, handler) {
   useEffect(() => {

@@ -224,18 +224,26 @@ function NorthStarMeter(){
   );
 }
 
+// A metric the backend did not supply arrives as null. Render it "—", never as a
+// number: OBSERVE's seed is a complete, plausible picture (91% success, 847
+// interactions, 99.97% uptime, 0 errors), and every un-hydrated field used to fall
+// back to it — under a green LIVE badge. `Math.round(null*100)` is 0, so a missing
+// success rate would otherwise read as a confident 0%.
+function _obs(v: any, suffix = ''){ return (v === null || v === undefined) ? '—' : `${v}${suffix}`; }
+function _pct(v: any){ return (v === null || v === undefined) ? '—' : `${Math.round(v * 100)}%`; }
+
 function ObserveMode({ t }){
   const O = V2.OBSERVE;
-  const maxLat = Math.max(...O.by_agent.map(a=>a.v));
+  const maxLat = O.by_agent.length ? Math.max(...O.by_agent.map(a=>a.v)) : 0;
   return (
     <ModePanel icon="observe" title={t.observe} status="world · north-star · traces · eval">
       <NorthStarMeter />
       <WorldIntelligencePanel />
       <div className="mem-grid" style={{marginBottom:'var(--gap)'}}>
-        <div className="stat-card"><div className="sv">{Math.round(O.quality.success_rate*100)}%</div><div className="sl">success rate</div></div>
-        <div className="stat-card"><div className="sv">{O.quality.interactions}</div><div className="sl">interactions</div></div>
-        <div className="stat-card"><div className="sv">{O.bench.p50}s</div><div className="sl">latency p50</div></div>
-        <div className="stat-card"><div className="sv">{O.resilience.uptime}</div><div className="sl">uptime</div></div>
+        <div className="stat-card"><div className="sv">{_pct(O.quality.success_rate)}</div><div className="sl">success rate</div></div>
+        <div className="stat-card"><div className="sv">{_obs(O.quality.interactions)}</div><div className="sl">interactions</div></div>
+        <div className="stat-card"><div className="sv">{_obs(O.bench.p50, 's')}</div><div className="sl">latency p50</div></div>
+        <div className="stat-card"><div className="sv">{_obs(O.resilience.uptime)}</div><div className="sl">uptime</div></div>
       </div>
       <div className="obs-grid">
         <div>
@@ -266,10 +274,10 @@ function ObserveMode({ t }){
             </div>
           ))}
           <SubH style={{marginTop:16}}>RESILIENCE</SubH>
-          <div className="cap-row"><div className="cn">Network guard</div><span className="cap-tag allow">{O.resilience.ssrf_blocked}</span></div>
-          <div className="cap-row"><div className="cn">Errors · 24h</div><span className="cap-tag allow">{O.resilience.errors_24h}</span></div>
-          <div className="cap-row"><div className="cn">PII redactions</div><span className="cap-tag gated">{O.resilience.redactions}</span></div>
-          <div className="cap-row"><div className="cn">Escalations</div><span className="cap-tag scoped">{O.quality.escalations}</span></div>
+          <div className="cap-row"><div className="cn">Network guard</div><span className="cap-tag allow">{_obs(O.resilience.ssrf_blocked)}</span></div>
+          <div className="cap-row"><div className="cn">Errors · 24h</div><span className="cap-tag allow">{_obs(O.resilience.errors_24h)}</span></div>
+          <div className="cap-row"><div className="cn">PII redactions</div><span className="cap-tag gated">{_obs(O.resilience.redactions)}</span></div>
+          <div className="cap-row"><div className="cn">Escalations</div><span className="cap-tag scoped">{_obs(O.quality.escalations)}</span></div>
         </div>
       </div>
     </ModePanel>

@@ -14,9 +14,20 @@ def client():
 
 
 def test_learning_stats_endpoint(client):
+    """This endpoint raised on EVERY call and its `except Exception` returned zeros.
+
+    `stats.get("agents_tracked")` is a COUNT, and the handler did `list(...)` over
+    it — TypeError, every time, swallowed. The old version of this test asserted
+    only that the fields were ints and lists, which a body of zeros satisfies
+    perfectly, so a permanently broken endpoint stayed green. `available` is the
+    field that distinguishes a real reading from a swallowed failure.
+    """
     resp = client.get("/learning/stats")
     assert resp.status_code == 200
     data = resp.json()
+    assert data.get("available") is not False, (
+        f"the endpoint fell into its error path: {data.get('degraded')}"
+    )
     assert "interactions_total" in data
     assert "success_rate" in data
     assert "prompt_optimizations" in data
@@ -27,6 +38,37 @@ def test_learning_stats_endpoint(client):
     assert isinstance(data["prompt_optimizations"], list)
     assert isinstance(data["promotion_candidates"], list)
     assert isinstance(data["demotion_warnings"], list)
+
+
+def test_learning_stats_says_unavailable_rather_than_zero_on_failure(client, monkeypatch):
+    """A failed read must not be presentable as "0 interactions, 0% success"."""
+    from agents import web
+
+    class _Broken:
+        def get_stats(self, *a, **k):
+            raise RuntimeError("learning store unreadable")
+
+    monkeypatch.setattr(web.orch, "learning", _Broken(), raising=False)
+    data = client.get("/learning/stats").json()
+
+    assert data["available"] is False
+    assert data["degraded"]["source"] == "learning"
+    assert data["interactions_total"] is None       # not 0
+    assert data["success_rate"] is None             # not 0
+
+
+def test_get_stats_exposes_the_agent_ids_the_route_needs():
+    """Pin the contract that was wrong: ids, not a count."""
+    from agents.core.learning.loop import LearningLoop
+
+    loop = LearningLoop.__new__(LearningLoop)
+    loop.interactions = []
+    loop.suggest_promotions = lambda active_ids=None: []
+    stats = loop.get_stats()
+
+    assert isinstance(stats["agents_tracked"], int)
+    assert isinstance(stats["agent_ids"], list)
+    list(stats["agent_ids"])          # iterable — the operation that used to raise
 
 
 def test_memory_stats_endpoint(client):

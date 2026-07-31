@@ -35,8 +35,17 @@ class TestHonestyFor:
         assert v["status"] == "needs_config"
         assert "plugins.tuya_secret" in v["needs"]
 
-    def test_unknown_plugin_needs_empty(self):
-        assert honesty_for("mystery", False)["needs"] == []
+    def test_unknown_plugin_says_something_actionable(self):
+        """A needs_config verdict must never render an amber chip with an empty tooltip.
+
+        This used to assert ``needs == []``, which is what produced the other half of the
+        ADV-069 finding: the badge told the owner to configure something and could not
+        say what. An unlisted plugin genuinely has no declared requirement, so the honest
+        answer is to say *that* rather than to say nothing.
+        """
+        needs = honesty_for("mystery", False)["needs"]
+        assert needs, "needs_config with nothing to configure"
+        assert "none is declared" in needs[0]
 
 
 class TestConfiguredDetection:
