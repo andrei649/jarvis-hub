@@ -9,7 +9,7 @@
   },
   "devDependencies": {
     "istanbul-lib-instrument": "^6.0.3",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.0",
     "nyc": "^18.0.0",
     "vitest": "^4.1.10"
   }

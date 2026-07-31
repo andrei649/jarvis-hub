@@ -13,7 +13,11 @@ describe('exposed constants', () => {
   it('publishes fallback datasets and agent metadata on window', () => {
     expect(env.window.JARVIS_AGENT_META.jarvis).toMatchObject({ tier: 'CNS' });
     expect(Array.isArray(env.window.JARVIS_FALLBACK_CALENDAR)).toBe(true);
-    expect(env.window.JARVIS_FALLBACK_SYS.ram_total).toBe(192);
+    // Every telemetry field is null before anything is measured. It used to be a
+    // complete plausible machine (ram_total 192, ram_used 42, gpu_load 30), which
+    // the HUD rendered as live state on a box that had never been read.
+    expect(env.window.JARVIS_FALLBACK_SYS.ram_total).toBeNull();
+    expect(env.window.JARVIS_FALLBACK_SYS.measured).toBe(false);
     expect(typeof env.window.loadJarvisData).toBe('function');
   });
 });
@@ -28,11 +32,14 @@ describe('loadJarvisData', () => {
     const jarvis = data.agents.find((a) => a.id === 'jarvis');
     expect(jarvis).toMatchObject({ tier: 'CNS', role: 'Prime Orchestrator', status: 'idle' });
 
-    // Other sections fall back to their static defaults.
-    expect(data.sys).toMatchObject({ ram_total: 192 });
+    // Other sections fall back to their static defaults — and those defaults now
+    // assert nothing. This test used to require the opposite: with every endpoint
+    // down it asserted ram_total 192 and lmOnline true, so the HUD claimed to
+    // know the host's memory and that the LM backend was up. Both were guesses.
+    expect(data.sys).toMatchObject({ ram_total: null, measured: false });
     expect(data.weather).toEqual(env.window.JARVIS_FALLBACK_WEATHER);
     expect(data.tasks).toEqual([]);
-    expect(data.lmOnline).toBe(true);
+    expect(data.lmOnline).toBeNull();
   });
 
   it('maps live /api/agents results with tier/role/glyph metadata', async () => {
@@ -43,7 +50,7 @@ describe('loadJarvisData', () => {
         });
       }
       if (url === '/status') {
-        return Promise.resolve({ json: async () => ({ lm_online: false, sys: { latency: 9.9 } }) });
+        return Promise.resolve({ ok: true, json: async () => ({ lm_online: false, sys: { latency: 9.9 } }) });
       }
       return Promise.reject(new Error('no stub'));
     });

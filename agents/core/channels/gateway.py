@@ -71,8 +71,21 @@ class Gateway:
                 decision = self.pairing.gate_inbound(channel, str(sender),
                                                       code=kwargs.get("pairing_code"))
             except Exception:
-                logger.warning("Gateway: pairing gate error — allowing", exc_info=True)
-                decision = {"allowed": True}
+                # Fails CLOSED. This used to default to {"allowed": True}: a gate whose
+                # store errored admitted the sender it exists to hold. The adversarial
+                # audit narrowed the blast radius correctly — a BLOCKED sender cannot get
+                # through this way (that path is pure in-memory and cannot raise) and
+                # corrupt JSON normalises to {} which already fails closed — so the only
+                # reachable case is an unknown first-contact sender during a write
+                # failure. That is still the exact sender this gate is for, and holding
+                # them costs one re-send while admitting them costs the guarantee.
+                # Coverage confirmed these lines were executed by no test at all.
+                logger.warning("Gateway: pairing gate error — holding sender", exc_info=True)
+                decision = {
+                    "allowed": False,
+                    "status": "gate_error",
+                    "message": None,
+                }
             if not decision.get("allowed", True):
                 logger.info("Gateway: held unpaired sender on '%s' (status=%s)",
                             log_safe(channel), decision.get('status'))

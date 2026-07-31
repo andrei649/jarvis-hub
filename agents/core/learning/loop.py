@@ -262,6 +262,12 @@ class LearningLoop:
             "successful": successes,
             "failed": total - successes,
             "agents_tracked": len(agents),
+            # The IDS, not just the count. `/learning/stats` wanted these and did
+            # `list(stats.get("agents_tracked", ...))` — over an int — so it raised
+            # TypeError on every single call and its `except Exception` returned a
+            # body of zeros. The endpoint had never once reported real data, and
+            # nothing noticed because zeros look like a quiet system.
+            "agent_ids": sorted(agents),
             "optimizations_available": optimizable,
             "promotion_suggestions": self.suggest_promotions(active_ids),
         }

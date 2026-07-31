@@ -23,14 +23,25 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int, cached_toke
     """Estimate cost for a single LLM call.
 
     Returns dict with input_cost, output_cost, total, cached_input, savings.
-    Raises ValueError on negative token counts. Unknown models return zero cost.
+    Raises ValueError on negative token counts. An unknown model returns zero cost with
+    ``priced: False`` — a caller that renders a currency figure must check that flag, or
+    it reports $0.00 for a model nobody has priced (ADV-078).
     """
     if input_tokens < 0 or output_tokens < 0:
         raise ValueError(f"Negative token counts not allowed: input={input_tokens}, output={output_tokens}")
-    pricing = MODELS.get(model) or MODELS.get("local")
-    if pricing is None or pricing["input"] == 0:
+    # ADV-078: "this model is free" and "nobody priced this model" are different answers,
+    # and returning 0.0 for both let dashboards render a confident $0.00 over a model
+    # whose real cost is simply unknown. `total` stays numeric so existing arithmetic
+    # keeps working; `priced` is what a surface must consult before printing a figure.
+    pricing = MODELS.get(model)
+    if pricing is None:
         return {"input_cost": 0.0, "output_cost": 0.0, "total": 0.0,
-                "cached_input": cached_tokens, "savings": 0.0}
+                "cached_input": cached_tokens, "savings": 0.0,
+                "priced": False, "model": model}
+    if pricing["input"] == 0:
+        return {"input_cost": 0.0, "output_cost": 0.0, "total": 0.0,
+                "cached_input": cached_tokens, "savings": 0.0,
+                "priced": True, "model": model}
     non_cached_input = max(0, input_tokens - cached_tokens)
     input_cost = non_cached_input / 1_000_000 * pricing["input"]
     output_cost = output_tokens / 1_000_000 * pricing["output"]
@@ -41,6 +52,8 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int, cached_toke
         "total": round(input_cost + output_cost, 10),
         "cached_input": cached_tokens,
         "savings": round(savings, 10),
+        "priced": True,
+        "model": model,
     }
 
 

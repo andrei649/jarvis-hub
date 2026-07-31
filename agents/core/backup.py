@@ -137,6 +137,61 @@ def default_backup_dir(source_root: Optional[Path] = None) -> Path:
     return (source_root or data_root()) / "backups"
 
 
+# ── AUDIT-2c: the pre-forget archive ──────────────────────────────
+# The safety net for `POST /api/admin/forget` used to land in `<data_root>/backups`,
+# unencrypted unless a key happened to be configured, with no API way to decline it and
+# nothing pruning it. So a forget did not erase the user's data — it CONCENTRATED what was
+# scattered across the data root into one grab-and-go archive, and left it inside the
+# folder it had just cleaned. Every marker the adversarial audit planted was recoverable
+# from it, including a settings.db token.
+#
+# Three properties now, and they are the whole point of the change: the archive lives
+# OUTSIDE the data root (so purging the root cannot leave a copy behind), it is encrypted
+# unconditionally (the cipher key resolves under $JARVIS_KEY_DIR, never inside the archive
+# — `_backup_cipher` generates one if the owner set none), and old ones are pruned,
+# because "keep every full copy forever" is a strange reading of a deletion request.
+def pre_forget_dir(source_root: Optional[Path] = None) -> Path:
+    """Where pre-forget archives live: a sibling of the data root, never inside it."""
+    override = os.environ.get("JARVIS_FORGET_ARCHIVE_DIR")
+    if override:
+        return Path(override)
+    root = Path(source_root) if source_root else data_root()
+    return root.parent / f"{root.name}-forget-archives"
+
+
+def prune_pre_forget_archives(keep: Optional[int] = None,
+                              source_root: Optional[Path] = None) -> list[str]:
+    """Keep only the newest *keep* pre-forget archives; return what was removed.
+
+    Defaults to 1 — enough to undo the most recent forget, which is what the safety net
+    is for. Retaining more means retaining more complete copies of data the owner asked
+    to be deleted, which is the opposite of the request. ``JARVIS_FORGET_ARCHIVE_KEEP``
+    overrides; 0 keeps none.
+    """
+    if keep is None:
+        try:
+            keep = int(os.environ.get("JARVIS_FORGET_ARCHIVE_KEEP", "1"))
+        except ValueError:
+            keep = 1
+    keep = max(0, keep)
+    out = pre_forget_dir(source_root)
+    if not out.is_dir():
+        return []
+    archives = sorted(
+        (p for p in out.iterdir() if p.is_file() and p.name.startswith(_ARCHIVE_PREFIX)),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    removed = []
+    for stale in archives[keep:]:
+        try:
+            stale.unlink()
+            removed.append(stale.name)
+        except OSError:
+            logger.warning("could not prune stale pre-forget archive %s", stale.name)
+    return removed
+
+
 # ── create ────────────────────────────────────────────────────────
 def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = None,
                   label: str = "", encrypt: Optional[bool] = None,

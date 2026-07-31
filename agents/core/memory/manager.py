@@ -193,13 +193,40 @@ class MemoryManager:
             else:
                 await self.conversation.clear()
 
+    def _vector_count(self) -> Optional[int]:
+        """Number of stored vectors, or None if the backend could not be reached.
+
+        BLOCKING with a networked backend: `QdrantVectorStore.__len__` first calls
+        `_ensure_collection()` (a GET, then possibly a PUT) and then POSTs
+        `/points/count`, all on a synchronous httpx client. `_collection_ready` is
+        only set on success, so while Qdrant is down it is re-probed on every call.
+
+        None rather than 0 on failure: zero is a claim ("nothing is stored"), and
+        the caller renders it as one.
+        """
+        try:
+            return len(self.vectors)
+        except Exception:
+            logger.warning("vector store unreachable — reporting an unknown count",
+                           exc_info=True)
+            return None
+
     async def get_session_stats(self) -> dict:
+        # Off the event loop AND outside the lock. This was a plain `len(self.vectors)`
+        # inside `async with self._lock` — its three neighbours above all wrap the same
+        # store in `asyncio.to_thread` with comments about exactly this hazard, and this
+        # one was missed. With Qdrant unreachable it blocked the whole event loop for up
+        # to three 10s httpx timeouts per call, so every other in-flight request —
+        # including ones that touch no memory at all — appeared to hang. Holding the
+        # lock across it would additionally queue every other memory operation behind a
+        # dead backend.
+        vectors = await asyncio.to_thread(self._vector_count)
         async with self._lock:
             return {
                 "sessions": len(self.conversation.sessions),
                 "current_session": self.conversation.current_session_id,
                 "total_turns": sum(len(t) for t in self.conversation.sessions.values()),
-                "vectors": len(self.vectors),
+                "vectors": vectors,
                 "agent_contexts": list(self.agent_contexts.keys()),
             }
 

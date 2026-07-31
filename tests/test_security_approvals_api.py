@@ -92,8 +92,15 @@ def test_security_posture_shape(token_client):
     r = token_client.get("/api/security/posture", headers=HEADERS)
     assert r.status_code == 200
     data = r.json()
-    assert data["secrets"]["encrypted_at_rest"] is True
-    assert data["secrets"]["backend"] in ("fernet", "hmac-fallback", "unavailable")
+    secrets = data["secrets"]
+    assert secrets["backend"] in ("fernet", "hmac-fallback", "unavailable")
+    # encrypted_at_rest is DERIVED from the backend, not asserted. It used to be a
+    # hardcoded `True`, so this line passed even on a box where the secret store
+    # could not be opened — a green "encrypted" badge for an unknown state.
+    if secrets["backend"] in ("fernet", "hmac-fallback"):
+        assert secrets["encrypted_at_rest"] is True
+    else:
+        assert secrets["encrypted_at_rest"] is None
     assert "require_signed" in data["skills"]
     assert "total" in data["skills"]
     assert "docker_available" in data["sandbox"]
@@ -104,3 +111,48 @@ def test_security_posture_shape(token_client):
 
 def test_security_posture_requires_admin(token_client):
     assert token_client.get("/api/security/posture").status_code in (401, 403)
+
+
+def test_security_posture_does_not_claim_encryption_it_could_not_verify(token_client, monkeypatch):
+    """The regression: an unopenable secret store must report unknown, not true.
+
+    `encrypted_at_rest` was the literal `True` in the response dict — never read
+    from anything — so the security-posture page, whose whole job is to report
+    posture honestly, showed a green "encrypted" badge unconditionally.
+    """
+    # The handler does `from core.secrets import SecretStore`, and `core.secrets`
+    # and `agents.core.secrets` are DISTINCT module objects under this repo's dual
+    # sys.path — patching the wrong one silently does nothing.
+    import core.secrets as secrets_mod
+
+    class _Broken:
+        def __init__(self, *a, **k):
+            raise OSError("secret store cannot be opened")
+
+    monkeypatch.setattr(secrets_mod, "SecretStore", _Broken)
+    data = token_client.get("/api/security/posture", headers=HEADERS).json()
+
+    assert data["secrets"]["backend"] == "unavailable"
+    # None, not True (a false assurance) and not False (also a claim — we did not
+    # observe plaintext, we failed to look).
+    assert data["secrets"]["encrypted_at_rest"] is None
+    assert "unknown" in data["secrets"]["note"]
+
+
+def test_security_posture_flags_the_weaker_fallback_cipher(token_client, monkeypatch):
+    """fernet and hmac-fallback are both real encryption, but not equivalent, and
+    the posture page should not present them as identical."""
+    import core.secrets as secrets_mod
+
+    class _Fallback:
+        backend = "hmac-fallback"
+
+        def __init__(self, *a, **k):
+            pass
+
+    monkeypatch.setattr(secrets_mod, "SecretStore", _Fallback)
+    secrets = token_client.get("/api/security/posture", headers=HEADERS).json()["secrets"]
+
+    assert secrets["encrypted_at_rest"] is True
+    assert secrets["strength"] == "fallback-cipher"
+    assert "cryptography" in secrets["note"]

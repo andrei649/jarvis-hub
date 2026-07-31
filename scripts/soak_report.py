@@ -104,7 +104,7 @@ def process_memory(pid: int | None = None) -> dict:
         pass
     status = Path(f"/proc/{target}/status")
     if status.exists():
-        match = re.search(r"^VmRSS:\s+(\d+)\s+kB", status.read_text(), re.MULTILINE)
+        match = re.search(r"^VmRSS:\s+(\d+)\s+kB", status.read_text(encoding="utf-8"), re.MULTILINE)
         if match:
             return {"rss_bytes": int(match.group(1)) * 1024, "source": f"pid:{target}"}
     return {"rss_bytes": None, "source": "unavailable"}
