@@ -20,7 +20,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~5,430 collected (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~5,660 collected (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -409,6 +409,36 @@ Still open from that run (verified real, not yet fixed): blocking DNS/HTTP on th
 re-verify in `security.py`; `north_star.py` reporting an all-time aggregate as the 7-day counter
 metric; the seeded ADMIN/OBSERVE corpora in `modes3.tsx`/`modes2.tsx`; and the dead `arr() || fallback`
 in two `gap.tsx` panels.
+
+- [x] ✅ **Follow-up: the secret-store race fix corrupted key material on Windows.** The new
+  `_read_or_create_atomically` opened its descriptor without `O_BINARY`, so the CRT ran it in TEXT
+  mode and expanded every `0x0A` to `0x0D 0x0A`: the creator returned the 16 salt bytes it minted
+  while every later reader read 17 different ones, deriving a different key for the same store. ~6%
+  per salt (`1 - (255/256)**16`), silent, and reported only as "cannot decrypt secret (wrong key or
+  corrupted)" against data written correctly. It surfaced as three unrelated Windows failures on a
+  docs-only PR (`test_secrets`, `test_h30_presence`, `test_oauth_token_key`), which is the honest
+  version of "the Windows run was green last time" — it was, by luck. `vault.py` has always ORed the
+  flag in; `secrets.py` was the one `os.open` in the repo that did not. +3 tests, one of which pins
+  the flag by giving POSIX an `O_BINARY`, so a Linux-only run can still catch its removal.
+
+**The phone surface — open question, owner call (2026-07-29).** The scheduled e2e run fails 9
+`mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button "intercept pointer events" at
+the 393×851 Pixel 5 viewport). Nothing regressed: `E2E_BROWSER_MATRIX` is set only on `schedule`
+events, and **all 26 scheduled runs since 2026-07-04 have failed — none has ever passed.** The matrix
+was switched on over a layout that was never made responsive. Two facts frame the decision:
+
+- [ ] 🟡 **The web HUD is not reachable from a phone today, by design.** `serve.py:66` defaults
+  `JARVIS_HOST` to `127.0.0.1`, and `assert_safe_bind()` (`boot_guards.py:25`) **exits** on a
+  non-loopback bind unless `JARVIS_USER_TOKEN`/`JARVIS_ADMIN_TOKEN` is set (or
+  `JARVIS_ALLOW_INSECURE_BIND=1`); even then `_user_guard` (`web.py:192`) 403s every non-localhost
+  client without a `USER_TOKEN`. The guards are right — but **the supported LAN path is documented
+  nowhere**: a `docs/` grep for LAN/remote-access guidance returns nothing. Write it down regardless
+  of the decision below.
+- [ ] 🟡 **`mobile/` already assumes this topology** — a React Native app whose client takes a
+  configured `baseUrl` (`mobile/src/api/client.ts`). If the app is the phone story, the web HUD is a
+  desktop surface and `mobile-chrome` should come **out** of the matrix rather than stay permanently
+  red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
+  (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
 
 ---
 
