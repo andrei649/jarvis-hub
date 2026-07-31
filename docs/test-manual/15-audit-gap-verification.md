@@ -1753,51 +1753,63 @@ every row against `docs/TEST_MANUAL.md` §1.1 — an honest empty is a **PASS**.
 
 ## Gap ledger — missing code, missing features, missing evidence
 
+> **⚠ Most of this ledger was CLOSED after the chapter was written.** The two confirmed
+> High findings and eight of the ten corrected-down ones were fixed on the same branch that
+> shipped this chapter — see the `Fixed` column. That changes what you are doing here: for a
+> `✅` row your job is **verification on real hardware**, not discovery, and the expected
+> verdict is `FIXED-SINCE`. If a `✅` row still reproduces on the box, that is a much more
+> serious finding than the original, because it means a fix passed CI and did not hold —
+> report it first and quote the case id.
+>
+> `python scripts/qa_audit_probes.py` gives you eight `CLOSED` verdicts in 30 seconds. A
+> CLOSED probe is still only a lead (§15.0.1): the live cross-check in each case is what
+> you file.
+
 The user-facing half of this chapter: not "what is broken" but **"what is not there"**. Fill the
 last two columns during the run. `Kind` is the important distinction — a **BUG** has code that is
 wrong, a **GAP** has no code at all, and an **EVIDENCE** item has code that works and a gate that
 does not prove it. They get triaged differently.
 
-| # | What is missing | Kind | Where it should live | Audit severity | Your verdict | Notes |
-|---|---|---|---|---|---|---|
-| G01 | Chain-algorithm pinning: nothing asserts that a configured key implies a required row algorithm | BUG | `agents/core/security/audit.py` | High · CONFIRMED | | §15.1 |
-| G02 | A full-table-rewrite regression test | GAP | `tests/test_audit_hardening.py` | High | | ADV-014 |
-| G03 | Automatic transparency anchoring + a comparison against the chain tail | GAP | `agents/core/security/anchor.py` | — | | ADV-007 |
-| G04 | An operator-visible audit-integrity signal in the HUD | GAP | `frontend/src/gap.tsx` | — | | ADV-013 |
-| G05 | Purge as a KEEP-allowlist instead of a PURGE-allowlist | BUG | `agents/core/data_purge.py` | High · CONFIRMED | | §15.2 |
-| G06 | `clear()` as an abstract method on the store and graph base classes | GAP | `agents/core/memory/store.py`, `agents/core/memory/graph.py` | High | | ADV-022 |
-| G07 | Any `clear()` implementation for a persistent vector or graph backend | GAP | `agents/core/memory/qdrant_store.py` | High | | ADV-022, ADV-033 |
-| G08 | Pre-forget archive: outside the data root, encrypted unconditionally, pruned | BUG | `agents/core/backup.py` | High | | ADV-024, ADV-026 |
-| G09 | `backup_first` exposed on the forget route (the API's `--no-backup`) | GAP | `agents/core/routers/backup.py` | High | | ADV-025 |
-| G10 | Export/purge allowlist reconciliation the module docstring already promises | BUG | `agents/core/data_purge.py`, `agents/core/data_export.py` | High | | ADV-019 |
-| G11 | A per-store report in the forget response | GAP | `agents/core/routers/backup.py` | — | | ADV-027 |
-| G12 | `require_signed()` failing closed when enforcement is on and no key exists | BUG | `agents/core/skills/signing.py` | High → scoped | | ADV-035 |
-| G13 | Sandboxing or deferring `exec_module` at skill load | GAP | `agents/core/skills/loader.py` | High (audit: fix first) | | ADV-038 |
-| G14 | A policy floor over synthesis contributors | BUG | `agents/core/agent.py` | High · PARTIAL | | §15.4, SEC-B1 |
-| G15 | Any test at the synthesize boundary, and any coverage of the handoff path | GAP | `tests/` | High | | ADV-054, ADV-055 |
-| G16 | A `{agent_id: route}` map carried into the interaction record | BUG | `agents/core/orchestrator.py` | Medium · PARTIAL | | §15.5 |
-| G17 | `degradation_info()` overriding the honesty verdict | BUG | `agents/core/plugins/honesty.py` | Medium · CONFIRMED | | ADV-075 |
-| G18 | A `configured` contract distinct from `available` on the keyless-real plugin | GAP | `agents/core/plugins/analytics.py` | Medium | | ADV-073 |
-| G19 | An `unknown` honesty status for plugins with no contract | GAP | `agents/core/plugins/honesty.py` | Medium | | ADV-076 |
-| G20 | `record()` called from the router with the model that actually ran | GAP | `agents/core/cost_tracker.py` | Medium · CONFIRMED | | §15.7 |
-| G21 | Cost persistence across a restart | GAP | `agents/core/cost_tracker.py` | Medium | | ADV-082 |
-| G22 | `None` for an unpriced model instead of `0.0` | BUG | `agents/core/llm/cost_estimator.py` | Medium | | ADV-079 |
-| G23 | A daily spend cap checked before a cloud route | GAP | `agents/core/llm/hybrid_router.py` | Medium | | ADV-083 |
-| G24 | The action-capability probe resolving `manifest.implementation` | BUG | `agents/core/observability/reality_harness.py` | Medium · PARTIAL | | ADV-087 |
-| G25 | Measured (not literal) safety counters in the ambient pack | EVIDENCE | `agents/core/observability/ambient_reality.py` | Medium | | ADV-091 |
-| G26 | A parity gate that greps for a caller instead of classifying a prefix | EVIDENCE | `tests/test_hud_v2_parity.py` | Medium · PARTIAL | | ADV-096 |
-| G27 | Enforced reality-case coverage for wired capabilities | EVIDENCE | `agents/core/observability/capability_registry.py` | Medium | | ADV-098 |
-| G28 | `is_degraded()` consulted before recording a capability success | BUG | `agents/core/autonomy/worker.py` | Medium | | ADV-094 |
-| G29 | Telegram allowed-user-id parsing, and owner binding on the callback | GAP | `agents/web.py`, `agents/core/channels/telegram.py` | Medium · PARTIAL | | §15.9, SEC-B3 |
-| G30 | The pairing gate failing closed on a store error | BUG | `agents/core/channels/gateway.py` | Medium | | ADV-108 |
-| G31 | Anything that starts the Wyoming server | GAP | `agents/core/voice/wyoming.py` | — · new | | ADV-115 |
-| G32 | `JARVIS_ACTION_KERNEL` and the hardening flags in the example env | GAP | `.env.example` | Minor | | ADV-117 |
-| G33 | `docs/THREAT_MODEL.md` "single front door" and T5 corrections | DOC | `docs/THREAT_MODEL.md` | Minor | | ADV-112, ADV-113 |
-| G34 | `docs/PRIVACY.md` forget wording | DOC | `docs/PRIVACY.md` | High | | ADV-111 |
-| G35 | The ingestion archive in the purge, retention and export sets | GAP | `agents/core/data_purge.py` | unmeasured | | ADV-131 |
-| G36 | A governed/ungoverned inventory for the MCP RPC tool surface | GAP | `agents/core/mcp/server.py` | unmeasured | | ADV-132 |
-| G37 | Any exercise of the upgrade path against a populated data root | GAP | `agents/core/persistence/migrations.py` | unmeasured | | ADV-133 |
-| G38 | A protocol for orchestrator attributes written by other modules | GAP | `agents/core/orchestrator.py` | Minor · REFUTED-with-residue | | ADV-130 |
+| # | What is missing | Kind | Where it should live | Audit severity | Fixed | Your verdict | Notes |
+|---|---|---|---|---|---|---|---|
+| G01 | Chain-algorithm pinning: nothing asserts that a configured key implies a required row algorithm | BUG | `agents/core/security/audit.py` | High · CONFIRMED | ✅ | | §15.1 |
+| G02 | A full-table-rewrite regression test | GAP | `tests/test_audit_hardening.py` | High | ✅ | | ADV-014 |
+| G03 | Automatic transparency anchoring + a comparison against the chain tail | GAP | `agents/core/security/anchor.py` | — | — | | ADV-007 |
+| G04 | An operator-visible audit-integrity signal in the HUD | GAP | `frontend/src/gap.tsx` | — | — | | ADV-013 |
+| G05 | Purge as a KEEP-allowlist instead of a PURGE-allowlist | BUG | `agents/core/data_purge.py` | High · CONFIRMED | ✅ | | §15.2 |
+| G06 | `clear()` as an abstract method on the store and graph base classes | GAP | `agents/core/memory/store.py`, `agents/core/memory/graph.py` | High | ✅ | | ADV-022 |
+| G07 | Any `clear()` implementation for a persistent vector or graph backend | GAP | `agents/core/memory/qdrant_store.py` | High | ✅ | | ADV-022, ADV-033 |
+| G08 | Pre-forget archive: outside the data root, encrypted unconditionally, pruned | BUG | `agents/core/backup.py` | High | ✅ | | ADV-024, ADV-026 |
+| G09 | `backup_first` exposed on the forget route (the API's `--no-backup`) | GAP | `agents/core/routers/backup.py` | High | ✅ | | ADV-025 |
+| G10 | Export/purge allowlist reconciliation the module docstring already promises | BUG | `agents/core/data_purge.py`, `agents/core/data_export.py` | High | ✅ | | ADV-019 |
+| G11 | A per-store report in the forget response | GAP | `agents/core/routers/backup.py` | — | ✅ | | ADV-027 |
+| G12 | `require_signed()` failing closed when enforcement is on and no key exists | BUG | `agents/core/skills/signing.py` | High → scoped | ✅ | | ADV-035 |
+| G13 | Sandboxing or deferring `exec_module` at skill load | GAP | `agents/core/skills/loader.py` | High (audit: fix first) | — | | ADV-038 |
+| G14 | A policy floor over synthesis contributors | BUG | `agents/core/agent.py` | High · PARTIAL | ✅ | | §15.4, SEC-B1 |
+| G15 | Any test at the synthesize boundary, and any coverage of the handoff path | GAP | `tests/` | High | ✅ | | ADV-054, ADV-055 |
+| G16 | A `{agent_id: route}` map carried into the interaction record | BUG | `agents/core/orchestrator.py` | Medium · PARTIAL | ✅ | | §15.5 |
+| G17 | `degradation_info()` overriding the honesty verdict | BUG | `agents/core/plugins/honesty.py` | Medium · CONFIRMED | ✅ | | ADV-075 |
+| G18 | A `configured` contract distinct from `available` on the keyless-real plugin | GAP | `agents/core/plugins/analytics.py` | Medium | ✅ | | ADV-073 |
+| G19 | An `unknown` honesty status for plugins with no contract | GAP | `agents/core/plugins/honesty.py` | Medium | ✅ | | ADV-076 |
+| G20 | `record()` called from the router with the model that actually ran | GAP | `agents/core/cost_tracker.py` | Medium · CONFIRMED | ✅ | | §15.7 |
+| G21 | Cost persistence across a restart | GAP | `agents/core/cost_tracker.py` | Medium | ✅ | | ADV-082 |
+| G22 | `None` for an unpriced model instead of `0.0` | BUG | `agents/core/llm/cost_estimator.py` | Medium | ✅ | | ADV-079 |
+| G23 | A daily spend cap checked before a cloud route | GAP | `agents/core/llm/hybrid_router.py` | Medium | ✅ | | ADV-083 |
+| G24 | The action-capability probe resolving `manifest.implementation` | BUG | `agents/core/observability/reality_harness.py` | Medium · PARTIAL | — | | ADV-087 |
+| G25 | Measured (not literal) safety counters in the ambient pack | EVIDENCE | `agents/core/observability/ambient_reality.py` | Medium | ✅ | | ADV-091 |
+| G26 | A parity gate that greps for a caller instead of classifying a prefix | EVIDENCE | `tests/test_hud_v2_parity.py` | Medium · PARTIAL | ✅ | | ADV-096 |
+| G27 | Enforced reality-case coverage for wired capabilities | EVIDENCE | `agents/core/observability/capability_registry.py` | Medium | — | | ADV-098 |
+| G28 | `is_degraded()` consulted before recording a capability success | BUG | `agents/core/autonomy/worker.py` | Medium | ✅ | | ADV-094 |
+| G29 | Telegram allowed-user-id parsing, and owner binding on the callback | GAP | `agents/web.py`, `agents/core/channels/telegram.py` | Medium · PARTIAL | ✅ | | §15.9, SEC-B3 |
+| G30 | The pairing gate failing closed on a store error | BUG | `agents/core/channels/gateway.py` | Medium | ✅ | | ADV-108 |
+| G31 | Anything that starts the Wyoming server | GAP | `agents/core/voice/wyoming.py` | — · new | ✅ | | ADV-115 |
+| G32 | `JARVIS_ACTION_KERNEL` and the hardening flags in the example env | GAP | `.env.example` | Minor | ✅ | | ADV-117 |
+| G33 | `docs/THREAT_MODEL.md` "single front door" and T5 corrections | DOC | `docs/THREAT_MODEL.md` | Minor | ✅ | | ADV-112, ADV-113 |
+| G34 | `docs/PRIVACY.md` forget wording | DOC | `docs/PRIVACY.md` | High | ✅ | | ADV-111 |
+| G35 | The ingestion archive in the purge, retention and export sets | GAP | `agents/core/data_purge.py` | unmeasured | — | | ADV-131 |
+| G36 | A governed/ungoverned inventory for the MCP RPC tool surface | GAP | `agents/core/mcp/server.py` | unmeasured | — | | ADV-132 |
+| G37 | Any exercise of the upgrade path against a populated data root | GAP | `agents/core/persistence/migrations.py` | unmeasured | — | | ADV-133 |
+| G38 | A protocol for orchestrator attributes written by other modules | GAP | `agents/core/orchestrator.py` | Minor · REFUTED-with-residue | — | | ADV-130 |
 
 ---
 

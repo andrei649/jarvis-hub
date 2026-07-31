@@ -75,3 +75,36 @@ describe('KillSwitchPanel — a refused halt is reported, not hidden', () => {
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 });
+
+describe('KillSwitchPanel — an unread state is never reported as ARMED', () => {
+  it('says UNKNOWN, not "ARMED · operational", when the status GET fails', async () => {
+    // The card derived `halted` from an empty response, and false meant ARMED. So a
+    // status read that never came back told the operator the safety system was fine.
+    // For a kill-switch that is the worst possible default direction.
+    global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
+    render(<KillSwitchPanel />);
+    await waitFor(() =>
+      expect(screen.getByText(/UNKNOWN · could not read kill-switch state/)).toBeTruthy());
+    expect(screen.queryByText(/ARMED · operational/)).toBeNull();
+  });
+
+  it('says UNKNOWN while the status is still in flight', async () => {
+    global.fetch = vi.fn().mockImplementation(() => new Promise(() => {}));  // never resolves
+    render(<KillSwitchPanel />);
+    expect(screen.queryByText(/ARMED · operational/)).toBeNull();
+    expect(screen.getByText(/UNKNOWN · could not read kill-switch state/)).toBeTruthy();
+  });
+
+  it('still offers HALT ALL when the state is unknown — halting is the safe direction', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
+    render(<KillSwitchPanel />);
+    await waitFor(() => expect(screen.getByText(/UNKNOWN/)).toBeTruthy());
+    expect(screen.getByText('HALT ALL')).toBeTruthy();
+  });
+
+  it('reports ENGAGED normally once a real halted state is read', async () => {
+    mockFetch({ global: true, halted: {} });
+    render(<KillSwitchPanel />);
+    await waitFor(() => expect(screen.getByText(/ENGAGED · all agents halted/)).toBeTruthy());
+  });
+});

@@ -293,6 +293,9 @@ export interface paths {
         /**
          * Wyoming Status
          * @description Wyoming protocol support status (H12.4).
+         *
+         *     Reports ``enabled`` (the setting) and ``listening`` (measured) separately, because
+         *     they were conflated and only the first was ever true.
          */
         get: operations["wyoming_status_api_voice_wyoming_get"];
         put?: never;
@@ -2044,6 +2047,13 @@ export interface paths {
          *
          *     'Tamper-evident' is only real if the chain is actually checked — this is the
          *     check. Returns the first broken row id when integrity fails.
+         *
+         *     Reports `tamper_evident` separately from `valid`, because they are different claims:
+         *     an UNKEYED chain that verifies proves only that nobody edited a row without also
+         *     recomputing its hash, which anyone with file access can do. `reason` says which
+         *     situation you are in, in plain English — including the case where a key was
+         *     configured on a chain that predates it, which is a false verdict with a very
+         *     different remedy from an actual rewrite (adversarial audit 2026-07-25, AUDIT-1).
          */
         get: operations["audit_verify_api_security_audit_verify_get"];
         put?: never;
@@ -2120,7 +2130,16 @@ export interface paths {
         };
         /**
          * Security Status
-         * @description Return security system status.
+         * @description Live security system status.
+         *
+         *     Every number here used to be a literal. `mode` was always "WARN", the redact
+         *     and block counts were always 0, the pattern counts were hand-written (10 and
+         *     6 — both wrong), and the SSRF counters were 0. The Console renders these as
+         *     measured security activity, so a hub running in BLOCK mode that had redacted
+         *     forty PII spans reported a clean, untriggered system with the wrong mode.
+         *
+         *     The engine now counts what it does; anything still unmeasured is reported as
+         *     null with `available: false`, never as a zero that reads like a measurement.
          */
         get: operations["security_status_security_status_get"];
         put?: never;
@@ -4048,6 +4067,12 @@ export interface paths {
         /**
          * Memory Stats
          * @description Live memory stats for SystemsPanel.
+         *
+         *     Every failure path here reports *unavailable* rather than zero. It used to do
+         *     the opposite: an unbounded `get_session_stats()` await hung when the backend
+         *     was down, and the broad `except Exception` around it returned a body of zeros
+         *     that the panel drew as "0 vectors, 0 entities" — a dead store rendered as an
+         *     empty one, with nothing logged.
          */
         get: operations["memory_stats_memory_stats_get"];
         put?: never;
@@ -6827,7 +6852,18 @@ export interface paths {
         };
         /**
          * Get Cognition
-         * @description Return the last dynamic routing/cognition context.
+         * @description Return the last dynamic routing/cognition context, or an honest empty.
+         *
+         *     Before any request has been routed there is nothing to show. This used to
+         *     manufacture one: the first five entries of ``INTENT_RULES`` were returned as
+         *     ``scoring`` — so the panel drew weight bars for keywords the owner had never
+         *     typed — alongside a ``decision`` with ``confidence: 1.0`` and
+         *     ``agents_selected: ["jarvis"]`` for a routing decision that never happened.
+         *     Nothing marked any of it synthetic, so the HUD rendered "ROUTING DECISION /
+         *     STANDBY / Confidence 100%" as though the router had actually decided that.
+         *
+         *     Now the empty case is returned as empty, with ``live: false`` and a ``state``
+         *     the UI can render as "nothing routed yet".
          */
         get: operations["get_cognition_api_cognition_get"];
         put?: never;
@@ -7799,7 +7835,7 @@ export interface components {
             limit: number;
             /** Weights */
             weights?: {
-                [key: string]: unknown;
+                [key: string]: number;
             } | null;
         };
         /** EvidenceItem */

@@ -117,6 +117,15 @@ async def forget_data(req: Request):
             {"error": 'forget requires confirmation — send {"confirm": "FORGET"}'},
             status_code=400,
         )
+    # AUDIT-2c: the API's equivalent of the CLI's --no-backup. The route used to hardcode
+    # backup_first=True, so a user who wanted deletion could not get deletion through the
+    # product — the one path that matters for someone handing the box back. Still defaults
+    # to True: an accidental forget with no way back is the worse failure.
+    backup_first = (body or {}).get("backup_first", True)
+    if not isinstance(backup_first, bool):
+        return JSONResponse(
+            {"error": "backup_first must be true or false"}, status_code=400,
+        )
     # Capture known session ids and clear live memory before the file purge.
     orch = get_orch()
     session_ids: list[str] = []
@@ -129,20 +138,51 @@ async def forget_data(req: Request):
                 session_ids = []
     denied = _purge.purge_contract_denial(
         source="api.admin.forget",
-        backup_first=True,
+        backup_first=backup_first,
         memory=True,
         session_count=len(session_ids),
     )
     if denied is not None:
         return JSONResponse({"error": f"contract denied: {denied}"}, status_code=403)
+    live_cleared: list[str] = []
+    live_failed: list[str] = []
     if orch is not None:
-        await _purge.clear_live_memory(orch)
+        live_cleared, live_failed = await _purge.clear_live_memory(orch)
     try:
         # Backs up then deletes across the data root — blocking file/DB I/O.
         result = await asyncio.to_thread(
-            _purge.purge_data, backup_first=True, memory=True, session_ids=session_ids
+            _purge.purge_data, backup_first=backup_first, memory=True,
+            session_ids=session_ids
         )
     except (OSError, ValueError, _purge.PurgeError) as e:
         logger.warning("forget purge failed: %s", e)
         return JSONResponse({"error": "forget failed"}, status_code=500)
+    # AUDIT-2: never report an unqualified success over data that survived. A wipe that
+    # could not reach Qdrant or Neo4j used to be logged and dropped, so the response said
+    # ok:true while every embedding was still on disk — an F5 (a claimed completed action
+    # that did not complete) on the one operation where the user cannot check for
+    # themselves. `ok` now reflects the whole forget, not just the file half.
+    result["live_stores_cleared"] = live_cleared
+    # MERGE, don't overwrite. `purge_data` already puts the files its sweep could not
+    # erase into `not_erased` (and sets ok:false). This line used to assign
+    # `live_failed` straight over that, so a run where the FILE sweep failed but the
+    # live stores cleared cleanly reported `ok: false` with an empty `not_erased`
+    # and no warning — the user was told something survived but not what, on the one
+    # operation where they cannot go and check for themselves. That is the same
+    # defect the comment above this block was written about, one line further down.
+    file_failed = list(result.get("not_erased") or [])
+    not_erased = file_failed + [s for s in live_failed if s not in file_failed]
+    result["not_erased"] = not_erased
+    if not_erased:
+        result["ok"] = False
+        parts = []
+        if file_failed:
+            parts.append("files the sweep could not erase")
+        if live_failed:
+            parts.append("live stores that could not be cleared")
+        result["warning"] = (
+            "SOME DATA WAS NOT ERASED — see not_erased (" + " and ".join(parts) + "). "
+            "The listed items still hold your content."
+        )
+        logger.error("forget completed with surviving data: %s", not_erased)
     return nocache_json(result)

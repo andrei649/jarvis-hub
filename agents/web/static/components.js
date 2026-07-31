@@ -65,13 +65,21 @@ function Badge({ label, value, kind }) {
  */
 function TrustIndicator({ trust }) {
   var micOff = trust && trust.mic === 'off';
-  var strictLocal = !trust || trust.strict_local;
+  // Three states, not two. `!trust || trust.strict_local` meant that a HUD which
+  // had not yet reached /api/trust/status — or could not reach it at all —
+  // displayed a padlock and told the owner "nothing leaves this machine". That is
+  // a privacy assurance asserted from the ABSENCE of information, which is the
+  // one direction this indicator must never fail in. Unknown now says unknown.
+  var known = !!trust && trust.strict_local !== undefined && trust.strict_local !== null;
+  var strictLocal = known && !!trust.strict_local;
   var micLabel = _t('comp.trust_mic', 'Mic');
   var localLabel = _t('comp.trust_local', 'Local');
   var micTitle = micOff
     ? _t('comp.trust_mic_off_hint', 'Microphone muted — no audio is captured')
     : _t('comp.trust_mic_on_hint', 'Microphone live — audio can be captured');
-  var localTitle = strictLocal
+  var localTitle = !known
+    ? _t('comp.trust_local_unknown_hint', 'Routing mode unknown — the hub did not report it')
+    : strictLocal
     ? _t('comp.trust_local_on_hint', 'Strict-local: no cloud calls, nothing leaves this machine')
     : _t('comp.trust_local_off_hint', 'Cloud routing available — some requests may leave this machine');
   return h('div', { className: 'trust-indicator', role: 'status', 'aria-label': 'Trust state' },
@@ -85,13 +93,15 @@ function TrustIndicator({ trust }) {
       h('span', { className: 'trust-chip-val' }, micOff ? 'OFF' : 'ON'),
     ),
     h('div', {
-      className: 'trust-chip trust-local ' + (strictLocal ? 'is-on' : 'is-off'),
+      className: 'trust-chip trust-local ' + (!known ? 'is-unknown' : strictLocal ? 'is-on' : 'is-off'),
       title: localTitle,
-      'aria-label': localLabel + ': ' + (strictLocal ? 'strict' : 'cloud'),
+      'aria-label': localLabel + ': ' + (!known ? 'unknown' : strictLocal ? 'strict' : 'cloud'),
     },
-      h('span', { className: 'trust-chip-icon', 'aria-hidden': true }, strictLocal ? '🔒' : '☁'),
+      h('span', { className: 'trust-chip-icon', 'aria-hidden': true },
+        !known ? '?' : strictLocal ? '🔒' : '☁'),
       h('span', { className: 'trust-chip-label' }, localLabel),
-      h('span', { className: 'trust-chip-val' }, strictLocal ? 'STRICT' : 'CLOUD'),
+      h('span', { className: 'trust-chip-val' },
+        !known ? '—' : strictLocal ? 'STRICT' : 'CLOUD'),
     ),
   );
 }
@@ -138,14 +148,19 @@ function SysRow({ label, value, mono }) {
 }
 
 function SysMeter({ label, used, total, unit, raw }) {
-  const pct = raw ? used : Math.round((used / total) * 100);
-  return h('div', { className: 'sys-meter' },
+  // Nothing measured yet (or the /status poll failed) → show that, rather than
+  // "null/null GB" or a bar sized by NaN. An empty bar at 0% would be worse
+  // still: it reads as a real measurement of zero.
+  const unknown = used == null || (!raw && total == null);
+  const pct = unknown ? 0 : (raw ? used : Math.round((used / total) * 100));
+  return h('div', { className: 'sys-meter' + (unknown ? ' is-unknown' : '') },
     h('div', { className: 'sys-meter-head' },
       h('span', { className: 'sys-key' }, label),
-      h('span', { className: 'sys-val' }, raw ? `${used}${unit}` : `${used}/${total} ${unit}`),
+      h('span', { className: 'sys-val' },
+        unknown ? '—' : (raw ? `${used}${unit}` : `${used}/${total} ${unit}`)),
     ),
     h('div', { className: 'sys-bar' },
-      h('div', { className: 'sys-bar-fill', style: { width: `${pct}%` } }),
+      !unknown && h('div', { className: 'sys-bar-fill', style: { width: `${pct}%` } }),
       h('div', { className: 'sys-bar-ticks' },
         Array.from({ length: 10 }).map((_, i) => h('span', { key: i })),
       ),
@@ -187,7 +202,13 @@ function AgentList({ agents, tiers, activeAgent, onSelect, onDoubleClick, sys })
         ),
       ),
     ),
-    h(Bracket, { label: _t('comp.system'), status: _t('comp.nominal'), className: 'sys-bracket' },
+    // "NOMINAL" was hardcoded, so the panel certified the host healthy without
+    // ever having read it — including when /status had not answered at all.
+    h(Bracket, {
+      label: _t('comp.system'),
+      status: sys.measured === false ? _t('comp.unmeasured') : _t('comp.nominal'),
+      className: 'sys-bracket',
+    },
       h('div', { className: 'sys-rows' },
         h(SysRow, { label: 'HOST', value: sys.host }),
         h(SysRow, { label: 'CPU', value: sys.cpu }),
@@ -196,7 +217,9 @@ function AgentList({ agents, tiers, activeAgent, onSelect, onDoubleClick, sys })
         h(SysMeter, { label: _t('comp.gpu_load'), used: sys.gpu_load, total: 100, unit: '%', raw: true }),
         h(SysRow, { label: _t('comp.backend'), value: sys.backend }),
         h(SysRow, { label: _t('comp.model'), value: sys.model, mono: true }),
-        h(SysRow, { label: _t('comp.latency'), value: `${(sys.latency || 0).toFixed(1)}s avg` }),
+        // `|| 0` turned "not measured" into a confident "0.0s avg".
+        h(SysRow, { label: _t('comp.latency'),
+                    value: sys.latency == null ? '—' : `${sys.latency.toFixed(1)}s avg` }),
         h(SysRow, { label: _t('comp.uptime'), value: sys.uptime }),
       ),
     ),

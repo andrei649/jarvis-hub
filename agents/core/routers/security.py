@@ -6,6 +6,7 @@ attribution, and the packaged security posture.
 """
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
@@ -14,6 +15,8 @@ from agents.core.routers._deps import admin_guard, user_guard
 
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
+
+logger = logging.getLogger("jarvis.web")
 
 
 router = APIRouter(tags=["security"])
@@ -257,17 +260,19 @@ async def audit_verify():
     """Verify the Merkle hash chain of the security audit log (tamper evidence).
 
     'Tamper-evident' is only real if the chain is actually checked — this is the
-    check. Returns the first broken row id when integrity fails."""
+    check. Returns the first broken row id when integrity fails.
+
+    Reports `tamper_evident` separately from `valid`, because they are different claims:
+    an UNKEYED chain that verifies proves only that nobody edited a row without also
+    recomputing its hash, which anyone with file access can do. `reason` says which
+    situation you are in, in plain English — including the case where a key was
+    configured on a chain that predates it, which is a false verdict with a very
+    different remedy from an actual rewrite (adversarial audit 2026-07-25, AUDIT-1)."""
     orch = get_orch()
     audit = getattr(orch, "audit", None) if orch else None
     if audit is None:
         return JSONResponse({"error": "audit log not available"}, status_code=503)
-    valid, first_bad = await asyncio.to_thread(audit.verify_chain)
-    return nocache_json({
-        "valid": valid,
-        "first_invalid_id": first_bad,
-        "entries": await asyncio.to_thread(audit.count),
-    })
+    return nocache_json(await asyncio.to_thread(audit.chain_status))
 
 
 @router.get("/api/security/audit/anchors")
@@ -287,12 +292,34 @@ async def security_posture():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
 
-    # Secrets at-rest backend.
+    # Secrets at-rest backend. `encrypted_at_rest` is DERIVED from it below, never
+    # asserted: it used to be the literal `True`, so a box where the secret store
+    # could not even be constructed still got a green "encrypted" badge on the
+    # security posture page — the one screen whose whole job is to not do that.
     try:
         from core.secrets import SecretStore
-        secret_backend = SecretStore().backend
+        at_rest_cipher = SecretStore().backend
     except Exception:
-        secret_backend = "unavailable"
+        logger.warning("secret store unavailable — posture reports unknown", exc_info=True)
+        at_rest_cipher = "unavailable"
+    # "fernet"  → AES via the cryptography package.
+    # "hmac-fallback" → the pure-Python HMAC-keystream + HMAC-tag cipher used when
+    #   cryptography is absent. Genuinely encrypted and authenticated, but not a
+    #   vetted AEAD, so it is reported as encrypted AND flagged as the weaker path
+    #   rather than being silently equated with fernet.
+    # anything else → we could not open the store, so we do not know.
+    secrets_posture: dict = {"backend": at_rest_cipher}
+    if at_rest_cipher in ("fernet", "hmac-fallback"):
+        secrets_posture["encrypted_at_rest"] = True
+        secrets_posture["strength"] = "aead" if at_rest_cipher == "fernet" else "fallback-cipher"
+        if at_rest_cipher == "hmac-fallback":
+            secrets_posture["note"] = (
+                "the 'cryptography' package is not installed — secrets use the "
+                "pure-Python fallback cipher; install it for AES-based Fernet"
+            )
+    else:
+        secrets_posture["encrypted_at_rest"] = None  # unknown, not false and not true
+        secrets_posture["note"] = "secret store could not be opened — at-rest state unknown"
 
     # Skill signing posture.
     from core.skills import signing as _signing
@@ -308,14 +335,22 @@ async def security_posture():
         sandbox_sec = orch.sandbox.security_status()
     except Exception:
         # Sandbox is optional; absence just means posture reports an unavailable
-        # backend rather than failing the security-posture endpoint.
-        sandbox_sec = {"backend": "unavailable", "isolated": False,
-                       "insecure_host_exec": False, "docker": False}
+        # backend rather than failing the security-posture endpoint. `isolated` and
+        # `insecure_host_exec` are None rather than False — False would be a claim
+        # ("nothing runs unisolated") made from a status read that failed.
+        sandbox_sec = {"backend": "unavailable", "isolated": None,
+                       "insecure_host_exec": None, "docker": False,
+                       "note": "sandbox status could not be read"}
 
     return nocache_json({
-        "secrets": {"encrypted_at_rest": True, "backend": secret_backend},
+        "secrets": secrets_posture,
         "skills": {
-            "require_signed": _signing.require_signed(),
+            # signing_posture() rather than require_signed(): the latter raises on a
+            # misconfigured gate (enforcement on, no key), which is correct for the
+            # enforcement path and useless here — a 500 tells the owner nothing. This
+            # reports `effective` and `integrity_only` so "the flag is on" is not mistaken
+            # for "signatures prove authorship" (SEC-B2).
+            **_signing.signing_posture(),
             "total": len(skill_rows),
             "trusted": len(skill_rows) - len(untrusted),
             "untrusted": len(untrusted),

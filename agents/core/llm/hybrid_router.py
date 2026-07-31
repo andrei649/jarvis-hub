@@ -189,6 +189,7 @@ class HybridRouter(LLMRouter):
         self._local_available = False
         self._cloud_available = False
         self._claude_available = False
+        self._daily_cost_cap = 0.0        # /admin → llm.daily_cost_cap_usd (0 = none)
         self._ollama_backend: Optional[OllamaBackend] = None
         self._ollama_available = False
         self._local_model = DEFAULT_LOCAL_MODEL
@@ -357,6 +358,11 @@ class HybridRouter(LLMRouter):
         else:
             logger.warning("Ollama not available — Howard will fall back to default backend")
 
+        # Re-stamp: `super().detect()` stamped after the LOCAL probe, but the cloud,
+        # Claude and Ollama flags above were measured after that. The age reported by
+        # `/readyz` must cover every flag this method sets, not just the first.
+        self._mark_probed()
+
     def get_agent_policy(self, agent_id: str) -> str:
         # Security floor first: code-enforced, the registry cannot override it.
         if agent_id in LOCAL_ONLY_AGENTS:
@@ -441,7 +447,7 @@ class HybridRouter(LLMRouter):
             if self._claude_available:
                 return self._claude_backend, self._claude_model, "claude"
             logger.warning(f"Claude unavailable for {agent_id}, falling back to cloud")
-            if self._cloud_available and self._cloud_fallback_mode != "never":
+            if self._cloud_permitted() and self._cloud_fallback_mode != "never":
                 return self._gemini_backend, self._gemini_model, "cloud-fallback"
             if self._local_available:
                 logger.warning(f"No cloud backend for {agent_id}, falling back to local")
@@ -449,7 +455,7 @@ class HybridRouter(LLMRouter):
             raise RuntimeError(f"No LLM backend available for {agent_id}")
 
         if policy == POLICY_CLOUD:
-            if self._cloud_available:
+            if self._cloud_permitted():
                 return self._gemini_backend, self._gemini_model, "cloud"
             logger.warning(
                 f"Cloud backend unavailable for {agent_id} (policy=cloud), falling back to local"
@@ -469,7 +475,7 @@ class HybridRouter(LLMRouter):
         #   never     → auto-policy agents NEVER spill to cloud (local or fail)
         #   on-demand → spill only when the context outgrows the local window
         #   always    → prefer cloud for auto agents whenever it's available
-        if self._cloud_fallback_mode == "always" and self._cloud_available:
+        if self._cloud_fallback_mode == "always" and self._cloud_permitted():
             return self._gemini_backend, self._gemini_model, "cloud-flash"
         # H7.5 — Complexity escalation: heavy prompts for auto-policy agents
         # are routed to the deep local slot (DDR5) when AUTO_DEEP_ENABLED.
@@ -483,9 +489,9 @@ class HybridRouter(LLMRouter):
                 return self._backend, self._configured_deep_model(), "local-deep"
             return self._backend, self._local_model, "local"
         if self._cloud_fallback_mode != "never":
-            if token_count <= self._flash_max and self._cloud_available:
+            if token_count <= self._flash_max and self._cloud_permitted():
                 return self._gemini_backend, self._gemini_model, "cloud-flash"
-            if self._cloud_available:
+            if self._cloud_permitted():
                 return self._gemini_backend, DEFAULT_GEMINI_PRO_MODEL, "cloud-pro"
 
         if self._local_available:
@@ -527,6 +533,50 @@ class HybridRouter(LLMRouter):
         except (TypeError, ValueError):
             return default
         return n if n > 0 else sys.maxsize
+
+    def set_daily_cost_cap(self, value) -> None:
+        """Live update from /admin → llm.daily_cost_cap_usd. 0 / unset = no cap."""
+        try:
+            cap = float(value or 0)
+        except (TypeError, ValueError):
+            cap = 0.0
+        cap = max(0.0, cap)
+        if cap != self._daily_cost_cap:
+            logger.info("Daily cloud spend cap → %s",
+                        f"${cap:.2f}" if cap else "none")
+        self._daily_cost_cap = cap
+
+    def _cloud_permitted(self) -> bool:
+        """Is a cloud route allowed right now — available AND within the daily cap?
+
+        ADV-078: an unattended night-shift loop on a cloud key had no ceiling anywhere and
+        produced no signal, so the first sign of a problem was the provider's invoice.
+        The cap is checked HERE, before a cloud backend is selected, rather than after the
+        call — the point is not to bill and then complain.
+
+        Default is 0 (no cap), so behaviour is unchanged until the owner sets one. Over
+        the cap, routing degrades to local rather than failing: a capped box should get
+        slower and more private, not stop answering.
+        """
+        if not self._cloud_available:
+            return False
+        if not self._daily_cost_cap:
+            return True
+        try:
+            from agents.core import cost_tracker
+            spent = cost_tracker.spend_today_usd()
+        except Exception:
+            # A meter we cannot read must not silently disable the cap OR the cloud;
+            # allowing through is the pre-cap behaviour and the honest default here.
+            logger.debug("daily cost cap: spend unreadable", exc_info=True)
+            return True
+        if spent >= self._daily_cost_cap:
+            logger.warning(
+                "Daily cloud spend cap reached ($%.2f of $%.2f) — routing local",
+                spent, self._daily_cost_cap,
+            )
+            return False
+        return True
 
     def set_local_max(self, value) -> None:
         """Live update from /admin → llm.hybrid_local_max. Prompts up to this many

@@ -123,7 +123,18 @@ async def test_verify_endpoint(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "orch", _Orch())
     resp = await audit_verify()
     body = json.loads(resp.body)
-    assert body == {"valid": True, "first_invalid_id": None, "entries": 3}
+    # The original contract still holds...
+    assert body["valid"] is True
+    assert body["first_invalid_id"] is None
+    assert body["entries"] == 3
+    # ...and the endpoint no longer lets an UNKEYED pass read as tamper evidence
+    # (adversarial audit 2026-07-25, ADV-009). This fixture logs without a key, so
+    # anyone with file access could recompute the whole chain — `valid` is the weaker
+    # claim, and the response has to say which one the reader is looking at.
+    assert body["key_configured"] is False
+    assert body["tamper_evident"] is False
+    assert body["integrity"] == "sha256"
+    assert "NOT tamper evidence" in body["reason"]
 
 
 async def test_verify_endpoint_unavailable(monkeypatch):

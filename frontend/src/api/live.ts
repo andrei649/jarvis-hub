@@ -113,6 +113,60 @@ function workflowToCanvas(workflow: any) {
   };
 }
 
+/** Build the OBSERVE view from the live payloads, never borrowing the demo seed.
+ *
+ * Exported so its behaviour is tested directly — a test that re-implements this
+ * would pass while the shipped path regressed.
+ *
+ * Every field used to end in `?? seed.<field>`, and the seed is a complete,
+ * plausible picture: 91% success, 847 interactions, 99.97% uptime, 0 errors. So a
+ * field the backend did not supply rendered as a convincing fabricated number,
+ * under a green LIVE badge — `mark('OBSERVE')` fires when ANY of the six fetches
+ * returns something truthy.
+ *
+ * Two of them supplied nothing at all. `/api/quality` returns `{stats, alert}`, so
+ * `quality.success_rate` was always undefined; `/api/resilience` returns
+ * `{metrics, circuit_breakers}` and has never emitted uptime / ssrf_blocked /
+ * errors_24h / redactions. Both objects are truthy, so the panel was marked live
+ * over 100% seed data.
+ *
+ * Un-hydrated fields are null now, and the panels render null as "\u2014".
+ */
+export function hydrateObserve(bench: any, quality: any, resil: any, seed: any) {
+  const O: any = { ...seed };
+  if (bench) {
+    O.bench = {
+      p50: bench.latency?.p50 ?? bench.p50 ?? null,
+      p95: bench.latency?.p95 ?? bench.p95 ?? null,
+      p99: bench.latency?.p99 ?? bench.p99 ?? null,
+    };
+  }
+  if (quality) {
+    // The real nesting. `avg_score` is the rolling quality average and `n` the
+    // sample count; escalations are not tracked by this endpoint at all.
+    const qs = quality.stats ?? quality;
+    O.quality = {
+      success_rate: qs.avg_score ?? qs.success_rate ?? qs.rolling_avg ?? null,
+      interactions: qs.n ?? qs.interactions ?? qs.count ?? null,
+      escalations: qs.escalations ?? null,
+    };
+  }
+  if (resil) {
+    // Derive what the payload really carries: per-agent success/failure counts
+    // under `metrics`. Uptime and redactions are not emitted by any endpoint, so
+    // they stay null rather than borrowing the seed's 99.97%.
+    const m = resil.metrics && typeof resil.metrics === 'object' ? Object.values(resil.metrics) as any[] : [];
+    const failures = m.reduce((n: number, st: any) => n + (Number(st?.failure) || 0), 0);
+    O.resilience = {
+      uptime: resil.uptime ?? null,
+      ssrf_blocked: resil.ssrf_blocked ?? null,
+      errors_24h: resil.errors_24h ?? (m.length ? failures : null),
+      redactions: resil.redactions ?? null,
+    };
+  }
+  return O;
+}
+
 function marketplaceSkills(raw: any[]) {
   return raw.slice(0, 8).map((skill: any) => ({
     name: text(skill.name || skill.id, 'Skill'),
@@ -274,10 +328,7 @@ export function useLiveModes(): LiveModes {
         apiGet('/api/traces?limit=8').catch(() => null),
         signalLayerHealth(),
       ]).then(([bench, quality, resil, arena, traces, signalLayer]: any[]) => {
-        const O = { ...V2.OBSERVE };
-        if (bench) O.bench = { p50: bench.latency?.p50 ?? bench.p50 ?? O.bench.p50, p95: bench.latency?.p95 ?? bench.p95 ?? O.bench.p95, p99: bench.latency?.p99 ?? bench.p99 ?? O.bench.p99 };
-        if (quality) O.quality = { success_rate: quality.success_rate ?? quality.rolling_avg ?? O.quality.success_rate, interactions: quality.interactions ?? quality.count ?? O.quality.interactions, escalations: quality.escalations ?? O.quality.escalations };
-        if (resil) O.resilience = { uptime: resil.uptime ?? O.resilience.uptime, ssrf_blocked: resil.ssrf_blocked ?? O.resilience.ssrf_blocked, errors_24h: resil.errors_24h ?? O.resilience.errors_24h, redactions: resil.redactions ?? O.resilience.redactions };
+        const O = hydrateObserve(bench, quality, resil, V2.OBSERVE);
         const al = arr(arena, 'leaderboard');
         if (al && al.length) O.arena = al.map((a: any) => ({ model: a.model || a.id, wins: a.wins ?? a.elo ?? 0, latency: a.latency || '', cost: a.cost || '', pick: !!a.pick }));
         const tl = arr(traces, 'traces');

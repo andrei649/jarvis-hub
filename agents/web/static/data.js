@@ -27,12 +27,19 @@ const JARVIS_TIERS = [
 ];
 /* JARVIS_SAMPLE_CONVERSATION, JARVIS_PROJECTS, JARVIS_COLLAB, JARVIS_TICKER, JARVIS_DEMO — removed, live data only */
 
+// Pre-measurement placeholders. Every telemetry number here is null, NOT a
+// plausible value: these are what the HUD shows before /status answers, and on a
+// box where /status never answers they are what it shows forever. They used to
+// read ram_used: 42, ram_total: 192, gpu_load: 30, vram_used: 10, latency: 2.1 —
+// a complete, credible picture of a machine nobody had looked at. `measured`
+// stays false until a real sample lands, and the meters render null as "—".
 const JARVIS_FALLBACK_SYS = {
   host: _t('env.fallback_host'), cpu: _t('env.fallback_cpu'),
-  ram_used: 42, ram_total: 192, gpu: _t('env.fallback_gpu'),
-  vram_used: 10, vram_total: 24, gpu_load: 30,
+  ram_used: null, ram_total: null, gpu: _t('env.fallback_gpu'),
+  vram_used: null, vram_total: null, gpu_load: null,
   backend: _t('env.fallback_backend'), model: _t('env.fallback_model'),
-  latency: 2.1, uptime: '—', sessions: 0,
+  latency: null, uptime: '—', sessions: 0,
+  measured: false,
 };
 const JARVIS_FALLBACK_WEATHER = {
   city: _t('data.city'), temp: '—', desc: _t('data.loading'),
@@ -65,7 +72,9 @@ async function loadJarvisData() {
   let calendar = [...JARVIS_FALLBACK_CALENDAR];
   let notifications = [...JARVIS_FALLBACK_NOTIFICATIONS];
   let tasks = [];
-  let lmOnline = true;
+  // null = not yet known. It defaulted to `true`, and the /status catch below is
+  // silent, so a hub that never answered rendered its LM backend badge as online.
+  let lmOnline = null;
   let statusAgents = [];
 
   // Fetch /api/agents for full agent list
@@ -81,11 +90,15 @@ async function loadJarvisData() {
   // Always fetch /status for live sys data (replaces static fallback)
   try {
     const r = await fetch('/status');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
-    if (d.sys) sys = { ...sys, ...d.sys };
+    // `measured: true` only once a real sample actually arrived.
+    if (d.sys) sys = { ...sys, ...d.sys, measured: true };
     if (d.lm_online !== undefined) lmOnline = d.lm_online;
     if (agents.length === 0 && d.agents) statusAgents = d.agents;
-  } catch {}
+  } catch (e) {
+    console.warn('status poll failed — system telemetry stays unmeasured:', e);
+  }
 
   // If agents failed, build from /status
   if (agents.length === 0) {

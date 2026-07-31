@@ -16,6 +16,7 @@ does `monkeypatch.setattr(web, "_dashboard_cache", ...)` / `_dashboard_lock`), a
 import edge back into `agents.web`.
 """
 
+import logging
 import sys
 import time
 from datetime import UTC, datetime
@@ -28,6 +29,8 @@ from pydantic import BaseModel
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
+
+logger = logging.getLogger("jarvis.web")
 
 router = APIRouter(tags=["dashboard"])
 
@@ -234,17 +237,23 @@ async def get_ticker():
     if orch.observer:
         try:
             obs_status = orch.observer.status()
-            for key, state in obs_status.get("signals", {}).items():
-                if not state.get("healthy", True):
-                    items.append({
-                        "agent": state.get("agent", "steve"),
-                        "verb": "WARNING",
-                        "obj": state.get("detail", key),
-                        "pct": 100,
-                        "pri": "high" if state.get("severity") == "CRITICAL" else "mid",
-                    })
+            # `ProactiveObserver.status()` returns {"probes", "tracked", "unhealthy"}.
+            # This read `obs_status.get("signals", {})` — a key it has never emitted —
+            # so the loop body never executed and every unhealthy probe was silently
+            # dropped from the ticker. A hub with Qdrant down and the disk filling up
+            # scrolled "all agents monitoring" exactly like a healthy one.
+            # Entries are {"key", "detail", "severity"} and are unhealthy by
+            # construction, so there is no `healthy` flag left to check.
+            for signal in obs_status.get("unhealthy", []):
+                items.append({
+                    "agent": signal.get("agent", "steve"),
+                    "verb": "WARNING",
+                    "obj": signal.get("detail") or signal.get("key", "unknown signal"),
+                    "pct": 100,
+                    "pri": "high" if signal.get("severity") == "CRITICAL" else "mid",
+                })
         except Exception:
-            pass
+            logger.warning("ticker: observer status unreadable", exc_info=True)
 
     # 2. Add active unhealthy signals from event watcher
     if getattr(orch, "event_watcher", None):

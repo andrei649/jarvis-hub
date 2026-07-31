@@ -20,7 +20,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~5,430 collected (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~5,660 collected (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -229,10 +229,10 @@ python -m pytest tests/ -v          # ~5,430 collected (counter synced via scrip
     decision, execution and failure now leave signed records with causal attribution. Both call sites
     share `orch.action_audit`. Best-effort contract preserved: a failed audit write never aborts an
     authorized action. (+9 tests across a/b/c; backend counter 5430 → 5439 after rebase onto #729.)
-- [ ] 🔴 **GAP-2d — SEC-B3 Telegram owner binding + default channel pairing on.** The remaining
-  one-liner, deliberately split out: our only live approval sink accepts decisions from anyone in the
-  chat, while Hermes documents default-deny + DM pairing. Touches the security lane, not the defaults
-  lane.
+- [x] ✅ **GAP-2d — SEC-B3 Telegram owner binding.** **Owner-binding half done** — the approval sink
+  now checks owner chat id **and** user id and fails closed with neither configured, and
+  `TELEGRAM_ALLOWED_USER_IDS` is parsed so the channel guards are reachable at all (they were
+  unreachable no-ops). *Still open:* channel pairing ON by default, which is the defaults lane.
 - [ ] 🔴 **GAP-3 — register the escaping action kinds.** `channel.reply` and `skill.install` call
   `kernel.authorize` but are absent from `ACTION_REGISTRY` / `tests/_snapshots/action_auth.json`, and
   the matrix test cannot discover kinds that were never registered (its broker enumeration is a
@@ -241,9 +241,10 @@ python -m pytest tests/ -v          # ~5,430 collected (counter synced via scrip
   (browser · desktop · house · one acquisition); publish the table including the losses. Aim at where
   Hermes documents *limits* — Windows admin-integrity windows (UIPI), Wayland without XWayland,
   password entry. ~1 day. Feeds S1/S2.
-- [ ] 🟠 **GAP-5 — SEC-B1 with its preconditions stated.** Real and cheap to fix, but it needs cloud
-  configured AND (`cloud_fallback=always` OR local down OR prompt over the local window) — not a
-  default-install leak. Overstating it is how a real finding gets dismissed.
+- [x] ✅ **GAP-5 — SEC-B1 with its preconditions stated.** **FIXED**, and the preconditions were right
+  to insist on: cloud configured AND (`cloud_fallback=always` OR local down OR a prompt over the local
+  window) — not a default-install leak. The adversarial audit independently reached the same
+  correction after its first pass overstated it. Overstating a real finding is how it gets dismissed.
 - [ ] 🟠 **GAP-6 — flags: know what flipping costs.** `JARVIS_ACTION_KERNEL` is **not pure hardening**
   — with it on, a broker GRANT sets `autonomy_level="act"`, removing the wave-1 unconditional `ask`
   floor; and the O27–O30 facades need **two** flags (`JARVIS_UNIFIED_ACTION_API` too), so the kernel
@@ -289,18 +290,18 @@ python -m pytest tests/ -v          # ~5,430 collected (counter synced via scrip
   mode), while still tolerating a legitimate legacy pre-Merkle prefix. +3 regression tests.
 
 **Deferred — needs design/posture work (ranked):**
-- [ ] 🔴 **SEC-B1 (Critical) — Frigga family data → cloud via synthesis.** `Agent.synthesize` runs
+- [x] ✅ **SEC-B1 — Frigga family data → cloud via synthesis.** **FIXED** — `Agent.synthesize` now computes a policy floor over CONTRIBUTORS and pins the merge to `llm_router.local_backend` (the fail-closed accessor `_compression_summarizer` already used), falling back to the deterministic join when no local backend exists. Tested at the synthesize boundary, per the audit. Original: `Agent.synthesize` runs
   under jarvis's cloud-eligible policy and embeds a strict-local agent's raw output; a direct-to-Frigga
   turn triggers synthesis. Fix: synthesis inherits the strictest contributor policy (pin local if any
   responder ∈ `LOCAL_ONLY_AGENTS`) + a test that frigga-containing responses never select cloud.
   Precondition: cloud configured + (`cloud_fallback=always` or large prompt). Breaks the hardest promise.
-- [ ] 🟠 **SEC-B2 — unkeyed-hash-as-signature (audit #3 + skill signing #9).** `REQUIRE_SIGNED_SKILLS`
+- [x] ✅ **SEC-B2 — unkeyed-hash-as-signature (audit #3 + skill signing #9).** **FIXED both halves** — `require_signed()` fails closed when enforcement is on with no key; `verify_skill` returns `integrity-only` rather than `signed` for an unkeyed digest; `signing_posture()` surfaces `effective`/`integrity_only` on `/api/security/posture`; and the audit-chain half is AUDIT-1 above. Original: `REQUIRE_SIGNED_SKILLS`
   and the "tamper-evident" audit claim only hold when an optional key env var is set. Fail closed /
   label unkeyed digests as integrity-only; surface the distinction in `/api/security/posture`.
-- [ ] 🟠 **SEC-B3 — Telegram approval owner-binding.** Callback handler has no owner check when
+- [x] ✅ **SEC-B3 — Telegram approval owner-binding.** **FIXED** — `TELEGRAM_ALLOWED_USER_IDS` is parsed and passed (the guards were unreachable no-ops before), the decision callback checks owner chat **and** user id and fails closed with neither, and the pairing gate no longer defaults to allow on a store error. Original: Callback handler has no owner check when
   constructed without `allowed_user_ids` (the production wiring). Implement the 2-factor callback
   check (owner `chat_id` + `user_id`, fail closed on empty allowlist) the wave plan already specifies.
-- [ ] 🟡 **SEC-B4 — SSRF IP-pinning coverage.** The checker is sound but the Playwright path and the
+- [ ] 🟡 **SEC-B4 — SSRF IP-pinning coverage.** *(still open — needs a live network/browser host to demonstrate; chapter 15 ADV-142.)* The checker is sound but the Playwright path and the
   central `PluginHTTPClient` don't route through `resolve_and_validate` with pinning (rebinding TOCTOU).
 - [ ] 🟡 **SEC-B5 — taint by dataflow, not just declared origin.** Proactive/recall/ambient payloads
   rebuilt outside an inbound turn drop ingress taint (worst confirmed case is READ_ONLY-bounded).
@@ -309,7 +310,7 @@ python -m pytest tests/ -v          # ~5,430 collected (counter synced via scrip
 trying hard to embarrass this codebase mostly re-discovered SEC-B1…B6 above. Two need owner triage
 because they are **not** on that list:
 
-- [ ] 🔴 **AUDIT-1 (High, confirmed) — the audit chain is forgeable in hardened mode.** `verify_chain`
+- [x] ✅ **AUDIT-1 (High, confirmed) — the audit chain is forgeable in hardened mode.** **FIXED** — `verify_chain`
   recomputes each row with *the row's own* `hash_algo`, and `_digest` demands the key only when that
   column says `hmac-sha256`. Downgrade every row to `sha256` and the chain re-links cleanly with
   `JARVIS_AUDIT_KEY` set and `hardened.enforce()` returning clean — reproduced independently while
@@ -318,7 +319,7 @@ because they are **not** on that list:
   is still an HMAC. Fix: pin the algorithm per install and treat a post-legacy `sha256` row as
   tampering when a key is configured — the fail-closed shape the blank-row guard (SEC-A2) already
   uses. Extend the regression to a full-table rewrite in the same commit. Same root cause as SEC-B2.
-- [ ] 🔴 **AUDIT-2 (High, confirmed) — `POST /api/admin/forget` does not erase, it copies.** Three
+- [x] ✅ **AUDIT-2 (High, confirmed) — `POST /api/admin/forget` did not erase, it copied.** **FIXED** — Three
   independent failures: twelve user-content stores sit outside the `PURGE_*` allowlists (including
   per-agent run previews and full inbound message bodies, two of them on a denylist that also stops
   the session path deleting them, so nothing removes them ever); the vector/KG wipe is dead code —
@@ -343,6 +344,101 @@ owner's machine in 30 seconds, read-only.
 
 - [ ] **SEC-B6 — gate hardening.** Extend `test_route_auth_matrix.py` to require classification of
   *read* routes touching personal data, so the theme-B read/write asymmetry can't regress open.
+
+**Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
+3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source
+and, where the defect was reproducible, reproduced before being fixed. The verification stage
+required 2 of 3 independent skeptics to fail to refute a claim, each with a different lens
+(does-it-reproduce / already-handled-elsewhere / is-the-severity-honest).
+
+The theme is the same one the 2026-07-25 audit named — a claim whose shape is checked but whose
+substance is not — and it turned out to be much wider than the gates. It runs through the *display*
+layer end to end: **twelve surfaces asserted something they had never measured.**
+
+Fixed, all with regression tests that fail when the defect is reintroduced:
+
+- [x] ✅ **Privacy: a forget kept a plaintext copy of everything it erased.** `backups` sat on
+  `KEEP_DIRS`, justified as holding the pre-forget archive — but AUDIT-2c had already moved that
+  archive *outside* the data root. What the entry actually retained was ordinary owner snapshots,
+  and `POST /api/admin/backup` passes no key, so those are unencrypted tarballs of the whole root.
+  Back up Monday, forget Friday, and `purge_data` returned `ok:true` while a cleartext copy sat in
+  the folder it had just cleaned.
+- [x] ✅ **Data loss: every forget destroyed `settings.db`.** The sweep unlinked SQLite `-wal`/`-shm`
+  sidecars, including those of the KEPT databases (`Path("settings.db-wal").suffix` is `.db-wal`, so
+  it matched no branch and fell through to `unlink()`). Deleting the `-wal` of a live WAL database
+  leaves it unopenable — reproduced as `disk I/O error`.
+- [x] ✅ **Money: the runway figure was computed from mock bank balances.** With ING configured and
+  failing, `_total_balance()` summed the hardcoded `MOCK_BALANCES` to 16000.32 and divided real
+  monthly spend by it, returning `"mock": false`.
+- [x] ✅ **Two lost-write races on the secret store.** Key/salt creation was check-then-act, reachable
+  from the two backup routes that each build a `SecretStore` in a worker thread — the loser's archive
+  becomes permanently undecryptable. Writing the tests surfaced a second race the finders missed: a
+  shared `.tmp` filename plus a read-modify-write over a per-instance cache, which silently dropped
+  credentials.
+- [x] ✅ **Privacy assurance from missing data.** The legacy HUD computed strict-local as
+  `!trust || trust.strict_local`, so a HUD that could not reach `/api/trust/status` displayed a
+  padlock reading "nothing leaves this machine".
+- [x] ✅ **The HUD synthesized its own telemetry.** `useLiveSys` layered sine waves and
+  `Math.random()` onto RAM/VRAM/GPU/latency every 1.4s and rendered the result as live host state,
+  seeded from a hardcoded 42/192 GB machine. Numbers that drift are more convincing than static ones.
+- [x] ✅ **`/security/status` was entirely static** — mode always `WARN`, every counter `0`, pattern
+  counts hand-written and wrong. Guardrails now actually count; what is still unmeasured says so.
+- [x] ✅ **`/readyz` published a configured backend NAME inside a dict called `checks`.**
+- [x] ✅ **`/api/cognition` fabricated a routing decision** (confidence 1.0, zeroed timings) when
+  nothing had been routed. Its test asserted the fabrication.
+- [x] ✅ **`/learning/stats` had never once worked** — `list()` over an int count, TypeError on every
+  call, swallowed into a body of zeros. Its test asserted only "ints and lists", which zeros satisfy.
+- [x] ✅ **`/ticker` read a key the observer has never emitted**, so every unhealthy probe was
+  silently dropped. Its test stubbed the same fictional key, so test and code agreed while both
+  disagreed with the class.
+- [x] ✅ **OBSERVE rendered the demo seed under a LIVE badge** — `/api/quality` nests under `stats`
+  and `/api/resilience` emits none of uptime/errors/redactions, so four fabricated numbers showed
+  with a green chip.
+- [x] ✅ **XSS in the public widget snippet** (`color`/`position` unescaped into `innerHTML`) and
+  **path traversal in skill import** (`replace(" ", "-")` left `..` and `/` intact).
+- [x] ✅ **The four hanging routes, root-caused.** A blocking Qdrant read inside an async handler
+  under a lock froze the whole event loop, so handlers with no I/O of their own hung too; plus a
+  heavy ML import on the loop and an unbounded memory await.
+- [x] ✅ **Shutdown released nothing** — autonomy worker and learning loop never cancelled, two
+  sqlite handles never closed (which is what makes a data directory undeletable on Windows).
+- [x] ✅ **Cypher property names could hijack node identity** — a relation property called `source`
+  rewired the relation to a different node.
+
+Still open from that run (verified real, not yet fixed): blocking DNS/HTTP on the request path in
+`browser.py`, `codeintel.py`, `house.py`, `onvif.py`, `memory_kg.py`; the unauthenticated full-chain
+re-verify in `security.py`; `north_star.py` reporting an all-time aggregate as the 7-day counter
+metric; the seeded ADMIN/OBSERVE corpora in `modes3.tsx`/`modes2.tsx`; and the dead `arr() || fallback`
+in two `gap.tsx` panels.
+
+- [x] ✅ **Follow-up: the secret-store race fix corrupted key material on Windows.** The new
+  `_read_or_create_atomically` opened its descriptor without `O_BINARY`, so the CRT ran it in TEXT
+  mode and expanded every `0x0A` to `0x0D 0x0A`: the creator returned the 16 salt bytes it minted
+  while every later reader read 17 different ones, deriving a different key for the same store. ~6%
+  per salt (`1 - (255/256)**16`), silent, and reported only as "cannot decrypt secret (wrong key or
+  corrupted)" against data written correctly. It surfaced as three unrelated Windows failures on a
+  docs-only PR (`test_secrets`, `test_h30_presence`, `test_oauth_token_key`), which is the honest
+  version of "the Windows run was green last time" — it was, by luck. `vault.py` has always ORed the
+  flag in; `secrets.py` was the one `os.open` in the repo that did not. +3 tests, one of which pins
+  the flag by giving POSIX an `O_BINARY`, so a Linux-only run can still catch its removal.
+
+**The phone surface — open question, owner call (2026-07-29).** The scheduled e2e run fails 9
+`mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button "intercept pointer events" at
+the 393×851 Pixel 5 viewport). Nothing regressed: `E2E_BROWSER_MATRIX` is set only on `schedule`
+events, and **all 26 scheduled runs since 2026-07-04 have failed — none has ever passed.** The matrix
+was switched on over a layout that was never made responsive. Two facts frame the decision:
+
+- [ ] 🟡 **The web HUD is not reachable from a phone today, by design.** `serve.py:66` defaults
+  `JARVIS_HOST` to `127.0.0.1`, and `assert_safe_bind()` (`boot_guards.py:25`) **exits** on a
+  non-loopback bind unless `JARVIS_USER_TOKEN`/`JARVIS_ADMIN_TOKEN` is set (or
+  `JARVIS_ALLOW_INSECURE_BIND=1`); even then `_user_guard` (`web.py:192`) 403s every non-localhost
+  client without a `USER_TOKEN`. The guards are right — but **the supported LAN path is documented
+  nowhere**: a `docs/` grep for LAN/remote-access guidance returns nothing. Write it down regardless
+  of the decision below.
+- [ ] 🟡 **`mobile/` already assumes this topology** — a React Native app whose client takes a
+  configured `baseUrl` (`mobile/src/api/client.ts`). If the app is the phone story, the web HUD is a
+  desktop surface and `mobile-chrome` should come **out** of the matrix rather than stay permanently
+  red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
+  (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
 
 ---
 

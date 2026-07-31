@@ -19,10 +19,22 @@ fallback for older repos.
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("jarvis.skills.importer")
+
+# A skill slug becomes a directory name under `skills_dir`, so it is restricted to
+# an identifier alphabet — the same shape the agents router uses for agent ids.
+# It used to be `skill_name.lower().replace(" ", "-")`, which replaces ONLY spaces:
+# path separators, "..", a leading "/" and a drive letter all survived it, and the
+# result was joined straight onto skills_dir. A skill named "../../pwned" wrote to
+# the grandparent directory and "/etc/jarvis-pwned" wrote at the filesystem root.
+# (The route is user-guarded and DEV_MODE-only, so this is not a remote hole — but
+# the name reaches the path from a remote repository listing, and a mistake or a
+# hostile source should not be able to write outside the skills tree.)
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 HERMES_REPO = "NousResearch/hermes-agent"
 HERMES_SKILLS_PATH = "main/skills"
@@ -31,6 +43,17 @@ OPENCLAW_SKILLS_PATH = "main/skills"
 
 GITHUB_RAW = "https://raw.githubusercontent.com"
 GITHUB_API = "https://api.github.com"
+
+
+def _safe_slug(skill_name: str) -> Optional[str]:
+    """Directory-safe slug for *skill_name*, or None if it cannot be made safe.
+
+    Rejects rather than sanitizes: silently rewriting "../../pwned" into "pwned"
+    would import a skill under a name the caller did not ask for, which is its own
+    surprise. A name that is not a plain identifier is refused.
+    """
+    slug = (skill_name or "").strip().lower().replace(" ", "-")
+    return slug if _SLUG_RE.match(slug) else None
 
 
 class SkillImportError(Exception):
@@ -61,7 +84,12 @@ class SkillImporter:
         except ImportError:
             raise SkillImportError("httpx required for skill import")
 
-        skill_slug = skill_name.lower().replace(" ", "-")
+        # Validate before any network call: this slug is interpolated into the raw
+        # GitHub URL path, so an unchecked name could climb it or graft on a query.
+        skill_slug = _safe_slug(skill_name)
+        if skill_slug is None:
+            logger.warning("Rejected skill import: unsafe name %r", skill_name)
+            return False
         branch, subdir = self._split_base_path(base_path)
 
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
@@ -167,8 +195,20 @@ class SkillImporter:
         skill_md_text: Optional[str] = None,
         manifest: Optional[dict] = None,
     ) -> bool:
-        slug = skill_name.lower().replace(" ", "-")
+        slug = _safe_slug(skill_name)
+        if slug is None:
+            logger.warning("Rejected skill import: unsafe name %r", skill_name)
+            return False
         target_dir = self.skills_dir / slug
+        # Belt and braces: even with the regex, confirm the resolved path is really
+        # inside the skills tree before creating anything. A symlinked skills_dir or
+        # a future change to the pattern cannot quietly reopen the escape.
+        try:
+            target_dir.resolve().relative_to(self.skills_dir.resolve())
+        except ValueError:
+            logger.warning("Rejected skill import: %r resolves outside %s",
+                           skill_name, self.skills_dir)
+            return False
         target_dir.mkdir(parents=True, exist_ok=True)
 
         if skill_md_text is None:

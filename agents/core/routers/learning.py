@@ -12,6 +12,8 @@ web. Behavior is unchanged: handlers branch on a missing/partial orchestrator
 exactly as the inline versions did.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -19,6 +21,8 @@ from pydantic import BaseModel
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
 from agents.core.web_helpers import nocache_json
+
+logger = logging.getLogger("jarvis.web")
 
 router = APIRouter(tags=["learning"])
 
@@ -86,7 +90,9 @@ async def learning_stats():
         return nocache_json({"interactions_total": 0, "success_rate": 0, "prompt_optimizations": [], "promotion_candidates": [], "demotion_warnings": []})
     try:
         stats = orch.learning.get_stats()
-        active_ids = list(stats.get("agents_tracked", stats.get("active_ids", [])))
+        # `agents_tracked` is a COUNT; iterating it raised TypeError on every call.
+        # `agent_ids` is the list this always meant.
+        active_ids = list(stats.get("agent_ids") or [])
         optimizations = []
         for aid in active_ids:
             opt = orch.learning.optimize_prompt(aid) if hasattr(orch.learning, 'optimize_prompt') else None
@@ -105,4 +111,14 @@ async def learning_stats():
             "demotion_warnings": [],
         })
     except Exception:
-        return nocache_json({"interactions_total": 0, "success_rate": 0, "prompt_optimizations": [], "promotion_candidates": [], "demotion_warnings": []})
+        # Zeros here are a claim: "the hub has had 0 interactions with a 0% success
+        # rate", which the SystemsPanel renders as a real reading. A failed read is
+        # a different fact, so say which one this is.
+        logger.warning("learning stats read failed", exc_info=True)
+        return nocache_json({
+            "interactions_total": None, "success_rate": None,
+            "prompt_optimizations": [], "promotion_candidates": [],
+            "demotion_warnings": [],
+            "available": False,
+            "degraded": {"source": "learning", "reason": "read-failed"},
+        })

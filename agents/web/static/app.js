@@ -53,11 +53,18 @@ function App() {
   }, []);
 
   var fetchCognition = useCallback(async function () {
+    // A failed fetch must not leave the last successful render on screen, and an
+    // error body must not be parsed into the panel: both read as "nothing has been
+    // routed yet", which is a different fact. Fail to a labelled unavailable state.
     try {
       var r = await fetch('/api/cognition');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       var d = await r.json();
       setCognitionData(d);
-    } catch (e) { console.error('Failed to fetch cognition:', e); }
+    } catch (e) {
+      console.error('Failed to fetch cognition:', e);
+      setCognitionData({ scoring: [], decision: null, trace: [], live: false, state: 'unavailable' });
+    }
   }, []);
 
   useEffect(function () {
@@ -392,6 +399,7 @@ function App() {
           scoring: cognitionData ? cognitionData.scoring : [],
           decision: cognitionData ? cognitionData.decision : null,
           trace: cognitionData ? cognitionData.trace : [],
+          state: cognitionData ? cognitionData.state : null,
           message: '',
           onRefresh: fetchCognition,
         }),

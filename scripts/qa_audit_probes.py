@@ -25,9 +25,10 @@ not the verdicts.
 
 **Safety.** Every probe is read-only against the live install. The chain probe forges
 rows in a throwaway ``tempfile`` DB and never opens ``<data_root>/security/audit.db``.
-The purge probe *lists* stores and never deletes. Nothing prints a secret value: the
-signing probe reports whether signing is configured, never any part of the secret, and the
-chain probe generates its own throwaway key rather than carrying a literal one.
+The purge probe seeds and erases its OWN temp data root, never the real one. The chain and
+signing probes set env vars and restore them. Nothing prints a secret value: the signing
+probe reports only WHETHER signing is configured, and the chain probe generates a throwaway
+key rather than carrying a literal one.
 
 Usage:
     python scripts/qa_audit_probes.py                 # all probes, table
@@ -176,34 +177,75 @@ _KNOWN_USER_STORES = {
 
 
 def probe_purge() -> dict:
-    """Which known user-content stores are outside every purge allowlist?
+    """Do the known user-content stores actually survive a forget?
 
-    ``PURGE_DBS`` is three databases, ``PURGE_JSON`` is two files, and
-    ``PURGE_MEMORY_FILES`` covers the memory subsystem by exact name. Anything else that
-    holds user content simply survives ``POST /api/admin/forget``, which
-    ``docs/PRIVACY.md`` says "erases memory, transcripts, vectors, and the knowledge
-    graph at rest".
+    Seeds a throwaway data root with each store the audit named, carrying a recognisable
+    marker, runs a real ``purge_data`` over it, and reports which markers are still
+    readable afterwards.
+
+    This is deliberately a *measurement* and not a reading of the allowlists. The first
+    version of this probe compared ``PURGE_DBS | PURGE_JSON | PURGE_MEMORY_FILES`` against
+    a hand-list of stores — which answered "is this name in that tuple", not "does the
+    data survive". The moment the purge stopped working from those tuples, the probe kept
+    reporting OPEN against a fixed codebase. That is precisely the shape-instead-of-
+    substance reflex chapter 15 exists to criticise, committed inside chapter 15's own
+    tooling, and it is why this one writes bytes and then looks for them.
+
+    Never touches the live install: everything happens under ``tempfile``.
     """
     from agents.core import data_purge as dp
     from agents.core.data_export import EXPORT_DBS
 
-    covered = set(dp.PURGE_DBS) | set(dp.PURGE_JSON) | set(dp.PURGE_MEMORY_FILES)
-    survivors = {name: owner for name, owner in sorted(_KNOWN_USER_STORES.items())
-                 if name not in covered}
-    export_only = sorted(set(EXPORT_DBS) - set(dp.PURGE_DBS))
+    with tempfile.TemporaryDirectory(prefix="adv015-") as d:
+        root = Path(d) / "data"
+        root.mkdir()
+        for name in _KNOWN_USER_STORES:
+            path = root / name
+            if path.suffix == ".db":
+                con = sqlite3.connect(str(path))
+                try:
+                    con.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, body TEXT)")
+                    con.execute("INSERT INTO items (body) VALUES (?)", (f"MARKER-{name}",))
+                    con.commit()
+                finally:
+                    con.close()
+            elif path.suffix == ".jsonl":
+                path.write_text(f'{{"body": "MARKER-{name}"}}\n', encoding="utf-8")
+            else:
+                path.write_text(f'{{"body": "MARKER-{name}"}}', encoding="utf-8")
+
+        seeded = len(_KNOWN_USER_STORES)
+        dp.purge_data(source_root=str(root), backup_first=False, memory=True)
+
+        survivors = {}
+        for name, owner in sorted(_KNOWN_USER_STORES.items()):
+            path = root / name
+            if not path.exists():
+                continue
+            try:
+                if b"MARKER-" in path.read_bytes():
+                    survivors[name] = owner
+            except OSError:
+                continue
+
+    # Kept as context, not as a verdict input: once the purge works from KEEP rather
+    # than PURGE_DBS, a database missing from that tuple is no longer retained — the
+    # sweep catches it. The asymmetry the audit flagged is now cosmetic.
+    named_in_export_not_in_purge_dbs = sorted(set(EXPORT_DBS) - set(dp.PURGE_DBS))
     return {
         "claim": "user-content stores survive a forget because the purge works from an allowlist",
         "verdict": OPEN if survivors else CLOSED,
         "detail": {
-            "purge_dbs": list(dp.PURGE_DBS),
-            "purge_json": list(dp.PURGE_JSON),
-            "surviving_stores": survivors,
-            "exported_but_never_purged": export_only,
-            "backup_first_forced_by_route": True,
+            "stores_seeded": seeded,
+            "still_readable_after_forget": survivors,
+            "keep_files": sorted(getattr(dp, "KEEP_FILES", ())),
+            "keep_dirs": sorted(getattr(dp, "KEEP_DIRS", ())),
+            "named_in_export_not_in_purge_dbs": named_in_export_not_in_purge_dbs,
         },
-        "means": ("OPEN: each listed store keeps its contents through a forget. The "
-                  "audit's proposed shape is the inverse — purge everything under the "
-                  "data root except an explicit KEEP allowlist."),
+        "means": ("OPEN: each listed store still held its marker after a real purge over "
+                  "a seeded data root. CLOSED: nothing seeded survived — note this proves "
+                  "the file half only; the live vector/KG wipe is the `clear` probe, and "
+                  "the pre-forget archive is ADV-024."),
     }
 
 
@@ -250,38 +292,64 @@ def _signing_is_configured(signing) -> bool:
 
 
 def probe_signing() -> dict:
-    """Does ``require_signed()`` fail closed when enforcement is on and no key is set?
+    """With enforcement on and no key, does the signing gate fail closed?
 
-    ``compute_digest`` returns a plain ``sha256:`` digest with no key configured, and
-    ``require_signed()`` reads one env flag and nothing else — so an attacker who ships
-    their own ``SKILL.sig`` computes a matching digest without any secret.
+    Sets ``JARVIS_REQUIRE_SIGNED_SKILLS`` with no ``JARVIS_SKILL_SIGNING_KEY`` and calls
+    the real ``require_signed()``. Returning True there is the finding: ``compute_digest``
+    hands back a plain sha256 with no key, so an attacker computes the same value and
+    ships their own ``SKILL.sig`` — the flag then blocks honest unsigned content and
+    accepts anything a deliberate adversary signs.
 
-    Never prints key material: only whether signing is configured at all. The value is
-    reduced to a bool inside ``_signing_is_configured`` and nothing else about it — not a
-    prefix, not a length — leaves that function. Nothing in the output is named for a
-    credential either, which is deliberate: a detector that echoes what it detects is the
-    classic own-goal, and ``scripts/check_test_manual.py`` carries the scar tissue from
-    getting this wrong three times.
+    Behavioural on purpose. The first version grepped ``require_signed``'s AST for the
+    signing-key helper by name, which is a proxy for the property and broke the moment the
+    fix called a differently-named accessor — the third time on this branch that a probe
+    measured shape instead of substance. Both env vars are restored afterwards.
+
+    Never prints key material: only whether signing is configured, reduced to a bool in
+    ``_signing_is_configured`` and named for nothing.
     """
     from agents.core.skills import signing
 
-    src = (ROOT / "agents/core/skills/signing.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    body = next((n for n in ast.walk(tree)
-                 if isinstance(n, ast.FunctionDef) and n.name == "require_signed"), None)
-    consults_a_configured_secret = bool(body) and "_signing_key" in ast.unparse(body)
+    saved = {k: os.environ.get(k)
+             for k in ("JARVIS_REQUIRE_SIGNED_SKILLS", "JARVIS_SKILL_SIGNING_KEY")}
+    try:
+        os.environ["JARVIS_REQUIRE_SIGNED_SKILLS"] = "1"
+        os.environ.pop("JARVIS_SKILL_SIGNING_KEY", None)
+        try:
+            enforced_unkeyed = signing.require_signed()
+            fails_closed = False
+        except Exception as exc:
+            enforced_unkeyed = None
+            fails_closed = type(exc).__name__ == "SkillSigningMisconfigured"
+
+        # ...and the honest configuration must still work, or the fix is a denial of
+        # service rather than a gate.
+        os.environ["JARVIS_SKILL_SIGNING_KEY"] = secrets.token_hex(16)
+        try:
+            enforced_keyed = signing.require_signed()
+        except Exception:
+            enforced_keyed = None
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
     return {
         "claim": "hardening JARVIS_REQUIRE_SIGNED_SKILLS buys nothing when no signing key is configured",
-        "verdict": CLOSED if consults_a_configured_secret else OPEN,
+        "verdict": CLOSED if (fails_closed and enforced_keyed is True) else OPEN,
         "detail": {
-            "require_signed_consults_a_configured_secret": consults_a_configured_secret,
+            "enforcement_without_a_key_fails_closed": fails_closed,
+            "enforcement_without_a_key_returned": enforced_unkeyed,
+            "enforcement_with_a_key_still_works": enforced_keyed,
             "signing_is_configured_on_this_host": _signing_is_configured(signing),
             "unkeyed_algo_label": signing.compute_digest(ROOT / "agents/core/skills")[0],
         },
         "means": ("OPEN: enforcement accepts an unkeyed digest, so the gate stops honest "
-                  "unsigned content and not a deliberate adversary. Note the audit's "
-                  "correction: the exec primitive in loader._load_skill, not the hash, is "
-                  "what grants code execution — fix that first."),
+                  "unsigned content and not a deliberate adversary. Either way, note the "
+                  "audit's correction: the exec primitive in loader._load_skill, not the "
+                  "hash, is what grants code execution — fix that first."),
     }
 
 
@@ -310,28 +378,27 @@ def _class_members(node: ast.ClassDef) -> set[str]:
 
 
 def probe_honesty() -> dict:
-    """Which plugins does ``honesty.py`` contradict itself about?
+    """Does ``honesty_for`` return a green LIVE verdict for a plugin that needs a key?
 
-    The test is deliberately narrow, because the loose version is wrong: a keyless
-    plugin (weather, news, stock quotes) *should* badge green, so "exposes no
-    ``configured``" is not by itself a defect. The defensible claim is an internal
-    contradiction inside one module — the plugin's id appears in ``honesty._NEEDS``,
-    which says the owner must supply a key, **and** its class exposes none of
-    ``configured``/``available``/``_configured``, so ``plugin_configured`` falls through
-    to ``(True, "loaded")`` and ``honesty_for`` maps ``"loaded"`` to *live, no setup
-    required*. The module asserts both "needs a key" and "needs no setup".
+    Calls the real verdict function with the inputs a KEYLESS BOOT produces for each
+    plugin ``honesty._NEEDS`` says requires config, and flags any that comes back
+    ``live``. Measuring the function beats reading the classes: the first version of this
+    probe checked whether a class exposed ``configured``/``available``/``_configured``,
+    which is one of three things that decide the verdict — so when the fix routed two
+    plugins through the ``degradation_info()`` override instead of giving them an
+    attribute, the probe kept reporting OPEN against corrected behaviour. Same
+    shape-instead-of-substance reflex chapter 15 is about, inside chapter 15's tooling,
+    for the second time.
 
-    A class with no ``degradation_info()`` also gets no amber MOCK chip next to the green
-    one (``frontend/src/modes3.tsx``), so that row is a clean green lie rather than a
-    visible contradiction the owner can spot.
-
-    Static (AST) on purpose: booting the plugin host would need the owner's real keys, and
-    the audit's worst methodology error came from a stubbed runtime.
+    Static only in one respect, stated so nobody over-reads it: whether a plugin *would*
+    report degradation on a keyless boot is taken from ``degradation_info()`` existing at
+    all, since reporting mock-mode when unconfigured is that method's entire purpose.
+    Confirm against a real keyless boot (ADV-070) before filing.
     """
-    from agents.core.plugins.honesty import _NEEDS
+    from agents.core.plugins.honesty import _NEEDS, honesty_for
 
     plugin_dir = ROOT / "agents/core/plugins"
-    contradicted, unresolved, honest = [], [], []
+    still_live, unresolved, honest = [], [], []
     for pid in sorted(_NEEDS):
         base = _PLUGIN_MODULE_ALIASES.get(pid, pid.replace("-", "_"))
         path = plugin_dir / f"{base}.py"
@@ -349,45 +416,43 @@ def probe_honesty() -> dict:
             unresolved.append(pid)
             continue
         members = set().union(*(_class_members(c) for c in classes))
-        rel = f"agents/core/plugins/{path.name}"
-        if any(a in members for a in _HONESTY_ATTRS):
-            honest.append(pid)
+
+        # What a keyless boot hands honesty_for. Only the NO-CONTRACT case is interesting:
+        # `plugin_configured` falls through to (True, "loaded") when a class exposes none
+        # of the three attributes, and that spurious True is the whole trap. A plugin that
+        # HAS a contract reports configured=False without its key, which is the honest
+        # path — asserting True for those would manufacture findings, the same error the
+        # audit's own Gmail auditor made by stubbing a gate to return True.
+        has_contract = any(a in members for a in _HONESTY_ATTRS)
+        degraded = "degradation_info" in members
+        if has_contract:
+            attr = next(a for a in _HONESTY_ATTRS if a in members)
+            configured, source = False, f"{attr}()"
         else:
-            contradicted.append({
-                "plugin": pid,
-                "module": rel,
-                "needs": _NEEDS[pid],
-                "has_degradation_info": "degradation_info" in members,
-            })
-    silent = [r["plugin"] for r in contradicted if not r["has_degradation_info"]]
+            configured, source = True, "loaded"
 
-    # The other direction: amber with nothing actionable in `needs`.
-    amber_empty = []
-    for pid in ("analytics",):
-        base = _PLUGIN_MODULE_ALIASES.get(pid, pid.replace("-", "_"))
-        path = plugin_dir / f"{base}.py"
-        if path.exists() and pid not in _NEEDS:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            members = set().union(*[_class_members(n) for n in tree.body
-                                    if isinstance(n, ast.ClassDef)] or [set()])
-            if "configured" not in members and "available" in members:
-                amber_empty.append(pid)
+        verdict = honesty_for(pid, configured, source, degraded=degraded)
+        row = {"plugin": pid, "module": f"agents/core/plugins/{path.name}",
+               "verdict": verdict["status"], "needs": verdict["needs"],
+               "has_config_contract": has_contract, "has_degradation_info": degraded}
+        (still_live if verdict["status"] == "live" else honest).append(row)
 
+    empty_needs = [r["plugin"] for r in honest
+                   if r["verdict"] == "needs_config" and not r["needs"]]
     return {
         "claim": "honesty.py badges plugins LIVE that its own _NEEDS table says require a key",
-        "verdict": OPEN if contradicted or amber_empty else CLOSED,
+        "verdict": OPEN if (still_live or empty_needs) else CLOSED,
         "detail": {
-            "needs_a_key_but_badges_live": contradicted,
-            "green_with_no_mock_chip": silent,
-            "amber_with_an_empty_needs_list": amber_empty,
-            "resolved_and_honest": honest,
+            "needs_a_key_but_verdict_is_live": still_live,
+            "needs_config_with_nothing_to_configure": empty_needs,
+            "resolved_and_honest": [r["plugin"] for r in honest],
             "could_not_resolve_to_a_module": unresolved,
         },
-        "means": ("OPEN: each listed plugin badges LIVE on a keyless boot while the same "
-                  "module names the key it needs. green_with_no_mock_chip are the clean "
-                  "misstatements — the rest render [MOCK] beside the green, so the owner "
-                  "at least sees a contradiction. Verify every one against a real "
-                  "keyless boot before filing: this probe reads source, not runtime."),
+        "means": ("OPEN: each listed plugin would badge LIVE on a keyless boot while the "
+                  "same module names the key it needs. needs_config_with_nothing_to_"
+                  "configure is the other direction — an amber chip whose tooltip lists "
+                  "nothing. Verify against a real keyless boot (ADV-070): this calls the "
+                  "verdict function, not the running plugin host."),
     }
 
 
@@ -481,27 +546,57 @@ def probe_ambient() -> dict:
 
 
 def probe_parity() -> dict:
-    """Does the HUD parity gate check coverage, or only classify a prefix?
+    """Does the HUD parity suite check COVERAGE, or only classification?
 
-    ``_classify`` prefix-matches against ``RULES``, so an endpoint nobody has written and
-    no client calls still resolves to a surface and the gate goes green.
+    ``_classify`` prefix-matches against RULES, so an endpoint nobody wrote resolves to a
+    surface and the gate goes green. That function is not itself the defect — mapping a
+    route to a surface is a real job — the defect was that nothing else asked whether any
+    client CALLS the route, so classification was standing in for coverage.
+
+    So this measures the capability rather than the symptom: is there a gate that can tell
+    a called route from an uncalled one, over a non-empty corpus of real client sources?
+    An earlier version asserted that ``_classify`` returns UNMAPPED for an invented path,
+    which would have gone on reporting OPEN forever — ``_classify`` still classifies, by
+    design, and the fix was to add a coverage gate beside it, not to break the mapping.
     """
     sys.path.insert(0, str(ROOT / "tests"))
     try:
-        from test_hud_v2_parity import _classify
+        import test_hud_v2_parity as parity
     except Exception as exc:                                    # pragma: no cover
         return {"claim": "the parity gate classifies rather than covers",
-                "verdict": NA, "detail": {"import_error": str(exc)}, "means": "could not load the gate"}
+                "verdict": NA, "detail": {"import_error": str(exc)},
+                "means": "could not load the gate"}
+
     invented = "/api/admin/totally-invented-endpoint"
-    surface = _classify(invented)
+    classified_as = parity._classify(invented)
+
+    has_caller = getattr(parity, "_has_caller", None)
+    blob = parity._client_blob() if hasattr(parity, "_client_blob") else ""
+    coverage_gate = any(
+        name.startswith("test_") and "caller" in name for name in dir(parity)
+    )
+    # The gate is only real if it runs over actual client sources AND can distinguish a
+    # wired route from an invented one. Either half missing makes it vacuous.
+    distinguishes = bool(
+        has_caller and blob
+        and not has_caller(invented, blob)
+        and has_caller("/api/security/kill-switch", blob)
+    )
     return {
         "claim": "the HUD parity gate matches a URL prefix instead of asking whether any client calls the route",
-        "verdict": OPEN if surface != "UNMAPPED" else CLOSED,
-        "detail": {"invented_path": invented, "classified_as": surface},
-        "means": ("OPEN: classification is not coverage. The audit corrected the count of "
-                  "uncalled user-facing routes down to roughly 68 of 358 — about 16 of the "
-                  "originally reported ones were inbound or machine-facing and merely "
-                  "misclassified by RULES."),
+        "verdict": CLOSED if (coverage_gate and distinguishes) else OPEN,
+        "detail": {
+            "classify_still_maps_an_invented_path_to": classified_as,
+            "a_coverage_gate_exists": coverage_gate,
+            "it_distinguishes_called_from_uncalled": distinguishes,
+            "client_corpus_chars": len(blob),
+            "declared_uncalled_backlog": len(getattr(parity, "UNCALLED_BACKLOG", ()) or ()),
+            "declared_machine_facing": len(getattr(parity, "MACHINE_FACING", {}) or {}),
+        },
+        "means": ("OPEN: nothing in the parity suite asks whether a route has a caller, so "
+                  "an endpoint no client touches passes. CLOSED: a coverage gate exists "
+                  "and can tell the two apart — check declared_uncalled_backlog, which is "
+                  "a punch-list and should be shrinking, not an allowance."),
     }
 
 
@@ -548,6 +643,35 @@ def run(names: list[str]) -> dict:
     return out
 
 
+def _means_lines(means: str, verdict: str) -> list[str]:
+    """Render the `means` legend so it cannot be misread AS the verdict.
+
+    `means` explains what each outcome would signify, so it often opens with
+    "OPEN: ...". Printed directly under a verdict line it read as a contradiction —
+    a probe reporting CLOSED was immediately followed by a line beginning "OPEN:",
+    and a reader scanning output could not tell which was current. That is the same
+    class of defect these probes exist to find, in the probe tool itself.
+
+    When the legend covers both outcomes, the half matching the ACTUAL verdict is
+    shown first and labelled; the other half is kept, indented, as context.
+    """
+    marker = "CLOSED:"
+    if marker in means and means.lstrip().startswith("OPEN:"):
+        open_half, closed_half = means.split(marker, 1)
+        halves = {
+            "OPEN": open_half.strip().removeprefix("OPEN:").strip(),
+            "CLOSED": closed_half.strip(),
+        }
+        other = "CLOSED" if verdict == "OPEN" else "OPEN"
+        lines = [f"→ {verdict}: {halves.get(verdict) or means}"]
+        if halves.get(other):
+            lines.append(f"  (would have meant, {other}: {halves[other]})")
+        return lines
+    # A single-outcome legend. Label it as a legend rather than a conclusion, so a
+    # CLOSED probe whose note only describes the OPEN case cannot be misread.
+    return [f"→ what a verdict means here: {means}"]
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("probes", nargs="*", help=f"one or more of: {', '.join(PROBES)} (default: all)")
@@ -579,7 +703,8 @@ def main(argv: list[str]) -> int:
         print(f"── {r['case']} · {name} — {r['verdict']}")
         for key, value in r["detail"].items():
             print(f"     {key}: {value}")
-        print(f"     → {r['means']}")
+        for line in _means_lines(r["means"], r["verdict"]):
+            print(f"     {line}")
         print()
     print("A verdict is a lead, not a finding. Cross-check each OPEN against the live "
           "surface named in the case before you file it (docs/test-manual/15-audit-gap-verification.md).")
