@@ -418,7 +418,10 @@ class HouseActuator:
                 "title": title,
                 "risk_tier": payload["risk_tier"],
                 "payload": {**payload, "target": payload["entity_id"]},
-            }
+            },
+            # The house pipeline sets its own approval floor (ask until earned);
+            # the preview must describe that reality, not the generic tier math.
+            autonomy_level=autonomy_level,
         )
         base = {
             "ok": True,

@@ -56,7 +56,7 @@
  "GET /api/arena/leaderboard": "open",
  "GET /api/arena/match/{match_id}": "open",
  "GET /api/autonomy/escalation/targets": "open",
- "GET /api/autonomy/tasks/{task_id}/preview": "open",
+ "GET /api/autonomy/tasks/{task_id}/preview": "admin",
  "GET /api/brain/summary": "user",
  "GET /api/cameras/events": "user",
  "GET /api/cameras/status": "user",

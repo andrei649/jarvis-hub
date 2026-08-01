@@ -191,6 +191,40 @@ def test_missions_workflows_subagents_halted_passthrough():
     assert s["halted"] is True
 
 
+def test_user_tier_feed_never_carries_step_results_or_previews():
+    """PGE-042: the swarm feed is user-tier — mission step results and workflow
+    prompt/output previews are payload-tier and must be stripped, with realistic
+    shapes (the old passthrough toys couldn't catch this)."""
+    mission = SimpleNamespace(to_dict=lambda: {
+        "id": 7, "title": "ship it", "status": "active",
+        "plan": [{"idx": 0, "title": "draft", "status": "done",
+                  "result": "Dear Bob, the merger closes Friday…"}],
+    })
+    run = {
+        "id": "run-1", "ok": True,
+        "steps": [{
+            "step": "s1", "kind": "agent", "ok": True, "elapsed_ms": 4.2,
+            "input_preview": "summarize my inbox: [private]",
+            "output_preview": "Bob wrote about the merger…",
+            "steps": [{"step": "sub1", "ok": True,
+                       "input_preview": "nested secret", "output_preview": "nested out"}],
+        }],
+    }
+    orch = _fake_orch(
+        missions=SimpleNamespace(list=lambda limit=10: [mission]),
+        workflow_engine=SimpleNamespace(recent=lambda n: [run]),
+    )
+    s = swarm.build_swarm_summary(orch)
+    blob = json.dumps(s)
+    assert "merger" not in blob and "private" not in blob and "nested secret" not in blob
+    step = s["workflows"]["runs"][0]["steps"][0]
+    assert step["step"] == "s1" and step["ok"] is True and step["elapsed_ms"] == 4.2
+    assert s["missions"][0]["plan"][0]["title"] == "draft"  # progress stays visible
+    # the source dicts were not mutated (recent() shares its ring with the engine)
+    assert run["steps"][0]["input_preview"].startswith("summarize")
+    assert mission.to_dict()["plan"][0]["result"].startswith("Dear Bob")
+
+
 def test_dev_locks_reader(tmp_path, monkeypatch):
     monkeypatch.setattr(swarm, "_LOCKS_DIR", tmp_path)
     now = time.time()

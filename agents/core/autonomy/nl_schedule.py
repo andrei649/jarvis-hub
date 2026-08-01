@@ -57,11 +57,15 @@ def parse_schedule(text: str) -> dict:
         re.search(r"(?:la fiecare|fiecare)\s+(\d+)\s*(?:minute|min)\b", t)
     if m:
         n = int(m.group(1))
+        if n < 1:  # GOV-148: `*/0` is not a valid cron field — refuse, don't emit it
+            return {"ok": False, "error": "interval must be at least 1 minute"}
         return {"ok": True, "cron": f"*/{n} * * * *", "description": f"every {n} minute(s)"}
     m = re.search(r"every\s+(\d+)\s*(?:hours?|hrs?)\b", t) or \
         re.search(r"(?:la fiecare|fiecare)\s+(\d+)\s*(?:ore|oră|ora)\b", t)
     if m:
         n = int(m.group(1))
+        if n < 1:
+            return {"ok": False, "error": "interval must be at least 1 hour"}
         return {"ok": True, "cron": f"0 */{n} * * *", "description": f"every {n} hour(s)"}
     if re.search(r"\b(hourly|în fiecare oră|in fiecare ora|orar)\b", t):
         return {"ok": True, "cron": "0 * * * *", "description": "hourly"}
@@ -79,7 +83,7 @@ def parse_schedule(text: str) -> dict:
     # day-of-week selection
     if re.search(r"\b(weekday|weekdays|zi lucr|zile lucr)\w*", t):
         dow, label = "1-5", "weekdays"
-    elif re.search(r"\b(weekend|weekenduri)\b", t):
+    elif re.search(r"\b(weekends?|weekenduri)\b", t):  # GOV-147: the English plural
         dow, label = "0,6", "weekends"
     else:
         days = sorted({v for name, v in _DAYS.items() if re.search(rf"\b{name}\b", t)})

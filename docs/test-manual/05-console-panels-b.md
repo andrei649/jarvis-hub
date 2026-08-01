@@ -655,10 +655,14 @@ owner to triage — several are the reason a case above is written as "expected 
 6. **Dry-run's `would_execute` is hard-coded `False`** (`agents/core/autonomy/dry_run.py:88`), so the
    Decision Inbox chip is permanently `would queue` and the green `would execute` branch
    (`gap.tsx:1517`) is dead. Either the badge or the classifier is wrong. *(PNB-055)*
+   **FIXED 2026-08-01** — `would_execute = not requires_approval` (a preview still never executes);
+   the green branch is reachable for genuinely auto-approvable tasks.
 7. **`GET /api/autonomy/tasks/{task_id}/preview` is open tier** (`tests/_snapshots/route_auth.json`) and
    returns `target` plus `effects[].value` — raw payload values including `to`, `recipient`, `body`,
    `amount`, `command`, `path` (`dry_run.py:47-55`). Every sibling autonomy route is admin. Looks like an
    unintended unauthenticated read of pending-action contents. *(PNB-143)*
+   **FIXED 2026-08-01** — admin-guarded like every sibling; the Decision Inbox preview button now
+   sends the admin header it already uses for decisions; route-auth snapshot re-seeded.
 8. **`GET /api/admin/settings` returns decrypted secret values** (`agents/core/settings_db.py:378`) and
    `SettingsPanel` renders them in a plain visible `<input>` (`gap.tsx:1162`) — e.g. `tuya_secret`,
    `gecko_ing_client_secret` (`settings_db.py:210,214`). Admin-tier, but shoulder-surfable and

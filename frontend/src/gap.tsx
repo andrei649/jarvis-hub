@@ -1517,7 +1517,7 @@ export function DecisionInboxPanel() {
   const loadPreview = (id) => {
     if (preview && preview.id === id) { setPreview(null); return; }
     setPreview({ id, data: null });
-    apiGet('/api/autonomy/tasks/' + id + '/preview')
+    apiGet('/api/autonomy/tasks/' + id + '/preview', { admin: true })
       .then((r) => setPreview({ id, data: r || {} }))
       .catch(() => setPreview({ id, data: { error: 'preview unavailable' } }));
   };
