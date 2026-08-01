@@ -165,7 +165,9 @@ async def oracle_resolve_conflicts():
     bridge = getattr(orch, "oracle_bridge", None)
     if not bridge:
         return JSONResponse({"ok": False, "error": "Oracle bridge not available"}, status_code=503)
-    bridge.conflicts = [c for c in bridge.conflicts if c.resolved]
+    # PNL-119: "clear resolved" keeps the UNRESOLVED conflicts. The filter used
+    # to be inverted — it discarded every open conflict and kept the resolved.
+    bridge.conflicts = [c for c in bridge.conflicts if not c.resolved]
     return nocache_json({"ok": True})
 
 

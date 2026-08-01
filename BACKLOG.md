@@ -20,7 +20,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~5,674 collected (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~5,675 collected (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -409,8 +409,10 @@ Fixed, all with regression tests that fail when the defect is reintroduced:
   rewired the relation to a different node.
 
 Still open from that run (verified real, not yet fixed): blocking DNS/HTTP on the request path in
-`browser.py`, `codeintel.py`, `house.py`, `onvif.py`, `memory_kg.py`; the seeded ADMIN/OBSERVE
-corpora in `modes3.tsx`/`modes2.tsx`; and the dead `arr() || fallback` in two `gap.tsx` panels.
+`browser.py`, `codeintel.py`, `house.py`, `onvif.py`, `memory_kg.py`; and the seeded ADMIN/OBSERVE
+corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): ✅ the dead `arr() || fallback` in
+the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
+shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
 Fixed since: ✅ the unauthenticated full-chain re-verify in `security.py` — `audit/verify` plus its
 `audit/intent` and `audit/anchors` siblings (and `GET /api/workflows/traces`, WFL-132) are now
 user-guarded, route-auth snapshot re-seeded; ✅ `north_star.py` all-time-as-7-day — `local_pct` is
