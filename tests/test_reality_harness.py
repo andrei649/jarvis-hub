@@ -2,7 +2,8 @@
 
 Offline + deterministic: the framework mechanics use fake probes; the seeded CASES
 exercise the *real* egress-policy rail hermetically (no socket). Live cases are skipped
-unless JARVIS_REALITY_HARNESS=1.
+unless JARVIS_REALITY_HARNESS=1; on the scheduled reality lane they run, and the
+owner-gated probes degrade honestly (never pass) without the owner's own opt-in.
 """
 
 import pytest
@@ -133,10 +134,24 @@ async def test_manual_demote_overrides_a_verification(monkeypatch):
 # ── the real seeded cases: prove the egress + kernel kill-switch rails hermetically ──
 async def test_seeded_cases_prove_rails_and_promote():
     out = await run_reality(rh.CASES, now="2026-06-25T00:00:00+00:00")
-    live_count = len(H30_HOUSE_LIVE_CASES) + len(H31_CAMERA_LIVE_CASES)
-    hermetic_count = len(rh.CASES) - live_count
-    assert out["total"] == out["passed"] == hermetic_count
-    assert out["skipped"] == live_count
+    live_cases = [case for case in rh.CASES if case.live]
+    hermetic_count = len(rh.CASES) - len(live_cases)
+    if rh.reality_enabled():
+        # Scheduled reality lane (JARVIS_REALITY_HARNESS=1): live cases run instead of
+        # skipping. On a runner without the owner's double opt-in the owner-gated probes
+        # degrade honestly (never a fabricated pass) — tolerate exactly that documented
+        # degradation; a hermetic failure or any other live failure is a regression.
+        assert out["total"] == len(rh.CASES) and out["skipped"] == 0
+        paired = list(zip(rh.CASES, out["results"], strict=True))
+        assert [item["name"] for case, item in paired if not case.live and not item["passed"]] == []
+        for case, item in paired:
+            if case.live and not item["passed"]:
+                assert item["metadata"].get("status") == "degraded"
+                assert item["metadata"].get("reason") == "owner_live_opt_in_missing"
+    else:
+        # Unit/PR lane (env unset): live cases are skipped, every hermetic case passes.
+        assert out["total"] == out["passed"] == hermetic_count
+        assert out["skipped"] == len(live_cases)
     assert {"component:kill_switch", "component:capabilities"} <= set(out["promoted"])
     snap = cr.snapshot()  # plugins derive statically (no orch needed)
     states = {c["id"]: c["state"] for c in snap["capabilities"]}
