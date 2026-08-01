@@ -856,6 +856,9 @@ Observations only — **no code was changed.** Each is a pointer for the owner t
    is a feed-tier leak, not a visible one — but the React port (H34.4) and mobile will consume the same
    feed. `tests/test_swarm_summary.py:176` asserts *passthrough* with toy dicts, so the suite cannot
    catch it. **Test: PGE-042.**
+   **FIXED 2026-08-01** — missions drop `plan[].result` and workflow runs drop
+   `steps[].input_preview/output_preview` (recursively through sub-workflow traces) before entering
+   the feed; regression test uses realistic shapes and pins that the engine's shared ring is not mutated.
 5. **Mission Control never renders workflow runs or sub-agents**, though `COWORK_QA_RUNBOOK.md` §4b
    lists both as chips to cross-check and `build_swarm_summary` computes both. The only occurrence of
    "workflow" in the page is the HTML header comment (`agents/web/mission_control.html:7`).

@@ -78,3 +78,22 @@ def test_env_truthy_spellings():
     assert _env_truthy("") is False
     assert _env_truthy(None) is False
     assert _env_truthy("off") is False
+
+
+def test_oracle_clear_resolved_keeps_the_unresolved_conflicts(monkeypatch):
+    """PNL-119: the button says 'clear resolved' — it must discard resolved rows
+    and KEEP the open ones (the filter used to be inverted). Drives the real
+    handler directly (admin_guard + lifespan are exercised elsewhere)."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from agents.core.routers import oauth as oauth_router
+
+    open_c = SimpleNamespace(resolved=False, id="open-1")
+    done_c = SimpleNamespace(resolved=True, id="done-1")
+    bridge = SimpleNamespace(conflicts=[open_c, done_c])
+    monkeypatch.setattr(web, "orch", SimpleNamespace(oracle_bridge=bridge))
+
+    resp = asyncio.run(oauth_router.oracle_resolve_conflicts())
+    assert resp.status_code == 200
+    assert bridge.conflicts == [open_c]

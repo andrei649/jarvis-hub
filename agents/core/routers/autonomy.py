@@ -87,7 +87,9 @@ async def escalation_send(req: Request):
     return nocache_json(await router_.escalate(message, (body or {}).get("channels")))
 
 
-@router.get("/api/autonomy/tasks/{task_id}/preview")
+# Admin like every sibling autonomy read (ch05 gap 7): the preview echoes the
+# queued task's real payload values (to/body/amount/command/path) via effects[].
+@router.get("/api/autonomy/tasks/{task_id}/preview", dependencies=[Depends(admin_guard)])
 async def autonomy_task_preview(task_id: int):
     """H12.5 — dry-run preview of a queued task by id."""
     orch = get_orch()

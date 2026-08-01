@@ -671,15 +671,23 @@ move, so re-grep before relying on one (see the note at the end).
    *gate* is unaffected; the **text the human reads before approving** is wrong. The inversion is pinned
    by `tests/test_h12_5_autonomy_dryrun.py:27-38` ("reversible + low risk (tier 3)"), so a fix must change
    the test too. Covered by GOV-038/039. Severity: MAJOR (decision-card honesty).
+   **FIXED 2026-08-01** — comparison is `tier >= 2` on the real scale, the unknown-tier default (3) now
+   fails closed, and the pinning tests were rewritten to the true tiers (+ a regression that
+   `book_flight`/`purchase_item`/`withdraw_cash` preview as IRREVERSIBLE, approval required).
 2. **`_IRREVERSIBLE_TOKENS` is narrower than the policy's irreversible set.** `dry_run.py:25-26` lacks
    `purchase`, `checkout`, `withdraw`, `book`, `sign`, `cancel`, `unsubscribe`, `destroy`, `drop`, `wipe`,
    `release`, all present in `policy.py:65-69`. Same user-visible effect as (1).
+   **FIXED 2026-08-01** — the token set is now derived from the policy's own
+   `_MONEY_OR_IRREVERSIBLE + _EXTERNAL` tuples (plus `exec`), matched by word-token like the policy
+   (so "design" no longer risks flagging via "sign").
 3. **NL scheduling: `weekends` (plural) silently yields a daily cron.** `nl_schedule.py:82` matches
    `\b(weekend|weekenduri)\b`, so "weekends at 10am" falls through to the daily default and returns
    `0 10 * * *` with description "every day" — a wrong answer presented as `ok:true`. The weekday branch
    handles the plural via `\w*`. Verified by running the parser. GOV-147. Severity: MAJOR.
+   **FIXED 2026-08-01** — `weekends?` matches the plural; regression pinned.
 4. **NL scheduling: `every 0 minutes` produces the invalid cron `*/0 * * * *`** with `ok:true`
    (`nl_schedule.py:56-60`, no `n > 0` guard). GOV-148. Severity: MINOR/MAJOR depending on the consumer.
+   **FIXED 2026-08-01** — zero minute/hour intervals return `ok:false` with an explicit error.
 5. **No API consumes a parsed cron.** `POST /api/schedule/parse` is the only schedule route in
    `route_surface.json`; the parsed expression cannot be turned into a job through any endpoint. The only
    user-reachable cron surface is an agent's `HEARTBEAT(.local).md` `cadence:` front-matter

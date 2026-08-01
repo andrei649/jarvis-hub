@@ -152,6 +152,11 @@ async def get_tasks(
     # Format and enrich tasks for both backend model schema and frontend React network/widgets schema
     def format_task(t):
         d = t.to_dict() if hasattr(t, "to_dict") else dict(t)
+        # TASK-5: this is a USER-tier surface; the raw row carries the full payload
+        # and result (email drafts, writeback bodies) that every /autonomy/* read
+        # keeps admin-only. Titles/decisions/status only — never payload/result.
+        d.pop("payload", None)
+        d.pop("result", None)
         # Ensure owner, state, label, and project are present for React component compatibility (e.g. NetworkBrain)
         d["owner"] = d.get("owner") or d.get("agent_id") or d.get("agent") or "jarvis"
         d["state"] = d.get("state") or d.get("status") or "done"

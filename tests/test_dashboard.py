@@ -4,6 +4,7 @@ Covers the 503 guard when orch is absent, the response structure required by
 the React HUD widgets, weather-string parsing, dummy-task fallback, and the
 ticker fallback to agent-standby items.
 """
+import json
 import sys
 import time
 from datetime import UTC, datetime
@@ -199,6 +200,28 @@ def test_tasks_have_required_react_fields(monkeypatch):
     tasks = client.get("/tasks").json()["tasks"]
     for task in tasks:
         assert _TASK_REQUIRED_FIELDS <= set(task.keys()), f"Missing fields in task: {task}"
+
+
+def test_tasks_user_tier_never_ships_payload_or_result(monkeypatch):
+    """TASK-5: /tasks is user-tier while every /autonomy/* read is admin — the
+    raw queue row's payload (email drafts, writeback bodies) and result must
+    never reach this surface. Titles/decisions/status only."""
+    m = _simple_orch()
+    real_task = MagicMock()
+    real_task.to_dict.return_value = {
+        "id": "t-9", "agent_id": "jarvis", "kind": "channel.reply",
+        "title": "Reply to Bob", "status": "done", "decision": "accept",
+        "payload": {"to": "bob@x.com", "text": "the merger closes Friday"},
+        "result": {"status": "ok", "sent_body": "the merger closes Friday"},
+    }
+    m.autonomy_queue.list.return_value = [real_task]
+    monkeypatch.setattr(web, "orch", m)
+    client = TestClient(web.app)
+    for view in ("", "?view=running", "?view=history"):
+        body = client.get(f"/tasks{view}").json()
+        for task in body["tasks"]:
+            assert "payload" not in task and "result" not in task, (view, task)
+        assert "merger" not in json.dumps(body), view
 
 
 def test_tasks_real_tasks_have_valid_state(monkeypatch):

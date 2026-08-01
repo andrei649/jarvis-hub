@@ -134,10 +134,41 @@ def _safe(fn, default):
 # Fields of a pending decision that are safe at the user tier. The full cards
 # (payload/result) are served admin-tier by `/autonomy/status` and
 # `/autonomy/approvals`, which the page fetches separately with the admin
-# token and degrades to this preview without one. (The pre-existing user-tier
-# `GET /tasks` still ships full payloads — tracked as TASK-5 in BACKLOG.md;
-# this feed deliberately does not repeat that mistake.)
+# token and degrades to this preview without one. (`GET /tasks` applies the
+# same rule since the TASK-5 fix — payload/result never leave the admin tier.)
 _PREVIEW_FIELDS = ("id", "title", "agent", "kind", "risk_tier", "status", "created_at")
+
+
+def _payload_free_mission(mission: dict) -> dict:
+    """PGE-042: the feed is user-tier — mission step RESULTS are model output
+    (payload tier) and stay admin-only; titles/status/progress pass through."""
+    out = dict(mission)
+    plan = out.get("plan")
+    if isinstance(plan, list):
+        out["plan"] = [
+            {k: v for k, v in step.items() if k != "result"} if isinstance(step, dict) else step
+            for step in plan
+        ]
+    return out
+
+
+def _payload_free_run(run: dict) -> dict:
+    """PGE-042: workflow step traces carry 160-char rendered prompt/output
+    previews (personal content); the cockpit needs step names/status/timing.
+    Sub-workflow steps nest their own trace under "steps", so strip recursively."""
+
+    def _clean_step(step):
+        if not isinstance(step, dict):
+            return step
+        cleaned = {k: v for k, v in step.items() if k not in ("input_preview", "output_preview")}
+        if isinstance(cleaned.get("steps"), list):
+            cleaned["steps"] = [_clean_step(sub) for sub in cleaned["steps"]]
+        return cleaned
+
+    out = dict(run)
+    if isinstance(out.get("steps"), list):
+        out["steps"] = [_clean_step(step) for step in out["steps"]]
+    return out
 
 
 def build_swarm_summary(orch) -> dict:
@@ -234,8 +265,12 @@ def build_swarm_summary(orch) -> dict:
     # ── missions / workflows / sub-agents / A2A / kill-switch ────────────────
     if orch is not None:
         missions = _safe(
-            lambda: [m.to_dict() for m in orch.missions.list(limit=10)], [])
-        wf_runs = _safe(lambda: orch.workflow_engine.recent(5), []) or []
+            lambda: [_payload_free_mission(m.to_dict()) for m in orch.missions.list(limit=10)],
+            [],
+        )
+        wf_runs = _safe(
+            lambda: [_payload_free_run(r) for r in (orch.workflow_engine.recent(5) or [])], []
+        )
         subagents = _safe(
             lambda: {"spawns": len(orch.subagents.list() or []),
                      "stats": orch.subagents.stats() or {}},

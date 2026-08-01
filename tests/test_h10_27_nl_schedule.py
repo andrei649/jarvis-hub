@@ -40,6 +40,12 @@ def test_weekend():
     assert r["ok"] and r["cron"] == "0 10 * * 0,6"
 
 
+def test_weekends_plural_is_not_silently_daily():
+    # GOV-147: "weekends at 10am" used to miss the day filter and yield a DAILY cron.
+    r = parse_schedule("weekends at 10am")
+    assert r["ok"] and r["cron"] == "0 10 * * 0,6" and r["description"].startswith("weekends")
+
+
 def test_interval_minutes_and_hours():
     assert parse_schedule("every 15 minutes")["cron"] == "*/15 * * * *"
     assert parse_schedule("every 2 hours")["cron"] == "0 */2 * * *"
@@ -54,6 +60,12 @@ def test_errors():
     assert parse_schedule("")["ok"] is False
     assert parse_schedule("every monday")["ok"] is False     # no time
     assert parse_schedule("at 99:00")["ok"] is False         # invalid time
+
+
+def test_zero_interval_is_refused_not_invalid_cron():
+    # GOV-148: `every 0 minutes` used to emit `*/0 * * * *` with ok:true.
+    assert parse_schedule("every 0 minutes")["ok"] is False
+    assert parse_schedule("every 0 hours")["ok"] is False
 
 
 def test_endpoint():

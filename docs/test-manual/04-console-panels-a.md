@@ -564,6 +564,8 @@ pointer, for the owner to triage — several are the "wrong-but-not-failing" cla
    `KgPanel` never reads `error` (`frontend/src/gap.tsx:182-191`) — so with Neo4j down the card shows a
    green **LIVE** chip, `0 entities` and `nothing yet`, identical to a healthy empty graph. Highest-severity
    honesty gap I found in this scope (test: PNL-059).
+   **FIXED 2026-08-01** — `KgPanel` reads `error`, drops the LIVE chip, and renders the reason
+   ("graph unavailable, not empty"); vitest regression in `honesty-fix-panels.test.tsx`.
 2. **`PosturePanel`'s "encrypted" chip can never be red.** `security_posture()` hard-codes
    `"secrets": {"encrypted_at_rest": True, …}` (`agents/core/routers/security.py:315-316`) even when the
    backend probe fell through to `"unavailable"` (`:291-295`). The green chip at `gap.tsx:586` is therefore
@@ -576,6 +578,8 @@ pointer, for the owner to triage — several are the "wrong-but-not-failing" cla
    (`agents/core/plugins/oracle_bridge.py:120`). The button visibly empties the conflict list by discarding
    the conflicts (test: PNL-119). Same panel: the per-row tag can never read `resolved` for the same reason
    (`gap.tsx:767`).
+   **FIXED 2026-08-01** (the inversion) — the route keeps `not c.resolved`; pytest regression in
+   `tests/test_trust_api.py`. The per-row `resolved` tag limitation stands (status() exposes only unresolved).
 4. **`LocalDocsPanel` reads the wrong key.** The endpoint returns configured folder keys under `available`
    (`agents/core/routers/onboarding.py:38`); the panel looks for `folders`/`keys` (`gap.tsx:264`), so the
    folder list and its `index` buttons never appear even when `local_docs.folders` is configured (PNL-053).
@@ -622,6 +626,7 @@ pointer, for the owner to triage — several are the "wrong-but-not-failing" cla
     (`agents/core/routers/a2a.py:39-41`) → a 422 that `actA`'s `.catch(() => {})` swallows
     (`gap.tsx:76`). The only governance decision surface for inbound peer tasks is therefore
     non-functional from the HUD, and it fails *silently* (PNL-106 step 4). **MAJOR.**
+    **FIXED 2026-08-01** — the panel posts `{approve}`; vitest regression pins the wire body.
 14. **A peer can blank the operator's cockpit.** `it.task` is arbitrary peer JSON (`a2a.py:249`) and the
     panel calls `.slice(0, 40)` on it (`gap.tsx:813`); there is no `ErrorBoundary` anywhere under
     `frontend/src/`, so a render throw unmounts the React root (PNL-162). **MAJOR.**

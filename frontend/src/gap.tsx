@@ -193,9 +193,14 @@ export function KgPanel() {
   const [msg, setMsg] = useState(null);
   const del = (name) => apiDelete('/api/kg/entities/' + encodeURIComponent(name)).then(reload).catch(() => {});
   const forget = () => { if (!forgetId.trim()) return; act('/api/memory/decay/forget', { id: forgetId.trim() }, (r) => { setMsg(r && r.error ? 'not found' : 'forgotten · ' + forgetId.trim()); setForgetId(''); reload(); }); };
+  /* PNL-059: the route answers 200 with {entities: [], error} when the store is
+     down — reading only `entities` rendered a dead graph as a clean empty one
+     under a green LIVE chip. */
+  const kgError = (d as any)?.error;
   return (
-    <Card title="KNOWLEDGE GRAPH" live={asLive(d)} sub={d ? `${ents.length} entities` : null} onReload={reload}>
+    <Card title="KNOWLEDGE GRAPH" live={asLive(d, !kgError)} sub={d ? `${ents.length} entities` : null} onReload={reload}>
       <State e={e} loading={loading} n={ents.length} />
+      {kgError && <Row><span style={{ ...mono, color: 'var(--amber)' }}>{String(kgError)} — graph unavailable, not empty</span></Row>}
       {ents.slice(0, 12).map((en, i) => (
         <Row key={en.name ?? i}>
           <span style={{ ...mono, color: 'var(--ink-2)' }}>{en.name}</span>
@@ -844,15 +849,16 @@ export function SatellitesPanel() {
     </Card>
   );
 }
-function A2AInboxPanel() {
+export function A2AInboxPanel() {
   const { d, e, loading, reload } = useApi('/api/a2a/inbox');
   const items = arr(d, 'inbox', 'tasks');
   return <Card title="A2A APPROVAL INBOX" live={asLive(d)} sub={items.length} onReload={reload}>
     <State e={e} loading={loading} n={items.length} />
     {items.slice(0, 10).map((it, i) => <Row key={i}><span style={mono}>{it.peer || it.from || '?'}</span><span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(it.task || it.summary || '').slice(0, 40)}</span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-        <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approved: true }, reload)}>✓</button>
-        <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approved: false }, reload)}>✕</button>
+        {/* PNL-106: the API body is {approve} — {approved} 422'd invisibly */}
+        <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approve: true }, reload)}>✓</button>
+        <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approve: false }, reload)}>✕</button>
       </span></Row>)}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>verified peer tasks land here; never auto-execute (H16.2)</div>
   </Card>;
@@ -894,7 +900,7 @@ function EvalPanel() {
     <State e={e} loading={loading} n={ds.length} />
     {ds.slice(0, 8).map((x, i) => <Row key={i}>
       <span style={{ ...mono, cursor: 'pointer', color: open === x.name ? 'var(--accent)' : 'var(--ink)' }} onClick={() => showRuns(x.name)} title="show recent runs">{x.name}</span>
-      <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>v{x.version} · {x.cases ?? x.count ?? '?'}</span>
+      <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>v{x.latest_version ?? x.version ?? '?'} · {x.cases ?? x.count ?? '?'}</span>
       <Btn onClick={() => act('/api/eval/datasets/run', { name: x.name }, reload)}>run</Btn></Row>)}
     {open && <div style={{ marginTop: 6 }}>
       <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)' }}>{open.toUpperCase()} · RECENT RUNS</div>
@@ -903,9 +909,12 @@ function EvalPanel() {
         <span style={{ marginLeft: 'auto', ...mono, fontSize: 10, color: 'var(--accent-light)' }}>μ {r.mean_score ?? r.score ?? '—'}</span></Row>)}
       {runs.length >= 2 && <button className="tool-btn" style={{ marginTop: 6 }} onClick={compare}>compare last two</button>}
       {cmp && <div style={{ ...mono, fontSize: 10.5, marginTop: 6 }}>
+        {/* WFL-078/PNB-018: the API emits `regressed`/`improved` (lists of case
+            names) — the old `regressions`/`improvements` keys made a real
+            regression render as "0 regression(s)". */}
         <span style={{ color: (cmp.score_delta ?? 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>Δ score {cmp.score_delta ?? '—'}</span>
-        <span style={{ color: 'var(--ink-3)' }}> · {(cmp.regressions || []).length} regression(s) · {(cmp.improvements || []).length} improvement(s)</span>
-        {(cmp.regressions || []).slice(0, 4).map((g, i) => <div key={i} style={{ color: 'var(--red)' }}>− {(g.case || g.prompt || g.id || '').toString().slice(0, 48)}</div>)}
+        <span style={{ color: 'var(--ink-3)' }}> · {(cmp.regressed || []).length} regression(s) · {(cmp.improved || []).length} improvement(s)</span>
+        {(cmp.regressed || []).slice(0, 4).map((g, i) => <div key={i} style={{ color: 'var(--red)' }}>− {(typeof g === 'string' ? g : g.case || g.prompt || g.id || '').toString().slice(0, 48)}</div>)}
       </div>}
     </div>}
   </Card>;
@@ -915,7 +924,7 @@ function ReviewPanel() {
   const q = arr(d, 'queue', 'items');
   return <Card title="REVIEW QUEUE" live={asLive(d)} sub={q.length} onReload={reload}>
     <State e={e} loading={loading} n={q.length} />
-    {q.slice(0, 10).map((it, i) => <Row key={i}><span style={{ fontSize: 11 }}>{(it.preview || it.text || '').slice(0, 38)}</span>
+    {q.slice(0, 10).map((it, i) => <Row key={i}><span style={{ fontSize: 11 }}>{(it.text_preview || it.preview || it.text || '').slice(0, 38)}</span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
         <button className="tool-btn" onClick={() => act(`/api/review/${it.id || it.trace_id}/vote`, { verdict: 'up' }, reload)}>👍</button>
         <button className="tool-btn" onClick={() => act(`/api/review/${it.id || it.trace_id}/vote`, { verdict: 'down' }, reload)}>👎</button>
@@ -1162,10 +1171,12 @@ export function LMStudioPanel() {
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>configured routing is independent from provider-reported residency · lifecycle actions follow backend capabilities</div>
   </Card>;
 }
-function AuthProfilesPanel() {
+export function AuthProfilesPanel() {
   const { d, e, loading, reload } = useApi('/api/llm/auth-profiles', true, true);
-  const pools = arr(d, 'profiles', 'pools') || Object.entries(d || {}).map(([k, v]) => ({ provider: k, ...(typeof v === 'object' ? v : {}) }));
-  const list = Array.isArray(pools) ? pools : [];
+  /* arr() is always truthy, so the old `|| Object.entries(...)` fallback was dead
+     and this panel rendered permanently empty: the API shape is {pools: {provider: status}}. */
+  const fromArr = arr(d, 'profiles', 'pools');
+  const list = fromArr.length ? fromArr : Object.entries((d as any)?.pools || {}).map(([k, v]) => ({ provider: k, ...(typeof v === 'object' ? v : {}) }));
   return <Card title="CLOUD AUTH PROFILES" live={asLive(d)} sub={list.length} onReload={reload}>
     <State e={e} loading={loading} n={list.length} />
     {list.slice(0, 8).map((p, i) => <Row key={i}>
@@ -1178,9 +1189,11 @@ function AuthProfilesPanel() {
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>masked rotation/failover pools (H12.20) · keys never shown</div>
   </Card>;
 }
-function OAuthPanel() {
+export function OAuthPanel() {
   const { d, e, loading, reload } = useApi('/api/oauth/status');
-  const svcs = arr(d, 'services') || Object.entries(d || {}).map(([k, v]: [string, any]) => ({ service: k, ...(v || {}) }));
+  /* same dead-fallback bug: /api/oauth/status returns a bare {service: {...}} map */
+  const fromArr = arr(d, 'services');
+  const svcs = fromArr.length ? fromArr : Object.entries(d || {}).filter(([, v]) => v && typeof v === 'object').map(([k, v]: [string, any]) => ({ service: k, ...(v || {}) }));
   return <Card title="OAUTH" live={asLive(d)} sub={svcs.length} onReload={reload}>
     <State e={e} loading={loading} n={svcs.length} />
     {svcs.slice(0, 8).map((s, i) => <Row key={i}><span style={mono}>{s.service || s.label || s.key}</span>
@@ -1517,7 +1530,7 @@ export function DecisionInboxPanel() {
   const loadPreview = (id) => {
     if (preview && preview.id === id) { setPreview(null); return; }
     setPreview({ id, data: null });
-    apiGet('/api/autonomy/tasks/' + id + '/preview')
+    apiGet('/api/autonomy/tasks/' + id + '/preview', { admin: true })
       .then((r) => setPreview({ id, data: r || {} }))
       .catch(() => setPreview({ id, data: { error: 'preview unavailable' } }));
   };
