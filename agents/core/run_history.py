@@ -101,15 +101,25 @@ class RunHistory(JsonStore):
         out.sort(key=lambda r: r["last_ts"], reverse=True)
         return out
 
-    def locality(self) -> dict:
+    def locality(self, since: float | None = None) -> dict:
         """% of recorded runs served on-device vs cloud, from the route field.
 
         The brand's north-star counter-metric (MOONSHOT §6: "% tasks served
         locally vs cloud"). A route is local unless it starts with "cloud" or is
         a known cloud route ("claude"); unrouted/empty rows are 'unknown' and
-        excluded from the percentage so the meter never fabricates a split."""
+        excluded from the percentage so the meter never fabricates a split.
+
+        ``since`` (epoch seconds) restricts the split to runs recorded at/after
+        that instant, so a windowed report (the north-star's trailing 7 days)
+        never presents the all-time aggregate as a period metric. ``None`` keeps
+        the all-time behavior (the /api/analytics/locality board)."""
         with self._lock:
-            snapshot = [r for runs in self._runs.values() for r in runs]
+            snapshot = [
+                r
+                for runs in self._runs.values()
+                for r in runs
+                if since is None or float(r.get("ts", 0.0)) >= since
+            ]
         local = cloud = unknown = 0
         for r in snapshot:
             route = str(r.get("route", "")).lower()

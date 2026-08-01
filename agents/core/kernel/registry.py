@@ -85,6 +85,14 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     "house.control": Mediation.KERNEL,
     "house.security_control": Mediation.KERNEL,
     "house.recovery": Mediation.KERNEL,
+    # Safe Comms — a governed reply to a live channel inbox thread crosses the
+    # kernel at request time (ChannelReplyBroker); a GRANT lifts the draft from
+    # ask→act, a DENY refuses before the approval queue sees it (GAP-3).
+    "channel.reply": Mediation.KERNEL,
+    # ORIZONT 32 — installing an acquired capability crosses the kernel before a
+    # PromotionProposal exists (make_skill_install_kernel_gate); even a kernel
+    # GRANT cannot bypass the permanent owner-approval floor (GAP-3).
+    "skill.install": Mediation.KERNEL,
 }
 
 
@@ -106,6 +114,10 @@ def known_broker_action_kinds() -> set[str]:
     kinds.add(WriteBackBroker.KIND_PREFIX + "*")
     from ..payments import PaymentBroker
     kinds.add(getattr(PaymentBroker, "KIND", "payment"))
+    from ..channel_reply import CHANNEL_REPLY_TASK_KIND
+    kinds.add(CHANNEL_REPLY_TASK_KIND)
+    from ..skills.marketplace import SKILL_INSTALL_CONTRACT_KIND
+    kinds.add(SKILL_INSTALL_CONTRACT_KIND)
     return kinds
 
 

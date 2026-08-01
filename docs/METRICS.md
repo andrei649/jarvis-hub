@@ -32,7 +32,7 @@ the thing that turns "prove value to a user" from a slogan into a number.
   "counter_metrics": {
     "interrupt_rate_per_day": 0.286, // tasks pushed to the inbox / days  (budget ≤4/day)
     "reject_rate": 0.2,              // rejected / (done + rejected); null if no decisions
-    "local_pct": 80,                 // RunHistory.locality() — % served on-device; null if no routed runs
+    "local_pct": 80,                 // RunHistory.locality(since=cutoff) — % served on-device IN THE WINDOW; null if no routed runs
     "p95_latency_ms": 48.0           // 95th pct of per-turn non-LLM total_ms; null if no traces
   },
   "interrupt_budget": { "per_day": 4, "remaining": 3 }, // null if the budget isn't wired

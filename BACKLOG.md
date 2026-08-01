@@ -20,7 +20,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~5,660 collected (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~5,667 collected (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -233,10 +233,14 @@ python -m pytest tests/ -v          # ~5,660 collected (counter synced via scrip
   now checks owner chat id **and** user id and fails closed with neither configured, and
   `TELEGRAM_ALLOWED_USER_IDS` is parsed so the channel guards are reachable at all (they were
   unreachable no-ops). *Still open:* channel pairing ON by default, which is the defaults lane.
-- [ ] 🔴 **GAP-3 — register the escaping action kinds.** `channel.reply` and `skill.install` call
-  `kernel.authorize` but are absent from `ACTION_REGISTRY` / `tests/_snapshots/action_auth.json`, and
-  the matrix test cannot discover kinds that were never registered (its broker enumeration is a
-  hand-maintained import list). BACKLOG's "Gate-K COMPLETE — no bypass path exists" overstates this.
+- [x] ✅ **GAP-3 — register the escaping action kinds.** **DONE** — `channel.reply` and `skill.install`
+  are registered KERNEL in `ACTION_REGISTRY` + `tests/_snapshots/action_auth.json`, enumerated in
+  `known_broker_action_kinds()` (from their own KIND constants, so the matrix discovers them), carry
+  full H27 capability manifests, and both have real matrix exercisers (kernel-on invokes / kernel-off
+  doesn't). The acquisition gate now goes through the shared `make_skill_install_kernel_gate` factory,
+  which also closes its kernel-off gap: it used to call `authorize` even with `JARVIS_ACTION_KERNEL`
+  unset, unlike every sibling broker. Original: both kinds called `kernel.authorize` but were absent
+  from the registry, and the matrix's broker enumeration was a hand-maintained import list.
 - [ ] 🟠 **GAP-4 — run the head-to-head once.** Install Hermes on the same box; **10** tasks
   (browser · desktop · house · one acquisition); publish the table including the losses. Aim at where
   Hermes documents *limits* — Windows admin-integrity windows (UIPI), Wayland without XWayland,
@@ -405,10 +409,13 @@ Fixed, all with regression tests that fail when the defect is reintroduced:
   rewired the relation to a different node.
 
 Still open from that run (verified real, not yet fixed): blocking DNS/HTTP on the request path in
-`browser.py`, `codeintel.py`, `house.py`, `onvif.py`, `memory_kg.py`; the unauthenticated full-chain
-re-verify in `security.py`; `north_star.py` reporting an all-time aggregate as the 7-day counter
-metric; the seeded ADMIN/OBSERVE corpora in `modes3.tsx`/`modes2.tsx`; and the dead `arr() || fallback`
-in two `gap.tsx` panels.
+`browser.py`, `codeintel.py`, `house.py`, `onvif.py`, `memory_kg.py`; the seeded ADMIN/OBSERVE
+corpora in `modes3.tsx`/`modes2.tsx`; and the dead `arr() || fallback` in two `gap.tsx` panels.
+Fixed since: ✅ the unauthenticated full-chain re-verify in `security.py` — `audit/verify` plus its
+`audit/intent` and `audit/anchors` siblings (and `GET /api/workflows/traces`, WFL-132) are now
+user-guarded, route-auth snapshot re-seeded; ✅ `north_star.py` all-time-as-7-day — `local_pct` is
+computed via `RunHistory.locality(since=cutoff)` over the same trailing window as every other
+counter metric (all-time stays available to `/api/analytics/locality`).
 
 - [x] ✅ **Follow-up: the secret-store race fix corrupted key material on Windows.** The new
   `_read_or_create_atomically` opened its descriptor without `O_BINARY`, so the CRT ran it in TEXT

@@ -62,9 +62,18 @@ def _set_local_hour(queue: TaskQueue, tid: int, hour: int) -> None:
 class _FakeRunHistory:
     def __init__(self, local_pct):
         self._lp = local_pct
+        self.since_calls: list = []
+
+    def locality(self, since=None):
+        self.since_calls.append(since)
+        return {"local": 8, "cloud": 2, "unknown": 0, "total": 10, "local_pct": self._lp}
+
+
+class _AllTimeOnlyRunHistory:
+    """A pre-`since` RunHistory double — the compatibility fallback path."""
 
     def locality(self):
-        return {"local": 8, "cloud": 2, "unknown": 0, "total": 10, "local_pct": self._lp}
+        return {"local": 1, "cloud": 0, "unknown": 0, "total": 1, "local_pct": 100}
 
 
 class _FakeTracer:
@@ -126,6 +135,22 @@ def test_window_excludes_old_decisions(q):
     out = compute_north_star(q, None, None, days=7, now=now)
     assert out["north_star"]["total_accepted"] == 1  # only the fresh one
     assert fresh and stale  # both exist; windowing — not deletion — excludes the old
+
+
+def test_locality_is_windowed_like_every_other_counter(q):
+    """local_pct must be computed over the same trailing window as the payload —
+    an all-time aggregate labeled as the 7-day counter metric is a fabrication
+    (2026-07-28 bug-hunt residual)."""
+    now = datetime.now(UTC).timestamp()
+    rh = _FakeRunHistory(local_pct=80)
+    out = compute_north_star(q, rh, None, days=7, now=now)
+    assert out["counter_metrics"]["local_pct"] == 80
+    assert rh.since_calls == [now - 7 * 86_400]
+
+
+def test_locality_falls_back_to_all_time_for_older_run_history(q):
+    out = compute_north_star(q, _AllTimeOnlyRunHistory(), None, days=7)
+    assert out["counter_metrics"]["local_pct"] == 100
 
 
 def test_empty_is_honest_no_fabrication(q):

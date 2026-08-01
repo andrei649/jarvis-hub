@@ -76,8 +76,8 @@ async def test_all_executable_capability_cases_pass_hermetically_without_flag_le
         now="2026-07-12T00:00:00+00:00",
     )
 
-    assert result["total"] == 20
-    assert result["passed"] == 20
+    assert result["total"] == 22
+    assert result["passed"] == 22
     assert result["skipped"] == 0
     assert result["promoted"] == []
     assert all(item["passed"] for item in result["results"])
@@ -133,7 +133,7 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     verification_pairs = [
         (manifest.verification, manifest.id) for manifest in ACTION_CAPABILITY_MANIFESTS.values()
     ] + [(record.verification, record.id) for record in [*tool_records, *records]]
-    assert len(verification_pairs) == 94
+    assert len(verification_pairs) == 96
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1
