@@ -25,6 +25,35 @@ class PromotionError(RuntimeError):
     pass
 
 
+def make_skill_install_kernel_gate(action_kernel):
+    """Bind the ``skill.install`` kernel gate used by :meth:`PromotionBroker.propose`.
+
+    One factory serves both the production wiring (``autonomy_coordinator``) and the
+    action-auth matrix, so the gate the matrix proves is the gate that ships. The
+    kernel hook is skipped entirely unless ``JARVIS_ACTION_KERNEL`` is set (the same
+    call-time ``kernel_enabled()`` discipline every other broker follows) — and even
+    a kernel GRANT cannot bypass the permanent owner-approval floor in ``propose``.
+    """
+
+    def _gate(payload):
+        from agents.core.kernel import Action, kernel_enabled
+
+        if action_kernel is None or not kernel_enabled():
+            return "queue"
+        decision = action_kernel(
+            Action(
+                kind="skill.install",
+                agent="jarvis",
+                title="Install acquired capability",
+                payload=dict(payload),
+                origin="generated",
+            )
+        )
+        return decision.verdict.value
+
+    return _gate
+
+
 @dataclass(frozen=True, slots=True)
 class PromotionProposal:
     proposal_id: str

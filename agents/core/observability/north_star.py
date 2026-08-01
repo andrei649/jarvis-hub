@@ -294,10 +294,19 @@ def compute_north_star(
     )
 
     # ── locality (already a counter-metric) ─────────────────────────────────
+    # Windowed like every other counter metric: an all-time aggregate reported
+    # inside a trailing-`days` payload would lie about the period (2026-07-28
+    # bug-hunt residual). Older RunHistory doubles without the `since` parameter
+    # fall back to the all-time split rather than dropping the metric.
     local_pct = None
     if run_history is not None:
         try:
-            local_pct = run_history.locality().get("local_pct")
+            local_pct = run_history.locality(since=cutoff).get("local_pct")
+        except TypeError:
+            try:
+                local_pct = run_history.locality().get("local_pct")
+            except Exception:
+                local_pct = None
         except Exception:
             local_pct = None
 

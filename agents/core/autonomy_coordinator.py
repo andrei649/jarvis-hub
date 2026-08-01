@@ -579,26 +579,12 @@ class AutonomyCoordinator:
         )
         acquisition = getattr(self._orch, "acquisition", None)
         if acquisition is not None:
-            def _acquisition_kernel_gate(payload):
-                if _action_kernel is None:
-                    return "queue"
-                from .kernel import Action
-
-                decision = _action_kernel(
-                    Action(
-                        kind="skill.install",
-                        agent="jarvis",
-                        title="Install acquired capability",
-                        payload=dict(payload),
-                        origin="generated",
-                    )
-                )
-                return decision.verdict.value
+            from .acquisition.promotion import make_skill_install_kernel_gate
 
             acquisition.bind_promotion(
                 tool_rpc=self._orch.tool_rpc,
                 marketplace=getattr(self._orch, "marketplace", None),
-                kernel_gate=_acquisition_kernel_gate,
+                kernel_gate=make_skill_install_kernel_gate(_action_kernel),
             )
             executor.register("skill.install", acquisition.execute_install_task)
 

@@ -99,7 +99,9 @@ async def run_workflow(body: WorkflowRunBody):
         return error_json(e, 200, "workflow run failed", extra={"ok": False})
 
 
-@router.get("/api/workflows/traces")
+# User-guarded (WFL-132): step traces echo 160-char prompt/output previews,
+# which is personal content, not telemetry.
+@router.get("/api/workflows/traces", dependencies=[Depends(user_guard)])
 async def workflow_traces(limit: int = Query(20, ge=1, le=50)):
     """H10.2 — recent workflow runs with per-step trace for the visual overlay."""
     orch = get_orch()

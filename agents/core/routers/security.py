@@ -226,7 +226,7 @@ async def audit_record_action(req: Request):
     return nocache_json({"ok": True, "entry": entry})
 
 
-@router.get("/api/security/audit/intent")
+@router.get("/api/security/audit/intent", dependencies=[Depends(user_guard)])
 async def audit_intent(limit: int = Query(100, ge=1, le=1000)):
     """List signed intent records + chain/signature verification."""
     orch = get_orch()
@@ -255,7 +255,7 @@ async def audit_anchor():
     return nocache_json({"ok": True, "receipt": receipt})
 
 
-@router.get("/api/security/audit/verify")
+@router.get("/api/security/audit/verify", dependencies=[Depends(user_guard)])
 async def audit_verify():
     """Verify the Merkle hash chain of the security audit log (tamper evidence).
 
@@ -275,7 +275,7 @@ async def audit_verify():
     return nocache_json(await asyncio.to_thread(audit.chain_status))
 
 
-@router.get("/api/security/audit/anchors")
+@router.get("/api/security/audit/anchors", dependencies=[Depends(user_guard)])
 async def audit_anchors(limit: int = Query(100, ge=1, le=1000)):
     """List external anchor receipts + verify the anchor chain."""
     orch = get_orch()

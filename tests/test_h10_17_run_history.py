@@ -90,3 +90,20 @@ def test_locality_empty_is_none(tmp_path):
     from agents.core.run_history import RunHistory
     rh = RunHistory(path=tmp_path / "rh2.json")
     assert rh.locality()["local_pct"] is None  # never fabricate a split
+
+
+def test_locality_since_windows_the_split(tmp_path):
+    """`since` restricts the split to the trailing window so the north-star's
+    7-day counter metric can't be an all-time aggregate in disguise."""
+    import sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root)); sys.path.insert(0, str(root / "agents"))
+    from agents.core.run_history import RunHistory
+    rh = RunHistory(path=tmp_path / "rh3.json")
+    rh.record(agent_id="jarvis", input_text="old", output_text="y", route="claude", ts=1_000.0)
+    rh.record(agent_id="jarvis", input_text="new", output_text="y", route="local", ts=2_000.0)
+    windowed = rh.locality(since=1_500.0)
+    assert windowed["total"] == 1 and windowed["local_pct"] == 100
+    all_time = rh.locality()
+    assert all_time["total"] == 2 and all_time["local_pct"] == 50

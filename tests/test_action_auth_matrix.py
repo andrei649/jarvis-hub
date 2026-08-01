@@ -389,6 +389,103 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
                 challenge = actuator.mint_confirmation(task)
                 actuator.confirm(challenge["token"], task)
             asyncio.run(actuator.execute_task(task))
+    elif kind == "channel.reply":
+        # Safe Comms: a governed reply request crosses the kernel before it can
+        # enqueue a draft (ChannelReplyBroker checks kernel_enabled() itself).
+        from agents.core.channel_inbox import ChannelInboxStore
+        from agents.core.channel_reply import ChannelReplyBroker
+
+        inbox = ChannelInboxStore(tmp_path / "inbox.json")
+        message = inbox.record_inbound("telegram", "ping", metadata={"chat_id": 42})
+        broker = ChannelReplyBroker(inbox=inbox, enqueue=lambda *a, **k: 1, kernel=spy)
+        result = broker.request(message["thread_id"], "pong")
+        assert result["ok"] is True, result
+    elif kind == "skill.install":
+        # O32: promoting an acquired capability crosses the kernel via the SAME
+        # production gate binding (make_skill_install_kernel_gate) before a
+        # proposal exists; the permanent owner-approval floor stays after it.
+        import asyncio
+        from dataclasses import asdict
+
+        from agents.core.acquisition.generator import (
+            CapabilityContract,
+            ContractCase,
+            StrictLocalGenerator,
+        )
+        from agents.core.acquisition.promotion import (
+            PromotionBroker,
+            PromotionJournal,
+            PromotionStore,
+            make_skill_install_kernel_gate,
+        )
+        from agents.core.acquisition.quarantine import QuarantineStore
+        from agents.core.acquisition.receipt import make_receipt
+        from agents.core.acquisition.sandbox_profile import AcquisitionSandboxProfile
+        from agents.core.acquisition.store import CapabilityRequestStore
+
+        contract = CapabilityContract(
+            goal="parse items",
+            entrypoint="run",
+            cases=(ContractCase(input={"items": [{"id": 1}]}, expected=[1]),),
+        )
+        requests = CapabilityRequestStore(root=tmp_path / "requests")
+        request = requests.capture(contract.goal, agent_id="jarvis", reason="tool_not_allowed")
+        requests.transition(request.request_id, "researching", actor="research")
+        requests.transition(request.request_id, "quarantined", actor="generator")
+
+        async def _generate(_prompt):
+            return {
+                "name": "matrix_item_parser",
+                "entrypoint": "run",
+                "code": "def run(payload):\n    return [i['id'] for i in payload.get('items', [])]\n",
+                "test": (
+                    "import unittest\n"
+                    "from main import run\n\n"
+                    "class T(unittest.TestCase):\n"
+                    "    def test_items(self):\n"
+                    "        self.assertEqual(run({'items': [{'id': 2}]}), [2])\n"
+                ),
+            }
+
+        package = asyncio.run(
+            StrictLocalGenerator(generate=_generate, route="strict-local").generate(
+                request=request,
+                grounded_plan={"fully_grounded": True, "source_hash": "b" * 64},
+                contract=contract,
+            )
+        )
+        profile = AcquisitionSandboxProfile(image="python:3.12-slim@sha256:" + "a" * 64)
+        receipt = make_receipt(
+            package=package,
+            contract=contract,
+            profile=profile,
+            generated_test_output="ok",
+            contract_output="ok",
+            mutation_output="detected",
+            generated_test_exit=0,
+            contract_exit=0,
+            mutation_exit=1,
+            started_at=1.0,
+            finished_at=2.0,
+        )
+        quarantine = QuarantineStore(root=tmp_path / "quarantine")
+        quarantine.put(package)
+        quarantine.transition(package.artifact_id, "verified", receipt=asdict(receipt))
+        broker = PromotionBroker(
+            enabled=lambda: True,
+            quarantine=quarantine,
+            requests=requests,
+            proposals=PromotionStore(root=tmp_path / "proposals"),
+            packages=None,
+            journal=PromotionJournal(root=tmp_path / "journal"),
+            tool_rpc=None,
+            runtime=None,
+            marketplace=None,
+            profile=profile,
+            kernel_gate=make_skill_install_kernel_gate(spy),
+        )
+        proposal = broker.propose(package.artifact_id, contract=contract)
+        assert proposal.status == "pending"  # the owner floor holds even on GRANT
     elif kind == "desktop.step":
         # The optional real host seam must cross CapabilityActionAPI immediately
         # before driver execution. The unified facade stays default-off; the outer

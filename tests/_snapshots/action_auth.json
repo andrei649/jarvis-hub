@@ -2,6 +2,7 @@
  "admin.capability_issue": "kernel",
  "admin.kill_switch": "kernel",
  "call.outbound": "kernel",
+ "channel.reply": "kernel",
  "desktop.step": "kernel",
  "house.control": "kernel",
  "house.recovery": "kernel",
@@ -14,6 +15,7 @@
  "payment": "kernel",
  "plugin.egress": "kernel",
  "repo.sync": "kernel",
+ "skill.install": "kernel",
  "social.*": "kernel",
  "tool.rpc": "kernel",
  "writeback.*": "kernel"
