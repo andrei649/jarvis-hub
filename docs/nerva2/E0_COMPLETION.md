@@ -1,23 +1,25 @@
-# Nerva 2.0 E0.3b2b — repository-ledger verification
+# Nerva 2.0 E0.3b2b — final durable-ledger verification
 
-> **Snapshot:** `main@13290b6a10f2bfce5b10a3bf57305777341c0909` on 2026-08-02.  
+> **Snapshot:** `main@13290b6a10f2bfce5b10a3bf57305777341c0909` on 2026-08-03.  
 > **Program:** #757 · **Epic:** #758 · **Blocker plan:** #778.  
 > **Machine-readable companion:** [`E0_COMPLETION.json`](E0_COMPLETION.json).  
 > **Final reconciliation brief:** [`E0_FINAL_RECONCILIATION.md`](E0_FINAL_RECONCILIATION.md).  
 > **Issue-ledger evidence:** [`ISSUE_LEDGER_RECONCILIATION.md`](ISSUE_LEDGER_RECONCILIATION.md).  
 > **Repository-ledger evidence:** [`E0_REPOSITORY_LEDGER_MIGRATION.md`](E0_REPOSITORY_LEDGER_MIGRATION.md).  
+> **#778 body evidence:** [`E0_778_BODY_RECONCILIATION.md`](E0_778_BODY_RECONCILIATION.md).  
 > **Status:** E0 is `VERIFYING`; this slice does not close E0 or unblock production implementation.
 
 ## 1. Purpose
 
 E0 has accepted baseline, reuse, dependency, authority, risk, ORIZONT ownership, false-closure and
-owner-facing issue-ledger controls through merged #788. Draft #789 applies the reviewed current Nerva
-blocks to the complete historical `BACKLOG.md` and `STATUS.md` files and refreshes generated project
-status through the repository's existing generator.
+owner-facing issue-ledger controls through merged #788. Draft #789 applies reviewed current Nerva
+blocks to the complete historical `BACKLOG.md` and `STATUS.md` files, refreshes generated project
+status through the existing generator and records the complete #778 body reconciliation.
 
-`BACKLOG.md` and `STATUS.md` are reconciled in draft #789. The remaining durable-source blocker is the
-complete #778 long-form body, followed by exact-head CI and an independent closure decision. The
-repository-ledger movement does not make the first-wave runtime capabilities implemented.
+`BACKLOG.md` and `STATUS.md` are reconciled in draft #789. The #778 body is reconciled with an
+authoritative current-state snapshot while retaining its B0–B10, M0–M8, metrics and anti-drift plan.
+The remaining E0 gate is exact-head independent acceptance. Repository and issue-ledger movement does
+not make the first-wave runtime capabilities implemented.
 
 This document is a planning/evidence ledger. It is not a runtime registry, capability catalog or
 authority source.
@@ -65,12 +67,13 @@ No item above is evidence of implementation. The safe post-E0 parallel wave is #
 |---|---|---|
 | `BACKLOG.md` | **Reconciled in draft #789.** One exact marker-bounded block names accepted controls through #788, E0 `VERIFYING`, the blocked first wave and the Ultron authority ceiling. Historical ORIZONT delivery remains outside the insertion. | Independent review and integration of the exact diff. |
 | `STATUS.md` | **Reconciled in draft #789.** One exact snapshot records E0 `VERIFYING`, blocked first slices, the authority ceiling and closure checks. Normal generated counters were refreshed from 5,731 to 5,743 collected backend tests. | Independent review and integration of the exact diff. |
-| #757 | **Body reconciled.** It names accepted controls through #788, E0 `VERIFYING` and blocked first slices. | Add factual draft progress; change durable body only when accepted state changes. |
-| #758 | **Body reconciled.** It reports `VERIFYING`, marks first-slice issue creation complete and keeps closure work open. | Close only after #778, exact-head checks and independent acceptance. |
-| #778 | Factual progress comments are current; the long-form body still contains historical unchecked items. | Reconcile the complete body without deleting the blocker plan or promoting later gates to E0 completion. |
+| #757 | **Body reconciled.** It names accepted controls through #788, E0 `VERIFYING` and blocked first slices. | Factual draft progress remains external evidence until #789 is accepted. |
+| #758 | **Body reconciled.** It reports `VERIFYING`, marks first-slice issue creation complete and keeps closure work open. | Close only after exact-head checks and independent acceptance. |
+| #778 | **Body reconciled.** A 2026-08-03 snapshot marks B0 resolved, B1/M0 `VERIFYING`, B2 partial and B3–B10 open while preserving the detailed program plan. | Independent review against this repository evidence. |
 
-Issue bodies #757 and #758 are reconciled. The #778 body remains pending; therefore E0 remains
-`VERIFYING` and `close_e0=false` even though both repository ledgers are now present in the draft.
+Issue bodies #757, #758 and #778 are reconciled. E0 nevertheless remains `VERIFYING` and
+`close_e0=false` because only an independent integrator may accept the final exact-head evidence and
+close the gate.
 
 ## 5. E0 closure requirements
 
@@ -90,13 +93,14 @@ E0 may become `DONE` only when all are true:
 
 Draft #789 adds the history-preserving migrator, its focused Linux/Windows tests and workflow coverage;
 applies the exact blocks to complete `BACKLOG.md` and `STATUS.md`; refreshes the repository's generated
-status artifacts; and upgrades the E0 checker from a pending-ledger guard to exact canonical-block
-validation.
+status artifacts; upgrades the E0 checker to exact canonical-block validation; and reconciles the full
+#778 body without deleting its detailed blocker and milestone plan.
 
 The one-shot branch workflow used only locked dependencies and `contents: write`, enforced a strict
-allowlist, verified both marker pairs and removed itself in the generated commit. It introduced no
-runtime, API, persistence, routing, settings, capability-readiness or privileged-action behavior.
+allowlist, verified both marker pairs and removed itself in the generated commit. The #778 body edit is
+external issue evidence mirrored by `E0_778_BODY_RECONCILIATION.md`. No runtime, API, persistence,
+routing, settings, capability-readiness or privileged-action behavior changed.
 
-The next smallest slice is **E0.3b2b-778-body — reconcile the complete #778 long-form body without
-deleting its program plan, then run exact-head generated-status, ledger, Nerva and full CI checks and
-request a separate independent E0 closure review**.
+The next smallest slice is **E0.3b2b-independent-closure — independently review draft #789, the
+reconciled #778 body, all final exact-head generated-status, ledger, Nerva and workflow evidence,
+dependency order and authority boundaries. The builder must not merge, close E0 or begin #780–#784**.
