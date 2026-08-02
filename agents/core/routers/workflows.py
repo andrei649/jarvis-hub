@@ -170,9 +170,11 @@ async def delete_workflow(pipeline_id: str):
     deleted = _wf_store().delete(pipeline_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Workflow '{pipeline_id}' not found in store")
-    # Best-effort removal from live registry (built-ins are intentionally kept).
+    # Best-effort live-registry update: a user pipeline is dropped; a shadowed
+    # built-in id is RESTORED to the pristine built-in (WFL-036 — the old
+    # unconditional pop made the built-in vanish until restart).
     try:
-        orch.workflow_registry._pipelines.pop(pipeline_id, None)
+        orch.workflow_registry.unregister(pipeline_id)
     except Exception:
         pass
     return nocache_json({"ok": True, "deleted": pipeline_id})

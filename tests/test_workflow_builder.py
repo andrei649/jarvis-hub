@@ -341,3 +341,22 @@ def test_endpoint_run_workflow_registry(wf_client):
     assert r.status_code == 200
     d = r.json()
     assert d["ok"] is True
+
+
+def test_endpoint_delete_shadow_keeps_builtin(wf_client):
+    """WFL-036: deleting a user pipeline saved under a built-in id must restore
+    the built-in in the live registry, not pop it until restart."""
+    import agents.web as web
+
+    shadow = dict(_EP_PIPE, id="finance_report", name="Shadow")
+    assert wf_client.post("/api/workflows", json=shadow).status_code == 200
+    r = wf_client.delete("/api/workflows/finance_report")
+    assert r.status_code == 200 and r.json()["ok"] is True
+
+    ids = [w["id"] for w in wf_client.get("/api/workflows").json()["workflows"]]
+    assert "finance_report" in ids, "the built-in must survive the shadow's deletion"
+    restored = web.orch.workflow_registry.get("finance_report")
+    assert restored is not None and restored.name != "Shadow"
+    assert len(restored.steps) >= 3, (
+        "the registry entry must be the pristine BUILT-IN, not the 1-step shadow"
+    )

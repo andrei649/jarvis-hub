@@ -93,6 +93,18 @@ class WorkflowRegistry:
     def register(self, pipeline: Pipeline) -> None:
         self._pipelines[pipeline.id] = pipeline
 
+    def unregister(self, pipeline_id: str) -> bool:
+        """Drop a user pipeline; a shadowed BUILT-IN id is restored, not removed.
+
+        By delete time the dict entry is the user's shadow, so restoration must
+        come from the pristine module-level ``_BUILTIN`` list (WFL-036 — the
+        old route-level pop made the built-in vanish until restart)."""
+        builtin = next((p for p in _BUILTIN if p.id == pipeline_id), None)
+        if builtin is not None:
+            self._pipelines[pipeline_id] = builtin
+            return False
+        return self._pipelines.pop(pipeline_id, None) is not None
+
     def get(self, pipeline_id: str) -> Pipeline | None:
         return self._pipelines.get(pipeline_id)
 
