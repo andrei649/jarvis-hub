@@ -37,7 +37,7 @@ Status column = the committed ledger; update it inside each item's own sync comm
 
 **Stretch lane (strict order, only if ahead):** QA4 live ungoverned-actions counter (`/api/metrics/kernel` + intent-log mediation ratio) → Q7 workflow truth pair (WFL-032/036) → Q8 review→dataset mint (WFL-088) → Q10 widget ingress gateway+taint → Q12 seeded-corpora DEMO labels + cockpit decision-queue wiring (SHL-102/103) → Q9 email reply dispatch branch → Q14 R8 repro-first → Q13 SEC-B6 read-gate ratchet → Q4 wave-E off-loop I/O (grep for call sites; the old list named a nonexistent `routers/onvif.py`) → Q16 catch-up notes.
 
-**Stretch-lane status:** Q7 ✅ (this PR) · Q8 ready-in-tree · Q10 ready-in-tree · QA4 recon banked · rest ⬜. Main-lane C1–C8 all merged (#749–#756).
+**Stretch-lane status (final, 2026-08-02):** Q7 ✅ #774 · Q8 ✅ #775 · Q10 ✅ #776 · **QA4 PARKED** (design flaw — see `2026-08-02-qa4-ungoverned-counter-park.md`) · Q12/Q9/Q14/Q13/Q4/Q16 ⬜ not started. Main-lane C1–C8 all merged (#749–#756).
 
 ## 4. Schedule + cut protocol
 
