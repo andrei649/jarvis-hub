@@ -60,8 +60,8 @@
       "reuse_paths": [
         "agents/core/memory/bitemporal.py",
         "agents/core/routers/memory_kg.py",
-        "agents/plugins/homebridge.py",
-        "agents/plugins/iot_control.py",
+        "agents/core/plugins/homebridge.py",
+        "agents/core/plugins/iot_control.py",
         "agents/core/voice/wyoming.py"
       ],
       "remaining_nerva_value": "Canonical identity, provenance and privacy-aware Atlas snapshots over real room, device and occupant state, plus live governed proof.",
