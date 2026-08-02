@@ -1,6 +1,19 @@
 # Changelog
 
 ## [Unreleased]
+### Q10 — the public widget door is governed like the external input it is (2026-08-02)
+- **ch11 CHN-061**: `widget` no longer sits in `INTERNAL_TURN_CHANNELS`. The embed endpoint is
+  tier `open` — an anonymous visitor on a third-party site — so its turns now classify
+  **`inbound`**, which taint-marks them (`inbound:widget`) and makes the kernel escalate a
+  GRANTed action to QUEUE (owner approval) instead of letting it auto-execute.
+- **ch11 CHN-060**: `POST /api/widget/{token}/message` routes through `Gateway.route` (via the
+  new late-binding `app_state.get_gateway()`), so the per-channel rate limit and injection-flag
+  detection apply. Deliberately **no `sender=`** — the pairing gate fails closed and would hold
+  every anonymous message for approval — and deliberately **no inbox record**, since there is no
+  widget reply adapter and a thread nobody can answer would be the dishonest option.
+- A `None` from the gateway (its handler-failure path) maps to the documented
+  `{"reply": "", "error": "request failed"}` envelope, so the embed shows an honest failure
+  rather than its `(no reply)` fallback.
 ### Q8 — review→dataset promotion mints a real case, not a fabricated 1.0 (2026-08-02)
 - **WFL-088**: `ReviewQueue.to_eval_case` emitted `{"input","expected",…}` — keys `run_dataset`
   never reads — so every promoted case replayed an **empty prompt** with no criterion, and the

@@ -33,6 +33,18 @@ def get_orch() -> Optional[object]:
     return getattr(web, "orch", None) if web is not None else None
 
 
+def get_gateway() -> Optional[object]:
+    """Return the live channel Gateway (or None before startup / after shutdown).
+
+    Same late-binding rationale as `get_orch`: routers must not statically
+    import `agents.web`. A None result means "no governed door is running yet"
+    — callers fall back to the orchestrator directly rather than dropping the
+    turn.
+    """
+    web = sys.modules.get("agents.web")
+    return getattr(web, "gateway", None) if web is not None else None
+
+
 def dev_mode() -> bool:
     """Return web.py's DEV_MODE flag, read at REQUEST time (CLN-3 unblock B).
 
