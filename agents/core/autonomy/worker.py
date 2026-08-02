@@ -119,7 +119,9 @@ class AutonomyWorker:
     def __init__(self, queue: TaskQueue, policy: Optional[AutonomyPolicy] = None,
                  executor: Optional[Executor] = None, notifier: Optional[Notifier] = None,
                  budget: Optional[InterruptBudget] = None, audit=None, prefs=None,
-                 kill_switch=None, delivery_broker: AttentionDeliveryBroker | None = None):
+                 kill_switch=None, delivery_broker: AttentionDeliveryBroker | None = None,
+                 clock: Optional[Callable[[], float]] = None,
+                 running_ttl_seconds: float = 3600.0):
         self.queue = queue
         self.policy = policy or AutonomyPolicy()
         if hasattr(self.policy, "outcome_provider"):
@@ -136,10 +138,15 @@ class AutonomyWorker:
         # KERNEL-INDEPENDENTLY — before this, engaging the halt did not stop an
         # already-approved broker task from executing on a default install.
         self._kill_switch = kill_switch
+        import time as _time
+
+        self._clock = clock or _time.time
+        # Q6: TTL for the stuck-RUNNING reaper; <=0 disables it.
+        self.running_ttl_seconds = float(running_ttl_seconds)
         # Strong refs to fire-and-forget push tasks so they aren't GC'd mid-flight.
         self._bg_tasks: set = set()
 
-    def _halted(self) -> bool:
+    def _halted(self, scope: Optional[str] = None) -> bool:
         if self._kill_switch is None:
             try:
                 from ..security.capability import KillSwitch
@@ -147,9 +154,26 @@ class AutonomyWorker:
             except Exception:
                 return False
         try:
-            return bool(self._kill_switch.is_halted())
+            if scope is None:
+                return bool(self._kill_switch.is_halted())
+            return bool(self._kill_switch.is_halted(scope))
         except Exception:
             return False
+
+    def _reap_stuck(self) -> int:
+        """Fail tasks stranded in RUNNING by a crash, past the TTL (Q6)."""
+        ttl = float(getattr(self, "running_ttl_seconds", 0.0) or 0.0)
+        if ttl <= 0:
+            return 0
+        try:
+            reaped = self.queue.reap_stuck_running(ttl, now=self._clock())
+        except Exception:
+            logger.warning("stuck-running reaper failed", exc_info=True)
+            return 0
+        for task in reaped:
+            self._audit("autonomy.reaped", task,
+                        f"stuck in running > {int(ttl)}s — failed by the reaper")
+        return len(reaped)
 
     # O26-P0.7 (F3): the governed intake brokers use as their enqueue sink.
     # Before this, social/writeback/call/node/tool-rpc proposals went straight
@@ -380,14 +404,24 @@ class AutonomyWorker:
         `max_tier` caps which risk tiers run this pass — used by the night shift
         to batch only reversible/read-only work (max_tier=1).
         """
-        ran = done = failed = 0
+        ran = done = failed = held = 0
+        # Q6: reap crash-stranded RUNNING tasks first — bookkeeping, not an
+        # action, so it runs even under a halt (the stuck state is honest).
+        reaped = self._reap_stuck()
         # O26-P0.7 (F3): an engaged kill-switch stops execution at THIS seam,
         # kernel-independently — approved tasks stay approved (nothing is lost)
         # and run on the first tick after release.
         if self._halted():
             logger.warning("kill-switch engaged — autonomy tick skipped (tasks held)")
-            return {"ran": 0, "done": 0, "failed": 0, "halted": True}
+            return {"ran": 0, "done": 0, "failed": 0, "halted": True,
+                    "held": 0, "reaped": reaped}
         for task in self.queue.runnable(limit=limit, max_tier=max_tier):
+            # Q6: a per-agent halt (scope = the agent's name, ch07 GOV-178)
+            # holds that agent's tasks at this same kernel-independent seam —
+            # they stay APPROVED and run on the first tick after release.
+            if self._halted(task.agent):
+                held += 1
+                continue
             ran += 1
             self.queue.transition(task.id, TaskStatus.RUNNING)
             attempts = self.queue.increment_attempts(task.id)
@@ -409,7 +443,7 @@ class AutonomyWorker:
                     # back to approved for another attempt
                     self.queue.transition(task.id, TaskStatus.APPROVED)
                     logger.info(f"Task #{task.id} failed (attempt {attempts}), will retry: {e}")
-        return {"ran": ran, "done": done, "failed": failed}
+        return {"ran": ran, "done": done, "failed": failed, "held": held, "reaped": reaped}
 
     async def _execute(self, task: Task) -> dict:
         if self.executor is None:

@@ -2068,7 +2068,7 @@ async def test_desktop_tool_actuates_only_from_durable_human_approved_worker_tic
         summary = await worker.tick()
         completed = queue.get(task_id)
 
-        assert summary == {"ran": 1, "done": 1, "failed": 0}
+        assert summary == {"ran": 1, "done": 1, "failed": 0, "held": 0, "reaped": 0}
         assert completed.status == "done"
         assert completed.result["status"] == "ok"
         assert completed.result["result"]["ran"][0]["status"] == "ran"

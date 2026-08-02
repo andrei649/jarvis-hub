@@ -369,6 +369,10 @@ class Orchestrator:
             # rather than the guardrails DB, whose rows are plain sha256 unless an
             # optional env key is set.
             audit=self.action_audit,
+            # Q6: share the orchestrator's own KillSwitch — the worker's lazy
+            # fallback builds a SECOND store that never reloads its file, so a
+            # halt engaged after boot never reached the tick until restart.
+            kill_switch=self.kill_switch,
         )
         # H34.2: owner desk-presence. Default 'unknown' (fail-calm) until a host
         # daemon reports; when 'away', decision cards additionally escalate to the
