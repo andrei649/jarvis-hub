@@ -282,9 +282,12 @@ async def acquisition_drive(request_id: _RequestId, body: AcquisitionDriveBody):
                 ContractCase(input=case.input, expected=case.expected) for case in body.cases
             ),
         )
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError):
+        # Exception text stays out of the HTTP body (information exposure);
+        # the server log keeps the specifics.
+        logger.info("acquisition drive rejected an invalid contract", exc_info=True)
         return nocache_json(
-            {"status": "refused", "reason": "invalid_contract", "detail": str(exc)[:200]},
+            {"status": "refused", "reason": "invalid_contract"},
             status_code=400,
         )
 
