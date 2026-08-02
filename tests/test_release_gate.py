@@ -71,6 +71,32 @@ def test_status_sync_check_against_real_repo_is_clean():
     result = gate.check_status_sync()
     assert result["status"] == "PASS", result["detail"]
 
+    baseline_path = REPO / "docs" / "nerva2" / "BASELINE.md"
+    disposition_path = REPO / "docs" / "nerva2" / "REUSE_BUILD_RETIRE.md"
+    baseline = baseline_path.read_text(encoding="utf-8")
+    disposition = disposition_path.read_text(encoding="utf-8")
+
+    assert "616f4d3e348675d56f0f600cca2d622b58ded804" in baseline
+    assert "does **not** close E0" in baseline
+    assert "Remaining E0 work" in baseline
+    for state in ("`LIVE`", "`GATED`", "`SEAM`", "`STUB`", "`MIXED`"):
+        assert state in baseline
+    for decision in ("`REUSE`", "`INTEGRATE`", "`BUILD`", "`REFACTOR`", "`RETIRE`"):
+        assert decision in disposition
+    for relative in (
+        "agents/core/orchestrator.py",
+        "agents/core/agent_runtime.py",
+        "agents/core/kernel/__init__.py",
+        "agents/core/autonomy/observer.py",
+        "agents/core/observability/capability_registry.py",
+        "agents/core/memory/bitemporal.py",
+        "agents/core/cognition/memory.py",
+        "agents/core/learning/background_review.py",
+        "agents/core/acquisition/runtime.py",
+        "agents/core/observability/eval.py",
+    ):
+        assert (REPO / relative).is_file(), relative
+
 
 def test_status_sync_check_runs_the_full_generated_artifact_gate():
     seen = []
