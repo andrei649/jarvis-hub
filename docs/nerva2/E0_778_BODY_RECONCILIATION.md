@@ -1,7 +1,7 @@
 # Nerva 2.0 E0.3b2b — blocker-plan body reconciliation
 
 > **Program:** #757 · **Epic:** #758 · **Blocker plan:** #778.  
-> **Candidate PR:** #789 on `nerva2/e0-ledger-migrator`.  
+> **Delivery PR:** #789.  
 > **Status:** E0 remains `VERIFYING`; `close_e0=false`.
 
 ## Purpose
@@ -19,8 +19,8 @@ evidence from later whole-program work and keeps all implementation and authorit
 - **B0 is resolved:** #772 accepted the acyclic delivery DAG, the exact E5 blocker set, the separate
   runtime-feedback graph and the advisory-only E12 boundary.
 - **B1 / M0 remain `VERIFYING`:** controls #771, #772, #779, #785, #786, #787 and #788 are accepted;
-  draft #789 contains the candidate repository-ledger reconciliation and generated-status refresh.
-  E0 is not closed until independent exact-head acceptance.
+  the repository-ledger reconciliation and generated-status refresh are present. E0 is not closed
+  until independent exact-head acceptance.
 - **B2 is partial:** repository manifests and checkers now protect the accepted E0 and first-wave
   contract, but the broader whole-program manifest/orphan checker remains future work.
 - **B3–B10 remain open:** Continuity Core mapping, universal cognitive-ledger contracts, SDK breadth,
@@ -41,7 +41,7 @@ B0, B1 and M0. The detailed work breakdown remains intact as historical and futu
 - Live task-level mediation, owner hardware and release evidence remain later gates.
 - The builder does not close E0 or start downstream implementation.
 
-## Repository evidence in draft #789
+## Repository evidence
 
 - exact marker-bounded blocks in `BACKLOG.md` and `STATUS.md`;
 - generated status synchronized through `scripts/status_sync.py`;
@@ -66,6 +66,6 @@ record.
 
 ## Next smallest slice
 
-**E0.3b2b-independent-closure:** independently review the complete #789 diff, the reconciled #778 body,
+**E0.3b2b-independent-closure:** independently review the final change set, the reconciled #778 body,
 all exact-head checks, dependency order and authority boundaries. Only an independent integrator may
 change E0 from `VERIFYING` to `DONE`; the builder must not merge or begin #780–#784.
