@@ -102,6 +102,11 @@ class WorkflowEngine:
                         errors.append(step.id)
                     else:
                         ctx[step.id] = out
+                        # WFL-032: a RETURNED "[error:…]" (timeout, validator,
+                        # guardrail, subflow) must fail the run exactly like the
+                        # serial branch — not only raised exceptions.
+                        if isinstance(out, str) and out.startswith("[error:"):
+                            errors.append(step.id)
 
             # H10.10: validate + expose structured fields for any schema'd step.
             for step in batch:

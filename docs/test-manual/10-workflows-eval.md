@@ -138,8 +138,8 @@ group at `/v1`.
 - **FAIL if:** `steps` is empty for a run that produced output → **MAJOR**. If `ts` is not ~now (run 1's Steve reported a 2024 timestamp) → **BLOCKER**. If `elapsed_ms` is 0 for a real LLM step → **MAJOR**.
 - **Evidence:** the verbatim JSON alongside the screenshot from WFL-030.
 
-#### WFL-032 — A failed step inside a PARALLEL batch must not report the run as OK
-- **Surface:** engine `run()` · **Auto:** ❌ (the serial path is covered by tests/test_workflows.py::test_engine_marks_errors; the parallel path is not)
+#### WFL-032 — A failed step inside a PARALLEL batch must not report the run as OK — **FIXED 2026-08-02**
+- **Surface:** engine `run()` · **Auto:** ✅tests/test_workflows.py::test_parallel_batch_error_string_marks_run_failed (+ serial-agreement + the existing serial test)
 - **Why it matters:** the golden rule's exact shape — a green screen over a failed run.
 - **Prereq:** none (deterministic; no model needed).
 - **Steps:** 1) Save a pipeline with **two root steps** (no `depends_on`, so they land in the same batch and take the parallel path, `engine.py:87-104`), one of which is guaranteed to fail:
@@ -153,8 +153,8 @@ group at `/v1`.
   3) `curl -s localhost:8080/api/workflows/traces?limit=1`
   4) Also click **run** on this pipeline in the v2 Console `WORKFLOWS` card.
 - **Expected (the contract):** `result.bad` is `[error:validation failed: empty output]` (`workflows/transforms.py:72`), and therefore `_ok` must be `false` with `_errors: ["bad"]`.
-- **What the source says will actually happen:** the parallel branch only appends to `errors` for raised `Exception`s (`engine.py:99-104`); a step that *returns* an `[error:…]` string is not recorded. The serial branch does record it (`engine.py:85-86`). So expect `_ok: true`, `_errors: []`, the trace's step entry showing `"ok": false` for `bad`, the ResultPanel header showing `✓ Run complete`, and the v2 card showing `ran qa-par-fail · ok`.
-- **FAIL if:** that is what you observe → **MAJOR**, and note explicitly in the report that under the golden rule this is BLOCKER-class (a failed run is displayed as a success). The trace-vs-run-level disagreement (`steps[].ok: false` while `ok: true`) is your evidence.
+- **Fixed behavior (2026-08-02):** the parallel branch now records a *returned* `[error:…]` string exactly like the serial branch (raised exceptions were already recorded), so the expected contract above is what you observe: `_ok: false`, `_errors: ["bad"]`, ResultPanel `✗ Run errors`, v2 card `run failed`, and the trace agreeing with the run level.
+- **FAIL if:** `_ok` is `true` while any step value starts with `[error:` → **MAJOR**, BLOCKER-class under the golden rule (a failed run displayed as a success).
 - **Evidence:** the run JSON, the trace JSON, and the two UI screenshots.
 
 | ID | Check | Do | Expect | Fail | Auto |
@@ -162,7 +162,7 @@ group at `/v1`.
 | WFL-033 | Run an unknown pipeline | `curl -si -X POST localhost:8080/api/workflows/run -H "X-User-Token: …" -H 'Content-Type: application/json' -d '{"pipeline_id":"ghost"}'` | `404`, detail `Pipeline 'ghost' not found` (`routers/workflows.py:94`) | MINOR | ✅tests/test_workflow_builder.py |
 | WFL-034 | Run with the engine down | Kill the model + force the autonomy init to fail, or inspect a boot where the log shows `Autonomy init failed` | `200 {"ok":false,"error":"workflow engine not initialized"}` (`routers/workflows.py:77`) — honest, not a 500 | MAJOR | ⚠️tests/test_workflows_autonomy_api.py |
 | WFL-035 | User store overrides a builtin at RUN time | `POST /api/workflows` with `id: "finance_report"` and one trivial step, then run it | The run executes **your** single step, not the built-in's three — the store is consulted first (`routers/workflows.py:84-92`) | MAJOR | ✅tests/test_workflow_builder.py |
-| WFL-036 | **Deleting the shadow must not delete the builtin** | After WFL-035, `DELETE /api/workflows/finance_report`, then `GET /api/workflows` | `finance_report` should still be listed as the **built-in**. `routers/workflows.py:173` pops it from the live registry unconditionally, so expect it to vanish until restart; restart and confirm it returns | MAJOR | ❌ |
+| WFL-036 | **Deleting the shadow must not delete the builtin** — **FIXED 2026-08-02** | After WFL-035, `DELETE /api/workflows/finance_report`, then `GET /api/workflows` | `finance_report` is still listed and the registry entry is the pristine **built-in** (3 steps, not the shadow) — `WorkflowRegistry.unregister` restores a shadowed built-in id from `_BUILTIN` instead of popping it; no restart needed | MAJOR | ✅tests/test_workflow_builder.py::test_endpoint_delete_shadow_keeps_builtin |
 | WFL-037 | `traces` limit bounds | `curl -si "localhost:8080/api/workflows/traces?limit=0"` and `?limit=99` | Both `422` (bounds `ge=1, le=50`, `routers/workflows.py:103`) | MINOR | ✅tests/test_h10_2_workflow_trace.py |
 | WFL-038 | Ring is capped at 50 | Run any pipeline 55× (`for i in $(seq 55); do curl -s -X POST …/run -d '{"pipeline_id":"qa-par-fail"}' -o /dev/null; done`), then `traces?limit=50` | Exactly 50 runs, newest first (`_MAX_RECENT_RUNS = 50`, `engine.py:26`) | MINOR | ✅tests/test_h10_2_workflow_trace.py::test_recent_runs_ring_most_recent_first |
 
@@ -584,7 +584,7 @@ affect that surface. Anything that shows a number, a green badge, or plausible p
 | **`JARVIS_ADMIN_TOKEN` set** | `run` works (user tier); `✕` 401s | **Save/Delete 401 `admin token required`** — visible, not silent | run works | works (user tier) | works (user tier) | reads open; `run` user | run/vote user | reads open; **threshold 401** | works | status/events user; export/purge/revoke 401 | open |
 | **No token at all, request from another host 🌐** | `GET` open → 200 | page loads; all writes **403** `user routes disabled from network…` | `run` **403** | **403** | **403** | reads 200; `run` 403 | reads 200; run/vote 403 | reads 200; threshold 403 | reads 200; flag/vote/dataset 403 | status/events 403 | 200 |
 | **Empty DB / fresh box** | 3 built-ins only, `total:3` | `— select a workflow —`, `No steps yet — add steps below` | `{"runs":[]}` | works | works | `{"datasets":[]}` | `{"leaderboard":[]}` + `no matches yet …` | `n:0`, `avg_score:null` | `{"items":[],"rubric_criteria":[4]}` | `enabled:false, reason:"acquisition_disabled"` | all zeros, `by_agent:{}` |
-| **After restart ⏱** | user pipelines reload from `memory_logs/workflows/*.json`; a built-in shadowed-then-deleted one reappears (WFL-036) | list repopulates | traces **empty** unless `JARVIS_WORKFLOW_PERSIST=1` | — | — | datasets + runs persist (files) | ELO persists | `n` back to 0 (in-memory by design) | items persist (JSON) | ledger persists | samples reset |
+| **After restart ⏱** | user pipelines reload from `memory_logs/workflows/*.json`; a shadowed built-in is restored at DELETE time (WFL-036 ✅) — restart no longer involved | list repopulates | traces **empty** unless `JARVIS_WORKFLOW_PERSIST=1` | — | — | datasets + runs persist (files) | ELO persists | `n` back to 0 (in-memory by design) | items persist (JSON) | ledger persists | samples reset |
 | **Qdrant/Neo4j/n8n down** | — | — | an `oracle`-targeted step returns `[error:` honestly | — | — | — | — | scores reflect the failures | flags them | — | — |
 | **Acquisition enabled, no pinned sandbox image** | — | — | — | — | — | — | — | — | — | `status:"blocked"`, `reason:"managed_signing_key_required"` or `promotion_runtime_unavailable`; **`packages:[]`** — never a runnable-looking row | — |
 | **Guardrail step in `block` mode fires** | — | — | step value `[error:guardrail blocked: <names>]`, `_ok:false`; **the planted secret must not appear in `output_preview` or the log** | — | — | — | — | — | — | — | — |
@@ -634,7 +634,7 @@ affect that surface. Anything that shows a number, a green badge, or plausible p
 |-------|-------|-------|--------------|-------|
 | 10.1 Preflight & inventory | 17 (WFL-001–017) | none (👁 for 015–017) | 12 ✅ / 3 ⚠️ / 2 ❌ | Establishes the zero baseline every later fabrication check compares against |
 | 10.2 Visual builder | 12 (018–029) | 👁, admin-token restart | 5 ✅ / 1 ⚠️ / 6 ❌ | UI is entirely uncovered offline; WFL-023 is the admin-header defect |
-| 10.3 Run & trace overlay | 9 (030–038) | 🤖 for 030–031 | 6 ✅ / 2 ⚠️ / 1 ❌ | WFL-032 is the parallel-batch `_ok` defect (golden-rule class) |
+| 10.3 Run & trace overlay | 9 (030–038) | 🤖 for 030–031 | 7 ✅ / 2 ⚠️ / 0 ❌ | WFL-032 (parallel-batch `_ok`, golden-rule class) FIXED 2026-08-02 |
 | 10.4 All seven step kinds | 10 (039–048) | 🤖 for router/critic/timeout | 8 ✅ / 1 ⚠️ / 1 ❌ | `transform`/`guardrail`/`loop`/`subflow` all run with no model |
 | 10.5 AI step builder | 4 (049–052) | 🤖 half, then model **off** | 2 ✅ / 2 ❌ | The `source` label is the honesty contract; RO keywords are a gap |
 | 10.6 Hierarchical | 4 (053–056) | 🤖 | 3 ✅ / 1 ❌ | No UI; redistribution + static error message are the payload |
@@ -657,10 +657,10 @@ affect that surface. Anything that shows a number, a green badge, or plausible p
 
 Observations from reading the source, stated as observations with pointers. **No code was changed.**
 
-1. **A failed step inside a parallel batch does not mark the run failed.** `agents/core/workflows/engine.py:99-104` only appends to `errors` for raised exceptions; the serial branch at `:85-86` correctly checks for the `[error:` prefix. Consequence: `_ok:true` and `✓ Run complete` / `ran X · ok` over a run whose trace shows `steps[].ok:false`. Golden-rule class. → WFL-032.
+1. ~~A failed step inside a parallel batch does not mark the run failed.~~ **FIXED 2026-08-02** — the parallel branch records a returned `[error:` prefix exactly like serial; run/trace/either UI now agree. (With `JARVIS_WORKFLOW_PERSIST=1`, a parallel batch containing such a step now retries/parks-dead in the durable queue instead of completing — the honest outcome.) → WFL-032 ✅.
 2. **The legacy visual builder cannot save or delete when an admin token is set.** `agents/web/static/workflows.js:436,476` use bare `fetch`; `templates/index.html:32-47` loads `auth.js` (user token only) and never `admin.js`'s `afetch` (`static/admin.js:12`). Both routes are admin-tier. → WFL-023, WFL-027.
 3. **The builder cannot author six of the seven step kinds.** `StepForm` collects only `id`/`agent_id`/`prompt_template`/`depends_on` (`workflows.js:239`); there is no `kind` selector, so `router`/`critic`/`transform`/`guardrail`/`loop`/`subflow` are JSON-only. MANUAL_TESTING §D's "in the builder… exercise each" is not literally executable.
-4. **Deleting a user pipeline that shadows a built-in removes the built-in from the live registry.** `agents/core/routers/workflows.py:173` pops unconditionally despite the comment "built-ins are intentionally kept". Recovered only by restart. → WFL-036.
+4. ~~Deleting a user pipeline that shadows a built-in removes the built-in from the live registry.~~ **FIXED 2026-08-02** — `WorkflowRegistry.unregister` restores a shadowed built-in from `_BUILTIN` at delete time; the route comment is finally true. → WFL-036 ✅.
 5. **`build_flow` silently drops `subflow`.** `agents/core/workflows/flow_api.py:88-101` forwards `critic`/`router`/`transform`/`guardrail`/`loop`/`output_schema`/`terminate_when` but not `subflow`, so a Python-authored subflow step becomes a no-op at `engine.py:240-241`. → WFL-057.
 6. **`max_retries` on the hierarchical runner has no upper bound.** `agents/core/workflows/hierarchical.py:35` clamps only ≥0; `routers/workflows.py:212-214` rejects only non-integers. A user-tier request can request a million agent calls, and `HierarchicalManager._run` applies no per-call timeout. → WFL-062.
 7. **Loop nesting is uncapped.** `engine.py:214,276` re-enter `_run_loop` for a `loop`-kind body step with no depth counter, unlike `_MAX_DEPTH = 5` for subflows (`:27,228`). Two levels at the 100-iteration clamp = 10 000 body runs. Nested loops sharing a step id also collide on `{id}._iter` (`:274`). → WFL-063.

@@ -1,6 +1,15 @@
 # Changelog
 
 ## [Unreleased]
+### Q7 — workflow truth pair: parallel-batch honesty + built-in restore (2026-08-02)
+- **WFL-032**: a step that *returns* `[error:…]` (timeout, validator, guardrail, subflow) inside a
+  PARALLEL batch now fails the run exactly like the serial branch — before, `_ok` stayed `true`
+  over a failed run (golden-rule class: `✓ Run complete` above a trace showing `ok: false`).
+  With `JARVIS_WORKFLOW_PERSIST=1`, such runs now retry/park-dead in the durable queue instead of
+  completing — the honest outcome.
+- **WFL-036**: deleting a user pipeline that shadows a built-in id now RESTORES the pristine
+  built-in in the live registry (`WorkflowRegistry.unregister`, from `_BUILTIN`) instead of popping
+  it until restart; the route comment is finally true.
 ### Q5 — SEC-065 live guardrails-mode propagation + SEC-071 audit preview redaction (2026-08-02)
 - **The posture screen and the live engine now agree without a restart** — `GuardrailsEngine.apply_settings`
   (name-keyed; garbage keeps the CURRENT mode) is re-pushed by the 30s settings watcher; `bind()` copies

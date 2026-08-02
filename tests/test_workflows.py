@@ -206,3 +206,59 @@ async def test_security_digest_parallel_then_synthesize():
     first = {s.id for s in batches[0]}
     assert "security" in first and "system" in first
     assert batches[1][0].id == "digest"
+
+
+# ── Q7 / WFL-032: the parallel branch tells the same truth as serial ─────────
+
+@pytest.mark.asyncio
+async def test_parallel_batch_error_string_marks_run_failed():
+    """WFL-032: the parallel branch only recorded RAISED exceptions — a step
+    that RETURNS '[error:…]' (timeout, validator, guardrail, subflow) left
+    _ok True while the trace's own step entry said ok: False."""
+    p = _make_pipeline(
+        WorkflowStep("bad", "_passthrough", "{_input}",
+                     kind="transform",
+                     transform={"op": "validator", "check": "min_length", "value": 9999}),
+        WorkflowStep("good", "steve", "system status"),
+    )
+    result = await WorkflowEngine(_MockOrch()).run(p, "go")
+    assert result["bad"].startswith("[error:")
+    assert result["_ok"] is False, (
+        "a failed step inside a PARALLEL batch must not report the run as OK"
+    )
+    assert result["_errors"] == ["bad"]
+
+
+@pytest.mark.asyncio
+async def test_parallel_batch_error_matches_serial_branch():
+    failing = {"kind": "transform",
+               "transform": {"op": "validator", "check": "min_length", "value": 9999}}
+    solo = await WorkflowEngine(_MockOrch()).run(_make_pipeline(
+        WorkflowStep("bad", "_passthrough", "{_input}", **failing)), "go")
+    paired = await WorkflowEngine(_MockOrch()).run(_make_pipeline(
+        WorkflowStep("bad", "_passthrough", "{_input}", **failing),
+        WorkflowStep("good", "steve", "system status")), "go")
+    assert solo["_ok"] is False and paired["_ok"] is False
+    assert solo["_errors"] == ["bad"] == paired["_errors"]
+
+
+# ── Q7 / WFL-036: deleting a shadow restores the built-in ────────────────────
+
+def test_registry_unregister_restores_builtin():
+    reg = WorkflowRegistry()
+    builtin = reg.get("finance_report")
+    assert builtin is not None
+    shadow = Pipeline(id="finance_report", name="Shadow", description="",
+                      steps=[WorkflowStep("s1", "jarvis", "{_input}")])
+    reg.register(shadow)
+    assert reg.get("finance_report") is shadow
+
+    assert reg.unregister("finance_report") is False  # restored, not removed
+    assert reg.get("finance_report") is builtin, (
+        "a shadowed built-in id must be RESTORED from _BUILTIN, not popped"
+    )
+
+    reg.register(Pipeline(id="user_pipe", name="U", description="",
+                          steps=[WorkflowStep("s1", "jarvis", "{_input}")]))
+    assert reg.unregister("user_pipe") is True
+    assert reg.get("user_pipe") is None

@@ -32,10 +32,12 @@ Status column = the committed ledger; update it inside each item's own sync comm
 | C4 | QA2 | A8-ii: presence-aware media target (`presence:auto`) | M | same files as C3 → **serialize after C3** | ✅ merged #753 |
 | C5 | Q1 | Streaming multi-agent synthesis + per-agent route_name | L | `agents/core/orchestrator.py` | ✅ merged #752 |
 | C6 | Q6 | Kill-switch per-agent scope in worker tick + stuck-`running` TTL reaper | M | `agents/core/autonomy/worker.py`, `agents/core/autonomy/queue.py` | ✅ merged #754 (retry 1: pack pin) |
-| C7 | Q2 | Stream notes parity (same function as Q1 → after Q1 merges) | S | `agents/core/orchestrator.py` | ⬜ |
-| C8 | Q5 | SEC-065 live guardrails-mode propagation + SEC-071 audit preview redaction | M | `agents/core/security/guardrails.py`, settings watcher, `agents/core/security/audit.py` | ⬜ |
+| C7 | Q2 | Stream notes parity — **actually the web layer** (`agents/web.py`), not `orchestrator.py`; independent of Q1 | S | `agents/web.py` | ✅ merged #755 |
+| C8 | Q5 | SEC-065 live guardrails-mode propagation + SEC-071 audit preview redaction | M | `agents/core/security/guardrails.py`, settings watcher, `agents/core/security/audit.py` | ✅ merged #756 (retry: stale-head refresh + one infra re-run) |
 
 **Stretch lane (strict order, only if ahead):** QA4 live ungoverned-actions counter (`/api/metrics/kernel` + intent-log mediation ratio) → Q7 workflow truth pair (WFL-032/036) → Q8 review→dataset mint (WFL-088) → Q10 widget ingress gateway+taint → Q12 seeded-corpora DEMO labels + cockpit decision-queue wiring (SHL-102/103) → Q9 email reply dispatch branch → Q14 R8 repro-first → Q13 SEC-B6 read-gate ratchet → Q4 wave-E off-loop I/O (grep for call sites; the old list named a nonexistent `routers/onvif.py`) → Q16 catch-up notes.
+
+**Stretch-lane status:** Q7 ✅ (this PR) · Q8 ready-in-tree · Q10 ready-in-tree · QA4 recon banked · rest ⬜. Main-lane C1–C8 all merged (#749–#756).
 
 ## 4. Schedule + cut protocol
 
