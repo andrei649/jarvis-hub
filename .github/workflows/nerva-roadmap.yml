@@ -59,5 +59,8 @@ jobs:
       - name: Validate Nerva roadmap reconciliation
         run: python scripts/check_nerva_roadmap.py
 
+      - name: Validate exact repository ledger blocks
+        run: python scripts/reconcile_nerva_repository_ledgers.py --check
+
       - name: Validate Nerva E0 completion ledger
         run: python scripts/check_nerva_e0_completion.py
