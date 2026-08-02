@@ -5,14 +5,20 @@ on:
     paths:
       - "docs/nerva2/ROADMAP_RECONCILIATION.md"
       - "docs/nerva2/ROADMAP_RECONCILIATION.json"
+      - "docs/nerva2/E0_COMPLETION.md"
+      - "docs/nerva2/E0_COMPLETION.json"
       - "scripts/check_nerva_roadmap.py"
+      - "scripts/check_nerva_e0_completion.py"
       - ".github/workflows/nerva-roadmap.yml"
   push:
     branches: [main]
     paths:
       - "docs/nerva2/ROADMAP_RECONCILIATION.md"
       - "docs/nerva2/ROADMAP_RECONCILIATION.json"
+      - "docs/nerva2/E0_COMPLETION.md"
+      - "docs/nerva2/E0_COMPLETION.json"
       - "scripts/check_nerva_roadmap.py"
+      - "scripts/check_nerva_e0_completion.py"
       - ".github/workflows/nerva-roadmap.yml"
   workflow_dispatch:
 
@@ -30,7 +36,13 @@ jobs:
           python-version: "3.12"
 
       - name: Validate syntax
-        run: python -m py_compile scripts/check_nerva_roadmap.py
+        run: >-
+          python -m py_compile
+          scripts/check_nerva_roadmap.py
+          scripts/check_nerva_e0_completion.py
 
       - name: Validate Nerva roadmap reconciliation
         run: python scripts/check_nerva_roadmap.py
+
+      - name: Validate Nerva E0 completion ledger
+        run: python scripts/check_nerva_e0_completion.py
