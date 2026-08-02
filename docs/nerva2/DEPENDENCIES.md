@@ -6,9 +6,10 @@
 > ownership boundaries required before E1–E3, E8–E9 and E12 can build safely in parallel.
 
 The machine-readable companion is [`CONTRACT_REGISTRY.json`](CONTRACT_REGISTRY.json). It is a
-planning and integrity artifact, not a second runtime capability registry. E12's provisional
-schemas remain outside that canonical contract list until E12.1 exercises typed fixtures and
-calibration tests; its dependency and authority boundary are canonical now.
+planning and integrity artifact, not a second runtime capability registry. It records the acyclic
+delivery prerequisites separately from runtime feedback edges. E12's provisional schemas remain
+outside the canonical contract list until E12.1 exercises typed fixtures and calibration tests;
+its dependency and authority boundary are canonical now.
 
 ## 1. Dependency rule
 
@@ -34,28 +35,60 @@ The arrows are data and authority boundaries, not permission to import every ups
 No model, agent, preference predictor, simulator, metacognitive controller, UI or scheduler may
 bypass Ultron for a privileged effect.
 
-## 2. Delivery DAG
+## 2. Delivery prerequisite DAG — acyclic
+
+Only build-time prerequisites belong in this graph. A runtime consumer or feedback edge never
+becomes a delivery blocker merely because it may improve an already working capability.
 
 ```text
 E0 baseline and contracts
- ├─> E1 Cortex ─────────────────────────────────────┐
- ├─> E2 Atlas ──> E3 Episodes ─────────────────────┤
- ├─> E8 Synapse Skills SDK ────────────────────────┤
- └─> E9 Research Lab ──────────────────────────────┤
-                                                    ├─> E5 Night Shift ──> E10 Experience
-E3 Episodes ──> E6 Reflection ─────────────────────┤
-E3 Episodes ──> E4 Howard ─────────────────────────┘
-E1 Cortex + E2 Atlas + E3 Episodes + E4 Howard ─────> E7 World Model
-E1 Cortex + E2 Atlas + E3 Episodes + E6 Reflection
-           + E9 Research Lab ───────────────────────> E12 Hybrid Cognition
-E12 advisory outputs ───────────────────────────────> Cortex / World Model / Research Lab
-All streams ────────────────────────────────────────> E11 Proof and release
+ ├─> E1 Cortex
+ ├─> E2 Atlas ──> E3 Episodes ──┬─> E4 Howard
+ │                              └─> E6 Reflection
+ ├─> E8 Synapse Skills SDK
+ └─> E9 Research Lab
+
+E0 + E1 + E2 + E3 + E6 ─────────────> E5 Night Shift
+E1 + E2 + E3 + E4 ──────────────────> E7 World Model
+E1 + E2 + E3 + E6 + E9 ─────────────> E12 Hybrid Cognition
+E1 + E2 + E5 + E6 ──────────────────> E10 Experience
+All mandatory production bars ──────> E11 Proof and release
 ```
+
+The exact direct blockers for the first bounded E5 Night Shift are:
+
+```text
+E0 Baseline + E1 Cortex + E2 Atlas + E3 Episodes + E6 Reflection
+```
+
+E4 Howard, E8 Synapse Skills SDK, E9 Research Lab and E12 Hybrid Cognition may improve later Night
+Shift versions, but they are not direct prerequisites for its first bounded implementation. The
+first version may reuse current capability manifests, ToolRPC, the Action Kernel, scheduler,
+queue/worker and verification substrate while those streams mature independently.
 
 A downstream epic may prototype against versioned fixtures, but it cannot claim completion until
 its upstream live contract, migration path and deletion/export behavior are verified. E12 may run
 shadow-mode experiments early; it cannot become production routing, live-state mutation or action
 authority before its declared dependencies are real and tested.
+
+### 2.1 Runtime cognitive feedback graph — cycles expected
+
+Runtime feedback is deliberately separate from delivery order:
+
+```text
+Observe → Atlas → Cortex → Ultron → Synapse / Executors → Verification
+   ↑                                                       ↓
+   └──────── Episodes ← Outcomes / Evidence ←──────────────┘
+                  ↓
+              Reflection ──advisory──> Atlas / Cortex
+
+Howard ──preference prediction only──> Cortex
+E12 ──belief / metacognition only────> Cortex / World Model / Research Lab
+```
+
+These feedback edges may be cyclic because the system learns from outcomes. They never grant
+authority, never mutate live state by themselves and are not delivery prerequisites. Every
+privileged effect still crosses Ultron.
 
 ## 3. Contract ownership summary
 
