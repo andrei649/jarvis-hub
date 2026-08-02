@@ -1,7 +1,7 @@
 # Nerva 2.0 E0 repository-ledger migration
 
 > **Program:** #757 · **Epic:** #758 · **Blocker plan:** #778.  
-> **Applied state:** complete candidate diff in draft #789; E0 remains `VERIFYING` and `close_e0=false`.
+> **Applied state:** exact repository reconciliation is present; E0 remains `VERIFYING` and `close_e0=false`.
 
 ## Purpose
 
@@ -26,9 +26,9 @@ per ledger, then becomes an idempotent verifier of the exact marker-bounded cont
 - keeps E0 `VERIFYING`, all first-wave issues blocked and Ultron as the sole privileged-action
   authority.
 
-## Applied evidence in draft #789
+## Applied evidence
 
-A branch-scoped one-shot workflow used locked dependencies to:
+The E0.3b2b delivery workflow used locked dependencies to:
 
 1. run the existing project-status generator with tracked frontend/mobile counts;
 2. apply both reviewed ledger blocks from the complete checkout;
@@ -37,14 +37,13 @@ A branch-scoped one-shot workflow used locked dependencies to:
 5. enforce an exact generated-file allowlist and `git diff --check`;
 6. commit the generated reconciliation and remove the one-shot workflow itself.
 
-The resulting pull-request diff contains one insertion in each ledger plus normal generated-status
-updates to `project-status.json`, `README.md`, `NERVA.md`, `GO_LIVE_PLAN.md` and the volatile counters
-in `STATUS.md`. The tracked backend count moved from 5,731 to 5,743 because the new tests are now part
-of the collected suite.
+The resulting change set contains one insertion in each ledger plus normal generated-status updates to
+`project-status.json`, `README.md`, `NERVA.md`, `GO_LIVE_PLAN.md` and the volatile counters in
+`STATUS.md`. The tracked backend count moved from 5,731 to 5,743 because the new tests are now part of
+the collected suite.
 
-The complete #778 body is also reconciled through a separate authoritative snapshot and repository
-evidence in `E0_778_BODY_RECONCILIATION.md`; its B0–B10, M0–M8, metrics and anti-drift plan remain
-intact.
+The complete #778 body is reconciled through a separate authoritative snapshot and repository evidence
+in `E0_778_BODY_RECONCILIATION.md`; its B0–B10, M0–M8, metrics and anti-drift plan remain intact.
 
 ## Verification commands
 
@@ -68,6 +67,6 @@ manifest work and B3–B10 remain open.
 
 ## Next slice
 
-**E0.3b2b-independent-closure:** independently review the complete #789 diff, the reconciled #778 body,
+**E0.3b2b-independent-closure:** independently review the final change set, the reconciled #778 body,
 all exact-head checks and authority/dependency boundaries. The builder must not merge, close E0 or
 start downstream implementation.
