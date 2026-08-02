@@ -1,6 +1,20 @@
 # Changelog
 
 ## [Unreleased]
+### Q8 — review→dataset promotion mints a real case, not a fabricated 1.0 (2026-08-02)
+- **WFL-088**: `ReviewQueue.to_eval_case` emitted `{"input","expected",…}` — keys `run_dataset`
+  never reads — so every promoted case replayed an **empty prompt** with no criterion, and the
+  harness's "no criterion → pass by default" turned a flagged-as-bad answer into a perfect eval
+  score. It now emits the documented `{"name","prompt","expect_contains","metadata"}` contract
+  (promotion is idempotent per `trace_id`; `POST /api/review/{id}/dataset` accepts an optional
+  reviewer `expect_contains` gold; `prompt_source` records that the preview may be truncated).
+- **A criterion-less FILE case is now UNSCORED, never a pass** — `scored:false`, `score:null`,
+  excluded from the aggregate (which is `null` when everything is unscored, never `0.0`), with
+  `unscored:n` on the run. `EvalHarness._evaluate`'s pass-by-default is deliberately untouched:
+  it stays a smoke-test affordance for ad-hoc lanes, while in the file lane `expect_contains`
+  *is* the criterion (as the module contract has always said).
+- **A promotion with no prompt is refused `400`** instead of minting a case that burns a live
+  inference against an empty string.
 ### Q7 — workflow truth pair: parallel-batch honesty + built-in restore (2026-08-02)
 - **WFL-032**: a step that *returns* `[error:…]` (timeout, validator, guardrail, subflow) inside a
   PARALLEL batch now fails the run exactly like the serial branch — before, `_ok` stayed `true`

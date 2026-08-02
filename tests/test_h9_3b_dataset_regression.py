@@ -191,3 +191,43 @@ def test_dataset_endpoints_shape():
         resp = c.post("/api/eval/datasets/run", json={"name": "does-not-exist"})
         assert resp.status_code == 404
         assert "error" in resp.json()
+
+
+# ── Q8 / WFL-088: criterion-less file cases are UNSCORED, not a perfect pass ──
+
+async def test_promoted_case_without_criterion_is_unscored_not_perfect(tmp_path):
+    store = DatasetStore(root=tmp_path)
+    store.save_version("review_q8", [
+        {"name": "gold", "prompt": "ping", "expect_contains": "echo"},
+        {"name": "no-gold", "prompt": "flagged answer text",
+         "metadata": {"source": "human_review"}},
+    ])
+
+    async def runner(prompt):
+        return f"echo: {prompt}"
+
+    out = await store.run_dataset("review_q8", runner)
+
+    assert out["total"] == 2 and out["passed"] == 1
+    assert out["unscored"] == 1
+    assert out["score"] == 1.0, "the average must cover SCORED cases only"
+    by_name = {r["name"]: r for r in out["results"]}
+    assert by_name["no-gold"]["scored"] is False
+    assert by_name["no-gold"]["score"] is None
+    assert by_name["no-gold"]["passed"] is False, (
+        "WFL-088: a case with no criterion must never report a fabricated pass"
+    )
+
+
+async def test_all_unscored_run_reports_null_score(tmp_path):
+    store = DatasetStore(root=tmp_path)
+    store.save_version("review_q8_all", [
+        {"name": "a", "prompt": "x"}, {"name": "b", "prompt": "y"},
+    ])
+
+    async def runner(prompt):
+        return "whatever"
+
+    out = await store.run_dataset("review_q8_all", runner)
+
+    assert out["score"] is None and out["passed"] == 0 and out["unscored"] == 2
