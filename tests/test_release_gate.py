@@ -1,6 +1,7 @@
 """Tests for scripts/release_gate.py (H23.25 — the one-command RC readiness gate)."""
 
 import importlib.util
+import json
 import sqlite3
 from pathlib import Path
 
@@ -73,8 +74,14 @@ def test_status_sync_check_against_real_repo_is_clean():
 
     baseline_path = REPO / "docs" / "nerva2" / "BASELINE.md"
     disposition_path = REPO / "docs" / "nerva2" / "REUSE_BUILD_RETIRE.md"
+    dependencies_path = REPO / "docs" / "nerva2" / "DEPENDENCIES.md"
+    hybrid_path = REPO / "docs" / "nerva2" / "HYBRID_COGNITION_BOUNDARY.md"
+    registry_path = REPO / "docs" / "nerva2" / "CONTRACT_REGISTRY.json"
     baseline = baseline_path.read_text(encoding="utf-8")
     disposition = disposition_path.read_text(encoding="utf-8")
+    dependencies = dependencies_path.read_text(encoding="utf-8")
+    hybrid = hybrid_path.read_text(encoding="utf-8")
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
 
     assert "616f4d3e348675d56f0f600cca2d622b58ded804" in baseline
     assert "does **not** close E0" in baseline
@@ -96,6 +103,83 @@ def test_status_sync_check_against_real_repo_is_clean():
         "agents/core/observability/eval.py",
     ):
         assert (REPO / relative).is_file(), relative
+
+    assert "a2766a98d16be40389ca587c6677c9e5e5d6e270" in dependencies
+    assert "E12 Hybrid Cognition" in dependencies
+    assert "No model, agent, preference predictor, simulator, metacognitive controller" in dependencies
+    assert "Cortex chooses a route; it cannot authorize" in dependencies
+    assert "Simulation never mutates live Atlas" in dependencies
+    assert "E12 has no privileged-action authority" in hybrid
+    assert "A probability is never promoted to fact" in hybrid
+    assert "Any external effect ──> Ultron / Action Kernel" in hybrid
+
+    assert registry["schema_version"] == 1
+    assert registry["program_issue"] == 757
+    assert registry["epic_issue"] == 758
+    boundaries = registry["epic_boundaries"]
+    assert boundaries == [
+        {
+            "id": "E12",
+            "issue": 773,
+            "owner": "Hybrid Cognition Lab",
+            "status": "discovery",
+            "depends_on": ["E0", "E1", "E2", "E3", "E6", "E9"],
+            "authority": "advisory_only",
+            "can_authorize_actions": False,
+            "can_mutate_live_state": False,
+            "boundary_path": "docs/nerva2/HYBRID_COGNITION_BOUNDARY.md",
+        }
+    ]
+    contracts = registry["contracts"]
+    ids = [contract["id"] for contract in contracts]
+    assert len(ids) == len(set(ids))
+    assert {
+        "nerva.observation.v1",
+        "nerva.atlas.snapshot.v1",
+        "nerva.capability.v1",
+        "nerva.decision.v1",
+        "nerva.action.v1",
+        "nerva.episode.v1",
+        "nerva.lesson.v1",
+        "nerva.preference.v1",
+        "nerva.work-run.v1",
+        "nerva.scenario.v1",
+        "nerva.benchmark.v1",
+        "nerva.evidence.v1",
+    } == set(ids)
+    assert [
+        contract["id"]
+        for contract in contracts
+        if contract["authority"] == "privileged_action"
+    ] == ["nerva.action.v1"]
+    assert {
+        "Atlas",
+        "Synapse",
+        "Cortex",
+        "Ultron",
+        "Episodes",
+        "Reflection",
+        "Howard",
+        "Night Shift",
+        "World Model",
+        "Research Lab",
+        "Verification Fabric",
+    } <= {contract["owner"] for contract in contracts}
+    by_id = {contract["id"]: contract for contract in contracts}
+    for contract_id in (
+        "nerva.atlas.snapshot.v1",
+        "nerva.decision.v1",
+        "nerva.episode.v1",
+        "nerva.lesson.v1",
+        "nerva.benchmark.v1",
+        "nerva.evidence.v1",
+    ):
+        assert "E12" in by_id[contract_id]["unblocks"], contract_id
+    for contract in contracts:
+        assert contract["status"] in {"proposed", "evolves_existing"}
+        assert contract["unblocks"]
+        for relative in contract["evidence_paths"]:
+            assert (REPO / relative).is_file(), f"{contract['id']}: {relative}"
 
 
 def test_status_sync_check_runs_the_full_generated_artifact_gate():
