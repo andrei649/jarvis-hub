@@ -18,11 +18,11 @@
 
 ## Repository-ledger state
 
-`BACKLOG.md` and `STATUS.md` now contain one exact marker-bounded Nerva block each in draft #789.
+`BACKLOG.md` and `STATUS.md` contain one exact marker-bounded Nerva block each in draft #789.
 Together they state all of the following without rewriting historical ORIZONT delivery:
 
 1. E0 control architecture is accepted through #788.
-2. E0 remains `VERIFYING` until the exact diff, #778 body and required checks are independently accepted.
+2. E0 remains `VERIFYING` until the exact diff and required checks are independently accepted.
 3. #780, #781, #783 and #784 are the first parallel executable slices after E0 closure.
 4. #782 remains downstream of #781.
 5. None of #780–#784 is implemented merely because its issue exists.
@@ -36,9 +36,10 @@ volatile tokens in `STATUS.md`.
 ## Issue-ledger state
 
 - #757 body is reconciled with accepted controls through #788, E0 `VERIFYING` and the blocked first wave.
-- #758 body is reconciled with E0 `VERIFYING`, completed child-issue creation and the remaining #778/closure gate.
-- #778 has current factual progress comments, but its complete long-form body still requires safe reconciliation.
-- The repository-ledger diff is present in draft #789 and awaits independent integration.
+- #758 body is reconciled with E0 `VERIFYING`, completed child-issue creation and the independent closure gate.
+- #778 body is reconciled with an authoritative 2026-08-03 snapshot while preserving B0–B10, M0–M8, metrics and anti-drift detail.
+- The #778 snapshot marks B0 resolved, B1/M0 `VERIFYING`, B2 partial and B3–B10 open.
+- The complete repository-ledger candidate remains draft #789 and awaits independent integration.
 
 ## First implementation wave
 
@@ -56,10 +57,10 @@ volatile tokens in `STATUS.md`.
 - [x] `STATUS.md` contains the reviewed candidate Nerva implementation snapshot in draft #789.
 - [x] #757 body records the accepted control and first-wave state.
 - [x] #758 body records E0 `VERIFYING` and the remaining closure gate.
-- [ ] #778 body agrees with both repository ledgers.
+- [x] #778 body agrees with the repository ledgers while preserving the long-range blocker plan.
 - [ ] `scripts/status_sync.py --check` passes on the final exact head.
 - [ ] The ledger migrator `--check` and both Nerva integrity checkers pass on the final exact head.
-- [ ] Full Linux/Windows CI, Security, CodeQL, Smoke, Code Health and park-list checks are green.
+- [ ] Full Linux/Windows CI, Security, CodeQL, Smoke, Code Health and park-list checks are green on the final exact head.
 - [ ] Independent integrator confirms no runtime or authority behavior changed.
 - [ ] Independent integrator explicitly changes E0 from `VERIFYING` to `DONE`.
 
@@ -67,11 +68,11 @@ volatile tokens in `STATUS.md`.
 
 This document does not claim that Cortex, Atlas, Episodes, Synapse SDK or Research Lab are implemented.
 It does not promote hermetic evidence to live capability, close owner/hardware gates, enable global
-autonomy or modify Ultron authority.
+autonomy or modify Ultron authority. Broader B2 program-manifest work and B3–B10 remain open after E0.
 
 ## Next action
 
-Complete **E0.3b2b-778-body** from the full issue source without deleting its detailed blocker program.
-Then run normal generated-status verification, the exact ledger and Nerva checkers and all required CI,
-and submit the final exact diff for an independent E0 closure decision. Only after that decision may
-#780, #781, #783 and #784 begin in parallel; #782 still waits for #781.
+Complete **E0.3b2b-independent-closure**: independently review the complete #789 diff, the reconciled
+#778 body, normal generated-status verification, exact ledger and Nerva checkers and all required CI.
+Only an independent integrator may merge #789 or change E0 from `VERIFYING` to `DONE`. Only after that
+decision may #780, #781, #783 and #784 begin in parallel; #782 still waits for #781.
