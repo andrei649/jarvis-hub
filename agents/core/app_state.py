@@ -44,4 +44,12 @@ def dev_mode() -> bool:
     static import edge back into `agents.web`.
     """
     web = sys.modules.get("agents.web")
-    return bool(getattr(web, "DEV_MODE", False)) if web is not None else False
+    if web is not None and bool(getattr(web, "DEV_MODE", False)):
+        return True
+    # ENV-039: DEV_MODE may arrive via .env, which loads after web.py's import
+    # (PluginManager.build) — fall back to a live env read so a .env-only flag
+    # still takes effect. The module global (tests' monkeypatch channel) wins
+    # when True; a monkeypatched False with no env var set stays False.
+    from agents.core.env_config import env_flag
+
+    return env_flag("DEV_MODE")

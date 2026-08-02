@@ -67,10 +67,23 @@ _LOCALHOSTS = {"127.0.0.1", "::1", "localhost"}
 from agents.core.security.token_store import get_token_store
 
 
+def _admin_env_token() -> str:
+    """ENV-039: the bootstrap token may arrive via `.env`, which loads *after*
+    this module (PluginManager.build). The module global — the import-time value
+    and the test suite's monkeypatch channel — wins when set; otherwise the
+    environment is re-read at call time so a `.env`-only token still activates."""
+    return ADMIN_TOKEN or os.environ.get("JARVIS_ADMIN_TOKEN", "").strip()
+
+
+def _user_env_token() -> str:
+    """ENV-039: same late-`.env` resolution as `_admin_env_token`."""
+    return USER_TOKEN or os.environ.get("JARVIS_USER_TOKEN", "").strip()
+
+
 def _env_admin_active() -> bool:
     """True when the static admin env token is set AND not yet superseded by a
     rotation (AUD-6). Once rotated, the env token is dead even if still exported."""
-    return bool(ADMIN_TOKEN) and not get_token_store().env_revoked("admin")
+    return bool(_admin_env_token()) and not get_token_store().env_revoked("admin")
 
 
 def _admin_configured() -> bool:
@@ -111,7 +124,7 @@ def _admin_credential_ok(supplied: str) -> bool:
         return False
     if get_token_store().verify(supplied) == "admin":
         return True
-    return _env_admin_active() and secrets.compare_digest(supplied, ADMIN_TOKEN)
+    return _env_admin_active() and secrets.compare_digest(supplied, _admin_env_token())
 
 
 async def _admin_guard(request: Request):
@@ -150,7 +163,7 @@ USER_TOKEN = os.environ.get("JARVIS_USER_TOKEN", "").strip()
 def _env_user_active() -> bool:
     """True when the static user env token is set AND not superseded by a rotation
     (AUD-6) — the user-tier analog of _env_admin_active."""
-    return bool(USER_TOKEN) and not get_token_store().env_revoked("user")
+    return bool(_user_env_token()) and not get_token_store().env_revoked("user")
 
 
 def _user_token_required() -> bool:
@@ -181,7 +194,7 @@ def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bo
     posture applies and no credential is needed."""
     if user_supplied and get_token_store().verify(user_supplied) == "user":
         return True
-    if _env_user_active() and user_supplied and secrets.compare_digest(user_supplied, USER_TOKEN):
+    if _env_user_active() and user_supplied and secrets.compare_digest(user_supplied, _user_env_token()):
         return True
     # An admin credential is a superset of user access — accept it too.
     if _admin_credential_ok(admin_supplied):
@@ -191,7 +204,7 @@ def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bo
 
 async def _user_guard(request: Request):
     """Authorize a user-facing request or raise 401/403. See USER_TOKEN above."""
-    if USER_TOKEN:
+    if _user_env_token():
         if _user_credential_ok(
             user_supplied=request.headers.get("x-user-token", ""),
             admin_supplied=request.headers.get("x-admin-token", ""),
