@@ -76,11 +76,13 @@ def test_status_sync_check_against_real_repo_is_clean():
     disposition_path = REPO / "docs" / "nerva2" / "REUSE_BUILD_RETIRE.md"
     dependencies_path = REPO / "docs" / "nerva2" / "DEPENDENCIES.md"
     hybrid_path = REPO / "docs" / "nerva2" / "HYBRID_COGNITION_BOUNDARY.md"
+    risks_path = REPO / "docs" / "nerva2" / "RISKS.md"
     registry_path = REPO / "docs" / "nerva2" / "CONTRACT_REGISTRY.json"
     baseline = baseline_path.read_text(encoding="utf-8")
     disposition = disposition_path.read_text(encoding="utf-8")
     dependencies = dependencies_path.read_text(encoding="utf-8")
     hybrid = hybrid_path.read_text(encoding="utf-8")
+    risks = risks_path.read_text(encoding="utf-8")
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
 
     assert "616f4d3e348675d56f0f600cca2d622b58ded804" in baseline
@@ -100,6 +102,84 @@ def test_status_sync_check_against_real_repo_is_clean():
         "agents/core/cognition/memory.py",
         "agents/core/learning/background_review.py",
         "agents/core/acquisition/runtime.py",
+        "agents/core/observability/eval.py",
+    ):
+        assert (REPO / relative).is_file(), relative
+
+    assert "8b8e64d599262f15334ce547b7adfa3c042a7a78" in risks
+    assert "does **not** close E0" in risks
+    assert "No risk below is marked `CLOSED`" in risks
+    risk_ids = (
+        "SEC-01",
+        "SEC-02",
+        "SEC-03",
+        "SEC-04",
+        "SEC-05",
+        "SEC-06",
+        "SEC-07",
+        "PRIV-01",
+        "PRIV-02",
+        "PRIV-03",
+        "PRIV-04",
+        "DATA-01",
+        "DATA-02",
+        "DATA-03",
+        "DATA-04",
+        "MEM-01",
+        "MEM-02",
+        "MEM-03",
+        "AUTO-01",
+        "AUTO-02",
+        "AUTO-03",
+        "AUTO-04",
+        "AUTO-05",
+        "AUTO-06",
+        "RES-01",
+        "RES-02",
+        "RES-03",
+        "RES-04",
+        "RES-05",
+        "OPS-01",
+        "OPS-02",
+        "OPS-03",
+        "OPS-04",
+        "OPS-05",
+        "PROD-01",
+        "PROD-02",
+        "PROD-03",
+        "PROD-04",
+        "PROD-05",
+        "SUP-01",
+    )
+    for risk_id in risk_ids:
+        assert risks.count(f"| `{risk_id}` |") == 1, risk_id
+    for invariant in (
+        "Ultron is the sole privileged-action authority",
+        "Prediction is not consent",
+        "Belief is not fact",
+        "Simulation is not mutation",
+        "Every material completion claim has environment-appropriate verification evidence",
+        "Deletion/export covers derived state",
+    ):
+        assert invariant in risks
+    assert "E0.3b must reconcile ORIZONT 27–33" in risks
+    for relative in (
+        "docs/THREAT_MODEL.md",
+        "docs/PRIVACY.md",
+        "docs/superpowers/plans/2026-08-02-qa4-ungoverned-counter-park.md",
+        "agents/core/kernel/__init__.py",
+        "agents/core/autonomy/queue.py",
+        "agents/core/autonomy/worker.py",
+        "agents/core/security/audit.py",
+        "agents/core/autonomy/audit_sink.py",
+        "agents/core/data_purge.py",
+        "agents/core/memory/bitemporal.py",
+        "agents/core/cognition/memory.py",
+        "agents/core/learning/background_review.py",
+        "agents/core/autonomy/reflection.py",
+        "agents/core/acquisition/runtime.py",
+        "agents/core/observability/capability_registry.py",
+        "agents/core/observability/reality_harness.py",
         "agents/core/observability/eval.py",
     ):
         assert (REPO / relative).is_file(), relative
