@@ -835,9 +835,11 @@ async def chat(req: ChatRequest):
                 message = prefix + message
         reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None)
         return ChatResponse(reply=reply)
-    except Exception as e:
+    except Exception:
+        # Constant reply — exception text in the client body is an
+        # information-exposure pattern; the log line above keeps the specifics.
         logger.exception("chat error")
-        return ChatResponse(reply=f"Internal error: {e}")
+        return ChatResponse(reply="Internal error.")
 
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override):
@@ -863,9 +865,12 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override):
             await queue.put(("end", full))
         except asyncio.CancelledError:
             raise  # client disconnected → propagate so the turn actually stops
-        except Exception as e:
+        except Exception:
             logger.exception("chat stream runner error")
-            await queue.put(("error", str(e)))
+            # Constant marker — the SSE end event reaches the client verbatim,
+            # so exception text here would leak internals the same way the
+            # non-stream path used to.
+            await queue.put(("error", ""))
 
     task = asyncio.create_task(runner())
     try:
@@ -878,7 +883,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override):
                 yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': data})}\n\n"
                 break
             elif kind == "error":
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': f'Eroare internă: {data}'})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.'})}\n\n"
                 break
     finally:
         # Runs on normal completion AND on client disconnect (GeneratorExit). Awaiting
@@ -900,8 +905,17 @@ async def chat_stream(req: ChatRequest):
         return JSONResponse({"error": "not initialized"}, status_code=503)
 
     agent_override = req.agent if req.agent != "jarvis" else None
+    # H10.21 parity (Q2): the stream path injects the session's notes block the
+    # same way /chat does — before this, persistent notes silently stopped
+    # applying the moment the cockpit switched to streaming.
+    message = req.message
+    notes = getattr(orch, "notes", None)
+    if notes is not None:
+        prefix = notes.context_for(getattr(orch, "session_id", "web"))
+        if prefix:
+            message = prefix + message
     return StreamingResponse(
-        _chat_event_stream(orch, req.message, req.agent, agent_override),
+        _chat_event_stream(orch, message, req.agent, agent_override),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

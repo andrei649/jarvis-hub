@@ -1,6 +1,13 @@
 # Changelog
 
 ## [Unreleased]
+### Q2 — /chat/stream parity: session notes injected; constant error bodies (2026-08-02)
+- **`/chat/stream` now injects the session's notes block (H10.21) the same way `/chat` does** —
+  persistent notes silently stopped applying the moment the cockpit switched to streaming
+  (ch02 CHT-073 / open gap G3).
+- **Both chat error paths return constant text** (`Internal error.` / `Eroare internă.`) instead
+  of live exception detail — the py/stack-trace-exposure family that blocked #750; specifics stay
+  in the server log.
 ### Q6 — kill-switch per-agent scope at the executor seam + stuck-RUNNING reaper (2026-08-02)
 - **A per-agent halt now holds that agent's tasks at the tick** (`_halted(task.agent)` per task,
   same kernel-independent seam; held ≠ lost — tasks stay `approved` and run on release; summary
