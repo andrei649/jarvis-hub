@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "snapshot_commit": "a2766a98d16be40389ca587c6677c9e5e5d6e270",
+  "program_issue": 757,
+  "epic_issue": 758,
+  "slice": "E0.2",
+  "epic_boundaries": [
+    {
+      "id": "E12",
+      "issue": 773,
+      "owner": "Hybrid Cognition Lab",
+      "status": "discovery",
+      "depends_on": ["E0", "E1", "E2", "E3", "E6", "E9"],
+      "authority": "advisory_only",
+      "can_authorize_actions": false,
+      "can_mutate_live_state": false,
+      "boundary_path": "docs/nerva2/HYBRID_COGNITION_BOUNDARY.md"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "nerva.observation.v1",
+      "owner": "Atlas",
+      "authority": "evidence_only",
+      "status": "proposed",
+      "unblocks": ["E2", "E3", "E5"],
+      "evidence_paths": [
+        "agents/core/autonomy/observer.py",
+        "agents/core/scheduler_service.py"
+      ]
+    },
+    {
+      "id": "nerva.atlas.snapshot.v1",
+      "owner": "Atlas",
+      "authority": "read_only_state",
+      "status": "proposed",
+      "unblocks": ["E1", "E3", "E4", "E7", "E12"],
+      "evidence_paths": [
+        "agents/core/memory/bitemporal.py",
+        "agents/core/routers/memory_kg.py"
+      ]
+    },
+    {
+      "id": "nerva.capability.v1",
+      "owner": "Synapse",
+      "authority": "description_only",
+      "status": "evolves_existing",
+      "unblocks": ["E1", "E8", "E9"],
+      "evidence_paths": [
+        "agents/core/capability_manifests.py",
+        "agents/core/observability/capability_registry.py"
+      ]
+    },
+    {
+      "id": "nerva.decision.v1",
+      "owner": "Cortex",
+      "authority": "route_selection_only",
+      "status": "proposed",
+      "unblocks": ["E1", "E5", "E7", "E10", "E12"],
+      "evidence_paths": [
+        "agents/core/orchestrator.py",
+        "agents/core/router.py",
+        "agents/core/agent_runtime.py"
+      ]
+    },
+    {
+      "id": "nerva.action.v1",
+      "owner": "Ultron",
+      "authority": "privileged_action",
+      "status": "evolves_existing",
+      "unblocks": ["E1", "E5", "E8", "E11"],
+      "evidence_paths": [
+        "agents/core/kernel/__init__.py",
+        "agents/core/autonomy/queue.py",
+        "agents/core/autonomy/worker.py"
+      ]
+    },
+    {
+      "id": "nerva.episode.v1",
+      "owner": "Episodes",
+      "authority": "memory_record_only",
+      "status": "proposed",
+      "unblocks": ["E3", "E4", "E6", "E7", "E12"],
+      "evidence_paths": [
+        "agents/core/cognition/memory.py",
+        "agents/core/autonomy/reflection.py"
+      ]
+    },
+    {
+      "id": "nerva.lesson.v1",
+      "owner": "Reflection",
+      "authority": "proposal_only",
+      "status": "proposed",
+      "unblocks": ["E4", "E5", "E6", "E12"],
+      "evidence_paths": [
+        "agents/core/learning/background_review.py",
+        "agents/core/autonomy/reflection.py"
+      ]
+    },
+    {
+      "id": "nerva.preference.v1",
+      "owner": "Howard",
+      "authority": "prediction_only",
+      "status": "proposed",
+      "unblocks": ["E4", "E7", "E10"],
+      "evidence_paths": [
+        "agents/core/cognition/persona.py",
+        "agents/core/cognition/memory.py"
+      ]
+    },
+    {
+      "id": "nerva.work-run.v1",
+      "owner": "Night Shift",
+      "authority": "delegated_execution_only",
+      "status": "proposed",
+      "unblocks": ["E5", "E10", "E11"],
+      "evidence_paths": [
+        "agents/core/autonomy/missions.py",
+        "agents/core/autonomy/queue.py",
+        "agents/core/autonomy/worker.py"
+      ]
+    },
+    {
+      "id": "nerva.scenario.v1",
+      "owner": "World Model",
+      "authority": "simulation_only",
+      "status": "proposed",
+      "unblocks": ["E7", "E10"],
+      "evidence_paths": [
+        "agents/core/memory/bitemporal.py",
+        "agents/core/autonomy/missions.py"
+      ]
+    },
+    {
+      "id": "nerva.benchmark.v1",
+      "owner": "Research Lab",
+      "authority": "evaluation_only",
+      "status": "proposed",
+      "unblocks": ["E1", "E8", "E9", "E11", "E12"],
+      "evidence_paths": [
+        "agents/core/observability/eval.py",
+        "agents/core/observability/reality_harness.py"
+      ]
+    },
+    {
+      "id": "nerva.evidence.v1",
+      "owner": "Verification Fabric",
+      "authority": "claim_evidence_only",
+      "status": "evolves_existing",
+      "unblocks": ["E1", "E5", "E8", "E9", "E10", "E11", "E12"],
+      "evidence_paths": [
+        "agents/core/observability/reality_harness.py",
+        "agents/core/observability/capability_registry.py"
+      ]
+    }
+  ]
+}
