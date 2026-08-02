@@ -1,14 +1,14 @@
 # Nerva 2.0 E0 repository-ledger migration
 
 > **Program:** #757 · **Epic:** #758 · **Blocker plan:** #778.  
-> **Status:** blocker-removal tooling only; E0 remains `VERIFYING` and `close_e0=false`.
+> **Applied state:** complete candidate diff in draft #789; E0 remains `VERIFYING` and `close_e0=false`.
 
 ## Purpose
 
 `BACKLOG.md` and `STATUS.md` are large historical ledgers. Reconstructing either file from partial
 API output risks deleting delivery history, changing unrelated generated content or creating a false
-E0 closure claim. `scripts/reconcile_nerva_repository_ledgers.py` provides one bounded and reusable
-way to apply the reviewed Nerva blocks from a complete worktree.
+E0 closure claim. `scripts/reconcile_nerva_repository_ledgers.py` supplies one bounded and reusable
+way to apply and continuously verify the reviewed Nerva blocks from a complete worktree.
 
 The migrator is not another program manifest and does not replace
 `docs/nerva2/E0_COMPLETION.json`. It performs a byte-preserving insertion at one unique stable anchor
@@ -26,12 +26,25 @@ per ledger, then becomes an idempotent verifier of the exact marker-bounded cont
 - keeps E0 `VERIFYING`, all first-wave issues blocked and Ultron as the sole privileged-action
   authority.
 
-## Usage in the next slice
+## Applied evidence in draft #789
 
-Run from a dedicated branch backed by a complete checkout:
+A branch-scoped one-shot workflow used locked dependencies to:
+
+1. run the existing project-status generator with tracked frontend/mobile counts;
+2. apply both reviewed ledger blocks from the complete checkout;
+3. run the migrator in `--check` mode;
+4. run `scripts/status_sync.py --check`, both Nerva checkers and the focused migrator tests;
+5. enforce an exact generated-file allowlist and `git diff --check`;
+6. commit the generated reconciliation and remove the one-shot workflow itself.
+
+The resulting pull-request diff contains one insertion in each ledger plus normal generated-status
+updates to `project-status.json`, `README.md`, `NERVA.md`, `GO_LIVE_PLAN.md` and the volatile counters
+in `STATUS.md`. The tracked backend count moved from 5,731 to 5,743 because the new tests are now part
+of the collected suite.
+
+## Verification commands
 
 ```bash
-python scripts/reconcile_nerva_repository_ledgers.py --write
 python scripts/reconcile_nerva_repository_ledgers.py --check
 python scripts/status_sync.py --check
 python scripts/check_nerva_roadmap.py
@@ -39,13 +52,16 @@ python scripts/check_nerva_e0_completion.py
 python -m pytest tests/test_reconcile_nerva_repository_ledgers.py -q
 ```
 
-Review the resulting `BACKLOG.md` and `STATUS.md` diff before changing the completion manifest or
-issue #778. The expected diff is two insertions and zero modifications to historical lines.
+The dedicated Nerva workflow runs the repository-only ledger and Nerva checks; full CI independently
+runs the generated-status release gate and the Linux/Windows test suites.
 
 ## Explicit non-claims
 
-This tooling slice does **not** reconcile either repository ledger by itself, update the #778 body,
-close E0, unblock #780–#784 or implement any Nerva runtime capability. Direct ledger edits and the
-long-form #778 reconciliation remain the next executable slice. E0 closure remains a separate
-independent integrator decision after generated-status checks, both Nerva checkers and all required
-exact-head CI are green.
+The applied ledger blocks do **not** reconcile the complete #778 body, close E0, unblock #780–#784 or
+implement any Nerva runtime capability. E0 closure remains a separate independent integrator decision
+after #778, exact-head generated-status checks and all required CI are accepted.
+
+## Next slice
+
+**E0.3b2b-778-body:** reconcile the complete #778 long-form body without deleting its blocker plan,
+then run exact-head checks and request an independent E0 closure review.
