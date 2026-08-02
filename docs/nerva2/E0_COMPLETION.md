@@ -1,22 +1,25 @@
-# Nerva 2.0 E0.3b2b — issue-ledger verification
+# Nerva 2.0 E0.3b2b — final durable-ledger verification
 
-> **Snapshot:** `main@25eac3688830750be231c43ebacce889427c50cc` on 2026-08-02.  
+> **Accepted-control base:** `main@13290b6a10f2bfce5b10a3bf57305777341c0909` on 2026-08-03.  
 > **Program:** #757 · **Epic:** #758 · **Blocker plan:** #778.  
 > **Machine-readable companion:** [`E0_COMPLETION.json`](E0_COMPLETION.json).  
 > **Final reconciliation brief:** [`E0_FINAL_RECONCILIATION.md`](E0_FINAL_RECONCILIATION.md).  
 > **Issue-ledger evidence:** [`ISSUE_LEDGER_RECONCILIATION.md`](ISSUE_LEDGER_RECONCILIATION.md).  
+> **Repository-ledger evidence:** [`E0_REPOSITORY_LEDGER_MIGRATION.md`](E0_REPOSITORY_LEDGER_MIGRATION.md).  
+> **#778 body evidence:** [`E0_778_BODY_RECONCILIATION.md`](E0_778_BODY_RECONCILIATION.md).  
 > **Status:** E0 is `VERIFYING`; this slice does not close E0 or unblock production implementation.
 
 ## 1. Purpose
 
-E0 has accepted baseline, reuse, dependency, authority, risk, ORIZONT ownership and false-closure
-controls through #787. This bounded slice reconciles the owner-facing #757 body and the E0 #758 body
-without pretending that the large historical repository ledgers or the #778 long-form plan are already
-finished.
+E0 has accepted baseline, reuse, dependency, authority, risk, ORIZONT ownership, false-closure and
+owner-facing issue-ledger controls through merged #788. The E0.3b2b change set applies reviewed current
+Nerva blocks to the complete historical `BACKLOG.md` and `STATUS.md` files, refreshes generated project
+status through the existing generator and records the complete #778 body reconciliation.
 
-The remaining gate is **durable ledger agreement**: `BACKLOG.md`, `STATUS.md`, #757, #758 and #778
-must describe the same accepted state, and generated-status plus exact-head CI evidence must be green
-before an independent integrator can close E0.
+`BACKLOG.md` and `STATUS.md` are reconciled. The #778 body is reconciled with an authoritative
+current-state snapshot while retaining its B0–B10, M0–M8, metrics and anti-drift plan. The remaining
+E0 gate is exact-head independent acceptance. Repository and issue-ledger movement does not make the
+first-wave runtime capabilities implemented.
 
 This document is a planning/evidence ledger. It is not a runtime registry, capability catalog or
 authority source.
@@ -31,6 +34,7 @@ authority source.
 | **E0.3b1** | #785 · `a943514050a361cbd909761f05c7d9731e0f323e` | ORIZONT 27–33 reuse/ownership reconciliation and bounded first executable issues. |
 | **E0.3b2a** | #786 · `265a1c984822b059bfbf9449dacc2bde7554d225` | Durable completion manifest, false-closure guard and ledger-trigger coverage. |
 | **E0.3b2b-control** | #787 · `25eac3688830750be231c43ebacce889427c50cc` | Final reconciliation contract, accepted-control pinning and E0 `VERIFYING` controls. |
+| **E0.3b2b-issues** | #788 · `13290b6a10f2bfce5b10a3bf57305777341c0909` | Reconciled #757/#758 owner-facing posture and pinned the remaining repository/#778 gates. |
 
 These controls preserve the core boundaries:
 
@@ -59,24 +63,26 @@ No item above is evidence of implementation. The safe post-E0 parallel wave is #
 
 ## 4. Durable-source reconciliation state
 
-| Source | Current honest state | Required next change |
+| Source | Current honest state | Remaining gate |
 |---|---|---|
-| `BACKLOG.md` | Contains historical ORIZONT 27–33 delivery and Nerva vision references, but not the accepted current E0 control/first-wave block. | Add one concise current Nerva block naming accepted controls through #787, E0 `VERIFYING`, and #780–#784 as blocked. Preserve historical delivery records. |
-| `STATUS.md` | Describes the 1.0 destination and ORIZONT capability program, but not the current E0 verification gate. | Add one current Nerva snapshot with E0 `VERIFYING`, blocked first slices and no live/runtime capability claim. |
-| #757 | **Body reconciled.** It now names accepted controls through #787, E0 `VERIFYING` and blocked first slices. | Recheck against the final repository-ledger wording before closure. |
-| #758 | **Body reconciled.** It now reports `VERIFYING`, marks first-slice issue creation complete and keeps closure work open. | Close only after repository ledgers, #778 and exact-head evidence agree. |
-| #778 | A factual progress update is current; the long-form body still contains historical unchecked items. | Reconcile the body from a complete source in the repository-ledger movement; keep B7/live mediation and later implementation gates open. |
+| `BACKLOG.md` | **Reconciled.** One exact marker-bounded block names accepted controls through #788, E0 `VERIFYING`, the blocked first wave and the Ultron authority ceiling. Historical ORIZONT delivery remains outside the insertion. | Independent exact-head E0 closure decision. |
+| `STATUS.md` | **Reconciled.** One exact snapshot records E0 `VERIFYING`, blocked first slices, the authority ceiling and closure checks. Normal generated counters were refreshed from 5,731 to 5,743 collected backend tests. | Independent exact-head E0 closure decision. |
+| #757 | **Body reconciled.** It names accepted controls through #788, E0 `VERIFYING` and blocked first slices. | Independent exact-head E0 closure decision. |
+| #758 | **Body reconciled.** It reports `VERIFYING`, marks first-slice issue creation complete and keeps closure work open. | Independent exact-head E0 closure decision. |
+| #778 | **Body reconciled.** A 2026-08-03 snapshot marks B0 resolved, B1/M0 `VERIFYING`, B2 partial and B3–B10 open while preserving the detailed program plan. | Independent review against this repository evidence. |
 
-Issue bodies #757 and #758 are reconciled. The #778 body remains pending, as do `BACKLOG.md` and
-`STATUS.md`; therefore E0 remains `VERIFYING` and `close_e0=false`.
+Issue bodies #757, #758 and #778 are reconciled. E0 nevertheless remains `VERIFYING` and
+`close_e0=false` because only an independent integrator may accept the final exact-head evidence and
+close the gate.
 
 ## 5. E0 closure requirements
 
 E0 may become `DONE` only when all are true:
 
-1. `BACKLOG.md` and `STATUS.md` contain reviewed durable Nerva status blocks.
+1. `BACKLOG.md` and `STATUS.md` contain independently reviewed durable Nerva status blocks.
 2. #757, #758 and #778 agree with those repository files.
-3. `scripts/status_sync.py --check` and both Nerva integrity checkers pass on the exact head.
+3. `scripts/status_sync.py --check`, the ledger migrator `--check` and both Nerva integrity checkers
+   pass on the exact head.
 4. Full Linux/Windows CI, Security, CodeQL, Smoke, Code Health and park-list checks are green.
 5. The direct ledger diff preserves history and does not promote default-off, seam, reference-driver,
    hermetic or documentation-only work to live capability.
@@ -85,15 +91,16 @@ E0 may become `DONE` only when all are true:
 
 ## 6. Current bounded slice
 
-The current slice records #787 as accepted control evidence, adds a durable issue-ledger snapshot,
-updates #757 and #758 bodies, and extends the repository-only checker so partial issue reconciliation
-cannot be mistaken for E0 closure. The checker remains explicit that GitHub issue bodies are external
-evidence reviewed by the integrator.
+The E0.3b2b change set adds the history-preserving migrator, its focused Linux/Windows tests and
+workflow coverage; applies the exact blocks to complete `BACKLOG.md` and `STATUS.md`; refreshes the
+repository's generated status artifacts; upgrades the E0 checker to exact canonical-block validation;
+and reconciles the full #778 body without deleting its detailed blocker and milestone plan.
 
-Direct replacement of the large historical `BACKLOG.md` and `STATUS.md` files remains a separate,
-reviewable movement inside E0.3b2b. Until that diff, the #778 body reconciliation and all required
-checks are present and accepted, E0 remains `VERIFYING`.
+The one-shot branch workflow used only locked dependencies and `contents: write`, enforced a strict
+allowlist, verified both marker pairs and removed itself in the generated commit. The #778 body edit is
+external issue evidence mirrored by `E0_778_BODY_RECONCILIATION.md`. No runtime, API, persistence,
+routing, settings, capability-readiness or privileged-action behavior changed.
 
-The next smallest slice is **E0.3b2b-repository-ledgers — apply the reviewed blocks to `BACKLOG.md`
-and `STATUS.md`, reconcile the #778 body, run normal status-generation verification and full CI, then
-request an independent E0 closure decision**.
+The next smallest slice is **E0.3b2b-independent-closure — independently review the final change set,
+the reconciled #778 body, all final exact-head generated-status, ledger, Nerva and workflow evidence,
+dependency order and authority boundaries. The builder must not merge, close E0 or begin #780–#784**.

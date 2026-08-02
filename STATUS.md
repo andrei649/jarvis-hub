@@ -1,6 +1,6 @@
 # Jarvis Hub — Status Snapshot
 
-> **Current version:** v0.11.0 (feature-complete + refactor done; productionizing toward 1.0) · **Tests:** ~5,731 collected (current branch sync 2026-07-18) + frontend **408 vitest** + mobile **96 jest** + Playwright HUD/flow suites (HUD-v3 Console port complete: every blueprint surface + the north-star Decision Inbox + native Neural-Mesh canvas + cinema mode) · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** 405 (+ feedback widget/summary, H23.21; + onboarding, H23.20; + canonical `/api/capabilities`, H27.8; + `/api/metrics/capabilities`, V2; + `/api/security/loop-breaker` status/reset, K3; + `/api/metrics/kernel`, Gate-K observability) — `web.py` mounts **65 per-domain routers** (CLN-3 plus subsequent domain slices including Media, House, Cameras, Acquisition, Ambient, and Self-Improvement); only 9 app-shell/chat/admin routes remain inline
+> **Current version:** v0.11.0 (feature-complete + refactor done; productionizing toward 1.0) · **Tests:** ~5,743 collected (current branch sync 2026-07-18) + frontend **408 vitest** + mobile **96 jest** + Playwright HUD/flow suites (HUD-v3 Console port complete: every blueprint surface + the north-star Decision Inbox + native Neural-Mesh canvas + cinema mode) · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** 405 (+ feedback widget/summary, H23.21; + onboarding, H23.20; + canonical `/api/capabilities`, H27.8; + `/api/metrics/capabilities`, V2; + `/api/security/loop-breaker` status/reset, K3; + `/api/metrics/kernel`, Gate-K observability) — `web.py` mounts **65 per-domain routers** (CLN-3 plus subsequent domain slices including Media, House, Cameras, Acquisition, Ambient, and Self-Improvement); only 9 app-shell/chat/admin routes remain inline
 > **The version is the roadmap.** Every feature horizon (H1–H22 + WorldView O19) is delivered — that's **0.10.0**; the **0.11.0** refactor (CLN-3 `web.py` split + CLN-2 `orchestrator.py` managers) is done (#293/#296). There is no "audit gate" version: 1.0 is a real destination reached by finishing the productionization layer (**H23**: agentic-safety budgets, DB migrations, backup/restore + export-delete, operability, quality + user docs) **and** proving it with real design-partner users. **As of 2026-07-11 the 1.0 destination also includes the AI-OS capability program** (ORIZONT 27–33 — capability registry, operators, media director, house brain, cameras, acquisition, ambient; [NERVA_VISION.md](NERVA_VISION.md)). The plan is the version line in [BACKLOG.md](BACKLOG.md#version-roadmap); strategy in [MOONSHOT.md](MOONSHOT.md) §4. Manual testing/audit ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md), [docs/AUDIT.md](docs/AUDIT.md)) is the release step that tags a version. GPU-gated dev (H12.14, H13.3, Howard) is its own minor (0.18). HUD deep write-controls tracked in [docs/design/HUD_V2_REMAINING.md](docs/design/HUD_V2_REMAINING.md).
 >
 > The version labels in the feature tables below (`v0.2.0`, `v0.2.1`) record *when* each capability first
@@ -10,6 +10,25 @@
 > **Hermes migration v3 plan (reviewed by Fable 2026-07-07 — APPROVED with notes; Phase 0–1 merged, Phase 2 delivered in #634):** [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md) · verdict in [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md) §5 · Phase 2 = context-compression maturity (`keep_first` + structured template + iterative merge + opt-in strict-local summarizer, defaults byte-identical)
 >
 > **Canonical HUD addresses:** live/default [`http://127.0.0.1:8080/`](http://127.0.0.1:8080/) · explicit stable V2 alias [`http://127.0.0.1:8080/v2/`](http://127.0.0.1:8080/v2/) · shareable demo only [`http://127.0.0.1:8080/v2/?demo=1`](http://127.0.0.1:8080/v2/?demo=1). H23.24–H23.28 are operator CLI/CI tooling, not synthetic HUD cards.
+
+<!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
+## Nerva 2.0 verification snapshot — 2026-08-02
+
+- **Program state:** E0 is `VERIFYING`; `close_e0=false`.
+- **Accepted controls:** #771, #772, #779, #785, #786, #787 and #788.
+- **Blocked first wave:** #780, #781, #783 and #784 wait for #758; #782 waits for #758 and #781.
+- **Authority ceiling:** Ultron / `nerva.action.v1` is the sole privileged-action authority. The first
+  Cortex, Atlas, Episodes, Synapse and Research Lab slices do not gain action authority.
+- **Truth boundary:** the issues and control artifacts are plans and verification evidence, not proof
+  that first-wave runtime capabilities are implemented. The ORIZONT history below is preserved.
+- **Closure gate:** `scripts/status_sync.py --check`, both Nerva integrity checkers, all required CI and
+  a separate independent review must pass before E0 can be marked complete or downstream work starts.
+
+Canonical evidence: [#757](https://github.com/andrei649/jarvis-hub/issues/757),
+[#758](https://github.com/andrei649/jarvis-hub/issues/758),
+[#778](https://github.com/andrei649/jarvis-hub/issues/778),
+[`docs/nerva2/E0_COMPLETION.md`](docs/nerva2/E0_COMPLETION.md).
+<!-- NERVA2:E0-REPOSITORY-LEDGER:END -->
 
 ---
 

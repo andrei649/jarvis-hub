@@ -11,8 +11,12 @@ on:
       - "docs/nerva2/E0_COMPLETION.json"
       - "docs/nerva2/E0_FINAL_RECONCILIATION.md"
       - "docs/nerva2/ISSUE_LEDGER_RECONCILIATION.md"
+      - "docs/nerva2/E0_REPOSITORY_LEDGER_MIGRATION.md"
+      - "docs/nerva2/E0_778_BODY_RECONCILIATION.md"
       - "scripts/check_nerva_roadmap.py"
       - "scripts/check_nerva_e0_completion.py"
+      - "scripts/reconcile_nerva_repository_ledgers.py"
+      - "tests/test_reconcile_nerva_repository_ledgers.py"
       - ".github/workflows/nerva-roadmap.yml"
   push:
     branches: [main]
@@ -25,8 +29,12 @@ on:
       - "docs/nerva2/E0_COMPLETION.json"
       - "docs/nerva2/E0_FINAL_RECONCILIATION.md"
       - "docs/nerva2/ISSUE_LEDGER_RECONCILIATION.md"
+      - "docs/nerva2/E0_REPOSITORY_LEDGER_MIGRATION.md"
+      - "docs/nerva2/E0_778_BODY_RECONCILIATION.md"
       - "scripts/check_nerva_roadmap.py"
       - "scripts/check_nerva_e0_completion.py"
+      - "scripts/reconcile_nerva_repository_ledgers.py"
+      - "tests/test_reconcile_nerva_repository_ledgers.py"
       - ".github/workflows/nerva-roadmap.yml"
   workflow_dispatch:
 
@@ -48,9 +56,13 @@ jobs:
           python -m py_compile
           scripts/check_nerva_roadmap.py
           scripts/check_nerva_e0_completion.py
+          scripts/reconcile_nerva_repository_ledgers.py
 
       - name: Validate Nerva roadmap reconciliation
         run: python scripts/check_nerva_roadmap.py
+
+      - name: Validate exact repository ledger blocks
+        run: python scripts/reconcile_nerva_repository_ledgers.py --check
 
       - name: Validate Nerva E0 completion ledger
         run: python scripts/check_nerva_e0_completion.py
