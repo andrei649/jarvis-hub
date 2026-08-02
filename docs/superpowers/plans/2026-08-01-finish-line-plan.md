@@ -31,7 +31,7 @@ Status column = the committed ledger; update it inside each item's own sync comm
 | C3 | Q15 | A8-iii: MediaDriver seam + `LocalFileMediaDriver` reference | M | `agents/core/routers/media_director.py`, `agents/core/media_director.py` | ✅ merged #751 |
 | C4 | QA2 | A8-ii: presence-aware media target (`presence:auto`) | M | same files as C3 → **serialize after C3** | ✅ merged #753 |
 | C5 | Q1 | Streaming multi-agent synthesis + per-agent route_name | L | `agents/core/orchestrator.py` | ✅ merged #752 |
-| C6 | Q6 | Kill-switch per-agent scope in worker tick + stuck-`running` TTL reaper | M | `agents/core/autonomy/worker.py`, `agents/core/autonomy/queue.py` | ⬜ |
+| C6 | Q6 | Kill-switch per-agent scope in worker tick + stuck-`running` TTL reaper | M | `agents/core/autonomy/worker.py`, `agents/core/autonomy/queue.py` | ✅ merged #754 (retry 1: pack pin) |
 | C7 | Q2 | Stream notes parity (same function as Q1 → after Q1 merges) | S | `agents/core/orchestrator.py` | ⬜ |
 | C8 | Q5 | SEC-065 live guardrails-mode propagation + SEC-071 audit preview redaction | M | `agents/core/security/guardrails.py`, settings watcher, `agents/core/security/audit.py` | ⬜ |
 
@@ -97,6 +97,7 @@ Status column = the committed ledger; update it inside each item's own sync comm
 9. **Reality-lane semantics** — `JARVIS_REALITY_HARNESS=1` un-skips live cases and owner-live probes fail honestly without opt-in → count assertions must be lane-aware.
 10. **Never mass-format** — ruff-format nonconformance pre-exists repo-wide; `ruff check` only, on touched files.
 11. **CodeQL gates the merge via a repository rule** — a fully green CI can still refuse to merge ("1 security relevant alert"; auto-merge just waits). The alert is named nowhere in CI logs — reason it out from the *scanned* diff (tests are paths-ignored per `.github/codeql/codeql-config.yml`). Exception text in an HTTP body (`str(exc)` in a response, #750) is `py/stack-trace-exposure` → constant `reason` strings only, specifics to the server log.
+12. **Exact-shape pins live outside tests/ too** — the H28 operator pack pins the whole tick-summary dict inside `agents/core/observability/`. When adding keys to a shared summary/shape, sweep the WHOLE repo (`grep -rn '{"ran"' agents/ scripts/ tests/`), not tests/ alone (#754 retry 1).
 
 ## 8. Failure / stop protocol
 
