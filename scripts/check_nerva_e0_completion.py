@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Validate the Nerva E0 completion ledger without claiming E0 is complete.
+"""Validate the Nerva E0 verification ledger without claiming E0 is complete.
 
-The checker is intentionally repository-only and side-effect free. GitHub issue bodies and CI
-results remain external evidence reviewed by the integrator; this gate verifies that the accepted
-control slices, first implementation wave, repository-ledger posture and authority boundaries stay
-internally consistent.
+The checker is repository-only and side-effect free. GitHub issue bodies and CI results remain
+external evidence reviewed by the integrator; this gate verifies that accepted control slices,
+first-wave dependencies, repository-ledger posture and authority boundaries stay internally
+consistent while E0 is VERIFYING.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 MANIFEST = REPO / "docs" / "nerva2" / "E0_COMPLETION.json"
 DOCUMENT = REPO / "docs" / "nerva2" / "E0_COMPLETION.md"
+FINAL_RECONCILIATION = REPO / "docs" / "nerva2" / "E0_FINAL_RECONCILIATION.md"
 ROADMAP = REPO / "docs" / "nerva2" / "ROADMAP_RECONCILIATION.json"
 BACKLOG = REPO / "BACKLOG.md"
 STATUS = REPO / "STATUS.md"
@@ -35,6 +36,10 @@ EXPECTED_CONTROLS = {
     "E0.3b1": {
         "pull_request": 785,
         "merge_commit": "a943514050a361cbd909761f05c7d9731e0f323e",
+    },
+    "E0.3b2a": {
+        "pull_request": 786,
+        "merge_commit": "265a1c984822b059bfbf9449dacc2bde7554d225",
     },
 }
 EXPECTED_SLICES = {
@@ -61,26 +66,30 @@ def _load_json(path: Path, errors: list[str]) -> dict:
     return value
 
 
+def _read_text(path: Path, errors: list[str]) -> str:
+    if not path.is_file():
+        errors.append(f"missing file: {path.relative_to(REPO)}")
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
 def validate() -> list[str]:
     errors: list[str] = []
     data = _load_json(MANIFEST, errors)
     roadmap = _load_json(ROADMAP, errors)
-    if not DOCUMENT.is_file():
-        errors.append(f"missing file: {DOCUMENT.relative_to(REPO)}")
-        text = ""
-    else:
-        text = DOCUMENT.read_text(encoding="utf-8")
+    text = _read_text(DOCUMENT, errors)
+    final_text = _read_text(FINAL_RECONCILIATION, errors)
 
     if data.get("schema_version") != 1:
         errors.append("schema_version must be 1")
     if data.get("program_issue") != 757 or data.get("epic_issue") != 758:
         errors.append("program/epic linkage drifted")
-    if data.get("slice") != "E0.3b2a":
-        errors.append("completion ledger slice must be E0.3b2a")
-    if data.get("status") != "building" or data.get("close_e0") is not False:
-        errors.append("completion ledger must keep E0 BUILDING and close_e0=false")
-    if data.get("snapshot_commit") != EXPECTED_CONTROLS["E0.3b1"]["merge_commit"]:
-        errors.append("completion ledger snapshot must be the accepted E0.3b1 merge")
+    if data.get("slice") != "E0.3b2b":
+        errors.append("completion ledger slice must be E0.3b2b")
+    if data.get("status") != "verifying" or data.get("close_e0") is not False:
+        errors.append("completion ledger must keep E0 VERIFYING and close_e0=false")
+    if data.get("snapshot_commit") != EXPECTED_CONTROLS["E0.3b2a"]["merge_commit"]:
+        errors.append("completion ledger snapshot must be the accepted E0.3b2a merge")
 
     controls = data.get("accepted_control_slices", [])
     by_slice = {item.get("slice"): item for item in controls if isinstance(item, dict)}
@@ -129,7 +138,7 @@ def validate() -> list[str]:
     for name in ("BACKLOG.md", "STATUS.md"):
         entry = ledgers.get(name, {})
         if entry.get("state") != "reconciliation_pending":
-            errors.append(f"{name}: must remain reconciliation_pending in E0.3b2a")
+            errors.append(f"{name}: must remain reconciliation_pending while E0 is VERIFYING")
         if not entry.get("existing_truth") or not entry.get("required_change"):
             errors.append(f"{name}: missing current truth or required change")
 
@@ -147,14 +156,14 @@ def validate() -> list[str]:
 
     if data.get("issue_ledgers") != [757, 758, 778]:
         errors.append("issue ledger set must remain #757, #758 and #778")
-    if len(data.get("closure_requirements", [])) < 5:
+    if len(data.get("closure_requirements", [])) < 6:
         errors.append("E0 closure requirements are incomplete")
     next_slice = str(data.get("next_slice", ""))
-    if not next_slice.startswith("E0.3b2b"):
-        errors.append("next slice must remain E0.3b2b direct repository-ledger reconciliation")
+    if not next_slice.startswith("E0.3b2b-ledgers"):
+        errors.append("next slice must be direct repository-ledger reconciliation")
 
     required_phrases = (
-        "E0 remains `BUILDING`",
+        "E0 is `VERIFYING`",
         "Ultron / `nerva.action.v1` remains the sole privileged-action authority",
         "No item above is evidence of implementation",
         "Direct replacement of the large historical `BACKLOG.md` and `STATUS.md` files",
@@ -162,6 +171,22 @@ def validate() -> list[str]:
     for phrase in required_phrases:
         if phrase not in text:
             errors.append(f"completion document missing invariant: {phrase}")
+
+    final_required = (
+        "Status: **VERIFYING**",
+        "E0.3b2a",
+        "#786",
+        "#780",
+        "#781",
+        "#782",
+        "#783",
+        "#784",
+        "Ultron / `nerva.action.v1` remains the sole privileged-action authority",
+        "scripts/status_sync.py --check",
+    )
+    for phrase in final_required:
+        if phrase not in final_text:
+            errors.append(f"final reconciliation brief missing invariant: {phrase}")
 
     return errors
 
@@ -173,8 +198,8 @@ def main() -> int:
             print(f"ERROR: {error}")
         return 1
     print(
-        "Nerva E0 completion ledger is consistent: 4 accepted control slices, "
-        "5 blocked first slices, E0 still BUILDING."
+        "Nerva E0 verification ledger is consistent: 5 accepted control slices, "
+        "5 blocked first slices, E0 still VERIFYING."
     )
     return 0
 
