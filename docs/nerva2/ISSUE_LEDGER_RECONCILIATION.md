@@ -1,14 +1,14 @@
 # Nerva 2.0 E0.3b2b — issue-ledger reconciliation
 
-> **Snapshot:** `main@13290b6a10f2bfce5b10a3bf57305777341c0909` on 2026-08-03.  
+> **Accepted-control base:** `main@13290b6a10f2bfce5b10a3bf57305777341c0909` on 2026-08-03.  
 > **Program:** #757 · **Epic:** #758 · **Blocker plan:** #778.  
 > **Status:** E0 remains `VERIFYING`; `close_e0=false`.
 
 ## Purpose
 
 Merged #788 reconciled the owner-facing master body (#757) and E0 epic body (#758) with accepted E0
-evidence. Draft #789 reconciles the complete repository ledgers and the full #778 blocker-plan body
-while preserving its detailed B0–B10, M0–M8, metrics and anti-drift content.
+evidence. The E0.3b2b change set reconciles the complete repository ledgers and the full #778
+blocker-plan body while preserving its detailed B0–B10, M0–M8, metrics and anti-drift content.
 
 This document is planning evidence only. It does not implement Cortex, Atlas, Episodes, Synapse SDK
 or Research Lab, and it does not change runtime behavior or privileged-action authority.
@@ -29,11 +29,11 @@ or Research Lab, and it does not change runtime behavior or privileged-action au
 
 | Source | State after this slice | Evidence / remaining work |
 |---|---|---|
-| #757 | body reconciled | Names E0 `VERIFYING`, accepted controls through #788 and blocked first slices #780–#784. Factual #789 progress is recorded without claiming integration. |
+| #757 | body reconciled | Names E0 `VERIFYING`, accepted controls through #788 and blocked first slices #780–#784. |
 | #758 | body reconciled | Marks first-slice issue creation complete, records accepted controls and keeps independent closure open. |
 | #778 | body reconciled | A 2026-08-03 authoritative snapshot marks B0 resolved, B1/M0 `VERIFYING`, B2 partial and B3–B10 open while preserving the complete long-range plan. |
-| `BACKLOG.md` | reconciled in draft #789 | One exact block records E0 `VERIFYING`, first-wave dependencies and the Ultron authority ceiling while preserving historical ORIZONT delivery. |
-| `STATUS.md` | reconciled in draft #789 | One exact snapshot records the verification gate; generated project counters were refreshed through `scripts/status_sync.py`. |
+| `BACKLOG.md` | reconciled | One exact block records E0 `VERIFYING`, first-wave dependencies and the Ultron authority ceiling while preserving historical ORIZONT delivery. |
+| `STATUS.md` | reconciled | One exact snapshot records the verification gate; generated project counters were refreshed through `scripts/status_sync.py`. |
 
 ## First executable wave remains blocked
 
@@ -56,7 +56,7 @@ independent E0 closure decision; #782 still waits for #781.
 
 ## Next smallest slice
 
-**E0.3b2b-independent-closure:** independently review the complete #789 diff, the reconciled #778 body,
+**E0.3b2b-independent-closure:** independently review the final change set, the reconciled #778 body,
 `python scripts/status_sync.py --check`, the ledger migrator `--check`, both Nerva integrity checkers
-and all required exact-head CI. Only an independent integrator may merge #789 or change E0 from
-`VERIFYING` to `DONE`; the builder must not start #780–#784.
+and all required exact-head CI. Only an independent integrator may merge the delivery PR or change E0
+from `VERIFYING` to `DONE`; the builder must not start #780–#784.
