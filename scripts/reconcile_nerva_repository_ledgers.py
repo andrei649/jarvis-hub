@@ -64,8 +64,6 @@ Canonical evidence: [#757](https://github.com/andrei649/jarvis-hub/issues/757),
 [`docs/nerva2/E0_COMPLETION.md`](docs/nerva2/E0_COMPLETION.md).
 <!-- NERVA2:E0-REPOSITORY-LEDGER:END -->
 
----
-
 """
 
 
@@ -101,6 +99,33 @@ def _decode(raw: bytes, relative_path: str) -> str:
         raise ReconciliationError(f"{relative_path}: expected UTF-8 input: {exc}") from exc
 
 
+def _with_line_ending(value: str, line_ending: str) -> str:
+    return value if line_ending == "\n" else value.replace("\n", line_ending)
+
+
+def _existing_block_line_ending(text: str, start: int, path: str) -> str:
+    after_start = start + len(START)
+    if text.startswith("\r\n", after_start):
+        return "\r\n"
+    if text.startswith("\n", after_start):
+        return "\n"
+    raise ReconciliationError(f"{path}: marker is not followed by a supported line ending")
+
+
+def _find_anchor(text: str, spec: LedgerSpec) -> tuple[str, str]:
+    candidates = (
+        (spec.anchor, "\n"),
+        (_with_line_ending(spec.anchor, "\r\n"), "\r\n"),
+    )
+    matches = [(anchor, ending) for anchor, ending in candidates if text.count(anchor)]
+    count = sum(text.count(anchor) for anchor, _ in candidates)
+    if count != 1 or len(matches) != 1:
+        raise ReconciliationError(
+            f"{spec.path}: expected one stable anchor, found {count}; refusing to guess"
+        )
+    return matches[0]
+
+
 def reconcile_text(text: str, spec: LedgerSpec) -> tuple[str, bool]:
     """Return the exact reconciled text and whether a write is required."""
 
@@ -116,22 +141,19 @@ def reconcile_text(text: str, spec: LedgerSpec) -> tuple[str, bool]:
     if starts == 1:
         start = text.index(START)
         end = text.index(END, start) + len(END)
+        line_ending = _existing_block_line_ending(text, start, spec.path)
         existing = text[start:end]
-        expected = spec.block.rstrip("\n")
+        expected = _with_line_ending(spec.block, line_ending).rstrip("\r\n")
         if existing != expected:
             raise ReconciliationError(
                 f"{spec.path}: marker-bounded block exists but differs from canonical content"
             )
         return text, False
 
-    anchor_count = text.count(spec.anchor)
-    if anchor_count != 1:
-        raise ReconciliationError(
-            f"{spec.path}: expected one stable anchor, found {anchor_count}; refusing to guess"
-        )
-
-    reconciled = text.replace(spec.anchor, spec.block + spec.anchor, 1)
-    if reconciled.replace(spec.block, "", 1) != text:
+    anchor, line_ending = _find_anchor(text, spec)
+    block = _with_line_ending(spec.block, line_ending)
+    reconciled = text.replace(anchor, block + anchor, 1)
+    if reconciled.replace(block, "", 1) != text:
         raise ReconciliationError(f"{spec.path}: preservation invariant failed")
     return reconciled, True
 
@@ -194,8 +216,16 @@ def run(root: Path, *, write: bool) -> list[str]:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--check", action="store_true", help="fail if either canonical block is absent")
-    mode.add_argument("--write", action="store_true", help="insert missing canonical blocks atomically")
+    mode.add_argument(
+        "--check",
+        action="store_true",
+        help="fail if either canonical block is absent",
+    )
+    mode.add_argument(
+        "--write",
+        action="store_true",
+        help="insert missing canonical blocks atomically",
+    )
     parser.add_argument(
         "--root",
         type=Path,
