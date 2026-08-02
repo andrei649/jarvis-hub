@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import stat
 from pathlib import Path
 
@@ -101,8 +102,9 @@ def test_run_writes_atomically_preserves_modes_and_then_checks(tmp_path: Path) -
     messages = run(tmp_path, write=True)
 
     assert messages[-1] == "updated 2 ledger(s) without rewriting existing history"
-    assert stat.S_IMODE(backlog.stat().st_mode) == 0o640
-    assert stat.S_IMODE(status.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(backlog.stat().st_mode) == 0o640
+        assert stat.S_IMODE(status.stat().st_mode) == 0o600
     assert BACKLOG_BLOCK in backlog.read_text(encoding="utf-8")
     assert STATUS_BLOCK in status.read_text(encoding="utf-8")
 
