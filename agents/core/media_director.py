@@ -477,6 +477,156 @@ class NullMediaDriver:
         return {"ok": False, "state": "no_driver", "reason": self.reason}
 
 
+class LocalFileMediaDriver:
+    """A8-iii reference driver for the ``local`` device kind: real, hermetic state.
+
+    It proves the *governed rail* — session board, restore, duration verification,
+    the ``verified`` chip — with a durable now-playing record under
+    ``data_path("media")``, no hardware, no sockets, no subprocesses. Honest
+    limits: it produces no sound or image (AIO-032/033 stay SKIP on it), but its
+    state is real — ``status()`` flips to ``idle`` past the declared duration, so
+    the duration/interrupt rails exercise a genuine transition, not a claim. The
+    state path resolves lazily at call time so ``$JARVIS_HOME`` is honored
+    (the ``settings_db`` discipline); ``path=None`` stays fully in-memory like
+    ``DeviceRegistry``/``SessionBoard``.
+    """
+
+    supports_duration = True
+
+    def __init__(self, *, path: Path | None | str = "auto", clock=time.time) -> None:
+        self._path_spec = path
+        self._clock = clock
+        self._lock = threading.RLock()
+        self._records: dict[str, dict] | None = None
+
+    def _path(self) -> Path | None:
+        if self._path_spec == "auto":
+            from agents.core.paths import data_path
+
+            return Path(data_path("media")) / "now_playing.json"
+        return self._path_spec  # an explicit Path, or None for in-memory
+
+    def _store(self) -> _BoundedJsonStore:
+        return _BoundedJsonStore(self._path(), _MAX_DEVICES)
+
+    def _load(self) -> dict[str, dict]:
+        if self._records is None:
+            self._records = {
+                str(item.get("device_id")): item
+                for item in self._store().load()
+                if item.get("device_id")
+            }
+        return self._records
+
+    def _save(self) -> None:
+        self._store().save(list(self._load().values()))
+
+    def _record(self, device: MediaDevice) -> dict | None:
+        record = self._load().get(device.id)
+        if record is None:
+            return None
+        expires_at = record.get("expires_at")
+        if isinstance(expires_at, (int, float)) and float(self._clock()) >= float(expires_at):
+            self._load().pop(device.id, None)  # the declared duration elapsed → idle
+            self._save()
+            return None
+        return record
+
+    def play(
+        self,
+        device: MediaDevice,
+        content: dict,
+        *,
+        duration_seconds: float | None = None,
+    ) -> dict:
+        if not isinstance(content, Mapping) or not content.get("value"):
+            return {"ok": False, "state": "error", "reason": "invalid_content"}
+        try:
+            with self._lock:
+                now = float(self._clock())
+                self._load()[device.id] = {
+                    "device_id": device.id,
+                    "content": dict(content),
+                    "state": "playing",
+                    "started_at": now,
+                    "duration_seconds": duration_seconds,
+                    "expires_at": (now + float(duration_seconds)) if duration_seconds else None,
+                }
+                self._save()
+        except OSError:
+            return {"ok": False, "state": "error", "reason": "media_state_unwritable"}
+        return {"ok": True, "state": "playing"}
+
+    def pause(self, device: MediaDevice) -> dict:
+        return self._flip(device, "paused")
+
+    def resume(self, device: MediaDevice) -> dict:
+        return self._flip(device, "playing")
+
+    def _flip(self, device: MediaDevice, state: str) -> dict:
+        with self._lock:
+            record = self._record(device)
+            if record is None:
+                return {"ok": False, "state": "idle", "reason": "nothing_playing"}
+            record["state"] = state
+            try:
+                self._save()
+            except OSError:
+                return {"ok": False, "state": "error", "reason": "media_state_unwritable"}
+        return {"ok": True, "state": state}
+
+    def stop(self, device: MediaDevice) -> dict:
+        try:
+            with self._lock:
+                self._load().pop(device.id, None)
+                self._save()
+        except OSError:
+            return {"ok": False, "state": "error", "reason": "media_state_unwritable"}
+        return {"ok": True, "state": "idle"}
+
+    def status(self, device: MediaDevice) -> dict:
+        with self._lock:
+            record = self._record(device)
+        if record is None:
+            return {"ok": True, "state": "idle", "content": {}}
+        payload = {
+            "ok": True,
+            "state": str(record.get("state", "playing")),
+            "content": dict(record.get("content") or {}),
+        }
+        if record.get("duration_seconds") is not None:
+            payload["duration_seconds"] = record["duration_seconds"]
+        return payload
+
+
+# The name → constructor table for JARVIS_MEDIA_DRIVERS. Kinds bind to the
+# EXISTING DEVICE_KINDS vocabulary (the HUD/mobile pickers pin it) — the
+# reference driver serves the `local` kind under the config name `local_file`.
+BUILTIN_MEDIA_DRIVERS: dict[str, tuple[str, type]] = {
+    "local_file": ("local", LocalFileMediaDriver),
+}
+
+
+def build_drivers(spec: str) -> dict[str, MediaDriver]:
+    """Resolve a comma-separated driver spec to a ``{device_kind: driver}`` map.
+
+    Whole-list fail-closed like the sibling media env knobs: one unknown name
+    (or a duplicate kind) returns ``{}``, keeping the default-off invariant the
+    hermetic reality pack depends on."""
+    raw = (spec or "").strip()
+    if not raw:
+        return {}
+    drivers: dict[str, MediaDriver] = {}
+    for item in raw.split(","):
+        name = item.strip().lower()
+        entry = BUILTIN_MEDIA_DRIVERS.get(name)
+        if not name or entry is None or entry[0] in drivers:
+            return {}
+        kind, factory = entry
+        drivers[kind] = factory()
+    return drivers
+
+
 # ── the present() contract (0.45 discipline: validate before the kernel) ────
 
 MEDIA_PRESENT_CONTRACT = ContractTemplate(

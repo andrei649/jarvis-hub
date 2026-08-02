@@ -286,8 +286,9 @@ Record each as **HELD / REGRESSED / STILL OPEN** with evidence. Ask the chat row
 | **S6** | **`install_smoke` was restored as the owner's live session at every boot** — the fixture redirected the data root, but the memory modules bound theirs at import, before the redirect | resolved lazily now, same class and same fix as the autonomy-queue leak in #723 | Run `scripts/install_smoke.py`, then reload the HUD and check the session list and `memory_logs/` | No fixture session anywhere in the live store |
 
 Also still open from run 2 and **expected to reproduce**: no per-session `/chat` (a feature decision,
-not a bug), and `NullMediaDriver` being the only media implementation — so §12's media proof cannot
-pass on **any** hardware until a real driver exists. Do not spend hardware time on it.
+not a bug). *(Updated 2026-08-02, A8-iii: `NullMediaDriver` is no longer the only implementation —
+`JARVIS_MEDIA_DRIVERS=local_file` binds the shipped `LocalFileMediaDriver`, so §12.5's governed-rail
+half is provable without hardware; only the audible/visible half still waits on owner-wired drivers.)*
 
 ---
 

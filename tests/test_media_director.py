@@ -1155,3 +1155,83 @@ def test_contract_constraint_order_is_deterministic():
     decision = MEDIA_PRESENT_CONTRACT.evaluate({})
     assert decision.admissible is False
     assert decision.reason.startswith("missing_field")
+
+
+# ── A8-iii: the LocalFileMediaDriver reference driver (real, hermetic state) ──
+
+
+def test_local_file_driver_passes_the_verify_rail_and_restores():
+    from agents.core.media_director import LocalFileMediaDriver
+
+    driver = LocalFileMediaDriver(path=None)
+    director = _director(driver)
+
+    first = director.present(_payload())
+    assert first["ok"] is True and first["verified"] is True
+    assert first["verification"] == "driver-status-match"
+
+    second = director.present(
+        _payload(urgency="high", content={"type": "url", "value": "https://93.184.216.34/second"}),
+        interrupt_budget=InterruptBudget(per_day=1),
+    )
+    assert second["ok"] is True and second["verified"] is True
+
+    restored = director.restore("tv-1")
+    assert restored == {"ok": True, "restored": "previous_session"}
+    assert director.sessions.get("tv-1").content["value"] == "https://93.184.216.34/x"
+
+    # The restored session carries no further snapshot → a second restore stops
+    # to a REAL idle (the driver's state flips, not just the board's).
+    idle = director.restore("tv-1")
+    assert idle["ok"] is True and idle["restored"] == "idle"
+    assert director.sessions.get("tv-1") is None
+    assert driver.status(director.registry.get("tv-1"))["state"] == "idle"
+
+
+def test_local_file_driver_duration_is_verified_and_really_elapses():
+    from agents.core.media_director import LocalFileMediaDriver
+
+    now = [1_000.0]
+    driver = LocalFileMediaDriver(path=None, clock=lambda: now[0])
+    director = _director(driver)
+
+    result = director.present(_payload(duration_seconds=30.5))
+    assert result["ok"] is True and result["verified"] is True
+
+    device = director.registry.get("tv-1")
+    assert driver.status(device)["state"] == "playing"
+    now[0] += 31.0  # past the declared duration → a real transition, not a claim
+    assert driver.status(device) == {"ok": True, "state": "idle", "content": {}}
+
+
+def test_local_file_driver_state_is_durable_and_corrupt_safe(tmp_path):
+    from agents.core.media_director import LocalFileMediaDriver
+
+    state = tmp_path / "now_playing.json"
+    driver = LocalFileMediaDriver(path=state)
+    device = MediaDevice(id="tv-1", name="Living TV", kind="tv", room="living")
+
+    assert driver.play(device, {"type": "url", "value": "https://93.184.216.34/x"})["ok"] is True
+    rebooted = LocalFileMediaDriver(path=state)
+    assert rebooted.status(device)["state"] == "playing"
+
+    state.write_text("{not json", encoding="utf-8")
+    fresh = LocalFileMediaDriver(path=state)
+    assert fresh.status(device) == {"ok": True, "state": "idle", "content": {}}
+
+    assert driver.play(device, {"type": "url"}) == {
+        "ok": False,
+        "state": "error",
+        "reason": "invalid_content",
+    }
+
+
+def test_build_drivers_is_whole_list_fail_closed():
+    from agents.core.media_director import LocalFileMediaDriver, build_drivers
+
+    assert build_drivers("") == {}
+    assert build_drivers("nope") == {}
+    assert build_drivers("local_file,nope") == {}
+    assert build_drivers("local_file,local_file") == {}  # duplicate kind
+    resolved = build_drivers(" Local_File ")
+    assert set(resolved) == {"local"} and isinstance(resolved["local"], LocalFileMediaDriver)
