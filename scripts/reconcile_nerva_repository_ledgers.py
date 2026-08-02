@@ -16,6 +16,7 @@ import os
 import stat
 import sys
 import tempfile
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -175,10 +176,8 @@ def _atomic_write(path: Path, content: bytes) -> None:
         os.chmod(temporary, mode)
         os.replace(temporary, path)
     except BaseException:
-        try:
+        with suppress(FileNotFoundError):
             os.unlink(temporary)
-        except FileNotFoundError:
-            pass
         raise
 
 
