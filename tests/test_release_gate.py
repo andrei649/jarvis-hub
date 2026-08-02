@@ -109,6 +109,12 @@ def test_status_sync_check_against_real_repo_is_clean():
     assert "No model, agent, preference predictor, simulator, metacognitive controller" in dependencies
     assert "Cortex chooses a route; it cannot authorize" in dependencies
     assert "Simulation never mutates live Atlas" in dependencies
+    assert "## 2. Delivery prerequisite DAG — acyclic" in dependencies
+    assert "### 2.1 Runtime cognitive feedback graph — cycles expected" in dependencies
+    assert "E0 Baseline + E1 Cortex + E2 Atlas + E3 Episodes + E6 Reflection" in dependencies
+    assert "E4 Howard, E8 Synapse Skills SDK, E9 Research Lab and E12 Hybrid Cognition" in dependencies
+    assert "E12 ──belief / metacognition only────> Cortex / World Model / Research Lab" in dependencies
+    assert "E12 advisory outputs ─" not in dependencies
     assert "E12 has no privileged-action authority" in hybrid
     assert "A probability is never promoted to fact" in hybrid
     assert "Any external effect ──> Ultron / Action Kernel" in hybrid
@@ -116,6 +122,35 @@ def test_status_sync_check_against_real_repo_is_clean():
     assert registry["schema_version"] == 1
     assert registry["program_issue"] == 757
     assert registry["epic_issue"] == 758
+    delivery = registry["delivery_dependencies"]
+    assert delivery["E5"] == ["E0", "E1", "E2", "E3", "E6"]
+    assert delivery["E12"] == ["E0", "E1", "E2", "E3", "E6", "E9"]
+    assert {"E4", "E8", "E9", "E12"}.isdisjoint(delivery["E5"])
+    known_epics = {"E0", *delivery}
+    assert all(set(blockers) <= known_epics for blockers in delivery.values())
+
+    visiting = set()
+    visited = set()
+
+    def visit(epic):
+        assert epic not in visiting, f"cycle in delivery dependencies at {epic}"
+        if epic in visited:
+            return
+        visiting.add(epic)
+        for blocker in delivery.get(epic, []):
+            visit(blocker)
+        visiting.remove(epic)
+        visited.add(epic)
+
+    for epic in delivery:
+        visit(epic)
+
+    feedback = registry["runtime_feedback_edges"]
+    assert ["E12", "E1"] in feedback
+    assert ["E12", "E7"] in feedback
+    assert ["E12", "E9"] in feedback
+    assert all(edge[0] in known_epics and edge[1] in known_epics for edge in feedback)
+
     boundaries = registry["epic_boundaries"]
     assert boundaries == [
         {
