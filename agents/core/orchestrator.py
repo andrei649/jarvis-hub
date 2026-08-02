@@ -825,6 +825,19 @@ class Orchestrator:
                 router.set_local_max(flat.get("llm.hybrid_local_max"))
                 router.set_daily_cost_cap(flat.get("llm.daily_cost_cap_usd"))
                 router.set_flash_max(flat.get("llm.hybrid_flash_max"))
+            # SEC-065: re-push the guardrails knobs onto the live engine — the
+            # mode was frozen at load_agents() time, so the posture screen could
+            # say BLOCK while scans ran WARN. bind() copies the mode per
+            # request, so this takes effect on the next turn. (A mode flip also
+            # rotates the prompt-cache key via policy_fingerprint — expected.)
+            engine = getattr(self, "security", None)
+            if engine is not None and hasattr(engine, "apply_settings"):
+                from .security.hardened import guardrails_default
+                engine.apply_settings(
+                    flat.get("security.guardrails_mode", guardrails_default()),
+                    scan_input=flat.get("security.scan_input"),
+                    scan_output=flat.get("security.scan_output"),
+                )
         except Exception as e:
             log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
 
@@ -1933,7 +1946,9 @@ class Orchestrator:
             event_type=SecurityEventType.LLM_CALL,
             timestamp=time.time(),
             findings=[],
-            content_preview=synthesized[:100],
+            # SEC-071: redact BEFORE the 100-char cap — truncating first can
+            # split a key so no scanner pattern matches the remainder.
+            content_preview=self.audit.preview(synthesized, 100),
             action_taken=action_taken,
         )
         await asyncio.to_thread(self.audit.log, event)

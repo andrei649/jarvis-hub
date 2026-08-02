@@ -87,6 +87,28 @@ class GuardrailsEngine:
         with self._counters_lock:
             self._counters[key] = self._counters.get(key, 0) + n
 
+    def apply_settings(self, mode=None, scan_input=None, scan_output=None) -> "GuardrailsEngine":
+        """Live-resync seam for the settings watcher (SEC-065).
+
+        The mode was frozen at load_agents() time — flipping
+        ``security.guardrails_mode`` changed the posture screen but not the
+        running engine. ``mode`` accepts a RedactionMode or its NAME (the
+        settings row stores uppercase names); an unknown value keeps the
+        CURRENT mode, never a silent reset. bind() copies the mode per
+        request, so a change takes effect on the next turn.
+        """
+        if isinstance(mode, RedactionMode):
+            self._mode = mode
+        elif isinstance(mode, str):
+            candidate = RedactionMode.__members__.get(mode.strip().upper())
+            if candidate is not None:
+                self._mode = candidate
+        if scan_input is not None:
+            self._scan_input = bool(scan_input)
+        if scan_output is not None:
+            self._scan_output = bool(scan_output)
+        return self
+
     def stats(self) -> dict:
         """Live guardrail activity + the real scanner rulesets, for /security/status."""
         with self._counters_lock:

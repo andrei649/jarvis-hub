@@ -58,6 +58,13 @@ class AuditLogger:
         # sha256 behavior — opt-in hardening per the default-off convention.
         _key_raw = os.environ.get("JARVIS_AUDIT_KEY")
         self._key: Optional[bytes] = _key_raw.encode() if _key_raw else None
+        # SEC-071: previews are masked at write time (the AUD-12 discipline —
+        # the secret must never hit disk). Scanners built ONCE here; per-row
+        # construction would recompile ~26 patterns on every audited turn.
+        from .scanner import PIIScanner, SecretScanner
+
+        self._preview_secret_scanner = SecretScanner()
+        self._preview_pii_scanner = PIIScanner()
         self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         # WAL + synchronous=NORMAL: every turn appends one hash-chained audit row
         # on the async hot path; this keeps the commit cheap (~36x in-bench) while
@@ -118,17 +125,39 @@ class AuditLogger:
             for f in event.findings
         ])
 
+        # SEC-071: the preview is redacted BEFORE the chain hash so the stored
+        # value verifies — same write-time discipline as findings above.
+        preview = self._redact_preview(event.content_preview)
+
         algo = "hmac-sha256" if self._key else "sha256"
         with self._lock:
             prev_hash = self._tail_hash_unlocked()
-            hash_input = f"{prev_hash}|{event.timestamp}|{event.event_type.value}|{findings_json}|{event.content_preview}|{event.action_taken}"
+            hash_input = f"{prev_hash}|{event.timestamp}|{event.event_type.value}|{findings_json}|{preview}|{event.action_taken}"
             row_hash = self._digest(algo, hash_input)
 
             self._conn.execute(
                 "INSERT INTO security_events (timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash, hash_algo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (event.timestamp, event.event_type.value, findings_json, event.content_preview, event.action_taken, row_hash, prev_hash, algo),
+                (event.timestamp, event.event_type.value, findings_json, preview, event.action_taken, row_hash, prev_hash, algo),
             )
             self._conn.commit()
+
+    def preview(self, text: str, limit: int = 100) -> str:
+        """Redact-then-truncate for callers that cap preview length — truncating
+        FIRST can split a key so no pattern matches, leaving a raw prefix on
+        disk. ``log()`` still re-redacts as the durable backstop (idempotent)."""
+        return self._redact_preview(str(text or ""))[: max(0, int(limit))]
+
+    def _redact_preview(self, preview: str) -> str:
+        if not preview:
+            return preview
+        try:
+            return self._preview_pii_scanner.redact(
+                self._preview_secret_scanner.redact(preview)
+            )
+        except Exception:
+            # Fail closed for a durable write: an unscannable preview is
+            # dropped, never stored raw.
+            return "[REDACTED:preview_scan_failed]"
 
     def query(self, event_type: Optional[str] = None, since: Optional[float] = None, limit: int = 100) -> list[SecurityEvent]:
         sql = "SELECT timestamp, event_type, findings_json, content_preview, action_taken FROM security_events WHERE 1=1"
