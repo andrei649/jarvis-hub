@@ -120,16 +120,16 @@
   ],
   "repository_ledgers": {
     "BACKLOG.md": {
-      "state": "reconciled_in_pr",
+      "state": "reconciled",
       "evidence": "One exact NERVA2:E0-REPOSITORY-LEDGER block records accepted controls through #788, E0 VERIFYING, the blocked first wave and the Ultron authority ceiling.",
       "historical_truth_preserved": "The existing NERVA_VISION and ORIZONT 27-33 delivery record remains outside the marker-bounded insertion.",
-      "remaining_gate": "Independent review and integration of draft #789."
+      "remaining_gate": "Independent exact-head E0 closure decision."
     },
     "STATUS.md": {
-      "state": "reconciled_in_pr",
+      "state": "reconciled",
       "evidence": "One exact NERVA2:E0-REPOSITORY-LEDGER snapshot records E0 VERIFYING, blocked first slices, the authority ceiling and the closure checks.",
       "historical_truth_preserved": "The existing implementation snapshot and ORIZONT 27-33 history remains outside the marker-bounded insertion; generated counters were refreshed normally.",
-      "remaining_gate": "Independent review and integration of draft #789."
+      "remaining_gate": "Independent exact-head E0 closure decision."
     }
   },
   "issue_ledgers": [
@@ -148,7 +148,7 @@
     },
     "778": {
       "state": "body_reconciled",
-      "evidence": "The complete long-form body now carries an authoritative 2026-08-03 snapshot while preserving B0-B10, M0-M8, metrics and anti-drift detail; B0 is resolved, B1/M0 remain VERIFYING, B2 is partial and B3-B10 remain open."
+      "evidence": "The complete long-form body carries an authoritative 2026-08-03 snapshot while preserving B0-B10, M0-M8, metrics and anti-drift detail; B0 is resolved, B1/M0 remain VERIFYING, B2 is partial and B3-B10 remain open."
     }
   },
   "closure_requirements": [
@@ -159,5 +159,5 @@
     "An independent integrator accepts the final diff and explicitly marks E0 complete.",
     "No first-wave production implementation begins before E0 closure."
   ],
-  "next_slice": "E0.3b2b-independent-closure — independently review draft #789, the reconciled #778 body, all exact-head checks, dependency order and authority boundaries; the builder must not merge, close E0 or start #780-#784"
+  "next_slice": "E0.3b2b-independent-closure — independently review the final change set, the reconciled #778 body, all exact-head checks, dependency order and authority boundaries; the builder must not merge, close E0 or start #780-#784"
 }
