@@ -20,6 +20,7 @@ DOCUMENT = REPO / "docs" / "nerva2" / "E0_COMPLETION.md"
 FINAL_RECONCILIATION = REPO / "docs" / "nerva2" / "E0_FINAL_RECONCILIATION.md"
 ISSUE_RECONCILIATION = REPO / "docs" / "nerva2" / "ISSUE_LEDGER_RECONCILIATION.md"
 MIGRATION_DOCUMENT = REPO / "docs" / "nerva2" / "E0_REPOSITORY_LEDGER_MIGRATION.md"
+BLOCKER_PLAN_RECONCILIATION = REPO / "docs" / "nerva2" / "E0_778_BODY_RECONCILIATION.md"
 ROADMAP = REPO / "docs" / "nerva2" / "ROADMAP_RECONCILIATION.json"
 BACKLOG = REPO / "BACKLOG.md"
 STATUS = REPO / "STATUS.md"
@@ -64,7 +65,7 @@ EXPECTED_SLICES = {
 EXPECTED_ISSUE_STATUS = {
     "757": "body_reconciled",
     "758": "body_reconciled",
-    "778": "progress_current_body_reconciliation_pending",
+    "778": "body_reconciled",
 }
 
 
@@ -110,6 +111,7 @@ def validate() -> list[str]:
     final_text = _read_text(FINAL_RECONCILIATION, errors)
     issue_text = _read_text(ISSUE_RECONCILIATION, errors)
     migration_text = _read_text(MIGRATION_DOCUMENT, errors)
+    blocker_plan_text = _read_text(BLOCKER_PLAN_RECONCILIATION, errors)
 
     if data.get("schema_version") != 1:
         errors.append("schema_version must be 1")
@@ -210,15 +212,16 @@ def validate() -> list[str]:
     if len(data.get("closure_requirements", [])) < 6:
         errors.append("E0 closure requirements are incomplete")
     next_slice = str(data.get("next_slice", ""))
-    if not next_slice.startswith("E0.3b2b-778-body"):
-        errors.append("next slice must be safe #778 body reconciliation")
+    if not next_slice.startswith("E0.3b2b-independent-closure"):
+        errors.append("next slice must be independent E0 closure review")
 
     required_phrases = (
         "E0 is `VERIFYING`",
         "Ultron / `nerva.action.v1` remains the sole privileged-action authority",
         "No item above is evidence of implementation",
         "`BACKLOG.md` and `STATUS.md` are reconciled in draft #789",
-        "The #778 body remains pending",
+        "The #778 body is reconciled",
+        "E0.3b2b-independent-closure",
     )
     for phrase in required_phrases:
         if phrase not in text:
@@ -228,7 +231,8 @@ def validate() -> list[str]:
         "Status: **VERIFYING**",
         "E0.3b2b-issues",
         "#788",
-        "`BACKLOG.md` and `STATUS.md` now contain",
+        "`BACKLOG.md` and `STATUS.md` contain",
+        "#778 body is reconciled",
         "#780",
         "#781",
         "#782",
@@ -236,6 +240,7 @@ def validate() -> list[str]:
         "#784",
         "Ultron / `nerva.action.v1` remains the sole privileged-action authority",
         "scripts/status_sync.py --check",
+        "E0.3b2b-independent-closure",
     )
     for phrase in final_required:
         if phrase not in final_text:
@@ -246,10 +251,9 @@ def validate() -> list[str]:
         "#757",
         "#758",
         "#778",
-        "body reconciled",
-        "body reconciliation pending",
+        "| #778 | body reconciled |",
         "reconciled in draft #789",
-        "E0.3b2b-778-body",
+        "E0.3b2b-independent-closure",
     )
     for phrase in issue_required:
         if phrase not in issue_text:
@@ -259,11 +263,25 @@ def validate() -> list[str]:
         "Applied state",
         "draft #789",
         "scripts/status_sync.py --check",
-        "E0.3b2b-778-body",
+        "E0_778_BODY_RECONCILIATION.md",
+        "E0.3b2b-independent-closure",
     )
     for phrase in migration_required:
         if phrase not in migration_text:
             errors.append(f"repository-ledger migration document missing invariant: {phrase}")
+
+    blocker_plan_required = (
+        "Status:** E0 remains `VERIFYING`",
+        "B0 is resolved",
+        "B1 / M0 remain `VERIFYING`",
+        "B2 is partial",
+        "B3–B10 remain open",
+        "Ultron / `nerva.action.v1` is the sole privileged-action authority",
+        "E0.3b2b-independent-closure",
+    )
+    for phrase in blocker_plan_required:
+        if phrase not in blocker_plan_text:
+            errors.append(f"#778 reconciliation evidence missing invariant: {phrase}")
 
     return errors
 
@@ -276,8 +294,8 @@ def main() -> int:
         return 1
     print(
         "Nerva E0 verification ledger is consistent: 7 accepted control slices, "
-        "2 exact repository blocks, 2 reconciled issue bodies, 5 blocked first slices, "
-        "#778 pending, E0 still VERIFYING."
+        "2 exact repository blocks, 3 reconciled issue bodies, 5 blocked first slices, "
+        "E0 still VERIFYING pending independent closure."
     )
     return 0
 
