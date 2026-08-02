@@ -18,8 +18,8 @@
 
 ## Repository-ledger state
 
-`BACKLOG.md` and `STATUS.md` contain one exact marker-bounded Nerva block each in draft #789.
-Together they state all of the following without rewriting historical ORIZONT delivery:
+`BACKLOG.md` and `STATUS.md` contain one exact marker-bounded Nerva block each. Together they state all
+of the following without rewriting historical ORIZONT delivery:
 
 1. E0 control architecture is accepted through #788.
 2. E0 remains `VERIFYING` until the exact diff and required checks are independently accepted.
@@ -39,7 +39,7 @@ volatile tokens in `STATUS.md`.
 - #758 body is reconciled with E0 `VERIFYING`, completed child-issue creation and the independent closure gate.
 - #778 body is reconciled with an authoritative 2026-08-03 snapshot while preserving B0–B10, M0–M8, metrics and anti-drift detail.
 - The #778 snapshot marks B0 resolved, B1/M0 `VERIFYING`, B2 partial and B3–B10 open.
-- The complete repository-ledger candidate remains draft #789 and awaits independent integration.
+- Independent exact-head acceptance remains the only E0 closure gate.
 
 ## First implementation wave
 
@@ -53,8 +53,8 @@ volatile tokens in `STATUS.md`.
 
 ## Independent E0 closure checklist
 
-- [x] `BACKLOG.md` contains the reviewed candidate Nerva program block in draft #789.
-- [x] `STATUS.md` contains the reviewed candidate Nerva implementation snapshot in draft #789.
+- [x] `BACKLOG.md` contains the reviewed Nerva program block.
+- [x] `STATUS.md` contains the reviewed Nerva implementation snapshot.
 - [x] #757 body records the accepted control and first-wave state.
 - [x] #758 body records E0 `VERIFYING` and the remaining closure gate.
 - [x] #778 body agrees with the repository ledgers while preserving the long-range blocker plan.
@@ -72,7 +72,7 @@ autonomy or modify Ultron authority. Broader B2 program-manifest work and B3–B
 
 ## Next action
 
-Complete **E0.3b2b-independent-closure**: independently review the complete #789 diff, the reconciled
+Complete **E0.3b2b-independent-closure**: independently review the final change set, the reconciled
 #778 body, normal generated-status verification, exact ledger and Nerva checkers and all required CI.
-Only an independent integrator may merge #789 or change E0 from `VERIFYING` to `DONE`. Only after that
-decision may #780, #781, #783 and #784 begin in parallel; #782 still waits for #781.
+Only an independent integrator may merge the delivery PR or change E0 from `VERIFYING` to `DONE`. Only
+after that decision may #780, #781, #783 and #784 begin in parallel; #782 still waits for #781.
