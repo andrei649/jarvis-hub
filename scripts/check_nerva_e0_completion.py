@@ -170,8 +170,8 @@ def validate() -> list[str]:
         errors.append("repository_ledgers must contain exactly BACKLOG.md and STATUS.md")
     for name in ("BACKLOG.md", "STATUS.md"):
         entry = ledgers.get(name, {})
-        if entry.get("state") != "reconciled_in_pr":
-            errors.append(f"{name}: must be reconciled_in_pr while #789 awaits integration")
+        if entry.get("state") != "reconciled":
+            errors.append(f"{name}: merge-stable state must be reconciled")
         for field in ("evidence", "historical_truth_preserved", "remaining_gate"):
             if not entry.get(field):
                 errors.append(f"{name}: missing {field}")
@@ -219,7 +219,7 @@ def validate() -> list[str]:
         "E0 is `VERIFYING`",
         "Ultron / `nerva.action.v1` remains the sole privileged-action authority",
         "No item above is evidence of implementation",
-        "`BACKLOG.md` and `STATUS.md` are reconciled in draft #789",
+        "`BACKLOG.md` and `STATUS.md` are reconciled",
         "The #778 body is reconciled",
         "E0.3b2b-independent-closure",
     )
@@ -252,7 +252,8 @@ def validate() -> list[str]:
         "#758",
         "#778",
         "| #778 | body reconciled |",
-        "reconciled in draft #789",
+        "| `BACKLOG.md` | reconciled |",
+        "| `STATUS.md` | reconciled |",
         "E0.3b2b-independent-closure",
     )
     for phrase in issue_required:
@@ -261,7 +262,7 @@ def validate() -> list[str]:
 
     migration_required = (
         "Applied state",
-        "draft #789",
+        "exact repository reconciliation is present",
         "scripts/status_sync.py --check",
         "E0_778_BODY_RECONCILIATION.md",
         "E0.3b2b-independent-closure",
