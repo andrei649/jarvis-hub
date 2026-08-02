@@ -115,6 +115,9 @@ def test_status_sync_check_against_real_repo_is_clean():
     assert "E4 Howard, E8 Synapse Skills SDK, E9 Research Lab and E12 Hybrid Cognition" in dependencies
     assert "E12 ──belief / metacognition only────> Cortex / World Model / Research Lab" in dependencies
     assert "E12 advisory outputs ─" not in dependencies
+    assert "Cortex, Episodes, Howard, World Model, Experience, E12" in dependencies
+    assert "Cortex, Howard, Night Shift, Reflection, World Model, E12" in dependencies
+    assert "Episodes, Howard, Synapse, Experience, E12, human review" in dependencies
     assert "E12 has no privileged-action authority" in hybrid
     assert "A probability is never promoted to fact" in hybrid
     assert "Any external effect ──> Ultron / Action Kernel" in hybrid
@@ -201,6 +204,31 @@ def test_status_sync_check_against_real_repo_is_clean():
         "Verification Fabric",
     } <= {contract["owner"] for contract in contracts}
     by_id = {contract["id"]: contract for contract in contracts}
+    contracts_by_owner = {}
+    for contract in contracts:
+        contracts_by_owner.setdefault(contract["owner"], []).append(contract)
+    epic_owners = {
+        "E1": "Cortex",
+        "E2": "Atlas",
+        "E3": "Episodes",
+        "E4": "Howard",
+        "E5": "Night Shift",
+        "E6": "Reflection",
+        "E7": "World Model",
+        "E8": "Synapse",
+        "E9": "Research Lab",
+    }
+    for dependent, blockers in delivery.items():
+        if dependent == "E11":
+            continue
+        for blocker in blockers:
+            if blocker == "E0":
+                continue
+            owner = epic_owners[blocker]
+            assert any(
+                dependent in contract["unblocks"]
+                for contract in contracts_by_owner[owner]
+            ), f"{blocker} ({owner}) does not expose a contract unblocking {dependent}"
     for contract_id in (
         "nerva.atlas.snapshot.v1",
         "nerva.decision.v1",
