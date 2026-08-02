@@ -7244,6 +7244,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/acquisition/{request_id}/drive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acquisition Drive
+         * @description Drive the governed acquisition loop for a captured capability gap.
+         */
+        post: operations["acquisition_drive_api_acquisition__request_id__drive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ambient/monitors": {
         parameters: {
             query?: never;
@@ -7461,6 +7481,23 @@ export interface components {
              * @default
              */
             name: string;
+        };
+        /** AcquisitionCaseBody */
+        AcquisitionCaseBody: {
+            /** Input */
+            input: unknown;
+            /** Expected */
+            expected: unknown;
+        };
+        /** AcquisitionDriveBody */
+        AcquisitionDriveBody: {
+            /**
+             * Entrypoint
+             * @default run
+             */
+            entrypoint: string;
+            /** Cases */
+            cases: components["schemas"]["AcquisitionCaseBody"][];
         };
         /** AcquisitionPurgeBody */
         AcquisitionPurgeBody: {
@@ -18996,6 +19033,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acquisition_drive_api_acquisition__request_id__drive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcquisitionDriveBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

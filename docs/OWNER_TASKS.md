@@ -130,9 +130,13 @@ bundle" button, or `POST /api/self-improvement/enable`:
   durable facts/corrections; proposed skill patches still need your approval).
 - [ ] **`acquisition.enabled`** — H32 Capability Acquisition (gap → reuse-search →
   sandboxed research → strict-local codegen → hostile-sandbox verification →
-  **your approval** → signed install). Needs a configured search backend
-  (`SEARXNG_URL` or `TAVILY_API_KEY` in `.env`) to actually research anything —
-  without one it stays enabled but inert.
+  **your approval** → signed install). The acquisition research path is
+  **SearXNG-only** (`SEARXNG_URL` in `.env`; a Tavily key is deliberately
+  refused on this path — cloud research is forbidden for local codegen) plus a
+  digest-pinned `JARVIS_ACQUISITION_SANDBOX_IMAGE` — without them the drive
+  route refuses honestly (`_degraded {reason, needs}`) instead of sitting inert.
+  Drive a captured gap end-to-end with `POST /api/acquisition/{request_id}/drive`
+  (admin; A8-i — no Python shell needed anymore).
 - [ ] **`ambient.enabled`** — H33 Ambient Intelligence monitors over house/camera/
   digital signals (only meaningful once H30/H31 hardware is connected).
 - [ ] **`autonomy.tech_scout_enabled`** — the new Proactive Technology Scout: a

@@ -227,6 +227,7 @@
  "POST /api/acquisition/ledger/purge": "admin",
  "POST /api/acquisition/{name}/revoke": "admin",
  "POST /api/acquisition/{name}/rollback": "admin",
+ "POST /api/acquisition/{request_id}/drive": "admin",
  "POST /api/actions/request": "user",
  "POST /api/actions/{action_id}/decide": "admin",
  "POST /api/admin/backup": "admin",

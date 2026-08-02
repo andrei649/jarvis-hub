@@ -164,7 +164,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "fd557ba1b6e495d0cb9dbe5b5f26bab7342e3cc3",
+  "latest_ci_commit": "161a98c19fddf8377a30e93ef10d814043dd0200",
   "open_release_gates": [
     {
       "id": "A1",
@@ -203,7 +203,7 @@
     },
     {
       "id": "A8",
-      "name": "**AI-OS v1 owner-host proof** — complete `docs/MANUAL_TESTING.md` §N on real hardware: installed Playwright Chromium + Windows UIA browser/desktop actuation; real Home Assistant state + device/room/occupant/presence graph + governed device actuation; consented Frigate event → house/memory/ambient flow; presence-aware Media Director delivery on ≥2 non-chat output surfaces/device classes; one approved acquisition→reuse loop. Record redacted audit/task/device evidence; hermetic reality packs alone do not clear this gate. **⚠️ Parts of §N are not runnable as written (#728):** writing `docs/test-manual/12-aios-owner-host.md` against the source found the product lacks surfaces §N assumes — the H32 acquisition loop has no HTTP/HUD trigger (in-process only), no presence→media-target binding exists, only `NullMediaDriver` ships, and `ungoverned_actions == 0` is measurable only inside the hermetic reality packs. Full list with `file:line` in that chapter's **Open gaps**; owner triage needed before buying media hardware or scheduling the A8 block.",
+      "name": "**AI-OS v1 owner-host proof** — complete `docs/MANUAL_TESTING.md` §N on real hardware: installed Playwright Chromium + Windows UIA browser/desktop actuation; real Home Assistant state + device/room/occupant/presence graph + governed device actuation; consented Frigate event → house/memory/ambient flow; presence-aware Media Director delivery on ≥2 non-chat output surfaces/device classes; one approved acquisition→reuse loop. Record redacted audit/task/device evidence; hermetic reality packs alone do not clear this gate. **⚠️ Parts of §N are not runnable as written (#728), being unblocked by the finish-line run:** ✅ **A8-i done 2026-08-02** — the H32 acquisition loop now has a product trigger, `POST /api/acquisition/{request_id}/drive` (admin; reuse-first, honest `_degraded` refusals; AIO-038 rewritten to use it, no Python shell). Still open: no presence→media-target binding (A8-ii, queued C4), only `NullMediaDriver` ships (A8-iii, queued C3), and `ungoverned_actions == 0` is measurable only inside the hermetic reality packs (A8-iv, stretch QA4). Full list with `file:line` in that chapter's **Open gaps**; media-hardware purchase can be scheduled once C3/C4 merge.",
       "status": "⬜ **blocking owner/live gate**"
     },
     {
@@ -212,9 +212,9 @@
       "status": "⬜"
     }
   ],
-  "routes": 404,
+  "routes": 405,
   "tests": {
-    "backend": 5680,
+    "backend": 5686,
     "frontend": 408,
     "mobile": 96
   },

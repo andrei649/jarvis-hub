@@ -468,14 +468,15 @@ configured Tavily key with `"cloud search backend is forbidden for local researc
 (`agents/core/acquisition/research.py:76-84`). Sandbox verification needs a real pinned Docker image
 (`JARVIS_ACQUISITION_SANDBOX_IMAGE`, `agents/core/acquisition/runtime.py:129`).
 
-**Honest limit, stated once so nobody fakes it:** there is **no HTTP route and no HUD control** that
-captures a gap or drives the loop. The router exposes only `status`, `events`, `ledger/export`,
-`ledger/purge`, `{name}/revoke`, `{name}/rollback` (verified against
-`tests/_snapshots/route_surface.json`). `capture_gap` fires only from the agent tool-loop's
-`gap_callback`, and `resolve_gap` / `synthesize_and_propose` are **never auto-invoked** — the
-docstring says so at `agents/core/acquisition/runtime.py:191-196`. §10 records the same finding. So
-AIO-038 is a **scripted** proof run from a Python shell on the host. If you will not script it, mark
-the whole proof SKIP with that reason — do not mark it PASS from the status panel.
+**Honest limit, updated 2026-08-02 (A8-i):** the loop now has a product trigger —
+`POST /api/acquisition/{request_id}/drive` (admin) runs reuse-check → research → strict-local
+generate → sandbox verify → propose for a captured gap, refusing honestly (409 + `_degraded
+{reason, needs}`) when SearXNG, the local LLM, or the pinned sandbox image is absent, and
+refusing with `reuse_available` when reuse outranks synthesis. Gap **capture** still fires only
+from the agent tool-loop's `gap_callback` (by design — gaps are observed, not declared), there is
+still no HUD button (drive it with curl + the admin token), and nothing is auto-invoked: the
+route is owner-initiated, and the permanent Decision-Inbox approval floor is unchanged. AIO-038
+no longer needs a Python shell.
 
 #### AIO-037 — Acquisition reports its own state honestly  🖥👁
 - **Surface:** `GET /api/acquisition/status` (user) · Console → Build → **CAPABILITY ACQUISITION** · **Auto:** ✅tests/test_h32_acquisition_api.py, ✅frontend/src/test/acquisition-panel.test.tsx
@@ -487,7 +488,7 @@ the whole proof SKIP with that reason — do not mark it PASS from the status pa
 #### AIO-038 — One full loop: gap → reuse-miss → research → generate → sandbox → approve → promote → reuse  🖥🤖🔑⏱
 - **Surface:** `AcquisitionRuntime` (script) + Decision Inbox (`skill.install` task kind) · **Auto:** ✅tests/test_h32_synthesis_pipeline.py, ✅tests/test_h32_promotion.py, ✅tests/test_h32_reuse_resolver.py, ✅tests/test_h32_acquisition_reality.py
 - **Prereq:** `acquisition.enabled=true`; a reachable SearXNG; **no** `TAVILY_API_KEY`; a pinned sandbox image; a local model for strict-local generation; an **isolated** target (this creates and runs generated code).
-- **Steps:** 1) Trigger a genuine gap by asking the assistant for a capability it does not have while the tool loop is on (`llm.tool_loop_enabled`) — confirm a request appears in `states` on `GET /api/acquisition/status`. 2) In a Python shell: `runtime.resolve_gap(request_id, orch)` → expect `no_reuse`, request left at `MISSING`. 3) `await runtime.synthesize_and_propose(request_id, contract=<system-owned CapabilityContract with the same goal>, research=<GovernedResearch>, generate=<strict-local generator callable>)`. 4) Watch `GET /api/acquisition/events?limit=100`. 5) Find the resulting proposal and approve it as a `skill.install` task from the Decision Inbox. 6) Ask for the same capability again.
+- **Steps:** 1) Trigger a genuine gap by asking the assistant for a capability it does not have while the tool loop is on (`llm.tool_loop_enabled`) — confirm a request appears in `states` on `GET /api/acquisition/status`. 2) Drive it: `curl -X POST -H "X-Admin-Token: …" -H "Content-Type: application/json" -d '{"entrypoint":"run","cases":[{"input":…,"expected":…}]}' http://127.0.0.1:8080/api/acquisition/<request_id>/drive` — the route runs reuse-check → research → generate → sandbox verify → propose (A8-i; a `reuse_available` 409 means reuse won, which is also a pass for reuse-before-generate). 3) Watch `GET /api/acquisition/events?limit=100`. 4) Find the resulting proposal and approve it as a `skill.install` task from the Decision Inbox. 5) Ask for the same capability again.
 - **Expected:** the request walks `MISSING → researching → quarantined → verified → proposed`; each transition emits a hash-only audit event visible in `/api/acquisition/events` as `#<sequence> · <event_type>` with an `actor` (the HUD shows hashes only — raw goals, research extracts, package paths and receipt bodies never reach it, `gap.tsx:2361-2362`). A contract whose `goal` does not match the request returns `None` and logs `contract must be system-owned and goal-matched` (`runtime.py:211-214`) — verify that guard by passing a mismatched contract. `broker.propose()` requires a **verified receipt** and permanent owner approval (`promotion.py:389` — `"permanent owner approval required"`). Step 6 reuses the promoted capability: `reuse.reused` increments and `reuse_rate` rises; the card sub-line `ready · reuse N%` moves.
 - **FAIL if:** anything installs or runs without your approval → **BLOCKER**. If research proceeds with a Tavily key configured → **BLOCKER** (cloud research in a local-first product).
 - **Rollback:** Console → Build → CAPABILITY ACQUISITION → **revoke** then **rollback** for that package name (`POST /api/acquisition/{name}/revoke` / `/rollback`, admin). Confirm `packages[].status` changes and a later invocation refuses.

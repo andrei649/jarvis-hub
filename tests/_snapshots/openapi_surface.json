@@ -223,6 +223,7 @@
   "POST /api/acquisition/ledger/purge": "acquisition_purge_api_acquisition_ledger_purge_post",
   "POST /api/acquisition/{name}/revoke": "acquisition_revoke_api_acquisition__name__revoke_post",
   "POST /api/acquisition/{name}/rollback": "acquisition_rollback_api_acquisition__name__rollback_post",
+  "POST /api/acquisition/{request_id}/drive": "acquisition_drive_api_acquisition__request_id__drive_post",
   "POST /api/actions/request": "actions_request_api_actions_request_post",
   "POST /api/actions/{action_id}/decide": "actions_decide_api_actions__action_id__decide_post",
   "POST /api/admin/backup": "backup_create_api_admin_backup_post",
