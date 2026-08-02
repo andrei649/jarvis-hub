@@ -1,6 +1,15 @@
 # Changelog
 
 ## [Unreleased]
+### Q5 — SEC-065 live guardrails-mode propagation + SEC-071 audit preview redaction (2026-08-02)
+- **The posture screen and the live engine now agree without a restart** — `GuardrailsEngine.apply_settings`
+  (name-keyed; garbage keeps the CURRENT mode) is re-pushed by the 30s settings watcher; `bind()` copies
+  the mode per request, so the next turn scans under the new mode. A live flip rotates the prompt-cache
+  key via `policy_fingerprint` (expected).
+- **`content_preview` is masked at rest** — `AuditLogger.log()` redacts the preview (secret+PII scanners,
+  the AUD-12 `[REDACTED:<pattern>]` convention) BEFORE the chain hash so stored rows verify; the turn seam
+  redacts **then** truncates (`AuditLogger.preview`) so a 100-char cap can never split a key into an
+  unmatchable raw prefix. `GET /api/admin/audit`'s `summary` alias shows the masked value.
 ### Q2 — /chat/stream parity: session notes injected; constant error bodies (2026-08-02)
 - **`/chat/stream` now injects the session's notes block (H10.21) the same way `/chat` does** —
   persistent notes silently stopped applying the moment the cockpit switched to streaming

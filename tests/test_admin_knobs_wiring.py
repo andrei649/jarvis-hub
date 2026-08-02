@@ -124,16 +124,29 @@ async def test_orchestrator_guardrails_honors_settings(monkeypatch):
         self._claude_available = False
         self._ollama_available = False
 
+    security_values = {"security.guardrails_mode": "BLOCK",
+                       "security.scan_input": False,
+                       "security.scan_output": True}
     monkeypatch.setattr(HybridRouter, "detect", detect_without_backend)
     monkeypatch.setenv("JARVIS_LLM_WARMUP", "0")
-    monkeypatch.setattr("core.settings_db.get_value",
-                        _gv_factory({"security.guardrails_mode": "BLOCK",
-                                     "security.scan_input": False,
-                                     "security.scan_output": True}))
+    monkeypatch.setattr("core.settings_db.get_value", _gv_factory(security_values))
+
+    # load_agents() builds the engine from get_value(), then its final runtime
+    # settings sync reads the bulk get_all() seam. Keep both views coherent so
+    # this test exercises the real boot + live-resync path rather than letting
+    # the on-disk default WARN overwrite the deliberately injected BLOCK value.
+    import core.orchestrator as orchestrator_module
+    monkeypatch.setattr(orchestrator_module, "_get_settings", lambda: {
+        "security": [
+            {"key": "guardrails_mode", "value": "BLOCK"},
+            {"key": "scan_input", "value": False},
+            {"key": "scan_output", "value": True},
+        ],
+    })
+
     from core.config import JarvisConfig
-    from core.orchestrator import Orchestrator
-    o = Orchestrator(JarvisConfig())
-    await o.load_agents()  # GuardrailsEngine is built here, not in __init__
+    o = orchestrator_module.Orchestrator(JarvisConfig())
+    await o.load_agents()  # GuardrailsEngine is built here, then live-resynced
     assert o.security is not None
     assert o.security._mode == RedactionMode.BLOCK
     assert o.security._scan_input is False
