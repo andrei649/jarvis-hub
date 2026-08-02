@@ -184,7 +184,10 @@ class DatasetStore:
             "run_id": run_id,
             "ts": time.time(),
             "version": version,
-            "score": round(result.get("score", 0.0), 4),
+            # None = an all-unscored run (WFL-088) — recorded honestly, not as 0.0.
+            "score": (
+                round(result["score"], 4) if result.get("score") is not None else None
+            ),
             "passed": result.get("passed", 0),
             "total": result.get("total", 0),
             # keep per-case pass/score (drop responses) so we can diff later
@@ -265,8 +268,27 @@ class DatasetStore:
             for i, c in enumerate(raw)
         ]
         result = await EvalHarness(runner).run(cases)
+        # WFL-088: in the FILE contract (module docstring) `expect_contains`
+        # IS the criterion — a criterion-less case is UNSCORED, never a
+        # fabricated pass. The harness's no-criterion default stays a
+        # smoke-test affordance for ad-hoc lanes only.
+        unscored = 0
+        for case, row in zip(cases, result.get("results", []), strict=False):
+            if case.expect_contains is None:
+                row["scored"] = False
+                row["score"] = None
+                row["passed"] = False
+                unscored += 1
+        if unscored:
+            scored_rows = [r for r in result["results"] if r.get("scored", True)]
+            result["passed"] = sum(1 for r in scored_rows if r["passed"])
+            result["score"] = (
+                round(sum(r["score"] for r in scored_rows) / len(scored_rows), 4)
+                if scored_rows else None
+            )
+            result["unscored"] = unscored
         run_id = self.record_run(name, version, result)
-        return {
+        out = {
             "run_id": run_id,
             "version": version,
             "score": result["score"],
@@ -274,3 +296,6 @@ class DatasetStore:
             "total": result["total"],
             "results": result["results"],
         }
+        if unscored:
+            out["unscored"] = unscored
+        return out

@@ -56,7 +56,7 @@ def test_to_eval_case_and_stats(tmp_path):
     item = q.flag(TRACE)
     q.review(item["id"], "up")
     case = q.to_eval_case(q.get(item["id"]))
-    assert case["source"] == "human_review" and case["verdict"] == "up"
+    assert case["source"] == "human_review" and case["metadata"]["verdict"] == "up"
     q.mark_in_dataset(item["id"])
     s = q.stats()
     assert s["reviewed"] == 1 and s["thumbs_up"] == 1 and s["in_dataset"] == 1
@@ -93,3 +93,44 @@ def test_review_endpoints():
         ds = c.post(f"/api/review/{item_id}/dataset", json={"dataset": "review_test"})
         assert ds.status_code == 200 and ds.json()["case"]["source"] == "human_review"
         assert c.get("/api/review/stats").json()["stats"]["thumbs_down"] == 1
+
+
+# ── Q8 / WFL-088: promotion mints a REAL dataset case, never a fabricated 1.0 ─
+
+def test_to_eval_case_uses_dataset_case_keys(tmp_path):
+    q = ReviewQueue(path=tmp_path / "r.json")
+    item = q.flag(TRACE)
+    q.review(item["id"], "down", rubric={"accuracy": 0})
+    case = q.to_eval_case(q.get(item["id"]))
+
+    assert case["prompt"] == item["text_preview"], (
+        "WFL-088: the old {'input',...} shape was unreadable by run_dataset — "
+        "a promoted case replayed an EMPTY prompt"
+    )
+    assert case["name"].startswith("review-")
+    assert case.get("expect_contains") is None  # no gold unless the reviewer supplies one
+    assert case["source"] == "human_review"     # existing consumers keep working
+    meta = case["metadata"]
+    assert meta["trace_id"] == item["trace_id"] and meta["verdict"] == "down"
+    assert meta["prompt_source"] == "trace.text_preview"
+
+
+def test_promote_without_prompt_is_refused():
+    from agents import web
+    from starlette.testclient import TestClient
+
+    with TestClient(web.app) as c:
+        if getattr(web.orch, "review_queue", None) is None:
+            return
+        web.orch.review_queue.clear()
+        flagged = c.post("/api/review/flag",
+                         json={"trace": {"id": "empty-1"}, "reason": "manual"})
+        assert flagged.status_code == 200
+        item_id = flagged.json()["item"]["id"]
+
+        r = c.post(f"/api/review/{item_id}/dataset", json={"dataset": "review_q8_empty"})
+        assert r.status_code == 400, (
+            "an item with no prompt must be refused, not minted as an empty-prompt "
+            "case that burns a live inference and scores 1.0"
+        )
+        web.orch.review_queue.clear()

@@ -86,14 +86,30 @@ class ReviewQueue(JsonStore):
             return dict(item)
 
     def to_eval_case(self, item: dict) -> dict:
-        """Convert a reviewed item into an eval dataset case."""
+        """Convert a reviewed item into an eval dataset case.
+
+        Emits the documented DatasetStore contract ({"name","prompt",
+        "expect_contains","metadata"}) — the old {"input","expected"} shape was
+        unreadable by ``run_dataset``, so a promoted case replayed an EMPTY
+        prompt against the live model and scored a fabricated 1.0 (WFL-088).
+        ``source`` stays top-level for existing consumers. The preview is the
+        flagged turn's truncated text, and for manual flags may be an answer
+        rather than a prompt — ``prompt_source`` says so instead of claiming a
+        faithful replay.
+        """
         return {
-            "input": item.get("text_preview", ""),
-            "expected": "",
-            "verdict": item.get("verdict"),
-            "rubric": item.get("rubric", {}),
+            "name": f"review-{item.get('trace_id')}",
+            "prompt": item.get("text_preview", ""),
+            "expect_contains": None,
             "source": "human_review",
-            "trace_id": item.get("trace_id"),
+            "metadata": {
+                "source": "human_review",
+                "verdict": item.get("verdict"),
+                "rubric": item.get("rubric", {}),
+                "notes": item.get("notes", ""),
+                "trace_id": item.get("trace_id"),
+                "prompt_source": "trace.text_preview",
+            },
         }
 
     def mark_in_dataset(self, item_id: str) -> Optional[dict]:

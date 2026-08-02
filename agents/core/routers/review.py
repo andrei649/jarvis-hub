@@ -84,10 +84,23 @@ async def review_queue_to_dataset(item_id: str, req: Request):
         body = {}
     name = (body or {}).get("dataset", "review_flagged")
     case = q.to_eval_case(item)
+    # WFL-088: an item with no prompt cannot be replayed — refusing beats
+    # minting a case that burns a live inference and scores a fabricated 1.0.
+    if not str(case.get("prompt") or "").strip():
+        return JSONResponse({"error": "item has no prompt to replay"}, status_code=400)
+    gold = (body or {}).get("expect_contains")
+    if isinstance(gold, str) and gold.strip():
+        case["expect_contains"] = gold.strip()
     try:
         from agents.core.observability.datasets import DatasetStore
         store = DatasetStore()
         cases = store.load(name) or []
+        # Idempotent per trace: re-promoting replaces the item's case.
+        trace_id = case["metadata"]["trace_id"]
+        cases = [
+            c for c in cases
+            if (c.get("metadata") or {}).get("trace_id") != trace_id
+        ]
         cases.append(case)
         version = store.save_version(name, cases)
     except Exception:
