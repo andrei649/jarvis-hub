@@ -87,9 +87,24 @@ def _configured_drivers(env=None) -> dict:
     return build_drivers(raw)
 
 
+def _configured_presence_room(env=None) -> str:
+    """A8-ii: JARVIS_MEDIA_PRESENCE_ROOM — the owner's room for ``presence:auto``.
+
+    Blank/unset keeps the presence target default-off (an honest
+    ``presence_unknown`` refusal). Env-only for the same singleton-lifetime
+    reason as the sibling knobs; deliberately NOT a settings key (the
+    ``autonomy.presence_ttl`` read has no DEFAULTS row and can't be set via
+    put_category — don't inherit that trap)."""
+    import os
+
+    source = os.environ if env is None else env
+    return str(source.get("JARVIS_MEDIA_PRESENCE_ROOM", "")).strip()
+
+
 def _get_director():
     global _director
     if _director is None:
+        from agents.core.app_state import get_orch
         from agents.core.browser_agent import BrowserPolicy, GovernedBrowser
         from agents.core.media_catalog import default_catalog_if_enabled
         from agents.core.media_director import MediaDirector
@@ -101,6 +116,9 @@ def _get_director():
                 policy=BrowserPolicy(_configured_url_allowlist()),
             ),
             drivers=_configured_drivers(),
+            # Lazy: the singleton is often built before the orchestrator exists.
+            presence=lambda: getattr(get_orch(), "owner_presence", None),
+            presence_room=_configured_presence_room(),
         )
     return _director
 

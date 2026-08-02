@@ -1,6 +1,14 @@
 # Changelog
 
 ## [Unreleased]
+### A8-ii — presence-aware media target `presence:auto` (2026-08-02)
+- **`target: "presence:auto"`** on `media.present` resolves the owner room's default device —
+  gated on a **fresh `present` signal** from the H34.2 owner-presence store (the temporal half)
+  plus **`JARVIS_MEDIA_PRESENCE_ROOM`** (the spatial half; unset keeps the target default-off).
+  Idle/away/unknown/stale presence, a missing store, or an unset room refuse `presence_unknown` —
+  a guess about where the owner is would be a lie. Room-level refusals pass through unchanged,
+  every other target string resolves exactly as before, and the sentinel is branched before
+  device-id lookup so a registered id can never shadow it.
 ### A8-iii — MediaDriver registry + the LocalFileMediaDriver reference driver (2026-08-02)
 - **`JARVIS_MEDIA_DRIVERS`** (env, comma-separated; whole-list fail-closed like the sibling media
   knobs) binds real drivers into the route-owned `MediaDirector` — the `drivers=` seam existed on

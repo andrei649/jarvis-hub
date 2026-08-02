@@ -1235,3 +1235,123 @@ def test_build_drivers_is_whole_list_fail_closed():
     assert build_drivers("local_file,local_file") == {}  # duplicate kind
     resolved = build_drivers(" Local_File ")
     assert set(resolved) == {"local"} and isinstance(resolved["local"], LocalFileMediaDriver)
+
+
+# ── presence:auto — the owner-room target (A8-ii) ────────────────────────────
+
+
+def _presence_director(driver, store, room="living"):
+    return _director(driver, presence=lambda: store, presence_room=room)
+
+
+def test_presence_auto_resolves_the_owner_room_default_device():
+    from agents.core.autonomy.presence import PRESENT, OwnerPresence
+    from agents.core.media_director import LocalFileMediaDriver
+
+    now = [1000.0]
+    store = OwnerPresence(ttl_seconds=300.0, clock=lambda: now[0])
+    store.update(PRESENT)
+    director = _presence_director(LocalFileMediaDriver(path=None), store)
+
+    result = director.present(_payload(target="presence:auto"))
+
+    assert result["ok"] is True and result["verified"] is True
+    assert director.sessions.get("tv-1") is not None, (
+        "presence:auto must land on the owner room's device (living's only tv)"
+    )
+
+
+def test_presence_auto_refuses_presence_unknown_when_stale_absent_or_away():
+    from agents.core.autonomy.presence import AWAY, PRESENT, OwnerPresence
+    from agents.core.media_director import LocalFileMediaDriver
+
+    driver = LocalFileMediaDriver(path=None)
+
+    # no presence store wired at all — refuse, never guess
+    refusal = _director(driver, presence_room="living").present(
+        _payload(target="presence:auto")
+    )
+    assert refusal["ok"] is False and refusal["reason"] == "presence_unknown"
+
+    # a fresh AWAY signal is a refusal, not a fallback
+    now = [1000.0]
+    away = OwnerPresence(ttl_seconds=300.0, clock=lambda: now[0])
+    away.update(AWAY)
+    refusal = _presence_director(driver, away).present(_payload(target="presence:auto"))
+    assert refusal["ok"] is False and refusal["reason"] == "presence_unknown"
+
+    # PRESENT but stale — the desk daemon went quiet past the TTL
+    now2 = [1000.0]
+    stale = OwnerPresence(ttl_seconds=300.0, clock=lambda: now2[0])
+    stale.update(PRESENT)
+    now2[0] = 1401.0
+    refusal = _presence_director(driver, stale).present(_payload(target="presence:auto"))
+    assert refusal["ok"] is False and refusal["reason"] == "presence_unknown"
+
+
+def test_presence_auto_is_refused_when_no_presence_room_is_configured():
+    from agents.core.autonomy.presence import PRESENT, OwnerPresence
+    from agents.core.media_director import LocalFileMediaDriver
+
+    now = [1000.0]
+    store = OwnerPresence(ttl_seconds=300.0, clock=lambda: now[0])
+    store.update(PRESENT)
+    director = _director(LocalFileMediaDriver(path=None), presence=lambda: store)
+
+    refusal = director.present(_payload(target="presence:auto"))
+
+    assert refusal["ok"] is False and refusal["reason"] == "presence_unknown", (
+        "no configured owner room ⇒ default-off ⇒ honest refusal"
+    )
+
+
+def test_presence_auto_does_not_change_existing_target_resolution():
+    from agents.core.media_director import LocalFileMediaDriver
+
+    director = _director(LocalFileMediaDriver(path=None))
+    assert director.present(_payload())["ok"] is True  # device-id path untouched
+    unknown = director.present(_payload(target="garage"))
+    assert unknown["ok"] is False and "unknown target" in unknown["reason"]
+
+
+def test_presence_auto_sentinel_cannot_be_shadowed_by_a_device_id():
+    from agents.core.media_director import LocalFileMediaDriver
+
+    director = _director(LocalFileMediaDriver(path=None))
+    director.registry.register(
+        MediaDevice(id="presence:auto", name="rogue", kind="tv", room="living")
+    )
+
+    refusal = director.present(_payload(target="presence:auto"))
+
+    assert refusal["ok"] is False and refusal["reason"] == "presence_unknown", (
+        "the sentinel must route through presence, never a registered device id"
+    )
+
+
+def test_presence_auto_consumes_the_budget_on_the_resolved_device():
+    from agents.core.autonomy.presence import PRESENT, OwnerPresence
+    from agents.core.media_director import LocalFileMediaDriver
+
+    now = [1000.0]
+    store = OwnerPresence(ttl_seconds=300.0, clock=lambda: now[0])
+    store.update(PRESENT)
+    director = _presence_director(LocalFileMediaDriver(path=None), store)
+    assert director.present(_payload())["ok"] is True  # tv-1 now holds a session
+
+    budget = InterruptBudget(per_day=1)
+    second = director.present(
+        _payload(target="presence:auto", urgency="high",
+                 content={"type": "url", "value": "https://93.184.216.34/second"}),
+        interrupt_budget=budget,
+    )
+    assert second["ok"] is True and second["verified"] is True
+
+    third = director.present(
+        _payload(urgency="high",
+                 content={"type": "url", "value": "https://93.184.216.34/third"}),
+        interrupt_budget=budget,
+    )
+    assert third["ok"] is False, (
+        "the presence-resolved present must have consumed the single budget slot"
+    )
