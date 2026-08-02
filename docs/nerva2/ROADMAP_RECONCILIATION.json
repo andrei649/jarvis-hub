@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "snapshot_commit": "ab177c5501eeea379b66d9d33a1ed895a322e934",
+  "program_issue": 757,
+  "epic_issue": 758,
+  "slice": "E0.3b1",
+  "status": "building",
+  "purpose": "Reconcile legacy ORIZONT 27-33 delivery horizons with Nerva 2.0 ownership without rebuilding accepted substrate or claiming legacy completion as Nerva completion.",
+  "horizons": [
+    {
+      "id": "O27",
+      "program": "A — Foundations",
+      "legacy_scope": "Capability Registry and Unified Action API",
+      "disposition": "integrate",
+      "nerva_epics": ["E1", "E8", "E11"],
+      "reuse_paths": [
+        "agents/core/capability_manifests.py",
+        "agents/core/observability/capability_registry.py",
+        "agents/core/automation_contracts.py",
+        "agents/core/agent_runtime.py",
+        "agents/core/kernel/__init__.py"
+      ],
+      "remaining_nerva_value": "Typed Cortex decision records, a versioned capability SDK contract, task-level Ultron mediation evidence and release proof.",
+      "honest_state": "mixed_existing_substrate"
+    },
+    {
+      "id": "O28",
+      "program": "B — Computer operator",
+      "legacy_scope": "Computer and Browser Operator",
+      "disposition": "integrate",
+      "nerva_epics": ["E8", "E10", "E11"],
+      "reuse_paths": [
+        "agents/core/environments",
+        "agents/core/tool_rpc.py",
+        "agents/core/agent_runtime.py"
+      ],
+      "remaining_nerva_value": "Real structured browser and desktop implementations, capability conformance, honest degradation, owner-visible evidence and live verification.",
+      "honest_state": "governed_seams_and_host_dependencies"
+    },
+    {
+      "id": "O29",
+      "program": "C — Media and surfaces",
+      "legacy_scope": "Multimedia Director",
+      "disposition": "integrate",
+      "nerva_epics": ["E8", "E10", "E11"],
+      "reuse_paths": [
+        "agents/core/media_director.py",
+        "agents/core/routers/media_director.py",
+        "agents/core/media_catalog.py"
+      ],
+      "remaining_nerva_value": "Versioned presentation capabilities, additional real device classes, evidence-linked delivery and coherent owner controls.",
+      "honest_state": "mixed_reference_driver_and_live_hardware_gap"
+    },
+    {
+      "id": "O30",
+      "program": "D — Atlas house model",
+      "legacy_scope": "House Brain",
+      "disposition": "integrate",
+      "nerva_epics": ["E2", "E10", "E11"],
+      "reuse_paths": [
+        "agents/core/memory/bitemporal.py",
+        "agents/core/routers/memory_kg.py",
+        "agents/plugins/homebridge.py",
+        "agents/plugins/iot_control.py",
+        "agents/core/voice/wyoming.py"
+      ],
+      "remaining_nerva_value": "Canonical identity, provenance and privacy-aware Atlas snapshots over real room, device and occupant state, plus live governed proof.",
+      "honest_state": "mixed_connectors_and_incomplete_reality_graph"
+    },
+    {
+      "id": "O31",
+      "program": "E — Vision and surveillance",
+      "legacy_scope": "Camera Intelligence",
+      "disposition": "build_on_existing_boundaries",
+      "nerva_epics": ["E2", "E8", "E11"],
+      "reuse_paths": [
+        "agents/core/llm/vlm.py",
+        "agents/core/memory/bitemporal.py",
+        "agents/core/observability/reality_harness.py"
+      ],
+      "remaining_nerva_value": "Privacy-first camera event adapters, Atlas observations, capability contracts, retention/deletion and owner-hardware verification.",
+      "honest_state": "gated_or_missing_live_adapters"
+    },
+    {
+      "id": "O32",
+      "program": "F — Synapse self-extension",
+      "legacy_scope": "Capability Acquisition",
+      "disposition": "integrate",
+      "nerva_epics": ["E8", "E9", "E11"],
+      "reuse_paths": [
+        "agents/core/acquisition/runtime.py",
+        "agents/core/acquisition/llm_synth.py",
+        "agents/core/observability/capability_registry.py",
+        "agents/core/observability/eval.py"
+      ],
+      "remaining_nerva_value": "SDK conformance, benchmark evidence, staged promotion, rollback and measured reuse-before-generation reliability.",
+      "honest_state": "governed_pipeline_without_universal_sdk"
+    },
+    {
+      "id": "O33",
+      "program": "G — Ambient cognition",
+      "legacy_scope": "Ambient Intelligence",
+      "disposition": "integrate",
+      "nerva_epics": ["E5", "E6", "E10", "E11"],
+      "reuse_paths": [
+        "agents/core/autonomy/observer.py",
+        "agents/core/autonomy/missions.py",
+        "agents/core/autonomy/queue.py",
+        "agents/core/autonomy/worker.py",
+        "agents/core/learning/background_review.py"
+      ],
+      "remaining_nerva_value": "Approved goals, bounded opportunity discovery, independent verification, reflection and evidence-linked morning briefs with live zero-bypass proof.",
+      "honest_state": "existing_primitives_without_night_shift_acceptance"
+    }
+  ],
+  "first_executable_slices": [
+    {
+      "epic": "E1",
+      "issue": 780,
+      "title": "shadow DecisionRecord over current routing",
+      "blocked_by": [758],
+      "authority": "shadow_no_action"
+    },
+    {
+      "epic": "E2",
+      "issue": 781,
+      "title": "Atlas identity, provenance and read-only snapshot contract",
+      "blocked_by": [758],
+      "authority": "read_only_state"
+    },
+    {
+      "epic": "E3",
+      "issue": 782,
+      "title": "Episode schema and deterministic manual boundaries",
+      "blocked_by": [758, 781],
+      "authority": "memory_record_only"
+    },
+    {
+      "epic": "E8",
+      "issue": 783,
+      "title": "Synapse manifest conformance on three existing capabilities",
+      "blocked_by": [758],
+      "authority": "description_only"
+    },
+    {
+      "epic": "E9",
+      "issue": 784,
+      "title": "versioned benchmark contract and privacy-safe task suite",
+      "blocked_by": [758],
+      "authority": "evaluation_only"
+    }
+  ],
+  "source_artifacts": {
+    "product_destination": "NERVA_VISION.md",
+    "delivery_roadmap": "BACKLOG.md",
+    "implementation_snapshot": "STATUS.md",
+    "dependency_contract": "docs/nerva2/DEPENDENCIES.md",
+    "risk_contract": "docs/nerva2/RISKS.md",
+    "program_ledger": 757
+  },
+  "remaining_e0_work": [
+    "Reconcile the accepted mapping into BACKLOG.md and STATUS.md without hand-claiming live capability.",
+    "Update #757, #758 and #778 bodies or durable ledger sections to point at the accepted first slices.",
+    "Add a machine-readable whole-program manifest and cycle/orphan checker after E0 closes or as the next control-plane slice.",
+    "Close E0 only after the direct ledger edits and independent review are accepted."
+  ]
+}
