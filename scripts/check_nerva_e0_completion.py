@@ -2,9 +2,9 @@
 """Validate the Nerva E0 verification ledger without claiming E0 is complete.
 
 The checker is repository-only and side-effect free. GitHub issue bodies and CI results remain
-external evidence reviewed by the integrator; this gate verifies that accepted control slices,
-first-wave dependencies, repository-ledger posture and authority boundaries stay internally
-consistent while E0 is VERIFYING.
+external evidence reviewed by the integrator; this gate verifies accepted control slices,
+first-wave dependencies, repository-ledger posture, recorded issue-ledger posture and authority
+boundaries while E0 is VERIFYING.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ REPO = Path(__file__).resolve().parent.parent
 MANIFEST = REPO / "docs" / "nerva2" / "E0_COMPLETION.json"
 DOCUMENT = REPO / "docs" / "nerva2" / "E0_COMPLETION.md"
 FINAL_RECONCILIATION = REPO / "docs" / "nerva2" / "E0_FINAL_RECONCILIATION.md"
+ISSUE_RECONCILIATION = REPO / "docs" / "nerva2" / "ISSUE_LEDGER_RECONCILIATION.md"
 ROADMAP = REPO / "docs" / "nerva2" / "ROADMAP_RECONCILIATION.json"
 BACKLOG = REPO / "BACKLOG.md"
 STATUS = REPO / "STATUS.md"
@@ -41,6 +42,10 @@ EXPECTED_CONTROLS = {
         "pull_request": 786,
         "merge_commit": "265a1c984822b059bfbf9449dacc2bde7554d225",
     },
+    "E0.3b2b-control": {
+        "pull_request": 787,
+        "merge_commit": "25eac3688830750be231c43ebacce889427c50cc",
+    },
 }
 EXPECTED_SLICES = {
     "E1": {"issue": 780, "blocked_by": [758], "authority": "shadow_no_action"},
@@ -48,6 +53,11 @@ EXPECTED_SLICES = {
     "E3": {"issue": 782, "blocked_by": [758, 781], "authority": "memory_record_only"},
     "E8": {"issue": 783, "blocked_by": [758], "authority": "description_only"},
     "E9": {"issue": 784, "blocked_by": [758], "authority": "evaluation_only"},
+}
+EXPECTED_ISSUE_STATUS = {
+    "757": "body_reconciled",
+    "758": "body_reconciled",
+    "778": "progress_current_body_reconciliation_pending",
 }
 
 
@@ -79,17 +89,18 @@ def validate() -> list[str]:
     roadmap = _load_json(ROADMAP, errors)
     text = _read_text(DOCUMENT, errors)
     final_text = _read_text(FINAL_RECONCILIATION, errors)
+    issue_text = _read_text(ISSUE_RECONCILIATION, errors)
 
     if data.get("schema_version") != 1:
         errors.append("schema_version must be 1")
     if data.get("program_issue") != 757 or data.get("epic_issue") != 758:
         errors.append("program/epic linkage drifted")
-    if data.get("slice") != "E0.3b2b":
-        errors.append("completion ledger slice must be E0.3b2b")
+    if data.get("slice") != "E0.3b2b-issues":
+        errors.append("completion ledger slice must be E0.3b2b-issues")
     if data.get("status") != "verifying" or data.get("close_e0") is not False:
         errors.append("completion ledger must keep E0 VERIFYING and close_e0=false")
-    if data.get("snapshot_commit") != EXPECTED_CONTROLS["E0.3b2a"]["merge_commit"]:
-        errors.append("completion ledger snapshot must be the accepted E0.3b2a merge")
+    if data.get("snapshot_commit") != EXPECTED_CONTROLS["E0.3b2b-control"]["merge_commit"]:
+        errors.append("completion ledger snapshot must be the accepted #787 merge")
 
     controls = data.get("accepted_control_slices", [])
     by_slice = {item.get("slice"): item for item in controls if isinstance(item, dict)}
@@ -156,17 +167,30 @@ def validate() -> list[str]:
 
     if data.get("issue_ledgers") != [757, 758, 778]:
         errors.append("issue ledger set must remain #757, #758 and #778")
+    issue_status = data.get("issue_ledger_status", {})
+    if set(issue_status) != set(EXPECTED_ISSUE_STATUS):
+        errors.append("issue_ledger_status must contain exactly #757, #758 and #778")
+    for issue, expected_state in EXPECTED_ISSUE_STATUS.items():
+        entry = issue_status.get(issue, {})
+        if entry.get("state") != expected_state:
+            errors.append(
+                f"issue #{issue}: expected state {expected_state!r}, got {entry.get('state')!r}"
+            )
+        if not entry.get("evidence"):
+            errors.append(f"issue #{issue}: missing reconciliation evidence")
+
     if len(data.get("closure_requirements", [])) < 6:
         errors.append("E0 closure requirements are incomplete")
     next_slice = str(data.get("next_slice", ""))
-    if not next_slice.startswith("E0.3b2b-ledgers"):
+    if not next_slice.startswith("E0.3b2b-repository-ledgers"):
         errors.append("next slice must be direct repository-ledger reconciliation")
 
     required_phrases = (
         "E0 is `VERIFYING`",
         "Ultron / `nerva.action.v1` remains the sole privileged-action authority",
         "No item above is evidence of implementation",
-        "Direct replacement of the large historical `BACKLOG.md` and `STATUS.md` files",
+        "Issue bodies #757 and #758 are reconciled",
+        "The #778 body remains pending",
     )
     for phrase in required_phrases:
         if phrase not in text:
@@ -174,8 +198,8 @@ def validate() -> list[str]:
 
     final_required = (
         "Status: **VERIFYING**",
-        "E0.3b2a",
-        "#786",
+        "E0.3b2b-control",
+        "#787",
         "#780",
         "#781",
         "#782",
@@ -188,6 +212,19 @@ def validate() -> list[str]:
         if phrase not in final_text:
             errors.append(f"final reconciliation brief missing invariant: {phrase}")
 
+    issue_required = (
+        "Status:** E0 remains `VERIFYING`",
+        "#757",
+        "#758",
+        "#778",
+        "body reconciled",
+        "body reconciliation pending",
+        "E0.3b2b-repository-ledgers",
+    )
+    for phrase in issue_required:
+        if phrase not in issue_text:
+            errors.append(f"issue reconciliation document missing invariant: {phrase}")
+
     return errors
 
 
@@ -198,8 +235,8 @@ def main() -> int:
             print(f"ERROR: {error}")
         return 1
     print(
-        "Nerva E0 verification ledger is consistent: 5 accepted control slices, "
-        "5 blocked first slices, E0 still VERIFYING."
+        "Nerva E0 verification ledger is consistent: 6 accepted control slices, "
+        "2 reconciled issue bodies, 5 blocked first slices, E0 still VERIFYING."
     )
     return 0
 
