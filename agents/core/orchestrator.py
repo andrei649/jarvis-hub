@@ -1202,7 +1202,9 @@ class Orchestrator:
                 if result:
                     await self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
                     if on_token:
-                        on_token(result)
+                        emitted = on_token(result)
+                        if inspect.isawaitable(emitted):
+                            await emitted
                     self.last_cognition = {
                         "scoring": [],
                         "decision": {
@@ -1224,7 +1226,9 @@ class Orchestrator:
                 if reply:
                     await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
                     if on_token:
-                        on_token(reply)
+                        emitted = on_token(reply)
+                        if inspect.isawaitable(emitted):
+                            await emitted
                     self.last_cognition = self._control_cognition(llm_ctl[0])
                     return reply
 
@@ -1255,6 +1259,11 @@ class Orchestrator:
         # `target` is empty (e.g. _route_candidates returns nothing).
         agent_id = None
         route_name = ""
+        # ch02-G1: the per-agent route/latency maps are PER TURN. Before this
+        # reset, a stream turn inherited whatever map the previous (non-stream)
+        # turn left behind, mislabeling locality for agents it never ran.
+        self._last_routes = {}
+        self._last_latencies = {}
         t_s0 = time.perf_counter()
         for agent_id in target:
             if agent_id in self.agents:
@@ -1352,13 +1361,17 @@ class Orchestrator:
                     msg = LOCAL_SELECTION_UNAVAILABLE_REPLY
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream-local")
                     if on_token:
-                        on_token(msg)
+                        emitted = on_token(msg)
+                        if inspect.isawaitable(emitted):
+                            await emitted
                     return msg
                 except RuntimeError:
                     msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")
                     if on_token:
-                        on_token(msg)
+                        emitted = on_token(msg)
+                        if inspect.isawaitable(emitted):
+                            await emitted
                     return msg
 
                 t_s0 = time.perf_counter()
@@ -1374,7 +1387,38 @@ class Orchestrator:
                         on_token=on_token,
                     )
                 synthesized = response
+                self._last_routes[agent_id] = route_name or ""
+                self._last_latencies[agent_id] = (time.perf_counter() - t_s0) * 1000
                 break
+
+        # ch02-G1: fan out to the remaining routed agents and synthesize. The
+        # primary streamed live above; secondaries run through the same parallel
+        # path the non-stream turn uses (per-agent timeout, failure markers,
+        # per-agent route/latency maps), and the SEC-B1-floored merge becomes
+        # the final text — the SSE `end` event replaces the bubble with it, so
+        # the HUD needs no changes. Single-agent turns take none of this path.
+        responder_id = agent_id
+        secondaries = (
+            [aid for aid in target if aid != agent_id and aid in self.agents]
+            if agent_id
+            else []
+        )
+        if secondaries:
+            primary_route = route_name or ""
+            primary_latency = self._last_latencies.get(agent_id, 0.0)
+            secondary_responses = await self._call_agents_parallel(
+                secondaries, text, intent.context, plugin_data
+            )
+            # _call_agents_parallel rebuilds both per-agent maps — re-insert the
+            # primary so _record_interactions scores it with its real route.
+            self._last_routes[agent_id] = primary_route
+            self._last_latencies[agent_id] = primary_latency
+            responses = {agent_id: synthesized, **secondary_responses}
+            synthesized = await self._synthesize(responses, intent)
+            _stream_responses = responses
+            responder_id = "jarvis"
+        else:
+            _stream_responses = {agent_id: synthesized} if agent_id else {}
 
         # Truncated-before-answer (or otherwise empty) replies must not surface
         # as a blank bubble. The backend already refuses to leak raw reasoning,
@@ -1385,7 +1429,6 @@ class Orchestrator:
                 emitted = on_token(synthesized)
                 if inspect.isawaitable(emitted):
                     await emitted
-        _stream_responses = {agent_id: synthesized} if agent_id else {}
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
         await self._complete_llm_turn(
             text=text,
@@ -1393,10 +1436,10 @@ class Orchestrator:
             plugin_data=plugin_data,
             responses=_stream_responses,
             synthesized=synthesized,
-            responder_id=agent_id,
+            responder_id=responder_id,
             route_name=route_name,
             channel=channel,
-            action_taken=f"handle_input_stream({agent_id}) via {channel}",
+            action_taken=f"handle_input_stream({responder_id}) via {channel}",
             t_classify=t_classify,
             t_route=t_route,
             t_plugin=t_plugin,

@@ -791,6 +791,12 @@ Observations only — no code was changed. Every pointer is `file:line` at the r
   `route_name` is computed **once for the primary agent** (`orchestrator.py:1053-1055`) and then recorded
   for *every* agent in the response set (`orchestrator.py:2164-2172`), so a mixed local+cloud fan-out
   mislabels locality in `run_history` and therefore in `GET /api/analytics/locality`.
+  **FIXED 2026-08-02** — the stream path now streams the primary live, fans the remaining routed
+  agents through `_call_agents_parallel` (per-agent timeout + failure markers), and delivers the
+  SEC-B1-floored `_synthesize` merge as the final text (the SSE `end` event replaces the bubble, so
+  the HUD needed no change). Per-agent route/latency maps are reset per turn and carry each agent's
+  real route (the stale-map cross-turn leak is regression-pinned). Four latent non-awaited
+  `on_token` emits fixed alongside. `tests/test_ch02_g1_stream_fanout.py`.
 - **G2 — The provenance chip can never be truthful about plugins or locality.** `last_cognition` is
   `{scoring, decision, trace}` only (`agents/core/cognition_trace.py:66-70`), but the HUD reads
   `cog.plugins || dloc.plugins` and `dloc.local` (`frontend/src/app.tsx:280-282`). Both are always
