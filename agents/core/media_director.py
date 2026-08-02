@@ -767,6 +767,8 @@ class MediaDirector:
         catalog=None,
         browser=None,
         clock=None,
+        presence=None,
+        presence_room: str = "",
     ) -> None:
         self.registry = (
             registry
@@ -782,9 +784,40 @@ class MediaDirector:
         self._catalog = catalog
         self._browser = browser
         self._clock = clock or time.time
+        # A8-ii: `presence` is a lazy zero-arg callable returning the owner
+        # presence store (or None) — lazy because the route-owned director is
+        # built before the orchestrator may exist. `presence_room` is the
+        # owner's configured desk room; blank keeps presence:auto default-off.
+        self._presence = presence
+        self._presence_room = str(presence_room or "").strip()
 
     def driver_for(self, device: MediaDevice) -> MediaDriver:
         return self._drivers.get(device.kind, self._null)
+
+    def _resolve_presence_target(self, mode: str) -> MediaDevice:
+        """``presence:auto`` → the owner's room default, on a FRESH present signal.
+
+        The owner-presence store (H34.2) supplies the temporal gate only — it
+        deliberately carries no room. The spatial half is the owner-configured
+        presence room; both must hold or the refusal is ``presence_unknown``
+        (a guess about where the owner is would be a lie). Room-level refusals
+        (``room_media_target_missing``/``ambiguous_room_media_target``) pass
+        through from resolve_room_default unchanged.
+        """
+        room = self._presence_room
+        try:
+            store = self._presence() if callable(self._presence) else self._presence
+        except Exception:
+            store = None
+        if store is None or not room:
+            raise MediaError("presence_unknown")
+        try:
+            snapshot = store.snapshot()
+        except Exception:
+            raise MediaError("presence_unknown") from None
+        if getattr(snapshot, "stale", True) or getattr(snapshot, "state", "") != "present":
+            raise MediaError("presence_unknown")
+        return self.registry.resolve_room_default(room, mode=mode)
 
     @staticmethod
     def _supports_duration(driver: MediaDriver) -> bool:
@@ -894,7 +927,14 @@ class MediaDirector:
                 catalog=self._catalog,
                 browser=self._browser,
             )
-            device = self.registry.resolve_target(str(payload["target"]))
+            target = str(payload["target"])
+            # A8-ii: the sentinel is branched BEFORE resolve_target so a
+            # registered device id can never shadow it; every other target
+            # string resolves exactly as before.
+            if target == "presence:auto":
+                device = self._resolve_presence_target(str(payload.get("mode", "play")))
+            else:
+                device = self.registry.resolve_target(target)
         except MediaError as exc:
             refusal = {"ok": False, "reason": exc.reason}
             if exc.detail is not None:

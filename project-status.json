@@ -164,7 +164,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "4fe3f003bb0988151cb0ef5b1086d0575f72381a",
+  "latest_ci_commit": "db1f03918d33cec4c9aae65eea613136d2bb34a0",
   "open_release_gates": [
     {
       "id": "A1",
@@ -203,7 +203,7 @@
     },
     {
       "id": "A8",
-      "name": "**AI-OS v1 owner-host proof** — complete `docs/MANUAL_TESTING.md` §N on real hardware: installed Playwright Chromium + Windows UIA browser/desktop actuation; real Home Assistant state + device/room/occupant/presence graph + governed device actuation; consented Frigate event → house/memory/ambient flow; presence-aware Media Director delivery on ≥2 non-chat output surfaces/device classes; one approved acquisition→reuse loop. Record redacted audit/task/device evidence; hermetic reality packs alone do not clear this gate. **⚠️ Parts of §N are not runnable as written (#728), being unblocked by the finish-line run:** ✅ **A8-i done 2026-08-02** — the H32 acquisition loop now has a product trigger, `POST /api/acquisition/{request_id}/drive` (admin; reuse-first, honest `_degraded` refusals; AIO-038 rewritten to use it, no Python shell). ✅ **A8-iii done 2026-08-02** — `JARVIS_MEDIA_DRIVERS=local_file` binds the shipped `LocalFileMediaDriver` (real durable state through the present/verify/restore/duration rails; kind `local`; whole-list fail-closed registry in `_get_director()`; the audible/visible half still needs owner hardware). Still open: no presence→media-target binding (A8-ii, queued C4) and `ungoverned_actions == 0` is measurable only inside the hermetic reality packs (A8-iv, stretch QA4). Full list with `file:line` in that chapter's **Open gaps**; media-hardware purchase can be scheduled once C3/C4 merge.",
+      "name": "**AI-OS v1 owner-host proof** — complete `docs/MANUAL_TESTING.md` §N on real hardware: installed Playwright Chromium + Windows UIA browser/desktop actuation; real Home Assistant state + device/room/occupant/presence graph + governed device actuation; consented Frigate event → house/memory/ambient flow; presence-aware Media Director delivery on ≥2 non-chat output surfaces/device classes; one approved acquisition→reuse loop. Record redacted audit/task/device evidence; hermetic reality packs alone do not clear this gate. **⚠️ Parts of §N are not runnable as written (#728), being unblocked by the finish-line run:** ✅ **A8-i done 2026-08-02** — the H32 acquisition loop now has a product trigger, `POST /api/acquisition/{request_id}/drive` (admin; reuse-first, honest `_degraded` refusals; AIO-038 rewritten to use it, no Python shell). ✅ **A8-iii done 2026-08-02** — `JARVIS_MEDIA_DRIVERS=local_file` binds the shipped `LocalFileMediaDriver` (real durable state through the present/verify/restore/duration rails; kind `local`; whole-list fail-closed registry in `_get_director()`; the audible/visible half still needs owner hardware). ✅ **A8-ii done 2026-08-02** — `target:\"presence:auto\"` resolves the owner room's default device, gated on a FRESH `present` signal from the H34.2 owner-presence store (temporal) + `JARVIS_MEDIA_PRESENCE_ROOM` (spatial, default-off); idle/away/stale/unset → honest `presence_unknown`; a registered device id can never shadow the sentinel. Still open: `ungoverned_actions == 0` is measurable only inside the hermetic reality packs (A8-iv, stretch QA4). Full list with `file:line` in that chapter's **Open gaps**; media-hardware purchase can be scheduled once C3/C4 merge.",
       "status": "⬜ **blocking owner/live gate**"
     },
     {
@@ -214,7 +214,7 @@
   ],
   "routes": 405,
   "tests": {
-    "backend": 5695,
+    "backend": 5702,
     "frontend": 408,
     "mobile": 96
   },

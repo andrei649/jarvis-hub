@@ -305,3 +305,16 @@ def test_route_owned_director_binds_configured_drivers_and_defaults_off(monkeypa
     monkeypatch.setenv("JARVIS_MEDIA_DRIVERS", "local_file,nope")
     monkeypatch.setattr(media_routes, "_director", None)
     assert media_routes._get_director()._drivers == {}
+
+
+def test_route_owned_director_binds_the_presence_room_knob(monkeypatch):
+    """A8-ii: JARVIS_MEDIA_PRESENCE_ROOM feeds presence:auto; unset = default-off."""
+    monkeypatch.setenv("JARVIS_MEDIA_PRESENCE_ROOM", "  study  ")
+    monkeypatch.setattr(media_routes, "_director", None)
+    director = media_routes._get_director()
+    assert director._presence_room == "study"
+    assert callable(director._presence)
+
+    monkeypatch.delenv("JARVIS_MEDIA_PRESENCE_ROOM")
+    monkeypatch.setattr(media_routes, "_director", None)
+    assert media_routes._get_director()._presence_room == ""

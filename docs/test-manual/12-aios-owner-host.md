@@ -399,7 +399,9 @@ plus `JARVIS_UNIFIED_ACTION_API` and `JARVIS_ACTION_KERNEL` for the facade, `JAR
 for `url` content, `JARVIS_MEDIA_CATALOG` for `catalog`/`query` content, and
 `JARVIS_MEDIA_DRIVERS` (comma-separated driver names; today `local_file`) to bind real drivers —
 unset keeps every kind on the honest `NullMediaDriver` refusal; one unknown name fails the whole
-list closed. Media env changes need a restart (the director is a process-lifetime singleton).
+list closed — and `JARVIS_MEDIA_PRESENCE_ROOM` (a room name) to enable the `presence:auto`
+target (unset keeps it refusing `presence_unknown`). Media env changes need a restart (the
+director is a process-lifetime singleton).
 
 **Wiring a real media driver (A8-iii):** a driver is a plain class satisfying the `MediaDriver`
 protocol (`media_director.py` — `supports_duration` attr + `play(device, content, *,
@@ -415,13 +417,20 @@ state under `data_path("media")/now_playing.json` that really flips to `idle` pa
 duration — but produces **no sound or image**, so AIO-032/033's audible/visible halves stay a
 SKIP on it; it exists so the rail is provable before you buy hardware.
 
-**Read this before writing your steps.** The shipped `MediaDirector` has **no automatic
-presence→target binding**. Two real resolution paths exist: (a) `registry.resolve_target(target)`,
-which accepts a device id **or a room name with a unique match** (`media_director.py:361-374`), and
-(b) `registry.resolve_room_default(room, mode)`, used only by the room-aware voice path
-(`agents/core/voice/wyoming.py:75`). So "presence-aware" is proved as: *read the occupied room from
-the live house presence projection, target that room by name, and show the resolver picks the
-occupied room's device.* Do not write a step that implies the director reads presence by itself.
+**Read this before writing your steps.** Three real resolution paths exist: (a)
+`registry.resolve_target(target)`, which accepts a device id **or a room name with a unique
+match**; (b) `registry.resolve_room_default(room, mode)`, used by the room-aware voice path
+(`agents/core/voice/wyoming.py`); and (c) **`target: "presence:auto"` (A8-ii)** — the director
+resolves the owner's configured room's default device, but ONLY on a **fresh `present` signal**
+from the H34.2 owner-presence store (the desk daemon posting `POST /api/presence/owner`). The
+temporal gate is presence; the spatial half is `JARVIS_MEDIA_PRESENCE_ROOM` — the store
+deliberately carries no room, and the house-graph presence projection is deliberately NOT
+consulted (structurally empty in production — GAP-9). Idle/away/unknown/stale presence, a missing
+store, or an unset room all refuse `presence_unknown`; room-level refusals
+(`room_media_target_missing`/`ambiguous_room_media_target`) pass through unchanged, and a
+registered device id can never shadow the sentinel. Prove "presence-aware" as: *daemon reports
+`present` → `presence:auto` lands on the configured room's device; kill the daemon (or report
+`away`) → the same call refuses `presence_unknown`.*
 
 #### AIO-030 — Device registry holds two real classes, in rooms  🖥
 - **Surface:** `POST /api/media/devices` (admin) · `GET /api/media/devices` (user) · **Auto:** ✅tests/test_media_director_routes.py, ✅frontend/src/test/media-director-panel.test.tsx

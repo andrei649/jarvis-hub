@@ -137,6 +137,11 @@ bundle" button, or `POST /api/self-improvement/enable`:
   route refuses honestly (`_degraded {reason, needs}`) instead of sitting inert.
   Drive a captured gap end-to-end with `POST /api/acquisition/{request_id}/drive`
   (admin; A8-i — no Python shell needed anymore).
+- [ ] **Presence-aware media (A8-ii)** — for `target:"presence:auto"` set
+  `JARVIS_MEDIA_PRESENCE_ROOM=<your desk room>` in `.env` (plus the desk-presence
+  daemon posting `POST /api/presence/owner` — H34.2 install above). Unset, the
+  target refuses `presence_unknown`; it only ever fires on a fresh `present`
+  signal, so a dead daemon can never trigger media at a guessed location.
 - [ ] **`ambient.enabled`** — H33 Ambient Intelligence monitors over house/camera/
   digital signals (only meaningful once H30/H31 hardware is connected).
 - [ ] **`autonomy.tech_scout_enabled`** — the new Proactive Technology Scout: a
