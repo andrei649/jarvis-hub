@@ -1,7 +1,7 @@
 # Nerva 2.0 E0.3b2b — final durable-ledger reconciliation
 
 > Program: #757 · Epic: #758 · Blocker plan: #778  
-> Accepted-control base: `main@25eac3688830750be231c43ebacce889427c50cc`  
+> Accepted-control base: `main@13290b6a10f2bfce5b10a3bf57305777341c0909`  
 > Status: **VERIFYING** — this contract does not authorize E0 closure.
 
 ## Accepted E0 evidence
@@ -14,25 +14,31 @@
 | E0.3b1 | #785 | `a943514050a361cbd909761f05c7d9731e0f323e` | ORIZONT 27–33 ownership/reuse reconciliation and first slices |
 | E0.3b2a | #786 | `265a1c984822b059bfbf9449dacc2bde7554d225` | durable completion ledger and false-closure guard |
 | E0.3b2b-control | #787 | `25eac3688830750be231c43ebacce889427c50cc` | verification controls and this final reconciliation contract |
+| E0.3b2b-issues | #788 | `13290b6a10f2bfce5b10a3bf57305777341c0909` | reconciled #757/#758 posture and isolated the repository/#778 gates |
 
-## Repository-ledger block to preserve
+## Repository-ledger state
 
-`BACKLOG.md` and `STATUS.md` must state all of the following without rewriting historical ORIZONT delivery:
+`BACKLOG.md` and `STATUS.md` now contain one exact marker-bounded Nerva block each in draft #789.
+Together they state all of the following without rewriting historical ORIZONT delivery:
 
-1. E0 control architecture is accepted through #787.
-2. E0 is not closed until the exact final reconciliation diff and generated-status checks are independently accepted.
+1. E0 control architecture is accepted through #788.
+2. E0 remains `VERIFYING` until the exact diff, #778 body and required checks are independently accepted.
 3. #780, #781, #783 and #784 are the first parallel executable slices after E0 closure.
 4. #782 remains downstream of #781.
 5. None of #780–#784 is implemented merely because its issue exists.
 6. Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 7. Live kernel mediation evidence, real hardware proof and release evidence remain later gates, not E0 completion claims.
 
+The repository status generator was run normally, updating the tracked backend count from 5,731 to
+5,743 and synchronizing `project-status.json`, `README.md`, `NERVA.md`, `GO_LIVE_PLAN.md` and the
+volatile tokens in `STATUS.md`.
+
 ## Issue-ledger state
 
-- #757 body is reconciled with accepted controls through #787, E0 `VERIFYING` and the blocked first wave.
-- #758 body is reconciled with E0 `VERIFYING`, completed child-issue creation and the remaining durable-ledger gate.
-- #778 has a current factual progress update, but its long-form body still requires reconciliation from a complete source.
-- `BACKLOG.md` and `STATUS.md` remain unreconciled and are the next repository movement.
+- #757 body is reconciled with accepted controls through #788, E0 `VERIFYING` and the blocked first wave.
+- #758 body is reconciled with E0 `VERIFYING`, completed child-issue creation and the remaining #778/closure gate.
+- #778 has current factual progress comments, but its complete long-form body still requires safe reconciliation.
+- The repository-ledger diff is present in draft #789 and awaits independent integration.
 
 ## First implementation wave
 
@@ -46,21 +52,26 @@
 
 ## Independent E0 closure checklist
 
-- [ ] `BACKLOG.md` contains the reviewed current Nerva program block.
-- [ ] `STATUS.md` contains the reviewed current Nerva implementation snapshot.
+- [x] `BACKLOG.md` contains the reviewed candidate Nerva program block in draft #789.
+- [x] `STATUS.md` contains the reviewed candidate Nerva implementation snapshot in draft #789.
 - [x] #757 body records the accepted control and first-wave state.
 - [x] #758 body records E0 `VERIFYING` and the remaining closure gate.
 - [ ] #778 body agrees with both repository ledgers.
-- [ ] `scripts/status_sync.py --check` passes on the exact head.
-- [ ] Nerva roadmap and E0 completion checkers pass on the exact head.
+- [ ] `scripts/status_sync.py --check` passes on the final exact head.
+- [ ] The ledger migrator `--check` and both Nerva integrity checkers pass on the final exact head.
 - [ ] Full Linux/Windows CI, Security, CodeQL, Smoke, Code Health and park-list checks are green.
 - [ ] Independent integrator confirms no runtime or authority behavior changed.
 - [ ] Independent integrator explicitly changes E0 from `VERIFYING` to `DONE`.
 
 ## Non-claims
 
-This document does not claim that Cortex, Atlas, Episodes, Synapse SDK or Research Lab are implemented. It does not promote hermetic evidence to live capability, close owner/hardware gates, enable global autonomy or modify Ultron authority.
+This document does not claim that Cortex, Atlas, Episodes, Synapse SDK or Research Lab are implemented.
+It does not promote hermetic evidence to live capability, close owner/hardware gates, enable global
+autonomy or modify Ultron authority.
 
 ## Next action
 
-Apply the concise block above to `BACKLOG.md` and `STATUS.md`, reconcile the #778 body, run normal generated-status verification and submit the exact diff for an independent E0 closure decision. Only after that decision may #780, #781, #783 and #784 begin in parallel; #782 still waits for #781.
+Complete **E0.3b2b-778-body** from the full issue source without deleting its detailed blocker program.
+Then run normal generated-status verification, the exact ledger and Nerva checkers and all required CI,
+and submit the final exact diff for an independent E0 closure decision. Only after that decision may
+#780, #781, #783 and #784 begin in parallel; #782 still waits for #781.
