@@ -520,7 +520,7 @@ kill-switch chip that disagrees with `GET /api/security/kill-switch` — **BLOCK
 | ID | Check | Do | Expect | Fail | Auto |
 |----|-------|----|--------|------|------|
 | GOV-178 | Per-agent scope | `-d '{"engage":true,"scope":"steve"}'` | `GET /api/security/kill-switch` → `{"global":false,"halted":{"steve":{…}}}`; `authorize()` blocks scope `steve` and anything under `global`, but not other scopes (`capability.py` `is_halted`) | MAJOR | ✅ |
-| GOV-179 | **Note the coupling** | with only `scope:"steve"` engaged, run one autonomy tick | the worker's `_halted()` checks the **global** scope only (`worker.py:142-152` → `KillSwitch().is_halted()` default scope), so a per-agent halt does **not** stop the autonomy tick. Record as expected-current behaviour, MINOR-to-MAJOR depending on the owner's reading | MINOR | ⚠️ |
+| GOV-179 | Per-agent halt holds the tick too — **FIXED 2026-08-02** | with only `scope:"steve"` engaged, run one autonomy tick with approved tasks for steve and another agent | steve's tasks stay `approved` (held, summary `held:1`), the other agent's run; disengage → steve's run on the next tick. The worker checks `_halted(task.agent)` per task at the same kernel-independent seam and shares the orchestrator's live switch instance (a post-boot halt bites without a restart) | MAJOR if a halted agent's task executes | ✅tests/test_q6_autonomy_killswitch_scope_reaper.py |
 | GOV-180 | Halt survives a restart ⏱ | engage global, restart the server, `GET /api/security/kill-switch` | still `{"global":true,…}` and the worker still skips ticks — the state is persisted to `kill_switch.json` | **BLOCKER** if a restart silently releases the halt | ✅tests/test_h17_3_capability_killswitch.py |
 | GOV-181 | Disengage always works | with a halt engaged (and, if you have it, the action kernel enabled) | disengage succeeds — it is deliberately **not** kernel-mediated so a halt cannot brick its own release (`routers/security.py:160-165`) | **BLOCKER** if recovery is impossible | ✅ |
 | GOV-182 | Status read is open, write is admin | `GET` with no token → 200; `POST` with user token only → 401 | matches `route_auth.json` | **BLOCKER** if POST succeeds at user tier | ✅tests/test_route_auth_matrix.py |
@@ -615,7 +615,7 @@ condition says otherwise is the section's worst failure mode.
 | GOV-221 | Payee case/whitespace evasion | mandate payee `ACME SRL`, request `"  acme srl "` | denied `payee_not_allowed` — matching is exact after `strip()` (`payments.py:205`, `payee_ok`) | **BLOCKER** if allowed | ✅ |
 | GOV-222 | Clock skew vs mandate TTL | create a 60 s mandate, jump the system clock forward 1 h, request | `mandate_expired`; nothing pending | MAJOR if it is admitted | ⚠️ |
 | GOV-223 | Clock skew vs presence TTL | POST `away`, jump the clock forward past the TTL | `stale:true`, `away:false` | MAJOR | ✅ |
-| GOV-224 | Restart mid-operation ⏱ | kill the server while a task is `running` | on restart the task is still `running` and **stuck** (no reaper exists — see Open gaps). Confirm and record: severity **MAJOR**; the recovery path is a manual decision or a DB edit | MAJOR | ❌ |
+| GOV-224 | Restart mid-operation ⏱ — **reaper shipped 2026-08-02** | kill the server while a task is `running`; restart; wait out `autonomy.running_ttl_seconds` (default 3600; set it low to observe) | the next tick fails the stranded task with `result.error:"stuck_running_ttl"` + `stuck_since`, audits `autonomy.reaped`, and the summary counts it under `reaped` (never `ran`). In-process hangs are still the executor wall-time budget's job — the reaper exists for dead processes | MAJOR if a stranded `running` task survives past the TTL | ✅tests/test_q6_autonomy_killswitch_scope_reaper.py |
 | GOV-225 | Restart mid-payment | kill the server between approve and settle | on restart the payment is still `approved`, never auto-settles | **BLOCKER** if it settles by itself | ⚠️ |
 | GOV-226 | Concurrent mission step writes | two parallel `/steps/0/finish` calls with `max_steps:2` | `steps_used` increments at most twice; the budget is never bypassed; one call may 409 | MAJOR if `steps_used` exceeds `max_steps` | ⚠️ |
 | GOV-227 | Concurrent queue writes | 20 parallel `POST /autonomy/tasks` | 20 distinct ids, no `database is locked` 500s (WAL + a serialising lock, `queue.py:110-121`) | MAJOR | ⚠️ |
@@ -714,15 +714,17 @@ move, so re-grep before relying on one (see the note at the end).
    `{admin:true}`, so with `JARVIS_ADMIN_TOKEN` set they 401 as well. The honest empty state is *correct*
    behaviour, but a mode that is structurally unreachable is a gap. Severity: MAJOR (dead surface),
    COSMETIC as a truthfulness matter.
-9. **Per-agent kill-switch scope does not stop the autonomy tick.** `AutonomyWorker._halted()` calls
-   `KillSwitch().is_halted()` with the default `global` scope (`worker.py:142-152`), so
-   `POST /api/security/kill-switch {"scope":"steve"}` blocks `authorize()` for that scope but the worker
-   keeps executing steve's approved tasks. GOV-178/179. Severity: MINOR–MAJOR (owner call).
-10. **No queue expiry and no `running`-task reaper.** `TaskQueue` has no TTL: a blocked decision waits
-    forever, and a task left `running` by a crash has no legal transition back to `approved` other than a
-    successful/failed execution that will never happen (`_TRANSITIONS`, `queue.py:50-60`). Contrast with
-    the TTLs that *do* exist: mandates (`payments.py:163`), presence (`presence.py:58`), capability tokens
-    (`capability.py`). GOV-224. Severity: MAJOR for the stuck-`running` case.
+9. ~~Per-agent kill-switch scope does not stop the autonomy tick.~~ **FIXED 2026-08-02** — the tick
+   checks `_halted(task.agent)` per task (held ≠ lost: tasks stay `approved`), the global pre-check is
+   unchanged, fail-open on a broken switch is preserved, and the worker now shares the orchestrator's
+   own `KillSwitch` instance (the lazy fallback built a second store that never reloaded, so post-boot
+   halts were invisible until restart). GOV-178/179 updated.
+10. **Blocked decisions still wait forever** (deliberate — a pending approval is the owner's, not a
+    timer's). ~~No `running`-task reaper.~~ **FIXED 2026-08-02** — `TaskQueue.reap_stuck_running(ttl)`
+    fails crash-stranded `running` tasks past `autonomy.running_ttl_seconds` (default 3600, live-resynced
+    each tick like the sibling knobs) with `stuck_running_ttl` + an `autonomy.reaped` audit row, run at
+    the top of every tick — even under a halt, since honesty about a dead task is bookkeeping, not an
+    action. GOV-224 updated.
 11. **`presence_ttl` is not live-resynced.** `OwnerPresence` is built once at orchestrator construction
     (`orchestrator.py:366-368`); the autonomy tick resyncs mode/caps/budget but not the TTL
     (`autonomy_coordinator.py:134-155`). Changing `autonomy.presence_ttl` needs a restart — worth

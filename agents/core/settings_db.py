@@ -247,6 +247,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="cap_per_action",  value=50,     label="Money cap per action", kind="number"),
     dict(category="autonomy", key="daily_ceiling",   value=200,    label="Money daily ceiling",  kind="number"),
     dict(category="autonomy", key="interrupt_budget",value=4,      label="Urgent pushes per day", kind="number"),
+    dict(category="autonomy", key="running_ttl_seconds", value=3600, label="Stuck-running reaper TTL (s)", kind="number"),
     dict(category="autonomy", key="night_shift",     value=False,  label="Night shift enabled",  kind="toggle"),
     dict(category="autonomy", key="night_start",     value=23,     label="Night window start (h)", kind="number"),
     dict(category="autonomy", key="night_end",       value=6,      label="Night window end (h)", kind="number"),

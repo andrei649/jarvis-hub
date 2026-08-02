@@ -20,6 +20,7 @@ import logging
 import math
 import sqlite3
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -322,6 +323,40 @@ class TaskQueue:
                 params,
             ).fetchall()
         return [_row_to_task(r) for r in rows]
+
+    def reap_stuck_running(self, ttl_seconds: float, *, now: Optional[float] = None) -> list[Task]:
+        """Fail tasks stranded in RUNNING past ``ttl_seconds`` (crash mid-task).
+
+        A worker crash between the RUNNING transition and the terminal one
+        strands the task: ``runnable()`` selects APPROVED only, so nothing ever
+        picks it back up. ``updated_at`` is stamped by the RUNNING transition
+        (and again by ``increment_attempts`` moments later), so it is the
+        run-start marker. In-process hangs are already bounded by the executor's
+        wall-time budget — this reaper exists for dead processes.
+        """
+        ts = float(now) if now is not None else time.time()
+        cutoff = datetime.fromtimestamp(
+            ts - max(0.0, float(ttl_seconds)), tz=timezone.utc
+        ).isoformat()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tasks WHERE status='running' AND updated_at < ? ORDER BY id ASC",
+                (cutoff,),
+            ).fetchall()
+        reaped: list[Task] = []
+        for task in (_row_to_task(r) for r in rows):
+            reaped.append(
+                self.transition(
+                    task.id,
+                    TaskStatus.FAILED,
+                    result={
+                        "error": "stuck_running_ttl",
+                        "ttl_seconds": float(ttl_seconds),
+                        "stuck_since": task.updated_at,
+                    },
+                )
+            )
+        return reaped
 
     def runnable(self, limit: int = 10, max_tier: Optional[int] = None) -> list[Task]:
         """Approved tasks that have not exhausted their retry budget.

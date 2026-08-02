@@ -29,7 +29,7 @@ Status column = the committed ledger; update it inside each item's own sync comm
 | C1 | Q11 | `.env` token load order (ENV-039) | S | `agents/web.py` + env read sites | ✅ merged #749 |
 | C2 | QA1 | A8-i: acquisition-loop HTTP trigger + contract factory | M/L | `agents/core/routers/acquisition.py`, `agents/core/acquisition/runtime.py`, `agents/core/acquisition/llm_synth.py` | ✅ merged #750 |
 | C3 | Q15 | A8-iii: MediaDriver seam + `LocalFileMediaDriver` reference | M | `agents/core/routers/media_director.py`, `agents/core/media_director.py` | ✅ merged #751 |
-| C4 | QA2 | A8-ii: presence-aware media target (`presence:auto`) | M | same files as C3 → **serialize after C3** | ⬜ |
+| C4 | QA2 | A8-ii: presence-aware media target (`presence:auto`) | M | same files as C3 → **serialize after C3** | ✅ merged #753 |
 | C5 | Q1 | Streaming multi-agent synthesis + per-agent route_name | L | `agents/core/orchestrator.py` | ✅ merged #752 |
 | C6 | Q6 | Kill-switch per-agent scope in worker tick + stuck-`running` TTL reaper | M | `agents/core/autonomy/worker.py`, `agents/core/autonomy/queue.py` | ⬜ |
 | C7 | Q2 | Stream notes parity (same function as Q1 → after Q1 merges) | S | `agents/core/orchestrator.py` | ⬜ |

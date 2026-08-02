@@ -552,7 +552,7 @@ async def _probe_operator_durable_desktop_actuation() -> dict:
         proposal.get("reason") == "approval_required"
         and blocked_task is not None
         and bypass.get("reason") == "trusted_execution_required"
-        and summary == {"ran": 1, "done": 1, "failed": 0}
+        and summary == {"ran": 1, "done": 1, "failed": 0, "held": 0, "reaped": 0}
         and completed is not None
         and completed.status == "done"
         and completed.result.get("status") == "ok"

@@ -1,6 +1,18 @@
 # Changelog
 
 ## [Unreleased]
+### Q6 — kill-switch per-agent scope at the executor seam + stuck-RUNNING reaper (2026-08-02)
+- **A per-agent halt now holds that agent's tasks at the tick** (`_halted(task.agent)` per task,
+  same kernel-independent seam; held ≠ lost — tasks stay `approved` and run on release; summary
+  gains `held`). The global pre-check and fail-open-on-broken-switch semantics are unchanged.
+- **The worker now shares the orchestrator's own `KillSwitch` instance** — its lazy fallback
+  built a second store that never reloaded the file, so a halt engaged after boot never reached
+  the tick until a process restart (red-proven by revert-run).
+- **`TaskQueue.reap_stuck_running(ttl)`** fails crash-stranded `running` tasks past
+  `autonomy.running_ttl_seconds` (default 3600, live-resynced each tick, ≤0 disables) with
+  `stuck_running_ttl` + `stuck_since` and an `autonomy.reaped` audit row — run at the top of
+  every tick, even under a halt (honesty about a dead task is bookkeeping, not an action).
+  In-process hangs stay the executor wall-time budget's job; the reaper exists for dead processes.
 ### A8-ii — presence-aware media target `presence:auto` (2026-08-02)
 - **`target: "presence:auto"`** on `media.present` resolves the owner room's default device —
   gated on a **fresh `present` signal** from the H34.2 owner-presence store (the temporal half)
