@@ -95,12 +95,12 @@ privileged effect still crosses Ultron.
 | Contract | Owner | Existing substrate reused | Primary consumers | Authority |
 |---|---|---|---|---|
 | `nerva.observation.v1` | Atlas | `autonomy/observer.py`, scheduler and domain adapters | Atlas, Episodes, Night Shift | Evidence only |
-| `nerva.atlas.snapshot.v1` | Atlas | `memory/bitemporal.py`, memory KG routes | Cortex, Episodes, Howard, World Model, E12 | Read-only snapshot/query |
+| `nerva.atlas.snapshot.v1` | Atlas | `memory/bitemporal.py`, memory KG routes | Cortex, Episodes, Howard, World Model, Experience, E12 | Read-only snapshot/query |
 | `nerva.capability.v1` | Synapse | capability manifests + Capability Registry | Cortex, Research Lab, Experience | Describes; does not execute |
 | `nerva.decision.v1` | Cortex | orchestrator, router and bounded agent runtime | Night Shift, interactive runtime, Experience, E12 | Chooses route; does not authorize |
 | `nerva.action.v1` | Ultron | Action Kernel, policy, queue, worker and audit | Every privileged implementation | Sole privileged-action authority |
-| `nerva.episode.v1` | Episodes | LivingMemory, turn/fact stores, reflection inputs | Cortex, Howard, Reflection, World Model, E12 | Memory record only |
-| `nerva.lesson.v1` | Reflection | BackgroundReviewer and DailyReflector | Episodes, Howard, Synapse, E12, human review | Proposal until promoted |
+| `nerva.episode.v1` | Episodes | LivingMemory, turn/fact stores, reflection inputs | Cortex, Howard, Night Shift, Reflection, World Model, E12 | Memory record only |
+| `nerva.lesson.v1` | Reflection | BackgroundReviewer and DailyReflector | Episodes, Howard, Synapse, Experience, E12, human review | Proposal until promoted |
 | `nerva.preference.v1` | Howard | persona/cognition, feedback and approved history | Cortex, Experience, World Model | Prediction; never consent |
 | `nerva.work-run.v1` | Night Shift | missions, scheduler, task queue and worker | Experience, Reflection, Research Lab | Delegates actions to Ultron |
 | `nerva.scenario.v1` | World Model | Atlas snapshots and decision constraints | Owner/Cortex advisory use | Simulation only; no mutation |
