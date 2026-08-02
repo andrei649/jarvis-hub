@@ -42,6 +42,10 @@ updates to `project-status.json`, `README.md`, `NERVA.md`, `GO_LIVE_PLAN.md` and
 in `STATUS.md`. The tracked backend count moved from 5,731 to 5,743 because the new tests are now part
 of the collected suite.
 
+The complete #778 body is also reconciled through a separate authoritative snapshot and repository
+evidence in `E0_778_BODY_RECONCILIATION.md`; its B0–B10, M0–M8, metrics and anti-drift plan remain
+intact.
+
 ## Verification commands
 
 ```bash
@@ -57,11 +61,13 @@ runs the generated-status release gate and the Linux/Windows test suites.
 
 ## Explicit non-claims
 
-The applied ledger blocks do **not** reconcile the complete #778 body, close E0, unblock #780–#784 or
-implement any Nerva runtime capability. E0 closure remains a separate independent integrator decision
-after #778, exact-head generated-status checks and all required CI are accepted.
+The applied ledger blocks and issue reconciliation do **not** close E0, unblock #780–#784 or implement
+any Nerva runtime capability. E0 closure remains a separate independent integrator decision after the
+final exact-head generated-status checks and all required CI are accepted. Broader B2 whole-program
+manifest work and B3–B10 remain open.
 
 ## Next slice
 
-**E0.3b2b-778-body:** reconcile the complete #778 long-form body without deleting its blocker plan,
-then run exact-head checks and request an independent E0 closure review.
+**E0.3b2b-independent-closure:** independently review the complete #789 diff, the reconciled #778 body,
+all exact-head checks and authority/dependency boundaries. The builder must not merge, close E0 or
+start downstream implementation.
