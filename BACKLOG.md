@@ -27,6 +27,11 @@ python -m pytest tests/ -v          # ~5,675 collected (counter synced via scrip
 > fost eliminat în CLN-1; Spotify (H2.5) **funcționează** via `skills/spotify/main.py`, acoperit
 > de `tests/test_spotify_skill.py`.)
 
+**Rulare autonomă (10h):** coada aprobată + protocolul complet + promptul de shift sunt în
+[`docs/superpowers/plans/2026-08-01-finish-line-plan.md`](docs/superpowers/plans/2026-08-01-finish-line-plan.md)
+— A8-unblockers întâi (trigger achiziție · seam MediaDriver · presence→media · Q1 stream-synthesis);
+statusul per item se ține în tabelul §3 al planului, nu aici.
+
 **După modificări JS/CSS:** Ctrl+F5 în browser (cache bust).
 **După modificări Python:** repornire server (Ctrl+C, re-execută comanda uvicorn).
 **Server curent** (dacă e pornit): PID vezi `netstat -ano | findstr ":8080 "`.
