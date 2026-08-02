@@ -3,6 +3,8 @@ name: Nerva Roadmap Integrity
 on:
   pull_request:
     paths:
+      - "BACKLOG.md"
+      - "STATUS.md"
       - "docs/nerva2/ROADMAP_RECONCILIATION.md"
       - "docs/nerva2/ROADMAP_RECONCILIATION.json"
       - "docs/nerva2/E0_COMPLETION.md"
@@ -13,6 +15,8 @@ on:
   push:
     branches: [main]
     paths:
+      - "BACKLOG.md"
+      - "STATUS.md"
       - "docs/nerva2/ROADMAP_RECONCILIATION.md"
       - "docs/nerva2/ROADMAP_RECONCILIATION.json"
       - "docs/nerva2/E0_COMPLETION.md"
