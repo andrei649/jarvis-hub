@@ -148,8 +148,23 @@ async def widget_message(token: str, req: Request):
     message = (body or {}).get("message", "")
     if not message:
         return JSONResponse({"error": "message required"}, status_code=400)
+    # Q10: the embed is a PUBLIC door — route it through the governed gateway
+    # (per-channel rate limit, inbound taint + injection flags) instead of
+    # calling the orchestrator directly. No `sender=`: the pairing gate fails
+    # closed, and an anonymous visitor has no pairing to approve. Falls back to
+    # the orchestrator only when no gateway is running (pre-startup/unit).
     try:
-        reply = await orch.handle_input(message, channel="widget")
+        from agents.core.app_state import get_gateway
+
+        gw = get_gateway()
+        if gw is not None:
+            reply = await gw.route(message, channel="widget")
+            if reply is None:
+                # Gateway.route swallows handler failures into None; keep the
+                # embed's honest envelope instead of rendering "(no reply)".
+                return nocache_json({"reply": "", "error": "request failed"})
+        else:
+            reply = await orch.handle_input(message, channel="widget")
         return nocache_json({"reply": reply})
     except Exception as e:
         return error_json(e, 200, "request failed", extra={"reply": ""})

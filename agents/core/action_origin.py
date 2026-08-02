@@ -17,10 +17,12 @@ INTERNAL_TURN_CHANNELS = frozenset({
     "builder",
     "room",
     "arena",
-    "widget",
     "workflow",
     "internal",
 })
+# NOTE (Q10 / ch11 CHN-061): `widget` is deliberately NOT internal. The embed
+# endpoint is tier `open` — the text comes from an anonymous visitor on someone
+# else's website, so it classifies `inbound` like any other external door.
 TRUSTED_TURN_CHANNELS = OPERATOR_TURN_CHANNELS | INTERNAL_TURN_CHANNELS
 DEFAULT_ACTION_ORIGIN = "generated"
 INBOUND_ACTION_ORIGIN = "inbound"

@@ -18,7 +18,6 @@ def test_origin_for_channel_keeps_operator_and_internal_turns_trusted():
         "builder",
         "room",
         "arena",
-        "widget",
         "workflow",
         "internal",
     }
@@ -26,7 +25,9 @@ def test_origin_for_channel_keeps_operator_and_internal_turns_trusted():
     for channel in trusted_channels:
         assert action_origin.origin_for_channel(channel) == action_origin.DEFAULT_ACTION_ORIGIN
 
-    for channel in {"webhook", "mcp", "telegram", "discord", "slack", "email", "unknown", ""}:
+    # Q10: `widget` moved here — the embed is a PUBLIC door (ch11 CHN-061).
+    for channel in {"webhook", "mcp", "telegram", "discord", "slack", "email",
+                    "widget", "unknown", ""}:
         assert action_origin.origin_for_channel(channel) == action_origin.INBOUND_ACTION_ORIGIN
 
 
