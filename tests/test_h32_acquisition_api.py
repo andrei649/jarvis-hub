@@ -173,4 +173,5 @@ def test_router_declares_complete_user_admin_surface():
         "/api/acquisition/ledger/purge",
         "/api/acquisition/{name}/revoke",
         "/api/acquisition/{name}/rollback",
+        "/api/acquisition/{request_id}/drive",
     }

@@ -223,6 +223,7 @@
   "POST /api/acquisition/ledger/purge",
   "POST /api/acquisition/{name}/revoke",
   "POST /api/acquisition/{name}/rollback",
+  "POST /api/acquisition/{request_id}/drive",
   "POST /api/actions/request",
   "POST /api/actions/{action_id}/decide",
   "POST /api/admin/backup",
