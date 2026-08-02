@@ -1,8 +1,8 @@
 # Nerva 2.0 E0.3b2b — final durable-ledger reconciliation
 
 > Program: #757 · Epic: #758 · Blocker plan: #778  
-> Base: `main@265a1c984822b059bfbf9449dacc2bde7554d225`  
-> Status: **VERIFYING** — this slice prepares, but does not itself authorize, E0 closure.
+> Accepted-control base: `main@25eac3688830750be231c43ebacce889427c50cc`  
+> Status: **VERIFYING** — this contract does not authorize E0 closure.
 
 ## Accepted E0 evidence
 
@@ -13,18 +13,26 @@
 | E0.3a | #779 | `ab177c5501eeea379b66d9d33a1ed895a322e934` | evidence-grounded risk register and stop-ship invariants |
 | E0.3b1 | #785 | `a943514050a361cbd909761f05c7d9731e0f323e` | ORIZONT 27–33 ownership/reuse reconciliation and first slices |
 | E0.3b2a | #786 | `265a1c984822b059bfbf9449dacc2bde7554d225` | durable completion ledger and false-closure guard |
+| E0.3b2b-control | #787 | `25eac3688830750be231c43ebacce889427c50cc` | verification controls and this final reconciliation contract |
 
 ## Repository-ledger block to preserve
 
 `BACKLOG.md` and `STATUS.md` must state all of the following without rewriting historical ORIZONT delivery:
 
-1. E0 control architecture is accepted through #786.
+1. E0 control architecture is accepted through #787.
 2. E0 is not closed until the exact final reconciliation diff and generated-status checks are independently accepted.
 3. #780, #781, #783 and #784 are the first parallel executable slices after E0 closure.
 4. #782 remains downstream of #781.
 5. None of #780–#784 is implemented merely because its issue exists.
 6. Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 7. Live kernel mediation evidence, real hardware proof and release evidence remain later gates, not E0 completion claims.
+
+## Issue-ledger state
+
+- #757 body is reconciled with accepted controls through #787, E0 `VERIFYING` and the blocked first wave.
+- #758 body is reconciled with E0 `VERIFYING`, completed child-issue creation and the remaining durable-ledger gate.
+- #778 has a current factual progress update, but its long-form body still requires reconciliation from a complete source.
+- `BACKLOG.md` and `STATUS.md` remain unreconciled and are the next repository movement.
 
 ## First implementation wave
 
@@ -40,12 +48,14 @@
 
 - [ ] `BACKLOG.md` contains the reviewed current Nerva program block.
 - [ ] `STATUS.md` contains the reviewed current Nerva implementation snapshot.
-- [ ] #757, #758 and #778 bodies agree with both repository ledgers.
+- [x] #757 body records the accepted control and first-wave state.
+- [x] #758 body records E0 `VERIFYING` and the remaining closure gate.
+- [ ] #778 body agrees with both repository ledgers.
 - [ ] `scripts/status_sync.py --check` passes on the exact head.
 - [ ] Nerva roadmap and E0 completion checkers pass on the exact head.
 - [ ] Full Linux/Windows CI, Security, CodeQL, Smoke, Code Health and park-list checks are green.
 - [ ] Independent integrator confirms no runtime or authority behavior changed.
-- [ ] Independent integrator explicitly changes E0 from `BUILDING/VERIFYING` to `DONE`.
+- [ ] Independent integrator explicitly changes E0 from `VERIFYING` to `DONE`.
 
 ## Non-claims
 
@@ -53,4 +63,4 @@ This document does not claim that Cortex, Atlas, Episodes, Synapse SDK or Resear
 
 ## Next action
 
-Apply the concise block above to `BACKLOG.md` and `STATUS.md`, reconcile issue bodies, run normal generated-status verification and submit the exact diff for an independent E0 closure decision. Only after that decision may #780, #781, #783 and #784 begin in parallel; #782 still waits for #781.
+Apply the concise block above to `BACKLOG.md` and `STATUS.md`, reconcile the #778 body, run normal generated-status verification and submit the exact diff for an independent E0 closure decision. Only after that decision may #780, #781, #783 and #784 begin in parallel; #782 still waits for #781.
