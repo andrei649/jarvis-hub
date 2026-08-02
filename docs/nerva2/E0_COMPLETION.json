@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "snapshot_commit": "a943514050a361cbd909761f05c7d9731e0f323e",
+  "program_issue": 757,
+  "epic_issue": 758,
+  "slice": "E0.3b2a",
+  "status": "building",
+  "close_e0": false,
+  "purpose": "Record the accepted E0 control slices, the bounded first implementation wave, and the exact durable-ledger work that still blocks E0 closure without promoting legacy ORIZONT delivery to Nerva completion.",
+  "accepted_control_slices": [
+    {
+      "slice": "E0.1",
+      "pull_request": 771,
+      "merge_commit": "288412086439e5a02c08fcf8e575944c9b81f96c",
+      "artifacts": [
+        "docs/nerva2/BASELINE.md",
+        "docs/nerva2/REUSE_BUILD_RETIRE.md"
+      ]
+    },
+    {
+      "slice": "E0.2",
+      "pull_request": 772,
+      "merge_commit": "8b8e64d599262f15334ce547b7adfa3c042a7a78",
+      "artifacts": [
+        "docs/nerva2/DEPENDENCIES.md",
+        "docs/nerva2/CONTRACT_REGISTRY.json",
+        "docs/nerva2/HYBRID_COGNITION_BOUNDARY.md"
+      ]
+    },
+    {
+      "slice": "E0.3a",
+      "pull_request": 779,
+      "merge_commit": "ab177c5501eeea379b66d9d33a1ed895a322e934",
+      "artifacts": [
+        "docs/nerva2/RISKS.md"
+      ]
+    },
+    {
+      "slice": "E0.3b1",
+      "pull_request": 785,
+      "merge_commit": "a943514050a361cbd909761f05c7d9731e0f323e",
+      "artifacts": [
+        "docs/nerva2/ROADMAP_RECONCILIATION.md",
+        "docs/nerva2/ROADMAP_RECONCILIATION.json"
+      ]
+    }
+  ],
+  "first_executable_slices": [
+    {
+      "epic": "E1",
+      "issue": 780,
+      "blocked_by": [758],
+      "authority": "shadow_no_action"
+    },
+    {
+      "epic": "E2",
+      "issue": 781,
+      "blocked_by": [758],
+      "authority": "read_only_state"
+    },
+    {
+      "epic": "E3",
+      "issue": 782,
+      "blocked_by": [758, 781],
+      "authority": "memory_record_only"
+    },
+    {
+      "epic": "E8",
+      "issue": 783,
+      "blocked_by": [758],
+      "authority": "description_only"
+    },
+    {
+      "epic": "E9",
+      "issue": 784,
+      "blocked_by": [758],
+      "authority": "evaluation_only"
+    }
+  ],
+  "repository_ledgers": {
+    "BACKLOG.md": {
+      "state": "reconciliation_pending",
+      "existing_truth": "Legacy ORIZONT 27-33 delivery history and NERVA_VISION references are present.",
+      "required_change": "Add a concise current Nerva E0/E1/E2/E3/E8/E9 program block that points to the accepted control artifacts and issues #780-#784 without rewriting historical delivery records."
+    },
+    "STATUS.md": {
+      "state": "reconciliation_pending",
+      "existing_truth": "The implementation snapshot distinguishes the 1.0 destination and ORIZONT 27-33 capability program.",
+      "required_change": "Add a current Nerva program snapshot that keeps E0 BUILDING, names accepted control slices and lists #780-#784 as blocked, not implemented."
+    }
+  },
+  "issue_ledgers": [757, 758, 778],
+  "closure_requirements": [
+    "BACKLOG.md and STATUS.md contain reviewed durable Nerva program blocks.",
+    "Issue bodies #757, #758 and #778 agree with the repository ledgers and first executable slices.",
+    "The normal status generator/check and all required CI workflows are green on the exact head.",
+    "An independent integrator accepts the final diff and explicitly marks E0 complete.",
+    "No first-wave production implementation begins before E0 closure."
+  ],
+  "next_slice": "E0.3b2b — direct BACKLOG.md and STATUS.md reconciliation, normal generated-status verification, and independent E0 closure decision"
+}
