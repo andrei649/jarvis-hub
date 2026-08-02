@@ -26,8 +26,8 @@ Status column = the committed ledger; update it inside each item's own sync comm
 
 | Cycle | ID | Item | Size | Primary files | Status |
 |---|---|------|------|---------------|--------|
-| C1 | Q11 | `.env` token load order (ENV-039) | S | `agents/web.py` + env read sites | ⬜ |
-| C2 | QA1 | A8-i: acquisition-loop HTTP trigger + contract factory | M/L | `agents/core/routers/acquisition.py`, `agents/core/acquisition/runtime.py`, `agents/core/acquisition/llm_synth.py` | ⬜ |
+| C1 | Q11 | `.env` token load order (ENV-039) | S | `agents/web.py` + env read sites | ✅ merged #749 |
+| C2 | QA1 | A8-i: acquisition-loop HTTP trigger + contract factory | M/L | `agents/core/routers/acquisition.py`, `agents/core/acquisition/runtime.py`, `agents/core/acquisition/llm_synth.py` | ✅ merged #750 |
 | C3 | Q15 | A8-iii: MediaDriver seam + `LocalFileMediaDriver` reference | M | `agents/core/routers/media_director.py`, `agents/core/media_director.py` | ⬜ |
 | C4 | QA2 | A8-ii: presence-aware media target (`presence:auto`) | M | same files as C3 → **serialize after C3** | ⬜ |
 | C5 | Q1 | Streaming multi-agent synthesis + per-agent route_name | L | `agents/core/orchestrator.py` | ⬜ |
@@ -96,6 +96,7 @@ Status column = the committed ledger; update it inside each item's own sync comm
 8. **status_sync JS counts** — `--reuse-js-counts` unless JS tests changed; the full run needs `npm ci` in both `frontend/` and `mobile/`.
 9. **Reality-lane semantics** — `JARVIS_REALITY_HARNESS=1` un-skips live cases and owner-live probes fail honestly without opt-in → count assertions must be lane-aware.
 10. **Never mass-format** — ruff-format nonconformance pre-exists repo-wide; `ruff check` only, on touched files.
+11. **CodeQL gates the merge via a repository rule** — a fully green CI can still refuse to merge ("1 security relevant alert"; auto-merge just waits). The alert is named nowhere in CI logs — reason it out from the *scanned* diff (tests are paths-ignored per `.github/codeql/codeql-config.yml`). Exception text in an HTTP body (`str(exc)` in a response, #750) is `py/stack-trace-exposure` → constant `reason` strings only, specifics to the server log.
 
 ## 8. Failure / stop protocol
 

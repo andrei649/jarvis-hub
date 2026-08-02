@@ -70,6 +70,23 @@ def _configured_url_allowlist(env=None) -> list[str]:
     return domains
 
 
+def _configured_drivers(env=None) -> dict:
+    """A8-iii: resolve JARVIS_MEDIA_DRIVERS (e.g. ``local_file``) to real drivers.
+
+    Same whole-list fail-closed discipline as the sibling media env knobs — any
+    unknown name yields ``{}`` so an unset/typo'd config keeps every device on
+    the honest NullMediaDriver refusal. Env-only (not a settings key) because
+    the director is a process-lifetime singleton; media env changes need a
+    restart and a live-editable setting would lie about that."""
+    from agents.core.env_config import env_str
+    from agents.core.media_director import build_drivers
+
+    raw = (
+        env_str("JARVIS_MEDIA_DRIVERS") if env is None else str(env.get("JARVIS_MEDIA_DRIVERS", ""))
+    )
+    return build_drivers(raw)
+
+
 def _get_director():
     global _director
     if _director is None:
@@ -83,6 +100,7 @@ def _get_director():
             browser=GovernedBrowser(
                 policy=BrowserPolicy(_configured_url_allowlist()),
             ),
+            drivers=_configured_drivers(),
         )
     return _director
 

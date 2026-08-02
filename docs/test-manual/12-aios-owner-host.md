@@ -396,7 +396,24 @@ Env: `JARVIS_MEDIA_DIRECTOR=1` (else every route answers
 `{"enabled":false,"hint":"set JARVIS_MEDIA_DIRECTOR=1 …"}`, `agents/core/routers/media_director.py:90-100`),
 plus `JARVIS_UNIFIED_ACTION_API` and `JARVIS_ACTION_KERNEL` for the facade, `JARVIS_MEDIA_ROOTS`
 (absolute, existing dirs, `os.pathsep`-separated) for `local` content, `JARVIS_MEDIA_URL_ALLOWLIST`
-for `url` content, `JARVIS_MEDIA_CATALOG` for `catalog`/`query` content.
+for `url` content, `JARVIS_MEDIA_CATALOG` for `catalog`/`query` content, and
+`JARVIS_MEDIA_DRIVERS` (comma-separated driver names; today `local_file`) to bind real drivers —
+unset keeps every kind on the honest `NullMediaDriver` refusal; one unknown name fails the whole
+list closed. Media env changes need a restart (the director is a process-lifetime singleton).
+
+**Wiring a real media driver (A8-iii):** a driver is a plain class satisfying the `MediaDriver`
+protocol (`media_director.py` — `supports_duration` attr + `play(device, content, *,
+duration_seconds=None)` / `pause` / `resume` / `stop` / `status`, each returning a dict; never
+raise — return `{"ok": False, "reason": …}`). The verify rail marks a present `verified: True`
+only when, after a truthy `play()`, `status()` reports `ok` + `state: "playing"` + the resolved
+`content.value` + (when requested) the exact `duration_seconds`. Register it in
+`BUILTIN_MEDIA_DRIVERS` (`media_director.py`) against one of the existing device kinds
+(`chromecast`/`spotify_connect`/`browser_tab`/`local`/`speaker`/`tv`) and name it in
+`JARVIS_MEDIA_DRIVERS`. The shipped **`local_file` → `local`** reference driver proves the
+*governed rail* — session board, restore, duration verification, the `verified` chip, durable
+state under `data_path("media")/now_playing.json` that really flips to `idle` past the declared
+duration — but produces **no sound or image**, so AIO-032/033's audible/visible halves stay a
+SKIP on it; it exists so the rail is provable before you buy hardware.
 
 **Read this before writing your steps.** The shipped `MediaDirector` has **no automatic
 presence→target binding**. Two real resolution paths exist: (a) `registry.resolve_target(target)`,
@@ -424,7 +441,7 @@ occupied room's device.* Do not write a step that implies the director reads pre
 #### AIO-032 — Governed present() on device class A, verified against the device itself  🖥👁🔑
 - **Surface:** `POST /api/media/present` · **Tier:** user · **Auto:** ✅tests/test_media_director.py, ✅tests/test_h29_media_reality.py
 - **Why it matters:** the §N clause "no absent-room or unverified outcome may be shown as success".
-- **Prereq:** a **real driver** wired for that kind. Out of the box `driver_for()` returns `NullMediaDriver`, which refuses honestly (`media_director.py:450-477`) — that is a SKIP, not a pass.
+- **Prereq:** a **real driver** wired for that kind. Out of the box `driver_for()` returns `NullMediaDriver`, which refuses honestly (`media_director.py:450-477`) — that is a SKIP, not a pass. Since A8-iii, `JARVIS_MEDIA_DRIVERS=local_file` binds the shipped reference driver to the `local` kind: it proves the governed present/verify/restore rail with real durable state, but it makes nothing audible or visible — the perceptual half of this proof still needs owner-wired hardware.
 - **Steps:** 1) Present a short, harmless clip: `-d '{"content":{"type":"local","value":"/abs/path/inside/JARVIS_MEDIA_ROOTS/chime.wav"},"target":"a8-kitchen","mode":"play","privacy":"household","urgency":"normal"}'`. 2) Listen/watch. 3) Read `GET /api/media/session`. 4) Read the MEDIA DIRECTOR card.
 - **Expected:** `{"enabled":true,"status":"completed","reason":…,"output":{"ok":true,"device":"a8-kitchen","content":{…},"verified":true,"verification":"driver-status-match"}}`. `verified` is **only** true when the driver's own `status()` reports `state:"playing"` with a matching `content.value` and matching duration (`media_director.py:790-796`). The card shows green `verified success · …` **only** for `status==='completed' && output.ok===true && output.verified===true`; if `verified` is false it shows amber `unverified · success not claimed` (`gap.tsx:88-97`). `GET /api/media/session` lists the session with `state:"playing"` and its `previous` snapshot.
 - **Also acceptable:** `{"status":"disabled","reason":"unified_action_api_disabled"}` / `"action_kernel_disabled"`; `{"output":{"ok":false,"state":"no_driver","reason":"no media driver wired for this device (host seam …)"}}` → card red `refused · <reason>`.

@@ -1,6 +1,15 @@
 # Changelog
 
 ## [Unreleased]
+### A8-iii — MediaDriver registry + the LocalFileMediaDriver reference driver (2026-08-02)
+- **`JARVIS_MEDIA_DRIVERS`** (env, comma-separated; whole-list fail-closed like the sibling media
+  knobs) binds real drivers into the route-owned `MediaDirector` — the `drivers=` seam existed on
+  the class but `_get_director()` never passed it, so `NullMediaDriver` was the only reachable
+  implementation and owner gate A8's media proof was unschedulable.
+- **`LocalFileMediaDriver`** (`local_file` → device kind `local`): durable now-playing state under
+  `data_path("media")/now_playing.json` that passes the full present/verify/restore rails and
+  really flips to `idle` past a declared duration. Honest limits documented: no sound or image —
+  it proves the governed rail before hardware is bought, not playback itself.
 ### fastapi 0.137 upgrade unblocked — route-introspection flattener (2026-06-19)
 - **`fastapi` bumped to `>=0.137.2,<0.138`** (+ `starlette>=0.46,<1.0`). fastapi 0.137 wraps
   `include_router` results in an opaque `_IncludedRouter` instead of flattening them into

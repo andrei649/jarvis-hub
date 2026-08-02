@@ -282,3 +282,26 @@ def test_present_route_binds_the_live_orchestrator_budget_per_request(client, mo
     assert allowed["output"]["ok"] is True
     assert fresh.remaining() == 0
     assert director._drivers["tv"].calls == ["play"]
+
+
+def test_route_owned_director_binds_configured_drivers_and_defaults_off(monkeypatch):
+    from agents.core.media_director import LocalFileMediaDriver, MediaDevice, NullMediaDriver
+
+    monkeypatch.setenv("JARVIS_MEDIA_DRIVERS", "local_file")
+    monkeypatch.setattr(media_routes, "_director", None)
+    director = media_routes._get_director()
+    assert set(director._drivers) == {"local"}
+    assert isinstance(director._drivers["local"], LocalFileMediaDriver)
+
+    # Unset (and any typo) keeps every kind on the honest NullMediaDriver refusal —
+    # the default-off invariant the hermetic reality pack depends on.
+    monkeypatch.delenv("JARVIS_MEDIA_DRIVERS", raising=False)
+    monkeypatch.setattr(media_routes, "_director", None)
+    bare = media_routes._get_director()
+    assert bare._drivers == {}
+    local_device = MediaDevice(id="l1", name="Local", kind="local", room="office")
+    assert isinstance(bare.driver_for(local_device), NullMediaDriver)
+
+    monkeypatch.setenv("JARVIS_MEDIA_DRIVERS", "local_file,nope")
+    monkeypatch.setattr(media_routes, "_director", None)
+    assert media_routes._get_director()._drivers == {}
