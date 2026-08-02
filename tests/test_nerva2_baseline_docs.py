@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = ROOT / "docs" / "nerva2" / "BASELINE.md"
 DISPOSITION = ROOT / "docs" / "nerva2" / "REUSE_BUILD_RETIRE.md"
