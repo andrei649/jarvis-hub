@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "snapshot_commit": "265a1c984822b059bfbf9449dacc2bde7554d225",
+  "snapshot_commit": "25eac3688830750be231c43ebacce889427c50cc",
   "program_issue": 757,
   "epic_issue": 758,
-  "slice": "E0.3b2b",
+  "slice": "E0.3b2b-issues",
   "status": "verifying",
   "close_e0": false,
-  "purpose": "Record the accepted E0 control slices through E0.3b2a, keep the direct repository-ledger reconciliation honest, and prevent first-wave implementation or E0 closure before BACKLOG.md, STATUS.md, issue bodies, generated status and exact-head CI agree.",
+  "purpose": "Record the accepted E0 control slices through #787, reconcile the owner-facing #757 and E0 #758 issue bodies without claiming repository-ledger completion, and prevent first-wave implementation or E0 closure before BACKLOG.md, STATUS.md, #778, generated status and exact-head CI agree.",
   "accepted_control_slices": [
     {
       "slice": "E0.1",
@@ -52,6 +52,15 @@
         "docs/nerva2/E0_COMPLETION.md",
         "docs/nerva2/E0_COMPLETION.json",
         "scripts/check_nerva_e0_completion.py"
+      ]
+    },
+    {
+      "slice": "E0.3b2b-control",
+      "pull_request": 787,
+      "merge_commit": "25eac3688830750be231c43ebacce889427c50cc",
+      "artifacts": [
+        "docs/nerva2/E0_FINAL_RECONCILIATION.md",
+        ".github/workflows/nerva-roadmap.yml"
       ]
     }
   ],
@@ -102,7 +111,7 @@
     "BACKLOG.md": {
       "state": "reconciliation_pending",
       "existing_truth": "Legacy ORIZONT 27-33 delivery history and NERVA_VISION references are present.",
-      "required_change": "Add one concise current Nerva program block that names accepted E0 controls through #786, keeps E0 VERIFYING, lists #780-#784 as blocked rather than implemented, and preserves historical ORIZONT delivery records."
+      "required_change": "Add one concise current Nerva program block that names accepted E0 controls through #787, keeps E0 VERIFYING, lists #780-#784 as blocked rather than implemented, and preserves historical ORIZONT delivery records."
     },
     "STATUS.md": {
       "state": "reconciliation_pending",
@@ -115,6 +124,20 @@
     758,
     778
   ],
+  "issue_ledger_status": {
+    "757": {
+      "state": "body_reconciled",
+      "evidence": "Owner-facing program status names accepted controls through #787, E0 VERIFYING and blocked first slices #780-#784."
+    },
+    "758": {
+      "state": "body_reconciled",
+      "evidence": "E0 body reports VERIFYING, marks first-slice issue creation complete and keeps repository-ledger closure work open."
+    },
+    "778": {
+      "state": "progress_current_body_reconciliation_pending",
+      "evidence": "A factual progress update records accepted controls and remaining gates; the long-form body is not yet rewritten."
+    }
+  },
   "closure_requirements": [
     "BACKLOG.md and STATUS.md contain reviewed durable Nerva program blocks.",
     "Issue bodies #757, #758 and #778 agree with the repository ledgers and first executable slices.",
@@ -123,5 +146,5 @@
     "An independent integrator accepts the final diff and explicitly marks E0 complete.",
     "No first-wave production implementation begins before E0 closure."
   ],
-  "next_slice": "E0.3b2b-ledgers — apply the reviewed blocks to BACKLOG.md and STATUS.md, reconcile #757/#758/#778 bodies, run generated-status and full CI, then request an independent E0 closure decision"
+  "next_slice": "E0.3b2b-repository-ledgers — apply the reviewed blocks to BACKLOG.md and STATUS.md, reconcile the #778 body, run generated-status and full CI, then request an independent E0 closure decision"
 }
