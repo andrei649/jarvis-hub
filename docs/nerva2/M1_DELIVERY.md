@@ -16,6 +16,10 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
   `e244ea7c9e32673bdb56fe1459f355a7abb9d63f`.
 - `nerva.cortex.comparison.v1` is an evaluation-only regression baseline; it
   does not add persistence, production selection or action authority.
+- When this snapshot is present on `main` through merged PR #793, E1.1 is
+  accepted as an evaluation-only regression baseline.
+- Normalized request digests are pseudonymous/linkable and remain subject to
+  access, retention and deletion controls for `redacted_local` evaluations.
 
 ## E2.0 candidate transition
 
@@ -28,6 +32,8 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
 - Legacy facts default to `private_local` privacy and `unknown` confidence;
   explicit resolvers may narrow or qualify those values but cannot silently
   treat missing metadata as public or measured.
+- Compatibility entity IDs are source-scoped so differently sourced subjects
+  are not silently merged before an explicit identity-resolution contract.
 - The candidate does not add a database, migration, mutation endpoint,
   cross-connector identity merge, deletion executor or live three-domain claim.
 
