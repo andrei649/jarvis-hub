@@ -1,6 +1,6 @@
 # Cryptography 50 remediation — CVE-2026-69247
 
-Status: draft candidate in PR #801; no acceptance claim until exact-head CI is complete.
+Status: exact-head remediation evidence for PR #801; final acceptance is recorded in the PR and Nerva program ledgers.
 
 ## Trigger and scope
 
