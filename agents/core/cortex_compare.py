@@ -1,8 +1,8 @@
-"""Deterministic, privacy-safe comparison reports for Cortex shadow decisions.
+"""Deterministic, privacy-minimised comparison reports for Cortex shadow decisions.
 
-The harness evaluates the current router against explicit synthetic or redacted
-fixture expectations. It is evaluation-only: it does not change route
-selection, persist traces, authorize actions, execute work, or mark tasks
+The harness evaluates the current router against explicitly classified synthetic
+or redacted fixture expectations. It is evaluation-only: it does not change
+route selection, persist traces, authorize actions, execute work, or mark tasks
 complete.
 """
 
@@ -18,6 +18,7 @@ from typing import Any, Literal, Protocol
 from agents.core.cortex_decision import DecisionRecord, DecisionRequest, EvidenceValue
 
 FixturePrivacyClass = Literal["synthetic_public", "redacted_local"]
+_ALLOWED_PRIVACY_CLASSES = {"synthetic_public", "redacted_local"}
 
 
 @dataclass(frozen=True)
@@ -28,18 +29,14 @@ class ComparisonCase:
     text: str
     expected_primary: str
     expected_source: str
-    privacy_class: FixturePrivacyClass = "synthetic_public"
+    privacy_class: FixturePrivacyClass
 
     def __post_init__(self) -> None:
-        if not self.case_id.strip():
-            raise ValueError("comparison case_id cannot be empty")
-        if not self.text.strip():
-            raise ValueError("comparison fixture text cannot be empty")
-        if not self.expected_primary.strip():
-            raise ValueError("expected_primary cannot be empty")
-        if not self.expected_source.strip():
-            raise ValueError("expected_source cannot be empty")
-        if self.privacy_class not in {"synthetic_public", "redacted_local"}:
+        for field_name in ("case_id", "text", "expected_primary", "expected_source"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"comparison {field_name} must be a non-empty string")
+        if self.privacy_class not in _ALLOWED_PRIVACY_CLASSES:
             raise ValueError("comparison fixtures must be synthetic or redacted")
 
 
@@ -48,6 +45,7 @@ class ComparisonCaseResult:
     """Privacy-minimised result for one comparison case."""
 
     case_id: str
+    privacy_class: FixturePrivacyClass
     request_digest: str
     decision_fingerprint: str | None
     actual_primary: str | None
@@ -75,6 +73,7 @@ class ComparisonReport:
     general_case_count: int
     failure_count: int
     source_distribution: tuple[tuple[str, int], ...]
+    privacy_distribution: tuple[tuple[str, int], ...]
     latency: EvidenceValue = field(
         default_factory=lambda: EvidenceValue("not_measured")
     )
@@ -146,6 +145,7 @@ async def compare_router(
             results.append(
                 ComparisonCaseResult(
                     case_id=case.case_id,
+                    privacy_class=case.privacy_class,
                     request_digest=request_digest,
                     decision_fingerprint=record.replay_fingerprint,
                     actual_primary=actual_primary,
@@ -163,6 +163,7 @@ async def compare_router(
             results.append(
                 ComparisonCaseResult(
                     case_id=case.case_id,
+                    privacy_class=case.privacy_class,
                     request_digest=request_digest,
                     decision_fingerprint=None,
                     actual_primary=None,
@@ -191,6 +192,7 @@ async def compare_router(
     sources = Counter(
         result.actual_source for result in completed if result.actual_source is not None
     )
+    privacy_classes = Counter(result.privacy_class for result in result_tuple)
 
     return ComparisonReport(
         baseline_id=baseline_id,
@@ -216,21 +218,29 @@ async def compare_router(
         ),
         failure_count=sum(result.failure_type is not None for result in result_tuple),
         source_distribution=tuple(sorted(sources.items())),
+        privacy_distribution=tuple(sorted(privacy_classes.items())),
     )
 
 
 def load_comparison_cases(payload: Sequence[Mapping[str, Any]]) -> tuple[ComparisonCase, ...]:
-    """Parse a JSON-compatible fixture list into validated cases."""
+    """Parse a JSON-compatible fixture list, rejecting implicit classifications."""
 
     cases: list[ComparisonCase] = []
     for item in payload:
         cases.append(
             ComparisonCase(
-                case_id=str(item["case_id"]),
-                text=str(item["text"]),
-                expected_primary=str(item["expected_primary"]),
-                expected_source=str(item["expected_source"]),
-                privacy_class=str(item.get("privacy_class", "synthetic_public")),
+                case_id=_required_string(item, "case_id"),
+                text=_required_string(item, "text"),
+                expected_primary=_required_string(item, "expected_primary"),
+                expected_source=_required_string(item, "expected_source"),
+                privacy_class=_required_string(item, "privacy_class"),
             )
         )
     return tuple(cases)
+
+
+def _required_string(item: Mapping[str, Any], key: str) -> str:
+    value = item.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"comparison fixture {key} must be an explicit non-empty string")
+    return value
