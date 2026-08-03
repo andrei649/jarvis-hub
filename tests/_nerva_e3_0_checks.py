@@ -243,6 +243,10 @@ def run_e3_0_checks(tmp_path) -> None:
     tampered_audit_payload["reason"] = "silently changed"
     with pytest.raises(ValueError, match="canonical|integrity"):
         EpisodeAuditEvent.from_payload(tampered_audit_payload)
+    boolean_timestamp_payload = json.loads(settled.audit.to_json())
+    boolean_timestamp_payload["occurred_at"] = True
+    with pytest.raises(ValueError, match="numeric"):
+        EpisodeAuditEvent.from_payload(boolean_timestamp_payload)
 
     forged_episode_audit = _forge_audit(
         settled.audit,
@@ -272,6 +276,16 @@ def run_e3_0_checks(tmp_path) -> None:
             occurred_at=309,
             reason="time-reversing correction",
         )
+    with pytest.raises(ValueError, match="cannot follow updated_at"):
+        correct_episode(
+            settled_record,
+            actor_id="owner:andrei",
+            occurred_at=320,
+            reason="time-forward correction",
+            ended_at=321,
+        )
+    with pytest.raises(ValueError, match="cannot follow updated_at"):
+        replace(settled_record, updated_at=299)
 
     replayed = EpisodeRecord.from_json(settled_record.to_json())
     assert replayed == settled_record
@@ -577,4 +591,6 @@ def run_e3_0_checks(tmp_path) -> None:
     assert "f2901528e452586f9702c7df1678e72ca36ca2ee" in m1_doc
     assert "E3.0 / #782" in m1_doc
     assert "independent integration" in m1_doc
+    assert "deterministic integrity-checked audit events" in m1_doc
+    assert "tamper-evident audit events" not in m1_doc
     assert "#783 Synapse and #784 Research Lab remain separately eligible" in m1_doc

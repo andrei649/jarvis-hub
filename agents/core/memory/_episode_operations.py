@@ -203,7 +203,7 @@ class EpisodeAuditEvent:
                 audit_id=payload["audit_id"],
                 operation=payload["operation"],
                 actor_id=payload["actor_id"],
-                occurred_at=float(payload["occurred_at"]),
+                occurred_at=payload["occurred_at"],
                 reason=payload["reason"],
                 input_record_ids=tuple(payload["input_record_ids"]),
                 output_record_ids=tuple(payload["output_record_ids"]),

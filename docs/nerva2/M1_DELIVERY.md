@@ -56,8 +56,10 @@ Repository placement determines delivery state. Under the pre-integration rule, 
   storage.
 - Direct assertions retain evidence references. Low-confidence inference cannot
   enter settled or consolidated history without explicit measured confidence.
-- Manual mutations emit tamper-evident audit events and exact immutable rollback
-  values. Merge and split remain atomic multi-record mutations.
+- Manual mutations emit deterministic integrity-checked audit events and exact
+  immutable rollback values. Plain SHA-256 detects changed or corrupted content but
+  does not authenticate a signer or provide non-repudiation. Merge and split remain
+  atomic multi-record mutations.
 - The included situation/outcome query is a focused fixture only; it does not
   change production recall or establish a performance claim.
 - Repository placement is transition evidence until independent integration of

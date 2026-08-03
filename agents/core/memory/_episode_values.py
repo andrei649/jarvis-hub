@@ -318,6 +318,8 @@ class EpisodeRecord:
             _validate_time(self.ended_at, "ended_at")
             if self.ended_at < self.started_at:
                 raise ValueError("Episode ended_at cannot precede started_at")
+            if self.ended_at > self.updated_at:
+                raise ValueError("Episode ended_at cannot follow updated_at")
         if self.state == "open" and self.ended_at is not None:
             raise ValueError("Open episode cannot have ended_at")
         if self.state in {"settled", "consolidated"} and self.ended_at is None:
