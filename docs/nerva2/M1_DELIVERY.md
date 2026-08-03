@@ -18,40 +18,40 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
   does not add persistence, production selection or action authority.
 - Normalized request digests are pseudonymous/linkable and remain subject to
   access, retention and deletion controls for `redacted_local` evaluations.
-- At E1.1 acceptance, #781 Atlas, #783 Synapse and #784 Research Lab remain
-  separately eligible.
+- E2.0 / #781 / PR #794 is accepted on `main` as
+  `f2901528e452586f9702c7df1678e72ca36ca2ee`.
+- `nerva.observation.v1` and `nerva.atlas.snapshot.v1` are typed, deterministic,
+  read-only projections over the existing `BiTemporalKG`; they do not add a
+  writable Atlas database, identity merge, deletion executor or action
+  authority.
 
-## E2.0 transition evidence
+## E3.0 transition evidence
 
-- E2.0 / #781 defines typed `nerva.observation.v1` projections and
-  deterministic `nerva.atlas.snapshot.v1` read-only snapshots over the existing
-  `BiTemporalKG`.
-- Repository placement determines delivery state: the artifacts are transition
-  evidence until an independent integrator accepts one exact head with green
-  exact-head CI through the repository's safe merge method.
-- #782 becomes eligible when the exact reviewed E2.0 head lands on `main`;
-  before that integration decision it remains blocked only by #781.
-- Queries declare requested privacy classes, while a trusted
-  `AtlasAccessAuthorizer` issues the effective grant before any source-store
-  read. Requested scope alone never authorizes access.
-- Legacy facts default to `private_local` privacy and `unknown` confidence;
-  explicit resolvers may narrow or qualify those values but cannot silently
-  treat missing metadata as public or measured.
-- Compatibility entity IDs are source-scoped so differently sourced subjects
-  are not silently merged before an explicit identity-resolution contract.
-- Snapshot construction rejects non-observations, failed integrity, duplicate
-  IDs and values outside the requested/granted query scope.
-- E2.0 does not add a database, migration, mutation endpoint, production
-  authentication, cross-connector identity merge, deletion executor or live
-  three-domain claim.
+- The accepted E2.0 Atlas contract makes #782 eligible.
+- E3.0 / #782 defines a typed `nerva.episode.v1` value contract and
+  deterministic manual open, settle, consolidate, correct, merge, split and
+  source-tombstone operations.
+- Episode records reference source records and Atlas projections by stable
+  metadata; raw transcripts and source values are not copied into episode
+  storage.
+- Direct assertions retain evidence references. Low-confidence inference cannot
+  enter settled or consolidated history without explicit measured confidence.
+- Manual mutations emit tamper-evident audit events and exact immutable rollback
+  values. Merge and split remain atomic multi-record mutations.
+- The included situation/outcome query is a focused fixture only; it does not
+  change production recall or establish a performance claim.
+- Repository placement is transition evidence until independent integration of
+  one exact head with required exact-head CI and resolved review concerns.
 
 ## Dependency posture
 
-- #781 Atlas remains the active E2.0 transition until independent integration.
+- #782 Episodes is the active bounded E3.0 transition after accepted Atlas E2.0.
 - #783 Synapse and #784 Research Lab remain separately eligible.
-- #782 remains blocked only by #781 before E2.0 integration and becomes
-  eligible after the exact reviewed E2.0 head is accepted onto `main`.
+- E3.0 is independent of those streams and does not change their dependency or
+  authority boundaries.
 - Ultron / `nerva.action.v1` remains the sole privileged-action authority.
+- The E0 blocks in `BACKLOG.md` and `STATUS.md` remain immutable historical
+  closure evidence; this delivery snapshot carries current post-E0 movement.
 
 ## Remaining E1 evidence
 
@@ -63,9 +63,16 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
 
 ## Remaining M1 evidence
 
-- independent acceptance of the E2.0 Atlas snapshot contract;
+- independent integration of the E3.0 typed episode/manual-boundary candidate;
 - E8.0 Synapse manifest and conformance evidence;
 - E9.0 versioned benchmark contract and first privacy-safe task suite;
 - cross-cutting Goal/Evidence/Outcome/Cognitive-Ledger records;
 - a real request replayed over truthful Atlas state and declared capabilities
   without performing an external action.
+
+## Beyond this candidate
+
+E3.0 does not complete Episodes. Measured retrieval against the current memory
+baseline, learned boundary detection, durable persistence, Reflection/lesson
+integration, production recall adoption, deletion execution and broad memory
+migration remain separate work packages with separate rollback decisions.
