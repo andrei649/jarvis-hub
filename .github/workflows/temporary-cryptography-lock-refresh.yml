@@ -1,0 +1,49 @@
+name: Temporary cryptography lock refresh
+
+on:
+  push:
+    branches:
+      - security/cryptography-50-cve-2026-69247
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temporary-cryptography-lock-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install canonical lock compiler
+        run: python -m pip install --disable-pip-version-check uv
+
+      - name: Regenerate affected universal hash locks
+        run: |
+          set -euo pipefail
+          ./scripts/lock_deps.sh
+          git checkout -- requirements-dev.lock
+          ./scripts/lock_deps.sh --check
+
+      - name: Commit generated lockfiles
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- requirements.lock requirements-beta.lock; then
+            echo "Affected lockfiles already match the fixed source constraints."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add requirements.lock requirements-beta.lock
+          git commit -m "chore(security): regenerate cryptography 50 lockfiles"
+          git push origin HEAD:${GITHUB_REF_NAME}
