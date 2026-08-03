@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from agents.core.memory._episode_operations import EpisodeMatch, EpisodeQuery
 from agents.core.memory._episode_operations import (
-    EpisodeMatch,
-    EpisodeQuery,
     retrieve_episodes as _score_current_episodes,
 )
 from agents.core.memory._episode_values import EpisodeRecord
@@ -43,7 +42,7 @@ def _current_episode_revisions(
         revisions[record.revision] = record
 
     current: list[EpisodeRecord] = []
-    for episode_id, revisions in revisions_by_episode.items():
+    for _episode_id, revisions in revisions_by_episode.items():
         ordered = [revisions[revision] for revision in sorted(revisions)]
         for previous, candidate in zip(ordered, ordered[1:], strict=False):
             if candidate.updated_at < previous.updated_at:
