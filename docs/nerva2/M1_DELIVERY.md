@@ -13,11 +13,17 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
 - `nerva.decision.v1` and the failure-isolated `ShadowDecisionRouter` are
   observation-only and do not alter production routing.
 
-## Current candidate
+## E1.1 integration transition
 
-- E1.1 / #792 adds a privacy-safe current-router comparison baseline.
-- It remains evaluation-only and does not add persistence, scoring authority,
-  execution authority or an E1 completion claim.
+- E1.1 / #792 / PR #793 adds the privacy-minimised
+  `nerva.cortex.comparison.v1` current-router baseline.
+- On a feature branch, these artifacts remain candidate evidence only.
+- When this snapshot is present on `main` through merged PR #793, E1.1 is
+  accepted as an evaluation-only regression baseline.
+- Acceptance does not add persistence, scoring authority, execution authority,
+  measured real-task quality or an E1 completion claim.
+- Normalized request digests are pseudonymous/linkable and remain subject to
+  access, retention and deletion controls for `redacted_local` evaluations.
 
 ## Dependency posture
 
