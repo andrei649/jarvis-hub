@@ -45,13 +45,39 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
 
 Repository placement determines delivery state. Under the pre-integration rule, #781 remained transition evidence and #782 becomes eligible when the exact reviewed E2.0 head lands on `main`. That condition was satisfied by PR #794 and merge `f2901528e452586f9702c7df1678e72ca36ca2ee`; this wording is retained only as historical transition evidence, not as the current dependency state.
 
+## E3.0 transition evidence
+
+- The accepted E2.0 Atlas contract makes #782 eligible.
+- E3.0 / #782 defines a typed `nerva.episode.v1` value contract and
+  deterministic manual open, settle, consolidate, correct, merge, split and
+  source-tombstone operations.
+- Episode constructors store content-free source metadata and do not
+  automatically copy source payloads or transcripts. Caller-supplied bounded
+  derived assertions remain privacy-governed; the contract does not claim
+  semantic transcript detection.
+- Direct assertions retain evidence references. Low-confidence inference cannot
+  enter settled or consolidated history without explicit measured confidence.
+- Manual mutations emit deterministic integrity-checked audit events and exact
+  immutable rollback values. Plain SHA-256 detects changed or corrupted content but
+  does not authenticate a signer or provide non-repudiation. Merge and split remain
+  atomic multi-record mutations.
+- The included situation/outcome query is a focused fixture only. It selects one
+  deterministic current revision per logical episode before scoring, rejects
+  conflicting same-revision forks, and does not change production recall or
+  establish a performance claim.
+- Repository placement is transition evidence until independent integration of
+  one exact head with required exact-head CI and resolved review concerns.
+
 ## Dependency posture
 
 - #781 Atlas is accepted and closed through PR #794.
-- #782 Episodes is `NOT STARTED · ELIGIBLE` for one bounded typed
-  episode/manual-boundary package.
+- #782 Episodes is the active bounded E3.0 transition after accepted Atlas E2.0.
 - #783 Synapse and #784 Research Lab remain separately eligible.
+- E3.0 is independent of those streams and does not change their dependency or
+  authority boundaries.
 - Ultron / `nerva.action.v1` remains the sole privileged-action authority.
+- The E0 blocks in `BACKLOG.md` and `STATUS.md` remain immutable historical
+  closure evidence; this delivery snapshot carries current post-E0 movement.
 
 ## Remaining E1 evidence
 
@@ -63,16 +89,16 @@ Repository placement determines delivery state. Under the pre-integration rule, 
 
 ## Remaining M1 evidence
 
+- independent integration of the E3.0 typed episode/manual-boundary candidate;
 - E8.0 Synapse manifest and conformance evidence;
 - E9.0 versioned benchmark contract and first privacy-safe task suite;
 - cross-cutting Goal/Evidence/Outcome/Cognitive-Ledger records;
 - a real request replayed over truthful Atlas state and declared capabilities
   without performing an external action.
 
-## Next coherent package
+## Beyond this candidate
 
-Build #782 as a separate E3.0 PR containing the typed episode value contract,
-deterministic manual open/settle/merge/split operations, source-reference and
-deletion-lineage tests, and coherent rollback documentation. Keep learned
-boundary detection, Reflection, production recall changes and action authority
-out of that package.
+E3.0 does not complete Episodes. Measured retrieval against the current memory
+baseline, learned boundary detection, durable persistence, Reflection/lesson
+integration, production recall adoption, deletion execution and broad memory
+migration remain separate work packages with separate rollback decisions.
