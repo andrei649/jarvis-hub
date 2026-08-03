@@ -143,17 +143,18 @@ def run_e1_1_checks() -> None:
     )
     assert "9235ef69961862df49826a910be00955d7be420e" in snapshot
     assert "E1.1 / #792 / PR #793" in snapshot
-    assert "On a feature branch, these artifacts remain candidate evidence only" in snapshot
-    assert (
-        "When this snapshot is present on `main` through merged PR #793, E1.1 is"
-        in snapshot
-    )
+    assert "e244ea7c9e32673bdb56fe1459f355a7abb9d63f" in snapshot
+    assert "evaluation-only regression baseline" in snapshot
+    assert "Repository placement determines delivery state" in snapshot
     assert "pseudonymous/linkable" in snapshot
     assert (
-        "#781 Atlas, #783 Synapse and #784 Research Lab remain separately eligible"
+        "#783 Synapse and #784 Research Lab remain separately eligible"
         in snapshot
     )
-    assert "#782 Episodes remains blocked only by #781" in snapshot
+    assert (
+        "#782 becomes eligible when the exact reviewed E2.0 head lands on `main`"
+        in snapshot
+    )
     assert (
         "Ultron / `nerva.action.v1` remains the sole privileged-action authority"
         in snapshot
