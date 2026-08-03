@@ -132,8 +132,9 @@ The coherent rollback is:
 4. remove the E2.0 candidate/accepted snapshot from
    `docs/nerva2/M1_DELIVERY.md` and this document.
 
-Rollback must not delete or rewrite the existing bi-temporal store. Partial
-rollback that leaves the test wiring or a misleading delivery claim is invalid.
+Rollback must not delete or rewrite the existing bi-temporal store.
+Partial rollback that leaves the test wiring or a misleading delivery claim is
+invalid.
 
 ## Residual risks and next package
 
