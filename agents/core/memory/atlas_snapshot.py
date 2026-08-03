@@ -284,9 +284,11 @@ class LegacyBiTemporalAdapter:
 
         source_record_id = f"{self._policy.source_id}:{fact_id}"
         observation_id = "atlas:observation:" + _sha256(source_record_id)[:24]
-        entity_id = "atlas:entity:" + _sha256(
-            _normalize_identifier(subject)
-        )[:24]
+        entity_material = {
+            "source_id": self._policy.source_id,
+            "subject": _normalize_identifier(subject),
+        }
+        entity_id = "atlas:entity:" + _sha256(entity_material)[:24]
         source = AtlasSourceRef(
             source_id=self._policy.source_id,
             record_id=source_record_id,
