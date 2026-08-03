@@ -39,6 +39,26 @@ _ALLOWED_OPERATIONS = {
 }
 _KEEP = object()
 _MAX_AUDIT_REASON_CHARS = 1024
+_AUDIT_PAYLOAD_KEYS = frozenset(
+    {
+        "affected_reference_ids",
+        "actor_id",
+        "audit_id",
+        "authority",
+        "can_authorize",
+        "can_execute",
+        "can_mark_complete",
+        "input_episode_ids",
+        "input_record_ids",
+        "integrity_sha256",
+        "occurred_at",
+        "operation",
+        "output_episode_ids",
+        "output_record_ids",
+        "reason",
+        "schema",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -104,6 +124,7 @@ class EpisodeAuditEvent:
         after: tuple[EpisodeRecord, ...],
         affected_reference_ids: tuple[str, ...] = (),
     ) -> EpisodeAuditEvent:
+        _validate_time(occurred_at, "audit occurred_at")
         input_record_ids = tuple(sorted(record.record_id for record in before))
         output_record_ids = tuple(sorted(record.record_id for record in after))
         input_episode_ids = tuple(sorted(record.episode_id for record in before))
@@ -191,6 +212,8 @@ class EpisodeAuditEvent:
     def from_payload(cls, payload: dict[str, Any]) -> EpisodeAuditEvent:
         if not isinstance(payload, dict):
             raise ValueError("Episode audit payload must be an object")
+        if set(payload) != _AUDIT_PAYLOAD_KEYS:
+            raise ValueError("Episode audit payload is not canonical")
         if payload.get("schema") != "nerva.episode.audit.v1":
             raise ValueError("Episode audit schema is not recognized")
         if payload.get("authority") != "memory_record_only":

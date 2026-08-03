@@ -80,9 +80,11 @@ detection:
 
 Participant, reference and evidence ordering is canonicalized before identity,
 integrity and audit fingerprints are calculated. Replaying equivalent manual
-inputs therefore yields the same records and audit event. Mutation occurrence
-time cannot precede an input revision, and deletion time cannot precede the
-affected source occurrence or exceed the mutation time.
+inputs therefore yields the same records and audit event. Public record and audit
+builders validate raw timestamp types before numeric normalization, so Python
+booleans cannot enter canonical time fields. Mutation occurrence time cannot
+precede an input revision, and deletion time cannot precede the affected source
+occurrence or exceed the mutation time.
 
 ## Confidence and product-truth rules
 
@@ -106,8 +108,9 @@ Every manual operation returns one `EpisodeMutation`:
 before records + after records + deterministic integrity audit + rollback value
 ```
 
-The canonical audit payload is round-trippable and rejects changed content,
-authority flags, logical episode IDs or unrelated affected-reference IDs. Its
+The canonical audit payload is round-trippable and rejects unknown top-level
+fields, changed content, authority flags, logical episode IDs or unrelated
+affected-reference IDs. Its
 plain SHA-256 digest detects accidental or uncoordinated modification. It does not authenticate a signer and does not provide non-repudiation.
 
 `rollback()` returns the exact immutable `before` tuple. Persisting an operation
@@ -135,7 +138,9 @@ test, covers:
 - fixed memory-only authority;
 - low-confidence settlement rejection;
 - settle, consolidate and correction revision chains;
-- record and audit round-trip serialization plus tamper rejection;
+- record and audit round-trip serialization, strict canonical audit keys and
+  tamper rejection;
+- raw boolean timestamp rejection across direct builders, open and migration;
 - deterministic audited merge and exact-cover split;
 - source derivative tracing across merge/split, tombstones and rollback;
 - bounded assertion/audit text and monotonic time rejection;

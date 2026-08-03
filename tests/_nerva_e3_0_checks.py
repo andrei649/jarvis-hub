@@ -176,6 +176,39 @@ def run_e3_0_checks(tmp_path) -> None:
     assert "raw-private-beta" not in serialized_open
     assert "transcript" not in serialized_open
 
+    with pytest.raises(ValueError, match="numeric"):
+        EpisodeRecord.build(
+            state="open",
+            participants=("person:andrei",),
+            started_at=True,
+            ended_at=None,
+            references=(first_ref,),
+            goal=None,
+            summary=None,
+            significance=None,
+            created_at=205,
+            updated_at=205,
+        )
+    with pytest.raises(ValueError, match="numeric"):
+        open_episode(
+            participants=("person:andrei",),
+            started_at=True,
+            references=(first_ref,),
+            actor_id="owner:andrei",
+            occurred_at=205,
+            reason="boolean boundary",
+        )
+    with pytest.raises(ValueError, match="numeric"):
+        EpisodeAuditEvent.build(
+            operation="open",
+            actor_id="owner:andrei",
+            occurred_at=True,
+            reason="boolean audit time",
+            before=(),
+            after=(open_record,),
+            affected_reference_ids=(first_ref.reference_id,),
+        )
+
     with pytest.raises(ValueError, match="4096"):
         _direct("x" * 4097, first_ref.reference_id)
     with pytest.raises(ValueError, match="1024"):
@@ -247,6 +280,10 @@ def run_e3_0_checks(tmp_path) -> None:
     boolean_timestamp_payload["occurred_at"] = True
     with pytest.raises(ValueError, match="numeric"):
         EpisodeAuditEvent.from_payload(boolean_timestamp_payload)
+    extra_field_payload = json.loads(settled.audit.to_json())
+    extra_field_payload["unhashed_note"] = "must not be ignored"
+    with pytest.raises(ValueError, match="canonical"):
+        EpisodeAuditEvent.from_payload(extra_field_payload)
 
     forged_episode_audit = _forge_audit(
         settled.audit,
@@ -559,6 +596,15 @@ def run_e3_0_checks(tmp_path) -> None:
     assert migrated.audit.operation == "migrate"
     assert migrated.after[0].schema == "nerva.episode.v1"
     assert migrated.rollback() == ()
+    boolean_legacy = dict(legacy)
+    boolean_legacy["started_at"] = True
+    with pytest.raises(ValueError, match="numeric"):
+        migrate_manual_episode_v0(
+            boolean_legacy,
+            actor_id="owner:andrei",
+            occurred_at=900,
+            reason="invalid boolean timestamp migration",
+        )
     raw_legacy = dict(legacy)
     raw_legacy["raw_transcript"] = "must not be copied"
     with pytest.raises(ValueError, match="raw content"):

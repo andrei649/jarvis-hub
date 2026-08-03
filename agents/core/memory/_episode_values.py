@@ -405,6 +405,11 @@ class EpisodeRecord:
         supersedes_record_id: str | None = None,
         superseded_by_episode_ids: tuple[str, ...] = (),
     ) -> EpisodeRecord:
+        _validate_time(started_at, "started_at")
+        if ended_at is not None:
+            _validate_time(ended_at, "ended_at")
+        _validate_time(created_at, "created_at")
+        _validate_time(updated_at, "updated_at")
         participants = _validated_string_tuple(
             participants,
             "participants",
