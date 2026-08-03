@@ -108,8 +108,7 @@ before records + after records + deterministic integrity audit + rollback value
 
 The canonical audit payload is round-trippable and rejects changed content,
 authority flags, logical episode IDs or unrelated affected-reference IDs. Its
-plain SHA-256 digest detects accidental or uncoordinated modification but does
-not authenticate a signer and does not provide non-repudiation.
+plain SHA-256 digest detects accidental or uncoordinated modification. It does not authenticate a signer and does not provide non-repudiation.
 
 `rollback()` returns the exact immutable `before` tuple. Persisting an operation
 is therefore an atomic caller responsibility: write the complete `after` set
