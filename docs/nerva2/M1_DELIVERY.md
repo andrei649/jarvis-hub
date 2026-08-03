@@ -18,19 +18,15 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
   does not add persistence, production selection or action authority.
 - Normalized request digests are pseudonymous/linkable and remain subject to
   access, retention and deletion controls for `redacted_local` evaluations.
-- At E1.1 acceptance, #781 Atlas, #783 Synapse and #784 Research Lab remain
-  separately eligible.
+- E2.0 / #781 / PR #794 is accepted on `main` as
+  `f2901528e452586f9702c7df1678e72ca36ca2ee` from exact reviewed head
+  `f01b13e354eb64504d7996cc4d87d4828ae74330`.
+- `nerva.observation.v1` projections and deterministic
+  `nerva.atlas.snapshot.v1` snapshots are now accepted read-only substrate over
+  the existing `BiTemporalKG`.
 
-## E2.0 transition evidence
+## E2.0 accepted contract
 
-- E2.0 / #781 defines typed `nerva.observation.v1` projections and
-  deterministic `nerva.atlas.snapshot.v1` read-only snapshots over the existing
-  `BiTemporalKG`.
-- Repository placement determines delivery state: the artifacts are transition
-  evidence until an independent integrator accepts one exact head with green
-  exact-head CI through the repository's safe merge method.
-- #782 becomes eligible when the exact reviewed E2.0 head lands on `main`;
-  before that integration decision it remains blocked only by #781.
 - Queries declare requested privacy classes, while a trusted
   `AtlasAccessAuthorizer` issues the effective grant before any source-store
   read. Requested scope alone never authorizes access.
@@ -45,12 +41,20 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
   authentication, cross-connector identity merge, deletion executor or live
   three-domain claim.
 
+## Historical transition rule — satisfied
+
+Repository placement determines delivery state. Under the pre-integration rule,
+#781 remained transition evidence and #782 becomes eligible when the exact
+reviewed E2.0 head lands on `main`. That condition was satisfied by PR #794 and
+merge `f2901528e452586f9702c7df1678e72ca36ca2ee`; this wording is retained only
+as historical transition evidence, not as the current dependency state.
+
 ## Dependency posture
 
-- #781 Atlas remains the active E2.0 transition until independent integration.
+- #781 Atlas is accepted and closed through PR #794.
+- #782 Episodes is `NOT STARTED · ELIGIBLE` for one bounded typed
+  episode/manual-boundary package.
 - #783 Synapse and #784 Research Lab remain separately eligible.
-- #782 remains blocked only by #781 before E2.0 integration and becomes
-  eligible after the exact reviewed E2.0 head is accepted onto `main`.
 - Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 
 ## Remaining E1 evidence
@@ -63,9 +67,16 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
 
 ## Remaining M1 evidence
 
-- independent acceptance of the E2.0 Atlas snapshot contract;
 - E8.0 Synapse manifest and conformance evidence;
 - E9.0 versioned benchmark contract and first privacy-safe task suite;
 - cross-cutting Goal/Evidence/Outcome/Cognitive-Ledger records;
 - a real request replayed over truthful Atlas state and declared capabilities
   without performing an external action.
+
+## Next coherent package
+
+Build #782 as a separate E3.0 PR containing the typed episode value contract,
+deterministic manual open/settle/merge/split operations, source-reference and
+deletion-lineage tests, and coherent rollback documentation. Keep learned
+boundary detection, Reflection, production recall changes and action authority
+out of that package.
