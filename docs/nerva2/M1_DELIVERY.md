@@ -43,11 +43,7 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
 
 ## Historical transition rule — satisfied
 
-Repository placement determines delivery state. Under the pre-integration rule,
-#781 remained transition evidence and #782 becomes eligible when the exact
-reviewed E2.0 head lands on `main`. That condition was satisfied by PR #794 and
-merge `f2901528e452586f9702c7df1678e72ca36ca2ee`; this wording is retained only
-as historical transition evidence, not as the current dependency state.
+Repository placement determines delivery state. Under the pre-integration rule, #781 remained transition evidence and #782 becomes eligible when the exact reviewed E2.0 head lands on `main`. That condition was satisfied by PR #794 and merge `f2901528e452586f9702c7df1678e72ca36ca2ee`; this wording is retained only as historical transition evidence, not as the current dependency state.
 
 ## Dependency posture
 
