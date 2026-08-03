@@ -72,15 +72,17 @@ Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 Adoption is explicit: callers import and run `compare_router()` in tests or an
 evaluation process. No production construction path is changed.
 
-Rollback is deletion of:
+Rollback requires one coherent revert:
 
-- `agents/core/cortex_compare.py`;
-- `tests/test_cortex_compare.py`;
-- `tests/fixtures/nerva/cortex_e1_1_cases.json`;
-- this document and the M1 delivery snapshot.
+- delete `agents/core/cortex_compare.py`;
+- delete `tests/_nerva_e1_1_checks.py`;
+- delete `tests/fixtures/nerva/cortex_e1_1_cases.json`;
+- remove the E1.1 helper import and invocation from `tests/test_router_v2.py`;
+- delete this document and `docs/nerva2/M1_DELIVERY.md`.
 
-Removing the harness leaves the existing router and E1.0 shadow contract
-unchanged.
+Removing that complete set leaves the existing router and E1.0 shadow contract
+unchanged. Partial deletion is not a valid rollback because it could leave a
+broken test import or stale delivery claim.
 
 ## Next slice
 
