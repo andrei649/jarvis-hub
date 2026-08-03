@@ -17,6 +17,7 @@ on:
       - "scripts/check_nerva_e0_completion.py"
       - "scripts/reconcile_nerva_repository_ledgers.py"
       - "tests/test_reconcile_nerva_repository_ledgers.py"
+      - "tests/test_nerva_e0_completion.py"
       - ".github/workflows/nerva-roadmap.yml"
   push:
     branches: [main]
@@ -35,6 +36,7 @@ on:
       - "scripts/check_nerva_e0_completion.py"
       - "scripts/reconcile_nerva_repository_ledgers.py"
       - "tests/test_reconcile_nerva_repository_ledgers.py"
+      - "tests/test_nerva_e0_completion.py"
       - ".github/workflows/nerva-roadmap.yml"
   workflow_dispatch:
 
