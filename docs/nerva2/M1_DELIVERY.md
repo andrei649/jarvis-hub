@@ -19,11 +19,31 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
 - Normalized request digests are pseudonymous/linkable and remain subject to
   access, retention and deletion controls for `redacted_local` evaluations.
 - E2.0 / #781 / PR #794 is accepted on `main` as
-  `f2901528e452586f9702c7df1678e72ca36ca2ee`.
-- `nerva.observation.v1` and `nerva.atlas.snapshot.v1` are typed, deterministic,
-  read-only projections over the existing `BiTemporalKG`; they do not add a
-  writable Atlas database, identity merge, deletion executor or action
-  authority.
+  `f2901528e452586f9702c7df1678e72ca36ca2ee` from exact reviewed head
+  `f01b13e354eb64504d7996cc4d87d4828ae74330`.
+- `nerva.observation.v1` projections and deterministic
+  `nerva.atlas.snapshot.v1` snapshots are now accepted read-only substrate over
+  the existing `BiTemporalKG`.
+
+## E2.0 accepted contract
+
+- Queries declare requested privacy classes, while a trusted
+  `AtlasAccessAuthorizer` issues the effective grant before any source-store
+  read. Requested scope alone never authorizes access.
+- Legacy facts default to `private_local` privacy and `unknown` confidence;
+  explicit resolvers may narrow or qualify those values but cannot silently
+  treat missing metadata as public or measured.
+- Compatibility entity IDs are source-scoped so differently sourced subjects
+  are not silently merged before an explicit identity-resolution contract.
+- Snapshot construction rejects non-observations, failed integrity, duplicate
+  IDs and values outside the requested/granted query scope.
+- E2.0 does not add a database, migration, mutation endpoint, production
+  authentication, cross-connector identity merge, deletion executor or live
+  three-domain claim.
+
+## Historical transition rule — satisfied
+
+Repository placement determines delivery state. Under the pre-integration rule, #781 remained transition evidence and #782 becomes eligible when the exact reviewed E2.0 head lands on `main`. That condition was satisfied by PR #794 and merge `f2901528e452586f9702c7df1678e72ca36ca2ee`; this wording is retained only as historical transition evidence, not as the current dependency state.
 
 ## E3.0 transition evidence
 
@@ -45,6 +65,7 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
 
 ## Dependency posture
 
+- #781 Atlas is accepted and closed through PR #794.
 - #782 Episodes is the active bounded E3.0 transition after accepted Atlas E2.0.
 - #783 Synapse and #784 Research Lab remain separately eligible.
 - E3.0 is independent of those streams and does not change their dependency or
