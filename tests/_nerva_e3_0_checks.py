@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from agents.core.memory._episode_values import _sha256
 from agents.core.memory.atlas_snapshot import (
     AtlasConfidence,
     LegacyBiTemporalAdapter,
@@ -20,6 +21,8 @@ from agents.core.memory.atlas_snapshot import (
 from agents.core.memory.bitemporal import BiTemporalKG
 from agents.core.memory.episodes import (
     EpisodeAssertion,
+    EpisodeAuditEvent,
+    EpisodeMutation,
     EpisodePartition,
     EpisodeQuery,
     EpisodeRecord,
@@ -73,6 +76,29 @@ def _outcome_reference(record_id: str, occurred_at: float) -> EpisodeReference:
         occurred_at=occurred_at,
         deletion_root_id=record_id,
         confidence=AtlasConfidence("measured", 1.0, "tests.verified_outcome"),
+    )
+
+
+def _forge_audit(
+    audit: EpisodeAuditEvent,
+    **changes,
+) -> EpisodeAuditEvent:
+    material = audit.audit_material()
+    material.update(changes)
+    audit_id = "episode:audit:" + _sha256(material)[:24]
+    integrity_sha256 = _sha256({**material, "audit_id": audit_id})
+    return EpisodeAuditEvent(
+        audit_id=audit_id,
+        operation=material["operation"],
+        actor_id=material["actor_id"],
+        occurred_at=material["occurred_at"],
+        reason=material["reason"],
+        input_record_ids=tuple(material["input_record_ids"]),
+        output_record_ids=tuple(material["output_record_ids"]),
+        input_episode_ids=tuple(material["input_episode_ids"]),
+        output_episode_ids=tuple(material["output_episode_ids"]),
+        affected_reference_ids=tuple(material["affected_reference_ids"]),
+        integrity_sha256=integrity_sha256,
     )
 
 
@@ -150,6 +176,18 @@ def run_e3_0_checks(tmp_path) -> None:
     assert "raw-private-beta" not in serialized_open
     assert "transcript" not in serialized_open
 
+    with pytest.raises(ValueError, match="4096"):
+        _direct("x" * 4097, first_ref.reference_id)
+    with pytest.raises(ValueError, match="1024"):
+        open_episode(
+            participants=("person:andrei",),
+            started_at=100,
+            references=(first_ref,),
+            actor_id="owner:andrei",
+            occurred_at=205,
+            reason="x" * 1025,
+        )
+
     outcome = _outcome_reference("outcome:travel-plan-confirmed", 300)
     weak_summary = _inference(
         "the travel plan probably worked",
@@ -194,6 +232,46 @@ def run_e3_0_checks(tmp_path) -> None:
     assert settled_record.outcome_references == (outcome,)
     assert settled.rollback() == (open_record,)
     assert settled.audit.verify_integrity()
+
+    replayed_audit = EpisodeAuditEvent.from_json(settled.audit.to_json())
+    assert replayed_audit == settled.audit
+    tampered_audit_payload = json.loads(settled.audit.to_json())
+    tampered_audit_payload["can_execute"] = True
+    with pytest.raises(ValueError, match="authority"):
+        EpisodeAuditEvent.from_payload(tampered_audit_payload)
+    tampered_audit_payload = json.loads(settled.audit.to_json())
+    tampered_audit_payload["reason"] = "silently changed"
+    with pytest.raises(ValueError, match="canonical|integrity"):
+        EpisodeAuditEvent.from_payload(tampered_audit_payload)
+
+    forged_episode_audit = _forge_audit(
+        settled.audit,
+        input_episode_ids=("episode:forged",),
+    )
+    with pytest.raises(ValueError, match="input episode IDs"):
+        EpisodeMutation(
+            before=settled.before,
+            after=settled.after,
+            audit=forged_episode_audit,
+        )
+    forged_reference_audit = _forge_audit(
+        settled.audit,
+        affected_reference_ids=("episode:ref:unrelated",),
+    )
+    with pytest.raises(ValueError, match="unrelated affected references"):
+        EpisodeMutation(
+            before=settled.before,
+            after=settled.after,
+            audit=forged_reference_audit,
+        )
+
+    with pytest.raises(ValueError, match="precede the current revision"):
+        correct_episode(
+            settled_record,
+            actor_id="owner:andrei",
+            occurred_at=309,
+            reason="time-reversing correction",
+        )
 
     replayed = EpisodeRecord.from_json(settled_record.to_json())
     assert replayed == settled_record
@@ -291,12 +369,14 @@ def run_e3_0_checks(tmp_path) -> None:
     merged_record = next(
         record
         for record in merged.after
-        if record.episode_id not in {settled_record.episode_id, packing_settled.episode_id}
+        if record.episode_id
+        not in {settled_record.episode_id, packing_settled.episode_id}
     )
     reordered_record = next(
         record
         for record in merged_reordered.after
-        if record.episode_id not in {settled_record.episode_id, packing_settled.episode_id}
+        if record.episode_id
+        not in {settled_record.episode_id, packing_settled.episode_id}
     )
     assert merged_record == reordered_record
     assert merged.audit == merged_reordered.audit
@@ -304,6 +384,10 @@ def run_e3_0_checks(tmp_path) -> None:
     assert merged.rollback() == tuple(
         sorted((settled_record, packing_settled), key=lambda record: record.record_id)
     )
+    assert trace_source_derivatives(
+        merged_record,
+        first_ref.deletion_root_id,
+    ).reference_ids == (first_ref.reference_id,)
 
     first_partition_ids = (first_ref.reference_id,)
     remaining_ids = tuple(
@@ -342,6 +426,17 @@ def run_e3_0_checks(tmp_path) -> None:
     assert child_references == {
         reference.reference_id for reference in merged_record.references
     }
+    first_child = next(
+        record
+        for record in split.after
+        if record.state != "superseded"
+        and first_ref.reference_id
+        in {reference.reference_id for reference in record.references}
+    )
+    assert trace_source_derivatives(
+        first_child,
+        first_ref.deletion_root_id,
+    ).reference_ids == (first_ref.reference_id,)
     assert split.rollback() == (merged_record,)
 
     trace = trace_source_derivatives(
@@ -351,6 +446,26 @@ def run_e3_0_checks(tmp_path) -> None:
     assert trace.reference_ids == (first_ref.reference_id,)
     assert goal.assertion_id in trace.assertion_ids
     assert summary.assertion_id in trace.assertion_ids
+
+    with pytest.raises(ValueError, match="precedes source occurrence"):
+        tombstone_sources(
+            settled_record,
+            deletion_root_ids=(first_ref.deletion_root_id,),
+            deleted_at=99,
+            actor_id="owner:andrei",
+            occurred_at=800,
+            reason="invalid source deletion time",
+        )
+    with pytest.raises(ValueError, match="future"):
+        tombstone_sources(
+            settled_record,
+            deletion_root_ids=(first_ref.deletion_root_id,),
+            deleted_at=801,
+            actor_id="owner:andrei",
+            occurred_at=800,
+            reason="future source deletion time",
+        )
+
     tombstoned = tombstone_sources(
         settled_record,
         deletion_root_ids=(first_ref.deletion_root_id,),
@@ -368,6 +483,19 @@ def run_e3_0_checks(tmp_path) -> None:
     assert tombstoned_record.summary is None
     assert tombstoned_record.significance is not None
     assert tombstoned.rollback() == (settled_record,)
+
+    outcome_tombstoned = tombstone_sources(
+        settled_record,
+        deletion_root_ids=(outcome.deletion_root_id,),
+        deleted_at=800,
+        actor_id="owner:andrei",
+        occurred_at=800,
+        reason="verified outcome deleted",
+    ).after[0]
+    assert retrieve_episodes(
+        (outcome_tombstoned,),
+        EpisodeQuery(outcome_record_ids=("outcome:travel-plan-confirmed",)),
+    ) == ()
 
     legacy = {
         "schema": "nerva.episode.manual.v0",
@@ -432,10 +560,14 @@ def run_e3_0_checks(tmp_path) -> None:
     )
     assert "Reference-only storage" in episode_doc
     assert "Low-confidence inference" in episode_doc
-    assert "Atomic rollback" in episode_doc
+    assert "atomic rollback" in episode_doc
     assert "production recall" in episode_doc
     assert "Ultron / `nerva.action.v1`" in episode_doc
     assert "Partial rollback is invalid" in episode_doc
+    assert "4096" in episode_doc
+    assert "1024" in episode_doc
+    assert "does not authenticate a signer" in episode_doc
+    assert "caller-supplied episode revision" in episode_doc
     assert "f2901528e452586f9702c7df1678e72ca36ca2ee" in episode_doc
 
     m1_doc = (ROOT / "docs" / "nerva2" / "M1_DELIVERY.md").read_text(
