@@ -20,6 +20,8 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
   accepted as an evaluation-only regression baseline.
 - Normalized request digests are pseudonymous/linkable and remain subject to
   access, retention and deletion controls for `redacted_local` evaluations.
+- At E1.1 acceptance, #781 Atlas, #783 Synapse and #784 Research Lab remain
+  separately eligible.
 
 ## E2.0 candidate transition
 
