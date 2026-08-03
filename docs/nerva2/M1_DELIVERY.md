@@ -12,23 +12,30 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
   `9235ef69961862df49826a910be00955d7be420e`.
 - `nerva.decision.v1` and the failure-isolated `ShadowDecisionRouter` are
   observation-only and do not alter production routing.
+- E1.1 / #792 / PR #793 is accepted on `main` as
+  `e244ea7c9e32673bdb56fe1459f355a7abb9d63f`.
+- `nerva.cortex.comparison.v1` is an evaluation-only regression baseline; it
+  does not add persistence, production selection or action authority.
 
-## E1.1 integration transition
+## E2.0 candidate transition
 
-- E1.1 / #792 / PR #793 adds the privacy-minimised
-  `nerva.cortex.comparison.v1` current-router baseline.
+- E2.0 / #781 adds typed `nerva.observation.v1` projections and deterministic
+  `nerva.atlas.snapshot.v1` read-only snapshots over the existing
+  `BiTemporalKG`.
 - On a feature branch, these artifacts remain candidate evidence only.
-- When this snapshot is present on `main` through merged PR #793, E1.1 is
-  accepted as an evaluation-only regression baseline.
-- Acceptance does not add persistence, scoring authority, execution authority,
-  measured real-task quality or an E1 completion claim.
-- Normalized request digests are pseudonymous/linkable and remain subject to
-  access, retention and deletion controls for `redacted_local` evaluations.
+- Independent review and exact-head green CI are required before E2.0 can be
+  accepted or #782 Episodes can be unblocked.
+- Legacy facts default to `private_local` privacy and `unknown` confidence;
+  explicit resolvers may narrow or qualify those values but cannot silently
+  treat missing metadata as public or measured.
+- The candidate does not add a database, migration, mutation endpoint,
+  cross-connector identity merge, deletion executor or live three-domain claim.
 
 ## Dependency posture
 
-- #781 Atlas, #783 Synapse and #784 Research Lab remain separately eligible.
-- #782 Episodes remains blocked only by #781.
+- #781 Atlas is the active candidate package.
+- #783 Synapse and #784 Research Lab remain separately eligible.
+- #782 Episodes remains blocked only by #781 until E2.0 is accepted.
 - Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 
 ## Remaining E1 evidence
@@ -38,3 +45,12 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
 - at least 20 representative real Nerva tasks that beat or match the current
   router without safety regression;
 - an independently reviewed selector decision before any production adoption.
+
+## Remaining M1 evidence
+
+- independent acceptance of the E2.0 Atlas snapshot contract;
+- E8.0 Synapse manifest and conformance evidence;
+- E9.0 versioned benchmark contract and first privacy-safe task suite;
+- cross-cutting Goal/Evidence/Outcome/Cognitive-Ledger records;
+- a real request replayed over truthful Atlas state and declared capabilities
+  without performing an external action.
