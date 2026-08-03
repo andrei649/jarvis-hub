@@ -16,33 +16,41 @@ This post-E0 snapshot is additive. The immutable E0 marker blocks in
   `e244ea7c9e32673bdb56fe1459f355a7abb9d63f`.
 - `nerva.cortex.comparison.v1` is an evaluation-only regression baseline; it
   does not add persistence, production selection or action authority.
-- When this snapshot is present on `main` through merged PR #793, E1.1 is
-  accepted as an evaluation-only regression baseline.
 - Normalized request digests are pseudonymous/linkable and remain subject to
   access, retention and deletion controls for `redacted_local` evaluations.
-- At E1.1 acceptance, #781 Atlas, #783 Synapse and #784 Research Lab remain separately eligible.
+- At E1.1 acceptance, #781 Atlas, #783 Synapse and #784 Research Lab remain
+  separately eligible.
 
-## E2.0 candidate transition
+## E2.0 transition evidence
 
-- E2.0 / #781 adds typed `nerva.observation.v1` projections and deterministic
-  `nerva.atlas.snapshot.v1` read-only snapshots over the existing
+- E2.0 / #781 defines typed `nerva.observation.v1` projections and
+  deterministic `nerva.atlas.snapshot.v1` read-only snapshots over the existing
   `BiTemporalKG`.
-- On a feature branch, these artifacts remain candidate evidence only.
-- Independent review and exact-head green CI are required before E2.0 can be
-  accepted or #782 Episodes can be unblocked.
+- Repository placement determines delivery state: the artifacts are transition
+  evidence until an independent integrator accepts one exact head with green
+  exact-head CI through the repository's safe merge method.
+- #782 becomes eligible when the exact reviewed E2.0 head lands on `main`;
+  before that integration decision it remains blocked only by #781.
+- Queries declare requested privacy classes, while a trusted
+  `AtlasAccessAuthorizer` issues the effective grant before any source-store
+  read. Requested scope alone never authorizes access.
 - Legacy facts default to `private_local` privacy and `unknown` confidence;
   explicit resolvers may narrow or qualify those values but cannot silently
   treat missing metadata as public or measured.
 - Compatibility entity IDs are source-scoped so differently sourced subjects
   are not silently merged before an explicit identity-resolution contract.
-- The candidate does not add a database, migration, mutation endpoint,
-  cross-connector identity merge, deletion executor or live three-domain claim.
+- Snapshot construction rejects non-observations, failed integrity, duplicate
+  IDs and values outside the requested/granted query scope.
+- E2.0 does not add a database, migration, mutation endpoint, production
+  authentication, cross-connector identity merge, deletion executor or live
+  three-domain claim.
 
 ## Dependency posture
 
-- #781 Atlas is the active candidate package.
+- #781 Atlas remains the active E2.0 transition until independent integration.
 - #783 Synapse and #784 Research Lab remain separately eligible.
-- #782 Episodes remains blocked only by #781 until E2.0 is accepted.
+- #782 remains blocked only by #781 before E2.0 integration and becomes
+  eligible after the exact reviewed E2.0 head is accepted onto `main`.
 - Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 
 ## Remaining E1 evidence
