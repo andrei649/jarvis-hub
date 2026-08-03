@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Validate the Nerva E0.3b ORIZONT-to-epic reconciliation.
+"""Validate the Nerva ORIZONT-to-epic reconciliation after E0 closure.
 
-This checker deliberately avoids runtime imports. It verifies planning integrity only:
-all legacy horizons remain mapped, first executable slices are bounded and dependency-safe,
-reuse evidence exists, and the human-readable document agrees with the JSON companion.
+This checker deliberately avoids runtime imports. It verifies planning integrity only: all legacy
+horizons remain mapped, the first executable slices retain bounded authority, the E0 blocker is gone,
+Episodes still waits for Atlas, reuse evidence exists, and the Markdown agrees with the JSON companion.
 """
 
 from __future__ import annotations
@@ -17,11 +17,11 @@ DOCUMENT = REPO / "docs" / "nerva2" / "ROADMAP_RECONCILIATION.md"
 
 EXPECTED_HORIZONS = [f"O{number}" for number in range(27, 34)]
 EXPECTED_SLICES = {
-    "E1": {"issue": 780, "blocked_by": [758], "authority": "shadow_no_action"},
-    "E2": {"issue": 781, "blocked_by": [758], "authority": "read_only_state"},
-    "E3": {"issue": 782, "blocked_by": [758, 781], "authority": "memory_record_only"},
-    "E8": {"issue": 783, "blocked_by": [758], "authority": "description_only"},
-    "E9": {"issue": 784, "blocked_by": [758], "authority": "evaluation_only"},
+    "E1": {"issue": 780, "blocked_by": [], "authority": "shadow_no_action"},
+    "E2": {"issue": 781, "blocked_by": [], "authority": "read_only_state"},
+    "E3": {"issue": 782, "blocked_by": [781], "authority": "memory_record_only"},
+    "E8": {"issue": 783, "blocked_by": [], "authority": "description_only"},
+    "E9": {"issue": 784, "blocked_by": [], "authority": "evaluation_only"},
 }
 ALLOWED_DISPOSITIONS = {"integrate", "build_on_existing_boundaries"}
 FORBIDDEN_COMPLETION_STATES = {"done", "live", "ga", "closed"}
@@ -42,9 +42,11 @@ def validate() -> list[str]:
     if data.get("program_issue") != 757 or data.get("epic_issue") != 758:
         errors.append("program/epic issue linkage drifted")
     if data.get("slice") != "E0.3b1":
-        errors.append("slice must remain E0.3b1 until direct ledger reconciliation lands")
-    if data.get("status") != "building":
-        errors.append("E0.3b1 must not claim E0 completion")
+        errors.append("the historical ownership-map slice must remain E0.3b1")
+    if data.get("status") != "done":
+        errors.append("roadmap reconciliation must record E0 DONE")
+    if data.get("snapshot_commit") != "0c7f880dea1fe254d590ce8967e45cfe453dc52f":
+        errors.append("roadmap snapshot must use the accepted #789 merge")
 
     horizons = data.get("horizons", [])
     horizon_ids = [item.get("id") for item in horizons]
@@ -87,12 +89,13 @@ def validate() -> list[str]:
         if f"**#{issue}**" not in text:
             errors.append(f"{epic}: issue #{issue} missing from Markdown table")
 
-    # The first wave must not skip the Atlas prerequisite for Episodes.
-    if by_epic.get("E3", {}).get("blocked_by") != [758, 781]:
-        errors.append("E3 must remain blocked by E0 and the minimum Atlas slice")
+    if by_epic.get("E3", {}).get("blocked_by") != [781]:
+        errors.append("E3 must remain blocked only by the minimum Atlas slice")
     for epic in ("E1", "E2", "E8", "E9"):
-        if by_epic.get(epic, {}).get("blocked_by") != [758]:
-            errors.append(f"{epic} must remain blocked only by the E0 gate in this plan")
+        if by_epic.get(epic, {}).get("blocked_by") != []:
+            errors.append(f"{epic} must be unblocked after E0 closure")
+    if any(758 in item.get("blocked_by", []) for item in slices):
+        errors.append("no first-wave slice may retain the closed E0 blocker")
 
     source_artifacts = data.get("source_artifacts", {})
     for key in (
@@ -106,15 +109,22 @@ def validate() -> list[str]:
         if not relative or not (REPO / relative).is_file():
             errors.append(f"missing canonical source artifact for {key}: {relative!r}")
 
-    remaining = data.get("remaining_e0_work", [])
-    if not remaining:
-        errors.append("remaining_e0_work must stay explicit")
-    if "does not close E0" not in text:
-        errors.append("Markdown must state that this slice does not close E0")
-    if "E0.3b2 — direct ledger reconciliation" not in text:
-        errors.append("next bounded slice is missing or drifted")
-    if "Ultron as the sole privileged-action authority" not in text:
-        errors.append("Ultron authority invariant missing from reconciliation")
+    if data.get("remaining_e0_work") != []:
+        errors.append("remaining_e0_work must be empty after E0 closure")
+    if not data.get("post_e0_work"):
+        errors.append("post_e0_work must keep broader program gaps explicit")
+
+    required = (
+        "E0 is `DONE`",
+        "does not claim that legacy ORIZONT completion equals Nerva runtime or release completion",
+        "#780, #781, #783 and #784 may proceed",
+        "#782 still waits for #781",
+        "Ultron as the sole privileged-action authority",
+        "E1.0 / E2.0 / E8.0 / E9.0",
+    )
+    for phrase in required:
+        if phrase not in text:
+            errors.append(f"Markdown missing post-E0 invariant: {phrase}")
 
     return errors
 
@@ -127,7 +137,7 @@ def main() -> int:
         return 1
     print(
         "Nerva roadmap reconciliation is internally consistent: "
-        "7 horizons, 5 bounded first slices, E0 still building."
+        "7 horizons, 4 unblocked first slices, E3 still waits for Atlas, E0 DONE."
     )
     return 0
 
