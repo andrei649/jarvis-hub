@@ -1,0 +1,142 @@
+[
+  {
+    "case_id": "automation-workflow",
+    "text": "automation workflow",
+    "expected_primary": "oracle",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "budget-review",
+    "text": "review my budget",
+    "expected_primary": "gecko",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "calendar-meeting",
+    "text": "calendar meeting tomorrow",
+    "expected_primary": "pepper",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "family-plans",
+    "text": "family plans for the weekend",
+    "expected_primary": "frigga",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "general-unmapped",
+    "text": "qxz blorp synthetic utterance",
+    "expected_primary": "jarvis",
+    "expected_source": "general",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "howard-preference",
+    "text": "what would I choose",
+    "expected_primary": "howard",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "inbox-check",
+    "text": "check my inbox",
+    "expected_primary": "pepper",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "jarvis-wake",
+    "text": "Jarvis, help with this",
+    "expected_primary": "jarvis",
+    "expected_source": "wake_word",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "music-play",
+    "text": "play some music",
+    "expected_primary": "jerome",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "news-headlines",
+    "text": "news headlines",
+    "expected_primary": "friday",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "analytics-kpi",
+    "text": "show the analytics KPI report",
+    "expected_primary": "stark",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "research-market",
+    "text": "research the market",
+    "expected_primary": "vision",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "satellite-overflight",
+    "text": "satellite overflight report",
+    "expected_primary": "argus",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "security-firewall",
+    "text": "security firewall review",
+    "expected_primary": "ultron",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "server-backup",
+    "text": "server backup status",
+    "expected_primary": "steve",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "sleep-review",
+    "text": "how did I sleep",
+    "expected_primary": "hercules",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "strategy-planning",
+    "text": "strategy for a small business",
+    "expected_primary": "athena",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "engine-service",
+    "text": "engine service plan",
+    "expected_primary": "hephaestus",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "weather-sample-city",
+    "text": "weather in a sample city",
+    "expected_primary": "friday",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  },
+  {
+    "case_id": "write-social-caption",
+    "text": "write a social caption",
+    "expected_primary": "veronica",
+    "expected_source": "keyword_match",
+    "privacy_class": "synthetic_public"
+  }
+]
