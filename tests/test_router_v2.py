@@ -15,7 +15,9 @@ import pytest
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from _nerva_e1_1_checks import run_e1_1_checks  # noqa: E402
 from agents.core.cortex_decision import (  # noqa: E402
     DecisionRecord,
     DecisionRejection,
@@ -39,6 +41,7 @@ def test_existing_weather_routes_to_friday():
     intent = _route(_router(), "weather in bucuresti")
     assert "friday" in intent.target_agents
     assert not intent.is_general
+    run_e1_1_checks()
 
 
 def test_existing_music_routes_to_jerome():
