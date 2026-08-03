@@ -41,7 +41,7 @@ consolidation revisions. Every immutable revision receives a deterministic
 `record_id`, integrity digest and `supersedes_record_id`. Merge and split create
 new logical episodes and supersede their inputs without deleting history.
 
-## Reference-only source projection and bounded derived text
+## Reference-only storage and bounded derived text
 
 Episode constructors store content-free source references and do not
 automatically copy source payloads or transcripts. A source reference contains
