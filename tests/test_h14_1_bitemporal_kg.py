@@ -6,9 +6,10 @@ from fastapi.testclient import TestClient
 
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from agents.core.memory.bitemporal import BiTemporalKG
-from tests._nerva_e2_0_checks import run_e2_0_checks
+from _nerva_e2_0_checks import run_e2_0_checks  # noqa: E402
+from agents.core.memory.bitemporal import BiTemporalKG  # noqa: E402
 
 
 def test_contradiction_invalidates_not_deletes(tmp_path):
