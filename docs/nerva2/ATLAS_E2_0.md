@@ -35,20 +35,23 @@ not add a replacement database or migrate existing data.
   - deletion/export lineage for each derived observation;
   - deterministic integrity hashes and replay fingerprints;
   - immutable snapshot values and fixed read-only authority flags;
-  - fail-closed validation for type, scope, integrity, duplicate identity,
-    ordering and query consistency.
+  - fail-closed direct-construction validation for type, scope, integrity,
+    duplicate identity, ordering and query consistency.
 - `tests/_nerva_e2_0_checks.py`
-  - projection without source mutation;
+  - projection of existing facts without source mutation;
   - valid-time and known-time behavior;
   - unauthorized-scope refusal before the source store is read;
-  - authorized filtering without unauthorized-record counts;
+  - authorized classification filtering without unauthorized-record counts;
   - contradiction and lineage preservation;
   - immutable values and no writable store handle;
   - deterministic replay, integrity, truncation and malformed-input failures;
-  - rejection of forged or inconsistent snapshots.
+  - direct-construction rejection of forged or inconsistent snapshots.
 - `tests/test_h14_1_bitemporal_kg.py`
   - invokes the bounded Atlas checks from an existing collected test so the
-    pinned test-count contract is not changed for bookkeeping.
+    repository's pinned test-count contract is not changed for bookkeeping.
+- `tests/_nerva_e1_1_checks.py`
+  - keeps the accepted E1.1 M1 ledger guard aligned with the durable E2.0
+    delivery-state wording and the coherent rollback contract.
 
 ## Legacy compatibility policy
 
@@ -95,7 +98,7 @@ controls.
   previously returned snapshot.
 
 The compatibility adapter does not repair pre-existing transaction-history
-limitations inside `BiTemporalKG`; it preserves the current store behavior and
+limitations inside `BiTemporalKG`; it preserves the current store's behavior and
 makes the selected temporal axis explicit for later migration work.
 
 ## Security and authority boundary
@@ -161,8 +164,8 @@ The coherent rollback is:
    with the pre-E2.0 `docs/nerva2/M1_DELIVERY.md` content;
 5. remove this E2.0 contract document.
 
-Rollback must not delete or rewrite the existing bi-temporal store. Partial rollback
-that leaves the test wiring or a misleading delivery claim is invalid.
+Rollback must not delete or rewrite the existing bi-temporal store. Partial
+rollback that leaves the test wiring or a misleading delivery claim is invalid.
 
 ## Residual risks and next package
 
