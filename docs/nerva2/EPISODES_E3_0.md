@@ -87,9 +87,16 @@ Participant, reference and evidence ordering is canonicalized before identity,
 integrity and audit fingerprints are calculated. Replaying equivalent manual
 inputs therefore yields the same records and audit event. Public record and audit
 builders validate raw timestamp types before numeric normalization, so Python
-booleans cannot enter canonical time fields. Mutation occurrence time cannot
-precede an input revision, and deletion time cannot precede the affected source
+booleans cannot enter canonical time fields. Episode start and end boundaries
+cannot follow the revision `updated_at`; mutation occurrence time cannot precede
+an input revision, and deletion time cannot precede the affected source
 occurrence or exceed the mutation time.
+
+Canonical record and audit deserializers require JSON arrays for collection
+fields before converting them to immutable tuples. Strings, objects and other
+iterables are rejected rather than silently normalized into apparently valid
+canonical values. This applies to record participants, references, lineage IDs,
+assertion evidence IDs and every audit ID collection.
 
 ## Confidence and product-truth rules
 
@@ -122,9 +129,17 @@ before records + after records + deterministic integrity audit + rollback value
 
 The canonical audit payload is round-trippable and rejects unknown top-level
 fields, changed content, authority flags, logical episode IDs or unrelated
-affected-reference IDs. Its plain SHA-256 digest detects accidental or
-uncoordinated modification. It does not authenticate a signer and does not
-provide non-repudiation.
+affected-reference IDs. `EpisodeMutation` also validates that the declared audit
+operation matches the immutable transition shape: creation, direct revision,
+settlement, consolidation, correction, tombstone, merge or split. A correctly
+re-hashed audit cannot label a one-record correction as a merge or otherwise
+misrepresent the observable before/after transition. Initial `open` and bounded
+legacy `migrate` records intentionally share the same creation shape; `open`
+additionally requires the output state to remain `open`.
+
+The audit's plain SHA-256 digest detects accidental or uncoordinated
+modification. It does not authenticate a signer and does not provide
+non-repudiation.
 
 `rollback()` returns the exact immutable `before` tuple. Persisting an operation
 is therefore an atomic caller responsibility: write the complete `after` set
@@ -137,7 +152,7 @@ caller-supplied episode revision to its references and assertions. Merge and
 split preserve source deletion roots in successor references; callers traversing
 a persisted graph must supply each relevant descendant revision. The function
 is intentionally not a durable collection-level graph walker.
-`tombstone_sources(...)` keeps an explicit tombstone and scrubs assertions whose
+`Tombstone_sources(...)` keeps an explicit tombstone and scrubs assertions whose
 evidence was deleted. This is a traversal/value contract only; it does not
 implement the external source deletion executor or a durable episode database.
 
@@ -158,7 +173,11 @@ regression test, cover:
 - raw boolean timestamp rejection across direct builders, open and migration;
 - deterministic audited merge and exact-cover split;
 - source derivative tracing across merge/split, tombstones and rollback;
-- bounded assertion/audit text and monotonic time rejection;
+- bounded assertion/audit text plus monotonic start, end, mutation and deletion
+  chronology rejection;
+- canonical JSON-array rejection for record, nested assertion and audit
+  collection fields;
+- forged audit-operation rejection against immutable transition semantics;
 - current-revision selection over tombstone, correction and supersession
   histories;
 - same-revision fork and broken adjacent-lineage rejection;
