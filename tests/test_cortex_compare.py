@@ -50,6 +50,8 @@ def test_twenty_case_current_router_baseline_matches_fixture_expectations():
         "keyword_match": 18,
         "wake_word": 1,
     }
+    assert dict(report.privacy_distribution) == {"synthetic_public": 20}
+    assert all(case.privacy_class == "synthetic_public" for case in report.cases)
 
 
 def test_case_order_does_not_change_canonical_report():
@@ -88,23 +90,65 @@ def test_router_failures_are_bounded_and_exception_messages_are_not_serialized()
             )
 
     cases = (
-        ComparisonCase("ok", "safe synthetic", "jarvis", "general"),
-        ComparisonCase("bad", "explode now", "jarvis", "general"),
+        ComparisonCase(
+            "ok", "safe synthetic", "jarvis", "general", "synthetic_public"
+        ),
+        ComparisonCase(
+            "bad", "explode now", "jarvis", "general", "redacted_local"
+        ),
     )
     report = _run(cases=cases, router=FailingRouter())
 
     assert report.failure_count == 1
     assert [case.case_id for case in report.cases] == ["bad", "ok"]
     assert report.cases[0].failure_type == "RuntimeError"
+    assert report.cases[0].privacy_class == "redacted_local"
+    assert dict(report.privacy_distribution) == {
+        "redacted_local": 1,
+        "synthetic_public": 1,
+    }
     assert "secret fixture content" not in report.to_json()
     assert "explode now" not in report.to_json()
 
 
 def test_duplicate_case_ids_fail_closed():
     cases = (
-        ComparisonCase("same", "weather", "friday", "keyword_match"),
-        ComparisonCase("same", "news", "friday", "keyword_match"),
+        ComparisonCase(
+            "same", "weather", "friday", "keyword_match", "synthetic_public"
+        ),
+        ComparisonCase(
+            "same", "news", "friday", "keyword_match", "synthetic_public"
+        ),
     )
 
     with pytest.raises(ValueError, match="unique"):
         _run(cases=cases)
+
+
+def test_loader_requires_explicit_privacy_class():
+    payload = [
+        {
+            "case_id": "unclassified",
+            "text": "weather",
+            "expected_primary": "friday",
+            "expected_source": "keyword_match",
+        }
+    ]
+
+    with pytest.raises(ValueError, match="privacy_class"):
+        load_comparison_cases(payload)
+
+
+def test_loader_rejects_non_string_fixture_fields():
+    payload = [
+        {
+            "case_id": "bad-type",
+            "text": None,
+            "expected_primary": "friday",
+            "expected_source": "keyword_match",
+            "privacy_class": "synthetic_public",
+        }
+    ]
+
+    with pytest.raises(ValueError, match="text"):
+        load_comparison_cases(payload)
