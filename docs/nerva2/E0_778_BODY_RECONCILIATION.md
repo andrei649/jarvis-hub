@@ -1,54 +1,46 @@
-# Nerva 2.0 E0.3b2b — blocker-plan body reconciliation
+# Nerva 2.0 E0.3b2c — blocker-plan closure reconciliation
 
 > **Program:** #757 · **Epic:** #758 · **Blocker plan:** #778.  
-> **Delivery PR:** #789.  
-> **Status:** E0 remains `VERIFYING`; `close_e0=false`.
+> **Accepted-evidence base:** #789 / `0c7f880dea1fe254d590ce8967e45cfe453dc52f`.  
+> **Status:** E0 is `DONE` when this exact transition is independently integrated.
 
 ## Purpose
 
-Issue #778 is the long-lived cross-epic blocker and milestone plan for Nerva 2.0. Its detailed B0–B10,
-M0–M8, metrics and anti-drift sections remain valuable, but the body predated accepted E0 controls and
-therefore contained stale unchecked work for already accepted slices.
+Issue #778 remains the long-lived cross-epic blocker and milestone plan. E0 closure updates only its
+current-state snapshot and the stale E0-related checklist items; B0–B10, M0–M8, metrics and anti-drift
+content remain intact.
 
-The 2026-08-03 reconciliation adds one authoritative current-state snapshot to the complete issue body
-without deleting or compressing the detailed plan. The snapshot distinguishes accepted E0 control
-evidence from later whole-program work and keeps all implementation and authority ceilings explicit.
+## Required blocker-plan posture after integration
 
-## Current blocker-plan posture
-
-- **B0 is resolved:** #772 accepted the acyclic delivery DAG, the exact E5 blocker set, the separate
-  runtime-feedback graph and the advisory-only E12 boundary.
-- **B1 / M0 remain `VERIFYING`:** controls #771, #772, #779, #785, #786, #787 and #788 are accepted;
-  the repository-ledger reconciliation and generated-status refresh are present. E0 is not closed
-  until independent exact-head acceptance.
-- **B2 is partial:** repository manifests and checkers now protect the accepted E0 and first-wave
-  contract, but the broader whole-program manifest/orphan checker remains future work.
+- **B0 and B1 are resolved:** the dependency contradiction, baseline/control evidence and durable
+  repository/issue ledgers are accepted through #789.
+- **M0 is complete:** E0 is `DONE`, all E0 sources agree and the first bounded wave has an explicit
+  dependency and authority position.
+- **B2 is partial:** E0/first-wave manifests and checkers exist, but the broader whole-program
+  manifest, cycle/orphan detection and generated dependency view remain open.
 - **B3–B10 remain open:** Continuity Core mapping, universal cognitive-ledger contracts, SDK breadth,
   real actuation, live task-level Ultron mediation, research/calibration, Night Shift prerequisites and
-  product proof are not promoted to E0 completion.
-- **First-wave issues remain blocked:** #780, #781, #783 and #784 wait for #758; #782 waits for #758
-  and #781.
+  product proof remain future work.
+- **Post-E0 first wave:** #780, #781, #783 and #784 may proceed in separate bounded PRs; #782 still
+  waits for #781.
 - **Authority remains unchanged:** Ultron / `nerva.action.v1` is the sole privileged-action authority.
 
-The reconciliation snapshot explicitly supersedes stale checkbox state only for the current status of
-B0, B1 and M0. The detailed work breakdown remains intact as historical and future planning context.
+## Truth boundaries
 
-## Preserved truth boundaries
-
-- Issue creation, documentation and hermetic checks are not runtime implementation evidence.
-- No first-wave capability is marked live or complete.
-- No default-off seam, reference driver or generated status is promoted to real-world proof.
-- Live task-level mediation, owner hardware and release evidence remain later gates.
-- The builder does not close E0 or start downstream implementation.
+- E0 completion is planning/control completion, not runtime or release completion.
+- Issue creation, documentation and hermetic checks are not implementation evidence.
+- No default-off seam, reference driver or generated status is promoted to live proof.
+- Live task-level mediation, real adapters, owner hardware and release evidence remain later gates.
+- The builder does not merge, close #758 or edit blockers to appear removed before independent review.
 
 ## Repository evidence
 
-- exact marker-bounded blocks in `BACKLOG.md` and `STATUS.md`;
-- generated status synchronized through `scripts/status_sync.py`;
-- a fail-closed, history-preserving ledger migrator and focused LF/CRLF tests;
-- accepted controls through merged #788 in `E0_COMPLETION.json`;
-- permanent Nerva Roadmap Integrity coverage for the ledger migrator and E0 checker;
-- this document as the durable repository record of the #778 body reconciliation.
+- exact E0 DONE blocks in `BACKLOG.md` and `STATUS.md`;
+- `E0_COMPLETION.json` with `status=done`, `close_e0=true` and accepted evidence through #789;
+- a roadmap manifest with #758 removed from the first wave and #781 retained on #782;
+- fail-closed tests for split status/closure, stale blockers and partial ledger transitions;
+- normal generated status synchronized through `scripts/status_sync.py`;
+- both Nerva integrity checkers and the ledger migrator in permanent CI.
 
 ## Verification
 
@@ -57,15 +49,10 @@ python scripts/status_sync.py --check
 python scripts/reconcile_nerva_repository_ledgers.py --check
 python scripts/check_nerva_roadmap.py
 python scripts/check_nerva_e0_completion.py
-python -m pytest tests/test_reconcile_nerva_repository_ledgers.py -q
+pytest -q tests/test_reconcile_nerva_repository_ledgers.py tests/test_nerva_e0_completion.py
 ```
-
-All required exact-head workflow families must be green after this reconciliation commit. The issue
-body itself remains external GitHub evidence and requires independent review against this repository
-record.
 
 ## Next smallest slice
 
-**E0.3b2b-independent-closure:** independently review the final change set, the reconciled #778 body,
-all exact-head checks, dependency order and authority boundaries. Only an independent integrator may
-change E0 from `VERIFYING` to `DONE`; the builder must not merge or begin #780–#784.
+After independent integration, choose one bounded **E1.0 / E2.0 / E8.0 / E9.0** slice per PR.
+#782 still waits for #781. B2 and B3–B10 remain visible in #778 and are not silently absorbed by E0.
