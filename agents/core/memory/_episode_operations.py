@@ -1058,14 +1058,23 @@ def _validate_operation_transition(
 
     operation = audit.operation
     valid = False
-    if operation in {"open", "migrate"}:
+    if operation == "open":
         valid = (
             not before
             and len(after) == 1
             and after[0].revision == 1
             and after[0].supersedes_record_id is None
             and after[0].created_at == audit.occurred_at
-            and (operation != "open" or after[0].state == "open")
+            and after[0].state == "open"
+        )
+    elif operation == "migrate":
+        valid = (
+            not before
+            and len(after) == 1
+            and after[0].revision == 1
+            and after[0].supersedes_record_id is None
+            and after[0].created_at <= audit.occurred_at
+            and after[0].state in {"open", "settled", "consolidated"}
         )
     elif operation == "settle":
         valid = _is_single_revision_transition(
