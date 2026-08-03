@@ -164,8 +164,7 @@ The coherent rollback is:
    with the pre-E2.0 `docs/nerva2/M1_DELIVERY.md` content;
 5. remove this E2.0 contract document.
 
-Rollback must not delete or rewrite the existing bi-temporal store. Partial
-rollback that leaves the test wiring or a misleading delivery claim is invalid.
+Rollback must not delete or rewrite the existing bi-temporal store. Partial rollback that leaves the test wiring or a misleading delivery claim is invalid.
 
 ## Residual risks and next package
 
