@@ -2,13 +2,13 @@
 
 Parent slice: #781 · Epic: #760 · Program: #757
 
-## Delivery transition
+## Delivery status
 
-This document describes the E2.0 contract independent of branch state. The
-artifacts are transition evidence until an independent integrator reviews one
-exact head, confirms exact-head CI and accepts that head through the
-repository's safe merge method. #782 becomes eligible when the exact reviewed head lands on `main`.
-Before that integration decision it remains blocked by #781.
+E2.0 is accepted. PR #794 was independently reviewed at exact head
+`f01b13e354eb64504d7996cc4d87d4828ae74330` and squash-merged to `main` as
+`f2901528e452586f9702c7df1678e72ca36ca2ee`.
+
+The historical transition rule was: #782 becomes eligible when the exact reviewed head lands on `main`. That condition is now satisfied; #782 is eligible for a separate bounded E3.0 package. This sentence records the former gate and must not be read as an active blocker.
 
 ## Outcome
 
@@ -47,8 +47,8 @@ not add a replacement database or migrate existing data.
   - invokes the bounded Atlas checks from an existing collected test so the
     repository's pinned test-count contract is not changed for bookkeeping.
 - `tests/_nerva_e1_1_checks.py`
-  - keeps the already accepted E1.1 ledger guard aligned with the
-    branch-independent M1 transition wording introduced by this package.
+  - keeps the accepted E1.1 M1 ledger guard aligned with the durable E2.0
+    delivery-state wording and the coherent rollback contract.
 
 ## Legacy compatibility policy
 
@@ -143,8 +143,8 @@ ruff check agents/core/memory/atlas_snapshot.py \
   tests/_nerva_e1_1_checks.py
 ```
 
-Repository CI remains the integration evidence and must be green on the exact
-reviewed head before merge.
+Repository CI was green on the accepted exact head. Future modifications must
+again pass exact-head CI before merge.
 
 ## Migration and rollback
 
@@ -161,9 +161,7 @@ The coherent rollback is:
    with the pre-E2.0 `docs/nerva2/M1_DELIVERY.md` content;
 5. remove this E2.0 contract document.
 
-Rollback must not delete or rewrite the existing bi-temporal store.
-Partial rollback that leaves the test wiring or a misleading delivery claim is
-invalid.
+Rollback must not delete or rewrite the existing bi-temporal store. Partial rollback that leaves the test wiring or a misleading delivery claim is invalid.
 
 ## Residual risks and next package
 
@@ -174,7 +172,7 @@ represented but no deletion executor is added. Source-scoped subject hashing is
 compatibility identity, not cross-domain entity resolution. Access-grant IDs are
 audit references, not signatures.
 
-After the exact reviewed E2.0 head is accepted and its contents land on `main`,
-#782 Episodes becomes eligible. The next Atlas package should exercise explicit
-identity/provenance adapters across three bounded real domains, while preserving
-correction, privacy and deletion semantics.
+The next coherent package is #782: typed Episode values plus deterministic
+manual open/settle/merge/split operations, source-reference and deletion-lineage
+tests, and rollback documentation. Learned boundary detection, Reflection,
+production recall changes and action authority remain separate.
