@@ -1,106 +1,92 @@
-# Nerva 2.0 E0.3b2b — final durable-ledger verification
+# Nerva 2.0 E0.3b2c — closure state transition
 
-> **Accepted-control base:** `main@13290b6a10f2bfce5b10a3bf57305777341c0909` on 2026-08-03.  
+> **Accepted-evidence base:** `main@0c7f880dea1fe254d590ce8967e45cfe453dc52f` on 2026-08-03.  
 > **Program:** #757 · **Epic:** #758 · **Blocker plan:** #778.  
 > **Machine-readable companion:** [`E0_COMPLETION.json`](E0_COMPLETION.json).  
-> **Final reconciliation brief:** [`E0_FINAL_RECONCILIATION.md`](E0_FINAL_RECONCILIATION.md).  
-> **Issue-ledger evidence:** [`ISSUE_LEDGER_RECONCILIATION.md`](ISSUE_LEDGER_RECONCILIATION.md).  
-> **Repository-ledger evidence:** [`E0_REPOSITORY_LEDGER_MIGRATION.md`](E0_REPOSITORY_LEDGER_MIGRATION.md).  
-> **#778 body evidence:** [`E0_778_BODY_RECONCILIATION.md`](E0_778_BODY_RECONCILIATION.md).  
-> **Status:** E0 is `VERIFYING`; this slice does not close E0 or unblock production implementation.
+> **Status:** E0 is `DONE` when this exact transition is independently integrated; `close_e0=true`.
 
-## 1. Purpose
+## 1. Decision
 
-E0 has accepted baseline, reuse, dependency, authority, risk, ORIZONT ownership, false-closure and
-owner-facing issue-ledger controls through merged #788. The E0.3b2b change set applies reviewed current
-Nerva blocks to the complete historical `BACKLOG.md` and `STATUS.md` files, refreshes generated project
-status through the existing generator and records the complete #778 body reconciliation.
+E0 has independently accepted evidence for the component baseline, reuse/build/retire map, dependency
+DAG, contract ownership, privileged-action boundary, risk register, ORIZONT ownership map, bounded
+first issues, durable issue ledgers and durable repository ledgers. The final accepted control is #789,
+merged as `0c7f880dea1fe254d590ce8967e45cfe453dc52f`.
 
-`BACKLOG.md` and `STATUS.md` are reconciled. The #778 body is reconciled with an authoritative
-current-state snapshot while retaining its B0–B10, M0–M8, metrics and anti-drift plan. The remaining
-E0 gate is exact-head independent acceptance. Repository and issue-ledger movement does not make the
-first-wave runtime capabilities implemented.
-
-This document is a planning/evidence ledger. It is not a runtime registry, capability catalog or
-authority source.
+This closure changes only planning/control truth. It does not implement Cortex, Atlas, Episodes,
+Synapse SDK or Research Lab; it does not promote a seam, default-off route, reference driver,
+hermetic test or documentation claim to a live capability.
 
 ## 2. Accepted E0 control slices
 
 | Slice | Accepted evidence | What it established |
 |---|---|---|
-| **E0.1** | #771 · `288412086439e5a02c08fcf8e575944c9b81f96c` | Code-pinned baseline and `REUSE / INTEGRATE / BUILD / REFACTOR / RETIRE` decisions. |
-| **E0.2** | #772 · `8b8e64d599262f15334ce547b7adfa3c042a7a78` | Acyclic delivery dependencies, contract ownership and the Hybrid Cognition advisory boundary. |
-| **E0.3a** | #779 · `ab177c5501eeea379b66d9d33a1ed895a322e934` | Forty evidence-grounded risks, ten stop-ship invariants and closure-evidence rules. |
-| **E0.3b1** | #785 · `a943514050a361cbd909761f05c7d9731e0f323e` | ORIZONT 27–33 reuse/ownership reconciliation and bounded first executable issues. |
-| **E0.3b2a** | #786 · `265a1c984822b059bfbf9449dacc2bde7554d225` | Durable completion manifest, false-closure guard and ledger-trigger coverage. |
-| **E0.3b2b-control** | #787 · `25eac3688830750be231c43ebacce889427c50cc` | Final reconciliation contract, accepted-control pinning and E0 `VERIFYING` controls. |
-| **E0.3b2b-issues** | #788 · `13290b6a10f2bfce5b10a3bf57305777341c0909` | Reconciled #757/#758 owner-facing posture and pinned the remaining repository/#778 gates. |
+| **E0.1** | #771 · `288412086439e5a02c08fcf8e575944c9b81f96c` | Code-pinned baseline and reuse/build/retire decisions. |
+| **E0.2** | #772 · `8b8e64d599262f15334ce547b7adfa3c042a7a78` | Acyclic dependencies, interface ownership and advisory-only feedback boundaries. |
+| **E0.3a** | #779 · `ab177c5501eeea379b66d9d33a1ed895a322e934` | Evidence-grounded risks and stop-ship invariants. |
+| **E0.3b1** | #785 · `a943514050a361cbd909761f05c7d9731e0f323e` | ORIZONT 27–33 reuse/ownership mapping and bounded first issues. |
+| **E0.3b2a** | #786 · `265a1c984822b059bfbf9449dacc2bde7554d225` | Machine-readable completion ledger and false-closure guard. |
+| **E0.3b2b-control** | #787 · `25eac3688830750be231c43ebacce889427c50cc` | Final reconciliation contract and verification controls. |
+| **E0.3b2b-issues** | #788 · `13290b6a10f2bfce5b10a3bf57305777341c0909` | Reconciled owner-facing issue posture. |
+| **E0.3b2b-repository-ledgers** | #789 · `0c7f880dea1fe254d590ce8967e45cfe453dc52f` | History-preserving `BACKLOG.md`, `STATUS.md` and #778 reconciliation with permanent guards. |
 
-These controls preserve the core boundaries:
+## 3. Authority boundaries remain unchanged
 
-- Ultron / `nerva.action.v1` remains the sole privileged-action authority;
-- Cortex records/selects routes but cannot authorize or mark completion;
-- Atlas exposes immutable state to consumers;
-- Episodes writes memory records, not source facts;
-- Synapse manifests describe capabilities but never grant permission;
-- Research Lab evaluates and recommends but cannot change production routing;
-- E12 remains advisory and cannot mutate live state.
+- Ultron / `nerva.action.v1` remains the sole privileged-action authority.
+- Cortex may create shadow decisions but cannot authorize, execute or mark completion.
+- Atlas exposes read-only state to first-wave consumers and does not create a second truth store.
+- Episodes writes memory records and cannot overwrite source facts.
+- Synapse manifests describe permissions; they never grant them.
+- Research Lab evaluates candidates and cannot change production routing.
+- Howard and E12 remain advisory and cannot substitute prediction for consent.
 
-## 3. First executable wave
+## 4. First executable wave after E0
 
-All first-wave issues exist and remain blocked by E0:
+| Epic | Issue | Bounded slice | Remaining blockers | Authority posture |
+|---|---:|---|---|---|
+| E1 Cortex | **#780** | Shadow `DecisionRecord` over current routing | none | `shadow_no_action` |
+| E2 Atlas | **#781** | Identity/provenance and read-only snapshot | none | `read_only_state` |
+| E3 Episodes | **#782** | Episode schema and deterministic manual boundaries | **#781** | `memory_record_only` |
+| E8 Synapse | **#783** | Manifest conformance over three existing capabilities | none | `description_only` |
+| E9 Research Lab | **#784** | Versioned benchmark contract and privacy-safe task suite | none | `evaluation_only` |
 
-| Epic | Issue | Bounded slice | Authority posture |
-|---|---:|---|---|
-| E1 Cortex | **#780** | Shadow `DecisionRecord` over current routing | `shadow_no_action` |
-| E2 Atlas | **#781** | Identity/provenance and read-only snapshot over the current store | `read_only_state` |
-| E3 Episodes | **#782** | Episode schema and deterministic manual boundaries | `memory_record_only`; also waits for #781 |
-| E8 Synapse | **#783** | Manifest conformance over three existing capabilities | `description_only` |
-| E9 Research Lab | **#784** | Versioned benchmark contract and privacy-safe task suite | `evaluation_only` |
+No item above is evidence of implementation. #780, #781, #783 and #784 may proceed in separate,
+bounded PRs after independent integration of this closure. #782 still waits for #781.
 
-No item above is evidence of implementation. The safe post-E0 parallel wave is #780, #781, #783 and
-#784; #782 begins only after the minimum Atlas contract in #781.
+## 5. Fail-closed closure mechanics
 
-## 4. Durable-source reconciliation state
+The closure is intentionally indivisible:
 
-| Source | Current honest state | Remaining gate |
-|---|---|---|
-| `BACKLOG.md` | **Reconciled.** One exact marker-bounded block names accepted controls through #788, E0 `VERIFYING`, the blocked first wave and the Ultron authority ceiling. Historical ORIZONT delivery remains outside the insertion. | Independent exact-head E0 closure decision. |
-| `STATUS.md` | **Reconciled.** One exact snapshot records E0 `VERIFYING`, blocked first slices, the authority ceiling and closure checks. Normal generated counters were refreshed from 5,731 to 5,743 collected backend tests. | Independent exact-head E0 closure decision. |
-| #757 | **Body reconciled.** It names accepted controls through #788, E0 `VERIFYING` and blocked first slices. | Independent exact-head E0 closure decision. |
-| #758 | **Body reconciled.** It reports `VERIFYING`, marks first-slice issue creation complete and keeps closure work open. | Independent exact-head E0 closure decision. |
-| #778 | **Body reconciled.** A 2026-08-03 snapshot marks B0 resolved, B1/M0 `VERIFYING`, B2 partial and B3–B10 open while preserving the detailed program plan. | Independent review against this repository evidence. |
+1. `status=done` and `close_e0=true` must change together.
+2. The accepted-control set must include #789.
+3. `BACKLOG.md` and `STATUS.md` must both contain their exact canonical E0 DONE blocks.
+4. The roadmap and completion manifests must remove #758 from all first-wave blockers.
+5. #782 must retain #781 as its only blocker.
+6. All authority ceilings and non-claims must remain present.
+7. #757, #758 and #778 are updated by the independent integrator when the transition is accepted.
 
-Issue bodies #757, #758 and #778 are reconciled. E0 nevertheless remains `VERIFYING` and
-`close_e0=false` because only an independent integrator may accept the final exact-head evidence and
-close the gate.
+The ledger migrator recognizes only the exact accepted VERIFYING blocks from #789 or the exact new
+DONE blocks. Any unknown, duplicated or partial state fails. It validates both ledgers before writing
+either. Unit tests also mutate the completion manifest to prove partial closure is rejected.
 
-## 5. E0 closure requirements
+## 6. Verification required on the exact head
 
-E0 may become `DONE` only when all are true:
+- `python scripts/reconcile_nerva_repository_ledgers.py --check`
+- `python scripts/check_nerva_roadmap.py`
+- `python scripts/check_nerva_e0_completion.py`
+- `python scripts/status_sync.py --check`
+- focused closure and migrator tests on Linux and Windows
+- full repository CI, Security, CodeQL, Smoke Test, Code Health and park-list workflows
+- independent diff, dependency, issue-body and authority review
 
-1. `BACKLOG.md` and `STATUS.md` contain independently reviewed durable Nerva status blocks.
-2. #757, #758 and #778 agree with those repository files.
-3. `scripts/status_sync.py --check`, the ledger migrator `--check` and both Nerva integrity checkers
-   pass on the exact head.
-4. Full Linux/Windows CI, Security, CodeQL, Smoke, Code Health and park-list checks are green.
-5. The direct ledger diff preserves history and does not promote default-off, seam, reference-driver,
-   hermetic or documentation-only work to live capability.
-6. An independent integrator accepts the evidence and explicitly closes E0.
-7. No first-wave production implementation has started ahead of that decision.
+## 7. Work that remains open after E0
 
-## 6. Current bounded slice
+E0 completion does not close the Nerva program. B2 whole-program manifest/orphan checking remains
+partial. B3–B10 remain open, including Continuity Core mapping, universal cognitive-ledger contracts,
+SDK breadth, real actuation, restart-safe task-level Ultron mediation, research/calibration, Night
+Shift prerequisites, owner-hardware proof and the Nerva 2.0 release gate.
 
-The E0.3b2b change set adds the history-preserving migrator, its focused Linux/Windows tests and
-workflow coverage; applies the exact blocks to complete `BACKLOG.md` and `STATUS.md`; refreshes the
-repository's generated status artifacts; upgrades the E0 checker to exact canonical-block validation;
-and reconciles the full #778 body without deleting its detailed blocker and milestone plan.
+## 8. Next smallest slice
 
-The one-shot branch workflow used only locked dependencies and `contents: write`, enforced a strict
-allowlist, verified both marker pairs and removed itself in the generated commit. The #778 body edit is
-external issue evidence mirrored by `E0_778_BODY_RECONCILIATION.md`. No runtime, API, persistence,
-routing, settings, capability-readiness or privileged-action behavior changed.
-
-The next smallest slice is **E0.3b2b-independent-closure — independently review the final change set,
-the reconciled #778 body, all final exact-head generated-status, ledger, Nerva and workflow evidence,
-dependency order and authority boundaries. The builder must not merge, close E0 or begin #780–#784**.
+**E1.0 / E2.0 / E8.0 / E9.0:** choose one smallest bounded slice per PR. The preferred first movement
+is the contract-only or read-only work that maximizes reuse and creates no privileged effect. #780,
+#781, #783 and #784 may proceed independently; #782 still waits for #781.

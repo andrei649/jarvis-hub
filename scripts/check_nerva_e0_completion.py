@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Validate the Nerva E0 verification ledger without claiming E0 is complete.
+"""Validate the closed Nerva E0 planning/control ledger.
 
-The checker is repository-only and side-effect free. GitHub issue bodies and CI results remain
-external evidence reviewed by the integrator; this gate verifies accepted control slices,
-first-wave dependencies, exact repository-ledger blocks, recorded issue-ledger posture and authority
-boundaries while E0 is VERIFYING.
+The checker is repository-only and side-effect free. It validates accepted evidence, post-E0
+first-wave dependencies, exact repository-ledger blocks, issue-ledger target posture and authority
+boundaries. GitHub issue state and CI results remain external evidence for the independent integrator.
 """
 
 from __future__ import annotations
@@ -54,18 +53,22 @@ EXPECTED_CONTROLS = {
         "pull_request": 788,
         "merge_commit": "13290b6a10f2bfce5b10a3bf57305777341c0909",
     },
+    "E0.3b2b-repository-ledgers": {
+        "pull_request": 789,
+        "merge_commit": "0c7f880dea1fe254d590ce8967e45cfe453dc52f",
+    },
 }
 EXPECTED_SLICES = {
-    "E1": {"issue": 780, "blocked_by": [758], "authority": "shadow_no_action"},
-    "E2": {"issue": 781, "blocked_by": [758], "authority": "read_only_state"},
-    "E3": {"issue": 782, "blocked_by": [758, 781], "authority": "memory_record_only"},
-    "E8": {"issue": 783, "blocked_by": [758], "authority": "description_only"},
-    "E9": {"issue": 784, "blocked_by": [758], "authority": "evaluation_only"},
+    "E1": {"issue": 780, "blocked_by": [], "authority": "shadow_no_action"},
+    "E2": {"issue": 781, "blocked_by": [], "authority": "read_only_state"},
+    "E3": {"issue": 782, "blocked_by": [781], "authority": "memory_record_only"},
+    "E8": {"issue": 783, "blocked_by": [], "authority": "description_only"},
+    "E9": {"issue": 784, "blocked_by": [], "authority": "evaluation_only"},
 }
 EXPECTED_ISSUE_STATUS = {
-    "757": "body_reconciled",
-    "758": "body_reconciled",
-    "778": "body_reconciled",
+    "757": "e0_done",
+    "758": "e0_done",
+    "778": "e0_done",
 }
 
 
@@ -97,32 +100,27 @@ def _validate_exact_block(
     if text.count(START) != 1 or text.count(END) != 1:
         errors.append(f"{name}: expected exactly one complete Nerva repository-ledger block")
     if expected_block not in text:
-        errors.append(f"{name}: canonical Nerva repository-ledger block is absent or stale")
+        errors.append(f"{name}: canonical Nerva E0 DONE block is absent or stale")
     for token in historical_tokens:
         if token not in text:
             errors.append(f"{name}: lost existing Nerva/ORIZONT anchor: {token}")
 
 
-def validate() -> list[str]:
-    errors: list[str] = []
-    data = _load_json(MANIFEST, errors)
-    roadmap = _load_json(ROADMAP, errors)
-    text = _read_text(DOCUMENT, errors)
-    final_text = _read_text(FINAL_RECONCILIATION, errors)
-    issue_text = _read_text(ISSUE_RECONCILIATION, errors)
-    migration_text = _read_text(MIGRATION_DOCUMENT, errors)
-    blocker_plan_text = _read_text(BLOCKER_PLAN_RECONCILIATION, errors)
+def validate_state(data: dict, errors: list[str]) -> None:
+    """Validate the machine-readable closure state, including partial-closure rejection."""
 
     if data.get("schema_version") != 1:
         errors.append("schema_version must be 1")
     if data.get("program_issue") != 757 or data.get("epic_issue") != 758:
         errors.append("program/epic linkage drifted")
-    if data.get("slice") != "E0.3b2b-repository-ledgers":
-        errors.append("completion ledger slice must be E0.3b2b-repository-ledgers")
-    if data.get("status") != "verifying" or data.get("close_e0") is not False:
-        errors.append("completion ledger must keep E0 VERIFYING and close_e0=false")
-    if data.get("snapshot_commit") != EXPECTED_CONTROLS["E0.3b2b-issues"]["merge_commit"]:
-        errors.append("completion ledger snapshot must be the accepted #788 merge")
+    if data.get("slice") != "E0.3b2c-closure-state-transition":
+        errors.append("completion ledger slice must be E0.3b2c-closure-state-transition")
+    if data.get("status") != "done" or data.get("close_e0") is not True:
+        errors.append("completion ledger must set status=done and close_e0=true together")
+    if data.get("snapshot_commit") != EXPECTED_CONTROLS["E0.3b2b-repository-ledgers"][
+        "merge_commit"
+    ]:
+        errors.append("completion ledger snapshot must be the accepted #789 merge")
 
     controls = data.get("accepted_control_slices", [])
     by_slice = {item.get("slice"): item for item in controls if isinstance(item, dict)}
@@ -149,9 +147,61 @@ def validate() -> list[str]:
         for key, value in expected.items():
             if actual.get(key) != value:
                 errors.append(f"{epic}: expected {key}={value!r}, got {actual.get(key)!r}")
-        issue = expected["issue"]
-        if f"**#{issue}**" not in text:
-            errors.append(f"{epic}: issue #{issue} missing from completion document")
+    if any(758 in item.get("blocked_by", []) for item in slices if isinstance(item, dict)):
+        errors.append("partial closure: a first-wave slice still retains #758 as a blocker")
+    if by_epic.get("E3", {}).get("blocked_by") != [781]:
+        errors.append("E3 must remain blocked only by #781 after E0 closure")
+
+    ledgers = data.get("repository_ledgers", {})
+    if set(ledgers) != {"BACKLOG.md", "STATUS.md"}:
+        errors.append("repository_ledgers must contain exactly BACKLOG.md and STATUS.md")
+    for name in ("BACKLOG.md", "STATUS.md"):
+        entry = ledgers.get(name, {})
+        if entry.get("state") != "e0_done":
+            errors.append(f"{name}: state must be e0_done")
+        for field in ("evidence", "historical_truth_preserved", "remaining_gate"):
+            if not entry.get(field):
+                errors.append(f"{name}: missing {field}")
+
+    if data.get("issue_ledgers") != [757, 758, 778]:
+        errors.append("issue ledger set must remain #757, #758 and #778")
+    issue_status = data.get("issue_ledger_status", {})
+    if set(issue_status) != set(EXPECTED_ISSUE_STATUS):
+        errors.append("issue_ledger_status must contain exactly #757, #758 and #778")
+    for issue, expected_state in EXPECTED_ISSUE_STATUS.items():
+        entry = issue_status.get(issue, {})
+        if entry.get("state") != expected_state:
+            errors.append(
+                f"issue #{issue}: expected state {expected_state!r}, got {entry.get('state')!r}"
+            )
+        if not entry.get("evidence"):
+            errors.append(f"issue #{issue}: missing closure evidence")
+
+    if len(data.get("closure_invariants", [])) < 8:
+        errors.append("E0 closure invariants are incomplete")
+    if not data.get("post_e0_open_work"):
+        errors.append("post-E0 open work must remain explicit")
+    next_slice = str(data.get("next_slice", ""))
+    if not next_slice.startswith("E1.0 / E2.0 / E8.0 / E9.0"):
+        errors.append("next slice must name the bounded post-E0 parallel wave")
+
+
+def validate() -> list[str]:
+    errors: list[str] = []
+    data = _load_json(MANIFEST, errors)
+    roadmap = _load_json(ROADMAP, errors)
+    text = _read_text(DOCUMENT, errors)
+    final_text = _read_text(FINAL_RECONCILIATION, errors)
+    issue_text = _read_text(ISSUE_RECONCILIATION, errors)
+    migration_text = _read_text(MIGRATION_DOCUMENT, errors)
+    blocker_plan_text = _read_text(BLOCKER_PLAN_RECONCILIATION, errors)
+
+    validate_state(data, errors)
+
+    slices = data.get("first_executable_slices", [])
+    for item in slices:
+        if isinstance(item, dict) and f"**#{item.get('issue')}**" not in text:
+            errors.append(f"{item.get('epic')}: issue #{item.get('issue')} missing from completion document")
 
     roadmap_slices = {
         item.get("epic"): {
@@ -164,17 +214,8 @@ def validate() -> list[str]:
     }
     if roadmap_slices != EXPECTED_SLICES:
         errors.append("completion ledger and accepted roadmap first slices disagree")
-
-    ledgers = data.get("repository_ledgers", {})
-    if set(ledgers) != {"BACKLOG.md", "STATUS.md"}:
-        errors.append("repository_ledgers must contain exactly BACKLOG.md and STATUS.md")
-    for name in ("BACKLOG.md", "STATUS.md"):
-        entry = ledgers.get(name, {})
-        if entry.get("state") != "reconciled":
-            errors.append(f"{name}: merge-stable state must be reconciled")
-        for field in ("evidence", "historical_truth_preserved", "remaining_gate"):
-            if not entry.get(field):
-                errors.append(f"{name}: missing {field}")
+    if roadmap.get("status") != "done":
+        errors.append("roadmap reconciliation must record E0 DONE")
 
     backlog = _read_text(BACKLOG, errors)
     status = _read_text(STATUS, errors)
@@ -195,90 +236,65 @@ def validate() -> list[str]:
             errors=errors,
         )
 
-    if data.get("issue_ledgers") != [757, 758, 778]:
-        errors.append("issue ledger set must remain #757, #758 and #778")
-    issue_status = data.get("issue_ledger_status", {})
-    if set(issue_status) != set(EXPECTED_ISSUE_STATUS):
-        errors.append("issue_ledger_status must contain exactly #757, #758 and #778")
-    for issue, expected_state in EXPECTED_ISSUE_STATUS.items():
-        entry = issue_status.get(issue, {})
-        if entry.get("state") != expected_state:
-            errors.append(
-                f"issue #{issue}: expected state {expected_state!r}, got {entry.get('state')!r}"
-            )
-        if not entry.get("evidence"):
-            errors.append(f"issue #{issue}: missing reconciliation evidence")
-
-    if len(data.get("closure_requirements", [])) < 6:
-        errors.append("E0 closure requirements are incomplete")
-    next_slice = str(data.get("next_slice", ""))
-    if not next_slice.startswith("E0.3b2b-independent-closure"):
-        errors.append("next slice must be independent E0 closure review")
-
     required_phrases = (
-        "E0 is `VERIFYING`",
+        "E0 is `DONE`",
         "Ultron / `nerva.action.v1` remains the sole privileged-action authority",
         "No item above is evidence of implementation",
-        "`BACKLOG.md` and `STATUS.md` are reconciled",
-        "The #778 body is reconciled",
-        "E0.3b2b-independent-closure",
+        "#780, #781, #783 and #784 may proceed",
+        "#782 still waits for #781",
+        "E1.0 / E2.0 / E8.0 / E9.0",
     )
     for phrase in required_phrases:
         if phrase not in text:
             errors.append(f"completion document missing invariant: {phrase}")
 
     final_required = (
-        "Status: **VERIFYING**",
-        "E0.3b2b-issues",
-        "#788",
-        "`BACKLOG.md` and `STATUS.md` contain",
-        "#778 body is reconciled",
-        "#780",
-        "#781",
-        "#782",
-        "#783",
-        "#784",
+        "Status: **DONE**",
+        "E0.3b2b-repository-ledgers",
+        "#789",
+        "#780, #781, #783 and #784 may proceed",
+        "#782 still waits for #781",
         "Ultron / `nerva.action.v1` remains the sole privileged-action authority",
         "scripts/status_sync.py --check",
-        "E0.3b2b-independent-closure",
+        "E1.0 / E2.0 / E8.0 / E9.0",
     )
     for phrase in final_required:
         if phrase not in final_text:
             errors.append(f"final reconciliation brief missing invariant: {phrase}")
 
     issue_required = (
-        "Status:** E0 remains `VERIFYING`",
+        "Status:** E0 is `DONE`",
         "#757",
         "#758",
         "#778",
-        "| #778 | body reconciled |",
-        "| `BACKLOG.md` | reconciled |",
-        "| `STATUS.md` | reconciled |",
-        "E0.3b2b-independent-closure",
+        "| #778 | E0 done |",
+        "| `BACKLOG.md` | E0 done |",
+        "| `STATUS.md` | E0 done |",
+        "#782 still waits for #781",
     )
     for phrase in issue_required:
         if phrase not in issue_text:
             errors.append(f"issue reconciliation document missing invariant: {phrase}")
 
     migration_required = (
-        "Applied state",
-        "exact repository reconciliation is present",
+        "Closure transition",
+        "accepted VERIFYING block",
+        "canonical E0 DONE block",
         "scripts/status_sync.py --check",
-        "E0_778_BODY_RECONCILIATION.md",
-        "E0.3b2b-independent-closure",
+        "partial closure",
     )
     for phrase in migration_required:
         if phrase not in migration_text:
             errors.append(f"repository-ledger migration document missing invariant: {phrase}")
 
     blocker_plan_required = (
-        "Status:** E0 remains `VERIFYING`",
-        "B0 is resolved",
-        "B1 / M0 remain `VERIFYING`",
+        "Status:** E0 is `DONE`",
+        "B0 and B1 are resolved",
+        "M0 is complete",
         "B2 is partial",
         "B3–B10 remain open",
         "Ultron / `nerva.action.v1` is the sole privileged-action authority",
-        "E0.3b2b-independent-closure",
+        "#782 still waits for #781",
     )
     for phrase in blocker_plan_required:
         if phrase not in blocker_plan_text:
@@ -294,9 +310,9 @@ def main() -> int:
             print(f"ERROR: {error}")
         return 1
     print(
-        "Nerva E0 verification ledger is consistent: 7 accepted control slices, "
-        "2 exact repository blocks, 3 reconciled issue bodies, 5 blocked first slices, "
-        "E0 still VERIFYING pending independent closure."
+        "Nerva E0 closure ledger is consistent: 8 accepted control slices, "
+        "2 exact E0 DONE repository blocks, 3 E0-done issue targets, "
+        "4 E0-unblocked first slices, E3 still waiting for Atlas."
     )
     return 0
 

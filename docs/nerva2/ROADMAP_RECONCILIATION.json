@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "snapshot_commit": "ab177c5501eeea379b66d9d33a1ed895a322e934",
+  "snapshot_commit": "0c7f880dea1fe254d590ce8967e45cfe453dc52f",
   "program_issue": 757,
   "epic_issue": 758,
   "slice": "E0.3b1",
-  "status": "building",
+  "status": "done",
   "purpose": "Reconcile legacy ORIZONT 27-33 delivery horizons with Nerva 2.0 ownership without rebuilding accepted substrate or claiming legacy completion as Nerva completion.",
   "horizons": [
     {
@@ -12,7 +12,11 @@
       "program": "A — Foundations",
       "legacy_scope": "Capability Registry and Unified Action API",
       "disposition": "integrate",
-      "nerva_epics": ["E1", "E8", "E11"],
+      "nerva_epics": [
+        "E1",
+        "E8",
+        "E11"
+      ],
       "reuse_paths": [
         "agents/core/capability_manifests.py",
         "agents/core/observability/capability_registry.py",
@@ -28,7 +32,11 @@
       "program": "B — Computer operator",
       "legacy_scope": "Computer and Browser Operator",
       "disposition": "integrate",
-      "nerva_epics": ["E8", "E10", "E11"],
+      "nerva_epics": [
+        "E8",
+        "E10",
+        "E11"
+      ],
       "reuse_paths": [
         "agents/core/environments",
         "agents/core/tool_rpc.py",
@@ -42,7 +50,11 @@
       "program": "C — Media and surfaces",
       "legacy_scope": "Multimedia Director",
       "disposition": "integrate",
-      "nerva_epics": ["E8", "E10", "E11"],
+      "nerva_epics": [
+        "E8",
+        "E10",
+        "E11"
+      ],
       "reuse_paths": [
         "agents/core/media_director.py",
         "agents/core/routers/media_director.py",
@@ -56,7 +68,11 @@
       "program": "D — Atlas house model",
       "legacy_scope": "House Brain",
       "disposition": "integrate",
-      "nerva_epics": ["E2", "E10", "E11"],
+      "nerva_epics": [
+        "E2",
+        "E10",
+        "E11"
+      ],
       "reuse_paths": [
         "agents/core/memory/bitemporal.py",
         "agents/core/routers/memory_kg.py",
@@ -72,7 +88,11 @@
       "program": "E — Vision and surveillance",
       "legacy_scope": "Camera Intelligence",
       "disposition": "build_on_existing_boundaries",
-      "nerva_epics": ["E2", "E8", "E11"],
+      "nerva_epics": [
+        "E2",
+        "E8",
+        "E11"
+      ],
       "reuse_paths": [
         "agents/core/llm/vlm.py",
         "agents/core/memory/bitemporal.py",
@@ -86,7 +106,11 @@
       "program": "F — Synapse self-extension",
       "legacy_scope": "Capability Acquisition",
       "disposition": "integrate",
-      "nerva_epics": ["E8", "E9", "E11"],
+      "nerva_epics": [
+        "E8",
+        "E9",
+        "E11"
+      ],
       "reuse_paths": [
         "agents/core/acquisition/runtime.py",
         "agents/core/acquisition/llm_synth.py",
@@ -101,7 +125,12 @@
       "program": "G — Ambient cognition",
       "legacy_scope": "Ambient Intelligence",
       "disposition": "integrate",
-      "nerva_epics": ["E5", "E6", "E10", "E11"],
+      "nerva_epics": [
+        "E5",
+        "E6",
+        "E10",
+        "E11"
+      ],
       "reuse_paths": [
         "agents/core/autonomy/observer.py",
         "agents/core/autonomy/missions.py",
@@ -118,35 +147,37 @@
       "epic": "E1",
       "issue": 780,
       "title": "shadow DecisionRecord over current routing",
-      "blocked_by": [758],
+      "blocked_by": [],
       "authority": "shadow_no_action"
     },
     {
       "epic": "E2",
       "issue": 781,
       "title": "Atlas identity, provenance and read-only snapshot contract",
-      "blocked_by": [758],
+      "blocked_by": [],
       "authority": "read_only_state"
     },
     {
       "epic": "E3",
       "issue": 782,
       "title": "Episode schema and deterministic manual boundaries",
-      "blocked_by": [758, 781],
+      "blocked_by": [
+        781
+      ],
       "authority": "memory_record_only"
     },
     {
       "epic": "E8",
       "issue": 783,
       "title": "Synapse manifest conformance on three existing capabilities",
-      "blocked_by": [758],
+      "blocked_by": [],
       "authority": "description_only"
     },
     {
       "epic": "E9",
       "issue": 784,
       "title": "versioned benchmark contract and privacy-safe task suite",
-      "blocked_by": [758],
+      "blocked_by": [],
       "authority": "evaluation_only"
     }
   ],
@@ -158,10 +189,11 @@
     "risk_contract": "docs/nerva2/RISKS.md",
     "program_ledger": 757
   },
-  "remaining_e0_work": [
-    "Reconcile the accepted mapping into BACKLOG.md and STATUS.md without hand-claiming live capability.",
-    "Update #757, #758 and #778 bodies or durable ledger sections to point at the accepted first slices.",
-    "Add a machine-readable whole-program manifest and cycle/orphan checker after E0 closes or as the next control-plane slice.",
-    "Close E0 only after the direct ledger edits and independent review are accepted."
+  "remaining_e0_work": [],
+  "post_e0_work": [
+    "Add the whole-program manifest, cycle/orphan detection and generated dependency view.",
+    "Map Continuity Core #731 into E2/E3/E4/E5/E6/E10/E11 without duplicate substrate.",
+    "Implement #780, #781, #783 and #784 as separate bounded slices; #782 remains after #781.",
+    "Earn live task-level Ultron mediation, real adapter, owner-hardware and release evidence in later gates."
   ]
 }

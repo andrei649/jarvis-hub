@@ -12,24 +12,24 @@
 > **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
 <!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
-## Nerva 2.0 program control — E0 VERIFYING
+## Nerva 2.0 program control — E0 DONE
 
 > Canonical program: [#757](https://github.com/andrei649/jarvis-hub/issues/757) · E0 epic:
 > [#758](https://github.com/andrei649/jarvis-hub/issues/758) · blocker plan:
 > [#778](https://github.com/andrei649/jarvis-hub/issues/778) · machine-readable completion ledger:
 > [`docs/nerva2/E0_COMPLETION.json`](docs/nerva2/E0_COMPLETION.json).
 
-- Accepted E0 control evidence: #771, #772, #779, #785, #786, #787 and #788.
-- E0 remains **VERIFYING** with `close_e0=false`; this block is program truth, not an implementation
-  claim and not an E0 closure decision.
-- First executable slices #780 (Cortex), #781 (Atlas), #783 (Synapse) and #784 (Research Lab) remain
-  blocked by #758. #782 (Episodes) remains blocked by #758 and the minimum Atlas slice #781.
+- Accepted E0 evidence is complete through #789: baseline, ownership, dependencies, authority,
+  risks, ORIZONT mapping, issue ledgers and repository ledgers were independently reviewed.
+- E0 is **DONE** with `close_e0=true`. This closes the baseline/control gate only; it does not claim
+  that Cortex, Atlas, Episodes, Synapse SDK or Research Lab runtime capabilities are implemented.
+- #780 (Cortex), #781 (Atlas), #783 (Synapse) and #784 (Research Lab) are no longer blocked by E0 and
+  may proceed as separate bounded slices. #782 (Episodes) still waits for the minimum Atlas slice #781.
 - Ultron / `nerva.action.v1` remains the sole privileged-action authority. Cortex is shadow/no-action,
   Atlas is read-only to consumers, Episodes is memory-record-only, Synapse is description-only and
   Research Lab is evaluation-only in the first wave.
-- The historical ORIZONT delivery record below remains intact. Nerva completion is earned only by
-  reviewed repository/issue agreement, green generated-status and integrity checks, exact-head CI,
-  and a separate independent integrator decision.
+- Historical ORIZONT delivery remains intact. Broader program-manifest work, Continuity Core mapping,
+  live task-level mediation, real adapters, Night Shift prerequisites and release proof remain open.
 <!-- NERVA2:E0-REPOSITORY-LEDGER:END -->
 
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**

@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Apply or verify the bounded Nerva E0 blocks in BACKLOG.md and STATUS.md.
+"""Apply or verify the bounded Nerva E0 closure blocks in BACKLOG.md and STATUS.md.
 
-This migrator exists because both ledgers contain long-lived delivery history that must not be
-reconstructed or reformatted to add the current Nerva program state. It inserts one exact,
-marker-bounded block at a unique stable anchor and otherwise preserves the input bytes.
-
-The script does not close E0. The inserted truth keeps E0 VERIFYING, close_e0=false and the first
-implementation wave blocked pending independent integration review.
+The two ledgers contain long-lived delivery history that must not be reconstructed or reformatted.
+This migrator inserts the canonical block when absent, upgrades the one exact previously accepted
+VERIFYING block to the DONE block, and otherwise refuses to guess. Both ledgers are validated before
+either is written, so a partial or ambiguous closure cannot be committed accidentally.
 """
 
 from __future__ import annotations
@@ -23,7 +21,7 @@ from pathlib import Path
 START = "<!-- NERVA2:E0-REPOSITORY-LEDGER:START -->"
 END = "<!-- NERVA2:E0-REPOSITORY-LEDGER:END -->"
 
-BACKLOG_BLOCK = """<!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
+PREVIOUS_BACKLOG_BLOCK = """<!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
 ## Nerva 2.0 program control — E0 VERIFYING
 
 > Canonical program: [#757](https://github.com/andrei649/jarvis-hub/issues/757) · E0 epic:
@@ -46,7 +44,7 @@ BACKLOG_BLOCK = """<!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
 
 """
 
-STATUS_BLOCK = """<!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
+PREVIOUS_STATUS_BLOCK = """<!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
 ## Nerva 2.0 verification snapshot — 2026-08-02
 
 - **Program state:** E0 is `VERIFYING`; `close_e0=false`.
@@ -67,12 +65,58 @@ Canonical evidence: [#757](https://github.com/andrei649/jarvis-hub/issues/757),
 
 """
 
+BACKLOG_BLOCK = """<!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
+## Nerva 2.0 program control — E0 DONE
+
+> Canonical program: [#757](https://github.com/andrei649/jarvis-hub/issues/757) · E0 epic:
+> [#758](https://github.com/andrei649/jarvis-hub/issues/758) · blocker plan:
+> [#778](https://github.com/andrei649/jarvis-hub/issues/778) · machine-readable completion ledger:
+> [`docs/nerva2/E0_COMPLETION.json`](docs/nerva2/E0_COMPLETION.json).
+
+- Accepted E0 evidence is complete through #789: baseline, ownership, dependencies, authority,
+  risks, ORIZONT mapping, issue ledgers and repository ledgers were independently reviewed.
+- E0 is **DONE** with `close_e0=true`. This closes the baseline/control gate only; it does not claim
+  that Cortex, Atlas, Episodes, Synapse SDK or Research Lab runtime capabilities are implemented.
+- #780 (Cortex), #781 (Atlas), #783 (Synapse) and #784 (Research Lab) are no longer blocked by E0 and
+  may proceed as separate bounded slices. #782 (Episodes) still waits for the minimum Atlas slice #781.
+- Ultron / `nerva.action.v1` remains the sole privileged-action authority. Cortex is shadow/no-action,
+  Atlas is read-only to consumers, Episodes is memory-record-only, Synapse is description-only and
+  Research Lab is evaluation-only in the first wave.
+- Historical ORIZONT delivery remains intact. Broader program-manifest work, Continuity Core mapping,
+  live task-level mediation, real adapters, Night Shift prerequisites and release proof remain open.
+<!-- NERVA2:E0-REPOSITORY-LEDGER:END -->
+
+"""
+
+STATUS_BLOCK = """<!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
+## Nerva 2.0 E0 completion snapshot — 2026-08-03
+
+- **Program state:** E0 is `DONE`; `close_e0=true`.
+- **Accepted controls:** #771, #772, #779, #785, #786, #787, #788 and #789.
+- **First executable wave:** #780, #781, #783 and #784 are eligible for separate bounded work; #782
+  remains blocked only by the minimum Atlas slice #781.
+- **Authority ceiling:** Ultron / `nerva.action.v1` is the sole privileged-action authority. The first
+  Cortex, Atlas, Episodes, Synapse and Research Lab slices do not gain action authority.
+- **Truth boundary:** E0 completion proves planning/control consistency, not live runtime capability.
+  The ORIZONT history below remains preserved and later product, hardware and release gates stay open.
+- **Next movement:** implement one bounded first-wave slice per PR, beginning with reusable typed or
+  read-only contracts; never combine E0 closure with production behavior or privileged effects.
+
+Canonical evidence: [#757](https://github.com/andrei649/jarvis-hub/issues/757),
+[#758](https://github.com/andrei649/jarvis-hub/issues/758),
+[#778](https://github.com/andrei649/jarvis-hub/issues/778),
+[`docs/nerva2/E0_COMPLETION.md`](docs/nerva2/E0_COMPLETION.md).
+<!-- NERVA2:E0-REPOSITORY-LEDGER:END -->
+
+"""
+
 
 @dataclass(frozen=True)
 class LedgerSpec:
     path: str
     anchor: str
     block: str
+    previous_block: str
 
 
 SPECS = (
@@ -80,11 +124,13 @@ SPECS = (
         path="BACKLOG.md",
         anchor="**S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**\n",
         block=BACKLOG_BLOCK,
+        previous_block=PREVIOUS_BACKLOG_BLOCK,
     ),
     LedgerSpec(
         path="STATUS.md",
         anchor="---\n\n## ORIZONT 26 Update — 2026-07-04\n",
         block=STATUS_BLOCK,
+        previous_block=PREVIOUS_STATUS_BLOCK,
     ),
 )
 
@@ -128,7 +174,7 @@ def _find_anchor(text: str, spec: LedgerSpec) -> tuple[str, str]:
 
 
 def reconcile_text(text: str, spec: LedgerSpec) -> tuple[str, bool]:
-    """Return the exact reconciled text and whether a write is required."""
+    """Return the exact closure-reconciled text and whether a write is required."""
 
     starts = text.count(START)
     ends = text.count(END)
@@ -145,11 +191,14 @@ def reconcile_text(text: str, spec: LedgerSpec) -> tuple[str, bool]:
         line_ending = _existing_block_line_ending(text, start, spec.path)
         existing = text[start:end]
         expected = _with_line_ending(spec.block, line_ending).rstrip("\r\n")
-        if existing != expected:
-            raise ReconciliationError(
-                f"{spec.path}: marker-bounded block exists but differs from canonical content"
-            )
-        return text, False
+        previous = _with_line_ending(spec.previous_block, line_ending).rstrip("\r\n")
+        if existing == expected:
+            return text, False
+        if existing == previous:
+            return text[:start] + expected + text[end:], True
+        raise ReconciliationError(
+            f"{spec.path}: marker-bounded block is neither the accepted VERIFYING state nor the canonical DONE state"
+        )
 
     anchor, line_ending = _find_anchor(text, spec)
     block = _with_line_ending(spec.block, line_ending)
@@ -193,13 +242,13 @@ def run(root: Path, *, write: bool) -> list[str]:
         reconciled, changed = reconcile_bytes(raw, spec)
         if changed:
             pending.append((path, reconciled))
-            messages.append(f"{spec.path}: reconciliation required")
+            messages.append(f"{spec.path}: E0 closure reconciliation required")
         else:
-            messages.append(f"{spec.path}: canonical block present")
+            messages.append(f"{spec.path}: canonical E0 DONE block present")
 
     if pending and not write:
         raise ReconciliationError(
-            "repository ledgers are not reconciled; run with --write in a dedicated branch"
+            "repository ledgers are not in the canonical E0 DONE state; run with --write in a dedicated branch"
         )
 
     for path, content in pending:
@@ -208,7 +257,7 @@ def run(root: Path, *, write: bool) -> list[str]:
     if pending:
         messages.append(f"updated {len(pending)} ledger(s) without rewriting existing history")
     else:
-        messages.append("repository ledgers already reconciled; no files changed")
+        messages.append("repository ledgers already record E0 DONE; no files changed")
     return messages
 
 
@@ -218,12 +267,12 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument(
         "--check",
         action="store_true",
-        help="fail if either canonical block is absent",
+        help="fail unless both canonical E0 DONE blocks are present",
     )
     mode.add_argument(
         "--write",
         action="store_true",
-        help="insert missing canonical blocks atomically",
+        help="insert or transition both canonical E0 DONE blocks atomically per file",
     )
     parser.add_argument(
         "--root",
