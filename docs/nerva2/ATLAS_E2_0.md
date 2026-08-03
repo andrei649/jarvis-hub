@@ -46,6 +46,9 @@ not add a replacement database or migrate existing data.
 - `tests/test_h14_1_bitemporal_kg.py`
   - invokes the bounded Atlas checks from an existing collected test so the
     repository's pinned test-count contract is not changed for bookkeeping.
+- `tests/_nerva_e1_1_checks.py`
+  - keeps the already accepted E1.1 ledger guard aligned with the
+    branch-independent M1 transition wording introduced by this package.
 
 ## Legacy compatibility policy
 
@@ -136,7 +139,8 @@ Focused verification:
 ```bash
 pytest -q tests/test_h14_1_bitemporal_kg.py
 ruff check agents/core/memory/atlas_snapshot.py \
-  tests/_nerva_e2_0_checks.py tests/test_h14_1_bitemporal_kg.py
+  tests/_nerva_e2_0_checks.py tests/test_h14_1_bitemporal_kg.py \
+  tests/_nerva_e1_1_checks.py
 ```
 
 Repository CI remains the integration evidence and must be green on the exact
@@ -153,8 +157,9 @@ The coherent rollback is:
 2. delete `tests/_nerva_e2_0_checks.py`;
 3. remove the helper import and invocation from
    `tests/test_h14_1_bitemporal_kg.py`;
-4. remove the E2.0 transition/accepted snapshot from
-   `docs/nerva2/M1_DELIVERY.md` and this document.
+4. restore the pre-E2.0 M1 assertions in `tests/_nerva_e1_1_checks.py` together
+   with the pre-E2.0 `docs/nerva2/M1_DELIVERY.md` content;
+5. remove this E2.0 contract document.
 
 Rollback must not delete or rewrite the existing bi-temporal store.
 Partial rollback that leaves the test wiring or a misleading delivery claim is
