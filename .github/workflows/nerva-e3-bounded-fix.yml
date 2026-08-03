@@ -1,0 +1,151 @@
+name: Nerva E3.0 bounded hardening
+
+on:
+  push:
+    branches:
+      - nerva2/e3-0-episodes-manual-boundaries
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Apply bounded fail-closed corrections
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file_path = Path(path)
+              text = file_path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f"expected exactly one match in {path}, found {count}"
+                  )
+              file_path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "agents/core/memory/_episode_values.py",
+              '''        if self.ended_at is not None:
+                      _validate_time(self.ended_at, "ended_at")
+                      if self.ended_at < self.started_at:
+                          raise ValueError("Episode ended_at cannot precede started_at")
+          ''',
+              '''        if self.ended_at is not None:
+                      _validate_time(self.ended_at, "ended_at")
+                      if self.ended_at < self.started_at:
+                          raise ValueError("Episode ended_at cannot precede started_at")
+                      if self.ended_at > self.updated_at:
+                          raise ValueError("Episode ended_at cannot follow updated_at")
+          ''',
+          )
+
+          replace_once(
+              "agents/core/memory/_episode_operations.py",
+              '                occurred_at=float(payload["occurred_at"]),\n',
+              '                occurred_at=payload["occurred_at"],\n',
+          )
+
+          replace_once(
+              "tests/_nerva_e3_0_checks.py",
+              '''    tampered_audit_payload = json.loads(settled.audit.to_json())
+                  tampered_audit_payload["reason"] = "silently changed"
+                  with pytest.raises(ValueError, match="canonical|integrity"):
+                      EpisodeAuditEvent.from_payload(tampered_audit_payload)
+
+          ''',
+              '''    tampered_audit_payload = json.loads(settled.audit.to_json())
+                  tampered_audit_payload["reason"] = "silently changed"
+                  with pytest.raises(ValueError, match="canonical|integrity"):
+                      EpisodeAuditEvent.from_payload(tampered_audit_payload)
+                  boolean_timestamp_payload = json.loads(settled.audit.to_json())
+                  boolean_timestamp_payload["occurred_at"] = True
+                  with pytest.raises(ValueError, match="numeric"):
+                      EpisodeAuditEvent.from_payload(boolean_timestamp_payload)
+
+          ''',
+          )
+
+          replace_once(
+              "tests/_nerva_e3_0_checks.py",
+              '''    with pytest.raises(ValueError, match="precede the current revision"):
+                  correct_episode(
+                      settled_record,
+                      actor_id="owner:andrei",
+                      occurred_at=309,
+                      reason="time-reversing correction",
+                  )
+
+          ''',
+              '''    with pytest.raises(ValueError, match="precede the current revision"):
+                  correct_episode(
+                      settled_record,
+                      actor_id="owner:andrei",
+                      occurred_at=309,
+                      reason="time-reversing correction",
+                  )
+                  with pytest.raises(ValueError, match="cannot follow updated_at"):
+                      correct_episode(
+                          settled_record,
+                          actor_id="owner:andrei",
+                          occurred_at=320,
+                          reason="time-forward correction",
+                          ended_at=321,
+                      )
+                  with pytest.raises(ValueError, match="cannot follow updated_at"):
+                      replace(settled_record, updated_at=299)
+
+          ''',
+          )
+
+          replace_once(
+              "docs/nerva2/M1_DELIVERY.md",
+              '''- Manual mutations emit tamper-evident audit events and exact immutable rollback
+                values. Merge and split remain atomic multi-record mutations.
+          ''',
+              '''- Manual mutations emit deterministic integrity-checked audit events and exact
+                immutable rollback values. Plain SHA-256 detects changed or corrupted content but
+                does not authenticate a signer or provide non-repudiation. Merge and split remain
+                atomic multi-record mutations.
+          ''',
+          )
+
+          replace_once(
+              "tests/_nerva_e3_0_checks.py",
+              '''    assert "E3.0 / #782" in m1_doc
+                  assert "independent integration" in m1_doc
+                  assert "#783 Synapse and #784 Research Lab remain separately eligible" in m1_doc
+          ''',
+              '''    assert "E3.0 / #782" in m1_doc
+                  assert "independent integration" in m1_doc
+                  assert "deterministic integrity-checked audit events" in m1_doc
+                  assert "tamper-evident audit events" not in m1_doc
+                  assert "#783 Synapse and #784 Research Lab remain separately eligible" in m1_doc
+          ''',
+          )
+
+          workflow = Path(".github/workflows/nerva-e3-bounded-fix.yml")
+          workflow.unlink()
+
+      - name: Commit bounded corrections and remove helper workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add agents/core/memory/_episode_values.py \
+                  agents/core/memory/_episode_operations.py \
+                  tests/_nerva_e3_0_checks.py \
+                  docs/nerva2/M1_DELIVERY.md \
+                  .github/workflows/nerva-e3-bounded-fix.yml
+          git diff --cached --check
+          git commit -m "fix(nerva): close E3.0 fail-closed review gaps"
+          git push origin HEAD:${{ github.ref_name }}
