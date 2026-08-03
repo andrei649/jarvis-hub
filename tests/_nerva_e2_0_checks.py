@@ -91,6 +91,12 @@ def run_e2_0_checks(tmp_path) -> None:
     assert current.replay_fingerprint == replayed.replay_fingerprint
     assert json.loads(current.to_json())["schema"] == "nerva.atlas.snapshot.v1"
 
+    other_source_observation = LegacyBiTemporalAdapter(
+        LegacyProjectionPolicy(source_id="connector.other")
+    ).project(second)
+    assert other_source_observation.entity_id != observation.entity_id
+    assert other_source_observation.observation_id != observation.observation_id
+
     equivalent_scope = reader.snapshot(
         AtlasQuery(
             temporal_axis="valid",
@@ -205,6 +211,7 @@ def run_e2_0_checks(tmp_path) -> None:
     assert "Partial rollback" in atlas_doc
     assert "Ultron / `nerva.action.v1` remains" in atlas_doc
     assert "production Atlas HTTP/API exposure" in atlas_doc
+    assert "source-scoped" in atlas_doc
 
     m1_doc = (ROOT / "docs" / "nerva2" / "M1_DELIVERY.md").read_text(
         encoding="utf-8"
