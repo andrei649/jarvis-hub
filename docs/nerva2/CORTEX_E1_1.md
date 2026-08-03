@@ -1,4 +1,4 @@
-# Cortex E1.1 — privacy-safe comparison baseline
+# Cortex E1.1 — privacy-minimised comparison baseline
 
 Program: #757 · Epic: #759 · Slice: #792 · Prerequisite: E1.0/#780/#791
 
@@ -15,17 +15,25 @@ completion signal.
 
 `nerva.cortex.comparison.v1` records:
 
-- fixture case ID;
+- fixture case ID and explicit privacy class;
 - normalized request digest, never request text;
 - `nerva.decision.v1` replay fingerprint;
 - expected and observed primary route and decision source;
 - candidate, fallback and hard-rejection counts;
 - aggregate primary/source fixture agreement;
-- source distribution and evaluation failures.
+- source/privacy distributions and evaluation failures.
 
-Only fixtures classified as `synthetic_public` or `redacted_local` are
-accepted. The checked-in suite contains 20 synthetic prompts covering current
-keyword, wake-word and general-route behavior.
+Every fixture must explicitly declare `synthetic_public` or `redacted_local`;
+missing or invalid classifications fail closed. The checked-in suite contains
+20 synthetic prompts covering current keyword, wake-word and general-route
+behavior.
+
+A normalized SHA-256 request digest is **pseudonymous, not anonymous**. Common
+or guessable inputs may be recoverable through dictionary comparison, and the
+digest can link repeated inputs. Any `redacted_local` evaluation and its report
+therefore remain subject to local access, retention and deletion controls. The
+harness removes raw request text from the report; it does not claim that the
+digest is safe for unrestricted sharing.
 
 Fixture agreement means only that the current deterministic router still
 matches the checked-in expectation. It is not real-world outcome quality and
