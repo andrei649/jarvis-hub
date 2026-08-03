@@ -20,6 +20,7 @@ from agents.core.memory._episode_values import (
     _normalize_text,
     _reject_raw_content,
     _require_current_state,
+    _require_json_array,
     _require_non_empty,
     _sha256,
     _validate_sha256_hex,
@@ -222,17 +223,37 @@ class EpisodeAuditEvent:
             if payload.get(flag) is not False:
                 raise ValueError("Episode audit payload attempts to expand authority")
         try:
+            input_record_ids = _require_json_array(
+                payload["input_record_ids"],
+                "audit input_record_ids",
+            )
+            output_record_ids = _require_json_array(
+                payload["output_record_ids"],
+                "audit output_record_ids",
+            )
+            input_episode_ids = _require_json_array(
+                payload["input_episode_ids"],
+                "audit input_episode_ids",
+            )
+            output_episode_ids = _require_json_array(
+                payload["output_episode_ids"],
+                "audit output_episode_ids",
+            )
+            affected_reference_ids = _require_json_array(
+                payload["affected_reference_ids"],
+                "audit affected_reference_ids",
+            )
             return cls(
                 audit_id=payload["audit_id"],
                 operation=payload["operation"],
                 actor_id=payload["actor_id"],
                 occurred_at=payload["occurred_at"],
                 reason=payload["reason"],
-                input_record_ids=tuple(payload["input_record_ids"]),
-                output_record_ids=tuple(payload["output_record_ids"]),
-                input_episode_ids=tuple(payload["input_episode_ids"]),
-                output_episode_ids=tuple(payload["output_episode_ids"]),
-                affected_reference_ids=tuple(payload["affected_reference_ids"]),
+                input_record_ids=tuple(input_record_ids),
+                output_record_ids=tuple(output_record_ids),
+                input_episode_ids=tuple(input_episode_ids),
+                output_episode_ids=tuple(output_episode_ids),
+                affected_reference_ids=tuple(affected_reference_ids),
                 integrity_sha256=payload["integrity_sha256"],
             )
         except (KeyError, TypeError) as exc:
@@ -289,6 +310,7 @@ class EpisodeMutation:
             raise ValueError(
                 "Episode mutation audit names unrelated affected references"
             )
+        _validate_operation_transition(self.before, self.after, self.audit)
 
     def rollback(self) -> tuple[EpisodeRecord, ...]:
         """Return the exact immutable pre-mutation records for atomic restore."""
@@ -1019,6 +1041,190 @@ def _superseded_revision(
         superseded_by_episode_ids=successor_episode_ids,
         created_at=record.created_at,
         updated_at=occurred_at,
+    )
+
+
+def _validate_operation_transition(
+    before: tuple[EpisodeRecord, ...],
+    after: tuple[EpisodeRecord, ...],
+    audit: EpisodeAuditEvent,
+) -> None:
+    """Bind the audit label to the immutable transition shape it describes."""
+
+    if any(record.updated_at > audit.occurred_at for record in before):
+        raise ValueError("Episode mutation audit precedes an input revision")
+    if any(record.updated_at != audit.occurred_at for record in after):
+        raise ValueError("Episode mutation outputs do not match audit occurrence time")
+
+    operation = audit.operation
+    valid = False
+    if operation in {"open", "migrate"}:
+        valid = (
+            not before
+            and len(after) == 1
+            and after[0].revision == 1
+            and after[0].supersedes_record_id is None
+            and after[0].created_at == audit.occurred_at
+            and (operation != "open" or after[0].state == "open")
+        )
+    elif operation == "settle":
+        valid = _is_single_revision_transition(
+            before,
+            after,
+            from_states={"open"},
+            to_state="settled",
+        )
+    elif operation == "consolidate":
+        valid = _is_single_revision_transition(
+            before,
+            after,
+            from_states={"settled"},
+            to_state="consolidated",
+        )
+    elif operation == "correct":
+        valid = (
+            len(before) == 1
+            and len(after) == 1
+            and before[0].state in {"open", "settled", "consolidated"}
+            and after[0].state == before[0].state
+            and _is_direct_successor(before[0], after[0])
+        )
+    elif operation == "tombstone":
+        valid = _is_tombstone_transition(before, after, audit)
+    elif operation == "merge":
+        valid = _is_merge_transition(before, after)
+    elif operation == "split":
+        valid = _is_split_transition(before, after)
+    if not valid:
+        raise ValueError(
+            "Episode mutation audit operation does not match transition semantics"
+        )
+
+
+def _is_direct_successor(before: EpisodeRecord, after: EpisodeRecord) -> bool:
+    return (
+        after.episode_id == before.episode_id
+        and after.revision == before.revision + 1
+        and after.supersedes_record_id == before.record_id
+        and after.created_at == before.created_at
+    )
+
+
+def _is_single_revision_transition(
+    before: tuple[EpisodeRecord, ...],
+    after: tuple[EpisodeRecord, ...],
+    *,
+    from_states: set[str],
+    to_state: str,
+) -> bool:
+    return (
+        len(before) == 1
+        and len(after) == 1
+        and before[0].state in from_states
+        and after[0].state == to_state
+        and _is_direct_successor(before[0], after[0])
+    )
+
+
+def _is_tombstone_transition(
+    before: tuple[EpisodeRecord, ...],
+    after: tuple[EpisodeRecord, ...],
+    audit: EpisodeAuditEvent,
+) -> bool:
+    if (
+        len(before) != 1
+        or len(after) != 1
+        or before[0].state not in {"open", "settled", "consolidated"}
+        or after[0].state != before[0].state
+        or not _is_direct_successor(before[0], after[0])
+    ):
+        return False
+    before_by_id = {ref.reference_id: ref for ref in before[0].references}
+    after_by_id = {ref.reference_id: ref for ref in after[0].references}
+    if set(before_by_id) != set(after_by_id):
+        return False
+    affected = set(audit.affected_reference_ids)
+    if not affected:
+        return False
+    for reference_id in affected:
+        previous = before_by_id.get(reference_id)
+        current = after_by_id.get(reference_id)
+        if previous is None or current is None or not current.tombstoned:
+            return False
+        if current.deleted_at is None:
+            return False
+        if previous.tombstoned and current.deleted_at == previous.deleted_at:
+            return False
+    return all(
+        before_by_id[reference_id] == reference
+        for reference_id, reference in after_by_id.items()
+        if reference_id not in affected
+    )
+
+
+def _is_merge_transition(
+    before: tuple[EpisodeRecord, ...],
+    after: tuple[EpisodeRecord, ...],
+) -> bool:
+    if len(before) < 2 or len(after) != len(before) + 1:
+        return False
+    input_ids = {record.episode_id for record in before}
+    if len(input_ids) != len(before):
+        return False
+    superseded = {
+        record.episode_id: record
+        for record in after
+        if record.episode_id in input_ids
+    }
+    successors = [record for record in after if record.episode_id not in input_ids]
+    if set(superseded) != input_ids or len(successors) != 1:
+        return False
+    successor = successors[0]
+    if (
+        successor.revision != 1
+        or successor.supersedes_record_id is not None
+        or set(successor.parent_episode_ids) != input_ids
+    ):
+        return False
+    for prior in before:
+        revision = superseded[prior.episode_id]
+        if (
+            revision.state != "superseded"
+            or not _is_direct_successor(prior, revision)
+            or revision.superseded_by_episode_ids != (successor.episode_id,)
+        ):
+            return False
+    return True
+
+
+def _is_split_transition(
+    before: tuple[EpisodeRecord, ...],
+    after: tuple[EpisodeRecord, ...],
+) -> bool:
+    if len(before) != 1 or len(after) < 3:
+        return False
+    prior = before[0]
+    parent_revisions = [
+        record for record in after if record.episode_id == prior.episode_id
+    ]
+    children = [
+        record for record in after if record.episode_id != prior.episode_id
+    ]
+    if len(parent_revisions) != 1 or len(children) < 2:
+        return False
+    parent_revision = parent_revisions[0]
+    child_ids = tuple(sorted(child.episode_id for child in children))
+    if (
+        parent_revision.state != "superseded"
+        or not _is_direct_successor(prior, parent_revision)
+        or parent_revision.superseded_by_episode_ids != child_ids
+    ):
+        return False
+    return all(
+        child.revision == 1
+        and child.supersedes_record_id is None
+        and child.parent_episode_ids == (prior.episode_id,)
+        for child in children
     )
 
 
