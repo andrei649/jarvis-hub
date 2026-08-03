@@ -16,15 +16,21 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
+from agents.core.cortex_decision import (  # noqa: E402
+    DecisionRecord,
+    DecisionRejection,
+    ShadowDecisionRouter,
+)
 from agents.core.router import Intent, IntentRouter  # noqa: E402
 
 
-def _router(llm=None) -> IntentRouter:
+def _router(llm=None, writer=None):
     # Router only stores `config`; None keeps the test independent of JarvisConfig.
-    return IntentRouter(config=None, llm_classifier=llm)
+    router = IntentRouter(config=None, llm_classifier=llm)
+    return ShadowDecisionRouter(router, writer) if writer else router
 
 
-def _route(router: IntentRouter, text: str) -> Intent:
+def _route(router, text: str) -> Intent:
     return asyncio.run(router.classify(text, {}))
 
 
@@ -41,12 +47,67 @@ def test_existing_music_routes_to_jerome():
 
 
 def test_intent_object_shape_is_preserved():
-    intent = _route(_router(), "weather")
+    records: list[DecisionRecord] = []
+    router = _router(writer=records.append)
+    intent = _route(router, "weather")
+    second = _route(router, "weather")
+    normalized_variant = _route(router, "  WEATHER  ")
+
     assert isinstance(intent.target_agents, list)
     assert isinstance(intent.is_general, bool)
     assert "source" in intent.context
     assert 0.0 <= intent.confidence <= 1.0
     assert intent.primary == intent.target_agents[0]
+    assert second.target_agents == intent.target_agents
+    assert normalized_variant.target_agents == intent.target_agents
+
+    assert len(records) == 3
+    assert records[0].schema == "nerva.decision.v1"
+    assert records[0].authority == "route_selection_only"
+    assert not records[0].can_authorize
+    assert not records[0].can_execute
+    assert not records[0].can_mark_complete
+    assert records[0].replay_fingerprint == records[1].replay_fingerprint
+    assert records[0].replay_fingerprint == records[2].replay_fingerprint
+    assert records[0].request.text_length == len("weather")
+    assert "weather" not in records[0].to_json()  # raw request is never persisted
+
+    hard_rejection = DecisionRejection(
+        route_id="cloud_router",
+        code="private_data_local_only",
+        category="privacy",
+        source="privacy.policy",
+    )
+    assert hard_rejection.non_overridable
+
+    rejected_intent = Intent(
+        ["jarvis"],
+        is_general=False,
+        context={
+            "source": "policy_test",
+            "hard_constraint_rejections": [
+                {
+                    "route_id": "cloud_router",
+                    "code": "private_data_local_only",
+                    "category": "privacy",
+                    "source": "privacy.policy",
+                }
+            ],
+        },
+        confidence=0.5,
+    )
+    rejected_record = DecisionRecord.from_intent(
+        text="private request",
+        agents={},
+        intent=rejected_intent,
+    )
+    assert rejected_record.hard_constraint_rejections == (hard_rejection,)
+    rejected_candidate = next(
+        candidate
+        for candidate in rejected_record.candidates
+        if candidate.route_id == "cloud_router"
+    )
+    assert not rejected_candidate.selected
 
 
 # ── the substring bug is gone (the headline regression) ────────────────────
@@ -84,10 +145,14 @@ def test_diacritics_are_folded():
 
 # ── wake word: exact token, not startswith ─────────────────────────────────
 def test_wake_word_direct_address():
-    intent = _route(_router(), "Jarvis, what's the weather?")
+    records: list[DecisionRecord] = []
+    intent = _route(_router(writer=records.append), "Jarvis, what's the weather?")
     assert intent.target_agents == ["jarvis"]
     assert intent.context["source"] == "wake_word"
     assert intent.confidence == 1.0
+    assert records[0].source == "wake_word"
+    assert records[0].selected_route == "jarvis"
+    assert records[0].confidence.status == "measured"
 
 
 def test_wake_word_with_particle():
@@ -113,10 +178,17 @@ def test_strongest_signal_is_primary():
 
 
 def test_multi_agent_email_is_ordered_and_deterministic():
-    a = _route(_router(), "check my inbox").target_agents
-    b = _route(_router(), "check my inbox").target_agents
+    records: list[DecisionRecord] = []
+    router = _router(writer=records.append)
+    a = _route(router, "check my inbox").target_agents
+    b = _route(router, "check my inbox").target_agents
     assert a == b                       # deterministic
     assert set(a) >= {"pepper", "veronica", "stark"}
+    assert records[0].source == "keyword_match"
+    assert records[0].selected_route == a[0]
+    assert records[0].fallbacks == tuple(a[1:])
+    assert [candidate.route_id for candidate in records[0].candidates] == a
+    assert all(candidate.score.status == "measured" for candidate in records[0].candidates)
 
 
 # ── canonical keyword tags (what the orchestrator pre-fetches plugins on) ───
@@ -134,10 +206,15 @@ def test_keywords_found_are_canonical_and_language_independent(text, tag):
 # ── general fallback ───────────────────────────────────────────────────────
 @pytest.mark.parametrize("text", ["", "   ", "asdfqwer zzz blorp"])
 def test_unmatched_input_is_general_jarvis(text):
-    intent = _route(_router(), text)
+    records: list[DecisionRecord] = []
+    intent = _route(_router(writer=records.append), text)
     assert intent.target_agents == ["jarvis"]
     assert intent.is_general
     assert intent.confidence == 0.0
+    assert records[0].source == "general"
+    assert records[0].candidates[0].score.status == "not_measured"
+    assert records[0].candidates[0].quality.status == "not_measured"
+    assert records[0].candidates[0].cost.status == "not_measured"
 
 
 # ── optional LLM fallback: deterministic-first, LLM only for the ambiguous ──
@@ -153,10 +230,13 @@ class _FakeClassifier:
 
 def test_llm_fallback_used_when_nothing_matches():
     clf = _FakeClassifier(["athena"])
-    intent = _route(_router(llm=clf), "ponder the meaning of my quarter")
+    records: list[DecisionRecord] = []
+    intent = _route(_router(llm=clf, writer=records.append), "ponder the meaning of my quarter")
     assert clf.calls == 1
     assert intent.target_agents == ["athena"]
     assert intent.context["source"] == "llm"
+    assert records[0].source == "llm"
+    assert records[0].candidates[0].score.status == "not_measured"
 
 
 def test_llm_fallback_not_used_for_confident_match():
@@ -168,9 +248,16 @@ def test_llm_fallback_not_used_for_confident_match():
 
 def test_llm_fallback_consulted_for_low_confidence_greeting():
     clf = _FakeClassifier(["pepper"])
-    intent = _route(_router(llm=clf), "help")    # weak-only match → low confidence
+    records: list[DecisionRecord] = []
+    intent = _route(_router(llm=clf, writer=records.append), "help")
     assert clf.calls == 1
     assert intent.target_agents == ["pepper"]
+    assert [candidate.route_id for candidate in records[0].candidates] == [
+        "pepper",
+        "jarvis",
+    ]
+    assert records[0].selected_route == "pepper"
+    assert not records[0].candidates[1].selected
 
 
 def test_llm_fallback_failure_is_swallowed():
@@ -180,6 +267,12 @@ def test_llm_fallback_failure_is_swallowed():
 
     intent = _route(_router(llm=_Boom()), "ponder something unmappable")
     assert intent.is_general                     # degrades to general, never raises
+
+    def broken_writer(_record):
+        raise RuntimeError("trace store offline")
+
+    routed = _route(_router(writer=broken_writer), "weather")
+    assert routed.target_agents == ["friday"]    # shadow failure never changes route
 
 
 # ── ROUTING_TABLE isolation + bench-agent promotion (orchestrator contract) ─
