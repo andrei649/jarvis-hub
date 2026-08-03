@@ -159,6 +159,14 @@ def run_e1_1_checks() -> None:
         in snapshot
     )
 
+    cortex_doc = (ROOT / "docs" / "nerva2" / "CORTEX_E1_1.md").read_text(
+        encoding="utf-8"
+    )
+    assert "`tests/_nerva_e1_1_checks.py`" in cortex_doc
+    assert "`tests/test_router_v2.py`" in cortex_doc
+    assert "Partial deletion is not a valid rollback" in cortex_doc
+    assert "tests/test_cortex_compare.py" not in cortex_doc
+
     backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
     status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
     marker = "<!-- NERVA2:E0-REPOSITORY-LEDGER:START -->"
