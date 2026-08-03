@@ -1,0 +1,220 @@
+name: Nerva E3.0 final hardening
+
+on:
+  pull_request:
+    types:
+      - reopened
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Apply bounded builder and canonical-payload corrections
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file_path = Path(path)
+              text = file_path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f"expected exactly one match in {path}, found {count}: {old!r}"
+                  )
+              file_path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "agents/core/memory/_episode_operations.py",
+              '_MAX_AUDIT_REASON_CHARS = 1024\n',
+              '_MAX_AUDIT_REASON_CHARS = 1024\n'
+              '_AUDIT_PAYLOAD_KEYS = frozenset(\n'
+              '    {\n'
+              '        "affected_reference_ids",\n'
+              '        "actor_id",\n'
+              '        "audit_id",\n'
+              '        "authority",\n'
+              '        "can_authorize",\n'
+              '        "can_execute",\n'
+              '        "can_mark_complete",\n'
+              '        "input_episode_ids",\n'
+              '        "input_record_ids",\n'
+              '        "integrity_sha256",\n'
+              '        "occurred_at",\n'
+              '        "operation",\n'
+              '        "output_episode_ids",\n'
+              '        "output_record_ids",\n'
+              '        "reason",\n'
+              '        "schema",\n'
+              '    }\n'
+              ')\n',
+          )
+
+          replace_once(
+              "agents/core/memory/_episode_operations.py",
+              '    ) -> EpisodeAuditEvent:\n'
+              '        input_record_ids = tuple(sorted(record.record_id for record in before))\n',
+              '    ) -> EpisodeAuditEvent:\n'
+              '        _validate_time(occurred_at, "audit occurred_at")\n'
+              '        input_record_ids = tuple(sorted(record.record_id for record in before))\n',
+          )
+
+          replace_once(
+              "agents/core/memory/_episode_operations.py",
+              '        if not isinstance(payload, dict):\n'
+              '            raise ValueError("Episode audit payload must be an object")\n'
+              '        if payload.get("schema") != "nerva.episode.audit.v1":\n',
+              '        if not isinstance(payload, dict):\n'
+              '            raise ValueError("Episode audit payload must be an object")\n'
+              '        if set(payload) != _AUDIT_PAYLOAD_KEYS:\n'
+              '            raise ValueError("Episode audit payload is not canonical")\n'
+              '        if payload.get("schema") != "nerva.episode.audit.v1":\n',
+          )
+
+          replace_once(
+              "agents/core/memory/_episode_values.py",
+              '    ) -> EpisodeRecord:\n'
+              '        participants = _validated_string_tuple(\n',
+              '    ) -> EpisodeRecord:\n'
+              '        _validate_time(started_at, "started_at")\n'
+              '        if ended_at is not None:\n'
+              '            _validate_time(ended_at, "ended_at")\n'
+              '        _validate_time(created_at, "created_at")\n'
+              '        _validate_time(updated_at, "updated_at")\n'
+              '        participants = _validated_string_tuple(\n',
+          )
+
+          replace_once(
+              "tests/_nerva_e3_0_checks.py",
+              '    assert "raw-private-beta" not in serialized_open\n'
+              '    assert "transcript" not in serialized_open\n\n'
+              '    with pytest.raises(ValueError, match="4096"):\n',
+              '    assert "raw-private-beta" not in serialized_open\n'
+              '    assert "transcript" not in serialized_open\n\n'
+              '    with pytest.raises(ValueError, match="numeric"):\n'
+              '        EpisodeRecord.build(\n'
+              '            state="open",\n'
+              '            participants=("person:andrei",),\n'
+              '            started_at=True,\n'
+              '            ended_at=None,\n'
+              '            references=(first_ref,),\n'
+              '            goal=None,\n'
+              '            summary=None,\n'
+              '            significance=None,\n'
+              '            created_at=205,\n'
+              '            updated_at=205,\n'
+              '        )\n'
+              '    with pytest.raises(ValueError, match="numeric"):\n'
+              '        open_episode(\n'
+              '            participants=("person:andrei",),\n'
+              '            started_at=True,\n'
+              '            references=(first_ref,),\n'
+              '            actor_id="owner:andrei",\n'
+              '            occurred_at=205,\n'
+              '            reason="boolean boundary",\n'
+              '        )\n'
+              '    with pytest.raises(ValueError, match="numeric"):\n'
+              '        EpisodeAuditEvent.build(\n'
+              '            operation="open",\n'
+              '            actor_id="owner:andrei",\n'
+              '            occurred_at=True,\n'
+              '            reason="boolean audit time",\n'
+              '            before=(),\n'
+              '            after=(open_record,),\n'
+              '            affected_reference_ids=(first_ref.reference_id,),\n'
+              '        )\n\n'
+              '    with pytest.raises(ValueError, match="4096"):\n',
+          )
+
+          replace_once(
+              "tests/_nerva_e3_0_checks.py",
+              '    with pytest.raises(ValueError, match="numeric"):\n'
+              '        EpisodeAuditEvent.from_payload(boolean_timestamp_payload)\n\n'
+              '    forged_episode_audit = _forge_audit(\n',
+              '    with pytest.raises(ValueError, match="numeric"):\n'
+              '        EpisodeAuditEvent.from_payload(boolean_timestamp_payload)\n'
+              '    extra_field_payload = json.loads(settled.audit.to_json())\n'
+              '    extra_field_payload["unhashed_note"] = "must not be ignored"\n'
+              '    with pytest.raises(ValueError, match="canonical"):\n'
+              '        EpisodeAuditEvent.from_payload(extra_field_payload)\n\n'
+              '    forged_episode_audit = _forge_audit(\n',
+          )
+
+          replace_once(
+              "tests/_nerva_e3_0_checks.py",
+              '    assert migrated.audit.operation == "migrate"\n'
+              '    assert migrated.after[0].schema == "nerva.episode.v1"\n'
+              '    assert migrated.rollback() == ()\n'
+              '    raw_legacy = dict(legacy)\n',
+              '    assert migrated.audit.operation == "migrate"\n'
+              '    assert migrated.after[0].schema == "nerva.episode.v1"\n'
+              '    assert migrated.rollback() == ()\n'
+              '    boolean_legacy = dict(legacy)\n'
+              '    boolean_legacy["started_at"] = True\n'
+              '    with pytest.raises(ValueError, match="numeric"):\n'
+              '        migrate_manual_episode_v0(\n'
+              '            boolean_legacy,\n'
+              '            actor_id="owner:andrei",\n'
+              '            occurred_at=900,\n'
+              '            reason="invalid boolean timestamp migration",\n'
+              '        )\n'
+              '    raw_legacy = dict(legacy)\n',
+          )
+
+          replace_once(
+              "docs/nerva2/EPISODES_E3_0.md",
+              'Participant, reference and evidence ordering is canonicalized before identity,\n'
+              'integrity and audit fingerprints are calculated. Replaying equivalent manual\n'
+              'inputs therefore yields the same records and audit event. Mutation occurrence\n'
+              'time cannot precede an input revision, and deletion time cannot precede the\n'
+              'affected source occurrence or exceed the mutation time.\n',
+              'Participant, reference and evidence ordering is canonicalized before identity,\n'
+              'integrity and audit fingerprints are calculated. Replaying equivalent manual\n'
+              'inputs therefore yields the same records and audit event. Public record and audit\n'
+              'builders validate raw timestamp types before numeric normalization, so Python\n'
+              'booleans cannot enter canonical time fields. Mutation occurrence time cannot\n'
+              'precede an input revision, and deletion time cannot precede the affected source\n'
+              'occurrence or exceed the mutation time.\n',
+          )
+
+          replace_once(
+              "docs/nerva2/EPISODES_E3_0.md",
+              'The canonical audit payload is round-trippable and rejects changed content,\n'
+              'authority flags, logical episode IDs or unrelated affected-reference IDs. Its\n',
+              'The canonical audit payload is round-trippable and rejects unknown top-level\n'
+              'fields, changed content, authority flags, logical episode IDs or unrelated\n'
+              'affected-reference IDs. Its\n',
+          )
+
+          replace_once(
+              "docs/nerva2/EPISODES_E3_0.md",
+              '- record and audit round-trip serialization plus tamper rejection;\n',
+              '- record and audit round-trip serialization, strict canonical audit keys and\n'
+              '  tamper rejection;\n'
+              '- raw boolean timestamp rejection across direct builders, open and migration;\n',
+          )
+
+          Path(".github/workflows/nerva-e3-final-hardening.yml").unlink()
+
+      - name: Commit bounded corrections and remove helper workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add agents/core/memory/_episode_operations.py \
+                  agents/core/memory/_episode_values.py \
+                  tests/_nerva_e3_0_checks.py \
+                  docs/nerva2/EPISODES_E3_0.md \
+                  .github/workflows/nerva-e3-final-hardening.yml
+          git diff --cached --check
+          git commit -m "fix(nerva): reject non-canonical E3 inputs"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
