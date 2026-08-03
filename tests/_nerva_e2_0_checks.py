@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import pytest
 
@@ -20,6 +21,8 @@ from agents.core.memory.atlas_snapshot import (
     LegacyProjectionPolicy,
 )
 from agents.core.memory.bitemporal import BiTemporalKG
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def run_e2_0_checks(tmp_path) -> None:
@@ -52,8 +55,9 @@ def run_e2_0_checks(tmp_path) -> None:
         )
     )
     assert denied.observations == ()
-    assert denied.total_source_records == 1
-    assert denied.denied_count == 1
+    assert denied.eligible_count == 0
+    assert "denied_count" not in denied.to_json()
+    assert "total_source_records" not in denied.to_json()
     assert denied.authority == "read_only"
     assert not denied.can_mutate
     assert not denied.can_authorize
@@ -69,6 +73,7 @@ def run_e2_0_checks(tmp_path) -> None:
     )
     current = reader.snapshot(current_query)
     assert len(current.observations) == 1
+    assert current.eligible_count == 1
     observation = current.observations[0]
     assert observation.value == "city-b"
     assert observation.valid_from == 200
@@ -82,8 +87,27 @@ def run_e2_0_checks(tmp_path) -> None:
     assert observation.lineage.derived_record_ids == (observation.observation_id,)
     assert observation.lineage.propagates_to == ("atlas_snapshot_projection",)
     assert observation.verify_integrity()
-    assert current.replay_fingerprint == reader.snapshot(current_query).replay_fingerprint
+    replayed = reader.snapshot(current_query)
+    assert current.replay_fingerprint == replayed.replay_fingerprint
     assert json.loads(current.to_json())["schema"] == "nerva.atlas.snapshot.v1"
+
+    equivalent_scope = reader.snapshot(
+        AtlasQuery(
+            temporal_axis="valid",
+            at=250,
+            allowed_privacy_classes=("private_local", "personal"),
+            subject="person:sample",
+        )
+    )
+    reversed_scope = reader.snapshot(
+        AtlasQuery(
+            temporal_axis="valid",
+            at=250,
+            allowed_privacy_classes=("personal", "private_local"),
+            subject="person:sample",
+        )
+    )
+    assert equivalent_scope.replay_fingerprint == reversed_scope.replay_fingerprint
 
     with pytest.raises(FrozenInstanceError):
         observation.value = "mutated"  # type: ignore[misc]
@@ -100,11 +124,10 @@ def run_e2_0_checks(tmp_path) -> None:
         ingested_at=310,
     )
     assert current.observations[0].value == "city-b"
-    assert [item["object"] for item in kg.history("person:sample", "location")] == [
-        "city-a",
-        "city-b",
-        "city-c",
+    history_values = [
+        item["object"] for item in kg.history("person:sample", "location")
     ]
+    assert history_values == ["city-a", "city-b", "city-c"]
 
     historical = reader.snapshot(
         AtlasQuery(
@@ -118,9 +141,11 @@ def run_e2_0_checks(tmp_path) -> None:
     assert [item.value for item in historical.observations] == ["city-a", "city-b"]
     assert historical.observations[0].valid_to == 200
     assert historical.observations[0].invalidated_at == 200
-    assert historical.observations[0].source.record_id.endswith(f":{first['id']}")
-    assert historical.observations[0].entity_id == historical.observations[1].entity_id
-    assert historical.observations[0].observation_id != historical.observations[1].observation_id
+    first_observation = historical.observations[0]
+    second_observation = historical.observations[1]
+    assert first_observation.source.record_id.endswith(f":{first['id']}")
+    assert first_observation.entity_id == second_observation.entity_id
+    assert first_observation.observation_id != second_observation.observation_id
 
     public_adapter = LegacyBiTemporalAdapter(
         LegacyProjectionPolicy(default_privacy_class="personal"),
@@ -154,6 +179,7 @@ def run_e2_0_checks(tmp_path) -> None:
         )
     )
     assert len(limited.observations) == 1
+    assert limited.eligible_count == 3
     assert limited.truncated_count == 2
 
     with pytest.raises(ValueError, match="privacy scope"):
@@ -166,4 +192,25 @@ def run_e2_0_checks(tmp_path) -> None:
         )
 
     # Projection is read-only and rollback is deletion of Atlas artifacts only.
-    assert kg.as_of(250, "person:sample", "location")[0]["object"] == "city-b"
+    source_at_250 = kg.as_of(250, "person:sample", "location")
+    assert source_at_250[0]["object"] == "city-b"
+
+    atlas_doc = (ROOT / "docs" / "nerva2" / "ATLAS_E2_0.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Legacy `BiTemporalKG` rows" in atlas_doc
+    assert "Unknown privacy is never treated as public" in atlas_doc
+    assert "no database handle is returned" in atlas_doc
+    assert "Integrity hashes" in atlas_doc
+    assert "Partial rollback" in atlas_doc
+    assert "Ultron / `nerva.action.v1` remains" in atlas_doc
+    assert "production Atlas HTTP/API exposure" in atlas_doc
+
+    m1_doc = (ROOT / "docs" / "nerva2" / "M1_DELIVERY.md").read_text(
+        encoding="utf-8"
+    )
+    assert "e244ea7c9e32673bdb56fe1459f355a7abb9d63f" in m1_doc
+    assert "E2.0 / #781" in m1_doc
+    assert "candidate evidence only" in m1_doc
+    assert "#782 Episodes remains blocked only by #781" in m1_doc
+    assert "#783 Synapse and #784 Research Lab remain separately eligible" in m1_doc
