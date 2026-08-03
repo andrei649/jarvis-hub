@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "snapshot_commit": "13290b6a10f2bfce5b10a3bf57305777341c0909",
+  "snapshot_commit": "0c7f880dea1fe254d590ce8967e45cfe453dc52f",
   "program_issue": 757,
   "epic_issue": 758,
-  "slice": "E0.3b2b-repository-ledgers",
-  "status": "verifying",
-  "close_e0": false,
-  "purpose": "Record the accepted E0 control slices through #788, apply reviewed marker-bounded Nerva blocks to BACKLOG.md and STATUS.md, refresh generated project status, reconcile the complete #778 blocker-plan body without deleting its long-range plan, and preserve independent E0 closure as the remaining gate.",
+  "slice": "E0.3b2c-closure-state-transition",
+  "status": "done",
+  "close_e0": true,
+  "purpose": "Record the accepted E0 evidence through #789, transition the durable repository state from VERIFYING to DONE, remove only the E0 blocker from the first executable wave, preserve the Atlas-before-Episodes dependency and keep all authority ceilings unchanged.",
   "accepted_control_slices": [
     {
       "slice": "E0.1",
@@ -73,30 +73,38 @@
         "docs/nerva2/E0_COMPLETION.json",
         "scripts/check_nerva_e0_completion.py"
       ]
+    },
+    {
+      "slice": "E0.3b2b-repository-ledgers",
+      "pull_request": 789,
+      "merge_commit": "0c7f880dea1fe254d590ce8967e45cfe453dc52f",
+      "artifacts": [
+        "BACKLOG.md",
+        "STATUS.md",
+        "docs/nerva2/E0_REPOSITORY_LEDGER_MIGRATION.md",
+        "docs/nerva2/E0_778_BODY_RECONCILIATION.md",
+        "scripts/reconcile_nerva_repository_ledgers.py",
+        "tests/test_reconcile_nerva_repository_ledgers.py"
+      ]
     }
   ],
   "first_executable_slices": [
     {
       "epic": "E1",
       "issue": 780,
-      "blocked_by": [
-        758
-      ],
+      "blocked_by": [],
       "authority": "shadow_no_action"
     },
     {
       "epic": "E2",
       "issue": 781,
-      "blocked_by": [
-        758
-      ],
+      "blocked_by": [],
       "authority": "read_only_state"
     },
     {
       "epic": "E3",
       "issue": 782,
       "blocked_by": [
-        758,
         781
       ],
       "authority": "memory_record_only"
@@ -104,32 +112,28 @@
     {
       "epic": "E8",
       "issue": 783,
-      "blocked_by": [
-        758
-      ],
+      "blocked_by": [],
       "authority": "description_only"
     },
     {
       "epic": "E9",
       "issue": 784,
-      "blocked_by": [
-        758
-      ],
+      "blocked_by": [],
       "authority": "evaluation_only"
     }
   ],
   "repository_ledgers": {
     "BACKLOG.md": {
-      "state": "reconciled",
-      "evidence": "One exact NERVA2:E0-REPOSITORY-LEDGER block records accepted controls through #788, E0 VERIFYING, the blocked first wave and the Ultron authority ceiling.",
-      "historical_truth_preserved": "The existing NERVA_VISION and ORIZONT 27-33 delivery record remains outside the marker-bounded insertion.",
-      "remaining_gate": "Independent exact-head E0 closure decision."
+      "state": "e0_done",
+      "evidence": "One exact NERVA2:E0-REPOSITORY-LEDGER block records accepted evidence through #789, E0 DONE, four E0-unblocked first slices, the Atlas-before-Episodes dependency and the Ultron authority ceiling.",
+      "historical_truth_preserved": "The existing NERVA_VISION and ORIZONT 27-33 delivery record remains outside the marker-bounded replacement.",
+      "remaining_gate": "No E0 gate remains after independent integration; broader Nerva program and release gates remain open."
     },
     "STATUS.md": {
-      "state": "reconciled",
-      "evidence": "One exact NERVA2:E0-REPOSITORY-LEDGER snapshot records E0 VERIFYING, blocked first slices, the authority ceiling and the closure checks.",
-      "historical_truth_preserved": "The existing implementation snapshot and ORIZONT 27-33 history remains outside the marker-bounded insertion; generated counters were refreshed normally.",
-      "remaining_gate": "Independent exact-head E0 closure decision."
+      "state": "e0_done",
+      "evidence": "One exact NERVA2:E0-REPOSITORY-LEDGER snapshot records E0 DONE, first-wave eligibility, the remaining #782-after-#781 dependency and unchanged authority ceilings.",
+      "historical_truth_preserved": "The existing implementation snapshot and ORIZONT 27-33 history remains outside the marker-bounded replacement; generated counters continue to use the normal status generator.",
+      "remaining_gate": "No E0 gate remains after independent integration; runtime, hardware and release proof remain later gates."
     }
   },
   "issue_ledgers": [
@@ -139,25 +143,33 @@
   ],
   "issue_ledger_status": {
     "757": {
-      "state": "body_reconciled",
-      "evidence": "Owner-facing program status names accepted controls through #788, E0 VERIFYING and blocked first slices #780-#784."
+      "state": "e0_done",
+      "evidence": "The master program ledger must record accepted evidence through #789, E0 DONE, four E0-unblocked first slices and #782 still waiting for #781."
     },
     "758": {
-      "state": "body_reconciled",
-      "evidence": "E0 body reports VERIFYING, marks first-slice issue creation complete and keeps independent closure work open."
+      "state": "e0_done",
+      "evidence": "The E0 epic must be closed only after independent integration of this exact transition and must preserve all authority non-claims."
     },
     "778": {
-      "state": "body_reconciled",
-      "evidence": "The complete long-form body carries an authoritative 2026-08-03 snapshot while preserving B0-B10, M0-M8, metrics and anti-drift detail; B0 is resolved, B1/M0 remain VERIFYING, B2 is partial and B3-B10 remain open."
+      "state": "e0_done",
+      "evidence": "The long-form blocker plan must mark B1/M0 resolved while retaining B2 partial, B3-B10 open, all milestones, metrics and anti-drift detail."
     }
   },
-  "closure_requirements": [
-    "BACKLOG.md and STATUS.md contain reviewed durable Nerva program blocks.",
-    "Issue bodies #757, #758 and #778 agree with the repository ledgers and first executable slices.",
-    "scripts/status_sync.py --check, the ledger migrator --check and both Nerva integrity checkers pass on the exact head.",
-    "All required CI workflows are green on the exact head.",
-    "An independent integrator accepts the final diff and explicitly marks E0 complete.",
-    "No first-wave production implementation begins before E0 closure."
+  "closure_invariants": [
+    "status=done and close_e0=true must change together.",
+    "Accepted controls include the independently merged #789 repository-ledger evidence.",
+    "No first-wave slice retains #758 as a blocker after E0 closure.",
+    "#782 remains blocked by #781 and no other first-wave dependency is invented.",
+    "Ultron / nerva.action.v1 remains the sole privileged-action authority.",
+    "E0 completion is not runtime, live-capability, hardware or release completion.",
+    "BACKLOG.md, STATUS.md, ROADMAP_RECONCILIATION.json and both Nerva checkers must agree on the exact post-E0 state.",
+    "Issue bodies #757, #758 and #778 are updated by the independent integrator when this transition is accepted."
   ],
-  "next_slice": "E0.3b2b-independent-closure — independently review the final change set, the reconciled #778 body, all exact-head checks, dependency order and authority boundaries; the builder must not merge, close E0 or start #780-#784"
+  "post_e0_open_work": [
+    "B2 whole-program manifest, cycle/orphan detection and generated dependency views.",
+    "B3 Continuity Core mapping into the formal streams.",
+    "B4-B10 cognitive-ledger, SDK, live actuation, mediation, research, Night Shift and product-proof work.",
+    "All runtime, owner-hardware and Nerva 2.0 release gates."
+  ],
+  "next_slice": "E1.0 / E2.0 / E8.0 / E9.0 — choose one smallest bounded slice per PR; #780, #781, #783 and #784 may proceed independently, while #782 begins only after #781"
 }
