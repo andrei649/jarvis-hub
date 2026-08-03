@@ -1,9 +1,9 @@
 name: Nerva E3.0 bounded hardening
 
 on:
-  push:
-    branches:
-      - nerva2/e3-0-episodes-manual-boundaries
+  pull_request:
+    types:
+      - reopened
 
 permissions:
   contents: write
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Apply bounded fail-closed corrections
@@ -133,8 +133,7 @@ jobs:
           ''',
           )
 
-          workflow = Path(".github/workflows/nerva-e3-bounded-fix.yml")
-          workflow.unlink()
+          Path(".github/workflows/nerva-e3-bounded-fix.yml").unlink()
 
       - name: Commit bounded corrections and remove helper workflow
         shell: bash
@@ -148,4 +147,4 @@ jobs:
                   .github/workflows/nerva-e3-bounded-fix.yml
           git diff --cached --check
           git commit -m "fix(nerva): close E3.0 fail-closed review gaps"
-          git push origin HEAD:${{ github.ref_name }}
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
