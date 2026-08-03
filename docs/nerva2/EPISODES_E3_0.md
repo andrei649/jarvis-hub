@@ -29,7 +29,7 @@ privileged-action authority.
   with evidence-reference IDs and confidence provenance;
 - `EpisodeRecord` — `nerva.episode.v1` with the lifecycle `open`, `settled`,
   `consolidated`, `superseded`;
-- `EpisodeAuditEvent` and `EpisodeMutation` — tamper-evident operation evidence
+- `EpisodeAuditEvent` and `EpisodeMutation` — deterministic integrity evidence
   plus the exact pre-mutation values needed for rollback;
 - `EpisodePartition`, `EpisodeDerivativeTrace`, `EpisodeQuery` and
   `EpisodeMatch` — bounded manual split, deletion/export traversal and pure
@@ -49,9 +49,11 @@ observations must pass their own integrity check before they can become episode
 references.
 
 Derived goal, summary and significance assertions may contain bounded episode
-text, but each assertion must name existing evidence references. Unknown
-privacy is never widened, source identity is never merged implicitly, and a
-reference tombstone removes assertions that depended on that source.
+text, but each assertion must name existing evidence references. Assertion text
+is fail-closed at 4096 characters and audit reasons at 1024 characters; these
+are storage bounds, not semantic transcript detection. Unknown privacy is never
+widened, source identity is never merged implicitly, and a reference tombstone
+removes assertions that depended on that source.
 
 The bounded `nerva.episode.manual.v0` migration accepts reference-only payloads
 and recursively rejects raw-content fields such as `transcript`,
@@ -78,7 +80,9 @@ detection:
 
 Participant, reference and evidence ordering is canonicalized before identity,
 integrity and audit fingerprints are calculated. Replaying equivalent manual
-inputs therefore yields the same records and audit event.
+inputs therefore yields the same records and audit event. Mutation occurrence
+time cannot precede an input revision, and deletion time cannot precede the
+affected source occurrence or exceed the mutation time.
 
 ## Confidence and product-truth rules
 
@@ -88,18 +92,24 @@ assertion requires measured confidence of at least `0.75`; unknown or weaker
 inference is rejected when a record enters `settled` or `consolidated`.
 
 The included `retrieve_episodes(...)` path is a focused, in-memory fixture for
-situation terms, participants and verified outcome IDs. It is not wired into
+situation terms, participants and verified outcome IDs. Tombstoned references
+cannot satisfy situation or outcome signals. The fixture is not wired into
 production recall and makes no claim that Episodes improves the current memory
 baseline. A later package must compare deterministic episode retrieval against
 the current longitudinal recall path before any production adoption.
 
-## Audit, deletion/export traversal and Atomic rollback
+## Audit, deletion/export traversal and atomic rollback
 
 Every manual operation returns one `EpisodeMutation`:
 
 ```text
-before records + after records + tamper-evident audit event
+before records + after records + deterministic integrity audit + rollback value
 ```
+
+The canonical audit payload is round-trippable and rejects changed content,
+authority flags, logical episode IDs or unrelated affected-reference IDs. Its
+plain SHA-256 digest detects accidental or uncoordinated modification but does
+not authenticate a signer and does not provide non-repudiation.
 
 `rollback()` returns the exact immutable `before` tuple. Persisting an operation
 is therefore an atomic caller responsibility: write the complete `after` set
@@ -107,11 +117,14 @@ and its audit event, or restore the complete `before` set. Merge and split must
 never be partially persisted because their successor and supersession records
 are one coherent mutation.
 
-`trace_source_derivatives(...)` maps a canonical deletion root to the episode
-revision, references and assertions derived from it. `tombstone_sources(...)`
-keeps an explicit tombstone and scrubs assertions whose evidence was deleted.
-This is a traversal/value contract only; it does not implement the external
-source deletion executor or a durable episode database.
+`trace_source_derivatives(...)` maps a canonical deletion root within one
+caller-supplied episode revision to its references and assertions. Merge and
+split preserve source deletion roots in successor references; callers traversing
+a persisted graph must supply each relevant descendant revision. The function
+is intentionally not a durable collection-level graph walker.
+`tombstone_sources(...)` keeps an explicit tombstone and scrubs assertions whose
+evidence was deleted. This is a traversal/value contract only; it does not
+implement the external source deletion executor or a durable episode database.
 
 ## Tests and evidence
 
@@ -123,9 +136,11 @@ test, covers:
 - fixed memory-only authority;
 - low-confidence settlement rejection;
 - settle, consolidate and correction revision chains;
-- round-trip serialization and tamper rejection;
+- record and audit round-trip serialization plus tamper rejection;
 - deterministic audited merge and exact-cover split;
-- source derivative tracing, tombstones and rollback;
+- source derivative tracing across merge/split, tombstones and rollback;
+- bounded assertion/audit text and monotonic time rejection;
+- tombstoned retrieval-signal exclusion;
 - reference-only v0 migration and raw-content rejection;
 - focused situation/outcome retrieval without production wiring.
 
