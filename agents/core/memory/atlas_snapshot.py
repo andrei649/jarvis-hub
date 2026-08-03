@@ -128,14 +128,19 @@ class AtlasObservation:
         if len(self.integrity_sha256) != 64:
             raise ValueError("Atlas integrity hash must be a SHA-256 hex digest")
 
-    def canonical_payload(self, *, include_integrity: bool = True) -> dict[str, Any]:
+    def canonical_payload(
+        self,
+        *,
+        include_integrity: bool = True,
+    ) -> dict[str, Any]:
         payload = asdict(self)
         if not include_integrity:
             payload.pop("integrity_sha256", None)
         return payload
 
     def verify_integrity(self) -> bool:
-        return self.integrity_sha256 == _sha256(self.canonical_payload(include_integrity=False))
+        payload = self.canonical_payload(include_integrity=False)
+        return self.integrity_sha256 == _sha256(payload)
 
 
 @dataclass(frozen=True)
@@ -155,10 +160,17 @@ class AtlasQuery:
         _validate_time(self.at, "query at")
         if not self.allowed_privacy_classes:
             raise ValueError("Atlas queries require an explicit privacy scope")
-        if len(set(self.allowed_privacy_classes)) != len(self.allowed_privacy_classes):
+        if len(set(self.allowed_privacy_classes)) != len(
+            self.allowed_privacy_classes
+        ):
             raise ValueError("Atlas privacy scope cannot contain duplicates")
         for privacy_class in self.allowed_privacy_classes:
             _validate_privacy_class(privacy_class)
+        object.__setattr__(
+            self,
+            "allowed_privacy_classes",
+            tuple(sorted(self.allowed_privacy_classes)),
+        )
         if not isinstance(self.subject, str) or not isinstance(self.predicate, str):
             raise ValueError("Atlas subject and predicate filters must be strings")
         if not isinstance(self.limit, int) or isinstance(self.limit, bool):
@@ -167,9 +179,7 @@ class AtlasQuery:
             raise ValueError("Atlas query limit must be between 1 and 1000")
 
     def canonical_payload(self) -> dict[str, Any]:
-        payload = asdict(self)
-        payload["allowed_privacy_classes"] = tuple(sorted(self.allowed_privacy_classes))
-        return payload
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -179,8 +189,7 @@ class AtlasSnapshot:
     snapshot_id: str
     query: AtlasQuery
     observations: tuple[AtlasObservation, ...]
-    total_source_records: int
-    denied_count: int
+    eligible_count: int
     truncated_count: int
     schema: str = field(default="nerva.atlas.snapshot.v1", init=False)
     authority: str = field(default="read_only", init=False)
@@ -192,14 +201,13 @@ class AtlasSnapshot:
     def __post_init__(self) -> None:
         _require_non_empty(self.snapshot_id, "snapshot_id")
         for value, name in (
-            (self.total_source_records, "total_source_records"),
-            (self.denied_count, "denied_count"),
+            (self.eligible_count, "eligible_count"),
             (self.truncated_count, "truncated_count"),
         ):
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise ValueError(f"Atlas {name} must be a non-negative integer")
-        if len(self.observations) + self.denied_count + self.truncated_count > self.total_source_records:
-            raise ValueError("Atlas snapshot counts exceed source records")
+        if len(self.observations) + self.truncated_count != self.eligible_count:
+            raise ValueError("Atlas snapshot counts do not match eligible records")
 
     def canonical_payload(self) -> dict[str, Any]:
         return asdict(self)
@@ -276,7 +284,9 @@ class LegacyBiTemporalAdapter:
 
         source_record_id = f"{self._policy.source_id}:{fact_id}"
         observation_id = "atlas:observation:" + _sha256(source_record_id)[:24]
-        entity_id = "atlas:entity:" + _sha256(_normalize_identifier(subject))[:24]
+        entity_id = "atlas:entity:" + _sha256(
+            _normalize_identifier(subject)
+        )[:24]
         source = AtlasSourceRef(
             source_id=self._policy.source_id,
             record_id=source_record_id,
@@ -373,15 +383,12 @@ class AtlasSnapshotReader:
 
         allowed = set(query.allowed_privacy_classes)
         projected: list[AtlasObservation] = []
-        denied_count = 0
         for fact in facts:
             if not isinstance(fact, Mapping):
                 raise ValueError("Atlas source records must be mappings")
             observation = self.__adapter.project(fact)
-            if observation.privacy_class not in allowed:
-                denied_count += 1
-                continue
-            projected.append(observation)
+            if observation.privacy_class in allowed:
+                projected.append(observation)
 
         projected.sort(
             key=lambda item: (
@@ -390,15 +397,15 @@ class AtlasSnapshotReader:
                 item.observation_id,
             )
         )
-        truncated_count = max(0, len(projected) - query.limit)
+        eligible_count = len(projected)
+        truncated_count = max(0, eligible_count - query.limit)
         observations = tuple(projected[: query.limit])
         snapshot_material = {
             "query": query.canonical_payload(),
             "observation_integrity": tuple(
                 observation.integrity_sha256 for observation in observations
             ),
-            "total_source_records": len(facts),
-            "denied_count": denied_count,
+            "eligible_count": eligible_count,
             "truncated_count": truncated_count,
             "schema": "nerva.atlas.snapshot.v1",
         }
@@ -407,8 +414,7 @@ class AtlasSnapshotReader:
             snapshot_id=snapshot_id,
             query=query,
             observations=observations,
-            total_source_records=len(facts),
-            denied_count=denied_count,
+            eligible_count=eligible_count,
             truncated_count=truncated_count,
         )
 
