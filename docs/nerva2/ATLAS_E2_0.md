@@ -53,10 +53,14 @@ how many unauthorized source records existed. Snapshot counts describe only
 records eligible for the caller's explicit privacy scope.
 
 The adapter does not infer that two differently named subjects are the same
-entity. It only gives the same normalized legacy subject a stable projected
-entity ID. Cross-connector identity resolution remains future Atlas work.
-Normalized subject hashes are deterministic and therefore pseudonymous/linkable;
-they still require normal access, retention and deletion controls.
+entity. Compatibility entity IDs are source-scoped: the same normalized subject
+within the same declared source receives a stable ID, while a different source
+receives a different ID until an explicit future identity-resolution contract
+links them. This prevents implicit cross-connector merging.
+
+Normalized source/subject hashes are deterministic and therefore
+pseudonymous/linkable; they still require normal access, retention and deletion
+controls.
 
 ## Temporal and contradiction semantics
 
@@ -136,7 +140,7 @@ rollback that leaves the test wiring or a misleading delivery claim is invalid.
 The contract exposes honest defaults for legacy rows but does not create missing
 source metadata. Query-time filtering is proven at the adapter seam, not yet at
 a production API boundary. Deletion lineage is represented but no deletion
-executor is added. Stable subject hashing is compatibility identity, not
+executor is added. Source-scoped subject hashing is compatibility identity, not
 cross-domain entity resolution.
 
 After independent acceptance, #782 Episodes is unblocked. The next Atlas package
