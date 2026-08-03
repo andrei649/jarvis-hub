@@ -314,6 +314,8 @@ class EpisodeRecord:
         _validate_time(self.updated_at, "updated_at")
         if self.updated_at < self.created_at:
             raise ValueError("Episode updated_at cannot precede created_at")
+        if self.started_at > self.updated_at:
+            raise ValueError("Episode started_at cannot follow updated_at")
         if self.ended_at is not None:
             _validate_time(self.ended_at, "ended_at")
             if self.ended_at < self.started_at:
@@ -548,8 +550,24 @@ class EpisodeRecord:
             if payload.get(flag) is not False:
                 raise ValueError("Episode payload attempts to expand authority")
         try:
+            reference_payloads = _require_json_array(
+                payload["references"],
+                "references",
+            )
+            participant_payloads = _require_json_array(
+                payload["participants"],
+                "participants",
+            )
+            parent_payloads = _require_json_array(
+                payload.get("parent_episode_ids", []),
+                "parent_episode_ids",
+            )
+            successor_payloads = _require_json_array(
+                payload.get("superseded_by_episode_ids", []),
+                "superseded_by_episode_ids",
+            )
             references = tuple(
-                _reference_from_payload(item) for item in payload["references"]
+                _reference_from_payload(item) for item in reference_payloads
             )
             goal = _assertion_from_payload(payload.get("goal"))
             summary = _assertion_from_payload(payload.get("summary"))
@@ -559,18 +577,16 @@ class EpisodeRecord:
                 record_id=payload["record_id"],
                 revision=payload["revision"],
                 state=payload["state"],
-                participants=tuple(payload["participants"]),
+                participants=tuple(participant_payloads),
                 started_at=payload["started_at"],
                 ended_at=payload.get("ended_at"),
                 references=references,
                 goal=goal,
                 summary=summary,
                 significance=significance,
-                parent_episode_ids=tuple(payload.get("parent_episode_ids", ())),
+                parent_episode_ids=tuple(parent_payloads),
                 supersedes_record_id=payload.get("supersedes_record_id"),
-                superseded_by_episode_ids=tuple(
-                    payload.get("superseded_by_episode_ids", ())
-                ),
+                superseded_by_episode_ids=tuple(successor_payloads),
                 created_at=payload["created_at"],
                 updated_at=payload["updated_at"],
                 integrity_sha256=payload["integrity_sha256"],
@@ -681,11 +697,15 @@ def _assertion_from_payload(
     if payload.get("schema") != "nerva.episode.assertion.v1":
         raise ValueError("Unsupported episode assertion schema")
     confidence = payload["confidence"]
+    evidence_reference_ids = _require_json_array(
+        payload["evidence_reference_ids"],
+        "assertion evidence_reference_ids",
+    )
     return EpisodeAssertion(
         assertion_id=payload["assertion_id"],
         kind=payload["kind"],
         text=payload["text"],
-        evidence_reference_ids=tuple(payload["evidence_reference_ids"]),
+        evidence_reference_ids=tuple(evidence_reference_ids),
         confidence=AtlasConfidence(
             confidence["status"],
             confidence.get("value"),
@@ -788,6 +808,12 @@ def _validated_string_tuple(
     if len(set(normalized)) != len(normalized):
         raise ValueError(f"Episode {name} cannot contain duplicates")
     return tuple(sorted(normalized))
+
+
+def _require_json_array(value: Any, name: str) -> list[Any]:
+    if not isinstance(value, list):
+        raise ValueError(f"Episode {name} must be a JSON array")
+    return value
 
 
 def _require_non_empty(value: Any, name: str) -> None:
