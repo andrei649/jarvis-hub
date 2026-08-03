@@ -29,7 +29,7 @@ not add a replacement database or migrate existing data.
 - `tests/_nerva_e2_0_checks.py`
   - projection of existing facts without source mutation;
   - valid-time and known-time behavior;
-  - private-scope denial;
+  - private-scope denial without unauthorized-record counts;
   - contradiction and lineage preservation;
   - immutable values and no writable store handle;
   - deterministic replay, integrity, truncation and malformed-input failures.
@@ -48,12 +48,15 @@ or privacy metadata. The adapter therefore labels them honestly:
   privacy class.
 
 Unknown privacy is never treated as public. Every query must supply one or more
-allowed privacy classes, and non-matching observations are omitted with a
-visible `denied_count`.
+allowed privacy classes. Non-matching observations are omitted without exposing
+how many unauthorized source records existed. Snapshot counts describe only
+records eligible for the caller's explicit privacy scope.
 
 The adapter does not infer that two differently named subjects are the same
 entity. It only gives the same normalized legacy subject a stable projected
 entity ID. Cross-connector identity resolution remains future Atlas work.
+Normalized subject hashes are deterministic and therefore pseudonymous/linkable;
+they still require normal access, retention and deletion controls.
 
 ## Temporal and contradiction semantics
 
@@ -64,6 +67,10 @@ entity ID. Cross-connector identity resolution remains future Atlas work.
 - snapshots are detached frozen values, so later source writes do not rewrite a
   previously returned snapshot.
 
+The compatibility adapter does not repair pre-existing transaction-history
+limitations inside `BiTemporalKG`; it preserves the current store's behavior and
+makes the selected temporal axis explicit for later migration work.
+
 ## Security and authority boundary
 
 Atlas E2.0 is read-only.
@@ -71,6 +78,7 @@ Atlas E2.0 is read-only.
 - no mutation endpoint is added;
 - no database handle is returned to consumers;
 - no privacy class is broadened implicitly;
+- no unauthorized-record count is exposed in a filtered snapshot;
 - no probability, Reflection proposal or E12 belief becomes a fact;
 - no action is authorized or executed;
 - no task is marked complete;
