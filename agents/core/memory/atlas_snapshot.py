@@ -3,8 +3,9 @@
 This module is the bounded E2.0 compatibility seam. It does not introduce a
 new database, mutate the source store, merge identities, or promote inferred
 content to fact. Legacy facts are projected with explicit provenance,
-confidence and privacy defaults, then filtered through an explicit query
-context before immutable snapshot values are returned.
+confidence and privacy defaults. A trusted authorizer grants an effective
+privacy scope before the source store is read, then immutable snapshot values
+are returned.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ _ALLOWED_PRIVACY_CLASSES = {
     "restricted",
 }
 _ALLOWED_TEMPORAL_AXES = {"valid", "known"}
+_SHA256_HEX_LENGTH = 64
 
 
 @dataclass(frozen=True)
@@ -78,12 +80,18 @@ class AtlasDeletionLineage:
 
     def __post_init__(self) -> None:
         _require_non_empty(self.source_record_id, "source_record_id")
+        if not isinstance(self.derived_record_ids, tuple):
+            raise ValueError("Atlas derived_record_ids must be an immutable tuple")
+        if not isinstance(self.propagates_to, tuple):
+            raise ValueError("Atlas propagates_to must be an immutable tuple")
         if not self.derived_record_ids:
             raise ValueError("Atlas lineage requires at least one derived record")
         for value in (*self.derived_record_ids, *self.propagates_to):
             _require_non_empty(value, "lineage identifier")
-        if self.deleted_at is not None and not self.tombstoned:
-            raise ValueError("deleted_at requires an explicit tombstone")
+        if self.deleted_at is not None:
+            _validate_time(self.deleted_at, "deleted_at")
+            if not self.tombstoned:
+                raise ValueError("deleted_at requires an explicit tombstone")
 
 
 @dataclass(frozen=True)
@@ -116,6 +124,12 @@ class AtlasObservation:
             "integrity_sha256",
         ):
             _require_non_empty(getattr(self, name), name)
+        if not isinstance(self.source, AtlasSourceRef):
+            raise ValueError("Atlas observation source must be AtlasSourceRef")
+        if not isinstance(self.confidence, AtlasConfidence):
+            raise ValueError("Atlas observation confidence must be AtlasConfidence")
+        if not isinstance(self.lineage, AtlasDeletionLineage):
+            raise ValueError("Atlas observation lineage must be AtlasDeletionLineage")
         _validate_privacy_class(self.privacy_class)
         _validate_time(self.valid_from, "valid_from")
         _validate_time(self.ingested_at, "ingested_at")
@@ -125,8 +139,7 @@ class AtlasObservation:
                 raise ValueError("valid_to cannot precede valid_from")
         if self.invalidated_at is not None:
             _validate_time(self.invalidated_at, "invalidated_at")
-        if len(self.integrity_sha256) != 64:
-            raise ValueError("Atlas integrity hash must be a SHA-256 hex digest")
+        _validate_sha256_hex(self.integrity_sha256, "integrity_sha256")
 
     def canonical_payload(
         self,
@@ -145,11 +158,11 @@ class AtlasObservation:
 
 @dataclass(frozen=True)
 class AtlasQuery:
-    """Explicit temporal and privacy scope for one bounded snapshot."""
+    """Requested temporal and privacy scope for one bounded snapshot."""
 
     temporal_axis: TemporalAxis
     at: float
-    allowed_privacy_classes: tuple[PrivacyClass, ...]
+    requested_privacy_classes: tuple[PrivacyClass, ...]
     subject: str = ""
     predicate: str = ""
     limit: int = 100
@@ -158,19 +171,11 @@ class AtlasQuery:
         if self.temporal_axis not in _ALLOWED_TEMPORAL_AXES:
             raise ValueError("Atlas temporal_axis must be valid or known")
         _validate_time(self.at, "query at")
-        if not self.allowed_privacy_classes:
-            raise ValueError("Atlas queries require an explicit privacy scope")
-        if len(set(self.allowed_privacy_classes)) != len(
-            self.allowed_privacy_classes
-        ):
-            raise ValueError("Atlas privacy scope cannot contain duplicates")
-        for privacy_class in self.allowed_privacy_classes:
-            _validate_privacy_class(privacy_class)
-        object.__setattr__(
-            self,
-            "allowed_privacy_classes",
-            tuple(sorted(self.allowed_privacy_classes)),
+        normalized_scope = _validated_privacy_scope(
+            self.requested_privacy_classes,
+            "requested privacy scope",
         )
+        object.__setattr__(self, "requested_privacy_classes", normalized_scope)
         if not isinstance(self.subject, str) or not isinstance(self.predicate, str):
             raise ValueError("Atlas subject and predicate filters must be strings")
         if not isinstance(self.limit, int) or isinstance(self.limit, bool):
@@ -183,11 +188,46 @@ class AtlasQuery:
 
 
 @dataclass(frozen=True)
+class AtlasAccessGrant:
+    """Trusted authorizer result for one principal and requested scope."""
+
+    grant_id: str
+    principal_id: str
+    granted_privacy_classes: tuple[PrivacyClass, ...]
+    issued_by: str
+    schema: str = field(default="nerva.atlas.access_grant.v1", init=False)
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.grant_id, "grant_id")
+        _require_non_empty(self.principal_id, "principal_id")
+        _require_non_empty(self.issued_by, "issued_by")
+        normalized_scope = _validated_privacy_scope(
+            self.granted_privacy_classes,
+            "granted privacy scope",
+        )
+        object.__setattr__(self, "granted_privacy_classes", normalized_scope)
+
+    def canonical_payload(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+class AtlasAccessAuthorizer(Protocol):
+    """Trusted composition seam that grants or denies Atlas read scope."""
+
+    def authorize(
+        self,
+        principal_id: str,
+        requested_privacy_classes: tuple[PrivacyClass, ...],
+    ) -> AtlasAccessGrant: ...
+
+
+@dataclass(frozen=True)
 class AtlasSnapshot:
     """Immutable, bounded ``nerva.atlas.snapshot.v1`` query result."""
 
     snapshot_id: str
     query: AtlasQuery
+    access_grant: AtlasAccessGrant
     observations: tuple[AtlasObservation, ...]
     eligible_count: int
     truncated_count: int
@@ -200,12 +240,54 @@ class AtlasSnapshot:
 
     def __post_init__(self) -> None:
         _require_non_empty(self.snapshot_id, "snapshot_id")
+        if not isinstance(self.query, AtlasQuery):
+            raise ValueError("Atlas snapshot query must be AtlasQuery")
+        if not isinstance(self.access_grant, AtlasAccessGrant):
+            raise ValueError("Atlas snapshot access_grant must be AtlasAccessGrant")
+        if not isinstance(self.observations, tuple):
+            raise ValueError("Atlas snapshot observations must be an immutable tuple")
+
+        requested = set(self.query.requested_privacy_classes)
+        granted = set(self.access_grant.granted_privacy_classes)
+        if not requested.issubset(granted):
+            raise ValueError("Atlas snapshot query exceeds its trusted access grant")
+
+        observation_ids: set[str] = set()
+        for observation in self.observations:
+            if not isinstance(observation, AtlasObservation):
+                raise ValueError("Atlas snapshot values must be AtlasObservation")
+            if observation.observation_id in observation_ids:
+                raise ValueError(
+                    "Atlas snapshot cannot contain duplicate observation IDs"
+                )
+            observation_ids.add(observation.observation_id)
+            if observation.privacy_class not in requested:
+                raise ValueError(
+                    "Atlas observation is outside the requested privacy scope"
+                )
+            if observation.privacy_class not in granted:
+                raise ValueError(
+                    "Atlas observation is outside the granted privacy scope"
+                )
+            if not observation.verify_integrity():
+                raise ValueError("Atlas observation integrity verification failed")
+            if not _observation_matches_query(observation, self.query):
+                raise ValueError("Atlas observation is outside the snapshot query")
+
+        expected_order = tuple(sorted(self.observations, key=_observation_sort_key))
+        if self.observations != expected_order:
+            raise ValueError(
+                "Atlas snapshot observations are not deterministically ordered"
+            )
+
         for value, name in (
             (self.eligible_count, "eligible_count"),
             (self.truncated_count, "truncated_count"),
         ):
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise ValueError(f"Atlas {name} must be a non-negative integer")
+        if len(self.observations) > self.query.limit:
+            raise ValueError("Atlas snapshot exceeds the query limit")
         if len(self.observations) + self.truncated_count != self.eligible_count:
             raise ValueError("Atlas snapshot counts do not match eligible records")
 
@@ -351,23 +433,46 @@ class BiTemporalReadProtocol(Protocol):
 class AtlasSnapshotReader:
     """Read-only adapter that returns values, never a writable store handle."""
 
-    __slots__ = ("__read_store", "__adapter")
+    __slots__ = ("__read_store", "__adapter", "__authorizer")
 
     def __init__(
         self,
         read_store: BiTemporalReadProtocol,
+        authorizer: AtlasAccessAuthorizer,
         adapter: LegacyBiTemporalAdapter | None = None,
     ) -> None:
         if not callable(getattr(read_store, "as_of", None)):
             raise ValueError("Atlas read store must provide as_of")
         if not callable(getattr(read_store, "known_as_of", None)):
             raise ValueError("Atlas read store must provide known_as_of")
+        if not callable(getattr(authorizer, "authorize", None)):
+            raise ValueError("Atlas reader requires a trusted access authorizer")
         self.__read_store = read_store
         self.__adapter = adapter or LegacyBiTemporalAdapter()
+        self.__authorizer = authorizer
 
-    def snapshot(self, query: AtlasQuery) -> AtlasSnapshot:
+    def snapshot(self, query: AtlasQuery, *, principal_id: str) -> AtlasSnapshot:
         if not isinstance(query, AtlasQuery):
             raise ValueError("Atlas snapshot requires an AtlasQuery")
+        _require_non_empty(principal_id, "principal_id")
+
+        access_grant = self.__authorizer.authorize(
+            principal_id,
+            query.requested_privacy_classes,
+        )
+        if not isinstance(access_grant, AtlasAccessGrant):
+            raise PermissionError(
+                "Atlas authorizer did not return a trusted access grant"
+            )
+        if access_grant.principal_id != principal_id:
+            raise PermissionError(
+                "Atlas access grant principal does not match the caller"
+            )
+        requested = set(query.requested_privacy_classes)
+        granted = set(access_grant.granted_privacy_classes)
+        if not requested.issubset(granted):
+            raise PermissionError("Atlas requested privacy scope is not granted")
+
         if query.temporal_axis == "valid":
             facts = self.__read_store.as_of(
                 query.at,
@@ -383,27 +488,21 @@ class AtlasSnapshotReader:
         if not isinstance(facts, Sequence):
             raise ValueError("Atlas read store must return a sequence")
 
-        allowed = set(query.allowed_privacy_classes)
         projected: list[AtlasObservation] = []
         for fact in facts:
             if not isinstance(fact, Mapping):
                 raise ValueError("Atlas source records must be mappings")
             observation = self.__adapter.project(fact)
-            if observation.privacy_class in allowed:
+            if observation.privacy_class in requested:
                 projected.append(observation)
 
-        projected.sort(
-            key=lambda item: (
-                item.valid_from,
-                item.ingested_at,
-                item.observation_id,
-            )
-        )
+        projected.sort(key=_observation_sort_key)
         eligible_count = len(projected)
         truncated_count = max(0, eligible_count - query.limit)
         observations = tuple(projected[: query.limit])
         snapshot_material = {
             "query": query.canonical_payload(),
+            "access_grant": access_grant.canonical_payload(),
             "observation_integrity": tuple(
                 observation.integrity_sha256 for observation in observations
             ),
@@ -415,10 +514,34 @@ class AtlasSnapshotReader:
         return AtlasSnapshot(
             snapshot_id=snapshot_id,
             query=query,
+            access_grant=access_grant,
             observations=observations,
             eligible_count=eligible_count,
             truncated_count=truncated_count,
         )
+
+
+def _observation_sort_key(observation: AtlasObservation) -> tuple[float, float, str]:
+    return (
+        observation.valid_from,
+        observation.ingested_at,
+        observation.observation_id,
+    )
+
+
+def _observation_matches_query(
+    observation: AtlasObservation,
+    query: AtlasQuery,
+) -> bool:
+    if query.subject and observation.subject != query.subject:
+        return False
+    if query.predicate and observation.predicate != query.predicate:
+        return False
+    if query.temporal_axis == "valid":
+        return observation.valid_from <= query.at and (
+            observation.valid_to is None or query.at < observation.valid_to
+        )
+    return observation.ingested_at <= query.at
 
 
 def _fact_identifier(fact: Mapping[str, Any]) -> str:
@@ -453,9 +576,33 @@ def _require_non_empty(value: Any, name: str) -> None:
         raise ValueError(f"Atlas {name} must be a non-empty string")
 
 
+def _validated_privacy_scope(
+    value: Any,
+    name: str,
+) -> tuple[PrivacyClass, ...]:
+    if not isinstance(value, tuple):
+        raise ValueError(f"Atlas {name} must be an immutable tuple")
+    if not value:
+        raise ValueError(f"Atlas {name} cannot be empty")
+    if len(set(value)) != len(value):
+        raise ValueError(f"Atlas {name} cannot contain duplicates")
+    for privacy_class in value:
+        _validate_privacy_class(privacy_class)
+    return tuple(sorted(value))
+
+
 def _validate_privacy_class(value: Any) -> None:
     if value not in _ALLOWED_PRIVACY_CLASSES:
         raise ValueError("Atlas privacy class is not recognized")
+
+
+def _validate_sha256_hex(value: Any, name: str) -> None:
+    if not isinstance(value, str):
+        raise ValueError(f"Atlas {name} must be a SHA-256 hex digest")
+    if len(value) != _SHA256_HEX_LENGTH:
+        raise ValueError(f"Atlas {name} must be a SHA-256 hex digest")
+    if any(character not in "0123456789abcdef" for character in value):
+        raise ValueError(f"Atlas {name} must be a SHA-256 hex digest")
 
 
 def _validate_time(value: Any, name: str) -> None:
