@@ -8,6 +8,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 
 from agents.core.memory.bitemporal import BiTemporalKG
+from tests._nerva_e2_0_checks import run_e2_0_checks
 
 
 def test_contradiction_invalidates_not_deletes(tmp_path):
@@ -49,6 +50,7 @@ def test_known_as_of_transaction_time(tmp_path):
     # we didn't know it at t=400
     assert kg.known_as_of(400, "andrei") == []
     assert len(kg.known_as_of(600, "andrei")) == 1
+    run_e2_0_checks(tmp_path)
 
 
 def test_multi_valued_does_not_invalidate(tmp_path):
