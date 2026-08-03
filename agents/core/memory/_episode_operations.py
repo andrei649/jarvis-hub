@@ -7,14 +7,14 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from agents.core.memory._episode_values import (
+    _ALLOWED_OPERATIONS,
+    _ALLOWED_STATES,
+    _KEEP,
     EpisodeAssertion,
     EpisodeOperation,
     EpisodeRecord,
     EpisodeReference,
     EpisodeState,
-    _ALLOWED_OPERATIONS,
-    _ALLOWED_STATES,
-    _KEEP,
     _legacy_assertion_from_payload,
     _legacy_reference_from_payload,
     _merge_references,
@@ -27,6 +27,7 @@ from agents.core.memory._episode_values import (
     _validate_time,
     _validated_string_tuple,
 )
+
 
 @dataclass(frozen=True)
 class EpisodeAuditEvent:
@@ -67,11 +68,11 @@ class EpisodeAuditEvent:
             raise ValueError('Episode audit integrity verification failed')
 
     @classmethod
-    def build(cls, *, operation: EpisodeOperation, actor_id: str, occurred_at: float, reason: str, before: tuple[EpisodeRecord, ...], after: tuple[EpisodeRecord, ...], affected_reference_ids: tuple[str, ...]=()) -> 'EpisodeAuditEvent':
-        input_record_ids = tuple(sorted((record.record_id for record in before)))
-        output_record_ids = tuple(sorted((record.record_id for record in after)))
-        input_episode_ids = tuple(sorted((record.episode_id for record in before)))
-        output_episode_ids = tuple(sorted((record.episode_id for record in after)))
+    def build(cls, *, operation: EpisodeOperation, actor_id: str, occurred_at: float, reason: str, before: tuple[EpisodeRecord, ...], after: tuple[EpisodeRecord, ...], affected_reference_ids: tuple[str, ...]=()) -> EpisodeAuditEvent:
+        input_record_ids = tuple(sorted(record.record_id for record in before))
+        output_record_ids = tuple(sorted(record.record_id for record in after))
+        input_episode_ids = tuple(sorted(record.episode_id for record in before))
+        output_episode_ids = tuple(sorted(record.episode_id for record in after))
         affected_reference_ids = _validated_string_tuple(affected_reference_ids, 'affected_reference_ids', allow_empty=True)
         material = _audit_material(operation=operation, actor_id=actor_id, occurred_at=float(occurred_at), reason=reason, input_record_ids=input_record_ids, output_record_ids=output_record_ids, input_episode_ids=input_episode_ids, output_episode_ids=output_episode_ids, affected_reference_ids=affected_reference_ids)
         audit_id = 'episode:audit:' + _sha256(material)[:24]
@@ -105,9 +106,9 @@ class EpisodeMutation:
                 raise ValueError('Episode mutation values must be EpisodeRecord')
             if not record.verify_integrity():
                 raise ValueError('Episode mutation contains invalid record integrity')
-        if tuple((record.record_id for record in self.before)) != self.audit.input_record_ids:
+        if tuple(record.record_id for record in self.before) != self.audit.input_record_ids:
             raise ValueError('Episode mutation before records do not match audit')
-        if tuple((record.record_id for record in self.after)) != self.audit.output_record_ids:
+        if tuple(record.record_id for record in self.after) != self.audit.output_record_ids:
             raise ValueError('Episode mutation after records do not match audit')
 
     def rollback(self) -> tuple[EpisodeRecord, ...]:
@@ -156,14 +157,14 @@ class EpisodeQuery:
     limit: int = 20
 
     def __post_init__(self) -> None:
-        terms = _validated_string_tuple(tuple((_normalize_text(term) for term in self.situation_terms if term.strip())), 'situation_terms', allow_empty=True)
+        terms = _validated_string_tuple(tuple(_normalize_text(term) for term in self.situation_terms if term.strip()), 'situation_terms', allow_empty=True)
         object.__setattr__(self, 'situation_terms', terms)
         for name in ('outcome_record_ids', 'participants'):
             normalized = _validated_string_tuple(getattr(self, name), name, allow_empty=True)
             object.__setattr__(self, name, normalized)
         if not isinstance(self.states, tuple) or not self.states:
             raise ValueError('Episode query states must be a non-empty tuple')
-        if any((state not in _ALLOWED_STATES for state in self.states)):
+        if any(state not in _ALLOWED_STATES for state in self.states):
             raise ValueError('Episode query state is not recognized')
         object.__setattr__(self, 'states', tuple(sorted(set(self.states))))
         if not isinstance(self.limit, int) or isinstance(self.limit, bool):
@@ -182,14 +183,14 @@ class EpisodeMatch:
 def open_episode(*, participants: tuple[str, ...], started_at: float, references: tuple[EpisodeReference, ...], actor_id: str, occurred_at: float, reason: str, goal: EpisodeAssertion | None=None) -> EpisodeMutation:
     record = EpisodeRecord.build(state='open', participants=participants, started_at=started_at, ended_at=None, references=references, goal=goal, summary=None, significance=None, created_at=occurred_at, updated_at=occurred_at)
     after = (record,)
-    audit = EpisodeAuditEvent.build(operation='open', actor_id=actor_id, occurred_at=occurred_at, reason=reason, before=(), after=after, affected_reference_ids=tuple((ref.reference_id for ref in references)))
+    audit = EpisodeAuditEvent.build(operation='open', actor_id=actor_id, occurred_at=occurred_at, reason=reason, before=(), after=after, affected_reference_ids=tuple(ref.reference_id for ref in references))
     return EpisodeMutation(before=(), after=after, audit=audit)
 
 def settle_episode(record: EpisodeRecord, *, ended_at: float, actor_id: str, occurred_at: float, reason: str, additional_references: tuple[EpisodeReference, ...]=(), summary: EpisodeAssertion | None=None, significance: EpisodeAssertion | None=None) -> EpisodeMutation:
     _require_current_state(record, {'open'}, 'settle')
     references = _merge_references(record.references, additional_references)
     settled = EpisodeRecord.build(episode_id=record.episode_id, revision=record.revision + 1, state='settled', participants=record.participants, started_at=record.started_at, ended_at=ended_at, references=references, goal=record.goal, summary=summary if summary is not None else record.summary, significance=significance if significance is not None else record.significance, parent_episode_ids=record.parent_episode_ids, supersedes_record_id=record.record_id, created_at=record.created_at, updated_at=occurred_at)
-    return _mutation('settle', actor_id, occurred_at, reason, (record,), (settled,), tuple((ref.reference_id for ref in additional_references)))
+    return _mutation('settle', actor_id, occurred_at, reason, (record,), (settled,), tuple(ref.reference_id for ref in additional_references))
 
 def consolidate_episode(record: EpisodeRecord, *, actor_id: str, occurred_at: float, reason: str, summary: EpisodeAssertion | None=None, significance: EpisodeAssertion | None=None) -> EpisodeMutation:
     _require_current_state(record, {'settled'}, 'consolidate')
@@ -208,13 +209,13 @@ def merge_episodes(records: tuple[EpisodeRecord, ...], *, actor_id: str, occurre
         _require_current_state(record, {'open', 'settled', 'consolidated'}, 'merge')
     if len({record.episode_id for record in records}) != len(records):
         raise ValueError('Episode merge requires distinct logical episodes')
-    references = _merge_references((), tuple((reference for record in records for reference in record.references)))
+    references = _merge_references((), tuple(reference for record in records for reference in record.references))
     participants = tuple(sorted({participant for record in records for participant in record.participants}))
-    all_closed = all((record.state != 'open' for record in records))
-    merged = EpisodeRecord.build(state='settled' if all_closed else 'open', participants=participants, started_at=min((record.started_at for record in records)), ended_at=max((record.ended_at for record in records if record.ended_at is not None)) if all_closed else None, references=references, goal=goal, summary=summary, significance=significance, parent_episode_ids=tuple((record.episode_id for record in records)), created_at=occurred_at, updated_at=occurred_at)
-    superseded = tuple((_superseded_revision(record, successor_episode_ids=(merged.episode_id,), occurred_at=occurred_at) for record in records))
+    all_closed = all(record.state != 'open' for record in records)
+    merged = EpisodeRecord.build(state='settled' if all_closed else 'open', participants=participants, started_at=min(record.started_at for record in records), ended_at=max(record.ended_at for record in records if record.ended_at is not None) if all_closed else None, references=references, goal=goal, summary=summary, significance=significance, parent_episode_ids=tuple(record.episode_id for record in records), created_at=occurred_at, updated_at=occurred_at)
+    superseded = tuple(_superseded_revision(record, successor_episode_ids=(merged.episode_id,), occurred_at=occurred_at) for record in records)
     after = (*superseded, merged)
-    return _mutation('merge', actor_id, occurred_at, reason, records, after, tuple((reference.reference_id for reference in references)))
+    return _mutation('merge', actor_id, occurred_at, reason, records, after, tuple(reference.reference_id for reference in references))
 
 def split_episode(record: EpisodeRecord, partitions: tuple[EpisodePartition, ...], *, actor_id: str, occurred_at: float, reason: str) -> EpisodeMutation:
     _require_current_state(record, {'open', 'settled', 'consolidated'}, 'split')
@@ -227,20 +228,20 @@ def split_episode(record: EpisodeRecord, partitions: tuple[EpisodePartition, ...
     if set(partition_ids) != all_reference_ids:
         raise ValueError('Episode split partitions must cover every reference exactly once')
     by_id = {reference.reference_id: reference for reference in record.references}
-    children = tuple((EpisodeRecord.build(state='open' if partition.ended_at is None else 'settled', participants=partition.participants, started_at=partition.started_at, ended_at=partition.ended_at, references=tuple((by_id[ref_id] for ref_id in partition.reference_ids)), goal=partition.goal, summary=partition.summary, significance=partition.significance, parent_episode_ids=(record.episode_id,), created_at=occurred_at, updated_at=occurred_at) for partition in partitions))
+    children = tuple(EpisodeRecord.build(state='open' if partition.ended_at is None else 'settled', participants=partition.participants, started_at=partition.started_at, ended_at=partition.ended_at, references=tuple(by_id[ref_id] for ref_id in partition.reference_ids), goal=partition.goal, summary=partition.summary, significance=partition.significance, parent_episode_ids=(record.episode_id,), created_at=occurred_at, updated_at=occurred_at) for partition in partitions)
     children = tuple(sorted(children, key=lambda item: item.episode_id))
-    superseded = _superseded_revision(record, successor_episode_ids=tuple((child.episode_id for child in children)), occurred_at=occurred_at)
+    superseded = _superseded_revision(record, successor_episode_ids=tuple(child.episode_id for child in children), occurred_at=occurred_at)
     after = (superseded, *children)
     return _mutation('split', actor_id, occurred_at, reason, (record,), after, tuple(partition_ids))
 
 def tombstone_sources(record: EpisodeRecord, *, deletion_root_ids: tuple[str, ...], deleted_at: float, actor_id: str, occurred_at: float, reason: str) -> EpisodeMutation:
     _require_current_state(record, {'open', 'settled', 'consolidated'}, 'tombstone')
     roots = _validated_string_tuple(deletion_root_ids, 'deletion_root_ids', allow_empty=False)
-    affected = tuple((reference.reference_id for reference in record.references if reference.deletion_root_id in set(roots)))
+    affected = tuple(reference.reference_id for reference in record.references if reference.deletion_root_id in set(roots))
     if not affected:
         raise ValueError('Episode tombstone did not match any source lineage')
     affected_set = set(affected)
-    references = tuple((replace(reference, tombstoned=True, deleted_at=float(deleted_at)) if reference.reference_id in affected_set else reference for reference in record.references))
+    references = tuple(replace(reference, tombstoned=True, deleted_at=float(deleted_at)) if reference.reference_id in affected_set else reference for reference in record.references)
 
     def scrub(assertion: EpisodeAssertion | None) -> EpisodeAssertion | None:
         if assertion is None:
@@ -253,12 +254,12 @@ def tombstone_sources(record: EpisodeRecord, *, deletion_root_ids: tuple[str, ..
 
 def trace_source_derivatives(record: EpisodeRecord, deletion_root_id: str) -> EpisodeDerivativeTrace:
     _require_non_empty(deletion_root_id, 'deletion_root_id')
-    reference_ids = tuple((reference.reference_id for reference in record.references if reference.deletion_root_id == deletion_root_id))
+    reference_ids = tuple(reference.reference_id for reference in record.references if reference.deletion_root_id == deletion_root_id)
     if not reference_ids:
         raise KeyError(deletion_root_id)
     reference_set = set(reference_ids)
-    assertion_ids = tuple((assertion.assertion_id for assertion in (record.goal, record.summary, record.significance) if assertion is not None and set(assertion.evidence_reference_ids) & reference_set))
-    tombstoned = all((reference.tombstoned for reference in record.references if reference.reference_id in reference_set))
+    assertion_ids = tuple(assertion.assertion_id for assertion in (record.goal, record.summary, record.significance) if assertion is not None and set(assertion.evidence_reference_ids) & reference_set)
+    tombstoned = all(reference.tombstoned for reference in record.references if reference.reference_id in reference_set)
     return EpisodeDerivativeTrace(deletion_root_id=deletion_root_id, episode_id=record.episode_id, episode_record_id=record.record_id, reference_ids=reference_ids, assertion_ids=assertion_ids, tombstoned=tombstoned)
 
 def retrieve_episodes(records: Sequence[EpisodeRecord], query: EpisodeQuery) -> tuple[EpisodeMatch, ...]:
@@ -288,8 +289,8 @@ def retrieve_episodes(records: Sequence[EpisodeRecord], query: EpisodeQuery) -> 
             score += len(overlap) * 4.0
             reasons.append('outcome')
         if query.situation_terms:
-            text = _normalize_text(' '.join((assertion.text for assertion in (record.goal, record.summary, record.significance) if assertion is not None)))
-            term_hits = sum((1 for term in query.situation_terms if term in text))
+            text = _normalize_text(' '.join(assertion.text for assertion in (record.goal, record.summary, record.significance) if assertion is not None))
+            term_hits = sum(1 for term in query.situation_terms if term in text)
             if not term_hits:
                 continue
             score += float(term_hits)
@@ -318,7 +319,7 @@ def migrate_manual_episode_v0(payload: dict[str, Any], *, actor_id: str, occurre
     references = tuple(references_list)
     assertions = {name: _legacy_assertion_from_payload(payload.get(name), reference_aliases=reference_aliases) for name in ('goal', 'summary', 'significance')}
     record = EpisodeRecord.build(state=payload['state'], participants=tuple(payload['participants']), started_at=payload['started_at'], ended_at=payload.get('ended_at'), references=references, goal=assertions['goal'], summary=assertions['summary'], significance=assertions['significance'], created_at=payload.get('created_at', occurred_at), updated_at=occurred_at, parent_episode_ids=tuple(payload.get('parent_episode_ids', ())))
-    return _mutation('migrate', actor_id, occurred_at, reason, (), (record,), tuple((ref.reference_id for ref in references)))
+    return _mutation('migrate', actor_id, occurred_at, reason, (), (record,), tuple(ref.reference_id for ref in references))
 
 def _mutation(operation: EpisodeOperation, actor_id: str, occurred_at: float, reason: str, before: tuple[EpisodeRecord, ...], after: tuple[EpisodeRecord, ...], affected_reference_ids: tuple[str, ...]=()) -> EpisodeMutation:
     before = tuple(sorted(before, key=lambda record: record.record_id))

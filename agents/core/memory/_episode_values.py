@@ -81,13 +81,13 @@ class EpisodeReference:
             raise ValueError('Episode reference_id does not match canonical metadata')
 
     @classmethod
-    def build(cls, *, role: EpisodeReferenceRole, source_id: str, record_id: str, source_kind: str, source_schema: str, privacy_class: PrivacyClass, integrity_sha256: str, occurred_at: float, deletion_root_id: str, confidence: AtlasConfidence, projection_id: str | None=None, tombstoned: bool=False, deleted_at: float | None=None) -> 'EpisodeReference':
+    def build(cls, *, role: EpisodeReferenceRole, source_id: str, record_id: str, source_kind: str, source_schema: str, privacy_class: PrivacyClass, integrity_sha256: str, occurred_at: float, deletion_root_id: str, confidence: AtlasConfidence, projection_id: str | None=None, tombstoned: bool=False, deleted_at: float | None=None) -> EpisodeReference:
         material = {'role': role, 'source_id': source_id, 'record_id': record_id, 'source_kind': source_kind, 'source_schema': source_schema, 'projection_id': projection_id}
         reference_id = 'episode:ref:' + _sha256(material)[:24]
         return cls(reference_id=reference_id, role=role, source_id=source_id, record_id=record_id, source_kind=source_kind, source_schema=source_schema, privacy_class=privacy_class, integrity_sha256=integrity_sha256, occurred_at=occurred_at, deletion_root_id=deletion_root_id, confidence=confidence, projection_id=projection_id, tombstoned=tombstoned, deleted_at=deleted_at)
 
     @classmethod
-    def from_atlas(cls, observation: AtlasObservation, *, role: EpisodeReferenceRole='source') -> 'EpisodeReference':
+    def from_atlas(cls, observation: AtlasObservation, *, role: EpisodeReferenceRole='source') -> EpisodeReference:
         if not isinstance(observation, AtlasObservation):
             raise ValueError('Episode Atlas reference requires AtlasObservation')
         if not observation.verify_integrity():
@@ -127,7 +127,7 @@ class EpisodeAssertion:
             raise ValueError('Episode assertion_id does not match canonical content')
 
     @classmethod
-    def build(cls, *, kind: EpisodeAssertionKind, text: str, evidence_reference_ids: tuple[str, ...], confidence: AtlasConfidence) -> 'EpisodeAssertion':
+    def build(cls, *, kind: EpisodeAssertionKind, text: str, evidence_reference_ids: tuple[str, ...], confidence: AtlasConfidence) -> EpisodeAssertion:
         refs = _validated_string_tuple(evidence_reference_ids, 'assertion evidence references', allow_empty=False)
         material = {'kind': kind, 'text': text, 'evidence_reference_ids': refs, 'confidence': asdict(confidence)}
         assertion_id = 'episode:assertion:' + _sha256(material)[:24]
@@ -208,7 +208,7 @@ class EpisodeRecord:
         expected_references = tuple(sorted(self.references, key=_reference_sort_key))
         if self.references != expected_references:
             raise ValueError('Episode references are not deterministically ordered')
-        if not any((reference.role == 'source' for reference in self.references)):
+        if not any(reference.role == 'source' for reference in self.references):
             raise ValueError('Episode requires at least one source reference')
         for assertion in (self.goal, self.summary, self.significance):
             if assertion is None:
@@ -244,13 +244,13 @@ class EpisodeRecord:
             raise ValueError('Episode record integrity verification failed')
 
     @classmethod
-    def build(cls, *, state: EpisodeState, participants: tuple[str, ...], started_at: float, ended_at: float | None, references: tuple[EpisodeReference, ...], goal: EpisodeAssertion | None, summary: EpisodeAssertion | None, significance: EpisodeAssertion | None, created_at: float, updated_at: float, episode_id: str | None=None, revision: int=1, parent_episode_ids: tuple[str, ...]=(), supersedes_record_id: str | None=None, superseded_by_episode_ids: tuple[str, ...]=()) -> 'EpisodeRecord':
+    def build(cls, *, state: EpisodeState, participants: tuple[str, ...], started_at: float, ended_at: float | None, references: tuple[EpisodeReference, ...], goal: EpisodeAssertion | None, summary: EpisodeAssertion | None, significance: EpisodeAssertion | None, created_at: float, updated_at: float, episode_id: str | None=None, revision: int=1, parent_episode_ids: tuple[str, ...]=(), supersedes_record_id: str | None=None, superseded_by_episode_ids: tuple[str, ...]=()) -> EpisodeRecord:
         participants = _validated_string_tuple(participants, 'participants', allow_empty=False)
         references = tuple(sorted(references, key=_reference_sort_key))
         parent_episode_ids = _validated_string_tuple(parent_episode_ids, 'parent_episode_ids', allow_empty=True)
         superseded_by_episode_ids = _validated_string_tuple(superseded_by_episode_ids, 'superseded_by_episode_ids', allow_empty=True)
         if episode_id is None:
-            identity_material = {'participants': participants, 'started_at': float(started_at), 'reference_ids': tuple((reference.reference_id for reference in references)), 'parent_episode_ids': parent_episode_ids}
+            identity_material = {'participants': participants, 'started_at': float(started_at), 'reference_ids': tuple(reference.reference_id for reference in references), 'parent_episode_ids': parent_episode_ids}
             episode_id = 'episode:' + _sha256(identity_material)[:24]
         material = _record_material(episode_id=episode_id, revision=revision, state=state, participants=participants, started_at=float(started_at), ended_at=None if ended_at is None else float(ended_at), references=references, goal=goal, summary=summary, significance=significance, parent_episode_ids=parent_episode_ids, supersedes_record_id=supersedes_record_id, superseded_by_episode_ids=superseded_by_episode_ids, created_at=float(created_at), updated_at=float(updated_at))
         record_id = 'episode:record:' + _sha256(material)[:24]
@@ -278,14 +278,14 @@ class EpisodeRecord:
         return json.dumps(self.canonical_payload(), ensure_ascii=False, sort_keys=True, separators=(',', ':'))
 
     @classmethod
-    def from_json(cls, value: str) -> 'EpisodeRecord':
+    def from_json(cls, value: str) -> EpisodeRecord:
         if not isinstance(value, str):
             raise ValueError('Episode JSON must be a string')
         payload = json.loads(value)
         return cls.from_payload(payload)
 
     @classmethod
-    def from_payload(cls, payload: dict[str, Any]) -> 'EpisodeRecord':
+    def from_payload(cls, payload: dict[str, Any]) -> EpisodeRecord:
         if not isinstance(payload, dict):
             raise ValueError('Episode payload must be an object')
         if payload.get('schema') != 'nerva.episode.v1':
@@ -295,7 +295,7 @@ class EpisodeRecord:
         for flag in ('can_authorize', 'can_execute', 'can_mark_complete'):
             if payload.get(flag) is not False:
                 raise ValueError('Episode payload attempts to expand authority')
-        references = tuple((_reference_from_payload(item) for item in payload['references']))
+        references = tuple(_reference_from_payload(item) for item in payload['references'])
         goal = _assertion_from_payload(payload.get('goal'))
         summary = _assertion_from_payload(payload.get('summary'))
         significance = _assertion_from_payload(payload.get('significance'))
@@ -303,26 +303,26 @@ class EpisodeRecord:
 
     @property
     def source_references(self) -> tuple[EpisodeReference, ...]:
-        return tuple((ref for ref in self.references if ref.role == 'source'))
+        return tuple(ref for ref in self.references if ref.role == 'source')
 
     @property
     def decision_references(self) -> tuple[EpisodeReference, ...]:
-        return tuple((ref for ref in self.references if ref.role == 'decision'))
+        return tuple(ref for ref in self.references if ref.role == 'decision')
 
     @property
     def action_references(self) -> tuple[EpisodeReference, ...]:
-        return tuple((ref for ref in self.references if ref.role == 'action'))
+        return tuple(ref for ref in self.references if ref.role == 'action')
 
     @property
     def outcome_references(self) -> tuple[EpisodeReference, ...]:
-        return tuple((ref for ref in self.references if ref.role == 'outcome'))
+        return tuple(ref for ref in self.references if ref.role == 'outcome')
 
     @property
     def replay_fingerprint(self) -> str:
         return hashlib.sha256(self.to_json().encode('utf-8')).hexdigest()
 
 def _record_material(*, episode_id: str, revision: int, state: EpisodeState, participants: tuple[str, ...], started_at: float, ended_at: float | None, references: tuple[EpisodeReference, ...], goal: EpisodeAssertion | None, summary: EpisodeAssertion | None, significance: EpisodeAssertion | None, parent_episode_ids: tuple[str, ...], supersedes_record_id: str | None, superseded_by_episode_ids: tuple[str, ...], created_at: float, updated_at: float) -> dict[str, Any]:
-    return {'episode_id': episode_id, 'revision': revision, 'state': state, 'participants': participants, 'started_at': started_at, 'ended_at': ended_at, 'references': tuple((reference.canonical_payload() for reference in references)), 'goal': None if goal is None else goal.canonical_payload(), 'summary': None if summary is None else summary.canonical_payload(), 'significance': None if significance is None else significance.canonical_payload(), 'parent_episode_ids': parent_episode_ids, 'supersedes_record_id': supersedes_record_id, 'superseded_by_episode_ids': superseded_by_episode_ids, 'created_at': created_at, 'updated_at': updated_at, 'schema': 'nerva.episode.v1', 'authority': 'memory_record_only', 'can_authorize': False, 'can_execute': False, 'can_mark_complete': False}
+    return {'episode_id': episode_id, 'revision': revision, 'state': state, 'participants': participants, 'started_at': started_at, 'ended_at': ended_at, 'references': tuple(reference.canonical_payload() for reference in references), 'goal': None if goal is None else goal.canonical_payload(), 'summary': None if summary is None else summary.canonical_payload(), 'significance': None if significance is None else significance.canonical_payload(), 'parent_episode_ids': parent_episode_ids, 'supersedes_record_id': supersedes_record_id, 'superseded_by_episode_ids': superseded_by_episode_ids, 'created_at': created_at, 'updated_at': updated_at, 'schema': 'nerva.episode.v1', 'authority': 'memory_record_only', 'can_authorize': False, 'can_execute': False, 'can_mark_complete': False}
 
 def _reference_from_payload(payload: dict[str, Any]) -> EpisodeReference:
     if payload.get('schema') != 'nerva.episode.reference.v1':
@@ -347,7 +347,7 @@ def _legacy_assertion_from_payload(payload: dict[str, Any] | None, *, reference_
         return None
     confidence = payload['confidence']
     try:
-        evidence_reference_ids = tuple((reference_aliases[value] for value in payload['evidence_reference_ids']))
+        evidence_reference_ids = tuple(reference_aliases[value] for value in payload['evidence_reference_ids'])
     except KeyError as exc:
         raise ValueError('Legacy assertion references unknown evidence alias') from exc
     return EpisodeAssertion.build(kind=payload['kind'], text=payload['text'], evidence_reference_ids=evidence_reference_ids, confidence=AtlasConfidence(confidence['status'], confidence.get('value'), confidence.get('source')))
@@ -396,7 +396,7 @@ def _validate_privacy_class(value: Any) -> None:
 def _validate_sha256_hex(value: Any, name: str) -> None:
     if not isinstance(value, str) or len(value) != _SHA256_HEX_LENGTH:
         raise ValueError(f'Episode {name} must be a SHA-256 hex digest')
-    if any((character not in '0123456789abcdef' for character in value)):
+    if any(character not in '0123456789abcdef' for character in value):
         raise ValueError(f'Episode {name} must be a SHA-256 hex digest')
 
 def _validate_time(value: Any, name: str) -> None:
