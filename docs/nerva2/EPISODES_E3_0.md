@@ -133,9 +133,10 @@ affected-reference IDs. `EpisodeMutation` also validates that the declared audit
 operation matches the immutable transition shape: creation, direct revision,
 settlement, consolidation, correction, tombstone, merge or split. A correctly
 re-hashed audit cannot label a one-record correction as a merge or otherwise
-misrepresent the observable before/after transition. Initial `open` and bounded
-legacy `migrate` records intentionally share the same creation shape; `open`
-additionally requires the output state to remain `open`.
+misrepresent the observable before/after transition. `open` requires a new open
+record created at the audit time. Bounded legacy `migrate` also creates one
+revision-one record, but may preserve a historical `created_at` no later than
+the migration audit and may produce `open`, `settled` or `consolidated` state.
 
 The audit's plain SHA-256 digest detects accidental or uncoordinated
 modification. It does not authenticate a signer and does not provide
@@ -152,7 +153,7 @@ caller-supplied episode revision to its references and assertions. Merge and
 split preserve source deletion roots in successor references; callers traversing
 a persisted graph must supply each relevant descendant revision. The function
 is intentionally not a durable collection-level graph walker.
-`Tombstone_sources(...)` keeps an explicit tombstone and scrubs assertions whose
+`tombstone_sources(...)` keeps an explicit tombstone and scrubs assertions whose
 evidence was deleted. This is a traversal/value contract only; it does not
 implement the external source deletion executor or a durable episode database.
 
