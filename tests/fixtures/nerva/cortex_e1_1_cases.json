@@ -22,7 +22,7 @@
   },
   {
     "case_id": "family-plans",
-    "text": "family plans with Alexandra",
+    "text": "family plans for the weekend",
     "expected_primary": "frigga",
     "expected_source": "keyword_match",
     "privacy_class": "synthetic_public"
@@ -70,8 +70,8 @@
     "privacy_class": "synthetic_public"
   },
   {
-    "case_id": "raiffeisen-kpi",
-    "text": "show the Raiffeisen KPI report",
+    "case_id": "analytics-kpi",
+    "text": "show the analytics KPI report",
     "expected_primary": "stark",
     "expected_source": "keyword_match",
     "privacy_class": "synthetic_public"
@@ -112,29 +112,29 @@
     "privacy_class": "synthetic_public"
   },
   {
-    "case_id": "strategy-digitaholic",
-    "text": "strategy for Digitaholic",
+    "case_id": "strategy-planning",
+    "text": "strategy for a small business",
     "expected_primary": "athena",
     "expected_source": "keyword_match",
     "privacy_class": "synthetic_public"
   },
   {
-    "case_id": "vehicle-engine",
-    "text": "BMW engine service",
+    "case_id": "engine-service",
+    "text": "engine service plan",
     "expected_primary": "hephaestus",
     "expected_source": "keyword_match",
     "privacy_class": "synthetic_public"
   },
   {
-    "case_id": "weather-bucharest",
-    "text": "weather in Bucharest",
+    "case_id": "weather-sample-city",
+    "text": "weather in a sample city",
     "expected_primary": "friday",
     "expected_source": "keyword_match",
     "privacy_class": "synthetic_public"
   },
   {
-    "case_id": "write-linkedin",
-    "text": "write a LinkedIn caption",
+    "case_id": "write-social-caption",
+    "text": "write a social caption",
     "expected_primary": "veronica",
     "expected_source": "keyword_match",
     "privacy_class": "synthetic_public"
