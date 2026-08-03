@@ -129,6 +129,11 @@ test, covers:
 - reference-only v0 migration and raw-content rejection;
 - focused situation/outcome retrieval without production wiring.
 
+The candidate branch must be reconciled with the current accepted `main` and
+pass blocking Ruff plus the complete repository workflow families on the same
+exact head. Local compilation or a focused fixture is supporting evidence only;
+it never substitutes for exact-head CI or independent review.
+
 Repository placement is transition evidence only. E3.0 remains `VERIFYING`
 until an independent integrator reviews one exact head, required CI is green,
 review concerns are resolved and the PR is safely merged.
