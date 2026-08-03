@@ -51,6 +51,7 @@ def test_intent_object_shape_is_preserved():
     router = _router(writer=records.append)
     intent = _route(router, "weather")
     second = _route(router, "weather")
+    normalized_variant = _route(router, "  WEATHER  ")
 
     assert isinstance(intent.target_agents, list)
     assert isinstance(intent.is_general, bool)
@@ -58,14 +59,17 @@ def test_intent_object_shape_is_preserved():
     assert 0.0 <= intent.confidence <= 1.0
     assert intent.primary == intent.target_agents[0]
     assert second.target_agents == intent.target_agents
+    assert normalized_variant.target_agents == intent.target_agents
 
-    assert len(records) == 2
+    assert len(records) == 3
     assert records[0].schema == "nerva.decision.v1"
     assert records[0].authority == "route_selection_only"
     assert not records[0].can_authorize
     assert not records[0].can_execute
     assert not records[0].can_mark_complete
     assert records[0].replay_fingerprint == records[1].replay_fingerprint
+    assert records[0].replay_fingerprint == records[2].replay_fingerprint
+    assert records[0].request.text_length == len("weather")
     assert "weather" not in records[0].to_json()  # raw request is never persisted
 
     hard_rejection = DecisionRejection(
@@ -75,6 +79,35 @@ def test_intent_object_shape_is_preserved():
         source="privacy.policy",
     )
     assert hard_rejection.non_overridable
+
+    rejected_intent = Intent(
+        ["jarvis"],
+        is_general=False,
+        context={
+            "source": "policy_test",
+            "hard_constraint_rejections": [
+                {
+                    "route_id": "cloud_router",
+                    "code": "private_data_local_only",
+                    "category": "privacy",
+                    "source": "privacy.policy",
+                }
+            ],
+        },
+        confidence=0.5,
+    )
+    rejected_record = DecisionRecord.from_intent(
+        text="private request",
+        agents={},
+        intent=rejected_intent,
+    )
+    assert rejected_record.hard_constraint_rejections == (hard_rejection,)
+    rejected_candidate = next(
+        candidate
+        for candidate in rejected_record.candidates
+        if candidate.route_id == "cloud_router"
+    )
+    assert not rejected_candidate.selected
 
 
 # ── the substring bug is gone (the headline regression) ────────────────────
@@ -215,9 +248,16 @@ def test_llm_fallback_not_used_for_confident_match():
 
 def test_llm_fallback_consulted_for_low_confidence_greeting():
     clf = _FakeClassifier(["pepper"])
-    intent = _route(_router(llm=clf), "help")    # weak-only match → low confidence
+    records: list[DecisionRecord] = []
+    intent = _route(_router(llm=clf, writer=records.append), "help")
     assert clf.calls == 1
     assert intent.target_agents == ["pepper"]
+    assert [candidate.route_id for candidate in records[0].candidates] == [
+        "pepper",
+        "jarvis",
+    ]
+    assert records[0].selected_route == "pepper"
+    assert not records[0].candidates[1].selected
 
 
 def test_llm_fallback_failure_is_swallowed():
@@ -227,6 +267,12 @@ def test_llm_fallback_failure_is_swallowed():
 
     intent = _route(_router(llm=_Boom()), "ponder something unmappable")
     assert intent.is_general                     # degrades to general, never raises
+
+    def broken_writer(_record):
+        raise RuntimeError("trace store offline")
+
+    routed = _route(_router(writer=broken_writer), "weather")
+    assert routed.target_agents == ["friday"]    # shadow failure never changes route
 
 
 # ── ROUTING_TABLE isolation + bench-agent promotion (orchestrator contract) ─
