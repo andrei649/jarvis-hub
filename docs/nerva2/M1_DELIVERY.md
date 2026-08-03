@@ -51,17 +51,20 @@ Repository placement determines delivery state. Under the pre-integration rule, 
 - E3.0 / #782 defines a typed `nerva.episode.v1` value contract and
   deterministic manual open, settle, consolidate, correct, merge, split and
   source-tombstone operations.
-- Episode records reference source records and Atlas projections by stable
-  metadata; raw transcripts and source values are not copied into episode
-  storage.
+- Episode constructors store content-free source metadata and do not
+  automatically copy source payloads or transcripts. Caller-supplied bounded
+  derived assertions remain privacy-governed; the contract does not claim
+  semantic transcript detection.
 - Direct assertions retain evidence references. Low-confidence inference cannot
   enter settled or consolidated history without explicit measured confidence.
 - Manual mutations emit deterministic integrity-checked audit events and exact
   immutable rollback values. Plain SHA-256 detects changed or corrupted content but
   does not authenticate a signer or provide non-repudiation. Merge and split remain
   atomic multi-record mutations.
-- The included situation/outcome query is a focused fixture only; it does not
-  change production recall or establish a performance claim.
+- The included situation/outcome query is a focused fixture only. It selects one
+  deterministic current revision per logical episode before scoring, rejects
+  conflicting same-revision forks, and does not change production recall or
+  establish a performance claim.
 - Repository placement is transition evidence until independent integration of
   one exact head with required exact-head CI and resolved review concerns.
 
