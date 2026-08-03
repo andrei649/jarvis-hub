@@ -8,7 +8,6 @@ from typing import Any
 
 from agents.core.memory._episode_values import (
     EpisodeAssertion,
-    EpisodeAssertionKind,
     EpisodeOperation,
     EpisodeRecord,
     EpisodeReference,
@@ -20,7 +19,6 @@ from agents.core.memory._episode_values import (
     _legacy_reference_from_payload,
     _merge_references,
     _normalize_text,
-    _reference_sort_key,
     _reject_raw_content,
     _require_current_state,
     _require_non_empty,
