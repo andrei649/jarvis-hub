@@ -1,6 +1,6 @@
 """Typed, replayable shadow records for the existing intent router.
 
-This module is deliberately advisory.  It observes the route chosen by the
+This module is deliberately advisory. It observes the route chosen by the
 current router and emits ``nerva.decision.v1`` evidence without changing that
 route, authorizing an action, or marking work complete.
 """
@@ -12,8 +12,9 @@ import inspect
 import json
 import logging
 import unicodedata
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass, field
-from typing import Any, Awaitable, Callable, Literal, Mapping, Protocol
+from typing import Any, Literal, Protocol
 
 logger = logging.getLogger("nerva.cortex.shadow")
 
@@ -24,7 +25,7 @@ EvidenceStatus = Literal["measured", "unknown", "not_measured", "not_applicable"
 class EvidenceValue:
     """One explicitly qualified evidence value.
 
-    Missing data is never converted into a guessed number.  ``value`` is only
+    Missing data is never converted into a guessed number. ``value`` is only
     populated for measured evidence; the status remains visible in serialized
     records and fingerprints.
     """
@@ -36,6 +37,8 @@ class EvidenceValue:
     def __post_init__(self) -> None:
         if self.status != "measured" and self.value is not None:
             raise ValueError("unmeasured evidence cannot carry a value")
+        if self.status == "measured" and self.value is None:
+            raise ValueError("measured evidence requires a value")
         if self.status == "measured" and self.source is None:
             raise ValueError("measured evidence requires a source")
 
@@ -44,7 +47,7 @@ class EvidenceValue:
 class DecisionRejection:
     """A hard constraint that excluded a route.
 
-    Rejections are non-overridable by construction.  A future scored Cortex may
+    Rejections are non-overridable by construction. A future scored Cortex may
     rank eligible routes, but it must never outvote policy or privacy constraints.
     """
 
@@ -65,11 +68,11 @@ class DecisionRequest:
     privacy_class: str = "unknown"
 
     @classmethod
-    def from_input(cls, text: str, agents: Mapping[str, Any]) -> "DecisionRequest":
+    def from_input(cls, text: str, agents: Mapping[str, Any]) -> DecisionRequest:
         normalized = _normalize_for_digest(text)
         return cls(
             text_digest=hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
-            text_length=len(text or ""),
+            text_length=len(normalized),
             available_agents=tuple(sorted(str(agent_id) for agent_id in agents)),
         )
 
@@ -138,13 +141,30 @@ class DecisionRecord:
         text: str,
         agents: Mapping[str, Any],
         intent: Any,
-    ) -> "DecisionRecord":
+    ) -> DecisionRecord:
         context = dict(getattr(intent, "context", {}) or {})
-        target_agents = tuple(getattr(intent, "target_agents", None) or ("jarvis",))
-        raw_scores = context.get("scores") if isinstance(context.get("scores"), dict) else {}
+        target_agents = tuple(
+            str(route_id)
+            for route_id in (getattr(intent, "target_agents", None) or ("jarvis",))
+        )
+        raw_scores = (
+            context.get("scores") if isinstance(context.get("scores"), dict) else {}
+        )
+        rejections = tuple(_parse_rejections(context.get("hard_constraint_rejections")))
 
+        candidate_routes = list(target_agents)
+        context_candidates = context.get("candidates")
+        if isinstance(context_candidates, (list, tuple)):
+            for route_id in context_candidates:
+                if isinstance(route_id, str) and route_id not in candidate_routes:
+                    candidate_routes.append(route_id)
+        for rejection in rejections:
+            if rejection.route_id not in candidate_routes:
+                candidate_routes.append(rejection.route_id)
+
+        selected_route = target_agents[0]
         candidates: list[DecisionCandidate] = []
-        for rank, route_id in enumerate(target_agents):
+        for rank, route_id in enumerate(candidate_routes):
             raw_score = raw_scores.get(route_id)
             score = (
                 EvidenceValue("measured", float(raw_score), "router.context.scores")
@@ -153,9 +173,9 @@ class DecisionRecord:
             )
             candidates.append(
                 DecisionCandidate(
-                    route_id=str(route_id),
+                    route_id=route_id,
                     rank=rank,
-                    selected=rank == 0,
+                    selected=route_id == selected_route,
                     score=score,
                 )
             )
@@ -167,13 +187,12 @@ class DecisionRecord:
             else EvidenceValue("unknown")
         )
 
-        rejections = tuple(_parse_rejections(context.get("hard_constraint_rejections")))
         return cls(
             request=DecisionRequest.from_input(text, agents),
             source=str(context.get("source") or "unknown"),
             candidates=tuple(candidates),
-            selected_route=str(target_agents[0]),
-            fallbacks=tuple(str(route_id) for route_id in target_agents[1:]),
+            selected_route=selected_route,
+            fallbacks=target_agents[1:],
             confidence=confidence,
             hard_constraint_rejections=rejections,
         )
@@ -189,7 +208,7 @@ ShadowWriter = Callable[[DecisionRecord], None | Awaitable[None]]
 class ShadowDecisionRouter:
     """Transparent wrapper that records current router output in shadow mode.
 
-    The wrapped ``Intent`` object is returned unchanged.  Writer failure is
+    The wrapped ``Intent`` object is returned unchanged. Writer failure is
     isolated and logged, so enabling observation cannot alter routing behavior.
     Unknown attributes are delegated to preserve mutable routing-table and
     promotion behavior used by the orchestrator.
