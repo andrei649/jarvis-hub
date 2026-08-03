@@ -11,7 +11,13 @@ def test_m1_snapshot_records_current_e1_and_dependency_posture():
     )
 
     assert "9235ef69961862df49826a910be00955d7be420e" in snapshot
-    assert "E1.1 / #792" in snapshot
+    assert "E1.1 / #792 / PR #793" in snapshot
+    assert "On a feature branch, these artifacts remain candidate evidence only" in snapshot
+    assert (
+        "When this snapshot is present on `main` through merged PR #793, E1.1 is"
+        in snapshot
+    )
+    assert "pseudonymous/linkable" in snapshot
     assert (
         "#781 Atlas, #783 Synapse and #784 Research Lab remain separately eligible"
         in snapshot
