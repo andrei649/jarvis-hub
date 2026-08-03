@@ -8,10 +8,7 @@ E2.0 is accepted. PR #794 was independently reviewed at exact head
 `f01b13e354eb64504d7996cc4d87d4828ae74330` and squash-merged to `main` as
 `f2901528e452586f9702c7df1678e72ca36ca2ee`.
 
-The historical transition rule was: #782 becomes eligible when the exact
-reviewed head lands on `main`. That condition is now satisfied; #782 is eligible
-for a separate bounded E3.0 package. This sentence records the former gate and
-must not be read as an active blocker.
+The historical transition rule was: #782 becomes eligible when the exact reviewed head lands on `main`. That condition is now satisfied; #782 is eligible for a separate bounded E3.0 package. This sentence records the former gate and must not be read as an active blocker.
 
 ## Outcome
 
