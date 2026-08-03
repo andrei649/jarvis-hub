@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from agents.core.memory._episode_values import _sha256
 from agents.core.memory.atlas_snapshot import AtlasConfidence
 from agents.core.memory.episodes import (
     EpisodeAssertion,
+    EpisodeAuditEvent,
+    EpisodeMutation,
+    EpisodePartition,
     EpisodeQuery,
     EpisodeRecord,
     EpisodeReference,
@@ -15,6 +21,7 @@ from agents.core.memory.episodes import (
     open_episode,
     retrieve_episodes,
     settle_episode,
+    split_episode,
     tombstone_sources,
 )
 
@@ -88,6 +95,29 @@ def _settled_episode(
     ).after[0]
 
 
+def _forge_audit(
+    audit: EpisodeAuditEvent,
+    **changes,
+) -> EpisodeAuditEvent:
+    material = audit.audit_material()
+    material.update(changes)
+    audit_id = "episode:audit:" + _sha256(material)[:24]
+    integrity_sha256 = _sha256({**material, "audit_id": audit_id})
+    return EpisodeAuditEvent(
+        audit_id=audit_id,
+        operation=material["operation"],
+        actor_id=material["actor_id"],
+        occurred_at=material["occurred_at"],
+        reason=material["reason"],
+        input_record_ids=tuple(material["input_record_ids"]),
+        output_record_ids=tuple(material["output_record_ids"]),
+        input_episode_ids=tuple(material["input_episode_ids"]),
+        output_episode_ids=tuple(material["output_episode_ids"]),
+        affected_reference_ids=tuple(material["affected_reference_ids"]),
+        integrity_sha256=integrity_sha256,
+    )
+
+
 def run_e3_0_revision_checks() -> None:
     """Prove stale immutable revisions cannot satisfy facade retrieval."""
 
@@ -114,13 +144,14 @@ def run_e3_0_revision_checks() -> None:
     assert retrieve_episodes((settled, tombstoned), outcome_query) == ()
     assert retrieve_episodes((tombstoned, settled), outcome_query) == ()
 
-    corrected = correct_episode(
+    corrected_mutation = correct_episode(
         settled,
         actor_id="owner:andrei",
         occurred_at=510,
         reason="replace obsolete derived wording",
         summary=_direct("confirmed itinerary retained", source.reference_id),
-    ).after[0]
+    )
+    corrected = corrected_mutation.after[0]
     assert retrieve_episodes(
         (settled, corrected),
         EpisodeQuery(situation_terms=("obsolete itinerary",)),
@@ -131,6 +162,90 @@ def run_e3_0_revision_checks() -> None:
     )
     assert len(corrected_matches) == 1
     assert corrected_matches[0].episode == corrected
+
+    forged_operation_audit = _forge_audit(
+        corrected_mutation.audit,
+        operation="merge",
+    )
+    with pytest.raises(ValueError, match="operation does not match"):
+        EpisodeMutation(
+            before=corrected_mutation.before,
+            after=corrected_mutation.after,
+            audit=forged_operation_audit,
+        )
+
+    with pytest.raises(ValueError, match="started_at cannot follow updated_at"):
+        EpisodeRecord.build(
+            state="open",
+            participants=("person:andrei",),
+            started_at=151,
+            ended_at=None,
+            references=(source,),
+            goal=None,
+            summary=None,
+            significance=None,
+            created_at=140,
+            updated_at=150,
+        )
+    with pytest.raises(ValueError, match="started_at cannot follow updated_at"):
+        open_episode(
+            participants=("person:andrei",),
+            started_at=151,
+            references=(source,),
+            actor_id="owner:andrei",
+            occurred_at=150,
+            reason="future open boundary",
+        )
+    with pytest.raises(ValueError, match="started_at cannot follow updated_at"):
+        correct_episode(
+            settled,
+            actor_id="owner:andrei",
+            occurred_at=520,
+            reason="future corrected boundary",
+            started_at=521,
+        )
+    with pytest.raises(ValueError, match="started_at cannot follow updated_at"):
+        split_episode(
+            settled,
+            (
+                EpisodePartition(
+                    reference_ids=(source.reference_id,),
+                    participants=("person:andrei",),
+                    started_at=531,
+                    ended_at=None,
+                ),
+                EpisodePartition(
+                    reference_ids=(outcome.reference_id,),
+                    participants=("person:andrei",),
+                    started_at=100,
+                    ended_at=120,
+                ),
+            ),
+            actor_id="owner:andrei",
+            occurred_at=530,
+            reason="future split boundary",
+        )
+
+    audit_payload = json.loads(corrected_mutation.audit.to_json())
+    audit_payload["input_record_ids"] = corrected_mutation.before[0].record_id
+    with pytest.raises(ValueError, match="JSON array"):
+        EpisodeAuditEvent.from_payload(audit_payload)
+
+    record_payload = json.loads(corrected.to_json())
+    record_payload["participants"] = "person:andrei"
+    with pytest.raises(ValueError, match="JSON array"):
+        EpisodeRecord.from_payload(record_payload)
+
+    record_payload = json.loads(corrected.to_json())
+    record_payload["references"] = corrected.references[0].canonical_payload()
+    with pytest.raises(ValueError, match="JSON array"):
+        EpisodeRecord.from_payload(record_payload)
+
+    record_payload = json.loads(corrected.to_json())
+    assert record_payload["summary"] is not None
+    record_payload["summary"]["evidence_reference_ids"] = source.reference_id
+    with pytest.raises(ValueError, match="JSON array"):
+        EpisodeRecord.from_payload(record_payload)
 
     second_source = _source("event:packing", 200)
     second = _settled_episode(
