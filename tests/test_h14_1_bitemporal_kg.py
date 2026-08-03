@@ -9,6 +9,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _nerva_e2_0_checks import run_e2_0_checks  # noqa: E402
+
 from agents.core.memory.bitemporal import BiTemporalKG  # noqa: E402
 
 
