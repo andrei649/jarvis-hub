@@ -67,6 +67,33 @@ async def _run_query_parity_checks() -> None:
         == "episodes.retrieve_episodes.question_derived"
     )
 
+    juniper = next(
+        case
+        for case in _longitudinal_cases()
+        if case.case_id == "multi-session-juniper"
+    )
+    juniper_aligned = replace(
+        juniper,
+        query=EpisodeQuery(situation_terms=("project juniper",), limit=5),
+    )
+    answer_bearing = replace(
+        juniper,
+        query=EpisodeQuery(situation_terms=("solar sensor",), limit=5),
+    )
+    aligned_juniper_report = await compare_episode_retrieval(
+        cases=(juniper_aligned,),
+        comparison_id="e3.1-answer-query-invariance",
+        baseline_runner=_perfect_baseline,
+        baseline_source="tests.perfect_baseline",
+    )
+    answer_bearing_report = await compare_episode_retrieval(
+        cases=(answer_bearing,),
+        comparison_id="e3.1-answer-query-invariance",
+        baseline_runner=_perfect_baseline,
+        baseline_source="tests.perfect_baseline",
+    )
+    assert aligned_juniper_report.to_json() == answer_bearing_report.to_json()
+
     oracle_only = replace(
         harbor,
         question="What happened?",
