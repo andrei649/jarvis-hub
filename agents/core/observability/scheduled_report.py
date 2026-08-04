@@ -74,9 +74,14 @@ _COMPARISON_STATUSES = frozenset(
 #: E9.1 measures no hardware; the profile is fixed rather than caller-supplied.
 HARDWARE_PROFILE = "not_measured"
 
-# Module-private construction guard. A report is canonical only when derived
-# from a retained BenchmarkRun through build_report().
+# Module-private construction guards. A report is canonical only when derived
+# from a *retained* BenchmarkRun through build_report(); an environment profile
+# is canonical only when produced by EnvironmentProfile.detect().
 _REPORT_GUARD = object()
+_ENVIRONMENT_GUARD = object()
+
+#: Environment fields are short, single-line, printable identifiers.
+_MAX_ENVIRONMENT_CHARS = 128
 
 _SHA256_HEX_LENGTH = 64
 
@@ -150,26 +155,41 @@ class EnvironmentProfile:
     # claim cannot be introduced through this contract at all — not by direct
     # construction and not through ``dataclasses.replace``.
     hardware_profile: str = field(default=HARDWARE_PROFILE, init=False)
+    guard: Any = field(default=None, compare=False, repr=False)
     schema: str = field(default="nerva.benchmark.environment.v1", init=False)
 
     def __post_init__(self) -> None:
+        # The canonical environment is detected, not asserted by a caller.
+        if self.guard is not _ENVIRONMENT_GUARD:
+            raise ValueError(
+                "an environment profile must be produced by EnvironmentProfile.detect"
+            )
         for value, name in (
             (self.runner_id, "runner_id"),
             (self.platform, "platform"),
             (self.python_version, "python_version"),
         ):
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"environment {name} must be a non-empty string")
+            _validate_environment_field(value, name)
         if self.hardware_profile != HARDWARE_PROFILE:
             raise ValueError("E9.1 hardware profile must remain not_measured")
+        object.__setattr__(self, "guard", None)
+
+    def canonical_payload(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload.pop("guard", None)
+        return payload
 
     @classmethod
     def detect(cls, *, runner_id: str) -> EnvironmentProfile:
-        # Hardware performance is never inferred from a shared CI runner.
+        # Hardware performance is never inferred from a shared CI runner. The
+        # platform and interpreter are read from the running process rather than
+        # accepted from the caller; only the runner label is supplied, and it is
+        # bounded to a single printable line.
         return cls(
             runner_id=runner_id,
             platform=f"{platform.system()}-{platform.machine()}".lower(),
             python_version=platform.python_version(),
+            guard=_ENVIRONMENT_GUARD,
         )
 
 
@@ -246,6 +266,8 @@ class RegressionReport:
     regressed: bool
     #: SHA-256 of the canonical JSON of the retained run this report summarizes.
     run_fingerprint: str = ""
+    #: SHA-256 of the retained predecessor, present exactly when a baseline exists.
+    previous_run_fingerprint: str | None = None
     guard: Any = field(default=None, compare=False, repr=False)
     schema: str = field(default="nerva.benchmark.report.v1", init=False)
     authority: str = field(default="evaluation_only", init=False)
@@ -283,6 +305,15 @@ class RegressionReport:
         except ValueError as exc:
             raise ValueError(f"report identity is invalid: {exc}") from exc
         _validate_sha256(self.run_fingerprint, "run_fingerprint")
+        # A named predecessor and its fingerprint are inseparable.
+        if (self.previous_run_id is None) != (self.previous_run_fingerprint is None):
+            raise ValueError(
+                "a named previous run requires its fingerprint, and vice versa"
+            )
+        if self.previous_run_fingerprint is not None:
+            _validate_sha256(self.previous_run_fingerprint, "previous_run_fingerprint")
+            if self.previous_run_fingerprint == self.run_fingerprint:
+                raise ValueError("a report cannot compare a run against itself")
 
         if not isinstance(self.comparisons, tuple):
             raise ValueError("report comparisons must be an immutable tuple")
@@ -364,12 +395,13 @@ class RegressionReport:
             "source_revision": self.source_revision,
             "candidate_id": self.candidate_id,
             "baseline_id": self.baseline_id,
-            "environment": asdict(self.environment),
+            "environment": self.environment.canonical_payload(),
             "totals": dict(self.totals),
             "comparisons": [asdict(item) for item in self.comparisons],
             "previous_run_id": self.previous_run_id,
             "regressed": self.regressed,
             "run_fingerprint": self.run_fingerprint,
+            "previous_run_fingerprint": self.previous_run_fingerprint,
         }
 
     def to_json(self) -> str:
@@ -621,10 +653,28 @@ def _run_metrics(run: BenchmarkRun) -> dict[str, float | None]:
 def build_report(
     run: BenchmarkRun,
     *,
+    store: BenchmarkStore,
     environment: EnvironmentProfile,
     previous: BenchmarkRun | None = None,
 ) -> RegressionReport:
-    """Compare only genuinely measured metrics against the previous run."""
+    """Compare only genuinely measured metrics against the previous run.
+
+    Both the current run and any predecessor must already be retained in the
+    accepted store. An unrecorded in-memory run cannot become canonical
+    evidence, so a report always refers to reproducible retained state.
+    """
+
+    retained = {run_fingerprint(record) for record in store.runs(SUITE_NAME, last_n=50)}
+    current_fingerprint = run_fingerprint(run)
+    if current_fingerprint not in retained:
+        raise ValueError("report requires a run retained in the benchmark store")
+    previous_fingerprint = None
+    if previous is not None:
+        previous_fingerprint = run_fingerprint(previous)
+        if previous_fingerprint not in retained:
+            raise ValueError(
+                "comparison requires a predecessor retained in the benchmark store"
+            )
 
     current_metrics = _run_metrics(run)
     previous_metrics = _run_metrics(previous) if previous is not None else {}
@@ -695,7 +745,10 @@ def build_report(
         regressed=any(
             comparison.status == "regressed" for comparison in comparisons
         ),
-        run_fingerprint=run_fingerprint(run),
+        run_fingerprint=current_fingerprint,
+        previous_run_fingerprint=(
+            previous_fingerprint if comparable and previous else None
+        ),
         guard=_REPORT_GUARD,
     )
 
@@ -715,7 +768,13 @@ def run_fingerprint(run: BenchmarkRun) -> str:
     return hashlib.sha256(run.to_json().encode("utf-8")).hexdigest()
 
 
-def validate_report_against_run(report: RegressionReport, run: BenchmarkRun) -> None:
+def validate_report_against_run(
+    report: RegressionReport,
+    run: BenchmarkRun,
+    *,
+    previous: BenchmarkRun | None = None,
+    environment: EnvironmentProfile | None = None,
+) -> None:
     """Prove a report describes exactly the retained run it claims.
 
     Every identity field is recomputed from the run, so a report carrying an
@@ -741,6 +800,40 @@ def validate_report_against_run(report: RegressionReport, run: BenchmarkRun) -> 
         raise ValueError("report totals do not match the retained run summary")
     if report.run_fingerprint != run_fingerprint(run):
         raise ValueError("report is not bound to the retained run")
+
+    if previous is None:
+        if report.previous_run_fingerprint is not None:
+            raise ValueError("report claims a predecessor that was not supplied")
+    else:
+        if not isinstance(previous, BenchmarkRun):
+            raise ValueError("run binding requires a BenchmarkRun predecessor")
+        if report.previous_run_id != previous.run_id:
+            raise ValueError("report previous_run_id does not match the predecessor")
+        if report.previous_run_fingerprint != run_fingerprint(previous):
+            raise ValueError("report is not bound to the retained predecessor")
+
+    if environment is not None:
+        if not isinstance(environment, EnvironmentProfile):
+            raise ValueError("run binding requires an EnvironmentProfile")
+        if report.environment != environment:
+            raise ValueError("report environment does not match the detected profile")
+
+
+def _validate_environment_field(value: Any, name: str) -> None:
+    """Bounded, single-line, printable environment evidence."""
+
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"environment {name} must be a non-empty string")
+    if len(value) > _MAX_ENVIRONMENT_CHARS:
+        raise ValueError(f"environment {name} exceeds its character limit")
+    if value != value.strip():
+        raise ValueError(f"environment {name} cannot be padded")
+    # A multiline or control-character value could forge extra evidence lines in
+    # the rendered summary.
+    if any(character in value for character in "\r\n\t"):
+        raise ValueError(f"environment {name} must be a single line")
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
+        raise ValueError(f"environment {name} cannot contain control characters")
 
 
 def _validate_sha256(value: Any, name: str) -> None:
@@ -783,6 +876,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report = build_report(
         run,
+        store=store,
         environment=EnvironmentProfile.detect(runner_id=args.runner_id),
         previous=previous_run(store, exclude_run_id=run.run_id),
     )

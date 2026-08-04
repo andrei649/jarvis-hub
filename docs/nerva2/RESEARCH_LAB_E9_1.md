@@ -107,15 +107,32 @@ validates itself:
 - suite name, suite version, run id and evaluator identifiers are validated
   against the repository's accepted formats.
 
-**A report must be derived from a retained run.** `RegressionReport` requires a
+**A report must be derived from a run that is actually retained.**
+`build_report()` takes the `BenchmarkStore` and refuses any current run — or any
+predecessor — whose fingerprint is not present in the store. An unrecorded
+in-memory run cannot become canonical evidence, so a report always refers to
+reproducible retained state. `RegressionReport` additionally requires a
 module-private construction guard held only by `build_report()`, so a directly
-constructed record is noncanonical. Each report carries a `run_fingerprint` —
-the SHA-256 of the retained run's canonical JSON — and
-`validate_report_against_run()` recomputes every identity field plus the totals
-and the fingerprint from the run itself. A report claiming an invented suite,
-revision, run or evaluator is rejected even when its own numbers are coherent.
-The guard is a module-private capability, not a cryptographic boundary: it closes
-the public contract, but does not defend against code executing inside the
+constructed record is noncanonical.
+
+Each report carries `run_fingerprint` and, whenever a baseline exists,
+`previous_run_fingerprint` — SHA-256 of the respective retained run's canonical
+JSON. The two predecessor fields are inseparable: a named `previous_run_id`
+without its fingerprint, or the reverse, is refused.
+`validate_report_against_run()` recomputes every identity field, the totals and
+both fingerprints from the runs themselves, so a predecessor that keeps the same
+run id but different content is caught by the fingerprint rather than the label.
+
+**Environment evidence is detected, not asserted.** `EnvironmentProfile` requires
+a guard held only by `detect()`, which reads the platform and interpreter from
+the running process. The single caller-supplied label, `runner_id`, is bounded:
+single line, printable, trimmed, at most 128 characters — so a multiline or
+control-character value cannot forge extra evidence lines in the rendered
+summary. `validate_report_against_run()` verifies the exact environment record
+alongside the run evidence.
+
+Both guards are module-private capabilities, not cryptographic boundaries: they
+close the public contract, but do not defend against code executing inside the
 module.
 
 Comparability also requires matching evaluator identities. A retained run for the
@@ -194,7 +211,7 @@ The cache and artifact hold only synthetic-public suite content and run evidence
 The repository pins its generated test count. Following the E3.0/E3.1/E6.0
 convention, the bounded assertions live in `tests/_nerva_e9_1_checks.py` and are
 invoked from the existing `tests/test_nerva_benchmark_e9_0.py` regression, so the
-collected test count is unchanged (5767 before and after). Twenty assertion groups
+collected test count is unchanged (5767 before and after). Twenty-two assertion groups
 cover synthetic-public/CI-only enforcement, suite-version stability, persistence
 through the accepted store, the first-run `no_baseline` state, regression and
 improvement decisions, refusal to coerce unmeasured metrics, deterministic
@@ -205,8 +222,9 @@ two concerns, refusal of non-exact revisions and hardware claims at the report
 boundary, self-asserted comparison semantics and metric-set tampering, frozen
 totals, benchmark-summary invariants with comparison/summary agreement,
 evaluator-identity binding before comparison, retained-run binding with forged
-identity and fingerprint cases, baseline-identity/evidence pairing, and the CLI
-path.
+identity and fingerprint cases, refusal of unretained current runs and
+predecessors, detected/bounded/validated environment evidence,
+baseline-identity/evidence pairing, and the CLI path.
 
 ## What this slice is not
 

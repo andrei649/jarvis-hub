@@ -43,11 +43,7 @@ _OTHER_REVISION = "b" * 40
 
 
 def _environment() -> EnvironmentProfile:
-    return EnvironmentProfile(
-        runner_id="test-runner",
-        platform="linux-x86_64",
-        python_version="3.12.0",
-    )
+    return EnvironmentProfile.detect(runner_id="test-runner")
 
 
 def _check_suite_is_synthetic_public_and_ci_only() -> None:
@@ -111,7 +107,7 @@ def _check_first_run_has_no_baseline_and_cannot_claim_a_regression(tmp_path) -> 
     run = asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-one"))
     assert previous_run(store, exclude_run_id="run-one") is None
 
-    report = build_report(run, environment=_environment(), previous=None)
+    report = build_report(run, store=store, environment=_environment(), previous=None)
     assert report.previous_run_id is None
     assert report.regressed is False
     assert {comparison.status for comparison in report.comparisons} == {"no_baseline"}
@@ -131,7 +127,7 @@ def _check_regression_and_improvement_are_decided_only_on_measured_metrics(
     )
 
     # Two identical deterministic runs must not report drift.
-    steady = build_report(second, environment=_environment(), previous=first)
+    steady = build_report(second, store=store, environment=_environment(), previous=first)
     assert steady.previous_run_id == "run-one"
     assert steady.regressed is False
     assert {
@@ -140,16 +136,18 @@ def _check_regression_and_improvement_are_decided_only_on_measured_metrics(
         if comparison.metric == "quality_mean"
     } == {"unchanged"}
 
-    # A genuinely lower measured quality is a regression.
-    degraded = _with_quality(second, 0.25)
-    report = build_report(degraded, environment=_environment(), previous=first)
+    # A genuinely lower measured quality is a regression. The degraded run is
+    # retained first: an unrecorded run cannot become canonical evidence.
+    degraded = replace(_with_quality(second, 0.25), run_id="run-degraded")
+    store.record_run(degraded)
+    report = build_report(degraded, store=store, environment=_environment(), previous=first)
     quality = _comparison(report, "quality_mean")
     assert quality.status == "regressed"
     assert quality.delta is not None and quality.delta < 0
     assert report.regressed is True
 
     # The inverse is an improvement, not a regression.
-    improved = build_report(first, environment=_environment(), previous=degraded)
+    improved = build_report(first, store=store, environment=_environment(), previous=degraded)
     assert _comparison(improved, "quality_mean").status == "improved"
     assert improved.regressed is False
 
@@ -160,8 +158,9 @@ def _check_unmeasured_metrics_are_never_coerced_into_a_score(tmp_path) -> None:
     store = BenchmarkStore(tmp_path / "unmeasured")
     first = asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-one"))
     unscored = replace(_with_unscored_case(first), run_id="run-unscored")
+    store.record_run(unscored)
 
-    report = build_report(unscored, environment=_environment(), previous=first)
+    report = build_report(unscored, store=store, environment=_environment(), previous=first)
     ratio = _comparison(report, "pass_ratio")
     assert ratio.status == "not_measured"
     assert ratio.delta is None
@@ -172,10 +171,14 @@ def _check_unmeasured_metrics_are_never_coerced_into_a_score(tmp_path) -> None:
         if comparison.metric == "pass_ratio"
     )
 
-    # A comparison across a different suite version is not a comparison at all.
-    other_version = replace(first, suite_version=first.suite_version + 1)
-    across = build_report(first, environment=_environment(), previous=other_version)
+    # A comparison across a different suite version is not a comparison at all,
+    # even when both runs are genuinely retained.
+    version = store.save_suite(SUITE_NAME, scheduled_cases(), lane="ci")
+    other_version = replace(first, suite_version=version, run_id="run-other-version")
+    store.record_run(other_version)
+    across = build_report(first, store=store, environment=_environment(), previous=other_version)
     assert across.previous_run_id is None
+    assert across.previous_run_fingerprint is None
     assert {comparison.status for comparison in across.comparisons} == {"no_baseline"}
 
 
@@ -185,8 +188,8 @@ def _check_report_is_deterministic_and_evaluation_only(tmp_path) -> None:
     store = BenchmarkStore(tmp_path / "deterministic")
     run = asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-one"))
 
-    first = build_report(run, environment=_environment(), previous=None)
-    second = build_report(run, environment=_environment(), previous=None)
+    first = build_report(run, store=store, environment=_environment(), previous=None)
+    second = build_report(run, store=store, environment=_environment(), previous=None)
     assert first.to_json() == second.to_json()
 
     payload = json.loads(first.to_json())
@@ -246,6 +249,7 @@ def _build_report(**overrides) -> RegressionReport:
         "previous_run_id": "run-zero",
         "regressed": True,
         "run_fingerprint": "c" * 64,
+        "previous_run_fingerprint": "e" * 64,
         "guard": _REPORT_GUARD,
     }
     fields.update(overrides)
@@ -259,7 +263,7 @@ def _check_report_invariants_reject_incoherent_summaries() -> None:
     with pytest.raises(ValueError, match="regression flag must match"):
         _build_report(regressed=False)
     with pytest.raises(ValueError, match="requires a previous run"):
-        _build_report(previous_run_id=None)
+        _build_report(previous_run_id=None, previous_run_fingerprint=None)
     with pytest.raises(ValueError, match="EnvironmentProfile"):
         _build_report(environment={"runner_id": "spoofed"})
 
@@ -409,7 +413,7 @@ def _check_report_is_bound_to_the_retained_run(tmp_path) -> None:
 
     store = BenchmarkStore(tmp_path / "bound")
     run = asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-one"))
-    report = build_report(run, environment=_environment(), previous=None)
+    report = build_report(run, store=store, environment=_environment(), previous=None)
 
     # The honest path validates.
     validate_report_against_run(report, run)
@@ -435,7 +439,7 @@ def _check_report_is_bound_to_the_retained_run(tmp_path) -> None:
 
     # A fingerprint that does not belong to the run is caught even when every
     # identity field agrees.
-    unbound = build_report(run, environment=_environment(), previous=None)
+    unbound = build_report(run, store=store, environment=_environment(), previous=None)
     with pytest.raises(ValueError, match="not bound to the retained run"):
         validate_report_against_run(
             _build_report(
@@ -448,6 +452,7 @@ def _check_report_is_bound_to_the_retained_run(tmp_path) -> None:
                 totals=dict(unbound.totals),
                 comparisons=unbound.comparisons,
                 previous_run_id=None,
+                previous_run_fingerprint=None,
                 regressed=False,
                 run_fingerprint="d" * 64,
             ),
@@ -463,6 +468,100 @@ def _check_report_is_bound_to_the_retained_run(tmp_path) -> None:
         _build_report(run_fingerprint="short")
     with pytest.raises(ValueError, match="cannot compare a run against itself"):
         _build_report(previous_run_id="run-one", run_id="run-one")
+    # A predecessor and its fingerprint are inseparable in both directions.
+    with pytest.raises(ValueError, match="requires its fingerprint"):
+        _build_report(previous_run_fingerprint=None)
+    with pytest.raises(ValueError, match="requires its fingerprint"):
+        _build_report(previous_run_id=None)
+    with pytest.raises(ValueError, match="cannot compare a run against itself"):
+        _build_report(previous_run_fingerprint="c" * 64)
+
+
+def _check_unretained_evidence_cannot_become_canonical(tmp_path) -> None:
+    """Only runs actually retained in the accepted store may be reported."""
+
+    store = BenchmarkStore(tmp_path / "retention")
+    run = asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-one"))
+
+    # A synthetic in-memory run that was never recorded is not evidence.
+    synthetic = replace(run, run_id="run-never-recorded")
+    with pytest.raises(ValueError, match="run retained in the benchmark store"):
+        build_report(synthetic, store=store, environment=_environment(), previous=None)
+
+    # The same applies to a predecessor supplied for the comparison.
+    with pytest.raises(ValueError, match="predecessor retained in the benchmark store"):
+        build_report(run, store=store, environment=_environment(), previous=synthetic)
+
+    # An empty store cannot back any report at all.
+    empty = BenchmarkStore(tmp_path / "retention-empty")
+    with pytest.raises(ValueError, match="run retained in the benchmark store"):
+        build_report(run, store=empty, environment=_environment(), previous=None)
+
+    # Once retained, the very same run is canonical and binds to its predecessor.
+    store.record_run(synthetic)
+    report = build_report(
+        synthetic, store=store, environment=_environment(), previous=run
+    )
+    assert report.previous_run_fingerprint == run_fingerprint(run)
+    validate_report_against_run(
+        report, synthetic, previous=run, environment=_environment()
+    )
+
+    # Binding rejects a substituted predecessor and a missing one.
+    with pytest.raises(ValueError, match="previous_run_id does not match"):
+        validate_report_against_run(report, synthetic, previous=synthetic)
+    with pytest.raises(ValueError, match="claims a predecessor that was not supplied"):
+        validate_report_against_run(report, synthetic)
+
+    # A predecessor keeping the same run id but different content is caught by
+    # the fingerprint, not just the identifier.
+    impostor = replace(run, source_revision=_OTHER_REVISION)
+    assert impostor.run_id == run.run_id
+    with pytest.raises(ValueError, match="not bound to the retained predecessor"):
+        validate_report_against_run(report, synthetic, previous=impostor)
+
+
+def _check_environment_is_detected_bounded_and_validated(tmp_path) -> None:
+    """Environment evidence is produced by detect(), bounded, and verified."""
+
+    # A caller cannot assert an environment; only detect() may produce one.
+    with pytest.raises(ValueError, match="produced by EnvironmentProfile.detect"):
+        EnvironmentProfile(
+            runner_id="spoofed",
+            platform="linux-x86_64",
+            python_version="3.12.0",
+        )
+    with pytest.raises((TypeError, ValueError)):
+        replace(_environment(), runner_id="spoofed")
+
+    # The one caller-supplied label is bounded: single line, printable, trimmed.
+    for bad in (
+        "runner\nplatform: owner-workstation",
+        "runner\rid",
+        "runner\tid",
+        "  padded  ",
+        "x" * 129,
+        "",
+        "   ",
+        "runner\x00id",
+    ):
+        with pytest.raises(ValueError, match="environment runner_id"):
+            EnvironmentProfile.detect(runner_id=bad)
+
+    # Platform and interpreter are read from the process, not accepted.
+    detected = EnvironmentProfile.detect(runner_id="test-runner")
+    assert detected.hardware_profile == "not_measured"
+    assert "guard" not in detected.canonical_payload()
+
+    # The exact environment record is validated alongside the run evidence.
+    store = BenchmarkStore(tmp_path / "environment")
+    run = asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-one"))
+    report = build_report(run, store=store, environment=detected, previous=None)
+    validate_report_against_run(report, run, environment=detected)
+    with pytest.raises(ValueError, match="environment does not match"):
+        validate_report_against_run(
+            report, run, environment=EnvironmentProfile.detect(runner_id="other-runner")
+        )
 
 
 def _check_baseline_identity_matches_baseline_evidence() -> None:
@@ -493,22 +592,30 @@ def _check_comparison_requires_matching_evaluator_identities(tmp_path) -> None:
     store = BenchmarkStore(tmp_path / "identities")
     run = asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-one"))
     prior = replace(run, run_id="run-prior")
+    store.record_run(prior)
 
-    # The control: identical identities do compare.
-    same = build_report(run, environment=_environment(), previous=prior)
+    # The control: identical identities do compare, and the report binds to the
+    # exact retained predecessor.
+    same = build_report(run, store=store, environment=_environment(), previous=prior)
     assert same.previous_run_id == "run-prior"
+    assert same.previous_run_fingerprint == run_fingerprint(prior)
 
     # A different candidate or baseline identity measures something else, so it
-    # must degrade to no_baseline rather than manufacture a decided result.
-    for changed in (
-        replace(prior, candidate_id="other-router"),
-        replace(prior, baseline_id="other-baseline.v1"),
-        replace(prior, suite_version=prior.suite_version + 1),
+    # must degrade to no_baseline rather than manufacture a decided result —
+    # even though both runs are genuinely retained.
+    for index, changed in enumerate(
+        (
+            replace(prior, candidate_id="other-router", run_id="run-other-candidate"),
+            replace(prior, baseline_id="other-baseline.v1", run_id="run-other-base"),
+        )
     ):
-        report = build_report(run, environment=_environment(), previous=changed)
+        store.record_run(changed)
+        report = build_report(run, store=store, environment=_environment(), previous=changed)
         assert report.previous_run_id is None
+        assert report.previous_run_fingerprint is None
         assert report.regressed is False
         assert {item.status for item in report.comparisons} == {"no_baseline"}
+        assert index >= 0
 
 
 def _check_totals_are_frozen_after_construction() -> None:
@@ -848,6 +955,8 @@ def run_e9_1_checks(tmp_path, monkeypatch) -> None:
     _check_totals_are_frozen_after_construction()
     _check_totals_semantics_and_comparison_agreement()
     _check_report_is_bound_to_the_retained_run(tmp_path)
+    _check_unretained_evidence_cannot_become_canonical(tmp_path)
+    _check_environment_is_detected_bounded_and_validated(tmp_path)
     _check_baseline_identity_matches_baseline_evidence()
     _check_comparison_requires_matching_evaluator_identities(tmp_path)
     _check_missing_prerequisites_fail_visibly(tmp_path, monkeypatch)
