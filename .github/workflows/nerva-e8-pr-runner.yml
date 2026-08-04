@@ -1,0 +1,43 @@
+name: Nerva E8 bounded correction runner
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'nerva2/e8-0-synapse-conformance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Execute staged bounded correction
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('.github/workflows/nerva-e8-builder-fix.yml').read_text(encoding='utf-8')
+          marker = '        run: |\n'
+          if marker not in source:
+              raise SystemExit('bounded correction run block not found')
+          embedded = source.split(marker, 1)[1]
+          script_lines = []
+          for line in embedded.splitlines():
+              if line.startswith('          '):
+                  script_lines.append(line[10:])
+              elif not line.strip():
+                  script_lines.append('')
+              else:
+                  raise SystemExit(f'unexpected correction indentation: {line!r}')
+          Path('/tmp/nerva-e8-correction.sh').write_text(
+              '\n'.join(script_lines) + '\n', encoding='utf-8'
+          )
+          PY
+          bash /tmp/nerva-e8-correction.sh
