@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from agents.core.observability.benchmark import BenchmarkStore
+from agents.core.observability.benchmark import BenchmarkObservation, BenchmarkStore
 from agents.core.observability.scheduled_report import (
     _COMPARED_METRICS,
     BASELINE_ID,
@@ -207,23 +207,25 @@ def _check_report_is_deterministic_and_evaluation_only(tmp_path) -> None:
 
 
 def _totals() -> dict:
+    # One passed, three failed: a coherent summary whose derived metrics are
+    # quality_mean 0.25, baseline_quality_mean 1.0 and pass_ratio 0.25.
     return {
         "total": 4,
         "scored": 4,
-        "passed": 4,
-        "failed": 0,
+        "passed": 1,
+        "failed": 3,
         "unscored": 0,
         "errors": 0,
-        "quality_mean": 1.0,
+        "quality_mean": 0.25,
         "baseline_quality_mean": 1.0,
     }
 
 
 def _full_comparisons() -> tuple[MetricComparison, ...]:
     return (
-        MetricComparison("quality_mean", "regressed", 0.5, 0.9, -0.4),
+        MetricComparison("quality_mean", "regressed", 0.25, 0.9, -0.65),
         MetricComparison("baseline_quality_mean", "unchanged", 1.0, 1.0, 0.0),
-        MetricComparison("pass_ratio", "unchanged", 1.0, 1.0, 0.0),
+        MetricComparison("pass_ratio", "unchanged", 0.25, 0.25, 0.0),
     )
 
 
@@ -338,11 +340,83 @@ def _check_comparison_semantics_cannot_be_self_asserted() -> None:
         _build_report(comparisons=(full[0], full[1], {"metric": "pass_ratio"}))
 
     # A report that names a previous run cannot claim it had no baseline.
+    derived = {"quality_mean": 0.25, "baseline_quality_mean": 1.0, "pass_ratio": 0.25}
     no_baseline = tuple(
-        MetricComparison(metric, "no_baseline", 1.0) for metric in _COMPARED_METRICS
+        MetricComparison(metric, "no_baseline", derived[metric])
+        for metric in _COMPARED_METRICS
     )
     with pytest.raises(ValueError, match="cannot yield only no_baseline"):
         _build_report(comparisons=no_baseline, regressed=False)
+
+
+def _check_totals_semantics_and_comparison_agreement() -> None:
+    """Impossible counts and summary-contradicting comparisons are refused."""
+
+    for broken, expected in (
+        ({**_totals(), "passed": 2}, "outcomes must sum to the case total"),
+        ({**_totals(), "total": 0, "passed": 0, "failed": 0}, "at least one case"),
+        ({**_totals(), "scored": 9}, "scored cannot exceed the case total"),
+        ({**_totals(), "failed": -3, "passed": 7}, "cannot be negative"),
+        ({**_totals(), "passed": 0, "failed": 0, "unscored": 4}, "passed plus failed"),
+        ({**_totals(), "total": 4.0}, "must be an integer"),
+        ({**_totals(), "errors": True, "failed": 2}, "must be an integer"),
+        ({**_totals(), "quality_mean": 1.5}, "must be a ratio"),
+        ({**_totals(), "quality_mean": float("inf")}, "must be finite"),
+        ({**_totals(), "quality_mean": "high"}, "must be numeric or null"),
+        (
+            {
+                **_totals(),
+                "scored": 0,
+                "passed": 0,
+                "failed": 0,
+                "unscored": 4,
+                "quality_mean": 0.25,
+            },
+            "cannot score an unscored run",
+        ),
+    ):
+        with pytest.raises(ValueError, match=expected):
+            _build_report(totals=broken)
+
+    # A comparison cannot publish a current value its own totals contradict.
+    tampered = (
+        MetricComparison("quality_mean", "regressed", 0.9, 0.95, -0.05),
+        *_full_comparisons()[1:],
+    )
+    with pytest.raises(ValueError, match="contradicts the retained totals"):
+        _build_report(comparisons=tampered, regressed=True)
+
+    # The same applies to the derived pass ratio.
+    tampered_ratio = (
+        *_full_comparisons()[:2],
+        MetricComparison("pass_ratio", "unchanged", 1.0, 1.0, 0.0),
+    )
+    with pytest.raises(ValueError, match="contradicts the retained totals"):
+        _build_report(comparisons=tampered_ratio)
+
+
+def _check_comparison_requires_matching_evaluator_identities(tmp_path) -> None:
+    """A prior run from different evaluators is not a baseline."""
+
+    store = BenchmarkStore(tmp_path / "identities")
+    run = asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-one"))
+    prior = replace(run, run_id="run-prior")
+
+    # The control: identical identities do compare.
+    same = build_report(run, environment=_environment(), previous=prior)
+    assert same.previous_run_id == "run-prior"
+
+    # A different candidate or baseline identity measures something else, so it
+    # must degrade to no_baseline rather than manufacture a decided result.
+    for changed in (
+        replace(prior, candidate_id="other-router"),
+        replace(prior, baseline_id="other-baseline.v1"),
+        replace(prior, suite_version=prior.suite_version + 1),
+    ):
+        report = build_report(run, environment=_environment(), previous=changed)
+        assert report.previous_run_id is None
+        assert report.regressed is False
+        assert {item.status for item in report.comparisons} == {"no_baseline"}
 
 
 def _check_totals_are_frozen_after_construction() -> None:
@@ -364,7 +438,7 @@ def _check_totals_are_frozen_after_construction() -> None:
         report.totals.clear()  # type: ignore[attr-defined]
     assert report.to_json() == before_json
     assert report.to_markdown() == before_markdown
-    assert json.loads(report.to_json())["totals"]["passed"] == 4
+    assert json.loads(report.to_json())["totals"]["passed"] == 1
 
     # The summary key set is verified rather than accepted as given.
     with pytest.raises(ValueError, match="totals must match the benchmark summary"):
@@ -485,20 +559,27 @@ def _check_regressed_run_is_retained_but_not_promoted(tmp_path, monkeypatch) -> 
     store = BenchmarkStore(store_root)
     asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-prior"))
 
-    def _metrics(run):
-        if run.run_id == "run-prior":
-            return {
-                "quality_mean": 1.0,
-                "baseline_quality_mean": 1.0,
-                "pass_ratio": 1.0,
-            }
-        return {
-            "quality_mean": 0.25,
-            "baseline_quality_mean": 1.0,
-            "pass_ratio": 0.25,
-        }
+    # Force a genuine regression by degrading the candidate itself, so the
+    # retained totals and the reported comparison stay mutually consistent.
+    # Fabricating metrics here would be exactly the self-assertion the report
+    # contract now refuses.
+    def _mis_routing_runner(router, agents, *, host_id="in-process"):
+        async def run(prompt: str) -> BenchmarkObservation:
+            return BenchmarkObservation(
+                response="jarvis",
+                route_id="jarvis",
+                model_id="none",
+                provider_id="local-deterministic",
+                host_id=host_id,
+                hardware_profile="not-measured",
+                cost_usd=0.0,
+                reliability=1.0,
+                privacy_effect="no_external_disclosure",
+            )
 
-    monkeypatch.setattr(module, "_run_metrics", _metrics)
+        return run
+
+    monkeypatch.setattr(module, "current_router_runner", _mis_routing_runner)
 
     summary = tmp_path / "regressed-summary.md"
     json_out = tmp_path / "regressed-report.json"
@@ -673,6 +754,8 @@ def run_e9_1_checks(tmp_path, monkeypatch) -> None:
     _check_report_cannot_claim_a_bad_revision_or_hardware()
     _check_comparison_semantics_cannot_be_self_asserted()
     _check_totals_are_frozen_after_construction()
+    _check_totals_semantics_and_comparison_agreement()
+    _check_comparison_requires_matching_evaluator_identities(tmp_path)
     _check_missing_prerequisites_fail_visibly(tmp_path, monkeypatch)
     _check_revision_must_be_an_exact_commit_sha(tmp_path)
     _check_regressed_run_is_retained_but_not_promoted(tmp_path, monkeypatch)

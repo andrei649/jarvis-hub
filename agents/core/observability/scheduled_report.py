@@ -261,11 +261,20 @@ class RegressionReport:
 
         if not isinstance(self.totals, Mapping):
             raise ValueError("report totals must be a mapping")
-        if set(self.totals) != _TOTALS_KEYS:
-            raise ValueError("report totals must match the benchmark summary keys")
+        _validate_totals(self.totals)
         # Freeze the retained summary so post-construction mutation cannot
         # change later JSON or Markdown evidence.
         object.__setattr__(self, "totals", MappingProxyType(dict(self.totals)))
+
+        # Each comparison's current value is derived from the retained summary,
+        # so a report cannot publish a current value its own totals contradict.
+        expected_current = _metrics_from_totals(self.totals)
+        for comparison in self.comparisons:
+            wanted = expected_current[comparison.metric]
+            if comparison.current != wanted:
+                raise ValueError(
+                    f"comparison {comparison.metric} contradicts the retained totals"
+                )
 
         decided = [
             comparison
@@ -489,20 +498,68 @@ async def run_scheduled_suite(
     return run
 
 
-def _run_metrics(run: BenchmarkRun) -> dict[str, float | None]:
-    summary = run.summary
-    total = summary["total"]
-    scored = summary["scored"]
+def _validate_totals(totals: Mapping[str, Any]) -> None:
+    """Reject a summary that cannot describe a real benchmark run."""
+
+    if set(totals) != _TOTALS_KEYS:
+        raise ValueError("report totals must match the benchmark summary keys")
+    counts = {}
+    for name in ("total", "scored", "passed", "failed", "unscored", "errors"):
+        value = totals[name]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"report totals {name} must be an integer")
+        if value < 0:
+            raise ValueError(f"report totals {name} cannot be negative")
+        counts[name] = value
+    if counts["total"] < 1:
+        raise ValueError("report totals require at least one case")
+    outcomes = (
+        counts["passed"] + counts["failed"] + counts["unscored"] + counts["errors"]
+    )
+    if outcomes != counts["total"]:
+        raise ValueError("report totals outcomes must sum to the case total")
+    if counts["scored"] > counts["total"]:
+        raise ValueError("report totals scored cannot exceed the case total")
+    # A scored case is one that produced a quality measurement, so it can never
+    # exceed the passed/failed population.
+    if counts["scored"] > counts["passed"] + counts["failed"]:
+        raise ValueError("report totals scored cannot exceed passed plus failed")
+
+    for name in ("quality_mean", "baseline_quality_mean"):
+        value = totals[name]
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"report totals {name} must be numeric or null")
+        if not math.isfinite(float(value)):
+            raise ValueError(f"report totals {name} must be finite")
+        if not 0.0 <= float(value) <= 1.0:
+            raise ValueError(f"report totals {name} must be a ratio")
+    if counts["scored"] == 0 and totals["quality_mean"] is not None:
+        raise ValueError("report totals cannot score an unscored run")
+
+
+def _metrics_from_totals(totals: Mapping[str, Any]) -> dict[str, float | None]:
+    """The only comparable metrics a summary supports.
+
+    Used both when building a report and when validating one, so a serialized
+    comparison can never contradict the summary it is published with.
+    """
+
+    total = totals["total"]
+    scored = totals["scored"]
     return {
-        "quality_mean": summary["quality_mean"],
-        "baseline_quality_mean": summary["baseline_quality_mean"],
+        "quality_mean": totals["quality_mean"],
+        "baseline_quality_mean": totals["baseline_quality_mean"],
         # Only a fully scored run yields a comparable pass ratio.
         "pass_ratio": (
-            round(summary["passed"] / total, 6)
-            if total and scored == total
-            else None
+            round(totals["passed"] / total, 6) if total and scored == total else None
         ),
     }
+
+
+def _run_metrics(run: BenchmarkRun) -> dict[str, float | None]:
+    return _metrics_from_totals(run.summary)
 
 
 def build_report(
@@ -515,10 +572,16 @@ def build_report(
 
     current_metrics = _run_metrics(run)
     previous_metrics = _run_metrics(previous) if previous is not None else {}
+    # Comparability requires the same suite content *and* the same evaluator
+    # identities. A retained run for the same suite version produced by a
+    # different candidate or baseline measures something else, so comparing it
+    # would manufacture a regression out of an identity change.
     comparable = (
         previous is not None
         and previous.suite_name == run.suite_name
         and previous.suite_version == run.suite_version
+        and previous.candidate_id == run.candidate_id
+        and previous.baseline_id == run.baseline_id
     )
 
     comparisons: list[MetricComparison] = []

@@ -14,7 +14,7 @@ proves scheduled operation and reporting only.
 ## Dependency and authority boundary
 
 - prerequisites: accepted E9.0 / #784 / #803 and Cortex E1.1 / #792, both in `main`;
-- base revision: `main@df0d529` (current `main` after E6.0 / #808 integration);
+- base revision: current `main@5ccf77d` (after E6.0 / #808 and dependency PR #811);
 - report authority is fixed to `evaluation_only`;
 - Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 
@@ -92,8 +92,19 @@ validates itself:
   cannot be `unchanged`, and unknown statuses or metrics are refused;
 - `not_measured` requires an actually unmeasured side and `no_baseline` cannot
   carry a previous value;
-- `totals` must match the benchmark summary key set exactly and is frozen at
-  construction, so mutating it afterwards cannot change later JSON or Markdown.
+- `totals` must match the benchmark summary key set exactly, satisfy the
+  benchmark-summary invariants (non-negative integer counts, outcomes summing to
+  the case total, `scored` bounded by both the total and the passed/failed
+  population, ratio means inside `[0, 1]`, no score on an unscored run), and is
+  frozen at construction so mutating it afterwards cannot change later JSON or
+  Markdown;
+- each comparison's `current` value is **derived from the retained totals**, so a
+  report cannot publish a current value its own summary contradicts.
+
+Comparability also requires matching evaluator identities. A retained run for the
+same suite version but a different `candidate_id` or `baseline_id` measures
+something else, so it degrades to `no_baseline` instead of manufacturing a
+decided regression out of an identity change.
 
 ## Failure behavior
 
@@ -166,7 +177,7 @@ The cache and artifact hold only synthetic-public suite content and run evidence
 The repository pins its generated test count. Following the E3.0/E3.1/E6.0
 convention, the bounded assertions live in `tests/_nerva_e9_1_checks.py` and are
 invoked from the existing `tests/test_nerva_benchmark_e9_0.py` regression, so the
-collected test count is unchanged (5767 before and after). Sixteen assertion groups
+collected test count is unchanged (5767 before and after). Eighteen assertion groups
 cover synthetic-public/CI-only enforcement, suite-version stability, persistence
 through the accepted store, the first-run `no_baseline` state, regression and
 improvement decisions, refusal to coerce unmeasured metrics, deterministic
@@ -175,7 +186,8 @@ exact-commit-SHA validation against symbolic and malformed values, retention of 
 regressed run without baseline promotion, the workflow-level separation of those
 two concerns, refusal of non-exact revisions and hardware claims at the report
 boundary, self-asserted comparison semantics and metric-set tampering, frozen
-totals, and the CLI path.
+totals, benchmark-summary invariants with comparison/summary agreement,
+evaluator-identity binding before comparison, and the CLI path.
 
 ## What this slice is not
 
