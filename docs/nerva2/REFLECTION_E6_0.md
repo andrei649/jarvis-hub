@@ -49,19 +49,24 @@ introduced. `DailyReflector` production behavior is untouched.
 
 ## Records
 
+### `nerva.outcome-verdict.v1` — `OutcomeVerdict`
+
+One retained verdict per observed reference, carrying eligibility, the match
+result, the exclusion reason, the privacy class and the tombstone state.
+
 ### `nerva.outcome-observation.v1` — `OutcomeObservation`
 
 Immutable comparison of one expected decision reference against observed outcome
-references. It carries the environment, explicit evidence limitations, privacy
-class, qualified confidence, and one of four comparison statuses:
+references, with environment, explicit evidence limitations, privacy class,
+qualified confidence and one of four comparison statuses:
 
 ```text
 confirmed | refuted | contradictory | insufficient_evidence
 ```
 
-`compare_outcome()` derives the status deterministically. An unjudged live
-reference is never guessed into a verdict — it forces `insufficient_evidence`
-and records why in `evidence_limitations`.
+`compare_outcome()` derives the status deterministically from the verdicts. A
+status must agree with the verdicts it summarizes — a `confirmed` observation
+whose evidence does not match is rejected.
 
 ### `nerva.lesson.v1` — `LessonProposal`
 
@@ -76,8 +81,60 @@ proposed | accepted_by_destination | rejected | expired | superseded
 ### `nerva.lesson.audit.v1` — `LessonAuditEvent`
 
 Every lifecycle transition returns an audit event retaining the prior revision,
-prior replay fingerprint, and the **exact prior canonical payload**, so a
-transition is fully reversible via `restore_prior()`.
+prior replay fingerprint, the destination, any replacement proposal, and the
+**exact prior canonical payload**.
+
+## Retention of ineligible evidence
+
+Evidence is never dropped to make a comparison look cleaner. Unjudged and
+tombstoned references stay in `observed_references` and receive an
+`OutcomeVerdict` marked ineligible with an explicit reason (`no_verdict` or
+`tombstoned`). Only eligible verdicts may support or counter a proposal.
+
+Privacy is escalated across **every retained reference**, eligible or not, so
+excluding evidence can never launder its classification: a restricted unjudged
+outcome still yields a restricted observation. A tombstoned expected decision is
+rejected outright as a comparison basis, and a verdict whose privacy class or
+tombstone state disagrees with its reference is rejected.
+
+## Destination separation
+
+Promotion is structurally separate and absent by default:
+
+- a directly constructed proposal in any lifecycle beyond `proposed` is
+  **noncanonical and rejected** — advanced states require a module-private
+  construction guard held only by `transition_lesson()`;
+- `transition_lesson()` refuses Reflection as the promoting actor;
+- the acting identity must **be** the destination that owns the promotion, and
+  that destination must be one the proposal actually targets;
+- reaching `accepted_by_destination` records the destination's own decision; it
+  does not write to Episodes, Atlas or Howard.
+
+Supersession must name a replacement, and that relationship is retained on both
+the updated proposal (`superseded_by_proposal_id`) and the audit event
+(`replacement_proposal_id`).
+
+## Audit integrity
+
+`LessonAuditEvent` validates the history it retains rather than asserting it.
+`prior_payload_json` must be canonical JSON, must hash to `prior_fingerprint`,
+and must agree with the event's `proposal_id`, `from_lifecycle`, `prior_revision`
+and lesson schema. `restore_prior()` therefore cannot return arbitrary claimed
+history.
+
+## Evidence-graph binding
+
+A proposal is canonical only once it validates against the observations it
+claims. `derive_proposal_evidence()` computes the only evidence graph a proposal
+may assert; `validate_proposal_evidence()` rejects invented observation IDs,
+inflated supporting references, unknown counter-evidence and privacy downgrade.
+Recomputing `proposal_id` over forged references is not enough to pass this
+boundary.
+
+`load_lesson_proposal()` is the canonical deserialization boundary. It accepts
+only the `proposed` lifecycle and requires the observation graph — advanced
+lifecycles are never rebuilt from a payload, only reached by replaying audited
+transitions.
 
 ## Fail-closed validation
 
@@ -86,49 +143,46 @@ The contract rejects, rather than normalizes:
 | Rejected condition | Behavior |
 |---|---|
 | Expected reference that is not a `decision` role | `ValueError` |
+| Tombstoned expected decision | `ValueError` |
 | Outcome evidence predating its own decision | `ValueError` |
-| `confirmed`/`refuted` without live outcome evidence | `ValueError` |
-| `contradictory` with fewer than two live outcomes | `ValueError` |
-| `insufficient_evidence` alongside live evidence | `ValueError` |
+| Status disagreeing with its verdicts | `ValueError` |
+| `confirmed`/`refuted` without eligible evidence | `ValueError` |
+| `contradictory` with fewer than two eligible outcomes | `ValueError` |
+| `insufficient_evidence` alongside eligible evidence | `ValueError` |
+| Verdict misreporting privacy or tombstone state | `ValueError` |
+| Tombstoned evidence marked eligible | `ValueError` |
 | Privacy class below the escalated evidence privacy | `ValueError` |
 | A forged `observation_id` or `proposal_id` | `ValueError` |
+| A proposal claiming observations or references it cannot prove | `ValueError` |
 | Evidence that both supports and counters one claim | `ValueError` |
 | Confidence supplied as a bare float | `ValueError` |
 | A proposal built only from insufficient/refuted evidence | `ValueError` |
+| Direct construction of any lifecycle beyond `proposed` | `ValueError` |
 | Reflection acting as the promoting actor | `ValueError` |
-| Acceptance without a targeted destination | `ValueError` |
+| Acceptance actor that is not the targeted destination | `ValueError` |
+| Non-canonical, mismatched or fabricated audit history | `ValueError` |
 | Expiry backdated before `expires_at` | `ValueError` |
 | Supersession without a named replacement | `ValueError` |
 | Any transition out of a terminal state | `ValueError` |
-
-Tombstoned references are never live evidence, so deleted sources cannot keep a
-proposal alive.
 
 ## Privacy controls
 
 Privacy escalates with combined evidence and can never downgrade. A proposal
 derived from `restricted` evidence may only target the `human_review`
-destination; routing it to `episodes`, `howard`, `synapse` or `experience` is
-rejected. Free-text `claim` and `scope` are length-bounded.
-
-## Destination separation
-
-Promotion is structurally separate and absent by default. `transition_lesson()`
-refuses acceptance when the actor is Reflection itself, and requires an explicit
-destination that the proposal actually targets. Reaching
-`accepted_by_destination` records the destination's own decision; it does not
-write to Episodes, Atlas or Howard.
+destination. Free-text `claim` and `scope` are length-bounded.
 
 ## Test surface and test-count neutrality
 
 The repository pins its generated test count. Following the E3.0/E3.1 convention,
 the bounded assertions live in `tests/_nerva_e6_0_checks.py` and are invoked from
 the existing `tests/test_daily_reflection.py` regression, so the collected test
-count is unchanged (5767 before and after). Ten assertion groups cover the four
-comparison paths, deterministic fingerprints, immutability and authority flags,
-insufficient-evidence fail-closure, evidence/chronology validation, privacy
-non-downgrade, self-promotion refusal, reversible lifecycle audit, counter-
-evidence retention, and canonical serialization.
+count is unchanged (5767 before and after). Thirteen assertion groups cover the
+four comparison paths, retention of ineligible evidence with its classification,
+deterministic fingerprints, immutability and authority flags,
+insufficient-evidence fail-closure, evidence/chronology validation, forged
+evidence-graph rejection, privacy non-downgrade, destination-owned acceptance,
+reversible and replacement-bound lifecycle audit, audit-history integrity,
+counter-evidence retention, and canonical serialization.
 
 ## What this slice is not
 
@@ -144,8 +198,11 @@ evidence retention, and canonical serialization.
 A proposal can still encode a misleading interpretation despite correct
 provenance. Confidence is initially uncalibrated. The single hermetic fixture may
 overfit. Free-text claims remain a privacy surface bounded only by length and
-privacy class. Destination modules may later promote too permissively; that risk
-belongs to the destination slice, not to this contract.
+privacy class. The construction guard is a module-private capability, not a
+cryptographic authority boundary; it makes advanced lifecycles unreachable
+through the public contract but does not defend against code executing inside the
+module. Destination modules may later promote too permissively; that risk belongs
+to the destination slice, not to this contract.
 
 ## Migration and rollback
 
