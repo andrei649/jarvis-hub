@@ -115,6 +115,25 @@ def test_manifest_is_frozen_and_validates_confidence_and_risk():
             ),
         )
 
+    for capability_id in (
+        " action:example.run",
+        "action:example.run ",
+        "Action:example.run",
+        "action:Example.run",
+        "action:example/run",
+        "action::example.run",
+        "action:.example.run",
+    ):
+        with pytest.raises(ValueError, match="canonical namespace:name"):
+            adapt_capability_manifest(
+                _manifest(id=capability_id, requires=("plugin.enabled",))
+            )
+    with pytest.raises(ValueError, match="action-kernel"):
+        adapt_capability_manifest(_manifest(requires=("plugin.enabled",)))
+    assert adapt_capability_manifest(_manifest(id="action:social.*")).id == (
+        "action:social.*"
+    )
+
     for implementation in (
         ":",
         "module:",
@@ -359,7 +378,9 @@ def test_every_governed_plugin_derives_complete_v1_metadata():
             assert synapse.failure.codes == ("unknown",)
 
 
-def test_plugin_defaults_are_conservative_for_transmitted_and_disabled_plugins():
+def test_plugin_defaults_are_conservative_for_transmitted_and_disabled_plugins(
+    tmp_path, monkeypatch
+):
     cloud = BUILTIN_PLUGINS["cloud-llm"]
     assert plugin_capability_manifest(cloud).risk == "sensitive"
     assert plugin_capability_manifest(BUILTIN_PLUGINS["system-control"]).risk == "sensitive"
@@ -396,3 +417,32 @@ def test_plugin_defaults_are_conservative_for_transmitted_and_disabled_plugins()
             quarantined,
             provenance=replace(quarantined.provenance, generated=1),
         )
+
+    from agents.core.skills.signing import sign_skill, verify_skill
+
+    with pytest.raises(ValueError, match="package digest"):
+        adapt_capability_manifest(source, package_digest="deadbeef")
+    integrity_only = "sha256:" + "0" * 64
+    with pytest.raises(ValueError, match="authenticated HMAC-SHA256"):
+        adapt_capability_manifest(
+            source,
+            trust_state="signed",
+            package_digest=integrity_only,
+        )
+
+    skill_dir = tmp_path / "signed-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("# Signed fixture\n", encoding="utf-8")
+    (skill_dir / "main.py").write_text("VALUE = 1\n", encoding="utf-8")
+    monkeypatch.setenv("JARVIS_SKILL_SIGNING_KEY", "e8-test-signing-key")
+    signature = sign_skill(skill_dir)
+    assert signature.startswith("hmac-sha256:")
+    assert verify_skill(skill_dir) == (True, "signed")
+    signed = adapt_capability_manifest(
+        source,
+        trust_state="signed",
+        package_digest=signature,
+        source_ref="agents.core.skills.signing:verify_skill",
+    )
+    assert signed.provenance.package_digest == signature
+    assert signed.provenance.trust_state == "signed"

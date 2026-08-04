@@ -149,3 +149,19 @@ authorization, and verification remain unchanged.
 Bind governed acquisition output to this conformance contract and the separate E9
 benchmark contract before any staged promotion flow. Keep acquisition, benchmark
 evidence, promotion policy, and action authority independently reviewable.
+
+
+## Canonical identity and signing evidence
+
+Capability identifiers use a canonical lowercase `namespace:name` profile with no
+surrounding whitespace. Existing bounded wildcard forms such as `action:social.*`
+remain valid, while whitespace-, case-, slash-, duplicate-separator-, and leading-dot
+variants fail closed before the `action:` to `action-kernel` requirement is evaluated.
+
+Package evidence uses the existing signing wire forms: `sha256:<64 lowercase hex>` is
+integrity-only, while `hmac-sha256:<64 lowercase hex>` is keyed evidence.
+`trust_state="signed"` therefore rejects plain SHA-256 and requires the HMAC form.
+Synapse only projects evidence established by the existing
+`agents.core.skills.signing.verify_skill` path; it does not possess the signing key,
+authenticate a signer itself, install or promote packages, authorize execution, or mark
+a capability verified. Ultron and the existing Action Kernel remain authoritative.

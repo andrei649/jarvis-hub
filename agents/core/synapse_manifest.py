@@ -43,6 +43,11 @@ MINIMUM_APPROVAL = {
 TRUST_STATES = frozenset({"builtin", "signed", "quarantined"})
 UNKNOWN = "unknown"
 _SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+_CAPABILITY_ID = re.compile(
+    r"^[a-z][a-z0-9_-]*:[a-z0-9](?:[a-z0-9._*-]*[a-z0-9*])?$"
+)
+_PACKAGE_DIGEST = re.compile(r"^(?:sha256|hmac-sha256):[0-9a-f]{64}$")
+_AUTHENTICATED_PACKAGE_DIGEST = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
 _RFC3339 = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
     r"(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
@@ -170,8 +175,10 @@ def validate_synapse_manifest(manifest: SynapseManifest) -> SynapseManifest:
         raise ValueError("capability_version must be semantic version x.y.z")
     if not isinstance(manifest.id, str) or not isinstance(manifest.description, str):
         raise ValueError("capability id and description must be strings")
-    if not manifest.id.strip() or not manifest.description.strip():
-        raise ValueError("capability id and description are required")
+    if _CAPABILITY_ID.fullmatch(manifest.id) is None:
+        raise ValueError("capability id must use canonical namespace:name syntax")
+    if not manifest.description.strip():
+        raise ValueError("capability description is required")
     _validate_schema(manifest.inputs, "inputs")
     _validate_schema(manifest.outputs, "outputs")
     _non_empty_strings(manifest.preconditions, "preconditions")
@@ -511,11 +518,20 @@ def _validate_provenance(value: ProvenanceContract) -> None:
     if value.generated and value.trust_state != "quarantined":
         raise ValueError("generated capabilities must remain quarantined")
     if value.package_digest is not None and (
-        not isinstance(value.package_digest, str) or not value.package_digest.strip()
+        not isinstance(value.package_digest, str)
+        or _PACKAGE_DIGEST.fullmatch(value.package_digest) is None
     ):
-        raise ValueError("package digest must be a non-empty string or null")
-    if value.trust_state == "signed" and not value.package_digest:
-        raise ValueError("signed capability requires a package digest")
+        raise ValueError(
+            "package digest must be sha256:<64 lowercase hex> or "
+            "hmac-sha256:<64 lowercase hex>"
+        )
+    if value.trust_state == "signed" and (
+        not value.package_digest
+        or _AUTHENTICATED_PACKAGE_DIGEST.fullmatch(value.package_digest) is None
+    ):
+        raise ValueError(
+            "signed capability requires authenticated HMAC-SHA256 package evidence"
+        )
 
 
 def _validate_schema(value: Mapping[str, Any], label: str) -> None:
