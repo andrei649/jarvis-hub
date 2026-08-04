@@ -403,6 +403,15 @@ def _check_forged_evidence_graph_is_rejected() -> None:
     assert forged_proposal.proposal_id == forged_proposal.expected_proposal_id
     with pytest.raises(ValueError, match="claims unknown observations"):
         validate_proposal_evidence(forged_proposal, (observation,))
+    with pytest.raises(ValueError, match="claims unknown observations"):
+        transition_lesson(
+            forged_proposal,
+            observations=(observation,),
+            to_lifecycle="rejected",
+            actor="episodes",
+            reason="forged evidence cannot reach a lifecycle sink",
+            occurred_at=460.0,
+        )
 
     # Claiming the real observations but inflating supporting evidence fails too.
     inflated = _forge(
@@ -450,6 +459,7 @@ def _check_forged_evidence_graph_is_rejected() -> None:
     # Advanced lifecycles are never rebuilt from a payload.
     accepted, _ = transition_lesson(
         proposal,
+        observations=(observation,),
         to_lifecycle="accepted_by_destination",
         actor="episodes",
         reason="destination validated the claim independently",
@@ -538,6 +548,7 @@ def _check_acceptance_requires_a_destination_owned_transition() -> None:
     with pytest.raises(ValueError, match="cannot promote its own"):
         transition_lesson(
             proposal,
+            observations=(observation,),
             to_lifecycle="accepted_by_destination",
             actor="reflection",
             reason="self promotion attempt",
@@ -549,6 +560,7 @@ def _check_acceptance_requires_a_destination_owned_transition() -> None:
     with pytest.raises(ValueError, match="actor must be the destination"):
         transition_lesson(
             proposal,
+            observations=(observation,),
             to_lifecycle="accepted_by_destination",
             actor="howard",
             reason="actor and destination disagree",
@@ -560,6 +572,7 @@ def _check_acceptance_requires_a_destination_owned_transition() -> None:
     with pytest.raises(ValueError, match="proposed destination"):
         transition_lesson(
             proposal,
+            observations=(observation,),
             to_lifecycle="accepted_by_destination",
             actor="howard",
             reason="wrong destination",
@@ -570,6 +583,7 @@ def _check_acceptance_requires_a_destination_owned_transition() -> None:
     with pytest.raises(ValueError, match="explicit destination"):
         transition_lesson(
             proposal,
+            observations=(observation,),
             to_lifecycle="accepted_by_destination",
             actor="episodes",
             reason="missing destination",
@@ -580,10 +594,12 @@ def _check_acceptance_requires_a_destination_owned_transition() -> None:
 def _check_lifecycle_audit_is_reversible_and_bound() -> None:
     """Transitions are audited, replacement-bound and exactly recoverable."""
 
-    proposal = _proposal(_confirmed())
+    observation = _confirmed()
+    proposal = _proposal(observation)
 
     accepted, event = transition_lesson(
         proposal,
+        observations=(observation,),
         to_lifecycle="accepted_by_destination",
         actor="episodes",
         reason="destination validated the claim independently",
@@ -606,6 +622,7 @@ def _check_lifecycle_audit_is_reversible_and_bound() -> None:
     # Supersession must name and retain the replacement on both records.
     superseded, supersede_event = transition_lesson(
         accepted,
+        observations=(observation,),
         to_lifecycle="superseded",
         actor="episodes",
         reason="a broader lesson replaced this one",
@@ -622,6 +639,7 @@ def _check_lifecycle_audit_is_reversible_and_bound() -> None:
     with pytest.raises(ValueError, match="supersedes_with_proposal_id"):
         transition_lesson(
             accepted,
+            observations=(observation,),
             to_lifecycle="superseded",
             actor="episodes",
             reason="missing replacement",
@@ -631,6 +649,7 @@ def _check_lifecycle_audit_is_reversible_and_bound() -> None:
     # Terminal states are terminal; a rejected proposal cannot be revived.
     rejected, _ = transition_lesson(
         proposal,
+        observations=(observation,),
         to_lifecycle="rejected",
         actor="episodes",
         reason="claim overfits one fixture",
@@ -639,6 +658,7 @@ def _check_lifecycle_audit_is_reversible_and_bound() -> None:
     with pytest.raises(ValueError, match="cannot move a rejected proposal"):
         transition_lesson(
             rejected,
+            observations=(observation,),
             to_lifecycle="accepted_by_destination",
             actor="episodes",
             reason="revival attempt",
@@ -650,6 +670,7 @@ def _check_lifecycle_audit_is_reversible_and_bound() -> None:
     with pytest.raises(ValueError, match="cannot expire before"):
         transition_lesson(
             proposal,
+            observations=(observation,),
             to_lifecycle="expired",
             actor="episodes",
             reason="premature expiry",
@@ -660,9 +681,11 @@ def _check_lifecycle_audit_is_reversible_and_bound() -> None:
 def _check_audit_events_cannot_self_assert_history() -> None:
     """A retained prior payload must be canonical and self-consistent."""
 
-    proposal = _proposal(_confirmed())
+    observation = _confirmed()
+    proposal = _proposal(observation)
     _, event = transition_lesson(
         proposal,
+        observations=(observation,),
         to_lifecycle="rejected",
         actor="episodes",
         reason="claim overfits one fixture",
@@ -747,6 +770,7 @@ def _check_audit_events_cannot_self_assert_history() -> None:
     # The recorded transition itself must be possible and correctly attributed.
     rejected, _ = transition_lesson(
         proposal,
+        observations=(observation,),
         to_lifecycle="rejected",
         actor="episodes",
         reason="claim overfits one fixture",
@@ -815,7 +839,8 @@ def _check_counter_evidence_is_retained() -> None:
 def _check_serialization_round_trip() -> None:
     """Canonical JSON is stable, sorted and never leaks the construction guard."""
 
-    proposal = _proposal(_confirmed())
+    observation = _confirmed()
+    proposal = _proposal(observation)
     payload = json.loads(proposal.to_json())
     assert payload["schema"] == "nerva.lesson.v1"
     assert payload["authority"] == "proposal_only"
@@ -825,6 +850,7 @@ def _check_serialization_round_trip() -> None:
 
     accepted, _ = transition_lesson(
         proposal,
+        observations=(observation,),
         to_lifecycle="accepted_by_destination",
         actor="episodes",
         reason="destination validated the claim independently",
