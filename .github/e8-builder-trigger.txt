@@ -1,3 +1,4 @@
 temporary trigger for bounded E8 builder correction; remove before review
 synchronize after PR runner installation
 synchronize after robust runner correction
+synchronize after deterministic block runner
