@@ -21,6 +21,7 @@ from agents.core.observability.benchmark import (
 )
 from agents.core.router import IntentRouter
 from tests import _nerva_benchmark_e9_0_base as _base_tests
+from tests._nerva_e9_1_checks import run_e9_1_checks
 
 # Preserve nine unchanged focused tests without collecting the private base
 # module separately. The structure-fingerprint test is repeated below with a
@@ -69,7 +70,13 @@ def _run_with(result, *, baseline_id):
     )
 
 
-def test_structure_fingerprint_ignores_volatile_values_but_not_contract_shape():
+def test_structure_fingerprint_ignores_volatile_values_but_not_contract_shape(
+    tmp_path,
+    monkeypatch,
+):
+    # Bounded Nerva E9.1 scheduled-reporting assertions; the E9.0 contract,
+    # store and runner below are unchanged.
+    run_e9_1_checks(tmp_path, monkeypatch)
     result = _base_tests._result_fixture()
     run = BenchmarkRun(
         suite_name="stable-shape",
