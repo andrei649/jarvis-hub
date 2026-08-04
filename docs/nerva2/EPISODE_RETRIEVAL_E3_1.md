@@ -41,12 +41,11 @@ boundary, test surface, and rollback:
 1. `agents/core/memory/episode_compare.py` — typed comparison input, result,
    canonical report, and deterministic question-derived Episode query;
 2. `tests/_nerva_e3_1_checks.py` — longitudinal, privacy, provenance, budget,
-   determinism, revision, and failure-isolation regressions;
-3. `tests/test_nerva_e3_1_query_parity.py` — focused oracle-query and canonical
+   revision, determinism, failure-isolation, oracle-query, and canonical
    query-parity regressions;
-4. `tests/test_h14_1_bitemporal_kg.py` — count-neutral invocation through the
+3. `tests/test_h14_1_bitemporal_kg.py` — count-neutral invocation through the
    established E2/E3 full-suite hook;
-5. this evidence document.
+4. this evidence document.
 
 Splitting these files would leave either an untested contract or tests without
 their declared evidence and rollback boundary.
@@ -205,7 +204,7 @@ fresh independent review.
 
 ## Rollback
 
-Revert the five-file E3.1 diff as one unit. This removes the comparison module,
+Revert the four-file E3.1 diff as one unit. This removes the comparison module,
 its focused checks, the H14.1 hook, and this document. Accepted E3.0, the
 existing memory evaluation harness, production recall, and stored data are
 unchanged; no migration or compensating action is required.
