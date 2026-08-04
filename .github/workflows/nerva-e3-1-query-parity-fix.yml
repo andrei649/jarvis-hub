@@ -1,0 +1,90 @@
+name: Nerva E3.1 query parity correction
+
+on:
+  push:
+    branches:
+      - nerva2/e3-1-longitudinal-retrieval-compare
+    paths:
+      - .github/workflows/nerva-e3-1-query-parity-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Apply bounded correction
+        shell: bash
+        run: |
+          cat > /tmp/apply_e3_1.py <<'PYCODE'
+          from __future__ import annotations
+
+          import base64
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label} expected once, found {count}")
+              return text.replace(old, new, 1)
+
+          module_path = Path("agents/core/memory/episode_compare.py")
+          module = module_path.read_text(encoding="utf-8")
+          module = replace_once(
+              module,
+              '_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")\n_CANONICAL_BASELINE_SOURCE = "memory.eval.run_recall_eval"\n_EPISODE_SOURCE = "episodes.retrieve_episodes"\n_DELTA_SOURCE = "episode-baseline"\n',
+              '_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")\n_QUESTION_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[-_:][A-Za-z0-9]+)*")\n_TITLE_PHRASE_RE = re.compile(\n    r"\\b(?:[A-Z][A-Za-z0-9]*(?:[-_:][A-Za-z0-9]+)*)(?:\\s+"\n    r"[A-Z][A-Za-z0-9]*(?:[-_:][A-Za-z0-9]+)*)+\\b"\n)\n_QUESTION_STOPWORDS = {\n    "a",\n    "an",\n    "and",\n    "are",\n    "as",\n    "at",\n    "be",\n    "by",\n    "did",\n    "do",\n    "does",\n    "for",\n    "from",\n    "how",\n    "in",\n    "is",\n    "it",\n    "of",\n    "on",\n    "or",\n    "the",\n    "to",\n    "was",\n    "were",\n    "what",\n    "when",\n    "where",\n    "which",\n    "who",\n    "why",\n    "with",\n}\n_CANONICAL_BASELINE_SOURCE = "memory.eval.run_recall_eval"\n_EPISODE_SOURCE = "episodes.retrieve_episodes.question_derived"\n_DELTA_SOURCE = "episode-baseline"\n',
+              'query constants',
+          )
+          module = replace_once(
+              module,
+              '    """Transient fixture input; canonical reports retain none of its text."""\n',
+              '    """Transient fixture input; canonical reports retain none of its text.\n\n    ``query`` is a separately labelled diagnostic selector. Canonical comparison\n    evidence never executes it, so manually authored or oracle-like selectors\n    cannot influence ``no_regression``.\n    """\n',
+              'case query documentation',
+          )
+          module = replace_once(
+              module,
+              '    """Compare both paths over identical cases and one explicit retrieval budget."""\n',
+              '    """Compare both paths using one budget and question-derived Episode queries."""\n',
+              'comparison documentation',
+          )
+          module = replace_once(
+              module,
+              '            raise ValueError(\n                "comparison Episode query limit must match the shared retrieval budget"\n            )\n',
+              '            raise ValueError(\n                "comparison diagnostic query limit must match the shared "\n                "retrieval budget"\n            )\n',
+              'diagnostic budget wording',
+          )
+          module = replace_once(
+              module,
+              '            matches = retrieve_episodes(case.records, case.query)\n',
+              '            canonical_query = _question_derived_query(case.question, top_k)\n            matches = retrieve_episodes(case.records, canonical_query)\n',
+              'canonical query execution',
+          )
+          module = replace_once(
+              module,
+              'def _baseline_results(\n',
+              'def _question_derived_query(question: str, limit: int) -> EpisodeQuery:\n    terms = _question_terms(question)\n    if not terms:\n        raise ValueError("comparison question cannot derive an Episode query")\n    return EpisodeQuery(situation_terms=terms, limit=limit)\n\n\ndef _question_terms(question: str) -> tuple[str, ...]:\n    normalized = _normalized_question(question)\n    compound = {\n        token.casefold()\n        for token in _QUESTION_TOKEN_RE.findall(question)\n        if any(separator in token for separator in "-_:")\n    }\n    title_phrases = {\n        " ".join(phrase.casefold().split())\n        for phrase in _TITLE_PHRASE_RE.findall(question)\n        if phrase.split()[0].casefold() not in _QUESTION_STOPWORDS\n    }\n    preferred = compound | title_phrases\n    if preferred:\n        return tuple(sorted(preferred))\n\n    fallback = {\n        token.casefold()\n        for token in _QUESTION_TOKEN_RE.findall(question)\n        if token.casefold() not in _QUESTION_STOPWORDS and len(token) >= 3\n    }\n    return tuple(sorted(term for term in fallback if term in normalized))\n\n\ndef _normalized_question(question: str) -> str:\n    return " ".join(question.casefold().strip().split())\n\n\ndef _baseline_results(\n',
+              'question-derived query helpers',
+          )
+          module_path.write_text(module, encoding="utf-8")
+
+          Path("tests/test_nerva_e3_1_query_parity.py").write_bytes(
+              base64.b64decode('IiIiUXVlcnktcGFyaXR5IHJlZ3Jlc3Npb25zIGZvciB0aGUgTmVydmEgRXBpc29kZXMgRTMuMSBjb21wYXJpc29uLiIiIgoKZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IGFzeW5jaW8KaW1wb3J0IHN5cwpmcm9tIGRhdGFjbGFzc2VzIGltcG9ydCByZXBsYWNlCmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKc3lzLnBhdGguaW5zZXJ0KDAsIHN0cihQYXRoKF9fZmlsZV9fKS5yZXNvbHZlKCkucGFyZW50KSkKCmZyb20gX25lcnZhX2UzXzFfY2hlY2tzIGltcG9ydCBfbG9uZ2l0dWRpbmFsX2Nhc2VzICAjIG5vcWE6IEU0MDIKZnJvbSBhZ2VudHMuY29yZS5tZW1vcnkuZXBpc29kZV9jb21wYXJlIGltcG9ydCAoICAjIG5vcWE6IEU0MDIKICAgIGNvbXBhcmVfZXBpc29kZV9yZXRyaWV2YWwsCikKZnJvbSBhZ2VudHMuY29yZS5tZW1vcnkuZXBpc29kZXMgaW1wb3J0IEVwaXNvZGVRdWVyeSAgIyBub3FhOiBFNDAyCgoKYXN5bmMgZGVmIF9wZXJmZWN0X2Jhc2VsaW5lKGNvcnB1cywgKiwgdG9wX2spOgogICAgcmV0dXJuIHsKICAgICAgICAidG9wX2siOiB0b3BfaywKICAgICAgICAicmVzdWx0cyI6IFsKICAgICAgICAgICAgewogICAgICAgICAgICAgICAgImlkIjogY2FzZS5pZCwKICAgICAgICAgICAgICAgICJwYXNzZWQiOiBUcnVlLAogICAgICAgICAgICAgICAgInJldHJpZXZlZCI6IGxpc3QoY2FzZS5mYWN0cylbOnRvcF9rXSwKICAgICAgICAgICAgfQogICAgICAgICAgICBmb3IgY2FzZSBpbiBjb3JwdXMKICAgICAgICBdLAogICAgfQoKCmFzeW5jIGRlZiBfcnVuX3F1ZXJ5X3Bhcml0eV9jaGVja3MoKSAtPiBOb25lOgogICAgaGFyYm9yID0gbmV4dCgKICAgICAgICBjYXNlCiAgICAgICAgZm9yIGNhc2UgaW4gX2xvbmdpdHVkaW5hbF9jYXNlcygpCiAgICAgICAgaWYgY2FzZS5jYXNlX2lkID09ICJzdGFibGUtaGFyYm9yLW91dGNvbWUiCiAgICApCiAgICBxdWVzdGlvbl9hbGlnbmVkID0gcmVwbGFjZSgKICAgICAgICBoYXJib3IsCiAgICAgICAgcXVlcnk9RXBpc29kZVF1ZXJ5KHNpdHVhdGlvbl90ZXJtcz0oInByb2plY3QgaGFyYm9yIiwpLCBsaW1pdD01KSwKICAgICkKICAgIG9yYWNsZV9kaWFnbm9zdGljID0gcmVwbGFjZSgKICAgICAgICBoYXJib3IsCiAgICAgICAgcXVlcnk9RXBpc29kZVF1ZXJ5KAogICAgICAgICAgICBvdXRjb21lX3JlY29yZF9pZHM9KCJvdXRjb21lOmhhcmJvci1ncmVlbiIsKSwKICAgICAgICAgICAgbGltaXQ9NSwKICAgICAgICApLAogICAgKQoKICAgIGFsaWduZWRfcmVwb3J0ID0gYXdhaXQgY29tcGFyZV9lcGlzb2RlX3JldHJpZXZhbCgKICAgICAgICBjYXNlcz0ocXVlc3Rpb25fYWxpZ25lZCwpLAogICAgICAgIGNvbXBhcmlzb25faWQ9ImUzLjEtcXVlcnktaW52YXJpYW5jZSIsCiAgICAgICAgYmFzZWxpbmVfcnVubmVyPV9wZXJmZWN0X2Jhc2VsaW5lLAogICAgICAgIGJhc2VsaW5lX3NvdXJjZT0idGVzdHMucGVyZmVjdF9iYXNlbGluZSIsCiAgICApCiAgICBvcmFjbGVfcmVwb3J0ID0gYXdhaXQgY29tcGFyZV9lcGlzb2RlX3JldHJpZXZhbCgKICAgICAgICBjYXNlcz0ob3JhY2xlX2RpYWdub3N0aWMsKSwKICAgICAgICBjb21wYXJpc29uX2lkPSJlMy4xLXF1ZXJ5LWludmFyaWFuY2UiLAogICAgICAgIGJhc2VsaW5lX3J1bm5lcj1fcGVyZmVjdF9iYXNlbGluZSwKICAgICAgICBiYXNlbGluZV9zb3VyY2U9InRlc3RzLnBlcmZlY3RfYmFzZWxpbmUiLAogICAgKQoKICAgIGFzc2VydCBhbGlnbmVkX3JlcG9ydC50b19qc29uKCkgPT0gb3JhY2xlX3JlcG9ydC50b19qc29uKCkKICAgIGFzc2VydCAoCiAgICAgICAgb3JhY2xlX3JlcG9ydC5lcGlzb2RlX2FjY3VyYWN5LnNvdXJjZQogICAgICAgID09ICJlcGlzb2Rlcy5yZXRyaWV2ZV9lcGlzb2Rlcy5xdWVzdGlvbl9kZXJpdmVkIgogICAgKQoKICAgIG9yYWNsZV9vbmx5ID0gcmVwbGFjZSgKICAgICAgICBoYXJib3IsCiAgICAgICAgcXVlc3Rpb249IldoYXQgaGFwcGVuZWQ/IiwKICAgICAgICBxdWVyeT1FcGlzb2RlUXVlcnkoCiAgICAgICAgICAgIG91dGNvbWVfcmVjb3JkX2lkcz0oIm91dGNvbWU6aGFyYm9yLWdyZWVuIiwpLAogICAgICAgICAgICBsaW1pdD01LAogICAgICAgICksCiAgICApCiAgICBmYWlsX2Nsb3NlZCA9IGF3YWl0IGNvbXBhcmVfZXBpc29kZV9yZXRyaWV2YWwoCiAgICAgICAgY2FzZXM9KG9yYWNsZV9vbmx5LCksCiAgICAgICAgY29tcGFyaXNvbl9pZD0iZTMuMS1vcmFjbGUtZmFpbC1jbG9zZWQiLAogICAgICAgIGJhc2VsaW5lX3J1bm5lcj1fcGVyZmVjdF9iYXNlbGluZSwKICAgICAgICBiYXNlbGluZV9zb3VyY2U9InRlc3RzLnBlcmZlY3RfYmFzZWxpbmUiLAogICAgKQoKICAgIGFzc2VydCBmYWlsX2Nsb3NlZC5iYXNlbGluZV9hY2N1cmFjeS52YWx1ZSA9PSAxLjAKICAgIGFzc2VydCBmYWlsX2Nsb3NlZC5lcGlzb2RlX2FjY3VyYWN5LnZhbHVlID09IDAuMAogICAgYXNzZXJ0IGZhaWxfY2xvc2VkLmNhc2VzWzBdLmVwaXNvZGVfbWF0Y2hfY291bnQgPT0gMAogICAgYXNzZXJ0IGZhaWxfY2xvc2VkLmVwaXNvZGVfd2luX2NvdW50ID09IDAKICAgIGFzc2VydCBmYWlsX2Nsb3NlZC5lcGlzb2RlX2xvc3NfY291bnQgPT0gMQogICAgYXNzZXJ0IGZhaWxfY2xvc2VkLm5vX3JlZ3Jlc3Npb24gaXMgRmFsc2UKCgpkZWYgdGVzdF9lM18xX2Nhbm9uaWNhbF9xdWVyeV9wYXJpdHkoKSAtPiBOb25lOgogICAgYXN5bmNpby5ydW4oX3J1bl9xdWVyeV9wYXJpdHlfY2hlY2tzKCkpCg==')
+          )
+          Path(".github/workflows/nerva-e3-1-query-parity-fix.yml").unlink()
+          PYCODE
+          python /tmp/apply_e3_1.py
+          python -m py_compile \
+            agents/core/memory/episode_compare.py \
+            tests/test_nerva_e3_1_query_parity.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(nerva): enforce E3.1 question-derived query parity"
+          git push origin HEAD:${{ github.ref_name }}
