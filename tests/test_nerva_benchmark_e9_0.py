@@ -10,9 +10,12 @@ from dataclasses import replace
 
 import pytest
 
+from agents.core.observability import _benchmark_e9_0_base as compatibility
 from agents.core.observability.benchmark import (
+    BenchmarkCriterion,
     BenchmarkHarness,
     BenchmarkRun,
+    BenchmarkStore,
     Measurement,
     current_router_runner,
 )
@@ -68,7 +71,7 @@ def _run_with(result, *, baseline_id):
     )
 
 
-async def test_run_round_trip_rejects_authority_or_summary_tampering():
+async def test_run_round_trip_rejects_authority_or_summary_tampering(tmp_path):
     await _base_tests.test_run_round_trip_rejects_authority_or_summary_tampering()
 
     result = _base_tests._result_fixture()
@@ -114,12 +117,58 @@ async def test_run_round_trip_rejects_authority_or_summary_tampering():
         "source": "baseline.runner",
     }
     payload["results"][0]["baseline_error_type"] = "TimeoutError"
-    with pytest.raises(ValueError, match="explicitly unmeasured skipped baseline"):
+    with pytest.raises(
+        ValueError,
+        match="explicitly unmeasured skipped baseline",
+    ):
         BenchmarkRun.from_json(json.dumps(payload))
+
+    # Stored evidence is bound to the complete immutable suite-case semantics,
+    # not only to case id, task and privacy metadata.
+    case = _base_tests._case()
+    store = BenchmarkStore(tmp_path)
+    version = store.save_suite("content-bound", [case], lane="ci")
+    run = await BenchmarkHarness(
+        _base_tests._candidate,
+        candidate_id="current-router",
+    ).run(
+        [case],
+        suite_name="content-bound",
+        suite_version=version,
+        lane="ci",
+        source_revision=_base_tests._REVISION,
+        run_id="run-content-bound",
+        now=_base_tests._clock,
+    )
+    suite_path = tmp_path / "suites" / "content-bound" / "v1.jsonl"
+
+    changed_prompt = replace(case, input_text="A different synthetic prompt")
+    suite_path.write_text(
+        json.dumps(changed_prompt.to_dict(lane="ci")) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="fingerprint must match"):
+        store.record_run(run)
+
+    changed_criterion = replace(
+        case,
+        criterion=BenchmarkCriterion("exact", "jarvis"),
+    )
+    suite_path.write_text(
+        json.dumps(changed_criterion.to_dict(lane="ci")) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="fingerprint must match"):
+        store.record_run(run)
 
 
 async def test_current_router_is_measurable_against_transparent_simple_baseline():
     await _base_tests.test_current_router_is_measurable_against_transparent_simple_baseline()
+
+    # The historical private import path re-exports the same canonical objects;
+    # import order cannot expose weaker symbols.
+    assert compatibility.BenchmarkRun is BenchmarkRun
+    assert compatibility.current_router_runner is current_router_runner
 
     calls = []
 
@@ -129,11 +178,17 @@ async def test_current_router_is_measurable_against_transparent_simple_baseline(
 
     configured = IntentRouter(config={}, llm_classifier=fallback)
     with pytest.raises(ValueError, match="llm_classifier=None"):
-        current_router_runner(configured, {"jarvis": object(), "vision": object()})
+        compatibility.current_router_runner(
+            configured,
+            {"jarvis": object(), "vision": object()},
+        )
     assert calls == []
 
     mutable = IntentRouter(config={})
-    runner = current_router_runner(mutable, {"jarvis": object(), "vision": object()})
+    runner = current_router_runner(
+        mutable,
+        {"jarvis": object(), "vision": object()},
+    )
     mutable.llm_classifier = fallback
     with pytest.raises(ValueError, match="llm_classifier=None"):
         await runner("an unmatched synthetic prompt")
