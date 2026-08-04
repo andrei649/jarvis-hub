@@ -10,13 +10,13 @@ This slice introduces the smallest reusable `nerva.benchmark.v1` substrate over 
 The implementation reuses:
 
 - `agents/core/observability/eval.py` for criterion scoring;
-- `agents/core/observability/datasets.py` path and versioning patterns;
-- the current `IntentRouter` as the first observed production-adjacent decision surface;
-- the existing CI/local/live distinction rather than inventing a new authority lane.
+- DatasetStore path and versioning patterns;
+- the current `IntentRouter` as the first production-adjacent surface;
+- existing CI/local/cloud distinctions rather than inventing an authority lane.
 
 ## Included contract
 
-`agents/core/observability/benchmark.py` defines:
+The public module `agents/core/observability/benchmark.py` exposes:
 
 - typed `BenchmarkCase`, `BenchmarkRun` and `BenchmarkResult` records under `nerva.benchmark.v1`;
 - explicit task, route, model, provider, host and hardware dimensions;
@@ -24,11 +24,14 @@ The implementation reuses:
 - honest `measured`, `not_measured`, `not_applicable` and `failed` states;
 - criterion-less cases as `unscored`, never fabricated passes;
 - privacy classes and allowed execution lanes;
-- a versioned JSONL suite store and append-only run evidence retaining negative and failed runs;
-- a transparent exact keyword/phrase baseline and an adapter that observes the existing router without changing its returned decision;
-- stable structural fingerprints that exclude run IDs, timestamps and measured values.
+- versioned JSONL suites and append-only positive, negative and failed run evidence;
+- a transparent exact keyword/phrase baseline;
+- a fail-closed deterministic adapter for the existing router;
+- stable structural fingerprints excluding run IDs, timestamps and measured values.
 
-Retained run evidence contains response digests and lengths, not raw response text or exception messages. Exception evidence is restricted to bounded canonical class identifiers such as `RuntimeError`; message-like, multiline and oversized values fail closed. Suite definitions retain fixture text because cases must be replayable; owner-private fixtures can be serialized and executed only in an explicit local lane.
+The mature contract mechanics remain in `_benchmark_e9_0_base.py`; the public facade adds the bounded cross-record and provenance corrections requested during independent review. This split preserves the already-reviewed implementation and one atomic rollback rather than rebuilding an equivalent parallel harness.
+
+Retained run evidence contains response digests and lengths, not raw response text or exception messages. Exception evidence is restricted to bounded canonical class identifiers. Message-like, multiline and oversized values fail closed.
 
 ## Privacy and execution lanes
 
@@ -36,27 +39,38 @@ Retained run evidence contains response digests and lengths, not raw response te
 |---|---:|---:|---:|---|
 | `synthetic_public` | caller-declared | caller-declared | caller-declared | Contains no owner data. |
 | `sanitized_public` | caller-declared | caller-declared | caller-declared | Sanitization remains an explicit producer responsibility. |
-| `owner_private_local` | denied | required | denied | Allowed lanes must be exactly `local`; serialization without an explicit local lane fails closed. |
+| `owner_private_local` | denied | required | denied | Allowed lanes must be exactly `local`. |
 
-The store validates the lane before creating a suite and again before recording run evidence. A run must cover the suite's case IDs exactly, and each retained result must preserve the stored case's immutable `task_type` and `privacy_class`. Reusing a valid case ID while changing either field is rejected before append.
+The store validates the lane before creating a suite and before recording run evidence. A run must cover the stored case IDs exactly, and every result must preserve the suite case's immutable `task_type` and `privacy_class`.
 
-## Retained measurement invariants
+## Retained evidence invariants
 
-Versioned result deserialization validates each metric at its own semantic boundary:
+Versioned construction and deserialization enforce:
 
-- quality, baseline quality and reliability are numeric `ratio` values in `[0, 1]` when measured;
-- latency is a finite non-negative numeric `ms` value;
-- cost is a finite non-negative numeric `usd` value;
-- privacy is one of the declared classification values and uses the `classification` unit;
-- resources use typed, uniquely named numeric measurements;
-- `failed` evidence carries a canonical source but no value or unit;
-- `passed`, `failed`, `unscored` and `error` states must agree with pass flags, candidate evidence and quality evidence;
-- candidate errors may retain only a canonical `error_type` and cannot claim candidate evidence;
-- baseline errors require absent baseline evidence, failed baseline-quality evidence and a canonical `baseline_error_type`.
+- quality, baseline quality and reliability are numeric ratios in `[0, 1]` when measured;
+- latency is finite non-negative `ms`;
+- cost is finite non-negative `usd`;
+- privacy uses one declared classification value;
+- resources are typed, numeric and uniquely named;
+- failed evidence carries a canonical source but no value or unit;
+- result status agrees with pass flags, candidate evidence and quality evidence;
+- candidate and baseline errors retain only canonical exception class identifiers;
+- baseline errors require absent baseline evidence and failed baseline-quality evidence;
+- `baseline_id=None` forbids retained baseline evidence, baseline errors and measured/failed baseline quality;
+- a declared `baseline_id` forbids `not_applicable` baseline quality;
+- candidate-error runs skip the baseline explicitly as `not_measured`; they cannot retain baseline evidence or a fabricated baseline failure.
 
-These checks apply on object construction and on JSON round trip, so arbitrary free text, mismatched units, out-of-range ratios and inconsistent status combinations cannot enter retained canonical evidence.
+These run-level rules prevent anonymous baselines and contradictory summary means.
 
-## Security and authority boundary
+## Router provenance boundary
+
+`current_router_runner()` is intentionally a deterministic adapter. It requires the router to expose `llm_classifier` and requires that value to be `None` both when the adapter is created and immediately before every classification.
+
+A configured or subsequently injected fallback therefore fails before `classify()` receives the fixture. An unexpected returned intent carrying `context.source == "llm_fallback"` is also rejected. Only after those checks may the adapter retain `model_id="none"`, `provider_id="local-deterministic"`, zero cost and `no_external_disclosure`.
+
+This is deliberately narrower than measuring an LLM-backed router. A future runner that evaluates an LLM path must supply trustworthy actual model, provider, privacy and cost provenance rather than reuse this adapter.
+
+## Security and authority
 
 Every `BenchmarkRun` is fixed to:
 
@@ -68,32 +82,30 @@ can_execute = false
 can_mark_complete = false
 ```
 
-Deserialization rejects modified authority flags and summary drift. Benchmark code has no production-routing mutation path and does not import the Action Kernel, task worker, promotion path or approval queue. Ultron / `nerva.action.v1` remains the sole privileged-action authority.
-
-The router adapter calls the existing `classify()` method and records the returned primary route. It does not wrap, replace or update the production router. The simple baseline is deliberately transparent and deterministic; benchmark results may inform a later reviewed proposal but cannot apply one.
+Deserialization rejects modified authority flags and summary drift. Benchmark code has no production-routing mutation path and does not import the Action Kernel, worker, promotion path or approval queue. Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 
 ## Test evidence in this slice
 
-`tests/test_nerva_benchmark_e9_0.py` covers:
+`tests/test_nerva_benchmark_e9_0.py` preserves the twelve-test focused surface and covers:
 
-- case/run schema round trips and digest, authority and summary tamper rejection;
+- case/run round trips plus digest, authority and summary tamper rejection;
 - owner-private local-only enforcement before storage;
 - separate candidate/baseline route, model, provider, host and hardware evidence;
-- criterion-less unscored behavior;
-- negative and runner-error retention without exception-message leakage;
-- hostile exception-type deserialization and error/baseline semantic drift;
-- metric-specific type, unit, range, privacy-classification and failed-state rejection;
-- typed and unique resource evidence;
-- exact suite/run case coverage plus task/privacy metadata binding;
+- criterion-less, negative and runner-error behavior;
+- exception-message exclusion and hostile exception-type deserialization;
+- metric-specific types, units, ranges and failed-state semantics;
+- typed resource evidence and exact suite/result metadata binding;
 - path escape and non-finite measurement rejection;
-- stable result-structure fingerprints;
-- the real current `IntentRouter` measured against a transparent keyword baseline on privacy-safe route fixtures.
+- stable structural fingerprints;
+- current-router comparison against a transparent simple baseline;
+- configured and post-construction LLM fallbacks rejected without invocation;
+- anonymous baseline evidence, declared/not-applicable baselines and fabricated skipped-baseline failures rejected on round trip.
 
-CI evidence is software evidence only. It is not owner-hardware, cloud-provider, energy, live reliability or migration proof.
+The unchanged tests live in `_nerva_benchmark_e9_0_base.py`; the public test module overrides the two reviewed surfaces while preserving the canonical collection count. CI remains software evidence only, not owner-hardware, provider, energy or live-workflow proof.
 
 ## Documentation consistency
 
-The twelve focused tests change the repository's canonical backend-test count. `project-status.json`, `README.md`, `NERVA.md`, `GO_LIVE_PLAN.md` and `STATUS.md` are refreshed in this PR by the existing `scripts/status_sync.py` generator. These five files are mechanical status outputs coupled to the same test surface and rollback; they do not add another feature, epic or authority change.
+The focused collection remains **twelve tests**, so the five generated status surfaces already present in this PR remain numerically correct. `project-status.json`, `README.md`, `NERVA.md`, `GO_LIVE_PLAN.md` and `STATUS.md` continue to report backend count `5,767`. No additional status-count churn is required for this correction.
 
 ## Explicit exclusions
 
@@ -102,25 +114,32 @@ This package does **not** add:
 - automatic model, provider, route or capability migration;
 - production routing changes or scored-selector authority;
 - cloud execution or owner-private fixture upload;
-- nightly scheduling, dashboards or migration recommendations;
-- E12 calibration, ablation or advanced-method adoption claims;
-- Synapse acquisition binding or capability promotion;
+- nightly scheduling, dashboards or recommendations;
+- E12 calibration or advanced-method adoption claims;
+- Synapse acquisition, promotion or privileged action;
 - owner-live reliability, energy or real-workflow value claims.
 
 ## Residual risks
 
-- fixture sensitivity classification cannot be inferred perfectly from free text;
-- response digests remain linkable evidence and should not encode secrets through predictable fixtures;
-- JSONL append operations are local-process primitives, not a distributed transaction system;
-- the first baseline is intentionally simple and validates the contract, not router superiority;
-- latency from the in-process adapter includes harness overhead and is not a hardware benchmark;
-- provider, cost, energy and live reliability remain unknown until a separately governed runner supplies measured evidence;
-- a benchmark recommendation still requires normal review, policy and rollback evidence before any production change.
+- fixture sensitivity classification remains a producer responsibility;
+- response digests remain linkable and unsuitable for predictable secrets;
+- JSONL append is a local-process primitive, not a distributed transaction log;
+- the first baseline validates the contract rather than proving router superiority;
+- in-process latency includes harness overhead;
+- provider, cost, energy and live reliability remain unknown for non-deterministic runners;
+- the compatibility facade/base split must be kept together until a later no-behavior-change consolidation is independently justified.
 
 ## Rollback
 
-Revert the three E9.0 source/test/document files together with the five mechanically generated status surfaces. This removes the benchmark contract and restores the prior canonical test-count metadata. Existing `EvalHarness`, `DatasetStore`, reality harness, current router and stored runtime data remain unchanged. No migration or compensating action is required.
+Revert together:
+
+- `benchmark.py` and `_benchmark_e9_0_base.py`;
+- `test_nerva_benchmark_e9_0.py` and `_nerva_benchmark_e9_0_base.py`;
+- this document;
+- the five mechanically generated status surfaces already included in the E9.0 candidate.
+
+That atomic revert removes the benchmark contract and restores prior status metadata. Existing evaluation code, current routing and production data remain unchanged; no migration or compensating action is required.
 
 ## Next coherent package
 
-After independent acceptance, use `nerva.benchmark.v1` in one separate E9.1 package to persist a bounded current-router/Cortex shadow suite through the existing scheduled evaluation lane and report regressions without changing production routing. Synapse acquisition binding may consume the accepted benchmark contract in its own independently reversible E8 package; it must remain quarantined and cannot bundle promotion or action authority.
+After independent acceptance, E9.1 may persist one bounded current-router/Cortex shadow suite through the existing scheduled evaluation lane and report regressions without changing production routing. Synapse acquisition binding remains a separate E8 package and must preserve quarantine.
