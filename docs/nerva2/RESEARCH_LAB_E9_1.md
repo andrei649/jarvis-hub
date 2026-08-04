@@ -80,7 +80,15 @@ byte-identical JSON.
 
 `missing_prerequisites()` checks the declared software prerequisites — the
 router import, construction, and the deterministic (`llm_classifier is None`)
-lane. When any is missing, or the source revision cannot be resolved, the CLI:
+lane.
+
+The source revision is supplied explicitly (`--revision`) or through
+`NERVA_SOURCE_REVISION` / `GITHUB_SHA`. It is deliberately **never discovered by
+shelling out to git**: a report that cannot name its exact revision is not
+evidence, so the run fails instead of guessing, and the package carries no
+subprocess surface.
+
+When a prerequisite is missing, or the source revision cannot be resolved, the CLI:
 
 - writes a visible `### Nerva E9.1 — FAILED` block to the job summary;
 - exits with code `2`;

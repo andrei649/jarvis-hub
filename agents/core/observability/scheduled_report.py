@@ -15,9 +15,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import platform
-import subprocess
 import sys
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -197,15 +198,29 @@ class RegressionReport:
         )
 
     def to_markdown(self) -> str:
+        title = (
+            f"### Nerva E9.1 scheduled shadow report — "
+            f"`{self.suite_name}` v{self.suite_version}"
+        )
+        identities = (
+            f"- candidate: `{self.candidate_id}` · "
+            f"baseline: `{self.baseline_id or 'none'}`"
+        )
+        runner = (
+            f"- runner: `{self.environment.runner_id}` "
+            f"({self.environment.platform}, py{self.environment.python_version})"
+        )
+        disclaimer = (
+            "This report is evaluation-only. It does not change routing, "
+            "promote a capability, or claim owner-hardware performance."
+        )
+
         lines = [
-            f"### Nerva E9.1 scheduled shadow report — `{self.suite_name}` "
-            f"v{self.suite_version}",
+            title,
             "",
             f"- run: `{self.run_id}` · revision: `{self.source_revision}`",
-            f"- candidate: `{self.candidate_id}` · baseline: "
-            f"`{self.baseline_id or 'none'}`",
-            f"- runner: `{self.environment.runner_id}` "
-            f"({self.environment.platform}, py{self.environment.python_version})",
+            identities,
+            runner,
             f"- hardware profile: `{self.environment.hardware_profile}`",
             f"- previous run: `{self.previous_run_id or 'none'}`",
             "",
@@ -213,20 +228,17 @@ class RegressionReport:
             "| --- | --- | --- | --- | --- |",
         ]
         for comparison in self.comparisons:
-            lines.append(
-                f"| {comparison.metric} | {comparison.status} | "
-                f"{_render(comparison.current)} | {_render(comparison.previous)} | "
-                f"{_render(comparison.delta)} |"
+            row = (
+                f"| {comparison.metric} | {comparison.status} "
+                f"| {_render(comparison.current)} "
+                f"| {_render(comparison.previous)} "
+                f"| {_render(comparison.delta)} |"
             )
-        lines.extend(
-            [
-                "",
-                f"Totals: {json.dumps(self.totals, sort_keys=True)}",
-                "",
-                "This report is evaluation-only. It does not change routing, "
-                "promote a capability, or claim owner-hardware performance.",
-            ]
-        )
+            lines.append(row)
+        lines.append("")
+        lines.append(f"Totals: {json.dumps(self.totals, sort_keys=True)}")
+        lines.append("")
+        lines.append(disclaimer)
         return "\n".join(lines)
 
 
@@ -256,25 +268,33 @@ def missing_prerequisites() -> tuple[str, ...]:
     return tuple(missing)
 
 
-def source_revision(explicit: str | None = None) -> str:
-    """Bind the report to an exact code revision, or fail honestly."""
+#: Environment variables consulted, in order, when no revision is passed.
+REVISION_ENV_VARS = ("NERVA_SOURCE_REVISION", "GITHUB_SHA")
+
+
+def source_revision(
+    explicit: str | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    """Bind the report to an exact code revision, or fail honestly.
+
+    The revision is supplied explicitly or through the environment. It is never
+    discovered by shelling out: a report that cannot name its exact revision is
+    not evidence, so the run fails rather than guessing.
+    """
 
     if explicit:
         return explicit
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except Exception as exc:
-        raise PrerequisiteError(f"cannot resolve source revision: {exc}") from exc
-    revision = result.stdout.strip()
-    if result.returncode != 0 or not revision:
-        raise PrerequisiteError("cannot resolve source revision from git")
-    return revision
+    source = os.environ if env is None else env
+    for name in REVISION_ENV_VARS:
+        value = (source.get(name) or "").strip()
+        if value:
+            return value
+    raise PrerequisiteError(
+        "cannot resolve source revision: pass --revision or set "
+        + " or ".join(REVISION_ENV_VARS)
+    )
 
 
 def ensure_suite(store: BenchmarkStore) -> int:

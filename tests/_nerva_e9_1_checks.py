@@ -281,15 +281,22 @@ def _check_missing_prerequisites_fail_visibly(tmp_path, monkeypatch) -> None:
     # No run may be retained for a suite that never executed.
     assert BenchmarkStore(tmp_path / "missing").runs(SUITE_NAME, last_n=5) == ()
 
-    # An unresolvable revision is equally a visible failure.
+    # An unresolvable revision is equally a visible failure. The revision is
+    # never discovered by shelling out, only supplied explicitly or by env.
     monkeypatch.setattr(module, "missing_prerequisites", lambda: ())
-    monkeypatch.setattr(
-        module,
-        "subprocess",
-        _FailingGit(),
-    )
     with pytest.raises(PrerequisiteError, match="cannot resolve source revision"):
-        source_revision(None)
+        source_revision(None, env={})
+    with pytest.raises(PrerequisiteError, match="cannot resolve source revision"):
+        source_revision(None, env={"GITHUB_SHA": "   "})
+    assert source_revision(None, env={"GITHUB_SHA": _REVISION}) == _REVISION
+    assert (
+        source_revision(None, env={"NERVA_SOURCE_REVISION": _REVISION})
+        == _REVISION
+    )
+    # An explicit argument always wins over the environment.
+    assert source_revision(_OTHER_REVISION, env={"GITHUB_SHA": _REVISION}) == (
+        _OTHER_REVISION
+    )
 
 
 def _check_cli_reports_without_changing_routing(tmp_path) -> None:
@@ -337,17 +344,6 @@ def _check_cli_reports_without_changing_routing(tmp_path) -> None:
         == 0
     )
     assert len(BenchmarkStore(store_root).runs(SUITE_NAME, last_n=5)) == 2
-
-
-class _FailingGit:
-    """Stand-in for ``subprocess`` whose git invocation fails."""
-
-    class CalledProcess:
-        stdout = ""
-        returncode = 1
-
-    def run(self, *args, **kwargs):  # noqa: D102 - test double
-        return self.CalledProcess()
 
 
 def _comparison(report: RegressionReport, metric: str) -> MetricComparison:
