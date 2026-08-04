@@ -196,6 +196,65 @@ def _check_ineligible_evidence_is_retained_with_its_classification() -> None:
             tombstoned=True,
         )
 
+    # The exclusion reason must agree with the tombstone state in BOTH
+    # directions, so a live unresolved reference cannot be relabelled deleted.
+    with pytest.raises(ValueError, match="reason must match the tombstone state"):
+        OutcomeVerdict(
+            reference_id="episode:ref:live0000000000000000",
+            eligible=False,
+            matched=None,
+            exclusion_reason="tombstoned",
+            privacy_class="personal",
+            tombstoned=False,
+        )
+    with pytest.raises(ValueError, match="reason must match the tombstone state"):
+        OutcomeVerdict(
+            reference_id="episode:ref:dead0000000000000000",
+            eligible=False,
+            matched=None,
+            exclusion_reason="no_verdict",
+            privacy_class="personal",
+            tombstoned=True,
+        )
+
+
+def _check_partial_evidence_fails_closed() -> None:
+    """One unresolved reference makes the whole comparison insufficient."""
+
+    ok = _reference("outcome", "outcome-ok", 200.0)
+    unresolved = _reference("outcome", "outcome-unresolved", 210.0)
+    deleted = _reference(
+        "outcome", "outcome-deleted", 220.0, tombstoned=True, deleted_at=250.0
+    )
+
+    # A confirmed reference alongside a live unjudged one is NOT a confirmation.
+    mixed = _observation({ok.reference_id: True}, (ok, unresolved))
+    assert mixed.comparison_status == "insufficient_evidence"
+    assert {verdict.reference_id for verdict in mixed.excluded_verdicts} == {
+        unresolved.reference_id
+    }
+
+    # The same holds when the unusable reference is deleted rather than unjudged.
+    with_deleted = _observation({ok.reference_id: True}, (ok, deleted))
+    assert with_deleted.comparison_status == "insufficient_evidence"
+
+    # Mixed refutation is equally inconclusive.
+    mixed_refuted = _observation({ok.reference_id: False}, (ok, unresolved))
+    assert mixed_refuted.comparison_status == "insufficient_evidence"
+
+    # Partial evidence can never feed a proposal.
+    with pytest.raises(ValueError, match="confirmed supporting reference"):
+        _proposal(mixed)
+
+    # A verdict cannot be reported alongside unresolved evidence by construction.
+    confirmed = _observation({ok.reference_id: True}, (ok,))
+    with pytest.raises(ValueError, match="alongside unresolved evidence"):
+        replace(
+            mixed,
+            comparison_status="confirmed",
+            observation_id=confirmed.observation_id,
+        )
+
 
 def _check_deterministic_fingerprints() -> None:
     """The same evidence yields identical observation and proposal fingerprints."""
@@ -361,6 +420,32 @@ def _check_forged_evidence_graph_is_rejected() -> None:
     # A well-formed payload round-trips only when its graph validates.
     restored = load_lesson_proposal(json.loads(proposal.to_json()), (observation,))
     assert restored.replay_fingerprint == proposal.replay_fingerprint
+
+    # The loader rejects forged authority and contradictory state rather than
+    # discarding those fields and rebuilding a safe-looking record.
+    for changes, expected in (
+        ({"can_authorize": True}, "not a canonical proposed record"),
+        ({"can_promote_lesson": True}, "not a canonical proposed record"),
+        ({"authority": "privileged_action"}, "not a canonical proposed record"),
+        ({"accepted_by": "episodes", "accepted_at": 401.0}, "cannot carry accepted_by"),
+        ({"prior_fingerprint": "b" * 64}, "cannot carry prior_fingerprint"),
+        (
+            {"superseded_by_proposal_id": "reflection:lesson:other"},
+            "cannot carry superseded_by_proposal_id",
+        ),
+        ({"unexpected_key": "smuggled"}, "not a canonical proposed record"),
+        ({"guard": "smuggled"}, "not a canonical proposed record"),
+    ):
+        tampered = dict(json.loads(proposal.to_json()))
+        tampered.update(changes)
+        with pytest.raises(ValueError, match=expected):
+            load_lesson_proposal(tampered, (observation,))
+
+    # A missing field is rejected too, rather than defaulted.
+    truncated = dict(json.loads(proposal.to_json()))
+    del truncated["review_at"]
+    with pytest.raises(ValueError):
+        load_lesson_proposal(truncated, (observation,))
 
     # Advanced lifecycles are never rebuilt from a payload.
     accepted, _ = transition_lesson(
@@ -627,6 +712,77 @@ def _check_audit_events_cannot_self_assert_history() -> None:
     with pytest.raises(ValueError, match="contradicts prior_revision"):
         _rebuild(prior_revision=7)
 
+    # Altering any OTHER prior field and recomputing the hash is still rejected,
+    # even though proposal_id, lifecycle, revision and schema stay untouched.
+    def _tamper(**changes) -> tuple[str, str]:
+        tampered = dict(json.loads(prior))
+        tampered.update(changes)
+        tampered_json = json.dumps(
+            tampered, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        return tampered_json, _sha256(tampered_json)
+
+    # Forged authority flag.
+    payload_json, digest = _tamper(can_authorize=True)
+    with pytest.raises(ValueError, match="not a canonical lesson revision"):
+        _rebuild(prior_payload_json=payload_json, prior_fingerprint=digest)
+
+    # Forged acceptance evidence on a proposed-state revision.
+    payload_json, digest = _tamper(accepted_by="episodes", accepted_at=401.0)
+    with pytest.raises(ValueError, match="not a valid lesson revision"):
+        _rebuild(prior_payload_json=payload_json, prior_fingerprint=digest)
+
+    # Rewritten claim, which no longer derives the recorded proposal_id.
+    payload_json, digest = _tamper(claim="A different lesson was learned.")
+    with pytest.raises(ValueError, match="not a valid lesson revision"):
+        _rebuild(prior_payload_json=payload_json, prior_fingerprint=digest)
+
+    # Rewritten evidence graph.
+    payload_json, digest = _tamper(
+        supporting_reference_ids=["episode:ref:invented000000000000000"]
+    )
+    with pytest.raises(ValueError, match="not a valid lesson revision"):
+        _rebuild(prior_payload_json=payload_json, prior_fingerprint=digest)
+
+    # The recorded transition itself must be possible and correctly attributed.
+    rejected, _ = transition_lesson(
+        proposal,
+        to_lifecycle="rejected",
+        actor="episodes",
+        reason="claim overfits one fixture",
+        occurred_at=460.0,
+    )
+    with pytest.raises(ValueError, match="impossible transition"):
+        LessonAuditEvent(
+            proposal_id=rejected.proposal_id,
+            from_lifecycle="rejected",
+            to_lifecycle="expired",
+            actor="episodes",
+            reason="reviving a terminal state",
+            occurred_at=700.0,
+            prior_revision=rejected.revision,
+            prior_fingerprint=rejected.replay_fingerprint,
+            prior_payload_json=rejected.to_json(),
+        )
+    with pytest.raises(ValueError, match="cannot record a self-promotion"):
+        _rebuild(
+            to_lifecycle="accepted_by_destination",
+            actor="reflection",
+            destination="episodes",
+        )
+    with pytest.raises(ValueError, match="actor must be the destination"):
+        _rebuild(
+            to_lifecycle="accepted_by_destination",
+            actor="howard",
+            destination="episodes",
+        )
+    with pytest.raises(ValueError, match="destination was never proposed"):
+        _rebuild(
+            to_lifecycle="accepted_by_destination",
+            actor="howard",
+            destination="howard",
+        )
+
 
 def _check_counter_evidence_is_retained() -> None:
     """Contradictions survive as counter-evidence instead of being discarded."""
@@ -686,6 +842,7 @@ def run_e6_0_checks() -> None:
 
     _check_four_comparison_paths()
     _check_ineligible_evidence_is_retained_with_its_classification()
+    _check_partial_evidence_fails_closed()
     _check_deterministic_fingerprints()
     _check_immutability_and_authority()
     _check_insufficient_evidence_cannot_produce_a_proposal()

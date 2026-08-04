@@ -146,8 +146,13 @@ class OutcomeVerdict:
             raise ValueError("Reflection ineligible verdict cannot carry a match")
         if self.exclusion_reason not in _ALLOWED_EXCLUSION_REASONS:
             raise ValueError("Reflection exclusion reason is not recognized")
-        if self.tombstoned and self.exclusion_reason != "tombstoned":
-            raise ValueError("Reflection tombstoned evidence needs a tombstone reason")
+        # The reason must agree with the tombstone state in both directions, so
+        # a live unresolved reference cannot be relabelled as deleted evidence.
+        expected_reason = "tombstoned" if self.tombstoned else "no_verdict"
+        if self.exclusion_reason != expected_reason:
+            raise ValueError(
+                "Reflection exclusion reason must match the tombstone state"
+            )
 
 
 @dataclass(frozen=True)
@@ -262,6 +267,13 @@ class OutcomeObservation:
                 )
 
         eligible = self.eligible_verdicts
+        # Fail closed on partial evidence: any retained reference that is
+        # unresolved or deleted forces ``insufficient_evidence``. A comparison
+        # never reports a verdict over evidence it could not fully evaluate.
+        if self.excluded_verdicts and self.comparison_status != "insufficient_evidence":
+            raise ValueError(
+                "Reflection cannot report a verdict alongside unresolved evidence"
+            )
         if self.comparison_status in {"confirmed", "refuted"} and not eligible:
             raise ValueError(
                 "Reflection cannot confirm or refute without eligible outcome evidence"
@@ -270,9 +282,13 @@ class OutcomeObservation:
             raise ValueError(
                 "Reflection contradictory status requires at least two eligible outcomes"
             )
-        if self.comparison_status == "insufficient_evidence" and eligible:
+        if (
+            self.comparison_status == "insufficient_evidence"
+            and eligible
+            and not self.excluded_verdicts
+        ):
             raise ValueError(
-                "Reflection insufficient_evidence conflicts with eligible evidence"
+                "Reflection insufficient_evidence conflicts with complete evidence"
             )
         matches = {verdict.matched for verdict in eligible}
         if self.comparison_status == "confirmed" and matches != {True}:
@@ -592,17 +608,49 @@ class LessonAuditEvent:
         if payload.get("schema") != "nerva.lesson.v1":
             raise ValueError("Reflection audit prior payload is not a lesson record")
 
-        if self.to_lifecycle == "accepted_by_destination" and self.destination is None:
-            raise ValueError("Reflection audit acceptance requires a destination")
+        # Validate the complete prior payload as a canonical proposal revision.
+        # Re-serializing the rebuilt record must reproduce the retained bytes
+        # exactly, so no field — claim, evidence, authority flag, chronology or
+        # acceptance state — can be altered and re-hashed into fake history.
+        try:
+            prior = _rebuild_proposal(payload)
+        except ValueError as exc:
+            raise ValueError(
+                f"Reflection audit prior payload is not a valid lesson revision: {exc}"
+            ) from exc
+        if prior.to_json() != self.prior_payload_json:
+            raise ValueError(
+                "Reflection audit prior payload is not a canonical lesson revision"
+            )
+
+        # Validate the recorded transition itself, not only its endpoints.
+        if self.to_lifecycle not in _ALLOWED_TRANSITIONS[self.from_lifecycle]:
+            raise ValueError("Reflection audit records an impossible transition")
+        if self.occurred_at < prior.created_at:
+            raise ValueError("Reflection audit cannot precede proposal creation")
+
+        if self.to_lifecycle == "accepted_by_destination":
+            if self.destination is None:
+                raise ValueError("Reflection audit acceptance requires a destination")
+            if self.destination not in prior.proposed_destinations:
+                raise ValueError("Reflection audit destination was never proposed")
+            if self.actor.strip().casefold() in _FORBIDDEN_PROMOTION_ACTORS:
+                raise ValueError("Reflection audit cannot record a self-promotion")
+            if self.actor.strip().casefold() != self.destination:
+                raise ValueError("Reflection audit actor must be the destination")
         if (
             self.destination is not None
             and self.destination not in _ALLOWED_DESTINATIONS
         ):
             raise ValueError("Reflection audit destination is not recognized")
+        if self.to_lifecycle == "expired" and self.occurred_at < prior.expires_at:
+            raise ValueError("Reflection audit cannot expire before expires_at")
         if self.to_lifecycle == "superseded":
             _require_non_empty(
                 self.replacement_proposal_id, "audit replacement_proposal_id"
             )
+            if self.replacement_proposal_id == self.proposal_id:
+                raise ValueError("Reflection audit replacement cannot be the proposal")
         elif self.replacement_proposal_id is not None:
             raise ValueError("Reflection audit replacement is only valid on supersession")
 
@@ -610,6 +658,55 @@ class LessonAuditEvent:
         """Return the validated exact prior payload so transitions stay reversible."""
 
         return json.loads(self.prior_payload_json)
+
+
+def _rebuild_proposal(payload: Mapping[str, Any]) -> LessonProposal:
+    """Rebuild a proposal from a payload using fixed authority values.
+
+    Authority flags, schema and the derived identifier are never taken from the
+    payload; they are recomputed. Callers compare the rebuilt record's canonical
+    JSON with the supplied bytes, so any forged or unknown field is detected.
+    """
+
+    if not isinstance(payload, Mapping):
+        raise ValueError("Reflection proposal payload must be a mapping")
+    confidence_payload = payload.get("confidence")
+    if not isinstance(confidence_payload, Mapping):
+        raise ValueError("Reflection proposal payload requires qualified confidence")
+    if set(confidence_payload) != {"status", "value", "source"}:
+        raise ValueError("Reflection proposal confidence has unexpected fields")
+
+    return LessonProposal(
+        proposal_id=payload.get("proposal_id"),
+        claim=payload.get("claim"),
+        scope=payload.get("scope"),
+        observation_ids=_as_string_tuple(payload.get("observation_ids")),
+        supporting_reference_ids=_as_string_tuple(
+            payload.get("supporting_reference_ids")
+        ),
+        counter_reference_ids=_as_string_tuple(payload.get("counter_reference_ids")),
+        confidence=AtlasConfidence(
+            status=confidence_payload.get("status"),
+            value=confidence_payload.get("value"),
+            source=confidence_payload.get("source"),
+        ),
+        applicability=_as_string_tuple(payload.get("applicability")),
+        proposed_destinations=_as_string_tuple(payload.get("proposed_destinations")),
+        contradicts_proposal_ids=_as_string_tuple(
+            payload.get("contradicts_proposal_ids")
+        ),
+        privacy_class=payload.get("privacy_class"),
+        lifecycle=payload.get("lifecycle"),
+        revision=payload.get("revision"),
+        created_at=payload.get("created_at"),
+        review_at=payload.get("review_at"),
+        expires_at=payload.get("expires_at"),
+        accepted_by=payload.get("accepted_by"),
+        accepted_at=payload.get("accepted_at"),
+        superseded_by_proposal_id=payload.get("superseded_by_proposal_id"),
+        prior_fingerprint=payload.get("prior_fingerprint"),
+        guard=_TRANSITION_GUARD,
+    )
 
 
 def compare_outcome(
@@ -677,7 +774,10 @@ def compare_outcome(
     verdicts.sort(key=lambda verdict: verdict.reference_id)
 
     matches = [verdict.matched for verdict in verdicts if verdict.eligible]
-    if not matches:
+    excluded = [verdict for verdict in verdicts if not verdict.eligible]
+    # Partial evidence is never summarised as a verdict. One unresolved or
+    # deleted reference is enough to make the whole comparison insufficient.
+    if not matches or excluded:
         status: ComparisonStatus = "insufficient_evidence"
     elif len(set(matches)) > 1:
         status = "contradictory"
@@ -881,36 +981,16 @@ def load_lesson_proposal(
         raise ValueError(
             "Reflection deserialization only accepts the proposed lifecycle"
         )
-    confidence_payload = payload.get("confidence")
-    if not isinstance(confidence_payload, Mapping):
-        raise ValueError("Reflection proposal payload requires qualified confidence")
 
-    proposal = LessonProposal(
-        proposal_id=str(payload.get("proposal_id", "")),
-        claim=str(payload.get("claim", "")),
-        scope=str(payload.get("scope", "")),
-        observation_ids=_as_string_tuple(payload.get("observation_ids")),
-        supporting_reference_ids=_as_string_tuple(
-            payload.get("supporting_reference_ids")
-        ),
-        counter_reference_ids=_as_string_tuple(payload.get("counter_reference_ids")),
-        confidence=AtlasConfidence(
-            status=confidence_payload.get("status"),
-            value=confidence_payload.get("value"),
-            source=confidence_payload.get("source"),
-        ),
-        applicability=_as_string_tuple(payload.get("applicability")),
-        proposed_destinations=_as_string_tuple(payload.get("proposed_destinations")),
-        contradicts_proposal_ids=_as_string_tuple(
-            payload.get("contradicts_proposal_ids")
-        ),
-        privacy_class=payload.get("privacy_class"),
-        lifecycle="proposed",
-        revision=payload.get("revision"),
-        created_at=payload.get("created_at"),
-        review_at=payload.get("review_at"),
-        expires_at=payload.get("expires_at"),
-    )
+    proposal = _rebuild_proposal(payload)
+    # The rebuilt record recomputes schema, authority flags and the derived
+    # identifier. Requiring byte-identical canonical JSON therefore rejects
+    # forged authority, contradictory acceptance state, unknown keys, missing
+    # keys and unsorted collections instead of silently normalizing them.
+    if proposal.to_json() != _canonical_json(dict(payload)):
+        raise ValueError(
+            "Reflection proposal payload is not a canonical proposed record"
+        )
     validate_proposal_evidence(proposal, observations)
     return proposal
 

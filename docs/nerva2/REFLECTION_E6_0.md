@@ -68,6 +68,12 @@ confirmed | refuted | contradictory | insufficient_evidence
 status must agree with the verdicts it summarizes — a `confirmed` observation
 whose evidence does not match is rejected.
 
+**Partial evidence is never summarised as a verdict.** If any retained
+reference is unresolved or deleted, the whole comparison is
+`insufficient_evidence`, even when other references were judged. One confirmed
+outcome plus one unjudged live outcome is *not* a confirmation, and such an
+observation cannot feed `propose_lesson()`.
+
 ### `nerva.lesson.v1` — `LessonProposal`
 
 Immutable bounded claim with supporting and counter-evidence reference IDs,
@@ -117,10 +123,23 @@ the updated proposal (`superseded_by_proposal_id`) and the audit event
 ## Audit integrity
 
 `LessonAuditEvent` validates the history it retains rather than asserting it.
-`prior_payload_json` must be canonical JSON, must hash to `prior_fingerprint`,
-and must agree with the event's `proposal_id`, `from_lifecycle`, `prior_revision`
-and lesson schema. `restore_prior()` therefore cannot return arbitrary claimed
-history.
+`prior_payload_json` must be canonical JSON and must hash to `prior_fingerprint`,
+but a matching hash alone proves nothing — a caller can always recompute it.
+The event therefore rebuilds the payload as a `LessonProposal` through
+`_rebuild_proposal()`, which recomputes the schema, the fixed authority flags and
+the derived identifier, and requires the rebuilt record's canonical JSON to
+reproduce the retained bytes **exactly**. Altering the claim, the evidence IDs,
+an authority flag, the chronology or the acceptance state and re-hashing is
+rejected.
+
+The recorded transition is validated too, not only its endpoints:
+`from → to` must be a permitted edge, the event cannot precede proposal
+creation, expiry cannot be backdated, supersession must name a replacement that
+is not the proposal itself, and acceptance must name a proposed destination with
+the actor bound to it and Reflection excluded.
+
+`restore_prior()` therefore returns history that has been structurally
+revalidated, not merely claimed.
 
 ## Evidence-graph binding
 
@@ -132,9 +151,12 @@ Recomputing `proposal_id` over forged references is not enough to pass this
 boundary.
 
 `load_lesson_proposal()` is the canonical deserialization boundary. It accepts
-only the `proposed` lifecycle and requires the observation graph — advanced
-lifecycles are never rebuilt from a payload, only reached by replaying audited
-transitions.
+only the `proposed` lifecycle, rebuilds the record with recomputed authority, and
+requires byte-identical canonical JSON. Forged `authority`/`can_*` values,
+acceptance evidence smuggled onto a proposed record, `prior_fingerprint`,
+`superseded_by_proposal_id`, unknown keys, missing keys and unsorted collections
+are **rejected rather than normalized away**. Advanced lifecycles are never
+rebuilt from a payload, only reached by replaying audited transitions.
 
 ## Fail-closed validation
 
@@ -146,10 +168,12 @@ The contract rejects, rather than normalizes:
 | Tombstoned expected decision | `ValueError` |
 | Outcome evidence predating its own decision | `ValueError` |
 | Status disagreeing with its verdicts | `ValueError` |
+| Any verdict reported alongside unresolved or deleted evidence | `ValueError` |
 | `confirmed`/`refuted` without eligible evidence | `ValueError` |
 | `contradictory` with fewer than two eligible outcomes | `ValueError` |
-| `insufficient_evidence` alongside eligible evidence | `ValueError` |
+| `insufficient_evidence` over complete, fully judged evidence | `ValueError` |
 | Verdict misreporting privacy or tombstone state | `ValueError` |
+| Exclusion reason disagreeing with the tombstone state either way | `ValueError` |
 | Tombstoned evidence marked eligible | `ValueError` |
 | Privacy class below the escalated evidence privacy | `ValueError` |
 | A forged `observation_id` or `proposal_id` | `ValueError` |
@@ -161,6 +185,10 @@ The contract rejects, rather than normalizes:
 | Reflection acting as the promoting actor | `ValueError` |
 | Acceptance actor that is not the targeted destination | `ValueError` |
 | Non-canonical, mismatched or fabricated audit history | `ValueError` |
+| Audit history re-hashed after altering any prior field | `ValueError` |
+| Audit recording an impossible or misattributed transition | `ValueError` |
+| Deserialized payload with forged authority or acceptance state | `ValueError` |
+| Deserialized payload with unknown or missing fields | `ValueError` |
 | Expiry backdated before `expires_at` | `ValueError` |
 | Supersession without a named replacement | `ValueError` |
 | Any transition out of a terminal state | `ValueError` |
@@ -176,13 +204,14 @@ destination. Free-text `claim` and `scope` are length-bounded.
 The repository pins its generated test count. Following the E3.0/E3.1 convention,
 the bounded assertions live in `tests/_nerva_e6_0_checks.py` and are invoked from
 the existing `tests/test_daily_reflection.py` regression, so the collected test
-count is unchanged (5767 before and after). Thirteen assertion groups cover the
+count is unchanged (5767 before and after). Fourteen assertion groups cover the
 four comparison paths, retention of ineligible evidence with its classification,
-deterministic fingerprints, immutability and authority flags,
-insufficient-evidence fail-closure, evidence/chronology validation, forged
-evidence-graph rejection, privacy non-downgrade, destination-owned acceptance,
-reversible and replacement-bound lifecycle audit, audit-history integrity,
-counter-evidence retention, and canonical serialization.
+partial-evidence fail-closure, deterministic fingerprints, immutability and
+authority flags, insufficient-evidence fail-closure, evidence/chronology
+validation, forged evidence-graph and forged-payload rejection, privacy
+non-downgrade, destination-owned acceptance, reversible and replacement-bound
+lifecycle audit, audit-history integrity under re-hashing, counter-evidence
+retention, and canonical serialization.
 
 ## What this slice is not
 
