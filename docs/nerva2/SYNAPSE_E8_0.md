@@ -161,7 +161,9 @@ variants fail closed before the `action:` to `action-kernel` requirement is eval
 Package evidence uses the existing signing wire forms: `sha256:<64 lowercase hex>` is
 integrity-only, while `hmac-sha256:<64 lowercase hex>` is keyed evidence.
 `trust_state="signed"` therefore rejects plain SHA-256 and requires the HMAC form.
-Synapse only projects evidence established by the existing
-`agents.core.skills.signing.verify_skill` path; it does not possess the signing key,
-authenticate a signer itself, install or promote packages, authorize execution, or mark
-a capability verified. Ultron and the existing Action Kernel remain authoritative.
+Synapse validates only the structural wire form supplied by its caller; it does not call
+`agents.core.skills.signing.verify_skill` or prove that verification occurred. Callers
+must set `trust_state="signed"` only after the existing verifier returns
+`(True, "signed")`. The signing key, verifier result, installation/promotion decision,
+authorization, execution, and capability-verification state remain outside Synapse.
+Ultron and the existing Action Kernel remain authoritative.
