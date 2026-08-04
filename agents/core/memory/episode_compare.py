@@ -34,8 +34,46 @@ BaselineRunner = Callable[..., Awaitable[dict[str, Any]]]
 
 _ALLOWED_PRIVACY = {"synthetic_public", "redacted_local"}
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_QUESTION_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[-_:][A-Za-z0-9]+)*")
+_TITLE_PHRASE_RE = re.compile(
+    r"\b(?:[A-Z][A-Za-z0-9]*(?:[-_:][A-Za-z0-9]+)*)(?:\s+"
+    r"[A-Z][A-Za-z0-9]*(?:[-_:][A-Za-z0-9]+)*)+\b"
+)
+_QUESTION_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "did",
+    "do",
+    "does",
+    "for",
+    "from",
+    "how",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "was",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+    "with",
+}
 _CANONICAL_BASELINE_SOURCE = "memory.eval.run_recall_eval"
-_EPISODE_SOURCE = "episodes.retrieve_episodes"
+_EPISODE_SOURCE = "episodes.retrieve_episodes.question_derived"
 _DELTA_SOURCE = "episode-baseline"
 
 
@@ -63,7 +101,12 @@ class EpisodeComparisonMetric:
 
 @dataclass(frozen=True)
 class EpisodeComparisonCase:
-    """Transient fixture input; canonical reports retain none of its text."""
+    """Transient fixture input; canonical reports retain none of its text.
+
+    ``query`` is a separately labelled diagnostic selector. Canonical comparison
+    evidence never executes it, so manually authored or oracle-like selectors
+    cannot influence ``no_regression``.
+    """
 
     case_id: str
     ability: str
@@ -328,7 +371,7 @@ async def compare_episode_retrieval(
     baseline_runner: BaselineRunner = run_recall_eval,
     baseline_source: str = _CANONICAL_BASELINE_SOURCE,
 ) -> EpisodeComparisonReport:
-    """Compare both paths over identical cases and one explicit retrieval budget."""
+    """Compare both paths using one budget and question-derived Episode queries."""
 
     _identifier(comparison_id, "comparison_id")
     _retrieval_budget(top_k)
@@ -345,7 +388,8 @@ async def compare_episode_retrieval(
     for case in ordered:
         if case.query.limit != top_k:
             raise ValueError(
-                "comparison Episode query limit must match the shared retrieval budget"
+                "comparison diagnostic query limit must match the shared "
+                "retrieval budget"
             )
 
     baseline_by_id: dict[str, dict[str, Any]] = {}
@@ -376,7 +420,8 @@ async def compare_episode_retrieval(
         episode_count = 0
         episode_failure: str | None = None
         try:
-            matches = retrieve_episodes(case.records, case.query)
+            canonical_query = _question_derived_query(case.question, top_k)
+            matches = retrieve_episodes(case.records, canonical_query)
             episode_count = len(matches)
             if episode_count > top_k:
                 raise ValueError("Episodes retrieval exceeded the shared budget")
@@ -474,6 +519,41 @@ def _validate_typed_privacy(case: EpisodeComparisonCase) -> None:
         raise ValueError(
             "synthetic_public comparison cases require public Episode references"
         )
+
+
+def _question_derived_query(question: str, limit: int) -> EpisodeQuery:
+    terms = _question_terms(question)
+    if not terms:
+        raise ValueError("comparison question cannot derive an Episode query")
+    return EpisodeQuery(situation_terms=terms, limit=limit)
+
+
+def _question_terms(question: str) -> tuple[str, ...]:
+    normalized = _normalized_question(question)
+    compound = {
+        token.casefold()
+        for token in _QUESTION_TOKEN_RE.findall(question)
+        if any(separator in token for separator in "-_:")
+    }
+    title_phrases = {
+        " ".join(phrase.casefold().split())
+        for phrase in _TITLE_PHRASE_RE.findall(question)
+        if phrase.split()[0].casefold() not in _QUESTION_STOPWORDS
+    }
+    preferred = compound | title_phrases
+    if preferred:
+        return tuple(sorted(preferred))
+
+    fallback = {
+        token.casefold()
+        for token in _QUESTION_TOKEN_RE.findall(question)
+        if token.casefold() not in _QUESTION_STOPWORDS and len(token) >= 3
+    }
+    return tuple(sorted(term for term in fallback if term in normalized))
+
+
+def _normalized_question(question: str) -> str:
+    return " ".join(question.casefold().strip().split())
 
 
 def _baseline_results(
