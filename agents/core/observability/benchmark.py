@@ -46,6 +46,7 @@ _EXCEPTION_TYPE_RE = re.compile(
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 _REVISION_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _MAX_VERSION = 1_000_000
+_EVAL_PASS_THRESHOLD = 0.5
 _PRIVACY_EFFECTS = {
     "no_external_disclosure",
     "sanitized_before_external_use",
@@ -693,6 +694,14 @@ class BenchmarkResult:
             if self.candidate is not None:
                 raise ValueError("error results cannot claim candidate evidence")
             _validate_ratio(self.quality, "quality", statuses={"failed"})
+
+        if self.status in {"passed", "failed"}:
+            score_passed = float(self.quality.value) >= _EVAL_PASS_THRESHOLD
+            if score_passed != (self.status == "passed"):
+                raise ValueError(
+                    "result status and pass flag must agree with measured quality "
+                    "at the EvalHarness pass threshold"
+                )
 
         if self.error_type is not None:
             _exception_type(self.error_type, "error type")
