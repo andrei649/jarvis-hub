@@ -76,6 +76,25 @@ scheduled run, or a run whose predecessor used a different suite version, yields
 Report construction is deterministic: the same run and environment reproduce
 byte-identical JSON.
 
+### The report contract is verified, not trusted
+
+`build_report()` is not the only way to construct a report, so the record
+validates itself:
+
+- `source_revision` is held to the same exact-commit format as the run it
+  describes; a symbolic or malformed value cannot be serialized as evidence;
+- `hardware_profile` is an `init=False` field pinned to `not_measured`, so an
+  owner-hardware claim cannot enter through construction or `replace()`;
+- every compared metric must appear **exactly once, in order**, so a regressed
+  metric cannot be hidden by omission, duplication or reordering;
+- each comparison recomputes its own delta and checks the label against its
+  sign: a positive delta cannot be published as a regression, a non-zero delta
+  cannot be `unchanged`, and unknown statuses or metrics are refused;
+- `not_measured` requires an actually unmeasured side and `no_baseline` cannot
+  carry a previous value;
+- `totals` must match the benchmark summary key set exactly and is frozen at
+  construction, so mutating it afterwards cannot change later JSON or Markdown.
+
 ## Failure behavior
 
 `missing_prerequisites()` checks the declared software prerequisites — the
@@ -91,8 +110,8 @@ subprocess surface.
 The value is validated against the repository's accepted exact-commit format,
 reusing E9.0's `_source_revision` as the single source of truth. A symbolic name
 (`latest`, `HEAD`, a branch, `refs/heads/...`), a truncated, over-length,
-uppercase or non-hex digest is refused. Whitespace padding is stripped rather
-than treated as a distinct revision. Validation happens at the E9.1 boundary and
+uppercase or non-hex digest is refused. Surrounding whitespace is stripped first,
+so a padded but otherwise exact SHA is accepted and normalized. Validation happens at the E9.1 boundary and
 again inside `run_scheduled_suite()`, so a malformed revision reaches the honest
 `PrerequisiteError` path instead of surfacing as an unhandled `ValueError` deep
 in the harness.
@@ -147,14 +166,16 @@ The cache and artifact hold only synthetic-public suite content and run evidence
 The repository pins its generated test count. Following the E3.0/E3.1/E6.0
 convention, the bounded assertions live in `tests/_nerva_e9_1_checks.py` and are
 invoked from the existing `tests/test_nerva_benchmark_e9_0.py` regression, so the
-collected test count is unchanged (5767 before and after). Thirteen assertion groups
+collected test count is unchanged (5767 before and after). Sixteen assertion groups
 cover synthetic-public/CI-only enforcement, suite-version stability, persistence
 through the accepted store, the first-run `no_baseline` state, regression and
 improvement decisions, refusal to coerce unmeasured metrics, deterministic
 evaluation-only reports, report invariants, visible prerequisite failure,
 exact-commit-SHA validation against symbolic and malformed values, retention of a
 regressed run without baseline promotion, the workflow-level separation of those
-two concerns, and the CLI path.
+two concerns, refusal of non-exact revisions and hardware claims at the report
+boundary, self-asserted comparison semantics and metric-set tampering, frozen
+totals, and the CLI path.
 
 ## What this slice is not
 

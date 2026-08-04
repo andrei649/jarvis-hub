@@ -15,12 +15,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import platform
 import sys
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Literal
 
 from agents.core.observability.benchmark import (
@@ -55,6 +57,26 @@ ComparisonStatus = Literal[
 # not established is not compared at all rather than guessed.
 _COMPARED_METRICS = ("quality_mean", "baseline_quality_mean", "pass_ratio")
 _REGRESSION_EPSILON = 1e-9
+_COMPARISON_STATUSES = frozenset(
+    {"improved", "regressed", "unchanged", "not_measured", "no_baseline"}
+)
+
+#: E9.1 measures no hardware; the profile is fixed rather than caller-supplied.
+HARDWARE_PROFILE = "not_measured"
+
+#: The exact key set a retained ``BenchmarkRun.summary`` must provide.
+_TOTALS_KEYS = frozenset(
+    {
+        "total",
+        "scored",
+        "passed",
+        "failed",
+        "unscored",
+        "errors",
+        "quality_mean",
+        "baseline_quality_mean",
+    }
+)
 
 _BASELINE_RULES = {
     "weather": "friday",
@@ -108,7 +130,10 @@ class EnvironmentProfile:
     runner_id: str
     platform: str
     python_version: str
-    hardware_profile: str = "not_measured"
+    # E9.1 measures no hardware. The field is ``init=False`` so an owner-hardware
+    # claim cannot be introduced through this contract at all — not by direct
+    # construction and not through ``dataclasses.replace``.
+    hardware_profile: str = field(default=HARDWARE_PROFILE, init=False)
     schema: str = field(default="nerva.benchmark.environment.v1", init=False)
 
     def __post_init__(self) -> None:
@@ -116,10 +141,11 @@ class EnvironmentProfile:
             (self.runner_id, "runner_id"),
             (self.platform, "platform"),
             (self.python_version, "python_version"),
-            (self.hardware_profile, "hardware_profile"),
         ):
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"environment {name} must be a non-empty string")
+        if self.hardware_profile != HARDWARE_PROFILE:
+            raise ValueError("E9.1 hardware profile must remain not_measured")
 
     @classmethod
     def detect(cls, *, runner_id: str) -> EnvironmentProfile:
@@ -128,7 +154,6 @@ class EnvironmentProfile:
             runner_id=runner_id,
             platform=f"{platform.system()}-{platform.machine()}".lower(),
             python_version=platform.python_version(),
-            hardware_profile="not_measured",
         )
 
 
@@ -143,12 +168,49 @@ class MetricComparison:
     delta: float | None = None
 
     def __post_init__(self) -> None:
-        if self.status in {"improved", "regressed"} and (
-            self.current is None or self.previous is None
+        if not isinstance(self.metric, str) or self.metric not in _COMPARED_METRICS:
+            raise ValueError("comparison metric is not a compared E9.1 metric")
+        if self.status not in _COMPARISON_STATUSES:
+            raise ValueError("comparison status is not recognized")
+        for value, name in (
+            (self.current, "current"),
+            (self.previous, "previous"),
+            (self.delta, "delta"),
         ):
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"comparison {name} must be numeric")
+            if not math.isfinite(float(value)):
+                raise ValueError(f"comparison {name} must be finite")
+
+        if self.status in {"not_measured", "no_baseline"}:
+            if self.delta is not None:
+                raise ValueError("an undecided comparison cannot carry a delta")
+            if self.status == "no_baseline" and self.previous is not None:
+                raise ValueError("a no_baseline comparison cannot carry a previous value")
+            if self.status == "not_measured" and (
+                self.current is not None and self.previous is not None
+            ):
+                raise ValueError(
+                    "a not_measured comparison requires an unmeasured side"
+                )
+            return
+
+        # Decided comparisons must be internally consistent: the delta is
+        # recomputed and the label must match its sign, so a positive delta
+        # cannot be published as a regression.
+        if self.current is None or self.previous is None:
             raise ValueError("a decided comparison requires both values")
-        if self.status in {"not_measured", "no_baseline"} and self.delta is not None:
-            raise ValueError("an undecided comparison cannot carry a delta")
+        expected = round(float(self.current) - float(self.previous), 6)
+        if self.delta is None or abs(float(self.delta) - expected) > _REGRESSION_EPSILON:
+            raise ValueError("comparison delta must equal current minus previous")
+        if self.status == "regressed" and expected >= -_REGRESSION_EPSILON:
+            raise ValueError("a regression requires a negative delta")
+        if self.status == "improved" and expected <= _REGRESSION_EPSILON:
+            raise ValueError("an improvement requires a positive delta")
+        if self.status == "unchanged" and abs(expected) > _REGRESSION_EPSILON:
+            raise ValueError("an unchanged comparison requires a zero delta")
 
 
 @dataclass(frozen=True)
@@ -177,8 +239,34 @@ class RegressionReport:
     def __post_init__(self) -> None:
         if not isinstance(self.environment, EnvironmentProfile):
             raise ValueError("report requires an EnvironmentProfile")
-        if not isinstance(self.comparisons, tuple) or not self.comparisons:
-            raise ValueError("report requires at least one comparison")
+        # A report is exact evidence; its revision is held to the same format
+        # as the run it describes.
+        try:
+            _validate_exact_revision(self.source_revision)
+        except ValueError as exc:
+            raise ValueError(f"report source revision is invalid: {exc}") from exc
+
+        if not isinstance(self.comparisons, tuple):
+            raise ValueError("report comparisons must be an immutable tuple")
+        for comparison in self.comparisons:
+            if not isinstance(comparison, MetricComparison):
+                raise ValueError("report comparisons must be MetricComparison")
+        metrics = [comparison.metric for comparison in self.comparisons]
+        # The exact metric set must be present exactly once, in a deterministic
+        # order, so a caller cannot hide a regressed metric by omitting it.
+        if tuple(metrics) != _COMPARED_METRICS:
+            raise ValueError(
+                "report must carry each compared metric exactly once, in order"
+            )
+
+        if not isinstance(self.totals, Mapping):
+            raise ValueError("report totals must be a mapping")
+        if set(self.totals) != _TOTALS_KEYS:
+            raise ValueError("report totals must match the benchmark summary keys")
+        # Freeze the retained summary so post-construction mutation cannot
+        # change later JSON or Markdown evidence.
+        object.__setattr__(self, "totals", MappingProxyType(dict(self.totals)))
+
         decided = [
             comparison
             for comparison in self.comparisons
@@ -191,9 +279,34 @@ class RegressionReport:
             for comparison in self.comparisons
         ):
             raise ValueError("a decided comparison requires a previous run")
+        if self.previous_run_id is not None and all(
+            comparison.status == "no_baseline" for comparison in self.comparisons
+        ):
+            raise ValueError("a previous run cannot yield only no_baseline results")
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        # Built explicitly rather than through asdict() so the frozen totals
+        # mapping is serialized from immutable state.
+        return {
+            "schema": self.schema,
+            "authority": self.authority,
+            "can_change_routing": self.can_change_routing,
+            "can_authorize": self.can_authorize,
+            "can_execute": self.can_execute,
+            "can_promote_capability": self.can_promote_capability,
+            "can_mark_complete": self.can_mark_complete,
+            "suite_name": self.suite_name,
+            "suite_version": self.suite_version,
+            "run_id": self.run_id,
+            "source_revision": self.source_revision,
+            "candidate_id": self.candidate_id,
+            "baseline_id": self.baseline_id,
+            "environment": asdict(self.environment),
+            "totals": dict(self.totals),
+            "comparisons": [asdict(item) for item in self.comparisons],
+            "previous_run_id": self.previous_run_id,
+            "regressed": self.regressed,
+        }
 
     def to_json(self) -> str:
         return json.dumps(
@@ -242,7 +355,7 @@ class RegressionReport:
             )
             lines.append(row)
         lines.append("")
-        lines.append(f"Totals: {json.dumps(self.totals, sort_keys=True)}")
+        lines.append(f"Totals: {json.dumps(dict(self.totals), sort_keys=True)}")
         lines.append("")
         lines.append(disclaimer)
         return "\n".join(lines)
@@ -290,9 +403,10 @@ def source_revision(
     not evidence, so the run fails rather than guessing.
 
     The value must be an exact lowercase commit SHA in the repository's accepted
-    format. A symbolic name such as ``latest`` or a branch, a truncated or
-    uppercase digest, or a whitespace-padded value is refused here rather than
-    being serialized as exact evidence.
+    format. A symbolic name such as ``latest`` or a branch, and a truncated,
+    over-length, uppercase or non-hex digest are refused rather than serialized
+    as exact evidence. Surrounding whitespace is stripped first, so a padded but
+    otherwise exact SHA is accepted and normalized.
     """
 
     candidate = (explicit or "").strip()

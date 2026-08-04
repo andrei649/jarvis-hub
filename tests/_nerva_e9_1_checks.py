@@ -17,6 +17,7 @@ import pytest
 
 from agents.core.observability.benchmark import BenchmarkStore
 from agents.core.observability.scheduled_report import (
+    _COMPARED_METRICS,
     BASELINE_ID,
     CANDIDATE_ID,
     SUITE_NAME,
@@ -205,50 +206,173 @@ def _check_report_is_deterministic_and_evaluation_only(tmp_path) -> None:
     assert "not_measured" in first.to_markdown() or "no_baseline" in first.to_markdown()
 
 
+def _totals() -> dict:
+    return {
+        "total": 4,
+        "scored": 4,
+        "passed": 4,
+        "failed": 0,
+        "unscored": 0,
+        "errors": 0,
+        "quality_mean": 1.0,
+        "baseline_quality_mean": 1.0,
+    }
+
+
+def _full_comparisons() -> tuple[MetricComparison, ...]:
+    return (
+        MetricComparison("quality_mean", "regressed", 0.5, 0.9, -0.4),
+        MetricComparison("baseline_quality_mean", "unchanged", 1.0, 1.0, 0.0),
+        MetricComparison("pass_ratio", "unchanged", 1.0, 1.0, 0.0),
+    )
+
+
+def _build_report(**overrides) -> RegressionReport:
+    fields = {
+        "suite_name": SUITE_NAME,
+        "suite_version": 1,
+        "run_id": "run-one",
+        "source_revision": _REVISION,
+        "candidate_id": CANDIDATE_ID,
+        "baseline_id": BASELINE_ID,
+        "environment": _environment(),
+        "totals": _totals(),
+        "comparisons": _full_comparisons(),
+        "previous_run_id": "run-zero",
+        "regressed": True,
+    }
+    fields.update(overrides)
+    return RegressionReport(**fields)
+
+
 def _check_report_invariants_reject_incoherent_summaries() -> None:
     """A report cannot understate a regression or invent a comparison."""
 
-    environment = _environment()
-    regressed = MetricComparison(
-        metric="quality_mean",
-        status="regressed",
-        current=0.5,
-        previous=0.9,
-        delta=-0.4,
-    )
-
-    def _build(**overrides) -> RegressionReport:
-        fields = {
-            "suite_name": SUITE_NAME,
-            "suite_version": 1,
-            "run_id": "run-one",
-            "source_revision": _REVISION,
-            "candidate_id": CANDIDATE_ID,
-            "baseline_id": BASELINE_ID,
-            "environment": environment,
-            "totals": {"total": 4},
-            "comparisons": (regressed,),
-            "previous_run_id": "run-zero",
-            "regressed": True,
-        }
-        fields.update(overrides)
-        return RegressionReport(**fields)
-
-    _build()
+    _build_report()
     with pytest.raises(ValueError, match="regression flag must match"):
-        _build(regressed=False)
+        _build_report(regressed=False)
     with pytest.raises(ValueError, match="requires a previous run"):
-        _build(previous_run_id=None)
-    with pytest.raises(ValueError, match="at least one comparison"):
-        _build(comparisons=(), regressed=False)
+        _build_report(previous_run_id=None)
     with pytest.raises(ValueError, match="EnvironmentProfile"):
-        _build(environment={"runner_id": "spoofed"})
+        _build_report(environment={"runner_id": "spoofed"})
 
     # A decided comparison cannot be asserted without both values.
     with pytest.raises(ValueError, match="requires both values"):
         MetricComparison(metric="quality_mean", status="regressed", current=0.5)
     with pytest.raises(ValueError, match="cannot carry a delta"):
         MetricComparison(metric="quality_mean", status="not_measured", delta=0.1)
+
+
+def _check_report_cannot_claim_a_bad_revision_or_hardware() -> None:
+    """Direct construction cannot serialize non-exact or hardware evidence."""
+
+    for value in ("latest", "HEAD", _REVISION[:39], _REVISION.upper(), "main"):
+        with pytest.raises(ValueError, match="source revision is invalid"):
+            _build_report(source_revision=value)
+
+    # The hardware profile is structurally fixed: it is not an init field, so an
+    # owner-hardware claim cannot enter through construction or replace().
+    profile = _environment()
+    assert profile.hardware_profile == "not_measured"
+    with pytest.raises(TypeError):
+        EnvironmentProfile(
+            runner_id="r",
+            platform="p",
+            python_version="3.12.0",
+            hardware_profile="ryzen-9-7950x",  # type: ignore[call-arg]
+        )
+    with pytest.raises((TypeError, ValueError)):
+        replace(profile, hardware_profile="ryzen-9-7950x")
+    assert json.loads(_build_report().to_json())["environment"][
+        "hardware_profile"
+    ] == "not_measured"
+
+
+def _check_comparison_semantics_cannot_be_self_asserted() -> None:
+    """Status, delta and the metric set are verified, not trusted."""
+
+    # An inverted delta cannot wear the opposite label.
+    with pytest.raises(ValueError, match="regression requires a negative delta"):
+        MetricComparison("quality_mean", "regressed", 0.9, 0.5, 0.4)
+    with pytest.raises(ValueError, match="improvement requires a positive delta"):
+        MetricComparison("quality_mean", "improved", 0.5, 0.9, -0.4)
+    with pytest.raises(ValueError, match="unchanged comparison requires a zero delta"):
+        MetricComparison("quality_mean", "unchanged", 0.5, 0.9, -0.4)
+
+    # A delta that does not equal current minus previous is rejected.
+    with pytest.raises(ValueError, match="delta must equal current minus previous"):
+        MetricComparison("quality_mean", "regressed", 0.5, 0.9, -0.01)
+    with pytest.raises(ValueError, match="delta must equal current minus previous"):
+        MetricComparison("quality_mean", "regressed", 0.5, 0.9, None)
+
+    # Unknown statuses and unknown metrics are refused.
+    with pytest.raises(ValueError, match="status is not recognized"):
+        MetricComparison("quality_mean", "looks_fine", 0.5, 0.9, -0.4)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="not a compared E9.1 metric"):
+        MetricComparison("invented_metric", "unchanged", 1.0, 1.0, 0.0)
+
+    # Undecided statuses cannot smuggle a fully measured pair or a baseline.
+    with pytest.raises(ValueError, match="requires an unmeasured side"):
+        MetricComparison("quality_mean", "not_measured", 1.0, 1.0)
+    with pytest.raises(ValueError, match="cannot carry a previous value"):
+        MetricComparison("quality_mean", "no_baseline", 1.0, 1.0)
+
+    # Non-finite and non-numeric values are refused.
+    with pytest.raises(ValueError, match="must be finite"):
+        MetricComparison("quality_mean", "not_measured", float("nan"))
+    with pytest.raises(ValueError, match="must be numeric"):
+        MetricComparison("quality_mean", "not_measured", True)
+
+    # A report must carry every compared metric exactly once, in order, so a
+    # regressed metric cannot be hidden by omission or duplication.
+    full = _full_comparisons()
+    for broken in (
+        full[:2],
+        (*full, full[0]),
+        (full[1], full[0], full[2]),
+        (full[0], full[0], full[0]),
+    ):
+        with pytest.raises(ValueError, match="each compared metric exactly once"):
+            _build_report(comparisons=broken)
+    with pytest.raises(ValueError, match="must be MetricComparison"):
+        _build_report(comparisons=(full[0], full[1], {"metric": "pass_ratio"}))
+
+    # A report that names a previous run cannot claim it had no baseline.
+    no_baseline = tuple(
+        MetricComparison(metric, "no_baseline", 1.0) for metric in _COMPARED_METRICS
+    )
+    with pytest.raises(ValueError, match="cannot yield only no_baseline"):
+        _build_report(comparisons=no_baseline, regressed=False)
+
+
+def _check_totals_are_frozen_after_construction() -> None:
+    """Mutating the retained summary cannot change later evidence."""
+
+    supplied = _totals()
+    report = _build_report(totals=supplied)
+    before_json = report.to_json()
+    before_markdown = report.to_markdown()
+
+    # The caller's dict is copied, so mutating it afterwards changes nothing.
+    supplied["passed"] = 0
+    assert report.to_json() == before_json
+
+    # The retained mapping itself refuses mutation.
+    with pytest.raises(TypeError):
+        report.totals["passed"] = 0  # type: ignore[index]
+    with pytest.raises(AttributeError):
+        report.totals.clear()  # type: ignore[attr-defined]
+    assert report.to_json() == before_json
+    assert report.to_markdown() == before_markdown
+    assert json.loads(report.to_json())["totals"]["passed"] == 4
+
+    # The summary key set is verified rather than accepted as given.
+    with pytest.raises(ValueError, match="totals must match the benchmark summary"):
+        _build_report(totals={"total": 4})
+    with pytest.raises(ValueError, match="totals must match the benchmark summary"):
+        _build_report(totals={**_totals(), "smuggled": 1})
+    with pytest.raises(ValueError, match="totals must be a mapping"):
+        _build_report(totals=[("total", 4)])
 
 
 def _check_missing_prerequisites_fail_visibly(tmp_path, monkeypatch) -> None:
@@ -546,6 +670,9 @@ def run_e9_1_checks(tmp_path, monkeypatch) -> None:
     _check_unmeasured_metrics_are_never_coerced_into_a_score(tmp_path)
     _check_report_is_deterministic_and_evaluation_only(tmp_path)
     _check_report_invariants_reject_incoherent_summaries()
+    _check_report_cannot_claim_a_bad_revision_or_hardware()
+    _check_comparison_semantics_cannot_be_self_asserted()
+    _check_totals_are_frozen_after_construction()
     _check_missing_prerequisites_fail_visibly(tmp_path, monkeypatch)
     _check_revision_must_be_an_exact_commit_sha(tmp_path)
     _check_regressed_run_is_retained_but_not_promoted(tmp_path, monkeypatch)

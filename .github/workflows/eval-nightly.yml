@@ -65,8 +65,10 @@ jobs:
   # E9.1 (#807) — scheduled current-router shadow comparison. Synthetic-public
   # fixtures only, evaluation-only authority: this lane reports, it never changes
   # production routing, promotes a capability, or claims owner-hardware numbers.
-  # Evidence is retained through the accepted E9.0 BenchmarkStore; the cache is
-  # the only retention surface and holds no owner or provider data.
+  # Evidence is retained through the accepted E9.0 BenchmarkStore. There are two
+  # distinct retention surfaces: an always() artifact that keeps every completed
+  # run and report (including regressed ones), and a success()-gated cache that
+  # advances the comparison baseline. Neither holds owner or provider data.
   nerva-router-shadow:
     runs-on: ubuntu-latest
     timeout-minutes: 10
