@@ -28,19 +28,21 @@ jobs:
 
           path = Path("agents/core/observability/benchmark.py")
           text = path.read_text(encoding="utf-8")
-          old = '''    if measurement.status == "measured":
-              if measurement.unit != "classification" or measurement.value not in _PRIVACY_EFFECTS:
-                  raise ValueError("privacy must use a supported classification")
-          '''
-          new = '''    if (
-              measurement.status == "measured"
-              and (
-                  measurement.unit != "classification"
-                  or measurement.value not in _PRIVACY_EFFECTS
-              )
-          ):
-              raise ValueError("privacy must use a supported classification")
-          '''
+          old = (
+              '    if measurement.status == "measured":\n'
+              '        if measurement.unit != "classification" or measurement.value not in _PRIVACY_EFFECTS:\n'
+              '            raise ValueError("privacy must use a supported classification")\n'
+          )
+          new = (
+              '    if (\n'
+              '        measurement.status == "measured"\n'
+              '        and (\n'
+              '            measurement.unit != "classification"\n'
+              '            or measurement.value not in _PRIVACY_EFFECTS\n'
+              '        )\n'
+              '    ):\n'
+              '        raise ValueError("privacy must use a supported classification")\n'
+          )
           if old not in text:
               raise SystemExit("expected Ruff correction anchor not found")
           path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
