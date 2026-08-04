@@ -14,7 +14,7 @@ proves scheduled operation and reporting only.
 ## Dependency and authority boundary
 
 - prerequisites: accepted E9.0 / #784 / #803 and Cortex E1.1 / #792, both in `main`;
-- base revision: current `main@5ccf77d` (after E6.0 / #808 and dependency PR #811);
+- base revision: current `main@796b93f` (after E6.0 / #808, dependency #811 and BACKLOG catch-up #810);
 - report authority is fixed to `evaluation_only`;
 - Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 
@@ -99,7 +99,25 @@ validates itself:
   frozen at construction so mutating it afterwards cannot change later JSON or
   Markdown;
 - each comparison's `current` value is **derived from the retained totals**, so a
-  report cannot publish a current value its own summary contradicts.
+  report cannot publish a current value its own summary contradicts;
+- `scored` must equal `passed + failed`, because under the accepted
+  `BenchmarkResult` contract exactly the passed and failed results carry measured
+  quality;
+- measured baseline evidence and a declared `baseline_id` must travel together in
+  both directions;
+- suite name, suite version, run id and evaluator identifiers are validated
+  against the repository's accepted formats.
+
+**A report must be derived from a retained run.** `RegressionReport` requires a
+module-private construction guard held only by `build_report()`, so a directly
+constructed record is noncanonical. Each report carries a `run_fingerprint` —
+the SHA-256 of the retained run's canonical JSON — and
+`validate_report_against_run()` recomputes every identity field plus the totals
+and the fingerprint from the run itself. A report claiming an invented suite,
+revision, run or evaluator is rejected even when its own numbers are coherent.
+The guard is a module-private capability, not a cryptographic boundary: it closes
+the public contract, but does not defend against code executing inside the
+module.
 
 Comparability also requires matching evaluator identities. A retained run for the
 same suite version but a different `candidate_id` or `baseline_id` measures
@@ -177,7 +195,7 @@ The cache and artifact hold only synthetic-public suite content and run evidence
 The repository pins its generated test count. Following the E3.0/E3.1/E6.0
 convention, the bounded assertions live in `tests/_nerva_e9_1_checks.py` and are
 invoked from the existing `tests/test_nerva_benchmark_e9_0.py` regression, so the
-collected test count is unchanged (5767 before and after). Eighteen assertion groups
+collected test count is unchanged (5767 before and after). Twenty assertion groups
 cover synthetic-public/CI-only enforcement, suite-version stability, persistence
 through the accepted store, the first-run `no_baseline` state, regression and
 improvement decisions, refusal to coerce unmeasured metrics, deterministic
@@ -187,7 +205,9 @@ regressed run without baseline promotion, the workflow-level separation of those
 two concerns, refusal of non-exact revisions and hardware claims at the report
 boundary, self-asserted comparison semantics and metric-set tampering, frozen
 totals, benchmark-summary invariants with comparison/summary agreement,
-evaluator-identity binding before comparison, and the CLI path.
+evaluator-identity binding before comparison, retained-run binding with forged
+identity and fingerprint cases, baseline-identity/evidence pairing, and the CLI
+path.
 
 ## What this slice is not
 

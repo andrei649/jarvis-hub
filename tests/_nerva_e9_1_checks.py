@@ -18,6 +18,7 @@ import pytest
 from agents.core.observability.benchmark import BenchmarkObservation, BenchmarkStore
 from agents.core.observability.scheduled_report import (
     _COMPARED_METRICS,
+    _REPORT_GUARD,
     BASELINE_ID,
     CANDIDATE_ID,
     SUITE_NAME,
@@ -29,9 +30,11 @@ from agents.core.observability.scheduled_report import (
     ensure_suite,
     main,
     previous_run,
+    run_fingerprint,
     run_scheduled_suite,
     scheduled_cases,
     source_revision,
+    validate_report_against_run,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -156,7 +159,7 @@ def _check_unmeasured_metrics_are_never_coerced_into_a_score(tmp_path) -> None:
 
     store = BenchmarkStore(tmp_path / "unmeasured")
     first = asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-one"))
-    unscored = _with_unscored_case(first)
+    unscored = replace(_with_unscored_case(first), run_id="run-unscored")
 
     report = build_report(unscored, environment=_environment(), previous=first)
     ratio = _comparison(report, "pass_ratio")
@@ -242,6 +245,8 @@ def _build_report(**overrides) -> RegressionReport:
         "comparisons": _full_comparisons(),
         "previous_run_id": "run-zero",
         "regressed": True,
+        "run_fingerprint": "c" * 64,
+        "guard": _REPORT_GUARD,
     }
     fields.update(overrides)
     return RegressionReport(**fields)
@@ -357,7 +362,11 @@ def _check_totals_semantics_and_comparison_agreement() -> None:
         ({**_totals(), "total": 0, "passed": 0, "failed": 0}, "at least one case"),
         ({**_totals(), "scored": 9}, "scored cannot exceed the case total"),
         ({**_totals(), "failed": -3, "passed": 7}, "cannot be negative"),
-        ({**_totals(), "passed": 0, "failed": 0, "unscored": 4}, "passed plus failed"),
+        ({**_totals(), "scored": 2}, "scored must equal passed plus failed"),
+        (
+            {**_totals(), "passed": 3, "failed": 1, "scored": 2},
+            "scored must equal passed plus failed",
+        ),
         ({**_totals(), "total": 4.0}, "must be an integer"),
         ({**_totals(), "errors": True, "failed": 2}, "must be an integer"),
         ({**_totals(), "quality_mean": 1.5}, "must be a ratio"),
@@ -393,6 +402,89 @@ def _check_totals_semantics_and_comparison_agreement() -> None:
     )
     with pytest.raises(ValueError, match="contradicts the retained totals"):
         _build_report(comparisons=tampered_ratio)
+
+
+def _check_report_is_bound_to_the_retained_run(tmp_path) -> None:
+    """A report must be derived from, and provably match, one retained run."""
+
+    store = BenchmarkStore(tmp_path / "bound")
+    run = asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-one"))
+    report = build_report(run, environment=_environment(), previous=None)
+
+    # The honest path validates.
+    validate_report_against_run(report, run)
+    assert report.run_fingerprint == run_fingerprint(run)
+    assert "guard" not in json.loads(report.to_json())
+
+    # Direct construction without the guard is noncanonical, even when every
+    # field is internally coherent.
+    with pytest.raises(ValueError, match="derived from a retained run"):
+        _build_report(guard=None)
+
+    # A report cannot claim a run it does not describe, even with coherent
+    # totals — every identity field is recomputed from the run.
+    for changed, expected in (
+        (replace(run, run_id="run-invented"), "run_id does not match"),
+        (replace(run, candidate_id="other-router"), "candidate_id does not match"),
+        (replace(run, source_revision=_OTHER_REVISION), "source_revision does not"),
+        (replace(run, suite_name="other-suite"), "suite_name does not match"),
+        (replace(run, suite_version=run.suite_version + 1), "suite_version does not"),
+    ):
+        with pytest.raises(ValueError, match=expected):
+            validate_report_against_run(report, changed)
+
+    # A fingerprint that does not belong to the run is caught even when every
+    # identity field agrees.
+    unbound = build_report(run, environment=_environment(), previous=None)
+    with pytest.raises(ValueError, match="not bound to the retained run"):
+        validate_report_against_run(
+            _build_report(
+                suite_name=run.suite_name,
+                suite_version=run.suite_version,
+                run_id=run.run_id,
+                source_revision=run.source_revision,
+                candidate_id=run.candidate_id,
+                baseline_id=run.baseline_id,
+                totals=dict(unbound.totals),
+                comparisons=unbound.comparisons,
+                previous_run_id=None,
+                regressed=False,
+                run_fingerprint="d" * 64,
+            ),
+            run,
+        )
+
+    # Malformed identifiers and fingerprints are refused outright.
+    with pytest.raises(ValueError, match="report identity is invalid"):
+        _build_report(run_id="not a valid id")
+    with pytest.raises(ValueError, match="report identity is invalid"):
+        _build_report(candidate_id="UPPER CASE")
+    with pytest.raises(ValueError, match="run_fingerprint must be a SHA-256"):
+        _build_report(run_fingerprint="short")
+    with pytest.raises(ValueError, match="cannot compare a run against itself"):
+        _build_report(previous_run_id="run-one", run_id="run-one")
+
+
+def _check_baseline_identity_matches_baseline_evidence() -> None:
+    """Measured baseline evidence and a declared baseline identity travel together."""
+
+    with pytest.raises(ValueError, match="requires a declared baseline identity"):
+        _build_report(baseline_id=None)
+
+    # With no measured baseline the derived current value is None, so the
+    # comparison must be undecided for the report to reach the identity check.
+    no_baseline_totals = {**_totals(), "baseline_quality_mean": None}
+    coherent = (
+        MetricComparison("quality_mean", "regressed", 0.25, 0.9, -0.65),
+        MetricComparison("baseline_quality_mean", "not_measured", None, 1.0),
+        MetricComparison("pass_ratio", "unchanged", 0.25, 0.25, 0.0),
+    )
+    with pytest.raises(ValueError, match="requires measured baseline evidence"):
+        _build_report(
+            totals=no_baseline_totals,
+            baseline_id=BASELINE_ID,
+            comparisons=coherent,
+        )
 
 
 def _check_comparison_requires_matching_evaluator_identities(tmp_path) -> None:
@@ -755,6 +847,8 @@ def run_e9_1_checks(tmp_path, monkeypatch) -> None:
     _check_comparison_semantics_cannot_be_self_asserted()
     _check_totals_are_frozen_after_construction()
     _check_totals_semantics_and_comparison_agreement()
+    _check_report_is_bound_to_the_retained_run(tmp_path)
+    _check_baseline_identity_matches_baseline_evidence()
     _check_comparison_requires_matching_evaluator_identities(tmp_path)
     _check_missing_prerequisites_fail_visibly(tmp_path, monkeypatch)
     _check_revision_must_be_an_exact_commit_sha(tmp_path)

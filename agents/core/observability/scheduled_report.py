@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import math
 import os
@@ -35,10 +36,19 @@ from agents.core.observability.benchmark import (
     current_router_runner,
 )
 from agents.core.observability.benchmark import (
-    # Single source of truth for the repository's exact-commit format. Validating
-    # here keeps a malformed revision on the honest PrerequisiteError path
-    # instead of surfacing as an unhandled ValueError deep in the harness.
+    # Single source of truth for the repository's accepted identifier formats.
+    # Validating here keeps a malformed value on the honest PrerequisiteError
+    # path instead of surfacing as an unhandled ValueError deep in the harness.
+    _identifier as _validate_identifier,
+)
+from agents.core.observability.benchmark import (
     _source_revision as _validate_exact_revision,
+)
+from agents.core.observability.benchmark import (
+    _suite_name as _validate_suite_name,
+)
+from agents.core.observability.benchmark import (
+    _version as _validate_version,
 )
 
 SUITE_NAME = "nerva-router-shadow"
@@ -63,6 +73,12 @@ _COMPARISON_STATUSES = frozenset(
 
 #: E9.1 measures no hardware; the profile is fixed rather than caller-supplied.
 HARDWARE_PROFILE = "not_measured"
+
+# Module-private construction guard. A report is canonical only when derived
+# from a retained BenchmarkRun through build_report().
+_REPORT_GUARD = object()
+
+_SHA256_HEX_LENGTH = 64
 
 #: The exact key set a retained ``BenchmarkRun.summary`` must provide.
 _TOTALS_KEYS = frozenset(
@@ -228,6 +244,9 @@ class RegressionReport:
     comparisons: tuple[MetricComparison, ...]
     previous_run_id: str | None
     regressed: bool
+    #: SHA-256 of the canonical JSON of the retained run this report summarizes.
+    run_fingerprint: str = ""
+    guard: Any = field(default=None, compare=False, repr=False)
     schema: str = field(default="nerva.benchmark.report.v1", init=False)
     authority: str = field(default="evaluation_only", init=False)
     can_change_routing: bool = field(default=False, init=False)
@@ -237,14 +256,33 @@ class RegressionReport:
     can_mark_complete: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
+        # A report is only canonical when it was derived from a retained run.
+        # ``build_report()`` holds the guard; direct construction cannot forge
+        # a run identity and present it as nerva.benchmark.report.v1.
+        if self.guard is not _REPORT_GUARD:
+            raise ValueError(
+                "a report must be derived from a retained run through build_report"
+            )
         if not isinstance(self.environment, EnvironmentProfile):
             raise ValueError("report requires an EnvironmentProfile")
-        # A report is exact evidence; its revision is held to the same format
-        # as the run it describes.
+        # A report is exact evidence; its identifiers are held to the same
+        # formats as the run it describes.
         try:
             _validate_exact_revision(self.source_revision)
         except ValueError as exc:
             raise ValueError(f"report source revision is invalid: {exc}") from exc
+        try:
+            _validate_suite_name(self.suite_name)
+            _validate_version(self.suite_version)
+            _validate_identifier(self.run_id, "run id")
+            _validate_identifier(self.candidate_id, "candidate id")
+            if self.baseline_id is not None:
+                _validate_identifier(self.baseline_id, "baseline id")
+            if self.previous_run_id is not None:
+                _validate_identifier(self.previous_run_id, "previous run id")
+        except ValueError as exc:
+            raise ValueError(f"report identity is invalid: {exc}") from exc
+        _validate_sha256(self.run_fingerprint, "run_fingerprint")
 
         if not isinstance(self.comparisons, tuple):
             raise ValueError("report comparisons must be an immutable tuple")
@@ -276,6 +314,17 @@ class RegressionReport:
                     f"comparison {comparison.metric} contradicts the retained totals"
                 )
 
+        # Measured baseline evidence requires a declared baseline identity, the
+        # same rule the accepted BenchmarkRun contract enforces.
+        if self.totals["baseline_quality_mean"] is not None and self.baseline_id is None:
+            raise ValueError(
+                "measured baseline evidence requires a declared baseline identity"
+            )
+        if self.totals["baseline_quality_mean"] is None and self.baseline_id is not None:
+            raise ValueError(
+                "a declared baseline identity requires measured baseline evidence"
+            )
+
         decided = [
             comparison
             for comparison in self.comparisons
@@ -292,6 +341,11 @@ class RegressionReport:
             comparison.status == "no_baseline" for comparison in self.comparisons
         ):
             raise ValueError("a previous run cannot yield only no_baseline results")
+        if self.previous_run_id == self.run_id:
+            raise ValueError("a report cannot compare a run against itself")
+
+        # The guard is a construction capability, never retained state.
+        object.__setattr__(self, "guard", None)
 
     def to_dict(self) -> dict[str, Any]:
         # Built explicitly rather than through asdict() so the frozen totals
@@ -315,6 +369,7 @@ class RegressionReport:
             "comparisons": [asdict(item) for item in self.comparisons],
             "previous_run_id": self.previous_run_id,
             "regressed": self.regressed,
+            "run_fingerprint": self.run_fingerprint,
         }
 
     def to_json(self) -> str:
@@ -520,10 +575,11 @@ def _validate_totals(totals: Mapping[str, Any]) -> None:
         raise ValueError("report totals outcomes must sum to the case total")
     if counts["scored"] > counts["total"]:
         raise ValueError("report totals scored cannot exceed the case total")
-    # A scored case is one that produced a quality measurement, so it can never
-    # exceed the passed/failed population.
-    if counts["scored"] > counts["passed"] + counts["failed"]:
-        raise ValueError("report totals scored cannot exceed passed plus failed")
+    # Under the accepted BenchmarkResult contract a passed or failed result has
+    # measured quality, while unscored and error results do not. A real
+    # BenchmarkRun.summary therefore always satisfies this equality exactly.
+    if counts["scored"] != counts["passed"] + counts["failed"]:
+        raise ValueError("report totals scored must equal passed plus failed")
 
     for name in ("quality_mean", "baseline_quality_mean"):
         value = totals[name]
@@ -639,6 +695,8 @@ def build_report(
         regressed=any(
             comparison.status == "regressed" for comparison in comparisons
         ),
+        run_fingerprint=run_fingerprint(run),
+        guard=_REPORT_GUARD,
     )
 
 
@@ -649,6 +707,47 @@ def previous_run(store: BenchmarkStore, *, exclude_run_id: str) -> BenchmarkRun 
         if candidate.run_id != exclude_run_id:
             return candidate
     return None
+
+
+def run_fingerprint(run: BenchmarkRun) -> str:
+    """SHA-256 of the retained run's canonical JSON."""
+
+    return hashlib.sha256(run.to_json().encode("utf-8")).hexdigest()
+
+
+def validate_report_against_run(report: RegressionReport, run: BenchmarkRun) -> None:
+    """Prove a report describes exactly the retained run it claims.
+
+    Every identity field is recomputed from the run, so a report carrying an
+    invented suite, revision, evaluator or summary is rejected even when its own
+    internal numbers are coherent.
+    """
+
+    if not isinstance(report, RegressionReport):
+        raise ValueError("run binding requires a RegressionReport")
+    if not isinstance(run, BenchmarkRun):
+        raise ValueError("run binding requires a BenchmarkRun")
+    for name, actual, expected in (
+        ("suite_name", report.suite_name, run.suite_name),
+        ("suite_version", report.suite_version, run.suite_version),
+        ("run_id", report.run_id, run.run_id),
+        ("source_revision", report.source_revision, run.source_revision),
+        ("candidate_id", report.candidate_id, run.candidate_id),
+        ("baseline_id", report.baseline_id, run.baseline_id),
+    ):
+        if actual != expected:
+            raise ValueError(f"report {name} does not match the retained run")
+    if dict(report.totals) != run.summary:
+        raise ValueError("report totals do not match the retained run summary")
+    if report.run_fingerprint != run_fingerprint(run):
+        raise ValueError("report is not bound to the retained run")
+
+
+def _validate_sha256(value: Any, name: str) -> None:
+    if not isinstance(value, str) or len(value) != _SHA256_HEX_LENGTH:
+        raise ValueError(f"report {name} must be a SHA-256 hex digest")
+    if any(character not in "0123456789abcdef" for character in value):
+        raise ValueError(f"report {name} must be a SHA-256 hex digest")
 
 
 def _render(value: float | None) -> str:
