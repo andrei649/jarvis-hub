@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _nerva_e2_0_checks import run_e2_0_checks  # noqa: E402
 from _nerva_e3_0_checks import run_e3_0_checks  # noqa: E402
 from _nerva_e3_0_revision_checks import run_e3_0_revision_checks  # noqa: E402
+from _nerva_e3_1_checks import run_e3_1_checks  # noqa: E402
 
 from agents.core.memory.bitemporal import BiTemporalKG  # noqa: E402
 
@@ -57,6 +58,7 @@ def test_known_as_of_transaction_time(tmp_path):
     run_e2_0_checks(tmp_path)
     run_e3_0_checks(tmp_path)
     run_e3_0_revision_checks()
+    run_e3_1_checks()
 
 
 def test_multi_valued_does_not_invalidate(tmp_path):
