@@ -47,7 +47,10 @@ completes its epic):
   promotion. Merged as `df0d529`; docs in [`docs/nerva2/REFLECTION_E6_0.md`](docs/nerva2/REFLECTION_E6_0.md).
 
 E1 and E6 remain `BUILDING`. E5 Night Shift stays blocked: it needs sufficient E1/E2/E3/E6
-behavior **plus** the B7 task-level Ultron mediation evidence, which is still unallocated.
+behavior **plus** the B7 task-level Ultron mediation evidence. B7 status per the #757/#778
+work-claim ledger: the **discovery claim is reserved** to the Ultron Security Architect on
+`nerva2/b7-task-mediation-evidence` — no child issue and no branch exist yet, implementation
+has not started, and acceptance evidence is still required. B7 therefore remains open.
 
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**
 
