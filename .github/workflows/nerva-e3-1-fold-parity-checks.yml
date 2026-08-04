@@ -1,0 +1,64 @@
+name: Nerva E3.1 fold parity checks
+
+on:
+  push:
+    branches:
+      - nerva2/e3-1-longitudinal-retrieval-compare
+    paths:
+      - .github/workflows/nerva-e3-1-fold-parity-checks.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fold parity checks into existing E3.1 surface
+        shell: bash
+        run: |
+          python - <<'PYCODE'
+          from pathlib import Path
+
+          checks_path = Path("tests/_nerva_e3_1_checks.py")
+          checks = checks_path.read_text(encoding="utf-8")
+          anchor = """    assert forward.to_json() == reversed_report.to_json()\n    assert forward.replay_fingerprint == reversed_report.replay_fingerprint\n\n"""
+          addition = """    harbor = next(\n        case for case in cases if case.case_id == \"stable-harbor-outcome\"\n    )\n    question_aligned = replace(\n        harbor,\n        query=EpisodeQuery(situation_terms=(\"project harbor\",), limit=5),\n    )\n    oracle_diagnostic = replace(\n        harbor,\n        query=EpisodeQuery(\n            outcome_record_ids=(\"outcome:harbor-green\",),\n            limit=5,\n        ),\n    )\n    aligned_report = await compare_episode_retrieval(\n        cases=(question_aligned,),\n        comparison_id=\"e3.1-query-invariance\",\n        baseline_runner=perfect_baseline,\n        baseline_source=\"tests.perfect_baseline\",\n    )\n    oracle_report = await compare_episode_retrieval(\n        cases=(oracle_diagnostic,),\n        comparison_id=\"e3.1-query-invariance\",\n        baseline_runner=perfect_baseline,\n        baseline_source=\"tests.perfect_baseline\",\n    )\n    assert aligned_report.to_json() == oracle_report.to_json()\n    assert (\n        oracle_report.episode_accuracy.source\n        == \"episodes.retrieve_episodes.question_derived\"\n    )\n\n    juniper = next(\n        case for case in cases if case.case_id == \"multi-session-juniper\"\n    )\n    juniper_aligned = replace(\n        juniper,\n        query=EpisodeQuery(situation_terms=(\"project juniper\",), limit=5),\n    )\n    answer_bearing = replace(\n        juniper,\n        query=EpisodeQuery(situation_terms=(\"solar sensor\",), limit=5),\n    )\n    aligned_juniper_report = await compare_episode_retrieval(\n        cases=(juniper_aligned,),\n        comparison_id=\"e3.1-answer-query-invariance\",\n        baseline_runner=perfect_baseline,\n        baseline_source=\"tests.perfect_baseline\",\n    )\n    answer_bearing_report = await compare_episode_retrieval(\n        cases=(answer_bearing,),\n        comparison_id=\"e3.1-answer-query-invariance\",\n        baseline_runner=perfect_baseline,\n        baseline_source=\"tests.perfect_baseline\",\n    )\n    assert aligned_juniper_report.to_json() == answer_bearing_report.to_json()\n\n    oracle_only = replace(\n        harbor,\n        question=\"What happened?\",\n        query=EpisodeQuery(\n            outcome_record_ids=(\"outcome:harbor-green\",),\n            limit=5,\n        ),\n    )\n    fail_closed = await compare_episode_retrieval(\n        cases=(oracle_only,),\n        comparison_id=\"e3.1-oracle-fail-closed\",\n        baseline_runner=perfect_baseline,\n        baseline_source=\"tests.perfect_baseline\",\n    )\n    assert fail_closed.baseline_accuracy.value == 1.0\n    assert fail_closed.episode_accuracy.value == 0.0\n    assert fail_closed.cases[0].episode_match_count == 0\n    assert fail_closed.episode_win_count == 0\n    assert fail_closed.episode_loss_count == 1\n    assert fail_closed.no_regression is False\n\n"""
+          if checks.count(anchor) != 1:
+              raise SystemExit("E3.1 replay anchor was not unique")
+          checks_path.write_text(checks.replace(anchor, anchor + addition), encoding="utf-8")
+
+          docs_path = Path("docs/nerva2/EPISODE_RETRIEVAL_E3_1.md")
+          docs = docs_path.read_text(encoding="utf-8")
+          old_scope = """1. `agents/core/memory/episode_compare.py` — typed comparison input, result,\n   canonical report, and deterministic question-derived Episode query;\n2. `tests/_nerva_e3_1_checks.py` — longitudinal, privacy, provenance, budget,\n   determinism, revision, and failure-isolation regressions;\n3. `tests/test_nerva_e3_1_query_parity.py` — focused oracle-query and canonical\n   query-parity regressions;\n4. `tests/test_h14_1_bitemporal_kg.py` — count-neutral invocation through the\n   established E2/E3 full-suite hook;\n5. this evidence document.\n"""
+          new_scope = """1. `agents/core/memory/episode_compare.py` — typed comparison input, result,\n   canonical report, and deterministic question-derived Episode query;\n2. `tests/_nerva_e3_1_checks.py` — longitudinal, privacy, provenance, budget,\n   revision, determinism, failure-isolation, oracle-query, and canonical\n   query-parity regressions;\n3. `tests/test_h14_1_bitemporal_kg.py` — count-neutral invocation through the\n   established E2/E3 full-suite hook;\n4. this evidence document.\n"""
+          if docs.count(old_scope) != 1:
+              raise SystemExit("E3.1 documentation scope block was not unique")
+          docs = docs.replace(old_scope, new_scope)
+          docs = docs.replace(
+              "Revert the five-file E3.1 diff as one unit.",
+              "Revert the four-file E3.1 diff as one unit.",
+          )
+          docs_path.write_text(docs, encoding="utf-8")
+
+          Path("tests/test_nerva_e3_1_query_parity.py").unlink()
+          Path(".github/workflows/nerva-e3-1-fold-parity-checks.yml").unlink()
+          PYCODE
+          pip install --require-hashes -r requirements-beta.lock
+          pip install --require-hashes -r requirements-dev.lock
+          ruff check agents/core/memory/episode_compare.py tests/_nerva_e3_1_checks.py tests/test_h14_1_bitemporal_kg.py
+          python scripts/status_sync.py --check
+          python -m pytest tests/test_h14_1_bitemporal_kg.py -q --timeout=90
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "test(nerva): fold E3.1 parity checks into existing surface"
+          git push origin HEAD:${{ github.ref_name }}
