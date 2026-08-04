@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _nerva_e3_1_checks import _longitudinal_cases  # noqa: E402
+
 from agents.core.memory.episode_compare import (  # noqa: E402
     compare_episode_retrieval,
 )
