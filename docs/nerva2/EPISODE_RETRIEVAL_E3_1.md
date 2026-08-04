@@ -38,21 +38,30 @@ introduced.
 The PR contains one evaluation package with a single dependency gate, authority
 boundary, test surface, and rollback:
 
-1. `agents/core/memory/episode_compare.py` — typed comparison input, result, and
-   canonical report;
+1. `agents/core/memory/episode_compare.py` — typed comparison input, result,
+   canonical report, and deterministic question-derived Episode query;
 2. `tests/_nerva_e3_1_checks.py` — longitudinal, privacy, provenance, budget,
    determinism, revision, and failure-isolation regressions;
-3. `tests/test_h14_1_bitemporal_kg.py` — count-neutral invocation through the
+3. `tests/test_nerva_e3_1_query_parity.py` — focused oracle-query and canonical
+   query-parity regressions;
+4. `tests/test_h14_1_bitemporal_kg.py` — count-neutral invocation through the
    established E2/E3 full-suite hook;
-4. this evidence document.
+5. this evidence document.
 
 Splitting these files would leave either an untested contract or tests without
 their declared evidence and rollback boundary.
 
 ## Evidence semantics
 
-Each comparison case runs both paths over the same transient facts, question,
-expected answer, and abstention rule. Canonical reports retain only:
+Each comparison case gives both paths the same natural-language question,
+expected answer, abstention rule, and one explicit retrieval budget. The two
+memory representations are **semantically aligned but not literally identical**:
+MemoryManager receives transient fixture facts, while Episodes receives typed
+immutable records. Canonical Episodes retrieval derives its selectors only from
+the shared question; a separately authored diagnostic `EpisodeQuery` is never
+executed for baseline-comparison evidence.
+
+Canonical reports retain only:
 
 - bounded content-free case and ability identifiers;
 - explicit fixture privacy class;
@@ -64,16 +73,14 @@ expected answer, and abstention rule. Canonical reports retain only:
 - explicit `not_measured` latency and real-outcome quality.
 
 The report does not retain fixture facts, questions, expected text, Episode
-assertion text, retrieved snippets, answers, or exception messages.
+assertion text, retrieved snippets, answers, diagnostic queries, or exception
+messages.
 
 `no_regression=true` is derived, not caller-controlled. It requires zero
 baseline failures, zero Episode failures, and Episode accuracy greater than or
 equal to the baseline on the bounded fixture.
 
 ## Independent-review corrections
-
-The candidate fails closed on the three evidence gaps identified during
-independent integration review:
 
 ### Baseline provenance binding
 
@@ -96,11 +103,37 @@ actually synthetic and redacted text remains locally governed.
 
 ### Equal retrieval budgets
 
-`top_k` is the single explicit comparison retrieval budget. Every
+`top_k` is the single explicit comparison retrieval budget. Every diagnostic
 `EpisodeQuery.limit` must equal it before either path runs. Baseline reports that
 claim a different budget or return more than the requested number of snippets
 fail closed; Episode results exceeding the same bound also fail. The canonical
 report records the shared budget.
+
+### Question-derived canonical query parity
+
+The canonical Episodes path does not execute the fixture author's query. It
+derives a new immutable `EpisodeQuery` solely from the natural-language question
+that is also given to MemoryManager:
+
+1. compound identifiers containing `-`, `_`, or `:` are preferred;
+2. otherwise, title-cased multiword phrases are preferred;
+3. a bounded non-stopword lexical fallback is used only when neither exists.
+
+This rule prevents exact outcome IDs, participant IDs, answer-bearing terms, or
+other oracle selectors absent from the question from influencing
+`no_regression`. The retained metric source is
+`episodes.retrieve_episodes.question_derived`, making the evidence path explicit.
+
+The caller-supplied `EpisodeComparisonCase.query` remains available only as a
+separately labelled diagnostic fixture and is excluded from canonical execution
+and serialization. Focused tests show that replacing a question-aligned
+diagnostic with an exact outcome-ID oracle leaves canonical evidence unchanged,
+and that an oracle-only selector cannot rescue a case whose shared question
+derives no matching Episode evidence.
+
+This is lexical parity, not proof of semantic equivalence. Fixture authors must
+still justify that transient facts and typed Episode records represent the same
+underlying event and that the shared question is not itself answer-bearing.
 
 ## Longitudinal fixture
 
@@ -123,8 +156,9 @@ not establish broad semantic-memory quality.
 - malformed or failed baseline evidence cannot produce a positive result;
 - baseline and Episode failures are isolated per path and retained only by
   exception type;
+- canonical question-derived selectors are deterministic;
 - canonical JSON and SHA-256 replay fingerprints are stable under case-order
-  changes.
+  changes and diagnostic-query substitutions.
 
 ## Explicit exclusions
 
@@ -142,6 +176,9 @@ This package does not add:
 ## Residual risks
 
 - keyword scoring can understate or overstate semantic answer quality;
+- lexical question anchors are transparent but not a semantic retrieval model;
+- fixture alignment between transient facts and typed records remains
+  caller-governed;
 - the real baseline transiently ingests fixture text even though reports omit it;
 - bounded identifiers remain linkable and must not encode personal content;
 - `redacted_local` data still requires local access and retention governance;
@@ -157,6 +194,8 @@ The focused regression surface verifies:
 - injected-runner provenance binding;
 - typed public/local privacy compatibility;
 - corrected, tombstoned, stable, multi-session, and forked histories;
+- question-derived canonical selectors and diagnostic-query non-authority;
+- exact outcome-ID oracle and answer-bearing-selector isolation;
 - canonical derived values, deterministic JSON, and replay fingerprint;
 - content-free retained evidence and exception-type-only failures;
 - fixed evaluation-only authority.
@@ -166,9 +205,9 @@ fresh independent review.
 
 ## Rollback
 
-Revert the four-file E3.1 diff as one unit. This removes the comparison module,
-its focused checks, the two-line H14.1 hook, and this document. Accepted E3.0,
-the existing memory evaluation harness, production recall, and stored data are
+Revert the five-file E3.1 diff as one unit. This removes the comparison module,
+its focused checks, the H14.1 hook, and this document. Accepted E3.0, the
+existing memory evaluation harness, production recall, and stored data are
 unchanged; no migration or compensating action is required.
 
 ## Next work package
