@@ -70,12 +70,12 @@ A result generated for one prompt or criterion therefore cannot be retained unde
 Versioned construction and deserialization enforce:
 
 - quality, baseline quality and reliability are numeric ratios in `[0, 1]` when measured;
+- result status, pass flag and measured quality agree at the reused `EvalHarness` boundary: a score `>= 0.5` passes and a score `< 0.5` fails;
 - latency is finite non-negative `ms`;
 - cost is finite non-negative `usd`;
 - privacy uses one declared classification value;
 - resources are typed, numeric and uniquely named;
 - failed evidence carries a canonical source but no value or unit;
-- result status agrees with pass flags, candidate evidence and quality evidence;
 - candidate and baseline errors retain only canonical exception class identifiers;
 - baseline errors require absent baseline evidence and failed baseline-quality evidence;
 - `baseline_id=None` forbids retained baseline evidence, baseline errors and measured/failed baseline quality;
@@ -83,7 +83,7 @@ Versioned construction and deserialization enforce:
 - candidate-error runs skip the baseline explicitly as `not_measured`; they cannot retain baseline evidence or a fabricated baseline failure;
 - stored results require an exact immutable suite-case content fingerprint.
 
-These rules prevent anonymous baselines, contradictory summary means and evidence attributed to altered tests.
+These rules prevent anonymous baselines, contradictory pass/fail summaries and evidence attributed to altered tests.
 
 ## Router provenance boundary
 
@@ -114,6 +114,7 @@ Deserialization rejects modified authority flags and summary drift. Benchmark co
 `tests/test_nerva_benchmark_e9_0.py` preserves the twelve-test focused surface and covers:
 
 - case/run round trips plus digest, fingerprint, authority and summary tamper rejection;
+- exact `EvalHarness` pass-boundary behavior plus hostile rejection of passed/failed metadata that contradicts measured quality;
 - owner-private local-only enforcement before storage;
 - separate candidate/baseline route, model, provider, host and hardware evidence;
 - criterion-less, negative and runner-error behavior;
@@ -128,7 +129,7 @@ Deserialization rejects modified authority flags and summary drift. Benchmark co
 - direct compatibility imports resolving to the canonical classes and adapter;
 - anonymous baseline evidence, declared/not-applicable baselines and fabricated skipped-baseline failures rejected on round trip.
 
-The ten unchanged tests remain in `tests/_nerva_benchmark_e9_0_base.py` and are collected through the public test module. CI remains software evidence only, not owner-hardware, provider, energy or live-workflow proof.
+The nine unchanged tests remain in `tests/_nerva_benchmark_e9_0_base.py`; the adjusted structural-fingerprint regression and two bounded independent-review regressions are collected through the public test module. CI remains software evidence only, not owner-hardware, provider, energy or live-workflow proof.
 
 ## Documentation consistency
 
