@@ -14,7 +14,7 @@ proves scheduled operation and reporting only.
 ## Dependency and authority boundary
 
 - prerequisites: accepted E9.0 / #784 / #803 and Cortex E1.1 / #792, both in `main`;
-- base revision: `main@5bd996f83f9a5cca10fa49d0c680b851c18139e8`;
+- base revision: `main@df0d529` (current `main` after E6.0 / #808 integration);
 - report authority is fixed to `evaluation_only`;
 - Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 
@@ -88,6 +88,15 @@ shelling out to git**: a report that cannot name its exact revision is not
 evidence, so the run fails instead of guessing, and the package carries no
 subprocess surface.
 
+The value is validated against the repository's accepted exact-commit format,
+reusing E9.0's `_source_revision` as the single source of truth. A symbolic name
+(`latest`, `HEAD`, a branch, `refs/heads/...`), a truncated, over-length,
+uppercase or non-hex digest is refused. Whitespace padding is stripped rather
+than treated as a distinct revision. Validation happens at the E9.1 boundary and
+again inside `run_scheduled_suite()`, so a malformed revision reaches the honest
+`PrerequisiteError` path instead of surfacing as an unhandled `ValueError` deep
+in the harness.
+
 When a prerequisite is missing, or the source revision cannot be resolved, the CLI:
 
 - writes a visible `### Nerva E9.1 — FAILED` block to the job summary;
@@ -108,27 +117,44 @@ daily schedule, on `workflow_dispatch`, and on pull requests touching the
 observability package or this lane. It declares least-privilege
 `permissions: contents: read`.
 
-Retention is the GitHub Actions cache at `.nerva-bench-cache/e9-1`, keyed on the
-hashes of `scheduled_report.py` and `benchmark.py`. It holds only
-synthetic-public suite content and run evidence — no owner data, no provider
-secrets, no credentials. The baseline is saved only on a successful non-pull-request
-run, so a pull request can never poison the scheduled baseline. A cache miss
-degrades to `no_baseline`, never to a fabricated comparison.
+**Evidence retention and baseline promotion are separate concerns**, because a
+regressed run is exactly the evidence that must survive:
 
-The job writes to `$GITHUB_STEP_SUMMARY`; `--json-out` is available for local
-runs and is not enabled in CI.
+| concern | mechanism | condition |
+|---|---|---|
+| evidence retention | `actions/upload-artifact`, 14-day retention | `always()` |
+| baseline promotion | `actions/cache/save` at `.nerva-bench-cache/e9-1` | `success() && github.event_name != 'pull_request'` |
+
+The run and its report are recorded **before** the process exits, so a regression
+that makes `--fail-on-regression` exit `1` still leaves the completed run in the
+accepted store and the report on disk; the artifact upload then retains both.
+Baseline promotion stays gated on `success()`, so a regressed or failed run is
+never silently adopted as the next comparison baseline, and a pull request can
+never poison the scheduled baseline. A cache miss degrades to `no_baseline`,
+never to a fabricated comparison.
+
+Both properties are asserted at the workflow level in
+`tests/_nerva_e9_1_checks.py`, and the retention half is additionally proven
+hermetically: a forced regression exits `1` while the store still contains the
+run and the report still records `regressed: true`.
+
+The cache and artifact hold only synthetic-public suite content and run evidence
+— no owner data, no provider secrets, no credentials. The job writes to
+`$GITHUB_STEP_SUMMARY` and `--json-out`.
 
 ## Test surface and test-count neutrality
 
 The repository pins its generated test count. Following the E3.0/E3.1/E6.0
 convention, the bounded assertions live in `tests/_nerva_e9_1_checks.py` and are
 invoked from the existing `tests/test_nerva_benchmark_e9_0.py` regression, so the
-collected test count is unchanged (5767 before and after). Ten assertion groups
+collected test count is unchanged (5767 before and after). Thirteen assertion groups
 cover synthetic-public/CI-only enforcement, suite-version stability, persistence
 through the accepted store, the first-run `no_baseline` state, regression and
 improvement decisions, refusal to coerce unmeasured metrics, deterministic
-evaluation-only reports, report invariants, visible prerequisite failure, and the
-CLI path.
+evaluation-only reports, report invariants, visible prerequisite failure,
+exact-commit-SHA validation against symbolic and malformed values, retention of a
+regressed run without baseline promotion, the workflow-level separation of those
+two concerns, and the CLI path.
 
 ## What this slice is not
 

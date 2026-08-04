@@ -77,6 +77,7 @@ jobs:
       # compare against. A cache miss is reported as "no_baseline", never as a
       # fabricated pass.
       NERVA_BENCH_STORE: ${{ github.workspace }}/.nerva-bench-cache/e9-1
+      NERVA_BENCH_REPORT: ${{ github.workspace }}/.nerva-bench-cache/e9-1-report.json
       NERVA_BENCH_CACHE_PREFIX: nerva-router-shadow-ubuntu-v1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -93,14 +94,34 @@ jobs:
             ${{ env.NERVA_BENCH_CACHE_PREFIX }}-${{ hashFiles('agents/core/observability/scheduled_report.py', 'agents/core/observability/benchmark.py') }}-
 
       - name: Scheduled router shadow comparison
+        id: shadow
         run: |
           python -m agents.core.observability.scheduled_report \
             --store-root "$NERVA_BENCH_STORE" \
             --summary "$GITHUB_STEP_SUMMARY" \
+            --json-out "$NERVA_BENCH_REPORT" \
             --revision "$GITHUB_SHA" \
             --runner-id "github-${{ runner.os }}-${{ runner.arch }}" \
             --fail-on-regression
 
+      # Evidence retention is deliberately separate from baseline promotion.
+      # This runs on always(), so a regressed or failed run — exactly the
+      # evidence #807 requires to stay visible — is retained and reproducible
+      # even though the step above exited non-zero.
+      - name: Upload scheduled shadow evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: nerva-router-shadow-evidence-${{ github.run_id }}
+          path: |
+            ${{ env.NERVA_BENCH_STORE }}
+            ${{ env.NERVA_BENCH_REPORT }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Baseline promotion stays gated on success(): a regressed or failed run
+      # is retained above but must never silently become the accepted
+      # comparison baseline for the next scheduled run.
       - name: Save scheduled shadow baseline
         if: ${{ success() && github.event_name != 'pull_request' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0

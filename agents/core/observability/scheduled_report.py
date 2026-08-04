@@ -32,6 +32,12 @@ from agents.core.observability.benchmark import (
     KeywordRouteBaseline,
     current_router_runner,
 )
+from agents.core.observability.benchmark import (
+    # Single source of truth for the repository's exact-commit format. Validating
+    # here keeps a malformed revision on the honest PrerequisiteError path
+    # instead of surfacing as an unhandled ValueError deep in the harness.
+    _source_revision as _validate_exact_revision,
+)
 
 SUITE_NAME = "nerva-router-shadow"
 CANDIDATE_ID = "current-router"
@@ -282,19 +288,32 @@ def source_revision(
     The revision is supplied explicitly or through the environment. It is never
     discovered by shelling out: a report that cannot name its exact revision is
     not evidence, so the run fails rather than guessing.
+
+    The value must be an exact lowercase commit SHA in the repository's accepted
+    format. A symbolic name such as ``latest`` or a branch, a truncated or
+    uppercase digest, or a whitespace-padded value is refused here rather than
+    being serialized as exact evidence.
     """
 
-    if explicit:
-        return explicit
-    source = os.environ if env is None else env
-    for name in REVISION_ENV_VARS:
-        value = (source.get(name) or "").strip()
-        if value:
-            return value
-    raise PrerequisiteError(
-        "cannot resolve source revision: pass --revision or set "
-        + " or ".join(REVISION_ENV_VARS)
-    )
+    candidate = (explicit or "").strip()
+    if not candidate:
+        source = os.environ if env is None else env
+        for name in REVISION_ENV_VARS:
+            value = (source.get(name) or "").strip()
+            if value:
+                candidate = value
+                break
+    if not candidate:
+        raise PrerequisiteError(
+            "cannot resolve source revision: pass --revision or set "
+            + " or ".join(REVISION_ENV_VARS)
+        )
+    try:
+        return _validate_exact_revision(candidate)
+    except ValueError as exc:
+        raise PrerequisiteError(
+            f"source revision is not an exact commit SHA: {exc}"
+        ) from exc
 
 
 def ensure_suite(store: BenchmarkStore) -> int:
@@ -329,6 +348,8 @@ async def run_scheduled_suite(
         raise PrerequisiteError(
             "scheduled suite prerequisites are missing: " + ", ".join(missing)
         )
+    # Defence in depth: a direct caller cannot bypass the exact-revision format.
+    revision = source_revision(revision)
 
     from agents.core.router import IntentRouter
 

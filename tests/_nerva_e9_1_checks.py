@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -32,6 +33,7 @@ from agents.core.observability.scheduled_report import (
     source_revision,
 )
 
+ROOT = Path(__file__).resolve().parent.parent
 _REVISION = "a" * 40
 _OTHER_REVISION = "b" * 40
 
@@ -297,6 +299,152 @@ def _check_missing_prerequisites_fail_visibly(tmp_path, monkeypatch) -> None:
     assert source_revision(_OTHER_REVISION, env={"GITHUB_SHA": _REVISION}) == (
         _OTHER_REVISION
     )
+    # Whitespace padding is stripped, not treated as a distinct revision.
+    assert source_revision(f"  {_REVISION}  ", env={}) == _REVISION
+
+
+def _check_revision_must_be_an_exact_commit_sha(tmp_path) -> None:
+    """A symbolic, malformed or truncated revision is never serialized."""
+
+    for value in (
+        "latest",
+        "HEAD",
+        "main",
+        "refs/heads/main",
+        _REVISION[:39],
+        _REVISION + "a",
+        _REVISION.upper(),
+        "z" * 40,
+        "a" * 41,
+    ):
+        with pytest.raises(PrerequisiteError, match="not an exact commit SHA"):
+            source_revision(value, env={})
+        # The environment path is validated identically.
+        with pytest.raises(PrerequisiteError, match="not an exact commit SHA"):
+            source_revision(None, env={"GITHUB_SHA": value})
+
+    # A 64-character digest is also an accepted exact revision.
+    assert source_revision("b" * 64, env={}) == "b" * 64
+
+    # A direct caller cannot bypass the format either, and the CLI turns it
+    # into the honest FAILED path rather than an unhandled traceback.
+    store_root = tmp_path / "bad-revision"
+    with pytest.raises(PrerequisiteError, match="not an exact commit SHA"):
+        asyncio.run(run_scheduled_suite(BenchmarkStore(store_root), revision="latest"))
+
+    summary = tmp_path / "bad-revision-summary.md"
+    assert (
+        main(
+            [
+                "--store-root",
+                str(store_root),
+                "--summary",
+                str(summary),
+                "--revision",
+                "latest",
+            ]
+        )
+        == 2
+    )
+    text = summary.read_text(encoding="utf-8")
+    assert "FAILED" in text
+    assert "not an exact commit SHA" in text
+    assert BenchmarkStore(store_root).runs(SUITE_NAME, last_n=5) == ()
+
+
+def _check_regressed_run_is_retained_but_not_promoted(tmp_path, monkeypatch) -> None:
+    """A regression keeps its evidence; only baseline promotion is withheld."""
+
+    import agents.core.observability.scheduled_report as module
+
+    store_root = tmp_path / "regressed"
+    store = BenchmarkStore(store_root)
+    asyncio.run(run_scheduled_suite(store, revision=_REVISION, run_id="run-prior"))
+
+    def _metrics(run):
+        if run.run_id == "run-prior":
+            return {
+                "quality_mean": 1.0,
+                "baseline_quality_mean": 1.0,
+                "pass_ratio": 1.0,
+            }
+        return {
+            "quality_mean": 0.25,
+            "baseline_quality_mean": 1.0,
+            "pass_ratio": 0.25,
+        }
+
+    monkeypatch.setattr(module, "_run_metrics", _metrics)
+
+    summary = tmp_path / "regressed-summary.md"
+    json_out = tmp_path / "regressed-report.json"
+    exit_code = main(
+        [
+            "--store-root",
+            str(store_root),
+            "--summary",
+            str(summary),
+            "--json-out",
+            str(json_out),
+            "--revision",
+            _OTHER_REVISION,
+            "--fail-on-regression",
+        ]
+    )
+
+    # The gate fails, as it must.
+    assert exit_code == 1
+
+    # The negative evidence survives the failure: the run is retained in the
+    # accepted store and the report is written, both before the non-zero exit.
+    retained = BenchmarkStore(store_root).runs(SUITE_NAME, last_n=5)
+    assert len(retained) == 2
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    assert payload["regressed"] is True
+    assert payload["previous_run_id"] == "run-prior"
+    assert "regressed" in summary.read_text(encoding="utf-8")
+
+    # Without the flag the same regression is reported but not enforced.
+    assert (
+        main(
+            [
+                "--store-root",
+                str(store_root),
+                "--summary",
+                str(summary),
+                "--revision",
+                _OTHER_REVISION,
+            ]
+        )
+        == 0
+    )
+
+
+def _check_workflow_separates_retention_from_promotion() -> None:
+    """Evidence upload runs always; baseline promotion stays gated on success."""
+
+    import yaml
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "eval-nightly.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    steps = workflow["jobs"]["nerva-router-shadow"]["steps"]
+    by_name = {step.get("name"): step for step in steps}
+
+    upload = by_name["Upload scheduled shadow evidence"]
+    assert "always()" in upload["if"]
+    assert "success()" not in upload["if"]
+
+    save = by_name["Save scheduled shadow baseline"]
+    assert "success()" in save["if"]
+    assert "pull_request" in save["if"]
+
+    # Least privilege is declared on the job itself.
+    assert workflow["jobs"]["nerva-router-shadow"]["permissions"] == {
+        "contents": "read"
+    }
 
 
 def _check_cli_reports_without_changing_routing(tmp_path) -> None:
@@ -399,4 +547,7 @@ def run_e9_1_checks(tmp_path, monkeypatch) -> None:
     _check_report_is_deterministic_and_evaluation_only(tmp_path)
     _check_report_invariants_reject_incoherent_summaries()
     _check_missing_prerequisites_fail_visibly(tmp_path, monkeypatch)
+    _check_revision_must_be_an_exact_commit_sha(tmp_path)
+    _check_regressed_run_is_retained_but_not_promoted(tmp_path, monkeypatch)
+    _check_workflow_separates_retention_from_promotion()
     _check_cli_reports_without_changing_routing(tmp_path)
