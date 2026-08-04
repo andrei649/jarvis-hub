@@ -293,6 +293,84 @@ async def _run_e3_1_checks() -> None:
     assert forward.to_json() == reversed_report.to_json()
     assert forward.replay_fingerprint == reversed_report.replay_fingerprint
 
+    harbor = next(
+        case for case in cases if case.case_id == "stable-harbor-outcome"
+    )
+    question_aligned = replace(
+        harbor,
+        query=EpisodeQuery(situation_terms=("project harbor",), limit=5),
+    )
+    oracle_diagnostic = replace(
+        harbor,
+        query=EpisodeQuery(
+            outcome_record_ids=("outcome:harbor-green",),
+            limit=5,
+        ),
+    )
+    aligned_report = await compare_episode_retrieval(
+        cases=(question_aligned,),
+        comparison_id="e3.1-query-invariance",
+        baseline_runner=perfect_baseline,
+        baseline_source="tests.perfect_baseline",
+    )
+    oracle_report = await compare_episode_retrieval(
+        cases=(oracle_diagnostic,),
+        comparison_id="e3.1-query-invariance",
+        baseline_runner=perfect_baseline,
+        baseline_source="tests.perfect_baseline",
+    )
+    assert aligned_report.to_json() == oracle_report.to_json()
+    assert (
+        oracle_report.episode_accuracy.source
+        == "episodes.retrieve_episodes.question_derived"
+    )
+
+    juniper = next(
+        case for case in cases if case.case_id == "multi-session-juniper"
+    )
+    juniper_aligned = replace(
+        juniper,
+        query=EpisodeQuery(situation_terms=("project juniper",), limit=5),
+    )
+    answer_bearing = replace(
+        juniper,
+        query=EpisodeQuery(situation_terms=("solar sensor",), limit=5),
+    )
+    aligned_juniper_report = await compare_episode_retrieval(
+        cases=(juniper_aligned,),
+        comparison_id="e3.1-answer-query-invariance",
+        baseline_runner=perfect_baseline,
+        baseline_source="tests.perfect_baseline",
+    )
+    answer_bearing_report = await compare_episode_retrieval(
+        cases=(answer_bearing,),
+        comparison_id="e3.1-answer-query-invariance",
+        baseline_runner=perfect_baseline,
+        baseline_source="tests.perfect_baseline",
+    )
+    assert aligned_juniper_report.to_json() == answer_bearing_report.to_json()
+
+    oracle_only = replace(
+        harbor,
+        question="What happened?",
+        query=EpisodeQuery(
+            outcome_record_ids=("outcome:harbor-green",),
+            limit=5,
+        ),
+    )
+    fail_closed = await compare_episode_retrieval(
+        cases=(oracle_only,),
+        comparison_id="e3.1-oracle-fail-closed",
+        baseline_runner=perfect_baseline,
+        baseline_source="tests.perfect_baseline",
+    )
+    assert fail_closed.baseline_accuracy.value == 1.0
+    assert fail_closed.episode_accuracy.value == 0.0
+    assert fail_closed.cases[0].episode_match_count == 0
+    assert fail_closed.episode_win_count == 0
+    assert fail_closed.episode_loss_count == 1
+    assert fail_closed.no_regression is False
+
     with pytest.raises(ValueError, match="runner identity"):
         await compare_episode_retrieval(
             cases=(cases[0],),
