@@ -94,10 +94,9 @@ validates itself:
   carry a previous value;
 - `totals` must match the benchmark summary key set exactly, satisfy the
   benchmark-summary invariants (non-negative integer counts, outcomes summing to
-  the case total, `scored` bounded by both the total and the passed/failed
-  population, ratio means inside `[0, 1]`, no score on an unscored run), and is
-  frozen at construction so mutating it afterwards cannot change later JSON or
-  Markdown;
+  the case total, `scored` within the case total, ratio means inside `[0, 1]`, no
+  score on an unscored run), and is frozen at construction so mutating it
+  afterwards cannot change later JSON or Markdown;
 - each comparison's `current` value is **derived from the retained totals**, so a
   report cannot publish a current value its own summary contradicts;
 - `scored` must equal `passed + failed`, because under the accepted
