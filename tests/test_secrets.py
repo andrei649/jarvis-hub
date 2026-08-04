@@ -1,5 +1,6 @@
 """Tests for the encrypted-at-rest SecretStore (H12.1)."""
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -83,6 +84,10 @@ def test_raw_fernet_key_accepted(tmp_path):
     if not _HAS_CRYPTOGRAPHY:
         pytest.skip("cryptography not installed")
     from cryptography.fernet import Fernet
+
+    # Security issue #800 requires the fixed major and the real encrypted-secret
+    # path to work on the exact package installed from the hash-pinned locks.
+    assert int(version("cryptography").split(".", maxsplit=1)[0]) >= 50
     raw = Fernet.generate_key().decode("ascii")
     store = SecretStore(tmp_path / "s.enc", key=raw)
     store.set("K", "v")
