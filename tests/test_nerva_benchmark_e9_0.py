@@ -1,8 +1,8 @@
 """E9.0 focused tests plus bounded independent-review regressions.
 
-The unchanged contract tests remain in the private base module so the two
-corrected tests can preserve the twelve-test collection surface and status
-metadata while adding the missing hostile cases.
+The unchanged contract tests remain in the private base module so the corrected
+tests can preserve the twelve-test collection surface and status metadata while
+adding the missing hostile cases.
 """
 
 import json
@@ -22,8 +22,9 @@ from agents.core.observability.benchmark import (
 from agents.core.router import IntentRouter
 from tests import _nerva_benchmark_e9_0_base as _base_tests
 
-# Preserve the ten unchanged focused tests without collecting the private base
-# module separately.
+# Preserve nine unchanged focused tests without collecting the private base
+# module separately. The structure-fingerprint test is repeated below with a
+# score that remains semantically consistent with its retained pass status.
 test_case_round_trip_requires_digest_and_preserves_dimensions = (
     _base_tests.test_case_round_trip_requires_digest_and_preserves_dimensions
 )
@@ -38,9 +39,6 @@ test_criterionless_case_is_unscored_not_passed = (
 )
 test_failed_and_negative_runs_are_retained_without_exception_messages = (
     _base_tests.test_failed_and_negative_runs_are_retained_without_exception_messages
-)
-test_structure_fingerprint_ignores_volatile_values_but_not_contract_shape = (
-    _base_tests.test_structure_fingerprint_ignores_volatile_values_but_not_contract_shape
 )
 test_store_rejects_path_escape_and_nonfinite_measurement = (
     _base_tests.test_store_rejects_path_escape_and_nonfinite_measurement
@@ -71,10 +69,78 @@ def _run_with(result, *, baseline_id):
     )
 
 
+def test_structure_fingerprint_ignores_volatile_values_but_not_contract_shape():
+    result = _base_tests._result_fixture()
+    run = BenchmarkRun(
+        suite_name="stable-shape",
+        suite_version=1,
+        lane="ci",
+        run_id="run-one",
+        started_at=_base_tests._FIXED_TS,
+        finished_at=_base_tests._FIXED_TS,
+        source_revision=_base_tests._REVISION,
+        candidate_id="current-router",
+        baseline_id=None,
+        results=(result,),
+    )
+    changed_values = replace(
+        run,
+        run_id="run-two",
+        source_revision="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        results=(
+            replace(
+                result,
+                quality=Measurement("measured", 0.75, "ratio", "test"),
+            ),
+        ),
+    )
+    changed_shape = replace(
+        run,
+        results=(
+            replace(
+                result,
+                baseline=_base_tests._evidence("jarvis"),
+                baseline_quality=Measurement("measured", 1.0, "ratio", "test"),
+            ),
+        ),
+        baseline_id="keyword-baseline.v1",
+    )
+
+    assert changed_values.structure_fingerprint == run.structure_fingerprint
+    assert changed_shape.structure_fingerprint != run.structure_fingerprint
+
+
 async def test_run_round_trip_rejects_authority_or_summary_tampering(tmp_path):
     await _base_tests.test_run_round_trip_rejects_authority_or_summary_tampering()
 
     result = _base_tests._result_fixture()
+
+    # Pass/fail metadata is inseparable from the measured score boundary reused
+    # from EvalHarness: >= 0.5 passes and < 0.5 fails.
+    assert replace(
+        result,
+        quality=Measurement("measured", 0.5, "ratio", "test"),
+    ).status == "passed"
+    assert replace(
+        result,
+        status="failed",
+        passed=False,
+        quality=Measurement("measured", 0.499999, "ratio", "test"),
+    ).status == "failed"
+
+    scored = _run_with(result, baseline_id=None)
+    payload = json.loads(scored.to_json())
+    payload["results"][0]["quality"]["value"] = 0.0
+    with pytest.raises(ValueError, match="EvalHarness pass threshold"):
+        BenchmarkRun.from_json(json.dumps(payload))
+
+    payload = json.loads(scored.to_json())
+    payload["results"][0]["status"] = "failed"
+    payload["results"][0]["passed"] = False
+    payload["results"][0]["quality"]["value"] = 0.5
+    with pytest.raises(ValueError, match="EvalHarness pass threshold"):
+        BenchmarkRun.from_json(json.dumps(payload))
+
     with_baseline = _run_with(
         replace(
             result,
