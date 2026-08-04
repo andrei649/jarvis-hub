@@ -483,9 +483,14 @@ def _validate_privacy(measurement: Measurement, *, statuses: set[str]) -> None:
         raise ValueError("privacy evidence must use Measurement")
     if measurement.status not in statuses:
         raise ValueError("privacy has an inconsistent measurement status")
-    if measurement.status == "measured":
-        if measurement.unit != "classification" or measurement.value not in _PRIVACY_EFFECTS:
-            raise ValueError("privacy must use a supported classification")
+    if (
+        measurement.status == "measured"
+        and (
+            measurement.unit != "classification"
+            or measurement.value not in _PRIVACY_EFFECTS
+        )
+    ):
+        raise ValueError("privacy must use a supported classification")
 
 
 @dataclass(frozen=True)
