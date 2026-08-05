@@ -16,7 +16,6 @@ import math
 import platform
 import re
 import sys
-import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
@@ -80,6 +79,7 @@ _CLASSIFICATION_PREFIX = "nerva://e6.1/classification/"
 _REPORT_GUARD = object()
 _ENVIRONMENT_GUARD = object()
 _MAX_TEXT = 10_000
+_FIXED_SYNTHETIC_EPOCH = 1_700_000_000.0
 
 
 def _canonical(value: Mapping[str, Any] | Sequence[Any]) -> str:
@@ -225,6 +225,19 @@ class RetentionPolicy:
     def fingerprint(self) -> str:
         return _sha256(asdict(self))
 
+    @property
+    def contract_fingerprint(self) -> str:
+        """Stable TTL semantics, excluding wall-clock artifact metadata."""
+
+        start = _timestamp(self.predeclared_at, "retention predeclared_at")
+        finish = _timestamp(self.expires_at, "retention expires_at")
+        return _sha256(
+            {
+                "ttl_milliseconds": int((finish - start).total_seconds() * 1_000),
+                "deletion_behavior": self.deletion_behavior,
+            }
+        )
+
 
 @dataclass(frozen=True)
 class EvaluationEnvironment:
@@ -302,6 +315,15 @@ def _observation_is_public(observation: OutcomeObservation) -> bool:
     references = (observation.expected_reference, *observation.observed_references)
     return observation.privacy_class == "public" and all(
         reference.privacy_class == "public" for reference in references
+    )
+
+
+def _observation_evidence_times(observation: OutcomeObservation) -> tuple[float, ...]:
+    return (
+        observation.observed_at,
+        observation.created_at,
+        observation.expected_reference.occurred_at,
+        *(reference.occurred_at for reference in observation.observed_references),
     )
 
 
@@ -472,6 +494,26 @@ class LessonEvaluationPlan:
         if self.max_outcome_age_seconds == 0:
             raise ValueError("max_outcome_age_seconds must be positive")
 
+        development_tokens: set[str] = set()
+        held_out_tokens: set[str] = set()
+        for item in self.cases:
+            for observation in item.development_observations:
+                development_tokens |= _observation_split_tokens(observation)
+                if any(
+                    timestamp > self.evaluated_at
+                    for timestamp in _observation_evidence_times(observation)
+                ):
+                    raise ValueError("future-dated development outcome evidence is not eligible")
+            if item.held_out_observation is not None:
+                held_out_tokens |= _observation_split_tokens(item.held_out_observation)
+                if any(
+                    timestamp > self.evaluated_at
+                    for timestamp in _observation_evidence_times(item.held_out_observation)
+                ):
+                    raise ValueError("future-dated held-out outcome evidence is not eligible")
+        if development_tokens & held_out_tokens:
+            raise ValueError("held-out split overlaps development evidence")
+
         privacy_classes = {item.privacy_class for item in self.cases}
         if len(privacy_classes) != 1:
             raise ValueError("privacy lanes must use separately retained suites")
@@ -509,7 +551,7 @@ class LessonEvaluationPlan:
                 "environment_fingerprint": self.environment.fingerprint,
                 "budget_fingerprint": self.budget.fingerprint,
                 "thresholds_fingerprint": self.thresholds.fingerprint,
-                "retention_fingerprint": self.retention.fingerprint,
+                "retention_contract_fingerprint": self.retention.contract_fingerprint,
                 "evaluated_at": float(self.evaluated_at),
                 "max_outcome_age_seconds": float(self.max_outcome_age_seconds),
             }
@@ -827,17 +869,37 @@ def _fit_context(items: Sequence[str], budget: EvaluationBudget) -> tuple[str, .
     return tuple(selected)
 
 
+def _paired_contexts(
+    case: HeldOutLessonCase,
+    budget: EvaluationBudget,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return equal-size candidate/baseline contexts under one shared budget."""
+
+    baseline = list(_fit_context(case.source_context, budget))
+    while baseline:
+        replacement_index = max(
+            range(len(baseline)),
+            key=lambda index: (len(baseline[index]), -index),
+        )
+        candidate = list(baseline)
+        candidate[replacement_index] = case.proposal.claim
+        if sum(map(len, candidate)) <= budget.max_context_chars:
+            return tuple(candidate), tuple(baseline)
+        baseline.pop()
+    raise ValueError("shared budget cannot admit the proposal treatment")
+
+
 def _runner_input(
     case: HeldOutLessonCase,
     plan: LessonEvaluationPlan,
     *,
     candidate: bool,
 ) -> LessonRunnerInput:
-    source = (case.proposal.claim, *case.source_context) if candidate else case.source_context
+    candidate_context, baseline_context = _paired_contexts(case, plan.budget)
     return LessonRunnerInput(
         case_id=case.case_id,
         question=case.question,
-        context_items=_fit_context(source, plan.budget),
+        context_items=candidate_context if candidate else baseline_context,
         treatment="proposal_overlay" if candidate else "raw_evidence",
         source_set_digest=case.source_set_digest,
         max_context_items=plan.budget.max_context_items,
@@ -1237,6 +1299,13 @@ async def evaluate_lesson_plan(
         raise ValueError("evaluation requires the accepted BenchmarkStore")
     if not callable(candidate_runner) or not callable(baseline_runner):
         raise ValueError("candidate and baseline answer runners must be callable")
+    if run_id is not None:
+        _identifier(run_id, "run id")
+        if any(
+            retained.run_id == run_id
+            for retained in store.runs(plan.suite_name, last_n=sys.maxsize)
+        ):
+            raise ValueError("run id already exists in the retained suite")
     cases = _materialize_cases(plan)
     version = store.save_suite(plan.suite_name, cases, lane=plan.lane)
     by_id = {item.case_id: item for item in plan.cases}
@@ -1323,9 +1392,24 @@ def load_lesson_evaluation_report(
 ) -> LessonEvaluationReport:
     """Load only a byte-equivalent report derivable from retained evidence."""
 
+    def reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        decoded: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in decoded:
+                raise ValueError("duplicate JSON member")
+            decoded[key] = value
+        return decoded
+
+    def reject_nonfinite(value: str) -> Any:
+        raise ValueError(f"non-finite JSON constant: {value}")
+
     try:
-        raw = json.loads(payload)
-    except (TypeError, json.JSONDecodeError) as exc:
+        raw = json.loads(
+            payload,
+            object_pairs_hook=reject_duplicate_members,
+            parse_constant=reject_nonfinite,
+        )
+    except (TypeError, ValueError) as exc:
         raise ValueError("lesson evaluation report must be valid JSON") from exc
     if not isinstance(raw, dict):
         raise ValueError("lesson evaluation report must be an object")
@@ -1408,8 +1492,9 @@ def _synthetic_plan(
     *,
     revision: str,
     runner_id: str,
-    epoch: float,
+    retention_started_at: datetime,
 ) -> LessonEvaluationPlan:
+    epoch = _FIXED_SYNTHETIC_EPOCH
     dev = _synthetic_observation("dev", observed_at=epoch - 10)
     proposal = propose_lesson(
         observations=(dev,),
@@ -1448,7 +1533,9 @@ def _synthetic_plan(
             held_out_observation=held_workflow,
         ),
     )
-    predeclared = datetime.now(UTC)
+    if retention_started_at.tzinfo is None:
+        raise ValueError("synthetic retention start must be timezone-aware")
+    predeclared = retention_started_at.astimezone(UTC)
     return LessonEvaluationPlan(
         suite_name="nerva-e6-1-synthetic",
         cases=cases,
@@ -1477,8 +1564,22 @@ async def run_synthetic_evaluation(
 ) -> LessonEvaluationReport:
     """Run the fixed synthetic-public CI fixture and retain its report."""
 
-    epoch = time.time()
-    plan = _synthetic_plan(revision=revision, runner_id=runner_id, epoch=epoch)
+    resolved_store = Path(store_root).expanduser().resolve(strict=False)
+    resolved_report = Path(report_path).expanduser().resolve(strict=False)
+    if (
+        resolved_report == resolved_store
+        or resolved_report.is_relative_to(resolved_store)
+        or resolved_store.is_relative_to(resolved_report)
+    ):
+        raise ValueError("report path must not overlap the retained evidence store")
+    if resolved_report.exists() and resolved_report.is_dir():
+        raise ValueError("report path must name a file")
+
+    plan = _synthetic_plan(
+        revision=revision,
+        runner_id=runner_id,
+        retention_started_at=datetime.now(UTC),
+    )
 
     async def candidate(runner_input: LessonRunnerInput) -> str:
         if runner_input.case_id == "synthetic-retry":
@@ -1490,11 +1591,11 @@ async def run_synthetic_evaluation(
 
     report = await evaluate_lesson_plan(
         plan,
-        store=BenchmarkStore(store_root),
+        store=BenchmarkStore(resolved_store),
         candidate_runner=candidate,
         baseline_runner=baseline,
     )
-    output = Path(report_path)
+    output = resolved_report
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(report.to_json() + "\n", encoding="utf-8")
     return report

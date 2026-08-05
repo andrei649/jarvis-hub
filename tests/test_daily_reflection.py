@@ -2,6 +2,7 @@
 
 All offline: InMemoryGraph + MemoryManager, no Neo4j/Qdrant.
 """
+
 import json
 import sys
 from datetime import date, timedelta
@@ -24,6 +25,7 @@ from agents.core.memory.manager import MemoryManager  # noqa: E402
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 async def _mem_with_turns(*turns) -> MemoryManager:
     """Return a MemoryManager pre-seeded with conversation turns."""
     m = MemoryManager()
@@ -36,10 +38,12 @@ async def _mem_with_turns(*turns) -> MemoryManager:
 def _llm_returning(payload: dict):
     async def _llm(prompt: str) -> str:
         return json.dumps(payload)
+
     return _llm
 
 
 # ── Task 1: idempotency ───────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_reflection_skips_when_disabled(tmp_path):
@@ -65,8 +69,8 @@ async def test_reflection_idempotent_same_day():
 
     r = DailyReflector(m, _llm)
     await r.run()
-    await r.run()            # second call same day → skipped
-    assert len(calls) == 1   # LLM called only once
+    await r.run()  # second call same day → skipped
+    assert len(calls) == 1  # LLM called only once
 
 
 @pytest.mark.asyncio
@@ -80,12 +84,13 @@ async def test_reflection_runs_again_next_day():
 
     r = DailyReflector(m, _llm)
     await r.run()
-    r._last_run = date.today() - timedelta(days=1)   # simulate yesterday's run
+    r._last_run = date.today() - timedelta(days=1)  # simulate yesterday's run
     await r.run()
     assert len(calls) == 2
 
 
 # ── Task 2: entity + relation consolidation ───────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_entities_promoted_to_graph():
@@ -125,6 +130,7 @@ async def test_relations_promoted_to_graph():
 
 # ── Task 3: graceful degradation ─────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_reflection_no_conversations():
     m = MemoryManager()
@@ -160,10 +166,11 @@ async def test_reflection_skips_empty_entity_names():
     }
     r = DailyReflector(m, _llm_returning(payload))
     result = await r.run()
-    assert result["promoted"]["entities"] == 0   # blank names ignored
+    assert result["promoted"]["entities"] == 0  # blank names ignored
 
 
 # ── Task 4: status ────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_status_before_run():
@@ -185,6 +192,7 @@ async def test_status_after_run():
 
 
 # ── Task 5: durable idempotency + LivingMemory handoff ───────────────────────
+
 
 @pytest.mark.asyncio
 async def test_reflection_durable_store_skips_after_restart(tmp_path):
@@ -253,7 +261,9 @@ async def test_reflection_living_memory_provider_can_gate_default_off():
     m = await _mem_with_turns(("user", "A lesson exists but cognition memory is off"))
     r = DailyReflector(
         m,
-        _llm_returning({"entities": [], "relations": [], "lessons": ["keep this only in graph reflection"]}),
+        _llm_returning(
+            {"entities": [], "relations": [], "lessons": ["keep this only in graph reflection"]}
+        ),
         living_memory=lambda: None,
     )
 

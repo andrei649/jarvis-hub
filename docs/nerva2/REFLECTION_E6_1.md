@@ -21,7 +21,9 @@ complete.
 - a predeclared retention deadline and artifact-only expiry behavior.
 
 Development and held-out observation IDs, episode IDs, fingerprints, reference
-IDs, and source-record identities must be disjoint. Every proposal is
+IDs, and source-record identities must be disjoint across the complete plan,
+not only within one case. Development and held-out observation/evidence
+timestamps cannot postdate the declared evaluation time. Every proposal is
 revalidated with E6.0 `validate_proposal_evidence`. A synthetic-public case also
 requires public proposal and observation evidence. Owner-private cases are
 supported only by an explicitly detected owner-local environment and a
@@ -35,8 +37,9 @@ label, shared source-set digest, and the shared budget. It never receives an
 expected answer, abstention truth, held-out observation, or another oracle field.
 
 The baseline fills the shared context slots with raw synthetic evidence. The
-candidate replaces one of those bounded slots with the proposed lesson; it does
-not gain another slot or a larger character budget. Both receive the same
+candidate deterministically replaces one selected source slot with the proposed
+lesson; it receives exactly the same number of items and never gains another
+slot or a larger character budget. Both receive the same
 question and source-set identity. The proposed lesson is therefore the declared
 treatment rather than hidden extra capacity.
 
@@ -69,14 +72,23 @@ E9.0 harness, and appends the E9.0 run before it builds a pass/fail report. A
 regression is therefore retained even when the command exits non-zero. Reports
 bind the exact retained suite/run fingerprints, source revision, fixture digest,
 plan, environment, evaluator identities, budgets, and privacy lane. Loading or
-validating a report recomputes it from the retained records and rejects direct
-construction, identity changes, fixture tampering, privacy drift, unknown
-classifications, or inconsistent metric totals.
+validating a report uses strict JSON decoding, recomputes it from the retained
+records, and rejects duplicate members, non-finite values, direct construction,
+identity changes, fixture tampering, privacy drift, unknown classifications, or
+inconsistent metric totals.
+
+An explicit run ID is checked against retained runs before a suite version,
+runner call, or run record can change the store. The report path is resolved and
+must be disjoint from the retained evidence store before evaluation starts.
 
 Eval Nightly runs only the fixed synthetic-public fixture. Its store and report
 upload under `always()` and expire after 14 days. The job has no cache-save or
 baseline-promotion step. Expiry describes deletion of the CI artifact only; it
 does not delete or rewrite accepted E6.0 observations/proposals or E9.0 records.
+The fixture uses a deterministic logical fixture time, so identical source
+revision and runner identity produce stable fixture, suite, and plan digests.
+The actual predeclaration and expiry timestamps remain separate wall-clock retention
+metadata; their exact values still bind the retained run and reconstructed report.
 
 ## Authority and rollback
 

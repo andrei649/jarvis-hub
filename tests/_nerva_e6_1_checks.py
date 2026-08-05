@@ -10,7 +10,9 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import fields, replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -26,9 +28,13 @@ from agents.core.reflection_evaluation import (
     LessonEvaluationReport,
     LessonEvaluationThresholds,
     RetentionPolicy,
+    _materialize_cases,
+    _suite_fingerprint,
+    _synthetic_plan,
     evaluate_lesson_plan,
     load_lesson_evaluation_report,
     retention_disposition,
+    run_synthetic_evaluation,
     validate_report_against_retained,
 )
 from agents.core.reflection_lesson import compare_outcome, propose_lesson
@@ -211,7 +217,10 @@ async def _evaluate(
 async def _check_happy_path_and_oracle_isolation(tmp_path: Path) -> None:
     answerable = _case("answerable", subgroup="workflow")
     abstention = _case("abstention", subgroup="safety", should_abstain=True)
-    plan = _plan((answerable, abstention))
+    plan = replace(
+        _plan((answerable, abstention)),
+        budget=EvaluationBudget(max_context_items=3, max_context_chars=512),
+    )
     report, store, candidate_inputs, baseline_inputs = await _evaluate(
         tmp_path,
         plan,
@@ -249,10 +258,27 @@ async def _check_happy_path_and_oracle_isolation(tmp_path: Path) -> None:
         assert candidate_input.source_set_digest == baseline_input.source_set_digest
         assert candidate_input.max_context_items == baseline_input.max_context_items
         assert candidate_input.max_context_chars == baseline_input.max_context_chars
+        assert len(candidate_input.context_items) == len(baseline_input.context_items)
         assert len(candidate_input.context_items) <= candidate_input.max_context_items
         assert len(baseline_input.context_items) <= baseline_input.max_context_items
         assert sum(map(len, candidate_input.context_items)) <= candidate_input.max_context_chars
         assert sum(map(len, baseline_input.context_items)) <= baseline_input.max_context_chars
+        proposal_claim = plan.cases[
+            next(
+                index
+                for index, item in enumerate(plan.cases)
+                if item.case_id == candidate_input.case_id
+            )
+        ].proposal.claim
+        differences = tuple(
+            index
+            for index, (candidate_item, baseline_item) in enumerate(
+                zip(candidate_input.context_items, baseline_input.context_items, strict=True)
+            )
+            if candidate_item != baseline_item
+        )
+        assert len(differences) == 1
+        assert candidate_input.context_items[differences[0]] == proposal_claim
 
     runs = store.runs(plan.suite_name)
     assert len(runs) == 1
@@ -315,6 +341,22 @@ def _check_predeclared_split_privacy_and_identity() -> None:
     )
     with pytest.raises(ValueError, match="held-out split overlaps development"):
         replace(case, held_out_observation=shared_reference_held_out)
+
+    cross_case_dev = _observation("cross-case-dev", observed_at=700.0)
+    first = replace(
+        _case("cross-case-a"),
+        held_out_observation=cross_case_dev,
+    )
+    second = _case("cross-case-b", dev=cross_case_dev)
+    with pytest.raises(ValueError, match="held-out split overlaps development"):
+        _plan((first, second))
+
+    with pytest.raises(ValueError, match="future-dated held-out outcome evidence"):
+        _plan((_case("future-held", observed_at=1_350.0),), evaluated_at=1_200.0)
+
+    future_dev = _observation("future-dev", observed_at=1_350.0)
+    with pytest.raises(ValueError, match="future-dated development outcome evidence"):
+        _plan((_case("future-development", dev=future_dev),), evaluated_at=1_200.0)
 
     private_dev = _observation("private-dev", privacy_class="private_local")
     private_proposal = _proposal(private_dev)
@@ -498,6 +540,12 @@ async def _check_tampering_totals_and_retention(tmp_path: Path) -> None:
             store=store,
         )
 
+    duplicate_member = '{"run_id":' + json.dumps(report.run_id) + "," + report.to_json()[1:]
+    with pytest.raises(ValueError, match="valid JSON"):
+        load_lesson_evaluation_report(duplicate_member, plan=plan, store=store)
+    with pytest.raises(ValueError, match="valid JSON"):
+        load_lesson_evaluation_report('{"run_id":NaN}', plan=plan, store=store)
+
     suite_path = tmp_path / "tamper" / "suites" / plan.suite_name / "v1.jsonl"
     raw_case = json.loads(suite_path.read_text(encoding="utf-8").splitlines()[0])
     stored_case = BenchmarkCase.from_dict(raw_case)
@@ -511,6 +559,95 @@ async def _check_tampering_totals_and_retention(tmp_path: Path) -> None:
 
     assert retention_disposition(report, now="2026-08-06T00:00:00.000Z") == "retain"
     assert retention_disposition(report, now="2026-08-20T00:00:00.000Z") == "delete_due"
+
+
+def _tree_snapshot(root: Path) -> tuple[tuple[str, ...], dict[str, bytes]]:
+    if not root.exists():
+        return (), {}
+    directories = tuple(
+        sorted(str(path.relative_to(root)) for path in root.rglob("*") if path.is_dir())
+    )
+    files = {
+        str(path.relative_to(root)): path.read_bytes() for path in root.rglob("*") if path.is_file()
+    }
+    return directories, files
+
+
+async def _check_duplicate_run_id_is_rejected_before_mutation(tmp_path: Path) -> None:
+    case = _case("duplicate")
+    plan = _plan((case,), thresholds=LessonEvaluationThresholds())
+    report, store, _, _ = await _evaluate(
+        tmp_path,
+        plan,
+        {"duplicate": "answer-duplicate"},
+        {"duplicate": "answer-duplicate"},
+        store_name="duplicate",
+    )
+    assert report.run_id == "run-duplicate"
+    store_root = tmp_path / "duplicate"
+    before = _tree_snapshot(store_root)
+    calls = 0
+
+    async def must_not_run(_runner_input):
+        nonlocal calls
+        calls += 1
+        return "answer-duplicate"
+
+    with pytest.raises(ValueError, match="run id already exists"):
+        await evaluate_lesson_plan(
+            plan,
+            store=store,
+            candidate_runner=must_not_run,
+            baseline_runner=must_not_run,
+            now=lambda: _NOW,
+            run_id="run-duplicate",
+        )
+    assert calls == 0
+    assert _tree_snapshot(store_root) == before
+    assert len(store.runs(plan.suite_name)) == 1
+    assert store.versions(plan.suite_name) == [1]
+
+
+async def _check_disjoint_report_path_and_deterministic_fixture(tmp_path: Path) -> None:
+    for label, report_from in (
+        ("equal", lambda sandbox, store: store),
+        ("descendant", lambda sandbox, store: store / "report.json"),
+        ("ancestor", lambda sandbox, store: sandbox),
+    ):
+        sandbox = tmp_path / f"path-overlap-{label}"
+        store_root = sandbox / "store"
+        report_path = report_from(sandbox, store_root)
+        before = _tree_snapshot(sandbox)
+        with patch("agents.core.reflection_evaluation.evaluate_lesson_plan") as evaluator:
+            with pytest.raises(ValueError, match="overlap"):
+                await run_synthetic_evaluation(
+                    store_root=store_root,
+                    report_path=report_path,
+                    revision=_REVISION,
+                    runner_id="pytest-e6-1",
+                )
+            evaluator.assert_not_called()
+        assert _tree_snapshot(sandbox) == before
+
+    first_start = datetime(2026, 8, 5, 20, 0, tzinfo=UTC)
+    second_start = first_start + timedelta(days=1)
+    first = _synthetic_plan(
+        revision=_REVISION,
+        runner_id="pytest-e6-1",
+        retention_started_at=first_start,
+    )
+    second = _synthetic_plan(
+        revision=_REVISION,
+        runner_id="pytest-e6-1",
+        retention_started_at=second_start,
+    )
+    assert first.fixture_digest == second.fixture_digest
+    assert _suite_fingerprint(_materialize_cases(first)) == _suite_fingerprint(
+        _materialize_cases(second)
+    )
+    assert first.fingerprint == second.fingerprint
+    assert first.retention.fingerprint != second.retention.fingerprint
+    assert first.retention.contract_fingerprint == second.retention.contract_fingerprint
 
 
 def _check_workflow_and_docs(repo_root: Path) -> None:
@@ -532,6 +669,8 @@ def _check_workflow_and_docs(repo_root: Path) -> None:
         "hallucinated_recall",
         "does not promote",
         "14 days",
+        "deterministic logical fixture time",
+        "wall-clock retention",
         "Residual risks",
     ):
         assert phrase in doc
@@ -545,4 +684,6 @@ async def run_e6_1_checks(tmp_path: Path) -> None:
     await _check_fail_closed_outcomes_and_error_matrix(tmp_path)
     await _check_false_hallucinated_and_subgroup_masking(tmp_path)
     await _check_tampering_totals_and_retention(tmp_path)
+    await _check_duplicate_run_id_is_rejected_before_mutation(tmp_path)
+    await _check_disjoint_report_path_and_deterministic_fixture(tmp_path)
     _check_workflow_and_docs(Path(__file__).resolve().parent.parent)
