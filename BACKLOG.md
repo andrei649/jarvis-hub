@@ -42,9 +42,18 @@ completes its epic):
 - ✅ E3.1 / #798 / PR #799 — longitudinal Episode retrieval comparison, evaluation-only.
 - ✅ E8.0 / #783 / PR #797 — Synapse manifest conformance, description-only.
 - ✅ E9.0 / #784 / PR #803 — versioned `nerva.benchmark.v1` contract and task suite.
+- ✅ E9.1 / #807 / PR #809 — scheduled current-router shadow comparison and
+  `nerva.benchmark.report.v1` regression report, `evaluation_only`. Runs through the existing
+  Eval Nightly lane on synthetic-public fixtures; reports, never routes. Merged as `f59191c`;
+  docs in [`docs/nerva2/RESEARCH_LAB_E9_1.md`](docs/nerva2/RESEARCH_LAB_E9_1.md).
 - ✅ E6.0 / #806 / PR #808 — evidence-bound `OutcomeObservation` / `nerva.lesson.v1`
   proposal contract, `proposal_only`. Reflection may propose a lesson; destinations own
   promotion. Merged as `df0d529`; docs in [`docs/nerva2/REFLECTION_E6_0.md`](docs/nerva2/REFLECTION_E6_0.md).
+
+E1, E6 and E9 remain `BUILDING` — E9.1 proves scheduled reporting only, not routing
+superiority or Research Lab completion. Its residual limits are recorded in the slice doc:
+four synthetic cases may overfit, shared-runner latency is deliberately unmeasured, and the
+module-private construction guards are boundaries, not cryptographic capabilities.
 
 E1 and E6 remain `BUILDING`. E5 Night Shift stays blocked: it needs sufficient E1/E2/E3/E6
 behavior **plus** the B7 task-level Ultron mediation evidence. B7 status per the #757/#778
