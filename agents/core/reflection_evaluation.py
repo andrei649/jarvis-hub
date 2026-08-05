@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import json
 import math
+import os
 import platform
 import re
 import sys
@@ -89,6 +90,28 @@ def _canonical(value: Mapping[str, Any] | Sequence[Any]) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
+
+
+def _strict_json(payload: str, *, error: str) -> Any:
+    def reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        decoded: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in decoded:
+                raise ValueError("duplicate JSON member")
+            decoded[key] = value
+        return decoded
+
+    def reject_nonfinite(value: str) -> Any:
+        raise ValueError(f"non-finite JSON constant: {value}")
+
+    try:
+        return json.loads(
+            payload,
+            object_pairs_hook=reject_duplicate_members,
+            parse_constant=reject_nonfinite,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(error) from exc
 
 
 def _sha256(value: str | Mapping[str, Any] | Sequence[Any]) -> str:
@@ -497,6 +520,8 @@ class LessonEvaluationPlan:
         development_tokens: set[str] = set()
         held_out_tokens: set[str] = set()
         for item in self.cases:
+            if item.proposal.created_at > self.evaluated_at:
+                raise ValueError("proposal postdates evaluation time")
             for observation in item.development_observations:
                 development_tokens |= _observation_split_tokens(observation)
                 if any(
@@ -506,11 +531,11 @@ class LessonEvaluationPlan:
                     raise ValueError("future-dated development outcome evidence is not eligible")
             if item.held_out_observation is not None:
                 held_out_tokens |= _observation_split_tokens(item.held_out_observation)
-                if any(
-                    timestamp > self.evaluated_at
-                    for timestamp in _observation_evidence_times(item.held_out_observation)
-                ):
+                held_out_times = _observation_evidence_times(item.held_out_observation)
+                if any(timestamp > self.evaluated_at for timestamp in held_out_times):
                     raise ValueError("future-dated held-out outcome evidence is not eligible")
+                if any(item.proposal.created_at >= timestamp for timestamp in held_out_times):
+                    raise ValueError("proposal must predate held-out evidence")
         if development_tokens & held_out_tokens:
             raise ValueError("held-out split overlaps development evidence")
 
@@ -1044,6 +1069,58 @@ def _materialize_cases(plan: LessonEvaluationPlan) -> tuple[BenchmarkCase, ...]:
     return tuple(materialized)
 
 
+def _strict_jsonl_records(path: Path, *, label: str) -> tuple[Mapping[str, Any], ...]:
+    if not path.exists():
+        return ()
+    try:
+        payload = path.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"{label} is unavailable") from exc
+    records: list[Mapping[str, Any]] = []
+    for line in payload.splitlines():
+        if not line.strip():
+            continue
+        raw = _strict_json(line, error=f"{label} must use strict JSON")
+        if not isinstance(raw, dict):
+            raise ValueError(f"{label} must use strict JSON")
+        records.append(raw)
+    return tuple(records)
+
+
+def _strict_retained_suite(
+    store: BenchmarkStore,
+    name: str,
+    version: int,
+) -> tuple[BenchmarkCase, ...]:
+    records = _strict_jsonl_records(
+        store._version_file(name, version),  # noqa: SLF001 - exact E9 boundary bytes
+        label="retained suite JSONL",
+    )
+    try:
+        return tuple(BenchmarkCase.from_dict(record) for record in records)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("retained suite JSONL schema is invalid") from exc
+
+
+def _strict_retained_runs(
+    store: BenchmarkStore,
+    name: str,
+    *,
+    last_n: int,
+) -> tuple[BenchmarkRun, ...]:
+    if isinstance(last_n, bool) or not isinstance(last_n, int) or last_n < 1:
+        raise ValueError("last_n must be a positive integer")
+    records = _strict_jsonl_records(
+        store._runs_file(name),  # noqa: SLF001 - exact E9 boundary bytes
+        label="retained run JSONL",
+    )
+    try:
+        runs = tuple(BenchmarkRun.from_json(_canonical(record)) for record in records)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("retained run JSONL schema is invalid") from exc
+    return tuple(reversed(runs[-last_n:]))
+
+
 def _classification(
     evidence: BenchmarkEvidence | None,
     *,
@@ -1299,11 +1376,21 @@ async def evaluate_lesson_plan(
         raise ValueError("evaluation requires the accepted BenchmarkStore")
     if not callable(candidate_runner) or not callable(baseline_runner):
         raise ValueError("candidate and baseline answer runners must be callable")
+    detected_environment = EvaluationEnvironment.detect(
+        runner_id=plan.environment.runner_id,
+        evidence_label=plan.environment.evidence_label,
+    )
+    if plan.environment != detected_environment:
+        raise ValueError("evaluation environment does not match the detected host")
     if run_id is not None:
         _identifier(run_id, "run id")
         if any(
             retained.run_id == run_id
-            for retained in store.runs(plan.suite_name, last_n=sys.maxsize)
+            for retained in _strict_retained_runs(
+                store,
+                plan.suite_name,
+                last_n=sys.maxsize,
+            )
         ):
             raise ValueError("run id already exists in the retained suite")
     cases = _materialize_cases(plan)
@@ -1339,9 +1426,11 @@ async def evaluate_lesson_plan(
     # Append before threshold/report decisions: negative evidence is never lost.
     store.record_run(run)
     retained = next(
-        item for item in store.runs(plan.suite_name, last_n=100_000) if item.run_id == run.run_id
+        item
+        for item in _strict_retained_runs(store, plan.suite_name, last_n=100_000)
+        if item.run_id == run.run_id
     )
-    retained_suite = store.load_suite(plan.suite_name, version)
+    retained_suite = _strict_retained_suite(store, plan.suite_name, version)
     return _report_from_retained(plan, retained, retained_suite)
 
 
@@ -1352,7 +1441,7 @@ def _retained_run(
 ) -> BenchmarkRun:
     matches = tuple(
         item
-        for item in store.runs(report.suite_name, last_n=100_000)
+        for item in _strict_retained_runs(store, report.suite_name, last_n=100_000)
         if item.run_id == report.run_id
     )
     if len(matches) != 1:
@@ -1373,7 +1462,7 @@ def validate_report_against_retained(
     if report.plan_fingerprint != plan.fingerprint:
         raise ValueError("report plan identity mismatches retained evidence")
     run = _retained_run(report, store=store)
-    suite = store.load_suite(report.suite_name, report.suite_version)
+    suite = _strict_retained_suite(store, report.suite_name, report.suite_version)
     expected_suite = _materialize_cases(plan)
     if tuple(item.content_fingerprint for item in suite) != tuple(
         item.content_fingerprint for item in expected_suite
@@ -1392,25 +1481,7 @@ def load_lesson_evaluation_report(
 ) -> LessonEvaluationReport:
     """Load only a byte-equivalent report derivable from retained evidence."""
 
-    def reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        decoded: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in decoded:
-                raise ValueError("duplicate JSON member")
-            decoded[key] = value
-        return decoded
-
-    def reject_nonfinite(value: str) -> Any:
-        raise ValueError(f"non-finite JSON constant: {value}")
-
-    try:
-        raw = json.loads(
-            payload,
-            object_pairs_hook=reject_duplicate_members,
-            parse_constant=reject_nonfinite,
-        )
-    except (TypeError, ValueError) as exc:
-        raise ValueError("lesson evaluation report must be valid JSON") from exc
+    raw = _strict_json(payload, error="lesson evaluation report must be valid JSON")
     if not isinstance(raw, dict):
         raise ValueError("lesson evaluation report must be an object")
     run_id = raw.get("run_id")
@@ -1423,11 +1494,13 @@ def load_lesson_evaluation_report(
     ):
         raise ValueError("lesson evaluation report identity fields are invalid")
     matches = tuple(
-        item for item in store.runs(suite_name, last_n=100_000) if item.run_id == run_id
+        item
+        for item in _strict_retained_runs(store, suite_name, last_n=100_000)
+        if item.run_id == run_id
     )
     if len(matches) != 1:
         raise ValueError("report does not match retained evidence")
-    suite = store.load_suite(suite_name, suite_version)
+    suite = _strict_retained_suite(store, suite_name, suite_version)
     expected_suite = _materialize_cases(plan)
     if tuple(item.content_fingerprint for item in suite) != tuple(
         item.content_fingerprint for item in expected_suite
@@ -1572,32 +1645,44 @@ async def run_synthetic_evaluation(
         or resolved_store.is_relative_to(resolved_report)
     ):
         raise ValueError("report path must not overlap the retained evidence store")
-    if resolved_report.exists() and resolved_report.is_dir():
-        raise ValueError("report path must name a file")
+    if resolved_report.exists():
+        raise ValueError("report path already exists; choose a fresh output path")
+    resolved_report.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        output = resolved_report.open("x", encoding="utf-8", newline="\n")
+    except (FileExistsError, IsADirectoryError) as exc:
+        raise ValueError("report path already exists; choose a fresh output path") from exc
 
-    plan = _synthetic_plan(
-        revision=revision,
-        runner_id=runner_id,
-        retention_started_at=datetime.now(UTC),
-    )
+    with output:
+        plan = _synthetic_plan(
+            revision=revision,
+            runner_id=runner_id,
+            retention_started_at=datetime.now(UTC),
+        )
 
-    async def candidate(runner_input: LessonRunnerInput) -> str:
-        if runner_input.case_id == "synthetic-retry":
-            return "retry once"
-        return "I don't know"
+        async def candidate(runner_input: LessonRunnerInput) -> str:
+            if runner_input.case_id == "synthetic-retry":
+                return "retry once"
+            return "I don't know"
 
-    async def baseline(runner_input: LessonRunnerInput) -> str:
-        return "I don't know"
+        async def baseline(runner_input: LessonRunnerInput) -> str:
+            return "I don't know"
 
-    report = await evaluate_lesson_plan(
-        plan,
-        store=BenchmarkStore(resolved_store),
-        candidate_runner=candidate,
-        baseline_runner=baseline,
-    )
-    output = resolved_report
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(report.to_json() + "\n", encoding="utf-8")
+        report = await evaluate_lesson_plan(
+            plan,
+            store=BenchmarkStore(resolved_store),
+            candidate_runner=candidate,
+            baseline_runner=baseline,
+        )
+        output.write(report.to_json() + "\n")
+        output.flush()
+        os.fsync(output.fileno())
+        try:
+            still_reserved_output = os.path.samefile(resolved_report, output.fileno())
+        except OSError as exc:
+            raise ValueError("report path changed after exclusive reservation") from exc
+        if not still_reserved_output:
+            raise ValueError("report path changed after exclusive reservation")
     return report
 
 

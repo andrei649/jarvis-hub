@@ -24,10 +24,16 @@ Development and held-out observation IDs, episode IDs, fingerprints, reference
 IDs, and source-record identities must be disjoint across the complete plan,
 not only within one case. Development and held-out observation/evidence
 timestamps cannot postdate the declared evaluation time. Every proposal is
-revalidated with E6.0 `validate_proposal_evidence`. A synthetic-public case also
+created no later than evaluation and strictly before every held-out evidence
+timestamp, preventing retrospective post-outcome proposal leakage. Every proposal
+is revalidated with E6.0 `validate_proposal_evidence`. A synthetic-public case also
 requires public proposal and observation evidence. Owner-private cases are
 supported only by an explicitly detected owner-local environment and a
 separately retained local suite; they cannot enter the CI lane.
+
+Immediately before any store or runner mutation, the evaluator re-detects the
+host Python, platform system, and machine for the declared runner/evidence lane.
+A copied environment with caller-forged host fields is rejected.
 
 ## Oracle isolation and equal budgets
 
@@ -76,10 +82,20 @@ validating a report uses strict JSON decoding, recomputes it from the retained
 records, and rejects duplicate members, non-finite values, direct construction,
 identity changes, fixture tampering, privacy drift, unknown classifications, or
 inconsistent metric totals.
+The E6 boundary reads the exact retained suite bytes and every retained run JSONL
+record with the same strict duplicate/non-finite policy before constructing E9
+types. Only strictly parsed records are canonically reserialized into the
+accepted E9 run constructor; its permissive decoder never receives raw retained
+bytes.
 
 An explicit run ID is checked against retained runs before a suite version,
 runner call, or run record can change the store. The report path is resolved and
 must be disjoint from the retained evidence store before evaluation starts.
+Report outputs are create-once: an existing path, including a hardlink alias, is
+rejected. A fresh output is exclusively reserved before any store mutation and
+the same open file is used for final serialization, so a path swap cannot redirect
+the report write into retained evidence. If evaluation fails, the empty reserved
+output remains closed; callers must inspect the failure and choose a fresh path.
 
 Eval Nightly runs only the fixed synthetic-public fixture. Its store and report
 upload under `always()` and expire after 14 days. The job has no cache-save or

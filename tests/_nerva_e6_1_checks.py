@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+from contextlib import suppress
 from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -105,14 +107,19 @@ def _observation(
     )
 
 
-def _proposal(dev, *, expires_at: float = 10_000.0):
+def _proposal(
+    dev,
+    *,
+    created_at: float = 800.0,
+    expires_at: float = 10_000.0,
+):
     return propose_lesson(
         observations=(dev,),
         claim="Retry once after a transient export failure.",
         scope="export-workflow",
         proposed_destinations=("episodes",),
-        created_at=800.0,
-        review_at=900.0,
+        created_at=created_at,
+        review_at=created_at + 100.0,
         expires_at=expires_at,
     )
 
@@ -342,7 +349,7 @@ def _check_predeclared_split_privacy_and_identity() -> None:
     with pytest.raises(ValueError, match="held-out split overlaps development"):
         replace(case, held_out_observation=shared_reference_held_out)
 
-    cross_case_dev = _observation("cross-case-dev", observed_at=700.0)
+    cross_case_dev = _observation("cross-case-dev", observed_at=1_100.0)
     first = replace(
         _case("cross-case-a"),
         held_out_observation=cross_case_dev,
@@ -357,6 +364,19 @@ def _check_predeclared_split_privacy_and_identity() -> None:
     future_dev = _observation("future-dev", observed_at=1_350.0)
     with pytest.raises(ValueError, match="future-dated development outcome evidence"):
         _plan((_case("future-development", dev=future_dev),), evaluated_at=1_200.0)
+
+    chronology = _case("proposal-chronology")
+    dev = chronology.development_observations[0]
+    with pytest.raises(ValueError, match="proposal postdates evaluation"):
+        _plan(
+            (replace(chronology, proposal=_proposal(dev, created_at=1_250.0)),),
+            evaluated_at=1_200.0,
+        )
+    with pytest.raises(ValueError, match="proposal must predate held-out evidence"):
+        _plan(
+            (replace(chronology, proposal=_proposal(dev, created_at=950.0)),),
+            evaluated_at=1_200.0,
+        )
 
     private_dev = _observation("private-dev", privacy_class="private_local")
     private_proposal = _proposal(private_dev)
@@ -395,7 +415,7 @@ async def _check_fail_closed_outcomes_and_error_matrix(tmp_path: Path) -> None:
     missing = _case("missing", held_out=...)
     contradictory = _case("contradictory", status="contradictory")
     insufficient = _case("insufficient", status="insufficient_evidence")
-    stale = _case("stale", observed_at=900.0)
+    stale = _case("stale", observed_at=1_001.0)
     plan = replace(
         _plan((missing, contradictory, insufficient, stale), evaluated_at=1_200.0),
         max_outcome_age_seconds=100.0,
@@ -561,6 +581,55 @@ async def _check_tampering_totals_and_retention(tmp_path: Path) -> None:
     assert retention_disposition(report, now="2026-08-20T00:00:00.000Z") == "delete_due"
 
 
+async def _check_retained_json_decoding_is_strict(tmp_path: Path) -> None:
+    case = _case("strict-retained")
+    plan = _plan((case,), thresholds=LessonEvaluationThresholds())
+    report, store, _, _ = await _evaluate(
+        tmp_path,
+        plan,
+        {"strict-retained": "answer-strict-retained"},
+        {"strict-retained": "answer-strict-retained"},
+        store_name="strict-retained",
+    )
+    store_root = tmp_path / "strict-retained"
+    runs_path = store_root / "suites" / plan.suite_name / "runs.jsonl"
+    suite_path = store_root / "suites" / plan.suite_name / "v1.jsonl"
+    run_line = runs_path.read_text(encoding="utf-8").strip()
+    suite_line = suite_path.read_text(encoding="utf-8").strip()
+    hostile_payloads = (
+        (
+            runs_path,
+            '{"run_id":' + json.dumps(report.run_id) + "," + run_line[1:],
+            "retained run JSONL must use strict JSON",
+        ),
+        (
+            runs_path,
+            run_line[:-1] + ',"hostile_nonfinite":NaN}',
+            "retained run JSONL must use strict JSON",
+        ),
+        (
+            suite_path,
+            '{"case_id":' + json.dumps(case.case_id) + "," + suite_line[1:],
+            "retained suite JSONL must use strict JSON",
+        ),
+        (
+            suite_path,
+            suite_line[:-1] + ',"hostile_nonfinite":NaN}',
+            "retained suite JSONL must use strict JSON",
+        ),
+    )
+    for path, hostile, error in hostile_payloads:
+        original = path.read_bytes()
+        try:
+            path.write_text(hostile + "\n", encoding="utf-8")
+            with pytest.raises(ValueError, match=error):
+                validate_report_against_retained(report, plan=plan, store=store)
+            with pytest.raises(ValueError, match=error):
+                load_lesson_evaluation_report(report.to_json(), plan=plan, store=store)
+        finally:
+            path.write_bytes(original)
+
+
 def _tree_snapshot(root: Path) -> tuple[tuple[str, ...], dict[str, bytes]]:
     if not root.exists():
         return (), {}
@@ -606,6 +675,190 @@ async def _check_duplicate_run_id_is_rejected_before_mutation(tmp_path: Path) ->
     assert _tree_snapshot(store_root) == before
     assert len(store.runs(plan.suite_name)) == 1
     assert store.versions(plan.suite_name) == [1]
+
+
+async def _check_execution_environment_is_redetected(tmp_path: Path) -> None:
+    case = _case("forged-environment")
+    plan = _plan((case,), thresholds=LessonEvaluationThresholds())
+    forged_plan = replace(
+        plan,
+        environment=replace(
+            plan.environment,
+            python_version="forged-python",
+            platform_system="forged-platform",
+        ),
+    )
+    store_root = tmp_path / "forged-environment"
+    store = BenchmarkStore(store_root)
+    before = _tree_snapshot(store_root)
+    calls = 0
+
+    async def must_not_run(_runner_input):
+        nonlocal calls
+        calls += 1
+        return "answer-forged-environment"
+
+    with pytest.raises(ValueError, match="detected host"):
+        await evaluate_lesson_plan(
+            forged_plan,
+            store=store,
+            candidate_runner=must_not_run,
+            baseline_runner=must_not_run,
+            now=lambda: _NOW,
+            run_id="run-forged-environment",
+        )
+    assert calls == 0
+    assert _tree_snapshot(store_root) == before
+
+
+async def _check_report_output_is_create_once(tmp_path: Path) -> None:
+    plain_store = tmp_path / "plain-existing-store"
+    plain_report = tmp_path / "plain-existing-report.json"
+    plain_report.write_bytes(b"pre-existing-report-sentinel")
+    plain_before = _tree_snapshot(plain_store)
+    calls = 0
+
+    async def counting_evaluator(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return await evaluate_lesson_plan(*args, **kwargs)
+
+    with (
+        patch(
+            "agents.core.reflection_evaluation.evaluate_lesson_plan",
+            side_effect=counting_evaluator,
+        ),
+        pytest.raises(ValueError, match="report path already exists"),
+    ):
+        await run_synthetic_evaluation(
+            store_root=plain_store,
+            report_path=plain_report,
+            revision=_REVISION,
+            runner_id="pytest-e6-1",
+        )
+    assert calls == 0
+    assert plain_report.read_bytes() == b"pre-existing-report-sentinel"
+    assert _tree_snapshot(plain_store) == plain_before
+
+    case = _case("hardlink-alias")
+    plan = _plan((case,), thresholds=LessonEvaluationThresholds())
+    _, _, _, _ = await _evaluate(
+        tmp_path,
+        plan,
+        {"hardlink-alias": "answer-hardlink-alias"},
+        {"hardlink-alias": "answer-hardlink-alias"},
+        store_name="hardlink-store",
+    )
+    hardlink_store = tmp_path / "hardlink-store"
+    runs_path = hardlink_store / "suites" / plan.suite_name / "runs.jsonl"
+    suite_path = hardlink_store / "suites" / plan.suite_name / "v1.jsonl"
+    for label, retained_path in (("runs", runs_path), ("suite", suite_path)):
+        hardlink_report = tmp_path / f"hardlink-{label}-report.json"
+        os.link(retained_path, hardlink_report)
+        store_before = _tree_snapshot(hardlink_store)
+        report_before = hardlink_report.read_bytes()
+        calls = 0
+        with (
+            patch(
+                "agents.core.reflection_evaluation.evaluate_lesson_plan",
+                side_effect=counting_evaluator,
+            ),
+            pytest.raises(ValueError, match="report path already exists"),
+        ):
+            await run_synthetic_evaluation(
+                store_root=hardlink_store,
+                report_path=hardlink_report,
+                revision=_REVISION,
+                runner_id="pytest-e6-1",
+            )
+        assert calls == 0
+        assert hardlink_report.samefile(retained_path)
+        assert hardlink_report.read_bytes() == report_before
+        assert _tree_snapshot(hardlink_store) == store_before
+        hardlink_report.unlink()
+
+
+async def _check_report_is_reserved_before_evaluation(tmp_path: Path) -> None:
+    store_root = tmp_path / "reservation-store"
+    report_path = tmp_path / "reserved-report.json"
+    calls = 0
+
+    async def stop_after_reservation(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        assert report_path.exists()
+        assert report_path.read_bytes() == b""
+        with pytest.raises(FileExistsError):
+            report_path.open("x", encoding="utf-8").close()
+        raise RuntimeError("stop after reservation")
+
+    with (
+        patch(
+            "agents.core.reflection_evaluation.evaluate_lesson_plan",
+            side_effect=stop_after_reservation,
+        ),
+        pytest.raises(RuntimeError, match="stop after reservation"),
+    ):
+        await run_synthetic_evaluation(
+            store_root=store_root,
+            report_path=report_path,
+            revision=_REVISION,
+            runner_id="pytest-e6-1",
+        )
+    assert calls == 1
+    assert report_path.read_bytes() == b""
+    assert _tree_snapshot(store_root) == ((), {})
+
+
+async def _check_report_path_swap_cannot_redirect_write(tmp_path: Path) -> None:
+    store_root = tmp_path / "swap-store"
+    report_path = tmp_path / "swap-report.json"
+    retained_bytes: bytes | None = None
+    path_changed = False
+
+    async def evaluate_then_swap(*args, **kwargs):
+        nonlocal path_changed, retained_bytes
+        report = await evaluate_lesson_plan(*args, **kwargs)
+        runs_path = store_root / "suites" / "nerva-e6-1-synthetic" / "runs.jsonl"
+        retained_bytes = runs_path.read_bytes()
+        try:
+            report_path.unlink()
+        except OSError:
+            return report
+        path_changed = True
+        with suppress(OSError):
+            os.link(runs_path, report_path)
+        return report
+
+    failure: ValueError | None = None
+    result = None
+    with patch(
+        "agents.core.reflection_evaluation.evaluate_lesson_plan",
+        side_effect=evaluate_then_swap,
+    ):
+        try:
+            result = await run_synthetic_evaluation(
+                store_root=store_root,
+                report_path=report_path,
+                revision=_REVISION,
+                runner_id="pytest-e6-1",
+            )
+        except ValueError as exc:
+            failure = exc
+
+    runs_path = store_root / "suites" / "nerva-e6-1-synthetic" / "runs.jsonl"
+    assert retained_bytes is not None
+    assert runs_path.read_bytes() == retained_bytes
+    if path_changed:
+        assert failure is not None
+        assert "changed after exclusive reservation" in str(failure)
+        if report_path.exists():
+            assert report_path.samefile(runs_path)
+            assert report_path.read_bytes() == retained_bytes
+    else:
+        assert failure is None
+        assert result is not None and result.success is True
+        assert json.loads(report_path.read_text(encoding="utf-8"))["success"] is True
 
 
 async def _check_disjoint_report_path_and_deterministic_fixture(tmp_path: Path) -> None:
@@ -669,6 +922,7 @@ def _check_workflow_and_docs(repo_root: Path) -> None:
         "hallucinated_recall",
         "does not promote",
         "14 days",
+        "create-once",
         "deterministic logical fixture time",
         "wall-clock retention",
         "Residual risks",
@@ -684,6 +938,11 @@ async def run_e6_1_checks(tmp_path: Path) -> None:
     await _check_fail_closed_outcomes_and_error_matrix(tmp_path)
     await _check_false_hallucinated_and_subgroup_masking(tmp_path)
     await _check_tampering_totals_and_retention(tmp_path)
+    await _check_retained_json_decoding_is_strict(tmp_path)
     await _check_duplicate_run_id_is_rejected_before_mutation(tmp_path)
+    await _check_execution_environment_is_redetected(tmp_path)
+    await _check_report_output_is_create_once(tmp_path)
+    await _check_report_is_reserved_before_evaluation(tmp_path)
+    await _check_report_path_swap_cannot_redirect_write(tmp_path)
     await _check_disjoint_report_path_and_deterministic_fixture(tmp_path)
     _check_workflow_and_docs(Path(__file__).resolve().parent.parent)
