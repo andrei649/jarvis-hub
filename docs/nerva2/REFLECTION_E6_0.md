@@ -110,6 +110,9 @@ Promotion is structurally separate and absent by default:
 - a directly constructed proposal in any lifecycle beyond `proposed` is
   **noncanonical and rejected** — advanced states require a module-private
   construction guard held only by `transition_lesson()`;
+- every `transition_lesson()` lifecycle sink receives the canonical
+  `observations` graph and validates it before applying transition semantics,
+  constructing an audit event, or constructing an advanced state;
 - `transition_lesson()` refuses Reflection as the promoting actor;
 - the acting identity must **be** the destination that owns the promotion, and
   that destination must be one the proposal actually targets;
@@ -157,6 +160,19 @@ acceptance evidence smuggled onto a proposed record, `prior_fingerprint`,
 `superseded_by_proposal_id`, unknown keys, missing keys and unsorted collections
 are **rejected rather than normalized away**. Advanced lifecycles are never
 rebuilt from a payload, only reached by replaying audited transitions.
+
+The same evidence check is enforced at both source and sink: the loader binds a
+proposed record to its observation graph, and every lifecycle transition binds
+the input proposal again before it can produce an audit or advanced record. The
+hostile regression sends a correctly re-hashed proposal with invented evidence
+through the `accepted_by_destination` sink and requires rejection before any
+transition result is returned. Positive coverage retains valid
+`proposed → accepted_by_destination`, `accepted_by_destination → superseded`,
+`proposed → expired`, and `accepted_by_destination → expired` paths at or after
+the expiry deadline. The review lesson is to trace integrity-sensitive fields
+from each source boundary to every state-changing sink; this is
+application-level validation, not a claim of cryptographic provenance or
+tamper-proof storage.
 
 ## Fail-closed validation
 
