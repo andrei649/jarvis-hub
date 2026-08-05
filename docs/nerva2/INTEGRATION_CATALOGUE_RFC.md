@@ -84,12 +84,20 @@ Classes reuse the E8.1a vocabulary: `reuse`, `thin_adapter`, `native_fallback`,
 `REJECTED`. An earlier revision invented `Accepted for RFC`, which is not a
 governed state.
 
-**Every row below is `PARKED`.** None has a primary-source pass, and #805 does
-not permit `ACCEPTED_FOR_EPIC` on secondary evidence. Durable `REJECTED` is also
-withheld: a rejection whose premise came from a third-party article could be
-wrong or already stale, and a wrong durable rejection is worse than a park
-because it stops reconsideration. Each row therefore carries an explicit
-**reconsideration trigger** — the evidence that would move it.
+**Every row below is `PARKED`, with exactly one stated exception.** No row has a
+primary-source pass, and #805 does not permit `ACCEPTED_FOR_EPIC` on secondary
+evidence. Durable `REJECTED` is also withheld for survey findings: a rejection
+whose premise came from a third-party article could be wrong or already stale,
+and a wrong durable rejection is worse than a park because it stops
+reconsideration.
+
+**The exception** is the last row of Tier C — an external agent framework as
+Nerva's brain. That one is `REJECTED` durably because it rests on an in-repo
+primary source (`NERVA_VISION.md` §8 and #778 assigning planning to Cortex), not
+on this survey.
+
+Every parked row carries an explicit **reconsideration trigger**: the concrete
+primary artifact or decision that would reopen it.
 
 ### 3.1 Tier A — closest to Nerva's accepted contracts
 
@@ -102,17 +110,17 @@ because it stops reconsideration. Each row therefore carries an explicit
 
 ### 3.2 Tier B — strong candidates, real open questions
 
-| Candidate | Gives Nerva | License (secondary) | Class | RFC status |
-|---|---|---|---|---|
-| **E2B** | Firecracker microVM isolation for untrusted code | Apache-2.0 | `thin_adapter` | `PARKED` — self-host needs Firecracker/KVM + a Nomad/Consul control plane; heavy, and sessions are reported short-lived |
-| **browser-use** | LLM-driven browser agent over DOM + vision | permissive (verify) | `thin_adapter` | `PARKED` — overlaps Hermes' browser tools; pick one, do not run two |
-| **Stagehand** | typed `act`/`extract`/`observe` over Playwright | permissive (verify) | `thin_adapter` | `PARKED` — cleanest abstraction, but TypeScript in a Python core |
-| **Letta** | OS-style tiered agent memory | Apache-2.0 | `reject` **as memory authority**, `thin_adapter` as experiment | `PARKED` — Atlas/Episodes are canonical; a second memory authority is the drift B3 warns about |
-| **Graphiti** | temporal knowledge graph, time-aware facts | open source (verify) | `native_fallback` | `PARKED` — Nerva already has a bi-temporal KG (`memory/bitemporal.py`); compare, do not replace |
-| **Whisper / faster-whisper** | local STT | MIT/permissive (unverified) | `thin_adapter` | `PARKED` — primary pass needed |
-| **openWakeWord** | always-listening wake word without running STT continuously | permissive (unverified) | `thin_adapter` | `PARKED` — primary pass needed |
-| **Kokoro / Coqui XTTS** | local TTS | unverified per project | `thin_adapter` | `PARKED` — candidate *instead of* Piper, on the secondary claim that Piper is archived |
-| **n8n** | 400+ prebuilt integrations, visual workflows | Sustainable Use (source-available, **not OSI**) | `thin_adapter` | `PARKED` — **license flag** — the fair-code terms must be read before any dependency |
+| Candidate | Gives Nerva | License (secondary) | Class | Status | Reconsideration trigger |
+|---|---|---|---|---|---|
+| **E2B** | Firecracker microVM isolation for untrusted code | Apache-2.0 | `thin_adapter` | `PARKED` — self-host is heavy | self-host requirements and session-lifetime limits read in upstream docs at source, plus an owner decision that a KVM control plane is acceptable |
+| **browser-use** | LLM-driven browser agent over DOM + vision | permissive (unverified) | `thin_adapter` | `PARKED` — overlaps Hermes | an E8.1b decision on which single browser surface Nerva adopts; two stacks are not an option |
+| **Stagehand** | typed `act`/`extract`/`observe` over Playwright | permissive (unverified) | `thin_adapter` | `PARKED` — TypeScript in a Python core | a decision that a TypeScript sidecar is acceptable, plus a LICENSE and API pass at source |
+| **Letta** | OS-style tiered agent memory | Apache-2.0 (unverified) | `reject` **as memory authority** | `PARKED` — experiment only | an architecture decision that Atlas/Episodes cede memory authority. Currently forbidden by B3, so this is a CEO-level call, not a project comparison |
+| **Graphiti** | temporal knowledge graph | open source (unverified) | `native_fallback` | `PARKED` — native surface exists | a measured comparison against `agents/core/memory/bitemporal.py` on a real temporal query set, through the E9 lane |
+| **Whisper / faster-whisper** | local STT | MIT/permissive (unverified) | `thin_adapter` | `PARKED` | `LICENSE` **and model-weight licence** read at source — they can differ |
+| **openWakeWord** | always-listening wake word without running STT continuously | permissive (unverified) | `thin_adapter` | `PARKED` | `LICENSE` and bundled-model licence read at source |
+| **Kokoro / Coqui XTTS** | local TTS | unverified per project | `thin_adapter` | `PARKED` | per-project `LICENSE` read at source, **and** confirmation of the Piper archive claim that made these the candidates |
+| **n8n** | 400+ prebuilt integrations, visual workflows | Sustainable Use (source-available, **not OSI**) | `thin_adapter` | `PARKED` — **license flag** | the Sustainable Use terms read in full at source and cleared for this deployment model. Until then it is not a candidate, it is a question |
 
 ### 3.3 Tier C — parked against a negative hypothesis
 
@@ -158,10 +166,11 @@ more than ten parked rows.
 ## 6. Nothing is forgotten
 
 Every idea above carries exactly one #805-canonical status. All are `PARKED`
-except a single `REJECTED` that rests on an in-repo primary source rather than on
-this survey. Each park records the evidence that would move it, so
-reconsideration is triggered by new facts rather than by a new opinion — and so
-that no row is quietly stuck.
+except a single `REJECTED` — the last Tier C row — which rests on an in-repo
+primary source rather than on this survey. Every parked row, in all three tiers,
+records the concrete artifact or decision that would move it, so reconsideration
+is triggered by new facts rather than by a new opinion, and no row is quietly
+stuck.
 
 ## 7. What this document is not
 
