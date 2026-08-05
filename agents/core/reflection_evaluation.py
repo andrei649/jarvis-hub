@@ -16,6 +16,7 @@ import math
 import os
 import platform
 import re
+import stat
 import sys
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
@@ -1382,16 +1383,16 @@ async def evaluate_lesson_plan(
     )
     if plan.environment != detected_environment:
         raise ValueError("evaluation environment does not match the detected host")
+    for existing_version in store.versions(plan.suite_name):
+        _strict_retained_suite(store, plan.suite_name, existing_version)
+    retained_runs = _strict_retained_runs(
+        store,
+        plan.suite_name,
+        last_n=sys.maxsize,
+    )
     if run_id is not None:
         _identifier(run_id, "run id")
-        if any(
-            retained.run_id == run_id
-            for retained in _strict_retained_runs(
-                store,
-                plan.suite_name,
-                last_n=sys.maxsize,
-            )
-        ):
+        if any(retained.run_id == run_id for retained in retained_runs):
             raise ValueError("run id already exists in the retained suite")
     cases = _materialize_cases(plan)
     version = store.save_suite(plan.suite_name, cases, lane=plan.lane)
@@ -1628,6 +1629,58 @@ def _synthetic_plan(
     )
 
 
+def _namespace_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        stat.S_IMODE(metadata.st_mode),
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+        metadata.st_nlink,
+    )
+
+
+def _reserve_report_namespace(
+    path: Path,
+) -> tuple[int, int, int, int, int, int]:
+    if os.path.lexists(path):
+        raise ValueError("report path already exists; choose a fresh output path")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.mkdir(mode=0o700)
+    except (FileExistsError, PermissionError) as exc:
+        raise ValueError("report path already exists; choose a fresh output path") from exc
+    metadata = os.lstat(path)
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError("report namespace reservation is not a directory")
+    return _namespace_identity(metadata)
+
+
+def _release_report_namespace(
+    path: Path,
+    expected_identity: tuple[int, int, int, int, int, int],
+) -> None:
+    try:
+        before = os.lstat(path)
+    except OSError as exc:
+        raise ValueError("report namespace reservation changed during evaluation") from exc
+    if not stat.S_ISDIR(before.st_mode) or _namespace_identity(before) != expected_identity:
+        raise ValueError("report namespace reservation changed during evaluation")
+    try:
+        with os.scandir(path) as entries:
+            if next(entries, None) is not None:
+                raise ValueError("report namespace reservation changed during evaluation")
+        after = os.lstat(path)
+    except OSError as exc:
+        raise ValueError("report namespace reservation changed during evaluation") from exc
+    if _namespace_identity(after) != expected_identity:
+        raise ValueError("report namespace reservation changed during evaluation")
+    try:
+        path.rmdir()
+    except OSError as exc:
+        raise ValueError("report namespace reservation changed during evaluation") from exc
+
+
 async def run_synthetic_evaluation(
     *,
     store_root: str | Path,
@@ -1645,15 +1698,8 @@ async def run_synthetic_evaluation(
         or resolved_store.is_relative_to(resolved_report)
     ):
         raise ValueError("report path must not overlap the retained evidence store")
-    if resolved_report.exists():
-        raise ValueError("report path already exists; choose a fresh output path")
-    resolved_report.parent.mkdir(parents=True, exist_ok=True)
+    reservation_identity = _reserve_report_namespace(resolved_report)
     try:
-        output = resolved_report.open("x", encoding="utf-8", newline="\n")
-    except (FileExistsError, IsADirectoryError) as exc:
-        raise ValueError("report path already exists; choose a fresh output path") from exc
-
-    with output:
         plan = _synthetic_plan(
             revision=revision,
             runner_id=runner_id,
@@ -1674,15 +1720,33 @@ async def run_synthetic_evaluation(
             candidate_runner=candidate,
             baseline_runner=baseline,
         )
-        output.write(report.to_json() + "\n")
+        if not isinstance(report, LessonEvaluationReport):
+            raise ValueError("synthetic evaluation returned an invalid report")
+        serialized_report = report.to_json() + "\n"
+    except BaseException as evaluation_error:
+        try:
+            _release_report_namespace(resolved_report, reservation_identity)
+        except ValueError as reservation_error:
+            raise reservation_error from evaluation_error
+        raise
+
+    _release_report_namespace(resolved_report, reservation_identity)
+    try:
+        output = resolved_report.open("x", encoding="utf-8", newline="\n")
+    except (FileExistsError, IsADirectoryError, PermissionError) as exc:
+        raise ValueError("report path collided after namespace reservation") from exc
+    with output:
+        if os.fstat(output.fileno()).st_nlink != 1:
+            raise ValueError("report path collided after namespace reservation")
+        output.write(serialized_report)
         output.flush()
         os.fsync(output.fileno())
         try:
             still_reserved_output = os.path.samefile(resolved_report, output.fileno())
         except OSError as exc:
-            raise ValueError("report path changed after exclusive reservation") from exc
-        if not still_reserved_output:
-            raise ValueError("report path changed after exclusive reservation")
+            raise ValueError("report path collided after namespace reservation") from exc
+        if not still_reserved_output or os.fstat(output.fileno()).st_nlink != 1:
+            raise ValueError("report path collided after namespace reservation")
     return report
 
 

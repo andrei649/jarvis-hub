@@ -630,6 +630,53 @@ async def _check_retained_json_decoding_is_strict(tmp_path: Path) -> None:
             path.write_bytes(original)
 
 
+async def _check_strict_preflight_is_unconditional(tmp_path: Path) -> None:
+    for label in ("run", "suite"):
+        case = _case(f"auto-preflight-{label}")
+        plan = _plan((case,), thresholds=LessonEvaluationThresholds())
+        report, store, _, _ = await _evaluate(
+            tmp_path,
+            plan,
+            {case.case_id: f"answer-{case.case_id}"},
+            {case.case_id: f"answer-{case.case_id}"},
+            store_name=f"auto-preflight-{label}",
+        )
+        store_root = tmp_path / f"auto-preflight-{label}"
+        suite_dir = store_root / "suites" / plan.suite_name
+        if label == "run":
+            path = suite_dir / "runs.jsonl"
+            line = path.read_text(encoding="utf-8").strip()
+            hostile = '{"run_id":' + json.dumps(report.run_id) + "," + line[1:]
+            error = "retained run JSONL must use strict JSON"
+        else:
+            path = suite_dir / "v1.jsonl"
+            line = path.read_text(encoding="utf-8").strip()
+            hostile = '{"case_id":' + json.dumps(case.case_id) + "," + line[1:]
+            error = "retained suite JSONL must use strict JSON"
+        path.write_text(hostile + "\n", encoding="utf-8")
+        before = _tree_snapshot(store_root)
+        calls = 0
+
+        async def must_not_run(
+            _runner_input,
+            fixed_answer=f"answer-{case.case_id}",
+        ):
+            nonlocal calls
+            calls += 1
+            return fixed_answer
+
+        with pytest.raises(ValueError, match=error):
+            await evaluate_lesson_plan(
+                plan,
+                store=store,
+                candidate_runner=must_not_run,
+                baseline_runner=must_not_run,
+                now=lambda: _NOW,
+            )
+        assert calls == 0
+        assert _tree_snapshot(store_root) == before
+
+
 def _tree_snapshot(root: Path) -> tuple[tuple[str, ...], dict[str, bytes]]:
     if not root.exists():
         return (), {}
@@ -786,10 +833,10 @@ async def _check_report_is_reserved_before_evaluation(tmp_path: Path) -> None:
     async def stop_after_reservation(*_args, **_kwargs):
         nonlocal calls
         calls += 1
-        assert report_path.exists()
-        assert report_path.read_bytes() == b""
+        assert report_path.is_dir()
+        assert tuple(report_path.iterdir()) == ()
         with pytest.raises(FileExistsError):
-            report_path.open("x", encoding="utf-8").close()
+            report_path.mkdir()
         raise RuntimeError("stop after reservation")
 
     with (
@@ -806,8 +853,110 @@ async def _check_report_is_reserved_before_evaluation(tmp_path: Path) -> None:
             runner_id="pytest-e6-1",
         )
     assert calls == 1
-    assert report_path.read_bytes() == b""
+    assert not report_path.exists()
     assert _tree_snapshot(store_root) == ((), {})
+
+
+async def _check_reservation_tampering_fails_closed(tmp_path: Path) -> None:
+    store_root = tmp_path / "reservation-tamper-store"
+    report_path = tmp_path / "reservation-tamper-report.json"
+    retained_after_evaluation = None
+
+    async def tamper_with_reservation(*args, **kwargs):
+        nonlocal retained_after_evaluation
+        report = await evaluate_lesson_plan(*args, **kwargs)
+        retained_after_evaluation = _tree_snapshot(store_root)
+        (report_path / "intruder").write_bytes(b"tampered-reservation")
+        return report
+
+    with (
+        patch(
+            "agents.core.reflection_evaluation.evaluate_lesson_plan",
+            side_effect=tamper_with_reservation,
+        ),
+        pytest.raises(ValueError, match="namespace reservation changed"),
+    ):
+        await run_synthetic_evaluation(
+            store_root=store_root,
+            report_path=report_path,
+            revision=_REVISION,
+            runner_id="pytest-e6-1",
+        )
+    assert retained_after_evaluation is not None
+    assert _tree_snapshot(store_root) == retained_after_evaluation
+    assert report_path.is_dir()
+    assert (report_path / "intruder").read_bytes() == b"tampered-reservation"
+
+
+async def _check_reverse_hardlinks_are_blocked_during_evaluation(tmp_path: Path) -> None:
+    for label in ("runs", "suite"):
+        store_root = tmp_path / f"reverse-hardlink-{label}"
+        report_path = tmp_path / f"reverse-hardlink-{label}-report.json"
+        link_blocked = False
+
+        async def attempt_reverse_hardlink(
+            *args,
+            fixed_store_root=store_root,
+            fixed_label=label,
+            fixed_report_path=report_path,
+            **kwargs,
+        ):
+            nonlocal link_blocked
+            suite_dir = fixed_store_root / "suites" / "nerva-e6-1-synthetic"
+            suite_dir.mkdir(parents=True, exist_ok=True)
+            target = suite_dir / ("runs.jsonl" if fixed_label == "runs" else "v1.jsonl")
+            try:
+                os.link(fixed_report_path, target)
+            except OSError:
+                link_blocked = True
+            return await evaluate_lesson_plan(*args, **kwargs)
+
+        with patch(
+            "agents.core.reflection_evaluation.evaluate_lesson_plan",
+            side_effect=attempt_reverse_hardlink,
+        ):
+            report = await run_synthetic_evaluation(
+                store_root=store_root,
+                report_path=report_path,
+                revision=_REVISION,
+                runner_id="pytest-e6-1",
+            )
+        assert link_blocked is True
+        assert report.success is True
+        assert json.loads(report_path.read_text(encoding="utf-8"))["success"] is True
+        store = BenchmarkStore(store_root)
+        assert len(store.runs("nerva-e6-1-synthetic")) == 1
+        assert len(store.load_suite("nerva-e6-1-synthetic", 1)) == 2
+
+
+async def _check_final_output_collision_does_not_write_store(tmp_path: Path) -> None:
+    store_root = tmp_path / "final-collision-store"
+    report_path = tmp_path / "final-collision-report.json"
+    original_open = Path.open
+    retained_before_collision: bytes | None = None
+    runs_path = store_root / "suites" / "nerva-e6-1-synthetic" / "runs.jsonl"
+
+    def collide_at_final_open(path, *args, **kwargs):
+        nonlocal retained_before_collision
+        mode = args[0] if args else kwargs.get("mode", "r")
+        if path == report_path and mode == "x":
+            retained_before_collision = runs_path.read_bytes()
+            os.link(runs_path, report_path)
+        return original_open(path, *args, **kwargs)
+
+    with (
+        patch.object(Path, "open", new=collide_at_final_open),
+        pytest.raises(ValueError, match="collided after namespace reservation"),
+    ):
+        await run_synthetic_evaluation(
+            store_root=store_root,
+            report_path=report_path,
+            revision=_REVISION,
+            runner_id="pytest-e6-1",
+        )
+    assert retained_before_collision is not None
+    assert report_path.samefile(runs_path)
+    assert runs_path.read_bytes() == retained_before_collision
 
 
 async def _check_report_path_swap_cannot_redirect_write(tmp_path: Path) -> None:
@@ -851,7 +1000,7 @@ async def _check_report_path_swap_cannot_redirect_write(tmp_path: Path) -> None:
     assert runs_path.read_bytes() == retained_bytes
     if path_changed:
         assert failure is not None
-        assert "changed after exclusive reservation" in str(failure)
+        assert "namespace reservation changed" in str(failure)
         if report_path.exists():
             assert report_path.samefile(runs_path)
             assert report_path.read_bytes() == retained_bytes
@@ -939,10 +1088,14 @@ async def run_e6_1_checks(tmp_path: Path) -> None:
     await _check_false_hallucinated_and_subgroup_masking(tmp_path)
     await _check_tampering_totals_and_retention(tmp_path)
     await _check_retained_json_decoding_is_strict(tmp_path)
+    await _check_strict_preflight_is_unconditional(tmp_path)
     await _check_duplicate_run_id_is_rejected_before_mutation(tmp_path)
     await _check_execution_environment_is_redetected(tmp_path)
     await _check_report_output_is_create_once(tmp_path)
     await _check_report_is_reserved_before_evaluation(tmp_path)
+    await _check_reservation_tampering_fails_closed(tmp_path)
+    await _check_reverse_hardlinks_are_blocked_during_evaluation(tmp_path)
+    await _check_final_output_collision_does_not_write_store(tmp_path)
     await _check_report_path_swap_cannot_redirect_write(tmp_path)
     await _check_disjoint_report_path_and_deterministic_fixture(tmp_path)
     _check_workflow_and_docs(Path(__file__).resolve().parent.parent)

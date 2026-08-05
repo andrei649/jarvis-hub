@@ -88,14 +88,19 @@ types. Only strictly parsed records are canonically reserialized into the
 accepted E9 run constructor; its permissive decoder never receives raw retained
 bytes.
 
-An explicit run ID is checked against retained runs before a suite version,
-runner call, or run record can change the store. The report path is resolved and
-must be disjoint from the retained evidence store before evaluation starts.
+Every existing suite version and every retained run are strict-scanned before a
+new suite version, runner call, or run record can change the store, including
+auto-generated run-ID executions. An explicit run ID is collision-checked against
+that same preflight snapshot. The report path is resolved and must be disjoint
+from the retained evidence store before evaluation starts.
 Report outputs are create-once: an existing path, including a hardlink alias, is
-rejected. A fresh output is exclusively reserved before any store mutation and
-the same open file is used for final serialization, so a path swap cannot redirect
-the report write into retained evidence. If evaluation fails, the empty reserved
-output remains closed; callers must inspect the failure and choose a fresh path.
+rejected. Before any store mutation, the exact output namespace is reserved as
+an exclusively created empty directory, which cannot be hardlinked into retained
+files. After the evaluator returns, its directory identity and unchanged emptiness
+are verified before a non-recursive removal and immediate exclusive file create.
+No evaluator callback remains when report bytes are written. On evaluator failure,
+only a still-owned, unchanged, empty reservation is removed; callers then choose
+a fresh path.
 
 Eval Nightly runs only the fixed synthetic-public fixture. Its store and report
 upload under `always()` and expire after 14 days. The job has no cache-save or
