@@ -174,10 +174,39 @@ The license mirror lists adapted files but records **no upstream commit or tag**
 so there is currently no way to tell whether the six adapted files still
 correspond to anything upstream.
 
-### Proposed manifest entry — deliberately NOT applied here
+### Proposed manifest entry — NOT applied, and NOT yet safe to apply
 
-E8.1a is documentation-only, so this PR does not modify the manifest. The
-proposal below is the recommended E8.1b (or owner) action:
+E8.1a is documentation-only, so this PR does not modify the manifest. More
+importantly, **the entry below must not be added until the updater lane is made
+safe**, for a repository-local reason verified in code:
+
+| Verified fact | Where |
+|---|---|
+| `is_vendored = str(entry.get("kind", "")).startswith("vendored")` — every entry whose `kind` does not start with `vendored` is treated as **doc-pinned** | `scripts/update_thirdparty.py:225` |
+| `_bump_doc_version()` regex-replaces the old version token **throughout `update_doc`** on word boundaries | `scripts/update_thirdparty.py:165-185` |
+| the scheduled workflow fans a matrix over **every** `sources` entry whose drift is `DRIFT`, with **no** `auto_update=false` or manual-only key anywhere | `.github/workflows/thirdparty-autoupdate.yml` |
+| its steps are drift detection → `update_thirdparty.py` → offline manifest consistency → PR creation. **No compatibility, security or E9 test runs.** | same |
+
+**The hazard this creates.** If Hermes were added to `sources` with `update_doc`
+pointing at this evidence map, a future upstream tag would rewrite every
+occurrence of `v2026.8.3` in this document — while leaving the pinned commit
+`3c27eb62…`, the PyPI facts, the interface inventory, the attestation evidence
+and every conclusion untouched. The result would be a document that *claims* to
+be verified at a tag it was never verified at: manufactured, internally
+inconsistent "verified" evidence. That is worse than no automation.
+
+**Retraction.** An earlier revision of this section claimed the existing
+auto-update lane could manage Hermes and that the drift/update PR "triggers
+compatibility tests". Both claims are **withdrawn**. The lane performs neither.
+
+**Blocked until** one of the following exists — each a separate package with its
+own rollback and tests, and explicitly **not** part of E8.1a:
+
+1. a `drift_only` / manual-review manifest policy, or
+2. an explicit `auto_update: false` opt-out the updater honours, and
+3. an `update_doc` target that is a short pin record rather than an evidence map.
+
+For reference only, the shape the entry would eventually take:
 
 ```jsonc
 {
@@ -188,26 +217,23 @@ proposal below is the recommended E8.1b (or owner) action:
   "pinned_version": "v2026.8.3",
   "license": "LICENSES/hermes-agent-MIT.txt",
   "track_drift": true,
-  "update_doc": "docs/nerva2/EXECUTION_PROVIDER_E8_1A.md"
+  "auto_update": false        // NOT honoured by the current updater
 }
 ```
 
-`pinned_version` is the verified latest release from §1.1, resolving to commit
-`3c27eb6234bf91b8ceee9e9071591b31e9b148cb`.
-
-**Operationally, once that entry lands:**
+**Operationally, under the corrected policy:**
 
 | Question | Answer |
 |---|---|
-| What enters the manifest | `v2026.8.3` |
-| What the drift checker observes | new tags on `NousResearch/hermes-agent` via the existing `check_thirdparty_drift.py` tag lookup. **Insufficient alone** — see §1.2; the PyPI release feed must be watched too, and tag/package divergence treated as a signal |
-| What triggers compatibility tests | the drift issue / update PR opened by `thirdparty-drift.yml` and `thirdparty-autoupdate.yml` |
-| How updates are reviewed | manually, on the auto-opened PR — `update_thirdparty.py` bumps the pin, it never promotes |
-| How the mutable runtime fetch is fixed | replace `HERMES_SKILLS_PATH = "main/skills"` with the pinned tag, and record a content digest per imported `SKILL.md` |
+| What enters the manifest | nothing yet — enrolment is blocked (above) |
+| Drift signal | GitHub tag feed **and** the PyPI release feed (§1.2), as a **proposed manual signal**, not an automated bump |
+| What triggers a pin movement | adapter-specific compatibility, supply-chain and E9 checks — **none of which exist today** |
+| How updates are reviewed | manually, and only after those checks exist |
+| How the mutable runtime fetch is fixed | replace `HERMES_SKILLS_PATH = "main/skills"` with the pinned tag, and record a content digest per imported `SKILL.md` — separate package |
 | Native fallback | unchanged — Nerva executes natively when no provider is registered |
 
-The runtime-fetch change and the manifest entry are both **E8.1b work**; this
-slice deliberately changes no code or configuration.
+The updater and workflow are **not** modified here. That is a separate
+security/automation package with its own rollback and tests.
 
 ## 4.1 Dependency and license surface — inspected
 
@@ -329,6 +355,8 @@ Stated plainly, because inventing any of it would be worse than leaving it open:
   tell us what those six files were adapted from;
 - **the transitive license closure and CVE posture** — only the direct dependency
   list was read (§4.1);
+- **any compatibility testing whatsoever** — no Hermes compatibility, security or
+  E9 lane exists in this repository today (§4);
 - **the Sigstore attestations themselves** — their presence is recorded from the
   PyPI page (§1.2); no bundle was downloaded or cryptographically verified;
 - **any performance, reliability, cost or privacy property** of Hermes. Nothing
@@ -364,8 +392,10 @@ this single document.
 E8.1b (`nerva.execution-provider.v1`) is blocked only on independent acceptance
 of this map. The smallest movements after acceptance, in order:
 
-1. Add the §4 manifest entry pinning `v2026.8.3` so drift is tracked like every
-   other third-party source.
+1. Make the updater lane safe (§4) — a `drift_only`/manual policy or an
+   `auto_update: false` opt-out the updater honours — **before** any manifest
+   entry. Adding Hermes today would enrol it in unattended auto-update that
+   rewrites this document's version tokens while leaving its evidence stale.
 2. Replace the mutable `main/skills` runtime fetch with the pinned tag plus a
    content digest per imported `SKILL.md`.
 3. Only then define the provider contract, with `grants_authority=false`
