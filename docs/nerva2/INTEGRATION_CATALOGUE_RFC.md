@@ -17,7 +17,8 @@ merged as `a6e8585`, landing `docs/nerva2/EXECUTION_PROVIDER_E8_1A.md` as the
 accepted E8.1a discovery gate. The serialization condition is met.
 
 That does not upgrade anything below. The E8.1a map is primary-verified; this
-catalogue performed no comparable upstream pass, and its external adoption and
+catalogue now records one bounded upstream README/commit read for MCP Registry,
+not a complete adoption assessment. Its external adoption and
 provider-promotion hypotheses stay `PARKED` for the reason in §0.
 
 This document proposes nothing for production and promotes nothing.
@@ -29,16 +30,17 @@ be the exact failure the program forbids:
 
 | Level | Meaning | Example |
 |---|---|---|
-| **Primary (read)** | a canonical upstream artifact was read directly and the read was recorded | accepted `docs/nerva2/EXECUTION_PROVIDER_E8_1A.md` — `pyproject.toml`, release tag and commit read at source |
+| **Primary (read)** | a canonical upstream artifact was read directly and the read was recorded | accepted `docs/nerva2/EXECUTION_PROVIDER_E8_1A.md`; the immutable MCP Registry README/commit evidence recorded in §2 and Sources |
 | **In-repository fact** | current Nerva code, dependency locks, tests or operator documentation prove a local surface, but not upstream suitability | Playwright's existing dependency, host-gated runtime and test surfaces |
 | **Secondary** | search summaries or third-party articles support a discovery hypothesis | the unconfirmed activity, licence and capability findings in §2 and §3 |
 | **Queued primary artifact** | an official repository or documentation link is identified for a future direct read, but was not read for this survey | the official links separated in Sources below |
 
 **External adoption and provider-promotion hypotheses below remain secondary or
-unverified unless a row says otherwise.** Upstream licence, activity and
-capability claims come from search summaries, not from reading each project's
-`LICENSE`, release history or source. No external project was installed, run,
-benchmarked or source-read as part of this survey.
+unverified unless a row says otherwise.** With the bounded MCP Registry
+README/commit exception recorded below, upstream licence, activity and
+capability claims still come from search summaries rather than a complete read
+of each project's `LICENSE`, release history and source. No external project was
+installed, run or benchmarked as part of this survey or correction.
 
 Playwright is the bounded local exception to the old blanket statement: this
 repository already pins `@playwright/test`, carries the host-gated
@@ -48,9 +50,11 @@ hypothesis that Playwright should be promoted as a governed provider capability;
 only that promotion hypothesis is parked below.
 
 Consequence: **no external adoption or provider-promotion hypothesis here is
-ready.** Each requires the same upstream primary-source pass E8.1a did — exact
-pin, licence file, dependency surface and API-stability assessment — before it
-can be proposed for an adapter.
+ready.** MCP Registry's README establishes technical local runnability, but not
+adoption readiness. Each candidate still requires the same complete upstream
+primary-source pass E8.1a did — an adoption pin, licence file, dependency
+surface and API-stability assessment — before it can be proposed for an adapter
+or deployment.
 
 ## 1. Why a catalogue does not make Nerva "able to do anything"
 
@@ -83,9 +87,29 @@ been wrong if taken from memory or from a year-old blog post:
 | **Daytona** | reported to have moved its production codebase **closed source in June 2026**, citing security; the original OSS repo remains public but unmaintained | a "self-hostable sandbox" assumption is now stale |
 | **Piper TTS** | reported **archived / read-only since 2025-10-06**; still functions as a Home Assistant Wyoming add-on | fine to consume, wrong to build new work on |
 | **Zep** | reported to have **retired the self-hosted Community Edition**; Graphiti itself stays open source | self-hosting story changed under the same brand |
-| **MCP Registry** | maintainers state the registry codebase **is not designed for self-hosting** and is unsupported if forked | consume the API; do not plan to run it |
+| **MCP Registry** | its official README documents a local PostgreSQL development environment, offline file seeding and pre-built GHCR images | the previous categorical claim against self-hosting was false; local runnability does not establish production suitability or support |
 | **Hermes Agent** | **no public API contract found** (primary-verified in accepted E8.1a) | argues for thin adapters everywhere, not deep coupling |
 | **This repository's auto-update lane** | `update_thirdparty.py` rewrites the version token throughout a source's `update_doc` with no awareness of what else that file asserts, and the scheduled workflow has no opt-out (primary-verified in accepted E8.1a §4) | any integration added to `sources` inherits this; it is a gate on §4, not a detail |
+
+**MCP Registry correction evidence — Primary (read), 2026-08-06.** A live read
+found upstream `main` at
+[`0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2`](https://github.com/modelcontextprotocol/registry/commit/0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2),
+whose immutable
+[`README.md`](https://github.com/modelcontextprotocol/registry/blob/0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2/README.md#L32-L76)
+is Git blob `33ce33790ca4d4a56ccc36b7afb340cba8c26bad`. It documents:
+
+- `make dev-compose`, which builds the registry image locally with `ko` and
+  starts `localhost:8080` with PostgreSQL using ephemeral development storage;
+- offline file seeding with `MCP_REGISTRY_SEED_FROM=data/seed.json` and
+  `MCP_REGISTRY_ENABLE_REGISTRY_VALIDATION=false` — explicitly without registry
+  validation;
+- pre-built `ghcr.io/modelcontextprotocol/registry` images tagged `latest`, a
+  release version, `main`, or `main-<date>-<sha>`. Those images do not bundle
+  PostgreSQL; the operator must provide it and set `MCP_REGISTRY_DATABASE_URL`.
+
+This directly proves a technically runnable local/self-managed path. It does
+not prove a supported production topology, operational fitness, Nerva API
+compatibility or safe adoption.
 
 ## 3. Catalogue
 
@@ -97,11 +121,12 @@ Classes reuse the E8.1a vocabulary: `reuse`, `thin_adapter`, `native_fallback`,
 governed state.
 
 **Every row below is `PARKED`, with exactly one stated exception.** No row has a
-primary-source pass, and #805 does not permit `ACCEPTED_FOR_EPIC` on secondary
-evidence. Durable `REJECTED` is also withheld for survey findings: a rejection
-whose premise came from a third-party article could be wrong or already stale,
-and a wrong durable rejection is worse than a park because it stops
-reconsideration.
+complete adoption-grade primary-source pass; the MCP Registry row has only the
+bounded README/commit feasibility read recorded in §2. #805 does not permit
+`ACCEPTED_FOR_EPIC` on partial or secondary evidence. Durable `REJECTED` is also
+withheld for survey findings: a rejection whose premise came from a third-party
+article could be wrong or already stale, and a wrong durable rejection is worse
+than a park because it stops reconsideration.
 
 **The exception** is the last row of Tier C — an external agent framework as
 Nerva's brain. That one is `REJECTED` durably because it rests on an in-repo
@@ -116,6 +141,7 @@ primary artifact or decision that would reopen it.
 | Candidate | Gives Nerva | License (secondary) | Class | Status | Reconsideration trigger |
 |---|---|---|---|---|---|
 | **MCP servers ecosystem** | a standardised tool surface behind a protocol Nerva already speaks | mixed per server | `thin_adapter` | `PARKED` | primary pass on one chosen server: LICENSE read, exact pin, interface inventory |
+| **MCP Registry codebase** | an official registry service with a documented local PostgreSQL development path | not assessed in this correction | `reuse` | `PARKED` — README feasibility only | select an exact adoption pin; assess `LICENSE`, dependencies, API stability and operations; then complete the full #805 contract and every §4 gate |
 | **Home Assistant** | device/room/occupant graph and governed actuation (B6) | Apache-2.0 (unverified) | `thin_adapter` | `PARKED` | primary pass; Hermes also ships a `homeassistant` extra |
 | **Frigate** | local camera event detection, no cloud | MIT (unverified) | `thin_adapter` | `PARKED` | primary pass; matches the local-first non-negotiable |
 | **Playwright** (already in-repo) | deterministic browser control | Apache-2.0 (not re-read upstream here) | `reuse` | `PARKED` as a *provider surface* | dependency, runtime and test surfaces already exist; only promotion to a governed capability needs the additive §4 gates |
@@ -145,7 +171,6 @@ changed, a durable rejection would silently stop reconsideration.
 | **Daytona** | `PARKED` | production code moved closed-source 2026-06; OSS repo unmaintained | repository state and last-commit date read directly |
 | **Piper TTS** | `PARKED` for new work | archived read-only since 2025-10-06 | repository archive flag read directly |
 | **Zep (self-hosted)** | `PARKED` | self-hosted Community Edition retired | upstream docs/release notes read directly |
-| **Self-hosting the MCP Registry** | `PARKED` | maintainers state it is not designed for self-hosting | maintainer statement read at its source |
 | Any external agent framework as Nerva's brain | **`REJECTED`** | — | **the one durable rejection here, and it rests on a primary in-repo source, not on a survey:** `NERVA_VISION.md` §8 and #778 assign planning to Cortex. Overturning it needs an architecture decision, not a better project |
 
 ## 4. Additional external-integration gates after the #805 minimum contract
@@ -198,24 +223,31 @@ stuck.
 - not the #804 handoff — that separate E8.1a artifact was accepted through PR
   #819 as `a6e85854dfef82106d3f5c9980fa634de58a38c7`; this catalogue neither
   re-delivers nor advances it;
-- not adoption-ready — no external adoption or provider-promotion hypothesis
-  has completed the required upstream primary-source pass;
+- not adoption-ready — the MCP Registry README/commit read establishes only
+  local feasibility; no external adoption or provider-promotion hypothesis has
+  completed the required adoption-grade primary-source and operational pass;
 - not a capability promotion, dependency, manifest change or adapter.
 
 ## Source taxonomy and queue
 
 Links are recorded so every hypothesis can be re-checked. Merely listing an
 official repository or documentation page does **not** mean it was read: those
-links are queued primary artifacts until a later direct-read pass records the
-artifact and result. The remaining links are secondary discovery sources; none
-is promoted to primary evidence by appearing here.
+links remain queued until a direct-read pass records the exact artifact and
+result. The MCP Registry evidence below is the bounded exception. The remaining
+links are secondary discovery sources; none is promoted to primary evidence by
+appearing here.
+
+### Primary artifacts read directly
+
+- [MCP Registry README blob `33ce33790ca4d4a56ccc36b7afb340cba8c26bad` at commit `0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2`](https://github.com/modelcontextprotocol/registry/blob/0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2/README.md#L32-L76)
+  — read 2026-08-06; the commit was re-verified as upstream `main` and the read
+  was limited to the local-run/seeding/image claims recorded in §2.
 
 ### Queued primary artifacts — official, not read in this survey
 
 - [Frigate — blakeblackshear/frigate](https://github.com/blakeblackshear/frigate)
 - [Frigate documentation](https://docs.frigate.video/)
-- [MCP Registry — modelcontextprotocol/registry](https://github.com/modelcontextprotocol/registry)
-- [MCP Registry — about](https://modelcontextprotocol.io/registry/about)
+- [MCP Registry — about (not read in this correction)](https://modelcontextprotocol.io/registry/about)
 - [MCP servers — modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers)
 - [n8n self-hosted AI starter kit](https://github.com/n8n-io/self-hosted-ai-starter-kit)
 
