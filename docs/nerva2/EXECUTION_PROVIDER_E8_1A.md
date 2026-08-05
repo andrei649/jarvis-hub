@@ -64,9 +64,35 @@ target. `main` is deliberately **not** the target: it is mutable, and although i
 currently reports the same `0.20.0` version as the tag, that equality is a
 coincidence of timing, not a guarantee.
 
-Update mechanism: GitHub releases/tags. There is no separate distribution
-channel to track, so the repository's existing tag-based drift checker is
-sufficient.
+### 1.2 Distribution channels — there are two, not one
+
+An earlier revision of this document claimed GitHub releases/tags were the only
+channel. That was **wrong**. Hermes Agent is also published to PyPI, and the two
+channels are not in lockstep:
+
+| Channel | Latest observed | Verified at |
+|---|---|---|
+| GitHub source tag | `v2026.8.3` → package version `0.20.0` | `releases/tag/v2026.8.3`, `pyproject.toml` at that tag |
+| PyPI package `hermes-agent` | **`0.19.0`**, released 2026-07-20 | `pypi.org/project/hermes-agent/` |
+
+**Finding: the package channel lags the source tag by one release.** `0.20.0` is
+tagged in git but the latest published wheel/sdist is `0.19.0`. A source pin and a
+package pin are therefore *different artifacts pointing at different code*, and
+tracking GitHub tags alone would not have revealed this.
+
+PyPI metadata verified on the same page: license MIT, `Requires-Python >=3.11,<3.14`
+— both consistent with the source tag. The project publishes with **GitHub Actions
+Trusted Publishing**, and the release carries **Sigstore attestation bundles with
+in-toto statements** for both the sdist and the wheel.
+
+**Policy consequence for E8.1b:** pin **source**, not the package, for the
+compatibility map and any adapter that reads upstream interfaces — the adapter
+targets modules, and modules live in the repository. If a runtime dependency on
+the published package is ever introduced, it needs its own pin *and* attestation
+verification, because Trusted Publishing provenance is only meaningful if
+something actually checks it. Drift policy must therefore watch **both** the tag
+feed and the PyPI release feed, and treat divergence between them as a signal
+rather than noise.
 
 ## 2. What Nerva already reuses — verified
 
@@ -174,7 +200,7 @@ proposal below is the recommended E8.1b (or owner) action:
 | Question | Answer |
 |---|---|
 | What enters the manifest | `v2026.8.3` |
-| What the drift checker observes | new tags on `NousResearch/hermes-agent` via the existing `check_thirdparty_drift.py` tag lookup |
+| What the drift checker observes | new tags on `NousResearch/hermes-agent` via the existing `check_thirdparty_drift.py` tag lookup. **Insufficient alone** — see §1.2; the PyPI release feed must be watched too, and tag/package divergence treated as a signal |
 | What triggers compatibility tests | the drift issue / update PR opened by `thirdparty-drift.yml` and `thirdparty-autoupdate.yml` |
 | How updates are reviewed | manually, on the auto-opened PR — `update_thirdparty.py` bumps the pin, it never promotes |
 | How the mutable runtime fetch is fixed | replace `HERMES_SKILLS_PATH = "main/skills"` with the pinned tag, and record a content digest per imported `SKILL.md` |
@@ -205,8 +231,15 @@ From `pyproject.toml` at `main` and at `v2026.8.3` (both read, both `0.20.0`):
 
 ## 5. Concrete upstream interfaces — inventoried at `main/tools`
 
-Module names below are **verbatim from the public directory listing** of
-`github.com/NousResearch/hermes-agent/tree/main/tools`, inspected 2026-08-04.
+Module names below are **verbatim from the public directory listing at the pinned
+tag** — `github.com/NousResearch/hermes-agent/tree/v2026.8.3/tools` — inspected
+2026-08-04. The map binds the version it inventories.
+
+**Drift note, recorded separately as required:** the same listing was also taken
+at mutable `main`. At inspection time the two file sets were **identical** — no
+file present at one and absent at the other. That is a point-in-time observation
+about `main`, not compatibility evidence for the pin; the classifications below
+rest on the tag alone.
 
 Stability caveat, stated up front: this project publishes **no documented public
 API contract** that was found during this inspection. Everything in `tools/` is
@@ -296,6 +329,8 @@ Stated plainly, because inventing any of it would be worse than leaving it open:
   tell us what those six files were adapted from;
 - **the transitive license closure and CVE posture** — only the direct dependency
   list was read (§4.1);
+- **the Sigstore attestations themselves** — their presence is recorded from the
+  PyPI page (§1.2); no bundle was downloaded or cryptographically verified;
 - **any performance, reliability, cost or privacy property** of Hermes. Nothing
   has been measured, and nothing is estimated. E9 must measure before promotion.
 
