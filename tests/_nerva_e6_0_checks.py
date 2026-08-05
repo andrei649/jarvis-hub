@@ -403,15 +403,18 @@ def _check_forged_evidence_graph_is_rejected() -> None:
     assert forged_proposal.proposal_id == forged_proposal.expected_proposal_id
     with pytest.raises(ValueError, match="claims unknown observations"):
         validate_proposal_evidence(forged_proposal, (observation,))
+    transition_result = None
     with pytest.raises(ValueError, match="claims unknown observations"):
-        transition_lesson(
+        transition_result = transition_lesson(
             forged_proposal,
             observations=(observation,),
-            to_lifecycle="rejected",
+            to_lifecycle="accepted_by_destination",
             actor="episodes",
-            reason="forged evidence cannot reach a lifecycle sink",
-            occurred_at=460.0,
+            reason="forged evidence cannot reach the acceptance sink",
+            occurred_at=450.0,
+            destination="episodes",
         )
+    assert transition_result is None
 
     # Claiming the real observations but inflating supporting evidence fails too.
     inflated = _forge(
@@ -635,6 +638,31 @@ def _check_lifecycle_audit_is_reversible_and_bound() -> None:
     assert supersede_event.replacement_proposal_id == (
         "reflection:lesson:replacement00000000"
     )
+
+    # Both supported expiry edges remain valid once the deadline is reached.
+    expired_at_deadline, expiry_event = transition_lesson(
+        proposal,
+        observations=(observation,),
+        to_lifecycle="expired",
+        actor="episodes",
+        reason="proposal reached its review expiry",
+        occurred_at=proposal.expires_at,
+    )
+    assert expired_at_deadline.lifecycle == "expired"
+    assert expiry_event.from_lifecycle == "proposed"
+    assert expiry_event.to_lifecycle == "expired"
+
+    accepted_expired, accepted_expiry_event = transition_lesson(
+        accepted,
+        observations=(observation,),
+        to_lifecycle="expired",
+        actor="episodes",
+        reason="accepted lesson reached its expiry",
+        occurred_at=accepted.expires_at + 1.0,
+    )
+    assert accepted_expired.lifecycle == "expired"
+    assert accepted_expiry_event.from_lifecycle == "accepted_by_destination"
+    assert accepted_expiry_event.to_lifecycle == "expired"
 
     with pytest.raises(ValueError, match="supersedes_with_proposal_id"):
         transition_lesson(
