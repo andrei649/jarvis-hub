@@ -6,6 +6,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // TypeScript 7.0.2 (pinned above) doesn't expose the compiler API Next's
+  // default type-checking path expects; run through the TypeScript CLI instead.
+  // https://nextjs.org/docs/messages/typescript-compiler-api (TypeScript 7 note)
+  experimental: {
+    useTypeScriptCli: true,
+  },
   // The application package and its node_modules live at worldview/, not the
   // enclosing JARVIS repository whose lockfile Next 16 otherwise discovers first.
   outputFileTracingRoot: path.resolve(here, ".."),
