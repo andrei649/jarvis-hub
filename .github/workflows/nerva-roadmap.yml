@@ -13,9 +13,14 @@ on:
       - "docs/nerva2/ISSUE_LEDGER_RECONCILIATION.md"
       - "docs/nerva2/E0_REPOSITORY_LEDGER_MIGRATION.md"
       - "docs/nerva2/E0_778_BODY_RECONCILIATION.md"
+      - "docs/nerva2/INNOVATION_LAB_RFC_V1.md"
+      - "docs/nerva2/INNOVATION_LAB_V1.schema.json"
+      - "docs/nerva2/KNOWLEDGE_GARDEN_V1.json"
       - "scripts/check_nerva_roadmap.py"
       - "scripts/check_nerva_e0_completion.py"
+      - "scripts/check_nerva_innovation_lab.py"
       - "scripts/reconcile_nerva_repository_ledgers.py"
+      - "tests/_nerva_innovation_lab_checks.py"
       - "tests/test_reconcile_nerva_repository_ledgers.py"
       - "tests/test_nerva_e0_completion.py"
       - ".github/workflows/nerva-roadmap.yml"
@@ -32,13 +37,27 @@ on:
       - "docs/nerva2/ISSUE_LEDGER_RECONCILIATION.md"
       - "docs/nerva2/E0_REPOSITORY_LEDGER_MIGRATION.md"
       - "docs/nerva2/E0_778_BODY_RECONCILIATION.md"
+      - "docs/nerva2/INNOVATION_LAB_RFC_V1.md"
+      - "docs/nerva2/INNOVATION_LAB_V1.schema.json"
+      - "docs/nerva2/KNOWLEDGE_GARDEN_V1.json"
       - "scripts/check_nerva_roadmap.py"
       - "scripts/check_nerva_e0_completion.py"
+      - "scripts/check_nerva_innovation_lab.py"
       - "scripts/reconcile_nerva_repository_ledgers.py"
+      - "tests/_nerva_innovation_lab_checks.py"
       - "tests/test_reconcile_nerva_repository_ledgers.py"
       - "tests/test_nerva_e0_completion.py"
       - ".github/workflows/nerva-roadmap.yml"
   workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Exact lowercase 40-hex accepted baseline commit
+        required: true
+        type: string
+      candidate_ref:
+        description: Exact lowercase 40-hex candidate commit that must equal HEAD
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -46,8 +65,15 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      NERVA_BASELINE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || inputs.baseline_ref }}
+      NERVA_CANDIDATE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.event.after || inputs.candidate_ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ env.NERVA_CANDIDATE_REF }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
@@ -58,7 +84,9 @@ jobs:
           python -m py_compile
           scripts/check_nerva_roadmap.py
           scripts/check_nerva_e0_completion.py
+          scripts/check_nerva_innovation_lab.py
           scripts/reconcile_nerva_repository_ledgers.py
+          tests/_nerva_innovation_lab_checks.py
 
       - name: Validate Nerva roadmap reconciliation
         run: python scripts/check_nerva_roadmap.py
@@ -68,3 +96,12 @@ jobs:
 
       - name: Validate Nerva E0 completion ledger
         run: python scripts/check_nerva_e0_completion.py
+
+      - name: Validate Nerva Innovation Lab immutable refs
+        run: >-
+          python scripts/check_nerva_innovation_lab.py
+          --baseline-ref "${NERVA_BASELINE_REF}"
+          --candidate-ref "${NERVA_CANDIDATE_REF}"
+
+      - name: Exercise Nerva Innovation Lab hostile matrix
+        run: python tests/_nerva_innovation_lab_checks.py
