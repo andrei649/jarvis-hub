@@ -57,8 +57,8 @@ credentials):
 `3c27eb6234bf91b8ceee9e9071591b31e9b148cb`, package `0.20.0`.**
 
 Rationale, and an explicit correction: a `v2026.7.7.2` / `0.18.2` candidate was
-proposed during review. That tag is real but is now **four releases behind**
-(`v2026.7.20`, `v2026.7.30`, `v2026.8.3` followed it). Pinning a superseded
+proposed during review. That tag is real but is now **three releases behind** — exactly
+`v2026.7.20`, `v2026.7.30` and `v2026.8.3` followed it. Pinning a superseded
 release would start E8.1b already stale, so the latest *release* is the correct
 target. `main` is deliberately **not** the target: it is mutable, and although it
 currently reports the same `0.20.0` version as the tag, that equality is a
@@ -222,14 +222,14 @@ From `pyproject.toml` at `main` and at `v2026.8.3` (both read, both `0.20.0`):
   `ptyprocess`, `pywinpty`, `pywin32`, `tzdata`, `concurrent-log-handler`.
 - **Assessment:** exact pinning upstream is a favourable supply-chain property —
   it makes a Nerva-side pin reproducible rather than nominal.
-- **Optional extras** are listed in §5.1. Several pull heavyweight or
+- **Optional extras** — 45 groups, listed in §5.1. Several pull heavyweight or
   network-bound stacks (`computer-use`, `vision`, `voice`, `daytona`, `modal`,
   `bedrock`, `vertex`). E8.1b must install **no extras by default**.
 - **Not verified:** the transitive license closure. Only the direct dependency
   list was read. A full transitive license and CVE review is required E8.1b work
   and is not claimed here.
 
-## 5. Concrete upstream interfaces — inventoried at `main/tools`
+## 5. Concrete upstream interfaces — inventoried at `v2026.8.3/tools`
 
 Module names below are **verbatim from the public directory listing at the pinned
 tag** — `github.com/NousResearch/hermes-agent/tree/v2026.8.3/tools` — inspected
@@ -272,7 +272,7 @@ argument or return-type claim is made anywhere in this document.
 ### 5.1 Declared capability surface — from `pyproject.toml` extras
 
 The optional-dependency extras are a useful, verifiable statement of what
-upstream already integrates. Verbatim group names at `main`:
+upstream already integrates. **45** groups, verbatim, at the pinned tag:
 
 `anthropic`, `exa`, `firecrawl`, `parallel-web`, `fal`, `edge-tts`, `modal`,
 `daytona`, `vercel`, `hindsight`, `dev`, `messaging`, `cron`, `slack`, `matrix`,
