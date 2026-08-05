@@ -1,12 +1,22 @@
 # Nerva Innovation Lab — external integration catalogue (RFC)
 
-Status: `RFC · DISCOVERY · NOTHING ACCEPTED`. Owner request: survey existing
-open-source projects Nerva could wire in, broadly, without worrying about
-storage cost.
+Status: `PRECURSOR CATALOGUE · DISCOVERY HYPOTHESES ONLY · DOES NOT DELIVER #805`.
 
-This document proposes nothing for production. It is an Innovation Lab
-catalogue: ideas with a status, so that nothing is forgotten and nothing is
-adopted by accident.
+Owner request: survey existing open-source projects Nerva could wire in,
+broadly, without worrying about storage cost.
+
+**Scope statement, stated truthfully.** This document is a *precursor* idea
+catalogue. It does **not** implement the #805 control slice — the versioned RFC
+template, status transitions, Knowledge Garden links, authority boundary and
+integrity check — and its acceptance would not satisfy #805. Those remain
+separate work, independently revertible, and are deliberately not bundled here.
+
+**Dependency status.** This flow was serialized behind the #804 handoff. That
+handoff is delivered as PR #819 but **#819 is open and unaccepted**, so this
+document does not claim the dependency is satisfied. It is a discovery artifact
+produced alongside, not downstream of, an accepted map.
+
+This document proposes nothing for production and promotes nothing.
 
 ## 0. Evidence level — read this before using any row below
 
@@ -64,40 +74,55 @@ been wrong if taken from memory or from a year-old blog post:
 ## 3. Catalogue
 
 Classes reuse the E8.1a vocabulary: `reuse`, `thin_adapter`, `native_fallback`,
-`reject`. All statuses are RFC proposals.
+`reject`.
+
+**Status vocabulary is #805 canonical:** `ACCEPTED_FOR_EPIC`, `PARKED`,
+`REJECTED`. An earlier revision invented `Accepted for RFC`, which is not a
+governed state.
+
+**Every row below is `PARKED`.** None has a primary-source pass, and #805 does
+not permit `ACCEPTED_FOR_EPIC` on secondary evidence. Durable `REJECTED` is also
+withheld: a rejection whose premise came from a third-party article could be
+wrong or already stale, and a wrong durable rejection is worse than a park
+because it stops reconsideration. Each row therefore carries an explicit
+**reconsideration trigger** — the evidence that would move it.
 
 ### 3.1 Tier A — closest to Nerva's accepted contracts
 
-| Candidate | Gives Nerva | License (secondary) | Class | RFC status |
-|---|---|---|---|---|
-| **MCP servers ecosystem** (`modelcontextprotocol/servers`, registry API) | a large, standardised tool surface behind one protocol Nerva already speaks | mixed per server | `thin_adapter` | **Accepted for RFC** — highest capability-per-unit-risk; each server still needs its own pin and policy |
-| **Home Assistant** | device/room/occupant graph and governed actuation, already named in B6 | Apache-2.0 (verify) | `thin_adapter` | **Accepted for RFC** — Hermes also ships a `homeassistant` extra |
-| **Frigate** | local camera event detection, no cloud | MIT (verify) | `thin_adapter` | **Accepted for RFC** — matches the local-first non-negotiable |
-| **Playwright** (already in-repo) | deterministic browser control | Apache-2.0 | `reuse` | **Accepted** — already a dependency; structured-DOM-first matches the execution hierarchy |
+| Candidate | Gives Nerva | License (secondary) | Class | Status | Reconsideration trigger |
+|---|---|---|---|---|---|
+| **MCP servers ecosystem** | a standardised tool surface behind a protocol Nerva already speaks | mixed per server | `thin_adapter` | `PARKED` | primary pass on one chosen server: LICENSE read, exact pin, interface inventory |
+| **Home Assistant** | device/room/occupant graph and governed actuation (B6) | Apache-2.0 (unverified) | `thin_adapter` | `PARKED` | primary pass; Hermes also ships a `homeassistant` extra |
+| **Frigate** | local camera event detection, no cloud | MIT (unverified) | `thin_adapter` | `PARKED` | primary pass; matches the local-first non-negotiable |
+| **Playwright** (already in-repo) | deterministic browser control | Apache-2.0 | `reuse` | `PARKED` as a *provider surface* | already a dependency for tests; promoting it to a governed capability needs the §4 gate |
 
 ### 3.2 Tier B — strong candidates, real open questions
 
 | Candidate | Gives Nerva | License (secondary) | Class | RFC status |
 |---|---|---|---|---|
-| **E2B** | Firecracker microVM isolation for untrusted code | Apache-2.0 | `thin_adapter` | **Parked** — self-host needs Firecracker/KVM + a Nomad/Consul control plane; heavy, and sessions are reported short-lived |
-| **browser-use** | LLM-driven browser agent over DOM + vision | permissive (verify) | `thin_adapter` | **Parked** — overlaps Hermes' browser tools; pick one, do not run two |
-| **Stagehand** | typed `act`/`extract`/`observe` over Playwright | permissive (verify) | `thin_adapter` | **Parked** — cleanest abstraction, but TypeScript in a Python core |
-| **Letta** | OS-style tiered agent memory | Apache-2.0 | `reject` **as memory authority**, `thin_adapter` as experiment | **Parked** — Atlas/Episodes are canonical; a second memory authority is the drift B3 warns about |
-| **Graphiti** | temporal knowledge graph, time-aware facts | open source (verify) | `native_fallback` | **Parked** — Nerva already has a bi-temporal KG (`memory/bitemporal.py`); compare, do not replace |
-| **Whisper / faster-whisper** | local STT | MIT/permissive (verify) | `thin_adapter` | **Accepted for RFC** — local-first, mature |
-| **openWakeWord** | always-listening wake word without running STT continuously | permissive (verify) | `thin_adapter` | **Accepted for RFC** |
-| **Kokoro / Coqui XTTS** | local TTS | verify per project | `thin_adapter` | **Accepted for RFC** — chosen *over* Piper because Piper is archived |
-| **n8n** | 400+ prebuilt integrations, visual workflows | Sustainable Use (source-available, **not OSI**) | `thin_adapter` | **Parked — license flag** — the fair-code terms must be read before any dependency |
+| **E2B** | Firecracker microVM isolation for untrusted code | Apache-2.0 | `thin_adapter` | `PARKED` — self-host needs Firecracker/KVM + a Nomad/Consul control plane; heavy, and sessions are reported short-lived |
+| **browser-use** | LLM-driven browser agent over DOM + vision | permissive (verify) | `thin_adapter` | `PARKED` — overlaps Hermes' browser tools; pick one, do not run two |
+| **Stagehand** | typed `act`/`extract`/`observe` over Playwright | permissive (verify) | `thin_adapter` | `PARKED` — cleanest abstraction, but TypeScript in a Python core |
+| **Letta** | OS-style tiered agent memory | Apache-2.0 | `reject` **as memory authority**, `thin_adapter` as experiment | `PARKED` — Atlas/Episodes are canonical; a second memory authority is the drift B3 warns about |
+| **Graphiti** | temporal knowledge graph, time-aware facts | open source (verify) | `native_fallback` | `PARKED` — Nerva already has a bi-temporal KG (`memory/bitemporal.py`); compare, do not replace |
+| **Whisper / faster-whisper** | local STT | MIT/permissive (unverified) | `thin_adapter` | `PARKED` — primary pass needed |
+| **openWakeWord** | always-listening wake word without running STT continuously | permissive (unverified) | `thin_adapter` | `PARKED` — primary pass needed |
+| **Kokoro / Coqui XTTS** | local TTS | unverified per project | `thin_adapter` | `PARKED` — candidate *instead of* Piper, on the secondary claim that Piper is archived |
+| **n8n** | 400+ prebuilt integrations, visual workflows | Sustainable Use (source-available, **not OSI**) | `thin_adapter` | `PARKED` — **license flag** — the fair-code terms must be read before any dependency |
 
-### 3.3 Tier C — rejected or superseded
+### 3.3 Tier C — parked against a negative hypothesis
 
-| Candidate | RFC status | Reason |
-|---|---|---|
-| **Daytona** | **Rejected** | production code reported closed-source since 2026-06; do not build on an unmaintained fork |
-| **Piper TTS** | **Rejected for new work** | archived read-only; keep only as an existing HA add-on |
-| **Zep (self-hosted)** | **Rejected** | self-hosted Community Edition reported retired; use Graphiti directly if wanted |
-| **Self-hosting the MCP Registry** | **Rejected** | maintainers state it is not designed for self-hosting and unsupported if forked; consume the public API instead |
-| Any agent framework as Nerva's brain (VoltAgent, Dify, OpenAgent, …) | **Rejected** | Cortex owns planning. Importing another agent loop is the architecture drift `NERVA_VISION.md` §8 forbids |
+These carry a *negative* secondary finding. Per §0 they cannot become durable
+`REJECTED` on secondary evidence alone: if the premise is wrong or has already
+changed, a durable rejection would silently stop reconsideration.
+
+| Candidate | Status | Negative hypothesis (secondary) | What would confirm or overturn it |
+|---|---|---|---|
+| **Daytona** | `PARKED` | production code moved closed-source 2026-06; OSS repo unmaintained | repository state and last-commit date read directly |
+| **Piper TTS** | `PARKED` for new work | archived read-only since 2025-10-06 | repository archive flag read directly |
+| **Zep (self-hosted)** | `PARKED` | self-hosted Community Edition retired | upstream docs/release notes read directly |
+| **Self-hosting the MCP Registry** | `PARKED` | maintainers state it is not designed for self-hosting | maintainer statement read at its source |
+| Any external agent framework as Nerva's brain | **`REJECTED`** | — | **the one durable rejection here, and it rests on a primary in-repo source, not on a survey:** `NERVA_VISION.md` §8 and #778 assign planning to Cortex. Overturning it needs an architecture decision, not a better project |
 
 ## 4. What every accepted RFC must pass before it becomes an adapter
 
@@ -121,15 +146,26 @@ part. The expensive parts a catalogue this size actually incurs are:
 - **verification debt** — an unverified capability cannot satisfy
   `outcome_verifiable`, so it cannot complete a governed task.
 
-Recommendation: adopt **Tier A only**, one at a time, each through the §4 gate.
-Tier B stays parked with its reason recorded. Tier C stays rejected with its
-reason recorded, so nobody re-proposes it in six months.
+Recommendation: take **one** Tier A candidate — most plausibly the MCP server
+surface, since Nerva already speaks the protocol — through a full primary-source
+pass and the §4 gate before touching a second. One governed capability is worth
+more than ten parked rows.
 
 ## 6. Nothing is forgotten
 
-Per the Innovation Lab rule, every idea above carries exactly one status —
-Accepted-for-RFC, Parked, or Rejected — with a reason. Re-proposal requires new
-evidence, not a new opinion.
+Every idea above carries exactly one #805-canonical status. All are `PARKED`
+except a single `REJECTED` that rests on an in-repo primary source rather than on
+this survey. Each park records the evidence that would move it, so
+reconsideration is triggered by new facts rather than by a new opinion — and so
+that no row is quietly stuck.
+
+## 7. What this document is not
+
+- not the #805 control slice — no RFC template, status-transition machinery,
+  Knowledge Garden linkage or integrity check is implemented here;
+- not a claim that the #804 handoff is accepted — #819 is open;
+- not adoption-ready — no row has a primary-source pass;
+- not a capability promotion, dependency, manifest change or adapter.
 
 ## Sources
 
