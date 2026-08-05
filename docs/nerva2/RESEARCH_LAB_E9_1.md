@@ -102,8 +102,10 @@ validates itself:
 - `scored` must equal `passed + failed`, because under the accepted
   `BenchmarkResult` contract exactly the passed and failed results carry measured
   quality;
-- measured baseline evidence and a declared `baseline_id` must travel together in
-  both directions;
+- measured baseline evidence requires a declared `baseline_id`. The rule is
+  deliberately **one-way**: the accepted `BenchmarkRun` contract permits a
+  declared baseline whose evidence is failed or skipped, and such a run must
+  still produce a visible report rather than raising after retention;
 - suite name, suite version, run id and evaluator identifiers are validated
   against the repository's accepted formats.
 
@@ -174,6 +176,20 @@ totals rather than being dropped.
 `--fail-on-regression` makes a measured regression exit `1`. Without it the
 regression is reported but not enforced.
 
+Two legal E9.0 failure states are explicitly supported and reported rather than
+raised on: every baseline invocation failing, and every candidate invocation
+erroring with the baseline honestly skipped. Both retain the run and emit a
+report whose comparisons stay undecided — no fabricated pass, no fabricated
+regression.
+
+### Output artifacts
+
+`--summary` is a running log and is **appended** to, which is what
+`$GITHUB_STEP_SUMMARY` expects. `--json-out` is a single
+`nerva.benchmark.report.v1` document and is **replaced atomically** on each run,
+via a temporary file and `Path.replace`. Appending it would concatenate JSON
+objects into something no parser can read.
+
 ## Workflow, permissions and retention
 
 The `nerva-router-shadow` job runs in the existing Eval Nightly workflow on its
@@ -211,7 +227,7 @@ The cache and artifact hold only synthetic-public suite content and run evidence
 The repository pins its generated test count. Following the E3.0/E3.1/E6.0
 convention, the bounded assertions live in `tests/_nerva_e9_1_checks.py` and are
 invoked from the existing `tests/test_nerva_benchmark_e9_0.py` regression, so the
-collected test count is unchanged (5767 before and after). Twenty-two assertion groups
+collected test count is unchanged (5767 before and after). Twenty-four assertion groups
 cover synthetic-public/CI-only enforcement, suite-version stability, persistence
 through the accepted store, the first-run `no_baseline` state, regression and
 improvement decisions, refusal to coerce unmeasured metrics, deterministic
@@ -224,7 +240,8 @@ totals, benchmark-summary invariants with comparison/summary agreement,
 evaluator-identity binding before comparison, retained-run binding with forged
 identity and fingerprint cases, refusal of unretained current runs and
 predecessors, detected/bounded/validated environment evidence,
-baseline-identity/evidence pairing, and the CLI path.
+baseline-identity/evidence pairing, the two legal baseline-failure states, the
+replace-not-append JSON artifact across repeated runs, and the CLI path.
 
 ## What this slice is not
 

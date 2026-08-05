@@ -351,10 +351,12 @@ class RegressionReport:
             raise ValueError(
                 "measured baseline evidence requires a declared baseline identity"
             )
-        if self.totals["baseline_quality_mean"] is None and self.baseline_id is not None:
-            raise ValueError(
-                "a declared baseline identity requires measured baseline evidence"
-            )
+        # The rule is deliberately one-way. The accepted BenchmarkRun contract
+        # permits a declared baseline whose evidence is failed or skipped — for
+        # example every baseline invocation fails, or every candidate errors and
+        # the baseline is honestly skipped. Those runs are valid and retained
+        # with baseline_quality_mean=None, and #807 requires them to still
+        # produce a visible report rather than raising after retention.
 
         decided = [
             comparison
@@ -871,7 +873,7 @@ def main(argv: list[str] | None = None) -> int:
         # Fail visibly. A missing prerequisite is never reported as a pass.
         message = f"E9.1 scheduled suite could not run: {exc}"
         print(message, file=sys.stderr)
-        _write(args.summary, f"### Nerva E9.1 — FAILED\n\n{message}\n")
+        _append(args.summary, f"### Nerva E9.1 — FAILED\n\n{message}\n")
         return 2
 
     report = build_report(
@@ -880,21 +882,40 @@ def main(argv: list[str] | None = None) -> int:
         environment=EnvironmentProfile.detect(runner_id=args.runner_id),
         previous=previous_run(store, exclude_run_id=run.run_id),
     )
-    _write(args.summary, report.to_markdown() + "\n")
-    _write(args.json_out, report.to_json() + "\n")
+    _append(args.summary, report.to_markdown() + "\n")
+    _write_document(args.json_out, report.to_json() + "\n")
     print(report.to_markdown())
     if report.regressed and args.fail_on_regression:
         return 1
     return 0
 
 
-def _write(target: str | None, content: str) -> None:
+def _append(target: str | None, content: str) -> None:
+    """Append to a running log such as ``$GITHUB_STEP_SUMMARY``."""
+
     if not target:
         return
     path = Path(target)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(content)
+
+
+def _write_document(target: str | None, content: str) -> None:
+    """Replace a single-document artifact atomically.
+
+    The report is one ``nerva.benchmark.report.v1`` JSON document. Appending a
+    second run to the same path would concatenate objects into something no
+    JSON parser can read, so each run replaces the document instead.
+    """
+
+    if not target:
+        return
+    path = Path(target)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(content, encoding="utf-8")
+    temporary.replace(path)
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry

@@ -570,20 +570,115 @@ def _check_baseline_identity_matches_baseline_evidence() -> None:
     with pytest.raises(ValueError, match="requires a declared baseline identity"):
         _build_report(baseline_id=None)
 
-    # With no measured baseline the derived current value is None, so the
-    # comparison must be undecided for the report to reach the identity check.
+    # The rule is one-way on purpose. A declared baseline whose evidence failed
+    # or was skipped is a legal E9.0 run, and it must still produce a report.
     no_baseline_totals = {**_totals(), "baseline_quality_mean": None}
     coherent = (
         MetricComparison("quality_mean", "regressed", 0.25, 0.9, -0.65),
         MetricComparison("baseline_quality_mean", "not_measured", None, 1.0),
         MetricComparison("pass_ratio", "unchanged", 0.25, 0.25, 0.0),
     )
-    with pytest.raises(ValueError, match="requires measured baseline evidence"):
-        _build_report(
-            totals=no_baseline_totals,
-            baseline_id=BASELINE_ID,
-            comparisons=coherent,
+    accepted = _build_report(
+        totals=no_baseline_totals,
+        baseline_id=BASELINE_ID,
+        comparisons=coherent,
+    )
+    assert accepted.baseline_id == BASELINE_ID
+    assert accepted.totals["baseline_quality_mean"] is None
+
+
+def _check_legal_baseline_failure_states_still_report(tmp_path, monkeypatch) -> None:
+    """A failed or skipped baseline is retained AND reported, never raised on."""
+
+    import agents.core.observability.scheduled_report as module
+
+    # (a) every baseline invocation fails: the run is valid, baseline evidence is
+    # failed, and baseline_quality_mean is None.
+    class _FailingBaseline:
+        async def __call__(self, prompt: str) -> BenchmarkObservation:
+            raise RuntimeError("baseline unavailable")
+
+    # Patches are scoped so later assertions still exercise the real runner.
+    with monkeypatch.context() as patched:
+        patched.setattr(
+            module, "KeywordRouteBaseline", lambda rules: _FailingBaseline()
         )
+        store = BenchmarkStore(tmp_path / "baseline-failed")
+        run = asyncio.run(
+            run_scheduled_suite(store, revision=_REVISION, run_id="run-bf")
+        )
+        assert run.baseline_id == BASELINE_ID
+        assert run.summary["baseline_quality_mean"] is None
+        assert store.runs(SUITE_NAME, last_n=5)
+
+        report = build_report(
+            run, store=store, environment=_environment(), previous=None
+        )
+        assert _comparison(report, "baseline_quality_mean").status == "no_baseline"
+        assert report.regressed is False
+        # The candidate side is still honestly measured and visible.
+        assert report.totals["scored"] == report.totals["total"]
+
+    # (b) every candidate invocation errors, so the baseline is honestly skipped.
+    def _erroring_runner(router, agents, *, host_id="in-process"):
+        async def run_case(prompt: str) -> BenchmarkObservation:
+            raise RuntimeError("candidate unavailable")
+
+        return run_case
+
+    with monkeypatch.context() as patched:
+        patched.setattr(module, "current_router_runner", _erroring_runner)
+        errored_store = BenchmarkStore(tmp_path / "candidate-errored")
+        errored = asyncio.run(
+            run_scheduled_suite(errored_store, revision=_REVISION, run_id="run-ce")
+        )
+        assert errored.summary["errors"] == errored.summary["total"]
+        assert errored.summary["quality_mean"] is None
+        assert errored.summary["baseline_quality_mean"] is None
+        assert errored_store.runs(SUITE_NAME, last_n=5)
+
+        errored_report = build_report(
+            errored, store=errored_store, environment=_environment(), previous=None
+        )
+        # Nothing is fabricated: no pass, no regression, everything undecided.
+        assert errored_report.regressed is False
+        assert {item.status for item in errored_report.comparisons} == {"no_baseline"}
+        assert "not_measured" in errored_report.to_markdown()
+
+
+def _check_json_report_is_replaced_not_appended(tmp_path) -> None:
+    """Repeated runs leave one parseable document, not concatenated objects."""
+
+    store_root = tmp_path / "json-out"
+    summary = tmp_path / "json-out-summary.md"
+    json_out = tmp_path / "json-out-report.json"
+
+    for revision in (_REVISION, _OTHER_REVISION):
+        assert (
+            main(
+                [
+                    "--store-root",
+                    str(store_root),
+                    "--summary",
+                    str(summary),
+                    "--json-out",
+                    str(json_out),
+                    "--revision",
+                    revision,
+                ]
+            )
+            == 0
+        )
+
+    # The artifact still parses as a single report document after two runs.
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    assert payload["schema"] == "nerva.benchmark.report.v1"
+    # It describes the most recent run, not the first.
+    assert payload["source_revision"] == _OTHER_REVISION
+    assert not list(json_out.parent.glob("*.tmp"))
+
+    # The step summary is a running log and legitimately keeps both entries.
+    assert summary.read_text(encoding="utf-8").count("scheduled shadow report") == 2
 
 
 def _check_comparison_requires_matching_evaluator_identities(tmp_path) -> None:
@@ -958,6 +1053,8 @@ def run_e9_1_checks(tmp_path, monkeypatch) -> None:
     _check_unretained_evidence_cannot_become_canonical(tmp_path)
     _check_environment_is_detected_bounded_and_validated(tmp_path)
     _check_baseline_identity_matches_baseline_evidence()
+    _check_legal_baseline_failure_states_still_report(tmp_path, monkeypatch)
+    _check_json_report_is_replaced_not_appended(tmp_path)
     _check_comparison_requires_matching_evaluator_identities(tmp_path)
     _check_missing_prerequisites_fail_visibly(tmp_path, monkeypatch)
     _check_revision_must_be_an_exact_commit_sha(tmp_path)
