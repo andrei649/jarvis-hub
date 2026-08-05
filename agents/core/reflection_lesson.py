@@ -998,6 +998,7 @@ def load_lesson_proposal(
 def transition_lesson(
     proposal: LessonProposal,
     *,
+    observations: tuple[OutcomeObservation, ...],
     to_lifecycle: LessonLifecycle,
     actor: str,
     reason: str,
@@ -1012,8 +1013,7 @@ def transition_lesson(
     the proposal actually targets.
     """
 
-    if not isinstance(proposal, LessonProposal):
-        raise ValueError("Reflection transition requires a LessonProposal")
+    validate_proposal_evidence(proposal, observations)
     if to_lifecycle not in _ALLOWED_LIFECYCLES:
         raise ValueError("Reflection lifecycle is not recognized")
     _require_non_empty(actor, "transition actor")
