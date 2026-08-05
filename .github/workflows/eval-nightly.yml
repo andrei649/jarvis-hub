@@ -9,6 +9,7 @@ on:
     paths:
       - "agents/core/observability/**"
       - "tests/test_companion_eval*.py"
+      - "tests/_nerva_e9_1_checks.py"
       - ".github/workflows/eval-nightly.yml"
 
 permissions:
@@ -60,6 +61,75 @@ jobs:
         with:
           path: ${{ env.JARVIS_EVAL_STORE }}
           key: ${{ env.JARVIS_EVAL_CACHE_PREFIX }}-${{ hashFiles('agents/core/observability/companion_dialogues.json', 'agents/core/observability/companion_eval.py') }}-${{ github.run_id }}
+
+  # E9.1 (#807) — scheduled current-router shadow comparison. Synthetic-public
+  # fixtures only, evaluation-only authority: this lane reports, it never changes
+  # production routing, promotes a capability, or claims owner-hardware numbers.
+  # Evidence is retained through the accepted E9.0 BenchmarkStore. There are two
+  # distinct retention surfaces: an always() artifact that keeps every completed
+  # run and report (including regressed ones), and a success()-gated cache that
+  # advances the comparison baseline. Neither holds owner or provider data.
+  nerva-router-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # Cache this exact BenchmarkStore root so scheduled run N+1 has run N to
+      # compare against. A cache miss is reported as "no_baseline", never as a
+      # fabricated pass.
+      NERVA_BENCH_STORE: ${{ github.workspace }}/.nerva-bench-cache/e9-1
+      NERVA_BENCH_REPORT: ${{ github.workspace }}/.nerva-bench-cache/e9-1-report.json
+      NERVA_BENCH_CACHE_PREFIX: nerva-router-shadow-ubuntu-v1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Restore scheduled shadow baseline
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ env.NERVA_BENCH_STORE }}
+          key: ${{ env.NERVA_BENCH_CACHE_PREFIX }}-${{ hashFiles('agents/core/observability/scheduled_report.py', 'agents/core/observability/benchmark.py') }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ env.NERVA_BENCH_CACHE_PREFIX }}-${{ hashFiles('agents/core/observability/scheduled_report.py', 'agents/core/observability/benchmark.py') }}-
+
+      - name: Scheduled router shadow comparison
+        id: shadow
+        run: |
+          python -m agents.core.observability.scheduled_report \
+            --store-root "$NERVA_BENCH_STORE" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --json-out "$NERVA_BENCH_REPORT" \
+            --revision "$GITHUB_SHA" \
+            --runner-id "github-${{ runner.os }}-${{ runner.arch }}" \
+            --fail-on-regression
+
+      # Evidence retention is deliberately separate from baseline promotion.
+      # This runs on always(), so a regressed or failed run — exactly the
+      # evidence #807 requires to stay visible — is retained and reproducible
+      # even though the step above exited non-zero.
+      - name: Upload scheduled shadow evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: nerva-router-shadow-evidence-${{ github.run_id }}
+          path: |
+            ${{ env.NERVA_BENCH_STORE }}
+            ${{ env.NERVA_BENCH_REPORT }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Baseline promotion stays gated on success(): a regressed or failed run
+      # is retained above but must never silently become the accepted
+      # comparison baseline for the next scheduled run.
+      - name: Save scheduled shadow baseline
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ env.NERVA_BENCH_STORE }}
+          key: ${{ env.NERVA_BENCH_CACHE_PREFIX }}-${{ hashFiles('agents/core/observability/scheduled_report.py', 'agents/core/observability/benchmark.py') }}-${{ github.run_id }}
 
   # B4 (handoff 2026-07-07) — the ci-small-model ADVISORY lane: live generation
   # through a tiny OSS model on the GitHub runner, deterministic rubric scoring.
