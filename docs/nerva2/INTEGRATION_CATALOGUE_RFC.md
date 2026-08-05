@@ -11,10 +11,13 @@ template, status transitions, Knowledge Garden links, authority boundary and
 integrity check — and its acceptance would not satisfy #805. Those remain
 separate work, independently revertible, and are deliberately not bundled here.
 
-**Dependency status.** This flow was serialized behind the #804 handoff. That
-handoff is delivered as PR #819 but **#819 is open and unaccepted**, so this
-document does not claim the dependency is satisfied. It is a discovery artifact
-produced alongside, not downstream of, an accepted map.
+**Dependency status — satisfied.** This flow was serialized behind the #804
+handoff. That handoff is now delivered **and independently accepted**: PR #819
+merged as `a6e8585`, landing `docs/nerva2/EXECUTION_PROVIDER_E8_1A.md` as the
+accepted E8.1a discovery gate. The serialization condition is met.
+
+That does not upgrade anything below. The E8.1a map is primary-verified; this
+catalogue is not, and its rows stay `PARKED` for the reason in §0.
 
 This document proposes nothing for production and promotes nothing.
 
@@ -25,7 +28,7 @@ and conflating them would be the exact failure the program forbids:
 
 | Level | Meaning | Example |
 |---|---|---|
-| **Primary** | a canonical artifact was read directly | `docs/nerva2/EXECUTION_PROVIDER_E8_1A.md` — `pyproject.toml`, release tag and commit read at source |
+| **Primary** | a canonical artifact was read directly | accepted `docs/nerva2/EXECUTION_PROVIDER_E8_1A.md` — `pyproject.toml`, release tag and commit read at source |
 | **Secondary** | search results and third-party articles | **everything in this document** |
 
 **Every candidate below is secondary-verified only.** License, activity and
@@ -69,7 +72,8 @@ been wrong if taken from memory or from a year-old blog post:
 | **Piper TTS** | reported **archived / read-only since 2025-10-06**; still functions as a Home Assistant Wyoming add-on | fine to consume, wrong to build new work on |
 | **Zep** | reported to have **retired the self-hosted Community Edition**; Graphiti itself stays open source | self-hosting story changed under the same brand |
 | **MCP Registry** | maintainers state the registry codebase **is not designed for self-hosting** and is unsupported if forked | consume the API; do not plan to run it |
-| **Hermes Agent** | **no public API contract found** (primary-verified in E8.1a) | argues for thin adapters everywhere, not deep coupling |
+| **Hermes Agent** | **no public API contract found** (primary-verified in accepted E8.1a) | argues for thin adapters everywhere, not deep coupling |
+| **This repository's auto-update lane** | `update_thirdparty.py` rewrites the version token throughout a source's `update_doc` with no awareness of what else that file asserts, and the scheduled workflow has no opt-out (primary-verified in accepted E8.1a §4) | any integration added to `sources` inherits this; it is a gate on §4, not a detail |
 
 ## 3. Catalogue
 
@@ -129,7 +133,7 @@ changed, a durable rejection would silently stop reconsideration.
 No exceptions, and none of these are satisfied by any row above today:
 
 1. **Primary-source pass** — read the `LICENSE`, pin an exact tag/commit, inventory the real interfaces, record the dependency surface. Same standard as E8.1a.
-2. **Manifest entry** — added to `.github/third-party-manifest.json` so `check_thirdparty_drift.py` tracks it. Anything not in that manifest is untracked supply chain.
+2. **Updater safety first, then a manifest entry.** Accepted E8.1a §4 establishes that adding a source to `.github/third-party-manifest.json` today enrols it in unattended auto-update that rewrites version tokens through its `update_doc`. Until a `drift_only`/manual policy or an honoured opt-out exists, a manifest entry is **not** a safe step. Anything not in the manifest is untracked supply chain — but enrolling it badly is worse.
 3. **`nerva.capability.v1` declaration** — typed inputs/outputs, preconditions, privacy class, risk tier, verifier, rollback.
 4. **Ultron mediation** — every privileged effect crosses `nerva.action.v1`. `grants_authority=false` immutable on any provider record.
 5. **E9 measurement** — compared against the native baseline, with unmeasured dimensions left `not_measured`.
