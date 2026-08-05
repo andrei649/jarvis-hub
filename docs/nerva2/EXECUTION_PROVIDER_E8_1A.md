@@ -158,7 +158,7 @@ The repository already owns the machinery E8.1a asks for:
 
 **`hermes-agent` appears in neither `sources` nor `untracked`** in that manifest.
 Verified: the manifest lists `superpowers` and `codebase-memory-mcp` under
-`sources`, and `axon` under `untracked`. `check_thirdparty_drift.py:112` iterates
+`sources`, and `axon` under `untracked`. `check_thirdparty_drift.py:136` iterates
 `manifest["sources"]` only and requires `track_drift` plus `repo`.
 
 So today Hermes is:
@@ -174,21 +174,22 @@ The license mirror lists adapted files but records **no upstream commit or tag**
 so there is currently no way to tell whether the six adapted files still
 correspond to anything upstream.
 
-### Proposed manifest entry — NOT applied, and NOT yet safe to apply
+### Proposed manifest entry — NOT applied; generic policy guard in #824
 
-E8.1a is documentation-only, so this PR does not modify the manifest. More
-importantly, **the entry below must not be added until the updater lane is made
-safe**, for a repository-local reason verified in code:
+E8.1a was documentation-only and did not modify the manifest. The E8.1d package
+tracked by #824 adds the generic fail-closed policy required before enrolment,
+without adding Hermes. The original repository-local hazard remains important
+because it explains why an explicit policy is mandatory:
 
 | Verified fact | Where |
 |---|---|
-| `is_vendored = str(entry.get("kind", "")).startswith("vendored")` — every entry whose `kind` does not start with `vendored` is treated as **doc-pinned** | `scripts/update_thirdparty.py:225` |
-| `_bump_doc_version()` regex-replaces the old version token **throughout `update_doc`** on word boundaries | `scripts/update_thirdparty.py:165-185` |
-| the scheduled workflow fans a matrix over **every** `sources` entry whose drift is `DRIFT`, with **no** `auto_update=false` or manual-only key anywhere | `.github/workflows/thirdparty-autoupdate.yml` |
+| `is_vendored = str(entry.get("kind", "")).startswith("vendored")` — every entry whose `kind` does not start with `vendored` is treated as **doc-pinned** | `scripts/update_thirdparty.py:243` |
+| `_bump_doc_version()` regex-replaces the old version token **throughout `update_doc`** on word boundaries | `scripts/update_thirdparty.py:181-201` |
+| before #824, the scheduled workflow fanned a matrix over **every** `sources` entry whose drift was `DRIFT`, with no manual-only policy | `.github/workflows/thirdparty-autoupdate.yml` before #824 |
 | its steps are drift detection → `update_thirdparty.py` → offline manifest consistency → PR creation. **No compatibility, security or E9 test runs.** | same |
 
-**The hazard this creates.** If Hermes were added to `sources` with `update_doc`
-pointing at this evidence map, a future upstream tag would rewrite every
+**The hazard without the #824 guard.** If Hermes were added to `sources` with
+`update_doc` pointing at this evidence map, a future upstream tag could rewrite every
 occurrence of `v2026.8.3` in this document — while leaving the pinned commit
 `3c27eb62…`, the PyPI facts, the interface inventory, the attestation evidence
 and every conclusion untouched. The result would be a document that *claims* to
@@ -199,12 +200,19 @@ inconsistent "verified" evidence. That is worse than no automation.
 auto-update lane could manage Hermes and that the drift/update PR "triggers
 compatibility tests". Both claims are **withdrawn**. The lane performs neither.
 
-**Blocked until** one of the following exists — each a separate package with its
-own rollback and tests, and explicitly **not** part of E8.1a:
+**Generic control supplied by #824:** every tracked source must declare a literal
+JSON boolean `auto_update`; missing or malformed values fail before a network
+lookup or write; `false` remains drift-visible but is rejected by both the
+scheduler and direct updater. The two pre-existing sources declare `true`
+explicitly. Focused hostile tests preserve a manual-only evidence document and
+manifest byte-for-byte.
 
-1. a `drift_only` / manual-review manifest policy, or
-2. an explicit `auto_update: false` opt-out the updater honours, and
-3. an `update_doc` target that is a short pin record rather than an evidence map.
+**Hermes enrolment remains blocked** until separate packages provide:
+
+1. an `update_doc` target that is a short pin record rather than an evidence map;
+2. the dual GitHub-tag and PyPI drift signal required by §1.2;
+3. adapter-specific compatibility, supply-chain and E9 checks before pin movement;
+4. the exact-revision/content-integrity binding for the mutable runtime fetch.
 
 For reference only, the shape the entry would eventually take:
 
@@ -217,7 +225,7 @@ For reference only, the shape the entry would eventually take:
   "pinned_version": "v2026.8.3",
   "license": "LICENSES/hermes-agent-MIT.txt",
   "track_drift": true,
-  "auto_update": false        // NOT honoured by the current updater
+  "auto_update": false        // drift visible; scheduled/direct mutation denied
 }
 ```
 
@@ -226,14 +234,16 @@ For reference only, the shape the entry would eventually take:
 | Question | Answer |
 |---|---|
 | What enters the manifest | nothing yet — enrolment is blocked (above) |
+| Generic updater policy | mandatory explicit boolean; `false` is drift-only/manual-review and fails closed at both mutation sinks |
 | Drift signal | GitHub tag feed **and** the PyPI release feed (§1.2), as a **proposed manual signal**, not an automated bump |
 | What triggers a pin movement | adapter-specific compatibility, supply-chain and E9 checks — **none of which exist today** |
 | How updates are reviewed | manually, and only after those checks exist |
 | How the mutable runtime fetch is fixed | replace `HERMES_SKILLS_PATH = "main/skills"` with the pinned tag, and record a content digest per imported `SKILL.md` — separate package |
 | Native fallback | unchanged — Nerva executes natively when no provider is registered |
 
-The updater and workflow are **not** modified here. That is a separate
-security/automation package with its own rollback and tests.
+Only the generic manifest policy, updater guard and scheduler selection change in
+#824. No Hermes-specific source, dependency, contract, adapter or promotion path
+is added.
 
 ## 4.1 Dependency and license surface — inspected
 
@@ -380,24 +390,23 @@ Per #804 and the accepted E9 contracts, before a shadow adapter may be promoted:
 - `ungoverned_actions == 0` across the adapter seam;
 - a demonstrated native/no-provider rollback.
 
-## 10. Exclusions honored by this slice
+## 10. Exclusions honored by these slices
 
-No fork, no vendored subsystem, no dependency, no adapter code, no provider
-contract, no installation, no execution of upstream source, no credential use, no
-manifest or workflow change, and no capability claim. Rollback is the revert of
-this single document.
+E8.1a added only this discovery document. E8.1d/#824 adds only the generic
+manifest policy, updater/workflow enforcement and focused tests. There is still
+no fork, vendored Hermes subsystem, dependency, adapter code, provider contract,
+installation, upstream execution, credential use, Hermes manifest entry or
+capability claim. Before any manual-only source is enrolled, #824 rolls back as
+one unit; after enrolment, the source must be removed first or the guard retained.
 
 ## Next coherent package
 
-E8.1b (`nerva.execution-provider.v1`) is blocked only on independent acceptance
-of this map. The smallest movements after acceptance, in order:
+E8.1a was independently accepted in PR #819. With #824 supplying the generic
+manual-only updater guard, the next security prerequisite for Hermes enrolment is
+to replace the mutable `main/skills` runtime fetch with the pinned tag plus a
+content digest per imported `SKILL.md`. A short pin record, dual GitHub/PyPI drift
+signal and adapter-specific compatibility/supply-chain/E9 gates remain separate.
 
-1. Make the updater lane safe (§4) — a `drift_only`/manual policy or an
-   `auto_update: false` opt-out the updater honours — **before** any manifest
-   entry. Adding Hermes today would enrol it in unattended auto-update that
-   rewrites this document's version tokens while leaving its evidence stale.
-2. Replace the mutable `main/skills` runtime fetch with the pinned tag plus a
-   content digest per imported `SKILL.md`.
-3. Only then define the provider contract, with `grants_authority=false`
-   immutable, and a transitive license/CVE review of the direct dependencies in
-   §4.1.
+E8.1b (`nerva.execution-provider.v1`) is independently eligible, but it must keep
+`grants_authority=false` immutable and cannot execute or promote Hermes. Manifest
+enrolment and a shadow adapter remain blocked on all of the controls above.

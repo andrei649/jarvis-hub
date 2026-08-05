@@ -8,6 +8,10 @@ bumps ``pinned_version`` in `.github/third-party-manifest.json` to the latest
 release. The workflow `.github/workflows/thirdparty-autoupdate.yml` then opens a
 PR for review.
 
+Mutation is fail-closed: the target entry must declare ``auto_update: true``.
+Missing, malformed, and explicit-false policies are rejected before any latest-
+version lookup, vendor runner, document rewrite, or manifest write.
+
 Two kinds of source (mirrors the manifest's ``kind``):
 
   * **vendored** (e.g. superpowers): shallow-clone the upstream repo, replace the
@@ -47,6 +51,18 @@ import check_thirdparty_drift as drift  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_MANIFEST = _REPO_ROOT / ".github" / "third-party-manifest.json"
+
+
+class AutoUpdateDisabledError(PermissionError):
+    """Raised when a tracked source is drift-only/manual-review."""
+
+
+def _require_auto_update_enabled(entry: dict) -> None:
+    if not drift.require_auto_update_policy(entry):
+        name = entry.get("name", "<unnamed>")
+        raise AutoUpdateDisabledError(
+            f"manifest source {name!r} has auto_update=false; update manually"
+        )
 
 
 # ── injectable vendor runner ──────────────────────────────────────────────────
@@ -204,6 +220,8 @@ def update_entry(
     entry = find_entry(manifest, name)
     if entry is None:
         raise KeyError(f"no manifest entry named {name!r}")
+    drift.validate_auto_update_policies(manifest)
+    _require_auto_update_enabled(entry)
 
     old_version = entry.get("pinned_version")
     summary = {
@@ -269,6 +287,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     entry = find_entry(manifest, args.name)
     if entry is None:
         print(f"✗ no manifest entry named {args.name!r}", file=sys.stderr)
+        return 2
+    try:
+        drift.validate_auto_update_policies(manifest)
+        _require_auto_update_enabled(entry)
+    except (ValueError, AutoUpdateDisabledError) as exc:
+        print(f"✗ {exc}", file=sys.stderr)
         return 2
 
     new_version = args.version

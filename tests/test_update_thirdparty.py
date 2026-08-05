@@ -13,6 +13,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "scripts"))
@@ -38,6 +40,7 @@ def _vendored_manifest():
                     "json_key": "version",
                 },
                 "track_drift": True,
+                "auto_update": True,
             }
         ]
     }
@@ -52,6 +55,7 @@ def _doc_manifest():
                 "kind": "doc-pinned (trial host binary)",
                 "path": "docs/dev/codebase-memory-mcp.md",
                 "pinned_version": "0.8.1",
+                "auto_update": True,
                 "update_doc": "docs/dev/codebase-memory-mcp.md",
             }
         ]
@@ -184,6 +188,202 @@ def test_consistency_passes_after_vendored_update(tmp_path):
 
 # ── doc-pinned bump ───────────────────────────────────────────────────────────
 
+def test_manual_only_doc_update_preserves_evidence_and_manifest_bytes(tmp_path):
+    manifest = {
+        "sources": [
+            {
+                "name": "evidence-source",
+                "repo": "o/evidence-source",
+                "kind": "doc-pinned evidence",
+                "path": "docs/evidence.md",
+                "pinned_version": "v2026.8.3",
+                "track_drift": True,
+                "auto_update": False,
+                "update_doc": "docs/evidence.md",
+            }
+        ]
+    }
+    manifest_path = tmp_path / ".github" / "third-party-manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode()
+    manifest_path.write_bytes(manifest_bytes)
+    doc = tmp_path / "docs/evidence.md"
+    doc.parent.mkdir(parents=True)
+    evidence_bytes = (
+        b"verified at v2026.8.3\n"
+        b"commit for v2026.8.3 remains 3c27eb6234bf\n"
+        b"interfaces at v2026.8.3 were reviewed\n"
+    )
+    doc.write_bytes(evidence_bytes)
+    runner_calls = []
+
+    with pytest.raises(PermissionError, match="auto_update"):
+        up.update_entry(
+            manifest,
+            "evidence-source",
+            "v2026.8.4",
+            tmp_path,
+            runner=_fake_runner(runner_calls),
+            manifest_path=manifest_path,
+        )
+
+    assert runner_calls == []
+    assert doc.read_bytes() == evidence_bytes
+    assert manifest_path.read_bytes() == manifest_bytes
+    assert manifest["sources"][0]["pinned_version"] == "v2026.8.3"
+
+
+def test_manual_only_vendored_update_refuses_before_runner(tmp_path):
+    _seed_vendored_tree(tmp_path)
+    manifest = _vendored_manifest()
+    manifest["sources"][0]["auto_update"] = False
+    records = []
+
+    with pytest.raises(PermissionError, match="auto_update"):
+        up.update_entry(
+            manifest,
+            "superpowers",
+            "6.1.0",
+            tmp_path,
+            runner=_fake_runner(records),
+        )
+
+    assert records == []
+    assert manifest["sources"][0]["pinned_version"] == "6.0.3"
+
+
+@pytest.mark.parametrize("policy", [None, "false", 0, 1, {}, []])
+def test_update_entry_rejects_malformed_policy_before_write(tmp_path, policy):
+    manifest = _doc_manifest()
+    manifest["sources"][0]["auto_update"] = policy
+    before = json.loads(json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="boolean auto_update"):
+        up.update_entry(
+            manifest,
+            "codebase-memory-mcp",
+            "0.9.0",
+            tmp_path,
+            runner=_fake_runner([]),
+        )
+
+    assert manifest == before
+
+
+def test_update_entry_rejects_missing_policy_before_write(tmp_path):
+    manifest = _doc_manifest()
+    del manifest["sources"][0]["auto_update"]
+    before = json.loads(json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="boolean auto_update"):
+        up.update_entry(
+            manifest,
+            "codebase-memory-mcp",
+            "0.9.0",
+            tmp_path,
+            runner=_fake_runner([]),
+        )
+
+    assert manifest == before
+
+
+def test_update_entry_validates_every_policy_before_runner_or_write(tmp_path):
+    _seed_vendored_tree(tmp_path)
+    manifest = _vendored_manifest()
+    manifest["sources"].append(
+        {
+            "name": "invalid-other-source",
+            "repo": "o/invalid",
+            "kind": "doc-pinned",
+            "path": "docs/invalid.md",
+            "pinned_version": "1.0.0",
+            "track_drift": True,
+        }
+    )
+    manifest_path = tmp_path / ".github" / "third-party-manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode()
+    manifest_path.write_bytes(manifest_bytes)
+    runner_calls = []
+
+    with pytest.raises(ValueError, match="boolean auto_update"):
+        up.update_entry(
+            manifest,
+            "superpowers",
+            "6.1.0",
+            tmp_path,
+            runner=_fake_runner(runner_calls),
+            manifest_path=manifest_path,
+        )
+
+    assert runner_calls == []
+    assert manifest_path.read_bytes() == manifest_bytes
+    assert manifest["sources"][0]["pinned_version"] == "6.0.3"
+
+
+def test_cli_manual_only_refuses_before_latest_fetch_or_write(tmp_path, monkeypatch):
+    manifest = _doc_manifest()
+    manifest["sources"][0]["auto_update"] = False
+    manifest_path = tmp_path / ".github" / "third-party-manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    before = (json.dumps(manifest, indent=2) + "\n").encode()
+    manifest_path.write_bytes(before)
+    fetches = []
+
+    def record_fetch(repo, token):
+        fetches.append((repo, token))
+        return "0.9.0"
+
+    monkeypatch.setattr(up.drift, "fetch_latest_github", record_fetch)
+
+    result = up.main([
+        "--name",
+        "codebase-memory-mcp",
+        "--manifest",
+        str(manifest_path),
+    ])
+
+    assert result != 0
+    assert fetches == []
+    assert manifest_path.read_bytes() == before
+
+
+def test_cli_validates_every_policy_before_latest_fetch_or_write(tmp_path, monkeypatch):
+    manifest = _doc_manifest()
+    manifest["sources"].append(
+        {
+            "name": "invalid-other-source",
+            "repo": "o/invalid",
+            "kind": "doc-pinned",
+            "path": "docs/invalid.md",
+            "pinned_version": "1.0.0",
+            "track_drift": True,
+        }
+    )
+    manifest_path = tmp_path / ".github" / "third-party-manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    before = (json.dumps(manifest, indent=2) + "\n").encode()
+    manifest_path.write_bytes(before)
+    fetches = []
+
+    def record_fetch(repo, token):
+        fetches.append((repo, token))
+        return "0.9.0"
+
+    monkeypatch.setattr(up.drift, "fetch_latest_github", record_fetch)
+
+    result = up.main([
+        "--name",
+        "codebase-memory-mcp",
+        "--manifest",
+        str(manifest_path),
+    ])
+
+    assert result != 0
+    assert fetches == []
+    assert manifest_path.read_bytes() == before
+
+
 def test_doc_pinned_bump_updates_pin_and_doc(tmp_path):
     manifest = _doc_manifest()
     doc = tmp_path / "docs/dev/codebase-memory-mcp.md"
@@ -286,3 +486,12 @@ def test_find_entry():
     manifest = _vendored_manifest()
     assert up.find_entry(manifest, "superpowers")["repo"] == "obra/superpowers"
     assert up.find_entry(manifest, "missing") is None
+
+
+def test_workflow_uses_shared_policy_aware_selector():
+    workflow = (
+        repo_root / ".github" / "workflows" / "thirdparty-autoupdate.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "drift.auto_update_candidates(rows)" in workflow
+    assert 'if r.get("drift") == "DRIFT"]' not in workflow

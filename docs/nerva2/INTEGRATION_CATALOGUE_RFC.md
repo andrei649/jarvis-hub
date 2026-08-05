@@ -89,7 +89,7 @@ been wrong if taken from memory or from a year-old blog post:
 | **Zep** | reported to have **retired the self-hosted Community Edition**; Graphiti itself stays open source | self-hosting story changed under the same brand |
 | **MCP Registry** | its official README documents a local PostgreSQL development environment, offline file seeding and pre-built GHCR images | the previous categorical claim against self-hosting was false; local runnability does not establish production suitability or support |
 | **Hermes Agent** | **no public API contract found** (primary-verified in accepted E8.1a) | argues for thin adapters everywhere, not deep coupling |
-| **This repository's auto-update lane** | `update_thirdparty.py` rewrites the version token throughout a source's `update_doc` with no awareness of what else that file asserts, and the scheduled workflow has no opt-out (primary-verified in accepted E8.1a §4) | any integration added to `sources` inherits this; it is a gate on §4, not a detail |
+| **This repository's auto-update lane** | before #824, every `DRIFT` source could enter mutation; #824 requires a literal boolean `auto_update`, while `false` stays drift-visible and is denied by both the scheduler and direct updater | this clears only the generic policy prerequisite; Hermes enrolment still requires a short pin record, dual GitHub/PyPI drift, adapter compatibility/supply-chain/E9 gates, and exact-revision/content-integrity binding |
 
 **MCP Registry correction evidence — Primary (read), 2026-08-06.** A live read
 found upstream `main` at
@@ -184,7 +184,7 @@ reviewer and reconsideration trigger. Only then do these external-integration
 gates apply. No row above satisfies both layers today:
 
 1. **Primary-source pass** — read the `LICENSE`, pin an exact tag/commit, inventory the real interfaces, record the dependency surface. Same standard as E8.1a.
-2. **Updater safety first, then a manifest entry.** Accepted E8.1a §4 establishes that adding a source to `.github/third-party-manifest.json` today enrols it in unattended auto-update that rewrites version tokens through its `update_doc`. Until a `drift_only`/manual policy or an honoured opt-out exists, a manifest entry is **not** a safe step. Anything not in the manifest is untracked supply chain — but enrolling it badly is worse.
+2. **Updater safety first, then a manifest entry.** Before #824, every drifted source could enter scheduled mutation. #824 now requires a literal boolean `auto_update`; `false` remains drift-visible and is denied by both the scheduler and direct updater. This clears only the generic policy prerequisite and does **not** make Hermes enrolment safe: a short pin record, dual GitHub/PyPI drift, adapter compatibility/supply-chain/E9 gates, and exact-revision/content-integrity binding remain separate requirements. Anything not in the manifest is untracked supply chain — but enrolling it badly is worse.
 3. **`nerva.capability.v1` declaration** — typed inputs/outputs, preconditions, privacy class, risk tier, verifier, rollback.
 4. **Ultron mediation** — every privileged effect crosses `nerva.action.v1`. `grants_authority=false` immutable on any provider record.
 5. **E9 measurement** — compared against the native baseline, with unmeasured dimensions left `not_measured`.

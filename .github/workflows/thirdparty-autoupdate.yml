@@ -2,9 +2,10 @@ name: Third-Party Auto-Update
 
 # Auto-update variant of Third-Party Drift. Where thirdparty-drift.yml only
 # *detects* drift and opens a tracking issue, this workflow *acts*: for each
-# vendored / doc-pinned source that is behind upstream, it re-vendors the source
-# and bumps the pin in .github/third-party-manifest.json, then opens a PR for
-# review. Manifest: .github/third-party-manifest.json.
+# explicitly auto-update-enabled vendored / doc-pinned source that is behind
+# upstream, it re-vendors the source and bumps the pin in
+# .github/third-party-manifest.json, then opens a PR for review. Drift-only
+# sources remain visible to the checker but never enter this mutation matrix.
 on:
   workflow_dispatch:
   schedule:
@@ -22,8 +23,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Discover which tracked sources are behind upstream and fan out one
-  # update job per source. Each source gets its own stable branch / PR.
+  # Discover which tracked, explicitly enabled sources are behind upstream and
+  # fan out one update job per source. Each source gets a stable branch / PR.
   discover:
     runs-on: ubuntu-latest
     outputs:
@@ -44,11 +45,17 @@ jobs:
       - name: Collect drifted source names
         id: collect
         run: |
-          # JSON array of source names whose drift == DRIFT, for the matrix.
+          # Shared Python policy validation decides which DRIFT rows may mutate.
           names="$(python - <<'PY'
           import json
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, str(Path("scripts").resolve()))
+          import check_thirdparty_drift as drift
+
           rows = json.load(open("drift.json"))
-          print(json.dumps([r["name"] for r in rows if r.get("drift") == "DRIFT"]))
+          print(json.dumps(drift.auto_update_candidates(rows)))
           PY
           )"
           echo "names=${names}" >> "$GITHUB_OUTPUT"
