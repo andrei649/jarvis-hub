@@ -95,7 +95,7 @@ been wrong if taken from memory or from a year-old blog post:
 found upstream `main` at
 [`0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2`](https://github.com/modelcontextprotocol/registry/commit/0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2),
 whose immutable
-[`README.md`](https://github.com/modelcontextprotocol/registry/blob/0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2/README.md#L32-L63)
+[`README.md`](https://github.com/modelcontextprotocol/registry/blob/0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2/README.md#L32-L76)
 is Git blob `33ce33790ca4d4a56ccc36b7afb340cba8c26bad`. It documents:
 
 - `make dev-compose`, which builds the registry image locally with `ko` and
@@ -239,7 +239,7 @@ appearing here.
 
 ### Primary artifacts read directly
 
-- [MCP Registry README blob `33ce33790ca4d4a56ccc36b7afb340cba8c26bad` at commit `0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2`](https://github.com/modelcontextprotocol/registry/blob/0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2/README.md#L32-L63)
+- [MCP Registry README blob `33ce33790ca4d4a56ccc36b7afb340cba8c26bad` at commit `0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2`](https://github.com/modelcontextprotocol/registry/blob/0b5cc0f6a9ba326d7982b4f03ea7da83bf7817a2/README.md#L32-L76)
   — read 2026-08-06; the commit was re-verified as upstream `main` and the read
   was limited to the local-run/seeding/image claims recorded in §2.
 
