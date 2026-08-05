@@ -17,28 +17,40 @@ merged as `a6e8585`, landing `docs/nerva2/EXECUTION_PROVIDER_E8_1A.md` as the
 accepted E8.1a discovery gate. The serialization condition is met.
 
 That does not upgrade anything below. The E8.1a map is primary-verified; this
-catalogue is not, and its rows stay `PARKED` for the reason in §0.
+catalogue performed no comparable upstream pass, and its external adoption and
+provider-promotion hypotheses stay `PARKED` for the reason in §0.
 
 This document proposes nothing for production and promotes nothing.
 
 ## 0. Evidence level — read this before using any row below
 
-Two very different verification levels appear in the Nerva discovery documents,
-and conflating them would be the exact failure the program forbids:
+Four evidence labels appear in Nerva discovery work, and conflating them would
+be the exact failure the program forbids:
 
 | Level | Meaning | Example |
 |---|---|---|
-| **Primary** | a canonical artifact was read directly | accepted `docs/nerva2/EXECUTION_PROVIDER_E8_1A.md` — `pyproject.toml`, release tag and commit read at source |
-| **Secondary** | search results and third-party articles | **everything in this document** |
+| **Primary (read)** | a canonical upstream artifact was read directly and the read was recorded | accepted `docs/nerva2/EXECUTION_PROVIDER_E8_1A.md` — `pyproject.toml`, release tag and commit read at source |
+| **In-repository fact** | current Nerva code, dependency locks, tests or operator documentation prove a local surface, but not upstream suitability | Playwright's existing dependency, host-gated runtime and test surfaces |
+| **Secondary** | search summaries or third-party articles support a discovery hypothesis | the unconfirmed activity, licence and capability findings in §2 and §3 |
+| **Queued primary artifact** | an official repository or documentation link is identified for a future direct read, but was not read for this survey | the official links separated in Sources below |
 
-**Every candidate below is secondary-verified only.** License, activity and
+**External adoption and provider-promotion hypotheses below remain secondary or
+unverified unless a row says otherwise.** Upstream licence, activity and
 capability claims come from search summaries, not from reading each project's
-`LICENSE`, release history or source. No project here has been installed, run,
-benchmarked or read.
+`LICENSE`, release history or source. No external project was installed, run,
+benchmarked or source-read as part of this survey.
 
-Consequence: **no row here is adoption-ready.** Each requires the same
-primary-source pass E8.1a did — exact pin, license file, dependency surface,
-API-stability assessment — before it can be proposed for an adapter.
+Playwright is the bounded local exception to the old blanket statement: this
+repository already pins `@playwright/test`, carries the host-gated
+`agents/core/browser_playwright.py` runtime, and exercises it in tests and
+operator documentation. Those in-repository facts do **not** verify the separate
+hypothesis that Playwright should be promoted as a governed provider capability;
+only that promotion hypothesis is parked below.
+
+Consequence: **no external adoption or provider-promotion hypothesis here is
+ready.** Each requires the same upstream primary-source pass E8.1a did — exact
+pin, licence file, dependency surface and API-stability assessment — before it
+can be proposed for an adapter.
 
 ## 1. Why a catalogue does not make Nerva "able to do anything"
 
@@ -106,7 +118,7 @@ primary artifact or decision that would reopen it.
 | **MCP servers ecosystem** | a standardised tool surface behind a protocol Nerva already speaks | mixed per server | `thin_adapter` | `PARKED` | primary pass on one chosen server: LICENSE read, exact pin, interface inventory |
 | **Home Assistant** | device/room/occupant graph and governed actuation (B6) | Apache-2.0 (unverified) | `thin_adapter` | `PARKED` | primary pass; Hermes also ships a `homeassistant` extra |
 | **Frigate** | local camera event detection, no cloud | MIT (unverified) | `thin_adapter` | `PARKED` | primary pass; matches the local-first non-negotiable |
-| **Playwright** (already in-repo) | deterministic browser control | Apache-2.0 | `reuse` | `PARKED` as a *provider surface* | already a dependency for tests; promoting it to a governed capability needs the §4 gate |
+| **Playwright** (already in-repo) | deterministic browser control | Apache-2.0 (not re-read upstream here) | `reuse` | `PARKED` as a *provider surface* | dependency, runtime and test surfaces already exist; only promotion to a governed capability needs the additive §4 gates |
 
 ### 3.2 Tier B — strong candidates, real open questions
 
@@ -136,9 +148,15 @@ changed, a durable rejection would silently stop reconsideration.
 | **Self-hosting the MCP Registry** | `PARKED` | maintainers state it is not designed for self-hosting | maintainer statement read at its source |
 | Any external agent framework as Nerva's brain | **`REJECTED`** | — | **the one durable rejection here, and it rests on a primary in-repo source, not on a survey:** `NERVA_VISION.md` §8 and #778 assign planning to Cortex. Overturning it needs an architecture decision, not a better project |
 
-## 4. What every accepted RFC must pass before it becomes an adapter
+## 4. Additional external-integration gates after the #805 minimum contract
 
-No exceptions, and none of these are satisfied by any row above today:
+These six gates are **additive** to #805's full RFC minimum contract; they do
+not replace or narrow it. An RFC must first retain every #805 field, including
+the owner outcome and alternatives, evidence and reuse/build/reject analysis,
+authority/security/privacy/data-retention impact, baseline and falsification
+plan, isolation rules, migration and rollback, and the decision record with its
+reviewer and reconsideration trigger. Only then do these external-integration
+gates apply. No row above satisfies both layers today:
 
 1. **Primary-source pass** — read the `LICENSE`, pin an exact tag/commit, inventory the real interfaces, record the dependency surface. Same standard as E8.1a.
 2. **Updater safety first, then a manifest entry.** Accepted E8.1a §4 establishes that adding a source to `.github/third-party-manifest.json` today enrols it in unattended auto-update that rewrites version tokens through its `update_doc`. Until a `drift_only`/manual policy or an honoured opt-out exists, a manifest entry is **not** a safe step. Anything not in the manifest is untracked supply chain — but enrolling it badly is worse.
@@ -160,8 +178,8 @@ part. The expensive parts a catalogue this size actually incurs are:
 
 Recommendation: take **one** Tier A candidate — most plausibly the MCP server
 surface, since Nerva already speaks the protocol — through a full primary-source
-pass and the §4 gate before touching a second. One governed capability is worth
-more than ten parked rows.
+pass and the additive §4 gates before touching a second. One governed capability
+is worth more than ten parked rows.
 
 ## 6. Nothing is forgotten
 
@@ -175,18 +193,34 @@ stuck.
 ## 7. What this document is not
 
 - not the #805 control slice — no RFC template, status-transition machinery,
-  Knowledge Garden linkage or integrity check is implemented here;
-- not a claim that the #804 handoff is accepted — #819 is open;
-- not adoption-ready — no row has a primary-source pass;
+  Knowledge Garden linkage or integrity check is implemented here, and accepting
+  this catalogue would satisfy no #805 checkbox;
+- not the #804 handoff — that separate E8.1a artifact was accepted through PR
+  #819 as `a6e85854dfef82106d3f5c9980fa634de58a38c7`; this catalogue neither
+  re-delivers nor advances it;
+- not adoption-ready — no external adoption or provider-promotion hypothesis
+  has completed the required upstream primary-source pass;
 - not a capability promotion, dependency, manifest change or adapter.
 
-## Sources
+## Source taxonomy and queue
 
-Secondary sources consulted for §2 and §3, recorded so the claims are auditable
-and re-checkable:
+Links are recorded so every hypothesis can be re-checked. Merely listing an
+official repository or documentation page does **not** mean it was read: those
+links are queued primary artifacts until a later direct-read pass records the
+artifact and result. The remaining links are secondary discovery sources; none
+is promoted to primary evidence by appearing here.
+
+### Queued primary artifacts — official, not read in this survey
 
 - [Frigate — blakeblackshear/frigate](https://github.com/blakeblackshear/frigate)
 - [Frigate documentation](https://docs.frigate.video/)
+- [MCP Registry — modelcontextprotocol/registry](https://github.com/modelcontextprotocol/registry)
+- [MCP Registry — about](https://modelcontextprotocol.io/registry/about)
+- [MCP servers — modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers)
+- [n8n self-hosted AI starter kit](https://github.com/n8n-io/self-hosted-ai-starter-kit)
+
+### Secondary discovery sources behind the survey hypotheses
+
 - [awesome-sandbox — restyler](https://github.com/restyler/awesome-sandbox)
 - [Daytona vs E2B (Northflank)](https://northflank.com/blog/daytona-vs-e2b-ai-code-execution-sandboxes)
 - [Self-hosting a code execution sandbox (Beam)](https://www.beam.cloud/blog/how-to-self-host-code-sandbox)
@@ -196,7 +230,3 @@ and re-checkable:
 - [Local AI voice assistant stack 2026](https://dev.to/kunal_d6a8fea2309e1571ee7/local-ai-voice-assistant-stack-2026-whisper-piper-ollama-wired-together-572l)
 - [Open-source memory layers comparison (GeniOS)](https://thegenios.com/blog/open-source-memory-layers-2026/)
 - [Mem0 vs Zep vs Letta (Rohit Raj)](https://rohitraj.tech/en/notes/open-source-ai-agent-memory-mem0-vs-zep-letta-2026)
-- [MCP Registry — modelcontextprotocol/registry](https://github.com/modelcontextprotocol/registry)
-- [MCP Registry — about](https://modelcontextprotocol.io/registry/about)
-- [MCP servers — modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers)
-- [n8n self-hosted AI starter kit](https://github.com/n8n-io/self-hosted-ai-starter-kit)
