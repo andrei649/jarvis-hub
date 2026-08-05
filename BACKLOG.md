@@ -59,6 +59,36 @@ completes its epic):
   canonical observations before producing audit or advanced state; a correctly re-hashed forged
   proposal is rejected at `accepted_by_destination`. E6 remains `BUILDING`.
 
+**Innovation Lab precursor documents** (merged, but **not** epic slices — neither satisfies a
+#805 checkbox and neither promotes, adopts or adds an integration/dependency pin):
+
+- ✅ Integration catalogue RFC / #805-adjacent / PR #821 — survey of external open-source
+  candidates Nerva could wire in, in
+  [`docs/nerva2/INTEGRATION_CATALOGUE_RFC.md`](docs/nerva2/INTEGRATION_CATALOGUE_RFC.md).
+  Merged as `ccc36e8`. Explicitly a *precursor catalogue*: it does not implement the #805 control
+  slice (RFC template, status transitions, Knowledge Garden links, integrity check), and its
+  acceptance satisfies no #805 checkbox. Every row carries a #805-canonical status — all `PARKED`
+  except one durable `REJECTED` (external agent framework as Nerva's brain) resting on in-repo
+  primary evidence. The accepted catalogue already distinguishes Playwright as an in-repository
+  fact, queues official-but-unread artifacts as primary follow-up, makes its six adoption gates
+  additive to the #805 minimum contract, and records #819 as accepted at `a6e8585`. #805 itself
+  therefore stays open.
+- ✅ MCP Registry evidence correction / #825 / PR #826 — merged as `72dca7e`. Replaces the
+  catalogue's categorical "not designed for self-hosting" claim with a recorded primary read of
+  the upstream README blob `33ce337` at commit `0b5cc0f`, which documents a local PostgreSQL dev
+  path, offline seeding and pre-built GHCR images. Local runnability is **not** adoption
+  readiness; the row stays `PARKED`. PR #826 changed only this MCP Registry evidence path. No
+  dependency, manifest, updater, provider, routing or authority change entered either PR.
+
+The catalogue's own §5 recommendation stands and is not yet scheduled: take **one** Tier A
+candidate through a complete adoption-grade primary-source pass plus the additive §4 gates before
+touching a second. E8.1d / #824 / PR #827 resolved the no-opt-out part of the auto-update hazard:
+every source declares a literal boolean `auto_update`, while `false` remains drift-visible and is
+denied by both the scheduler and direct updater before mutation. Broad version-token replacement
+remains a reviewed risk for explicitly auto-enabled non-vendored entries with an `update_doc`.
+A short pin record, dual GitHub/PyPI drift, exact revision/content integrity, adapter compatibility,
+supply-chain and E9 gates still precede Hermes enrolment or promotion.
+
 E1, E6 and E9 remain `BUILDING` — E9.1 proves scheduled reporting only, not routing
 superiority or Research Lab completion. Its residual limits are recorded in the slice doc:
 four synthetic cases may overfit, shared-runner latency is deliberately unmeasured, and the
@@ -80,7 +110,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~5,767 collected (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~5,790 collected (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
