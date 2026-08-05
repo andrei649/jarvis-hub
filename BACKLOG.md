@@ -32,6 +32,26 @@
   live task-level mediation, real adapters, Night Shift prerequisites and release proof remain open.
 <!-- NERVA2:E0-REPOSITORY-LEDGER:END -->
 
+**Accepted M1 slices since E0** (each independently reviewed and squash-merged; none of them
+completes its epic):
+
+- ✅ E1.0 / #780 / PR #791 — typed shadow `nerva.decision.v1` and `ShadowDecisionRouter`.
+- ✅ E1.1 / #792 — bounded current-router comparison over `nerva.cortex.comparison.v1`.
+- ✅ E2.0 / #781 — Atlas identity/provenance and read-only snapshot.
+- ✅ E3.0 / #782 / PR #796 — `nerva.episode.v1` schema, lifecycle and manual boundary.
+- ✅ E3.1 / #798 / PR #799 — longitudinal Episode retrieval comparison, evaluation-only.
+- ✅ E8.0 / #783 / PR #797 — Synapse manifest conformance, description-only.
+- ✅ E9.0 / #784 / PR #803 — versioned `nerva.benchmark.v1` contract and task suite.
+- ✅ E6.0 / #806 / PR #808 — evidence-bound `OutcomeObservation` / `nerva.lesson.v1`
+  proposal contract, `proposal_only`. Reflection may propose a lesson; destinations own
+  promotion. Merged as `df0d529`; docs in [`docs/nerva2/REFLECTION_E6_0.md`](docs/nerva2/REFLECTION_E6_0.md).
+
+E1 and E6 remain `BUILDING`. E5 Night Shift stays blocked: it needs sufficient E1/E2/E3/E6
+behavior **plus** the B7 task-level Ultron mediation evidence. B7 status per the #757/#778
+work-claim ledger: the **discovery claim is reserved** to the Ultron Security Architect on
+`nerva2/b7-task-mediation-evidence` — no child issue and no branch exist yet, implementation
+has not started, and acceptance evidence is still required. B7 therefore remains open.
+
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**
 
 ## Run
@@ -41,7 +61,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~5,731 collected (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~5,767 collected (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
