@@ -8,6 +8,8 @@ codebase-memory-mcp binary). Package deps (pip/npm/github-actions) stay with
 Dependabot — see `.github/dependabot.yml`.
 
 Manifest: `.github/third-party-manifest.json`.
+Every tracked source must declare a literal boolean ``auto_update``. ``false``
+keeps drift reporting enabled while excluding the source from mutation.
 
 Two checks:
   * consistency (offline, deterministic): the manifest's `pinned_version`
@@ -107,12 +109,38 @@ def fetch_latest_github(repo: str, token: Optional[str] = None) -> Optional[str]
 
 # ── core ────────────────────────────────────────────────────────────────────
 
+def require_auto_update_policy(entry: dict) -> bool:
+    """Return the required literal-boolean update policy for one source."""
+    if "auto_update" not in entry:
+        name = entry.get("name", "<unnamed>")
+        raise ValueError(
+            f"manifest source {name!r} must declare boolean auto_update"
+        )
+    policy = entry["auto_update"]
+    if type(policy) is not bool:
+        name = entry.get("name", "<unnamed>")
+        raise ValueError(
+            f"manifest source {name!r} must declare boolean auto_update"
+        )
+    return policy
+
+
+def validate_auto_update_policies(manifest: dict) -> list[tuple[dict, bool]]:
+    """Validate all tracked sources before any source-specific work begins."""
+    return [
+        (entry, require_auto_update_policy(entry))
+        for entry in manifest.get("sources", [])
+    ]
+
+
 def run_checks(manifest: dict, fetch: Fetcher, repo_root: Path) -> list[dict]:
+    sources = validate_auto_update_policies(manifest)
     results = []
-    for e in manifest.get("sources", []):
+    for e, auto_update in sources:
         pinned = e.get("pinned_version")
         row = {"name": e["name"], "repo": e.get("repo"), "pinned": pinned,
-               "latest": None, "consistency": "n/a", "drift": "skipped"}
+               "latest": None, "consistency": "n/a", "drift": "skipped",
+               "auto_update": auto_update}
 
         vs = e.get("version_source")
         if vs:
@@ -131,12 +159,24 @@ def run_checks(manifest: dict, fetch: Fetcher, repo_root: Path) -> list[dict]:
     return results
 
 
+def auto_update_candidates(results: list[dict]) -> list[str]:
+    """Return drifted source names explicitly eligible for scheduled mutation."""
+    return [
+        row["name"]
+        for row in results
+        if row.get("drift") == "DRIFT" and row.get("auto_update") is True
+    ]
+
+
 def format_table(results: list[dict]) -> str:
-    lines = [f"{'source':<22} {'pinned':<10} {'latest':<12} {'consistency':<12} drift",
-             "-" * 70]
+    lines = [f"{'source':<22} {'pinned':<10} {'latest':<12} {'consistency':<12} "
+             f"{'update':<8} drift",
+             "-" * 79]
     for r in results:
+        update_mode = "auto" if r["auto_update"] else "manual"
         lines.append(f"{r['name']:<22} {str(r['pinned']):<10} "
-                     f"{str(r['latest'] or '-'):<12} {r['consistency']:<12} {r['drift']}")
+                     f"{str(r['latest'] or '-'):<12} {r['consistency']:<12} "
+                     f"{update_mode:<8} {r['drift']}")
     return "\n".join(lines)
 
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "Third-party sources NOT covered by Dependabot (vendored copies + doc-pinned tools). Drift is checked by scripts/check_thirdparty_drift.py and .github/workflows/thirdparty-drift.yml. Dependabot already handles pip/npm/github-actions \u2014 see .github/dependabot.yml.",
+  "_comment": "Third-party sources NOT covered by Dependabot (vendored copies + doc-pinned tools). Every source must declare a boolean auto_update: false keeps drift visible but blocks scheduled and direct mutation; true permits the existing reviewed update lane. Drift is checked by scripts/check_thirdparty_drift.py and .github/workflows/thirdparty-drift.yml. Dependabot already handles pip/npm/github-actions \u2014 see .github/dependabot.yml.",
   "sources": [
     {
       "name": "superpowers",
@@ -13,6 +13,7 @@
         "json_key": "version"
       },
       "track_drift": true,
+      "auto_update": true,
       "update_doc": ".claude/plugins/README.md"
     },
     {
@@ -22,6 +23,7 @@
       "path": "docs/dev/codebase-memory-mcp.md",
       "pinned_version": "0.9.0",
       "track_drift": true,
+      "auto_update": true,
       "update_doc": "docs/dev/codebase-memory-mcp.md"
     }
   ],
