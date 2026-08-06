@@ -1233,16 +1233,24 @@ class _MeasuredStoreBoundary:
                 raise ValueError("measured store path must exist") from exc
         return path
 
+    def _directory(self, *parts: str, create: bool) -> Path:
+        path = self._descendant(*parts, allow_missing_final=create)
+        if not create:
+            return path
+        try:
+            _reject_link_or_reparse(path, "measured store path")
+        except FileNotFoundError:
+            try:
+                path.mkdir()
+            except OSError as exc:
+                raise ValueError(
+                    "measured store directory could not be created"
+                ) from exc
+        return self._descendant(*parts)
+
     def suite(self, name: str, *, create: bool) -> Path:
-        suites = self.root / "suites"
-        if create and not suites.exists():
-            suites.mkdir()
-        self._descendant("suites")
-        suite = suites / name
-        if create and not suite.exists():
-            suite.mkdir()
-        self._descendant("suites", name)
-        return suite
+        self._directory("suites", create=create)
+        return self._directory("suites", name, create=create)
 
     def version(self, name: str, version: int) -> Path:
         return self._descendant(

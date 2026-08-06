@@ -2759,6 +2759,128 @@ def _security_broken_final_probes() -> None:
     )
 
 
+def _security_broken_create_directory_probes() -> None:
+    failures: list[str] = []
+
+    def probe(label: str, operation) -> None:
+        try:
+            operation()
+        except BaseException as exc:
+            failures.append(f"{label}: {type(exc).__name__}: {exc}")
+
+    def broken_create_final(final_kind: str) -> None:
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            label_set = _load(_write(directory, _document()))
+            root = directory / "store"
+            root.mkdir()
+            suites = root / "suites"
+            suite_name = measured_compare._suite_name(label_set)
+            if final_kind == "selected-suite":
+                suites.mkdir()
+                marked = suites / suite_name
+            else:
+                marked = suites
+
+            sentinel = directory / "outside-sentinel.txt"
+            sentinel.write_text("must-remain-unchanged", encoding="utf-8")
+            outside_output = directory / "outside-created.txt"
+            create_events: list[str] = []
+            original_exists = Path.exists
+            original_mkdir = Path.mkdir
+
+            def is_marked(path: Path) -> bool:
+                candidate = Path(path)
+                return (
+                    candidate.name == marked.name
+                    and candidate.parent.name == marked.parent.name
+                )
+
+            def missing_exists(path: Path) -> bool:
+                if is_marked(path):
+                    return False
+                return original_exists(path)
+
+            def forbidden_mkdir(
+                path: Path,
+                mode: int = 0o777,
+                parents: bool = False,
+                exist_ok: bool = False,
+            ) -> None:
+                if is_marked(path):
+                    create_events.append("outside-create")
+                    outside_output.write_text("forbidden", encoding="utf-8")
+                    raise FileExistsError(path)
+                original_mkdir(
+                    path,
+                    mode=mode,
+                    parents=parents,
+                    exist_ok=exist_ok,
+                )
+
+            with (
+                patch.object(Path, "exists", missing_exists),
+                patch.object(
+                    measured_compare.os,
+                    "lstat",
+                    _broken_reparse_lstat(marked),
+                ),
+                patch.object(Path, "mkdir", forbidden_mkdir),
+                pytest.raises(ValueError, match="symlink|reparse"),
+            ):
+                ensure_owner_route_suite(BenchmarkStore(root), label_set)
+            assert create_events == []
+            assert sentinel.read_text(encoding="utf-8") == "must-remain-unchanged"
+            assert not outside_output.exists()
+
+    def normal_missing_directories() -> None:
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            label_set = _load(_write(directory, _document()))
+            root = directory / "store"
+            root.mkdir()
+            suite_name, version, _suite = ensure_owner_route_suite(
+                BenchmarkStore(root), label_set
+            )
+            assert version == 1
+            assert (root / "suites" / suite_name / "v1.jsonl").is_file()
+
+    def missing_create_false() -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary) / "store"
+            root.mkdir()
+            create_events: list[Path] = []
+
+            def forbidden_mkdir(
+                path: Path,
+                mode: int = 0o777,
+                parents: bool = False,
+                exist_ok: bool = False,
+            ) -> None:
+                del mode, parents, exist_ok
+                create_events.append(path)
+                raise AssertionError("create=False attempted directory creation")
+
+            boundary = measured_compare._MeasuredStoreBoundary(BenchmarkStore(root))
+            with (
+                patch.object(Path, "mkdir", forbidden_mkdir),
+                pytest.raises(ValueError, match="must exist"),
+            ):
+                boundary.suite("missing-suite", create=False)
+            assert create_events == []
+
+    probe("broken suites create final", lambda: broken_create_final("suites"))
+    probe(
+        "broken selected-suite create final",
+        lambda: broken_create_final("selected-suite"),
+    )
+    probe("normal missing-directory creation", normal_missing_directories)
+    probe("missing create=False", missing_create_false)
+    assert not failures, "broken create-directory finals failed: " + " | ".join(
+        failures
+    )
+
+
 def _security_label_preallocation_probe() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
@@ -2944,6 +3066,7 @@ def _check_security_hold_remediation() -> None:
     probe("bound deterministic capability", _security_bound_capability_probes)
     probe("legacy shadow compatibility", _security_shadow_legacy_compatibility_probe)
     probe("broken measured-store finals", _security_broken_final_probes)
+    probe("broken create-directory finals", _security_broken_create_directory_probes)
     probe("label pre-allocation byte bound", _security_label_preallocation_probe)
     probe("retention path redirections", _security_redirection_probes)
     probe("retained-run authority parser", _security_benchmark_parser_probes)
