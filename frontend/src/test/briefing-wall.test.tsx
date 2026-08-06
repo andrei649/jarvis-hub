@@ -647,9 +647,11 @@ describe('BriefingWall — demo provenance is honest, not absent', () => {
         serverUp={false} clock={new Date()} voice={{ status: 'off' }} />,
     );
     const stamps = Array.from(container.querySelectorAll('.wl-stamp')).map((e: any) => e.textContent);
-    expect(stamps).toContain('live');
-    expect(stamps).toContain('measured');
-    stamps.forEach((st) => expect(st).not.toContain('demo'));
+    // every value here is `—`, so no card may claim live/measured provenance
+    stamps.forEach((st) => {
+      expect(st).toBe('no evidence');
+      expect(st).not.toContain('demo');
+    });
     expect(cellValue(container, 'AGENTS IN ROSTER')).toBe('—');
     expect(cellValue(container, 'ON-DEVICE')).toBe('—');
     expect(container.querySelector('.nburst').getAttribute('data-regions')).toBe('0');
@@ -710,6 +712,34 @@ describe('BriefingWall — connected and mixed DEMO tell the truth per value', (
     expect(stamps['ATTENTION']).toBe('demo · seeded');
   });
 
+  it('the page caption follows the real source mix, not just the demo flag', () => {
+    const live = render(
+      <BriefingWall demo={true} agents={AGENTS} tasks={TASKS}
+        sources={{ agents: true, tasks: true, trust: true }} trust={{ mic: 'on' }}
+        llm={{ state: 'ready', model: 'gemma-4-26b', residents: [] }}
+        localPct={91} localPctSource="measured" calendar={[]} heartbeat={[]}
+        serverUp={true} clock={new Date()} voice={{ status: 'off' }} />,
+    );
+    // fully connected demo: nothing on screen is seeded, so the caption must not say so
+    expect(live.container.querySelector('.wl-cap').textContent).toBe('demo mode · live data');
+
+    const mixed = render(
+      <BriefingWall demo={true} agents={AGENTS} tasks={[]}
+        sources={{ agents: true }} trust={null} llm={{ state: 'unknown', residents: [] }}
+        localPct={87} localPctSource="seeded" decisions={[{}]} calendar={[]} heartbeat={[]}
+        serverUp={true} clock={new Date()} voice={{ status: 'off' }} />,
+    );
+    expect(mixed.container.querySelector('.wl-cap').textContent).toBe('demo mode · live + seeded data');
+
+    const seeded = render(
+      <BriefingWall demo={true} agents={AGENTS} tasks={[]}
+        sources={{}} trust={null} llm={{ state: 'unknown', residents: [] }}
+        localPct={87} localPctSource="seeded" decisions={[{}]} calendar={[]} heartbeat={[]}
+        serverUp={false} clock={new Date()} voice={{ status: 'off' }} />,
+    );
+    expect(seeded.container.querySelector('.wl-cap').textContent).toBe('demo corpus · seeded data');
+  });
+
   it('a single card holding both sources reads "mixed", never one or the other', () => {
     const { container } = render(
       <BriefingWall demo={true} agents={LIVE_AGENTS} tasks={[]}
@@ -728,7 +758,67 @@ describe('BriefingWall — connected and mixed DEMO tell the truth per value', (
     expect(cardStamp(['live', 'live'], 'live')).toBe('live');
     expect(cardStamp(['seeded', null], 'live')).toBe('demo · seeded');
     expect(cardStamp(['live', 'seeded'], 'live')).toBe('mixed · live + seeded');
-    expect(cardStamp([null, null], 'measured')).toBe('measured');
+    expect(cardStamp([null, null], 'measured')).toBe('no evidence');   // nothing shown → no claim
+    expect(cardStamp([], 'live')).toBe('no evidence');
+  });
+});
+
+/* The wall's "exact mic === 'on'" rule can be defeated UPSTREAM: the trust adapter in
+   `loaders.ts` used to coerce any falsy mic value to 'on' (`d.mic || 'on'`) and any truthy
+   strict_local to true (`!!d.strict_local`, so the STRING "false" became true). The wall's
+   own hostile tests could not see it because they hand-built the trust object. These drive
+   the REAL loader with malformed backend responses and feed its output into the wall. */
+describe('trust adapter → wall — malformed permission never authorizes', () => {
+  async function loadTrust(trustBody: any) {
+    const prevFetch = global.fetch;
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/trust/status')) {
+        return { ok: true, status: 200, json: async () => trustBody } as any;
+      }
+      throw new Error('offline');
+    }) as any;
+    const d = await loadJarvisData(false);
+    global.fetch = prevFetch;
+    return d;
+  }
+
+  it.each([
+    ['missing mic', {}],
+    ['empty string', { mic: '' }],
+    ['numeric zero', { mic: 0 }],
+    ['boolean false', { mic: false }],
+    ['unknown string', { mic: 'unknown' }],
+    ['non-string truthy', { mic: 1 }],
+  ])('%s does not become an affirmative permission', async (_label, body) => {
+    const d = await loadTrust(body);
+    expect(d.sources.trust).toBe(true);          // the response DID arrive…
+    expect(d.trust.mic).not.toBe('on');          // …but it authorizes nothing
+    const { container } = render(
+      <BriefingWall agents={[]} tasks={[]} sources={d.sources} trust={d.trust}
+        serverUp={true} clock={new Date()}
+        voice={{ status: 'off', supported: true, caps: null, start: vi.fn(), stop: vi.fn() }} />,
+    );
+    expect(container.querySelector('.wl-ptt').disabled).toBe(true);
+    expect(container.textContent).toContain('MIC · UNKNOWN');
+  });
+
+  it('an explicit on/off still works', async () => {
+    expect((await loadTrust({ mic: 'on' })).trust.mic).toBe('on');
+    expect((await loadTrust({ mic: 'off' })).trust.mic).toBe('off');
+  });
+
+  it.each([
+    ['string "false"', 'false'],
+    ['string "true"', 'true'],
+    ['number 1', 1],
+    ['object', {}],
+  ])('strict_local as %s does not become a governance claim', async (_label, value) => {
+    const d = await loadTrust({ mic: 'on', strict_local: value });
+    expect(d.trust.strict_local).toBe(false);    // only a literal boolean true counts
+  });
+
+  it('a literal boolean true is honoured', async () => {
+    expect((await loadTrust({ mic: 'on', strict_local: true })).trust.strict_local).toBe(true);
   });
 });
 

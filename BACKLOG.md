@@ -400,6 +400,18 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > (`measured` / `strict-local` / `seeded`) instead of inferred from `demo`. Vitest 484 → **488**,
 > with connected, partially-connected and mixed-card regressions alongside the offline-demo and
 > non-demo controls.
+>
+> **Wall pass 9 — seventh review round** (head `8d05aab`): a **fail-closed trust parse**. The wall's
+> "exact `mic === 'on'`" rule was defeated upstream by the adapter in `api/loaders.ts`:
+> `mic: d.mic || 'on'` turned a missing/empty/`0`/`false` value into an affirmative permission, and
+> `strict_local: !!d.strict_local` turned the STRING `"false"` into a true governance claim (which
+> also feeds a derived 100% locality figure). Only the literal strings/boolean now count; anything
+> else is `unknown` and refuses capture. Also: `cardStamp()` returned the live label when a card had
+> nothing to show, so an all-`—` card announced evidence it lacked (now `no evidence`); the demo
+> page caption was unconditional, so a fully connected demo described live data as seeded (now
+> derived from the real source mix); a `Cell` with no declared provenance defaulted to `live` (now
+> `unknown`); and an empty seeded decision list rendered `0` rather than `—`. +13 tests, all
+> red-proved (Vitest 488 → **501**).
 
 ---
 

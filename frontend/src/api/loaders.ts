@@ -148,9 +148,15 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     const d = await apiGet<any>('/api/trust/status');
     if (d && typeof d === 'object') {
       out.sources.trust = true;
+      // Fail-closed parse. `d.mic || 'on'` used to turn a missing, empty or otherwise
+      // falsy value into an affirmative permission, which defeated the wall's
+      // "exact mic === 'on'" rule before the value ever reached it. Only the literal
+      // strings authorize anything; everything else is 'unknown' and refuses capture.
+      // `!!d.strict_local` likewise made the STRING "false" true — a false governance
+      // claim that also feeds a derived 100% locality figure.
       out.trust = {
-        mic: d.mic || 'on',
-        strict_local: !!d.strict_local,
+        mic: d.mic === 'on' ? 'on' : d.mic === 'off' ? 'off' : 'unknown',
+        strict_local: d.strict_local === true,
         cloud_available: d.cloud_available === true,
         claude_available: d.claude_available === true,
       };

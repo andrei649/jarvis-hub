@@ -50,7 +50,7 @@ export function wallState({ voice = null, agents = [], tasks = [], serverUp = fa
 function Cell({ label, value, why, sub, prov }: any) {
   const missing = value === null || value === undefined || value === '';
   return (
-    <div className="wl-row" data-prov={missing ? 'none' : (prov || 'live')}>
+    <div className="wl-row" data-prov={missing ? 'none' : (prov || 'unknown')}>
       <span className="wl-k">{label}</span>
       <span className={'wl-v' + (missing ? ' wl-miss' : '')} title={missing ? (why || 'no evidence available') : undefined}>
         {missing ? '—' : value}
@@ -65,11 +65,16 @@ function Cell({ label, value, why, sub, prov }: any) {
    never a blanket assumption from `demo`. Cells with no value contribute nothing. */
 export function cardStamp(provs: any[], liveLabel: string) {
   const shown = (Array.isArray(provs) ? provs : []).filter(Boolean);
+  // A card showing nothing has no provenance to summarize. Returning the live label
+  // there let an all-`—` card announce evidence it does not have; absence of
+  // contradiction is not proof of measurement.
+  if (!shown.length) return 'no evidence';
   const seeded = shown.some((p) => p === 'seeded');
   const live = shown.some((p) => p === 'live');
   if (seeded && live) return 'mixed · live + seeded';
   if (seeded) return 'demo · seeded';
-  return liveLabel;
+  if (shown.every((p) => p === 'live')) return liveLabel;
+  return 'unverified';
 }
 
 /* The stamp is the card's provenance label, and it must be true AT THE POINT the figures
@@ -244,7 +249,7 @@ export function BriefingWall({
   const evidenceAgents = agentEvidence ? list : [];
   // There is no live decisions endpoint yet: `decisions` is seeded in demo and otherwise
   // stays []. Rendering 0 would assert "nothing is pending" on no evidence at all.
-  const decisionEvidence = !!demo && Array.isArray(decisions);
+  const decisionEvidence = !!demo && Array.isArray(decisions) && decisions.length > 0;
   const evidenceTasks = taskEvidence && Array.isArray(tasks) ? tasks : [];
   const running = runningTasks(evidenceTasks);
   const waiting = evidenceTasks.length - running.length;
@@ -280,6 +285,15 @@ export function BriefingWall({
     : localPctSource === 'seeded' ? 'seeded'
     : localPctSource ? 'live'
     : (demo ? 'seeded' : 'live');
+  // The page caption follows the same evidence as the cells: a CONNECTED demo really is
+  // showing live data, so calling the whole corpus seeded there is its own false claim.
+  const allProvs = [provRoster, provTasks, provModel, provCloud, provCal, provHb, provDecisions, provLocal];
+  const anyLive = allProvs.some((pv) => pv === 'live');
+  const anySeeded = allProvs.some((pv) => pv === 'seeded');
+  const demoCaption = anyLive && anySeeded ? 'demo mode · live + seeded data'
+    : anyLive ? 'demo mode · live data'
+    : anySeeded ? 'demo corpus · seeded data'
+    : 'demo mode · no data yet';
   const now = clock instanceof Date ? clock : new Date();
 
   const subsystems = [
@@ -304,7 +318,7 @@ export function BriefingWall({
       <div className="wl-top">
         <div className="wl-brand">
           <div className="wl-word">N.E.R.V.A.</div>
-          <div className="wl-cap">{demo ? 'demo corpus · seeded data' : 'local-first cabinet · ' + (serverUp ? 'connected' : 'no backend')}</div>
+          <div className="wl-cap">{demo ? demoCaption : 'local-first cabinet · ' + (serverUp ? 'connected' : 'no backend')}</div>
         </div>
         <div className={'wl-pill wl-pill-' + (demo ? 'demo' : serverUp ? 'live' : 'bad')}>
           <Dot tone={demo ? 'work' : serverUp ? 'live' : 'bad'} />
