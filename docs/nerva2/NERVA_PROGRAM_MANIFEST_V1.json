@@ -1,0 +1,503 @@
+{
+  "schema_version": 1,
+  "manifest_id": "nerva.program-manifest.v1",
+  "evidence_snapshot": {
+    "repository": "andrei649/jarvis-hub",
+    "baseline_commit": "458df5afabdf12536236522034e7c84493200147",
+    "observed_at_utc": "2026-08-06T06:19:08Z",
+    "program_issue": 757,
+    "blocker_plan_issue": 778,
+    "control_issue": 839,
+    "live_issue_state_verified_by_checker": false
+  },
+  "authority": {
+    "status_is_evidence_label_only": true,
+    "can_authorize": false,
+    "can_execute": false,
+    "completion_authority": false,
+    "release_ready": false,
+    "ultron_remains_sole_action_authority": true
+  },
+  "streams": [
+    {
+      "id": "E0",
+      "name": "Baseline and migration map",
+      "epic_issue": 758,
+      "program_status": "done",
+      "delivery_eligibility": "satisfied",
+      "completion_evidence": [
+        {
+          "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
+          "repo_path": "docs/nerva2/E0_COMPLETION.json",
+          "issue": 758,
+          "pull_request": 790,
+          "claim_code": "e0_control_gate_accepted"
+        }
+      ],
+      "delivery_prerequisites": [],
+      "blockers": [],
+      "references": [
+        {"kind": "issue", "value": 758},
+        {"kind": "repo_path", "value": "docs/nerva2/E0_COMPLETION.json"}
+      ]
+    },
+    {
+      "id": "E1",
+      "name": "Cortex meta-decision and capability routing",
+      "epic_issue": 759,
+      "program_status": "building",
+      "delivery_eligibility": "in_progress",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {
+          "source": "E0",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
+              "repo_path": "docs/nerva2/E0_COMPLETION.json",
+              "issue": 758,
+              "pull_request": 790,
+              "claim_code": "e0_control_gate_accepted"
+            }
+          ]
+        }
+      ],
+      "blockers": [],
+      "references": [
+        {"kind": "issue", "value": 759},
+        {"kind": "repo_path", "value": "docs/nerva2/CORTEX_E1_0.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/CORTEX_E1_1.md"}
+      ]
+    },
+    {
+      "id": "E2",
+      "name": "Atlas unified reality graph",
+      "epic_issue": 760,
+      "program_status": "building",
+      "delivery_eligibility": "in_progress",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {
+          "source": "E0",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
+              "repo_path": "docs/nerva2/E0_COMPLETION.json",
+              "issue": 758,
+              "pull_request": 790,
+              "claim_code": "e0_control_gate_accepted"
+            }
+          ]
+        }
+      ],
+      "blockers": [],
+      "references": [
+        {"kind": "issue", "value": 760},
+        {"kind": "repo_path", "value": "docs/nerva2/ATLAS_E2_0.md"}
+      ]
+    },
+    {
+      "id": "E3",
+      "name": "Episodes experience-centric memory",
+      "epic_issue": 761,
+      "program_status": "building",
+      "delivery_eligibility": "in_progress",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {
+          "source": "E0",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
+              "repo_path": "docs/nerva2/E0_COMPLETION.json",
+              "issue": 758,
+              "pull_request": 790,
+              "claim_code": "e0_control_gate_accepted"
+            }
+          ]
+        },
+        {
+          "source": "E2",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "9a13a0241fb65d01809f539f1048944ea01a3bf5",
+              "repo_path": "docs/nerva2/ATLAS_E2_0.md",
+              "issue": 781,
+              "pull_request": 795,
+              "claim_code": "atlas_minimum_for_episodes_accepted"
+            }
+          ]
+        }
+      ],
+      "blockers": [],
+      "references": [
+        {"kind": "issue", "value": 761},
+        {"kind": "repo_path", "value": "docs/nerva2/EPISODES_E3_0.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/EPISODE_RETRIEVAL_E3_1.md"}
+      ]
+    },
+    {
+      "id": "E4",
+      "name": "Howard digital twin and preference model",
+      "epic_issue": 762,
+      "program_status": "not_started",
+      "delivery_eligibility": "blocked",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {
+          "source": "E0",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
+              "repo_path": "docs/nerva2/E0_COMPLETION.json",
+              "issue": 758,
+              "pull_request": 790,
+              "claim_code": "e0_control_gate_accepted"
+            }
+          ]
+        },
+        {"source": "E3", "gate_state": "unsatisfied", "accepted_evidence": []}
+      ],
+      "blockers": [
+        {
+          "id": "E4-delivery-E3",
+          "kind": "delivery_gate",
+          "target": "E3",
+          "issue": 761,
+          "artifact": "docs/nerva2/DEPENDENCIES.md",
+          "reason_code": "upstream_gate_not_accepted"
+        }
+      ],
+      "references": [
+        {"kind": "issue", "value": 762},
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
+      ]
+    },
+    {
+      "id": "E5",
+      "name": "Night Shift autonomous work loop",
+      "epic_issue": 763,
+      "program_status": "not_started",
+      "delivery_eligibility": "blocked",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {
+          "source": "E0",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
+              "repo_path": "docs/nerva2/E0_COMPLETION.json",
+              "issue": 758,
+              "pull_request": 790,
+              "claim_code": "e0_control_gate_accepted"
+            }
+          ]
+        },
+        {"source": "E1", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E2", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E3", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E6", "gate_state": "unsatisfied", "accepted_evidence": []}
+      ],
+      "blockers": [
+        {"id": "E5-delivery-E1", "kind": "delivery_gate", "target": "E1", "issue": 759, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E5-delivery-E2", "kind": "delivery_gate", "target": "E2", "issue": 760, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E5-delivery-E3", "kind": "delivery_gate", "target": "E3", "issue": 761, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E5-delivery-E6", "kind": "delivery_gate", "target": "E6", "issue": 764, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E5-program-B7", "kind": "program_gate", "target": "B7", "issue": 818, "artifact": "BACKLOG.md", "reason_code": "task_mediation_decisions_unresolved"}
+      ],
+      "references": [
+        {"kind": "issue", "value": 763},
+        {"kind": "issue", "value": 818},
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
+      ]
+    },
+    {
+      "id": "E6",
+      "name": "Reflection and memory consolidation",
+      "epic_issue": 764,
+      "program_status": "building",
+      "delivery_eligibility": "in_progress",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {
+          "source": "E0",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
+              "repo_path": "docs/nerva2/E0_COMPLETION.json",
+              "issue": 758,
+              "pull_request": 790,
+              "claim_code": "e0_control_gate_accepted"
+            }
+          ]
+        },
+        {
+          "source": "E3",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "a33c9a5db5cc4b1e2f1849ebc39e28d197f66b5f",
+              "repo_path": "docs/nerva2/REFLECTION_E6_0.md",
+              "issue": 806,
+              "pull_request": 823,
+              "claim_code": "episodes_minimum_for_reflection_accepted"
+            }
+          ]
+        }
+      ],
+      "blockers": [],
+      "references": [
+        {"kind": "issue", "value": 764},
+        {"kind": "repo_path", "value": "docs/nerva2/REFLECTION_E6_0.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/REFLECTION_E6_1.md"}
+      ]
+    },
+    {
+      "id": "E7",
+      "name": "Governed world model and what-if simulation",
+      "epic_issue": 765,
+      "program_status": "not_started",
+      "delivery_eligibility": "blocked",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {"source": "E1", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E2", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E3", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E4", "gate_state": "unsatisfied", "accepted_evidence": []}
+      ],
+      "blockers": [
+        {"id": "E7-delivery-E1", "kind": "delivery_gate", "target": "E1", "issue": 759, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E7-delivery-E2", "kind": "delivery_gate", "target": "E2", "issue": 760, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E7-delivery-E3", "kind": "delivery_gate", "target": "E3", "issue": 761, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E7-delivery-E4", "kind": "delivery_gate", "target": "E4", "issue": 762, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"}
+      ],
+      "references": [
+        {"kind": "issue", "value": 765},
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
+      ]
+    },
+    {
+      "id": "E8",
+      "name": "Synapse Skills SDK and acquisition loop",
+      "epic_issue": 766,
+      "program_status": "building",
+      "delivery_eligibility": "in_progress",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {
+          "source": "E0",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
+              "repo_path": "docs/nerva2/E0_COMPLETION.json",
+              "issue": 758,
+              "pull_request": 790,
+              "claim_code": "e0_control_gate_accepted"
+            }
+          ]
+        }
+      ],
+      "blockers": [
+        {"id": "E8-external-E8_1C", "kind": "external_dependency", "target": "E8_1C", "issue": 804, "artifact": "docs/nerva2/EXECUTION_PROVIDER_E8_1A.md", "reason_code": "provider_preflight_not_accepted"},
+        {"id": "E8-program-B7", "kind": "program_gate", "target": "B7", "issue": 818, "artifact": "BACKLOG.md", "reason_code": "task_mediation_decisions_unresolved"},
+        {"id": "E8-external-PROVIDER_E9", "kind": "external_dependency", "target": "PROVIDER_E9", "issue": 767, "artifact": "docs/nerva2/RESEARCH_LAB_E9_1.md", "reason_code": "provider_specific_evidence_missing"}
+      ],
+      "references": [
+        {"kind": "issue", "value": 766},
+        {"kind": "repo_path", "value": "docs/nerva2/SYNAPSE_E8_0.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/EXECUTION_PROVIDER_E8_1A.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/EXECUTION_PROVIDER_E8_1B.md"}
+      ]
+    },
+    {
+      "id": "E9",
+      "name": "Research Lab and continuous benchmark harness",
+      "epic_issue": 767,
+      "program_status": "building",
+      "delivery_eligibility": "in_progress",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {
+          "source": "E0",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
+              "repo_path": "docs/nerva2/E0_COMPLETION.json",
+              "issue": 758,
+              "pull_request": 790,
+              "claim_code": "e0_control_gate_accepted"
+            }
+          ]
+        }
+      ],
+      "blockers": [],
+      "references": [
+        {"kind": "issue", "value": 767},
+        {"kind": "repo_path", "value": "docs/nerva2/RESEARCH_LAB_E9_0.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/RESEARCH_LAB_E9_1.md"}
+      ]
+    },
+    {
+      "id": "E10",
+      "name": "Executive dashboard and coherent experience",
+      "epic_issue": 768,
+      "program_status": "not_started",
+      "delivery_eligibility": "blocked",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {"source": "E1", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E2", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E5", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E6", "gate_state": "unsatisfied", "accepted_evidence": []}
+      ],
+      "blockers": [
+        {"id": "E10-delivery-E1", "kind": "delivery_gate", "target": "E1", "issue": 759, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E10-delivery-E2", "kind": "delivery_gate", "target": "E2", "issue": 760, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E10-delivery-E5", "kind": "delivery_gate", "target": "E5", "issue": 763, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E10-delivery-E6", "kind": "delivery_gate", "target": "E6", "issue": 764, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"}
+      ],
+      "references": [
+        {"kind": "issue", "value": 768},
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
+      ]
+    },
+    {
+      "id": "E11",
+      "name": "Proof, safety and release gate",
+      "epic_issue": 769,
+      "program_status": "not_started",
+      "delivery_eligibility": "blocked",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {
+          "source": "E0",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
+              "repo_path": "docs/nerva2/E0_COMPLETION.json",
+              "issue": 758,
+              "pull_request": 790,
+              "claim_code": "e0_control_gate_accepted"
+            }
+          ]
+        },
+        {"source": "E1", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E2", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E3", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E4", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E5", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E6", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E7", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E8", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E9", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E10", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E12", "gate_state": "unsatisfied", "accepted_evidence": []}
+      ],
+      "blockers": [
+        {"id": "E11-delivery-E1", "kind": "delivery_gate", "target": "E1", "issue": 759, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E11-delivery-E2", "kind": "delivery_gate", "target": "E2", "issue": 760, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E11-delivery-E3", "kind": "delivery_gate", "target": "E3", "issue": 761, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E11-delivery-E4", "kind": "delivery_gate", "target": "E4", "issue": 762, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E11-delivery-E5", "kind": "delivery_gate", "target": "E5", "issue": 763, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E11-delivery-E6", "kind": "delivery_gate", "target": "E6", "issue": 764, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E11-delivery-E7", "kind": "delivery_gate", "target": "E7", "issue": 765, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E11-delivery-E8", "kind": "delivery_gate", "target": "E8", "issue": 766, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E11-delivery-E9", "kind": "delivery_gate", "target": "E9", "issue": 767, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E11-delivery-E10", "kind": "delivery_gate", "target": "E10", "issue": 768, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E11-delivery-E12", "kind": "delivery_gate", "target": "E12", "issue": 773, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E11-owner-OWNER_LIVE", "kind": "owner_live", "target": "OWNER_LIVE", "issue": 769, "artifact": "docs/nerva2/RISKS.md", "reason_code": "owner_live_proof_missing"},
+        {"id": "E11-program-RESTORE_SOAK", "kind": "program_gate", "target": "RESTORE_SOAK", "issue": 769, "artifact": "docs/nerva2/RISKS.md", "reason_code": "restore_soak_proof_missing"},
+        {"id": "E11-program-RECURRING_WORKFLOWS", "kind": "program_gate", "target": "RECURRING_WORKFLOWS", "issue": 769, "artifact": "docs/nerva2/RISKS.md", "reason_code": "recurring_workflow_proof_missing"}
+      ],
+      "references": [
+        {"kind": "issue", "value": 769},
+        {"kind": "repo_path", "value": "docs/nerva2/RISKS.md"}
+      ]
+    },
+    {
+      "id": "E12",
+      "name": "Hybrid Cognition Lab",
+      "epic_issue": 773,
+      "program_status": "discovery",
+      "delivery_eligibility": "in_progress",
+      "completion_evidence": [],
+      "delivery_prerequisites": [
+        {
+          "source": "E0",
+          "gate_state": "satisfied",
+          "accepted_evidence": [
+            {
+              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
+              "repo_path": "docs/nerva2/E0_COMPLETION.json",
+              "issue": 758,
+              "pull_request": 790,
+              "claim_code": "e0_control_gate_accepted"
+            }
+          ]
+        },
+        {"source": "E1", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E2", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E3", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E6", "gate_state": "unsatisfied", "accepted_evidence": []},
+        {"source": "E9", "gate_state": "unsatisfied", "accepted_evidence": []}
+      ],
+      "blockers": [
+        {"id": "E12-delivery-E1", "kind": "delivery_gate", "target": "E1", "issue": 759, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E12-delivery-E2", "kind": "delivery_gate", "target": "E2", "issue": 760, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E12-delivery-E3", "kind": "delivery_gate", "target": "E3", "issue": 761, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E12-delivery-E6", "kind": "delivery_gate", "target": "E6", "issue": 764, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
+        {"id": "E12-delivery-E9", "kind": "delivery_gate", "target": "E9", "issue": 767, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"}
+      ],
+      "references": [
+        {"kind": "issue", "value": 773},
+        {"kind": "repo_path", "value": "docs/nerva2/HYBRID_COGNITION_BOUNDARY.md"}
+      ]
+    }
+  ],
+  "runtime_feedback_edges": [
+    {"source": "E4", "consumer": "E1", "mode": "preference_prediction_advisory", "grants_authority": false},
+    {"source": "E6", "consumer": "E1", "mode": "lesson_proposal_advisory", "grants_authority": false},
+    {"source": "E6", "consumer": "E2", "mode": "lesson_proposal_advisory", "grants_authority": false},
+    {"source": "E12", "consumer": "E1", "mode": "belief_and_metacognition_advisory", "grants_authority": false},
+    {"source": "E12", "consumer": "E7", "mode": "belief_and_metacognition_advisory", "grants_authority": false},
+    {"source": "E12", "consumer": "E9", "mode": "belief_and_metacognition_advisory", "grants_authority": false}
+  ],
+  "known_source_drifts": [
+    {
+      "id": "runtime-feedback-e4-to-e1-registry-omission",
+      "state": "open",
+      "present_in": "docs/nerva2/DEPENDENCIES.md",
+      "present_in_sha256": "39f8717a747e4ef6802611cde18fa4fd76b740839c765e3737a365ac62a821fc",
+      "present_in_anchor": "Howard ──preference prediction only──> Cortex",
+      "missing_from": "docs/nerva2/CONTRACT_REGISTRY.json",
+      "edge": {"source": "E4", "consumer": "E1"},
+      "reason_code": "historical_registry_omits_documented_advisory_edge"
+    }
+  ],
+  "invariants": {
+    "e5_direct_prerequisites": ["E0", "E1", "E2", "E3", "E6"],
+    "runtime_feedback_is_not_delivery_authority": true,
+    "satisfied_gate_requires_immutable_evidence": true,
+    "delivery_eligibility_derivation": {
+      "active_program_statuses": ["discovery", "building", "verifying"],
+      "active_result": "in_progress",
+      "open_cause_types": ["unsatisfied_delivery_gate", "typed_blocker"],
+      "not_started_open_cause_result": "blocked",
+      "not_started_clear_result": "eligible",
+      "blocked_result": "blocked",
+      "blocked_requires_open_cause": true,
+      "done_clear_result": "satisfied",
+      "done_open_cause_allowed": false
+    }
+  }
+}

@@ -32,8 +32,8 @@
   live task-level mediation, real adapters, Night Shift prerequisites and release proof remain open.
 <!-- NERVA2:E0-REPOSITORY-LEDGER:END -->
 
-**Accepted M1 slices since E0** (each independently reviewed and squash-merged; none of them
-completes its epic):
+**Accepted M1 slices and bounded program controls since E0** (each independently reviewed and
+squash-merged once present on `main`; no item by itself completes a runtime epic or release gate):
 
 - ✅ E1.0 / #780 / PR #791 — typed shadow `nerva.decision.v1` and `ShadowDecisionRouter`.
 - ✅ E1.1 / #792 — bounded current-router comparison over `nerva.cortex.comparison.v1`.
@@ -84,6 +84,16 @@ completes its epic):
   control-only packages satisfy all ten #805 acceptance items. No runtime, provider, routing,
   deployment, privileged action, automatic promotion, prototype outcome or owner-live capability
   is added; #836 remains open and grants no implementation authority.
+- ✅ B2 repository-manifest control / #839 / PR #840 — effective only when this PR is
+  squash-merged after exact-head hosted gates, versioned JSON becomes the sole current
+  dependency/status/gate/blocker/runtime truth for E0–E12; its Markdown view is deterministic and
+  byte-checked, and the offline checker fails closed on hostile structure, mutable-only evidence,
+  unsafe repository paths, Git/index/worktree drift and candidate-HEAD movement. This closes only
+  the repository-manifest portion of B2: parent #778 and program #757 remain open/partial; live
+  issue-ledger reconciliation, B7, E8.1c, provider-specific E9 proof, Night Shift, owner-live and
+  release gates remain separate. No runtime, route, provider, execution, action or completion
+  authority is added; Ultron remains the sole privileged-action authority and release readiness
+  remains false.
 
 **Innovation Lab precursor documents** (merged, but **not** epic slices — neither satisfies a
 #805 checkbox and neither promotes, adopts or adds an integration/dependency pin):
