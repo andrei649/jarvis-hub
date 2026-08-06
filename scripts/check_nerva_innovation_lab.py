@@ -33,6 +33,32 @@ PROGRAM_ISSUE = 805
 HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 ACTOR_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 TIMESTAMP_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
+GIT_BLOB_SOURCE_RE = re.compile(
+    r"^gitblob://([0-9a-f]{40})/"
+    r"(docs/nerva2/innovation_lab_examples/e9/[A-Za-z0-9._/-]+)$"
+)
+
+EXAMPLE_EVIDENCE_PATHS = {
+    "OBS-THIRDPARTY-DRIFT-LIFECYCLE-V1": (
+        "docs/nerva2/innovation_lab_examples/e9/suites/alpha-drift-alert-lifecycle/v1.jsonl"
+    ),
+    "EVID-THIRDPARTY-DRIFT-BASELINE-V1": (
+        "docs/nerva2/innovation_lab_examples/e9/suites/alpha-drift-alert-lifecycle/v1.jsonl"
+    ),
+    "EVID-THIRDPARTY-DRIFT-BENCHMARK-V1": (
+        "docs/nerva2/innovation_lab_examples/e9/suites/alpha-drift-alert-lifecycle/runs.jsonl"
+    ),
+    "EVID-EXTERNAL-CONTROL-PLANE-CATALOGUE-V1": (
+        "docs/nerva2/innovation_lab_examples/e9/suites/beta-external-control-plane/v1.jsonl"
+    ),
+    "OBS-EXTERNAL-CONTROL-PLANE-V1": (
+        "docs/nerva2/innovation_lab_examples/e9/suites/beta-external-control-plane/v1.jsonl"
+    ),
+    "EVID-EXTERNAL-CONTROL-PLANE-BENCHMARK-V1": (
+        "docs/nerva2/innovation_lab_examples/e9/suites/beta-external-control-plane/runs.jsonl"
+    ),
+}
+EXAMPLE_EVIDENCE_IDS = frozenset(EXAMPLE_EVIDENCE_PATHS)
 
 AUTHORITY = {
     "can_commit_main": False,
@@ -1608,6 +1634,54 @@ def _read_git_path(repo: Path, commit: str, path: str) -> bytes | None:
     return result if isinstance(result, bytes) else None
 
 
+def validate_example_evidence_artifacts(
+    data: dict[str, Any], *, repo: Path, candidate_ref: str
+) -> list[str]:
+    """Bind the v1 example evidence records to immutable candidate Git blobs."""
+
+    records = data.get("records", [])
+    if not isinstance(records, list):
+        return ["Innovation Lab example evidence requires an array of records"]
+    by_id = {
+        record.get("id"): record
+        for record in records
+        if isinstance(record, dict) and record.get("id") in EXAMPLE_EVIDENCE_IDS
+    }
+    if not by_id:
+        return []
+    errors: list[str] = []
+    missing = EXAMPLE_EVIDENCE_IDS - set(by_id)
+    if missing:
+        errors.append(f"Innovation Lab example evidence set is incomplete: {sorted(missing)}")
+    for record_id, record in by_id.items():
+        source_ref = record.get("source_ref")
+        match = GIT_BLOB_SOURCE_RE.fullmatch(source_ref) if isinstance(source_ref, str) else None
+        if match is None:
+            errors.append(f"{record_id}: example source_ref must pin a canonical Git blob/path")
+            continue
+        expected_blob, path = match.groups()
+        if path != EXAMPLE_EVIDENCE_PATHS[record_id]:
+            errors.append(
+                f"{record_id}: example source_ref must pin {EXAMPLE_EVIDENCE_PATHS[record_id]}"
+            )
+            continue
+        pure_path = PurePosixPath(path)
+        if pure_path.is_absolute() or ".." in pure_path.parts:
+            errors.append(f"{record_id}: example source path must remain repository-relative")
+            continue
+        raw = _read_git_path(repo, candidate_ref, path)
+        if raw is None:
+            errors.append(f"{record_id}: example evidence artifact is missing at {path}")
+            continue
+        resolved_blob = _git(repo, "rev-parse", f"{candidate_ref}:{path}")
+        if not isinstance(resolved_blob, str) or resolved_blob.strip() != expected_blob:
+            errors.append(f"{record_id}: example source_ref Git blob does not match candidate path")
+        digest = hashlib.sha256(raw).hexdigest()
+        if record.get("integrity_sha256") != digest:
+            errors.append(f"{record_id}: example evidence SHA-256 mismatch")
+    return errors
+
+
 def validate_repository(repo: Path, baseline_ref: str, candidate_ref: str) -> list[str]:
     """Validate only immutable Git objects, then compare the accepted baseline."""
 
@@ -1652,6 +1726,9 @@ def validate_repository(repo: Path, baseline_ref: str, candidate_ref: str) -> li
             verify_catalogues=True,
             require_canonical_catalogues=True,
         )
+    )
+    errors.extend(
+        validate_example_evidence_artifacts(candidate, repo=repo, candidate_ref=candidate_ref)
     )
     if not bootstrap:
         if baseline_schema_raw is None or baseline_garden_raw is None:

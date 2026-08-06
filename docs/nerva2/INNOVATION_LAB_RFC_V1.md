@@ -292,3 +292,74 @@ needs real, separately evidenced examples before any completion claim.
 
 Rollback is one atomic revert of these six control files. It changes no runtime
 state, provider, private data, or authority.
+
+## 12. Governed evidence examples v1
+
+The foundation above truthfully left #805 open and in `BUILDING`. This second,
+separately reversible control package supplies the remaining governed examples
+without changing the pinned schema or adding a runtime. Every case and retained
+run is `synthetic_public`, restricted to the CI lane, and fixed to
+`evaluation_only` with no routing, authorization, execution, or completion
+authority.
+
+### Alpha — accepted only for a separate epic
+
+`RFC-THIRDPARTY-DRIFT-RECONCILE-R1` evaluates the bounded observation that the
+managed third-party drift alert remained open after exact drift disappeared.
+Its three-case E9 comparison retains the existing open/update behavior, the
+missing resolved-managed close behavior, and the refusal to close an unmarked
+issue. The proposed contract passes all three cases; the simple current
+baseline passes two.
+
+The independent decision is `ACCEPTED_FOR_EPIC`, not accepted for delivery.
+It creates exactly one `EPIC` record bound to real issue #836. That issue stays
+proposed and unscheduled; this RFC does not authorize implementation, GitHub
+writes, a sprint addition, merge, deployment, updater mutation, or completion.
+Its outcome remains `pending` until that separate issue produces independently
+reviewed evidence.
+
+### Beta — radical alternative rejected
+
+`RFC-EXTERNAL-CONTROL-PLANE-R1` tests the radical hypothesis that a generic
+external framework can replace the Nerva control plane. The four-case baseline
+requires preservation of sole privileged-action authority, strict-local agent
+routing, no direct merge/deploy authority, and independently reversible
+migration. The replacement model violates all four while the existing simple
+boundary preserves them, so the independent decision is `REJECTED`.
+
+No external code is fetched, copied, or executed. A prototype is honestly
+`not_required`: the contract-level negative result falsifies this broad
+hypothesis before a supply-chain or execution surface is justified. Bounded
+future adapters remain possible only through their own E8, security,
+architecture, and evidence decisions.
+
+### Immutable E9 evidence
+
+| RFC | Artifact | Git blob | Bytes | SHA-256 |
+|---|---|---|---:|---|
+| Alpha | `alpha-drift-alert-lifecycle/v1.jsonl` | `cd144e7a16c8b16d5918fb6a77ccd778e06d4e3c` | 1,787 | `e55134df9495d8a5e4ef1452a376545d0bb6ce9c0242d7502f9279c4ef15faf2` |
+| Alpha | `alpha-drift-alert-lifecycle/runs.jsonl` | `4baf7cb5f1198fe4782e835a0b9ba8472d686ebe` | 4,901 | `2f7f710a220da90718b09b636ef34ec031f03259656eeb05d78898ab506380f8` |
+| Beta | `beta-external-control-plane/v1.jsonl` | `32c9f09acb5a7b72ca22a19d2afd1a9cf61ecd84` | 2,394 | `bae8aa70331dfa90992e113d860be039ccb445260e1349556f16d96646854a80` |
+| Beta | `beta-external-control-plane/runs.jsonl` | `2ccbba2363e4cd4c198fb57d3c80fb9a43dcf8e4` | 6,361 | `899da45cd11f0f595f7073caa9beb3ccef5f5dc23af32e1484eb9e450d717375` |
+
+The standard-library checker requires all four evidence IDs and their two
+observation records together, binds each one to its exact governed path,
+confirms the candidate Git blob, and recomputes the raw SHA-256. The hostile
+matrix additionally parses every suite case and run through the accepted
+`nerva.benchmark.v1` types, binds case fingerprints, and rejects source swaps,
+byte tampering, authority drift, challenge-only acceptance, support-only
+rejection, or acceptance without the separate epic.
+
+These records satisfy #805 acceptance items 7–9 at the process/evidence level.
+They do not advance E8, E9's real-task or owner-hardware criteria, B5, B7, B8,
+Night Shift, release readiness, or any live capability claim.
+
+### Evidence rollback
+
+Before integration the package may be abandoned with no state change. After
+integration, accepted Garden history is never deleted or rewritten. If the
+Alpha decision is later falsified, issue #836 is closed and post-decision
+negative evidence plus an outcome are appended. If the Beta rejection becomes
+reconsiderable, a new revision must `SUPERSEDES` and `REOPENS` it using genuinely
+new post-decision evidence. Normal rollback therefore uses
+append-only corrective evidence, not deletion of the retained decision.

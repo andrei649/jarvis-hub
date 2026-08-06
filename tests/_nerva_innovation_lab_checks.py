@@ -9,6 +9,7 @@ reference boundary.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import subprocess
@@ -20,6 +21,9 @@ REPO = Path(__file__).resolve().parent.parent
 SCRIPTS = REPO / "scripts"
 SCHEMA_PATH = REPO / "docs/nerva2/INNOVATION_LAB_V1.schema.json"
 GARDEN_PATH = REPO / "docs/nerva2/KNOWLEDGE_GARDEN_V1.json"
+EXAMPLE_ROOT = REPO / "docs/nerva2/innovation_lab_examples/e9/suites"
+ALPHA_EXAMPLE = EXAMPLE_ROOT / "alpha-drift-alert-lifecycle"
+BETA_EXAMPLE = EXAMPLE_ROOT / "beta-external-control-plane"
 
 
 def _load_checker():
@@ -31,6 +35,7 @@ def _load_checker():
         decode_json_bytes,
         evaluate_schema,
         validate_bundle,
+        validate_example_evidence_artifacts,
         validate_git_refs,
         validate_repository,
         validate_schema_bytes,
@@ -43,6 +48,7 @@ def _load_checker():
         "decode": decode_json_bytes,
         "evaluate_schema": evaluate_schema,
         "validate_bundle": validate_bundle,
+        "validate_example_evidence_artifacts": validate_example_evidence_artifacts,
         "validate_git_refs": validate_git_refs,
         "validate_repository": validate_repository,
         "validate_schema_bytes": validate_schema_bytes,
@@ -685,6 +691,250 @@ def _git_ref_matrix(validate_git_refs, validate_repository) -> None:
             validate_repository(partial, partial_base, partial_candidate),
             "bootstrap requires both schema and garden to be absent",
         )
+
+
+def _example_artifact_binding_matrix(validate_example_evidence_artifacts) -> None:
+    paths = {
+        "OBS-THIRDPARTY-DRIFT-LIFECYCLE-V1": (
+            "docs/nerva2/innovation_lab_examples/e9/suites/alpha-drift-alert-lifecycle/v1.jsonl"
+        ),
+        "EVID-THIRDPARTY-DRIFT-BASELINE-V1": (
+            "docs/nerva2/innovation_lab_examples/e9/suites/alpha-drift-alert-lifecycle/v1.jsonl"
+        ),
+        "EVID-THIRDPARTY-DRIFT-BENCHMARK-V1": (
+            "docs/nerva2/innovation_lab_examples/e9/suites/alpha-drift-alert-lifecycle/runs.jsonl"
+        ),
+        "EVID-EXTERNAL-CONTROL-PLANE-CATALOGUE-V1": (
+            "docs/nerva2/innovation_lab_examples/e9/suites/beta-external-control-plane/v1.jsonl"
+        ),
+        "OBS-EXTERNAL-CONTROL-PLANE-V1": (
+            "docs/nerva2/innovation_lab_examples/e9/suites/beta-external-control-plane/v1.jsonl"
+        ),
+        "EVID-EXTERNAL-CONTROL-PLANE-BENCHMARK-V1": (
+            "docs/nerva2/innovation_lab_examples/e9/suites/beta-external-control-plane/runs.jsonl"
+        ),
+    }
+    with tempfile.TemporaryDirectory(prefix="nerva-innovation-artifact-") as temp:
+        repo = Path(temp)
+        _run_git(repo, "init", "-q")
+        _run_git(repo, "config", "user.name", "Nerva Test")
+        _run_git(repo, "config", "user.email", "nerva@example.invalid")
+        artifacts = {
+            artifact_path: json.dumps({"path": artifact_path}, separators=(",", ":")).encode()
+            + b"\n"
+            for artifact_path in set(paths.values())
+        }
+        for artifact_path in artifacts:
+            target = repo / artifact_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(artifacts[artifact_path])
+            _run_git(repo, "add", artifact_path)
+        _run_git(repo, "commit", "-q", "-m", "fixture")
+        commit = _run_git(repo, "rev-parse", "HEAD")
+        bundle = {
+            "records": [
+                {
+                    "id": record_id,
+                    "kind": ("OBSERVATION" if record_id.startswith("OBS-") else "EVIDENCE"),
+                    "source_ref": (
+                        "gitblob://"
+                        f"{_run_git(repo, 'rev-parse', f'{commit}:{artifact_path}')}/"
+                        f"{artifact_path}"
+                    ),
+                    "integrity_sha256": hashlib.sha256(artifacts[artifact_path]).hexdigest(),
+                }
+                for record_id, artifact_path in paths.items()
+            ]
+        }
+        binding_errors = validate_example_evidence_artifacts(
+            bundle, repo=repo, candidate_ref=commit
+        )
+        assert binding_errors == [], binding_errors
+
+        tampered = copy.deepcopy(bundle)
+        tampered["records"][1]["integrity_sha256"] = "f" * 64
+        _assert_error(
+            validate_example_evidence_artifacts(tampered, repo=repo, candidate_ref=commit),
+            "SHA-256",
+        )
+
+        tampered_observation = copy.deepcopy(bundle)
+        tampered_observation["records"][0]["integrity_sha256"] = "f" * 64
+        _assert_error(
+            validate_example_evidence_artifacts(
+                tampered_observation, repo=repo, candidate_ref=commit
+            ),
+            "SHA-256",
+        )
+
+        swapped = copy.deepcopy(bundle)
+        swapped["records"][0]["source_ref"] = bundle["records"][2]["source_ref"]
+        swapped["records"][0]["integrity_sha256"] = bundle["records"][2]["integrity_sha256"]
+        _assert_error(
+            validate_example_evidence_artifacts(swapped, repo=repo, candidate_ref=commit),
+            "must pin",
+        )
+
+        partial = copy.deepcopy(bundle)
+        partial["records"].pop()
+        _assert_error(
+            validate_example_evidence_artifacts(partial, repo=repo, candidate_ref=commit),
+            "set is incomplete",
+        )
+
+        wrong_blob = copy.deepcopy(bundle)
+        wrong_source = wrong_blob["records"][0]["source_ref"]
+        _, wrong_path = wrong_source.removeprefix("gitblob://").split("/", 1)
+        wrong_blob["records"][0]["source_ref"] = f"gitblob://{'f' * 40}/{wrong_path}"
+        _assert_error(
+            validate_example_evidence_artifacts(wrong_blob, repo=repo, candidate_ref=commit),
+            "Git blob does not match",
+        )
+
+        missing_path = paths["EVID-THIRDPARTY-DRIFT-BENCHMARK-V1"]
+        _run_git(repo, "rm", "-q", missing_path)
+        _run_git(repo, "commit", "-q", "-m", "remove artifact")
+        missing_commit = _run_git(repo, "rev-parse", "HEAD")
+        _assert_error(
+            validate_example_evidence_artifacts(bundle, repo=repo, candidate_ref=missing_commit),
+            "artifact is missing",
+        )
+
+
+def _canonical_example_matrix(validate_bundle, schema: dict) -> None:
+    if str(REPO) not in sys.path:
+        sys.path.insert(0, str(REPO))
+    from agents.core.observability.benchmark import (  # noqa: PLC0415
+        BenchmarkCase,
+        BenchmarkRun,
+    )
+
+    parsed: dict[str, tuple[tuple[BenchmarkCase, ...], tuple[BenchmarkRun, ...]]] = {}
+    for name, directory in (("alpha", ALPHA_EXAMPLE), ("beta", BETA_EXAMPLE)):
+        suite_path = directory / "v1.jsonl"
+        runs_path = directory / "runs.jsonl"
+        assert suite_path.is_file(), f"missing governed example suite: {suite_path}"
+        assert runs_path.is_file(), f"missing governed example run: {runs_path}"
+        cases = tuple(
+            BenchmarkCase.from_dict(json.loads(line))
+            for line in suite_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        )
+        runs = tuple(
+            BenchmarkRun.from_json(line)
+            for line in runs_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        )
+        assert cases and len(runs) == 1
+        assert all(
+            case.privacy_class == "synthetic_public" and case.allowed_lanes == ("ci",)
+            for case in cases
+        )
+        run = runs[0]
+        assert run.lane == "ci"
+        assert run.source_revision == "76f17aa49498466540198b0410b037c1b2f6c8eb"
+        assert run.authority == "evaluation_only"
+        assert not run.can_change_routing
+        assert not run.can_authorize
+        assert not run.can_execute
+        assert not run.can_mark_complete
+        assert {result.case_id for result in run.results} == {case.case_id for case in cases}
+        assert {result.case_id: result.case_fingerprint for result in run.results} == {
+            case.case_id: case.content_fingerprint for case in cases
+        }
+        parsed[name] = (cases, runs)
+
+    alpha_run = parsed["alpha"][1][0]
+    assert alpha_run.candidate_id == "drift-alert-reconciler-contract.v1"
+    assert alpha_run.baseline_id == "current-drift-alert-workflow.v1"
+    assert alpha_run.summary["total"] == 3
+    assert alpha_run.summary["passed"] == 3
+    assert alpha_run.summary["quality_mean"] == 1.0
+    assert alpha_run.summary["baseline_quality_mean"] == 0.666667
+
+    beta_run = parsed["beta"][1][0]
+    assert beta_run.candidate_id == "external-control-plane-replacement.v1"
+    assert beta_run.baseline_id == "nerva-control-boundary.v1"
+    assert beta_run.summary["total"] == 4
+    assert beta_run.summary["failed"] == 4
+    assert beta_run.summary["quality_mean"] == 0.0
+    assert beta_run.summary["baseline_quality_mean"] == 1.0
+
+    contract = (REPO / "docs/nerva2/INNOVATION_LAB_RFC_V1.md").read_text(encoding="utf-8")
+    for phrase in (
+        "## 12. Governed evidence examples v1",
+        "RFC-THIRDPARTY-DRIFT-RECONCILE-R1",
+        "issue #836",
+        "RFC-EXTERNAL-CONTROL-PLANE-R1",
+        "synthetic_public",
+        "#805 acceptance items 7–9",
+        "does not authorize implementation",
+        "append-only corrective evidence",
+    ):
+        assert phrase in contract, f"example contract is missing {phrase!r}"
+
+    garden = json.loads(GARDEN_PATH.read_text(encoding="utf-8"))
+    assert (
+        validate_bundle(
+            garden,
+            schema=schema,
+            repo=REPO,
+            verify_catalogues=True,
+            require_canonical_catalogues=True,
+        )
+        == []
+    )
+    by_id = {record["id"]: record for record in garden["records"]}
+    expected_evidence_paths = {
+        "OBS-THIRDPARTY-DRIFT-LIFECYCLE-V1": ALPHA_EXAMPLE / "v1.jsonl",
+        "EVID-THIRDPARTY-DRIFT-BASELINE-V1": ALPHA_EXAMPLE / "v1.jsonl",
+        "EVID-THIRDPARTY-DRIFT-BENCHMARK-V1": ALPHA_EXAMPLE / "runs.jsonl",
+        "OBS-EXTERNAL-CONTROL-PLANE-V1": BETA_EXAMPLE / "v1.jsonl",
+        "EVID-EXTERNAL-CONTROL-PLANE-CATALOGUE-V1": BETA_EXAMPLE / "v1.jsonl",
+        "EVID-EXTERNAL-CONTROL-PLANE-BENCHMARK-V1": BETA_EXAMPLE / "runs.jsonl",
+    }
+    for record_id, path in expected_evidence_paths.items():
+        raw = path.read_bytes()
+        relative = path.relative_to(REPO).as_posix()
+        blob = _run_git(REPO, "hash-object", "--", relative)
+        assert by_id[record_id]["source_ref"] == f"gitblob://{blob}/{relative}"
+        assert by_id[record_id]["integrity_sha256"] == hashlib.sha256(raw).hexdigest()
+
+    alpha = by_id["RFC-THIRDPARTY-DRIFT-RECONCILE-R1"]
+    alpha_decision = by_id["DEC-THIRDPARTY-DRIFT-RECONCILE-V1"]
+    alpha_epic = by_id["EPIC-THIRDPARTY-DRIFT-RECONCILE-V1"]
+    assert alpha["lane"] == "ALPHA" and alpha["stage"] == "DECIDED"
+    assert alpha["prototype_disposition"]["status"] == "not_required"
+    assert alpha_decision["status"] == "ACCEPTED_FOR_EPIC"
+    assert alpha_epic["issue"] == 836
+    assert alpha["outcome_history"][-1]["to_status"] == "pending"
+
+    beta = by_id["RFC-EXTERNAL-CONTROL-PLANE-R1"]
+    beta_decision = by_id["DEC-EXTERNAL-CONTROL-PLANE-V1"]
+    assert beta["lane"] == "BETA" and beta["stage"] == "DECIDED"
+    assert beta["prototype_disposition"]["status"] == "not_required"
+    assert beta_decision["status"] == "REJECTED"
+    assert beta["outcome_history"][-1]["to_status"] == "not_applicable"
+    assert not any(
+        link["from"] == beta_decision["id"] and link["relation"] == "ACCEPTED_AS"
+        for link in garden["links"]
+    )
+    assert not any(record["kind"] in {"PROTOTYPE", "OUTCOME"} for record in garden["records"])
+
+    alpha_without_epic = copy.deepcopy(garden)
+    alpha_without_epic["links"] = [
+        link for link in alpha_without_epic["links"] if link["relation"] != "ACCEPTED_AS"
+    ]
+    _assert_error(validate_bundle(alpha_without_epic, schema=schema), "exactly one separate epic")
+
+    beta_support_only = copy.deepcopy(garden)
+    for link in beta_support_only["links"]:
+        if link["from"] == beta["id"] and link["relation"] == "CHALLENGED_BY":
+            link["relation"] = "SUPPORTED_BY"
+    _assert_error(
+        validate_bundle(beta_support_only, schema=schema),
+        "REJECTED requires strong pre-decision CHALLENGED_BY evidence",
+    )
 
 
 def run_checks() -> None:
@@ -1356,6 +1606,8 @@ def run_checks() -> None:
 
     # Immutable Git refs are strict SHA inputs; shallow and non-ancestor cases fail.
     _git_ref_matrix(checker["validate_git_refs"], checker["validate_repository"])
+    _example_artifact_binding_matrix(checker["validate_example_evidence_artifacts"])
+    _canonical_example_matrix(checker["validate_bundle"], schema)
 
     # Direct evaluator sanity: bool is not the integer zero in const/enum checks.
     _assert_error(checker["evaluate_schema"](0, {"const": False}), "const")
