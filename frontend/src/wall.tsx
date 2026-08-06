@@ -349,7 +349,7 @@ export function BriefingWall({
             <Cell label="TASKS RUNNING" value={taskEvidence ? running.length : null} prov={provTasks} why="task feed unavailable" />
             <Cell label="TASKS WAITING" value={taskEvidence ? Math.max(0, waiting) : null} prov={provTasks} why="task feed unavailable" />
           </Card>
-          <Card title="THIS SESSION" stamp={cardStamp([provLocal, provModel, provCloud], 'measured')}>
+          <Card title="THIS SESSION" stamp={cardStamp([provLocal, provModel, provCloud], provLocal === 'live' ? 'measured' : 'live')}>
             <Cell label="ON-DEVICE" value={localPct == null ? null : localPct + '%'} prov={provLocal} why="no measured locality split yet" />
             <Cell label="LOCAL MODEL" value={model} prov={provModel} why="no resident model reported" />
             <Cell label="CLOUD LANE" value={cloud} prov={provCloud} why="trust status unavailable" />

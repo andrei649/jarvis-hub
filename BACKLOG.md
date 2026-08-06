@@ -423,6 +423,13 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > a props fixture at all. Also: the ATTENTION card passed `queue` (not a provenance) as its all-live
 > label, so a card with live calendar/heartbeat evidence stamped `queue`; it now stamps `live`.
 > +12 tests, red-proved (Vitest 501 → **513**).
+>
+> **Wall pass 11 — ninth review round** (head `13012cf`): `THIS SESSION` stamped `measured` whenever
+> its cells were live, so a card whose only evidence was a trust read (CLOUD LANE) — or a resident
+> model — claimed to have measured something. The live label is now conditional on a genuinely
+> *measured* locality split being among the values shown; otherwise the card reads `live`. One of
+> the previous pass's tests had pinned that contradiction (live cell + `measured` card) and is
+> replaced, with a loader-shaped trust-only regression added. Vitest 513 → **515**.
 
 ---
 

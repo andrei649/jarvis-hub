@@ -13,6 +13,7 @@ import { render, fireEvent } from '@testing-library/react';
 import { BriefingWall, wallState, wallClock, readTranscriptPref, cardStamp } from '../wall';
 import { NeuralBurst, burstRegions, burstEnergy } from '../burst';
 import { loadJarvisData } from '../api/loaders';
+import { localityFigure } from '../locality';
 import { CinemaMesh } from '../shell';
 
 let rafCb: any = null;
@@ -875,13 +876,51 @@ describe('BriefingWall — a card names the evidence it actually has', () => {
     expect(stamp).not.toBe('queue');
   });
 
-  it('a live CLOUD LANE cell stamps its own card live', () => {
+  it('trust-only evidence is live, but the card must not claim it measured anything', () => {
     const { container } = render(
       <BriefingWall {...base} localPct={null} llm={{ state: 'unknown', residents: [] }}
         calendar={[]} heartbeat={[]} />,
     );
     expect(cellProv(container, 'CLOUD LANE')).toBe('live');
-    expect(cardStamps(container)['THIS SESSION']).toBe('measured');   // the card's live label
+    expect(cellValue(container, 'ON-DEVICE')).toBe('—');
+    expect(cellValue(container, 'LOCAL MODEL')).toBe('—');
+    expect(cardStamps(container)['THIS SESSION']).toBe('live');
+    expect(cardStamps(container)['THIS SESSION']).not.toBe('measured');
+  });
+
+  it('a resident model alone is live, not measured', () => {
+    const { container } = render(
+      <BriefingWall {...base} localPct={null} sources={{ agents: true }}
+        llm={{ state: 'ready', model: 'gemma-4-26b', residents: [] }} calendar={[]} heartbeat={[]} />,
+    );
+    expect(cellProv(container, 'LOCAL MODEL')).toBe('live');
+    expect(cardStamps(container)['THIS SESSION']).toBe('live');
+  });
+
+  it('loader-shaped: a trust-only backend response yields a live, not measured, card', async () => {
+    const prevFetch = global.fetch;
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/trust/status')) {
+        return { ok: true, status: 200, json: async () => ({ mic: 'on', cloud_available: true }) } as any;
+      }
+      throw new Error('offline');           // nothing else answers
+    }) as any;
+    const d = await loadJarvisData(false);
+    global.fetch = prevFetch;
+
+    expect(d.sources.trust).toBe(true);
+    expect(d.sources.agents).toBeFalsy();
+    const { pct, source } = localityFigure({ locality: null, trust: d.trust, demo: false });
+    expect(pct).toBeNull();
+    expect(source).toBeNull();
+
+    const { container } = render(
+      <BriefingWall agents={[]} tasks={[]} sources={d.sources} trust={d.trust} llm={d.llm}
+        localPct={pct} localPctSource={source} calendar={[]} heartbeat={[]} decisions={[]}
+        serverUp={true} clock={new Date()} voice={{ status: 'off' }} />,
+    );
+    expect(cellProv(container, 'CLOUD LANE')).toBe('live');
+    expect(cardStamps(container)['THIS SESSION']).toBe('live');
   });
 });
 
