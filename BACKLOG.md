@@ -296,6 +296,20 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > `tests/test_route_parity_guard.py` green. Mobile parity tracked as H18.24; the guide's remaining
 > gap (ambient LED sync) is filed as H30.8. Guide-vs-repo map:
 > [`docs/design/JARVIS_PRESENCE_GAP.md`](docs/design/JARVIS_PRESENCE_GAP.md).
+>
+> **Briefing wall — the reference layout** (same owner request, after five frames of the actual
+> video arrived and materially changed the visual brief): `frontend/src/burst.tsx` adds
+> `NeuralBurst`, a Canvas-2D neural firing field — per-tier dendrite trees grown from a
+> deterministic seed, synapse nodes, long white axon sweeps and a blown-out core — and
+> `frontend/src/wall.tsx` adds `BriefingWall`, the full wall-screen board (letterspaced wordmark,
+> live pill, running clock, four stat cards, subsystem status rail, spoken line, corner brackets)
+> with the field full-bleed behind it. It is the `brain` stage of cinema mode (`m` then `b`; `n`
+> mesh, `o` orb). **Honesty:** regions are real cabinet tiers, node density follows the real agent
+> count, only tiers that are actually executing fire, and `burstEnergy()` reports whether the light
+> comes from a measured mic level, live work, or idle. The reference's agency KPIs are NOT
+> reproduced — the same slots carry provable Nerva figures, and anything unmeasured renders `—`
+> with the reason attached. +15 frontend tests (Vitest 422 → **437**). No new dependency, no
+> endpoint, no backend change.
 
 ---
 

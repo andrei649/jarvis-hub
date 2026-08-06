@@ -104,7 +104,8 @@ physical/soft mute is on, the loop won't start.
 off, standing by, listening, transcribing, speaking, or broken. Two places use it:
 
 - **cinema mode** (`m` from the HUD, then `o`) — full-bleed on a wall screen; `n` returns to the
-  Neural Mesh, which stays the default stage;
+  Neural Mesh, which stays the default stage, and `b` opens the briefing wall (`wall.tsx`), where
+  the same voice state drives the neural field and the spoken line along the bottom;
 - **the cockpit voice pill** — the same orb inline, in place of the old flat status dot.
 
 The honesty rule is narrower than it looks: **only the LISTENING state is driven by a measured

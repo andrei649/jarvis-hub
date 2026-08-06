@@ -1,9 +1,16 @@
 # The "J.A.R.V.I.S. in the room" build — guide vs. this repo
 
-> Provenance: owner-supplied build guide (2026-08-06) describing the cinematic assistant seen in a
-> demo video — a reactive particle sphere, SF data panels, ambient LED sync, a natural voice, and an
-> autonomous agent brain wired to real data. This file maps every item in that guide onto what Nerva
-> already ships, so nobody rebuilds something that exists.
+> Provenance: an owner-supplied build guide (2026-08-06), then **five frames of the actual reference
+> video** the guide was written from (same day). The frames changed the visual brief materially and
+> are the authority here — the guide's "particle sphere" was a text approximation of something else.
+> This file maps every item onto what Nerva already ships, so nobody rebuilds what exists.
+>
+> **What the reference actually is:** a wall-mounted TV in a dark room with blue LED backlight,
+> showing a full-bleed *neural firing field* — a dark core surrounded by dense, branching, multi-
+> coloured dendrite bundles with long white axon sweeps and a blown-out hot centre — overlaid with
+> hairline mono chrome: a letterspaced wordmark, a red `BRIEFING · LIVE` pill, a running clock, four
+> stat cards down the sides, a subsystem status rail on the right edge, and the spoken line along
+> the bottom. Not a dot sphere: a brain mid-thought.
 >
 > Related: [VOICE.md](../VOICE.md) (the two voice paths) · [HUD_V2_REMAINING.md](HUD_V2_REMAINING.md)
 > (HUD punch-list) · [../ARCHITECTURE.md](../ARCHITECTURE.md) §3 (module index).
@@ -12,12 +19,14 @@
 
 | Guide item | State in this repo | Where |
 |---|---|---|
-| Reactive particle sphere ("brain"/plasma orb) | ✅ **shipped by this change** — `VoiceOrb`, a canvas particle sphere bound to the live `useVoice()` state machine (off / standing-by / listening / transcribing / speaking / error). Rendered in cinema mode (`o`), and inline in the voice pill. | `frontend/src/orb.tsx` |
-| Three.js / p5.js / GLSL shaders | ➖ **deliberately not used.** The HUD ships as a committed local bundle with no CDN and no runtime asset fetches; the sphere is Canvas-2D projection maths (Fibonacci sphere + yaw/tilt + perspective), so it adds zero dependencies and runs on the same guards as the Neural Mesh. | `frontend/src/orb.tsx` |
+| Neural firing field (the actual centrepiece) | ✅ **shipped** — `NeuralBurst`: per-tier dendrite trees grown from a deterministic seed, synapse nodes, long white axon sweeps, and a blown-out core, all bound to the live cabinet. Regions are real tiers, node density follows the real agent count, and only tiers that are actually executing fire. | `frontend/src/burst.tsx` |
+| The full briefing board (chrome + side cards + status rail + spoken line) | ✅ **shipped** — `BriefingWall`, the `brain` stage of cinema mode (`m` then `b`). | `frontend/src/wall.tsx` |
+| Reactive orb (from the written guide, before the frames arrived) | ✅ shipped earlier in the same PR and kept — `VoiceOrb` is a tighter voice-state read than the field, so it stays as the `orb` cinema stage and inline in the voice pill. | `frontend/src/orb.tsx` |
+| Three.js / p5.js / GLSL shaders | ➖ **deliberately not used.** The HUD ships as a committed local bundle with no CDN and no runtime asset fetches; both the field and the sphere are Canvas-2D, so they add zero dependencies and run on the same guards as the Neural Mesh. | `frontend/src/burst.tsx`, `orb.tsx` |
 | Wallpaper Engine / prebuilt "Jarvis HUD" skins | ➖ not needed — those are wallpapers, not a UI wired to real state. Nerva's own HUD is the surface. | — |
 | SF side panels (stats, graphs, figures) | ✅ already far past the guide: the HUD-v3 Console covers every blueprint surface, plus the Decision Inbox, Neural Mesh, ticker, and cinema mode. | `frontend/src/` |
 | Home Assistant + a futurist theme as the dashboard | ➖ not the path taken — Nerva has its own HUD; Home Assistant is consumed as a **data/actuation source** by the House Brain (H30), not as the UI. | `agents/core/house/` |
-| Big wall screen, black background | ✅ cinema mode (`m` from the HUD) is exactly this: full-bleed, dark, framed for a room. The orb stage (`o`) is the voice-facing half. | `frontend/src/shell.tsx` |
+| Big wall screen, black background | ✅ cinema mode (`m` from the HUD), with three stages: `n` mesh (who is working), `o` orb (voice state), `b` the briefing wall (the reference layout). | `frontend/src/shell.tsx` |
 | Ambient LED sync (Hue / Govee / WLED behind the TV) | ❌ **not built.** Nothing in the repo drives a light strip from assistant state. `iot_control.py` / `homebridge.py` are generic device plugins, and H30 actuates Home Assistant devices under approval — neither is an ambient state-colour bridge. Proposed as a separate slice below. | — |
 
 ## Part 2 — the functionality
@@ -30,6 +39,16 @@
 | Google Calendar / Gmail | ✅ `google_calendar.py`, `gmail_plugin.py` plugins. |
 | Telegram / Discord bots | ✅ Telegram channel + Safe Comms inbox with governed replies. |
 | CRM / database / business figures | ✅ `crm_sync.py`, `meta_ads.py`, `stock_quotes.py`, `analytics.py`, the Signal Layer. |
+
+## The one place we deliberately diverge from the reference
+
+The reference's cards show a marketing agency's KPIs — leads found, cold emails drafted, ad spend,
+MRR. Nerva has no such numbers, and inventing plausible ones onto a wall screen is exactly the
+failure this codebase is built to avoid. The same card slots therefore carry figures this hub can
+prove: roster size, agents executing, tasks running/waiting, measured %-on-device, the resident
+local model, whether a cloud lane was reported, decisions pending, and a subsystem status rail
+(server, model, mic, STT, TTS, strict-local, task feed). Anything unmeasured renders `—` with the
+reason in its `title` — see `wl-miss` in `wall.tsx` and the test that pins it.
 
 ## What is genuinely missing after this change
 

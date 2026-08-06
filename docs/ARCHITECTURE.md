@@ -245,6 +245,8 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 |------|---------|-------------|
 | `frontend/src/voice.ts` | mic capture + VAD + STT call + TTS playback + hands-free loop + opt-in barge-in | `useVoice` |
 | `frontend/src/orb.tsx` | the voice-reactive particle sphere: state→visual contract (only LISTENING uses the measured mic RMS) + Canvas-2D renderer; used by cinema mode and the cockpit voice pill | `VoiceOrb`, `orbVisual` |
+| `frontend/src/burst.tsx` | the neural firing field: real cabinet tiers → dendrite trees, with `burstEnergy()` reporting whether the light is a measured mic level, live work, or idle | `NeuralBurst`, `burstRegions`, `burstEnergy` |
+| `frontend/src/wall.tsx` | the wall-screen briefing board (cinema `brain` stage): chrome, stat cards, subsystem rail, spoken line — every cell proven or `—` | `BriefingWall`, `wallState` |
 | `agents/web.py` | `POST /api/voice/stt` (raw audio body → Whisper), `GET /api/voice/capabilities` | `stt_endpoint`, `_stt_engine`, `voice_capabilities` |
 | `agents/web.py` | `POST /tts` (text → cloned voice, fallback chain) | `tts_endpoint` |
 
