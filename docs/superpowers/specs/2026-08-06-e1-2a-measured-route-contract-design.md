@@ -70,7 +70,9 @@ this package's authority.
 ### In scope
 
 1. Strict owner-local route-label parsing and content fingerprinting.
-2. Conversion to accepted E9 benchmark cases without committing owner prompts.
+2. Conversion to accepted E9 benchmark cases without committing owner prompts. E9
+   necessarily persists those prompts in its owner-local suite file before retaining
+   runs, so the explicit store root shares the same owner retention boundary.
 3. A current-router runner that captures exactly one `DecisionRecord`, retains its
    fingerprint, and scores `accepted` or `rejected` separately from the actual route.
 4. One unretained warm-up followed by exactly five retained, comparable runs.
@@ -85,8 +87,9 @@ this package's authority.
 
 - No production selector, routing-table, orchestrator, model, provider, workflow,
   endpoint, HUD, mobile, Action Kernel, or Ultron change.
-- No automatic telemetry discovery, new persistence, scheduled owner-data job, or CI
-  upload of local evidence.
+- No automatic telemetry discovery, second persistence implementation, scheduled
+  owner-data job, or CI upload of local evidence. The accepted E9 store remains the
+  only persistence path.
 - No real-task fixture or generated owner report committed to Git.
 - No cost claim for CPU/GPU/NPU, energy, hardware, downstream agents, tools, actions,
   or the full task.
@@ -100,10 +103,12 @@ this package's authority.
 
 Create `agents/core/cortex_measured_compare.py` with two input records:
 
-- `RouteLabelCase`: bounded canonical `case_id`, raw text held only in local memory,
-  `owner_private_local` privacy, non-empty unique acceptable primary routes, canonical
-  task category, and a lowercase 64-hex source-record digest. Its normalized request
-  digest is derived, never caller-supplied.
+- `RouteLabelCase`: bounded canonical `case_id`, raw text held in local memory and in
+  the explicitly approved owner-local E9 suite file, `owner_private_local` privacy,
+  non-empty unique acceptable primary routes, canonical task category, and a lowercase
+  64-hex source-record digest. Its normalized request digest is derived only through
+  `DecisionRequest.from_input(text, {}).text_digest`, never caller-supplied or
+  reimplemented.
 - `RouteLabelSet`: schema `nerva.cortex.route-label-set.v1`, canonical ID, bounded
   sampling rule, canonical UTC source window, explicit `owner_attested=true`, bounded
   retention-policy ID, and at least 20 cases. Its content fingerprint covers every
@@ -115,12 +120,16 @@ numbers, unknown fields, invalid timestamps, duplicate case IDs or normalized re
 digests, fewer than 20 cases, non-local privacy, missing attestation/policy/sampling
 metadata, malformed source digests, and any acceptable route outside the supplied
 current route registry. The label file remains caller-owned and is never written by
-the module.
+the module. Its `retention_policy_id` covers the label file and every derived local
+suite, run, JSON report, and Markdown report artifact.
 
 `build_owner_route_suite(label_set)` returns one E9 `BenchmarkCase` per label, all
 fixed to `owner_private_local`, `allowed_lanes=("local",)`, and an exact `accepted`
 criterion. Case artifact references contain only the label-set and case fingerprints,
-not local paths or source identifiers.
+not local paths or source identifiers. `ensure_owner_route_suite(store, label_set)`
+reuses the latest stored version only when ordered case IDs and content fingerprints
+match exactly; otherwise it writes a new E9 suite version. This accepted E9 write
+persists raw prompt text in `<explicit-store-root>/suites/<suite>/vN.jsonl`.
 
 ### Measured current-router runner
 
@@ -143,9 +152,12 @@ LLM fallback fails before prompt disclosure to a model.
 
 ### Run batch
 
-`run_measured_comparison(...)` detects one E9.1 `EnvironmentProfile`, constructs the
-immutable E9 suite, performs one warm-up that is never stored, then performs exactly
-five retained E9 runs. It fixes the lane to `local`, candidate identity to
+`run_measured_comparison(..., store_root: Path, ...)` requires a non-default,
+explicitly supplied owner-approved local root, constructs `BenchmarkStore(store_root)`,
+detects one E9.1 `EnvironmentProfile`, ensures the immutable E9 suite, performs one
+warm-up that is never stored, then performs exactly five retained E9 runs. It never
+falls back to `BenchmarkStore()` or `data_path("benchmarks")`. It fixes the lane to
+`local`, candidate identity to
 `current-router-e1.2a`, baseline to none, and source revision to an exact lowercase
 commit SHA. Run IDs include the label fingerprint and repetition index; each run still
 retains its own timestamps and canonical fingerprint.
@@ -158,9 +170,13 @@ executing inside the module is trusted.
 
 ### Report
 
-`build_measured_report(batch, store, label_set)` first proves that every run is present
-in the supplied E9 store and that all runs have identical suite version, revision,
-candidate/baseline identity, local lane, case fingerprints, and result coverage.
+`build_measured_report(batch, store, label_set)` first rebuilds the expected E9 cases
+from the label set, loads the exact stored suite version, and proves ordered case IDs
+and content fingerprints match exactly. It then proves that every run is present in
+the supplied E9 store and that all runs have identical suite version, revision,
+candidate/baseline identity, local lane, case fingerprints, and result coverage. Run
+agreement alone is insufficient because a mutually consistent run set could otherwise
+be unrelated to the supplied labels.
 
 `MeasuredComparisonReport` uses schema
 `nerva.cortex.measured-comparison.v1` and records:
@@ -195,19 +211,24 @@ aggregate measurements, limitations, and owner gates.
 ignored owner-local label JSON
   -> strict RouteLabelSet in memory
   -> owner-private E9 BenchmarkCase suite
+  -> raw prompts persisted in explicit owner-local suite vN.jsonl
   -> warm-up (discarded)
   -> 5 x ShadowDecisionRouter + current_router_runner
-  -> retained BenchmarkRun records in owner-local BenchmarkStore
+  -> retained BenchmarkRun records in owner-local runs.jsonl
   -> retained-run and label-set validation
-  -> privacy-minimised JSON/Markdown MeasuredComparisonReport
+  -> privacy-minimised owner-local JSON/Markdown MeasuredComparisonReport
 ```
 
-No raw input crosses from the first three nodes into the report. The module does not
-select a default local file, scan a data directory, or upload an artifact.
+Raw input is present in the caller-owned label file and the E9 suite copy required for
+retention. It does not enter `runs.jsonl`, JSON reports, or Markdown reports. The module
+does not select a default label/store path, scan a data directory, or upload an
+artifact.
 
 ## Failure Behavior
 
 - Missing/malformed/unsafe label file: fail before router construction.
+- Missing, implicit, symlinked, or otherwise unsafe store root: fail before persisting
+  the suite; never fall back to the repository's default benchmark path.
 - Fewer than 20 unique tasks or incomplete labels: fail before warm-up.
 - Configured or late-injected LLM: fail before model invocation and before retention.
 - Zero/multiple shadow records or route mismatch: retain no successful sample for that
@@ -223,10 +244,13 @@ select a default local file, scan a data directory, or upload an artifact.
 
 ## Privacy and Authority
 
-The owner supplies the local file path explicitly. Every case is local-only and the
-E9 lane guard rejects CI/cloud execution. Raw prompts exist only in the caller-owned
-file and process memory. Fingerprints remain pseudonymous/linkable and are covered by
-the declared retention/access/deletion policy; they are not anonymous.
+The owner supplies both the label-file path and E9 store root explicitly. Every case is
+local-only and the E9 lane guard rejects CI/cloud execution. Raw prompts exist in the
+caller-owned label file, process memory, and the required owner-local E9 suite
+`vN.jsonl`; `runs.jsonl` and reports retain only privacy-minimised evidence. The named
+retention/access/deletion policy covers all five artifact classes: label file, suite,
+runs, JSON report, and Markdown report. Fingerprints remain pseudonymous/linkable and
+are not anonymous.
 
 The label file may say `owner_attested=true`, but this is a typed declaration, not
 proof of consent or label correctness. The owner task remains open until the owner
@@ -254,7 +278,9 @@ The red/green matrix covers:
 5. raw prompt/source/note/exception-message absence from JSON and Markdown;
 6. warm-up exclusion, five retained repetitions, deterministic median and nearest-rank
    p95;
-7. mixed revision/suite/environment/repetition refusal and unretained-run refusal;
+7. mixed revision/suite/environment/repetition refusal, unretained-run refusal, exact
+   stored-suite-to-label case/fingerprint binding, and refusal to use an implicit
+   default store;
 8. zero provider charge only under deterministic local evidence, with every other cost
    dimension explicitly unmeasured;
 9. retained negative adequacy versus incomplete error/unscored evidence;
@@ -296,8 +322,10 @@ implementation, and factual ledger integration as reviewable commits. The PR clo
 
 Rollback is one coherent revert of the adapter/report, helper invocation,
 documentation, owner-task entry, and factual manifest/backlog references. E1.0,
-E1.1, E9.0, E9.1, production routing, and owner-private files remain untouched. No
-schema migration or compensating production action is required.
+E1.1, E9.0, E9.1, and production routing remain untouched. A Git revert does not
+delete owner-private label, suite, run, or report artifacts; those follow the named
+retention/deletion policy at the explicitly supplied local root. No production schema
+migration or compensating action is required.
 
 ## Acceptance Boundary
 
