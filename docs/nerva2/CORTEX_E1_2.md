@@ -13,8 +13,10 @@ release readiness follows from this document.
 
 E1.2a evaluates only whether the **current router's primary route** belongs to
 the owner-declared acceptable primary routes for a retained task. The
-primary-route adequacy metric is the accepted fraction of complete, scored route
-observations. It is not answer quality, task completion, safety, selector
+primary-route adequacy metric is `accepted / (accepted + rejected)`. A rejected
+observation is valid scored negative evidence; adequacy may remain measured
+when other retained observations or measurements make the overall report
+incomplete. It is not answer quality, task completion, safety, selector
 superiority, a production route change, or an authority decision.
 
 ## External owner label schema
@@ -48,10 +50,13 @@ schema-shaped fragment uses synthetic values only:
 }
 ```
 
-`owner_attested=true` is a required integrity input for the label set. It does
-not prove consent, satisfy the owner gate, authorize retention, or permit an
-execution. The operator must separately supply the owner decisions listed in
-`docs/OWNER_TASKS.md`.
+## Owner-attestation boundary
+
+`owner_attested=true` is a typed declaration, not proof of consent or label
+correctness. It does not satisfy the owner gate, authorize retention, or permit
+an execution. The operator must separately supply the owner decisions listed in
+`docs/OWNER_TASKS.md`; until then the evidence state remains
+`owner_evidence_blocked`.
 
 ## Local invocation, with explicit paths
 
@@ -108,22 +113,52 @@ copied into a report or shared outside the owner-approved local boundary.
 | JSON report | operator-chosen report path | Privacy-minimised aggregate; same retention/access/deletion policy. |
 | Markdown report | operator-chosen report path | Privacy-minimised aggregate; same retention/access/deletion policy. |
 
-Reports expose environment digests and a separate raw E9 profile fingerprint,
-not the raw platform or Python-version strings. Digests and fingerprints remain
-pseudonymous and linkable: repeated values can correlate records, and guessable
-source inputs may be subject to dictionary comparison. They are therefore not
-safe for unrestricted publication. The policy must name who can access every
-artifact, how long it is retained, and how each copy is deleted.
+Digests and fingerprints remain pseudonymous and linkable: repeated values can
+correlate records, and guessable source inputs may be subject to dictionary
+comparison. They are therefore not safe for unrestricted publication. The
+policy must name who can access every artifact, how long it is retained, and
+how each copy is deleted.
 
 ## What is and is not measured
 
 | Dimension | State | Meaning |
 |---|---|---|
-| Primary-route adequacy | measured when retained observations are complete | Route is accepted only if it is in the owner-declared acceptable set. |
+| Primary-route adequacy | measured from scored evidence | `accepted / (accepted + rejected)`; rejected evidence is a valid scored negative. |
 | Harness latency | measured, harness-only | It does not measure a shared production path. |
 | Provider charge, compute, energy, hardware, downstream agent, tool, action | `not_measured` unless deterministic local evidence exists | No inferred resource claim. |
-| Real task-outcome quality | `not_measured` | No answer-quality, completion, or safety claim. |
+| Real task-outcome quality | `real_task_outcome_quality=not_measured` | No answer-quality, completion, or safety claim. |
 | Authority | evaluation-only | Cannot change routing, authorize, execute, promote, or mark complete. |
+
+`complete=false` is a separate honesty flag. It applies to error, unscored,
+missing required measurement, or unavailable deterministic provider-charge
+proof; it does not erase otherwise scored adequacy. A rejected observation is
+valid scored negative evidence, and adequacy may remain measured even when the
+report is incomplete.
+
+## Report v1 output contract
+
+`nerva.cortex.measured-comparison.v1` is a privacy-minimised aggregate report.
+It records the label ID/fingerprint, suite name/version, exact source revision,
+and fixed candidate/no baseline. It retains five ordered retained-run
+fingerprints and task/repetition/sample counts.
+
+The report carries the raw E9 environment-profile fingerprint separately from
+the sanitised environment evidence fingerprint and platform/Python digests; it
+does not expose raw platform or Python-version strings. It records
+accepted/rejected/error/incomplete totals, scored adequacy, and sorted
+per-actual-route aggregates.
+
+Latency median and nearest-rank p95 are measured only from
+`benchmark.harness`/`ms` observations. Provider charge is measured `$0` only
+under the full local-deterministic/no-model/no-baseline/`candidate.runner`
+USD-zero conjunction. The report leaves the following dimensions explicitly
+`not_measured`: compute/energy/hardware/downstream-agent/tool/action/executed-task-outcome.
+
+Authority is fixed `evaluation_only`, with all
+routing/authorization/execution/promotion/completion booleans false. The
+structural `from_json()` is not evidence acceptance: the rebinder must
+match the exact batch/store/labels before a report is accepted as retained
+evidence.
 
 ## Failure and completeness
 

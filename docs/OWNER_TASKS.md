@@ -14,8 +14,8 @@
   ignored-path dataset of at least 20 historical tasks; declare acceptable routes/categories;
   predeclare the sampling/exclusion rule; approve one named retention/access/deletion policy for
   the label file, E9 suite `vN.jsonl`, `runs.jsonl`, JSON report, and Markdown report; and give
-  permission for the local run. `owner_attested=true` on a label file is required integrity metadata;
-  it does not prove consent or clear this owner gate. Until these five inputs are
+  permission for the local run. `owner_attested=true` is a typed declaration, not proof of consent
+  or label correctness; it does not clear this owner gate. Until these five inputs are
   present, E1.2a is `contract_ready` but `owner_evidence_blocked`, and
   `real_task_outcome_quality=not_measured`.
 - [ ] **Run the manual-test runbook on the RTX box** — [`docs/MANUAL_TESTING.md`](MANUAL_TESTING.md),

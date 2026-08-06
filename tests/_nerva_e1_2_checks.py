@@ -2184,6 +2184,62 @@ def _check_measured_report_adversarial() -> None:
         assert provider_report.complete is False
 
 
+def _markdown_section(document: str, heading: str) -> str:
+    """Return one level-two Markdown section without accepting nearby claims."""
+
+    match = re.search(
+        rf"^## {re.escape(heading)}\n(?P<body>.*?)(?=^## |\Z)",
+        document,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    assert match is not None, f"missing section {heading!r}"
+    return match.group("body")
+
+
+def _unchecked_task_section(document: str, task_id: str) -> str:
+    """Return one unchecked owner task through its next peer task or heading."""
+
+    match = re.search(
+        rf"^- \[ \] \*\*{re.escape(task_id)}[^\n]*\*\*.*?(?=^- \[[ x]\] \*\*|^## |\Z)",
+        document,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    assert match is not None, f"missing unchecked task {task_id!r}"
+    return match.group(0)
+
+
+def _section_contains(section: str, statement: str) -> bool:
+    """Compare Markdown prose without making semantic assertions wrap-sensitive."""
+
+    return " ".join(statement.split()) in " ".join(section.split())
+
+
+def _workflow_event_paths(workflow: str, event: str) -> tuple[str, ...]:
+    """Parse one event's indented paths list rather than globally counting text."""
+
+    lines = workflow.splitlines()
+    start = next(
+        index for index, line in enumerate(lines) if line == f"  {event}:"
+    )
+    paths_start: int | None = None
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        if line.startswith("  ") and not line.startswith("    "):
+            break
+        if line == "    paths:":
+            paths_start = index
+            break
+    assert paths_start is not None
+    paths: list[str] = []
+    for line in lines[paths_start + 1 :]:
+        if line.startswith("  ") and not line.startswith("      "):
+            break
+        match = re.fullmatch(r'      - "([^"]+)"', line)
+        if match is not None:
+            paths.append(match.group(1))
+    return tuple(paths)
+
+
 def _check_operator_contract_ledgers() -> None:
     """Keep E1.2a operator claims aligned with the checked-in contract."""
 
@@ -2191,6 +2247,8 @@ def _check_operator_contract_ledgers() -> None:
     operator_contract = repository / "docs/nerva2/CORTEX_E1_2.md"
     assert operator_contract.is_file()
     contract = operator_contract.read_text(encoding="utf-8")
+
+    schema = _markdown_section(contract, "External owner label schema")
     for value in (
         "nerva.cortex.route-label-set.v1",
         "label_set_id",
@@ -2201,11 +2259,18 @@ def _check_operator_contract_ledgers() -> None:
         "case_id",
         "acceptable_primary_routes",
         "source_record_digest",
-        "BenchmarkStore",
-        "There is no committed E1.2a CLI.",
-        "store_root = Path",
-        "warm-up",
-        "five retained runs",
+    ):
+        assert _section_contains(schema, value)
+
+    invocation = _markdown_section(contract, "Local invocation, with explicit paths")
+    assert _section_contains(invocation, "There is no committed E1.2a CLI.")
+    assert _section_contains(invocation, "BenchmarkStore")
+    assert _section_contains(invocation, "store_root = Path")
+    assert _section_contains(invocation, "warm-up")
+    assert _section_contains(invocation, "five retained runs")
+
+    retained_data = _markdown_section(contract, "Stored data and owner policy")
+    for value in (
         "Label file",
         "E9 suite",
         "Retained runs",
@@ -2213,30 +2278,68 @@ def _check_operator_contract_ledgers() -> None:
         "runs.jsonl",
         "JSON report",
         "Markdown report",
-        "real_task_outcome_quality=not_measured",
-        "What is and is not measured",
-        "Failure and completeness",
+        "raw prompts",
         "pseudonymous and linkable",
-        "separate raw E9 profile fingerprint",
-        "evaluation-only",
-        "migration-free rollback",
-        "owner_evidence_blocked",
-        "primary-route adequacy",
     ):
-        assert value in contract
+        assert _section_contains(retained_data, value)
+
+    measurements = _markdown_section(contract, "What is and is not measured")
+    for value in (
+        "accepted / (accepted + rejected)",
+        "valid scored negative evidence",
+        "may remain measured",
+        "complete=false",
+        "missing required measurement",
+        "unavailable deterministic provider-charge proof",
+        "real_task_outcome_quality=not_measured",
+    ):
+        assert _section_contains(measurements, value)
+
+    report_contract = _markdown_section(contract, "Report v1 output contract")
+    for value in (
+        "nerva.cortex.measured-comparison.v1",
+        "label ID/fingerprint",
+        "suite name/version",
+        "exact source revision",
+        "fixed candidate/no baseline",
+        "five ordered retained-run fingerprints",
+        "task/repetition/sample counts",
+        "raw E9 environment-profile fingerprint",
+        "sanitised environment evidence fingerprint",
+        "platform/Python digests",
+        "accepted/rejected/error/incomplete totals",
+        "scored adequacy",
+        "sorted per-actual-route aggregates",
+        "nearest-rank p95",
+        "`benchmark.harness`/`ms`",
+        "full local-deterministic/no-model/no-baseline/`candidate.runner` USD-zero conjunction",
+        "compute/energy/hardware/downstream-agent/tool/action/executed-task-outcome",
+        "evaluation_only",
+        "all routing/authorization/execution/promotion/completion booleans false",
+        "structural `from_json()` is not evidence acceptance",
+        "exact batch/store/labels",
+    ):
+        assert _section_contains(report_contract, value)
+
+    attestation = _markdown_section(contract, "Owner-attestation boundary")
+    attestation_plain = attestation.replace("`", "")
+    assert _section_contains(attestation_plain, "owner_attested=true is a typed declaration")
+    assert _section_contains(attestation_plain, "not proof of consent or label correctness")
+    assert _section_contains(attestation, "owner_evidence_blocked")
 
     owner_tasks = (repository / "docs/OWNER_TASKS.md").read_text(encoding="utf-8")
+    e1_2b_task = _unchecked_task_section(owner_tasks, "E1.2b")
+    assert e1_2b_task.count("- [ ] **E1.2b") == 1
     for value in (
-        "E1.2b",
         "at least 20 historical tasks",
         "acceptable routes/categories",
         "sampling/exclusion rule",
         "retention/access/deletion policy",
         "permission for the local run",
-        "owner_attested=true",
-        "does not prove consent",
+        "owner_attested=true is a typed declaration",
+        "not proof of consent or label correctness",
     ):
-        assert value in owner_tasks
+        assert _section_contains(e1_2b_task.replace("`", ""), value)
 
     for path in ("docs/nerva2/M1_DELIVERY.md", "BACKLOG.md"):
         ledger = (repository / path).read_text(encoding="utf-8")
@@ -2262,7 +2365,9 @@ def _check_operator_contract_ledgers() -> None:
     workflow = (repository / ".github/workflows/nerva-roadmap.yml").read_text(
         encoding="utf-8"
     )
-    assert workflow.count('"docs/nerva2/CORTEX_E1_2.md"') == 2
+    for event in ("pull_request", "push"):
+        paths = _workflow_event_paths(workflow, event)
+        assert paths.count("docs/nerva2/CORTEX_E1_2.md") == 1
 
 
 def run_e1_2_checks() -> None:
