@@ -962,8 +962,16 @@ class BenchmarkRun:
 
     @classmethod
     def from_json(cls, payload: str) -> BenchmarkRun:
+        def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            parsed: dict[str, Any] = {}
+            for key, value in pairs:
+                if key in parsed:
+                    raise ValueError("benchmark run must not contain duplicate JSON keys")
+                parsed[key] = value
+            return parsed
+
         try:
-            raw = json.loads(payload)
+            raw = json.loads(payload, object_pairs_hook=_object)
         except (TypeError, json.JSONDecodeError) as exc:
             raise ValueError("benchmark run must be valid JSON") from exc
         _strict_keys(
@@ -1000,7 +1008,15 @@ class BenchmarkRun:
             "can_execute": False,
             "can_mark_complete": False,
         }
-        if any(raw[key] != value for key, value in immutable.items()):
+        if (
+            raw["authority"] != immutable["authority"]
+            or any(type(raw[key]) is not bool or raw[key] is not False for key in (
+                "can_change_routing",
+                "can_authorize",
+                "can_execute",
+                "can_mark_complete",
+            ))
+        ):
             raise ValueError("benchmark authority flags are immutable")
         if not isinstance(raw["results"], list):
             raise ValueError("benchmark results must use the versioned schema")
@@ -1426,6 +1442,10 @@ def _require_deterministic_router(router: Any) -> None:
         raise ValueError(
             "current-router deterministic adapter requires llm_classifier=None"
         )
+    if not callable(getattr(router, "classify_deterministic", None)):
+        raise TypeError(
+            "current-router deterministic adapter requires classify_deterministic"
+        )
 
 
 def current_router_runner(
@@ -1448,13 +1468,13 @@ def current_router_runner(
 
     async def run(prompt: str) -> BenchmarkObservation:
         _require_deterministic_router(router)
-        intent = await router.classify(prompt, dict(agents))
+        intent = await router.classify_deterministic(prompt, dict(agents))
         context = getattr(intent, "context", {})
         if not isinstance(context, Mapping):
             raise RuntimeError(
                 "current-router deterministic adapter requires inspectable provenance"
             )
-        if context.get("source") == "llm_fallback":
+        if context.get("source") in {"llm", "llm_fallback"}:
             raise RuntimeError(
                 "current-router deterministic adapter rejected LLM fallback provenance"
             )

@@ -232,6 +232,39 @@ class IntentRouter:
         # Stage 4 — general chat.
         return self._general()
 
+    async def classify_deterministic(self, text: str, agents: dict) -> Intent:
+        """Classify without consulting the optional LLM fallback capability."""
+        raw = (text or "").strip()
+        if not raw:
+            return self._general()
+
+        normalized = _normalize(raw)
+        tokens = _WORD_RE.findall(normalized)
+        wake = self._check_wake_word(tokens)
+        if wake:
+            return Intent(
+                [wake],
+                is_general=False,
+                context={"source": "wake_word", "agent": wake},
+                confidence=1.0,
+            )
+
+        scores, tags = self._score(normalized, set(tokens))
+        if scores:
+            ranked = self._rank(scores)
+            top = scores[ranked[0]]
+            return Intent(
+                ranked,
+                is_general=False,
+                context={
+                    "source": "keyword_match",
+                    "keywords_found": sorted(tags),
+                    "scores": {agent: round(score, 2) for agent, score in scores.items()},
+                },
+                confidence=min(1.0, top / W_STRONG),
+            )
+        return self._general()
+
     # ── stages ────────────────────────────────────────────────────
     def _check_wake_word(self, tokens: list[str]) -> Optional[str]:
         """Return an agent id if the input directly addresses one.

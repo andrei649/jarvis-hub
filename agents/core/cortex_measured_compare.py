@@ -50,6 +50,10 @@ _NONCE_RE = re.compile(r"[a-z0-9][a-z0-9._]{0,47}\Z")
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 _MAX_TEXT_LENGTH = 10_000
 _MAX_METADATA_LENGTH = 128
+_MAX_LABEL_BYTES = 2_000_000
+_MAX_LABEL_CASES = 1_000
+_MAX_ROUTES_PER_CASE = 32
+_MAX_REPORT_CHARACTERS = 2_000_000
 _ROOT_FIELDS = {
     "schema",
     "label_set_id",
@@ -171,7 +175,7 @@ def _fingerprint(payload: object) -> str:
 def _has_forbidden_characters(value: str) -> bool:
     return any(
         character in {"/", "\\"}
-        or unicodedata.category(character) in {"Cc", "Zl", "Zp"}
+        or unicodedata.category(character) in {"Cc", "Cs", "Zl", "Zp"}
         for character in value
     )
 
@@ -241,8 +245,37 @@ def _route_collection(allowed_routes: Collection[str]) -> frozenset[str]:
     return frozenset(_unique_routes(routes, "allowed route"))
 
 
+def _reject_link_or_reparse(path: Path, label: str) -> os.stat_result:
+    try:
+        metadata = os.lstat(path)
+    except OSError as exc:
+        raise ValueError(f"{label} must exist without redirected ancestors") from exc
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    if stat.S_ISLNK(metadata.st_mode) or bool(
+        getattr(metadata, "st_file_attributes", 0) & reparse_flag
+    ):
+        raise ValueError(f"{label} must not cross a symlink or reparse boundary")
+    return metadata
+
+
+def _validate_local_path(
+    candidate: Path,
+    *,
+    label: str,
+    require_file: bool = False,
+) -> None:
+    path = candidate if candidate.is_absolute() else Path.cwd() / candidate
+    current = Path(path.anchor)
+    for part in path.parts[1:]:
+        current /= part
+        _reject_link_or_reparse(current, label)
+    if require_file and not stat.S_ISREG(os.lstat(path).st_mode):
+        raise ValueError(f"{label} must be a regular file")
+
+
 def _load_json(path: str | Path) -> Mapping[str, Any]:
     candidate = Path(path)
+    _validate_local_path(candidate, label="route labels", require_file=True)
     if candidate.is_symlink() or not candidate.is_file():
         raise ValueError("route labels must be read from a regular non-symlink file")
     try:
@@ -251,6 +284,8 @@ def _load_json(path: str | Path) -> Mapping[str, Any]:
         raise ValueError("route labels could not be read") from exc
     if payload.startswith(b"\xef\xbb\xbf"):
         raise ValueError("route labels must not use a UTF-8 BOM")
+    if len(payload) > _MAX_LABEL_BYTES:
+        raise ValueError("route labels exceed the bounded input limit")
     try:
         text = payload.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
@@ -274,7 +309,7 @@ def _load_json(path: str | Path) -> Mapping[str, Any]:
             parse_float=_number,
             parse_constant=_number,
         )
-    except (TypeError, json.JSONDecodeError, ValueError) as exc:
+    except (RecursionError, TypeError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         raise ValueError("route labels must be strict versioned JSON") from exc
     if not isinstance(raw, Mapping):
         raise ValueError("route labels must use a root object")
@@ -881,13 +916,15 @@ class MeasuredComparisonReport:
         def _constant(_value: str) -> None:
             raise ValueError("measured report numbers must be finite")
 
+        if not isinstance(payload, str) or len(payload) > _MAX_REPORT_CHARACTERS:
+            raise ValueError("measured report exceeds the bounded input limit")
         try:
             raw = json.loads(
                 payload,
                 object_pairs_hook=_object,
                 parse_constant=_constant,
             )
-        except (TypeError, json.JSONDecodeError, ValueError) as exc:
+        except (RecursionError, TypeError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
             if isinstance(exc, ValueError) and "duplicate JSON keys" in str(exc):
                 raise
             raise ValueError("measured report must be strict JSON") from exc
@@ -988,13 +1025,17 @@ def load_route_label_set(
         raise ValueError("unsupported route label schema")
     window = _strict_keys(raw["source_window"], _WINDOW_FIELDS, "source window")
     cases_raw = raw["cases"]
-    if not isinstance(cases_raw, list):
+    if not isinstance(cases_raw, list) or len(cases_raw) > _MAX_LABEL_CASES:
         raise ValueError("route label cases must be an ordered JSON array")
     cases: list[RouteLabelCase] = []
     for index, raw_case in enumerate(cases_raw, start=1):
         case = _strict_keys(raw_case, _CASE_FIELDS, f"route label case {index}")
         routes = case["acceptable_primary_routes"]
-        if not isinstance(routes, list) or not routes:
+        if (
+            not isinstance(routes, list)
+            or not routes
+            or len(routes) > _MAX_ROUTES_PER_CASE
+        ):
             raise ValueError("acceptable routes must be a non-empty JSON array")
         routes = _unique_routes(routes, "acceptable route")
         for route in routes:
@@ -1059,14 +1100,19 @@ def ensure_owner_route_suite(
         raise ValueError("owner route suites require a BenchmarkStore")
     cases = build_owner_route_suite(label_set)
     name = _suite_name(label_set)
+    boundary = _MeasuredStoreBoundary(store)
+    boundary.suite(name, create=True)
     versions = store.versions(name)
     if versions:
         version = versions[-1]
+        boundary.version(name, version)
         stored = store.load_suite(name, version)
         if tuple(
             (case.case_id, case.content_fingerprint) for case in stored
         ) == tuple((case.case_id, case.content_fingerprint) for case in cases):
             return name, version, stored
+    next_version = (versions[-1] if versions else 0) + 1
+    boundary.version(name, next_version)
     return name, store.save_suite(name, cases, lane="local"), cases
 
 
@@ -1152,6 +1198,49 @@ def _validated_store_root(store_root: Path) -> Path:
     if not resolved.is_dir():
         raise ValueError("store root must resolve to a directory")
     return resolved
+
+
+class _MeasuredStoreBoundary:
+    """Validate every E1.2a store descendant immediately before E9 access."""
+
+    def __init__(self, store: BenchmarkStore) -> None:
+        if not isinstance(store, BenchmarkStore):
+            raise ValueError("measured store boundary requires a BenchmarkStore")
+        self.store = store
+        self.root = _validated_store_root(store.root)
+
+    def _descendant(self, *parts: str, allow_missing_final: bool = False) -> Path:
+        path = self.root
+        for index, part in enumerate(parts):
+            path /= part
+            try:
+                _reject_link_or_reparse(path, "measured store path")
+            except ValueError:
+                if allow_missing_final and index == len(parts) - 1 and not path.exists():
+                    return path
+                raise
+        return path
+
+    def suite(self, name: str, *, create: bool) -> Path:
+        suites = self.root / "suites"
+        if create and not suites.exists():
+            suites.mkdir()
+        self._descendant("suites")
+        suite = suites / name
+        if create and not suite.exists():
+            suite.mkdir()
+        self._descendant("suites", name)
+        return suite
+
+    def version(self, name: str, version: int) -> Path:
+        return self._descendant(
+            "suites", name, f"v{version}.jsonl", allow_missing_final=True
+        )
+
+    def runs(self, name: str) -> Path:
+        return self._descendant(
+            "suites", name, "runs.jsonl", allow_missing_final=True
+        )
 
 
 def _validate_measured_preflight(
@@ -1247,6 +1336,10 @@ async def run_measured_comparison(
             nonce_factory,
             repetition,
         )
+        boundary = _MeasuredStoreBoundary(store)
+        boundary.suite(suite_name, create=False)
+        boundary.version(suite_name, suite_version)
+        boundary.runs(suite_name)
         existing = store.runs(suite_name, last_n=sys.maxsize)
         if any(run.run_id == retained_run_id for run in existing):
             raise ValueError("measured run id collision")
@@ -1263,6 +1356,7 @@ async def run_measured_comparison(
         expected_fingerprint = run_fingerprint(run)
         store.record_run(run)
 
+        boundary.runs(suite_name)
         matches = tuple(
             candidate
             for candidate in store.runs(
@@ -1295,6 +1389,10 @@ def _exact_retained_runs(
     batch: MeasuredRunBatch,
     store: BenchmarkStore,
 ) -> tuple[BenchmarkRun, ...]:
+    boundary = _MeasuredStoreBoundary(store)
+    boundary.suite(batch.suite_name, create=False)
+    boundary.version(batch.suite_name, batch.suite_version)
+    boundary.runs(batch.suite_name)
     retained = store.runs(batch.suite_name, last_n=sys.maxsize)
     by_fingerprint: dict[str, list[BenchmarkRun]] = {}
     for run in retained:
@@ -1403,6 +1501,10 @@ def _derive_measured_report(
         raise ValueError("measured batch suite identity does not match its labels")
 
     expected_cases = build_owner_route_suite(label_set)
+    boundary = _MeasuredStoreBoundary(store)
+    boundary.suite(batch.suite_name, create=False)
+    boundary.version(batch.suite_name, batch.suite_version)
+    boundary.runs(batch.suite_name)
     stored_cases = store.load_suite(batch.suite_name, batch.suite_version)
     expected_sequence = tuple(
         (case.case_id, case.content_fingerprint) for case in expected_cases

@@ -13,6 +13,7 @@ from copy import deepcopy
 from dataclasses import FrozenInstanceError, fields, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -29,6 +30,7 @@ from agents.core.cortex_measured_compare import (
 from agents.core.observability.benchmark import (
     BenchmarkHarness,
     BenchmarkObservation,
+    BenchmarkRun,
     BenchmarkStore,
     Measurement,
 )
@@ -36,7 +38,7 @@ from agents.core.observability.scheduled_report import (
     EnvironmentProfile,
     run_fingerprint,
 )
-from agents.core.router import Intent
+from agents.core.router import Intent, IntentRouter
 
 _REVISION = "a" * 40
 _ARBITRARY_NOTE_SENTINEL = "arbitrary-note-sentinel"
@@ -270,6 +272,7 @@ def _check_suite_binding() -> None:
             assert "synthetic weather request" not in "".join(benchmark.artifact_refs)
 
         store = BenchmarkStore(directory / "store")
+        store.root.mkdir()
         name, version, stored = ensure_owner_route_suite(store, label_set)
         assert stored == suite
         assert version == 1
@@ -285,6 +288,7 @@ def _check_suite_binding() -> None:
         assert changed_version == 2
 
         ordered_store = BenchmarkStore(directory / "ordered-store")
+        ordered_store.root.mkdir()
         ensure_owner_route_suite(ordered_store, label_set)
         reordered = deepcopy(_document())
         reordered["cases"] = list(reversed(reordered["cases"]))
@@ -311,6 +315,11 @@ class _MeasuredRouter:
         )
         return self.last_intent
 
+    async def classify_deterministic(
+        self, text: str, agents: dict[str, object]
+    ) -> Intent:
+        return await self.classify(text, agents)
+
 
 class _NoCaptureRouter:
     def __init__(self, router, _writer) -> None:
@@ -318,6 +327,9 @@ class _NoCaptureRouter:
 
     async def classify(self, text: str, agents: dict[str, object]):
         return await self._router.classify(text, agents)
+
+    async def classify_deterministic(self, text: str, agents: dict[str, object]):
+        return await self._router.classify_deterministic(text, agents)
 
     def __getattr__(self, name: str):
         return getattr(self._router, name)
@@ -335,6 +347,13 @@ class _DoubleCaptureRouter:
         self._writer(record)
         return intent
 
+    async def classify_deterministic(self, text: str, agents: dict[str, object]):
+        intent = await self._router.classify_deterministic(text, agents)
+        record = DecisionRecord.from_intent(text=text, agents=agents, intent=intent)
+        self._writer(record)
+        self._writer(record)
+        return intent
+
     def __getattr__(self, name: str):
         return getattr(self._router, name)
 
@@ -346,6 +365,16 @@ class _MismatchedCaptureRouter:
 
     async def classify(self, text: str, agents: dict[str, object]):
         intent = await self._router.classify(text, agents)
+        self._writer(DecisionRecord.from_intent(text=text, agents=agents, intent=intent))
+        return Intent(
+            ["jarvis"],
+            is_general=False,
+            context={"source": "deterministic-test"},
+            confidence=1.0,
+        )
+
+    async def classify_deterministic(self, text: str, agents: dict[str, object]):
+        intent = await self._router.classify_deterministic(text, agents)
         self._writer(DecisionRecord.from_intent(text=text, agents=agents, intent=intent))
         return Intent(
             ["jarvis"],
@@ -375,6 +404,15 @@ class _InterleavingCaptureRouter:
 
     async def classify(self, text: str, agents: dict[str, object]):
         intent = await self._router.classify(text, agents)
+        self._writer(DecisionRecord.from_intent(text=text, agents=agents, intent=intent))
+        type(self).calls += 1
+        if type(self).calls == 2:
+            type(self).started.set()
+        await type(self).release.wait()
+        return intent
+
+    async def classify_deterministic(self, text: str, agents: dict[str, object]):
+        intent = await self._router.classify_deterministic(text, agents)
         self._writer(DecisionRecord.from_intent(text=text, agents=agents, intent=intent))
         type(self).calls += 1
         if type(self).calls == 2:
@@ -2413,7 +2451,218 @@ def _check_operator_contract_ledgers() -> None:
         assert paths.count("docs/nerva2/CORTEX_E1_2.md") == 1
 
 
+class _LateInjectingNormalRouter(IntentRouter):
+    """Fails closed only when E9 avoids the mutable normal classify path."""
+
+    def __init__(self) -> None:
+        super().__init__(config={})
+        self.normal_prompts: list[str] = []
+        self.classifier_prompts: list[str] = []
+
+    async def classify(self, text: str, agents: dict[str, object]) -> Intent:
+        self.normal_prompts.append(text)
+
+        async def _fallback(prompt: str, _ranked: list[str]) -> list[str]:
+            self.classifier_prompts.append(prompt)
+            return ["vision"]
+
+        self.llm_classifier = _fallback
+        return await super().classify(text, agents)
+
+
+def _marked_reparse_lstat(marked: Path):
+    """Return an lstat shim that models a Windows junction at one exact path."""
+
+    original = os.lstat
+
+    def _lstat(path: str | bytes | os.PathLike[str] | os.PathLike[bytes]):
+        metadata = original(path)
+        candidate = Path(path)
+        if (
+            candidate.name == marked.name
+            and candidate.parent.name == marked.parent.name
+        ):
+            return SimpleNamespace(
+                st_mode=metadata.st_mode,
+                st_file_attributes=getattr(
+                    measured_compare.stat,
+                    "FILE_ATTRIBUTE_REPARSE_POINT",
+                    0x400,
+                ),
+            )
+        return metadata
+
+    return _lstat
+
+
+def _security_redirection_probes() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        parent = directory / "label-parent"
+        parent.mkdir()
+        labels = parent / "labels.json"
+        labels.write_text(json.dumps(_document()), encoding="utf-8")
+        with (
+            patch.object(measured_compare.os, "lstat", _marked_reparse_lstat(parent)),
+            pytest.raises(ValueError),
+        ):
+            _load(parent / "labels.json")
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set = _load(_write(directory, _document()))
+        root = directory / "store"
+        root.mkdir()
+        suites = root / "suites"
+        suites.mkdir()
+        with (
+            patch.object(measured_compare.os, "lstat", _marked_reparse_lstat(suites)),
+            pytest.raises(ValueError),
+        ):
+            ensure_owner_route_suite(BenchmarkStore(root), label_set)
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set = _load(_write(directory, _document()))
+        root = directory / "store"
+        root.mkdir()
+        store = BenchmarkStore(root)
+        suite_name = measured_compare._suite_name(label_set)
+        (root / "suites").mkdir()
+        selected_suite = root / "suites" / suite_name
+        selected_suite.mkdir()
+        with (
+            patch.object(
+                measured_compare.os, "lstat", _marked_reparse_lstat(selected_suite)
+            ),
+            pytest.raises(ValueError),
+        ):
+            ensure_owner_route_suite(store, label_set)
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(directory)
+        version_path = (
+            store.root / "suites" / batch.suite_name / f"v{batch.suite_version}.jsonl"
+        )
+        with (
+            patch.object(
+                measured_compare.os, "lstat", _marked_reparse_lstat(version_path)
+            ),
+            pytest.raises(ValueError),
+        ):
+            measured_compare.build_measured_report(batch, store, label_set)
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(directory)
+        runs_path = _runs_path(store, batch.suite_name)
+        with (
+            patch.object(measured_compare.os, "lstat", _marked_reparse_lstat(runs_path)),
+            pytest.raises(ValueError),
+        ):
+            measured_compare.build_measured_report(batch, store, label_set)
+
+
+def _security_input_bound_probes() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        oversized = _write(directory, _document())
+        payload = oversized.read_bytes()
+        oversized.write_bytes(payload + b" " * (2_000_001 - len(payload)))
+        with pytest.raises(ValueError):
+            _load(oversized)
+
+        too_many = _document()
+        too_many["cases"] = [
+            {
+                **_document()["cases"][0],
+                "case_id": f"task-{number:04}",
+                "text": f"synthetic bounded request {number:04}",
+                "source_record_digest": _digest(number),
+            }
+            for number in range(1, 1_002)
+        ]
+        with pytest.raises(ValueError):
+            _load(_write(directory, too_many, "too-many.json"))
+
+        too_many_routes = _document()
+        routes = [f"route-{number:02}" for number in range(33)]
+        too_many_routes["cases"][0]["acceptable_primary_routes"] = routes
+        with pytest.raises(ValueError):
+            load_route_label_set(
+                _write(directory, too_many_routes, "too-many-routes.json"),
+                allowed_routes=routes,
+            )
+
+        surrogate = _document()
+        surrogate["cases"][0]["text"] = "escaped lone surrogate \ud800"
+        with pytest.raises(ValueError):
+            _load(_write(directory, surrogate, "surrogate.json"))
+
+        deep = directory / "deep.json"
+        deep.write_text("[" * 2_000 + "]" * 2_000, encoding="utf-8")
+        with pytest.raises(ValueError):
+            _load(deep)
+
+
+def _security_benchmark_parser_probes() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(directory)
+        report = measured_compare.build_measured_report(batch, store, label_set)
+        with pytest.raises(ValueError):
+            measured_compare.MeasuredComparisonReport.from_json(
+                report.to_json() + " " * 2_000_001
+            )
+
+        retained = store.runs(batch.suite_name, last_n=sys.maxsize)[0]
+        bool_as_number = retained.to_json().replace(
+            '"can_change_routing":false', '"can_change_routing":0', 1
+        )
+        with pytest.raises(ValueError):
+            BenchmarkRun.from_json(bool_as_number)
+        duplicate_authority = retained.to_json().replace(
+            '"can_authorize":false',
+            '"can_authorize":false,"can_authorize":false',
+            1,
+        )
+        with pytest.raises(ValueError):
+            BenchmarkRun.from_json(duplicate_authority)
+
+
+def _check_security_hold_remediation() -> None:
+    """Consolidated red/green probes for every accepted Task 6 security finding."""
+
+    failures: list[str] = []
+
+    def probe(label: str, operation) -> None:
+        try:
+            operation()
+        except BaseException as exc:  # collect every red class before failing once
+            failures.append(f"{label}: {type(exc).__name__}: {exc}")
+
+    def late_injection() -> None:
+        router = _LateInjectingNormalRouter()
+        observation = asyncio.run(
+            measured_compare.current_router_runner(
+                router,
+                {"jarvis": object(), "vision": object()},
+            )("an unmatched owner-local prompt")
+        )
+        assert observation.route_id == "jarvis"
+        assert router.normal_prompts == []
+        assert router.classifier_prompts == []
+
+    probe("late classifier injection", late_injection)
+    probe("retention path redirections", _security_redirection_probes)
+    probe("retained-run authority parser", _security_benchmark_parser_probes)
+    probe("bounded hostile parsers", _security_input_bound_probes)
+    assert not failures, "security HOLD probes failed: " + " | ".join(failures)
+
+
 def run_e1_2_checks() -> None:
+    _check_security_hold_remediation()
     _check_strict_route_labels()
     _check_suite_binding()
     _check_measured_runner()

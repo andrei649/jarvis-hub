@@ -201,6 +201,8 @@ class DecisionRecord:
 class RouterProtocol(Protocol):
     async def classify(self, text: str, agents: dict[str, Any]) -> Any: ...
 
+    async def classify_deterministic(self, text: str, agents: dict[str, Any]) -> Any: ...
+
 
 ShadowWriter = Callable[[DecisionRecord], None | Awaitable[None]]
 
@@ -220,6 +222,13 @@ class ShadowDecisionRouter:
 
     async def classify(self, text: str, agents: dict[str, Any]) -> Any:
         intent = await self._router.classify(text, agents)
+        return await self._capture(text, agents, intent)
+
+    async def classify_deterministic(self, text: str, agents: dict[str, Any]) -> Any:
+        intent = await self._router.classify_deterministic(text, agents)
+        return await self._capture(text, agents, intent)
+
+    async def _capture(self, text: str, agents: dict[str, Any], intent: Any) -> Any:
         try:
             record = DecisionRecord.from_intent(text=text, agents=agents, intent=intent)
             result = self._writer(record)
