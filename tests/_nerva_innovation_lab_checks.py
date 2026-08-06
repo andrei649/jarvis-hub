@@ -341,6 +341,7 @@ def _required_prototype_progression() -> tuple[dict, dict]:
     observation, idea = baseline["records"][:2]
     rfc["stage"] = "DRAFT"
     rfc["stage_history"] = rfc["stage_history"][:1]
+    rfc["benchmark"]["baseline_ref"] = None
     rfc["prototype_disposition"]["status"] = "required"
     rfc["outcome_history"] = []
     baseline["records"] = [observation, idea, rfc]
@@ -352,6 +353,7 @@ def _required_prototype_progression() -> tuple[dict, dict]:
     candidate_rfc["stage_history"] = copy.deepcopy(
         _valid_bundle()["records"][4]["stage_history"][:3]
     )
+    candidate_rfc["benchmark"]["baseline_ref"] = "EVID-BASE-0001"
     candidate["records"].extend(copy.deepcopy(_valid_bundle()["records"][2:4]))
     candidate["records"].append(
         {
@@ -779,12 +781,36 @@ def run_checks() -> None:
     )
     draft_baseline, evidence_candidate = _draft_to_evidence_progression()
     assert validate(draft_baseline) == []
+    draft_with_arbitrary_baseline = copy.deepcopy(draft_baseline)
+    draft_with_arbitrary_baseline["records"][2]["benchmark"]["baseline_ref"] = "EVID-ARBITRARY-0001"
+    _assert_error(
+        validate(draft_with_arbitrary_baseline),
+        "benchmark baseline_ref must resolve to exact-RFC evidence",
+    )
+    draft_with_exact_baseline = copy.deepcopy(evidence_candidate)
+    draft_with_exact_baseline["records"][2]["stage"] = "DRAFT"
+    draft_with_exact_baseline["records"][2]["stage_history"] = copy.deepcopy(
+        draft_baseline["records"][2]["stage_history"]
+    )
+    for link in draft_with_exact_baseline["links"]:
+        if link["to"] == "EVID-BASE-0001":
+            link["relation"] = "CHALLENGED_BY"
+    assert validate(draft_with_exact_baseline) == []
     assert validate(evidence_candidate) == []
     assert checker["compare"](draft_baseline, evidence_candidate) == [], (
         "DRAFT -> EVIDENCE_GATHERING may fill an empty exact-evidence baseline_ref"
     )
     evidence_baseline, ready_candidate = _evidence_to_ready_assessment_progression()
     assert validate(evidence_baseline) == []
+    for name in ("authority", "security", "privacy", "data_retention", "compatibility"):
+        evidence_with_not_applicable_assessment = copy.deepcopy(evidence_baseline)
+        evidence_with_not_applicable_assessment["records"][2]["assessments"][name]["status"] = (
+            "not_applicable"
+        )
+        _assert_error(
+            validate(evidence_with_not_applicable_assessment),
+            f"{name} assessment must be unknown or assessed",
+        )
     assert validate(ready_candidate) == []
     assert checker["compare"](evidence_baseline, ready_candidate) == [], (
         "EVIDENCE_GATHERING -> READY_FOR_REVIEW may complete required assessments"
@@ -845,14 +871,8 @@ def run_checks() -> None:
         checker["compare"](evidence_candidate, rewritten_baseline),
         "benchmark baseline_ref",
     )
-    fill_without_progression = copy.deepcopy(evidence_candidate)
-    fill_without_progression["records"][2]["stage"] = "DRAFT"
-    fill_without_progression["records"][2]["stage_history"] = copy.deepcopy(
-        draft_baseline["records"][2]["stage_history"]
-    )
-    assert validate(fill_without_progression) == []
     _assert_error(
-        checker["compare"](draft_baseline, fill_without_progression),
+        checker["compare"](draft_baseline, draft_with_exact_baseline),
         "DRAFT -> EVIDENCE_GATHERING",
     )
     regressed_assessment = copy.deepcopy(ready_candidate)

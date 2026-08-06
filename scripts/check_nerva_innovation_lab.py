@@ -720,14 +720,22 @@ def _validate_rfc(
     challenged_ids = outgoing.get((rfc_id, "CHALLENGED_BY"), [])
     evidence_ids = [*supported_ids, *challenged_ids]
     stage = rfc["stage"]
-    if stage in {"EVIDENCE_GATHERING", "READY_FOR_REVIEW", "DECIDED", "OUTCOME_REVIEWED"}:
-        baseline_ref = rfc["benchmark"]["baseline_ref"]
-        if baseline_ref not in evidence_ids:
-            errors.append(f"{rfc_id}: benchmark baseline_ref must resolve to exact-RFC evidence")
-    if stage in {"READY_FOR_REVIEW", "DECIDED", "OUTCOME_REVIEWED"}:
-        for name in ("authority", "security", "privacy", "data_retention", "compatibility"):
-            if rfc["assessments"][name]["status"] != "assessed":
-                errors.append(f"{rfc_id}: {name} must be assessed before review or decision")
+    baseline_ref = rfc["benchmark"]["baseline_ref"]
+    baseline_required = stage in {
+        "EVIDENCE_GATHERING",
+        "READY_FOR_REVIEW",
+        "DECIDED",
+        "OUTCOME_REVIEWED",
+    }
+    if (baseline_ref is not None or baseline_required) and baseline_ref not in evidence_ids:
+        errors.append(f"{rfc_id}: benchmark baseline_ref must resolve to exact-RFC evidence")
+    required_assessments = ("authority", "security", "privacy", "data_retention", "compatibility")
+    for name in required_assessments:
+        status = rfc["assessments"][name]["status"]
+        if status not in {"unknown", "assessed"}:
+            errors.append(f"{rfc_id}: {name} assessment must be unknown or assessed")
+        elif stage in {"READY_FOR_REVIEW", "DECIDED", "OUTCOME_REVIEWED"} and status != "assessed":
+            errors.append(f"{rfc_id}: {name} must be assessed before review or decision")
     if rfc["external_code_involved"]:
         for name in ("license", "supply_chain"):
             if rfc["assessments"][name]["status"] != "assessed":
