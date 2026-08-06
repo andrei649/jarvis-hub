@@ -54,6 +54,11 @@ function Cell({ label, value, why, sub }: any) {
   );
 }
 
+/* The stamp is the card's provenance label, and it must be true AT THE POINT the figures
+   are read: a page-level DEMO badge does not stop `CABINET · NOW · live` or
+   `THIS SESSION · measured` from claiming seeded numbers are live/measured. In demo every
+   card stamps `demo · seeded` instead. (App supplies a demo `localPct` of 87, which would
+   otherwise have sat under a "measured" stamp.) */
 function Card({ title, stamp, children }: any) {
   return (
     <div className="wl-card">
@@ -277,13 +282,13 @@ export function BriefingWall({
 
       <div className="wl-body">
         <div className="wl-col wl-left">
-          <Card title="CABINET · NOW" stamp="live">
+          <Card title="CABINET · NOW" stamp={demo ? 'demo · seeded' : 'live'}>
             <Cell label="AGENTS IN ROSTER" value={agentEvidence ? evidenceAgents.length : null} why="roster feed unavailable" />
             <Cell label="EXECUTING" value={agentEvidence ? firing : null} why="roster feed unavailable — an executing count needs a current roster" />
             <Cell label="TASKS RUNNING" value={taskEvidence ? running.length : null} why="task feed unavailable" />
             <Cell label="TASKS WAITING" value={taskEvidence ? Math.max(0, waiting) : null} why="task feed unavailable" />
           </Card>
-          <Card title="THIS SESSION" stamp="measured">
+          <Card title="THIS SESSION" stamp={demo ? 'demo · seeded' : 'measured'}>
             <Cell label="ON-DEVICE" value={localPct == null ? null : localPct + '%'} why="no measured locality split yet" />
             <Cell label="LOCAL MODEL" value={model} why="no resident model reported" />
             <Cell label="CLOUD LANE" value={cloud} why="trust status unavailable" />
@@ -296,13 +301,13 @@ export function BriefingWall({
         </div>
 
         <div className="wl-col wl-right">
-          <Card title="ATTENTION" stamp="queue">
+          <Card title="ATTENTION" stamp={demo ? 'demo · seeded' : 'queue'}>
             <Cell label="DECISIONS PENDING" value={decisionEvidence ? decisions.length : null} why="no live decision feed — the HUD has no backend source for this yet" />
             <Cell label="UPCOMING EVENTS" value={Array.isArray(calendar) && calendar.length ? calendar.length : null} why="calendar not connected" />
             <Cell label="HEARTBEATS" value={Array.isArray(heartbeat) && heartbeat.length ? heartbeat.length : null} why="no heartbeat entries" />
           </Card>
           <div className="wl-rail">
-            <div className="wl-rail-h">SUBSYSTEM STATUS</div>
+            <div className="wl-rail-h">SUBSYSTEM STATUS{demo ? ' · DEMO' : ''}</div>
             {subsystems.map((s) => (
               <div className="wl-rail-row" key={s.k}>
                 <span className="wl-rail-k">{s.k}</span>

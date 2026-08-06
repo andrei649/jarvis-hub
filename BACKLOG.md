@@ -377,6 +377,17 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > rejection while a newer capture is live) is covered by the same guard but is **not red-provable**
 > through the hook's public state — the running loop clears status/error every iteration — so no
 > test is claimed for it. Vitest 478 → **482**.
+>
+> **Wall pass 7 — fifth review round** (head `af372eb`): (a) the DEMO corpus was labelled as live
+> at the point it was read — `CABINET · NOW · live`, `THIS SESSION · measured` (over app.tsx's demo
+> `localPct = 87`) and the subsystem rail — even though the page chrome said DEMO. Provenance is now
+> per-card: every stamp reads `demo · seeded` in demo, and the regression is driven by the REAL
+> `loadJarvisData(true)` output instead of a hand-built props shape, asserting each card's stamp.
+> (b) The two stale-rejection interleavings the previous pass called unprovable ARE provable: with a
+> `MediaRecorder` mock that never completes an utterance, the newer session parks in `listening` and
+> a stale write is plainly visible. Older-reject-after-newer-success now red-proves the catch guard;
+> the unmount-then-reject case is kept as an invariant with its weaker status labelled in the test.
+> Vitest 482 → **484**.
 
 ---
 

@@ -12,6 +12,7 @@ import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import { BriefingWall, wallState, wallClock, readTranscriptPref } from '../wall';
 import { NeuralBurst, burstRegions, burstEnergy } from '../burst';
+import { loadJarvisData } from '../api/loaders';
 import { CinemaMesh } from '../shell';
 
 let rafCb: any = null;
@@ -574,36 +575,69 @@ describe('BriefingWall — identity-only rerenders must not stop a live capture'
    a separate, watermarked provenance. Shaped like the real loader's output, not like the
    convenient `sources.agents:true` the earlier positive control used. */
 describe('BriefingWall — demo provenance is honest, not absent', () => {
-  const DEMO_LOADER_STATE = {          // exactly what loadJarvisData(true) produces
-    demo: true,
-    agents: AGENTS,
-    tasks: [],
-    sources: { tasks: false, trust: false },     // no live flags in demo — by design
-    trust: { mic: 'on', strict_local: false },
-    serverUp: false, clock: new Date(), voice: { status: 'off' },
-  };
+  /* Driven by the REAL loader: `loadJarvisData(true)` with every fetch failing is exactly
+     the offline DEMO path (it swallows network errors and keeps the seeded corpus), and
+     `localPct = 87` is what app.tsx supplies in demo. A hand-built props shape was what let
+     the previous version of this test miss that the cards still stamped "live"/"measured". */
+  async function demoLoaderProps() {
+    const prevFetch = global.fetch;
+    global.fetch = vi.fn(async () => { throw new Error('offline'); }) as any;
+    const d = await loadJarvisData(true);
+    global.fetch = prevFetch;
+    return {
+      demo: true,
+      agents: d.agents, tasks: d.tasks, sources: d.sources, trust: d.trust,
+      serverUp: d.serverUp, llm: d.llm, calendar: d.calendar, heartbeat: d.heartbeat,
+      decisions: [{}, {}],
+      localPct: 87,                       // app.tsx: `demo ? 87 : null`
+      clock: new Date(), voice: { status: 'off' },
+    };
+  }
 
-  it('renders the seeded corpus instead of an empty wall', () => {
-    const { container } = render(<BriefingWall {...DEMO_LOADER_STATE} />);
-    expect(cellValue(container, 'AGENTS IN ROSTER')).toBe('4');
-    expect(cellValue(container, 'EXECUTING')).toBe('2');
-    expect(container.querySelector('.wl-tab-right .wl-tab-badge').textContent).toBe('4');
-    expect(container.querySelector('.nburst').getAttribute('data-regions')).toBe('3');
+  it('renders the seeded corpus instead of an empty wall', async () => {
+    const props = await demoLoaderProps();
+    const { container } = render(<BriefingWall {...props} />);
+    expect(Number(cellValue(container, 'AGENTS IN ROSTER'))).toBeGreaterThan(0);
+    expect(cellValue(container, 'AGENTS IN ROSTER')).not.toBe('—');
+    expect(Number(container.querySelector('.wl-tab-right .wl-tab-badge').textContent)).toBeGreaterThan(0);
+    expect(Number(container.querySelector('.nburst').getAttribute('data-regions'))).toBeGreaterThan(0);
     expect(container.textContent).not.toContain('no agents reported');
   });
 
-  it('says DEMO in its own chrome, so the seeded corpus is never passed off as live', () => {
-    const { container } = render(<BriefingWall {...DEMO_LOADER_STATE} />);
-    expect(container.textContent).toContain('DEMO');
+  it('labels EVERY seeded figure as demo at its own card, not just in the page chrome', async () => {
+    const props = await demoLoaderProps();
+    const { container } = render(<BriefingWall {...props} />);
+    // the seeded localPct would otherwise sit under a "measured" stamp
+    expect(cellValue(container, 'ON-DEVICE')).toBe('87%');
+    const stamps = Array.from(container.querySelectorAll('.wl-card')).map((card: any) => ({
+      title: card.querySelector('.wl-card-h span').textContent,
+      stamp: card.querySelector('.wl-stamp').textContent,
+    }));
+    expect(stamps.length).toBeGreaterThanOrEqual(3);
+    stamps.forEach((c) => expect(c.stamp).toContain('demo'));
+    // and no card may still claim live/measured provenance
+    stamps.forEach((c) => {
+      expect(c.stamp).not.toBe('live');
+      expect(c.stamp).not.toBe('measured');
+    });
+    expect(container.querySelector('.wl-rail-h').textContent).toContain('DEMO');
     expect(container.textContent).toContain('seeded data');
     expect(container.querySelector('.nburst').getAttribute('data-energy-source')).toBe('demo');
   });
 
-  it('negative control — the same roster WITHOUT demo and without evidence stays empty', () => {
-    const { container } = render(<BriefingWall {...DEMO_LOADER_STATE} demo={false} />);
+  it('non-demo cards keep live/measured stamps, and no-evidence cells stay blank', () => {
+    const { container } = render(
+      <BriefingWall agents={AGENTS} tasks={[]} decisions={[]} localPct={null}
+        sources={{ tasks: false, trust: false, agents: false }} trust={null}
+        serverUp={false} clock={new Date()} voice={{ status: 'off' }} />,
+    );
+    const stamps = Array.from(container.querySelectorAll('.wl-stamp')).map((e: any) => e.textContent);
+    expect(stamps).toContain('live');
+    expect(stamps).toContain('measured');
+    stamps.forEach((st) => expect(st).not.toContain('demo'));
     expect(cellValue(container, 'AGENTS IN ROSTER')).toBe('—');
+    expect(cellValue(container, 'ON-DEVICE')).toBe('—');
     expect(container.querySelector('.nburst').getAttribute('data-regions')).toBe('0');
-    expect(container.querySelector('.wl-state-word').textContent).toBe('offline');
   });
 });
 

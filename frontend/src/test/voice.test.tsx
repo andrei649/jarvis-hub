@@ -298,13 +298,76 @@ describe('useVoice state machine', () => {
       expect(track.stop).not.toHaveBeenCalled();
     });
 
-    /* The review also asked for a case where a stale rejection arrives while a NEWER capture
-       is live. The guard covers that interleaving (the catch compares generations before
-       publishing), but it is NOT red-provable through this hook's public state: the running
-       loop calls `setError(null)` + `setStat('listening')` on every iteration, so a stale
-       write is cleared inside the same tick and never reaches an observer. Rather than ship a
-       test that passes with and without the fix, the honest coverage is the stop-before-
-       rejection case above, which does fail without the guard. */
+    /* I previously claimed these two interleavings were not red-provable, because the running
+       loop clears status/error on each iteration. That was wrong: the review pointed out the
+       missing piece — hold the NEWER session in `listening` with a recorder that never
+       completes an utterance, and a stale write becomes plainly visible. */
+    function holdingRecorder() {
+      class HoldingRecorder {
+        static isTypeSupported = vi.fn(() => true);
+        state = 'inactive';
+        ondataavailable: any = null;
+        onstop: any = null;
+        constructor(public mediaStream: any, public opts: any = {}) {}
+        start() { this.state = 'recording'; }      // never completes → the loop parks in `listening`
+        stop() { this.state = 'inactive'; }
+      }
+      Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: HoldingRecorder });
+      Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, value: HoldingRecorder });
+    }
+
+    it('an older rejection must not report an error over a newer LIVE capture', async () => {
+      holdingRecorder();
+      const track = { stop: vi.fn() };
+      const stream = { getTracks: () => [track] };
+      let rejectFirst: any;
+      const first = new Promise((_r, rj) => { rejectFirst = rj; });
+      const getUserMedia = vi.fn()
+        .mockImplementationOnce(() => first)
+        .mockImplementationOnce(() => Promise.resolve(stream));
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+
+      render(<VoiceHarness />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/voice/capabilities'));
+      fireEvent.click(screen.getByText('start'));            // gen 1 — hangs on the prompt
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+      fireEvent.click(screen.getByText('stop'));
+      fireEvent.click(screen.getByText('start'));            // gen 2 — succeeds and parks
+      await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('listening'));
+
+      rejectFirst(new Error('NotAllowedError'));             // gen 1 rejects afterwards
+      await new Promise((r) => setTimeout(r, 30));
+
+      expect(screen.getByTestId('status').textContent).toBe('listening');   // newer capture intact
+      expect(screen.getByTestId('error').textContent).toBe('');
+    });
+
+    /* Note on strength: this one asserts the observable contract but does not by itself
+       red-prove the generation guard — React already no-ops setState after unmount, so it
+       passes either way. It is kept because it pins the invariant against a future change
+       that publishes through a store or ref surviving unmount. The guard's actual proofs
+       are the two tests above, which do fail without it. */
+    it('a rejection after unmount must publish nothing at all', async () => {
+      holdingRecorder();
+      let reject: any;
+      const pending = new Promise((_r, rj) => { reject = rj; });
+      const getUserMedia = vi.fn(() => pending);
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+
+      const states: any[] = [];
+      const view = render(<VoiceHarness onState={(st) => states.push(st)} />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/voice/capabilities'));
+      fireEvent.click(screen.getByText('start'));
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      view.unmount();
+      const mark = states.length;
+
+      reject(new Error('NotAllowedError'));                  // permission denied AFTER unmount
+      await new Promise((r) => setTimeout(r, 30));
+
+      expect(states.length).toBe(mark);                      // nothing published post-unmount
+      expect(states.some((st) => st.status === 'error')).toBe(false);
+    });
 
     it('unmount while the prompt is open kills the tracks and never goes active', async () => {
       const media = deferredMedia();
