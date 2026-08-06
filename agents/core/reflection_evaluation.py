@@ -18,6 +18,7 @@ import platform
 import re
 import stat
 import sys
+import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
@@ -1390,10 +1391,12 @@ async def evaluate_lesson_plan(
         plan.suite_name,
         last_n=sys.maxsize,
     )
-    if run_id is not None:
-        _identifier(run_id, "run id")
-        if any(retained.run_id == run_id for retained in retained_runs):
-            raise ValueError("run id already exists in the retained suite")
+    effective_run_id = _identifier(
+        run_id if run_id is not None else f"run-{uuid.uuid4().hex[:12]}",
+        "run id",
+    )
+    if any(retained.run_id == effective_run_id for retained in retained_runs):
+        raise ValueError("run id already exists in the retained suite")
     cases = _materialize_cases(plan)
     version = store.save_suite(plan.suite_name, cases, lane=plan.lane)
     by_id = {item.case_id: item for item in plan.cases}
@@ -1412,7 +1415,7 @@ async def evaluate_lesson_plan(
         suite_version=version,
         lane=plan.lane,
         source_revision=plan.source_revision,
-        run_id=run_id,
+        run_id=effective_run_id,
         **kwargs,
     )
     run = replace(

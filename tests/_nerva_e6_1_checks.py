@@ -15,6 +15,7 @@ from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
+from uuid import UUID
 
 import pytest
 
@@ -724,6 +725,48 @@ async def _check_duplicate_run_id_is_rejected_before_mutation(tmp_path: Path) ->
     assert store.versions(plan.suite_name) == [1]
 
 
+async def _check_auto_run_id_collision_is_rejected_before_mutation(
+    tmp_path: Path,
+) -> None:
+    case = _case("auto-duplicate")
+    plan = _plan((case,), thresholds=LessonEvaluationThresholds())
+    report, store, _, _ = await _evaluate(
+        tmp_path,
+        plan,
+        {case.case_id: f"answer-{case.case_id}"},
+        {case.case_id: f"answer-{case.case_id}"},
+        store_name="deadbeefcafe",
+    )
+    assert report.run_id == "run-deadbeefcafe"
+    store_root = tmp_path / "deadbeefcafe"
+    before = _tree_snapshot(store_root)
+    calls = 0
+
+    async def must_not_run(_runner_input):
+        nonlocal calls
+        calls += 1
+        return f"answer-{case.case_id}"
+
+    with (
+        patch(
+            "uuid.uuid4",
+            return_value=UUID("deadbeef-cafe-0000-0000-000000000000"),
+        ),
+        pytest.raises(ValueError, match="run id already exists"),
+    ):
+        await evaluate_lesson_plan(
+            plan,
+            store=store,
+            candidate_runner=must_not_run,
+            baseline_runner=must_not_run,
+            now=lambda: _NOW,
+        )
+    assert calls == 0
+    assert store.versions(plan.suite_name) == [1]
+    assert len(store.runs(plan.suite_name)) == 1
+    assert _tree_snapshot(store_root) == before
+
+
 async def _check_execution_environment_is_redetected(tmp_path: Path) -> None:
     case = _case("forged-environment")
     plan = _plan((case,), thresholds=LessonEvaluationThresholds())
@@ -1090,6 +1133,7 @@ async def run_e6_1_checks(tmp_path: Path) -> None:
     await _check_retained_json_decoding_is_strict(tmp_path)
     await _check_strict_preflight_is_unconditional(tmp_path)
     await _check_duplicate_run_id_is_rejected_before_mutation(tmp_path)
+    await _check_auto_run_id_collision_is_rejected_before_mutation(tmp_path)
     await _check_execution_environment_is_redetected(tmp_path)
     await _check_report_output_is_create_once(tmp_path)
     await _check_report_is_reserved_before_evaluation(tmp_path)

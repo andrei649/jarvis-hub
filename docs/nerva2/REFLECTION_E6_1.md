@@ -89,10 +89,11 @@ accepted E9 run constructor; its permissive decoder never receives raw retained
 bytes.
 
 Every existing suite version and every retained run are strict-scanned before a
-new suite version, runner call, or run record can change the store, including
-auto-generated run-ID executions. An explicit run ID is collision-checked against
-that same preflight snapshot. The report path is resolved and must be disjoint
-from the retained evidence store before evaluation starts.
+new suite version, runner call, or run record can change the store. The effective
+run ID is generated when needed, validated, and collision-checked against that
+same strict preflight snapshot before case materialization, suite save, or runner
+callbacks. The report path is resolved and must be disjoint from the retained
+evidence store before evaluation starts.
 Report outputs are create-once: an existing path, including a hardlink alias, is
 rejected. Before any store mutation, the exact output namespace is reserved as
 an exclusively created empty directory, which cannot be hardlinked into retained
