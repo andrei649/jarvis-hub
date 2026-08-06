@@ -262,6 +262,20 @@ def _parked_bundle() -> dict:
     return bundle
 
 
+def _rejected_bundle() -> dict:
+    bundle = _parked_bundle()
+    decision = bundle["records"][5]
+    decision["status"] = "REJECTED"
+    decision["unresolved_requirements"] = []
+    challenge_link = next(
+        link
+        for link in bundle["links"]
+        if link["relation"] == "SUPPORTED_BY" and link["to"] == "EVID-PRIMARY-0001"
+    )
+    challenge_link["relation"] = "CHALLENGED_BY"
+    return bundle
+
+
 def _ready_bundle() -> dict:
     bundle = _valid_bundle()
     rfc = bundle["records"][4]
@@ -616,8 +630,33 @@ def run_checks() -> None:
 
     assert validate(_valid_bundle()) == []
     assert validate(_parked_bundle()) == []
+    assert validate(_rejected_bundle()) == []
     assert validate(_reopened_bundle()) == []
     assert validate(_outcome_bundle()) == []
+
+    challenge_only_acceptance = _valid_bundle()
+    for link in challenge_only_acceptance["links"]:
+        if link["relation"] == "SUPPORTED_BY":
+            link["relation"] = "CHALLENGED_BY"
+    _assert_error(
+        validate(challenge_only_acceptance),
+        "ACCEPTED_FOR_EPIC requires strong pre-decision SUPPORTED_BY evidence",
+    )
+
+    non_benchmark_acceptance = _valid_bundle()
+    non_benchmark_acceptance["records"][4]["benchmark"]["baseline_ref"] = "EVID-PRIMARY-0001"
+    _assert_error(
+        validate(non_benchmark_acceptance),
+        "benchmark baseline_ref must resolve to pre-decision SUPPORTED_BY benchmark evidence",
+    )
+
+    support_only_rejection = _parked_bundle()
+    support_only_rejection["records"][5]["status"] = "REJECTED"
+    support_only_rejection["records"][5]["unresolved_requirements"] = []
+    _assert_error(
+        validate(support_only_rejection),
+        "REJECTED requires strong pre-decision CHALLENGED_BY evidence",
+    )
 
     ready = _ready_bundle()
     assert validate(ready) == []

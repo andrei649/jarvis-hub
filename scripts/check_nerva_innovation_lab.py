@@ -716,11 +716,9 @@ def _validate_rfc(
     if not ACTOR_RE.fullmatch(rfc["author_id"]):
         errors.append(f"{rfc_id}: author_id must be a canonical ASCII lowercase slug")
 
-    evidence_ids = [
-        *outgoing.get((rfc_id, "SUPPORTED_BY"), []),
-        *outgoing.get((rfc_id, "CHALLENGED_BY"), []),
-    ]
-    evidence = [by_id[item] for item in evidence_ids]
+    supported_ids = outgoing.get((rfc_id, "SUPPORTED_BY"), [])
+    challenged_ids = outgoing.get((rfc_id, "CHALLENGED_BY"), [])
+    evidence_ids = [*supported_ids, *challenged_ids]
     stage = rfc["stage"]
     if stage in {"EVIDENCE_GATHERING", "READY_FOR_REVIEW", "DECIDED", "OUTCOME_REVIEWED"}:
         baseline_ref = rfc["benchmark"]["baseline_ref"]
@@ -827,21 +825,45 @@ def _validate_rfc(
         errors.append(f"{rfc_id}: DECIDED transition must bind the decision timestamp")
     decision_time = _parse_time(decision["decided_at"], f"{decision_id}.decided_at", errors)
 
-    predecision_ids: set[str] = set()
-    for record in evidence:
-        observed = _parse_time(record["observed_at"], f"{record['id']}.observed_at", errors)
-        if observed is not None and decision_time is not None and observed <= decision_time:
-            predecision_ids.add(record["id"])
+    predecision_supported_ids: set[str] = set()
+    predecision_challenged_ids: set[str] = set()
+    for record_ids, predecision_ids_for_relation in (
+        (supported_ids, predecision_supported_ids),
+        (challenged_ids, predecision_challenged_ids),
+    ):
+        for record_id in record_ids:
+            record = by_id[record_id]
+            observed = _parse_time(record["observed_at"], f"{record['id']}.observed_at", errors)
+            if observed is not None and decision_time is not None and observed <= decision_time:
+                predecision_ids_for_relation.add(record_id)
+    predecision_ids = predecision_supported_ids | predecision_challenged_ids
     if set(decision["evidence_refs"]) != predecision_ids:
         errors.append(
             f"{decision_id}: evidence_refs must equal the exact-RFC evidence observed by the decision"
         )
-    decision_evidence = [by_id[item] for item in decision["evidence_refs"] if item in by_id]
     status = decision["status"]
-    if status in {"ACCEPTED_FOR_EPIC", "REJECTED"} and not any(
-        item["evidence_class"] in STRONG_EVIDENCE for item in decision_evidence
+    if status == "ACCEPTED_FOR_EPIC" and not any(
+        by_id[item]["evidence_class"] in STRONG_EVIDENCE for item in predecision_supported_ids
     ):
-        errors.append(f"{decision_id}: durable decision requires strong evidence")
+        errors.append(
+            f"{decision_id}: ACCEPTED_FOR_EPIC requires strong pre-decision SUPPORTED_BY evidence"
+        )
+    if status == "ACCEPTED_FOR_EPIC":
+        baseline_ref = rfc["benchmark"]["baseline_ref"]
+        if (
+            baseline_ref not in predecision_supported_ids
+            or by_id[baseline_ref]["evidence_class"] != "benchmark"
+        ):
+            errors.append(
+                f"{rfc_id}: benchmark baseline_ref must resolve to pre-decision "
+                "SUPPORTED_BY benchmark evidence"
+            )
+    if status == "REJECTED" and not any(
+        by_id[item]["evidence_class"] in STRONG_EVIDENCE for item in predecision_challenged_ids
+    ):
+        errors.append(
+            f"{decision_id}: REJECTED requires strong pre-decision CHALLENGED_BY evidence"
+        )
 
     epic_ids = outgoing.get((decision_id, "ACCEPTED_AS"), [])
     outcome_tail = rfc["outcome_history"][-1]["to_status"] if rfc["outcome_history"] else None
