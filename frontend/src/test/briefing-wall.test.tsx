@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
-import { BriefingWall, wallState, wallClock, readTranscriptPref } from '../wall';
+import { BriefingWall, wallState, wallClock, readTranscriptPref, cardStamp } from '../wall';
 import { NeuralBurst, burstRegions, burstEnergy } from '../burst';
 import { loadJarvisData } from '../api/loaders';
 import { CinemaMesh } from '../shell';
@@ -27,10 +27,28 @@ afterEach(() => { vi.restoreAllMocks(); });
 /* Read one stat cell by its label. Assertions target the cell, never the whole wall —
    the wall renders a live clock and a date, so a DOM-wide substring check on a digit is
    an assertion about the time of day. */
+function cellRow(container: any, label: string) {
+  return Array.from(container.querySelectorAll('.wl-row'))
+    .find((r: any) => r.querySelector('.wl-k') && r.querySelector('.wl-k').textContent === label) as any;
+}
 function cellValue(container: any, label: string) {
-  const row = Array.from(container.querySelectorAll('.wl-row'))
-    .find((r: any) => r.querySelector('.wl-k') && r.querySelector('.wl-k').textContent === label);
-  return row ? (row as any).querySelector('.wl-v').textContent.trim() : null;
+  const row = cellRow(container, label);
+  if (!row) return null;
+  const v = row.querySelector('.wl-v').cloneNode(true) as any;
+  const tag = v.querySelector('.wl-prov');          // the provenance tag is not the value
+  if (tag) tag.remove();
+  return v.textContent.trim();
+}
+// per-cell provenance: 'live' | 'seeded' | 'none'
+function cellProv(container: any, label: string) {
+  const row = cellRow(container, label);
+  return row ? row.getAttribute('data-prov') : null;
+}
+function cardStamps(container: any) {
+  return Object.fromEntries(Array.from(container.querySelectorAll('.wl-card')).map((card: any) => [
+    card.querySelector('.wl-card-h span').textContent,
+    card.querySelector('.wl-stamp').textContent,
+  ]));
 }
 
 const AGENTS = [
@@ -589,7 +607,7 @@ describe('BriefingWall — demo provenance is honest, not absent', () => {
       agents: d.agents, tasks: d.tasks, sources: d.sources, trust: d.trust,
       serverUp: d.serverUp, llm: d.llm, calendar: d.calendar, heartbeat: d.heartbeat,
       decisions: [{}, {}],
-      localPct: 87,                       // app.tsx: `demo ? 87 : null`
+      localPct: 87, localPctSource: 'seeded',   // app.tsx: `demo ? 87 : null`
       clock: new Date(), voice: { status: 'off' },
     };
   }
@@ -609,18 +627,15 @@ describe('BriefingWall — demo provenance is honest, not absent', () => {
     const { container } = render(<BriefingWall {...props} />);
     // the seeded localPct would otherwise sit under a "measured" stamp
     expect(cellValue(container, 'ON-DEVICE')).toBe('87%');
-    const stamps = Array.from(container.querySelectorAll('.wl-card')).map((card: any) => ({
-      title: card.querySelector('.wl-card-h span').textContent,
-      stamp: card.querySelector('.wl-stamp').textContent,
-    }));
+    const stamps = Object.values(cardStamps(container));
     expect(stamps.length).toBeGreaterThanOrEqual(3);
-    stamps.forEach((c) => expect(c.stamp).toContain('demo'));
-    // and no card may still claim live/measured provenance
-    stamps.forEach((c) => {
-      expect(c.stamp).not.toBe('live');
-      expect(c.stamp).not.toBe('measured');
+    stamps.forEach((st: any) => expect(st).toContain('demo'));
+    stamps.forEach((st: any) => {
+      expect(st).not.toBe('live');
+      expect(st).not.toBe('measured');
     });
-    expect(container.querySelector('.wl-rail-h').textContent).toContain('DEMO');
+    expect(cellProv(container, 'ON-DEVICE')).toBe('seeded');
+    expect(cellProv(container, 'AGENTS IN ROSTER')).toBe('seeded');
     expect(container.textContent).toContain('seeded data');
     expect(container.querySelector('.nburst').getAttribute('data-energy-source')).toBe('demo');
   });
@@ -638,6 +653,82 @@ describe('BriefingWall — demo provenance is honest, not absent', () => {
     expect(cellValue(container, 'AGENTS IN ROSTER')).toBe('—');
     expect(cellValue(container, 'ON-DEVICE')).toBe('—');
     expect(container.querySelector('.nburst').getAttribute('data-regions')).toBe('0');
+  });
+});
+
+/* A connected DEMO is the mirror of the offline one: `loadJarvisData(demo)` keeps polling
+   and replaces seeded values with real ones as each backend source answers, setting the
+   matching `sources.*` flag. Labelling those live values "seeded" is the same class of lie
+   as labelling seeded values "live" — and because sources answer independently, one card
+   can hold both at once. Provenance is therefore per cell, and the card stamp is derived. */
+describe('BriefingWall — connected and mixed DEMO tell the truth per value', () => {
+  const LIVE_AGENTS = AGENTS.map((a) => ({ ...a, name: a.name + ' (real)' }));
+
+  it('connected demo: a live roster is labelled live, not seeded', () => {
+    const { container } = render(
+      <BriefingWall demo={true} agents={LIVE_AGENTS} tasks={TASKS}
+        sources={{ agents: true, tasks: true, trust: true }} trust={{ mic: 'on' }}
+        llm={{ state: 'ready', model: 'gemma-4-26b', residents: [] }}
+        localPct={91} localPctSource="measured"
+        decisions={[]} calendar={[]} heartbeat={[]}
+        serverUp={true} clock={new Date()} voice={{ status: 'off' }} />,
+    );
+    expect(cellProv(container, 'AGENTS IN ROSTER')).toBe('live');
+    expect(cellProv(container, 'TASKS RUNNING')).toBe('live');
+    expect(cellProv(container, 'ON-DEVICE')).toBe('live');
+    expect(cellProv(container, 'LOCAL MODEL')).toBe('live');
+    const stamps = cardStamps(container);
+    expect(stamps['CABINET · NOW']).toBe('live');
+    expect(stamps['THIS SESSION']).toBe('measured');
+    // no live-sourced cell may carry a seeded tag
+    ['AGENTS IN ROSTER', 'EXECUTING', 'TASKS RUNNING', 'ON-DEVICE', 'LOCAL MODEL'].forEach((label) => {
+      expect(cellRow(container, label).querySelector('.wl-prov')).toBeNull();
+    });
+  });
+
+  it('partially connected demo: the card says mixed, and each cell says which it is', () => {
+    const { container } = render(
+      <BriefingWall demo={true} agents={LIVE_AGENTS} tasks={[]}
+        sources={{ agents: true, tasks: false, trust: false }}   // roster live, rest not
+        trust={null} llm={{ state: 'unknown', residents: [] }}
+        localPct={87} localPctSource="seeded"                     // still the demo sample
+        decisions={[{}, {}]} calendar={[{}]} heartbeat={[]}
+        serverUp={true} clock={new Date()} voice={{ status: 'off' }} />,
+    );
+    // the roster really arrived…
+    expect(cellProv(container, 'AGENTS IN ROSTER')).toBe('live');
+    // …while %-local is still the demo sample, and it says so on the cell
+    expect(cellProv(container, 'ON-DEVICE')).toBe('seeded');
+    expect(cellValue(container, 'ON-DEVICE')).toBe('87%');
+    expect(cellRow(container, 'ON-DEVICE').querySelector('.wl-prov')).toBeTruthy();
+    // decisions have no live feed at all, so they stay seeded in demo
+    expect(cellProv(container, 'DECISIONS PENDING')).toBe('seeded');
+    expect(cellProv(container, 'UPCOMING EVENTS')).toBe('seeded');
+    const stamps = cardStamps(container);
+    expect(stamps['CABINET · NOW']).toBe('live');                 // only live cells shown
+    expect(stamps['THIS SESSION']).toBe('demo · seeded');         // only the seeded one shown
+    expect(stamps['ATTENTION']).toBe('demo · seeded');
+  });
+
+  it('a single card holding both sources reads "mixed", never one or the other', () => {
+    const { container } = render(
+      <BriefingWall demo={true} agents={LIVE_AGENTS} tasks={[]}
+        sources={{ agents: true, tasks: false, trust: false, calendar: true }}
+        trust={null} llm={{ state: 'unknown', residents: [] }}
+        localPct={null} decisions={[{}]} calendar={[{}, {}]} heartbeat={[]}
+        serverUp={true} clock={new Date()} voice={{ status: 'off' }} />,
+    );
+    // ATTENTION now holds a seeded decision count AND a live calendar count
+    expect(cellProv(container, 'DECISIONS PENDING')).toBe('seeded');
+    expect(cellProv(container, 'UPCOMING EVENTS')).toBe('live');
+    expect(cardStamps(container)['ATTENTION']).toBe('mixed · live + seeded');
+  });
+
+  it('cardStamp derives from the cells actually shown, ignoring blanks', () => {
+    expect(cardStamp(['live', 'live'], 'live')).toBe('live');
+    expect(cardStamp(['seeded', null], 'live')).toBe('demo · seeded');
+    expect(cardStamp(['live', 'seeded'], 'live')).toBe('mixed · live + seeded');
+    expect(cardStamp([null, null], 'measured')).toBe('measured');
   });
 });
 

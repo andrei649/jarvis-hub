@@ -388,6 +388,18 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > a stale write is plainly visible. Older-reject-after-newer-success now red-proves the catch guard;
 > the unmount-then-reject case is kept as an invariant with its weaker status labelled in the test.
 > Vitest 482 → **484**.
+>
+> **Wall pass 8 — sixth review round** (head `6b57faf`): the per-card demo stamp added in pass 7 was
+> the mirror of the bug it fixed. A **connected** demo keeps polling and replaces seeded values with
+> real ones as each source answers (`sources.agents`, `.calendar`, `.heartbeat`, `.tasks`, `.trust`
+> are set independently), so stamping every card `demo · seeded` from `demo === true` relabelled
+> live data as seeded — and one card can legitimately hold both at once, which no single card label
+> can describe. Provenance is now **per cell** (`data-prov`, plus a visible `seeded` tag on seeded
+> values), and the card stamp is *derived* from the cells it actually shows: `live`/`measured`,
+> `demo · seeded`, or `mixed · live + seeded`. `localPct` provenance is passed from `app.tsx`
+> (`measured` / `strict-local` / `seeded`) instead of inferred from `demo`. Vitest 484 → **488**,
+> with connected, partially-connected and mixed-card regressions alongside the offline-demo and
+> non-demo controls.
 
 ---
 

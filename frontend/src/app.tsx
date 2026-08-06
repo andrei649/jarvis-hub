@@ -121,6 +121,10 @@ function App() {
   // → demo sample → unknown (hidden, never faked).
   const localPct = (locality && locality.local_pct != null) ? locality.local_pct
     : trust.strict_local ? 100 : (demo ? 87 : null);
+  // …and WHERE it came from, so the wall can label it truthfully instead of inferring
+  // "seeded" from `demo` (a connected demo measures a real split like any other session).
+  const localPctSource = (locality && locality.local_pct != null) ? 'measured'
+    : trust.strict_local ? 'strict-local' : (demo ? 'seeded' : null);
   const liveModes = useLiveModes(); // P4: stream live data into the capability modes; reports which keys are live
   // H22 — first-party page-view beacon. Fires once on load (privacy-first, no
   // cookies/PII; see analytics.ts), then once per HUD view change. The SPA has no
@@ -459,7 +463,7 @@ function App() {
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
         ui={{ look, setLook, density, setDensity, motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
-      {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} voice={voice} decisions={decisions} calendar={calendar} heartbeat={heartbeat} serverUp={serverUp} clock={clock} motion={motion} onExit={() => setCinema(false)} t={t} />}
+      {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} voice={voice} decisions={decisions} calendar={calendar} heartbeat={heartbeat} serverUp={serverUp} clock={clock} motion={motion} localPctSource={localPctSource} onExit={() => setCinema(false)} t={t} />}
     </div>
   );
 }

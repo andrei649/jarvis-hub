@@ -40,18 +40,36 @@ export function wallState({ voice = null, agents = [], tasks = [], serverUp = fa
 }
 
 /* A metric with provenance. `value === null` means "not measured" and prints as `—`
-   with `why` explaining the absence — the wall never fills a gap with a guess. */
-function Cell({ label, value, why, sub }: any) {
+   with `why` explaining the absence — the wall never fills a gap with a guess.
+
+   `prov` is per-CELL on purpose. A connected DEMO session replaces seeded values with real
+   ones as each backend source answers (see `loadJarvisData`), so one card can legitimately
+   hold live and seeded figures at the same time and no single card-level label can describe
+   them all truthfully. A seeded value carries its own tag; the card stamp is derived from
+   the cells it actually holds. */
+function Cell({ label, value, why, sub, prov }: any) {
   const missing = value === null || value === undefined || value === '';
   return (
-    <div className="wl-row">
+    <div className="wl-row" data-prov={missing ? 'none' : (prov || 'live')}>
       <span className="wl-k">{label}</span>
       <span className={'wl-v' + (missing ? ' wl-miss' : '')} title={missing ? (why || 'no evidence available') : undefined}>
         {missing ? '—' : value}
+        {!missing && prov === 'seeded' && <span className="wl-prov" title="seeded demo value, not a live reading">seeded</span>}
       </span>
       {sub && <span className="wl-sub">{sub}</span>}
     </div>
   );
+}
+
+/* The card's stamp is a summary of the provenance of the values it is actually showing —
+   never a blanket assumption from `demo`. Cells with no value contribute nothing. */
+export function cardStamp(provs: any[], liveLabel: string) {
+  const shown = (Array.isArray(provs) ? provs : []).filter(Boolean);
+  const seeded = shown.some((p) => p === 'seeded');
+  const live = shown.some((p) => p === 'live');
+  if (seeded && live) return 'mixed · live + seeded';
+  if (seeded) return 'demo · seeded';
+  return liveLabel;
 }
 
 /* The stamp is the card's provenance label, and it must be true AT THE POINT the figures
@@ -202,7 +220,7 @@ function EdgeTab({ side, label, badge }: any) {
 export function BriefingWall({
   agents = [], tasks = [], decisions = [], calendar = [], heartbeat = [],
   llm = null, trust = null, sources = null, localPct = null, voice = null,
-  serverUp = false, demo = false, clock = null, motion = 'lively', onExit,
+  serverUp = false, demo = false, clock = null, motion = 'lively', localPctSource = null, onExit,
 }: any) {
   const list = Array.isArray(agents) ? agents : [];
   // Evidence gate (review finding, 2026-08-06): `sources.tasks` is the proof that the
@@ -243,6 +261,25 @@ export function BriefingWall({
   // Raw mic state, un-normalized: only an exact 'on'/'off' means anything downstream.
   const micState = trust && typeof trust.mic === 'string' ? trust.mic : null;
   const model = (llm && llm.model) || (llm && Array.isArray(llm.residents) && llm.residents[0] && llm.residents[0].id) || null;
+
+  // Per-source provenance. `sources.*` is set by the loader only when THAT source answered,
+  // so a connected demo reports `live` for whatever really arrived and `seeded` only for
+  // what is still the demo corpus.
+  const provOf = (liveFlag: boolean, seededWhen: boolean) => (liveFlag ? 'live' : (demo && seededWhen ? 'seeded' : null));
+  const src = sources || {};
+  const provRoster = provOf(src.agents === true, list.length > 0);
+  const provTasks = provOf(src.tasks === true, false);        // demo seeds no tasks
+  const provModel = model ? 'live' : null;                    // llm is never demo-seeded
+  const provCloud = trustEvidence ? 'live' : null;
+  const provCal = provOf(src.calendar === true, Array.isArray(calendar) && calendar.length > 0);
+  const provHb = provOf(src.heartbeat === true, Array.isArray(heartbeat) && heartbeat.length > 0);
+  const provDecisions = decisionEvidence ? 'seeded' : null;   // no live decision feed exists
+  // %-local provenance comes from App, which knows whether it measured, proved strict-local,
+  // or fell back to the demo sample — it must not be inferred from `demo` alone.
+  const provLocal = localPct == null ? null
+    : localPctSource === 'seeded' ? 'seeded'
+    : localPctSource ? 'live'
+    : (demo ? 'seeded' : 'live');
   const now = clock instanceof Date ? clock : new Date();
 
   const subsystems = [
@@ -282,16 +319,19 @@ export function BriefingWall({
 
       <div className="wl-body">
         <div className="wl-col wl-left">
-          <Card title="CABINET · NOW" stamp={demo ? 'demo · seeded' : 'live'}>
-            <Cell label="AGENTS IN ROSTER" value={agentEvidence ? evidenceAgents.length : null} why="roster feed unavailable" />
-            <Cell label="EXECUTING" value={agentEvidence ? firing : null} why="roster feed unavailable — an executing count needs a current roster" />
-            <Cell label="TASKS RUNNING" value={taskEvidence ? running.length : null} why="task feed unavailable" />
-            <Cell label="TASKS WAITING" value={taskEvidence ? Math.max(0, waiting) : null} why="task feed unavailable" />
+          <Card title="CABINET · NOW" stamp={cardStamp([
+            agentEvidence ? provRoster : null, agentEvidence ? provRoster : null,
+            taskEvidence ? provTasks : null, taskEvidence ? provTasks : null,
+          ], 'live')}>
+            <Cell label="AGENTS IN ROSTER" value={agentEvidence ? evidenceAgents.length : null} prov={provRoster} why="roster feed unavailable" />
+            <Cell label="EXECUTING" value={agentEvidence ? firing : null} prov={provRoster} why="roster feed unavailable — an executing count needs a current roster" />
+            <Cell label="TASKS RUNNING" value={taskEvidence ? running.length : null} prov={provTasks} why="task feed unavailable" />
+            <Cell label="TASKS WAITING" value={taskEvidence ? Math.max(0, waiting) : null} prov={provTasks} why="task feed unavailable" />
           </Card>
-          <Card title="THIS SESSION" stamp={demo ? 'demo · seeded' : 'measured'}>
-            <Cell label="ON-DEVICE" value={localPct == null ? null : localPct + '%'} why="no measured locality split yet" />
-            <Cell label="LOCAL MODEL" value={model} why="no resident model reported" />
-            <Cell label="CLOUD LANE" value={cloud} why="trust status unavailable" />
+          <Card title="THIS SESSION" stamp={cardStamp([provLocal, provModel, provCloud], 'measured')}>
+            <Cell label="ON-DEVICE" value={localPct == null ? null : localPct + '%'} prov={provLocal} why="no measured locality split yet" />
+            <Cell label="LOCAL MODEL" value={model} prov={provModel} why="no resident model reported" />
+            <Cell label="CLOUD LANE" value={cloud} prov={provCloud} why="trust status unavailable" />
           </Card>
         </div>
 
@@ -301,13 +341,13 @@ export function BriefingWall({
         </div>
 
         <div className="wl-col wl-right">
-          <Card title="ATTENTION" stamp={demo ? 'demo · seeded' : 'queue'}>
-            <Cell label="DECISIONS PENDING" value={decisionEvidence ? decisions.length : null} why="no live decision feed — the HUD has no backend source for this yet" />
-            <Cell label="UPCOMING EVENTS" value={Array.isArray(calendar) && calendar.length ? calendar.length : null} why="calendar not connected" />
-            <Cell label="HEARTBEATS" value={Array.isArray(heartbeat) && heartbeat.length ? heartbeat.length : null} why="no heartbeat entries" />
+          <Card title="ATTENTION" stamp={cardStamp([provDecisions, provCal, provHb], 'queue')}>
+            <Cell label="DECISIONS PENDING" value={decisionEvidence ? decisions.length : null} prov={provDecisions} why="no live decision feed — the HUD has no backend source for this yet" />
+            <Cell label="UPCOMING EVENTS" value={Array.isArray(calendar) && calendar.length ? calendar.length : null} prov={provCal} why="calendar not connected" />
+            <Cell label="HEARTBEATS" value={Array.isArray(heartbeat) && heartbeat.length ? heartbeat.length : null} prov={provHb} why="no heartbeat entries" />
           </Card>
           <div className="wl-rail">
-            <div className="wl-rail-h">SUBSYSTEM STATUS{demo ? ' · DEMO' : ''}</div>
+            <div className="wl-rail-h">SUBSYSTEM STATUS</div>
             {subsystems.map((s) => (
               <div className="wl-rail-row" key={s.k}>
                 <span className="wl-rail-k">{s.k}</span>
