@@ -7,16 +7,22 @@ import json
 import re
 import unicodedata
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from agents.core.cortex_decision import DecisionRequest
+from agents.core.cortex_decision import (
+    DecisionRecord,
+    DecisionRequest,
+    ShadowDecisionRouter,
+)
 from agents.core.observability.benchmark import (
     BenchmarkCase,
     BenchmarkCriterion,
+    BenchmarkRunner,
     BenchmarkStore,
+    current_router_runner,
 )
 
 MIN_OWNER_TASKS = 20
@@ -369,6 +375,57 @@ def ensure_owner_route_suite(
     return name, store.save_suite(name, cases, lane="local"), cases
 
 
+def measured_current_router_runner(
+    router: Any,
+    agents: Mapping[str, Any],
+    label_set: RouteLabelSet,
+    *,
+    host_id: str = "in-process",
+) -> BenchmarkRunner:
+    """Score one observed deterministic route against retained owner labels."""
+
+    if not isinstance(label_set, RouteLabelSet):
+        raise ValueError("measured route runner requires a RouteLabelSet")
+    current_router_runner(router, agents, host_id=host_id)
+
+    labels_by_request: dict[str, RouteLabelCase] = {}
+    for case in label_set.cases:
+        if case.request_digest in labels_by_request:
+            raise ValueError("measured route labels must have unique request digests")
+        labels_by_request[case.request_digest] = case
+
+    async def run(prompt: str):
+        request_digest = DecisionRequest.from_input(prompt, {}).text_digest
+        label = labels_by_request.get(request_digest)
+        if label is None:
+            raise ValueError("measured route runner requires a known route label")
+
+        records: list[DecisionRecord] = []
+        shadow_router = ShadowDecisionRouter(router, records.append)
+        observation = await current_router_runner(
+            shadow_router,
+            agents,
+            host_id=host_id,
+        )(prompt)
+        if len(records) != 1:
+            raise RuntimeError("measured route runner requires exactly one decision record")
+        record = records[0]
+        if record.selected_route != observation.route_id:
+            raise RuntimeError("measured route runner requires matching route evidence")
+        score = (
+            "accepted"
+            if observation.route_id in label.acceptable_primary_routes
+            else "rejected"
+        )
+        return replace(
+            observation,
+            response=score,
+            artifact_refs=(f"decision:{record.replay_fingerprint}",),
+        )
+
+    return run
+
+
 __all__ = [
     "CANDIDATE_ID",
     "LABEL_SCHEMA",
@@ -380,4 +437,5 @@ __all__ = [
     "build_owner_route_suite",
     "ensure_owner_route_suite",
     "load_route_label_set",
+    "measured_current_router_runner",
 ]

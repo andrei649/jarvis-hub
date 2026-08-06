@@ -2,22 +2,27 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import pytest
 
-from agents.core.cortex_decision import DecisionRequest
+from agents.core import cortex_measured_compare as measured_compare
+from agents.core.cortex_decision import DecisionRecord, DecisionRequest
 from agents.core.cortex_measured_compare import (
     LABEL_SCHEMA,
     build_owner_route_suite,
     ensure_owner_route_suite,
     load_route_label_set,
+    measured_current_router_runner,
 )
 from agents.core.observability.benchmark import BenchmarkStore
+from agents.core.router import Intent
 
 
 def _digest(number: int) -> str:
@@ -260,6 +265,178 @@ def _check_suite_binding() -> None:
         assert reordered_version == 2
 
 
+class _MeasuredRouter:
+    def __init__(self, route_id: str = "friday") -> None:
+        self.llm_classifier = None
+        self.route_id = route_id
+        self.classify_calls = 0
+        self.last_intent: Intent | None = None
+
+    async def classify(self, text: str, agents: dict[str, object]) -> Intent:
+        self.classify_calls += 1
+        self.last_intent = Intent(
+            [self.route_id],
+            is_general=False,
+            context={"source": "deterministic-test"},
+            confidence=1.0,
+        )
+        return self.last_intent
+
+
+class _NoCaptureRouter:
+    def __init__(self, router, _writer) -> None:
+        self._router = router
+
+    async def classify(self, text: str, agents: dict[str, object]):
+        return await self._router.classify(text, agents)
+
+    def __getattr__(self, name: str):
+        return getattr(self._router, name)
+
+
+class _DoubleCaptureRouter:
+    def __init__(self, router, writer) -> None:
+        self._router = router
+        self._writer = writer
+
+    async def classify(self, text: str, agents: dict[str, object]):
+        intent = await self._router.classify(text, agents)
+        record = DecisionRecord.from_intent(text=text, agents=agents, intent=intent)
+        self._writer(record)
+        self._writer(record)
+        return intent
+
+    def __getattr__(self, name: str):
+        return getattr(self._router, name)
+
+
+class _MismatchedCaptureRouter:
+    def __init__(self, router, writer) -> None:
+        self._router = router
+        self._writer = writer
+
+    async def classify(self, text: str, agents: dict[str, object]):
+        intent = await self._router.classify(text, agents)
+        self._writer(DecisionRecord.from_intent(text=text, agents=agents, intent=intent))
+        return Intent(
+            ["jarvis"],
+            is_general=False,
+            context={"source": "deterministic-test"},
+            confidence=1.0,
+        )
+
+    def __getattr__(self, name: str):
+        return getattr(self._router, name)
+
+
+class _InterleavingCaptureRouter:
+    started: asyncio.Event
+    release: asyncio.Event
+    calls = 0
+
+    def __init__(self, router, writer) -> None:
+        self._router = router
+        self._writer = writer
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.started = asyncio.Event()
+        cls.release = asyncio.Event()
+        cls.calls = 0
+
+    async def classify(self, text: str, agents: dict[str, object]):
+        intent = await self._router.classify(text, agents)
+        self._writer(DecisionRecord.from_intent(text=text, agents=agents, intent=intent))
+        type(self).calls += 1
+        if type(self).calls == 2:
+            type(self).started.set()
+        await type(self).release.wait()
+        return intent
+
+    def __getattr__(self, name: str):
+        return getattr(self._router, name)
+
+
+def _check_measured_runner() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set = _load(_write(directory, _document()))
+        agents = {"friday": object(), "jarvis": object()}
+        prompt = label_set.cases[0].text
+
+        configured = _MeasuredRouter()
+        configured.llm_classifier = object()
+        with pytest.raises(ValueError, match="llm_classifier=None"):
+            measured_current_router_runner(configured, agents, label_set)
+
+        mutable = _MeasuredRouter()
+        runner = measured_current_router_runner(mutable, agents, label_set)
+        mutable.llm_classifier = object()
+        with pytest.raises(ValueError, match="llm_classifier=None"):
+            asyncio.run(runner(prompt))
+        assert mutable.classify_calls == 0
+
+        unknown = _MeasuredRouter()
+        unknown_runner = measured_current_router_runner(unknown, agents, label_set)
+        with pytest.raises(ValueError, match="known route label"):
+            asyncio.run(unknown_runner("  UNKNOWN NORMALIZED PROMPT  "))
+        assert unknown.classify_calls == 0
+
+        accepted_router = _MeasuredRouter("friday")
+        accepted = asyncio.run(
+            measured_current_router_runner(accepted_router, agents, label_set)(prompt)
+        )
+        expected_record = DecisionRecord.from_intent(
+            text=prompt,
+            agents=agents,
+            intent=accepted_router.last_intent,
+        )
+        assert accepted.response == "accepted"
+        assert accepted.route_id == "friday"
+        assert accepted.artifact_refs == (
+            f"decision:{expected_record.replay_fingerprint}",
+        )
+        assert prompt not in "".join(accepted.artifact_refs)
+        assert label_set.cases[0].source_record_digest not in "".join(
+            accepted.artifact_refs
+        )
+
+        rejected = asyncio.run(
+            measured_current_router_runner(_MeasuredRouter("jarvis"), agents, label_set)(
+                prompt
+            )
+        )
+        assert rejected.response == "rejected"
+        assert rejected.route_id == "jarvis"
+
+        for wrapper in (_NoCaptureRouter, _DoubleCaptureRouter, _MismatchedCaptureRouter):
+            with patch.object(measured_compare, "ShadowDecisionRouter", wrapper):
+                bad_runner = measured_current_router_runner(
+                    _MeasuredRouter(), agents, label_set
+                )
+                with pytest.raises(RuntimeError):
+                    asyncio.run(bad_runner(prompt))
+
+        async def _run_concurrently() -> tuple[object, object]:
+            _InterleavingCaptureRouter.reset()
+            concurrent_runner = measured_current_router_runner(
+                _MeasuredRouter(), agents, label_set
+            )
+            first = asyncio.create_task(concurrent_runner(label_set.cases[0].text))
+            second = asyncio.create_task(concurrent_runner(label_set.cases[1].text))
+            await _InterleavingCaptureRouter.started.wait()
+            _InterleavingCaptureRouter.release.set()
+            return await asyncio.gather(first, second)
+
+        with patch.object(
+            measured_compare, "ShadowDecisionRouter", _InterleavingCaptureRouter
+        ):
+            first, second = asyncio.run(_run_concurrently())
+        assert first.response == second.response == "accepted"
+        assert first.artifact_refs != second.artifact_refs
+
+
 def run_e1_2_checks() -> None:
     _check_strict_route_labels()
     _check_suite_binding()
+    _check_measured_runner()
