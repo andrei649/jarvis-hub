@@ -23,6 +23,15 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); });
 
+/* Read one stat cell by its label. Assertions target the cell, never the whole wall —
+   the wall renders a live clock and a date, so a DOM-wide substring check on a digit is
+   an assertion about the time of day. */
+function cellValue(container: any, label: string) {
+  const row = Array.from(container.querySelectorAll('.wl-row'))
+    .find((r: any) => r.querySelector('.wl-k') && r.querySelector('.wl-k').textContent === label);
+  return row ? (row as any).querySelector('.wl-v').textContent.trim() : null;
+}
+
 const AGENTS = [
   { id: 'jarvis', name: 'Jarvis', tier: 'CNS', status: 'active' },
   { id: 'pepper', name: 'Pepper', tier: 'CNS', status: 'idle' },
@@ -143,8 +152,10 @@ describe('BriefingWall — every cell is proven or blank', () => {
       expect(m.textContent.trim()).toBe('—');
       expect(m.getAttribute('title')).toBeTruthy();      // the reason is always attached
     });
-    // no fabricated locality/model/percentage anywhere on an unmeasured wall
-    expect(container.textContent).not.toMatch(/\d+%/);
+    // no fabricated locality/model figure in the cells that would carry them
+    expect(cellValue(container, 'ON-DEVICE')).toBe('—');
+    expect(cellValue(container, 'LOCAL MODEL')).toBe('—');
+    expect(cellValue(container, 'CLOUD LANE')).toBe('—');
     expect(container.textContent).toContain('BACKEND OFFLINE');
     expect(container.textContent).toContain('nothing heard yet');
   });
@@ -239,8 +250,11 @@ describe('BriefingWall — stale evidence drives nothing', () => {
     const { container } = render(<BriefingWall {...STALE} agents={idleAgents} trust={null} />);
     // the wall must not say "working" on evidence it cannot prove
     expect(container.querySelector('.wl-state-word').textContent).toBe('standing by');
-    // …nor count them, nor badge them
-    expect(container.textContent).not.toContain('2');
+    // …nor count them (assert the exact cells: the wall also renders a live clock,
+    // so scanning the whole DOM for a digit is a time-of-day-dependent assertion)
+    expect(cellValue(container, 'TASKS RUNNING')).toBe('—');
+    expect(cellValue(container, 'TASKS WAITING')).toBe('—');
+    // …nor badge them
     expect(container.querySelector('.wl-tab-left .wl-tab-badge')).toBeNull();
     // …and the field must be told there are no tasks, so nothing fires on their account
     expect(container.querySelector('.nburst').getAttribute('data-energy-source')).toBe('idle');
