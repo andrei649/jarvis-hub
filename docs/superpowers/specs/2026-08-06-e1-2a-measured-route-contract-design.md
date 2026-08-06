@@ -181,8 +181,9 @@ be unrelated to the supplied labels.
 `MeasuredComparisonReport` uses schema
 `nerva.cortex.measured-comparison.v1` and records:
 
-- exact source revision, suite/version, label-set fingerprint, detected environment,
-  five retained run fingerprints, unique task count, and sample count;
+- exact source revision, suite/version, label-set fingerprint, privacy-minimised
+  environment evidence, five retained run fingerprints, unique task count, and
+  sample count;
 - aggregate and per-route adequacy, rejection count, error count, and incomplete
   count;
 - latency median and nearest-rank p95 in milliseconds, sourced only from measured
@@ -194,6 +195,17 @@ be unrelated to the supplied labels.
   hardware, downstream-agent, tool, and action cost;
 - immutable `evaluation_only`, `can_change_routing=false`, `can_authorize=false`,
   `can_execute=false`, `can_promote=false`, and `can_mark_complete=false` fields.
+
+The pre-acceptance v1 environment representation never serializes detected platform
+or Python-version text. `EnvironmentEvidence` contains the fixed
+`owner-local-e1-2a` runner ID, SHA-256 digests of the exact source-valid platform and
+Python-version strings, fixed `hardware_profile=not_measured`, the fixed E9
+environment schema, and a content fingerprint over that sanitised payload. The
+report's separate `environment_fingerprint` remains the SHA-256 binding over the raw
+`EnvironmentProfile.canonical_payload()`. The builder proves that raw binding before
+deriving the sanitised snapshot; structural JSON can validate the snapshot only, and
+evidence rebinding proves both. No owner report using the earlier in-progress v1
+shape was persisted, so this pre-acceptance correction requires no migration.
 
 An adequacy rejection is valid negative evidence and does not make a run incomplete.
 An error, unscored result, missing measurement, coverage mismatch, or mixed identity
@@ -255,7 +267,9 @@ artifact.
 The owner supplies both the label-file path and E9 store root explicitly. Every case is
 local-only and the E9 lane guard rejects CI/cloud execution. Raw prompts exist in the
 caller-owned label file, process memory, and the required owner-local E9 suite
-`vN.jsonl`; `runs.jsonl` and reports retain only privacy-minimised evidence. The named
+`vN.jsonl`; `runs.jsonl` and reports retain only privacy-minimised evidence. Report
+JSON and Markdown contain platform/Python digests only, never their raw detected
+strings. The named
 retention/access/deletion policy covers all five artifact classes: label file, suite,
 runs, JSON report, and Markdown report. Fingerprints remain pseudonymous/linkable and
 are not anonymous.

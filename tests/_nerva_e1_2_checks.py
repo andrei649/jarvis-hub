@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -1063,13 +1064,16 @@ def _report_fixture(
     directory: Path,
     *,
     document: dict[str, object] | None = None,
+    environment: EnvironmentProfile | None = None,
     router: _MeasuredRouter | None = None,
     nonce: str = "reportfixture",
 ):
     label_set = _load(_write(directory, document or _document()))
     store_root = directory / "report-store"
     store_root.mkdir()
-    environment = EnvironmentProfile.detect(runner_id="owner-local-e1-2a")
+    environment = environment or EnvironmentProfile.detect(
+        runner_id="owner-local-e1-2a"
+    )
     with (
         patch(
             "agents.core.observability.benchmark.time.perf_counter",
@@ -1116,7 +1120,40 @@ def _refingerprint_environment(raw: dict[str, object]) -> None:
             if key != "content_fingerprint"
         }
     )
-    raw["environment_fingerprint"] = environment["content_fingerprint"]
+
+
+def _detected_environment(
+    *,
+    system: str,
+    machine: str,
+    python_version: str,
+) -> EnvironmentProfile:
+    with (
+        patch(
+            "agents.core.observability.scheduled_report.platform.system",
+            return_value=system,
+        ),
+        patch(
+            "agents.core.observability.scheduled_report.platform.machine",
+            return_value=machine,
+        ),
+        patch(
+            "agents.core.observability.scheduled_report.platform.python_version",
+            return_value=python_version,
+        ),
+    ):
+        return EnvironmentProfile.detect(runner_id="owner-local-e1-2a")
+
+
+def _construct_report(report, **changes):
+    constructor = {
+        field.name: getattr(report, field.name)
+        for field in fields(report)
+        if field.init
+    }
+    constructor.update(changes)
+    constructor["_guard"] = measured_compare._MEASURED_REPORT_GUARD
+    return measured_compare.MeasuredComparisonReport(**constructor)
 
 
 def _guarded_batch(batch, **changes):
@@ -1257,32 +1294,110 @@ def _check_report_count_parser_attacks() -> None:
                 _refingerprint_report(impossible_route)
             )
 
+        typed_routes = tuple(
+            measured_compare.RouteAdequacyAggregate(
+                route_id=route.route_id,
+                sample_count=route.sample_count,
+                accepted_count=route.accepted_count,
+                rejected_count=route.rejected_count,
+                incomplete_count=route.incomplete_count,
+                adequacy=route.adequacy,
+            )
+            for route in report.per_actual_route
+        )
+        with pytest.raises(ValueError, match="report incomplete"):
+            _construct_report(
+                report,
+                accepted_count=0,
+                rejected_count=0,
+                incomplete_count=0,
+                overall_adequacy=Measurement("not_measured"),
+                per_actual_route=typed_routes,
+            )
+
 
 def _check_report_environment_parser_attacks() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
-        label_set, batch, store, _ = _report_fixture(directory)
+        label_set, batch, store, environment = _report_fixture(directory)
         report = measured_compare.build_measured_report(batch, store, label_set)
-        for field, attack in (
-            ("runner_id", "owner-local-e1-2a-arbitrary-note-andrei649"),
-            ("platform", "windows-amd64-arbitrary-note-andrei649"),
-            ("python_version", "3.12.1-arbitrary-note-andrei649"),
-        ):
-            raw = json.loads(report.to_json())
-            raw["environment"][field] = attack
-            _refingerprint_environment(raw)
+        raw = json.loads(report.to_json())
+        raw["environment"]["runner_id"] = (
+            "owner-local-e1-2a-arbitrary-note-andrei649"
+        )
+        _refingerprint_environment(raw)
+        with pytest.raises(ValueError, match="environment"):
+            measured_compare.MeasuredComparisonReport.from_json(
+                _refingerprint_report(raw)
+            )
+
+        for raw_field in ("platform", "python_version"):
+            changed = json.loads(report.to_json())
+            changed["environment"][raw_field] = "raw-environment-sentinel"
+            _refingerprint_environment(changed)
             with pytest.raises(ValueError, match="environment"):
                 measured_compare.MeasuredComparisonReport.from_json(
-                    _refingerprint_report(raw)
+                    _refingerprint_report(changed)
                 )
 
         markdown = measured_compare.render_measured_report(report)
         for value in (
-            report.environment.runner_id,
-            report.environment.platform,
-            report.environment.python_version,
+            environment.platform,
+            environment.python_version,
         ):
             assert value not in markdown
+
+
+def _check_environment_digest_privacy() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        platform_sentinel = "windows-beats_current_andrei649"
+        python_sentinel = "3.12.0"
+        environment = _detected_environment(
+            system="Windows",
+            machine="beats_current_andrei649",
+            python_version=python_sentinel,
+        )
+        assert environment.platform == platform_sentinel
+        label_set, batch, store, _ = _report_fixture(
+            directory,
+            environment=environment,
+            nonce="digestprivacy",
+        )
+        report = measured_compare.build_measured_report(batch, store, label_set)
+        for output in (report.to_json(), measured_compare.render_measured_report(report)):
+            assert platform_sentinel not in output
+            assert python_sentinel not in output
+            assert "beats_current" not in output
+            assert "andrei649" not in output
+        assert report.environment.platform_digest == hashlib.sha256(
+            platform_sentinel.encode("utf-8")
+        ).hexdigest()
+        assert report.environment.python_version_digest == hashlib.sha256(
+            python_sentinel.encode("utf-8")
+        ).hexdigest()
+        assert report.environment.content_fingerprint != report.environment_fingerprint
+        measured_compare.validate_measured_report_against_evidence(
+            report,
+            batch,
+            store,
+            label_set,
+        )
+
+    unusual = _detected_environment(
+        system="Linux",
+        machine="",
+        python_version="3.12.0rc1",
+    )
+    assert unusual.platform == "linux-"
+    evidence = measured_compare.EnvironmentEvidence.from_profile(unusual)
+    encoded = json.dumps(evidence.to_dict())
+    assert "linux-" not in encoded
+    assert "3.12.0rc1" not in encoded
+    assert evidence.platform_digest == hashlib.sha256(b"linux-").hexdigest()
+    assert evidence.python_version_digest == hashlib.sha256(
+        b"3.12.0rc1"
+    ).hexdigest()
 
 
 def _check_report_parser_strictness() -> None:
@@ -1316,7 +1431,7 @@ def _check_report_parser_strictness() -> None:
 
         for path, mutation in (
             (("environment",), lambda value: value.update({"unknown": True})),
-            (("environment",), lambda value: value.pop("platform")),
+            (("environment",), lambda value: value.pop("platform_digest")),
             (("latency_median",), lambda value: value.update({"unknown": True})),
             (("latency_median",), lambda value: value.pop("unit")),
             (("per_actual_route", 0), lambda value: value.update({"unknown": True})),
@@ -1345,12 +1460,6 @@ def _check_report_parser_strictness() -> None:
                 label_set,
             )
 
-        constructor = {
-            field.name: getattr(report, field.name)
-            for field in fields(report)
-            if field.init
-        }
-        constructor["_guard"] = measured_compare._MEASURED_REPORT_GUARD
         for flag in (
             "can_change_routing",
             "can_authorize",
@@ -1359,10 +1468,7 @@ def _check_report_parser_strictness() -> None:
             "can_mark_complete",
         ):
             with pytest.raises(TypeError):
-                measured_compare.MeasuredComparisonReport(
-                    **constructor,
-                    **{flag: True},
-                )
+                _construct_report(report, **{flag: True})
             with pytest.raises((TypeError, ValueError)):
                 replace(report, **{flag: True})
         assert report.limitations == measured_compare.LIMITATION_CODES
@@ -1498,6 +1604,14 @@ def _check_retained_evidence_tamper_matrix() -> None:
             lambda run: _replace_result(
                 run,
                 0,
+                candidate=replace(
+                    run.results[0].candidate,
+                    hardware_profile="measured-hardware",
+                ),
+            ),
+            lambda run: _replace_result(
+                run,
+                0,
                 candidate=replace(run.results[0].candidate, artifact_refs=()),
             ),
             lambda run: _replace_result(
@@ -1588,7 +1702,13 @@ def _incomplete_mixed_run(run):
     return replace(run, results=tuple(results))
 
 
-def _assert_privacy_minimised(report, label_set, store) -> None:
+def _assert_privacy_minimised(
+    report,
+    label_set,
+    store,
+    *,
+    extra_sentinels: tuple[str, ...] = (),
+) -> None:
     rendered = (report.to_json(), measured_compare.render_measured_report(report))
     sentinels = {
         *(case.text for case in label_set.cases),
@@ -1603,6 +1723,7 @@ def _assert_privacy_minimised(report, label_set, store) -> None:
         "synthetic measured-router failure",
         str(store.root),
         os.environ.get("USERNAME", "__no_local_username__"),
+        *extra_sentinels,
     }
     for output in rendered:
         lowered = output.lower()
@@ -1732,6 +1853,25 @@ def _check_measurement_provider_privacy_matrix() -> None:
         assert "complete: false" in measured_compare.render_measured_report(incomplete)
         _assert_privacy_minimised(incomplete, label_set, store)
 
+        error_directory = directory / "actual-exception-evidence"
+        error_directory.mkdir()
+        error_labels, error_batch, error_store, _ = _report_fixture(
+            error_directory,
+            router=_FailAfterWarmupRouter(),
+            nonce="exceptionprivacy",
+        )
+        error_report = measured_compare.build_measured_report(
+            error_batch,
+            error_store,
+            error_labels,
+        )
+        _assert_privacy_minimised(
+            error_report,
+            error_labels,
+            error_store,
+            extra_sentinels=("synthetic measured-router failure",),
+        )
+
 
 def _check_measured_report() -> None:
     with TemporaryDirectory() as temporary:
@@ -1752,6 +1892,13 @@ def _check_measured_report() -> None:
             environment
         )
         assert report.environment_fingerprint == batch.environment_fingerprint
+        assert report.environment.content_fingerprint != report.environment_fingerprint
+        assert report.environment.platform_digest == hashlib.sha256(
+            environment.platform.encode("utf-8")
+        ).hexdigest()
+        assert report.environment.python_version_digest == hashlib.sha256(
+            environment.python_version.encode("utf-8")
+        ).hexdigest()
         assert report.run_fingerprints == batch.run_fingerprints
         assert report.repetition_count == 5
         assert report.task_count == 20
@@ -1817,6 +1964,8 @@ def _check_measured_report() -> None:
             label_set,
         )
         encoded = report.to_json()
+        assert environment.platform not in encoded
+        assert environment.python_version not in encoded
         assert encoded == json.dumps(
             json.loads(encoded),
             ensure_ascii=False,
@@ -2013,6 +2162,7 @@ def run_e1_2_checks() -> None:
     _check_measured_report_adversarial()
     _check_report_count_parser_attacks()
     _check_report_environment_parser_attacks()
+    _check_environment_digest_privacy()
     _check_report_parser_strictness()
     _check_retained_evidence_tamper_matrix()
     _check_measurement_provider_privacy_matrix()

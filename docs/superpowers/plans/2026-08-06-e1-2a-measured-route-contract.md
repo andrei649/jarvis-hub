@@ -348,7 +348,7 @@ Expected: report types/builders/renderers are missing or the new aggregate asser
 Define bounded frozen records for per-route aggregates and the full `MeasuredComparisonReport`. The report must carry:
 
 - schema, label-set ID/fingerprint, suite/version, exact revision, fixed candidate/no baseline;
-- a dedicated immutable `EnvironmentEvidence` snapshot derived from `EnvironmentProfile.canonical_payload()` plus its fingerprint, exactly five ordered retained-run fingerprints, and repetition/task/sample counts; do not attempt to construct or deserialize the guarded E9.1 `EnvironmentProfile` directly;
+- a dedicated immutable `EnvironmentEvidence` snapshot with fixed runner/schema/hardware fields, SHA-256 digests of the exact detected platform and Python-version strings, and a fingerprint over that sanitised payload; keep the separate raw-profile `environment_fingerprint`, exactly five ordered retained-run fingerprints, and repetition/task/sample counts; do not attempt to construct or deserialize the guarded E9.1 `EnvironmentProfile` directly;
 - accepted, rejected, error, and incomplete counts; overall and sorted per-actual-route adequacy;
 - typed E9 `Measurement` values for latency median/p95, provider charge, and every explicitly unmeasured dimension;
 - fixed limitation codes and the five owner-gate codes, not free-form prose;
@@ -366,10 +366,10 @@ Builder validation must:
 1. Require `store.root.resolve() == batch.store_root` without serializing the path.
 2. Rebuild expected E9 cases from the label set; load the exact suite version; compare ordered `(case_id, content_fingerprint)` sequences.
 3. Load retained runs from the store and locate each exact batch fingerprint; reject absent or duplicate matches.
-4. Verify every identity, artifact fingerprint, result coverage, task/privacy/case fingerprint, lane, candidate/baseline, environment snapshot, and revision field before aggregation. Candidate hardware provenance (`not-measured`) and E9.1 environment hardware (`not_measured`) are distinct fields and must not be compared or normalized into one claim.
+4. Verify every identity, artifact fingerprint, result coverage, task/privacy/case fingerprint, lane, candidate/baseline, environment snapshot, and revision field before aggregation. Recompute the raw E9 profile fingerprint against the batch, then derive the sanitised environment snapshot; its content fingerprint is intentionally distinct. Candidate hardware provenance (`not-measured`) and E9.1 environment hardware (`not_measured`) are distinct fields and must not be compared or normalized into one claim.
 5. Count failed route criteria as rejection evidence; count errors/unscored/missing measurements as incomplete evidence without hiding them.
 
-`MeasuredComparisonReport.to_json()` must use `ensure_ascii=False`, `sort_keys=True`, and `separators=(",", ":")`. `from_json()` must reject duplicate keys, floats/non-finite values that violate the report schema, unknown fields, derived-count/fingerprint drift, completeness drift, and immutable-authority drift. A deserialized report is structurally valid but becomes accepted retained evidence only after `validate_measured_report_against_evidence` passes.
+`MeasuredComparisonReport.to_json()` must use `ensure_ascii=False`, `sort_keys=True`, and `separators=(",", ":")`. `from_json()` must reject duplicate keys, floats/non-finite values that violate the report schema, unknown fields (including raw `platform` or `python_version`), derived-count/fingerprint drift, completeness drift, and immutable-authority drift. A deserialized report is structurally valid but becomes accepted retained evidence only after `validate_measured_report_against_evidence` proves both the raw batch environment fingerprint and sanitised snapshot. This is a pre-acceptance v1 correction; no persisted owner report exists and no migration is required.
 
 Markdown must render only bounded IDs, fingerprints, aggregate numbers, measurement status/source/unit, fixed limitation labels, and owner gates. It must say that owner evidence is blocked and real task-outcome quality is not measured.
 

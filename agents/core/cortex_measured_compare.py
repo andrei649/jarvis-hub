@@ -47,8 +47,6 @@ _IDENTIFIER_RE = re.compile(r"[a-z0-9][a-z0-9._:-]{0,127}\Z")
 _DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
 _REVISION_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _NONCE_RE = re.compile(r"[a-z0-9][a-z0-9._]{0,47}\Z")
-_PLATFORM_RE = re.compile(r"[a-z][a-z0-9]*-[a-z0-9]+(?:_[a-z0-9]+)*\Z")
-_PYTHON_VERSION_RE = re.compile(r"[0-9]+(?:\.[0-9]+){1,3}\Z")
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 _MAX_TEXT_LENGTH = 10_000
 _MAX_METADATA_LENGTH = 128
@@ -96,7 +94,14 @@ _ENVIRONMENT_FIELDS = {
     "python_version",
     "hardware_profile",
 }
-_ENVIRONMENT_EVIDENCE_FIELDS = _ENVIRONMENT_FIELDS | {"content_fingerprint"}
+_ENVIRONMENT_EVIDENCE_FIELDS = {
+    "schema",
+    "runner_id",
+    "platform_digest",
+    "python_version_digest",
+    "hardware_profile",
+    "content_fingerprint",
+}
 _MEASUREMENT_FIELDS = {"status", "value", "unit", "source"}
 _ROUTE_AGGREGATE_FIELDS = {
     "route_id",
@@ -430,18 +435,6 @@ def _nonnegative_int(value: object, label: str) -> int:
     return value
 
 
-def _bounded_environment_value(value: object, label: str) -> str:
-    if (
-        not isinstance(value, str)
-        or not value
-        or len(value) > _MAX_METADATA_LENGTH
-        or value != value.strip()
-        or any(ord(character) < 0x20 or ord(character) == 0x7F for character in value)
-    ):
-        raise ValueError(f"environment {label} must be bounded single-line text")
-    return value
-
-
 def _measurement_payload(measurement: Measurement) -> dict[str, Any]:
     if not isinstance(measurement, Measurement):
         raise ValueError("report measurements must use E9 Measurement")
@@ -478,8 +471,8 @@ class EnvironmentEvidence:
     """Immutable, serializable snapshot of a detected E9.1 environment."""
 
     runner_id: str
-    platform: str
-    python_version: str
+    platform_digest: str
+    python_version_digest: str
     hardware_profile: str
     schema: str
     content_fingerprint: str = field(init=False)
@@ -488,18 +481,10 @@ class EnvironmentEvidence:
     def __post_init__(self) -> None:
         if self._guard is not _MEASURED_REPORT_GUARD:
             raise ValueError("environment evidence is constructed internally")
-        for value, label in (
-            (self.runner_id, "runner id"),
-            (self.platform, "platform"),
-            (self.python_version, "python version"),
-        ):
-            _bounded_environment_value(value, label)
         if self.runner_id != "owner-local-e1-2a":
             raise ValueError("environment runner id is fixed")
-        if _PLATFORM_RE.fullmatch(self.platform) is None:
-            raise ValueError("environment platform must be canonical")
-        if _PYTHON_VERSION_RE.fullmatch(self.python_version) is None:
-            raise ValueError("environment Python version must be numeric dotted text")
+        _digest(self.platform_digest, "environment platform digest")
+        _digest(self.python_version_digest, "environment Python version digest")
         if self.hardware_profile != "not_measured":
             raise ValueError("environment hardware must remain not_measured")
         if self.schema != "nerva.benchmark.environment.v1":
@@ -514,8 +499,8 @@ class EnvironmentEvidence:
     def canonical_payload(self) -> dict[str, str]:
         return {
             "hardware_profile": self.hardware_profile,
-            "platform": self.platform,
-            "python_version": self.python_version,
+            "platform_digest": self.platform_digest,
+            "python_version_digest": self.python_version_digest,
             "runner_id": self.runner_id,
             "schema": self.schema,
         }
@@ -537,8 +522,12 @@ class EnvironmentEvidence:
         )
         return cls(
             runner_id=payload["runner_id"],
-            platform=payload["platform"],
-            python_version=payload["python_version"],
+            platform_digest=hashlib.sha256(
+                payload["platform"].encode("utf-8")
+            ).hexdigest(),
+            python_version_digest=hashlib.sha256(
+                payload["python_version"].encode("utf-8")
+            ).hexdigest(),
             hardware_profile=payload["hardware_profile"],
             schema=payload["schema"],
             _guard=_MEASURED_REPORT_GUARD,
@@ -553,8 +542,8 @@ class EnvironmentEvidence:
         )
         evidence = cls(
             runner_id=payload["runner_id"],
-            platform=payload["platform"],
-            python_version=payload["python_version"],
+            platform_digest=payload["platform_digest"],
+            python_version_digest=payload["python_version_digest"],
             hardware_profile=payload["hardware_profile"],
             schema=payload["schema"],
             _guard=_MEASURED_REPORT_GUARD,
@@ -686,8 +675,6 @@ class MeasuredComparisonReport:
         if not isinstance(self.environment, EnvironmentEvidence):
             raise ValueError("report environment must use EnvironmentEvidence")
         _digest(self.environment_fingerprint, "environment fingerprint")
-        if self.environment_fingerprint != self.environment.content_fingerprint:
-            raise ValueError("report environment fingerprint mismatch")
         if (
             not isinstance(self.run_fingerprints, tuple)
             or len(self.run_fingerprints) != RETAINED_REPETITIONS
@@ -1426,9 +1413,11 @@ def _derive_measured_report(
     if stored_sequence != expected_sequence:
         raise ValueError("stored suite does not match the ordered measured labels")
 
-    environment = EnvironmentEvidence.from_profile(batch.environment)
-    if environment.content_fingerprint != batch.environment_fingerprint:
+    if _fingerprint(batch.environment.canonical_payload()) != (
+        batch.environment_fingerprint
+    ):
         raise ValueError("measured batch environment fingerprint mismatch")
+    environment = EnvironmentEvidence.from_profile(batch.environment)
     runs = _exact_retained_runs(batch, store)
     label_by_id = {case.case_id: case for case in label_set.cases}
 
