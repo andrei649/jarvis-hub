@@ -69,10 +69,12 @@ function Dot({ tone }: any) { return <i className={'wl-dot wl-' + (tone || 'off'
    loop: press starts it, release stops it. That is genuine push-to-talk regardless of
    the configured mode, because `stop()` cancels an in-flight turn. It refuses honestly
    when the mic is muted or the browser can't do voice — it never pretends to listen. */
-function PushToTalk({ voice, muted }: any) {
+function PushToTalk({ voice, muted, trustEvidence }: any) {
   const [held, setHeld] = useState(false);
   const usable = !!voice && typeof voice.start === 'function' && typeof voice.stop === 'function' && voice.supported !== false;
-  const blocked = muted || !usable;
+  // Fails closed on a microphone: no current trust proof → no capture, even if a
+  // retained trust object still says the mic is on.
+  const blocked = !trustEvidence || muted || !usable;
   const release = useCallback(() => {
     setHeld((wasHeld) => { if (wasHeld && voice && voice.stop) voice.stop(); return false; });
   }, [voice]);
@@ -84,7 +86,8 @@ function PushToTalk({ voice, muted }: any) {
     return () => { window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release); };
   }, [held, release]);
   const press = () => { if (blocked) return; setHeld(true); voice.start(); };
-  const label = muted ? 'mic muted'
+  const label = !trustEvidence ? 'trust status unavailable'
+    : muted ? 'mic muted'
     : !usable ? 'voice unavailable'
     : held ? 'listening…'
     : 'hold to talk';
@@ -95,11 +98,58 @@ function PushToTalk({ voice, muted }: any) {
       onPointerDown={press}
       onPointerUp={release}
       disabled={blocked}
-      title={muted ? 'mic is muted — unmute Nerva to talk' : usable ? 'hold to speak' : 'this browser cannot capture audio'}
+      title={!trustEvidence ? 'no current trust status — the wall will not open the mic without it'
+        : muted ? 'mic is muted — unmute Nerva to talk'
+        : usable ? 'hold to speak' : 'this browser cannot capture audio'}
       style={held ? { boxShadow: `0 0 ${18 + lv * 40}px rgba(65,245,155,${0.3 + lv * 0.5})` } : undefined}
     >
       <span>{label}</span>
     </button>
+  );
+}
+
+/* The spoken line is a ROOM-FACING exposure, unlike the same text in the cockpit: a wall
+   screen has an audience. The reviewer asked for default-hide or an explicit opt-in; the
+   line is also the reference's signature element and the owner asked for it by name, so
+   the compromise is an always-present, persisted redaction control — one click hides it,
+   and the choice survives reloads. Flip TRANSCRIPT_DEFAULT_VISIBLE to change the default
+   for an installation where the wall is in a shared room. */
+export const TRANSCRIPT_DEFAULT_VISIBLE = true;
+const TRANSCRIPT_KEY = 'hud.wall.transcript';
+
+export function readTranscriptPref(storage?: any) {
+  try {
+    const store = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (!store) return TRANSCRIPT_DEFAULT_VISIBLE;
+    const raw = store.getItem(TRANSCRIPT_KEY);
+    if (raw === 'hidden') return false;
+    if (raw === 'shown') return true;
+    return TRANSCRIPT_DEFAULT_VISIBLE;
+  } catch { return TRANSCRIPT_DEFAULT_VISIBLE; }
+}
+
+function SpokenLine({ voice }: any) {
+  const [shown, setShown] = useState(readTranscriptPref);
+  const toggle = () => setShown((v) => {
+    const next = !v;
+    try { if (typeof localStorage !== 'undefined') localStorage.setItem(TRANSCRIPT_KEY, next ? 'shown' : 'hidden'); } catch { /* ignore */ }
+    return next;
+  });
+  const transcript = voice && voice.transcript;
+  return (
+    <div className="wl-said">
+      {!shown
+        ? <span className="wl-said-idle">transcript hidden · room mode</span>
+        : transcript
+          ? <><span className="wl-caret">▸</span> {transcript}</>
+          : <span className="wl-said-idle">{voice && voice.active ? 'listening…' : 'nothing heard yet'}</span>}
+      <button
+        className="wl-said-toggle"
+        onClick={toggle}
+        aria-pressed={!shown}
+        title={shown ? 'hide the spoken line (this screen faces a room)' : 'show the spoken line'}
+      >{shown ? 'hide' : 'show'}</button>
+    </div>
   );
 }
 
@@ -121,13 +171,24 @@ export function BriefingWall({
   serverUp = false, demo = false, clock = null, onExit,
 }: any) {
   const list = Array.isArray(agents) ? agents : [];
-  const running = runningTasks(Array.isArray(tasks) ? tasks : []);
-  const waiting = (Array.isArray(tasks) ? tasks : []).length - running.length;
+  // Evidence gate (review finding, 2026-08-06): `sources.tasks` is the proof that the
+  // task feed answered on THIS load. A retained array from an earlier poll must not
+  // survive that proof going away — otherwise the wall can render WORKING, firing
+  // regions and task-attributed chips while its own rail reports "task feed · no data".
+  // When the evidence is absent there are no tasks, for every consumer.
+  const taskEvidence = !!(sources && sources.tasks === true);
+  const evidenceTasks = taskEvidence && Array.isArray(tasks) ? tasks : [];
+  const running = runningTasks(evidenceTasks);
+  const waiting = evidenceTasks.length - running.length;
   const firing = list.filter(isExecutingAgent).length;
-  const state = wallState({ voice, agents, tasks, serverUp });
-  const energy = burstEnergy({ agents, tasks, voice, demo });
+  const state = wallState({ voice, agents, tasks: evidenceTasks, serverUp });
+  const energy = burstEnergy({ agents, tasks: evidenceTasks, voice, demo });
   const caps = (voice && voice.caps) || null;
-  const trustEvidence = sources && sources.trust === true;
+  // `trust` is RETAINED across polls in app.tsx (`if (d.trust) setTrust(d.trust)`), so a
+  // stale `mic: 'on'` can outlive its evidence. Everything trust-derived on this wall —
+  // including the microphone control — keys off `sources.trust`, never off the object
+  // alone. A default/retained object is not a current trust proof.
+  const trustEvidence = !!(sources && sources.trust === true);
   const cloud = trustEvidence ? ((trust && (trust.claude_available || trust.cloud_available)) ? 'reported' : 'none reported') : null;
   const model = (llm && llm.model) || (llm && Array.isArray(llm.residents) && llm.residents[0] && llm.residents[0].id) || null;
   const now = clock instanceof Date ? clock : new Date();
@@ -136,19 +197,19 @@ export function BriefingWall({
     { k: 'server', v: serverUp ? 'up' : 'down', tone: serverUp ? 'live' : 'bad' },
     { k: 'local model', v: model ? 'loaded' : (llm && llm.state === 'unknown' ? null : 'none'), tone: model ? 'live' : 'off' },
     { k: 'cloud lane', v: cloud, tone: cloud === 'reported' ? 'work' : 'off' },
-    { k: 'mic', v: trust ? (trust.mic === 'off' ? 'muted' : 'on') : null, tone: trust && trust.mic === 'off' ? 'bad' : 'live' },
+    { k: 'mic', v: trustEvidence && trust ? (trust.mic === 'off' ? 'muted' : 'on') : null, tone: trust && trust.mic === 'off' ? 'bad' : 'live' },
     { k: 'speech-to-text', v: caps ? (caps.stt ? 'ready' : 'not installed') : null, tone: caps && caps.stt ? 'live' : 'off' },
     { k: 'text-to-speech', v: caps ? (caps.tts ? 'ready' : 'not installed') : null, tone: caps && caps.tts ? 'live' : 'off' },
-    { k: 'strict-local', v: trust ? (trust.strict_local ? 'enforced' : 'off') : null, tone: trust && trust.strict_local ? 'live' : 'off' },
+    { k: 'strict-local', v: trustEvidence && trust ? (trust.strict_local ? 'enforced' : 'off') : null, tone: trust && trust.strict_local ? 'live' : 'off' },
     { k: 'task feed', v: sources ? (sources.tasks ? 'live' : 'no data') : null, tone: sources && sources.tasks ? 'live' : 'off' },
   ];
 
   return (
     <div className="wall">
       {/* the field spans the whole wall and passes BEHIND the cards, as in the reference */}
-      <div className="wl-field"><NeuralBurst agents={agents} tasks={tasks} voice={voice} demo={demo} motion="lively" /></div>
+      <div className="wl-field"><NeuralBurst agents={agents} tasks={evidenceTasks} voice={voice} demo={demo} motion="lively" /></div>
       <span className="wl-bk tl" /><span className="wl-bk tr" /><span className="wl-bk bl" /><span className="wl-bk br" />
-      <EdgeTab side="left" label="agent ops" badge={sources && sources.tasks ? running.length : null} />
+      <EdgeTab side="left" label="agent ops" badge={taskEvidence ? running.length : null} />
       <EdgeTab side="right" label="cabinet" badge={list.length || null} />
 
       <div className="wl-top">
@@ -172,8 +233,8 @@ export function BriefingWall({
           <Card title="CABINET · NOW" stamp="live">
             <Cell label="AGENTS IN ROSTER" value={list.length || null} why="roster not loaded" />
             <Cell label="EXECUTING" value={firing} />
-            <Cell label="TASKS RUNNING" value={sources && sources.tasks ? running.length : null} why="task feed unavailable" />
-            <Cell label="TASKS WAITING" value={sources && sources.tasks ? Math.max(0, waiting) : null} why="task feed unavailable" />
+            <Cell label="TASKS RUNNING" value={taskEvidence ? running.length : null} why="task feed unavailable" />
+            <Cell label="TASKS WAITING" value={taskEvidence ? Math.max(0, waiting) : null} why="task feed unavailable" />
           </Card>
           <Card title="THIS SESSION" stamp="measured">
             <Cell label="ON-DEVICE" value={localPct == null ? null : localPct + '%'} why="no measured locality split yet" />
@@ -183,12 +244,8 @@ export function BriefingWall({
         </div>
 
         <div className="wl-stage">
-          <PushToTalk voice={voice} muted={!!(trust && trust.mic === 'off')} />
-          <div className="wl-said">
-            {voice && voice.transcript
-              ? <><span className="wl-caret">▸</span> {voice.transcript}</>
-              : <span className="wl-said-idle">{voice && voice.active ? 'listening…' : 'nothing heard yet'}</span>}
-          </div>
+          <PushToTalk voice={voice} muted={!!(trust && trust.mic === 'off')} trustEvidence={trustEvidence} />
+          <SpokenLine voice={voice} />
         </div>
 
         <div className="wl-col wl-right">

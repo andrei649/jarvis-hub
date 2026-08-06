@@ -320,6 +320,18 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > when the task feed is unavailable; and under 820px the wall takes the reference's portrait
 > layout — cards give way to the edge tabs, chrome centres, and the talk button leads. +5 frontend
 > tests (Vitest 437 → **442**).
+>
+> **Wall pass 3 — integration-review fixes** (owner review on #843, head `9974f81`): two evidence
+> boundaries failed open and are now closed. (a) `sources.tasks` is the proof the task feed answered
+> *this* load; a retained array from an earlier poll no longer reaches `wallState`, `burstEnergy` or
+> `NeuralBurst`, so the wall can never claim WORKING / firing regions / task chips while its own rail
+> reports `task feed · no data`. (b) `trust` is deliberately RETAINED across polls in `app.tsx`
+> (`if (d.trust) setTrust(d.trust)`), so a stale `mic:'on'` could outlive its evidence — the
+> HOLD TO TALK control, and the rail's mic/strict-local rows, now key off `sources.trust` and fail
+> closed with `trust status unavailable` rather than opening a microphone on unproven state. The
+> room-facing spoken line gained a persisted redaction control (`hud.wall.transcript`,
+> `TRANSCRIPT_DEFAULT_VISIBLE` flips the installation default). +9 hostile frontend tests, all
+> red-proved against the pre-fix code (Vitest 442 → **451**).
 
 ---
 
@@ -1372,7 +1384,9 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 | H30.7 ✅ | **House reality-harness pack** — hermetic HA simulator proves the rail; live = owner-gated · **completed 2026-07-13** — the canonical pack passes **7/7 hermetic production-rail cases** across read/reconnect/offline, graph/privacy/purge, reversible actuation, security confirmation, verification/rollback, kernel halt, and room-aware output. The causal ledger measures `ungoverned_actions == 0` and rejects unapproved HA mutations; the read-only live probe requires both generic reality-harness and explicit H30 owner opt-in, with missing configuration reported degraded rather than passed. | 3 | P1 | O24-V1 | — |
 | H30.8 | **Ambient light bridge (assistant state → LAN strip)** — the last open item from the 2026-08-06 "J.A.R.V.I.S. in the room" guide (`docs/design/JARVIS_PRESENCE_GAP.md`): a default-off bridge that maps the SAME voice/assistant state the orb renders onto a LAN light controller, so the strip and the sphere can never disagree. WLED first (plain HTTP JSON on the local network, no cloud account, strict-local by construction); Hue/Govee behind their own opt-in since they reach a vendor cloud. Must go through the existing governed device path, stay silent (not guess) when the device is unreachable, and ship with the light OFF by default. | 3 | P3 | H30.4 | NERVA_VISION §7 |
 
-> **Total ORIZONT 30:** 29/29 SP implementation complete. The browser House HUD and native mobile
+> **Total ORIZONT 30:** 29/29 SP of the original H30.1–H30.7 scope complete. **H30.8 (3 SP,
+> added 2026-08-06) is open and sits OUTSIDE that completion gate** — the ambient light bridge
+> is new scope, not a regression of the closed seven. The browser House HUD and native mobile
 > Home surface share the guarded API; the seven-case hermetic pack proves zero ungoverned actions.
 > Real Home Assistant, physical satellite, and household device execution remain explicit owner-host
 > validation seams and are not claimed by the hermetic completion gate.

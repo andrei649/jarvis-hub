@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
-import { BriefingWall, wallState, wallClock } from '../wall';
+import { BriefingWall, wallState, wallClock, readTranscriptPref } from '../wall';
 import { NeuralBurst, burstRegions, burstEnergy } from '../burst';
 import { CinemaMesh } from '../shell';
 
@@ -214,6 +214,123 @@ describe('BriefingWall — edge tabs', () => {
     );
     expect(container.querySelector('.wl-tab-left .wl-tab-badge')).toBeNull();
     expect(container.querySelector('.wl-tab-right .wl-tab-badge')).toBeNull();
+  });
+});
+
+/* Hostile regressions from the 2026-08-06 integration review. Both are about evidence
+   outliving its proof: a task array retained from an earlier poll, and a `trust` object
+   that app.tsx deliberately KEEPS across polls (`if (d.trust) setTrust(d.trust)`). Neither
+   may drive a claim — or a microphone — once its `sources` flag goes away. */
+describe('BriefingWall — stale evidence drives nothing', () => {
+  const STALE = {
+    agents: AGENTS,
+    tasks: [
+      { id: 't1', owner: 'athena', state: 'running' },
+      { id: 't2', owner: 'jarvis', state: 'running' },
+    ],
+    sources: { tasks: false, trust: false },      // the feed did NOT answer this load
+    serverUp: true, clock: new Date(), llm: null, localPct: null,
+    voice: { status: 'off', caps: null },
+    agentsAllIdle: true,
+  };
+
+  it('a stale non-empty task array cannot make the wall claim work', () => {
+    const idleAgents = AGENTS.map((a) => ({ ...a, status: 'idle' }));
+    const { container } = render(<BriefingWall {...STALE} agents={idleAgents} trust={null} />);
+    // the wall must not say "working" on evidence it cannot prove
+    expect(container.querySelector('.wl-state-word').textContent).toBe('standing by');
+    // …nor count them, nor badge them
+    expect(container.textContent).not.toContain('2');
+    expect(container.querySelector('.wl-tab-left .wl-tab-badge')).toBeNull();
+    // …and the field must be told there are no tasks, so nothing fires on their account
+    expect(container.querySelector('.nburst').getAttribute('data-energy-source')).toBe('idle');
+  });
+
+  it('the same array DOES drive the wall once its source flag is present', () => {
+    const idleAgents = AGENTS.map((a) => ({ ...a, status: 'idle' }));
+    const { container } = render(
+      <BriefingWall {...STALE} agents={idleAgents} trust={null} sources={{ tasks: true, trust: false }} />,
+    );
+    expect(container.querySelector('.wl-state-word').textContent).toBe('working');
+    expect(container.querySelector('.nburst').getAttribute('data-energy-source')).toBe('work');
+  });
+
+  it('burstEnergy and wallState agree with the wall about an empty task set', () => {
+    expect(burstEnergy({ agents: AGENTS.map((a) => ({ ...a, status: 'idle' })), tasks: [] }).source).toBe('idle');
+    expect(wallState({ agents: AGENTS.map((a) => ({ ...a, status: 'idle' })), tasks: [], serverUp: true }).word).toBe('standing by');
+  });
+});
+
+describe('BriefingWall — the mic fails closed without current trust evidence', () => {
+  const base = {
+    agents: AGENTS, tasks: [], serverUp: true, clock: new Date(), llm: null, localPct: null,
+  };
+
+  it('refuses to open the mic when trust evidence is missing, even with a retained mic:on', () => {
+    const voice = { status: 'off', supported: true, caps: null, start: vi.fn(), stop: vi.fn() };
+    const { container } = render(
+      <BriefingWall {...base} trust={{ mic: 'on' }} sources={{ tasks: true, trust: false }} voice={voice} />,
+    );
+    const btn = container.querySelector('.wl-ptt');
+    expect(btn.textContent).toContain('trust status unavailable');
+    expect(btn.disabled).toBe(true);
+    fireEvent.pointerDown(btn);
+    expect(voice.start).not.toHaveBeenCalled();
+  });
+
+  it('refuses with no trust object at all', () => {
+    const voice = { status: 'off', supported: true, caps: null, start: vi.fn(), stop: vi.fn() };
+    const { container } = render(<BriefingWall {...base} trust={null} sources={{ tasks: true, trust: false }} voice={voice} />);
+    expect(container.querySelector('.wl-ptt').disabled).toBe(true);
+    fireEvent.pointerDown(container.querySelector('.wl-ptt'));
+    expect(voice.start).not.toHaveBeenCalled();
+  });
+
+  it('the rail refuses to report mic/strict-local state without that same evidence', () => {
+    const { container } = render(
+      <BriefingWall {...base} trust={{ mic: 'on', strict_local: true }} sources={{ tasks: true, trust: false }} voice={{ status: 'off' }} />,
+    );
+    const rows = Array.from(container.querySelectorAll('.wl-rail-row'));
+    const micRow = rows.find((r) => r.textContent.startsWith('mic'));
+    const localRow = rows.find((r) => r.textContent.startsWith('strict-local'));
+    expect(micRow.querySelector('.wl-miss')).toBeTruthy();
+    expect(localRow.querySelector('.wl-miss')).toBeTruthy();
+  });
+
+  it('opens only when the trust proof is current', () => {
+    const voice = { status: 'off', supported: true, caps: null, start: vi.fn(), stop: vi.fn() };
+    const { container } = render(
+      <BriefingWall {...base} trust={{ mic: 'on' }} sources={{ tasks: true, trust: true }} voice={voice} />,
+    );
+    const btn = container.querySelector('.wl-ptt');
+    expect(btn.disabled).toBe(false);
+    fireEvent.pointerDown(btn);
+    expect(voice.start).toHaveBeenCalled();
+  });
+});
+
+describe('BriefingWall — the spoken line is room-facing', () => {
+  const base = {
+    agents: AGENTS, tasks: [], sources: { tasks: true, trust: true }, trust: { mic: 'on' },
+    serverUp: true, clock: new Date(),
+    voice: { status: 'listening', supported: true, caps: null, transcript: 'my private sentence', start() {}, stop() {} },
+  };
+
+  it('can be redacted on demand, and the choice persists', () => {
+    const { container } = render(<BriefingWall {...base} />);
+    expect(container.textContent).toContain('my private sentence');
+    fireEvent.click(container.querySelector('.wl-said-toggle'));
+    expect(container.textContent).not.toContain('my private sentence');
+    expect(container.textContent).toContain('room mode');
+    expect(localStorage.getItem('hud.wall.transcript')).toBe('hidden');
+  });
+
+  it('honours a stored redaction on the next open', () => {
+    localStorage.setItem('hud.wall.transcript', 'hidden');
+    expect(readTranscriptPref()).toBe(false);
+    const { container } = render(<BriefingWall {...base} />);
+    expect(container.textContent).not.toContain('my private sentence');
+    localStorage.removeItem('hud.wall.transcript');
   });
 });
 
