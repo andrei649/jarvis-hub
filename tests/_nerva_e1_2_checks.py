@@ -27,6 +27,7 @@ from agents.core.cortex_measured_compare import (
 )
 from agents.core.observability.benchmark import (
     BenchmarkHarness,
+    BenchmarkObservation,
     BenchmarkStore,
     Measurement,
 )
@@ -1030,8 +1031,348 @@ def _check_measured_run_batch() -> None:
         assert len(BenchmarkStore(mismatch_proof_root).runs(failed_suite_name)) == 1
 
 
+class _PatternMeasuredRouter(_MeasuredRouter):
+    async def classify(self, text: str, agents: dict[str, object]) -> Intent:
+        self.classify_calls += 1
+        number = int(text.rsplit(" ", 1)[-1])
+        route_id = "friday" if number <= 15 else "jarvis"
+        self.last_intent = Intent(
+            [route_id],
+            is_general=False,
+            context={"source": "deterministic-test"},
+            confidence=1.0,
+        )
+        return self.last_intent
+
+
+class _ControlledLatencyClock:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self) -> float:
+        pair = self.calls // 2
+        is_finish = self.calls % 2 == 1
+        self.calls += 1
+        if not is_finish:
+            return 0.0
+        retained_sample = pair - 19
+        return max(1, retained_sample) / 1_000
+
+
+def _report_fixture(
+    directory: Path,
+    *,
+    router: _MeasuredRouter | None = None,
+    nonce: str = "reportfixture",
+):
+    label_set = _load(_write(directory, _document()))
+    store_root = directory / "report-store"
+    store_root.mkdir()
+    environment = EnvironmentProfile.detect(runner_id="owner-local-e1-2a")
+    with (
+        patch(
+            "agents.core.observability.benchmark.time.perf_counter",
+            side_effect=_ControlledLatencyClock(),
+        ),
+        patch.object(
+            measured_compare.EnvironmentProfile,
+            "detect",
+            return_value=environment,
+        ),
+    ):
+        batch = asyncio.run(
+            measured_compare.run_measured_comparison(
+                router=router or _PatternMeasuredRouter(),
+                agents={"friday": object(), "jarvis": object()},
+                label_set=label_set,
+                store_root=store_root,
+                source_revision=_REVISION,
+                run_nonce=lambda: nonce,
+            )
+        )
+    return (
+        label_set,
+        batch,
+        BenchmarkStore(store_root),
+        environment,
+    )
+
+
+def _check_measured_report() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, environment = _report_fixture(directory)
+        report = measured_compare.build_measured_report(batch, store, label_set)
+
+        assert isinstance(report, measured_compare.MeasuredComparisonReport)
+        assert report.schema == measured_compare.REPORT_SCHEMA
+        assert report.label_set_id == label_set.label_set_id
+        assert report.label_set_fingerprint == label_set.content_fingerprint
+        assert report.suite_name == batch.suite_name
+        assert report.suite_version == batch.suite_version
+        assert report.source_revision == _REVISION
+        assert report.candidate_id == measured_compare.CANDIDATE_ID
+        assert report.baseline_id is None
+        assert report.environment == measured_compare.EnvironmentEvidence.from_profile(
+            environment
+        )
+        assert report.environment_fingerprint == batch.environment_fingerprint
+        assert report.run_fingerprints == batch.run_fingerprints
+        assert report.repetition_count == 5
+        assert report.task_count == 20
+        assert report.sample_count == 100
+        assert report.accepted_count == 75
+        assert report.rejected_count == 25
+        assert report.error_count == 0
+        assert report.incomplete_count == 0
+        assert report.overall_adequacy == Measurement(
+            "measured", 0.75, "ratio", "benchmark.harness"
+        )
+        assert tuple(route.route_id for route in report.per_actual_route) == (
+            "friday",
+            "jarvis",
+        )
+        assert tuple(
+            (
+                route.sample_count,
+                route.accepted_count,
+                route.rejected_count,
+                route.incomplete_count,
+                route.adequacy.value,
+            )
+            for route in report.per_actual_route
+        ) == ((75, 75, 0, 0, 1.0), (25, 0, 25, 0, 0.0))
+        assert report.latency_median == Measurement(
+            "measured", 50.5, "ms", "benchmark.harness"
+        )
+        assert report.latency_p95 == Measurement(
+            "measured", 95.0, "ms", "benchmark.harness"
+        )
+        assert report.provider_charge == Measurement(
+            "measured", 0.0, "usd", "candidate.runner"
+        )
+        for measurement in (
+            report.compute,
+            report.energy,
+            report.hardware,
+            report.downstream_agent,
+            report.tool,
+            report.action,
+            report.executed_task_outcome,
+        ):
+            assert measurement == Measurement("not_measured")
+        assert len(report.limitations) >= 1
+        assert len(report.owner_gates) == 5
+        assert report.complete is True
+        assert report.authority == "evaluation_only"
+        assert not any(
+            (
+                report.can_change_routing,
+                report.can_authorize,
+                report.can_execute,
+                report.can_promote,
+                report.can_mark_complete,
+            )
+        )
+
+        measured_compare.validate_measured_report_against_evidence(
+            report,
+            batch,
+            store,
+            label_set,
+        )
+        encoded = report.to_json()
+        assert encoded == json.dumps(
+            json.loads(encoded),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        structural = measured_compare.MeasuredComparisonReport.from_json(encoded)
+        assert structural == report
+        measured_compare.validate_measured_report_against_evidence(
+            structural,
+            batch,
+            store,
+            label_set,
+        )
+
+        markdown = measured_compare.render_measured_report(report)
+        assert "owner evidence: blocked" in markdown.lower()
+        assert "real task-outcome quality: not_measured" in markdown.lower()
+        forbidden = (
+            "synthetic weather request",
+            label_set.cases[0].source_record_digest,
+            str(store.root),
+            os.environ.get("USERNAME", "__no_local_username__"),
+            "beats_current",
+            "selector-superiority",
+            "answer-quality",
+            "end-to-end-completion",
+            "safety claim",
+        )
+        for value in forbidden:
+            assert not value or value.lower() not in encoded.lower()
+            assert not value or value.lower() not in markdown.lower()
+
+
+def _check_measured_report_adversarial() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _environment = _report_fixture(directory)
+        report = measured_compare.build_measured_report(batch, store, label_set)
+        raw = json.loads(report.to_json())
+
+        for mutation in (
+            lambda value: value.update({"unknown": True}),
+            lambda value: value.pop("sample_count"),
+            lambda value: value.update({"sample_count": 99}),
+            lambda value: value.update({"complete": False}),
+            lambda value: value.update({"authority": "production"}),
+            lambda value: value.update({"can_execute": True}),
+            lambda value: value.update({"content_fingerprint": "0" * 64}),
+            lambda value: value["latency_p95"].update({"value": -1.0}),
+            lambda value: value["overall_adequacy"].update({"value": 1.1}),
+        ):
+            changed = deepcopy(raw)
+            mutation(changed)
+            with pytest.raises((TypeError, ValueError)):
+                measured_compare.MeasuredComparisonReport.from_json(
+                    json.dumps(changed)
+                )
+
+        duplicate = report.to_json()[:-1] + f',"schema":"{report.schema}"}}'
+        with pytest.raises(ValueError, match="duplicate"):
+            measured_compare.MeasuredComparisonReport.from_json(duplicate)
+        non_finite = report.to_json().replace('"value":95.0', '"value":NaN')
+        with pytest.raises(ValueError):
+            measured_compare.MeasuredComparisonReport.from_json(non_finite)
+
+        for flag in (
+            "can_change_routing",
+            "can_authorize",
+            "can_execute",
+            "can_promote",
+            "can_mark_complete",
+        ):
+            with pytest.raises((TypeError, ValueError)):
+                replace(report, **{flag: True})
+
+        other_document = _document()
+        other_document["cases"][0]["task_category"] = "forecast"
+        other_labels = _load(_write(directory, other_document, "other-labels.json"))
+        with pytest.raises(ValueError):
+            measured_compare.build_measured_report(batch, store, other_labels)
+        with pytest.raises(ValueError):
+            measured_compare.validate_measured_report_against_evidence(
+                report,
+                batch,
+                store,
+                other_labels,
+            )
+
+        runs_path = store.root / "suites" / batch.suite_name / "runs.jsonl"
+        retained_lines = runs_path.read_text(encoding="utf-8").splitlines()
+        runs_path.write_text("\n".join(retained_lines[:-1]) + "\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="fingerprint"):
+            measured_compare.build_measured_report(batch, store, label_set)
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, error_batch, error_store, _ = _report_fixture(
+            directory,
+            router=_FailAfterWarmupRouter(),
+            nonce="reporterrors",
+        )
+        error_report = measured_compare.build_measured_report(
+            error_batch,
+            error_store,
+            label_set,
+        )
+        assert error_report.accepted_count == 0
+        assert error_report.rejected_count == 0
+        assert error_report.error_count == 100
+        assert error_report.incomplete_count == 100
+        assert error_report.provider_charge == Measurement("not_measured")
+        assert error_report.complete is False
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set = _load(_write(directory, _document()))
+        store_root = directory / "unscored-report-store"
+        store_root.mkdir()
+        original_harness_run = BenchmarkHarness.run
+        calls = 0
+
+        async def _unscored_retained(self: BenchmarkHarness, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            run = await original_harness_run(self, *args, **kwargs)
+            return run if calls == 1 else _with_unscored_result(run)
+
+        with patch.object(BenchmarkHarness, "run", _unscored_retained):
+            batch = asyncio.run(
+                measured_compare.run_measured_comparison(
+                    router=_MeasuredRouter(),
+                    agents={"friday": object(), "jarvis": object()},
+                    label_set=label_set,
+                    store_root=store_root,
+                    source_revision=_REVISION,
+                    run_nonce=lambda: "reportunscored",
+                )
+            )
+        unscored_report = measured_compare.build_measured_report(
+            batch,
+            BenchmarkStore(store_root),
+            label_set,
+        )
+        assert unscored_report.accepted_count == 95
+        assert unscored_report.rejected_count == 0
+        assert unscored_report.error_count == 0
+        assert unscored_report.incomplete_count == 5
+        assert unscored_report.complete is False
+
+    def _provider_adapter(router, agents, *, host_id="in-process"):
+        async def run(prompt: str):
+            intent = await router.classify(prompt, dict(agents))
+            return BenchmarkObservation(
+                response=intent.primary,
+                route_id=intent.primary,
+                model_id="provider-model",
+                provider_id="provider-backed",
+                host_id=host_id,
+                hardware_profile="not-measured",
+                cost_usd=0.0,
+                reliability=1.0,
+                privacy_effect="local_only",
+            )
+
+        return run
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        with patch.object(
+            measured_compare,
+            "current_router_runner",
+            _provider_adapter,
+        ):
+            label_set, batch, store, _ = _report_fixture(
+                directory,
+                nonce="providerreport",
+            )
+        provider_report = measured_compare.build_measured_report(
+            batch,
+            store,
+            label_set,
+        )
+        assert provider_report.provider_charge == Measurement("not_measured")
+        assert provider_report.complete is False
+
+
 def run_e1_2_checks() -> None:
     _check_strict_route_labels()
     _check_suite_binding()
     _check_measured_runner()
     _check_measured_run_batch()
+    _check_measured_report()
+    _check_measured_report_adversarial()
