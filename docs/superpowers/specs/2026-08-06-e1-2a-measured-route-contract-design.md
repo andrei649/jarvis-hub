@@ -111,40 +111,45 @@ Create `agents/core/cortex_measured_compare.py` with two input records:
   reimplemented.
 - `RouteLabelSet`: schema `nerva.cortex.route-label-set.v1`, canonical ID, bounded
   sampling rule, canonical UTC source window, explicit `owner_attested=true`, bounded
-  retention-policy ID, and at least 20 cases. Its content fingerprint covers every
-  semantic field through request/source digests without exposing raw text.
+  retention-policy ID, the canonical route-registry ID tuple/fingerprint, and at
+  least 20 cases. Its content fingerprint covers every semantic field through
+  request/source/registry digests without exposing raw text.
 
-`load_route_label_set(path, allowed_routes=...)` accepts exact JSON fields only. It
+`load_route_label_set(path, registry=...)` accepts exact JSON fields only. It
 rejects symlinks/non-files, BOM/invalid UTF-8, duplicate JSON keys, floats/non-finite
 numbers, unknown fields, invalid timestamps, duplicate case IDs or normalized request
 digests, fewer than 20 cases, non-local privacy, missing attestation/policy/sampling
 metadata, malformed source digests, and any acceptable route outside the supplied
-current route registry. The label file remains caller-owned and is never written by
-the module. Its `retention_policy_id` covers the label file and every derived local
-suite, run, JSON report, and Markdown report artifact.
+bound current route registry. The label file remains caller-owned and is never
+written by the module. Its `retention_policy_id` names the policy covering the label
+file and every derived local suite, run, JSON report, and Markdown report artifact;
+the module does not enforce that policy at the OS layer.
 
 `build_owner_route_suite(label_set)` returns one E9 `BenchmarkCase` per label, all
 fixed to `owner_private_local`, `allowed_lanes=("local",)`, and an exact `accepted`
-criterion. Case artifact references contain only the label-set and case fingerprints,
-not local paths or source identifiers. `ensure_owner_route_suite(store, label_set)`
+criterion. Case artifact references contain only the label-set, case, and registry
+fingerprints, not local paths or source identifiers.
+`ensure_owner_route_suite(store, label_set)`
 reuses the latest stored version only when ordered case IDs and content fingerprints
 match exactly; otherwise it writes a new E9 suite version. This accepted E9 write
 persists raw prompt text in `<explicit-store-root>/suites/<suite>/vN.jsonl`.
 
 ### Measured current-router runner
 
-`measured_current_router_runner(router, agents, label_set)` composes rather than
+`measured_current_router_runner(router, registry, label_set)` composes rather than
 reimplements:
 
 1. `ShadowDecisionRouter` captures `DecisionRecord` values into an invocation-local
    list.
 2. E9 `current_router_runner` performs the deterministic classification and enforces
    `llm_classifier is None` both before and during every call.
-3. The adapter requires exactly one shadow record, verifies that its selected route
-   equals the E9 observation route, and verifies that the prompt digest selects exactly
-   one label.
+3. The adapter requires exactly one shadow record, verifies its available-agent tuple
+   equals the bound registry, verifies that its selected route equals the E9
+   observation route and belongs to the registry, and verifies that the prompt digest
+   selects exactly one label.
 4. It returns a copied `BenchmarkObservation` whose scoring response is `accepted` or
-   `rejected` and whose artifact references include only the decision fingerprint.
+   `rejected` and whose artifact references include the decision and registry
+   fingerprints.
 
 The retained E9 candidate evidence continues to carry the actual route ID. Scoring
 output therefore cannot replace or conceal the actual route. Initial or late-injected
@@ -163,29 +168,31 @@ commit SHA. Run IDs include the label fingerprint and repetition index; each run
 retains its own timestamps and canonical fingerprint.
 
 The function returns a guarded `MeasuredRunBatch`, not a plain caller-assembled tuple.
-The batch binds the label fingerprint, suite name/version, environment, source
-revision, repetition count, and retained run fingerprints. The guard is a module
-capability rather than a cryptographic boundary; documentation states that code
-executing inside the module is trusted.
+The batch binds the label and registry fingerprints, suite name/version, environment,
+source revision, repetition count, and retained run fingerprints. The guard is a
+module capability rather than a cryptographic boundary; documentation states that
+code executing inside the module is trusted.
 
 ### Report
 
-`build_measured_report(batch, store, label_set)` first rebuilds the expected E9 cases
-from the label set, loads the exact stored suite version, and proves ordered case IDs
-and content fingerprints match exactly. It then proves that every run is present in
-the supplied E9 store and that all runs have identical suite version, revision,
-candidate/baseline identity, local lane, case fingerprints, and result coverage. Run
-agreement alone is insufficient because a mutually consistent run set could otherwise
-be unrelated to the supplied labels.
+`build_measured_report(batch, store, label_set, registry=...)` first revalidates the
+bound registry, rebuilds the expected E9 cases from the label set, loads the exact
+stored suite version, and proves ordered case IDs and content fingerprints match
+exactly. It then proves that every run is present in the supplied E9 store and that
+all runs have identical registry, suite version, revision, candidate/baseline
+identity, local lane, case fingerprints, and result coverage. Run agreement alone is
+insufficient because a mutually consistent run set could otherwise be unrelated to
+the supplied labels.
 
 `MeasuredComparisonReport` uses schema
 `nerva.cortex.measured-comparison.v1` and records:
 
-- exact source revision, suite/version, label-set fingerprint, privacy-minimised
-  environment evidence, five retained run fingerprints, unique task count, and
-  sample count;
-- aggregate and per-route adequacy, rejection count, error count, and incomplete
-  count;
+- exact source revision, suite/version, label-set and registry fingerprints,
+  privacy-minimised environment evidence, and five retained run fingerprints;
+- explicit `unique_task_count` and `observation_count`, task-level
+  accepted/rejected/incomplete/nondeterministic counts, and observation-level
+  incomplete/error counts;
+- aggregate and per-route adequacy derived from unique consensus-scored cases only;
 - latency median and nearest-rank p95 in milliseconds, sourced only from measured
   E9 `benchmark.harness` values;
 - provider charge in USD, measured as zero only when every candidate proves
@@ -207,9 +214,12 @@ deriving the sanitised snapshot; structural JSON can validate the snapshot only,
 evidence rebinding proves both. No owner report using the earlier in-progress v1
 shape was persisted, so this pre-acceptance correction requires no migration.
 
-An adequacy rejection is valid negative evidence and does not make a run incomplete.
-An error, unscored result, missing measurement, coverage mismatch, or mixed identity
-does. An incomplete batch cannot serialize as complete measured evidence.
+An adequacy rejection with five-repetition consensus is valid negative evidence and
+does not make a case incomplete. An error, unscored result, route/outcome
+disagreement, or missing observation measurement makes the corresponding evidence
+incomplete. Coverage, registry, or mixed-identity drift is invalid evidence and
+raises rather than becoming an incomplete score. An incomplete batch cannot serialize
+as complete measured evidence.
 Warm-up `error`/`unscored` results abort before any run retention. During the five
 measured repetitions, however, `error`/`unscored` results are retained and
 fingerprint-proved as evidence; Task 4 reports the resulting batch with
@@ -225,7 +235,8 @@ aggregate measurements, limitations, and owner gates.
 
 ```text
 ignored owner-local label JSON
-  -> strict RouteLabelSet in memory
+  + guarded current route-registry binding
+  -> strict registry-bound RouteLabelSet in memory
   -> owner-private E9 BenchmarkCase suite
   -> raw prompts persisted in explicit owner-local suite vN.jsonl
   -> warm-up (discarded)
@@ -246,6 +257,8 @@ artifact.
 - Missing, implicit, symlinked, or otherwise unsafe store root: fail before persisting
   the suite; never fall back to the repository's default benchmark path.
 - Fewer than 20 unique tasks or incomplete labels: fail before warm-up.
+- Registry mismatch, key drift, mismatched decision registry, or an unregistered
+  selected route: fail before the affected persistence boundary.
 - Configured or late-injected LLM: fail before model invocation and before retention.
 - Zero/multiple shadow records or route mismatch: retain no successful sample for that
   invocation; the package is incomplete.
@@ -270,9 +283,13 @@ caller-owned label file, process memory, and the required owner-local E9 suite
 `vN.jsonl`; `runs.jsonl` and reports retain only privacy-minimised evidence. Report
 JSON and Markdown contain platform/Python digests only, never their raw detected
 strings. The named
-retention/access/deletion policy covers all five artifact classes: label file, suite,
-runs, JSON report, and Markdown report. Fingerprints remain pseudonymous/linkable and
-are not anonymous.
+retention/access/deletion policy is expected to cover all five artifact classes:
+label file, suite, runs, JSON report, and Markdown report, but remains caller-managed
+and is not OS enforcement by this module. In particular, local lane and path
+validation do not prove ACL/mode exclusivity, encryption, local-volume placement,
+backup/sync/index exclusion, other-user exclusion, or secure deletion. The fixed
+report limitation makes that boundary machine-visible. Fingerprints remain
+pseudonymous/linkable and are not anonymous.
 
 The label file may say `owner_attested=true`, but this is a typed declaration, not
 proof of consent or label correctness. The owner task remains open until the owner
@@ -386,6 +403,176 @@ Green evidence must prove zero classifier calls, zero outside-root writes or rea
 strict raw authority types, bounded parser failures, unchanged deterministic route
 results, and all prior E1.2a/E9 tests.
 
+## Whole-branch acceptance HOLD addendum (2026-08-06)
+
+Independent whole-branch review of candidate
+`3a3649f24233cc6311785ada98c316ca6ea92578` reproduced the three corrections from
+the original PR #842 design review: registry identity was still not bound, repeated
+observations still inflated the adequacy denominator, and filesystem confidentiality
+was still described more strongly than the code proved. It also found that an
+existing regular file could pass a measured directory boundary and leak a raw E9
+`FileExistsError`. This candidate remains a draft HOLD. The corrections below are a
+pre-acceptance v1 contract change; no owner evidence has been accepted. Any
+unaccepted local development artifacts are regenerated, so no migration is required.
+
+### One canonical route-registry capability
+
+`bind_route_registry(agents)` creates one guarded `RouteRegistryBinding` before a
+label is loaded. It validates a non-empty mapping with canonical route IDs, freezes a
+shallow snapshot for router execution, assigns one private non-serialized capability
+token, and derives exactly one fingerprint from this
+canonical payload:
+
+```json
+{"route_ids":["..."],"schema":"nerva.cortex.route-registry.v1"}
+```
+
+The fingerprint covers only the exact sorted route-ID tuple. It never hashes agent
+objects, `repr`, class names, addresses, or private state. The source mapping remains
+observable only so `assert_unchanged()` can reject key-set drift before and after
+every measured phase. Key or value replacement in the source mapping cannot alter the
+captured execution snapshot. In-place mutation of an already-captured agent object is
+trusted local behavior and is explicitly outside this route-ID identity claim.
+
+The same binding is supplied to label load, measured execution, report construction,
+and evidence validation. `RouteLabelSet` and `MeasuredRunBatch` retain its private
+token in memory and reject a merely lookalike binding, while JSON/Markdown never
+serialize that token. Its route IDs remain in the in-memory label contract; its
+fingerprint is bound into:
+
+- `RouteLabelSet` and the label-set content fingerprint;
+- every E9 suite case artifact reference;
+- `MeasuredRunBatch` and every retained run artifact reference;
+- the JSON/Markdown `MeasuredComparisonReport` and its content fingerprint.
+
+The binding is revalidated while loading labels, before the first suite write, before
+and after warm-up, before and after every case observation and retained repetition,
+before collision scan/write/readback, and before report reads/aggregation. The
+current-router adapter receives the frozen snapshot. Every captured
+`DecisionRecord.request.available_agents` must equal the bound sorted route IDs;
+`selected_route` must equal the observation route and belong to the binding. An
+unregistered selected route or registry drift rejects the phase before persistence;
+it can never become ordinary negative adequacy evidence.
+
+### Unique-case adequacy and repeated-observation evidence
+
+Five retained observations are repeated evidence for one labelled case, not five
+independent labels. The report schema therefore uses explicit, unit-bearing fields:
+
+- `unique_task_count` (at least 20) and `observation_count`
+  (`unique_task_count * repetition_count`, therefore 100 for the minimum corpus);
+- `accepted_task_count`, `rejected_task_count`, `incomplete_task_count`, and
+  `nondeterministic_task_count`, all counted once per unique case;
+- `incomplete_observation_count` and `error_observation_count`, counted across the
+  retained observations;
+- per-route aggregates counted from unique cases with one stable actual route.
+
+The task counters partition the unique cases:
+
+```text
+accepted_task_count + rejected_task_count + incomplete_task_count
+    == unique_task_count
+nondeterministic_task_count <= incomplete_task_count
+error_observation_count <= incomplete_observation_count <= observation_count
+```
+
+`nondeterministic_task_count` is a subset of the exclusive incomplete-task bucket and
+is disjoint from the adequacy denominator. Each per-route record satisfies
+`scored_task_count == accepted_task_count + rejected_task_count`; the sums of its
+accepted, rejected, and scored counts equal the report's corresponding accepted,
+rejected, and accepted-plus-rejected task totals.
+
+For a case to contribute one accepted or rejected unit, all five retained results
+must be scored, must select the same registered route, and must agree on the
+accepted/rejected outcome. Any route variation is nondeterministic even when both
+routes are acceptable. Any scored-outcome variation, `error`, or `unscored` result
+prevents that case from entering the adequacy denominator. Honest route/outcome
+variation remains in the retained runs and is represented by
+`nondeterministic_task_count += 1` and `incomplete_task_count += 1`; it does not raise
+a semantic parsing error and does not produce a blended percentage. Malformed,
+tampered, mixed-identity, or out-of-registry evidence still raises `ValueError`.
+
+Overall and per-route adequacy are computed only from the unique accepted/rejected
+task counts. Per-route records contain a stable route ID plus
+`scored_task_count`, `accepted_task_count`, and `rejected_task_count`; disagreement
+cases are never split across routes or assigned a synthetic route. A stable route
+result with incomplete latency, reliability, or cost evidence may keep its
+task-level route-adequacy classification, while the affected observations increment
+`incomplete_observation_count` and force `complete=false`. All structurally valid
+retained observations remain available for latency and provider-charge derivation;
+no new reliability average is invented. Warm-up remains excluded from both count
+families.
+
+`complete` is derived exactly as:
+
+```text
+incomplete_task_count == 0
+and incomplete_observation_count == 0
+and latency_median.status == "measured"
+and latency_p95.status == "measured"
+and provider_charge.status == "measured"
+```
+
+### OS confidentiality is caller-managed
+
+The fixed limitation set includes
+`filesystem_confidentiality_caller_managed`. The operator documentation and report
+Markdown state that this module does **not** prove or enforce Windows DACLs, POSIX
+owner/mode restrictions, encryption at rest, exclusive local-volume placement,
+backup/sync/index exclusion, other-local-user exclusion, or secure deletion.
+`retention_policy_id` identifies the owner's policy; it does not enforce it. The
+module proves only explicit local-lane execution, an explicit root, non-redirected
+and correctly typed paths, bounded inputs, and artifact integrity. Documentation may
+not call the store access-controlled without independent OS evidence.
+
+### Every store boundary has an exact type
+
+The private measured-store boundary checks every existing ancestor and requires
+`S_ISDIR` for the root, `suites`, and selected suite directory. Its operation modes
+are explicit:
+
+- version read: the exact `vN.jsonl` must exist and be `S_ISREG`;
+- new version create: the exact final must be absent before E9 and `S_ISREG` after;
+- runs read: the final may be absent only where the empty-run contract permits it,
+  otherwise it must be `S_ISREG`;
+- runs append: the final may be absent or `S_ISREG` before E9 and must be `S_ISREG`
+  after.
+
+Every create/write is followed by a fresh `lstat` type check. Symlinks, junctions,
+reparse points, broken redirects, directories where a file is expected, regular files
+where a directory is expected, and other special files fail before E9 reads or
+writes them.
+
+Topology and I/O failures such as `FileExistsError`, `NotADirectoryError`, and
+`PermissionError`, including those raised by the delegated E9 filesystem operation,
+are normalized to bounded `ValueError` messages that omit absolute paths. Narrow
+catches surround only the boundary-mediated I/O call; semantic E9 errors are not
+masked. Hostile create races fail closed, and no outside-root read or write is
+accepted.
+
+### Required red/green evidence for this addendum
+
+Tests must first prove all of these failures against the current candidate, then turn
+green without weakening earlier controls:
+
+1. registry fingerprint stability under key ordering and change under add/remove;
+2. label/runtime registry mismatch before a write, key drift before/after warm-up,
+   between repetitions, and during an observation, plus frozen-snapshot execution;
+3. unregistered selected routes and mismatched decision available-agent tuples;
+4. exact registry binding and tamper rejection in label, suite, run, batch, JSON,
+   Markdown, and evidence rebinding;
+5. stable 20-by-5 evidence reports 20 unique tasks and 100 observations with a
+   denominator of 20;
+6. route or outcome disagreement produces explicit nondeterministic/incomplete task
+   evidence and never a 99/100-style blended `complete=true` report;
+7. `error`/`unscored` observations remain retained, are counted in observation units,
+   make the unique case incomplete, and stay outside the adequacy denominator;
+8. the caller-managed filesystem limitation is immutable in JSON/Markdown/docs;
+9. regular files at `suites` or the selected suite, directories/special files at
+   `vN.jsonl` or `runs.jsonl`, redirects, broken links, and create races produce only
+   bounded failures with no outside read/write; normal missing directories/files are
+   created and post-validated.
+
 ## Files and Ownership
 
 - Create `agents/core/cortex_measured_compare.py`: strict input, adapter, batch, report,
@@ -441,5 +628,7 @@ E1.2b remains blocked until the owner provides or approves all five inputs:
 4. retention, access, and deletion policy;
 5. permission to execute the local run on the owner host.
 
-Until then, documentation must say `contract_ready`, `owner_evidence_blocked`, and
-`real_task_outcome_quality=not_measured`.
+Until this whole-branch HOLD is independently closed, documentation must say
+`design_hold`, `owner_evidence_blocked`, and
+`real_task_outcome_quality=not_measured`. After exact-head code acceptance it may say
+`contract_ready`, while the five owner blockers and release-false state remain.

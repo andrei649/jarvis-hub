@@ -130,13 +130,18 @@ class RouteLabelSet:
     source_window_end: str
     owner_attested: bool
     retention_policy_id: str
+    route_registry_ids: tuple[str, ...]
+    route_registry_fingerprint: str
     cases: tuple[RouteLabelCase, ...]
     schema: str = field(default=LABEL_SCHEMA, init=False)
     content_fingerprint: str = field(init=False)
+    _route_registry_token: Any = field(repr=False, compare=False)
 ```
 
-Expose the exact loader signature `load_route_label_set(path: str | Path, *,
-allowed_routes: Collection[str]) -> RouteLabelSet`.
+Create the guarded binding with
+`bind_route_registry(agents: Mapping[str, Any]) -> RouteRegistryBinding`, then expose
+the exact loader signature `load_route_label_set(path: str | Path, *,
+registry: RouteRegistryBinding) -> RouteLabelSet`.
 
 Implementation requirements:
 
@@ -145,8 +150,14 @@ Implementation requirements:
 - Require exact key sets at all three object levels. Reject booleans where an integer/string is expected and reject control characters, newlines, path separators, non-canonical identifiers, and strings over their documented bounds.
 - Accept timestamps only in canonical UTC RFC 3339 millisecond form and require `start <= end`.
 - Derive the normalized request digest only with `DecisionRequest.from_input(text, {}).text_digest`.
-- Canonicalize acceptable routes to a sorted tuple only after rejecting duplicates; validate them against a non-empty canonical `allowed_routes` collection supplied by the caller.
-- Fingerprint canonical, compact, sorted-key JSON. A case fingerprint covers case ID, request digest, acceptable routes, category, privacy, and source-record digest. The label-set fingerprint covers schema, label metadata, and the ordered case fingerprints, never raw text.
+- Canonicalize acceptable routes to a sorted tuple only after rejecting duplicates;
+  validate them against the binding's non-empty canonical route-ID tuple and
+  revalidate the source mapping before returning.
+- Fingerprint canonical, compact, sorted-key JSON. The registry fingerprint covers
+  `{"schema":"nerva.cortex.route-registry.v1","route_ids":[...]}`. A case
+  fingerprint covers case ID, request digest, acceptable routes, category, privacy,
+  and source-record digest. The label-set fingerprint covers schema, label metadata,
+  registry identity, and the ordered case fingerprints, never raw text.
 
 - [ ] **Step 5: Add red/green tests for suite conversion and version reuse**
 
@@ -162,7 +173,7 @@ The suite name must be a deterministic bounded derivative of the label-set ID/fi
 - `allowed_lanes=("local",)`;
 - `criterion=BenchmarkCriterion("exact", "accepted")`;
 - task type from the bounded category;
-- artifact references containing only the label-set and case fingerprints.
+- artifact references containing only the label-set, case, and registry fingerprints.
 
 Assert `ensure_owner_route_suite` reuses the latest version only when the ordered `(case_id, content_fingerprint)` sequence is exact; any semantic label change writes the next version. Assert the stored suite file contains the raw synthetic prompt, documenting that this is intentional E9 persistence under the explicit owner retention boundary, while its artifact references contain no path/source identifier.
 
@@ -201,10 +212,13 @@ Extend `run_e1_2_checks()` with `_check_measured_runner()` and assert:
 - a configured `llm_classifier` is rejected when the adapter is built;
 - a router whose `llm_classifier` changes after adapter creation is rejected before its `classify` body runs;
 - an unknown normalized prompt fails before classification;
-- each invocation captures exactly one `DecisionRecord` and the record's selected route equals the retained observation's actual `route_id`;
+- each invocation captures exactly one `DecisionRecord`; its available-agent tuple
+  equals the bound registry, its selected route equals the retained observation's
+  actual `route_id`, and that route is registered;
 - zero or two captured records, or a deliberately mismatched selected route, raise without returning scored evidence;
 - an acceptable actual route yields `response="accepted"`; a non-acceptable actual route yields `response="rejected"` while retaining the non-acceptable actual `route_id`;
-- the decision replay fingerprint is added to artifact references, while prompt text and source-record digest are absent;
+- decision and registry fingerprints are added to artifact references, while prompt
+  text and source-record digest are absent;
 - concurrent invocations cannot share record buffers.
 
 - [ ] **Step 2: Run focused test and confirm RED**
@@ -213,16 +227,23 @@ Run the existing router target. Expected: missing `measured_current_router_runne
 
 - [ ] **Step 3: Implement by composition, not routing reimplementation**
 
-Add `measured_current_router_runner(router: Any, agents: Mapping[str, Any],
+Add `measured_current_router_runner(router: Any, registry: RouteRegistryBinding,
 label_set: RouteLabelSet, *, host_id: str = "in-process") -> BenchmarkRunner`.
 
 At factory time, call the accepted `current_router_runner` once for its deterministic-router guard. Build a request-digest-to-label map and reject ambiguity. Inside every returned async invocation:
 
 1. Derive the prompt digest through `DecisionRequest.from_input(prompt, {}).text_digest` and select exactly one label before classification.
 2. Allocate an invocation-local `records: list[DecisionRecord]`.
-3. Wrap the router in `ShadowDecisionRouter(router, records.append)` and build the accepted E9 `current_router_runner` around that wrapper so the late-injected LLM guard runs before classification.
-4. Await the E9 runner; require exactly one record and exact `selected_route == observation.route_id`.
-5. Return `dataclasses.replace(observation, response=score, artifact_refs=(f"decision:{record.replay_fingerprint}",))`, where `score` is exactly `accepted` or `rejected`. The retained adapter reference is exactly this one fingerprint, even if a future underlying adapter grows unrelated references.
+3. Revalidate the binding, wrap the router in
+   `ShadowDecisionRouter(router, records.append)`, and build the accepted E9
+   `current_router_runner` around that wrapper with a copy of the frozen snapshot so
+   the late-injected LLM guard runs before classification.
+4. Await the E9 runner; revalidate the source keys and require exactly one record,
+   exact bound available-agent IDs, exact
+   `selected_route == observation.route_id`, and a registered selected route.
+5. Return `dataclasses.replace(...)` with a score exactly `accepted` or `rejected`
+   and only bounded decision/registry artifact references, even if a future
+   underlying adapter grows unrelated references.
 
 Do not catch router/adapter exceptions, persist prompt text, or set latency yourself; `BenchmarkHarness` remains the sole latency source.
 
@@ -260,7 +281,9 @@ Add `_check_measured_run_batch()` covering:
   `error`/`unscored` results remain evidence and all five repetitions are stored, while
   an exception before a run exists, run-ID collision, write failure, or retrieval/
   fingerprint-proof failure stops immediately and never returns a partial batch;
-- the returned batch cannot be directly constructed or modified by a caller and binds the resolved store root, label fingerprint, suite/version, environment fingerprint, revision, repetition count, and ordered run fingerprints.
+- the returned batch cannot be directly constructed or modified by a caller and
+  binds the resolved store root, label and registry fingerprints, suite/version,
+  environment fingerprint, revision, repetition count, and ordered run fingerprints.
 
 - [ ] **Step 2: Run focused test and confirm RED**
 
@@ -274,6 +297,7 @@ Add a module-private sentinel and:
 @dataclass(frozen=True)
 class MeasuredRunBatch:
     label_set_fingerprint: str
+    route_registry_fingerprint: str
     suite_name: str
     suite_version: int
     environment: EnvironmentProfile
@@ -282,21 +306,32 @@ class MeasuredRunBatch:
     run_fingerprints: tuple[str, ...]
     store_root: Path = field(repr=False)
     repetitions: int = field(default=RETAINED_REPETITIONS, init=False)
+    _route_registry_token: Any = field(repr=False, compare=False)
     _guard: Any = field(default=None, repr=False, compare=False)
 ```
 
-Expose the exact async signature `run_measured_comparison(*, router: Any, agents:
-Mapping[str, Any], label_set: RouteLabelSet, store_root: Path, source_revision: str,
+Expose the exact async signature `run_measured_comparison(*, router: Any, registry:
+RouteRegistryBinding, label_set: RouteLabelSet, store_root: Path, source_revision: str,
 run_nonce: Callable[[], str] | None = None) -> MeasuredRunBatch`.
 
 Implementation order is security-relevant:
 
 1. Require a `Path` instance and validate an explicitly supplied absolute, existing directory; reject the final path and every traversed Windows reparse/symlink boundary before resolving it. Never create/fallback to a default root.
-2. Validate the exact revision, label set, route registry, and initial deterministic-router state before the first suite write.
+2. Validate the exact revision, label set, bound registry, and initial
+   deterministic-router state before the first suite write. Revalidate registry keys
+   before and after warm-up, every observation/repetition, collision scan, write, and
+   readback.
 3. Construct `BenchmarkStore(resolved_root)`, ensure the suite, detect one environment, and hash its canonical payload.
 4. Build the measured runner and `BenchmarkHarness(candidate_id=CANDIDATE_ID)` with no baseline. Document that the accepted E9 store is a single-writer owner-local store; do not claim concurrent-writer safety that it does not provide.
 5. Run one full warm-up with lane `local` and never record it. Treat any warm-up result with status `error` or `unscored` as a warm-up failure.
-6. Run exactly five full retained repetitions. Before `store.record_run`, reject an existing run-ID collision and replace each run's artifact references with bounded label/environment fingerprints. Retain `BenchmarkRun` values containing `error` or `unscored` results so Task 4 can report `complete=false`. Record each run immediately, then prove its canonical fingerprint is uniquely retrievable from the complete store with an exact match before continuing. An exception before a run exists, collision, write failure, or retrieval/fingerprint-proof failure raises and returns no batch.
+6. Run exactly five full retained repetitions. Before `store.record_run`, reject an
+   existing run-ID collision, any registry drift/unregistered route, and replace each
+   run's artifact references with bounded label/registry/environment fingerprints.
+   Retain `BenchmarkRun` values containing `error` or `unscored` results so Task 4 can
+   report `complete=false`. Record each run immediately, then prove its canonical
+   fingerprint is uniquely retrievable from the complete store with an exact match
+   before continuing. An exception before a run exists, collision, write failure, or
+   retrieval/fingerprint-proof failure raises and returns no batch.
 7. Construct the batch only through the module sentinel after all five stores succeed. Hash runs with accepted E9.1 `run_fingerprint`.
 
 The batch's store path is internal evidence only and must never enter report serialization or Markdown.
@@ -331,9 +366,16 @@ git commit -m "feat(cortex): retain guarded measured route batches"
 
 Add `_check_measured_report()` and `_check_measured_report_adversarial()` with controlled five-run fixtures. Cover:
 
-- 100 samples for 20 tasks x 5 repetitions; accepted/rejected counts and overall/per-actual-route ratios are exact;
+- 20 unique tasks and 100 observations for 20 tasks x 5 repetitions are reported as
+  distinct units; accepted/rejected and overall/per-actual-route adequacy count one
+  exact all-five consensus per unique task;
+- a route or accepted/rejected outcome disagreement remains retained evidence but
+  increments task-level nondeterministic/incomplete counts, contributes no adequacy
+  unit or per-route split, and forces `complete=false`;
 - route rejection is valid negative evidence and does not increase incomplete/error counts;
-- an `error` or `unscored` result makes `complete=false`, preserves the negative/error count, and prevents a full-quality claim;
+- an `error` or `unscored` result makes its unique case incomplete, preserves exact
+  observation-level incomplete/error counts, stays outside the adequacy denominator,
+  and prevents a full-quality claim;
 - median is the ordinary middle/mean-of-two statistic and p95 is nearest-rank `sorted_values[ceil(0.95*n)-1]` over only E9 `benchmark.harness`/`ms` measurements;
 - provider charge is measured `$0` only if every candidate proves `model_id="none"`, `provider_id="local-deterministic"`, no baseline, and measured E9 `candidate.runner`/`usd` cost of `0.0`; otherwise it is `not_measured` and the deterministic-charge contract is incomplete;
 - compute, energy, hardware, downstream-agent, tool, action, and executed-task outcome measurements remain `not_measured`;
@@ -354,8 +396,10 @@ Expected: report types/builders/renderers are missing or the new aggregate asser
 Define bounded frozen records for per-route aggregates and the full `MeasuredComparisonReport`. The report must carry:
 
 - schema, label-set ID/fingerprint, suite/version, exact revision, fixed candidate/no baseline;
-- a dedicated immutable `EnvironmentEvidence` snapshot with fixed runner/schema/hardware fields, SHA-256 digests of the exact detected platform and Python-version strings, and a fingerprint over that sanitised payload; keep the separate raw-profile `environment_fingerprint`, exactly five ordered retained-run fingerprints, and repetition/task/sample counts; do not attempt to construct or deserialize the guarded E9.1 `EnvironmentProfile` directly;
-- accepted, rejected, error, and incomplete counts; overall and sorted per-actual-route adequacy;
+- a dedicated immutable `EnvironmentEvidence` snapshot with fixed runner/schema/hardware fields, SHA-256 digests of the exact detected platform and Python-version strings, and a fingerprint over that sanitised payload; keep the separate raw-profile `environment_fingerprint`, the bound registry fingerprint, exactly five ordered retained-run fingerprints, and explicit repetition/unique-task/observation counts; do not attempt to construct or deserialize the guarded E9.1 `EnvironmentProfile` directly;
+- task-level accepted, rejected, incomplete, and nondeterministic counts;
+  observation-level incomplete/error counts; overall and sorted per-actual-route
+  adequacy from consensus-scored unique tasks only;
 - typed E9 `Measurement` values for latency median/p95, provider charge, and every explicitly unmeasured dimension;
 - fixed limitation codes and the five owner-gate codes, not free-form prose;
 - `complete` derived from evidence only;
@@ -363,8 +407,8 @@ Define bounded frozen records for per-route aggregates and the full `MeasuredCom
 
 Implement these exact public signatures:
 
-- `build_measured_report(batch: MeasuredRunBatch, store: BenchmarkStore, label_set: RouteLabelSet) -> MeasuredComparisonReport`
-- `validate_measured_report_against_evidence(report: MeasuredComparisonReport, batch: MeasuredRunBatch, store: BenchmarkStore, label_set: RouteLabelSet) -> None`
+- `build_measured_report(batch: MeasuredRunBatch, store: BenchmarkStore, label_set: RouteLabelSet, *, registry: RouteRegistryBinding) -> MeasuredComparisonReport`
+- `validate_measured_report_against_evidence(report: MeasuredComparisonReport, batch: MeasuredRunBatch, store: BenchmarkStore, label_set: RouteLabelSet, *, registry: RouteRegistryBinding) -> None`
 - `render_measured_report(report: MeasuredComparisonReport) -> str`
 
 Builder validation must:
@@ -372,8 +416,18 @@ Builder validation must:
 1. Require `store.root.resolve() == batch.store_root` without serializing the path.
 2. Rebuild expected E9 cases from the label set; load the exact suite version; compare ordered `(case_id, content_fingerprint)` sequences.
 3. Load retained runs from the store and locate each exact batch fingerprint; reject absent or duplicate matches.
-4. Verify every identity, artifact fingerprint, result coverage, task/privacy/case fingerprint, lane, candidate/baseline, environment snapshot, and revision field before aggregation. Recompute the raw E9 profile fingerprint against the batch, then derive the sanitised environment snapshot; its content fingerprint is intentionally distinct. Candidate hardware provenance (`not-measured`) and E9.1 environment hardware (`not_measured`) are distinct fields and must not be compared or normalized into one claim.
-5. Count failed route criteria as rejection evidence; count errors/unscored/missing measurements as incomplete evidence without hiding them.
+4. Verify registry identity, every artifact fingerprint, result coverage,
+   task/privacy/case fingerprint, lane, candidate/baseline, environment snapshot, and
+   revision before aggregation. Recompute the raw E9 profile fingerprint against the
+   batch, then derive the sanitised environment snapshot; its content fingerprint is
+   intentionally distinct. Candidate hardware provenance (`not-measured`) and E9.1
+   environment hardware (`not_measured`) are distinct fields and must not be compared
+   or normalized into one claim.
+5. Group the five retained results by case. Count one task as accepted/rejected only
+   with exact route/outcome consensus. Preserve route/outcome disagreement as explicit
+   nondeterministic/incomplete task evidence; count error/unscored/missing
+   measurements in observation units without hiding them. Compute latency/provider
+   evidence from structurally valid observations, never from an invented task average.
 
 `MeasuredComparisonReport.to_json()` must use `ensure_ascii=False`, `sort_keys=True`, and `separators=(",", ":")`. `from_json()` must reject duplicate keys, floats/non-finite values that violate the report schema, unknown fields (including raw `platform` or `python_version`), derived-count/fingerprint drift, completeness drift, and immutable-authority drift. A deserialized report is structurally valid but becomes accepted retained evidence only after `validate_measured_report_against_evidence` proves both the raw batch environment fingerprint and sanitised snapshot. This is a pre-acceptance v1 correction; no persisted owner report exists and no migration is required.
 
@@ -557,17 +611,70 @@ then require the same security reviewer (or a fresh equivalent) to reproduce eve
 old probe against the new exact SHA. Any residual disclosure or outside-root write is
 HOLD.
 
+- [ ] **Step 3b: Resolve the whole-branch identity, denominator, claim, and type HOLD**
+
+Independent review of `3a3649f24233cc6311785ada98c316ca6ea92578`
+reproduced the three original PR #842 design corrections and one remaining typed-path
+gap. Implement only the whole-branch addendum in the design, using strict red-green
+TDD before publication:
+
+1. Add one guarded `RouteRegistryBinding`, derived from the exact sorted route IDs and
+   used by label load, execution, report construction, and evidence validation. Freeze
+   the shallow execution mapping; revalidate source keys at every phase boundary and
+   around every observation. Bind the registry fingerprint into label, suite cases,
+   retained runs, batch, report JSON/Markdown, and their semantic fingerprints.
+   Reject drift, mismatched decision registries, and selected routes outside the
+   binding before persistence.
+2. Replace ambiguous observation-denominator fields with explicit
+   `unique_task_count`, `observation_count`, task-level accepted/rejected/incomplete/
+   nondeterministic counts, and observation-level incomplete/error counts. Derive
+   adequacy and per-route aggregates from one all-five consensus per unique case.
+   Preserve honest disagreement as retained nondeterministic/incomplete evidence that
+   forces `complete=false`; never blend it into adequacy and never discard it merely
+   because it is negative evidence.
+3. Add the immutable `filesystem_confidentiality_caller_managed` limitation and state
+   precisely in operator docs/Markdown what is not enforced: ACLs/modes, encryption,
+   exclusive local volume, backup/sync/index exclusion, other-user exclusion, and
+   secure deletion. Keep `retention_policy_id` declarative.
+4. Require `S_ISDIR` at root/`suites`/suite boundaries and `S_ISREG` for existing
+   version/run files. Permit only the exact missing finals E9 may create, post-validate
+   every create/write, and normalize topology/I/O failures without masking semantic
+   E9 errors or leaking absolute paths.
+
+Expected implementation scope is
+`agents/core/cortex_measured_compare.py`,
+`tests/_nerva_e1_2_checks.py`, this design/plan, and
+`docs/nerva2/CORTEX_E1_2.md`. Change shared ledgers only after overlapping draft PR
+#843 integrates. No production router, selector, provider, E9 schema, scheduling,
+telemetry mining, second persistence, owner-data execution, or authority change is
+authorized. The route-label JSON remains v1; the pre-acceptance report v1 shape is
+corrected in place because no owner report exists.
+
+Run the new registry and 20-by-5 disagreement probes RED first. After GREEN, rerun
+the focused and adjacent E1.2a/E9/router/manifest suites, then full `tests/`, Ruff on
+all touched Python, targeted Bandit, compileall, manifest/status checks, cumulative
+and latest-commit `git diff --check`, and an exact-head independent functional,
+security, and truth review. Any registry drift that persists, unregistered route,
+99/100 blended report, falsely access-controlled wording, raw topology exception, or
+outside-root I/O is HOLD.
+
 - [ ] **Step 4: Refresh live GitHub state before publishing**
 
 Fetch `origin`, re-check open/draft/closed PRs, current `origin/main`, issue #841/#759/#757/#778 bodies, and any new overlapping branch or draft lock. If `origin/main` moved, rebase the isolated branch, rerun the full local matrix, and obtain reviews on the rebased exact head.
 
 - [ ] **Step 5: Push, update PR #842, and run exact-head hosted checks**
 
-Push the branch. Update the PR body with exact local evidence and the explicit distinction:
+Push the branch. Reconcile the PR body and #841 acceptance checklist with the exact
+implemented schema, hostile tests, owner blockers, and local evidence. While hosted
+acceptance is pending, use this explicit distinction:
 
-`CODE CONTRACT READY · OWNER EVIDENCE BLOCKED · EVALUATION ONLY · RELEASE FALSE`.
+`CODE CONTRACT CANDIDATE · WAITING EXACT-HEAD CHECKS · OWNER EVIDENCE BLOCKED · EVALUATION ONLY · RELEASE FALSE`.
 
 Keep the PR draft until independent reviews are GO. Then mark ready and wait for every required hosted check, including Windows, aggregate CodeQL/security, and any review-thread resolution, on the exact head SHA. Do not merge a superseded SHA or infer success from an older run.
+
+Only after every exact-head review and hosted gate is green may the PR/issue wording
+advance to `CODE CONTRACT READY`; that promotion does not advance owner evidence, E1,
+or release readiness.
 
 - [ ] **Step 6: Merge only when all gates are factual**
 
