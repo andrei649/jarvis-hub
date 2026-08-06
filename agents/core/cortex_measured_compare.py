@@ -12,9 +12,11 @@ import sys
 import unicodedata
 import uuid
 from collections.abc import Callable, Collection, Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from agents.core.cortex_decision import (
@@ -41,6 +43,7 @@ MIN_OWNER_TASKS = 20
 RETAINED_REPETITIONS = 5
 LABEL_SCHEMA = "nerva.cortex.route-label-set.v1"
 REPORT_SCHEMA = "nerva.cortex.measured-comparison.v1"
+ROUTE_REGISTRY_SCHEMA = "nerva.cortex.route-registry.v1"
 CANDIDATE_ID = "current-router-e1.2a"
 
 _IDENTIFIER_RE = re.compile(r"[a-z0-9][a-z0-9._:-]{0,127}\Z")
@@ -74,6 +77,7 @@ _CASE_FIELDS = {
 }
 _MEASURED_BATCH_GUARD = object()
 _MEASURED_REPORT_GUARD = object()
+_ROUTE_REGISTRY_GUARD = object()
 
 LIMITATION_CODES = (
     "route_adequacy_only",
@@ -82,6 +86,7 @@ LIMITATION_CODES = (
     "resource_dimensions_not_measured",
     "real_task_outcome_quality_not_measured",
     "fingerprints_are_pseudonymous",
+    "filesystem_confidentiality_caller_managed",
 )
 OWNER_GATE_CODES = (
     "owner_historical_task_dataset",
@@ -109,16 +114,16 @@ _ENVIRONMENT_EVIDENCE_FIELDS = {
 _MEASUREMENT_FIELDS = {"status", "value", "unit", "source"}
 _ROUTE_AGGREGATE_FIELDS = {
     "route_id",
-    "sample_count",
-    "accepted_count",
-    "rejected_count",
-    "incomplete_count",
+    "scored_task_count",
+    "accepted_task_count",
+    "rejected_task_count",
     "adequacy",
 }
 _REPORT_FIELDS = {
     "schema",
     "label_set_id",
     "label_set_fingerprint",
+    "route_registry_fingerprint",
     "suite_name",
     "suite_version",
     "source_revision",
@@ -128,12 +133,14 @@ _REPORT_FIELDS = {
     "environment_fingerprint",
     "run_fingerprints",
     "repetition_count",
-    "task_count",
-    "sample_count",
-    "accepted_count",
-    "rejected_count",
-    "error_count",
-    "incomplete_count",
+    "unique_task_count",
+    "observation_count",
+    "accepted_task_count",
+    "rejected_task_count",
+    "incomplete_task_count",
+    "nondeterministic_task_count",
+    "incomplete_observation_count",
+    "error_observation_count",
     "overall_adequacy",
     "per_actual_route",
     "latency_median",
@@ -170,6 +177,24 @@ def _canonical_json(payload: object) -> str:
 
 def _fingerprint(payload: object) -> str:
     return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def _bounded_call(
+    operation: Callable[[], Any],
+    errors: type[Exception] | tuple[type[Exception], ...],
+    message: str,
+) -> Any:
+    """Normalize private parser/OS failures without retaining their payloads."""
+
+    failed = False
+    result: Any = None
+    try:
+        result = operation()
+    except errors:
+        failed = True
+    if failed:
+        raise ValueError(message)
+    return result
 
 
 def _has_forbidden_characters(value: str) -> bool:
@@ -236,22 +261,127 @@ def _unique_routes(values: Collection[object], label: str) -> tuple[str, ...]:
     return routes
 
 
-def _route_collection(allowed_routes: Collection[str]) -> frozenset[str]:
-    if isinstance(allowed_routes, str):
-        raise ValueError("allowed routes must be a non-empty canonical collection")
-    routes = tuple(allowed_routes)
-    if not routes:
-        raise ValueError("allowed routes must be a non-empty canonical collection")
-    return frozenset(_unique_routes(routes, "allowed route"))
+def _canonical_registry_ids(agents: Mapping[str, Any]) -> tuple[str, ...]:
+    if not isinstance(agents, Mapping):
+        raise ValueError("route registry must be a non-empty mapping")
+    try:
+        raw_ids = tuple(agents)
+    except (OSError, RuntimeError, TypeError) as exc:
+        raise ValueError("route registry keys could not be observed") from exc
+    if not raw_ids:
+        raise ValueError("route registry must be a non-empty mapping")
+    route_ids = _unique_routes(raw_ids, "registered route")
+    return tuple(sorted(route_ids))
+
+
+def _registry_fingerprint(route_ids: tuple[str, ...]) -> str:
+    return _fingerprint(
+        {
+            "route_ids": list(route_ids),
+            "schema": ROUTE_REGISTRY_SCHEMA,
+        }
+    )
+
+
+@dataclass
+class _RegistryIntegrityState:
+    failure: str | None = None
+
+
+@dataclass(frozen=True)
+class RouteRegistryBinding:
+    """One in-memory capability binding labels and evidence to route identity."""
+
+    route_ids: tuple[str, ...]
+    fingerprint: str
+    _source: Mapping[str, Any] = field(repr=False, compare=False)
+    _snapshot: Mapping[str, Any] = field(repr=False, compare=False)
+    _token: Any = field(repr=False, compare=False)
+    _integrity: _RegistryIntegrityState = field(repr=False, compare=False)
+    _guard: Any = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self._guard is not _ROUTE_REGISTRY_GUARD:
+            raise ValueError("route registry bindings are constructed internally")
+        if (
+            not isinstance(self.route_ids, tuple)
+            or not self.route_ids
+            or self.route_ids != tuple(sorted(set(self.route_ids)))
+        ):
+            raise ValueError("route registry ids must be a sorted unique tuple")
+        for route_id in self.route_ids:
+            _identifier(route_id, "registered route")
+        _digest(self.fingerprint, "route registry fingerprint")
+        if self.fingerprint != _registry_fingerprint(self.route_ids):
+            raise ValueError("route registry fingerprint does not match its route ids")
+        if not isinstance(self._source, Mapping) or not isinstance(
+            self._snapshot, Mapping
+        ):
+            raise ValueError("route registry binding requires mapping capabilities")
+        if tuple(self._snapshot) != self.route_ids:
+            raise ValueError("route registry execution snapshot does not match its ids")
+        if not isinstance(self._integrity, _RegistryIntegrityState):
+            raise ValueError("route registry integrity state is invalid")
+        object.__setattr__(self, "_guard", None)
+
+    def _invalidate(self, message: str) -> None:
+        if self._integrity.failure is None:
+            self._integrity.failure = message
+        raise ValueError(self._integrity.failure)
+
+    def assert_unchanged(self) -> None:
+        if self._integrity.failure is not None:
+            raise ValueError(self._integrity.failure)
+        try:
+            current = _canonical_registry_ids(self._source)
+        except ValueError as exc:
+            self._invalidate("route registry drift could not be validated")
+            raise AssertionError("unreachable") from exc
+        if current != self.route_ids:
+            self._invalidate("route registry drift detected")
+
+    def execution_snapshot(self) -> Mapping[str, Any]:
+        self.assert_unchanged()
+        return self._snapshot
+
+
+def bind_route_registry(agents: Mapping[str, Any]) -> RouteRegistryBinding:
+    """Freeze route execution values while retaining source key-drift detection."""
+
+    route_ids = _canonical_registry_ids(agents)
+    try:
+        snapshot = {route_id: agents[route_id] for route_id in route_ids}
+    except (KeyError, OSError, RuntimeError, TypeError) as exc:
+        raise ValueError("route registry snapshot could not be captured") from exc
+    binding = RouteRegistryBinding(
+        route_ids=route_ids,
+        fingerprint=_registry_fingerprint(route_ids),
+        _source=agents,
+        _snapshot=MappingProxyType(snapshot),
+        _token=object(),
+        _integrity=_RegistryIntegrityState(),
+        _guard=_ROUTE_REGISTRY_GUARD,
+    )
+    binding.assert_unchanged()
+    return binding
 
 
 def _reject_link_or_reparse(path: Path, label: str) -> os.stat_result:
+    metadata: os.stat_result | None = None
+    missing = False
+    failed = False
     try:
         metadata = os.lstat(path)
     except FileNotFoundError:
-        raise
-    except OSError as exc:
-        raise ValueError(f"{label} must exist without redirected ancestors") from exc
+        missing = True
+    except OSError:
+        failed = True
+    if missing:
+        raise FileNotFoundError
+    if failed:
+        raise ValueError(f"{label} must exist without redirected ancestors")
+    if metadata is None:  # pragma: no cover - defensive unreachable state
+        raise AssertionError("lstat completed without metadata")
     reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
     if stat.S_ISLNK(metadata.st_mode) or bool(
         getattr(metadata, "st_file_attributes", 0) & reparse_flag
@@ -269,12 +399,15 @@ def _validate_local_path(
     path = candidate if candidate.is_absolute() else Path.cwd() / candidate
     current = Path(path.anchor)
     metadata: os.stat_result | None = None
+    missing = False
     try:
         for part in path.parts[1:]:
             current /= part
             metadata = _reject_link_or_reparse(current, label)
-    except FileNotFoundError as exc:
-        raise ValueError(f"{label} must exist without redirected ancestors") from exc
+    except FileNotFoundError:
+        missing = True
+    if missing:
+        raise ValueError(f"{label} must exist without redirected ancestors")
     if metadata is None:
         metadata = _reject_link_or_reparse(path, label)
     if require_file and not stat.S_ISREG(metadata.st_mode):
@@ -290,18 +423,20 @@ def _load_json(path: str | Path) -> Mapping[str, Any]:
         raise ValueError("route labels exceed the bounded input limit")
     if candidate.is_symlink() or not candidate.is_file():
         raise ValueError("route labels must be read from a regular non-symlink file")
-    try:
-        payload = candidate.read_bytes()
-    except OSError as exc:
-        raise ValueError("route labels could not be read") from exc
+    payload = _bounded_call(
+        candidate.read_bytes,
+        OSError,
+        "route labels could not be read",
+    )
     if payload.startswith(b"\xef\xbb\xbf"):
         raise ValueError("route labels must not use a UTF-8 BOM")
     if len(payload) > _MAX_LABEL_BYTES:
         raise ValueError("route labels exceed the bounded input limit")
-    try:
-        text = payload.decode("utf-8", errors="strict")
-    except UnicodeDecodeError as exc:
-        raise ValueError("route labels must use strict UTF-8") from exc
+    text = _bounded_call(
+        lambda: payload.decode("utf-8", errors="strict"),
+        UnicodeDecodeError,
+        "route labels must use strict UTF-8",
+    )
 
     def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         parsed: dict[str, Any] = {}
@@ -314,15 +449,16 @@ def _load_json(path: str | Path) -> Mapping[str, Any]:
     def _number(_value: str) -> None:
         raise ValueError("route labels do not permit JSON floats")
 
-    try:
-        raw = json.loads(
+    raw = _bounded_call(
+        lambda: json.loads(
             text,
             object_pairs_hook=_object,
             parse_float=_number,
             parse_constant=_number,
-        )
-    except (RecursionError, TypeError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
-        raise ValueError("route labels must be strict versioned JSON") from exc
+        ),
+        (RecursionError, TypeError, UnicodeError, json.JSONDecodeError, ValueError),
+        "route labels must be strict versioned JSON",
+    )
     if not isinstance(raw, Mapping):
         raise ValueError("route labels must use a root object")
     return raw
@@ -380,7 +516,10 @@ class RouteLabelSet:
     source_window_end: str
     owner_attested: bool
     retention_policy_id: str
+    route_registry_ids: tuple[str, ...]
+    route_registry_fingerprint: str
     cases: tuple[RouteLabelCase, ...]
+    _route_registry_token: Any = field(repr=False, compare=False)
     schema: str = field(default=LABEL_SCHEMA, init=False)
     content_fingerprint: str = field(init=False)
 
@@ -395,6 +534,22 @@ class RouteLabelSet:
             raise ValueError("route label sets require explicit owner attestation")
         _identifier(self.retention_policy_id, "retention policy id")
         if (
+            not isinstance(self.route_registry_ids, tuple)
+            or not self.route_registry_ids
+            or self.route_registry_ids
+            != tuple(sorted(set(self.route_registry_ids)))
+        ):
+            raise ValueError("label registry ids must be a sorted unique tuple")
+        for route_id in self.route_registry_ids:
+            _identifier(route_id, "registered route")
+        _digest(self.route_registry_fingerprint, "route registry fingerprint")
+        if self.route_registry_fingerprint != _registry_fingerprint(
+            self.route_registry_ids
+        ):
+            raise ValueError("label registry fingerprint does not match its route ids")
+        if self._route_registry_token is None:
+            raise ValueError("route labels require a registry capability token")
+        if (
             not isinstance(self.cases, tuple)
             or len(self.cases) < MIN_OWNER_TASKS
             or any(not isinstance(case, RouteLabelCase) for case in self.cases)
@@ -406,6 +561,12 @@ class RouteLabelSet:
             raise ValueError("route label request digests must be unique")
         if len({case.source_record_digest for case in self.cases}) != len(self.cases):
             raise ValueError("route label source record digests must be unique")
+        registered_routes = set(self.route_registry_ids)
+        if any(
+            not set(case.acceptable_primary_routes).issubset(registered_routes)
+            for case in self.cases
+        ):
+            raise ValueError("every acceptable route must be registered")
         object.__setattr__(
             self,
             "content_fingerprint",
@@ -415,6 +576,8 @@ class RouteLabelSet:
                     "label_set_id": self.label_set_id,
                     "owner_attested": self.owner_attested,
                     "retention_policy_id": self.retention_policy_id,
+                    "route_registry_fingerprint": self.route_registry_fingerprint,
+                    "route_registry_ids": list(self.route_registry_ids),
                     "sampling_rule": self.sampling_rule,
                     "schema": self.schema,
                     "source_window": {
@@ -426,9 +589,28 @@ class RouteLabelSet:
         )
 
 
+def _assert_label_registry(
+    label_set: RouteLabelSet,
+    registry: RouteRegistryBinding,
+) -> None:
+    if not isinstance(registry, RouteRegistryBinding):
+        raise ValueError("measured evidence requires a RouteRegistryBinding")
+    if not isinstance(label_set, RouteLabelSet):
+        raise ValueError("measured evidence requires a RouteLabelSet")
+    registry.assert_unchanged()
+    if label_set._route_registry_token is not registry._token:
+        raise ValueError("route label registry capability does not match")
+    if (
+        label_set.route_registry_ids != registry.route_ids
+        or label_set.route_registry_fingerprint != registry.fingerprint
+    ):
+        raise ValueError("route label registry identity does not match")
+
+
 @dataclass(frozen=True)
 class MeasuredRunBatch:
     label_set_fingerprint: str
+    route_registry_fingerprint: str
     suite_name: str
     suite_version: int
     environment: EnvironmentProfile
@@ -436,6 +618,7 @@ class MeasuredRunBatch:
     source_revision: str
     run_fingerprints: tuple[str, ...]
     store_root: Path = field(repr=False)
+    _route_registry_token: Any = field(repr=False, compare=False)
     repetitions: int = field(default=RETAINED_REPETITIONS, init=False)
     _guard: Any = field(default=None, repr=False, compare=False)
 
@@ -443,6 +626,9 @@ class MeasuredRunBatch:
         if self._guard is not _MEASURED_BATCH_GUARD:
             raise ValueError("measured run batches are constructed internally")
         _digest(self.label_set_fingerprint, "label set fingerprint")
+        _digest(self.route_registry_fingerprint, "route registry fingerprint")
+        if self._route_registry_token is None:
+            raise ValueError("measured batches require a registry capability token")
         _identifier(self.suite_name, "suite name")
         if (
             isinstance(self.suite_version, bool)
@@ -474,6 +660,20 @@ class MeasuredRunBatch:
         if not isinstance(self.store_root, Path) or not self.store_root.is_absolute():
             raise ValueError("measured batches require an absolute store root")
         object.__setattr__(self, "_guard", None)
+
+
+def _assert_batch_registry(
+    batch: MeasuredRunBatch,
+    label_set: RouteLabelSet,
+    registry: RouteRegistryBinding,
+) -> None:
+    if not isinstance(batch, MeasuredRunBatch):
+        raise ValueError("report evidence requires a MeasuredRunBatch")
+    _assert_label_registry(label_set, registry)
+    if batch._route_registry_token is not registry._token:
+        raise ValueError("measured batch registry capability does not match")
+    if batch.route_registry_fingerprint != registry.fingerprint:
+        raise ValueError("measured batch registry fingerprint does not match")
 
 
 def _nonnegative_int(value: object, label: str) -> int:
@@ -603,43 +803,36 @@ class EnvironmentEvidence:
 @dataclass(frozen=True)
 class RouteAdequacyAggregate:
     route_id: str
-    sample_count: int
-    accepted_count: int
-    rejected_count: int
-    incomplete_count: int
+    scored_task_count: int
+    accepted_task_count: int
+    rejected_task_count: int
     adequacy: Measurement
 
     def __post_init__(self) -> None:
         _identifier(self.route_id, "actual route id")
         for value, label in (
-            (self.sample_count, "route sample count"),
-            (self.accepted_count, "route accepted count"),
-            (self.rejected_count, "route rejected count"),
-            (self.incomplete_count, "route incomplete count"),
+            (self.scored_task_count, "route scored task count"),
+            (self.accepted_task_count, "route accepted task count"),
+            (self.rejected_task_count, "route rejected task count"),
         ):
             _nonnegative_int(value, label)
-        if self.accepted_count + self.rejected_count > self.sample_count:
-            raise ValueError("route accepted and rejected counts exceed samples")
-        if self.incomplete_count < (
-            self.sample_count - self.accepted_count - self.rejected_count
+        if self.scored_task_count != (
+            self.accepted_task_count + self.rejected_task_count
         ):
-            raise ValueError("route incomplete count hides unaccounted samples")
-        if self.incomplete_count > self.sample_count:
-            raise ValueError("route incomplete count exceeds samples")
+            raise ValueError("route scored task count does not match its outcomes")
         if self.adequacy != _adequacy_measurement(
-            self.accepted_count,
-            self.rejected_count,
+            self.accepted_task_count,
+            self.rejected_task_count,
         ):
             raise ValueError("route adequacy does not match its evidence counts")
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "accepted_count": self.accepted_count,
+            "accepted_task_count": self.accepted_task_count,
             "adequacy": _measurement_payload(self.adequacy),
-            "incomplete_count": self.incomplete_count,
-            "rejected_count": self.rejected_count,
+            "rejected_task_count": self.rejected_task_count,
             "route_id": self.route_id,
-            "sample_count": self.sample_count,
+            "scored_task_count": self.scored_task_count,
         }
 
     @classmethod
@@ -651,10 +844,9 @@ class RouteAdequacyAggregate:
         )
         return cls(
             route_id=payload["route_id"],
-            sample_count=payload["sample_count"],
-            accepted_count=payload["accepted_count"],
-            rejected_count=payload["rejected_count"],
-            incomplete_count=payload["incomplete_count"],
+            scored_task_count=payload["scored_task_count"],
+            accepted_task_count=payload["accepted_task_count"],
+            rejected_task_count=payload["rejected_task_count"],
             adequacy=_measurement_from_raw(payload["adequacy"], "route adequacy"),
         )
 
@@ -663,6 +855,7 @@ class RouteAdequacyAggregate:
 class MeasuredComparisonReport:
     label_set_id: str
     label_set_fingerprint: str
+    route_registry_fingerprint: str
     suite_name: str
     suite_version: int
     source_revision: str
@@ -672,12 +865,14 @@ class MeasuredComparisonReport:
     environment_fingerprint: str
     run_fingerprints: tuple[str, ...]
     repetition_count: int
-    task_count: int
-    sample_count: int
-    accepted_count: int
-    rejected_count: int
-    error_count: int
-    incomplete_count: int
+    unique_task_count: int
+    observation_count: int
+    accepted_task_count: int
+    rejected_task_count: int
+    incomplete_task_count: int
+    nondeterministic_task_count: int
+    incomplete_observation_count: int
+    error_observation_count: int
     overall_adequacy: Measurement
     per_actual_route: tuple[RouteAdequacyAggregate, ...]
     latency_median: Measurement
@@ -708,6 +903,7 @@ class MeasuredComparisonReport:
             raise ValueError("measured reports are constructed internally")
         _identifier(self.label_set_id, "label set id")
         _digest(self.label_set_fingerprint, "label set fingerprint")
+        _digest(self.route_registry_fingerprint, "route registry fingerprint")
         _identifier(self.suite_name, "suite name")
         if (
             isinstance(self.suite_version, bool)
@@ -715,7 +911,10 @@ class MeasuredComparisonReport:
             or self.suite_version < 1
         ):
             raise ValueError("report suite version must be a positive integer")
-        if _REVISION_RE.fullmatch(self.source_revision) is None:
+        if (
+            not isinstance(self.source_revision, str)
+            or _REVISION_RE.fullmatch(self.source_revision) is None
+        ):
             raise ValueError("report source revision must be an exact Git SHA")
         if self.candidate_id != CANDIDATE_ID or self.baseline_id is not None:
             raise ValueError("report target identity is immutable")
@@ -733,33 +932,42 @@ class MeasuredComparisonReport:
             raise ValueError("report run fingerprints must be unique")
         for value, label in (
             (self.repetition_count, "repetition count"),
-            (self.task_count, "task count"),
-            (self.sample_count, "sample count"),
-            (self.accepted_count, "accepted count"),
-            (self.rejected_count, "rejected count"),
-            (self.error_count, "error count"),
-            (self.incomplete_count, "incomplete count"),
+            (self.unique_task_count, "unique task count"),
+            (self.observation_count, "observation count"),
+            (self.accepted_task_count, "accepted task count"),
+            (self.rejected_task_count, "rejected task count"),
+            (self.incomplete_task_count, "incomplete task count"),
+            (self.nondeterministic_task_count, "nondeterministic task count"),
+            (self.incomplete_observation_count, "incomplete observation count"),
+            (self.error_observation_count, "error observation count"),
         ):
             _nonnegative_int(value, label)
         if self.repetition_count != RETAINED_REPETITIONS:
             raise ValueError("report repetition count must remain five")
-        if self.task_count < MIN_OWNER_TASKS:
+        if self.unique_task_count < MIN_OWNER_TASKS:
             raise ValueError("report requires at least twenty unique tasks")
-        if self.sample_count != self.task_count * self.repetition_count:
-            raise ValueError("report sample count does not match tasks and repetitions")
-        if self.accepted_count + self.rejected_count + self.error_count > self.sample_count:
-            raise ValueError("report result counts exceed samples")
-        if self.incomplete_count < (
-            self.sample_count - self.accepted_count - self.rejected_count
+        if self.observation_count != (
+            self.unique_task_count * self.repetition_count
         ):
-            raise ValueError("report incomplete count hides unaccounted samples")
-        if self.error_count > self.incomplete_count:
-            raise ValueError("report errors must remain visible as incomplete evidence")
-        if self.incomplete_count > self.sample_count:
-            raise ValueError("report incomplete count exceeds samples")
+            raise ValueError(
+                "report observation count does not match tasks and repetitions"
+            )
+        if (
+            self.accepted_task_count
+            + self.rejected_task_count
+            + self.incomplete_task_count
+            != self.unique_task_count
+        ):
+            raise ValueError("report task counts do not partition unique tasks")
+        if self.nondeterministic_task_count > self.incomplete_task_count:
+            raise ValueError("nondeterministic tasks must remain incomplete")
+        if self.error_observation_count > self.incomplete_observation_count:
+            raise ValueError("error observations must remain incomplete")
+        if self.incomplete_observation_count > self.observation_count:
+            raise ValueError("incomplete observations exceed retained observations")
         if self.overall_adequacy != _adequacy_measurement(
-            self.accepted_count,
-            self.rejected_count,
+            self.accepted_task_count,
+            self.rejected_task_count,
         ):
             raise ValueError("overall adequacy does not match evidence counts")
         if (
@@ -773,27 +981,26 @@ class MeasuredComparisonReport:
         route_ids = tuple(item.route_id for item in self.per_actual_route)
         if route_ids != tuple(sorted(set(route_ids))):
             raise ValueError("per-route evidence must be sorted and unique")
-        if sum(item.sample_count for item in self.per_actual_route) != (
-            self.sample_count - self.error_count
+        if sum(item.scored_task_count for item in self.per_actual_route) != (
+            self.accepted_task_count + self.rejected_task_count
         ):
-            raise ValueError("per-route samples do not match candidate evidence")
-        if sum(item.accepted_count for item in self.per_actual_route) != self.accepted_count:
+            raise ValueError("per-route scored tasks do not match the total")
+        if sum(item.accepted_task_count for item in self.per_actual_route) != (
+            self.accepted_task_count
+        ):
             raise ValueError("per-route accepted counts do not match the total")
-        if sum(item.rejected_count for item in self.per_actual_route) != self.rejected_count:
-            raise ValueError("per-route rejected counts do not match the total")
-        if (
-            self.error_count
-            + sum(item.incomplete_count for item in self.per_actual_route)
-            != self.incomplete_count
+        if sum(item.rejected_task_count for item in self.per_actual_route) != (
+            self.rejected_task_count
         ):
-            raise ValueError("per-route incomplete counts do not match the total")
+            raise ValueError("per-route rejected counts do not match the total")
         self._validate_measurements()
         if self.limitations != LIMITATION_CODES:
             raise ValueError("report limitations are fixed")
         if self.owner_gates != OWNER_GATE_CODES:
             raise ValueError("report owner gates are fixed")
         complete = (
-            self.incomplete_count == 0
+            self.incomplete_task_count == 0
+            and self.incomplete_observation_count == 0
             and self.latency_median.status == "measured"
             and self.latency_p95.status == "measured"
             and self.provider_charge.status == "measured"
@@ -861,7 +1068,7 @@ class MeasuredComparisonReport:
 
     def _payload(self) -> dict[str, Any]:
         return {
-            "accepted_count": self.accepted_count,
+            "accepted_task_count": self.accepted_task_count,
             "action": _measurement_payload(self.action),
             "authority": self.authority,
             "baseline_id": self.baseline_id,
@@ -877,30 +1084,33 @@ class MeasuredComparisonReport:
             "energy": _measurement_payload(self.energy),
             "environment": self.environment.to_dict(),
             "environment_fingerprint": self.environment_fingerprint,
-            "error_count": self.error_count,
+            "error_observation_count": self.error_observation_count,
             "executed_task_outcome": _measurement_payload(
                 self.executed_task_outcome
             ),
             "hardware": _measurement_payload(self.hardware),
-            "incomplete_count": self.incomplete_count,
+            "incomplete_observation_count": self.incomplete_observation_count,
+            "incomplete_task_count": self.incomplete_task_count,
             "label_set_fingerprint": self.label_set_fingerprint,
             "label_set_id": self.label_set_id,
             "latency_median": _measurement_payload(self.latency_median),
             "latency_p95": _measurement_payload(self.latency_p95),
             "limitations": list(self.limitations),
+            "nondeterministic_task_count": self.nondeterministic_task_count,
+            "observation_count": self.observation_count,
             "overall_adequacy": _measurement_payload(self.overall_adequacy),
             "owner_gates": list(self.owner_gates),
             "per_actual_route": [item.to_dict() for item in self.per_actual_route],
             "provider_charge": _measurement_payload(self.provider_charge),
-            "rejected_count": self.rejected_count,
+            "rejected_task_count": self.rejected_task_count,
             "repetition_count": self.repetition_count,
             "run_fingerprints": list(self.run_fingerprints),
-            "sample_count": self.sample_count,
+            "route_registry_fingerprint": self.route_registry_fingerprint,
             "schema": self.schema,
             "source_revision": self.source_revision,
             "suite_name": self.suite_name,
             "suite_version": self.suite_version,
-            "task_count": self.task_count,
+            "unique_task_count": self.unique_task_count,
             "tool": _measurement_payload(self.tool),
         }
 
@@ -973,6 +1183,7 @@ class MeasuredComparisonReport:
         report = cls(
             label_set_id=value["label_set_id"],
             label_set_fingerprint=value["label_set_fingerprint"],
+            route_registry_fingerprint=value["route_registry_fingerprint"],
             suite_name=value["suite_name"],
             suite_version=value["suite_version"],
             source_revision=value["source_revision"],
@@ -982,12 +1193,14 @@ class MeasuredComparisonReport:
             environment_fingerprint=value["environment_fingerprint"],
             run_fingerprints=tuple(value["run_fingerprints"]),
             repetition_count=value["repetition_count"],
-            task_count=value["task_count"],
-            sample_count=value["sample_count"],
-            accepted_count=value["accepted_count"],
-            rejected_count=value["rejected_count"],
-            error_count=value["error_count"],
-            incomplete_count=value["incomplete_count"],
+            unique_task_count=value["unique_task_count"],
+            observation_count=value["observation_count"],
+            accepted_task_count=value["accepted_task_count"],
+            rejected_task_count=value["rejected_task_count"],
+            incomplete_task_count=value["incomplete_task_count"],
+            nondeterministic_task_count=value["nondeterministic_task_count"],
+            incomplete_observation_count=value["incomplete_observation_count"],
+            error_observation_count=value["error_observation_count"],
             overall_adequacy=_measurement_from_raw(
                 value["overall_adequacy"], "overall adequacy"
             ),
@@ -1027,11 +1240,14 @@ class MeasuredComparisonReport:
 def load_route_label_set(
     path: str | Path,
     *,
-    allowed_routes: Collection[str],
+    registry: RouteRegistryBinding,
 ) -> RouteLabelSet:
     """Load one exact owner-attested, local-only route-label document."""
 
-    canonical_routes = _route_collection(allowed_routes)
+    if not isinstance(registry, RouteRegistryBinding):
+        raise ValueError("route labels require a RouteRegistryBinding")
+    registry.assert_unchanged()
+    canonical_routes = frozenset(registry.route_ids)
     raw = _strict_keys(_load_json(path), _ROOT_FIELDS, "route label set")
     if raw["schema"] != LABEL_SCHEMA:
         raise ValueError("unsupported route label schema")
@@ -1064,15 +1280,21 @@ def load_route_label_set(
                 source_record_digest=case["source_record_digest"],
             )
         )
-    return RouteLabelSet(
+    registry.assert_unchanged()
+    label_set = RouteLabelSet(
         label_set_id=raw["label_set_id"],
         sampling_rule=raw["sampling_rule"],
         source_window_start=window["start"],
         source_window_end=window["end"],
         owner_attested=raw["owner_attested"],
         retention_policy_id=raw["retention_policy_id"],
+        route_registry_ids=registry.route_ids,
+        route_registry_fingerprint=registry.fingerprint,
         cases=tuple(cases),
+        _route_registry_token=registry._token,
     )
+    _assert_label_registry(label_set, registry)
+    return label_set
 
 
 def _suite_name(label_set: RouteLabelSet) -> str:
@@ -1096,6 +1318,7 @@ def build_owner_route_suite(label_set: RouteLabelSet) -> tuple[BenchmarkCase, ..
             artifact_refs=(
                 f"label-fingerprint:{label_set.content_fingerprint}",
                 f"case-fingerprint:{case.content_fingerprint}",
+                f"registry-fingerprint:{label_set.route_registry_fingerprint}",
             ),
         )
         for case in label_set.cases
@@ -1114,32 +1337,51 @@ def ensure_owner_route_suite(
     name = _suite_name(label_set)
     boundary = _MeasuredStoreBoundary(store)
     boundary.suite(name, create=True)
-    versions = store.versions(name)
+    versions = boundary.versions(name)
     if versions:
         version = versions[-1]
-        boundary.version(name, version)
-        stored = store.load_suite(name, version)
+        stored = boundary.load_suite(name, version)
         if tuple(
             (case.case_id, case.content_fingerprint) for case in stored
         ) == tuple((case.case_id, case.content_fingerprint) for case in cases):
             return name, version, stored
     next_version = (versions[-1] if versions else 0) + 1
-    boundary.version(name, next_version)
-    return name, store.save_suite(name, cases, lane="local"), cases
+    version = boundary.save_suite(
+        name,
+        cases,
+        expected_version=next_version,
+    )
+    return name, version, cases
 
 
 def measured_current_router_runner(
     router: Any,
-    agents: Mapping[str, Any],
+    registry: RouteRegistryBinding,
     label_set: RouteLabelSet,
     *,
     host_id: str = "in-process",
 ) -> BenchmarkRunner:
     """Score one observed deterministic route against retained owner labels."""
 
-    if not isinstance(label_set, RouteLabelSet):
-        raise ValueError("measured route runner requires a RouteLabelSet")
-    current_router_runner(router, agents, host_id=host_id)
+    _assert_label_registry(label_set, registry)
+    active_records: ContextVar[list[DecisionRecord] | None] = ContextVar(
+        "measured_route_decision_records",
+        default=None,
+    )
+
+    def capture(record: DecisionRecord) -> None:
+        records = active_records.get()
+        if records is None:
+            raise RuntimeError("measured route decision capture is outside an invocation")
+        records.append(record)
+
+    shadow_router = ShadowDecisionRouter(router, capture)
+    observed_runner = current_router_runner(
+        shadow_router,
+        registry.execution_snapshot(),
+        host_id=host_id,
+    )
+    registry.assert_unchanged()
 
     labels_by_request: dict[str, RouteLabelCase] = {}
     for case in label_set.cases:
@@ -1148,23 +1390,28 @@ def measured_current_router_runner(
         labels_by_request[case.request_digest] = case
 
     async def run(prompt: str):
+        registry.assert_unchanged()
         request_digest = DecisionRequest.from_input(prompt, {}).text_digest
         label = labels_by_request.get(request_digest)
         if label is None:
             raise ValueError("measured route runner requires a known route label")
 
         records: list[DecisionRecord] = []
-        shadow_router = ShadowDecisionRouter(router, records.append)
-        observation = await current_router_runner(
-            shadow_router,
-            agents,
-            host_id=host_id,
-        )(prompt)
+        context_token = active_records.set(records)
+        try:
+            observation = await observed_runner(prompt)
+        finally:
+            active_records.reset(context_token)
+        registry.assert_unchanged()
         if len(records) != 1:
             raise RuntimeError("measured route runner requires exactly one decision record")
         record = records[0]
+        if record.request.available_agents != registry.route_ids:
+            registry._invalidate("decision available-agent registry mismatch")
         if record.selected_route != observation.route_id:
             raise RuntimeError("measured route runner requires matching route evidence")
+        if observation.route_id not in registry.route_ids:
+            registry._invalidate("selected route is not registered")
         score = (
             "accepted"
             if observation.route_id in label.acceptable_primary_routes
@@ -1173,7 +1420,10 @@ def measured_current_router_runner(
         return replace(
             observation,
             response=score,
-            artifact_refs=(f"decision:{record.replay_fingerprint}",),
+            artifact_refs=(
+                f"decision:{record.replay_fingerprint}",
+                f"registry-fingerprint:{registry.fingerprint}",
+            ),
         )
 
     return run
@@ -1191,22 +1441,26 @@ def _validated_store_root(store_root: Path) -> Path:
         if part == "..":
             raise ValueError("store root must not traverse parent components")
         current /= part
-        try:
-            metadata = os.lstat(current)
-        except OSError as exc:
-            raise ValueError("store root must be an existing directory") from exc
+        metadata = _bounded_call(
+            lambda current=current: os.lstat(current),
+            OSError,
+            "store root must be an existing directory",
+        )
         is_reparse = bool(
             getattr(metadata, "st_file_attributes", 0) & reparse_flag
         )
         if stat.S_ISLNK(metadata.st_mode) or is_reparse:
             raise ValueError("store root must not cross a symlink or reparse boundary")
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise ValueError("store root components must be directories")
 
     if not store_root.is_dir():
         raise ValueError("store root must be an existing directory")
-    try:
-        resolved = store_root.resolve(strict=True)
-    except OSError as exc:
-        raise ValueError("store root could not be resolved") from exc
+    resolved = _bounded_call(
+        lambda: store_root.resolve(strict=True),
+        OSError,
+        "store root could not be resolved",
+    )
     if not resolved.is_dir():
         raise ValueError("store root must resolve to a directory")
     return resolved
@@ -1221,52 +1475,171 @@ class _MeasuredStoreBoundary:
         self.store = store
         self.root = _validated_store_root(store.root)
 
-    def _descendant(self, *parts: str, allow_missing_final: bool = False) -> Path:
+    @staticmethod
+    def _require_type(
+        metadata: os.stat_result,
+        *,
+        expected: str,
+    ) -> None:
+        if expected == "directory" and not stat.S_ISDIR(metadata.st_mode):
+            raise ValueError("measured store path must be a directory")
+        if expected == "regular file" and not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("measured store path must be a regular file")
+
+    def _descendant(
+        self,
+        *parts: str,
+        allow_missing_final: bool = False,
+        final_type: str | None = None,
+    ) -> Path:
         path = self.root
         for index, part in enumerate(parts):
             path /= part
+            missing = False
             try:
-                _reject_link_or_reparse(path, "measured store path")
-            except FileNotFoundError as exc:
+                metadata = _reject_link_or_reparse(path, "measured store path")
+            except FileNotFoundError:
+                missing = True
+            if missing:
                 if allow_missing_final and index == len(parts) - 1:
                     return path
-                raise ValueError("measured store path must exist") from exc
+                raise ValueError("measured store path must exist")
+            expected = final_type if index == len(parts) - 1 else "directory"
+            if expected is not None:
+                self._require_type(metadata, expected=expected)
         return path
 
     def _directory(self, *parts: str, create: bool) -> Path:
-        path = self._descendant(*parts, allow_missing_final=create)
+        path = self._descendant(
+            *parts,
+            allow_missing_final=create,
+            final_type="directory",
+        )
         if not create:
             return path
+        missing = False
         try:
-            _reject_link_or_reparse(path, "measured store path")
+            metadata = _reject_link_or_reparse(path, "measured store path")
         except FileNotFoundError:
-            try:
-                path.mkdir()
-            except OSError as exc:
-                raise ValueError(
-                    "measured store directory could not be created"
-                ) from exc
-        return self._descendant(*parts)
+            missing = True
+        if missing:
+            _bounded_call(
+                path.mkdir,
+                OSError,
+                "measured store directory could not be created",
+            )
+        else:
+            self._require_type(metadata, expected="directory")
+        return self._descendant(*parts, final_type="directory")
 
     def suite(self, name: str, *, create: bool) -> Path:
         self._directory("suites", create=create)
         return self._directory("suites", name, create=create)
 
-    def version(self, name: str, version: int) -> Path:
+    def version(
+        self,
+        name: str,
+        version: int,
+        *,
+        allow_missing: bool = False,
+    ) -> Path:
         return self._descendant(
-            "suites", name, f"v{version}.jsonl", allow_missing_final=True
+            "suites",
+            name,
+            f"v{version}.jsonl",
+            allow_missing_final=allow_missing,
+            final_type="regular file",
         )
 
-    def runs(self, name: str) -> Path:
+    def runs(self, name: str, *, allow_missing: bool = True) -> Path:
         return self._descendant(
-            "suites", name, "runs.jsonl", allow_missing_final=True
+            "suites",
+            name,
+            "runs.jsonl",
+            allow_missing_final=allow_missing,
+            final_type="regular file",
         )
+
+    @staticmethod
+    def _io(label: str, operation: Callable[[], Any]) -> Any:
+        return _bounded_call(
+            operation,
+            OSError,
+            f"measured store {label} failed",
+        )
+
+    def versions(self, name: str) -> list[int]:
+        self.suite(name, create=False)
+        versions = self._io("version scan", lambda: self.store.versions(name))
+        self.suite(name, create=False)
+        return versions
+
+    def load_suite(self, name: str, version: int) -> tuple[BenchmarkCase, ...]:
+        missing = False
+        try:
+            self.version(name, version)
+        except ValueError as exc:
+            if str(exc) == "measured store path must exist":
+                missing = True
+            else:
+                raise
+        if missing:
+            raise ValueError("stored suite version must exist")
+        stored = self._io(
+            "suite read",
+            lambda: self.store.load_suite(name, version),
+        )
+        self.version(name, version)
+        return stored
+
+    def save_suite(
+        self,
+        name: str,
+        cases: tuple[BenchmarkCase, ...],
+        *,
+        expected_version: int,
+    ) -> int:
+        path = self.version(name, expected_version, allow_missing=True)
+        try:
+            metadata = _reject_link_or_reparse(path, "measured store path")
+        except FileNotFoundError:
+            pass
+        else:
+            self._require_type(metadata, expected="regular file")
+            raise ValueError("measured suite version create target must be absent")
+        version = self._io(
+            "suite create",
+            lambda: self.store.save_suite(name, cases, lane="local"),
+        )
+        if version != expected_version:
+            raise ValueError("measured suite version creation drifted")
+        self.version(name, expected_version)
+        return version
+
+    def read_runs(
+        self,
+        name: str,
+        *,
+        allow_missing: bool,
+    ) -> tuple[BenchmarkRun, ...]:
+        self.runs(name, allow_missing=allow_missing)
+        return self._io(
+            "run read",
+            lambda: self.store.runs(name, last_n=sys.maxsize),
+        )
+
+    def append_run(self, run: BenchmarkRun) -> None:
+        self.version(run.suite_name, run.suite_version)
+        self.runs(run.suite_name, allow_missing=True)
+        self._io("run append", lambda: self.store.record_run(run))
+        self.version(run.suite_name, run.suite_version)
+        self.runs(run.suite_name, allow_missing=False)
 
 
 def _validate_measured_preflight(
     *,
     router: Any,
-    agents: Mapping[str, Any],
+    registry: RouteRegistryBinding,
     label_set: RouteLabelSet,
     source_revision: str,
 ) -> BenchmarkRunner:
@@ -1275,15 +1648,8 @@ def _validate_measured_preflight(
         or _REVISION_RE.fullmatch(source_revision) is None
     ):
         raise ValueError("source revision must be an exact lowercase Git commit SHA")
-    if not isinstance(label_set, RouteLabelSet):
-        raise ValueError("measured comparisons require a RouteLabelSet")
-    if not isinstance(agents, Mapping):
-        raise ValueError("route registry must be a mapping")
-    registered_routes = _route_collection(tuple(agents))
-    for case in label_set.cases:
-        if not set(case.acceptable_primary_routes).issubset(registered_routes):
-            raise ValueError("every acceptable route must be registered")
-    return measured_current_router_runner(router, agents, label_set)
+    _assert_label_registry(label_set, registry)
+    return measured_current_router_runner(router, registry, label_set)
 
 
 def _run_id(
@@ -1302,10 +1668,30 @@ def _has_incomplete_results(run: Any) -> bool:
     return any(result.status in {"error", "unscored"} for result in run.results)
 
 
+def _validate_run_registry_evidence(
+    run: BenchmarkRun,
+    registry: RouteRegistryBinding,
+) -> None:
+    registry.assert_unchanged()
+    for result in run.results:
+        if result.status == "error":
+            continue
+        candidate = result.candidate
+        if candidate is None:
+            raise ValueError("non-error evidence requires a candidate identity")
+        if candidate.route_id not in registry.route_ids:
+            registry._invalidate("retained selected route is not registered")
+        _validate_decision_artifact(
+            result,
+            registry_fingerprint=registry.fingerprint,
+        )
+    registry.assert_unchanged()
+
+
 async def run_measured_comparison(
     *,
     router: Any,
-    agents: Mapping[str, Any],
+    registry: RouteRegistryBinding,
     label_set: RouteLabelSet,
     store_root: Path,
     source_revision: str,
@@ -1321,7 +1707,7 @@ async def run_measured_comparison(
     resolved_root = _validated_store_root(store_root)
     runner = _validate_measured_preflight(
         router=router,
-        agents=agents,
+        registry=registry,
         label_set=label_set,
         source_revision=source_revision,
     )
@@ -1329,12 +1715,17 @@ async def run_measured_comparison(
         raise ValueError("run nonce must be callable")
     nonce_factory = run_nonce or (lambda: uuid.uuid4().hex[:12])
 
+    registry.assert_unchanged()
     store = BenchmarkStore(resolved_root)
+    registry.assert_unchanged()
     suite_name, suite_version, cases = ensure_owner_route_suite(store, label_set)
+    registry.assert_unchanged()
     environment = EnvironmentProfile.detect(runner_id="owner-local-e1-2a")
+    registry.assert_unchanged()
     environment_fingerprint = _fingerprint(environment.canonical_payload())
     harness = BenchmarkHarness(runner, candidate_id=CANDIDATE_ID)
 
+    registry.assert_unchanged()
     warmup = await harness.run(
         cases,
         suite_name=suite_name,
@@ -1342,15 +1733,19 @@ async def run_measured_comparison(
         lane="local",
         source_revision=source_revision,
     )
+    registry.assert_unchanged()
+    _validate_run_registry_evidence(warmup, registry)
     if _has_incomplete_results(warmup):
         raise RuntimeError("measured route warm-up did not complete every case")
 
     artifact_refs = (
         f"label-fingerprint:{label_set.content_fingerprint}",
+        f"registry-fingerprint:{registry.fingerprint}",
         f"environment-fingerprint:{environment_fingerprint}",
     )
     fingerprints: list[str] = []
     for repetition in range(1, RETAINED_REPETITIONS + 1):
+        registry.assert_unchanged()
         retained_run_id = _run_id(
             label_set.content_fingerprint,
             nonce_factory,
@@ -1359,11 +1754,13 @@ async def run_measured_comparison(
         boundary = _MeasuredStoreBoundary(store)
         boundary.suite(suite_name, create=False)
         boundary.version(suite_name, suite_version)
-        boundary.runs(suite_name)
-        existing = store.runs(suite_name, last_n=sys.maxsize)
+        registry.assert_unchanged()
+        existing = boundary.read_runs(suite_name, allow_missing=True)
+        registry.assert_unchanged()
         if any(run.run_id == retained_run_id for run in existing):
             raise ValueError("measured run id collision")
 
+        registry.assert_unchanged()
         run = await harness.run(
             cases,
             suite_name=suite_name,
@@ -1372,24 +1769,29 @@ async def run_measured_comparison(
             source_revision=source_revision,
             run_id=retained_run_id,
         )
+        registry.assert_unchanged()
+        _validate_run_registry_evidence(run, registry)
         run = replace(run, artifact_refs=artifact_refs)
         expected_fingerprint = run_fingerprint(run)
         write_boundary = _MeasuredStoreBoundary(store)
         write_boundary.suite(suite_name, create=False)
         write_boundary.version(suite_name, suite_version)
-        write_boundary.runs(suite_name)
-        store.record_run(run)
+        registry.assert_unchanged()
+        write_boundary.append_run(run)
+        registry.assert_unchanged()
 
         readback_boundary = _MeasuredStoreBoundary(store)
         readback_boundary.suite(suite_name, create=False)
         readback_boundary.version(suite_name, suite_version)
-        readback_boundary.runs(suite_name)
+        registry.assert_unchanged()
+        retained = readback_boundary.read_runs(
+            suite_name,
+            allow_missing=False,
+        )
+        registry.assert_unchanged()
         matches = tuple(
             candidate
-            for candidate in store.runs(
-                suite_name,
-                last_n=sys.maxsize,
-            )
+            for candidate in retained
             if candidate.run_id == retained_run_id
         )
         if (
@@ -1398,9 +1800,12 @@ async def run_measured_comparison(
         ):
             raise RuntimeError("recorded measured run is not canonically retrievable")
         fingerprints.append(expected_fingerprint)
+        registry.assert_unchanged()
 
+    registry.assert_unchanged()
     return MeasuredRunBatch(
         label_set_fingerprint=label_set.content_fingerprint,
+        route_registry_fingerprint=registry.fingerprint,
         suite_name=suite_name,
         suite_version=suite_version,
         environment=environment,
@@ -1408,6 +1813,7 @@ async def run_measured_comparison(
         source_revision=source_revision,
         run_fingerprints=tuple(fingerprints),
         store_root=resolved_root,
+        _route_registry_token=registry._token,
         _guard=_MEASURED_BATCH_GUARD,
     )
 
@@ -1415,12 +1821,14 @@ async def run_measured_comparison(
 def _exact_retained_runs(
     batch: MeasuredRunBatch,
     store: BenchmarkStore,
+    registry: RouteRegistryBinding,
 ) -> tuple[BenchmarkRun, ...]:
+    registry.assert_unchanged()
     boundary = _MeasuredStoreBoundary(store)
     boundary.suite(batch.suite_name, create=False)
     boundary.version(batch.suite_name, batch.suite_version)
-    boundary.runs(batch.suite_name)
-    retained = store.runs(batch.suite_name, last_n=sys.maxsize)
+    retained = boundary.read_runs(batch.suite_name, allow_missing=False)
+    registry.assert_unchanged()
     by_fingerprint: dict[str, list[BenchmarkRun]] = {}
     for run in retained:
         fingerprint = run_fingerprint(run)
@@ -1438,7 +1846,12 @@ def _exact_retained_runs(
     return tuple(ordered)
 
 
-def _validate_decision_artifact(result: Any) -> None:
+def _validate_decision_artifact(
+    result: Any,
+    *,
+    registry_fingerprint: str,
+) -> None:
+    _digest(registry_fingerprint, "route registry fingerprint")
     if result.status == "error":
         if result.candidate is not None:
             raise ValueError("error evidence cannot carry a candidate identity")
@@ -1446,8 +1859,14 @@ def _validate_decision_artifact(result: Any) -> None:
     if result.candidate is None:
         raise ValueError("non-error evidence requires a candidate identity")
     artifacts = result.candidate.artifact_refs
-    if len(artifacts) != 1 or not artifacts[0].startswith("decision:"):
-        raise ValueError("candidate evidence requires one decision fingerprint")
+    if (
+        len(artifacts) != 2
+        or not artifacts[0].startswith("decision:")
+        or artifacts[1] != f"registry-fingerprint:{registry_fingerprint}"
+    ):
+        raise ValueError(
+            "candidate evidence requires decision and registry fingerprints"
+        )
     _digest(artifacts[0].removeprefix("decision:"), "decision fingerprint")
 
 
@@ -1490,6 +1909,18 @@ def _is_candidate_cost_measurement(measurement: Measurement) -> bool:
     )
 
 
+def _is_candidate_reliability_measurement(measurement: Measurement) -> bool:
+    return (
+        measurement.status == "measured"
+        and measurement.unit == "ratio"
+        and measurement.source == "candidate.runner"
+        and isinstance(measurement.value, (int, float))
+        and not isinstance(measurement.value, bool)
+        and math.isfinite(float(measurement.value))
+        and 0.0 <= float(measurement.value) <= 1.0
+    )
+
+
 def _latency_measurements(values: list[float]) -> tuple[Measurement, Measurement]:
     if not values:
         unknown = Measurement("not_measured")
@@ -1513,14 +1944,13 @@ def _derive_measured_report(
     batch: MeasuredRunBatch,
     store: BenchmarkStore,
     label_set: RouteLabelSet,
+    registry: RouteRegistryBinding,
 ) -> MeasuredComparisonReport:
-    if not isinstance(batch, MeasuredRunBatch):
-        raise ValueError("report evidence requires a MeasuredRunBatch")
     if not isinstance(store, BenchmarkStore):
         raise ValueError("report evidence requires a BenchmarkStore")
-    if not isinstance(label_set, RouteLabelSet):
-        raise ValueError("report evidence requires a RouteLabelSet")
-    if store.root.resolve() != batch.store_root:
+    _assert_batch_registry(batch, label_set, registry)
+    boundary = _MeasuredStoreBoundary(store)
+    if boundary.root != batch.store_root:
         raise ValueError("report store does not match the measured batch")
     if batch.label_set_fingerprint != label_set.content_fingerprint:
         raise ValueError("measured batch does not match the supplied label set")
@@ -1528,11 +1958,10 @@ def _derive_measured_report(
         raise ValueError("measured batch suite identity does not match its labels")
 
     expected_cases = build_owner_route_suite(label_set)
-    boundary = _MeasuredStoreBoundary(store)
+    registry.assert_unchanged()
     boundary.suite(batch.suite_name, create=False)
-    boundary.version(batch.suite_name, batch.suite_version)
-    boundary.runs(batch.suite_name)
-    stored_cases = store.load_suite(batch.suite_name, batch.suite_version)
+    stored_cases = boundary.load_suite(batch.suite_name, batch.suite_version)
+    registry.assert_unchanged()
     expected_sequence = tuple(
         (case.case_id, case.content_fingerprint) for case in expected_cases
     )
@@ -1547,22 +1976,30 @@ def _derive_measured_report(
     ):
         raise ValueError("measured batch environment fingerprint mismatch")
     environment = EnvironmentEvidence.from_profile(batch.environment)
-    runs = _exact_retained_runs(batch, store)
+    registry.assert_unchanged()
+    runs = _exact_retained_runs(batch, store, registry)
     label_by_id = {case.case_id: case for case in label_set.cases}
 
-    accepted_count = 0
-    rejected_count = 0
-    error_count = 0
-    incomplete_count = 0
+    accepted_task_count = 0
+    rejected_task_count = 0
+    incomplete_task_count = 0
+    nondeterministic_task_count = 0
+    error_observation_count = 0
+    incomplete_observation_count = 0
     latency_values: list[float] = []
     deterministic_charge = True
     route_counts: dict[str, list[int]] = {}
+    observations_by_case: dict[str, list[Any]] = {
+        case.case_id: [] for case in label_set.cases
+    }
     expected_artifacts = (
         f"label-fingerprint:{label_set.content_fingerprint}",
+        f"registry-fingerprint:{registry.fingerprint}",
         f"environment-fingerprint:{batch.environment_fingerprint}",
     )
 
     for repetition, run in enumerate(runs, start=1):
+        registry.assert_unchanged()
         if (
             run.suite_name != batch.suite_name
             or run.suite_version != batch.suite_version
@@ -1584,6 +2021,7 @@ def _derive_measured_report(
             raise ValueError("retained measured run result coverage mismatch")
 
         for stored_case, result in zip(stored_cases, run.results, strict=True):
+            registry.assert_unchanged()
             label = label_by_id[result.case_id]
             if (
                 result.task_type != stored_case.task_type
@@ -1591,11 +2029,14 @@ def _derive_measured_report(
                 or result.case_fingerprint != stored_case.content_fingerprint
             ):
                 raise ValueError("retained result identity or case fingerprint mismatch")
-            _validate_decision_artifact(result)
+            _validate_decision_artifact(
+                result,
+                registry_fingerprint=registry.fingerprint,
+            )
 
-            incomplete = result.status in {"error", "unscored"}
+            incomplete_observation = result.status in {"error", "unscored"}
             if result.status == "error":
-                error_count += 1
+                error_observation_count += 1
                 deterministic_charge = False
             else:
                 candidate = result.candidate
@@ -1606,46 +2047,80 @@ def _derive_measured_report(
                         "candidate hardware provenance must remain separately unmeasured"
                     )
                 route = candidate.route_id
-                counts = route_counts.setdefault(route, [0, 0, 0, 0])
-                counts[0] += 1
+                if route not in registry.route_ids:
+                    raise ValueError("retained selected route is not registered")
                 route_is_accepted = route in label.acceptable_primary_routes
                 if result.status == "passed":
                     if not route_is_accepted:
                         raise ValueError("passed route evidence contradicts its label")
-                    accepted_count += 1
-                    counts[1] += 1
                 elif result.status == "failed":
                     if route_is_accepted:
                         raise ValueError("failed route evidence contradicts its label")
-                    rejected_count += 1
-                    counts[2] += 1
                 elif result.status != "unscored":
                     raise ValueError("unsupported retained result status")
 
                 if _is_harness_latency(result.latency):
                     latency_values.append(float(result.latency.value))
                 else:
-                    incomplete = True
+                    incomplete_observation = True
                 if not _is_candidate_cost_measurement(result.cost):
-                    incomplete = True
+                    incomplete_observation = True
+                if not _is_candidate_reliability_measurement(result.reliability):
+                    incomplete_observation = True
                 if not _is_zero_local_charge(run, result):
                     deterministic_charge = False
-                if incomplete:
-                    counts[3] += 1
-            if incomplete:
-                incomplete_count += 1
+            if incomplete_observation:
+                incomplete_observation_count += 1
+            observations_by_case[result.case_id].append(result)
+            registry.assert_unchanged()
+        registry.assert_unchanged()
 
-    sample_count = len(runs) * len(stored_cases)
-    if sample_count != len(label_set.cases) * RETAINED_REPETITIONS:
-        raise ValueError("retained measured sample coverage mismatch")
+    observation_count = len(runs) * len(stored_cases)
+    if observation_count != len(label_set.cases) * RETAINED_REPETITIONS:
+        raise ValueError("retained measured observation coverage mismatch")
+
+    for label in label_set.cases:
+        registry.assert_unchanged()
+        observations = observations_by_case[label.case_id]
+        if len(observations) != RETAINED_REPETITIONS:
+            raise ValueError("retained case evidence does not have five observations")
+        routes = {
+            result.candidate.route_id
+            for result in observations
+            if result.candidate is not None
+        }
+        outcomes = {
+            result.status
+            for result in observations
+            if result.status in {"passed", "failed"}
+        }
+        all_scored = all(
+            result.status in {"passed", "failed"} for result in observations
+        )
+        if all_scored and len(routes) == 1 and len(outcomes) == 1:
+            route_id = next(iter(routes))
+            outcome = next(iter(outcomes))
+            counts = route_counts.setdefault(route_id, [0, 0, 0])
+            counts[0] += 1
+            if outcome == "passed":
+                accepted_task_count += 1
+                counts[1] += 1
+            else:
+                rejected_task_count += 1
+                counts[2] += 1
+        else:
+            incomplete_task_count += 1
+            if len(routes) > 1 or len(outcomes) > 1:
+                nondeterministic_task_count += 1
+        registry.assert_unchanged()
+
     latency_median, latency_p95 = _latency_measurements(latency_values)
     per_actual_route = tuple(
         RouteAdequacyAggregate(
             route_id=route_id,
-            sample_count=counts[0],
-            accepted_count=counts[1],
-            rejected_count=counts[2],
-            incomplete_count=counts[3],
+            scored_task_count=counts[0],
+            accepted_task_count=counts[1],
+            rejected_task_count=counts[2],
             adequacy=_adequacy_measurement(counts[1], counts[2]),
         )
         for route_id, counts in sorted(route_counts.items())
@@ -1654,6 +2129,7 @@ def _derive_measured_report(
     return MeasuredComparisonReport(
         label_set_id=label_set.label_set_id,
         label_set_fingerprint=label_set.content_fingerprint,
+        route_registry_fingerprint=registry.fingerprint,
         suite_name=batch.suite_name,
         suite_version=batch.suite_version,
         source_revision=batch.source_revision,
@@ -1663,13 +2139,18 @@ def _derive_measured_report(
         environment_fingerprint=batch.environment_fingerprint,
         run_fingerprints=batch.run_fingerprints,
         repetition_count=RETAINED_REPETITIONS,
-        task_count=len(label_set.cases),
-        sample_count=sample_count,
-        accepted_count=accepted_count,
-        rejected_count=rejected_count,
-        error_count=error_count,
-        incomplete_count=incomplete_count,
-        overall_adequacy=_adequacy_measurement(accepted_count, rejected_count),
+        unique_task_count=len(label_set.cases),
+        observation_count=observation_count,
+        accepted_task_count=accepted_task_count,
+        rejected_task_count=rejected_task_count,
+        incomplete_task_count=incomplete_task_count,
+        nondeterministic_task_count=nondeterministic_task_count,
+        incomplete_observation_count=incomplete_observation_count,
+        error_observation_count=error_observation_count,
+        overall_adequacy=_adequacy_measurement(
+            accepted_task_count,
+            rejected_task_count,
+        ),
         per_actual_route=per_actual_route,
         latency_median=latency_median,
         latency_p95=latency_p95,
@@ -1695,10 +2176,12 @@ def build_measured_report(
     batch: MeasuredRunBatch,
     store: BenchmarkStore,
     label_set: RouteLabelSet,
+    *,
+    registry: RouteRegistryBinding,
 ) -> MeasuredComparisonReport:
     """Build a privacy-minimised aggregate from exact retained evidence."""
 
-    return _derive_measured_report(batch, store, label_set)
+    return _derive_measured_report(batch, store, label_set, registry)
 
 
 def validate_measured_report_against_evidence(
@@ -1706,12 +2189,14 @@ def validate_measured_report_against_evidence(
     batch: MeasuredRunBatch,
     store: BenchmarkStore,
     label_set: RouteLabelSet,
+    *,
+    registry: RouteRegistryBinding,
 ) -> None:
     """Bind a structural report to the exact batch, store, and labels."""
 
     if not isinstance(report, MeasuredComparisonReport):
         raise ValueError("evidence validation requires a MeasuredComparisonReport")
-    expected = _derive_measured_report(batch, store, label_set)
+    expected = _derive_measured_report(batch, store, label_set, registry)
     if report != expected:
         raise ValueError("measured report does not match the retained evidence")
 
@@ -1736,6 +2221,7 @@ def render_measured_report(report: MeasuredComparisonReport) -> str:
         f"- schema: {report.schema}",
         f"- label set: {report.label_set_id}",
         f"- label fingerprint: {report.label_set_fingerprint}",
+        f"- route registry fingerprint: {report.route_registry_fingerprint}",
         f"- suite: {report.suite_name} v{report.suite_version}",
         f"- source revision: {report.source_revision}",
         f"- candidate: {report.candidate_id}",
@@ -1743,12 +2229,14 @@ def render_measured_report(report: MeasuredComparisonReport) -> str:
         f"- environment fingerprint: {report.environment_fingerprint}",
         f"- environment hardware: {report.environment.hardware_profile}",
         f"- repetitions: {report.repetition_count}",
-        f"- tasks: {report.task_count}",
-        f"- samples: {report.sample_count}",
-        f"- accepted: {report.accepted_count}",
-        f"- rejected: {report.rejected_count}",
-        f"- errors: {report.error_count}",
-        f"- incomplete: {report.incomplete_count}",
+        f"- unique tasks: {report.unique_task_count}",
+        f"- observations: {report.observation_count}",
+        f"- accepted tasks: {report.accepted_task_count}",
+        f"- rejected tasks: {report.rejected_task_count}",
+        f"- incomplete tasks: {report.incomplete_task_count}",
+        f"- nondeterministic tasks: {report.nondeterministic_task_count}",
+        f"- incomplete observations: {report.incomplete_observation_count}",
+        f"- error observations: {report.error_observation_count}",
         f"- complete: {str(report.complete).lower()}",
         f"- overall adequacy: {_render_measurement(report.overall_adequacy)}",
         f"- latency median: {_render_measurement(report.latency_median)}",
@@ -1772,14 +2260,23 @@ def render_measured_report(report: MeasuredComparisonReport) -> str:
     ]
     for aggregate in report.per_actual_route:
         lines.append(
-            f"- {aggregate.route_id}: samples={aggregate.sample_count} "
-            f"accepted={aggregate.accepted_count} "
-            f"rejected={aggregate.rejected_count} "
-            f"incomplete={aggregate.incomplete_count} "
+            f"- {aggregate.route_id}: scored_tasks={aggregate.scored_task_count} "
+            f"accepted_tasks={aggregate.accepted_task_count} "
+            f"rejected_tasks={aggregate.rejected_task_count} "
             f"adequacy={_render_measurement(aggregate.adequacy)}"
         )
     lines.extend(["", "## Fixed limitations", ""])
     lines.extend(f"- {code}" for code in report.limitations)
+    lines.extend(
+        [
+            "",
+            "Filesystem confidentiality is caller-managed. This module does not ",
+            "prove or enforce Windows DACL, POSIX owner/mode, encryption at rest, ",
+            "exclusive local-volume placement, backup/sync/index exclusion, ",
+            "other-local-user exclusion, or secure deletion. retention_policy_id is ",
+            "declarative and does not enforce those controls.",
+        ]
+    )
     lines.extend(["", "## Owner gates", "", "Owner evidence: blocked"])
     lines.extend(f"- {code}: blocked" for code in report.owner_gates)
     return "\n".join(lines) + "\n"
@@ -1796,9 +2293,12 @@ __all__ = [
     "OWNER_GATE_CODES",
     "REPORT_SCHEMA",
     "RETAINED_REPETITIONS",
+    "ROUTE_REGISTRY_SCHEMA",
     "RouteAdequacyAggregate",
     "RouteLabelCase",
     "RouteLabelSet",
+    "RouteRegistryBinding",
+    "bind_route_registry",
     "build_measured_report",
     "build_owner_route_suite",
     "ensure_owner_route_suite",

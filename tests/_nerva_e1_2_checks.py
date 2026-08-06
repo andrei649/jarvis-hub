@@ -7,8 +7,10 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
+import traceback
 from copy import deepcopy
 from dataclasses import FrozenInstanceError, fields, replace
 from pathlib import Path
@@ -47,6 +49,7 @@ from agents.core.router import Intent, IntentRouter
 _REVISION = "a" * 40
 _ARBITRARY_NOTE_SENTINEL = "arbitrary-note-sentinel"
 _RETAINED_EXCEPTION_MESSAGE = "synthetic retained measured-router failure"
+_LABEL_REGISTRIES: dict[int, object] = {}
 
 
 def _digest(number: int) -> str:
@@ -95,13 +98,67 @@ def _write(directory: Path, payload: object, name: str = "labels.json") -> Path:
     return path
 
 
-def _load(path: Path):
-    return load_route_label_set(path, allowed_routes=("friday", "jarvis"))
+def _route_agents() -> dict[str, object]:
+    return {"friday": object(), "jarvis": object()}
+
+
+def _bind(agents: dict[str, object] | None = None):
+    return measured_compare.bind_route_registry(
+        _route_agents() if agents is None else agents
+    )
+
+
+def _load(path: Path, *, registry=None):
+    binding = registry or _bind()
+    label_set = load_route_label_set(path, registry=binding)
+    _LABEL_REGISTRIES[id(label_set)] = binding
+    return label_set
+
+
+def _registry(label_set):
+    try:
+        return _LABEL_REGISTRIES[id(label_set)]
+    except KeyError as exc:  # pragma: no cover - a test-fixture construction defect
+        raise AssertionError("label fixture lost its registry capability") from exc
+
+
+def _build_report(batch, store, label_set):
+    return measured_compare.build_measured_report(
+        batch,
+        store,
+        label_set,
+        registry=_registry(label_set),
+    )
+
+
+def _validate_report(report, batch, store, label_set) -> None:
+    measured_compare.validate_measured_report_against_evidence(
+        report,
+        batch,
+        store,
+        label_set,
+        registry=_registry(label_set),
+    )
 
 
 def _assert_rejects(directory: Path, payload: object) -> None:
     with pytest.raises(ValueError):
         _load(_write(directory, payload))
+
+
+def _capture_detached_private_error(operation, *sentinels: object) -> ValueError:
+    """Require bounded failures to detach private parser/OS exception payloads."""
+
+    with pytest.raises(ValueError) as captured:
+        operation()
+    error = captured.value
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    rendered = "".join(traceback.format_exception(error)).lower()
+    for sentinel in sentinels:
+        value = str(sentinel).lower()
+        assert not value or value not in rendered
+    return error
 
 
 def _check_strict_route_labels() -> None:
@@ -121,6 +178,8 @@ def _check_strict_route_labels() -> None:
         assert loaded.cases[0].acceptable_primary_routes == ("friday",)
         assert len(loaded.cases[0].content_fingerprint) == 64
         assert len(loaded.content_fingerprint) == 64
+        assert loaded.route_registry_ids == ("friday", "jarvis")
+        assert loaded.route_registry_fingerprint == _registry(loaded).fingerprint
         assert "synthetic weather request 001" not in loaded.cases[0].content_fingerprint
         assert "synthetic weather request 001" not in loaded.content_fingerprint
         reloaded = _load(_write(directory, document, "repeat.json"))
@@ -185,11 +244,9 @@ def _check_strict_route_labels() -> None:
         mutated = deepcopy(document)
         mutated["cases"][0]["acceptable_primary_routes"] = [["friday"]]
         _assert_rejects(directory, mutated)
-        with pytest.raises(ValueError):
-            load_route_label_set(
-                _write(directory, document, "registry.json"),
-                allowed_routes=(["friday"],),
-            )
+        for invalid_registry in ({}, {"Friday": object()}, {True: object()}):
+            with pytest.raises(ValueError):
+                _bind(invalid_registry)
 
         for start, end in (
             ("2026-07-31T23:59:59.000Z", "2026-07-01T00:00:00.000Z"),
@@ -228,9 +285,23 @@ def _check_strict_route_labels() -> None:
         (directory / "bom.json").write_bytes(b"\xef\xbb\xbf{}")
         with pytest.raises(ValueError):
             _load(directory / "bom.json")
-        (directory / "invalid.json").write_bytes(b"\x80")
-        with pytest.raises(ValueError):
-            _load(directory / "invalid.json")
+        invalid_utf8 = directory / "invalid.json"
+        invalid_utf8.write_bytes(_ARBITRARY_NOTE_SENTINEL.encode("ascii") + b"\x80")
+        _capture_detached_private_error(
+            lambda: _load(invalid_utf8),
+            _ARBITRARY_NOTE_SENTINEL,
+            invalid_utf8,
+        )
+        malformed_private = directory / "malformed-private.json"
+        malformed_private.write_text(
+            '{"text":"' + _ARBITRARY_NOTE_SENTINEL + '",',
+            encoding="utf-8",
+        )
+        _capture_detached_private_error(
+            lambda: _load(malformed_private),
+            _ARBITRARY_NOTE_SENTINEL,
+            malformed_private,
+        )
         for literal in ("1.0", "NaN", "Infinity"):
             (directory / "number.json").write_text(literal, encoding="utf-8")
             with pytest.raises(ValueError):
@@ -245,6 +316,28 @@ def _check_strict_route_labels() -> None:
         else:
             with pytest.raises(ValueError):
                 _load(link)
+
+        private_os_path = "C:/private/owner/labels/route-labels.json"
+        with patch.object(
+            measured_compare.os,
+            "lstat",
+            side_effect=PermissionError(private_os_path),
+        ):
+            _capture_detached_private_error(
+                lambda: _load(directory / "labels.json"),
+                private_os_path,
+                directory,
+            )
+        with patch.object(
+            Path,
+            "read_bytes",
+            side_effect=PermissionError(private_os_path),
+        ):
+            _capture_detached_private_error(
+                lambda: _load(directory / "labels.json"),
+                private_os_path,
+                directory,
+            )
 
         mutated = deepcopy(document)
         mutated["cases"][0]["text"] = "x" * 10_001
@@ -270,6 +363,7 @@ def _check_suite_binding() -> None:
             assert benchmark.artifact_refs == (
                 f"label-fingerprint:{label_set.content_fingerprint}",
                 f"case-fingerprint:{source.content_fingerprint}",
+                f"registry-fingerprint:{label_set.route_registry_fingerprint}",
             )
             assert label_set.label_set_id not in "".join(benchmark.artifact_refs)
             assert source.source_record_digest not in "".join(benchmark.artifact_refs)
@@ -391,6 +485,48 @@ class _MismatchedCaptureRouter:
         return getattr(self._router, name)
 
 
+class _MismatchedRegistryCaptureRouter:
+    def __init__(self, router, writer) -> None:
+        self._router = router
+        self._writer = writer
+
+    async def classify_deterministic(self, text: str, agents: dict[str, object]):
+        intent = await self._router.classify_deterministic(text, agents)
+        self._writer(
+            DecisionRecord.from_intent(
+                text=text,
+                agents={"friday": agents["friday"]},
+                intent=intent,
+            )
+        )
+        return intent
+
+    def __getattr__(self, name: str):
+        return getattr(self._router, name)
+
+
+class _SnapshotAssertingRouter(_MeasuredRouter):
+    def __init__(self, expected_agent: object) -> None:
+        super().__init__()
+        self.expected_agent = expected_agent
+        self.saw_frozen_agent = False
+
+    async def classify(self, text: str, agents: dict[str, object]) -> Intent:
+        self.saw_frozen_agent = agents["friday"] is self.expected_agent
+        return await super().classify(text, agents)
+
+
+class _RegistryMutatingRouter(_MeasuredRouter):
+    def __init__(self, source_agents: dict[str, object]) -> None:
+        super().__init__()
+        self.source_agents = source_agents
+
+    async def classify(self, text: str, agents: dict[str, object]) -> Intent:
+        intent = await super().classify(text, agents)
+        self.source_agents["ultron"] = object()
+        return intent
+
+
 class _InterleavingCaptureRouter:
     started: asyncio.Event
     release: asyncio.Event
@@ -428,34 +564,223 @@ class _InterleavingCaptureRouter:
         return getattr(self._router, name)
 
 
+def _check_route_registry_binding() -> None:
+    ordered_agents = {"friday": object(), "jarvis": object()}
+    reversed_agents = {"jarvis": object(), "friday": object()}
+    binding = _bind(ordered_agents)
+    equivalent = _bind(reversed_agents)
+    expected = hashlib.sha256(
+        json.dumps(
+            {
+                "route_ids": ["friday", "jarvis"],
+                "schema": "nerva.cortex.route-registry.v1",
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    assert binding.route_ids == ("friday", "jarvis")
+    assert binding.fingerprint == equivalent.fingerprint == expected
+    assert _bind({"friday": object()}).fingerprint != expected
+    assert _bind({**ordered_agents, "ultron": object()}).fingerprint != expected
+    assert repr(ordered_agents["friday"]) not in repr(binding)
+
+    transient_agents = _route_agents()
+    transient_binding = _bind(transient_agents)
+    transient_agents["ultron"] = object()
+    with pytest.raises(ValueError, match="drift|registry"):
+        transient_binding.assert_unchanged()
+    transient_agents.pop("ultron")
+    with pytest.raises(ValueError, match="drift|registry"):
+        transient_binding.assert_unchanged()
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set = _load(_write(directory, _document()), registry=binding)
+        assert label_set.route_registry_ids == binding.route_ids
+        assert label_set.route_registry_fingerprint == binding.fingerprint
+
+        expanded = _bind({**ordered_agents, "ultron": object()})
+        expanded_labels = _load(
+            _write(directory, _document(), "expanded-registry.json"),
+            registry=expanded,
+        )
+        assert expanded_labels.content_fingerprint != label_set.content_fingerprint
+
+        # A same-fingerprint binding is not the same in-memory capability.
+        with pytest.raises(ValueError, match="registry|binding|capability"):
+            measured_current_router_runner(_MeasuredRouter(), equivalent, label_set)
+        lookalike_store = directory / "lookalike-store"
+        lookalike_store.mkdir()
+        with pytest.raises(ValueError, match="registry|binding|capability"):
+            asyncio.run(
+                measured_compare.run_measured_comparison(
+                    router=_MeasuredRouter(),
+                    registry=equivalent,
+                    label_set=label_set,
+                    store_root=lookalike_store,
+                    source_revision=_REVISION,
+                    run_nonce=lambda: "lookalike",
+                )
+            )
+        assert list(lookalike_store.iterdir()) == []
+
+        old_friday = ordered_agents["friday"]
+        ordered_agents["friday"] = object()
+        snapshot_router = _SnapshotAssertingRouter(old_friday)
+        observation = asyncio.run(
+            measured_current_router_runner(snapshot_router, binding, label_set)(
+                label_set.cases[0].text
+            )
+        )
+        assert observation.route_id == "friday"
+        assert snapshot_router.saw_frozen_agent is True
+
+        with pytest.raises(ValueError, match="registered|registry"):
+            asyncio.run(
+                measured_current_router_runner(
+                    _MeasuredRouter("ultron"), binding, label_set
+                )(label_set.cases[0].text)
+            )
+        benign_after_unregistered = _MeasuredRouter()
+        with pytest.raises(ValueError, match="registered|registry"):
+            measured_current_router_runner(
+                benign_after_unregistered,
+                binding,
+                label_set,
+            )
+        assert benign_after_unregistered.classify_calls == 0
+
+        mismatch_registry = _bind(_route_agents())
+        mismatch_labels = _load(
+            _write(directory, _document(), "mismatched-record-registry.json"),
+            registry=mismatch_registry,
+        )
+        with (
+            patch.object(
+                measured_compare,
+                "ShadowDecisionRouter",
+                _MismatchedRegistryCaptureRouter,
+            ),
+            pytest.raises(ValueError, match="available|registry"),
+        ):
+            asyncio.run(
+                measured_current_router_runner(
+                    _MeasuredRouter(), mismatch_registry, mismatch_labels
+                )(mismatch_labels.cases[0].text)
+            )
+        benign_after_mismatch = _MeasuredRouter()
+        with pytest.raises(ValueError, match="available|registry"):
+            measured_current_router_runner(
+                benign_after_mismatch,
+                mismatch_registry,
+                mismatch_labels,
+            )
+        assert benign_after_mismatch.classify_calls == 0
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        source_agents = _route_agents()
+        registry = _bind(source_agents)
+        label_set = _load(_write(directory, _document()), registry=registry)
+        mutating = _RegistryMutatingRouter(source_agents)
+        with pytest.raises(ValueError, match="drift|registry"):
+            asyncio.run(
+                measured_current_router_runner(mutating, registry, label_set)(
+                    label_set.cases[0].text
+                )
+            )
+
+    def assert_harness_phase_drift(mutate_after_call: int, name: str) -> None:
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            source_agents = _route_agents()
+            registry = _bind(source_agents)
+            label_set = _load(_write(directory, _document()), registry=registry)
+            store_root = directory / name
+            store_root.mkdir()
+            original_run = BenchmarkHarness.run
+            calls = 0
+
+            async def mutate_after_phase(self: BenchmarkHarness, *args, **kwargs):
+                nonlocal calls
+                result = await original_run(self, *args, **kwargs)
+                calls += 1
+                if calls == mutate_after_call:
+                    source_agents["ultron"] = object()
+                return result
+
+            with (
+                patch.object(BenchmarkHarness, "run", mutate_after_phase),
+                pytest.raises(ValueError, match="drift|registry"),
+            ):
+                asyncio.run(
+                    measured_compare.run_measured_comparison(
+                        router=_MeasuredRouter(),
+                        registry=registry,
+                        label_set=label_set,
+                        store_root=store_root,
+                        source_revision=_REVISION,
+                        run_nonce=lambda: "registrydrift",
+                    )
+                )
+            assert BenchmarkStore(store_root).runs(
+                measured_compare._suite_name(label_set), last_n=sys.maxsize
+            ) == ()
+
+    assert_harness_phase_drift(1, "after-warmup-drift")
+    assert_harness_phase_drift(2, "between-repetition-drift")
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        source_agents = _route_agents()
+        registry = _bind(source_agents)
+        label_set = _load(_write(directory, _document()), registry=registry)
+        source_agents.pop("jarvis")
+        store_root = directory / "preflight-drift"
+        store_root.mkdir()
+        with pytest.raises(ValueError, match="drift|registry"):
+            asyncio.run(
+                measured_compare.run_measured_comparison(
+                    router=_MeasuredRouter(),
+                    registry=registry,
+                    label_set=label_set,
+                    store_root=store_root,
+                    source_revision=_REVISION,
+                )
+            )
+        assert list(store_root.iterdir()) == []
+
+
 def _check_measured_runner() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
-        label_set = _load(_write(directory, _document()))
         agents = {"friday": object(), "jarvis": object()}
+        registry = _bind(agents)
+        label_set = _load(_write(directory, _document()), registry=registry)
         prompt = label_set.cases[0].text
 
         configured = _MeasuredRouter()
         configured.llm_classifier = object()
         with pytest.raises(ValueError, match="llm_classifier=None"):
-            measured_current_router_runner(configured, agents, label_set)
+            measured_current_router_runner(configured, registry, label_set)
 
         mutable = _MeasuredRouter()
-        runner = measured_current_router_runner(mutable, agents, label_set)
+        runner = measured_current_router_runner(mutable, registry, label_set)
         mutable.llm_classifier = object()
         with pytest.raises(ValueError, match="llm_classifier=None"):
             asyncio.run(runner(prompt))
         assert mutable.classify_calls == 0
 
         unknown = _MeasuredRouter()
-        unknown_runner = measured_current_router_runner(unknown, agents, label_set)
+        unknown_runner = measured_current_router_runner(unknown, registry, label_set)
         with pytest.raises(ValueError, match="known route label"):
             asyncio.run(unknown_runner("  UNKNOWN NORMALIZED PROMPT  "))
         assert unknown.classify_calls == 0
 
         accepted_router = _MeasuredRouter("friday")
         accepted = asyncio.run(
-            measured_current_router_runner(accepted_router, agents, label_set)(prompt)
+            measured_current_router_runner(accepted_router, registry, label_set)(prompt)
         )
         expected_record = DecisionRecord.from_intent(
             text=prompt,
@@ -466,6 +791,7 @@ def _check_measured_runner() -> None:
         assert accepted.route_id == "friday"
         assert accepted.artifact_refs == (
             f"decision:{expected_record.replay_fingerprint}",
+            f"registry-fingerprint:{registry.fingerprint}",
         )
         assert prompt not in "".join(accepted.artifact_refs)
         assert label_set.cases[0].source_record_digest not in "".join(
@@ -473,7 +799,9 @@ def _check_measured_runner() -> None:
         )
 
         rejected = asyncio.run(
-            measured_current_router_runner(_MeasuredRouter("jarvis"), agents, label_set)(
+            measured_current_router_runner(
+                _MeasuredRouter("jarvis"), registry, label_set
+            )(
                 prompt
             )
         )
@@ -483,7 +811,7 @@ def _check_measured_runner() -> None:
         for wrapper in (_NoCaptureRouter, _DoubleCaptureRouter, _MismatchedCaptureRouter):
             with patch.object(measured_compare, "ShadowDecisionRouter", wrapper):
                 bad_runner = measured_current_router_runner(
-                    _MeasuredRouter(), agents, label_set
+                    _MeasuredRouter(), registry, label_set
                 )
                 with pytest.raises(RuntimeError):
                     asyncio.run(bad_runner(prompt))
@@ -491,7 +819,7 @@ def _check_measured_runner() -> None:
         async def _run_concurrently() -> tuple[object, object]:
             _InterleavingCaptureRouter.reset()
             concurrent_runner = measured_current_router_runner(
-                _MeasuredRouter(), agents, label_set
+                _MeasuredRouter(), registry, label_set
             )
             first = asyncio.create_task(concurrent_runner(label_set.cases[0].text))
             second = asyncio.create_task(concurrent_runner(label_set.cases[1].text))
@@ -535,8 +863,9 @@ def _with_unscored_result(run: object):
 def _check_measured_run_batch() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
-        label_set = _load(_write(directory, _document()))
         agents = {"friday": object(), "jarvis": object()}
+        registry = _bind(agents)
+        label_set = _load(_write(directory, _document()), registry=registry)
 
         constructed_roots: list[tuple[object, ...]] = []
 
@@ -560,7 +889,7 @@ def _check_measured_run_batch() -> None:
                     asyncio.run(
                         measured_compare.run_measured_comparison(
                             router=_MeasuredRouter(),
-                            agents=agents,
+                            registry=registry,
                             label_set=label_set,
                             store_root=invalid,
                             source_revision=_REVISION,
@@ -570,7 +899,7 @@ def _check_measured_run_batch() -> None:
                 asyncio.run(
                     measured_compare.run_measured_comparison(
                         router=_MeasuredRouter(),
-                        agents=agents,
+                        registry=registry,
                         label_set=label_set,
                         source_revision=_REVISION,
                     )
@@ -597,7 +926,7 @@ def _check_measured_run_batch() -> None:
                 asyncio.run(
                     measured_compare.run_measured_comparison(
                         router=_MeasuredRouter(),
-                        agents=agents,
+                        registry=registry,
                         label_set=label_set,
                         store_root=link_root,
                         source_revision=_REVISION,
@@ -615,7 +944,7 @@ def _check_measured_run_batch() -> None:
                 asyncio.run(
                     measured_compare.run_measured_comparison(
                         router=_MeasuredRouter(),
-                        agents=agents,
+                        registry=registry,
                         label_set=label_set,
                         store_root=ancestor_link / "store",
                         source_revision=_REVISION,
@@ -643,7 +972,7 @@ def _check_measured_run_batch() -> None:
                     asyncio.run(
                         measured_compare.run_measured_comparison(
                             router=_MeasuredRouter(),
-                            agents=agents,
+                            registry=registry,
                             label_set=label_set,
                             store_root=junction_root,
                             source_revision=_REVISION,
@@ -679,7 +1008,7 @@ def _check_measured_run_batch() -> None:
                     asyncio.run(
                         measured_compare.run_measured_comparison(
                             router=_MeasuredRouter(),
-                            agents=agents,
+                            registry=registry,
                             label_set=label_set,
                             store_root=ancestor_junction / "store",
                             source_revision=_REVISION,
@@ -696,7 +1025,7 @@ def _check_measured_run_batch() -> None:
                 asyncio.run(
                     measured_compare.run_measured_comparison(
                         router=_MeasuredRouter(),
-                        agents=agents,
+                        registry=registry,
                         label_set=label_set,
                         store_root=preflight_root,
                         source_revision=revision,
@@ -706,17 +1035,18 @@ def _check_measured_run_batch() -> None:
             asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=_MeasuredRouter(),
-                    agents=agents,
+                    registry=registry,
                     label_set=object(),
                     store_root=preflight_root,
                     source_revision=_REVISION,
                 )
             )
-        with pytest.raises(ValueError, match="registered"):
+        lookalike_registry = _bind({"jarvis": object()})
+        with pytest.raises(ValueError, match="registry|binding|capability"):
             asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=_MeasuredRouter(),
-                    agents={"jarvis": object()},
+                    registry=lookalike_registry,
                     label_set=label_set,
                     store_root=preflight_root,
                     source_revision=_REVISION,
@@ -728,7 +1058,7 @@ def _check_measured_run_batch() -> None:
             asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=configured,
-                    agents=agents,
+                    registry=registry,
                     label_set=label_set,
                     store_root=preflight_root,
                     source_revision=_REVISION,
@@ -752,7 +1082,7 @@ def _check_measured_run_batch() -> None:
             batch = asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=router,
-                    agents=agents,
+                    registry=registry,
                     label_set=label_set,
                     store_root=store_root,
                     source_revision=_REVISION,
@@ -764,6 +1094,7 @@ def _check_measured_run_batch() -> None:
         assert router.classify_calls == 20 * 6
         assert batch.store_root == store_root.resolve()
         assert batch.label_set_fingerprint == label_set.content_fingerprint
+        assert batch.route_registry_fingerprint == registry.fingerprint
         assert batch.suite_name.startswith("owner-route-")
         assert batch.suite_version == 1
         assert batch.environment == environment
@@ -793,7 +1124,14 @@ def _check_measured_run_batch() -> None:
             assert len(run.run_id) <= 128
             assert run.artifact_refs == (
                 f"label-fingerprint:{label_set.content_fingerprint}",
+                f"registry-fingerprint:{registry.fingerprint}",
                 f"environment-fingerprint:{batch.environment_fingerprint}",
+            )
+            assert all(
+                f"registry-fingerprint:{registry.fingerprint}"
+                in result.candidate.artifact_refs
+                for result in run.results
+                if result.candidate is not None
             )
 
         with pytest.raises(FrozenInstanceError):
@@ -801,6 +1139,7 @@ def _check_measured_run_batch() -> None:
         with pytest.raises(ValueError, match="internally"):
             measured_compare.MeasuredRunBatch(
                 label_set_fingerprint=label_set.content_fingerprint,
+                route_registry_fingerprint=registry.fingerprint,
                 suite_name=batch.suite_name,
                 suite_version=batch.suite_version,
                 environment=environment,
@@ -808,6 +1147,7 @@ def _check_measured_run_batch() -> None:
                 source_revision=_REVISION,
                 run_fingerprints=batch.run_fingerprints,
                 store_root=store_root,
+                _route_registry_token=object(),
             )
         with pytest.raises(ValueError, match="internally"):
             replace(batch, source_revision="b" * 40)
@@ -819,7 +1159,7 @@ def _check_measured_run_batch() -> None:
             asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=failing_router,
-                    agents=agents,
+                    registry=registry,
                     label_set=label_set,
                     store_root=warmup_root,
                     source_revision=_REVISION,
@@ -848,7 +1188,7 @@ def _check_measured_run_batch() -> None:
             asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=_MeasuredRouter(),
-                    agents=agents,
+                    registry=registry,
                     label_set=label_set,
                     store_root=warmup_unscored_root,
                     source_revision=_REVISION,
@@ -865,7 +1205,7 @@ def _check_measured_run_batch() -> None:
         error_batch = asyncio.run(
             measured_compare.run_measured_comparison(
                 router=retained_error_router,
-                agents=agents,
+                registry=registry,
                 label_set=label_set,
                 store_root=retained_error_root,
                 source_revision=_REVISION,
@@ -901,7 +1241,7 @@ def _check_measured_run_batch() -> None:
             unscored_batch = asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=_MeasuredRouter(),
-                    agents=agents,
+                    registry=registry,
                     label_set=label_set,
                     store_root=retained_unscored_root,
                     source_revision=_REVISION,
@@ -950,7 +1290,7 @@ def _check_measured_run_batch() -> None:
             asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=collision_router,
-                    agents=agents,
+                    registry=registry,
                     label_set=label_set,
                     store_root=store_root,
                     source_revision=_REVISION,
@@ -976,17 +1316,19 @@ def _check_measured_run_batch() -> None:
 
         with (
             patch.object(BenchmarkStore, "record_run", _fail_second_write),
-            pytest.raises(OSError, match="retained-write"),
         ):
-            asyncio.run(
-                measured_compare.run_measured_comparison(
-                    router=write_failure_router,
-                        agents=agents,
+            _assert_bounded_topology_error(
+                lambda: asyncio.run(
+                    measured_compare.run_measured_comparison(
+                        router=write_failure_router,
+                        registry=registry,
                         label_set=label_set,
                         store_root=write_failure_root,
                         source_revision="b" * 64,
                         run_nonce=lambda: "writefail",
-                )
+                    )
+                ),
+                write_failure_root,
             )
         failed_store = BenchmarkStore(write_failure_root)
         failed_suite_name = measured_compare._suite_name(label_set)
@@ -1018,7 +1360,7 @@ def _check_measured_run_batch() -> None:
             asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=proof_failure_router,
-                    agents=agents,
+                    registry=registry,
                     label_set=label_set,
                     store_root=proof_failure_root,
                     source_revision=_REVISION,
@@ -1046,7 +1388,7 @@ def _check_measured_run_batch() -> None:
             asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=_MeasuredRouter(),
-                    agents=agents,
+                    registry=registry,
                     label_set=label_set,
                     store_root=duplicate_proof_root,
                     source_revision=_REVISION,
@@ -1077,7 +1419,7 @@ def _check_measured_run_batch() -> None:
             asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=_MeasuredRouter(),
-                    agents=agents,
+                    registry=registry,
                     label_set=label_set,
                     store_root=mismatch_proof_root,
                     source_revision=_REVISION,
@@ -1123,7 +1465,12 @@ def _report_fixture(
     router: _MeasuredRouter | None = None,
     nonce: str = "reportfixture",
 ):
-    label_set = _load(_write(directory, document or _document()))
+    agents = _route_agents()
+    registry = _bind(agents)
+    label_set = _load(
+        _write(directory, document or _document()),
+        registry=registry,
+    )
     store_root = directory / "report-store"
     store_root.mkdir()
     environment = environment or EnvironmentProfile.detect(
@@ -1143,7 +1490,7 @@ def _report_fixture(
         batch = asyncio.run(
             measured_compare.run_measured_comparison(
                 router=router or _PatternMeasuredRouter(),
-                agents={"friday": object(), "jarvis": object()},
+                registry=registry,
                 label_set=label_set,
                 store_root=store_root,
                 source_revision=_REVISION,
@@ -1249,11 +1596,7 @@ def _build_with_run_mutation(batch, store, label_set, mutate):
         run_fingerprints=tuple(run_fingerprint(run) for run in changed),
     )
     try:
-        return measured_compare.build_measured_report(
-            changed_batch,
-            store,
-            label_set,
-        )
+        return _build_report(changed_batch, store, label_set)
     finally:
         _write_runs(store, batch.suite_name, original)
 
@@ -1280,94 +1623,43 @@ def _check_report_count_parser_attacks() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
         label_set, batch, store, _ = _report_fixture(directory)
-        report = measured_compare.build_measured_report(batch, store, label_set)
+        report = _build_report(batch, store, label_set)
+        raw = json.loads(report.to_json())
 
-        impossible = json.loads(report.to_json())
-        impossible.update(
-            {
-                "accepted_count": 0,
-                "rejected_count": 0,
-                "incomplete_count": 0,
-                "overall_adequacy": {
-                    "source": None,
-                    "status": "not_measured",
-                    "unit": None,
-                    "value": None,
-                },
-            }
+        mutations = (
+            lambda value: value.update({"accepted_task_count": 14}),
+            lambda value: value.update({"nondeterministic_task_count": 1}),
+            lambda value: value.update({"error_observation_count": 1}),
+            lambda value: value.update({"observation_count": 99}),
+            lambda value: value["per_actual_route"][0].update(
+                {"scored_task_count": 14}
+            ),
+            lambda value: value["per_actual_route"][1].update(
+                {"accepted_task_count": 1}
+            ),
         )
-        for route in impossible["per_actual_route"]:
-            route.update(
-                {
-                    "accepted_count": 0,
-                    "rejected_count": 0,
-                    "incomplete_count": 0,
-                    "adequacy": {
-                        "source": None,
-                        "status": "not_measured",
-                        "unit": None,
-                        "value": None,
-                    },
-                }
-            )
-        with pytest.raises(ValueError, match="incomplete"):
-            measured_compare.MeasuredComparisonReport.from_json(
-                _refingerprint_report(impossible)
-            )
+        for mutate in mutations:
+            impossible = deepcopy(raw)
+            mutate(impossible)
+            with pytest.raises(ValueError):
+                measured_compare.MeasuredComparisonReport.from_json(
+                    _refingerprint_report(impossible)
+                )
 
-        impossible_route = json.loads(report.to_json())
-        friday, jarvis = impossible_route["per_actual_route"]
-        friday.update(
-            {
-                "accepted_count": 0,
-                "rejected_count": 0,
-                "incomplete_count": 0,
-                "adequacy": {
-                    "source": None,
-                    "status": "not_measured",
-                    "unit": None,
-                    "value": None,
-                },
-            }
-        )
-        jarvis.update({"accepted_count": 25, "rejected_count": 0})
-        jarvis["adequacy"]["value"] = 1.0
-        impossible_route.update(
-            {
-                "accepted_count": 25,
-                "rejected_count": 0,
-                "overall_adequacy": {
-                    "source": "benchmark.harness",
-                    "status": "measured",
-                    "unit": "ratio",
-                    "value": 1.0,
-                },
-            }
-        )
-        with pytest.raises(ValueError, match="route incomplete"):
-            measured_compare.MeasuredComparisonReport.from_json(
-                _refingerprint_report(impossible_route)
-            )
-
-        typed_routes = tuple(
+        route = report.per_actual_route[0]
+        with pytest.raises(ValueError):
             measured_compare.RouteAdequacyAggregate(
                 route_id=route.route_id,
-                sample_count=route.sample_count,
-                accepted_count=route.accepted_count,
-                rejected_count=route.rejected_count,
-                incomplete_count=route.incomplete_count,
+                scored_task_count=route.scored_task_count,
+                accepted_task_count=route.accepted_task_count,
+                rejected_task_count=route.rejected_task_count + 1,
                 adequacy=route.adequacy,
             )
-            for route in report.per_actual_route
-        )
-        with pytest.raises(ValueError, match="report incomplete"):
+
+        with pytest.raises(ValueError):
             _construct_report(
                 report,
-                accepted_count=0,
-                rejected_count=0,
-                incomplete_count=0,
-                overall_adequacy=Measurement("not_measured"),
-                per_actual_route=typed_routes,
+                accepted_task_count=14,
             )
 
 
@@ -1375,7 +1667,7 @@ def _check_report_environment_parser_attacks() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
         label_set, batch, store, environment = _report_fixture(directory)
-        report = measured_compare.build_measured_report(batch, store, label_set)
+        report = _build_report(batch, store, label_set)
         raw = json.loads(report.to_json())
         raw["environment"]["runner_id"] = (
             "owner-local-e1-2a-arbitrary-note-andrei649"
@@ -1419,7 +1711,7 @@ def _check_environment_digest_privacy() -> None:
             environment=environment,
             nonce="digestprivacy",
         )
-        report = measured_compare.build_measured_report(batch, store, label_set)
+        report = _build_report(batch, store, label_set)
         for output in (report.to_json(), measured_compare.render_measured_report(report)):
             assert platform_sentinel not in output
             assert python_sentinel not in output
@@ -1432,12 +1724,7 @@ def _check_environment_digest_privacy() -> None:
             python_sentinel.encode("utf-8")
         ).hexdigest()
         assert report.environment.content_fingerprint != report.environment_fingerprint
-        measured_compare.validate_measured_report_against_evidence(
-            report,
-            batch,
-            store,
-            label_set,
-        )
+        _validate_report(report, batch, store, label_set)
 
     unusual = _detected_environment(
         system="Linux",
@@ -1459,7 +1746,7 @@ def _check_report_parser_strictness() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
         label_set, batch, store, _ = _report_fixture(directory)
-        report = measured_compare.build_measured_report(batch, store, label_set)
+        report = _build_report(batch, store, label_set)
         raw = json.loads(report.to_json())
 
         for flag in (
@@ -1508,12 +1795,7 @@ def _check_report_parser_strictness() -> None:
             _refingerprint_report(divergent)
         )
         with pytest.raises(ValueError, match="retained evidence"):
-            measured_compare.validate_measured_report_against_evidence(
-                structural,
-                batch,
-                store,
-                label_set,
-            )
+            _validate_report(structural, batch, store, label_set)
 
         for flag in (
             "can_change_routing",
@@ -1554,13 +1836,9 @@ def _check_retained_evidence_tamper_matrix() -> None:
         wrong_root = directory / "wrong-store"
         wrong_root.mkdir()
         with pytest.raises(ValueError, match="store"):
-            measured_compare.build_measured_report(
-                batch,
-                BenchmarkStore(wrong_root),
-                label_set,
-            )
+            _build_report(batch, BenchmarkStore(wrong_root), label_set)
         with pytest.raises(ValueError, match="stored suite"):
-            measured_compare.build_measured_report(
+            _build_report(
                 _guarded_batch(batch, suite_version=batch.suite_version + 1),
                 store,
                 label_set,
@@ -1568,12 +1846,23 @@ def _check_retained_evidence_tamper_matrix() -> None:
         for changed_suite in (
             tuple(reversed(suite)),
             (replace(suite[0], task_type="forecast"), *suite[1:]),
+            (
+                replace(
+                    suite[0],
+                    artifact_refs=(
+                        suite[0].artifact_refs[0],
+                        suite[0].artifact_refs[1],
+                        f"registry-fingerprint:{'0' * 64}",
+                    ),
+                ),
+                *suite[1:],
+            ),
         ):
             with (
                 patch.object(store, "load_suite", return_value=changed_suite),
                 pytest.raises(ValueError, match="stored suite"),
             ):
-                measured_compare.build_measured_report(batch, store, label_set)
+                _build_report(batch, store, label_set)
 
         original_runs = _ordered_runs(store, batch.suite_name)
         path = _runs_path(store, batch.suite_name)
@@ -1584,7 +1873,7 @@ def _check_retained_evidence_tamper_matrix() -> None:
                 encoding="utf-8",
             )
             with pytest.raises(ValueError, match="fingerprint"):
-                measured_compare.build_measured_report(batch, store, label_set)
+                _build_report(batch, store, label_set)
         finally:
             path.write_text(original_text, encoding="utf-8")
 
@@ -1598,7 +1887,7 @@ def _check_retained_evidence_tamper_matrix() -> None:
                 ),
             )
         with pytest.raises(ValueError, match="fingerprint"):
-            measured_compare.build_measured_report(
+            _build_report(
                 _guarded_batch(
                     batch,
                     run_fingerprints=("f" * 64, *batch.run_fingerprints[1:]),
@@ -1607,7 +1896,7 @@ def _check_retained_evidence_tamper_matrix() -> None:
                 label_set,
             )
         with pytest.raises(ValueError, match="ordered repetitions"):
-            measured_compare.build_measured_report(
+            _build_report(
                 _guarded_batch(
                     batch,
                     run_fingerprints=tuple(reversed(batch.run_fingerprints)),
@@ -1618,7 +1907,7 @@ def _check_retained_evidence_tamper_matrix() -> None:
         try:
             _write_runs(store, batch.suite_name, original_runs[1:])
             with pytest.raises(ValueError, match="fingerprint"):
-                measured_compare.build_measured_report(batch, store, label_set)
+                _build_report(batch, store, label_set)
         finally:
             _write_runs(store, batch.suite_name, original_runs)
 
@@ -1633,6 +1922,7 @@ def _check_retained_evidence_tamper_matrix() -> None:
                 run,
                 artifact_refs=(
                     run.artifact_refs[0],
+                    run.artifact_refs[1],
                     f"environment-fingerprint:{'e' * 64}",
                 ),
             ),
@@ -1641,6 +1931,15 @@ def _check_retained_evidence_tamper_matrix() -> None:
                 artifact_refs=(
                     f"label-fingerprint:{'d' * 64}",
                     run.artifact_refs[1],
+                    run.artifact_refs[2],
+                ),
+            ),
+            lambda run: replace(
+                run,
+                artifact_refs=(
+                    run.artifact_refs[0],
+                    f"registry-fingerprint:{'0' * 64}",
+                    run.artifact_refs[2],
                 ),
             ),
             lambda run: replace(run, results=tuple(reversed(run.results))),
@@ -1688,6 +1987,17 @@ def _check_retained_evidence_tamper_matrix() -> None:
                     ),
                 ),
             ),
+            lambda run: _replace_result(
+                run,
+                0,
+                candidate=replace(
+                    run.results[0].candidate,
+                    artifact_refs=(
+                        run.results[0].candidate.artifact_refs[0],
+                        f"registry-fingerprint:{'0' * 64}",
+                    ),
+                ),
+            ),
         )
         for mutation in mutations:
             _assert_run_mutation_rejected(batch, store, label_set, mutation)
@@ -1706,17 +2016,9 @@ def _check_retained_evidence_tamper_matrix() -> None:
             document=other_document,
             nonce="otherevidence",
         )
-        measured_compare.build_measured_report(
-            other_batch,
-            other_store,
-            other_labels,
-        )
+        _build_report(other_batch, other_store, other_labels)
         with pytest.raises(ValueError):
-            measured_compare.build_measured_report(
-                other_batch,
-                other_store,
-                label_set,
-            )
+            _build_report(other_batch, other_store, label_set)
 
 
 def _provider_result_mutation(**candidate_changes):
@@ -1806,7 +2108,7 @@ def _check_measurement_provider_privacy_matrix() -> None:
         ):
             assert any(sentinel in case.text for case in label_set.cases)
             assert sentinel in suite_text
-        complete = measured_compare.build_measured_report(batch, store, label_set)
+        complete = _build_report(batch, store, label_set)
         _assert_privacy_minimised(complete, label_set, store)
 
         wrong_source = _build_with_run_mutation(
@@ -1824,9 +2126,10 @@ def _check_measurement_provider_privacy_matrix() -> None:
                 ),
             ),
         )
-        assert wrong_source.accepted_count == 75
-        assert wrong_source.rejected_count == 25
-        assert wrong_source.incomplete_count == 1
+        assert wrong_source.accepted_task_count == 15
+        assert wrong_source.rejected_task_count == 5
+        assert wrong_source.incomplete_task_count == 0
+        assert wrong_source.incomplete_observation_count == 1
         assert wrong_source.latency_median.value == 51.0
         assert wrong_source.latency_p95.value == 96.0
         assert wrong_source.complete is False
@@ -1874,7 +2177,8 @@ def _check_measurement_provider_privacy_matrix() -> None:
                 label_set,
                 _cost_result_mutation(measurement),
             )
-            assert changed.incomplete_count == 1
+            assert changed.incomplete_task_count == 0
+            assert changed.incomplete_observation_count == 1
             assert changed.provider_charge == Measurement("not_measured")
             assert changed.complete is False
 
@@ -1908,11 +2212,13 @@ def _check_measurement_provider_privacy_matrix() -> None:
             _incomplete_mixed_run,
         )
         assert (
-            incomplete.accepted_count,
-            incomplete.rejected_count,
-            incomplete.error_count,
-            incomplete.incomplete_count,
-        ) == (73, 25, 1, 3)
+            incomplete.accepted_task_count,
+            incomplete.rejected_task_count,
+            incomplete.incomplete_task_count,
+            incomplete.nondeterministic_task_count,
+            incomplete.error_observation_count,
+            incomplete.incomplete_observation_count,
+        ) == (13, 5, 2, 0, 1, 3)
         assert incomplete.latency_median.value == 51.0
         assert incomplete.latency_p95.value == 96.0
         assert incomplete.provider_charge == Measurement("not_measured")
@@ -1934,11 +2240,7 @@ def _check_measurement_provider_privacy_matrix() -> None:
             nonce="exceptionprivacy",
         )
         assert error_router.classify_calls == 20 * 6
-        error_report = measured_compare.build_measured_report(
-            error_batch,
-            error_store,
-            error_labels,
-        )
+        error_report = _build_report(error_batch, error_store, error_labels)
         _assert_privacy_minimised(
             error_report,
             error_labels,
@@ -1950,12 +2252,13 @@ def _check_measured_report() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
         label_set, batch, store, environment = _report_fixture(directory)
-        report = measured_compare.build_measured_report(batch, store, label_set)
+        report = _build_report(batch, store, label_set)
 
         assert isinstance(report, measured_compare.MeasuredComparisonReport)
         assert report.schema == measured_compare.REPORT_SCHEMA
         assert report.label_set_id == label_set.label_set_id
         assert report.label_set_fingerprint == label_set.content_fingerprint
+        assert report.route_registry_fingerprint == _registry(label_set).fingerprint
         assert report.suite_name == batch.suite_name
         assert report.suite_version == batch.suite_version
         assert report.source_revision == _REVISION
@@ -1974,12 +2277,14 @@ def _check_measured_report() -> None:
         ).hexdigest()
         assert report.run_fingerprints == batch.run_fingerprints
         assert report.repetition_count == 5
-        assert report.task_count == 20
-        assert report.sample_count == 100
-        assert report.accepted_count == 75
-        assert report.rejected_count == 25
-        assert report.error_count == 0
-        assert report.incomplete_count == 0
+        assert report.unique_task_count == 20
+        assert report.observation_count == 100
+        assert report.accepted_task_count == 15
+        assert report.rejected_task_count == 5
+        assert report.incomplete_task_count == 0
+        assert report.nondeterministic_task_count == 0
+        assert report.incomplete_observation_count == 0
+        assert report.error_observation_count == 0
         assert report.overall_adequacy == Measurement(
             "measured", 0.75, "ratio", "benchmark.harness"
         )
@@ -1989,14 +2294,13 @@ def _check_measured_report() -> None:
         )
         assert tuple(
             (
-                route.sample_count,
-                route.accepted_count,
-                route.rejected_count,
-                route.incomplete_count,
+                route.scored_task_count,
+                route.accepted_task_count,
+                route.rejected_task_count,
                 route.adequacy.value,
             )
             for route in report.per_actual_route
-        ) == ((75, 75, 0, 0, 1.0), (25, 0, 25, 0, 0.0))
+        ) == ((15, 15, 0, 1.0), (5, 0, 5, 0.0))
         assert report.latency_median == Measurement(
             "measured", 50.5, "ms", "benchmark.harness"
         )
@@ -2016,7 +2320,7 @@ def _check_measured_report() -> None:
             report.executed_task_outcome,
         ):
             assert measurement == Measurement("not_measured")
-        assert len(report.limitations) >= 1
+        assert "filesystem_confidentiality_caller_managed" in report.limitations
         assert len(report.owner_gates) == 5
         assert report.complete is True
         assert report.authority == "evaluation_only"
@@ -2030,12 +2334,7 @@ def _check_measured_report() -> None:
             )
         )
 
-        measured_compare.validate_measured_report_against_evidence(
-            report,
-            batch,
-            store,
-            label_set,
-        )
+        _validate_report(report, batch, store, label_set)
         encoded = report.to_json()
         assert environment.platform not in encoded
         assert environment.python_version not in encoded
@@ -2047,16 +2346,23 @@ def _check_measured_report() -> None:
         )
         structural = measured_compare.MeasuredComparisonReport.from_json(encoded)
         assert structural == report
-        measured_compare.validate_measured_report_against_evidence(
-            structural,
-            batch,
-            store,
-            label_set,
-        )
+        _validate_report(structural, batch, store, label_set)
 
         markdown = measured_compare.render_measured_report(report)
         assert "owner evidence: blocked" in markdown.lower()
         assert "real task-outcome quality: not_measured" in markdown.lower()
+        assert "filesystem_confidentiality_caller_managed" in markdown
+        assert report.route_registry_fingerprint in markdown
+        for caller_managed_boundary in (
+            "windows dacl",
+            "posix owner/mode",
+            "encryption at rest",
+            "exclusive local-volume",
+            "backup/sync/index exclusion",
+            "other-local-user exclusion",
+            "secure deletion",
+        ):
+            assert caller_managed_boundary in markdown.lower()
         forbidden = (
             "synthetic weather request",
             label_set.cases[0].source_record_digest,
@@ -2073,21 +2379,186 @@ def _check_measured_report() -> None:
             assert not value or value.lower() not in markdown.lower()
 
 
+def _check_unique_task_consensus() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(
+            directory,
+            router=_MeasuredRouter("friday"),
+            nonce="taskconsensus",
+        )
+
+        complete = _build_report(batch, store, label_set)
+        assert (
+            complete.unique_task_count,
+            complete.observation_count,
+            complete.accepted_task_count,
+            complete.rejected_task_count,
+            complete.incomplete_task_count,
+            complete.nondeterministic_task_count,
+            complete.incomplete_observation_count,
+            complete.error_observation_count,
+        ) == (20, 100, 20, 0, 0, 0, 0, 0)
+
+        def one_of_one_hundred_disagrees(run):
+            original = run.results[0]
+            assert original.candidate is not None
+            return _replace_result(
+                run,
+                0,
+                status="failed",
+                passed=False,
+                candidate=replace(original.candidate, route_id="jarvis"),
+                quality=replace(original.quality, value=0.0),
+            )
+
+        disagreement = _build_with_run_mutation(
+            batch,
+            store,
+            label_set,
+            one_of_one_hundred_disagrees,
+        )
+        assert (
+            disagreement.unique_task_count,
+            disagreement.observation_count,
+            disagreement.accepted_task_count,
+            disagreement.rejected_task_count,
+            disagreement.incomplete_task_count,
+            disagreement.nondeterministic_task_count,
+            disagreement.incomplete_observation_count,
+            disagreement.error_observation_count,
+        ) == (20, 100, 19, 0, 1, 1, 0, 0)
+        assert disagreement.complete is False
+        assert disagreement.overall_adequacy == Measurement(
+            "measured", 1.0, "ratio", "benchmark.harness"
+        )
+        assert tuple(item.route_id for item in disagreement.per_actual_route) == (
+            "friday",
+        )
+        assert disagreement.per_actual_route[0].scored_task_count == 19
+        encoded = disagreement.to_json()
+        assert '"accepted_task_count":19' in encoded
+        assert '"accepted_count":99' not in encoded
+        assert '"complete":false' in encoded
+
+        both_routes_document = _document()
+        both_routes_document["cases"][0]["acceptable_primary_routes"] = [
+            "friday",
+            "jarvis",
+        ]
+        both_routes_directory = directory / "two-acceptable-routes"
+        both_routes_directory.mkdir()
+        both_labels, both_batch, both_store, _ = _report_fixture(
+            both_routes_directory,
+            document=both_routes_document,
+            router=_MeasuredRouter("friday"),
+            nonce="twoacceptable",
+        )
+
+        def second_acceptable_route(run):
+            original = run.results[0]
+            assert original.candidate is not None
+            return _replace_result(
+                run,
+                0,
+                candidate=replace(original.candidate, route_id="jarvis"),
+            )
+
+        route_only_disagreement = _build_with_run_mutation(
+            both_batch,
+            both_store,
+            both_labels,
+            second_acceptable_route,
+        )
+        assert (
+            route_only_disagreement.accepted_task_count,
+            route_only_disagreement.rejected_task_count,
+            route_only_disagreement.incomplete_task_count,
+            route_only_disagreement.nondeterministic_task_count,
+            route_only_disagreement.incomplete_observation_count,
+        ) == (19, 0, 1, 1, 0)
+        assert route_only_disagreement.complete is False
+        assert tuple(
+            item.route_id for item in route_only_disagreement.per_actual_route
+        ) == ("friday",)
+        assert route_only_disagreement.per_actual_route[0].scored_task_count == 19
+
+        unscored = _build_with_run_mutation(
+            batch,
+            store,
+            label_set,
+            _with_unscored_result,
+        )
+        assert (
+            unscored.accepted_task_count,
+            unscored.incomplete_task_count,
+            unscored.nondeterministic_task_count,
+            unscored.incomplete_observation_count,
+            unscored.error_observation_count,
+        ) == (19, 1, 0, 1, 0)
+        assert unscored.complete is False
+
+        error = _build_with_run_mutation(
+            batch,
+            store,
+            label_set,
+            _incomplete_mixed_run,
+        )
+        assert (
+            error.accepted_task_count,
+            error.incomplete_task_count,
+            error.nondeterministic_task_count,
+            error.incomplete_observation_count,
+            error.error_observation_count,
+        ) == (18, 2, 0, 3, 1)
+        assert error.complete is False
+
+
 def _check_measured_report_adversarial() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
         label_set, batch, store, _environment = _report_fixture(directory)
-        report = measured_compare.build_measured_report(batch, store, label_set)
+        report = _build_report(batch, store, label_set)
         raw = json.loads(report.to_json())
+
+        lookalike_registry = _bind(
+            {"jarvis": object(), "friday": object()}
+        )
+        assert lookalike_registry.fingerprint == _registry(label_set).fingerprint
+        with pytest.raises(ValueError, match="binding|capability|registry"):
+            measured_compare.build_measured_report(
+                batch,
+                store,
+                label_set,
+                registry=lookalike_registry,
+            )
+        with pytest.raises(ValueError, match="binding|capability|registry"):
+            measured_compare.validate_measured_report_against_evidence(
+                report,
+                batch,
+                store,
+                label_set,
+                registry=lookalike_registry,
+            )
+        with pytest.raises(ValueError, match="registry"):
+            _build_report(
+                _guarded_batch(batch, route_registry_fingerprint="0" * 64),
+                store,
+                label_set,
+            )
 
         for mutation in (
             lambda value: value.update({"unknown": True}),
-            lambda value: value.pop("sample_count"),
-            lambda value: value.update({"sample_count": 99}),
+            lambda value: value.pop("observation_count"),
+            lambda value: value.update({"observation_count": 99}),
             lambda value: value.update({"complete": False}),
             lambda value: value.update({"authority": "production"}),
             lambda value: value.update({"can_execute": True}),
             lambda value: value.update({"content_fingerprint": "0" * 64}),
+            lambda value: value.update({"route_registry_fingerprint": "0" * 64}),
+            lambda value: value["limitations"].remove(
+                "filesystem_confidentiality_caller_managed"
+            ),
             lambda value: value["latency_p95"].update({"value": -1.0}),
             lambda value: value["overall_adequacy"].update({"value": 1.1}),
         ):
@@ -2097,6 +2568,29 @@ def _check_measured_report_adversarial() -> None:
                 measured_compare.MeasuredComparisonReport.from_json(
                     json.dumps(changed)
                 )
+
+        invalid_source_type = deepcopy(raw)
+        invalid_source_type["source_revision"] = 1
+        with pytest.raises(ValueError, match="source revision"):
+            measured_compare.MeasuredComparisonReport.from_json(
+                json.dumps(invalid_source_type)
+            )
+
+        rebound_registry = deepcopy(raw)
+        rebound_registry["route_registry_fingerprint"] = "0" * 64
+        structurally_valid_rebound = (
+            measured_compare.MeasuredComparisonReport.from_json(
+                _refingerprint_report(rebound_registry)
+            )
+        )
+        assert structurally_valid_rebound.route_registry_fingerprint == "0" * 64
+        with pytest.raises(ValueError, match="report|evidence|registry"):
+            _validate_report(
+                structurally_valid_rebound,
+                batch,
+                store,
+                label_set,
+            )
 
         duplicate = report.to_json()[:-1] + f',"schema":"{report.schema}"}}'
         with pytest.raises(ValueError, match="duplicate"):
@@ -2119,20 +2613,15 @@ def _check_measured_report_adversarial() -> None:
         other_document["cases"][0]["task_category"] = "forecast"
         other_labels = _load(_write(directory, other_document, "other-labels.json"))
         with pytest.raises(ValueError):
-            measured_compare.build_measured_report(batch, store, other_labels)
+            _build_report(batch, store, other_labels)
         with pytest.raises(ValueError):
-            measured_compare.validate_measured_report_against_evidence(
-                report,
-                batch,
-                store,
-                other_labels,
-            )
+            _validate_report(report, batch, store, other_labels)
 
         runs_path = store.root / "suites" / batch.suite_name / "runs.jsonl"
         retained_lines = runs_path.read_text(encoding="utf-8").splitlines()
         runs_path.write_text("\n".join(retained_lines[:-1]) + "\n", encoding="utf-8")
         with pytest.raises(ValueError, match="fingerprint"):
-            measured_compare.build_measured_report(batch, store, label_set)
+            _build_report(batch, store, label_set)
 
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
@@ -2141,15 +2630,13 @@ def _check_measured_report_adversarial() -> None:
             router=_FailAfterWarmupRouter(),
             nonce="reporterrors",
         )
-        error_report = measured_compare.build_measured_report(
-            error_batch,
-            error_store,
-            label_set,
-        )
-        assert error_report.accepted_count == 0
-        assert error_report.rejected_count == 0
-        assert error_report.error_count == 100
-        assert error_report.incomplete_count == 100
+        error_report = _build_report(error_batch, error_store, label_set)
+        assert error_report.accepted_task_count == 0
+        assert error_report.rejected_task_count == 0
+        assert error_report.incomplete_task_count == 20
+        assert error_report.nondeterministic_task_count == 0
+        assert error_report.error_observation_count == 100
+        assert error_report.incomplete_observation_count == 100
         assert error_report.provider_charge == Measurement("not_measured")
         assert error_report.complete is False
 
@@ -2171,22 +2658,22 @@ def _check_measured_report_adversarial() -> None:
             batch = asyncio.run(
                 measured_compare.run_measured_comparison(
                     router=_MeasuredRouter(),
-                    agents={"friday": object(), "jarvis": object()},
+                    registry=_registry(label_set),
                     label_set=label_set,
                     store_root=store_root,
                     source_revision=_REVISION,
                     run_nonce=lambda: "reportunscored",
                 )
             )
-        unscored_report = measured_compare.build_measured_report(
-            batch,
-            BenchmarkStore(store_root),
-            label_set,
+        unscored_report = _build_report(
+            batch, BenchmarkStore(store_root), label_set
         )
-        assert unscored_report.accepted_count == 95
-        assert unscored_report.rejected_count == 0
-        assert unscored_report.error_count == 0
-        assert unscored_report.incomplete_count == 5
+        assert unscored_report.accepted_task_count == 19
+        assert unscored_report.rejected_task_count == 0
+        assert unscored_report.incomplete_task_count == 1
+        assert unscored_report.nondeterministic_task_count == 0
+        assert unscored_report.error_observation_count == 0
+        assert unscored_report.incomplete_observation_count == 5
         assert unscored_report.complete is False
 
     def _provider_adapter(router, agents, *, host_id="in-process"):
@@ -2217,11 +2704,7 @@ def _check_measured_report_adversarial() -> None:
                 directory,
                 nonce="providerreport",
             )
-        provider_report = measured_compare.build_measured_report(
-            batch,
-            store,
-            label_set,
-        )
+        provider_report = _build_report(batch, store, label_set)
         assert provider_report.provider_charge == Measurement("not_measured")
         assert provider_report.complete is False
 
@@ -2304,6 +2787,18 @@ def _check_operator_contract_ledgers() -> None:
     assert operator_contract.is_file()
     contract = operator_contract.read_text(encoding="utf-8")
 
+    state = _markdown_section(contract, "State and boundary")
+    for value in (
+        "CODE CONTRACT CANDIDATE · WAITING EXACT-HEAD CHECKS",
+        "design_hold",
+        "public PR #842 head",
+        "hosted checks pass",
+        "owner_evidence_blocked",
+        "real_task_outcome_quality=not_measured",
+        "neither program completion nor release readiness",
+    ):
+        assert _section_contains(state, value)
+
     schema = _markdown_section(contract, "External owner label schema")
     for value in (
         "nerva.cortex.route-label-set.v1",
@@ -2324,6 +2819,13 @@ def _check_operator_contract_ledgers() -> None:
     assert _section_contains(invocation, "store_root = Path")
     assert _section_contains(invocation, "warm-up")
     assert _section_contains(invocation, "five retained runs")
+    invocation_code = re.search(
+        r"```python\n(?P<code>.*?)\n```",
+        invocation,
+        flags=re.DOTALL,
+    )
+    assert invocation_code is not None
+    assert ".resolve()" not in invocation_code.group("code")
 
     retained_data = _markdown_section(contract, "Stored data and owner policy")
     for value in (
@@ -2336,8 +2838,23 @@ def _check_operator_contract_ledgers() -> None:
         "Markdown report",
         "raw prompts",
         "pseudonymous and linkable",
+        "filesystem_confidentiality_caller_managed",
+        "retention_policy_id is declarative",
+        "windows dacl",
+        "posix owner/mode",
+        "encryption at rest",
+        "exclusive local-volume",
+        "backup/sync/index exclusion",
+        "other-local-user exclusion",
+        "secure deletion",
     ):
         assert _section_contains(retained_data, value)
+    for unsupported_claim in (
+        "the store is access-controlled",
+        "access-controlled by retention_policy_id",
+        "retention_policy_id enforces",
+    ):
+        assert unsupported_claim not in retained_data.lower()
 
     measurements = _markdown_section(contract, "What is and is not measured")
     for value in (
@@ -2387,12 +2904,19 @@ def _check_operator_contract_ledgers() -> None:
         "suite name/version",
         "exact source revision",
         "fixed candidate/no baseline",
+        "route-registry fingerprint",
         "five ordered retained-run fingerprints",
-        "task/repetition/sample counts",
+        "unique_task_count",
+        "observation_count",
+        "accepted_task_count",
+        "rejected_task_count",
+        "incomplete_task_count",
+        "nondeterministic_task_count",
+        "incomplete_observation_count",
+        "error_observation_count",
         "raw E9 environment-profile fingerprint",
         "sanitised environment evidence fingerprint",
         "platform/Python digests",
-        "accepted/rejected/error/incomplete totals",
         "scored adequacy",
         "sorted per-actual-route aggregates",
         "nearest-rank p95",
@@ -2489,7 +3013,7 @@ def _marked_reparse_lstat(marked: Path):
             return SimpleNamespace(
                 st_mode=metadata.st_mode,
                 st_file_attributes=getattr(
-                    measured_compare.stat,
+                    stat,
                     "FILE_ATTRIBUTE_REPARSE_POINT",
                     0x400,
                 ),
@@ -2515,9 +3039,9 @@ def _broken_reparse_lstat(marked: Path, states: list[str] | None = None):
             if state == "missing":
                 raise FileNotFoundError(path)
             return SimpleNamespace(
-                st_mode=measured_compare.stat.S_IFLNK | 0o777,
+                st_mode=stat.S_IFLNK | 0o777,
                 st_file_attributes=getattr(
-                    measured_compare.stat,
+                    stat,
                     "FILE_ATTRIBUTE_REPARSE_POINT",
                     0x400,
                 ),
@@ -2580,8 +3104,37 @@ def _security_bound_capability_probes() -> None:
         asyncio.run(shadow.classify("normal compatibility prompt", agents))
         assert normal_prompts == ["normal compatibility prompt"]
 
+    def measured_runner_binding() -> None:
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            registry = _bind()
+            labels = _load(_write(directory, _document()), registry=registry)
+            router = _MeasuredRouter()
+            runner = measured_current_router_runner(router, registry, labels)
+            first = asyncio.run(runner(labels.cases[0].text))
+            assert first.route_id == "friday"
+            replacement_prompts: list[str] = []
+
+            async def replacement(
+                text: str,
+                _route_agents: dict[str, object],
+            ) -> Intent:
+                replacement_prompts.append(text)
+                return Intent(
+                    ["friday"],
+                    is_general=False,
+                    context={"source": "keyword_match"},
+                    confidence=1.0,
+                )
+
+            router.classify_deterministic = replacement
+            second = asyncio.run(runner(labels.cases[1].text))
+            assert second.route_id == "friday"
+            assert replacement_prompts == []
+
     probe("current-router bound capability", runner_binding)
     probe("shadow-router bound capability", shadow_binding)
+    probe("measured-router bound capability", measured_runner_binding)
     assert not failures, "deterministic capability binding failed: " + " | ".join(
         failures
     )
@@ -2660,7 +3213,7 @@ def _security_broken_final_probes() -> None:
                 patch.object(BenchmarkStore, method, forbidden_sink),
                 pytest.raises(ValueError, match="symlink|reparse"),
             ):
-                measured_compare.build_measured_report(batch, store, label_set)
+                _build_report(batch, store, label_set)
             assert outside_events == []
             assert sentinel.read_text(encoding="utf-8") == (
                 "must-remain-unread-and-unchanged"
@@ -2723,7 +3276,7 @@ def _security_broken_final_probes() -> None:
                 asyncio.run(
                     measured_compare.run_measured_comparison(
                         router=_MeasuredRouter(),
-                        agents={"friday": object(), "jarvis": object()},
+                        registry=_registry(label_set),
                         label_set=label_set,
                         store_root=store_root,
                         source_revision=_REVISION,
@@ -2899,7 +3452,7 @@ def _security_label_preallocation_probe() -> None:
             patch.object(Path, "read_bytes", read_bytes),
             pytest.raises(ValueError, match="bounded input limit"),
         ):
-            load_route_label_set(oversized, allowed_routes=("friday", "jarvis"))
+            load_route_label_set(oversized, registry=_bind())
         assert reads == []
 
 
@@ -2959,7 +3512,7 @@ def _security_redirection_probes() -> None:
             ),
             pytest.raises(ValueError),
         ):
-            measured_compare.build_measured_report(batch, store, label_set)
+            _build_report(batch, store, label_set)
 
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
@@ -2969,7 +3522,7 @@ def _security_redirection_probes() -> None:
             patch.object(measured_compare.os, "lstat", _marked_reparse_lstat(runs_path)),
             pytest.raises(ValueError),
         ):
-            measured_compare.build_measured_report(batch, store, label_set)
+            _build_report(batch, store, label_set)
 
 
 def _security_input_bound_probes() -> None:
@@ -3000,7 +3553,7 @@ def _security_input_bound_probes() -> None:
         with pytest.raises(ValueError):
             load_route_label_set(
                 _write(directory, too_many_routes, "too-many-routes.json"),
-                allowed_routes=routes,
+                registry=_bind({route: object() for route in routes}),
             )
 
         surrogate = _document()
@@ -3018,7 +3571,7 @@ def _security_benchmark_parser_probes() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
         label_set, batch, store, _ = _report_fixture(directory)
-        report = measured_compare.build_measured_report(batch, store, label_set)
+        report = _build_report(batch, store, label_set)
         with pytest.raises(ValueError):
             measured_compare.MeasuredComparisonReport.from_json(
                 report.to_json() + " " * 2_000_001
@@ -3037,6 +3590,196 @@ def _security_benchmark_parser_probes() -> None:
         )
         with pytest.raises(ValueError):
             BenchmarkRun.from_json(duplicate_authority)
+
+
+def _assert_bounded_topology_error(operation, root: Path) -> None:
+    error = _capture_detached_private_error(
+        operation,
+        root,
+        "C:/private/owner/store/v1.jsonl",
+        "C:\\private\\owner\\store\\v1.jsonl",
+    )
+    message = str(error)
+    assert len(message) <= 200
+    assert str(root).lower() not in message.lower()
+    assert "c:/private/owner/store/v1.jsonl" not in message.lower()
+    assert "c:\\private\\owner\\store\\v1.jsonl" not in message.lower()
+
+
+def _special_file_lstat(marked: Path):
+    original = os.lstat
+
+    def _lstat(path: str | bytes | os.PathLike[str] | os.PathLike[bytes]):
+        metadata = original(path)
+        candidate = Path(path)
+        if (
+            candidate.name == marked.name
+            and candidate.parent.name == marked.parent.name
+        ):
+            return SimpleNamespace(
+                st_mode=stat.S_IFCHR | 0o600,
+                st_file_attributes=0,
+            )
+        return metadata
+
+    return _lstat
+
+
+def _check_exact_store_operation_types() -> None:
+    for directory_slot in ("suites", "selected-suite"):
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            label_set = _load(_write(directory, _document()))
+            root = directory / "store"
+            root.mkdir()
+            suites = root / "suites"
+            suite_name = measured_compare._suite_name(label_set)
+            if directory_slot == "suites":
+                suites.write_text("regular-file-directory-sentinel", encoding="utf-8")
+                sentinel = suites
+            else:
+                suites.mkdir()
+                sentinel = suites / suite_name
+                sentinel.write_text(
+                    "regular-file-directory-sentinel", encoding="utf-8"
+                )
+            _assert_bounded_topology_error(
+                lambda root=root, label_set=label_set: ensure_owner_route_suite(
+                    BenchmarkStore(root), label_set
+                ),
+                root,
+            )
+            assert sentinel.read_text(encoding="utf-8") == (
+                "regular-file-directory-sentinel"
+            )
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set = _load(_write(directory, _document()))
+        root = directory / "version-type-store"
+        root.mkdir()
+        store = BenchmarkStore(root)
+        suite_name, version, _ = ensure_owner_route_suite(store, label_set)
+        version_file = root / "suites" / suite_name / f"v{version}.jsonl"
+        version_file.unlink()
+        version_file.mkdir()
+        _assert_bounded_topology_error(
+            lambda: ensure_owner_route_suite(store, label_set),
+            root,
+        )
+        assert version_file.is_dir()
+
+    for final_name in ("version", "runs"):
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            label_set, batch, store, _ = _report_fixture(
+                directory,
+                nonce=f"special{final_name}",
+            )
+            marked = (
+                store.root
+                / "suites"
+                / batch.suite_name
+                / (
+                    f"v{batch.suite_version}.jsonl"
+                    if final_name == "version"
+                    else "runs.jsonl"
+                )
+            )
+            with patch.object(
+                measured_compare.os,
+                "lstat",
+                _special_file_lstat(marked),
+            ):
+                _assert_bounded_topology_error(
+                    lambda batch=batch, store=store, label_set=label_set: _build_report(
+                        batch, store, label_set
+                    ),
+                    store.root,
+                )
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(
+            directory,
+            nonce="runsdirectory",
+        )
+        runs_file = _runs_path(store, batch.suite_name)
+        runs_file.unlink()
+        runs_file.mkdir()
+        _assert_bounded_topology_error(
+            lambda: _build_report(batch, store, label_set),
+            store.root,
+        )
+        assert runs_file.is_dir()
+
+    for delegated_method, delegated_error in (
+        ("save_suite", FileExistsError("C:/private/owner/store/v1.jsonl")),
+        ("load_suite", PermissionError("C:/private/owner/store/v1.jsonl")),
+    ):
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            label_set = _load(_write(directory, _document()))
+            root = directory / f"delegated-{delegated_method}"
+            root.mkdir()
+            store = BenchmarkStore(root)
+            if delegated_method == "load_suite":
+                ensure_owner_route_suite(store, label_set)
+            with patch.object(
+                BenchmarkStore,
+                delegated_method,
+                side_effect=delegated_error,
+            ):
+                _assert_bounded_topology_error(
+                    lambda store=store, label_set=label_set: ensure_owner_route_suite(
+                        store, label_set
+                    ),
+                    root,
+                )
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(
+            directory,
+            nonce="delegatedrunsread",
+        )
+        with patch.object(
+            BenchmarkStore,
+            "runs",
+            side_effect=PermissionError("C:/private/owner/store/v1.jsonl"),
+        ):
+            _assert_bounded_topology_error(
+                lambda: _build_report(batch, store, label_set),
+                store.root,
+            )
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        registry = _bind()
+        label_set = _load(
+            _write(directory, _document()),
+            registry=registry,
+        )
+        root = directory / "delegated-record-run"
+        root.mkdir()
+        with patch.object(
+            BenchmarkStore,
+            "record_run",
+            side_effect=PermissionError("C:/private/owner/store/v1.jsonl"),
+        ):
+            _assert_bounded_topology_error(
+                lambda: asyncio.run(
+                    measured_compare.run_measured_comparison(
+                        router=_MeasuredRouter(),
+                        registry=registry,
+                        label_set=label_set,
+                        store_root=root,
+                        source_revision=_REVISION,
+                        run_nonce=lambda: "delegatedrecord",
+                    )
+                ),
+                root,
+            )
 
 
 def _check_security_hold_remediation() -> None:
@@ -3075,12 +3818,15 @@ def _check_security_hold_remediation() -> None:
 
 
 def run_e1_2_checks() -> None:
+    _check_route_registry_binding()
     _check_security_hold_remediation()
+    _check_exact_store_operation_types()
     _check_strict_route_labels()
     _check_suite_binding()
     _check_measured_runner()
     _check_measured_run_batch()
     _check_measured_report()
+    _check_unique_task_consensus()
     _check_measured_report_adversarial()
     _check_report_count_parser_attacks()
     _check_report_environment_parser_attacks()

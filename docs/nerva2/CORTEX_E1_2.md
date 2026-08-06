@@ -5,19 +5,26 @@ E1.1/#792 · E9 store/harness: #784
 
 ## State and boundary
 
-The code contract is `contract_ready`. It is not representative evidence:
-`owner_evidence_blocked` remains until the E1.2b owner gate is satisfied, and
+**CODE CONTRACT CANDIDATE · WAITING EXACT-HEAD CHECKS.** The implementation
+remains `design_hold` until the public PR #842 head receives independent review
+and its hosted checks pass; only an accepted main integration may advance it to
+`contract_ready`. It is not representative evidence: `owner_evidence_blocked`
+remains until the E1.2b owner gate is satisfied, and
 `real_task_outcome_quality=not_measured` is fixed for this slice. E1 remains
 `building`; B2 live enforcement remains partial; neither program completion nor
 release readiness follows from this document.
 
 E1.2a evaluates only whether the **current router's primary route** belongs to
 the owner-declared acceptable primary routes for a retained task. The
-primary-route adequacy metric is `accepted / (accepted + rejected)`. A rejected
-observation is valid scored negative evidence; adequacy may remain measured
-when other retained observations or measurements make the overall report
-incomplete. It is not answer quality, task completion, safety, selector
-superiority, a production route change, or an authority decision.
+primary-route adequacy metric is `accepted / (accepted + rejected)` over unique
+tasks, after one consensus classification across the five retained observations
+for each task. A rejected task is valid scored negative evidence. Route or
+outcome disagreement is retained as nondeterministic, incomplete task evidence;
+the five observations are never blended into an adequacy score. Stable scored
+route evidence may remain measured when a latency, cost, or reliability
+measurement makes the overall report incomplete. It is not answer quality, task
+completion, safety, selector superiority, a production route change, or an
+authority decision.
 
 ## External owner label schema
 
@@ -69,6 +76,7 @@ import asyncio
 from pathlib import Path
 
 from agents.core.cortex_measured_compare import (
+    bind_route_registry,
     build_measured_report,
     load_route_label_set,
     render_measured_report,
@@ -77,27 +85,48 @@ from agents.core.cortex_measured_compare import (
 from agents.core.observability.benchmark import BenchmarkStore
 
 label_path = Path(r"D:\\Nerva-private\\e1-2\\route-labels.json")
-store_root = Path(r"D:\\Nerva-private\\e9-store").resolve()
-labels = load_route_label_set(label_path, allowed_routes=tuple(agents))
+store_root = Path(r"D:\\Nerva-private\\e9-store")
+registry = bind_route_registry(agents)
+labels = load_route_label_set(label_path, registry=registry)
 batch = asyncio.run(
     run_measured_comparison(
         router=router,
-        agents=agents,
+        registry=registry,
         label_set=labels,
         store_root=store_root,
         source_revision="<exact-lowercase-40-hex-commit>",
     )
 )
-report = build_measured_report(batch, BenchmarkStore(store_root), labels)
+report = build_measured_report(
+    batch,
+    BenchmarkStore(store_root),
+    labels,
+    registry=registry,
+)
 json_report_path = store_root / "e1-2-report.json"
 markdown_report_path = store_root / "e1-2-report.md"
 json_report_path.write_text(report.to_json(), encoding="utf-8")
 markdown_report_path.write_text(render_measured_report(report), encoding="utf-8")
 ```
 
-The store path must be an existing absolute, non-symlink directory. The run
-performs one warm-up and then retains five retained runs. It first persists the
-derived E9 suite and verifies each retained run can be read back exactly.
+The binding snapshots the exact sorted registered route IDs and route objects,
+and the measured runner captures the deterministic router capability once,
+before any owner-private prompt is evaluated. It then checks the source mapping
+for key drift before and throughout labeling, execution, persistence, report
+construction, and evidence validation. Its identity is in-memory only; the
+route-registry fingerprint is persisted through the label, suite, run, batch,
+and report evidence.
+
+Pass the original store path to the API; do not pre-resolve it with
+`Path.resolve()`, because doing so would erase the junction/symlink boundary the
+validator must inspect. The store path must be an existing absolute,
+non-symlink directory. Suite and run containers must be real directories;
+suite-version and `runs.jsonl` paths must be regular files when present.
+Link/reparse changes, type swaps, registry drift, and bounded filesystem errors
+fail closed without exposing local paths in the exception or its traceback.
+The run performs one warm-up and then retains five retained runs. It first
+persists the derived E9 suite and verifies each retained run can be read back
+exactly.
 
 ## Stored data and owner policy
 
@@ -119,35 +148,44 @@ comparison. They are therefore not safe for unrestricted publication. The
 policy must name who can access every artifact, how long it is retained, and
 how each copy is deleted.
 
+The fixed limitation `filesystem_confidentiality_caller_managed` is explicit:
+`retention_policy_id is declarative`, and this slice does not enforce the named
+policy. The operator remains responsible for configuring and verifying windows
+dacl, posix owner/mode, encryption at rest, exclusive local-volume placement,
+backup/sync/index exclusion, other-local-user exclusion, and secure deletion.
+
 ## What is and is not measured
 
 | Dimension | State | Meaning |
 |---|---|---|
-| Primary-route adequacy | measured from scored evidence | `accepted / (accepted + rejected)`; rejected evidence is a valid scored negative. |
+| Primary-route adequacy | measured from scored task evidence | `accepted / (accepted + rejected)` after one all-five-observation consensus per unique task; rejected evidence is a valid scored negative. |
 | Harness latency | measured, harness-only | It does not measure a shared production path. |
 | Provider charge | conditionally measured `$0` | Only when every retained result has: baseline is `none`; candidate exists; model `none`; provider `local-deterministic`; cost is measured `0.0 usd`; source `candidate.runner`. |
 | Compute, energy, hardware, downstream agent, tool, action, executed-task outcome | unconditionally `not_measured` | No resource or executed-outcome claim. |
 | Real task-outcome quality | `real_task_outcome_quality=not_measured` | No answer-quality, completion, or safety claim. |
 | Authority | evaluation-only | Cannot change routing, authorize, execute, promote, or mark complete. |
 
-`complete=false` is a separate honesty flag. It applies to error, unscored,
-missing required measurement, or unavailable deterministic provider-charge
-proof; it does not erase otherwise scored adequacy. A rejected observation is
-valid scored negative evidence, and adequacy may remain measured even when the
-report is incomplete.
+`complete=false` is a separate honesty flag. It applies when there is any
+incomplete task, incomplete observation, missing required measurement, or
+unavailable deterministic provider-charge proof; it does not erase otherwise
+scored adequacy. A rejected task is valid scored negative evidence, and stable
+task adequacy may remain measured even when the report is incomplete.
 
 ## Report v1 output contract
 
 `nerva.cortex.measured-comparison.v1` is a privacy-minimised aggregate report.
 It records the label ID/fingerprint, suite name/version, exact source revision,
-and fixed candidate/no baseline. It retains five ordered retained-run
-fingerprints and task/repetition/sample counts.
+fixed candidate/no baseline, and route-registry fingerprint. It retains five
+ordered retained-run fingerprints and the explicit `unique_task_count`,
+`observation_count`, `accepted_task_count`, `rejected_task_count`,
+`incomplete_task_count`, `nondeterministic_task_count`,
+`incomplete_observation_count`, and `error_observation_count` fields.
 
 The report carries the raw E9 environment-profile fingerprint separately from
 the sanitised environment evidence fingerprint and platform/Python digests; it
-does not expose raw platform or Python-version strings. It records
-accepted/rejected/error/incomplete totals, scored adequacy, and sorted
-per-actual-route aggregates.
+does not expose raw platform or Python-version strings. It records scored
+adequacy and sorted per-actual-route aggregates whose counts are task counts,
+not observation counts.
 
 Latency median and nearest-rank p95 are measured only from
 `benchmark.harness`/`ms` observations. Provider charge is measured `$0` only
@@ -158,18 +196,22 @@ USD-zero conjunction. The report leaves the following dimensions explicitly
 Authority is fixed `evaluation_only`, with all
 routing/authorization/execution/promotion/completion booleans false. The
 structural `from_json()` is not evidence acceptance: the rebinder must
-match the exact batch/store/labels before a report is accepted as retained
-evidence.
+match the exact batch/store/labels and the same in-memory registry binding before
+a report is accepted as retained evidence.
 
 ## Failure and completeness
 
 The warm-up must complete every case or the run aborts before retained evidence
 is produced. Each retained run is append-verified; duplicate run IDs, malformed
 stores, missing/reordered evidence, unknown labels, cloud classifier use, or
-mismatched decision evidence fail closed. A router exception remains a bounded
-incomplete observation. Any error or unscored retained observation makes the
-report incomplete. Scored adequacy remains visible in an incomplete report, but
-it cannot establish completion, release, or representativeness.
+mismatched decision evidence fail closed. Route-registry drift latches the
+binding invalid for the remainder of the run, even if the source mapping is
+later restored. A router exception remains a bounded incomplete observation.
+Any error or unscored retained observation makes its task incomplete. Honest
+route/outcome disagreement makes the task nondeterministic and incomplete;
+scored task counts require all-five consensus. Scored adequacy remains visible
+in an incomplete report, but it cannot establish completion, release, or
+representativeness.
 
 The accepted E9 store is owner-local and single-writer. Collision detection and
 append verification do not establish concurrent-writer safety.
