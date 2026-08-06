@@ -83,6 +83,18 @@ def _check_strict_route_labels() -> None:
         assert len(loaded.content_fingerprint) == 64
         assert "synthetic weather request 001" not in loaded.cases[0].content_fingerprint
         assert "synthetic weather request 001" not in loaded.content_fingerprint
+        reloaded = _load(_write(directory, document, "repeat.json"))
+        assert reloaded.cases[0].content_fingerprint == loaded.cases[0].content_fingerprint
+        assert reloaded.content_fingerprint == loaded.content_fingerprint
+
+        sorted_routes = deepcopy(document)
+        sorted_routes["cases"][0]["acceptable_primary_routes"] = [
+            "jarvis",
+            "friday",
+        ]
+        assert _load(_write(directory, sorted_routes, "sorted.json")).cases[
+            0
+        ].acceptable_primary_routes == ("friday", "jarvis")
 
         mutated = deepcopy(document)
         mutated["cases"] = mutated["cases"][:-1]
@@ -124,6 +136,20 @@ def _check_strict_route_labels() -> None:
             mutated = deepcopy(document)
             mutate(mutated["cases"][1])
             _assert_rejects(directory, mutated)
+
+        for separator in ("\u2028", "\u2029"):
+            mutated = deepcopy(document)
+            mutated["cases"][0]["text"] = f"weather{separator}request"
+            _assert_rejects(directory, mutated)
+
+        mutated = deepcopy(document)
+        mutated["cases"][0]["acceptable_primary_routes"] = [["friday"]]
+        _assert_rejects(directory, mutated)
+        with pytest.raises(ValueError):
+            load_route_label_set(
+                _write(directory, document, "registry.json"),
+                allowed_routes=(["friday"],),
+            )
 
         for start, end in (
             ("2026-07-31T23:59:59.000Z", "2026-07-01T00:00:00.000Z"),
@@ -183,6 +209,10 @@ def _check_strict_route_labels() -> None:
         mutated = deepcopy(document)
         mutated["cases"][0]["text"] = "x" * 10_001
         _assert_rejects(directory, mutated)
+        for field in ("label_set_id", "sampling_rule", "retention_policy_id"):
+            mutated = deepcopy(document)
+            mutated[field] = "a" * 129
+            _assert_rejects(directory, mutated)
 
 
 def _check_suite_binding() -> None:
@@ -196,10 +226,14 @@ def _check_suite_binding() -> None:
         assert all(case.criterion and case.criterion.kind == "exact" for case in suite)
         assert all(case.criterion and case.criterion.expected == "accepted" for case in suite)
         assert all(case.task_type == "weather" for case in suite)
-        assert all(
-            all("synthetic weather request" not in ref for ref in case.artifact_refs)
-            for case in suite
-        )
+        for source, benchmark in zip(label_set.cases, suite, strict=True):
+            assert benchmark.artifact_refs == (
+                f"label-fingerprint:{label_set.content_fingerprint}",
+                f"case-fingerprint:{source.content_fingerprint}",
+            )
+            assert label_set.label_set_id not in "".join(benchmark.artifact_refs)
+            assert source.source_record_digest not in "".join(benchmark.artifact_refs)
+            assert "synthetic weather request" not in "".join(benchmark.artifact_refs)
 
         store = BenchmarkStore(directory / "store")
         name, version, stored = ensure_owner_route_suite(store, label_set)
@@ -215,6 +249,15 @@ def _check_suite_binding() -> None:
             store, _load(_write(directory, changed, "changed.json"))
         )
         assert changed_version == 2
+
+        ordered_store = BenchmarkStore(directory / "ordered-store")
+        ensure_owner_route_suite(ordered_store, label_set)
+        reordered = deepcopy(_document())
+        reordered["cases"] = list(reversed(reordered["cases"]))
+        _, reordered_version, _ = ensure_owner_route_suite(
+            ordered_store, _load(_write(directory, reordered, "reordered.json"))
+        )
+        assert reordered_version == 2
 
 
 def run_e1_2_checks() -> None:

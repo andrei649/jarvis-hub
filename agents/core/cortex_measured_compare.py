@@ -65,7 +65,8 @@ def _fingerprint(payload: object) -> str:
 
 def _has_forbidden_characters(value: str) -> bool:
     return any(
-        character in {"/", "\\"} or unicodedata.category(character) == "Cc"
+        character in {"/", "\\"}
+        or unicodedata.category(character) in {"Cc", "Zl", "Zp"}
         for character in value
     )
 
@@ -119,15 +120,20 @@ def _strict_keys(raw: object, expected: set[str], label: str) -> Mapping[str, An
     return raw
 
 
+def _unique_routes(values: Collection[object], label: str) -> tuple[str, ...]:
+    routes = tuple(_identifier(value, label) for value in values)
+    if len(set(routes)) != len(routes):
+        raise ValueError("acceptable routes must not contain duplicates")
+    return routes
+
+
 def _route_collection(allowed_routes: Collection[str]) -> frozenset[str]:
     if isinstance(allowed_routes, str):
         raise ValueError("allowed routes must be a non-empty canonical collection")
     routes = tuple(allowed_routes)
-    if not routes or len(set(routes)) != len(routes):
+    if not routes:
         raise ValueError("allowed routes must be a non-empty canonical collection")
-    for route in routes:
-        _identifier(route, "allowed route")
-    return frozenset(routes)
+    return frozenset(_unique_routes(routes, "allowed route"))
 
 
 def _load_json(path: str | Path) -> Mapping[str, Any]:
@@ -187,12 +193,11 @@ class RouteLabelCase:
         if (
             not isinstance(self.acceptable_primary_routes, tuple)
             or not self.acceptable_primary_routes
-            or len(set(self.acceptable_primary_routes)) != len(self.acceptable_primary_routes)
-            or self.acceptable_primary_routes != tuple(sorted(self.acceptable_primary_routes))
         ):
             raise ValueError("acceptable routes must be a sorted unique tuple")
-        for route in self.acceptable_primary_routes:
-            _identifier(route, "acceptable route")
+        routes = _unique_routes(self.acceptable_primary_routes, "acceptable route")
+        if routes != tuple(sorted(routes)):
+            raise ValueError("acceptable routes must be a sorted unique tuple")
         _identifier(self.task_category, "task category")
         _digest(self.source_record_digest, "source record digest")
         if self.privacy_class != "owner_private_local":
@@ -290,10 +295,8 @@ def load_route_label_set(
         routes = case["acceptable_primary_routes"]
         if not isinstance(routes, list) or not routes:
             raise ValueError("acceptable routes must be a non-empty JSON array")
-        if len(set(routes)) != len(routes):
-            raise ValueError("acceptable routes must not contain duplicates")
+        routes = _unique_routes(routes, "acceptable route")
         for route in routes:
-            _identifier(route, "acceptable route")
             if route not in canonical_routes:
                 raise ValueError("acceptable route is not registered")
         if case["privacy_class"] != "owner_private_local":
