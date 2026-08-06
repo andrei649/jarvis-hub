@@ -216,7 +216,7 @@ describe('BriefingWall — hold to talk', () => {
 describe('BriefingWall — edge tabs', () => {
   it('carries live counts so a narrow screen still reports load', () => {
     const { container } = render(
-      <BriefingWall agents={AGENTS} tasks={TASKS} sources={{ tasks: true }} serverUp={true} clock={new Date()} />,
+      <BriefingWall agents={AGENTS} tasks={TASKS} sources={{ tasks: true, agents: true }} serverUp={true} clock={new Date()} />,
     );
     expect(container.querySelector('.wl-tab-left').textContent).toContain('1');   // one running task (the other is waiting)
     expect(container.querySelector('.wl-tab-right').textContent).toContain('4');  // roster size
@@ -456,6 +456,116 @@ describe('BriefingWall — no metric cell claims a zero it cannot prove', () => 
     const missing = Array.from(container.querySelectorAll('.wl-v.wl-miss'));
     expect(missing.length).toBeGreaterThanOrEqual(9);
     missing.forEach((m: any) => expect(m.getAttribute('title')).toBeTruthy());
+  });
+});
+
+/* Third review round: the same evidence rule the task feed got, applied to the roster —
+   and exact-state rendering for the mic footer. Both are "a retained value outliving its
+   proof" bugs, the class this wall is supposed to be immune to. */
+describe('BriefingWall — stale roster drives nothing', () => {
+  const STALE_ROSTER = {
+    agents: AGENTS,                       // includes active + busy agents
+    tasks: [], decisions: [],
+    sources: { tasks: true, trust: true, agents: false },   // roster feed did NOT answer
+    trust: { mic: 'on' }, serverUp: true, clock: new Date(), voice: { status: 'off' },
+  };
+
+  it('a retained executing roster cannot make the wall claim work', () => {
+    const { container } = render(<BriefingWall {...STALE_ROSTER} />);
+    expect(container.querySelector('.wl-state-word').textContent).toBe('standing by');
+    expect(container.querySelector('.nburst').getAttribute('data-energy-source')).toBe('idle');
+  });
+
+  it('draws no regions or chips from a roster it cannot prove', () => {
+    const { container } = render(<BriefingWall {...STALE_ROSTER} />);
+    expect(container.querySelector('.nburst').getAttribute('data-regions')).toBe('0');
+    expect(container.textContent).toContain('no agents reported');
+  });
+
+  it('withholds the cabinet badge and both roster cells', () => {
+    const { container } = render(<BriefingWall {...STALE_ROSTER} />);
+    expect(container.querySelector('.wl-tab-right .wl-tab-badge')).toBeNull();
+    expect(cellValue(container, 'AGENTS IN ROSTER')).toBe('—');
+    expect(cellValue(container, 'EXECUTING')).toBe('—');
+  });
+
+  it('positive control — the same roster drives everything once proven', () => {
+    const { container } = render(
+      <BriefingWall {...STALE_ROSTER} sources={{ tasks: true, trust: true, agents: true }} />,
+    );
+    expect(container.querySelector('.wl-state-word').textContent).toBe('working');
+    expect(container.querySelector('.nburst').getAttribute('data-energy-source')).toBe('work');
+    expect(container.querySelector('.nburst').getAttribute('data-regions')).toBe('3');
+    expect(container.querySelector('.wl-tab-right .wl-tab-badge').textContent).toBe('4');
+    expect(cellValue(container, 'AGENTS IN ROSTER')).toBe('4');
+    expect(cellValue(container, 'EXECUTING')).toBe('2');
+  });
+});
+
+describe('BriefingWall — the mic footer states exactly what it knows', () => {
+  const base = {
+    agents: [], tasks: [], sources: { tasks: true, trust: true, agents: true },
+    serverUp: true, clock: new Date(),
+  };
+  const active = { status: 'listening', active: true, supported: true, start() {}, stop() {} };
+
+  it.each([
+    ['unknown string', { mic: 'unknown' }],
+    ['empty string', { mic: '' }],
+    ['missing', {}],
+    ['non-string', { mic: 42 }],
+    ['no trust object', null],
+  ])('reads UNKNOWN for %s, even with the voice loop active', (_label, trust) => {
+    const { container } = render(<BriefingWall {...base} trust={trust} voice={active} />);
+    expect(container.textContent).toContain('MIC · UNKNOWN');
+    expect(container.textContent).not.toContain('MIC · OPEN');
+  });
+
+  it('reads MUTED for an exact off, and OPEN/IDLE only for an exact on', () => {
+    const muted = render(<BriefingWall {...base} trust={{ mic: 'off' }} voice={active} />);
+    expect(muted.container.textContent).toContain('MIC · MUTED');
+    const open = render(<BriefingWall {...base} trust={{ mic: 'on' }} voice={active} />);
+    expect(open.container.textContent).toContain('MIC · OPEN');
+    const idle = render(<BriefingWall {...base} trust={{ mic: 'on' }} voice={{ status: 'off' }} />);
+    expect(idle.container.textContent).toContain('MIC · IDLE');
+  });
+});
+
+/* `useVoice()` returns a FRESH wrapper object on every render, and the wall's parent
+   rerenders on every clock tick. The earlier lifecycle tests reused one stable fake and
+   so could not see this: cleanup keyed on the wrapper identity fired on ordinary rerenders
+   and stopped a valid capture roughly once a second. */
+describe('BriefingWall — identity-only rerenders must not stop a live capture', () => {
+  const base = {
+    agents: AGENTS, tasks: [], serverUp: true, clock: new Date(),
+    sources: { tasks: true, trust: true, agents: true }, trust: { mic: 'on' },
+  };
+
+  it('survives fresh wrapper objects while held, then stops exactly once on release', () => {
+    const start = vi.fn(), stop = vi.fn();
+    const wrapper = () => ({ status: 'listening', level: 0.1, supported: true, caps: null, start, stop });
+    const { container, rerender } = render(<BriefingWall {...base} voice={wrapper()} />);
+    fireEvent.pointerDown(container.querySelector('.wl-ptt'));
+    expect(start).toHaveBeenCalledTimes(1);
+
+    // what the real hook does every clock tick: same callbacks, new object identity
+    for (let i = 0; i < 5; i++) rerender(<BriefingWall {...base} clock={new Date()} voice={wrapper()} />);
+    expect(stop).not.toHaveBeenCalled();
+    expect(container.querySelector('.wl-ptt.on')).toBeTruthy();   // still held
+
+    fireEvent.pointerUp(container.querySelector('.wl-ptt'));
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('still stops exactly once when the wall unmounts after such rerenders', () => {
+    const start = vi.fn(), stop = vi.fn();
+    const wrapper = () => ({ status: 'listening', level: 0.1, supported: true, caps: null, start, stop });
+    const { container, rerender, unmount } = render(<BriefingWall {...base} voice={wrapper()} />);
+    fireEvent.pointerDown(container.querySelector('.wl-ptt'));
+    for (let i = 0; i < 3; i++) rerender(<BriefingWall {...base} clock={new Date()} voice={wrapper()} />);
+    expect(stop).not.toHaveBeenCalled();
+    unmount();
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 });
 

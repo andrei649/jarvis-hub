@@ -79,9 +79,15 @@ function PushToTalk({ voice, micState, trustEvidence }: any) {
   //  - capture stops the moment either stops holding, and on unmount/stage switch.
   const permitted = trustEvidence && micState === 'on';
   const blocked = !permitted || !usable;
+  // `useVoice()` returns a FRESH wrapper object every render, and the parent rerenders on
+  // every clock tick. Depending on that identity made the unmount cleanup fire on ordinary
+  // rerenders and stop a perfectly valid capture ~once a second. Hold the callbacks in refs
+  // so release/cleanup identity is stable and only real events stop the mic.
+  const stopRef = useRef(voice && voice.stop);
+  stopRef.current = voice && voice.stop;
   const release = useCallback(() => {
-    setHeld((wasHeld) => { if (wasHeld && voice && voice.stop) voice.stop(); return false; });
-  }, [voice]);
+    setHeld((wasHeld) => { if (wasHeld && stopRef.current) stopRef.current(); return false; });
+  }, []);
   // release outside the button still ends the turn
   useEffect(() => {
     if (!held) return undefined;
@@ -91,10 +97,11 @@ function PushToTalk({ voice, micState, trustEvidence }: any) {
   }, [held, release]);
   // permission lost mid-capture (mute, trust evidence expiry) → cut the mic immediately
   useEffect(() => { if (held && blocked) release(); }, [held, blocked, release]);
-  // unmount (Esc out of the wall, stage switch) must never leave the loop running
+  // unmount (Esc out of the wall, stage switch) must never leave the loop running.
+  // Empty deps + refs: this runs on a REAL unmount, never on a rerender.
   const heldRef = useRef(held);
   heldRef.current = held;
-  useEffect(() => () => { if (heldRef.current && voice && voice.stop) voice.stop(); }, [voice]);
+  useEffect(() => () => { if (heldRef.current && stopRef.current) stopRef.current(); }, []);
   const press = () => { if (blocked) return; setHeld(true); voice.start(); };
   // keyboard hold/release — the control must be operable without a pointer
   const keyDown = (e: any) => {
@@ -203,15 +210,20 @@ export function BriefingWall({
   // really arrived, so without it neither the roster size nor an executing count is
   // knowable — and "0 executing" is a claim, not a neutral default.
   const agentEvidence = !!(sources && sources.agents === true);
+  // One boundary, every consumer — the same rule as `evidenceTasks`. Gating only the two
+  // metric cells left the roster half-fixed: a retained non-empty roster with
+  // `sources.agents === false` could still drive WORKING, work-driven energy, firing
+  // regions and a cabinet badge while the cards correctly said the roster was unavailable.
+  const evidenceAgents = agentEvidence ? list : [];
   // There is no live decisions endpoint yet: `decisions` is seeded in demo and otherwise
   // stays []. Rendering 0 would assert "nothing is pending" on no evidence at all.
   const decisionEvidence = !!demo && Array.isArray(decisions);
   const evidenceTasks = taskEvidence && Array.isArray(tasks) ? tasks : [];
   const running = runningTasks(evidenceTasks);
   const waiting = evidenceTasks.length - running.length;
-  const firing = list.filter(isExecutingAgent).length;
-  const state = wallState({ voice, agents, tasks: evidenceTasks, serverUp });
-  const energy = burstEnergy({ agents, tasks: evidenceTasks, voice, demo });
+  const firing = evidenceAgents.filter(isExecutingAgent).length;
+  const state = wallState({ voice, agents: evidenceAgents, tasks: evidenceTasks, serverUp });
+  const energy = burstEnergy({ agents: evidenceAgents, tasks: evidenceTasks, voice, demo });
   const caps = (voice && voice.caps) || null;
   // `trust` is RETAINED across polls in app.tsx (`if (d.trust) setTrust(d.trust)`), so a
   // stale `mic: 'on'` can outlive its evidence. Everything trust-derived on this wall —
@@ -238,10 +250,10 @@ export function BriefingWall({
   return (
     <div className="wall">
       {/* the field spans the whole wall and passes BEHIND the cards, as in the reference */}
-      <div className="wl-field"><NeuralBurst agents={agents} tasks={evidenceTasks} voice={voice} demo={demo} motion={motion} /></div>
+      <div className="wl-field"><NeuralBurst agents={evidenceAgents} tasks={evidenceTasks} voice={voice} demo={demo} motion={motion} /></div>
       <span className="wl-bk tl" /><span className="wl-bk tr" /><span className="wl-bk bl" /><span className="wl-bk br" />
       <EdgeTab side="left" label="agent ops" badge={taskEvidence ? running.length : null} />
-      <EdgeTab side="right" label="cabinet" badge={list.length || null} />
+      <EdgeTab side="right" label="cabinet" badge={agentEvidence ? (evidenceAgents.length || null) : null} />
 
       <div className="wl-top">
         <div className="wl-brand">
@@ -262,7 +274,7 @@ export function BriefingWall({
       <div className="wl-body">
         <div className="wl-col wl-left">
           <Card title="CABINET · NOW" stamp="live">
-            <Cell label="AGENTS IN ROSTER" value={agentEvidence ? list.length : null} why="roster feed unavailable" />
+            <Cell label="AGENTS IN ROSTER" value={agentEvidence ? evidenceAgents.length : null} why="roster feed unavailable" />
             <Cell label="EXECUTING" value={agentEvidence ? firing : null} why="roster feed unavailable — an executing count needs a current roster" />
             <Cell label="TASKS RUNNING" value={taskEvidence ? running.length : null} why="task feed unavailable" />
             <Cell label="TASKS WAITING" value={taskEvidence ? Math.max(0, waiting) : null} why="task feed unavailable" />
@@ -299,8 +311,12 @@ export function BriefingWall({
       </div>
 
       <div className="wl-bottom">
-        <span className="wl-foot">MIC · {!trustEvidence || !micState ? 'UNKNOWN'
+        {/* Exact-state rendering: 'on' and 'off' are the only values that mean anything.
+            Anything else — missing, 'unknown', empty, a number — is UNKNOWN, so the footer
+            can never read OPEN for a state the mic control itself refuses. */}
+        <span className="wl-foot">MIC · {!trustEvidence || micState === null ? 'UNKNOWN'
           : micState === 'off' ? 'MUTED'
+          : micState !== 'on' ? 'UNKNOWN'
           : voice && voice.active ? 'OPEN' : 'IDLE'}</span>
         <span className="wl-foot wl-foot-mid">{energy.detail}</span>
         <span className="wl-foot">FIELD DRIVEN BY · {energy.source.toUpperCase()}</span>

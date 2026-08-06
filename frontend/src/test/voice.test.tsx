@@ -242,4 +242,56 @@ describe('useVoice state machine', () => {
       }),
     ));
   });
+
+  /* Deferred-permission race (integration review, 2026-08-06). `getUserMedia()` can sit on
+     a permission prompt for seconds. A stop() or unmount in that window used to release a
+     stream that did not exist yet, and the late-resolving permission then opened the mic and
+     entered the hands-free loop anyway — capture beginning AFTER authorization was withdrawn.
+     These tests hold the promise open deliberately, which is the only way to see it. */
+  describe('a permission that resolves after cancellation must not open the mic', () => {
+    function deferredMedia() {
+      const track = { stop: vi.fn() };
+      const stream = { getTracks: () => [track] };
+      let resolve: any;
+      const pending = new Promise((r) => { resolve = r; });
+      const getUserMedia = vi.fn(() => pending);
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+      return { getUserMedia, track, grant: () => { resolve(stream); return pending; } };
+    }
+
+    it('stop() while the prompt is open kills the tracks and never goes active', async () => {
+      const media = deferredMedia();
+      const states: any[] = [];
+      render(<VoiceHarness onState={(st) => states.push(st)} />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/voice/capabilities'));
+
+      fireEvent.click(screen.getByText('start'));          // permission prompt is now up
+      await waitFor(() => expect(media.getUserMedia).toHaveBeenCalled());
+      fireEvent.click(screen.getByText('stop'));           // user releases / trust lost
+
+      await media.grant();                                  // permission arrives LATE
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(media.track.stop).toHaveBeenCalled();          // the granted mic is hung up
+      expect(screen.getByTestId('status').textContent).toBe('off');
+      expect(states.some((st) => st.active)).toBe(false);   // never went active at any point
+    });
+
+    it('unmount while the prompt is open kills the tracks and never goes active', async () => {
+      const media = deferredMedia();
+      const states: any[] = [];
+      const view = render(<VoiceHarness onState={(st) => states.push(st)} />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/voice/capabilities'));
+
+      fireEvent.click(screen.getByText('start'));
+      await waitFor(() => expect(media.getUserMedia).toHaveBeenCalled());
+      view.unmount();                                       // Esc out of the wall
+
+      await media.grant();
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(media.track.stop).toHaveBeenCalled();
+      expect(states.some((st) => st.active)).toBe(false);
+    });
+  });
 });

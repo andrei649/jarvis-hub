@@ -349,6 +349,21 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > wall from ➖ to ⬜); and the wall-screen room validation the doc *claimed* was in
 > `docs/OWNER_TASKS.md` is now actually there (legibility, mic pickup, echo, per-room privacy).
 > +13 hostile frontend tests (Vitest 451 → **464**).
+>
+> **Wall pass 5 — third review round** (head `fc9e94e`): a **capture-after-cancellation race** in
+> `frontend/src/voice.ts` is closed. `getUserMedia()` can sit on a permission prompt for seconds;
+> `stop()`/unmount released a stream that did not exist yet, so a late-resolving permission then
+> published the stream, went active and entered the hands-free loop — capture starting *after*
+> authorization was withdrawn. A monotonic `startGenRef` now invalidates pending starts: a stale
+> resolution stops every returned track and publishes nothing. Second: `useVoice()` returns a fresh
+> wrapper each render and the wall's parent rerenders every clock tick, so the wall's unmount
+> cleanup (keyed on that identity) was stopping a valid capture about once a second — release and
+> cleanup now key on a stable `stopRef`, never the wrapper. Third: the roster evidence rule was only
+> half-applied — `evidenceAgents` now gates every roster-derived consumer (`wallState`,
+> `burstEnergy`, `NeuralBurst`, the firing count and the CABINET badge), not just the two cells.
+> Fourth: the footer rendered a malformed `mic` value as OPEN/IDLE; only an exact `on`/`off` maps to
+> OPEN/IDLE/MUTED and everything else reads `UNKNOWN`. +14 tests, all four red-proved against the
+> pre-fix code (Vitest 464 → **478**).
 
 ---
 
