@@ -20,8 +20,10 @@ import check_nerva_program_manifest as manifest_checker  # noqa: E402
 from check_nerva_program_manifest import (  # noqa: E402
     DOCUMENT_RELATIVE,
     MANIFEST_RELATIVE,
+    MAX_JSON_DEPTH,
     ManifestError,
     _derive_eligibility,
+    _git_executable,
     _git_root_error,
     _tracked_repository_paths,
     _validate_snapshot,
@@ -460,6 +462,33 @@ def test_gate_evidence_is_resolved_against_immutable_baseline_history(tmp_path: 
         "grafts" in error
         for error in _verify_git_evidence(root, baseline, accepted, "artifact.txt", "fixture", 42)
     )
+
+
+def test_git_executable_resolution_is_absolute_and_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "candidate-repository"
+    safe_bin = tmp_path / "safe-bin"
+    root.mkdir()
+    safe_bin.mkdir()
+    executable_name = "git.exe" if os.name == "nt" else "git"
+    hostile = root / executable_name
+    executable = safe_bin / executable_name
+    hostile.write_bytes(b"hostile")
+    executable.write_bytes(b"fixture")
+    if os.name != "nt":
+        hostile.chmod(0o700)
+        executable.chmod(0o700)
+    monkeypatch.chdir(root)
+    environment = {"PATH": os.pathsep.join([str(root), "", "relative-bin", str(safe_bin)])}
+
+    selected = Path(_git_executable(root, environment=environment))
+    assert selected.is_absolute()
+    assert selected.samefile(executable)
+    assert not selected.samefile(hostile)
+
+    with pytest.raises(FileNotFoundError, match="Git executable is unavailable"):
+        _git_executable(root, environment={"PATH": str(root)})
 
 
 def test_duplicate_gate_evidence_is_rejected() -> None:
@@ -1004,9 +1033,17 @@ def test_strict_json_loader_rejects_duplicate_keys_and_non_finite_numbers(tmp_pa
         with pytest.raises(ManifestError, match="floating-point JSON value"):
             load_json_strict(exponent)
 
+    boundary = tmp_path / "depth-boundary.json"
+    boundary.write_text(
+        "[" * MAX_JSON_DEPTH + "0" + "]" * MAX_JSON_DEPTH,
+        encoding="utf-8",
+    )
+    assert load_json_strict(boundary)
+
     deep = tmp_path / "deep.json"
-    deep.write_text("[" * 2000 + "0" + "]" * 2000, encoding="utf-8")
-    with pytest.raises(ManifestError, match="invalid JSON"):
+    depth = MAX_JSON_DEPTH + 2
+    deep.write_text("[" * depth + "0" + "]" * depth, encoding="utf-8")
+    with pytest.raises(ManifestError, match="JSON nesting exceeds"):
         load_json_strict(deep)
 
     huge_integer = tmp_path / "huge-integer.json"
@@ -1088,6 +1125,21 @@ def test_write_repairs_drift_with_lf_is_idempotent_and_check_detects_crlf(tmp_pa
     document.write_bytes(first.replace(b"\n", b"\r\n"))
     with pytest.raises(ManifestError, match="generated Markdown drift"):
         run(root, write=False, verify_git=False)
+
+
+def test_atomic_write_never_widens_temporary_file_permissions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _copy_fixture_root(tmp_path)
+    (root / DOCUMENT_RELATIVE).write_bytes(b"stale\n")
+
+    def reject_permission_widening(*args, **kwargs) -> None:
+        raise AssertionError("generated output permissions must not be widened")
+
+    monkeypatch.setattr(manifest_checker.os, "chmod", reject_permission_widening)
+    messages = run(root, write=True, verify_git=False)
+
+    assert messages[-1] == "generated Markdown updated"
 
 
 def test_exact_head_run_binds_bytes_consumed_before_candidate_verification(

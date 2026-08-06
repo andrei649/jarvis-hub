@@ -13,10 +13,13 @@ import json
 import os
 import re
 import stat
-import subprocess
+
+# The checker invokes only an absolute Git executable with fixed argv and shell=False.
+import subprocess  # nosec B404
 import sys
 import tempfile
 import unicodedata
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -207,6 +210,7 @@ UTC_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 IDENTIFIER = re.compile(r"^[A-Za-z0-9_.-]+$")
 PORTABLE_REPO_PATH = re.compile(r"^[A-Za-z0-9._/-]+$")
 MANIFEST_V1_NOT_BEFORE = datetime(2026, 8, 5, tzinfo=UTC)
+MAX_JSON_DEPTH = 64
 
 
 class ManifestError(RuntimeError):
@@ -237,6 +241,20 @@ def _parse_int(value: str) -> int:
     return int(value)
 
 
+def _reject_excessive_json_depth(data: Any, path: Path) -> None:
+    stack: list[tuple[Any, int]] = [(data, 0)]
+    while stack:
+        value, depth = stack.pop()
+        if depth > MAX_JSON_DEPTH:
+            raise ManifestError(
+                f"invalid JSON in {path}: JSON nesting exceeds {MAX_JSON_DEPTH} levels"
+            )
+        if isinstance(value, dict):
+            stack.extend((item, depth + 1) for item in value.values())
+        elif isinstance(value, list):
+            stack.extend((item, depth + 1) for item in value)
+
+
 def _load_json_strict_with_bytes(path: Path) -> tuple[Any, bytes]:
     """Load strict JSON and retain the exact bytes that produced the parsed value."""
 
@@ -261,6 +279,7 @@ def _load_json_strict_with_bytes(path: Path) -> tuple[Any, bytes]:
             parse_float=_reject_float,
             parse_int=_parse_int,
         )
+        _reject_excessive_json_depth(data, path)
     except ManifestError:
         raise
     except (json.JSONDecodeError, RecursionError, ValueError) as exc:
@@ -378,13 +397,53 @@ def _git_environment() -> dict[str, str]:
     return environment
 
 
+def _git_executable(root: str | Path, *, environment: Mapping[str, str] | None = None) -> str:
+    """Resolve Git from absolute PATH entries outside the repository and cwd."""
+
+    source = os.environ if environment is None else environment
+    path_value = next((value for key, value in source.items() if key.upper() == "PATH"), "")
+    try:
+        protected_roots = {Path(root).resolve(strict=True), Path.cwd().resolve(strict=True)}
+    except (OSError, RuntimeError) as exc:
+        raise FileNotFoundError(f"Git executable trust roots cannot be resolved: {exc}") from exc
+    executable_name = "git.exe" if os.name == "nt" else "git"
+    for raw_entry in path_value.split(os.pathsep):
+        entry = raw_entry.strip().strip('"')
+        directory = Path(entry)
+        if not entry or not directory.is_absolute():
+            continue
+        try:
+            candidate = (directory / executable_name).resolve(strict=True)
+        except (OSError, RuntimeError):
+            continue
+        if not candidate.is_file() or not candidate.is_absolute():
+            continue
+        if os.name != "nt" and not os.access(candidate, os.X_OK):
+            continue
+        if any(
+            candidate == protected or candidate.is_relative_to(protected)
+            for protected in protected_roots
+        ):
+            continue
+        return str(candidate)
+    raise FileNotFoundError("Git executable is unavailable outside the repository and cwd")
+
+
 def _git_call(root_text: str, arguments: tuple[str, ...]) -> tuple[int, str]:
     try:
-        completed = subprocess.run(
-            ["git", "--no-replace-objects", "-C", root_text, *arguments],
+        environment = _git_environment()
+        # Arguments remain a fixed list; repository values never enter a shell command.
+        completed = subprocess.run(  # nosec B603
+            [
+                _git_executable(root_text, environment=environment),
+                "--no-replace-objects",
+                "-C",
+                root_text,
+                *arguments,
+            ],
             check=False,
             capture_output=True,
-            env=_git_environment(),
+            env=environment,
             text=True,
             timeout=15,
         )
@@ -408,9 +467,11 @@ def _tracked_repository_paths(
     if not (root_resolved / ".git").exists():
         return None, None
     try:
-        completed = subprocess.run(
+        environment = _git_environment()
+        # Arguments remain a fixed list; repository values never enter a shell command.
+        completed = subprocess.run(  # nosec B603
             [
-                "git",
+                _git_executable(root_resolved, environment=environment),
                 "--no-replace-objects",
                 "-C",
                 str(root_resolved),
@@ -419,7 +480,7 @@ def _tracked_repository_paths(
             ],
             check=False,
             capture_output=True,
-            env=_git_environment(),
+            env=environment,
             timeout=15,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -432,9 +493,11 @@ def _tracked_repository_paths(
 
 def _git_hash_bytes(root_text: str, payload: bytes) -> tuple[int, str]:
     try:
-        completed = subprocess.run(
+        environment = _git_environment()
+        # Arguments remain a fixed list; repository values never enter a shell command.
+        completed = subprocess.run(  # nosec B603
             [
-                "git",
+                _git_executable(root_text, environment=environment),
                 "--no-replace-objects",
                 "-C",
                 root_text,
@@ -445,7 +508,7 @@ def _git_hash_bytes(root_text: str, payload: bytes) -> tuple[int, str]:
             input=payload,
             check=False,
             capture_output=True,
-            env=_git_environment(),
+            env=environment,
             timeout=15,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -1506,6 +1569,12 @@ def _render_evidence(evidence: dict[str, Any]) -> str:
     )
 
 
+def _join_text(*parts: str) -> str:
+    """Join wrapped prose without implicit literal concatenation."""
+
+    return "".join(parts)
+
+
 def render_markdown(data: dict[str, Any]) -> str:
     """Render only fixed prose from validated structured fields."""
 
@@ -1513,9 +1582,11 @@ def render_markdown(data: dict[str, Any]) -> str:
     lines = [
         "# Nerva program manifest v1",
         "",
-        "> Offline repository evidence snapshot. This document does not query live GitHub, "
-        "does not authorize execution, does not declare program completion, and does not "
-        "establish release readiness.",
+        _join_text(
+            "> Offline repository evidence snapshot. This document does not query live GitHub, ",
+            "does not authorize execution, does not declare program completion, and does not ",
+            "establish release readiness.",
+        ),
         "",
         "- The JSON manifest is the sole current dependency/status/gate/blocker/runtime truth.",
         f"- Evidence baseline: `{snapshot['baseline_commit']}`",
@@ -1550,9 +1621,11 @@ def render_markdown(data: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "Program status describes the reviewed work snapshot. Delivery eligibility is "
-            "derived independently: active discovery/build/verification remains `in_progress`; "
-            "a consumer-specific gate may be satisfied while its source epic is still building.",
+            _join_text(
+                "Program status describes the reviewed work snapshot. Delivery eligibility is ",
+                "derived independently: active discovery/build/verification remains `in_progress`; ",
+                "a consumer-specific gate may be satisfied while its source epic is still building.",
+            ),
             "",
             "| Program status | Open delivery gate or typed blocker | Derived result |",
             "|---|---|---|",
@@ -1584,9 +1657,11 @@ def render_markdown(data: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "A satisfied delivery edge requires an accepted 40-hex commit, an artifact present "
-            "at that commit, and mutable issue/PR context. An upstream epic's overall status is "
-            "never substituted for consumer-specific gate acceptance.",
+            _join_text(
+                "A satisfied delivery edge requires an accepted 40-hex commit, an artifact present ",
+                "at that commit, and mutable issue/PR context. An upstream epic's overall status is ",
+                "never substituted for consumer-specific gate acceptance.",
+            ),
             "",
             "## Typed blockers",
             "",
@@ -1641,8 +1716,10 @@ def render_markdown(data: dict[str, Any]) -> str:
             "- Ultron remains the sole privileged-action authority.",
             "- Runtime feedback is advisory and never becomes delivery or action authority.",
             "- `done` and `satisfied` are repository-evidence labels, not owner-live or release proof.",
-            "- Release readiness remains `false`; typed owner-live, program, and external blockers "
-            "remain visible above when present.",
+            _join_text(
+                "- Release readiness remains `false`; typed owner-live, program, and external blockers ",
+                "remain visible above when present.",
+            ),
             "",
         ]
     )
@@ -1687,7 +1764,6 @@ def _atomic_write(root: Path, path: Path, payload: bytes) -> None:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temporary, 0o644)
         target_error = _validate_output_target(root, path)
         if target_error:
             raise ManifestError(target_error)
