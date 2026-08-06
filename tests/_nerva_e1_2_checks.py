@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 from copy import deepcopy
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError, fields, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -1062,10 +1062,11 @@ class _ControlledLatencyClock:
 def _report_fixture(
     directory: Path,
     *,
+    document: dict[str, object] | None = None,
     router: _MeasuredRouter | None = None,
     nonce: str = "reportfixture",
 ):
-    label_set = _load(_write(directory, _document()))
+    label_set = _load(_write(directory, document or _document()))
     store_root = directory / "report-store"
     store_root.mkdir()
     environment = EnvironmentProfile.detect(runner_id="owner-local-e1-2a")
@@ -1096,6 +1097,640 @@ def _report_fixture(
         BenchmarkStore(store_root),
         environment,
     )
+
+
+def _refingerprint_report(raw: dict[str, object]) -> str:
+    raw["content_fingerprint"] = measured_compare._fingerprint(
+        {key: value for key, value in raw.items() if key != "content_fingerprint"}
+    )
+    return json.dumps(raw)
+
+
+def _refingerprint_environment(raw: dict[str, object]) -> None:
+    environment = raw["environment"]
+    assert isinstance(environment, dict)
+    environment["content_fingerprint"] = measured_compare._fingerprint(
+        {
+            key: value
+            for key, value in environment.items()
+            if key != "content_fingerprint"
+        }
+    )
+    raw["environment_fingerprint"] = environment["content_fingerprint"]
+
+
+def _guarded_batch(batch, **changes):
+    return replace(
+        batch,
+        _guard=measured_compare._MEASURED_BATCH_GUARD,
+        **changes,
+    )
+
+
+def _runs_path(store: BenchmarkStore, suite_name: str) -> Path:
+    return store.root / "suites" / suite_name / "runs.jsonl"
+
+
+def _ordered_runs(store: BenchmarkStore, suite_name: str) -> tuple[object, ...]:
+    return tuple(reversed(store.runs(suite_name, last_n=sys.maxsize)))
+
+
+def _write_runs(store: BenchmarkStore, suite_name: str, runs: tuple[object, ...]) -> None:
+    _runs_path(store, suite_name).write_text(
+        "".join(f"{run.to_json()}\n" for run in runs),
+        encoding="utf-8",
+    )
+
+
+def _replace_result(run, index: int, **changes):
+    results = list(run.results)
+    results[index] = replace(results[index], **changes)
+    return replace(run, results=tuple(results))
+
+
+def _build_with_run_mutation(batch, store, label_set, mutate):
+    original = _ordered_runs(store, batch.suite_name)
+    changed = (mutate(original[0]), *original[1:])
+    _write_runs(store, batch.suite_name, changed)
+    changed_batch = _guarded_batch(
+        batch,
+        run_fingerprints=tuple(run_fingerprint(run) for run in changed),
+    )
+    try:
+        return measured_compare.build_measured_report(
+            changed_batch,
+            store,
+            label_set,
+        )
+    finally:
+        _write_runs(store, batch.suite_name, original)
+
+
+def _assert_run_mutation_rejected(batch, store, label_set, mutate) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        _build_with_run_mutation(batch, store, label_set, mutate)
+
+
+def _assert_raw_run_mutation_rejected(store, batch, mutate) -> None:
+    path = _runs_path(store, batch.suite_name)
+    original = path.read_text(encoding="utf-8")
+    raw = [json.loads(line) for line in original.splitlines()]
+    mutate(raw[0])
+    path.write_text("".join(f"{json.dumps(run)}\n" for run in raw), encoding="utf-8")
+    try:
+        with pytest.raises((TypeError, ValueError)):
+            store.runs(batch.suite_name, last_n=sys.maxsize)
+    finally:
+        path.write_text(original, encoding="utf-8")
+
+
+def _check_report_count_parser_attacks() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(directory)
+        report = measured_compare.build_measured_report(batch, store, label_set)
+
+        impossible = json.loads(report.to_json())
+        impossible.update(
+            {
+                "accepted_count": 0,
+                "rejected_count": 0,
+                "incomplete_count": 0,
+                "overall_adequacy": {
+                    "source": None,
+                    "status": "not_measured",
+                    "unit": None,
+                    "value": None,
+                },
+            }
+        )
+        for route in impossible["per_actual_route"]:
+            route.update(
+                {
+                    "accepted_count": 0,
+                    "rejected_count": 0,
+                    "incomplete_count": 0,
+                    "adequacy": {
+                        "source": None,
+                        "status": "not_measured",
+                        "unit": None,
+                        "value": None,
+                    },
+                }
+            )
+        with pytest.raises(ValueError, match="incomplete"):
+            measured_compare.MeasuredComparisonReport.from_json(
+                _refingerprint_report(impossible)
+            )
+
+        impossible_route = json.loads(report.to_json())
+        friday, jarvis = impossible_route["per_actual_route"]
+        friday.update(
+            {
+                "accepted_count": 0,
+                "rejected_count": 0,
+                "incomplete_count": 0,
+                "adequacy": {
+                    "source": None,
+                    "status": "not_measured",
+                    "unit": None,
+                    "value": None,
+                },
+            }
+        )
+        jarvis.update({"accepted_count": 25, "rejected_count": 0})
+        jarvis["adequacy"]["value"] = 1.0
+        impossible_route.update(
+            {
+                "accepted_count": 25,
+                "rejected_count": 0,
+                "overall_adequacy": {
+                    "source": "benchmark.harness",
+                    "status": "measured",
+                    "unit": "ratio",
+                    "value": 1.0,
+                },
+            }
+        )
+        with pytest.raises(ValueError, match="route incomplete"):
+            measured_compare.MeasuredComparisonReport.from_json(
+                _refingerprint_report(impossible_route)
+            )
+
+
+def _check_report_environment_parser_attacks() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(directory)
+        report = measured_compare.build_measured_report(batch, store, label_set)
+        for field, attack in (
+            ("runner_id", "owner-local-e1-2a-arbitrary-note-andrei649"),
+            ("platform", "windows-amd64-arbitrary-note-andrei649"),
+            ("python_version", "3.12.1-arbitrary-note-andrei649"),
+        ):
+            raw = json.loads(report.to_json())
+            raw["environment"][field] = attack
+            _refingerprint_environment(raw)
+            with pytest.raises(ValueError, match="environment"):
+                measured_compare.MeasuredComparisonReport.from_json(
+                    _refingerprint_report(raw)
+                )
+
+        markdown = measured_compare.render_measured_report(report)
+        for value in (
+            report.environment.runner_id,
+            report.environment.platform,
+            report.environment.python_version,
+        ):
+            assert value not in markdown
+
+
+def _check_report_parser_strictness() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(directory)
+        report = measured_compare.build_measured_report(batch, store, label_set)
+        raw = json.loads(report.to_json())
+
+        for flag in (
+            "can_change_routing",
+            "can_authorize",
+            "can_execute",
+            "can_promote",
+            "can_mark_complete",
+        ):
+            for numeric_false in (0, 0.0, 1):
+                changed = deepcopy(raw)
+                changed[flag] = numeric_false
+                with pytest.raises(ValueError, match="Boolean"):
+                    measured_compare.MeasuredComparisonReport.from_json(
+                        _refingerprint_report(changed)
+                    )
+        for numeric_true in (0, 0.0, 1, 1.0):
+            changed = deepcopy(raw)
+            changed["complete"] = numeric_true
+            with pytest.raises(ValueError, match="Boolean"):
+                measured_compare.MeasuredComparisonReport.from_json(
+                    _refingerprint_report(changed)
+                )
+
+        for path, mutation in (
+            (("environment",), lambda value: value.update({"unknown": True})),
+            (("environment",), lambda value: value.pop("platform")),
+            (("latency_median",), lambda value: value.update({"unknown": True})),
+            (("latency_median",), lambda value: value.pop("unit")),
+            (("per_actual_route", 0), lambda value: value.update({"unknown": True})),
+            (("per_actual_route", 0), lambda value: value.pop("route_id")),
+        ):
+            changed = deepcopy(raw)
+            nested = changed
+            for component in path:
+                nested = nested[component]
+            mutation(nested)
+            with pytest.raises(ValueError):
+                measured_compare.MeasuredComparisonReport.from_json(
+                    json.dumps(changed)
+                )
+
+        divergent = deepcopy(raw)
+        divergent["source_revision"] = "b" * 40
+        structural = measured_compare.MeasuredComparisonReport.from_json(
+            _refingerprint_report(divergent)
+        )
+        with pytest.raises(ValueError, match="retained evidence"):
+            measured_compare.validate_measured_report_against_evidence(
+                structural,
+                batch,
+                store,
+                label_set,
+            )
+
+        constructor = {
+            field.name: getattr(report, field.name)
+            for field in fields(report)
+            if field.init
+        }
+        constructor["_guard"] = measured_compare._MEASURED_REPORT_GUARD
+        for flag in (
+            "can_change_routing",
+            "can_authorize",
+            "can_execute",
+            "can_promote",
+            "can_mark_complete",
+        ):
+            with pytest.raises(TypeError):
+                measured_compare.MeasuredComparisonReport(
+                    **constructor,
+                    **{flag: True},
+                )
+            with pytest.raises((TypeError, ValueError)):
+                replace(report, **{flag: True})
+        assert report.limitations == measured_compare.LIMITATION_CODES
+        assert report.owner_gates == measured_compare.OWNER_GATE_CODES
+
+
+def _with_declared_baseline(run):
+    return replace(
+        run,
+        baseline_id="comparison-baseline",
+        results=tuple(
+            replace(
+                result,
+                baseline=result.candidate,
+                baseline_quality=result.quality,
+            )
+            for result in run.results
+        ),
+    )
+
+
+def _check_retained_evidence_tamper_matrix() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(directory)
+        suite = build_owner_route_suite(label_set)
+
+        wrong_root = directory / "wrong-store"
+        wrong_root.mkdir()
+        with pytest.raises(ValueError, match="store"):
+            measured_compare.build_measured_report(
+                batch,
+                BenchmarkStore(wrong_root),
+                label_set,
+            )
+        with pytest.raises(ValueError, match="stored suite"):
+            measured_compare.build_measured_report(
+                _guarded_batch(batch, suite_version=batch.suite_version + 1),
+                store,
+                label_set,
+            )
+        for changed_suite in (
+            tuple(reversed(suite)),
+            (replace(suite[0], task_type="forecast"), *suite[1:]),
+        ):
+            with (
+                patch.object(store, "load_suite", return_value=changed_suite),
+                pytest.raises(ValueError, match="stored suite"),
+            ):
+                measured_compare.build_measured_report(batch, store, label_set)
+
+        original_runs = _ordered_runs(store, batch.suite_name)
+        path = _runs_path(store, batch.suite_name)
+        original_text = path.read_text(encoding="utf-8")
+        try:
+            path.write_text(
+                original_text + original_runs[0].to_json() + "\n",
+                encoding="utf-8",
+            )
+            with pytest.raises(ValueError, match="fingerprint"):
+                measured_compare.build_measured_report(batch, store, label_set)
+        finally:
+            path.write_text(original_text, encoding="utf-8")
+
+        with pytest.raises(ValueError, match="unique"):
+            _guarded_batch(
+                batch,
+                run_fingerprints=(
+                    batch.run_fingerprints[0],
+                    batch.run_fingerprints[0],
+                    *batch.run_fingerprints[2:],
+                ),
+            )
+        with pytest.raises(ValueError, match="fingerprint"):
+            measured_compare.build_measured_report(
+                _guarded_batch(
+                    batch,
+                    run_fingerprints=("f" * 64, *batch.run_fingerprints[1:]),
+                ),
+                store,
+                label_set,
+            )
+        with pytest.raises(ValueError, match="ordered repetitions"):
+            measured_compare.build_measured_report(
+                _guarded_batch(
+                    batch,
+                    run_fingerprints=tuple(reversed(batch.run_fingerprints)),
+                ),
+                store,
+                label_set,
+            )
+        try:
+            _write_runs(store, batch.suite_name, original_runs[1:])
+            with pytest.raises(ValueError, match="fingerprint"):
+                measured_compare.build_measured_report(batch, store, label_set)
+        finally:
+            _write_runs(store, batch.suite_name, original_runs)
+
+        mutations = (
+            lambda run: replace(run, source_revision="b" * 40),
+            lambda run: replace(run, candidate_id="other-candidate"),
+            _with_declared_baseline,
+            lambda run: replace(run, lane="ci"),
+            lambda run: replace(run, suite_name="other-suite"),
+            lambda run: replace(run, suite_version=run.suite_version + 1),
+            lambda run: replace(
+                run,
+                artifact_refs=(
+                    run.artifact_refs[0],
+                    f"environment-fingerprint:{'e' * 64}",
+                ),
+            ),
+            lambda run: replace(
+                run,
+                artifact_refs=(
+                    f"label-fingerprint:{'d' * 64}",
+                    run.artifact_refs[1],
+                ),
+            ),
+            lambda run: replace(run, results=tuple(reversed(run.results))),
+            lambda run: replace(run, results=run.results[:-1]),
+            lambda run: _replace_result(
+                run,
+                0,
+                case_fingerprint="c" * 64,
+            ),
+            lambda run: _replace_result(
+                run,
+                0,
+                privacy_class="synthetic_public",
+            ),
+            lambda run: _replace_result(run, 0, task_type="forecast"),
+            lambda run: _replace_result(
+                run,
+                0,
+                candidate=replace(run.results[0].candidate, artifact_refs=()),
+            ),
+            lambda run: _replace_result(
+                run,
+                0,
+                candidate=replace(
+                    run.results[0].candidate,
+                    artifact_refs=("decision:not-a-digest",),
+                ),
+            ),
+            lambda run: _replace_result(
+                run,
+                0,
+                candidate=replace(
+                    run.results[0].candidate,
+                    artifact_refs=(
+                        run.results[0].candidate.artifact_refs[0],
+                        run.results[0].candidate.artifact_refs[0],
+                    ),
+                ),
+            ),
+        )
+        for mutation in mutations:
+            _assert_run_mutation_rejected(batch, store, label_set, mutation)
+
+        def duplicate_result(raw):
+            raw["results"].append(raw["results"][0])
+
+        _assert_raw_run_mutation_rejected(store, batch, duplicate_result)
+
+        other_directory = directory / "other-evidence"
+        other_directory.mkdir()
+        other_document = deepcopy(_document())
+        other_document["cases"][0]["task_category"] = "forecast"
+        other_labels, other_batch, other_store, _ = _report_fixture(
+            other_directory,
+            document=other_document,
+            nonce="otherevidence",
+        )
+        measured_compare.build_measured_report(
+            other_batch,
+            other_store,
+            other_labels,
+        )
+        with pytest.raises(ValueError):
+            measured_compare.build_measured_report(
+                other_batch,
+                other_store,
+                label_set,
+            )
+
+
+def _provider_result_mutation(**candidate_changes):
+    def mutate(run):
+        candidate = replace(run.results[0].candidate, **candidate_changes)
+        return _replace_result(run, 0, candidate=candidate)
+
+    return mutate
+
+
+def _cost_result_mutation(measurement: Measurement):
+    return lambda run: _replace_result(run, 0, cost=measurement)
+
+
+def _incomplete_mixed_run(run):
+    results = list(run.results)
+    results[0] = replace(
+        results[0],
+        status="error",
+        passed=None,
+        candidate=None,
+        baseline=None,
+        quality=Measurement("failed", source="candidate.runner"),
+        baseline_quality=Measurement("not_measured"),
+        latency=Measurement("failed", source="candidate.runner"),
+        cost=Measurement("not_measured"),
+        reliability=Measurement("measured", 0.0, "ratio", "candidate.runner"),
+        privacy=Measurement("failed", source="candidate.runner"),
+        error_type="RuntimeError",
+    )
+    results[1] = replace(
+        results[1],
+        status="unscored",
+        passed=None,
+        quality=Measurement("not_measured"),
+    )
+    results[2] = replace(results[2], cost=Measurement("not_measured"))
+    return replace(run, results=tuple(results))
+
+
+def _assert_privacy_minimised(report, label_set, store) -> None:
+    rendered = (report.to_json(), measured_compare.render_measured_report(report))
+    sentinels = {
+        *(case.text for case in label_set.cases),
+        *(case.source_record_digest for case in label_set.cases),
+        *(case.case_id for case in label_set.cases),
+        *(case.task_category for case in label_set.cases),
+        label_set.sampling_rule,
+        label_set.retention_policy_id,
+        label_set.source_window_start,
+        label_set.source_window_end,
+        "arbitrary-note-sentinel",
+        "synthetic measured-router failure",
+        str(store.root),
+        os.environ.get("USERNAME", "__no_local_username__"),
+    }
+    for output in rendered:
+        lowered = output.lower()
+        for sentinel in sentinels:
+            assert not sentinel or sentinel.lower() not in lowered
+
+
+def _check_measurement_provider_privacy_matrix() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(directory)
+        complete = measured_compare.build_measured_report(batch, store, label_set)
+        _assert_privacy_minimised(complete, label_set, store)
+
+        wrong_source = _build_with_run_mutation(
+            batch,
+            store,
+            label_set,
+            lambda run: _replace_result(
+                run,
+                0,
+                latency=Measurement(
+                    "measured",
+                    run.results[0].latency.value,
+                    "ms",
+                    "candidate.runner",
+                ),
+            ),
+        )
+        assert wrong_source.accepted_count == 75
+        assert wrong_source.rejected_count == 25
+        assert wrong_source.incomplete_count == 1
+        assert wrong_source.latency_median.value == 51.0
+        assert wrong_source.latency_p95.value == 96.0
+        assert wrong_source.complete is False
+
+        for raw_latency in (
+            {"source": None, "status": "not_measured", "unit": None, "value": None},
+            {
+                "source": "benchmark.harness",
+                "status": "measured",
+                "unit": "seconds",
+                "value": 1.0,
+            },
+        ):
+            _assert_raw_run_mutation_rejected(
+                store,
+                batch,
+                lambda raw, value=raw_latency: raw["results"][0].update(
+                    {"latency": value}
+                ),
+            )
+
+        for mutation in (
+            _provider_result_mutation(model_id="other-model"),
+            _provider_result_mutation(provider_id="other-provider"),
+            _cost_result_mutation(
+                Measurement("measured", 1.0, "usd", "candidate.runner")
+            ),
+        ):
+            changed = _build_with_run_mutation(
+                batch,
+                store,
+                label_set,
+                mutation,
+            )
+            assert changed.provider_charge == Measurement("not_measured")
+            assert changed.complete is False
+
+        for measurement in (
+            Measurement("not_measured"),
+            Measurement("measured", 0.0, "usd", "other.source"),
+        ):
+            changed = _build_with_run_mutation(
+                batch,
+                store,
+                label_set,
+                _cost_result_mutation(measurement),
+            )
+            assert changed.incomplete_count == 1
+            assert changed.provider_charge == Measurement("not_measured")
+            assert changed.complete is False
+
+        for raw_cost in (
+            {
+                "source": "candidate.runner",
+                "status": "failed",
+                "unit": None,
+                "value": None,
+            },
+            {
+                "source": "candidate.runner",
+                "status": "measured",
+                "unit": "tokens",
+                "value": 0.0,
+            },
+            {"source": None, "status": "measured", "unit": "usd", "value": 0.0},
+        ):
+            _assert_raw_run_mutation_rejected(
+                store,
+                batch,
+                lambda raw, value=raw_cost: raw["results"][0].update(
+                    {"cost": value}
+                ),
+            )
+
+        incomplete = _build_with_run_mutation(
+            batch,
+            store,
+            label_set,
+            _incomplete_mixed_run,
+        )
+        assert (
+            incomplete.accepted_count,
+            incomplete.rejected_count,
+            incomplete.error_count,
+            incomplete.incomplete_count,
+        ) == (73, 25, 1, 3)
+        assert incomplete.latency_median.value == 51.0
+        assert incomplete.latency_p95.value == 96.0
+        assert incomplete.provider_charge == Measurement("not_measured")
+        assert incomplete.complete is False
+        structural = measured_compare.MeasuredComparisonReport.from_json(
+            incomplete.to_json()
+        )
+        assert structural == incomplete
+        assert "complete: false" in measured_compare.render_measured_report(incomplete)
+        _assert_privacy_minimised(incomplete, label_set, store)
 
 
 def _check_measured_report() -> None:
@@ -1376,3 +2011,8 @@ def run_e1_2_checks() -> None:
     _check_measured_run_batch()
     _check_measured_report()
     _check_measured_report_adversarial()
+    _check_report_count_parser_attacks()
+    _check_report_environment_parser_attacks()
+    _check_report_parser_strictness()
+    _check_retained_evidence_tamper_matrix()
+    _check_measurement_provider_privacy_matrix()

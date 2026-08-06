@@ -47,6 +47,8 @@ _IDENTIFIER_RE = re.compile(r"[a-z0-9][a-z0-9._:-]{0,127}\Z")
 _DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
 _REVISION_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _NONCE_RE = re.compile(r"[a-z0-9][a-z0-9._]{0,47}\Z")
+_PLATFORM_RE = re.compile(r"[a-z][a-z0-9]*-[a-z0-9]+(?:_[a-z0-9]+)*\Z")
+_PYTHON_VERSION_RE = re.compile(r"[0-9]+(?:\.[0-9]+){1,3}\Z")
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 _MAX_TEXT_LENGTH = 10_000
 _MAX_METADATA_LENGTH = 128
@@ -492,6 +494,12 @@ class EnvironmentEvidence:
             (self.python_version, "python version"),
         ):
             _bounded_environment_value(value, label)
+        if self.runner_id != "owner-local-e1-2a":
+            raise ValueError("environment runner id is fixed")
+        if _PLATFORM_RE.fullmatch(self.platform) is None:
+            raise ValueError("environment platform must be canonical")
+        if _PYTHON_VERSION_RE.fullmatch(self.python_version) is None:
+            raise ValueError("environment Python version must be numeric dotted text")
         if self.hardware_profile != "not_measured":
             raise ValueError("environment hardware must remain not_measured")
         if self.schema != "nerva.benchmark.environment.v1":
@@ -576,6 +584,10 @@ class RouteAdequacyAggregate:
             _nonnegative_int(value, label)
         if self.accepted_count + self.rejected_count > self.sample_count:
             raise ValueError("route accepted and rejected counts exceed samples")
+        if self.incomplete_count < (
+            self.sample_count - self.accepted_count - self.rejected_count
+        ):
+            raise ValueError("route incomplete count hides unaccounted samples")
         if self.incomplete_count > self.sample_count:
             raise ValueError("route incomplete count exceeds samples")
         if self.adequacy != _adequacy_measurement(
@@ -703,6 +715,10 @@ class MeasuredComparisonReport:
             raise ValueError("report sample count does not match tasks and repetitions")
         if self.accepted_count + self.rejected_count + self.error_count > self.sample_count:
             raise ValueError("report result counts exceed samples")
+        if self.incomplete_count < (
+            self.sample_count - self.accepted_count - self.rejected_count
+        ):
+            raise ValueError("report incomplete count hides unaccounted samples")
         if self.error_count > self.incomplete_count:
             raise ValueError("report errors must remain visible as incomplete evidence")
         if self.incomplete_count > self.sample_count:
@@ -898,6 +914,16 @@ class MeasuredComparisonReport:
             "can_promote": False,
             "can_mark_complete": False,
         }
+        for key in (
+            "can_change_routing",
+            "can_authorize",
+            "can_execute",
+            "can_promote",
+            "can_mark_complete",
+            "complete",
+        ):
+            if type(value[key]) is not bool:
+                raise ValueError(f"measured report {key} must be an exact Boolean")
         if any(value[key] != expected for key, expected in immutable.items()):
             raise ValueError("measured report authority and schema are immutable")
         if not isinstance(value["run_fingerprints"], list):
@@ -1597,9 +1623,6 @@ def render_measured_report(report: MeasuredComparisonReport) -> str:
         f"- candidate: {report.candidate_id}",
         "- baseline: none",
         f"- environment fingerprint: {report.environment_fingerprint}",
-        f"- environment runner: {report.environment.runner_id}",
-        f"- environment platform: {report.environment.platform}",
-        f"- environment python: {report.environment.python_version}",
         f"- environment hardware: {report.environment.hardware_profile}",
         f"- repetitions: {report.repetition_count}",
         f"- tasks: {report.task_count}",
