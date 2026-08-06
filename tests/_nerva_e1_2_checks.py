@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import subprocess
 from copy import deepcopy
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -22,7 +25,13 @@ from agents.core.cortex_measured_compare import (
     measured_current_router_runner,
 )
 from agents.core.observability.benchmark import BenchmarkStore
+from agents.core.observability.scheduled_report import (
+    EnvironmentProfile,
+    run_fingerprint,
+)
 from agents.core.router import Intent
+
+_REVISION = "a" * 40
 
 
 def _digest(number: int) -> str:
@@ -436,7 +445,326 @@ def _check_measured_runner() -> None:
         assert first.artifact_refs != second.artifact_refs
 
 
+class _FailingMeasuredRouter(_MeasuredRouter):
+    async def classify(self, text: str, agents: dict[str, object]) -> Intent:
+        self.classify_calls += 1
+        raise RuntimeError("synthetic measured-router failure")
+
+
+def _check_measured_run_batch() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set = _load(_write(directory, _document()))
+        agents = {"friday": object(), "jarvis": object()}
+
+        constructed_roots: list[tuple[object, ...]] = []
+
+        class _TrackingStore(BenchmarkStore):
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                constructed_roots.append(args)
+                super().__init__(*args, **kwargs)
+
+        invalid_root = directory / "invalid-store"
+        invalid_file = directory / "not-a-directory"
+        invalid_file.write_text("not a benchmark store", encoding="utf-8")
+        invalid_roots: tuple[object, ...] = (
+            str(invalid_root),
+            Path("relative-store"),
+            invalid_root,
+            invalid_file,
+        )
+        with patch.object(measured_compare, "BenchmarkStore", _TrackingStore):
+            for invalid in invalid_roots:
+                with pytest.raises((TypeError, ValueError)):
+                    asyncio.run(
+                        measured_compare.run_measured_comparison(
+                            router=_MeasuredRouter(),
+                            agents=agents,
+                            label_set=label_set,
+                            store_root=invalid,
+                            source_revision=_REVISION,
+                        )
+                    )
+            with pytest.raises(TypeError):
+                asyncio.run(
+                    measured_compare.run_measured_comparison(
+                        router=_MeasuredRouter(),
+                        agents=agents,
+                        label_set=label_set,
+                        source_revision=_REVISION,
+                    )
+                )
+        assert constructed_roots == []
+        assert not invalid_root.exists()
+
+        link_target = directory / "link-target"
+        link_target.mkdir()
+        link_root = directory / "link-store"
+        try:
+            os.symlink(link_target, link_root, target_is_directory=True)
+        except (NotImplementedError, OSError):
+            pass
+        else:
+            with pytest.raises(ValueError, match="symlink|reparse"):
+                asyncio.run(
+                    measured_compare.run_measured_comparison(
+                        router=_MeasuredRouter(),
+                        agents=agents,
+                        label_set=label_set,
+                        store_root=link_root,
+                        source_revision=_REVISION,
+                    )
+                )
+
+        if os.name == "nt":
+            junction_root = directory / "junction-store"
+            created = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(junction_root), str(link_target)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            assert created.returncode == 0, created.stderr
+            try:
+                with pytest.raises(ValueError, match="symlink|reparse"):
+                    asyncio.run(
+                        measured_compare.run_measured_comparison(
+                            router=_MeasuredRouter(),
+                            agents=agents,
+                            label_set=label_set,
+                            store_root=junction_root,
+                            source_revision=_REVISION,
+                        )
+                    )
+            finally:
+                os.rmdir(junction_root)
+
+        preflight_root = directory / "preflight-store"
+        preflight_root.mkdir()
+        for revision in ("A" * 40, "a" * 39, "g" * 40, "a" * 41, True):
+            with pytest.raises(ValueError, match="revision"):
+                asyncio.run(
+                    measured_compare.run_measured_comparison(
+                        router=_MeasuredRouter(),
+                        agents=agents,
+                        label_set=label_set,
+                        store_root=preflight_root,
+                        source_revision=revision,
+                    )
+                )
+        with pytest.raises(ValueError, match="RouteLabelSet"):
+            asyncio.run(
+                measured_compare.run_measured_comparison(
+                    router=_MeasuredRouter(),
+                    agents=agents,
+                    label_set=object(),
+                    store_root=preflight_root,
+                    source_revision=_REVISION,
+                )
+            )
+        with pytest.raises(ValueError, match="registered"):
+            asyncio.run(
+                measured_compare.run_measured_comparison(
+                    router=_MeasuredRouter(),
+                    agents={"jarvis": object()},
+                    label_set=label_set,
+                    store_root=preflight_root,
+                    source_revision=_REVISION,
+                )
+            )
+        configured = _MeasuredRouter()
+        configured.llm_classifier = object()
+        with pytest.raises(ValueError, match="llm_classifier=None"):
+            asyncio.run(
+                measured_compare.run_measured_comparison(
+                    router=configured,
+                    agents=agents,
+                    label_set=label_set,
+                    store_root=preflight_root,
+                    source_revision=_REVISION,
+                )
+            )
+        assert list(preflight_root.iterdir()) == []
+
+        store_root = directory / "measured-store"
+        store_root.mkdir()
+        router = _MeasuredRouter()
+        environment = EnvironmentProfile.detect(runner_id="owner-local-e1-2a")
+        constructed_roots.clear()
+        with (
+            patch.object(measured_compare, "BenchmarkStore", _TrackingStore),
+            patch.object(
+                measured_compare.EnvironmentProfile,
+                "detect",
+                return_value=environment,
+            ) as detect,
+        ):
+            batch = asyncio.run(
+                measured_compare.run_measured_comparison(
+                    router=router,
+                    agents=agents,
+                    label_set=label_set,
+                    store_root=store_root,
+                    source_revision=_REVISION,
+                    run_nonce=lambda: "fixednonce",
+                )
+            )
+        detect.assert_called_once_with(runner_id="owner-local-e1-2a")
+        assert constructed_roots == [(store_root.resolve(),)]
+        assert router.classify_calls == 20 * 6
+        assert batch.store_root == store_root.resolve()
+        assert batch.label_set_fingerprint == label_set.content_fingerprint
+        assert batch.suite_name.startswith("owner-route-")
+        assert batch.suite_version == 1
+        assert batch.environment == environment
+        assert batch.environment_fingerprint == measured_compare._fingerprint(
+            environment.canonical_payload()
+        )
+        assert batch.source_revision == _REVISION
+        assert batch.repetitions == 5
+        assert len(batch.run_fingerprints) == 5
+        assert all(re.fullmatch(r"[0-9a-f]{64}", item) for item in batch.run_fingerprints)
+        assert str(store_root) not in repr(batch)
+
+        store = BenchmarkStore(store_root)
+        retained_newest_first = store.runs(batch.suite_name, last_n=20)
+        retained = tuple(reversed(retained_newest_first))
+        assert len(retained) == 5
+        assert batch.run_fingerprints == tuple(run_fingerprint(run) for run in retained)
+        for repetition, run in enumerate(retained, start=1):
+            assert run.lane == "local"
+            assert run.candidate_id == "current-router-e1.2a"
+            assert run.baseline_id is None
+            assert run.source_revision == _REVISION
+            assert run.run_id.startswith(
+                f"run-{label_set.content_fingerprint[:12]}-fixednonce-"
+            )
+            assert run.run_id.endswith(f"-{repetition}")
+            assert len(run.run_id) <= 128
+            assert run.artifact_refs == (
+                f"label-fingerprint:{label_set.content_fingerprint}",
+                f"environment-fingerprint:{batch.environment_fingerprint}",
+            )
+
+        with pytest.raises(FrozenInstanceError):
+            batch.source_revision = "b" * 40
+        with pytest.raises(ValueError, match="internally"):
+            measured_compare.MeasuredRunBatch(
+                label_set_fingerprint=label_set.content_fingerprint,
+                suite_name=batch.suite_name,
+                suite_version=batch.suite_version,
+                environment=environment,
+                environment_fingerprint=batch.environment_fingerprint,
+                source_revision=_REVISION,
+                run_fingerprints=batch.run_fingerprints,
+                store_root=store_root,
+            )
+        with pytest.raises(ValueError, match="internally"):
+            replace(batch, source_revision="b" * 40)
+
+        before_collision = store.runs(batch.suite_name, last_n=20)
+        collision_router = _MeasuredRouter()
+        with pytest.raises(ValueError, match="collision"):
+            asyncio.run(
+                measured_compare.run_measured_comparison(
+                    router=collision_router,
+                    agents=agents,
+                    label_set=label_set,
+                    store_root=store_root,
+                    source_revision=_REVISION,
+                    run_nonce=lambda: "fixednonce",
+                )
+            )
+        assert collision_router.classify_calls == 20
+        assert store.runs(batch.suite_name, last_n=20) == before_collision
+
+        warmup_root = directory / "warmup-error-store"
+        warmup_root.mkdir()
+        failing_router = _FailingMeasuredRouter()
+        with pytest.raises(RuntimeError, match="warm-up"):
+            asyncio.run(
+                measured_compare.run_measured_comparison(
+                    router=failing_router,
+                    agents=agents,
+                    label_set=label_set,
+                    store_root=warmup_root,
+                    source_revision=_REVISION,
+                )
+            )
+        warmup_store = BenchmarkStore(warmup_root)
+        assert failing_router.classify_calls == 20
+        assert warmup_store.runs(measured_compare._suite_name(label_set)) == ()
+
+        write_failure_root = directory / "write-failure-store"
+        write_failure_root.mkdir()
+        write_failure_router = _MeasuredRouter()
+        original_record_run = BenchmarkStore.record_run
+        writes = 0
+
+        def _fail_second_write(self: BenchmarkStore, run: object) -> None:
+            nonlocal writes
+            writes += 1
+            if writes == 2:
+                raise OSError("synthetic retained-write failure")
+            original_record_run(self, run)
+
+        with (
+            patch.object(BenchmarkStore, "record_run", _fail_second_write),
+            pytest.raises(OSError, match="retained-write"),
+        ):
+            asyncio.run(
+                measured_compare.run_measured_comparison(
+                    router=write_failure_router,
+                        agents=agents,
+                        label_set=label_set,
+                        store_root=write_failure_root,
+                        source_revision="b" * 64,
+                        run_nonce=lambda: "writefail",
+                )
+            )
+        failed_store = BenchmarkStore(write_failure_root)
+        failed_suite_name = measured_compare._suite_name(label_set)
+        assert writes == 2
+        assert write_failure_router.classify_calls == 20 * 3
+        written_before_failure = failed_store.runs(failed_suite_name, last_n=20)
+        assert len(written_before_failure) == 1
+        assert written_before_failure[0].source_revision == "b" * 64
+
+        proof_failure_root = directory / "proof-failure-store"
+        proof_failure_root.mkdir()
+        proof_failure_router = _MeasuredRouter()
+        original_runs = BenchmarkStore.runs
+        reads = 0
+
+        def _hide_just_written(
+            self: BenchmarkStore, name: str, *, last_n: int = 20
+        ) -> tuple[object, ...]:
+            nonlocal reads
+            reads += 1
+            if reads == 2:
+                return ()
+            return original_runs(self, name, last_n=last_n)
+
+        with (
+            patch.object(BenchmarkStore, "runs", _hide_just_written),
+            pytest.raises(RuntimeError, match="retrievable"),
+        ):
+            asyncio.run(
+                measured_compare.run_measured_comparison(
+                    router=proof_failure_router,
+                    agents=agents,
+                    label_set=label_set,
+                    store_root=proof_failure_root,
+                    source_revision=_REVISION,
+                    run_nonce=lambda: "prooffail",
+                )
+            )
+        assert proof_failure_router.classify_calls == 20 * 2
+        assert len(BenchmarkStore(proof_failure_root).runs(failed_suite_name)) == 1
+
+
 def run_e1_2_checks() -> None:
     _check_strict_route_labels()
     _check_suite_binding()
     _check_measured_runner()
+    _check_measured_run_batch()

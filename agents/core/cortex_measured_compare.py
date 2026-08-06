@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import stat
 import unicodedata
-from collections.abc import Collection, Mapping
+import uuid
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,9 +23,14 @@ from agents.core.cortex_decision import (
 from agents.core.observability.benchmark import (
     BenchmarkCase,
     BenchmarkCriterion,
+    BenchmarkHarness,
     BenchmarkRunner,
     BenchmarkStore,
     current_router_runner,
+)
+from agents.core.observability.scheduled_report import (
+    EnvironmentProfile,
+    run_fingerprint,
 )
 
 MIN_OWNER_TASKS = 20
@@ -33,6 +41,8 @@ CANDIDATE_ID = "current-router-e1.2a"
 
 _IDENTIFIER_RE = re.compile(r"[a-z0-9][a-z0-9._:-]{0,127}\Z")
 _DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
+_REVISION_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+_NONCE_RE = re.compile(r"[a-z0-9][a-z0-9._]{0,47}\Z")
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 _MAX_TEXT_LENGTH = 10_000
 _MAX_METADATA_LENGTH = 128
@@ -54,6 +64,8 @@ _CASE_FIELDS = {
     "task_category",
     "source_record_digest",
 }
+_MEASURED_BATCH_GUARD = object()
+_MAX_RETAINED_RUNS = 1_000_000
 
 
 def _canonical_json(payload: object) -> str:
@@ -280,6 +292,56 @@ class RouteLabelSet:
         )
 
 
+@dataclass(frozen=True)
+class MeasuredRunBatch:
+    label_set_fingerprint: str
+    suite_name: str
+    suite_version: int
+    environment: EnvironmentProfile
+    environment_fingerprint: str
+    source_revision: str
+    run_fingerprints: tuple[str, ...]
+    store_root: Path = field(repr=False)
+    repetitions: int = field(default=RETAINED_REPETITIONS, init=False)
+    _guard: Any = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self._guard is not _MEASURED_BATCH_GUARD:
+            raise ValueError("measured run batches are constructed internally")
+        _digest(self.label_set_fingerprint, "label set fingerprint")
+        _identifier(self.suite_name, "suite name")
+        if (
+            isinstance(self.suite_version, bool)
+            or not isinstance(self.suite_version, int)
+            or self.suite_version < 1
+        ):
+            raise ValueError("suite version must be a positive integer")
+        if not isinstance(self.environment, EnvironmentProfile):
+            raise ValueError("measured batches require a detected environment")
+        _digest(self.environment_fingerprint, "environment fingerprint")
+        if self.environment_fingerprint != _fingerprint(
+            self.environment.canonical_payload()
+        ):
+            raise ValueError("environment fingerprint does not match its profile")
+        if (
+            not isinstance(self.source_revision, str)
+            or _REVISION_RE.fullmatch(self.source_revision) is None
+        ):
+            raise ValueError("source revision must be an exact lowercase Git commit SHA")
+        if (
+            not isinstance(self.run_fingerprints, tuple)
+            or len(self.run_fingerprints) != RETAINED_REPETITIONS
+        ):
+            raise ValueError("measured batches require five ordered run fingerprints")
+        for fingerprint in self.run_fingerprints:
+            _digest(fingerprint, "run fingerprint")
+        if len(set(self.run_fingerprints)) != RETAINED_REPETITIONS:
+            raise ValueError("measured run fingerprints must be unique")
+        if not isinstance(self.store_root, Path) or not self.store_root.is_absolute():
+            raise ValueError("measured batches require an absolute store root")
+        object.__setattr__(self, "_guard", None)
+
+
 def load_route_label_set(
     path: str | Path,
     *,
@@ -426,10 +488,183 @@ def measured_current_router_runner(
     return run
 
 
+def _validated_store_root(store_root: Path) -> Path:
+    if not isinstance(store_root, Path):
+        raise TypeError("store root must be an explicitly supplied Path")
+    if not store_root.is_absolute():
+        raise ValueError("store root must be absolute")
+
+    current = Path(store_root.anchor)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    for part in store_root.parts[1:]:
+        if part == "..":
+            raise ValueError("store root must not traverse parent components")
+        current /= part
+        try:
+            metadata = os.lstat(current)
+        except OSError as exc:
+            raise ValueError("store root must be an existing directory") from exc
+        is_reparse = bool(
+            getattr(metadata, "st_file_attributes", 0) & reparse_flag
+        )
+        if stat.S_ISLNK(metadata.st_mode) or is_reparse:
+            raise ValueError("store root must not cross a symlink or reparse boundary")
+
+    if not store_root.is_dir():
+        raise ValueError("store root must be an existing directory")
+    try:
+        resolved = store_root.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("store root could not be resolved") from exc
+    if not resolved.is_dir():
+        raise ValueError("store root must resolve to a directory")
+    return resolved
+
+
+def _validate_measured_preflight(
+    *,
+    router: Any,
+    agents: Mapping[str, Any],
+    label_set: RouteLabelSet,
+    source_revision: str,
+) -> BenchmarkRunner:
+    if (
+        not isinstance(source_revision, str)
+        or _REVISION_RE.fullmatch(source_revision) is None
+    ):
+        raise ValueError("source revision must be an exact lowercase Git commit SHA")
+    if not isinstance(label_set, RouteLabelSet):
+        raise ValueError("measured comparisons require a RouteLabelSet")
+    if not isinstance(agents, Mapping):
+        raise ValueError("route registry must be a mapping")
+    registered_routes = _route_collection(tuple(agents))
+    for case in label_set.cases:
+        if not set(case.acceptable_primary_routes).issubset(registered_routes):
+            raise ValueError("every acceptable route must be registered")
+    return measured_current_router_runner(router, agents, label_set)
+
+
+def _run_id(
+    label_set_fingerprint: str,
+    nonce_factory: Callable[[], str],
+    repetition: int,
+) -> str:
+    nonce = nonce_factory()
+    if not isinstance(nonce, str) or _NONCE_RE.fullmatch(nonce) is None:
+        raise ValueError("run nonce must be a bounded lowercase identifier component")
+    run_id = f"run-{label_set_fingerprint[:12]}-{nonce}-{repetition}"
+    return _identifier(run_id, "run id")
+
+
+def _has_incomplete_results(run: Any) -> bool:
+    return any(result.status in {"error", "unscored"} for result in run.results)
+
+
+async def run_measured_comparison(
+    *,
+    router: Any,
+    agents: Mapping[str, Any],
+    label_set: RouteLabelSet,
+    store_root: Path,
+    source_revision: str,
+    run_nonce: Callable[[], str] | None = None,
+) -> MeasuredRunBatch:
+    """Warm the deterministic router, then retain five owner-local E9 runs.
+
+    The accepted E9 store is an owner-local, single-writer store. This guarded
+    path detects collisions and verifies its own append, but does not claim
+    safety for concurrent writers.
+    """
+
+    resolved_root = _validated_store_root(store_root)
+    runner = _validate_measured_preflight(
+        router=router,
+        agents=agents,
+        label_set=label_set,
+        source_revision=source_revision,
+    )
+    if run_nonce is not None and not callable(run_nonce):
+        raise ValueError("run nonce must be callable")
+    nonce_factory = run_nonce or (lambda: uuid.uuid4().hex[:12])
+
+    store = BenchmarkStore(resolved_root)
+    suite_name, suite_version, cases = ensure_owner_route_suite(store, label_set)
+    environment = EnvironmentProfile.detect(runner_id="owner-local-e1-2a")
+    environment_fingerprint = _fingerprint(environment.canonical_payload())
+    harness = BenchmarkHarness(runner, candidate_id=CANDIDATE_ID)
+
+    warmup = await harness.run(
+        cases,
+        suite_name=suite_name,
+        suite_version=suite_version,
+        lane="local",
+        source_revision=source_revision,
+    )
+    if _has_incomplete_results(warmup):
+        raise RuntimeError("measured route warm-up did not complete every case")
+
+    artifact_refs = (
+        f"label-fingerprint:{label_set.content_fingerprint}",
+        f"environment-fingerprint:{environment_fingerprint}",
+    )
+    fingerprints: list[str] = []
+    for repetition in range(1, RETAINED_REPETITIONS + 1):
+        retained_run_id = _run_id(
+            label_set.content_fingerprint,
+            nonce_factory,
+            repetition,
+        )
+        existing = store.runs(suite_name, last_n=_MAX_RETAINED_RUNS)
+        if any(run.run_id == retained_run_id for run in existing):
+            raise ValueError("measured run id collision")
+
+        run = await harness.run(
+            cases,
+            suite_name=suite_name,
+            suite_version=suite_version,
+            lane="local",
+            source_revision=source_revision,
+            run_id=retained_run_id,
+        )
+        if _has_incomplete_results(run):
+            raise RuntimeError("measured retained run did not complete every case")
+        run = replace(run, artifact_refs=artifact_refs)
+        expected_fingerprint = run_fingerprint(run)
+        store.record_run(run)
+
+        matches = tuple(
+            candidate
+            for candidate in store.runs(
+                suite_name,
+                last_n=_MAX_RETAINED_RUNS,
+            )
+            if candidate.run_id == retained_run_id
+        )
+        if (
+            len(matches) != 1
+            or run_fingerprint(matches[0]) != expected_fingerprint
+        ):
+            raise RuntimeError("recorded measured run is not canonically retrievable")
+        fingerprints.append(expected_fingerprint)
+
+    return MeasuredRunBatch(
+        label_set_fingerprint=label_set.content_fingerprint,
+        suite_name=suite_name,
+        suite_version=suite_version,
+        environment=environment,
+        environment_fingerprint=environment_fingerprint,
+        source_revision=source_revision,
+        run_fingerprints=tuple(fingerprints),
+        store_root=resolved_root,
+        _guard=_MEASURED_BATCH_GUARD,
+    )
+
+
 __all__ = [
     "CANDIDATE_ID",
     "LABEL_SCHEMA",
     "MIN_OWNER_TASKS",
+    "MeasuredRunBatch",
     "REPORT_SCHEMA",
     "RETAINED_REPETITIONS",
     "RouteLabelCase",
@@ -438,4 +673,5 @@ __all__ = [
     "ensure_owner_route_suite",
     "load_route_label_set",
     "measured_current_router_runner",
+    "run_measured_comparison",
 ]
