@@ -244,6 +244,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
 | `frontend/src/voice.ts` | mic capture + VAD + STT call + TTS playback + hands-free loop + opt-in barge-in | `useVoice` |
+| `frontend/src/orb.tsx` | the voice-reactive particle sphere: state→visual contract (only LISTENING uses the measured mic RMS) + Canvas-2D renderer; used by cinema mode and the cockpit voice pill | `VoiceOrb`, `orbVisual` |
 | `agents/web.py` | `POST /api/voice/stt` (raw audio body → Whisper), `GET /api/voice/capabilities` | `stt_endpoint`, `_stt_engine`, `voice_capabilities` |
 | `agents/web.py` | `POST /tts` (text → cloned voice, fallback chain) | `tts_endpoint` |
 

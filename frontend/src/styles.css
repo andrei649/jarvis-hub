@@ -606,6 +606,18 @@ input { font-family: inherit; }
 .nm-dot.core { background:#2bb8f0; box-shadow:0 0 6px rgba(43,184,240,.6); } .nm-dot.local { background:#41f59b; } .nm-dot.cloud { background:#a78bfa; } .nm-dot.task { background:#ffb23f; box-shadow:0 0 6px rgba(255,178,63,.45); }
 .nmesh-legend .nm-hint { margin-left:auto; color:var(--ink-4); }
 
+/* ── HUD v3 · VOICE ORB (particle sphere bound to the useVoice state machine) ── */
+.vorb { position:relative; flex:1; min-height:0; display:flex; }
+.vorb canvas { display:block; width:100%; height:100%; }
+.vorb-cap { position:absolute; left:0; right:0; bottom:8px; display:flex; gap:10px; align-items:baseline; justify-content:center; font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; text-transform:uppercase; pointer-events:none; }
+.vorb-cap .vorb-src { color:var(--ink-4); letter-spacing:.1em; }
+.vorb.vorb-inline { flex:none; width:26px; height:26px; }
+.vorb.vorb-inline canvas { width:26px; height:26px; }
+.cin-stage .vorb { background:transparent; }
+.cin-stage-pick { position:absolute; top:10px; right:16px; z-index:2; display:flex; gap:6px; }
+.cin-stage-pick button { font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; text-transform:uppercase; padding:4px 10px; border-radius:6px; cursor:pointer; color:var(--ink-3); background:transparent; border:1px solid var(--panel-line); }
+.cin-stage-pick button.on { color:#021a1f; background:var(--accent); border-color:var(--accent); }
+
 /* ── HUD v3 · CINEMA MODE (full-bleed mesh, framed for a shareable demo) ── */
 .cinema { position:fixed; inset:0; z-index:90; background:radial-gradient(circle at 50% 42%, #081421, #04070d 72%); display:flex; flex-direction:column; align-items:center; animation:msg-in .4s ease; }
 .cin-top { padding:26px 20px 4px; text-align:center; flex:none; }

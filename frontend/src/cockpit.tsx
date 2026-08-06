@@ -4,6 +4,7 @@ import { Icon, ICONS, Glyph } from './primitives';
 import { V2 } from './data';
 import { playTts } from './api/actions';
 import { SaveArtifactButton } from './artifacts';
+import { VoiceOrb } from './orb';
 
 /* Per-message TTS replay (🔊) — POST /tts {text,lang} → audio. Honest states: while
    speaking shows ◼ (stop is best-effort via re-click), errors fall back silently to
@@ -183,8 +184,6 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, t }: { o
     : voice && voice.status==='listening' ? 'listening…'
     : voice && voice.status==='transcribing' ? 'transcribing…'
     : voice && voice.status==='speaking' ? 'speaking…' : 'voice on';
-  const dotColor = voice && voice.status==='listening' ? 'var(--green)'
-    : voice && voice.status==='speaking' ? 'var(--accent-light)' : 'var(--ink-3)';
   const row = (lbl,node) => (
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'4px 0'}}>
       <span style={{color:'var(--ink-3)',fontFamily:'var(--font-mono)',fontSize:10,letterSpacing:'.1em'}}>{lbl}</span>{node}
@@ -194,7 +193,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, t }: { o
     <div style={{position:'relative'}}>
       {showPill && (
         <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',marginBottom:6,borderRadius:8,fontFamily:'var(--font-mono)',fontSize:11,letterSpacing:'.04em',background:'rgba(0,0,0,.18)',border:'1px solid var(--panel-line)',color:voice.error?'var(--amber)':'var(--accent-light)'}}>
-          {!voice.error && <span style={{width:8,height:8,borderRadius:8,background:dotColor,boxShadow:'0 0 8px currentColor',flex:'none'}}/>}
+          {!voice.error && <VoiceOrb status={voice.status} level={voice.level||0} density="compact" showLabel={false} className="vorb-inline" />}
           <span style={{flex:'none'}}>{voice.error ? '⚠ ' : ''}{label}</span>
           {!voice.error && voice.status==='listening' && (
             <span style={{flex:1,height:4,borderRadius:4,background:'var(--panel-line)',overflow:'hidden'}}>
