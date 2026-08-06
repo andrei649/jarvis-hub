@@ -315,11 +315,89 @@ Focused verification includes router E1.1, E9.0/E9.1, the B2 manifest checker, R
 targeted Bandit, compile, and `git diff --check`. Before integration, run the combined
 adjacent suite and complete exact-head hosted CI/security matrix.
 
+## Exact-head security HOLD addendum (2026-08-06)
+
+Independent review of candidate `4b81110156d3a313ad07fc8951878c4c7d4366b2`
+reproduced three acceptance-breaking gaps and one bounded-input weakness. The
+candidate remains a draft HOLD until all invariants below are implemented, tested,
+and independently re-reviewed on a new exact SHA.
+
+### Deterministic routing must be an exclusive capability
+
+Checking mutable `llm_classifier` state immediately before `classify()` is not a
+privacy boundary: the normal `classify()` method can observe a classifier injected
+after the check and disclose the raw owner prompt. `IntentRouter` therefore exposes a
+dedicated `classify_deterministic()` path that performs only wake-word, local rule,
+and general-route stages and never reads or calls `llm_classifier`. The E9 current-
+router adapter captures and invokes only that capability. `ShadowDecisionRouter`
+records that same deterministic result without falling back through `classify()`.
+Configured classifiers still fail preflight, and post-call provenance rejects both
+`llm` and `llm_fallback` as defence in depth, but privacy does not depend on a
+post-disclosure check.
+
+This protects against late mutation of the real current router's optional classifier.
+It does not claim to sandbox arbitrary malicious Python router implementations; the
+router object remains trusted local code.
+
+### The retention boundary includes every descendant used by E1.2a
+
+Validating only the supplied store root is insufficient when an existing `suites`
+directory or suite directory is a symlink, junction, or other Windows reparse point.
+Before any E1.2a store read or write, the measured path must create only missing
+direct children under the validated root, then `lstat` and reject every traversed
+descendant reparse/symlink boundary. It must repeat the check for the selected suite
+directory and existing `vN.jsonl` / `runs.jsonl` files at the read/write boundary.
+The single-writer owner-local assumption remains explicit; this change closes
+pre-existing redirection, not hostile concurrent replacement.
+
+One private measured-store boundary owns these checks and mediates every E1.2a suite
+ensure/reuse, retained-run collision scan/readback/write, and report suite/run read.
+Callers may still pass the public `BenchmarkStore` required by the report API, but the
+boundary must prove its root equals the batch root and validate the exact descendant
+paths before delegating. Scattered one-time preflight checks are not sufficient.
+
+The owner label reader applies the same ancestor-component check to the selected
+regular file. A final file check alone does not accept an ancestor junction.
+
+### Retained authority fields remain exact JSON Booleans
+
+`BenchmarkRun.from_json()` must reject duplicate JSON members and require exact
+`bool` types for every immutable authority flag before comparing values. JSON numeric
+`0` is not interchangeable with `false`. Retained evidence continues to use canonical
+semantic fingerprints; harmless whitespace/key ordering is not promoted into a new
+byte-identity contract.
+
+### Hostile JSON is bounded and fails as `ValueError`
+
+The label document is limited to 2,000,000 bytes, 1,000 cases, and 32 acceptable
+routes per case. The report parser is limited to 2,000,000 Unicode characters.
+Surrogate code points are rejected from case text, and parser recursion / invalid
+Unicode failures are normalized to bounded `ValueError` outcomes. These are local
+denial-of-service guards; they do not change the external v1 schemas or measured
+semantics.
+
+### Required red/green evidence
+
+Tests must first reproduce: late classifier disclosure through normal `classify()`;
+label-ancestor, Windows `suites`, selected-suite, exact-version-file, and runs-file
+redirections at the ensure/run/report sinks; retained `false` changed to numeric `0`;
+duplicate retained-run members; oversized/deep JSON; and an escaped lone surrogate.
+Green evidence must prove zero classifier calls, zero outside-root writes or reads,
+strict raw authority types, bounded parser failures, unchanged deterministic route
+results, and all prior E1.2a/E9 tests.
+
 ## Files and Ownership
 
 - Create `agents/core/cortex_measured_compare.py`: strict input, adapter, batch, report,
   serialization, and rendering.
+- Modify `agents/core/router.py` and `agents/core/cortex_decision.py`: expose and
+  preserve the no-LLM deterministic classification capability for direct and shadow
+  evaluation.
+- Modify `agents/core/observability/benchmark.py`: consume only that deterministic
+  capability and enforce exact retained-run JSON authority types/members.
 - Create `tests/_nerva_e1_2_checks.py`: bounded red/green and adversarial assertions.
+- Modify `tests/test_nerva_benchmark_e9_0.py`: adjacent adapter/parser regression
+  coverage for the shared E9 boundary.
 - Modify `tests/test_router_v2.py`: one helper import and invocation.
 - Create `docs/nerva2/CORTEX_E1_2.md`: contract, limitations, local operation,
   migration, and rollback.

@@ -13,7 +13,13 @@
 - Work only in `nerva2/e1-2a-measured-route-contract` and draft PR #842, based on `main@4ba1ac26d05c8371ce89d6663a7d7f51457093b6`.
 - Keep the primary checkout and its `docs/qa-runs/2026-07-27-run3.md` state untouched.
 - Refresh the component locks before edits or commits; release them only after the PR is integrated or explicitly parked.
-- Do not modify `agents/core/router.py`, E1.1, E9.0/E9.1 accepted schemas, the orchestrator, Action Kernel, Ultron, endpoints, HUD/mobile, or scheduled owner-data execution.
+- Do not modify E1.1, E9.0/E9.1 serialized schemas, the orchestrator, Action
+  Kernel, Ultron, endpoints, HUD/mobile, or scheduled owner-data execution. The
+  exact-head security HOLD in Task 6 Step 3a explicitly authorizes narrow edits to
+  `agents/core/router.py`, `agents/core/cortex_decision.py`, and
+  `agents/core/observability/benchmark.py` only for the no-LLM capability and strict
+  parser invariants; production `classify()` semantics and serialized fields must not
+  change.
 - Do not add a real-task fixture, prompt, source identifier, local evidence path, or generated owner report to Git.
 - The label file, E9 suite `vN.jsonl`, `runs.jsonl`, JSON report, and Markdown report all belong to the same named owner retention/access/deletion policy. A Git revert does not delete them.
 - Primary-route adequacy is the only quality claim. It is not answer quality, task completion, safety, user value, or selector superiority.
@@ -511,6 +517,45 @@ At minimum review:
 - hostile JSON/path parsing, symlink/store-root behavior, prompt/source leakage, late LLM injection, and authority tamper resistance;
 - exact E9 suite/run binding, warm-up exclusion, five-run comparability, adequacy/latency/cost arithmetic, error honesty, and deserialization boundaries;
 - BACKLOG/M1/owner task/manifest/workflow truth and preservation of `building`, owner-blocked, and release-false claims.
+
+- [ ] **Step 3a: Resolve the exact-head security HOLD with new TDD evidence**
+
+The security reviewer reproduced one Critical and two Important findings at
+`4b81110156d3a313ad07fc8951878c4c7d4366b2`, plus one bounded-input Minor. Before
+publishing, add failing tests for all four classes, then apply the minimum design-
+addendum implementation:
+
+1. Add `IntentRouter.classify_deterministic()` and matching shadow capture; make
+   `current_router_runner()` require/capture/invoke only this no-LLM capability and
+   reject both LLM provenance spellings. Prove a late-injecting normal `classify()`
+   receives zero calls and never sees the prompt.
+2. Harden the E1.2a label path and store descendants through one private measured-
+   store boundary used by suite ensure/reuse, retained-run collision/readback/write,
+   and report suite/run reads. Reject ancestor/final symlink or Windows reparse
+   boundaries, including pre-existing `suites`, selected suite directories, exact
+   `vN.jsonl`, and `runs.jsonl` paths, before every relevant read/write. Prove label-
+   ancestor, `suites`, selected-suite, version-file, and runs-file redirections fail;
+   no outside sentinel may be created or consumed.
+3. Make `BenchmarkRun.from_json()` reject duplicate members and exact-type violations
+   for immutable Boolean authority fields. Prove `false -> 0` and duplicate authority
+   keys fail before canonical fingerprint lookup.
+4. Enforce the design bounds (2,000,000-byte labels, 1,000 cases, 32 routes/case,
+   2,000,000-character report JSON), reject surrogate text, and normalize recursion /
+   Unicode parser failures to `ValueError`.
+
+Expected files are `agents/core/router.py`, `agents/core/cortex_decision.py`,
+`agents/core/observability/benchmark.py`, `agents/core/cortex_measured_compare.py`,
+`tests/test_nerva_benchmark_e9_0.py`, and `tests/_nerva_e1_2_checks.py`, plus this
+design/plan. Do not change production routing semantics, report schema, owner ledgers,
+manifest status, or release authority.
+
+Run the new red tests first. After GREEN, rerun the focused E1.2a + E9.0 + manifest
+suite, Ruff on every touched Python file, Bandit on both production modules,
+compileall, manifest/status checks, and cumulative diff checks. Run Bandit on every
+touched production module. Commit the remediation,
+then require the same security reviewer (or a fresh equivalent) to reproduce every
+old probe against the new exact SHA. Any residual disclosure or outside-root write is
+HOLD.
 
 - [ ] **Step 4: Refresh live GitHub state before publishing**
 
