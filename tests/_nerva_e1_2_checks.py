@@ -2214,6 +2214,20 @@ def _section_contains(section: str, statement: str) -> bool:
     return " ".join(statement.split()) in " ".join(section.split())
 
 
+def _markdown_table_row(section: str, label: str) -> tuple[str, ...]:
+    """Return one named Markdown table row from an already isolated section."""
+
+    matches = []
+    for line in section.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = tuple(cell.strip() for cell in line.strip("|").split("|"))
+        if cells and cells[0] == label:
+            matches.append(cells)
+    assert len(matches) == 1, f"expected one table row for {label!r}"
+    return matches[0]
+
+
 def _workflow_event_paths(workflow: str, event: str) -> tuple[str, ...]:
     """Parse one event's indented paths list rather than globally counting text."""
 
@@ -2294,6 +2308,35 @@ def _check_operator_contract_ledgers() -> None:
         "real_task_outcome_quality=not_measured",
     ):
         assert _section_contains(measurements, value)
+    provider_charge = _markdown_table_row(measurements, "Provider charge")
+    assert provider_charge[1] == "conditionally measured `$0`"
+    for value in (
+        "every retained result",
+        "baseline is `none`",
+        "candidate exists",
+        "model `none`",
+        "provider `local-deterministic`",
+        "cost is measured `0.0 usd`",
+        "source `candidate.runner`",
+    ):
+        assert _section_contains(provider_charge[2], value)
+    unmeasured = _markdown_table_row(
+        measurements,
+        "Compute, energy, hardware, downstream agent, tool, action, executed-task outcome",
+    )
+    assert unmeasured[1] == "unconditionally `not_measured`"
+    assert "| Provider charge, compute, energy" not in measurements
+
+    failure = _markdown_section(contract, "Failure and completeness")
+    assert _section_contains(
+        failure,
+        "Scored adequacy remains visible in an incomplete report",
+    )
+    assert _section_contains(
+        failure,
+        "cannot establish completion, release, or representativeness",
+    )
+    assert "completion, release, or adequacy claim" not in failure
 
     report_contract = _markdown_section(contract, "Report v1 output contract")
     for value in (
@@ -2328,8 +2371,8 @@ def _check_operator_contract_ledgers() -> None:
     assert _section_contains(attestation, "owner_evidence_blocked")
 
     owner_tasks = (repository / "docs/OWNER_TASKS.md").read_text(encoding="utf-8")
+    assert owner_tasks.count("- [ ] **E1.2b") == 1
     e1_2b_task = _unchecked_task_section(owner_tasks, "E1.2b")
-    assert e1_2b_task.count("- [ ] **E1.2b") == 1
     for value in (
         "at least 20 historical tasks",
         "acceptable routes/categories",

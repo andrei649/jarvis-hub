@@ -125,7 +125,8 @@ how each copy is deleted.
 |---|---|---|
 | Primary-route adequacy | measured from scored evidence | `accepted / (accepted + rejected)`; rejected evidence is a valid scored negative. |
 | Harness latency | measured, harness-only | It does not measure a shared production path. |
-| Provider charge, compute, energy, hardware, downstream agent, tool, action | `not_measured` unless deterministic local evidence exists | No inferred resource claim. |
+| Provider charge | conditionally measured `$0` | Only when every retained result has: baseline is `none`; candidate exists; model `none`; provider `local-deterministic`; cost is measured `0.0 usd`; source `candidate.runner`. |
+| Compute, energy, hardware, downstream agent, tool, action, executed-task outcome | unconditionally `not_measured` | No resource or executed-outcome claim. |
 | Real task-outcome quality | `real_task_outcome_quality=not_measured` | No answer-quality, completion, or safety claim. |
 | Authority | evaluation-only | Cannot change routing, authorize, execute, promote, or mark complete. |
 
@@ -167,7 +168,8 @@ is produced. Each retained run is append-verified; duplicate run IDs, malformed
 stores, missing/reordered evidence, unknown labels, cloud classifier use, or
 mismatched decision evidence fail closed. A router exception remains a bounded
 incomplete observation. Any error or unscored retained observation makes the
-report incomplete; it cannot become a completion, release, or adequacy claim.
+report incomplete. Scored adequacy remains visible in an incomplete report, but
+it cannot establish completion, release, or representativeness.
 
 The accepted E9 store is owner-local and single-writer. Collision detection and
 append verification do not establish concurrent-writer safety.
