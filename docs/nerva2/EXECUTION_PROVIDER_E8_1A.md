@@ -1,15 +1,16 @@
 # Nerva E8.1a — Hermes discovery and skill-fetch integrity boundary
 
-Status: accepted read-only discovery evidence from #819 plus the bounded,
-review-pending skill-fetch integrity package for issue #830 in draft PR #834.
+Status: accepted read-only discovery evidence from #819 plus the bounded
+skill-fetch integrity package accepted through issue #830 / PR #834 and merged
+as `76f17aa49498466540198b0410b037c1b2f6c8eb`.
 This document contains no provider contract, adapter, dependency, manifest
 enrolment or capability claim.
 It does not assert that any Hermes interface has been tested against Nerva.
 
 ## Scope and method
 
-The original E8.1a discovery slice was documentation-only. The draft PR #834 package for issue #830
-changes only the existing skill importer, its tests, this document and a compact
+The original E8.1a discovery slice was documentation-only. The merged PR #834 package for issue #830
+changed only the existing skill importer, its tests, this document and a compact
 pin record. No Hermes runtime, dependency or upstream
 skill is copied into the repository, installed or executed. Pin generation used
 a temporary, read-only fetch of exact Git objects outside the repository;
@@ -136,15 +137,15 @@ listed in the license mirror:
 provider contract must not re-import them through an adapter, or the same logic
 would exist on both sides of the boundary.
 
-## 3. Runtime skill-fetch integrity — issue #830 implementation in draft PR #834
+## 3. Runtime skill-fetch integrity — issue #830 accepted through PR #834
 
-Before draft PR #834 implemented issue #830, `agents/core/skills/importer.py`
+Before PR #834 implemented issue #830, `agents/core/skills/importer.py`
 listed and fetched Hermes skills from mutable `main/skills` and retained no
 source revision or content digest. The route was already `DEV_MODE`-only,
 user-guarded and protected by `_safe_slug`; those controls limited callers and
 filesystem paths but did not bind the remote bytes.
 
-The draft PR #834 technical package for issue #830 replaces only the
+The accepted PR #834 technical package for issue #830 replaces only the
 `source=hermes` path:
 
 | Bound field | Accepted value |
@@ -203,7 +204,7 @@ So today Hermes is:
 |---|---|---|---|
 | License mirrored | ✅ | ✅ | ✅ |
 | Listed in manifest | ✅ `sources` | ✅ `untracked` | ❌ **absent** |
-| Version pinned | ✅ `6.1.1` | n/a (declared) | ✅ skill-fetch candidate: release + commit + tree + 71 digests; ❌ manifest/dependency |
+| Version pinned | ✅ `6.1.1` | n/a (declared) | ✅ skill-fetch pin: release + commit + tree + 71 digests; ❌ manifest/dependency |
 | Drift tracked | ✅ | explicitly not | ❌ **never checked** |
 
 The license mirror lists adapted files but records **no upstream commit or tag**,
@@ -243,14 +244,13 @@ scheduler and direct updater. The two pre-existing sources declare `true`
 explicitly. Focused hostile tests preserve a manual-only evidence document and
 manifest byte-for-byte.
 
-**Hermes manifest enrolment remains blocked.** Draft PR #834 for issue #830
-supplies the compact pin and exact-revision/content-integrity boundary as a
-review-pending candidate, but does not enrol it. Remaining gates are:
+**Hermes manifest enrolment remains blocked.** PR #834 for issue #830 supplies
+the accepted compact pin and exact-revision/content-integrity boundary, but does
+not enrol Hermes. Remaining gates are:
 
-1. independent acceptance and merge of the exact PR #834 head;
-2. the dual GitHub-tag and PyPI drift signal required by §1.2;
-3. adapter-specific compatibility, supply-chain and E9 checks before pin movement;
-4. a later, explicit manifest-enrolment package after those controls exist.
+1. the dual GitHub-tag and PyPI drift signal required by §1.2;
+2. adapter-specific compatibility, supply-chain and E9 checks before pin movement;
+3. a later, explicit manifest-enrolment package after those controls exist.
 
 For reference only, the shape the entry would eventually take:
 
@@ -276,7 +276,7 @@ For reference only, the shape the entry would eventually take:
 | Drift signal | GitHub tag feed **and** the PyPI release feed (§1.2), as a **proposed manual signal**, not an automated bump |
 | What triggers a pin movement | adapter-specific compatibility, supply-chain and E9 checks — **none of which exist today** |
 | How updates are reviewed | manually, and only after those checks exist |
-| How the mutable runtime fetch is fixed | issue #830 candidate in draft PR #834: allowlisted exact-commit URL, raw-byte digest before decode/write, full source provenance; never fetch by tag or `main` |
+| How the mutable runtime fetch is fixed | issue #830 / merged PR #834: allowlisted exact-commit URL, raw-byte digest before decode/write, full source provenance; never fetch by tag or `main` |
 | Native fallback | unchanged — Nerva executes natively when no provider is registered |
 
 Only the generic manifest policy, updater guard and scheduler selection change in
@@ -378,7 +378,7 @@ comparison vs native            → E9 lanes (E9.0 accepted, E9.1 in review)
 
 | Risk | Why it matters here | Required control |
 |---|---|---|
-| Upstream pin movement | draft PR #834 for issue #830 binds current bytes; a future pin change could accept different instructions | explicit reviewed pin update plus exact digest reproduction |
+| Upstream pin movement | merged PR #834 for issue #830 binds current bytes; a future pin change could accept different instructions | explicit reviewed pin update plus exact digest reproduction |
 | Skill/plugin supply chain | a malicious `SKILL.md` becomes agent instructions | review gate, no auto-import into production |
 | Subprocess escape | provider runtimes execute code | existing sandbox, declared bounds, no host escalation |
 | Hidden network / retention | provider may call out or retain data | deny-by-default network, declared retention |
@@ -403,9 +403,9 @@ Stated plainly, because inventing any of it would be worse than leaving it open:
   tell us what those six files were adapted from;
 - **the transitive license closure and CVE posture** — only the direct dependency
   list was read (§4.1);
-- **provider compatibility or adapter security** — draft PR #834 for issue #830
-  tests the fetch-integrity boundary only; no provider contract, adapter or E9
-  lane exists today;
+- **provider compatibility or adapter security** — PR #834 for issue #830 tests
+  the fetch-integrity boundary only; no provider contract, adapter or
+  provider-specific E9 comparison exists on accepted `main`;
 - **the Sigstore attestations themselves** — their presence is recorded from the
   PyPI page (§1.2); no bundle was downloaded or cryptographically verified;
 - **any performance, reliability, cost or privacy property** of Hermes. Nothing
@@ -414,10 +414,9 @@ Stated plainly, because inventing any of it would be worse than leaving it open:
 **Unblock statement — corrected.** An earlier revision of this document claimed
 the pin required owner input. That was wrong: the upstream is public and the pin
 was obtainable by ordinary read-only inspection, which §1.1 now records. No owner
-decision and no credentials are needed for the pin. The next provider-contract
-slice remains blocked until PR #834 is independently accepted and merged;
-manifest enrolment and adapter promotion retain the additional gates in §4 and
-§9.
+decision and no credentials are needed for the pin. PR #834 is independently
+accepted and merged, so the provider-contract slice is now eligible; manifest
+enrolment and adapter promotion retain the additional gates in §4 and §9.
 
 ## 9. Evidence E9 must produce before any adapter promotion
 
@@ -434,8 +433,8 @@ Per #804 and the accepted E9 contracts, before a shadow adapter may be promoted:
 ## 10. Exclusions honored by these slices
 
 E8.1a added only this discovery document. E8.1d/#824 added only the generic
-manifest policy, updater/workflow enforcement and focused tests. Draft PR #834 for issue #830
-changes only the skill-fetch boundary, its tests, this document and the compact
+manifest policy, updater/workflow enforcement and focused tests. PR #834 for issue #830
+changed only the skill-fetch boundary, its tests, this document and the compact
 pin. There is still no fork, vendored Hermes subsystem,
 dependency, adapter code, provider contract, installation, upstream execution,
 credential use, Hermes manifest entry or capability claim. Import remains an
@@ -447,10 +446,10 @@ the sole privileged-action authority.
 
 ## Next coherent package
 
-E8.1a was independently accepted in PR #819 and #824 supplied the generic
-manual-only updater guard. After independent exact-head acceptance and merge of
-PR #834, which implements issue #830, the next coherent slice is the
-provider-neutral E8.1b (`nerva.execution-provider.v1`). It must keep
+E8.1a was independently accepted in PR #819, #824 supplied the generic
+manual-only updater guard, and PR #834 supplied the accepted exact-fetch
+integrity boundary. The next coherent slice is issue #835, the provider-neutral
+E8.1b (`nerva.execution-provider.v1`). It must keep
 `grants_authority=false` immutable and cannot execute or promote Hermes.
 
 Dual GitHub/PyPI drift, explicit manifest enrolment, a Hermes adapter and
