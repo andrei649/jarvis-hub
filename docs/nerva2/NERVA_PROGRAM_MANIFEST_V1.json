@@ -67,7 +67,9 @@
       "references": [
         {"kind": "issue", "value": 759},
         {"kind": "repo_path", "value": "docs/nerva2/CORTEX_E1_0.md"},
-        {"kind": "repo_path", "value": "docs/nerva2/CORTEX_E1_1.md"}
+        {"kind": "repo_path", "value": "docs/nerva2/CORTEX_E1_1.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/CORTEX_E1_2.md"},
+        {"kind": "issue", "value": 841}
       ]
     },
     {

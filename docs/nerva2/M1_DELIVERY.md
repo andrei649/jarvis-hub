@@ -81,6 +81,13 @@ Repository placement determines delivery state. Under the pre-integration rule, 
 
 ## Remaining E1 evidence
 
+E1.2a / #841 is `contract_ready`: it validates an owner-local, retained
+primary-route-adequacy contract with one warm-up and five retained runs, but it
+does not supply representative evidence. Its state is `owner_evidence_blocked`
+until the E1.2b owner inputs are supplied, and
+`real_task_outcome_quality=not_measured`. It leaves E1 `building`, B2 live
+enforcement partial, and program/release completion false.
+
 - bounded fallback behavior for a future selector;
 - route-level measured cost, latency and outcome quality;
 - at least 20 representative real Nerva tasks that beat or match the current

@@ -2184,6 +2184,87 @@ def _check_measured_report_adversarial() -> None:
         assert provider_report.complete is False
 
 
+def _check_operator_contract_ledgers() -> None:
+    """Keep E1.2a operator claims aligned with the checked-in contract."""
+
+    repository = Path(__file__).resolve().parent.parent
+    operator_contract = repository / "docs/nerva2/CORTEX_E1_2.md"
+    assert operator_contract.is_file()
+    contract = operator_contract.read_text(encoding="utf-8")
+    for value in (
+        "nerva.cortex.route-label-set.v1",
+        "label_set_id",
+        "sampling_rule",
+        "source_window",
+        "owner_attested",
+        "retention_policy_id",
+        "case_id",
+        "acceptable_primary_routes",
+        "source_record_digest",
+        "BenchmarkStore",
+        "There is no committed E1.2a CLI.",
+        "store_root = Path",
+        "warm-up",
+        "five retained runs",
+        "Label file",
+        "E9 suite",
+        "Retained runs",
+        "vN.jsonl",
+        "runs.jsonl",
+        "JSON report",
+        "Markdown report",
+        "real_task_outcome_quality=not_measured",
+        "What is and is not measured",
+        "Failure and completeness",
+        "pseudonymous and linkable",
+        "separate raw E9 profile fingerprint",
+        "evaluation-only",
+        "migration-free rollback",
+        "owner_evidence_blocked",
+        "primary-route adequacy",
+    ):
+        assert value in contract
+
+    owner_tasks = (repository / "docs/OWNER_TASKS.md").read_text(encoding="utf-8")
+    for value in (
+        "E1.2b",
+        "at least 20 historical tasks",
+        "acceptable routes/categories",
+        "sampling/exclusion rule",
+        "retention/access/deletion policy",
+        "permission for the local run",
+        "owner_attested=true",
+        "does not prove consent",
+    ):
+        assert value in owner_tasks
+
+    for path in ("docs/nerva2/M1_DELIVERY.md", "BACKLOG.md"):
+        ledger = (repository / path).read_text(encoding="utf-8")
+        assert "contract_ready" in ledger
+        assert "owner_evidence_blocked" in ledger
+        assert "real_task_outcome_quality=not_measured" in ledger
+
+    manifest = json.loads(
+        (repository / "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    e1 = next(stream for stream in manifest["streams"] if stream["id"] == "E1")
+    assert e1["program_status"] == "building"
+    assert e1["delivery_eligibility"] == "in_progress"
+    assert {reference["value"] for reference in e1["references"]} >= {
+        841,
+        "docs/nerva2/CORTEX_E1_2.md",
+    }
+    assert manifest["authority"]["completion_authority"] is False
+    assert manifest["authority"]["release_ready"] is False
+
+    workflow = (repository / ".github/workflows/nerva-roadmap.yml").read_text(
+        encoding="utf-8"
+    )
+    assert workflow.count('"docs/nerva2/CORTEX_E1_2.md"') == 2
+
+
 def run_e1_2_checks() -> None:
     _check_strict_route_labels()
     _check_suite_binding()
@@ -2197,3 +2278,4 @@ def run_e1_2_checks() -> None:
     _check_report_parser_strictness()
     _check_retained_evidence_tamper_matrix()
     _check_measurement_provider_privacy_matrix()
+    _check_operator_contract_ledgers()
