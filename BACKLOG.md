@@ -58,6 +58,11 @@ completes its epic):
 - ✅ E6.0 integrity correction / #820 / PR #823 — every lesson lifecycle sink revalidates
   canonical observations before producing audit or advanced state; a correctly re-hashed forged
   proposal is rejected at `accepted_by_destination`. E6 remains `BUILDING`.
+- ✅ E6.1 / #817 / PR #832 — synthetic-public held-out lesson-proposal evaluation reuses the
+  accepted E9.0 store/harness with immutable fixture splits, equal candidate/baseline budgets,
+  explicit false/hallucinated-recall metrics and strict retained-evidence preflight. Reports remain
+  `evaluation_only`; no lesson promotion, memory write, routing, execution or completion authority
+  is added. E6 remains `BUILDING`, and owner-live benefit is still unproven.
 
 **Innovation Lab precursor documents** (merged, but **not** epic slices — neither satisfies a
 #805 checkbox and neither promotes, adopts or adds an integration/dependency pin):
