@@ -1,0 +1,74 @@
+{
+  "schema_version": "nerva.innovation-lab.v1",
+  "program_issue": 805,
+  "authority_ceiling": {
+    "can_commit_main": false,
+    "can_merge": false,
+    "can_deploy": false,
+    "can_change_roadmap": false,
+    "can_promote_capability": false,
+    "can_authorize_actions": false,
+    "can_claim_completion": false,
+    "grants_authority": false,
+    "privileged_action_authority": "nerva.action.v1"
+  },
+  "catalogues": [
+    {
+      "id": "CATALOGUE-EXTERNAL-INTEGRATIONS-V1",
+      "path": "docs/nerva2/INTEGRATION_CATALOGUE_RFC.md",
+      "source_pr": 821,
+      "accepted_merge_commit": "ccc36e851094976fe8f6c209a8c2f5bf07aaad05",
+      "git_blob_oid": "9e446b8d7c5fbad954760f665a24de11b9755c59",
+      "content_bytes": 16965,
+      "content_sha256": "5697cc44824b01efb20cd345e79846b1ecd086a4999e2e75d0984c4b3d1944d3",
+      "reference_state": "historical_accepted_blob",
+      "import_mode": "reference_only",
+      "claim_scope": "precursor_hypotheses_only",
+      "satisfies_issue_805": [],
+      "limitations": [
+        "The catalogue is not an RFC record and satisfies no #805 checkbox.",
+        "Rows remain hypotheses until separately evidenced through this schema."
+      ]
+    },
+    {
+      "id": "CATALOGUE-EXTERNAL-INTEGRATIONS-V2",
+      "path": "docs/nerva2/INTEGRATION_CATALOGUE_RFC.md",
+      "source_pr": 826,
+      "source_issue": 825,
+      "accepted_merge_commit": "72dca7eea42229cca9a55a5bda7276810c376d8e",
+      "git_blob_oid": "9aee52226fa6e0075023f419a8273332f799ca46",
+      "content_bytes": 19409,
+      "content_sha256": "8d39336e657424a39fb1e77b4b12460085bd6aa86449267ce0553a5757161dae",
+      "reference_state": "historical_accepted_blob",
+      "import_mode": "reference_only",
+      "claim_scope": "precursor_hypotheses_only",
+      "satisfies_issue_805": [],
+      "supersedes": "CATALOGUE-EXTERNAL-INTEGRATIONS-V1",
+      "limitations": [
+        "The evidence correction is not an RFC record and satisfies no #805 checkbox.",
+        "Corrected self-hosting facts remain discovery inputs without delivery authority."
+      ]
+    },
+    {
+      "id": "CATALOGUE-EXTERNAL-INTEGRATIONS-V3",
+      "path": "docs/nerva2/INTEGRATION_CATALOGUE_RFC.md",
+      "source_pr": 827,
+      "source_issue": 824,
+      "accepted_merge_commit": "002b30fcdf7077880ad4f42f3c2297e97d26afa9",
+      "git_blob_oid": "245b0f7e90f414659499bd56bc157ff72c87e340",
+      "content_bytes": 19681,
+      "content_sha256": "ad211700fd4fc81be3006f31b2d5011e1070b56e2281ee94e5f298fe783972c9",
+      "reference_state": "historical_accepted_blob",
+      "import_mode": "reference_only",
+      "claim_scope": "precursor_hypotheses_only",
+      "satisfies_issue_805": [],
+      "supersedes": "CATALOGUE-EXTERNAL-INTEGRATIONS-V2",
+      "limitations": [
+        "The drift-policy revision is not an RFC record and satisfies no #805 checkbox.",
+        "Provider and authority decisions remain gated outside this catalogue reference."
+      ]
+    }
+  ],
+  "records": [],
+  "links": []
+}

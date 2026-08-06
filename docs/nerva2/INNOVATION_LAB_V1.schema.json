@@ -1,0 +1,427 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "nerva.innovation-lab.v1",
+  "x-nerva-schema-profile": "nerva.stdlib-schema-profile.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "program_issue",
+    "authority_ceiling",
+    "catalogues",
+    "records",
+    "links"
+  ],
+  "properties": {
+    "schema_version": {"const": "nerva.innovation-lab.v1"},
+    "program_issue": {"const": 805},
+    "authority_ceiling": {"$ref": "#/$defs/authority"},
+    "catalogues": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/catalogue"}
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"$ref": "#/$defs/observation"},
+          {"$ref": "#/$defs/idea"},
+          {"$ref": "#/$defs/rfc"},
+          {"$ref": "#/$defs/evidence"},
+          {"$ref": "#/$defs/prototype"},
+          {"$ref": "#/$defs/decision"},
+          {"$ref": "#/$defs/epic"},
+          {"$ref": "#/$defs/outcome"}
+        ]
+      }
+    },
+    "links": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/link"}
+    }
+  },
+  "$defs": {
+    "non_empty_string": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "actor_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "hex40": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "string_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/non_empty_string"}
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "can_commit_main",
+        "can_merge",
+        "can_deploy",
+        "can_change_roadmap",
+        "can_promote_capability",
+        "can_authorize_actions",
+        "can_claim_completion",
+        "grants_authority",
+        "privileged_action_authority"
+      ],
+      "properties": {
+        "can_commit_main": {"const": false},
+        "can_merge": {"const": false},
+        "can_deploy": {"const": false},
+        "can_change_roadmap": {"const": false},
+        "can_promote_capability": {"const": false},
+        "can_authorize_actions": {"const": false},
+        "can_claim_completion": {"const": false},
+        "grants_authority": {"const": false},
+        "privileged_action_authority": {"const": "nerva.action.v1"}
+      }
+    },
+    "catalogue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "source_pr",
+        "accepted_merge_commit",
+        "git_blob_oid",
+        "content_bytes",
+        "content_sha256",
+        "reference_state",
+        "import_mode",
+        "claim_scope",
+        "satisfies_issue_805",
+        "limitations"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^CATALOGUE-[A-Z0-9-]+$"},
+        "path": {"type": "string", "pattern": "^docs/nerva2/[A-Za-z0-9._/-]+$"},
+        "source_pr": {"type": "integer", "minimum": 1},
+        "source_issue": {"type": "integer", "minimum": 1},
+        "accepted_merge_commit": {"$ref": "#/$defs/hex40"},
+        "git_blob_oid": {"$ref": "#/$defs/hex40"},
+        "content_bytes": {"type": "integer", "minimum": 1},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "reference_state": {"const": "historical_accepted_blob"},
+        "import_mode": {"const": "reference_only"},
+        "claim_scope": {"const": "precursor_hypotheses_only"},
+        "satisfies_issue_805": {"type": "array", "maxItems": 0},
+        "supersedes": {
+          "type": ["string", "null"],
+          "pattern": "^CATALOGUE-[A-Z0-9-]+$"
+        },
+        "limitations": {"$ref": "#/$defs/string_list"}
+      }
+    },
+    "stage_transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from_stage", "to_stage", "at"],
+      "properties": {
+        "from_stage": {
+          "type": ["string", "null"],
+          "enum": [null, "DRAFT", "EVIDENCE_GATHERING", "READY_FOR_REVIEW", "DECIDED"]
+        },
+        "to_stage": {
+          "type": "string",
+          "enum": ["DRAFT", "EVIDENCE_GATHERING", "READY_FOR_REVIEW", "DECIDED", "OUTCOME_REVIEWED"]
+        },
+        "at": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "outcome_transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from_status", "to_status", "at", "reason"],
+      "properties": {
+        "from_status": {
+          "type": ["string", "null"],
+          "enum": [null, "pending"]
+        },
+        "to_status": {
+          "type": "string",
+          "enum": ["pending", "linked", "not_applicable"]
+        },
+        "at": {"$ref": "#/$defs/timestamp"},
+        "reason": {"$ref": "#/$defs/non_empty_string"}
+      }
+    },
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "details"],
+      "properties": {
+        "status": {"type": "string", "enum": ["assessed", "not_applicable", "unknown"]},
+        "details": {"$ref": "#/$defs/non_empty_string"}
+      }
+    },
+    "privacy_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "details", "private_data_policy", "policy_ref"],
+      "properties": {
+        "status": {"type": "string", "enum": ["assessed", "not_applicable", "unknown"]},
+        "details": {"$ref": "#/$defs/non_empty_string"},
+        "private_data_policy": {"type": "string", "enum": ["excluded", "local_only_fixture"]},
+        "policy_ref": {
+          "oneOf": [
+            {"$ref": "#/$defs/non_empty_string"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "summary", "source_ref", "privacy_class", "retention_class", "integrity_sha256", "observed_at"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^OBS-[A-Z0-9-]+$"},
+        "kind": {"const": "OBSERVATION"},
+        "summary": {"$ref": "#/$defs/non_empty_string"},
+        "source_ref": {"$ref": "#/$defs/non_empty_string"},
+        "privacy_class": {"$ref": "#/$defs/non_empty_string"},
+        "retention_class": {"$ref": "#/$defs/non_empty_string"},
+        "integrity_sha256": {"$ref": "#/$defs/sha256"},
+        "observed_at": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "idea": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "title", "problem", "owner_outcome"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^IDEA-[A-Z0-9-]+$"},
+        "kind": {"const": "IDEA"},
+        "title": {"$ref": "#/$defs/non_empty_string"},
+        "problem": {"$ref": "#/$defs/non_empty_string"},
+        "owner_outcome": {"$ref": "#/$defs/non_empty_string"}
+      }
+    },
+    "rfc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "kind", "stable_id", "revision", "lane", "author_id", "authoring_role",
+        "stage", "stage_history", "title", "problem", "owner_outcome", "hypothesis",
+        "alternatives", "reuse_build_reject", "dependencies", "affected_contracts",
+        "assessments", "external_code_involved", "advisory_dimensions", "benchmark",
+        "prototype_disposition", "outcome_history", "migration", "rollback", "authority",
+        "reopens_decision_id"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^RFC-[A-Z0-9-]+-R[1-9][0-9]*$"},
+        "kind": {"const": "RFC"},
+        "stable_id": {"type": "string", "pattern": "^RFC-[A-Z0-9-]+$"},
+        "revision": {"type": "integer", "minimum": 1},
+        "lane": {"type": "string", "enum": ["ALPHA", "BETA", "GAMMA", "DELTA"]},
+        "author_id": {"$ref": "#/$defs/actor_id"},
+        "authoring_role": {"$ref": "#/$defs/non_empty_string"},
+        "stage": {"type": "string", "enum": ["DRAFT", "EVIDENCE_GATHERING", "READY_FOR_REVIEW", "DECIDED", "OUTCOME_REVIEWED"]},
+        "stage_history": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/stage_transition"}
+        },
+        "title": {"$ref": "#/$defs/non_empty_string"},
+        "problem": {"$ref": "#/$defs/non_empty_string"},
+        "owner_outcome": {"$ref": "#/$defs/non_empty_string"},
+        "hypothesis": {"$ref": "#/$defs/non_empty_string"},
+        "alternatives": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/non_empty_string"}},
+        "reuse_build_reject": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reuse", "build", "reject"],
+          "properties": {
+            "reuse": {"$ref": "#/$defs/non_empty_string"},
+            "build": {"$ref": "#/$defs/non_empty_string"},
+            "reject": {"$ref": "#/$defs/non_empty_string"}
+          }
+        },
+        "dependencies": {"$ref": "#/$defs/string_list"},
+        "affected_contracts": {"$ref": "#/$defs/string_list"},
+        "assessments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["authority", "security", "privacy", "data_retention", "license", "supply_chain", "compatibility"],
+          "properties": {
+            "authority": {"$ref": "#/$defs/assessment"},
+            "security": {"$ref": "#/$defs/assessment"},
+            "privacy": {"$ref": "#/$defs/privacy_assessment"},
+            "data_retention": {"$ref": "#/$defs/assessment"},
+            "license": {"$ref": "#/$defs/assessment"},
+            "supply_chain": {"$ref": "#/$defs/assessment"},
+            "compatibility": {"$ref": "#/$defs/assessment"}
+          }
+        },
+        "external_code_involved": {"type": "boolean"},
+        "advisory_dimensions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["impact", "novelty", "difficulty", "risk", "compatibility", "expected_time_saved_hours", "probability_of_benefit", "innovation_score", "advisory_only"],
+          "properties": {
+            "impact": {"type": "integer", "minimum": 1, "maximum": 5},
+            "novelty": {"type": "integer", "minimum": 1, "maximum": 5},
+            "difficulty": {"type": "integer", "minimum": 1, "maximum": 5},
+            "risk": {"type": "integer", "minimum": 1, "maximum": 5},
+            "compatibility": {"type": "integer", "minimum": 1, "maximum": 5},
+            "expected_time_saved_hours": {"type": "number", "minimum": 0},
+            "probability_of_benefit": {"type": "number", "minimum": 0, "maximum": 1},
+            "innovation_score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+            "advisory_only": {"const": true}
+          }
+        },
+        "benchmark": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseline_ref", "falsification_plan"],
+          "properties": {
+            "baseline_ref": {"type": ["string", "null"]},
+            "falsification_plan": {"$ref": "#/$defs/non_empty_string"}
+          }
+        },
+        "prototype_disposition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason"],
+          "properties": {
+            "status": {"type": "string", "enum": ["required", "not_required"]},
+            "reason": {"$ref": "#/$defs/non_empty_string"}
+          }
+        },
+        "outcome_history": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/outcome_transition"}
+        },
+        "migration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required", "plan"],
+          "properties": {
+            "required": {"type": "boolean"},
+            "plan": {"$ref": "#/$defs/non_empty_string"}
+          }
+        },
+        "rollback": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["plan"],
+          "properties": {"plan": {"$ref": "#/$defs/non_empty_string"}}
+        },
+        "authority": {"$ref": "#/$defs/authority"},
+        "reopens_decision_id": {"type": ["string", "null"]}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "evidence_class", "claim", "source_ref", "limitations", "integrity_sha256", "observed_at"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^EVID-[A-Z0-9-]+$"},
+        "kind": {"const": "EVIDENCE"},
+        "evidence_class": {"type": "string", "enum": ["primary_read", "in_repository", "benchmark", "owner_live", "negative_result", "secondary", "simulation"]},
+        "claim": {"$ref": "#/$defs/non_empty_string"},
+        "source_ref": {"$ref": "#/$defs/non_empty_string"},
+        "limitations": {"$ref": "#/$defs/non_empty_string"},
+        "integrity_sha256": {"$ref": "#/$defs/sha256"},
+        "observed_at": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "prototype": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "branch", "disposable", "production_data", "private_data_policy", "policy_ref", "teardown_plan", "tested_at"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^PROTO-[A-Z0-9-]+$"},
+        "kind": {"const": "PROTOTYPE"},
+        "branch": {"type": "string", "pattern": "^nerva-lab/[a-z0-9-]+$"},
+        "disposable": {"const": true},
+        "production_data": {"const": false},
+        "private_data_policy": {"type": "string", "enum": ["excluded", "local_only_fixture"]},
+        "policy_ref": {
+          "oneOf": [
+            {"$ref": "#/$defs/non_empty_string"},
+            {"type": "null"}
+          ]
+        },
+        "teardown_plan": {"$ref": "#/$defs/non_empty_string"},
+        "tested_at": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "status", "reviewer_id", "reviewer_role", "basis", "rationale", "reconsideration_trigger", "evidence_refs", "unresolved_requirements", "decided_at"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^DEC-[A-Z0-9-]+$"},
+        "kind": {"const": "DECISION"},
+        "status": {"type": "string", "enum": ["ACCEPTED_FOR_EPIC", "PARKED", "REJECTED"]},
+        "reviewer_id": {"$ref": "#/$defs/actor_id"},
+        "reviewer_role": {"$ref": "#/$defs/non_empty_string"},
+        "basis": {"const": "evidence_and_review"},
+        "rationale": {"$ref": "#/$defs/non_empty_string"},
+        "reconsideration_trigger": {"$ref": "#/$defs/non_empty_string"},
+        "evidence_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^EVID-[A-Z0-9-]+$"}},
+        "unresolved_requirements": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/non_empty_string"}},
+        "decided_at": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "epic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "repository", "issue", "title", "dependencies", "acceptance_criteria"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^EPIC-[A-Z0-9-]+$"},
+        "kind": {"const": "EPIC"},
+        "repository": {"const": "andrei649/jarvis-hub"},
+        "issue": {"type": "integer", "minimum": 1},
+        "title": {"$ref": "#/$defs/non_empty_string"},
+        "dependencies": {"$ref": "#/$defs/string_list"},
+        "acceptance_criteria": {"$ref": "#/$defs/string_list"}
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "summary", "claim_scope", "evidence_refs", "measured_at"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^OUT-[A-Z0-9-]+$"},
+        "kind": {"const": "OUTCOME"},
+        "summary": {"$ref": "#/$defs/non_empty_string"},
+        "claim_scope": {"type": "string", "enum": ["hermetic", "prototype", "owner_live", "negative_result"]},
+        "evidence_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^EVID-[A-Z0-9-]+$"}},
+        "measured_at": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "relation", "to"],
+      "properties": {
+        "from": {"$ref": "#/$defs/non_empty_string"},
+        "relation": {"type": "string", "enum": ["MOTIVATES", "DEVELOPED_AS", "SUPPORTED_BY", "CHALLENGED_BY", "TESTED_BY", "DECIDED_BY", "ACCEPTED_AS", "PRODUCED", "SUPERSEDES", "REOPENS"]},
+        "to": {"$ref": "#/$defs/non_empty_string"}
+      }
+    }
+  }
+}
