@@ -59,6 +59,22 @@ EXAMPLE_EVIDENCE_PATHS = {
     ),
 }
 EXAMPLE_EVIDENCE_IDS = frozenset(EXAMPLE_EVIDENCE_PATHS)
+EXAMPLE_OBSERVATION_IDS = frozenset(
+    {
+        "OBS-THIRDPARTY-DRIFT-LIFECYCLE-V1",
+        "OBS-EXTERNAL-CONTROL-PLANE-V1",
+    }
+)
+EXAMPLE_SUITE_RUN_PAIRS = (
+    (
+        EXAMPLE_EVIDENCE_PATHS["EVID-THIRDPARTY-DRIFT-BASELINE-V1"],
+        EXAMPLE_EVIDENCE_PATHS["EVID-THIRDPARTY-DRIFT-BENCHMARK-V1"],
+    ),
+    (
+        EXAMPLE_EVIDENCE_PATHS["EVID-EXTERNAL-CONTROL-PLANE-CATALOGUE-V1"],
+        EXAMPLE_EVIDENCE_PATHS["EVID-EXTERNAL-CONTROL-PLANE-BENCHMARK-V1"],
+    ),
+)
 
 AUTHORITY = {
     "can_commit_main": False,
@@ -1634,6 +1650,80 @@ def _read_git_path(repo: Path, commit: str, path: str) -> bytes | None:
     return result if isinstance(result, bytes) else None
 
 
+def _decode_example_jsonl(raw: bytes, path: str) -> tuple[list[dict[str, Any]], list[str]]:
+    records: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for line_number, line in enumerate(raw.splitlines(), start=1):
+        if not line.strip():
+            continue
+        value, line_errors = decode_json_bytes(line, f"{path}:{line_number}")
+        errors.extend(line_errors)
+        if value is None:
+            continue
+        if not isinstance(value, dict):
+            errors.append(f"{path}:{line_number}: JSONL entry must be an object")
+            continue
+        records.append(value)
+    if not records:
+        errors.append(f"{path}: governed example JSONL must contain at least one object")
+    return records, errors
+
+
+def _validate_example_case_result_bindings(
+    raw_by_path: dict[str, bytes | None],
+) -> list[str]:
+    errors: list[str] = []
+    for suite_path, runs_path in EXAMPLE_SUITE_RUN_PAIRS:
+        suite_raw = raw_by_path.get(suite_path)
+        runs_raw = raw_by_path.get(runs_path)
+        if suite_raw is None or runs_raw is None:
+            continue
+        cases, case_errors = _decode_example_jsonl(suite_raw, suite_path)
+        runs, run_errors = _decode_example_jsonl(runs_raw, runs_path)
+        errors.extend(case_errors)
+        errors.extend(run_errors)
+        cases_by_id: dict[str, dict[str, Any]] = {}
+        for case in cases:
+            case_id = case.get("case_id")
+            if not isinstance(case_id, str) or not case_id:
+                errors.append(f"{suite_path}: every case requires a non-empty case_id")
+                continue
+            if case_id in cases_by_id:
+                errors.append(f"{suite_path}: duplicate case_id {case_id!r}")
+                continue
+            cases_by_id[case_id] = case
+            if case.get("privacy_class") != "synthetic_public":
+                errors.append(
+                    f"{suite_path}:{case_id}: case privacy_class must remain synthetic_public"
+                )
+            if not isinstance(case.get("task_type"), str) or not case["task_type"]:
+                errors.append(f"{suite_path}:{case_id}: case requires a non-empty task_type")
+        for run_index, run in enumerate(runs, start=1):
+            results = run.get("results")
+            if not isinstance(results, list):
+                errors.append(f"{runs_path}:{run_index}: run results must be an array")
+                continue
+            for result_index, result in enumerate(results, start=1):
+                label = f"{runs_path}:{run_index}:result:{result_index}"
+                if not isinstance(result, dict):
+                    errors.append(f"{label}: result must be an object")
+                    continue
+                case_id = result.get("case_id")
+                case = cases_by_id.get(case_id) if isinstance(case_id, str) else None
+                if case is None:
+                    errors.append(f"{label}: result must reference a governed case_id")
+                    continue
+                if result.get("privacy_class") != "synthetic_public" or result.get(
+                    "privacy_class"
+                ) != case.get("privacy_class"):
+                    errors.append(
+                        f"{label}: result privacy_class must match its synthetic_public case"
+                    )
+                if result.get("task_type") != case.get("task_type"):
+                    errors.append(f"{label}: result task_type must match its case")
+    return errors
+
+
 def validate_example_evidence_artifacts(
     data: dict[str, Any], *, repo: Path, candidate_ref: str
 ) -> list[str]:
@@ -1653,6 +1743,12 @@ def validate_example_evidence_artifacts(
     missing = EXAMPLE_EVIDENCE_IDS - set(by_id)
     if missing:
         errors.append(f"Innovation Lab example evidence set is incomplete: {sorted(missing)}")
+    for observation_id in sorted(EXAMPLE_OBSERVATION_IDS & set(by_id)):
+        if by_id[observation_id].get("privacy_class") != "synthetic_public":
+            errors.append(
+                f"{observation_id}: governed observation privacy_class must remain synthetic_public"
+            )
+    raw_by_path: dict[str, bytes | None] = {}
     for record_id, record in by_id.items():
         source_ref = record.get("source_ref")
         match = GIT_BLOB_SOURCE_RE.fullmatch(source_ref) if isinstance(source_ref, str) else None
@@ -1669,7 +1765,9 @@ def validate_example_evidence_artifacts(
         if pure_path.is_absolute() or ".." in pure_path.parts:
             errors.append(f"{record_id}: example source path must remain repository-relative")
             continue
-        raw = _read_git_path(repo, candidate_ref, path)
+        if path not in raw_by_path:
+            raw_by_path[path] = _read_git_path(repo, candidate_ref, path)
+        raw = raw_by_path[path]
         if raw is None:
             errors.append(f"{record_id}: example evidence artifact is missing at {path}")
             continue
@@ -1679,6 +1777,7 @@ def validate_example_evidence_artifacts(
         digest = hashlib.sha256(raw).hexdigest()
         if record.get("integrity_sha256") != digest:
             errors.append(f"{record_id}: example evidence SHA-256 mismatch")
+    errors.extend(_validate_example_case_result_bindings(raw_by_path))
     return errors
 
 

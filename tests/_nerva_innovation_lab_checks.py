@@ -719,10 +719,19 @@ def _example_artifact_binding_matrix(validate_example_evidence_artifacts) -> Non
         _run_git(repo, "init", "-q")
         _run_git(repo, "config", "user.name", "Nerva Test")
         _run_git(repo, "config", "user.email", "nerva@example.invalid")
+        alpha_suite = paths["EVID-THIRDPARTY-DRIFT-BASELINE-V1"]
+        alpha_runs = paths["EVID-THIRDPARTY-DRIFT-BENCHMARK-V1"]
+        beta_suite = paths["EVID-EXTERNAL-CONTROL-PLANE-CATALOGUE-V1"]
+        beta_runs = paths["EVID-EXTERNAL-CONTROL-PLANE-BENCHMARK-V1"]
         artifacts = {
-            artifact_path: json.dumps({"path": artifact_path}, separators=(",", ":")).encode()
-            + b"\n"
-            for artifact_path in set(paths.values())
+            alpha_suite: b'{"case_id":"alpha-1","privacy_class":"synthetic_public",'
+            b'"task_type":"alpha-task"}\n',
+            alpha_runs: b'{"results":[{"case_id":"alpha-1",'
+            b'"privacy_class":"synthetic_public","task_type":"alpha-task"}]}\n',
+            beta_suite: b'{"case_id":"beta-1","privacy_class":"synthetic_public",'
+            b'"task_type":"beta-task"}\n',
+            beta_runs: b'{"results":[{"case_id":"beta-1",'
+            b'"privacy_class":"synthetic_public","task_type":"beta-task"}]}\n',
         }
         for artifact_path in artifacts:
             target = repo / artifact_path
@@ -742,6 +751,11 @@ def _example_artifact_binding_matrix(validate_example_evidence_artifacts) -> Non
                         f"{artifact_path}"
                     ),
                     "integrity_sha256": hashlib.sha256(artifacts[artifact_path]).hexdigest(),
+                    **(
+                        {"privacy_class": "synthetic_public"}
+                        if record_id.startswith("OBS-")
+                        else {}
+                    ),
                 }
                 for record_id, artifact_path in paths.items()
             ]
@@ -789,6 +803,62 @@ def _example_artifact_binding_matrix(validate_example_evidence_artifacts) -> Non
         _assert_error(
             validate_example_evidence_artifacts(wrong_blob, repo=repo, candidate_ref=commit),
             "Git blob does not match",
+        )
+
+        private_observation = copy.deepcopy(bundle)
+        private_observation["records"][0]["privacy_class"] = "owner_private_local"
+        _assert_error(
+            validate_example_evidence_artifacts(
+                private_observation, repo=repo, candidate_ref=commit
+            ),
+            "governed observation privacy_class must remain synthetic_public",
+        )
+
+        def commit_variant(path: str, raw: bytes) -> tuple[dict, str]:
+            target = repo / path
+            target.write_bytes(raw)
+            _run_git(repo, "add", path)
+            _run_git(repo, "commit", "-q", "-m", "artifact variant")
+            variant_commit = _run_git(repo, "rev-parse", "HEAD")
+            variant = copy.deepcopy(bundle)
+            variant_blob = _run_git(repo, "rev-parse", f"{variant_commit}:{path}")
+            for record in variant["records"]:
+                if paths[record["id"]] == path:
+                    record["source_ref"] = f"gitblob://{variant_blob}/{path}"
+                    record["integrity_sha256"] = hashlib.sha256(raw).hexdigest()
+            return variant, variant_commit
+
+        sanitized_run = (
+            b'{"results":[{"case_id":"alpha-1",'
+            b'"privacy_class":"sanitized_public","task_type":"alpha-task"}]}\n'
+        )
+        sanitized_bundle, sanitized_commit = commit_variant(alpha_runs, sanitized_run)
+        _assert_error(
+            validate_example_evidence_artifacts(
+                sanitized_bundle, repo=repo, candidate_ref=sanitized_commit
+            ),
+            "result privacy_class must match its synthetic_public case",
+        )
+
+        commit_variant(alpha_runs, artifacts[alpha_runs])
+        mismatched_task_run = (
+            b'{"results":[{"case_id":"beta-1",'
+            b'"privacy_class":"synthetic_public","task_type":"other-task"}]}\n'
+        )
+        mismatched_bundle, mismatched_commit = commit_variant(beta_runs, mismatched_task_run)
+        _assert_error(
+            validate_example_evidence_artifacts(
+                mismatched_bundle, repo=repo, candidate_ref=mismatched_commit
+            ),
+            "result task_type must match its case",
+        )
+
+        restored_bundle, restored_commit = commit_variant(beta_runs, artifacts[beta_runs])
+        assert (
+            validate_example_evidence_artifacts(
+                restored_bundle, repo=repo, candidate_ref=restored_commit
+            )
+            == []
         )
 
         missing_path = paths["EVID-THIRDPARTY-DRIFT-BENCHMARK-V1"]
@@ -842,6 +912,12 @@ def _canonical_example_matrix(validate_bundle, schema: dict) -> None:
         assert {result.case_id: result.case_fingerprint for result in run.results} == {
             case.case_id: case.content_fingerprint for case in cases
         }
+        cases_by_id = {case.case_id: case for case in cases}
+        assert all(
+            result.privacy_class == cases_by_id[result.case_id].privacy_class == "synthetic_public"
+            and result.task_type == cases_by_id[result.case_id].task_type
+            for result in run.results
+        )
         parsed[name] = (cases, runs)
 
     alpha_run = parsed["alpha"][1][0]
@@ -885,6 +961,13 @@ def _canonical_example_matrix(validate_bundle, schema: dict) -> None:
         == []
     )
     by_id = {record["id"]: record for record in garden["records"]}
+    assert all(
+        by_id[record_id]["privacy_class"] == "synthetic_public"
+        for record_id in (
+            "OBS-THIRDPARTY-DRIFT-LIFECYCLE-V1",
+            "OBS-EXTERNAL-CONTROL-PLANE-V1",
+        )
+    )
     expected_evidence_paths = {
         "OBS-THIRDPARTY-DRIFT-LIFECYCLE-V1": ALPHA_EXAMPLE / "v1.jsonl",
         "EVID-THIRDPARTY-DRIFT-BASELINE-V1": ALPHA_EXAMPLE / "v1.jsonl",
