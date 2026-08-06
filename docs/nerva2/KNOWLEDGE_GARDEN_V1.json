@@ -69,6 +69,454 @@
       ]
     }
   ],
-  "records": [],
-  "links": []
+  "records": [
+    {
+      "id": "OBS-THIRDPARTY-DRIFT-LIFECYCLE-V1",
+      "kind": "OBSERVATION",
+      "summary": "The managed third-party drift alert remained open after the pinned dependency matched upstream and required manual reconciliation.",
+      "source_ref": "gitblob://cd144e7a16c8b16d5918fb6a77ccd778e06d4e3c/docs/nerva2/innovation_lab_examples/e9/suites/alpha-drift-alert-lifecycle/v1.jsonl",
+      "privacy_class": "synthetic_public",
+      "retention_class": "repository_history",
+      "integrity_sha256": "e55134df9495d8a5e4ef1452a376545d0bb6ce9c0242d7502f9279c4ef15faf2",
+      "observed_at": "2026-08-06T03:42:48Z"
+    },
+    {
+      "id": "IDEA-THIRDPARTY-DRIFT-RECONCILE-V1",
+      "kind": "IDEA",
+      "title": "Reconcile resolved managed drift alerts",
+      "problem": "The accepted drift workflow can open or refresh an alert but does not close a managed alert when exact drift disappears.",
+      "owner_outcome": "Keep the issue ledger current without closing manual issues or changing updater policy."
+    },
+    {
+      "id": "EVID-THIRDPARTY-DRIFT-BASELINE-V1",
+      "kind": "EVIDENCE",
+      "evidence_class": "in_repository",
+      "claim": "The versioned synthetic suite retains the current open-or-refresh behavior and the missing managed no-drift close case.",
+      "source_ref": "gitblob://cd144e7a16c8b16d5918fb6a77ccd778e06d4e3c/docs/nerva2/innovation_lab_examples/e9/suites/alpha-drift-alert-lifecycle/v1.jsonl",
+      "limitations": "The suite is a public control model and does not execute GitHub writes or prove live issue permissions.",
+      "integrity_sha256": "e55134df9495d8a5e4ef1452a376545d0bb6ce9c0242d7502f9279c4ef15faf2",
+      "observed_at": "2026-08-06T04:00:00Z"
+    },
+    {
+      "id": "EVID-THIRDPARTY-DRIFT-BENCHMARK-V1",
+      "kind": "EVIDENCE",
+      "evidence_class": "benchmark",
+      "claim": "The synthetic candidate satisfies all three lifecycle cases while the current baseline leaves the resolved managed alert open.",
+      "source_ref": "gitblob://4baf7cb5f1198fe4782e835a0b9ba8472d686ebe/docs/nerva2/innovation_lab_examples/e9/suites/alpha-drift-alert-lifecycle/runs.jsonl",
+      "limitations": "The evaluation-only run establishes contract behavior only; it is not implementation, owner-live value, or permission evidence.",
+      "integrity_sha256": "2f7f710a220da90718b09b636ef34ec031f03259656eeb05d78898ab506380f8",
+      "observed_at": "2026-08-06T04:00:01Z"
+    },
+    {
+      "id": "RFC-THIRDPARTY-DRIFT-RECONCILE-R1",
+      "kind": "RFC",
+      "stable_id": "RFC-THIRDPARTY-DRIFT-RECONCILE",
+      "revision": 1,
+      "lane": "ALPHA",
+      "author_id": "innovation-builder",
+      "authoring_role": "Innovation Lab Evidence Builder",
+      "stage": "DECIDED",
+      "stage_history": [
+        {
+          "from_stage": null,
+          "to_stage": "DRAFT",
+          "at": "2026-08-06T03:50:00Z"
+        },
+        {
+          "from_stage": "DRAFT",
+          "to_stage": "EVIDENCE_GATHERING",
+          "at": "2026-08-06T04:01:00Z"
+        },
+        {
+          "from_stage": "EVIDENCE_GATHERING",
+          "to_stage": "READY_FOR_REVIEW",
+          "at": "2026-08-06T04:05:00Z"
+        },
+        {
+          "from_stage": "READY_FOR_REVIEW",
+          "to_stage": "DECIDED",
+          "at": "2026-08-06T04:10:00Z"
+        }
+      ],
+      "title": "Managed third-party drift alert reconciliation",
+      "problem": "Resolved auto-managed drift alerts can remain stale after the manifest again matches upstream.",
+      "owner_outcome": "Remove stale managed alerts without hiding real drift or touching manual issues.",
+      "hypothesis": "A marker-bound, exact-no-drift reconciliation step can close only resolved managed alerts while preserving all manual and active alerts.",
+      "alternatives": [
+        "Keep manual closure as the accepted baseline",
+        "Add marker-bound reconciliation in a separately reviewed epic",
+        "Close every matching-title issue without provenance checks"
+      ],
+      "reuse_build_reject": {
+        "reuse": "Reuse the accepted third-party manifest and drift result as the only state input.",
+        "build": "Build only the separately scoped issue #836 after its own review and tests.",
+        "reject": "Reject title-only closure, direct implementation from this RFC, and any updater-policy change."
+      },
+      "dependencies": [
+        "H22.11 accepted drift control",
+        "Issue #836 separate delivery review"
+      ],
+      "affected_contracts": [
+        ".github/workflows/thirdparty-drift.yml",
+        ".github/third-party-manifest.json"
+      ],
+      "assessments": {
+        "authority": {
+          "status": "assessed",
+          "details": "The RFC may open a separate epic but cannot close issues, merge, deploy, or authorize implementation."
+        },
+        "security": {
+          "status": "assessed",
+          "details": "Any later implementation must require exact automation provenance and a current no-drift result."
+        },
+        "privacy": {
+          "status": "assessed",
+          "details": "Only synthetic-public state cases and public repository metadata are retained.",
+          "private_data_policy": "excluded",
+          "policy_ref": null
+        },
+        "data_retention": {
+          "status": "assessed",
+          "details": "Evidence remains in repository history; no owner or provider data is collected."
+        },
+        "license": {
+          "status": "not_applicable",
+          "details": "No external code or dependency is copied."
+        },
+        "supply_chain": {
+          "status": "not_applicable",
+          "details": "The evidence package adds no executable dependency or update path."
+        },
+        "compatibility": {
+          "status": "assessed",
+          "details": "The proposal preserves the accepted manifest and updater policy and is separately reversible."
+        }
+      },
+      "external_code_involved": false,
+      "advisory_dimensions": {
+        "impact": 2,
+        "novelty": 1,
+        "difficulty": 2,
+        "risk": 2,
+        "compatibility": 5,
+        "expected_time_saved_hours": 0.25,
+        "probability_of_benefit": 0.8,
+        "innovation_score": 52.0,
+        "advisory_only": true
+      },
+      "benchmark": {
+        "baseline_ref": "EVID-THIRDPARTY-DRIFT-BENCHMARK-V1",
+        "falsification_plan": "Reject the proposal if it closes an unmarked issue, closes while drift remains, or cannot improve the retained managed no-drift case."
+      },
+      "prototype_disposition": {
+        "status": "not_required",
+        "reason": "A synthetic decision-table comparison is sufficient to scope an epic; live GitHub writes are deliberately excluded."
+      },
+      "outcome_history": [
+        {
+          "from_status": null,
+          "to_status": "pending",
+          "at": "2026-08-06T04:10:00Z",
+          "reason": "The separately scoped epic remains unscheduled and has produced no implementation outcome."
+        }
+      ],
+      "migration": {
+        "required": false,
+        "plan": "This RFC changes no workflow or issue state; any later epic must define its own migration boundary."
+      },
+      "rollback": {
+        "plan": "Preserve this accepted record; if later evidence falsifies it, close issue #836 and append an evidence-bound negative outcome rather than rewriting history."
+      },
+      "authority": {
+        "can_commit_main": false,
+        "can_merge": false,
+        "can_deploy": false,
+        "can_change_roadmap": false,
+        "can_promote_capability": false,
+        "can_authorize_actions": false,
+        "can_claim_completion": false,
+        "grants_authority": false,
+        "privileged_action_authority": "nerva.action.v1"
+      },
+      "reopens_decision_id": null
+    },
+    {
+      "id": "DEC-THIRDPARTY-DRIFT-RECONCILE-V1",
+      "kind": "DECISION",
+      "status": "ACCEPTED_FOR_EPIC",
+      "reviewer_id": "independent-integrator",
+      "reviewer_role": "Independent Integrator",
+      "basis": "evidence_and_review",
+      "rationale": "Public repository evidence and the synthetic E9 comparison justify only a separately reviewed, unscheduled epic.",
+      "reconsideration_trigger": "New evidence that provenance cannot safely distinguish managed alerts, or that no-drift closure hides an active failure.",
+      "evidence_refs": [
+        "EVID-THIRDPARTY-DRIFT-BASELINE-V1",
+        "EVID-THIRDPARTY-DRIFT-BENCHMARK-V1"
+      ],
+      "unresolved_requirements": [],
+      "decided_at": "2026-08-06T04:10:00Z"
+    },
+    {
+      "id": "EPIC-THIRDPARTY-DRIFT-RECONCILE-V1",
+      "kind": "EPIC",
+      "repository": "andrei649/jarvis-hub",
+      "issue": 836,
+      "title": "Innovation Lab Alpha follow-up — reconcile resolved third-party drift alerts",
+      "dependencies": [
+        "H22.11 accepted drift control",
+        "Independent implementation review",
+        "Explicit scheduling outside #805"
+      ],
+      "acceptance_criteria": [
+        "Close only an exact auto-managed alert after an exact current no-drift result.",
+        "Never close a manual, unmarked, ambiguous, or actively drifting issue.",
+        "Retain idempotent tests, audit evidence, and a separately reversible rollback."
+      ]
+    },
+    {
+      "id": "OBS-EXTERNAL-CONTROL-PLANE-V1",
+      "kind": "OBSERVATION",
+      "summary": "The accepted precursor catalogue retained replacing Nerva's brain with an external agent framework as a radical rejected hypothesis.",
+      "source_ref": "gitblob://32c9f09acb5a7b72ca22a19d2afd1a9cf61ecd84/docs/nerva2/innovation_lab_examples/e9/suites/beta-external-control-plane/v1.jsonl",
+      "privacy_class": "synthetic_public",
+      "retention_class": "repository_history",
+      "integrity_sha256": "bae8aa70331dfa90992e113d860be039ccb445260e1349556f16d96646854a80",
+      "observed_at": "2026-08-06T03:43:00Z"
+    },
+    {
+      "id": "IDEA-EXTERNAL-CONTROL-PLANE-V1",
+      "kind": "IDEA",
+      "title": "Replace the Nerva control plane with an external framework",
+      "problem": "A clean-sheet external framework could appear simpler than preserving Nerva's existing local-first control contracts.",
+      "owner_outcome": "Test the radical alternative without weakening authority, privacy, migration, or rollback evidence."
+    },
+    {
+      "id": "EVID-EXTERNAL-CONTROL-PLANE-CATALOGUE-V1",
+      "kind": "EVIDENCE",
+      "evidence_class": "in_repository",
+      "claim": "The synthetic suite pins the accepted control-plane invariants that a radical replacement would have to preserve.",
+      "source_ref": "gitblob://32c9f09acb5a7b72ca22a19d2afd1a9cf61ecd84/docs/nerva2/innovation_lab_examples/e9/suites/beta-external-control-plane/v1.jsonl",
+      "limitations": "The suite represents repository contracts; it does not evaluate every external framework or future version.",
+      "integrity_sha256": "bae8aa70331dfa90992e113d860be039ccb445260e1349556f16d96646854a80",
+      "observed_at": "2026-08-06T04:10:00Z"
+    },
+    {
+      "id": "EVID-EXTERNAL-CONTROL-PLANE-BENCHMARK-V1",
+      "kind": "EVIDENCE",
+      "evidence_class": "benchmark",
+      "claim": "The radical replacement model violates all four retained authority, locality, delivery, and rollback cases while the simple baseline preserves them.",
+      "source_ref": "gitblob://2ccbba2363e4cd4c198fb57d3c80fb9a43dcf8e4/docs/nerva2/innovation_lab_examples/e9/suites/beta-external-control-plane/runs.jsonl",
+      "limitations": "The result rejects this broad control-plane replacement hypothesis, not every bounded adapter or reuse proposal.",
+      "integrity_sha256": "899da45cd11f0f595f7073caa9beb3ccef5f5dc23af32e1484eb9e450d717375",
+      "observed_at": "2026-08-06T04:10:01Z"
+    },
+    {
+      "id": "RFC-EXTERNAL-CONTROL-PLANE-R1",
+      "kind": "RFC",
+      "stable_id": "RFC-EXTERNAL-CONTROL-PLANE",
+      "revision": 1,
+      "lane": "BETA",
+      "author_id": "innovation-builder",
+      "authoring_role": "Innovation Lab Evidence Builder",
+      "stage": "DECIDED",
+      "stage_history": [
+        {
+          "from_stage": null,
+          "to_stage": "DRAFT",
+          "at": "2026-08-06T03:55:00Z"
+        },
+        {
+          "from_stage": "DRAFT",
+          "to_stage": "EVIDENCE_GATHERING",
+          "at": "2026-08-06T04:11:00Z"
+        },
+        {
+          "from_stage": "EVIDENCE_GATHERING",
+          "to_stage": "READY_FOR_REVIEW",
+          "at": "2026-08-06T04:15:00Z"
+        },
+        {
+          "from_stage": "READY_FOR_REVIEW",
+          "to_stage": "DECIDED",
+          "at": "2026-08-06T04:20:00Z"
+        }
+      ],
+      "title": "External framework as Nerva control-plane replacement",
+      "problem": "Replacing the established control plane could erase local-only routing, action authority, delivery separation, and reversible migration contracts.",
+      "owner_outcome": "Reject broad replacement unless new evidence proves all accepted controls and a measurable benefit.",
+      "hypothesis": "A generic external agent framework can replace the Nerva control plane while preserving every accepted invariant and outperforming the simple baseline.",
+      "alternatives": [
+        "Retain the current Nerva control boundary",
+        "Reuse bounded external components behind existing adapters",
+        "Replace the full control plane with an external framework"
+      ],
+      "reuse_build_reject": {
+        "reuse": "Permit future bounded adapters only through their own E8 and architecture reviews.",
+        "build": "Build no replacement or prototype from this rejected RFC.",
+        "reject": "Reject the broad control-plane replacement because it fails the retained invariant baseline."
+      },
+      "dependencies": [
+        "Accepted Nerva authority contract",
+        "Accepted local-first routing contract",
+        "E9 synthetic comparison evidence"
+      ],
+      "affected_contracts": [
+        "nerva.action.v1",
+        "LOCAL_ONLY_AGENTS",
+        "Nerva delivery prerequisite DAG"
+      ],
+      "assessments": {
+        "authority": {
+          "status": "assessed",
+          "details": "The broad replacement does not preserve the sole privileged-action and no-direct-delivery boundaries."
+        },
+        "security": {
+          "status": "assessed",
+          "details": "Replacing the control plane creates an unjustified expansion of trusted execution and policy surface."
+        },
+        "privacy": {
+          "status": "assessed",
+          "details": "The evidence is synthetic-public; no owner data or external framework input is used.",
+          "private_data_policy": "excluded",
+          "policy_ref": null
+        },
+        "data_retention": {
+          "status": "assessed",
+          "details": "Only immutable repository evidence is retained."
+        },
+        "license": {
+          "status": "assessed",
+          "details": "No specific external package is admitted; any future bounded candidate requires its own exact license review."
+        },
+        "supply_chain": {
+          "status": "assessed",
+          "details": "No external code is fetched or executed; future reuse requires exact provenance and dependency review."
+        },
+        "compatibility": {
+          "status": "assessed",
+          "details": "The radical replacement fails compatibility with the retained authority and routing contracts."
+        }
+      },
+      "external_code_involved": true,
+      "advisory_dimensions": {
+        "impact": 5,
+        "novelty": 4,
+        "difficulty": 5,
+        "risk": 5,
+        "compatibility": 1,
+        "expected_time_saved_hours": 0,
+        "probability_of_benefit": 0.1,
+        "innovation_score": 28.0,
+        "advisory_only": true
+      },
+      "benchmark": {
+        "baseline_ref": "EVID-EXTERNAL-CONTROL-PLANE-BENCHMARK-V1",
+        "falsification_plan": "Reject unless a new candidate preserves every authority, locality, delivery, and rollback invariant and then beats the retained baseline."
+      },
+      "prototype_disposition": {
+        "status": "not_required",
+        "reason": "The contract-level negative result falsifies the broad hypothesis before external code ingestion or execution is justified."
+      },
+      "outcome_history": [
+        {
+          "from_status": null,
+          "to_status": "not_applicable",
+          "at": "2026-08-06T04:20:00Z",
+          "reason": "A rejected RFC creates no epic, implementation, or outcome claim."
+        }
+      ],
+      "migration": {
+        "required": false,
+        "plan": "No replacement is implemented and no runtime or stored state changes."
+      },
+      "rollback": {
+        "plan": "Preserve the rejection; reconsider only through a new revision with genuinely new post-decision evidence."
+      },
+      "authority": {
+        "can_commit_main": false,
+        "can_merge": false,
+        "can_deploy": false,
+        "can_change_roadmap": false,
+        "can_promote_capability": false,
+        "can_authorize_actions": false,
+        "can_claim_completion": false,
+        "grants_authority": false,
+        "privileged_action_authority": "nerva.action.v1"
+      },
+      "reopens_decision_id": null
+    },
+    {
+      "id": "DEC-EXTERNAL-CONTROL-PLANE-V1",
+      "kind": "DECISION",
+      "status": "REJECTED",
+      "reviewer_id": "independent-integrator",
+      "reviewer_role": "Independent Integrator",
+      "basis": "evidence_and_review",
+      "rationale": "The radical replacement fails every retained control invariant in the synthetic benchmark and provides no evidence for weakening the simple baseline.",
+      "reconsideration_trigger": "A new exact candidate and independent evidence that preserve all four control invariants and demonstrate measurable benefit over the retained baseline.",
+      "evidence_refs": [
+        "EVID-EXTERNAL-CONTROL-PLANE-CATALOGUE-V1",
+        "EVID-EXTERNAL-CONTROL-PLANE-BENCHMARK-V1"
+      ],
+      "unresolved_requirements": [],
+      "decided_at": "2026-08-06T04:20:00Z"
+    }
+  ],
+  "links": [
+    {
+      "from": "OBS-THIRDPARTY-DRIFT-LIFECYCLE-V1",
+      "relation": "MOTIVATES",
+      "to": "IDEA-THIRDPARTY-DRIFT-RECONCILE-V1"
+    },
+    {
+      "from": "IDEA-THIRDPARTY-DRIFT-RECONCILE-V1",
+      "relation": "DEVELOPED_AS",
+      "to": "RFC-THIRDPARTY-DRIFT-RECONCILE-R1"
+    },
+    {
+      "from": "RFC-THIRDPARTY-DRIFT-RECONCILE-R1",
+      "relation": "SUPPORTED_BY",
+      "to": "EVID-THIRDPARTY-DRIFT-BASELINE-V1"
+    },
+    {
+      "from": "RFC-THIRDPARTY-DRIFT-RECONCILE-R1",
+      "relation": "SUPPORTED_BY",
+      "to": "EVID-THIRDPARTY-DRIFT-BENCHMARK-V1"
+    },
+    {
+      "from": "RFC-THIRDPARTY-DRIFT-RECONCILE-R1",
+      "relation": "DECIDED_BY",
+      "to": "DEC-THIRDPARTY-DRIFT-RECONCILE-V1"
+    },
+    {
+      "from": "DEC-THIRDPARTY-DRIFT-RECONCILE-V1",
+      "relation": "ACCEPTED_AS",
+      "to": "EPIC-THIRDPARTY-DRIFT-RECONCILE-V1"
+    },
+    {
+      "from": "OBS-EXTERNAL-CONTROL-PLANE-V1",
+      "relation": "MOTIVATES",
+      "to": "IDEA-EXTERNAL-CONTROL-PLANE-V1"
+    },
+    {
+      "from": "IDEA-EXTERNAL-CONTROL-PLANE-V1",
+      "relation": "DEVELOPED_AS",
+      "to": "RFC-EXTERNAL-CONTROL-PLANE-R1"
+    },
+    {
+      "from": "RFC-EXTERNAL-CONTROL-PLANE-R1",
+      "relation": "CHALLENGED_BY",
+      "to": "EVID-EXTERNAL-CONTROL-PLANE-CATALOGUE-V1"
+    },
+    {
+      "from": "RFC-EXTERNAL-CONTROL-PLANE-R1",
+      "relation": "CHALLENGED_BY",
+      "to": "EVID-EXTERNAL-CONTROL-PLANE-BENCHMARK-V1"
+    },
+    {
+      "from": "RFC-EXTERNAL-CONTROL-PLANE-R1",
+      "relation": "DECIDED_BY",
+      "to": "DEC-EXTERNAL-CONTROL-PLANE-V1"
+    }
+  ]
 }
