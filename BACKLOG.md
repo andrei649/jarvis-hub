@@ -44,6 +44,11 @@ completes its epic):
 - ✅ E8.1a / #804 / PR #819 — read-only Hermes upstream discovery and compatibility map,
   pinned to source tag `v2026.8.3` / commit `3c27eb6`. No dependency, provider contract,
   adapter, execution or authority change. Merged as `a6e85854`; E8.1 remains `BUILDING`.
+- ✅ E8.1a exact-fetch integrity / #830 / PR #834 — Hermes imports pin the signed
+  annotated `v2026.8.3` tag, unsigned commit `3c27eb6`, exact tree and all 71
+  allowlisted `SKILL.md` byte digests; exact-commit fetches verify URL, digest
+  and frontmatter before mutation. No manifest enrolment, provider contract,
+  adapter, execution or authority change; E8.1 remains `BUILDING`.
 - ✅ E8.1d / #824 / PR #827 — fail-closed manual-only third-party updater policy;
   `auto_update: false` stays drift-visible and is denied by scheduler and direct updater.
   No Hermes enrolment, provider or authority change; E8.1 remains `BUILDING`.
