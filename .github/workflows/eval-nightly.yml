@@ -8,8 +8,12 @@ on:
   pull_request:
     paths:
       - "agents/core/observability/**"
+      - "agents/core/reflection_evaluation.py"
       - "tests/test_companion_eval*.py"
       - "tests/_nerva_e9_1_checks.py"
+      - "tests/_nerva_e6_1_checks.py"
+      - "tests/test_daily_reflection.py"
+      - "docs/nerva2/REFLECTION_E6_1.md"
       - ".github/workflows/eval-nightly.yml"
 
 permissions:
@@ -177,3 +181,41 @@ jobs:
         with:
           path: ${{ env.JARVIS_EVAL_STORE }}
           key: eval-nightly-small-model-v1-${{ github.run_id }}
+
+  # E6.1 (#817) — fixed synthetic-public held-out lesson comparison. This job
+  # retains evaluation evidence only. It has no cache/promotion step and never
+  # consumes owner/private fixtures or a live provider/model.
+  nerva-lesson-held-out:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      NERVA_LESSON_EVAL_STORE: ${{ github.workspace }}/.nerva-e6-1/store
+      NERVA_LESSON_EVAL_REPORT: ${{ github.workspace }}/.nerva-e6-1/report.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Synthetic held-out lesson evaluation
+        run: |
+          python -m agents.core.reflection_evaluation \
+            --store-root "$NERVA_LESSON_EVAL_STORE" \
+            --json-out "$NERVA_LESSON_EVAL_REPORT" \
+            --revision "$GITHUB_SHA" \
+            --runner-id "github-e6-1" \
+            --fail-on-regression
+
+      # A negative result is evidence, not a discarded run or a new baseline.
+      - name: Upload held-out lesson evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: nerva-e6-1-held-out-${{ github.run_id }}
+          path: |
+            ${{ env.NERVA_LESSON_EVAL_STORE }}
+            ${{ env.NERVA_LESSON_EVAL_REPORT }}
+          if-no-files-found: warn
+          retention-days: 14
