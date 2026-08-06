@@ -7,22 +7,42 @@ on:
       - "STATUS.md"
       - "docs/nerva2/ROADMAP_RECONCILIATION.md"
       - "docs/nerva2/ROADMAP_RECONCILIATION.json"
+      - "docs/nerva2/ATLAS_E2_0.md"
+      - "docs/nerva2/CONTRACT_REGISTRY.json"
+      - "docs/nerva2/CORTEX_E1_0.md"
+      - "docs/nerva2/CORTEX_E1_1.md"
+      - "docs/nerva2/DEPENDENCIES.md"
       - "docs/nerva2/E0_COMPLETION.md"
       - "docs/nerva2/E0_COMPLETION.json"
       - "docs/nerva2/E0_FINAL_RECONCILIATION.md"
       - "docs/nerva2/ISSUE_LEDGER_RECONCILIATION.md"
       - "docs/nerva2/E0_REPOSITORY_LEDGER_MIGRATION.md"
       - "docs/nerva2/E0_778_BODY_RECONCILIATION.md"
+      - "docs/nerva2/EPISODES_E3_0.md"
+      - "docs/nerva2/EPISODE_RETRIEVAL_E3_1.md"
+      - "docs/nerva2/EXECUTION_PROVIDER_E8_1A.md"
+      - "docs/nerva2/EXECUTION_PROVIDER_E8_1B.md"
+      - "docs/nerva2/HYBRID_COGNITION_BOUNDARY.md"
       - "docs/nerva2/INNOVATION_LAB_RFC_V1.md"
       - "docs/nerva2/INNOVATION_LAB_V1.schema.json"
       - "docs/nerva2/KNOWLEDGE_GARDEN_V1.json"
+      - "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json"
+      - "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md"
+      - "docs/nerva2/REFLECTION_E6_0.md"
+      - "docs/nerva2/REFLECTION_E6_1.md"
+      - "docs/nerva2/RESEARCH_LAB_E9_0.md"
+      - "docs/nerva2/RESEARCH_LAB_E9_1.md"
+      - "docs/nerva2/RISKS.md"
+      - "docs/nerva2/SYNAPSE_E8_0.md"
       - "scripts/check_nerva_roadmap.py"
       - "scripts/check_nerva_e0_completion.py"
       - "scripts/check_nerva_innovation_lab.py"
+      - "scripts/check_nerva_program_manifest.py"
       - "scripts/reconcile_nerva_repository_ledgers.py"
       - "tests/_nerva_innovation_lab_checks.py"
       - "tests/test_reconcile_nerva_repository_ledgers.py"
       - "tests/test_nerva_e0_completion.py"
+      - "tests/test_nerva_program_manifest.py"
       - ".github/workflows/nerva-roadmap.yml"
   push:
     branches: [main]
@@ -31,22 +51,42 @@ on:
       - "STATUS.md"
       - "docs/nerva2/ROADMAP_RECONCILIATION.md"
       - "docs/nerva2/ROADMAP_RECONCILIATION.json"
+      - "docs/nerva2/ATLAS_E2_0.md"
+      - "docs/nerva2/CONTRACT_REGISTRY.json"
+      - "docs/nerva2/CORTEX_E1_0.md"
+      - "docs/nerva2/CORTEX_E1_1.md"
+      - "docs/nerva2/DEPENDENCIES.md"
       - "docs/nerva2/E0_COMPLETION.md"
       - "docs/nerva2/E0_COMPLETION.json"
       - "docs/nerva2/E0_FINAL_RECONCILIATION.md"
       - "docs/nerva2/ISSUE_LEDGER_RECONCILIATION.md"
       - "docs/nerva2/E0_REPOSITORY_LEDGER_MIGRATION.md"
       - "docs/nerva2/E0_778_BODY_RECONCILIATION.md"
+      - "docs/nerva2/EPISODES_E3_0.md"
+      - "docs/nerva2/EPISODE_RETRIEVAL_E3_1.md"
+      - "docs/nerva2/EXECUTION_PROVIDER_E8_1A.md"
+      - "docs/nerva2/EXECUTION_PROVIDER_E8_1B.md"
+      - "docs/nerva2/HYBRID_COGNITION_BOUNDARY.md"
       - "docs/nerva2/INNOVATION_LAB_RFC_V1.md"
       - "docs/nerva2/INNOVATION_LAB_V1.schema.json"
       - "docs/nerva2/KNOWLEDGE_GARDEN_V1.json"
+      - "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json"
+      - "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md"
+      - "docs/nerva2/REFLECTION_E6_0.md"
+      - "docs/nerva2/REFLECTION_E6_1.md"
+      - "docs/nerva2/RESEARCH_LAB_E9_0.md"
+      - "docs/nerva2/RESEARCH_LAB_E9_1.md"
+      - "docs/nerva2/RISKS.md"
+      - "docs/nerva2/SYNAPSE_E8_0.md"
       - "scripts/check_nerva_roadmap.py"
       - "scripts/check_nerva_e0_completion.py"
       - "scripts/check_nerva_innovation_lab.py"
+      - "scripts/check_nerva_program_manifest.py"
       - "scripts/reconcile_nerva_repository_ledgers.py"
       - "tests/_nerva_innovation_lab_checks.py"
       - "tests/test_reconcile_nerva_repository_ledgers.py"
       - "tests/test_nerva_e0_completion.py"
+      - "tests/test_nerva_program_manifest.py"
       - ".github/workflows/nerva-roadmap.yml"
   workflow_dispatch:
     inputs:
@@ -85,11 +125,19 @@ jobs:
           scripts/check_nerva_roadmap.py
           scripts/check_nerva_e0_completion.py
           scripts/check_nerva_innovation_lab.py
+          scripts/check_nerva_program_manifest.py
           scripts/reconcile_nerva_repository_ledgers.py
           tests/_nerva_innovation_lab_checks.py
+          tests/test_nerva_program_manifest.py
 
       - name: Validate Nerva roadmap reconciliation
         run: python scripts/check_nerva_roadmap.py
+
+      - name: Validate Nerva whole-program manifest
+        run: >-
+          python scripts/check_nerva_program_manifest.py
+          --check
+          --candidate-ref "${NERVA_CANDIDATE_REF}"
 
       - name: Validate exact repository ledger blocks
         run: python scripts/reconcile_nerva_repository_ledgers.py --check
