@@ -219,13 +219,21 @@ class ShadowDecisionRouter:
     def __init__(self, router: RouterProtocol, writer: ShadowWriter):
         self._router = router
         self._writer = writer
+        deterministic = getattr(router, "classify_deterministic", None)
+        self._classify_deterministic = (
+            deterministic if callable(deterministic) else None
+        )
 
     async def classify(self, text: str, agents: dict[str, Any]) -> Any:
         intent = await self._router.classify(text, agents)
         return await self._capture(text, agents, intent)
 
     async def classify_deterministic(self, text: str, agents: dict[str, Any]) -> Any:
-        intent = await self._router.classify_deterministic(text, agents)
+        if self._classify_deterministic is None:
+            raise TypeError(
+                "shadow deterministic capture requires classify_deterministic"
+            )
+        intent = await self._classify_deterministic(text, agents)
         return await self._capture(text, agents, intent)
 
     async def _capture(self, text: str, agents: dict[str, Any], intent: Any) -> Any:

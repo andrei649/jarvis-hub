@@ -1465,10 +1465,11 @@ def current_router_runner(
     if not isinstance(agents, Mapping):
         raise ValueError("agents must be a mapping")
     _require_deterministic_router(router)
+    classify_deterministic = router.classify_deterministic
 
     async def run(prompt: str) -> BenchmarkObservation:
         _require_deterministic_router(router)
-        intent = await router.classify_deterministic(prompt, dict(agents))
+        intent = await classify_deterministic(prompt, dict(agents))
         context = getattr(intent, "context", {})
         if not isinstance(context, Mapping):
             raise RuntimeError(

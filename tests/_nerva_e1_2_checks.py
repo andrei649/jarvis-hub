@@ -19,7 +19,11 @@ from unittest.mock import patch
 import pytest
 
 from agents.core import cortex_measured_compare as measured_compare
-from agents.core.cortex_decision import DecisionRecord, DecisionRequest
+from agents.core.cortex_decision import (
+    DecisionRecord,
+    DecisionRequest,
+    ShadowDecisionRouter,
+)
 from agents.core.cortex_measured_compare import (
     LABEL_SCHEMA,
     build_owner_route_suite,
@@ -2495,6 +2499,288 @@ def _marked_reparse_lstat(marked: Path):
     return _lstat
 
 
+def _broken_reparse_lstat(marked: Path, states: list[str] | None = None):
+    """Model an absent final that lstat identifies as a broken reparse point."""
+
+    original = os.lstat
+    remaining = list(states or ["broken"])
+
+    def _lstat(path: str | bytes | os.PathLike[str] | os.PathLike[bytes]):
+        candidate = Path(path)
+        if (
+            candidate.name == marked.name
+            and candidate.parent.name == marked.parent.name
+        ):
+            state = remaining.pop(0) if remaining else "broken"
+            if state == "missing":
+                raise FileNotFoundError(path)
+            return SimpleNamespace(
+                st_mode=measured_compare.stat.S_IFLNK | 0o777,
+                st_file_attributes=getattr(
+                    measured_compare.stat,
+                    "FILE_ATTRIBUTE_REPARSE_POINT",
+                    0x400,
+                ),
+            )
+        return original(path)
+
+    return _lstat
+
+
+def _security_bound_capability_probes() -> None:
+    prompt = "an unmatched owner-local prompt"
+    agents = {"jarvis": object(), "vision": object()}
+    failures: list[str] = []
+
+    def probe(label: str, operation) -> None:
+        try:
+            operation()
+        except BaseException as exc:
+            failures.append(f"{label}: {type(exc).__name__}: {exc}")
+
+    def runner_binding() -> None:
+        router = IntentRouter(config={})
+        runner = measured_compare.current_router_runner(router, agents)
+        replacement_prompts: list[str] = []
+
+        async def replacement(text: str, route_agents: dict[str, object]) -> Intent:
+            replacement_prompts.append(text)
+            return await router.classify(text, route_agents)
+
+        router.classify_deterministic = replacement
+        observation = asyncio.run(runner(prompt))
+        assert observation.route_id == "jarvis"
+        assert replacement_prompts == []
+
+    def shadow_binding() -> None:
+        router = IntentRouter(config={})
+        records: list[DecisionRecord] = []
+        shadow = ShadowDecisionRouter(router, records.append)
+        replacement_prompts: list[str] = []
+
+        async def replacement(text: str, route_agents: dict[str, object]) -> Intent:
+            replacement_prompts.append(text)
+            return await router.classify(text, route_agents)
+
+        router.classify_deterministic = replacement
+        intent = asyncio.run(shadow.classify_deterministic(prompt, agents))
+        assert intent.primary == "jarvis"
+        assert replacement_prompts == []
+        assert len(records) == 1
+
+        normal_prompts: list[str] = []
+
+        async def normal_replacement(
+            text: str, _route_agents: dict[str, object]
+        ) -> Intent:
+            normal_prompts.append(text)
+            return Intent(["jarvis"], is_general=True, context={"source": "general"})
+
+        router.classify = normal_replacement
+        asyncio.run(shadow.classify("normal compatibility prompt", agents))
+        assert normal_prompts == ["normal compatibility prompt"]
+
+    probe("current-router bound capability", runner_binding)
+    probe("shadow-router bound capability", shadow_binding)
+    assert not failures, "deterministic capability binding failed: " + " | ".join(
+        failures
+    )
+
+
+def _security_shadow_legacy_compatibility_probe() -> None:
+    class LegacyRouter:
+        def __init__(self) -> None:
+            self.prompts: list[str] = []
+
+        async def classify(
+            self, text: str, _agents: dict[str, object]
+        ) -> Intent:
+            self.prompts.append(text)
+            return Intent(["jarvis"], is_general=True, context={"source": "general"})
+
+    router = LegacyRouter()
+    records: list[DecisionRecord] = []
+    shadow = ShadowDecisionRouter(router, records.append)
+    intent = asyncio.run(shadow.classify("legacy normal prompt", {"jarvis": object()}))
+    assert intent.primary == "jarvis"
+    assert router.prompts == ["legacy normal prompt"]
+    assert len(records) == 1
+
+    late_deterministic_prompts: list[str] = []
+
+    async def late_deterministic(
+        text: str, _agents: dict[str, object]
+    ) -> Intent:
+        late_deterministic_prompts.append(text)
+        return Intent(["jarvis"], is_general=True, context={"source": "general"})
+
+    router.classify_deterministic = late_deterministic
+    with pytest.raises(TypeError, match="classify_deterministic"):
+        asyncio.run(
+            shadow.classify_deterministic(
+                "legacy deterministic prompt", {"jarvis": object()}
+            )
+        )
+    assert late_deterministic_prompts == []
+
+
+def _security_broken_final_probes() -> None:
+    failures: list[str] = []
+
+    def probe(label: str, operation) -> None:
+        try:
+            operation()
+        except BaseException as exc:
+            failures.append(f"{label}: {type(exc).__name__}: {exc}")
+
+    def report_final(filename: str) -> None:
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            label_set, batch, store, _ = _report_fixture(directory)
+            final_path = store.root / "suites" / batch.suite_name / filename
+            final_path.unlink()
+            sentinel = directory / "outside-sentinel.txt"
+            sentinel.write_text("must-remain-unread-and-unchanged", encoding="utf-8")
+            outside_output = directory / "outside-created.txt"
+            outside_events: list[str] = []
+
+            def forbidden_sink(_store: BenchmarkStore, *_args, **_kwargs):
+                outside_events.append("outside-read")
+                sentinel.read_text(encoding="utf-8")
+                outside_output.write_text("forbidden", encoding="utf-8")
+                return ()
+
+            method = "load_suite" if filename.startswith("v") else "runs"
+            with (
+                patch.object(
+                    measured_compare.os,
+                    "lstat",
+                    _broken_reparse_lstat(final_path),
+                ),
+                patch.object(BenchmarkStore, method, forbidden_sink),
+                pytest.raises(ValueError, match="symlink|reparse"),
+            ):
+                measured_compare.build_measured_report(batch, store, label_set)
+            assert outside_events == []
+            assert sentinel.read_text(encoding="utf-8") == (
+                "must-remain-unread-and-unchanged"
+            )
+            assert not outside_output.exists()
+
+    def run_phase(
+        states: list[str],
+        forbidden_stage: str,
+        expected_events: list[str],
+    ) -> None:
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            label_set = _load(_write(directory, _document()))
+            store_root = directory / "store"
+            store_root.mkdir()
+            suite_name = measured_compare._suite_name(label_set)
+            final_path = store_root / "suites" / suite_name / "runs.jsonl"
+            sentinel = directory / "outside-sentinel.txt"
+            sentinel.write_text("must-remain-unread-and-unchanged", encoding="utf-8")
+            outside_output = directory / "outside-created.txt"
+            events: list[str] = []
+            reads = 0
+
+            def outside_operation(label: str) -> None:
+                events.append(label)
+                sentinel.read_text(encoding="utf-8")
+                outside_output.write_text("forbidden", encoding="utf-8")
+
+            def runs(
+                _store: BenchmarkStore, _name: str, *, last_n: int = 20
+            ) -> tuple[object, ...]:
+                nonlocal reads
+                assert last_n == sys.maxsize
+                reads += 1
+                if (forbidden_stage == "collision" and reads == 1) or (
+                    forbidden_stage == "readback" and reads > 1
+                ):
+                    outside_operation("outside-read")
+                else:
+                    events.append("collision-read")
+                return ()
+
+            def record_run(_store: BenchmarkStore, _run: object) -> None:
+                if forbidden_stage == "write":
+                    outside_operation("outside-write")
+                else:
+                    events.append("store-write")
+
+            with (
+                patch.object(
+                    measured_compare.os,
+                    "lstat",
+                    _broken_reparse_lstat(final_path, states),
+                ),
+                patch.object(BenchmarkStore, "runs", runs),
+                patch.object(BenchmarkStore, "record_run", record_run),
+                pytest.raises(ValueError, match="symlink|reparse"),
+            ):
+                asyncio.run(
+                    measured_compare.run_measured_comparison(
+                        router=_MeasuredRouter(),
+                        agents={"friday": object(), "jarvis": object()},
+                        label_set=label_set,
+                        store_root=store_root,
+                        source_revision=_REVISION,
+                        run_nonce=lambda: "brokenfinal",
+                    )
+                )
+            assert events == expected_events
+            assert sentinel.read_text(encoding="utf-8") == (
+                "must-remain-unread-and-unchanged"
+            )
+            assert not outside_output.exists()
+
+    probe("broken version report final", lambda: report_final("v1.jsonl"))
+    probe("broken runs report final", lambda: report_final("runs.jsonl"))
+    probe(
+        "broken runs collision boundary",
+        lambda: run_phase(["broken"], "collision", []),
+    )
+    probe(
+        "broken runs write boundary",
+        lambda: run_phase(["missing", "broken"], "write", ["collision-read"]),
+    )
+    probe(
+        "broken runs readback boundary",
+        lambda: run_phase(
+            ["missing", "missing", "broken"],
+            "readback",
+            ["collision-read", "store-write"],
+        ),
+    )
+    assert not failures, "broken measured-store finals failed: " + " | ".join(
+        failures
+    )
+
+
+def _security_label_preallocation_probe() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        oversized = directory / "oversized-labels.json"
+        oversized.write_bytes(b"{}" + b" " * 2_000_000)
+        original_read_bytes = Path.read_bytes
+        reads: list[Path] = []
+
+        def read_bytes(path: Path) -> bytes:
+            if path.name == oversized.name and path.parent.name == oversized.parent.name:
+                reads.append(path)
+                raise AssertionError("oversized label was bulk-read")
+            return original_read_bytes(path)
+
+        with (
+            patch.object(Path, "read_bytes", read_bytes),
+            pytest.raises(ValueError, match="bounded input limit"),
+        ):
+            load_route_label_set(oversized, allowed_routes=("friday", "jarvis"))
+        assert reads == []
+
+
 def _security_redirection_probes() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
@@ -2655,6 +2941,10 @@ def _check_security_hold_remediation() -> None:
         assert router.classifier_prompts == []
 
     probe("late classifier injection", late_injection)
+    probe("bound deterministic capability", _security_bound_capability_probes)
+    probe("legacy shadow compatibility", _security_shadow_legacy_compatibility_probe)
+    probe("broken measured-store finals", _security_broken_final_probes)
+    probe("label pre-allocation byte bound", _security_label_preallocation_probe)
     probe("retention path redirections", _security_redirection_probes)
     probe("retained-run authority parser", _security_benchmark_parser_probes)
     probe("bounded hostile parsers", _security_input_bound_probes)

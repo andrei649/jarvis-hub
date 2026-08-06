@@ -248,6 +248,8 @@ def _route_collection(allowed_routes: Collection[str]) -> frozenset[str]:
 def _reject_link_or_reparse(path: Path, label: str) -> os.stat_result:
     try:
         metadata = os.lstat(path)
+    except FileNotFoundError:
+        raise
     except OSError as exc:
         raise ValueError(f"{label} must exist without redirected ancestors") from exc
     reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
@@ -263,19 +265,29 @@ def _validate_local_path(
     *,
     label: str,
     require_file: bool = False,
-) -> None:
+) -> tuple[Path, os.stat_result]:
     path = candidate if candidate.is_absolute() else Path.cwd() / candidate
     current = Path(path.anchor)
-    for part in path.parts[1:]:
-        current /= part
-        _reject_link_or_reparse(current, label)
-    if require_file and not stat.S_ISREG(os.lstat(path).st_mode):
+    metadata: os.stat_result | None = None
+    try:
+        for part in path.parts[1:]:
+            current /= part
+            metadata = _reject_link_or_reparse(current, label)
+    except FileNotFoundError as exc:
+        raise ValueError(f"{label} must exist without redirected ancestors") from exc
+    if metadata is None:
+        metadata = _reject_link_or_reparse(path, label)
+    if require_file and not stat.S_ISREG(metadata.st_mode):
         raise ValueError(f"{label} must be a regular file")
+    return path, metadata
 
 
 def _load_json(path: str | Path) -> Mapping[str, Any]:
-    candidate = Path(path)
-    _validate_local_path(candidate, label="route labels", require_file=True)
+    candidate, metadata = _validate_local_path(
+        Path(path), label="route labels", require_file=True
+    )
+    if metadata.st_size > _MAX_LABEL_BYTES:
+        raise ValueError("route labels exceed the bounded input limit")
     if candidate.is_symlink() or not candidate.is_file():
         raise ValueError("route labels must be read from a regular non-symlink file")
     try:
@@ -1215,10 +1227,10 @@ class _MeasuredStoreBoundary:
             path /= part
             try:
                 _reject_link_or_reparse(path, "measured store path")
-            except ValueError:
-                if allow_missing_final and index == len(parts) - 1 and not path.exists():
+            except FileNotFoundError as exc:
+                if allow_missing_final and index == len(parts) - 1:
                     return path
-                raise
+                raise ValueError("measured store path must exist") from exc
         return path
 
     def suite(self, name: str, *, create: bool) -> Path:
@@ -1354,9 +1366,16 @@ async def run_measured_comparison(
         )
         run = replace(run, artifact_refs=artifact_refs)
         expected_fingerprint = run_fingerprint(run)
+        write_boundary = _MeasuredStoreBoundary(store)
+        write_boundary.suite(suite_name, create=False)
+        write_boundary.version(suite_name, suite_version)
+        write_boundary.runs(suite_name)
         store.record_run(run)
 
-        boundary.runs(suite_name)
+        readback_boundary = _MeasuredStoreBoundary(store)
+        readback_boundary.suite(suite_name, create=False)
+        readback_boundary.version(suite_name, suite_version)
+        readback_boundary.runs(suite_name)
         matches = tuple(
             candidate
             for candidate in store.runs(
