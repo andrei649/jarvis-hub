@@ -39,6 +39,8 @@ from agents.core.observability.scheduled_report import (
 from agents.core.router import Intent
 
 _REVISION = "a" * 40
+_ARBITRARY_NOTE_SENTINEL = "arbitrary-note-sentinel"
+_RETAINED_EXCEPTION_MESSAGE = "synthetic retained measured-router failure"
 
 
 def _digest(number: int) -> str:
@@ -68,6 +70,17 @@ def _document() -> dict[str, object]:
             for number in range(1, 21)
         ],
     }
+
+
+def _privacy_document() -> dict[str, object]:
+    document = _document()
+    document["cases"][0]["text"] = (
+        f"{_ARBITRARY_NOTE_SENTINEL} weather request 001"
+    )
+    document["cases"][1]["text"] = (
+        f"{_RETAINED_EXCEPTION_MESSAGE} weather request 002"
+    )
+    return document
 
 
 def _write(directory: Path, payload: object, name: str = "labels.json") -> Path:
@@ -462,7 +475,7 @@ class _FailAfterWarmupRouter(_MeasuredRouter):
     async def classify(self, text: str, agents: dict[str, object]) -> Intent:
         if self.classify_calls >= 20:
             self.classify_calls += 1
-            raise RuntimeError("synthetic retained measured-router failure")
+            raise RuntimeError(_RETAINED_EXCEPTION_MESSAGE)
         return await super().classify(text, agents)
 
 
@@ -1706,8 +1719,6 @@ def _assert_privacy_minimised(
     report,
     label_set,
     store,
-    *,
-    extra_sentinels: tuple[str, ...] = (),
 ) -> None:
     rendered = (report.to_json(), measured_compare.render_measured_report(report))
     sentinels = {
@@ -1719,11 +1730,10 @@ def _assert_privacy_minimised(
         label_set.retention_policy_id,
         label_set.source_window_start,
         label_set.source_window_end,
-        "arbitrary-note-sentinel",
-        "synthetic measured-router failure",
+        _ARBITRARY_NOTE_SENTINEL,
+        _RETAINED_EXCEPTION_MESSAGE,
         str(store.root),
         os.environ.get("USERNAME", "__no_local_username__"),
-        *extra_sentinels,
     }
     for output in rendered:
         lowered = output.lower()
@@ -1734,7 +1744,26 @@ def _assert_privacy_minimised(
 def _check_measurement_provider_privacy_matrix() -> None:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
-        label_set, batch, store, _ = _report_fixture(directory)
+        privacy_document = _privacy_document()
+        privacy_router = _PatternMeasuredRouter()
+        label_set, batch, store, _ = _report_fixture(
+            directory,
+            document=privacy_document,
+            router=privacy_router,
+        )
+        assert privacy_router.classify_calls == 20 * 6
+        suite_text = (
+            store.root
+            / "suites"
+            / batch.suite_name
+            / f"v{batch.suite_version}.jsonl"
+        ).read_text(encoding="utf-8")
+        for sentinel in (
+            _ARBITRARY_NOTE_SENTINEL,
+            _RETAINED_EXCEPTION_MESSAGE,
+        ):
+            assert any(sentinel in case.text for case in label_set.cases)
+            assert sentinel in suite_text
         complete = measured_compare.build_measured_report(batch, store, label_set)
         _assert_privacy_minimised(complete, label_set, store)
 
@@ -1855,11 +1884,14 @@ def _check_measurement_provider_privacy_matrix() -> None:
 
         error_directory = directory / "actual-exception-evidence"
         error_directory.mkdir()
+        error_router = _FailAfterWarmupRouter()
         error_labels, error_batch, error_store, _ = _report_fixture(
             error_directory,
-            router=_FailAfterWarmupRouter(),
+            document=privacy_document,
+            router=error_router,
             nonce="exceptionprivacy",
         )
+        assert error_router.classify_calls == 20 * 6
         error_report = measured_compare.build_measured_report(
             error_batch,
             error_store,
@@ -1869,7 +1901,6 @@ def _check_measurement_provider_privacy_matrix() -> None:
             error_report,
             error_labels,
             error_store,
-            extra_sentinels=("synthetic measured-router failure",),
         )
 
 
