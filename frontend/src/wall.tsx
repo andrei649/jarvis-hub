@@ -209,7 +209,11 @@ export function BriefingWall({
   // Same rule for the roster: `sources.agents` is set by the loader only when agents
   // really arrived, so without it neither the roster size nor an executing count is
   // knowable — and "0 executing" is a claim, not a neutral default.
-  const agentEvidence = !!(sources && sources.agents === true);
+  // `sources.agents` means REAL LIVE evidence, and `loadJarvisData(demo)` deliberately seeds
+  // the roster while leaving that flag false — demo is a separate, explicitly watermarked
+  // provenance, not a claim about a live source. Gating on the flag alone emptied the demo
+  // wall. Both provenances are honest here because the wall badges DEMO in its own chrome.
+  const agentEvidence = !!demo || !!(sources && sources.agents === true);
   // One boundary, every consumer — the same rule as `evidenceTasks`. Gating only the two
   // metric cells left the roster half-fixed: a retained non-empty roster with
   // `sources.agents === false` could still drive WORKING, work-driven energy, firing

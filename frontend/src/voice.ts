@@ -269,7 +269,13 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     setError(null);
     const gen = ++startGenRef.current;
     let stream = null;
-    try { stream = await ensureStream(gen); } catch { setError('Microphone permission denied'); setStat('error'); return; }
+    try { stream = await ensureStream(gen); } catch {
+      // A rejection from a SUPERSEDED start must stay silent: it would otherwise overwrite
+      // the OFF state a stop() just set, or report an error over a newer capture that is
+      // already running. Only the current generation may publish permission-denied.
+      if (gen !== startGenRef.current) return;
+      setError('Microphone permission denied'); setStat('error'); return;
+    }
     // cancelled while the permission prompt was up: never go active, never enter the loop
     if (!stream || gen !== startGenRef.current) return;
     activeRef.current = true; setActive(true); setStat('idle');

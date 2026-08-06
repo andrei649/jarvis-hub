@@ -364,6 +364,19 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > Fourth: the footer rendered a malformed `mic` value as OPEN/IDLE; only an exact `on`/`off` maps to
 > OPEN/IDLE/MUTED and everything else reads `UNKNOWN`. +14 tests, all four red-proved against the
 > pre-fix code (Vitest 464 → **478**).
+>
+> **Wall pass 6 — fourth review round** (head `e07b311`): two regressions from the previous pass.
+> (a) The roster evidence gate emptied **demo mode**: `loadJarvisData(true)` seeds the roster while
+> leaving `sources.agents` false on purpose — that flag means *real live* evidence and demo is a
+> separate, watermarked provenance — so the demo wall lost its field, counts and badge.
+> `agentEvidence` now accepts `demo || sources.agents === true`, with a regression shaped like the
+> real loader's demo output (not the convenient `sources.agents:true` the earlier positive control
+> used) plus the non-demo negative control. (b) In `voice.ts`, a **stale permission rejection** from
+> a superseded start still published `error`, overwriting the OFF state a `stop()` had just set; the
+> catch now compares generations first. Noted honestly: the reviewer's second interleaving (stale
+> rejection while a newer capture is live) is covered by the same guard but is **not red-provable**
+> through the hook's public state — the running loop clears status/error every iteration — so no
+> test is claimed for it. Vitest 478 → **482**.
 
 ---
 

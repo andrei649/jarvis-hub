@@ -569,6 +569,44 @@ describe('BriefingWall — identity-only rerenders must not stop a live capture'
   });
 });
 
+/* The evidence gate must not swallow DEMO. `loadJarvisData(true)` seeds the roster while
+   leaving `sources.agents` false on purpose — that flag means REAL live evidence, and demo is
+   a separate, watermarked provenance. Shaped like the real loader's output, not like the
+   convenient `sources.agents:true` the earlier positive control used. */
+describe('BriefingWall — demo provenance is honest, not absent', () => {
+  const DEMO_LOADER_STATE = {          // exactly what loadJarvisData(true) produces
+    demo: true,
+    agents: AGENTS,
+    tasks: [],
+    sources: { tasks: false, trust: false },     // no live flags in demo — by design
+    trust: { mic: 'on', strict_local: false },
+    serverUp: false, clock: new Date(), voice: { status: 'off' },
+  };
+
+  it('renders the seeded corpus instead of an empty wall', () => {
+    const { container } = render(<BriefingWall {...DEMO_LOADER_STATE} />);
+    expect(cellValue(container, 'AGENTS IN ROSTER')).toBe('4');
+    expect(cellValue(container, 'EXECUTING')).toBe('2');
+    expect(container.querySelector('.wl-tab-right .wl-tab-badge').textContent).toBe('4');
+    expect(container.querySelector('.nburst').getAttribute('data-regions')).toBe('3');
+    expect(container.textContent).not.toContain('no agents reported');
+  });
+
+  it('says DEMO in its own chrome, so the seeded corpus is never passed off as live', () => {
+    const { container } = render(<BriefingWall {...DEMO_LOADER_STATE} />);
+    expect(container.textContent).toContain('DEMO');
+    expect(container.textContent).toContain('seeded data');
+    expect(container.querySelector('.nburst').getAttribute('data-energy-source')).toBe('demo');
+  });
+
+  it('negative control — the same roster WITHOUT demo and without evidence stays empty', () => {
+    const { container } = render(<BriefingWall {...DEMO_LOADER_STATE} demo={false} />);
+    expect(cellValue(container, 'AGENTS IN ROSTER')).toBe('—');
+    expect(container.querySelector('.nburst').getAttribute('data-regions')).toBe('0');
+    expect(container.querySelector('.wl-state-word').textContent).toBe('offline');
+  });
+});
+
 describe('CinemaMesh — brain stage', () => {
   it('switches to the briefing wall and back, and Esc still exits', () => {
     const onExit = vi.fn();

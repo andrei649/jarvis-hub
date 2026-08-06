@@ -277,6 +277,35 @@ describe('useVoice state machine', () => {
       expect(states.some((st) => st.active)).toBe(false);   // never went active at any point
     });
 
+    it('a stale REJECTION after stop() must not overwrite the off state', async () => {
+      const track = { stop: vi.fn() };
+      let reject: any;
+      const pending = new Promise((_r, rj) => { reject = rj; });
+      const getUserMedia = vi.fn(() => pending);
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+
+      render(<VoiceHarness />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/voice/capabilities'));
+      fireEvent.click(screen.getByText('start'));
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      fireEvent.click(screen.getByText('stop'));
+
+      reject(new Error('NotAllowedError'));                 // permission denied, LATE
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(screen.getByTestId('status').textContent).toBe('off');
+      expect(screen.getByTestId('error').textContent).toBe('');
+      expect(track.stop).not.toHaveBeenCalled();
+    });
+
+    /* The review also asked for a case where a stale rejection arrives while a NEWER capture
+       is live. The guard covers that interleaving (the catch compares generations before
+       publishing), but it is NOT red-provable through this hook's public state: the running
+       loop calls `setError(null)` + `setStat('listening')` on every iteration, so a stale
+       write is cleared inside the same tick and never reaches an observer. Rather than ship a
+       test that passes with and without the fix, the honest coverage is the stop-before-
+       rejection case above, which does fail without the guard. */
+
     it('unmount while the prompt is open kills the tracks and never goes active', async () => {
       const media = deferredMedia();
       const states: any[] = [];
