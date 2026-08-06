@@ -1098,10 +1098,15 @@ def _strict_retained_suite(
         store._version_file(name, version),  # noqa: SLF001 - exact E9 boundary bytes
         label="retained suite JSONL",
     )
+    if not records:
+        raise ValueError("retained suite JSONL must contain at least one case")
     try:
-        return tuple(BenchmarkCase.from_dict(record) for record in records)
+        cases = tuple(BenchmarkCase.from_dict(record) for record in records)
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("retained suite JSONL schema is invalid") from exc
+    if len({case.case_id for case in cases}) != len(cases):
+        raise ValueError("retained suite JSONL case ids must be unique")
+    return cases
 
 
 def _strict_retained_runs(
@@ -1120,6 +1125,10 @@ def _strict_retained_runs(
         runs = tuple(BenchmarkRun.from_json(_canonical(record)) for record in records)
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("retained run JSONL schema is invalid") from exc
+    if any(run.suite_name != name for run in runs):
+        raise ValueError("retained run suite name must match the scanned store")
+    if len({run.run_id for run in runs}) != len(runs):
+        raise ValueError("retained run JSONL run ids must be unique")
     return tuple(reversed(runs[-last_n:]))
 
 

@@ -690,6 +690,162 @@ def _tree_snapshot(root: Path) -> tuple[tuple[str, ...], dict[str, bytes]]:
     return directories, files
 
 
+async def _assert_retained_preflight_rejects_without_mutation(
+    *,
+    plan: LessonEvaluationPlan,
+    case: HeldOutLessonCase,
+    store: BenchmarkStore,
+    store_root: Path,
+    error: str,
+    attempted_run_id: str,
+) -> None:
+    before = _tree_snapshot(store_root)
+    versions_before = store.versions(plan.suite_name)
+    runs_before = tuple(run.to_json() for run in store.runs(plan.suite_name, last_n=100_000))
+    calls = 0
+
+    async def must_not_run(_runner_input):
+        nonlocal calls
+        calls += 1
+        return f"answer-{case.case_id}"
+
+    with (
+        patch(
+            "agents.core.reflection_evaluation._materialize_cases",
+            wraps=_materialize_cases,
+        ) as materialize,
+        patch.object(store, "save_suite", wraps=store.save_suite) as save_suite,
+        pytest.raises(ValueError, match=error),
+    ):
+        await evaluate_lesson_plan(
+            plan,
+            store=store,
+            candidate_runner=must_not_run,
+            baseline_runner=must_not_run,
+            now=lambda: _NOW,
+            run_id=attempted_run_id,
+        )
+    assert calls == 0
+    materialize.assert_not_called()
+    save_suite.assert_not_called()
+    assert store.versions(plan.suite_name) == versions_before
+    assert (
+        tuple(run.to_json() for run in store.runs(plan.suite_name, last_n=100_000)) == runs_before
+    )
+    assert _tree_snapshot(store_root) == before
+
+
+async def _check_truncated_empty_suite_is_rejected_before_mutation(
+    tmp_path: Path,
+) -> None:
+    case = _case("truncated-empty-suite")
+    plan = _plan((case,), thresholds=LessonEvaluationThresholds())
+    _, store, _, _ = await _evaluate(
+        tmp_path,
+        plan,
+        {case.case_id: f"answer-{case.case_id}"},
+        {case.case_id: f"answer-{case.case_id}"},
+        store_name="truncated-empty-suite",
+    )
+    store_root = tmp_path / "truncated-empty-suite"
+    suite_path = store_root / "suites" / plan.suite_name / "v1.jsonl"
+    suite_path.write_bytes(b"")
+
+    await _assert_retained_preflight_rejects_without_mutation(
+        plan=plan,
+        case=case,
+        store=store,
+        store_root=store_root,
+        error="retained suite JSONL must contain at least one case",
+        attempted_run_id="run-after-truncated-suite",
+    )
+
+
+async def _check_duplicate_suite_case_ids_are_rejected_before_mutation(
+    tmp_path: Path,
+) -> None:
+    case = _case("duplicate-suite-case")
+    plan = _plan((case,), thresholds=LessonEvaluationThresholds())
+    _, store, _, _ = await _evaluate(
+        tmp_path,
+        plan,
+        {case.case_id: f"answer-{case.case_id}"},
+        {case.case_id: f"answer-{case.case_id}"},
+        store_name="duplicate-suite-case",
+    )
+    store_root = tmp_path / "duplicate-suite-case"
+    suite_path = store_root / "suites" / plan.suite_name / "v1.jsonl"
+    line = suite_path.read_text(encoding="utf-8").strip()
+    suite_path.write_text(f"{line}\n{line}\n", encoding="utf-8")
+
+    await _assert_retained_preflight_rejects_without_mutation(
+        plan=plan,
+        case=case,
+        store=store,
+        store_root=store_root,
+        error="retained suite JSONL case ids must be unique",
+        attempted_run_id="run-after-duplicate-suite-case",
+    )
+
+
+async def _check_duplicate_retained_run_ids_are_rejected_before_mutation(
+    tmp_path: Path,
+) -> None:
+    case = _case("duplicate-retained-run")
+    plan = _plan((case,), thresholds=LessonEvaluationThresholds())
+    _, store, _, _ = await _evaluate(
+        tmp_path,
+        plan,
+        {case.case_id: f"answer-{case.case_id}"},
+        {case.case_id: f"answer-{case.case_id}"},
+        store_name="duplicate-retained-run",
+    )
+    store_root = tmp_path / "duplicate-retained-run"
+    runs_path = store_root / "suites" / plan.suite_name / "runs.jsonl"
+    line = runs_path.read_text(encoding="utf-8").strip()
+    runs_path.write_text(f"{line}\n{line}\n", encoding="utf-8")
+
+    await _assert_retained_preflight_rejects_without_mutation(
+        plan=plan,
+        case=case,
+        store=store,
+        store_root=store_root,
+        error="retained run JSONL run ids must be unique",
+        attempted_run_id="run-after-duplicate-retained-run",
+    )
+
+
+async def _check_retained_run_suite_name_must_match_store_path(
+    tmp_path: Path,
+) -> None:
+    case = _case("mismatched-retained-suite")
+    plan = _plan((case,), thresholds=LessonEvaluationThresholds())
+    _, store, _, _ = await _evaluate(
+        tmp_path,
+        plan,
+        {case.case_id: f"answer-{case.case_id}"},
+        {case.case_id: f"answer-{case.case_id}"},
+        store_name="mismatched-retained-suite",
+    )
+    store_root = tmp_path / "mismatched-retained-suite"
+    runs_path = store_root / "suites" / plan.suite_name / "runs.jsonl"
+    raw = json.loads(runs_path.read_text(encoding="utf-8"))
+    raw["suite_name"] = "other-retained-suite"
+    runs_path.write_text(
+        json.dumps(raw, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    await _assert_retained_preflight_rejects_without_mutation(
+        plan=plan,
+        case=case,
+        store=store,
+        store_root=store_root,
+        error="retained run suite name must match the scanned store",
+        attempted_run_id="run-after-mismatched-retained-suite",
+    )
+
+
 async def _check_duplicate_run_id_is_rejected_before_mutation(tmp_path: Path) -> None:
     case = _case("duplicate")
     plan = _plan((case,), thresholds=LessonEvaluationThresholds())
@@ -1132,6 +1288,10 @@ async def run_e6_1_checks(tmp_path: Path) -> None:
     await _check_tampering_totals_and_retention(tmp_path)
     await _check_retained_json_decoding_is_strict(tmp_path)
     await _check_strict_preflight_is_unconditional(tmp_path)
+    await _check_truncated_empty_suite_is_rejected_before_mutation(tmp_path)
+    await _check_duplicate_suite_case_ids_are_rejected_before_mutation(tmp_path)
+    await _check_duplicate_retained_run_ids_are_rejected_before_mutation(tmp_path)
+    await _check_retained_run_suite_name_must_match_store_path(tmp_path)
     await _check_duplicate_run_id_is_rejected_before_mutation(tmp_path)
     await _check_auto_run_id_collision_is_rejected_before_mutation(tmp_path)
     await _check_execution_environment_is_redetected(tmp_path)
