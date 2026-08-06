@@ -49,6 +49,14 @@ completes its epic):
   allowlisted `SKILL.md` byte digests; exact-commit fetches verify URL, digest
   and frontmatter before mutation. No manifest enrolment, provider contract,
   adapter, execution or authority change; E8.1 remains `BUILDING`.
+- ✅ E8.1b / #835 / PR #838 — strict, versioned `nerva.execution-provider.v1`
+  descriptor/request/result/health value types bind exact provider revision and
+  fingerprints, deep-freeze bounded JSON, and fail closed across sandbox,
+  filesystem, network, secret-reference, budget and lifecycle policy. Provider-local
+  results remain `unverified`; all authority fields are immutable false and external
+  verification is mandatory. The protocol is inert: no Hermes dependency, manifest
+  enrolment, adapter, registry, route, execution or kernel integration is added.
+  E8.1 remains `BUILDING`; E8.1c and provider-specific E9 evidence remain separate.
 - ✅ E8.1d / #824 / PR #827 — fail-closed manual-only third-party updater policy;
   `auto_update: false` stays drift-visible and is denied by scheduler and direct updater.
   No Hermes enrolment, provider or authority change; E8.1 remains `BUILDING`.
