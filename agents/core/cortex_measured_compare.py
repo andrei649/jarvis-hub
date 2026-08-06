@@ -7,6 +7,7 @@ import json
 import os
 import re
 import stat
+import sys
 import unicodedata
 import uuid
 from collections.abc import Callable, Collection, Mapping
@@ -65,7 +66,6 @@ _CASE_FIELDS = {
     "source_record_digest",
 }
 _MEASURED_BATCH_GUARD = object()
-_MAX_RETAINED_RUNS = 1_000_000
 
 
 def _canonical_json(payload: object) -> str:
@@ -614,7 +614,7 @@ async def run_measured_comparison(
             nonce_factory,
             repetition,
         )
-        existing = store.runs(suite_name, last_n=_MAX_RETAINED_RUNS)
+        existing = store.runs(suite_name, last_n=sys.maxsize)
         if any(run.run_id == retained_run_id for run in existing):
             raise ValueError("measured run id collision")
 
@@ -626,8 +626,6 @@ async def run_measured_comparison(
             source_revision=source_revision,
             run_id=retained_run_id,
         )
-        if _has_incomplete_results(run):
-            raise RuntimeError("measured retained run did not complete every case")
         run = replace(run, artifact_refs=artifact_refs)
         expected_fingerprint = run_fingerprint(run)
         store.record_run(run)
@@ -636,7 +634,7 @@ async def run_measured_comparison(
             candidate
             for candidate in store.runs(
                 suite_name,
-                last_n=_MAX_RETAINED_RUNS,
+                last_n=sys.maxsize,
             )
             if candidate.run_id == retained_run_id
         )

@@ -198,6 +198,10 @@ be unrelated to the supplied labels.
 An adequacy rejection is valid negative evidence and does not make a run incomplete.
 An error, unscored result, missing measurement, coverage mismatch, or mixed identity
 does. An incomplete batch cannot serialize as complete measured evidence.
+Warm-up `error`/`unscored` results abort before any run retention. During the five
+measured repetitions, however, `error`/`unscored` results are retained and
+fingerprint-proved as evidence; Task 4 reports the resulting batch with
+`complete=false` rather than censoring those runs.
 
 The report is constructed only through the builder guard. `from_json()` accepts exact
 fields and recomputes authority, counts, numeric ranges, fingerprints, and internal
@@ -233,8 +237,12 @@ artifact.
 - Configured or late-injected LLM: fail before model invocation and before retention.
 - Zero/multiple shadow records or route mismatch: retain no successful sample for that
   invocation; the package is incomplete.
-- Warm-up failure: retain no measured batch.
-- Any retained-run write failure: stop; do not summarize an in-memory subset.
+- Warm-up `error`/`unscored`: retain no measured run or batch.
+- Retained measured `error`/`unscored`: preserve all five runs as incomplete evidence;
+  do not reinterpret them as a write failure.
+- Exception before a retained run exists, run-ID collision, retained-run write
+  failure, or retrieval/fingerprint-proof failure: stop and return no batch; do not
+  summarize an in-memory subset.
 - Mixed identity/environment/revision/suite: refuse aggregation.
 - Non-deterministic/provider-backed evidence: provider charge becomes unavailable and
   the batch cannot claim the deterministic zero-provider-charge contract.

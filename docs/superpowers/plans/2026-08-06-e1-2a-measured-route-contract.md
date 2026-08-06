@@ -250,7 +250,10 @@ Add `_check_measured_run_batch()` covering:
 - `EnvironmentProfile.detect(runner_id="owner-local-e1-2a")` is called once for the batch;
 - one warm-up runs all 20 cases but is never passed to `record_run`;
 - exactly five later runs are retained, with unique bounded IDs carrying label-fingerprint prefix, nonce, and repetition index; collision with an already retained run ID fails before append even though E9 itself does not reject duplicate run IDs;
-- a warm-up error retains no run; a retained-run/write failure stops immediately and never returns a partial batch;
+- a warm-up `error`/`unscored` result retains no run; retained measured
+  `error`/`unscored` results remain evidence and all five repetitions are stored, while
+  an exception before a run exists, run-ID collision, write failure, or retrieval/
+  fingerprint-proof failure stops immediately and never returns a partial batch;
 - the returned batch cannot be directly constructed or modified by a caller and binds the resolved store root, label fingerprint, suite/version, environment fingerprint, revision, repetition count, and ordered run fingerprints.
 
 - [ ] **Step 2: Run focused test and confirm RED**
@@ -287,7 +290,7 @@ Implementation order is security-relevant:
 3. Construct `BenchmarkStore(resolved_root)`, ensure the suite, detect one environment, and hash its canonical payload.
 4. Build the measured runner and `BenchmarkHarness(candidate_id=CANDIDATE_ID)` with no baseline. Document that the accepted E9 store is a single-writer owner-local store; do not claim concurrent-writer safety that it does not provide.
 5. Run one full warm-up with lane `local` and never record it. Treat any warm-up result with status `error` or `unscored` as a warm-up failure.
-6. Run exactly five full retained repetitions. Before `store.record_run`, reject an existing run-ID collision and replace each run's artifact references with bounded label/environment fingerprints. Record each run immediately, then prove its canonical fingerprint is retrievable from the store before continuing; on any failure, raise and do not return a batch.
+6. Run exactly five full retained repetitions. Before `store.record_run`, reject an existing run-ID collision and replace each run's artifact references with bounded label/environment fingerprints. Retain `BenchmarkRun` values containing `error` or `unscored` results so Task 4 can report `complete=false`. Record each run immediately, then prove its canonical fingerprint is uniquely retrievable from the complete store with an exact match before continuing. An exception before a run exists, collision, write failure, or retrieval/fingerprint-proof failure raises and returns no batch.
 7. Construct the batch only through the module sentinel after all five stores succeed. Hash runs with accepted E9.1 `run_fingerprint`.
 
 The batch's store path is internal evidence only and must never enter report serialization or Markdown.
