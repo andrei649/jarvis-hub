@@ -667,6 +667,7 @@ input { font-family: inherit; }
 .wl-k { font-family:var(--font-mono); font-size:8px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); }
 .wl-v { font-family:var(--font-mono); font-size:15px; font-weight:700; color:var(--ink); }
 .wl-v.wl-miss, .wl-rail-v.wl-miss { color:var(--ink-4); font-weight:400; }
+.wl-prov-derived { background:rgba(43,184,240,.14); border-color:rgba(43,184,240,.4); color:var(--accent-light); }
 .wl-prov { margin-left:6px; padding:1px 5px; border-radius:3px; vertical-align:middle; background:rgba(255,194,77,.16); border:1px solid rgba(255,194,77,.4); color:var(--amber); font-family:var(--font-mono); font-size:7px; font-weight:400; letter-spacing:.16em; text-transform:uppercase; }
 .wl-sub { flex-basis:100%; font-family:var(--font-mono); font-size:7.5px; color:var(--ink-4); }
 

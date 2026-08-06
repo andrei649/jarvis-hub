@@ -55,6 +55,7 @@ function Cell({ label, value, why, sub, prov }: any) {
       <span className={'wl-v' + (missing ? ' wl-miss' : '')} title={missing ? (why || 'no evidence available') : undefined}>
         {missing ? '—' : value}
         {!missing && prov === 'seeded' && <span className="wl-prov" title="seeded demo value, not a live reading">seeded</span>}
+        {!missing && prov === 'derived' && <span className="wl-prov wl-prov-derived" title="derived from a governance flag, not measured">derived</span>}
       </span>
       {sub && <span className="wl-sub">{sub}</span>}
     </div>
@@ -70,9 +71,12 @@ export function cardStamp(provs: any[], liveLabel: string) {
   // contradiction is not proof of measurement.
   if (!shown.length) return 'no evidence';
   const seeded = shown.some((p) => p === 'seeded');
+  const derived = shown.some((p) => p === 'derived');
   const live = shown.some((p) => p === 'live');
-  if (seeded && live) return 'mixed · live + seeded';
+  if (seeded && (live || derived)) return 'mixed · live + seeded';
   if (seeded) return 'demo · seeded';
+  if (derived && live) return 'mixed · live + derived';
+  if (derived) return 'derived';
   if (shown.every((p) => p === 'live')) return liveLabel;
   return 'unverified';
 }
@@ -281,9 +285,12 @@ export function BriefingWall({
   const provDecisions = decisionEvidence ? 'seeded' : null;   // no live decision feed exists
   // %-local provenance comes from App, which knows whether it measured, proved strict-local,
   // or fell back to the demo sample — it must not be inferred from `demo` alone.
+  // Three-way, preserved end to end: a strict-local 100% is DERIVED from a governance
+  // flag, not measured, so it gets its own provenance rather than being folded into live.
   const provLocal = localPct == null ? null
     : localPctSource === 'seeded' ? 'seeded'
-    : localPctSource ? 'live'
+    : localPctSource === 'strict-local' ? 'derived'
+    : localPctSource === 'measured' ? 'live'
     : (demo ? 'seeded' : 'live');
   // The page caption follows the same evidence as the cells: a CONNECTED demo really is
   // showing live data, so calling the whole corpus seeded there is its own false claim.
@@ -355,7 +362,7 @@ export function BriefingWall({
         </div>
 
         <div className="wl-col wl-right">
-          <Card title="ATTENTION" stamp={cardStamp([provDecisions, provCal, provHb], 'queue')}>
+          <Card title="ATTENTION" stamp={cardStamp([provDecisions, provCal, provHb], 'live')}>
             <Cell label="DECISIONS PENDING" value={decisionEvidence ? decisions.length : null} prov={provDecisions} why="no live decision feed — the HUD has no backend source for this yet" />
             <Cell label="UPCOMING EVENTS" value={Array.isArray(calendar) && calendar.length ? calendar.length : null} prov={provCal} why="calendar not connected" />
             <Cell label="HEARTBEATS" value={Array.isArray(heartbeat) && heartbeat.length ? heartbeat.length : null} prov={provHb} why="no heartbeat entries" />

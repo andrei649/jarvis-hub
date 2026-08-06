@@ -2,6 +2,7 @@
    honest placeholder and get ported from the prototype in the next phase. */
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { V2 } from './data';
+import { localityFigure } from './locality';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
@@ -119,12 +120,9 @@ function App() {
   // %-local is honest, in priority order: a real measured split from /api/analytics/
   // locality (the brand metric, from run-history routes) → strict-local proof (100%)
   // → demo sample → unknown (hidden, never faked).
-  const localPct = (locality && locality.local_pct != null) ? locality.local_pct
-    : trust.strict_local ? 100 : (demo ? 87 : null);
-  // …and WHERE it came from, so the wall can label it truthfully instead of inferring
-  // "seeded" from `demo` (a connected demo measures a real split like any other session).
-  const localPctSource = (locality && locality.local_pct != null) ? 'measured'
-    : trust.strict_local ? 'strict-local' : (demo ? 'seeded' : null);
+  // …and WHERE it came from, so the wall can label it truthfully: a strict-local 100% is a
+  // correct inference from governance, not a measurement, and must not display as one.
+  const { pct: localPct, source: localPctSource } = localityFigure({ locality, trust, demo });
   const liveModes = useLiveModes(); // P4: stream live data into the capability modes; reports which keys are live
   // H22 — first-party page-view beacon. Fires once on load (privacy-first, no
   // cookies/PII; see analytics.ts), then once per HUD view change. The SPA has no

@@ -822,6 +822,69 @@ describe('trust adapter → wall — malformed permission never authorizes', () 
   });
 });
 
+/* Provenance labels must name the actual source. Two ways that broke: a strict-local
+   100% (derived from a governance flag) displaying under a `measured` stamp, and the
+   ATTENTION card passing `queue` — not a provenance — as its all-live label. */
+describe('BriefingWall — a card names the evidence it actually has', () => {
+  const base = {
+    agents: AGENTS, tasks: [], sources: { agents: true, trust: true },
+    trust: { mic: 'on', strict_local: true }, serverUp: true, clock: new Date(),
+    voice: { status: 'off' },
+  };
+
+  it('a strict-local 100% is labelled derived, not measured', () => {
+    const { container } = render(
+      <BriefingWall {...base} localPct={100} localPctSource="strict-local"
+        llm={{ state: 'unknown', residents: [] }} calendar={[]} heartbeat={[]} />,
+    );
+    expect(cellValue(container, 'ON-DEVICE')).toBe('100%');
+    expect(cellProv(container, 'ON-DEVICE')).toBe('derived');
+    expect(cellRow(container, 'ON-DEVICE').querySelector('.wl-prov').textContent).toBe('derived');
+    expect(cardStamps(container)['THIS SESSION']).not.toBe('measured');
+  });
+
+  it('a genuinely measured split still reads measured', () => {
+    const { container } = render(
+      <BriefingWall {...base} localPct={94} localPctSource="measured"
+        llm={{ state: 'ready', model: 'gemma-4-26b', residents: [] }} calendar={[]} heartbeat={[]} />,
+    );
+    expect(cellProv(container, 'ON-DEVICE')).toBe('live');
+    expect(cardStamps(container)['THIS SESSION']).toBe('measured');
+  });
+
+  it('a card mixing measured and derived says so', () => {
+    const { container } = render(
+      <BriefingWall {...base} localPct={100} localPctSource="strict-local"
+        llm={{ state: 'ready', model: 'gemma-4-26b', residents: [] }} calendar={[]} heartbeat={[]} />,
+    );
+    expect(cardStamps(container)['THIS SESSION']).toBe('mixed · live + derived');
+  });
+
+  it.each([
+    ['calendar', { calendar: [{}, {}], heartbeat: [] }],
+    ['heartbeat', { calendar: [], heartbeat: [{}] }],
+    ['both', { calendar: [{}], heartbeat: [{}] }],
+  ])('an all-live ATTENTION card (%s) says live, not "queue"', (_label, extraProps) => {
+    const { container } = render(
+      <BriefingWall {...base} localPct={null} llm={{ state: 'unknown', residents: [] }}
+        sources={{ agents: true, trust: true, calendar: true, heartbeat: true }}
+        decisions={[]} {...extraProps} />,
+    );
+    const stamp = cardStamps(container)['ATTENTION'];
+    expect(stamp).toBe('live');
+    expect(stamp).not.toBe('queue');
+  });
+
+  it('a live CLOUD LANE cell stamps its own card live', () => {
+    const { container } = render(
+      <BriefingWall {...base} localPct={null} llm={{ state: 'unknown', residents: [] }}
+        calendar={[]} heartbeat={[]} />,
+    );
+    expect(cellProv(container, 'CLOUD LANE')).toBe('live');
+    expect(cardStamps(container)['THIS SESSION']).toBe('measured');   // the card's live label
+  });
+});
+
 describe('CinemaMesh — brain stage', () => {
   it('switches to the briefing wall and back, and Esc still exits', () => {
     const onExit = vi.fn();

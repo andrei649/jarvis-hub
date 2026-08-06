@@ -412,6 +412,17 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > derived from the real source mix); a `Cell` with no declared provenance defaulted to `live` (now
 > `unknown`); and an empty seeded decision list rendered `0` rather than `—`. +13 tests, all
 > red-proved (Vitest 488 → **501**).
+>
+> **Wall pass 10 — eighth review round** (head `c4055a2`): provenance labels must name the ACTUAL
+> source. A strict-local 100% is *derived* from a governance flag, not measured, but the wall folded
+> every non-seeded locality source into `live` and `THIS SESSION` then stamped it `measured`. The
+> three-way source is now preserved end to end (`measured` / `strict-local` / `seeded`), a derived
+> value carries its own visible tag, and `cardStamp()` gained `derived` / `mixed · live + derived`.
+> The derivation moved into `frontend/src/locality.ts` so the reachable App path is testable — in
+> demo the app skips locality loading and the loader clears it, so that branch cannot be reached by
+> a props fixture at all. Also: the ATTENTION card passed `queue` (not a provenance) as its all-live
+> label, so a card with live calendar/heartbeat evidence stamped `queue`; it now stamps `live`.
+> +12 tests, red-proved (Vitest 501 → **513**).
 
 ---
 
