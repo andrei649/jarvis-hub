@@ -289,6 +289,52 @@ def _ready_bundle() -> dict:
     return bundle
 
 
+def _draft_to_evidence_progression() -> tuple[dict, dict]:
+    template = _valid_bundle()
+    full_stage_history = copy.deepcopy(template["records"][4]["stage_history"])
+    rfc = template["records"][4]
+    rfc["stage"] = "DRAFT"
+    rfc["stage_history"] = full_stage_history[:1]
+    rfc["benchmark"]["baseline_ref"] = None
+    rfc["outcome_history"] = []
+    baseline = {
+        **{key: copy.deepcopy(template[key]) for key in ("schema_version", "program_issue")},
+        "authority_ceiling": copy.deepcopy(template["authority_ceiling"]),
+        "catalogues": [],
+        "records": copy.deepcopy([template["records"][0], template["records"][1], rfc]),
+        "links": copy.deepcopy(template["links"][:2]),
+    }
+
+    candidate = copy.deepcopy(baseline)
+    candidate_rfc = candidate["records"][2]
+    candidate_rfc["stage"] = "EVIDENCE_GATHERING"
+    candidate_rfc["stage_history"] = full_stage_history[:2]
+    candidate_rfc["benchmark"]["baseline_ref"] = "EVID-BASE-0001"
+    candidate["records"].extend(copy.deepcopy(template["records"][2:4]))
+    candidate["links"].extend(copy.deepcopy(template["links"][2:4]))
+    return baseline, candidate
+
+
+def _evidence_to_ready_assessment_progression() -> tuple[dict, dict]:
+    _, baseline = _draft_to_evidence_progression()
+    required = ("authority", "security", "privacy", "data_retention", "compatibility")
+    baseline_rfc = baseline["records"][2]
+    for name in required:
+        baseline_rfc["assessments"][name]["status"] = "unknown"
+        baseline_rfc["assessments"][name]["details"] = "Assessment is pending."
+
+    candidate = copy.deepcopy(baseline)
+    candidate_rfc = candidate["records"][2]
+    candidate_rfc["stage"] = "READY_FOR_REVIEW"
+    candidate_rfc["stage_history"] = copy.deepcopy(
+        _valid_bundle()["records"][4]["stage_history"][:3]
+    )
+    completed = _valid_bundle()["records"][4]["assessments"]
+    for name in required:
+        candidate_rfc["assessments"][name] = copy.deepcopy(completed[name])
+    return baseline, candidate
+
+
 def _required_prototype_progression() -> tuple[dict, dict]:
     baseline = _valid_bundle()
     rfc = baseline["records"][4]
@@ -373,6 +419,55 @@ def _reopened_bundle() -> dict:
             {"from": "RFC-0001-R2", "relation": "SUPPORTED_BY", "to": "EVID-NEW-0001"},
             {"from": "RFC-0001-R2", "relation": "SUPERSEDES", "to": "RFC-0001-R1"},
             {"from": "RFC-0001-R2", "relation": "REOPENS", "to": "DEC-0001"},
+        ]
+    )
+    return bundle
+
+
+def _decided_reopened_bundle(*, novel_observed_at: str, include_novel_in_decision: bool) -> dict:
+    bundle = _reopened_bundle()
+    novel_evidence = bundle["records"][6]
+    successor = bundle["records"][7]
+    novel_evidence["observed_at"] = novel_observed_at
+    successor["stage"] = "DECIDED"
+    successor["stage_history"].append(
+        {
+            "from_stage": "EVIDENCE_GATHERING",
+            "to_stage": "DECIDED",
+            "at": "2026-08-06T01:03:00Z",
+        }
+    )
+    successor["outcome_history"] = [
+        {
+            "from_status": None,
+            "to_status": "not_applicable",
+            "at": "2026-08-06T01:03:00Z",
+            "reason": "The successor remains parked without an outcome.",
+        }
+    ]
+    bundle["records"].append(
+        {
+            "id": "DEC-0002",
+            "kind": "DECISION",
+            "status": "PARKED",
+            "reviewer_id": "independent-integrator",
+            "reviewer_role": "Independent Integrator",
+            "basis": "evidence_and_review",
+            "rationale": "Retained evidence does not yet justify a separate epic.",
+            "reconsideration_trigger": "Observe the novel artifact before another decision.",
+            "evidence_refs": (
+                ["EVID-NEW-0001", "EVID-BASE-0001"]
+                if include_novel_in_decision
+                else ["EVID-BASE-0001"]
+            ),
+            "unresolved_requirements": ["Retain novel evidence before reconsideration."],
+            "decided_at": "2026-08-06T01:03:00Z",
+        }
+    )
+    bundle["links"].extend(
+        [
+            {"from": "RFC-0001-R2", "relation": "SUPPORTED_BY", "to": "EVID-BASE-0001"},
+            {"from": "RFC-0001-R2", "relation": "DECIDED_BY", "to": "DEC-0002"},
         ]
     )
     return bundle
@@ -634,6 +729,25 @@ def run_checks() -> None:
     assert validate(_reopened_bundle()) == []
     assert validate(_outcome_bundle()) == []
 
+    parked_predates_decision = _parked_bundle()
+    parked_predates_decision["records"][4]["outcome_history"][0]["at"] = "2026-08-06T00:04:59Z"
+    _assert_error(
+        validate(parked_predates_decision),
+        "not_applicable outcome must start at the decision timestamp",
+    )
+    rejected_predates_decision = _rejected_bundle()
+    rejected_predates_decision["records"][4]["outcome_history"][0]["at"] = "2026-08-06T00:04:59Z"
+    _assert_error(
+        validate(rejected_predates_decision),
+        "not_applicable outcome must start at the decision timestamp",
+    )
+    parked_postdates_decision = _parked_bundle()
+    parked_postdates_decision["records"][4]["outcome_history"][0]["at"] = "2026-08-06T00:05:01Z"
+    _assert_error(
+        validate(parked_postdates_decision),
+        "not_applicable outcome must start at the decision timestamp",
+    )
+
     challenge_only_acceptance = _valid_bundle()
     for link in challenge_only_acceptance["links"]:
         if link["relation"] == "SUPPORTED_BY":
@@ -662,6 +776,109 @@ def run_checks() -> None:
     assert validate(ready) == []
     assert checker["compare"](ready, _valid_bundle()) == [], (
         "READY_FOR_REVIEW -> accepted decision/epic is a legal append-only progression"
+    )
+    draft_baseline, evidence_candidate = _draft_to_evidence_progression()
+    assert validate(draft_baseline) == []
+    assert validate(evidence_candidate) == []
+    assert checker["compare"](draft_baseline, evidence_candidate) == [], (
+        "DRAFT -> EVIDENCE_GATHERING may fill an empty exact-evidence baseline_ref"
+    )
+    evidence_baseline, ready_candidate = _evidence_to_ready_assessment_progression()
+    assert validate(evidence_baseline) == []
+    assert validate(ready_candidate) == []
+    assert checker["compare"](evidence_baseline, ready_candidate) == [], (
+        "EVIDENCE_GATHERING -> READY_FOR_REVIEW may complete required assessments"
+    )
+
+    assert checker["compare"](draft_baseline, ready_candidate) == [], (
+        "one candidate may append DRAFT -> EVIDENCE_GATHERING -> READY_FOR_REVIEW"
+    )
+    parked_template = _parked_bundle()
+    draft_to_decided = copy.deepcopy(draft_baseline)
+    draft_to_decided_rfc = draft_to_decided["records"][2]
+    draft_to_decided_rfc["stage"] = "DECIDED"
+    draft_to_decided_rfc["stage_history"].append(
+        {
+            "from_stage": "DRAFT",
+            "to_stage": "DECIDED",
+            "at": "2026-08-06T00:05:00Z",
+        }
+    )
+    draft_to_decided_rfc["benchmark"] = copy.deepcopy(parked_template["records"][4]["benchmark"])
+    draft_to_decided_rfc["outcome_history"] = copy.deepcopy(
+        parked_template["records"][4]["outcome_history"]
+    )
+    draft_to_decided["records"].extend(copy.deepcopy(parked_template["records"][2:4]))
+    draft_to_decided["records"].append(copy.deepcopy(parked_template["records"][5]))
+    draft_to_decided["links"].extend(copy.deepcopy(parked_template["links"][2:]))
+    assert validate(draft_to_decided) == []
+    assert checker["compare"](draft_baseline, draft_to_decided) == [], (
+        "DRAFT -> DECIDED may fill the baseline for a PARKED decision"
+    )
+
+    evidence_to_decided = copy.deepcopy(evidence_baseline)
+    evidence_to_decided_rfc = evidence_to_decided["records"][2]
+    evidence_to_decided_rfc["stage"] = "DECIDED"
+    evidence_to_decided_rfc["stage_history"].append(
+        {
+            "from_stage": "EVIDENCE_GATHERING",
+            "to_stage": "DECIDED",
+            "at": "2026-08-06T00:05:00Z",
+        }
+    )
+    evidence_to_decided_rfc["assessments"] = copy.deepcopy(
+        parked_template["records"][4]["assessments"]
+    )
+    evidence_to_decided_rfc["outcome_history"] = copy.deepcopy(
+        parked_template["records"][4]["outcome_history"]
+    )
+    evidence_to_decided["records"].append(copy.deepcopy(parked_template["records"][5]))
+    evidence_to_decided["links"].append(copy.deepcopy(parked_template["links"][-1]))
+    assert validate(evidence_to_decided) == []
+    assert checker["compare"](evidence_baseline, evidence_to_decided) == [], (
+        "EVIDENCE_GATHERING -> DECIDED may complete required assessments for PARKED"
+    )
+
+    rewritten_baseline = copy.deepcopy(evidence_candidate)
+    rewritten_baseline["records"][2]["benchmark"]["baseline_ref"] = "EVID-PRIMARY-0001"
+    _assert_error(
+        checker["compare"](evidence_candidate, rewritten_baseline),
+        "benchmark baseline_ref",
+    )
+    fill_without_progression = copy.deepcopy(evidence_candidate)
+    fill_without_progression["records"][2]["stage"] = "DRAFT"
+    fill_without_progression["records"][2]["stage_history"] = copy.deepcopy(
+        draft_baseline["records"][2]["stage_history"]
+    )
+    assert validate(fill_without_progression) == []
+    _assert_error(
+        checker["compare"](draft_baseline, fill_without_progression),
+        "DRAFT -> EVIDENCE_GATHERING",
+    )
+    regressed_assessment = copy.deepcopy(ready_candidate)
+    regressed_assessment["records"][2]["assessments"]["authority"] = {
+        "status": "unknown",
+        "details": "Assessment was erased.",
+    }
+    _assert_error(
+        checker["compare"](ready_candidate, regressed_assessment),
+        "assessment 'authority'",
+    )
+    rewritten_assessment = copy.deepcopy(ready_candidate)
+    rewritten_assessment["records"][2]["assessments"]["security"]["details"] = (
+        "A previously assessed result was rewritten."
+    )
+    _assert_error(
+        checker["compare"](ready_candidate, rewritten_assessment),
+        "assessment 'security'",
+    )
+    terminal_rfc_mutation = _valid_bundle()
+    terminal_rfc_mutation["records"][4]["benchmark"]["falsification_plan"] = (
+        "Rewrite the terminal experiment."
+    )
+    _assert_error(
+        checker["compare"](_valid_bundle(), terminal_rfc_mutation),
+        "terminal RFC core field 'benchmark'",
     )
     prototype_baseline, prototype_candidate = _required_prototype_progression()
     assert validate(prototype_baseline) == []
@@ -858,6 +1075,24 @@ def run_checks() -> None:
     backdated_reopen = _reopened_bundle()
     backdated_reopen["records"][6]["observed_at"] = "2026-08-06T00:04:59Z"
     _assert_error(validate(backdated_reopen), "observed after the prior decision")
+    decided_reopen = _decided_reopened_bundle(
+        novel_observed_at="2026-08-06T01:02:30Z",
+        include_novel_in_decision=True,
+    )
+    assert validate(decided_reopen) == []
+    boundary_reopen = _decided_reopened_bundle(
+        novel_observed_at="2026-08-06T01:03:00Z",
+        include_novel_in_decision=True,
+    )
+    assert validate(boundary_reopen) == []
+    postdecision_novelty = _decided_reopened_bundle(
+        novel_observed_at="2026-08-06T01:03:01Z",
+        include_novel_in_decision=False,
+    )
+    _assert_error(
+        validate(postdecision_novelty),
+        "reopening evidence must be observed on or before the successor decision",
+    )
     missing_reopens = _reopened_bundle()
     missing_reopens["links"] = [
         link for link in missing_reopens["links"] if link["relation"] != "REOPENS"

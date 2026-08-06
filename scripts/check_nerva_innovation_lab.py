@@ -934,6 +934,8 @@ def _validate_rfc(
             errors.append(f"{decision_id}: {status} must not create an epic")
         if outcome_tail != "not_applicable" or len(rfc["outcome_history"]) != 1:
             errors.append(f"{rfc_id}: {status} outcome must remain not_applicable")
+        elif rfc["outcome_history"][0]["at"] != decision["decided_at"]:
+            errors.append(f"{rfc_id}: not_applicable outcome must start at the decision timestamp")
         if stage != "DECIDED":
             errors.append(f"{rfc_id}: {status} cannot enter OUTCOME_REVIEWED")
         if status == "PARKED" and not decision["unresolved_requirements"]:
@@ -1026,17 +1028,44 @@ def _validate_lineage(
                 ]
                 if not new_evidence:
                     errors.append(f"{current_id}: reopening requires a new artifact fingerprint")
-                elif decision_time is not None and not any(
-                    (
-                        _parse_time(item["observed_at"], f"{item['id']}.observed_at", errors)
-                        or decision_time
-                    )
-                    > decision_time
-                    for item in new_evidence
-                ):
-                    errors.append(
-                        f"{current_id}: reopening evidence must be observed after the prior decision"
-                    )
+                elif decision_time is not None:
+                    novel_times = [
+                        observed
+                        for item in new_evidence
+                        if (
+                            observed := _parse_time(
+                                item["observed_at"], f"{item['id']}.observed_at", errors
+                            )
+                        )
+                        is not None
+                    ]
+                    post_predecessor_times = [
+                        observed for observed in novel_times if observed > decision_time
+                    ]
+                    if not post_predecessor_times:
+                        errors.append(
+                            f"{current_id}: reopening evidence must be observed after the prior decision"
+                        )
+                    successor_decisions = outgoing.get((current_id, "DECIDED_BY"), [])
+                    if len(successor_decisions) == 1:
+                        successor_decision = by_id[successor_decisions[0]]
+                        successor_decision_time = _parse_time(
+                            successor_decision["decided_at"],
+                            f"{successor_decision['id']}.decided_at",
+                            errors,
+                        )
+                        if (
+                            successor_decision_time is not None
+                            and post_predecessor_times
+                            and not any(
+                                observed <= successor_decision_time
+                                for observed in post_predecessor_times
+                            )
+                        ):
+                            errors.append(
+                                f"{current_id}: reopening evidence must be observed on or before "
+                                "the successor decision"
+                            )
 
 
 def _validate_graph(data: dict[str, Any], errors: list[str]) -> None:
@@ -1228,6 +1257,120 @@ def _accepted_rfc_ids(bundle: dict[str, Any]) -> set[str]:
     return accepted
 
 
+def _appended_stage_path(
+    prior: dict[str, Any], current: dict[str, Any]
+) -> list[dict[str, Any]] | None:
+    prior_history = prior.get("stage_history")
+    current_history = current.get("stage_history")
+    if not isinstance(prior_history, list) or not isinstance(current_history, list):
+        return None
+    if len(current_history) <= len(prior_history):
+        return None
+    if not _prefix_equal(prior_history, current_history):
+        return None
+    appended = current_history[len(prior_history) :]
+    expected_source = prior.get("stage")
+    for transition in appended:
+        if not isinstance(transition, dict):
+            return None
+        target = transition.get("to_stage")
+        if (
+            transition.get("from_stage") != expected_source
+            or (expected_source, target) not in STAGE_TRANSITIONS
+        ):
+            return None
+        expected_source = target
+    if expected_source != current.get("stage"):
+        return None
+    return appended
+
+
+def _compare_benchmark_completion(prior: dict[str, Any], current: dict[str, Any]) -> list[str]:
+    rfc_id = prior["id"]
+    prior_benchmark = prior.get("benchmark")
+    current_benchmark = current.get("benchmark")
+    if _json_equal(prior_benchmark, current_benchmark):
+        return []
+    if prior.get("stage") in {"DECIDED", "OUTCOME_REVIEWED"}:
+        return [f"{rfc_id}: terminal RFC core field 'benchmark' was rewritten"]
+    if not isinstance(prior_benchmark, dict) or not isinstance(current_benchmark, dict):
+        return [f"{rfc_id}: benchmark baseline_ref completion requires object-shaped benchmarks"]
+    if set(prior_benchmark) != set(current_benchmark):
+        return [f"{rfc_id}: benchmark property set is immutable"]
+    if not _json_equal(
+        prior_benchmark.get("falsification_plan"),
+        current_benchmark.get("falsification_plan"),
+    ):
+        return [f"{rfc_id}: immutable RFC core field 'benchmark' was rewritten"]
+    if prior_benchmark.get("baseline_ref") is not None:
+        return [f"{rfc_id}: benchmark baseline_ref is append-only and cannot be rewritten"]
+    if not isinstance(current_benchmark.get("baseline_ref"), str):
+        return [f"{rfc_id}: benchmark baseline_ref completion must be a record id"]
+    stage_path = _appended_stage_path(prior, current)
+    if (
+        prior.get("stage") != "DRAFT"
+        or stage_path is None
+        or stage_path[0].get("to_stage") not in {"EVIDENCE_GATHERING", "DECIDED"}
+    ):
+        return [
+            f"{rfc_id}: benchmark baseline_ref requires an appended "
+            "DRAFT -> EVIDENCE_GATHERING or DRAFT -> DECIDED history path"
+        ]
+    return []
+
+
+def _compare_assessment_completion(prior: dict[str, Any], current: dict[str, Any]) -> list[str]:
+    rfc_id = prior["id"]
+    prior_assessments = prior.get("assessments")
+    current_assessments = current.get("assessments")
+    if _json_equal(prior_assessments, current_assessments):
+        return []
+    if prior.get("stage") in {"DECIDED", "OUTCOME_REVIEWED"}:
+        return [f"{rfc_id}: terminal RFC core field 'assessments' was rewritten"]
+    if not isinstance(prior_assessments, dict) or not isinstance(current_assessments, dict):
+        return [f"{rfc_id}: assessments must retain their object shape"]
+    if set(prior_assessments) != set(current_assessments):
+        return [f"{rfc_id}: assessment property set is immutable"]
+
+    stage_path = _appended_stage_path(prior, current)
+    completion_stage_reached = stage_path is not None and any(
+        transition.get("to_stage") in {"READY_FOR_REVIEW", "DECIDED"} for transition in stage_path
+    )
+    required = {"authority", "security", "privacy", "data_retention", "compatibility"}
+    if prior.get("external_code_involved"):
+        required.update({"license", "supply_chain"})
+    errors: list[str] = []
+    for name, prior_assessment in prior_assessments.items():
+        current_assessment = current_assessments[name]
+        if _json_equal(prior_assessment, current_assessment):
+            continue
+        if not completion_stage_reached or name not in required:
+            errors.append(
+                f"{rfc_id}: assessment {name!r} was rewritten without an appended history "
+                "path reaching READY_FOR_REVIEW or DECIDED"
+            )
+            continue
+        if not isinstance(prior_assessment, dict) or not isinstance(current_assessment, dict):
+            errors.append(f"{rfc_id}: assessment {name!r} must retain its object shape")
+            continue
+        if set(prior_assessment) != set(current_assessment):
+            errors.append(f"{rfc_id}: assessment {name!r} property set is immutable")
+            continue
+        if (
+            prior_assessment.get("status") != "unknown"
+            or current_assessment.get("status") != "assessed"
+        ):
+            errors.append(f"{rfc_id}: assessment {name!r} may change only from unknown to assessed")
+            continue
+        immutable_fields = set(prior_assessment) - {"status", "details"}
+        if any(
+            not _json_equal(prior_assessment[field], current_assessment[field])
+            for field in immutable_fields
+        ):
+            errors.append(f"{rfc_id}: assessment {name!r} may update only status and details")
+    return errors
+
+
 def compare_append_only(baseline: Any, candidate: Any) -> list[str]:
     """Compare an accepted baseline with a candidate without trusting record IDs."""
 
@@ -1269,6 +1412,12 @@ def compare_append_only(baseline: Any, candidate: Any) -> list[str]:
             continue
         for field, value in prior.items():
             if field in {"stage", "stage_history", "outcome_history"}:
+                continue
+            if field == "benchmark":
+                errors.extend(_compare_benchmark_completion(prior, current))
+                continue
+            if field == "assessments":
+                errors.extend(_compare_assessment_completion(prior, current))
                 continue
             if field not in current or not _json_equal(value, current[field]):
                 errors.append(f"{prior['id']}: immutable RFC core field {field!r} was rewritten")
