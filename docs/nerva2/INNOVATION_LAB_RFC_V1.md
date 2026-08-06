@@ -98,8 +98,11 @@ Once accepted, historical facts do not move:
   exact canonical-JSON/semantic equivalence;
 - catalogue and link arrays retain the exact accepted semantic prefix and exact
   string values;
-- an RFC core is immutable; only `stage`, `stage_history`, and
-  `outcome_history` may advance;
+- an RFC core is immutable except for two one-way, stage-bound preterminal
+  completions: `benchmark.baseline_ref` may move once from `null` to an exact
+  evidence ID, and required assessments may move from `unknown` to `assessed`
+  by changing only `status` and `details`; `stage`, `stage_history`, and
+  `outcome_history` may otherwise advance only through their lifecycle rules;
 - both histories retain their exact accepted prefix and append legal,
   strictly increasing transitions;
 - new revisions are new records and point backward to the exact direct
