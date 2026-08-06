@@ -294,10 +294,10 @@ The batch's store path is internal evidence only and must never enter report ser
 
 - [ ] **Step 4: Verify and commit Task 3**
 
-Run the focused router test, E9.0, and E9.1 tests plus Ruff and diff check:
+Run the focused router test and the combined E9.0/E9.1 host file plus Ruff and diff check:
 
 ```powershell
-& ..\..\.venv\Scripts\python.exe -m pytest tests/test_router_v2.py::test_existing_weather_routes_to_friday tests/test_nerva_benchmark_e9_0.py tests/test_nerva_scheduled_report_e9_1.py -q
+& ..\..\.venv\Scripts\python.exe -m pytest tests/test_router_v2.py::test_existing_weather_routes_to_friday tests/test_nerva_benchmark_e9_0.py -q
 & ..\..\.venv\Scripts\python.exe -m ruff check agents/core/cortex_measured_compare.py tests/_nerva_e1_2_checks.py
 git diff --check
 ```
@@ -375,7 +375,7 @@ Markdown must render only bounded IDs, fingerprints, aggregate numbers, measurem
 Run:
 
 ```powershell
-& ..\..\.venv\Scripts\python.exe -m pytest tests/test_router_v2.py::test_existing_weather_routes_to_friday tests/test_nerva_benchmark_e9_0.py tests/test_nerva_scheduled_report_e9_1.py -q
+& ..\..\.venv\Scripts\python.exe -m pytest tests/test_router_v2.py::test_existing_weather_routes_to_friday tests/test_nerva_benchmark_e9_0.py -q
 & ..\..\.venv\Scripts\python.exe -m ruff check agents/core/cortex_measured_compare.py tests/_nerva_e1_2_checks.py
 & ..\..\.venv\Scripts\python.exe -m bandit -q agents/core/cortex_measured_compare.py
 & ..\..\.venv\Scripts\python.exe -m compileall -q agents/core/cortex_measured_compare.py tests/_nerva_e1_2_checks.py
@@ -487,7 +487,7 @@ Confirm no unrelated primary-checkout or worktree metadata appears in the diff.
 Run, in order:
 
 ```powershell
-& ..\..\.venv\Scripts\python.exe -m pytest tests/test_router_v2.py tests/test_nerva_benchmark_e9_0.py tests/test_nerva_scheduled_report_e9_1.py tests/test_nerva_program_manifest.py -q
+& ..\..\.venv\Scripts\python.exe -m pytest tests/test_router_v2.py tests/test_nerva_benchmark_e9_0.py tests/test_nerva_program_manifest.py -q
 & ..\..\.venv\Scripts\python.exe -m pytest tests/ -q
 & ..\..\.venv\Scripts\python.exe -m ruff check agents/core/cortex_measured_compare.py tests/_nerva_e1_2_checks.py tests/test_router_v2.py
 & ..\..\.venv\Scripts\python.exe -m bandit -q agents/core/cortex_measured_compare.py
