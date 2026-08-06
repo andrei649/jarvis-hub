@@ -284,7 +284,7 @@ clones/relabels, reopen bypasses, prototype/outcome misbinding, authority drift,
 catalogue drift, malformed refs, non-ancestors, and shallow history.
 
 Even after this control passes independent review and exact-head CI, it supplies
-only the process/schema foundation. #805 remains open and `DISCOVERY`; it still
+only the process/schema foundation. #805 remains open and enters `BUILDING`; it still
 needs real, separately evidenced examples before any completion claim.
 
 Rollback is one atomic revert of these six control files. It changes no runtime

@@ -63,6 +63,13 @@ completes its epic):
   explicit false/hallucinated-recall metrics and strict retained-evidence preflight. Reports remain
   `evaluation_only`; no lesson promotion, memory write, routing, execution or completion authority
   is added. E6 remains `BUILDING`, and owner-live benefit is still unproven.
+- ✅ Innovation Lab control v1 / #805 / PR #831 — versioned RFC and Knowledge Garden contracts,
+  fail-closed lifecycle/lineage validation, immutable retained evidence and the documented
+  no-delivery-authority boundary. This documentation/control-only foundation satisfies #805
+  acceptance items 1–6 and 10. The real incremental/radical decision examples, an intentionally
+  parked or rejected evidence case and accepted-idea-to-separate-epic proof (items 7–9) remain open;
+  #805 therefore enters `BUILDING`, not `DONE`. No runtime, provider, routing, deployment,
+  privileged action, automatic promotion or owner-live capability is added.
 
 **Innovation Lab precursor documents** (merged, but **not** epic slices — neither satisfies a
 #805 checkbox and neither promotes, adopts or adds an integration/dependency pin):

@@ -1523,7 +1523,7 @@ def validate_repository(repo: Path, baseline_ref: str, candidate_ref: str) -> li
             "CATALOGUE-EXTERNAL-INTEGRATIONS-V1",
             "CATALOGUE-EXTERNAL-INTEGRATIONS-V2",
             "CATALOGUE-EXTERNAL-INTEGRATIONS-V3",
-            "#805 remains open and `DISCOVERY`",
+            "#805 remains open and enters `BUILDING`",
         ):
             if phrase not in document:
                 errors.append(f"Innovation Lab contract is missing required invariant: {phrase}")
