@@ -300,8 +300,9 @@ From `pyproject.toml` at `main` and at `v2026.8.3` (both read, both `0.20.0`):
   network-bound stacks (`computer-use`, `vision`, `voice`, `daytona`, `modal`,
   `bedrock`, `vertex`). E8.1b must install **no extras by default**.
 - **Not verified:** the transitive license closure. Only the direct dependency
-  list was read. A full transitive license and CVE review is required E8.1b work
-  and is not claimed here.
+  list was read. A full transitive license and CVE review is required before any
+  Hermes adapter or dependency adoption and is not claimed by the provider-neutral
+  E8.1b contract.
 
 ## 5. Concrete upstream interfaces — inventoried at `v2026.8.3/tools`
 
@@ -404,8 +405,8 @@ Stated plainly, because inventing any of it would be worse than leaving it open:
 - **the transitive license closure and CVE posture** — only the direct dependency
   list was read (§4.1);
 - **provider compatibility or adapter security** — PR #834 for issue #830 tests
-  the fetch-integrity boundary only; no provider contract, adapter or
-  provider-specific E9 comparison exists on accepted `main`;
+  the fetch-integrity boundary only; E8.1b defines an inert provider-neutral
+  contract, not Hermes compatibility, an adapter or provider-specific E9 evidence;
 - **the Sigstore attestations themselves** — their presence is recorded from the
   PyPI page (§1.2); no bundle was downloaded or cryptographically verified;
 - **any performance, reliability, cost or privacy property** of Hermes. Nothing
@@ -435,11 +436,11 @@ Per #804 and the accepted E9 contracts, before a shadow adapter may be promoted:
 E8.1a added only this discovery document. E8.1d/#824 added only the generic
 manifest policy, updater/workflow enforcement and focused tests. PR #834 for issue #830
 changed only the skill-fetch boundary, its tests, this document and the compact
-pin. There is still no fork, vendored Hermes subsystem,
-dependency, adapter code, provider contract, installation, upstream execution,
-credential use, Hermes manifest entry or capability claim. Import remains an
-existing explicit, guarded action; this package adds no approval, promotion or
-execution authority.
+pin. E8.1b adds only inert provider-neutral value types and a protocol. There is
+still no fork, vendored Hermes subsystem, dependency, adapter implementation,
+provider registration, installation, upstream execution, credential use, Hermes
+manifest entry or capability claim. Import remains an existing explicit, guarded
+action; these packages add no approval, promotion or execution authority.
 The existing loader can discover the imported instruction file, which is why
 operator review remains necessary even when every byte matches. Ultron remains
 the sole privileged-action authority.
@@ -447,11 +448,12 @@ the sole privileged-action authority.
 ## Next coherent package
 
 E8.1a was independently accepted in PR #819, #824 supplied the generic
-manual-only updater guard, and PR #834 supplied the accepted exact-fetch
-integrity boundary. The next coherent slice is issue #835, the provider-neutral
-E8.1b (`nerva.execution-provider.v1`). It must keep
-`grants_authority=false` immutable and cannot execute or promote Hermes.
+manual-only updater guard, PR #834 supplied the accepted exact-fetch integrity
+boundary, and #835 supplies the inert provider-neutral E8.1b contract. After
+independent #835 integration, E8.1c must remain a separately scoped Hermes shadow
+adapter package; it cannot be inferred or authorized by the contract alone.
 
-Dual GitHub/PyPI drift, explicit manifest enrolment, a Hermes adapter and
-adapter-specific compatibility/supply-chain/E9 gates remain separate, later
-packages. A shadow adapter remains blocked on all of those controls.
+Dual GitHub/PyPI drift, explicit manifest enrolment, transitive license/CVE
+review, trusted Nerva-side kernel context, the Hermes adapter and adapter-specific
+compatibility/supply-chain/E9 gates remain separate, later packages. A shadow
+adapter remains blocked on all of those controls.

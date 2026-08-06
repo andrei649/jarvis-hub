@@ -1,6 +1,6 @@
 # Nerva E8.1b — provider-neutral execution contract
 
-Status: contract-only candidate for issue #835. This slice defines
+Status: contract-only package for issue #835. This slice defines
 `nerva.execution-provider.v1`; it does not register, import, select or execute a
 provider. Hermes remains only the first candidate named by the accepted E8.1a
 discovery.
