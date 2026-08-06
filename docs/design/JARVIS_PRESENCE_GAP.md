@@ -1,9 +1,10 @@
 # The "J.A.R.V.I.S. in the room" build — guide vs. this repo
 
-> Provenance: an owner-supplied build guide (2026-08-06), then **five frames of the actual reference
-> video** the guide was written from (same day). The frames changed the visual brief materially and
-> are the authority here — the guide's "particle sphere" was a text approximation of something else.
-> This file maps every item onto what Nerva already ships, so nobody rebuilds what exists.
+> Provenance, in the order it arrived (2026-08-06): a written build guide → **five frames** of the
+> reference video → **two full videos** (a TV build and a phone build). Each pass corrected the one
+> before: the guide's "particle sphere" was a text approximation, and the phone video revealed
+> controls the stills never showed. The videos are the authority. This file maps every item onto
+> what Nerva already ships, so nobody rebuilds what exists.
 >
 > **What the reference actually is:** a wall-mounted TV in a dark room with blue LED backlight,
 > showing a full-bleed *neural firing field* — a dark core surrounded by dense, branching, multi-
@@ -21,6 +22,12 @@
 |---|---|---|
 | Neural firing field (the actual centrepiece) | ✅ **shipped** — `NeuralBurst`: per-tier dendrite trees grown from a deterministic seed, synapse nodes, long white axon sweeps, and a blown-out core, all bound to the live cabinet. Regions are real tiers, node density follows the real agent count, and only tiers that are actually executing fire. | `frontend/src/burst.tsx` |
 | The full briefing board (chrome + side cards + status rail + spoken line) | ✅ **shipped** — `BriefingWall`, the `brain` stage of cinema mode (`m` then `b`). | `frontend/src/wall.tsx` |
+| Bordered region chips (`190 neurons · firing 0.8%`) | ✅ **shipped** — bordered plate, thick coloured edge bar, region-coloured title, sub-line `N agents · firing X% · N tasks`. The firing share is real (executing ÷ roster), not a decorative percentage. | `frontend/src/burst.tsx` |
+| `HOLD TO TALK` round mic control (phone build) | ✅ **shipped** — wired to the live `useVoice()` loop: press starts, release stops, and it refuses honestly when the mic is muted or the browser cannot capture audio. | `frontend/src/wall.tsx` |
+| Vertical edge tabs (`AGENT OPS` / `CORTEX`) | ✅ **shipped** as `AGENT OPS` / `CABINET`, carrying live counts; the badge is dropped rather than showing `0` when the feed is unavailable. | `frontend/src/wall.tsx` |
+| Portrait phone layout | ✅ **shipped** — under 820px the cards give way to the edge tabs, the chrome centres and the talk button leads, as in the phone video. | `frontend/src/styles.css` |
+| Pop-in "spoken point" card (`1.1M+ VIEWS · LAST 30 DAYS`) | ❌ not built — it belongs to a narrated-briefing flow (a card appearing as the assistant speaks each figure). Worth doing once there is a briefing script to drive it; it must pull from real digest data, not a highlight reel. | — |
+| Live avatar / camera bubble | ➖ not built — decorative in the reference, and a camera feed on a wall screen is a privacy decision for the owner, not a default. | — |
 | Reactive orb (from the written guide, before the frames arrived) | ✅ shipped earlier in the same PR and kept — `VoiceOrb` is a tighter voice-state read than the field, so it stays as the `orb` cinema stage and inline in the voice pill. | `frontend/src/orb.tsx` |
 | Three.js / p5.js / GLSL shaders | ➖ **deliberately not used.** The HUD ships as a committed local bundle with no CDN and no runtime asset fetches; both the field and the sphere are Canvas-2D, so they add zero dependencies and run on the same guards as the Neural Mesh. | `frontend/src/burst.tsx`, `orb.tsx` |
 | Wallpaper Engine / prebuilt "Jarvis HUD" skins | ➖ not needed — those are wallpapers, not a UI wired to real state. Nerva's own HUD is the surface. | — |

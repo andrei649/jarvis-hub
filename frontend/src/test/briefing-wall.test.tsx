@@ -163,6 +163,60 @@ describe('BriefingWall — every cell is proven or blank', () => {
   });
 });
 
+describe('BriefingWall — hold to talk', () => {
+  const base = {
+    agents: AGENTS, tasks: TASKS, sources: { tasks: true, trust: true },
+    serverUp: true, clock: new Date(), llm: null, localPct: null,
+  };
+
+  it('drives the real voice loop: press starts, release stops', () => {
+    const voice = { status: 'off', supported: true, caps: null, start: vi.fn(), stop: vi.fn() };
+    const { container } = render(<BriefingWall {...base} trust={{ mic: 'on' }} voice={voice} />);
+    const btn = container.querySelector('.wl-ptt');
+    expect(btn.textContent).toContain('hold to talk');
+    fireEvent.pointerDown(btn);
+    expect(voice.start).toHaveBeenCalled();
+    expect(container.querySelector('.wl-ptt.on')).toBeTruthy();
+    fireEvent.pointerUp(btn);
+    expect(voice.stop).toHaveBeenCalled();
+    expect(container.querySelector('.wl-ptt.on')).toBeNull();
+  });
+
+  it('refuses honestly when the mic is muted, and never calls start', () => {
+    const voice = { status: 'off', supported: true, caps: null, start: vi.fn(), stop: vi.fn() };
+    const { container } = render(<BriefingWall {...base} trust={{ mic: 'off' }} voice={voice} />);
+    const btn = container.querySelector('.wl-ptt');
+    expect(btn.textContent).toContain('mic muted');
+    expect(btn.disabled).toBe(true);
+    fireEvent.pointerDown(btn);
+    expect(voice.start).not.toHaveBeenCalled();
+  });
+
+  it('says voice is unavailable when the browser cannot capture audio', () => {
+    const { container } = render(<BriefingWall {...base} trust={{ mic: 'on' }} voice={{ status: 'off', supported: false, caps: null }} />);
+    expect(container.querySelector('.wl-ptt').textContent).toContain('voice unavailable');
+    expect(container.querySelector('.wl-ptt').disabled).toBe(true);
+  });
+});
+
+describe('BriefingWall — edge tabs', () => {
+  it('carries live counts so a narrow screen still reports load', () => {
+    const { container } = render(
+      <BriefingWall agents={AGENTS} tasks={TASKS} sources={{ tasks: true }} serverUp={true} clock={new Date()} />,
+    );
+    expect(container.querySelector('.wl-tab-left').textContent).toContain('1');   // one running task (the other is waiting)
+    expect(container.querySelector('.wl-tab-right').textContent).toContain('4');  // roster size
+  });
+
+  it('drops the badge rather than showing 0 when the task feed is unavailable', () => {
+    const { container } = render(
+      <BriefingWall agents={[]} tasks={[]} sources={{ tasks: false }} serverUp={false} clock={new Date()} />,
+    );
+    expect(container.querySelector('.wl-tab-left .wl-tab-badge')).toBeNull();
+    expect(container.querySelector('.wl-tab-right .wl-tab-badge')).toBeNull();
+  });
+});
+
 describe('CinemaMesh — brain stage', () => {
   it('switches to the briefing wall and back, and Esc still exits', () => {
     const onExit = vi.fn();

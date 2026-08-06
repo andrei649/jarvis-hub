@@ -298,14 +298,21 @@ export function NeuralBurst({ agents = [], tasks = [], voice = null, motion = 'l
     }
     ctx.restore();
 
-    // ── region chips: real name, real counts, anchored on the cluster
+    // ── region chips. The reference draws them as bordered plates with a thick
+    // coloured edge bar, a letterspaced title in the region colour and a light
+    // sub-line ("190 neurons · firing 0.8%"). Ours carries the same shape with
+    // figures we can prove: the real agent count and the real executing share.
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     field.clusters.forEach((c: any) => {
       const label = String(c.label || c.key).toUpperCase();
-      const sub = `${c.nodes} agent${c.nodes === 1 ? '' : 's'} · ${c.firing ? c.firing + ' executing' : 'idle'}${c.tasks ? ' · ' + c.tasks + ' task' + (c.tasks === 1 ? '' : 's') : ''}`;
-      ctx.font = '700 8px "JetBrains Mono",monospace';
-      const w = Math.max(ctx.measureText(label).width, ctx.measureText(sub).width) + 16;
+      const pct = c.nodes ? Math.round((c.firing / c.nodes) * 100) : 0;
+      const sub = `${c.nodes} agent${c.nodes === 1 ? '' : 's'} · firing ${pct}%${c.tasks ? ' · ' + c.tasks + ' task' + (c.tasks === 1 ? '' : 's') : ''}`;
+      ctx.font = '700 10px "JetBrains Mono",monospace';
+      const tw = ctx.measureText(label).width;
+      ctx.font = '400 9px "JetBrains Mono",monospace';
+      const sw = ctx.measureText(sub).width;
+      const w = Math.max(tw, sw) + 22, h = 30;
       // Anchor part-way out along the tree, then clamp into a safe band: the wall's
       // stat cards own the outer fifths and the top/bottom bars own the edges, so a
       // chip pinned to the outermost tip would land on top of them.
@@ -313,19 +320,22 @@ export function NeuralBurst({ agents = [], tasks = [], voice = null, motion = 'l
       const padX = W * 0.21, padTop = H * 0.12, padBot = H * 0.16;
       const x = Math.max(padX, Math.min(W - w - padX, ax - w / 2));
       const y = Math.max(padTop, Math.min(H - padBot, ay + 12));
-      ctx.fillStyle = 'rgba(3,8,20,0.82)';
-      ctx.fillRect(x, y, w, 22);
+      ctx.fillStyle = 'rgba(3,9,20,0.86)';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = c.color;
+      ctx.globalAlpha = 0.75;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.globalAlpha = 1;
       ctx.fillStyle = c.color;
-      ctx.fillRect(x, y, 2, 22);
-      ctx.globalAlpha = 0.85;
-      ctx.fillStyle = c.color;
-      ctx.font = '700 8px "JetBrains Mono",monospace';
+      ctx.fillRect(x, y, 3.5, h);                       // thick coloured edge bar
       ctx.textAlign = 'left';
-      ctx.fillText(label, x + 7, y + 9);
-      ctx.globalAlpha = 0.62;
-      ctx.fillStyle = '#a8c4dd';
-      ctx.font = '400 7px "JetBrains Mono",monospace';
-      ctx.fillText(sub, x + 7, y + 18);
+      ctx.font = '700 10px "JetBrains Mono",monospace';
+      ctx.fillText(label, x + 10, y + 13);
+      ctx.globalAlpha = 0.78;
+      ctx.fillStyle = '#dbe9f7';
+      ctx.font = '400 9px "JetBrains Mono",monospace';
+      ctx.fillText(sub, x + 10, y + 24);
       ctx.globalAlpha = 1;
     });
   }

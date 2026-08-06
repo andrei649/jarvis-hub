@@ -13,7 +13,7 @@
 
    Layout only; the field itself is burst.tsx. Rendered as the `brain` stage of cinema
    mode (shell.tsx). */
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { NeuralBurst, burstEnergy } from './burst';
 import { isExecutingAgent } from './mesh';
 import { runningTasks } from './task-state';
@@ -65,6 +65,56 @@ function Card({ title, stamp, children }: any) {
 
 function Dot({ tone }: any) { return <i className={'wl-dot wl-' + (tone || 'off')} />; }
 
+/* HOLD TO TALK — the reference's round mic control, wired to the real `useVoice()`
+   loop: press starts it, release stops it. That is genuine push-to-talk regardless of
+   the configured mode, because `stop()` cancels an in-flight turn. It refuses honestly
+   when the mic is muted or the browser can't do voice — it never pretends to listen. */
+function PushToTalk({ voice, muted }: any) {
+  const [held, setHeld] = useState(false);
+  const usable = !!voice && typeof voice.start === 'function' && typeof voice.stop === 'function' && voice.supported !== false;
+  const blocked = muted || !usable;
+  const release = useCallback(() => {
+    setHeld((wasHeld) => { if (wasHeld && voice && voice.stop) voice.stop(); return false; });
+  }, [voice]);
+  // release outside the button still ends the turn
+  useEffect(() => {
+    if (!held) return undefined;
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+    return () => { window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release); };
+  }, [held, release]);
+  const press = () => { if (blocked) return; setHeld(true); voice.start(); };
+  const label = muted ? 'mic muted'
+    : !usable ? 'voice unavailable'
+    : held ? 'listening…'
+    : 'hold to talk';
+  const lv = held ? Math.min(1, (Number(voice && voice.level) || 0) / 0.25) : 0;
+  return (
+    <button
+      className={'wl-ptt' + (held ? ' on' : '') + (blocked ? ' off' : '')}
+      onPointerDown={press}
+      onPointerUp={release}
+      disabled={blocked}
+      title={muted ? 'mic is muted — unmute Nerva to talk' : usable ? 'hold to speak' : 'this browser cannot capture audio'}
+      style={held ? { boxShadow: `0 0 ${18 + lv * 40}px rgba(65,245,155,${0.3 + lv * 0.5})` } : undefined}
+    >
+      <span>{label}</span>
+    </button>
+  );
+}
+
+/* Collapsed side tabs — the reference's vertical "AGENT OPS" / "CORTEX" rails. They
+   carry live counts, so on a narrow screen (where the stat cards are hidden) the wall
+   still says how much is running. */
+function EdgeTab({ side, label, badge }: any) {
+  return (
+    <div className={'wl-tab wl-tab-' + side}>
+      {badge !== null && badge !== undefined && <span className="wl-tab-badge">{badge}</span>}
+      <span className="wl-tab-label">{label}</span>
+    </div>
+  );
+}
+
 export function BriefingWall({
   agents = [], tasks = [], decisions = [], calendar = [], heartbeat = [],
   llm = null, trust = null, sources = null, localPct = null, voice = null,
@@ -98,6 +148,8 @@ export function BriefingWall({
       {/* the field spans the whole wall and passes BEHIND the cards, as in the reference */}
       <div className="wl-field"><NeuralBurst agents={agents} tasks={tasks} voice={voice} demo={demo} motion="lively" /></div>
       <span className="wl-bk tl" /><span className="wl-bk tr" /><span className="wl-bk bl" /><span className="wl-bk br" />
+      <EdgeTab side="left" label="agent ops" badge={sources && sources.tasks ? running.length : null} />
+      <EdgeTab side="right" label="cabinet" badge={list.length || null} />
 
       <div className="wl-top">
         <div className="wl-brand">
@@ -131,6 +183,7 @@ export function BriefingWall({
         </div>
 
         <div className="wl-stage">
+          <PushToTalk voice={voice} muted={!!(trust && trust.mic === 'off')} />
           <div className="wl-said">
             {voice && voice.transcript
               ? <><span className="wl-caret">▸</span> {voice.transcript}</>

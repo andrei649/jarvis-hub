@@ -310,6 +310,16 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > reproduced — the same slots carry provable Nerva figures, and anything unmeasured renders `—`
 > with the reason attached. +15 frontend tests (Vitest 422 → **437**). No new dependency, no
 > endpoint, no backend change.
+>
+> **Wall pass 2 — from the two owner videos** (the still frames were a partial read; the videos
+> showed the mobile build too): region chips are now bordered plates with a thick coloured edge bar
+> and a `N agents · firing X% · N tasks` sub-line (the firing share is real: executing/roster); the
+> wall gains a **HOLD TO TALK** control wired to the live `useVoice()` loop (press starts, release
+> stops, refusing honestly when the mic is muted or the browser cannot capture audio); collapsed
+> **AGENT OPS / CABINET** edge tabs carry live counts and drop the badge instead of showing `0`
+> when the task feed is unavailable; and under 820px the wall takes the reference's portrait
+> layout — cards give way to the edge tabs, chrome centres, and the talk button leads. +5 frontend
+> tests (Vitest 437 → **442**).
 
 ---
 
