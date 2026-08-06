@@ -126,7 +126,7 @@ describe('BriefingWall — every cell is proven or blank', () => {
     agents: AGENTS, tasks: TASKS, decisions: [{}, {}], calendar: [{}], heartbeat: [{}],
     llm: { state: 'ready', model: 'gemma-4-26b', residents: [] },
     trust: { mic: 'on', strict_local: true },
-    sources: { tasks: true, trust: true }, localPct: 94,
+    sources: { tasks: true, trust: true, agents: true }, localPct: 94,
     voice: { status: 'listening', level: 0.1, transcript: 'give me a recap', caps: { stt: true, tts: true } },
     serverUp: true, clock: new Date(2026, 7, 6, 22, 31, 23),
   };
@@ -135,7 +135,10 @@ describe('BriefingWall — every cell is proven or blank', () => {
     const { container } = render(<BriefingWall {...LIVE} />);
     expect(container.textContent).toContain('94%');
     expect(container.textContent).toContain('gemma-4-26b');
+    expect(container.textContent).not.toContain('give me a recap');   // redacted by default
+    fireEvent.click(container.querySelector('.wl-said-toggle'));
     expect(container.textContent).toContain('give me a recap');
+    localStorage.removeItem('hud.wall.transcript');
     expect(container.textContent).toContain('22:31:23');
     expect(container.querySelector('.wl-state-word').textContent).toBe('listening');
   });
@@ -157,7 +160,7 @@ describe('BriefingWall — every cell is proven or blank', () => {
     expect(cellValue(container, 'LOCAL MODEL')).toBe('—');
     expect(cellValue(container, 'CLOUD LANE')).toBe('—');
     expect(container.textContent).toContain('BACKEND OFFLINE');
-    expect(container.textContent).toContain('nothing heard yet');
+    expect(container.textContent).toContain('room mode');            // spoken line redacted by default
   });
 
   it('badges demo mode instead of passing seeded data off as live', () => {
@@ -182,7 +185,7 @@ describe('BriefingWall — hold to talk', () => {
 
   it('drives the real voice loop: press starts, release stops', () => {
     const voice = { status: 'off', supported: true, caps: null, start: vi.fn(), stop: vi.fn() };
-    const { container } = render(<BriefingWall {...base} trust={{ mic: 'on' }} voice={voice} />);
+    const { container } = render(<BriefingWall {...base} trust={{ mic: 'on' }} sources={{ tasks: true, trust: true }} voice={voice} />);
     const btn = container.querySelector('.wl-ptt');
     expect(btn.textContent).toContain('hold to talk');
     fireEvent.pointerDown(btn);
@@ -195,7 +198,7 @@ describe('BriefingWall — hold to talk', () => {
 
   it('refuses honestly when the mic is muted, and never calls start', () => {
     const voice = { status: 'off', supported: true, caps: null, start: vi.fn(), stop: vi.fn() };
-    const { container } = render(<BriefingWall {...base} trust={{ mic: 'off' }} voice={voice} />);
+    const { container } = render(<BriefingWall {...base} trust={{ mic: 'off' }} sources={{ tasks: true, trust: true }} voice={voice} />);
     const btn = container.querySelector('.wl-ptt');
     expect(btn.textContent).toContain('mic muted');
     expect(btn.disabled).toBe(true);
@@ -204,7 +207,7 @@ describe('BriefingWall — hold to talk', () => {
   });
 
   it('says voice is unavailable when the browser cannot capture audio', () => {
-    const { container } = render(<BriefingWall {...base} trust={{ mic: 'on' }} voice={{ status: 'off', supported: false, caps: null }} />);
+    const { container } = render(<BriefingWall {...base} trust={{ mic: 'on' }} sources={{ tasks: true, trust: true }} voice={{ status: 'off', supported: false, caps: null }} />);
     expect(container.querySelector('.wl-ptt').textContent).toContain('voice unavailable');
     expect(container.querySelector('.wl-ptt').disabled).toBe(true);
   });
@@ -325,26 +328,134 @@ describe('BriefingWall — the mic fails closed without current trust evidence',
 
 describe('BriefingWall — the spoken line is room-facing', () => {
   const base = {
-    agents: AGENTS, tasks: [], sources: { tasks: true, trust: true }, trust: { mic: 'on' },
+    agents: AGENTS, tasks: [], sources: { tasks: true, trust: true, agents: true }, trust: { mic: 'on' },
     serverUp: true, clock: new Date(),
     voice: { status: 'listening', supported: true, caps: null, transcript: 'my private sentence', start() {}, stop() {} },
   };
 
-  it('can be redacted on demand, and the choice persists', () => {
+  it('opens REDACTED by default — a wall screen has an audience', () => {
     const { container } = render(<BriefingWall {...base} />);
-    expect(container.textContent).toContain('my private sentence');
-    fireEvent.click(container.querySelector('.wl-said-toggle'));
     expect(container.textContent).not.toContain('my private sentence');
     expect(container.textContent).toContain('room mode');
-    expect(localStorage.getItem('hud.wall.transcript')).toBe('hidden');
   });
 
-  it('honours a stored redaction on the next open', () => {
-    localStorage.setItem('hud.wall.transcript', 'hidden');
-    expect(readTranscriptPref()).toBe(false);
+  it('shows the line only on an explicit opt-in, which persists', () => {
     const { container } = render(<BriefingWall {...base} />);
-    expect(container.textContent).not.toContain('my private sentence');
+    fireEvent.click(container.querySelector('.wl-said-toggle'));
+    expect(container.textContent).toContain('my private sentence');
+    expect(localStorage.getItem('hud.wall.transcript')).toBe('shown');
     localStorage.removeItem('hud.wall.transcript');
+  });
+
+  it('defaults to hidden with no stored preference', () => {
+    localStorage.removeItem('hud.wall.transcript');
+    expect(readTranscriptPref()).toBe(false);
+  });
+});
+
+/* Second review round: the mic must fail closed across its whole LIFECYCLE, not just at
+   first render — unknown permission, permission lost mid-capture, and the wall going away
+   while held are all ways an open microphone could outlive its authorization. */
+describe('BriefingWall — push-to-talk lifecycle', () => {
+  const ok = {
+    agents: AGENTS, tasks: [], serverUp: true, clock: new Date(),
+    sources: { tasks: true, trust: true, agents: true },
+  };
+  const mkVoice = () => ({ status: 'off', supported: true, caps: null, start: vi.fn(), stop: vi.fn() });
+
+  it.each([
+    ['missing', {}],
+    ['unknown', { mic: 'unknown' }],
+    ['malformed', { mic: 42 }],
+    ['empty', { mic: '' }],
+  ])('refuses capture when the mic state is %s — only an exact "on" authorizes', (_label, trust) => {
+    const voice = mkVoice();
+    const { container } = render(<BriefingWall {...ok} trust={trust} voice={voice} />);
+    const btn = container.querySelector('.wl-ptt');
+    expect(btn.disabled).toBe(true);
+    fireEvent.pointerDown(btn);
+    expect(voice.start).not.toHaveBeenCalled();
+  });
+
+  it('cuts an in-flight capture the moment permission is lost', () => {
+    const voice = mkVoice();
+    const { container, rerender } = render(<BriefingWall {...ok} trust={{ mic: 'on' }} voice={voice} />);
+    fireEvent.pointerDown(container.querySelector('.wl-ptt'));
+    expect(voice.start).toHaveBeenCalled();
+    expect(voice.stop).not.toHaveBeenCalled();
+    // the mic goes muted underneath a held button
+    rerender(<BriefingWall {...ok} trust={{ mic: 'off' }} voice={voice} />);
+    expect(voice.stop).toHaveBeenCalled();
+    expect(container.querySelector('.wl-ptt.on')).toBeNull();
+  });
+
+  it('cuts an in-flight capture when trust evidence expires', () => {
+    const voice = mkVoice();
+    const { container, rerender } = render(<BriefingWall {...ok} trust={{ mic: 'on' }} voice={voice} />);
+    fireEvent.pointerDown(container.querySelector('.wl-ptt'));
+    expect(voice.stop).not.toHaveBeenCalled();
+    rerender(<BriefingWall {...ok} sources={{ tasks: true, trust: false, agents: true }} trust={{ mic: 'on' }} voice={voice} />);
+    expect(voice.stop).toHaveBeenCalled();
+  });
+
+  it('never leaves the loop running when the wall unmounts mid-hold', () => {
+    const voice = mkVoice();
+    const { container, unmount } = render(<BriefingWall {...ok} trust={{ mic: 'on' }} voice={voice} />);
+    fireEvent.pointerDown(container.querySelector('.wl-ptt'));
+    expect(voice.stop).not.toHaveBeenCalled();
+    unmount();                       // Esc out of the wall, or a stage switch
+    expect(voice.stop).toHaveBeenCalled();
+  });
+
+  it('is operable from the keyboard, and ignores key repeat', () => {
+    const voice = mkVoice();
+    const { container } = render(<BriefingWall {...ok} trust={{ mic: 'on' }} voice={voice} />);
+    const btn = container.querySelector('.wl-ptt');
+    fireEvent.keyDown(btn, { key: ' ' });
+    expect(voice.start).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(btn, { key: ' ', repeat: true });
+    expect(voice.start).toHaveBeenCalledTimes(1);       // held, not re-triggered
+    fireEvent.keyUp(btn, { key: ' ' });
+    expect(voice.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an unknown mic as UNKNOWN in the footer, not idle or muted', () => {
+    const { container } = render(
+      <BriefingWall {...ok} sources={{ tasks: true, trust: false }} trust={{ mic: 'on' }} voice={{ status: 'off' }} />,
+    );
+    expect(container.textContent).toContain('MIC · UNKNOWN');
+  });
+});
+
+describe('BriefingWall — no metric cell claims a zero it cannot prove', () => {
+  it('withholds roster/executing without agent evidence, and decisions without a feed', () => {
+    const { container } = render(
+      <BriefingWall agents={AGENTS} tasks={[]} decisions={[]} serverUp={true} clock={new Date()}
+        sources={{ tasks: false, trust: false, agents: false }} voice={{ status: 'off' }} />,
+    );
+    expect(cellValue(container, 'AGENTS IN ROSTER')).toBe('—');
+    expect(cellValue(container, 'EXECUTING')).toBe('—');
+    expect(cellValue(container, 'DECISIONS PENDING')).toBe('—');
+  });
+
+  it('shows them once the evidence is there', () => {
+    const { container } = render(
+      <BriefingWall agents={AGENTS} tasks={[]} decisions={[{}, {}]} demo={true} serverUp={true} clock={new Date()}
+        sources={{ tasks: true, trust: true, agents: true }} voice={{ status: 'off' }} />,
+    );
+    expect(cellValue(container, 'AGENTS IN ROSTER')).toBe('4');
+    expect(cellValue(container, 'EXECUTING')).toBe('2');
+    expect(cellValue(container, 'DECISIONS PENDING')).toBe('2');
+  });
+
+  it('every unmeasured cell carries its reason', () => {
+    const { container } = render(
+      <BriefingWall agents={[]} tasks={[]} decisions={[]} serverUp={false} clock={new Date()}
+        sources={{}} trust={null} llm={null} localPct={null} voice={{ status: 'off' }} />,
+    );
+    const missing = Array.from(container.querySelectorAll('.wl-v.wl-miss'));
+    expect(missing.length).toBeGreaterThanOrEqual(9);
+    missing.forEach((m: any) => expect(m.getAttribute('title')).toBeTruthy());
   });
 });
 

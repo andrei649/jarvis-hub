@@ -13,7 +13,7 @@
 
    Layout only; the field itself is burst.tsx. Rendered as the `brain` stage of cinema
    mode (shell.tsx). */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { NeuralBurst, burstEnergy } from './burst';
 import { isExecutingAgent } from './mesh';
 import { runningTasks } from './task-state';
@@ -69,12 +69,16 @@ function Dot({ tone }: any) { return <i className={'wl-dot wl-' + (tone || 'off'
    loop: press starts it, release stops it. That is genuine push-to-talk regardless of
    the configured mode, because `stop()` cancels an in-flight turn. It refuses honestly
    when the mic is muted or the browser can't do voice — it never pretends to listen. */
-function PushToTalk({ voice, muted, trustEvidence }: any) {
+function PushToTalk({ voice, micState, trustEvidence }: any) {
   const [held, setHeld] = useState(false);
   const usable = !!voice && typeof voice.start === 'function' && typeof voice.stop === 'function' && voice.supported !== false;
-  // Fails closed on a microphone: no current trust proof → no capture, even if a
-  // retained trust object still says the mic is on.
-  const blocked = !trustEvidence || muted || !usable;
+  // Fails closed on a microphone, over the whole lifecycle:
+  //  - `sources.trust` must prove the status is CURRENT (a retained object is not proof);
+  //  - the mic state must be an EXACT affirmative 'on' — missing, unknown or malformed
+  //    values authorize nothing;
+  //  - capture stops the moment either stops holding, and on unmount/stage switch.
+  const permitted = trustEvidence && micState === 'on';
+  const blocked = !permitted || !usable;
   const release = useCallback(() => {
     setHeld((wasHeld) => { if (wasHeld && voice && voice.stop) voice.stop(); return false; });
   }, [voice]);
@@ -85,9 +89,24 @@ function PushToTalk({ voice, muted, trustEvidence }: any) {
     window.addEventListener('pointercancel', release);
     return () => { window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release); };
   }, [held, release]);
+  // permission lost mid-capture (mute, trust evidence expiry) → cut the mic immediately
+  useEffect(() => { if (held && blocked) release(); }, [held, blocked, release]);
+  // unmount (Esc out of the wall, stage switch) must never leave the loop running
+  const heldRef = useRef(held);
+  heldRef.current = held;
+  useEffect(() => () => { if (heldRef.current && voice && voice.stop) voice.stop(); }, [voice]);
   const press = () => { if (blocked) return; setHeld(true); voice.start(); };
+  // keyboard hold/release — the control must be operable without a pointer
+  const keyDown = (e: any) => {
+    if (e.key !== ' ' && e.key !== 'Enter') return;
+    e.preventDefault();
+    if (e.repeat || held) return;
+    press();
+  };
+  const keyUp = (e: any) => { if (e.key === ' ' || e.key === 'Enter') release(); };
   const label = !trustEvidence ? 'trust status unavailable'
-    : muted ? 'mic muted'
+    : micState === 'off' ? 'mic muted'
+    : micState !== 'on' ? 'mic state unknown'
     : !usable ? 'voice unavailable'
     : held ? 'listening…'
     : 'hold to talk';
@@ -97,10 +116,13 @@ function PushToTalk({ voice, muted, trustEvidence }: any) {
       className={'wl-ptt' + (held ? ' on' : '') + (blocked ? ' off' : '')}
       onPointerDown={press}
       onPointerUp={release}
+      onKeyDown={keyDown}
+      onKeyUp={keyUp}
       disabled={blocked}
       title={!trustEvidence ? 'no current trust status — the wall will not open the mic without it'
-        : muted ? 'mic is muted — unmute Nerva to talk'
-        : usable ? 'hold to speak' : 'this browser cannot capture audio'}
+        : micState === 'off' ? 'mic is muted — unmute Nerva to talk'
+        : micState !== 'on' ? 'mic permission is not an explicit yes — the wall will not open it'
+        : usable ? 'hold to speak (or hold space)' : 'this browser cannot capture audio'}
       style={held ? { boxShadow: `0 0 ${18 + lv * 40}px rgba(65,245,155,${0.3 + lv * 0.5})` } : undefined}
     >
       <span>{label}</span>
@@ -110,11 +132,11 @@ function PushToTalk({ voice, muted, trustEvidence }: any) {
 
 /* The spoken line is a ROOM-FACING exposure, unlike the same text in the cockpit: a wall
    screen has an audience. The reviewer asked for default-hide or an explicit opt-in; the
-   line is also the reference's signature element and the owner asked for it by name, so
-   the compromise is an always-present, persisted redaction control — one click hides it,
-   and the choice survives reloads. Flip TRANSCRIPT_DEFAULT_VISIBLE to change the default
-   for an installation where the wall is in a shared room. */
-export const TRANSCRIPT_DEFAULT_VISIBLE = true;
+   line is also the reference's signature element. Raised that tension in review; the owner
+   reaffirmed default-hide, so the wall now opens redacted and the spoken line is an
+   explicit, persisted opt-in per installation. One click shows it; the choice survives
+   reloads. */
+export const TRANSCRIPT_DEFAULT_VISIBLE = false;
 const TRANSCRIPT_KEY = 'hud.wall.transcript';
 
 export function readTranscriptPref(storage?: any) {
@@ -168,7 +190,7 @@ function EdgeTab({ side, label, badge }: any) {
 export function BriefingWall({
   agents = [], tasks = [], decisions = [], calendar = [], heartbeat = [],
   llm = null, trust = null, sources = null, localPct = null, voice = null,
-  serverUp = false, demo = false, clock = null, onExit,
+  serverUp = false, demo = false, clock = null, motion = 'lively', onExit,
 }: any) {
   const list = Array.isArray(agents) ? agents : [];
   // Evidence gate (review finding, 2026-08-06): `sources.tasks` is the proof that the
@@ -177,6 +199,13 @@ export function BriefingWall({
   // regions and task-attributed chips while its own rail reports "task feed · no data".
   // When the evidence is absent there are no tasks, for every consumer.
   const taskEvidence = !!(sources && sources.tasks === true);
+  // Same rule for the roster: `sources.agents` is set by the loader only when agents
+  // really arrived, so without it neither the roster size nor an executing count is
+  // knowable — and "0 executing" is a claim, not a neutral default.
+  const agentEvidence = !!(sources && sources.agents === true);
+  // There is no live decisions endpoint yet: `decisions` is seeded in demo and otherwise
+  // stays []. Rendering 0 would assert "nothing is pending" on no evidence at all.
+  const decisionEvidence = !!demo && Array.isArray(decisions);
   const evidenceTasks = taskEvidence && Array.isArray(tasks) ? tasks : [];
   const running = runningTasks(evidenceTasks);
   const waiting = evidenceTasks.length - running.length;
@@ -190,6 +219,8 @@ export function BriefingWall({
   // alone. A default/retained object is not a current trust proof.
   const trustEvidence = !!(sources && sources.trust === true);
   const cloud = trustEvidence ? ((trust && (trust.claude_available || trust.cloud_available)) ? 'reported' : 'none reported') : null;
+  // Raw mic state, un-normalized: only an exact 'on'/'off' means anything downstream.
+  const micState = trust && typeof trust.mic === 'string' ? trust.mic : null;
   const model = (llm && llm.model) || (llm && Array.isArray(llm.residents) && llm.residents[0] && llm.residents[0].id) || null;
   const now = clock instanceof Date ? clock : new Date();
 
@@ -197,7 +228,7 @@ export function BriefingWall({
     { k: 'server', v: serverUp ? 'up' : 'down', tone: serverUp ? 'live' : 'bad' },
     { k: 'local model', v: model ? 'loaded' : (llm && llm.state === 'unknown' ? null : 'none'), tone: model ? 'live' : 'off' },
     { k: 'cloud lane', v: cloud, tone: cloud === 'reported' ? 'work' : 'off' },
-    { k: 'mic', v: trustEvidence && trust ? (trust.mic === 'off' ? 'muted' : 'on') : null, tone: trust && trust.mic === 'off' ? 'bad' : 'live' },
+    { k: 'mic', v: trustEvidence && (micState === 'on' || micState === 'off') ? (micState === 'off' ? 'muted' : 'on') : null, tone: micState === 'off' ? 'bad' : 'live' },
     { k: 'speech-to-text', v: caps ? (caps.stt ? 'ready' : 'not installed') : null, tone: caps && caps.stt ? 'live' : 'off' },
     { k: 'text-to-speech', v: caps ? (caps.tts ? 'ready' : 'not installed') : null, tone: caps && caps.tts ? 'live' : 'off' },
     { k: 'strict-local', v: trustEvidence && trust ? (trust.strict_local ? 'enforced' : 'off') : null, tone: trust && trust.strict_local ? 'live' : 'off' },
@@ -207,7 +238,7 @@ export function BriefingWall({
   return (
     <div className="wall">
       {/* the field spans the whole wall and passes BEHIND the cards, as in the reference */}
-      <div className="wl-field"><NeuralBurst agents={agents} tasks={evidenceTasks} voice={voice} demo={demo} motion="lively" /></div>
+      <div className="wl-field"><NeuralBurst agents={agents} tasks={evidenceTasks} voice={voice} demo={demo} motion={motion} /></div>
       <span className="wl-bk tl" /><span className="wl-bk tr" /><span className="wl-bk bl" /><span className="wl-bk br" />
       <EdgeTab side="left" label="agent ops" badge={taskEvidence ? running.length : null} />
       <EdgeTab side="right" label="cabinet" badge={list.length || null} />
@@ -231,8 +262,8 @@ export function BriefingWall({
       <div className="wl-body">
         <div className="wl-col wl-left">
           <Card title="CABINET · NOW" stamp="live">
-            <Cell label="AGENTS IN ROSTER" value={list.length || null} why="roster not loaded" />
-            <Cell label="EXECUTING" value={firing} />
+            <Cell label="AGENTS IN ROSTER" value={agentEvidence ? list.length : null} why="roster feed unavailable" />
+            <Cell label="EXECUTING" value={agentEvidence ? firing : null} why="roster feed unavailable — an executing count needs a current roster" />
             <Cell label="TASKS RUNNING" value={taskEvidence ? running.length : null} why="task feed unavailable" />
             <Cell label="TASKS WAITING" value={taskEvidence ? Math.max(0, waiting) : null} why="task feed unavailable" />
           </Card>
@@ -244,13 +275,13 @@ export function BriefingWall({
         </div>
 
         <div className="wl-stage">
-          <PushToTalk voice={voice} muted={!!(trust && trust.mic === 'off')} trustEvidence={trustEvidence} />
+          <PushToTalk voice={voice} micState={micState} trustEvidence={trustEvidence} />
           <SpokenLine voice={voice} />
         </div>
 
         <div className="wl-col wl-right">
           <Card title="ATTENTION" stamp="queue">
-            <Cell label="DECISIONS PENDING" value={(Array.isArray(decisions) ? decisions.length : 0) || 0} />
+            <Cell label="DECISIONS PENDING" value={decisionEvidence ? decisions.length : null} why="no live decision feed — the HUD has no backend source for this yet" />
             <Cell label="UPCOMING EVENTS" value={Array.isArray(calendar) && calendar.length ? calendar.length : null} why="calendar not connected" />
             <Cell label="HEARTBEATS" value={Array.isArray(heartbeat) && heartbeat.length ? heartbeat.length : null} why="no heartbeat entries" />
           </Card>
@@ -268,7 +299,9 @@ export function BriefingWall({
       </div>
 
       <div className="wl-bottom">
-        <span className="wl-foot">MIC · {trust && trust.mic === 'off' ? 'MUTED' : (voice && voice.active ? 'OPEN' : 'IDLE')}</span>
+        <span className="wl-foot">MIC · {!trustEvidence || !micState ? 'UNKNOWN'
+          : micState === 'off' ? 'MUTED'
+          : voice && voice.active ? 'OPEN' : 'IDLE'}</span>
         <span className="wl-foot wl-foot-mid">{energy.detail}</span>
         <span className="wl-foot">FIELD DRIVEN BY · {energy.source.toUpperCase()}</span>
       </div>

@@ -175,7 +175,7 @@ function Seg({ cur, opts, on }) {
 }
 
 /* input bar — text + voice (mic toggles the useVoice loop; ⚙ opens voice settings) */
-function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, t }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; t?: any }) {
+function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any }) {
   const [val,setVal]=useState('');
   const [cfgOpen,setCfgOpen]=useState(false);
   const submit=()=>{ if(!val.trim())return; onSubmit(val.trim()); setVal(''); };
@@ -193,7 +193,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, t }: { o
     <div style={{position:'relative'}}>
       {showPill && (
         <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',marginBottom:6,borderRadius:8,fontFamily:'var(--font-mono)',fontSize:11,letterSpacing:'.04em',background:'rgba(0,0,0,.18)',border:'1px solid var(--panel-line)',color:voice.error?'var(--amber)':'var(--accent-light)'}}>
-          {!voice.error && <VoiceOrb status={voice.status} level={voice.level||0} density="compact" showLabel={false} className="vorb-inline" />}
+          {!voice.error && <VoiceOrb status={voice.status} level={voice.level||0} motion={motion} density="compact" showLabel={false} className="vorb-inline" />}
           <span style={{flex:'none'}}>{voice.error ? '⚠ ' : ''}{label}</span>
           {!voice.error && voice.status==='listening' && (
             <span style={{flex:1,height:4,borderRadius:4,background:'var(--panel-line)',overflow:'hidden'}}>

@@ -81,6 +81,15 @@
   on the 5090 box (current coverage is mock-only), incl. the new HUD Admin → LM STUDIO panel.
 - [ ] **Live-mic validation** — HUD voice loop + barge-in tuning need a real microphone
   (PR #162/#164 caveat), incl. Wyoming satellite if you set one up.
+- [ ] **Wall-screen room validation (briefing wall)** — the `brain` cinema stage was built from
+  reference video and verified only in a headless browser. On the real wall screen, check:
+  (a) legibility of the hairline chrome and region chips at your actual viewing distance;
+  (b) mic placement — HOLD TO TALK captures usable audio from where you stand, not just at the desk;
+  (c) echo/feedback when the reply plays through the TV or soundbar while the mic is open;
+  (d) **the privacy call** — the spoken-line redaction now defaults to HIDDEN
+  (`TRANSCRIPT_DEFAULT_VISIBLE` in `frontend/src/wall.tsx`); decide per room whether the opt-in
+  should ever be turned on with other people present.
+  Until this is done, the wall is *unproven in a room*, whatever CI says.
 
 ## 🟢 Optional: desk-presence daemon (H34.2 away-notify)
 

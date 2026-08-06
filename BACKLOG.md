@@ -332,6 +332,23 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > room-facing spoken line gained a persisted redaction control (`hud.wall.transcript`,
 > `TRANSCRIPT_DEFAULT_VISIBLE` flips the installation default). +9 hostile frontend tests, all
 > red-proved against the pre-fix code (Vitest 442 → **451**).
+>
+> **Wall pass 4 — second integration review** (head `5e8825b`): the microphone now fails closed over
+> its whole *lifecycle*, not just at first render — capture needs current `sources.trust` evidence
+> **and** an exact `mic === 'on'` (missing/unknown/malformed authorizes nothing), and it stops on
+> permission loss, trust expiry and unmount/stage-switch; the control is keyboard-operable
+> (space/enter, repeat-safe). The room-facing spoken line now defaults to **hidden** — the owner
+> reaffirmed default-hide over the reference's always-on line, so showing it is an explicit,
+> persisted per-installation opt-in. Two unevidenced zeros are gone: `EXECUTING` gates on
+> `sources.agents` and `DECISIONS PENDING` on the absence of any live decision feed (there is no
+> endpoint yet — it renders `—` with that reason outside demo). The HUD motion preference is wired
+> end-to-end (app → cinema → orb/mesh/burst and the cockpit's inline orb), so the calm-motion claim
+> in `docs/VOICE.md` is now true instead of aspirational; unknown trust reads `MIC · UNKNOWN`.
+> Docs: the presence doc pointed ambient work at H23.x instead of H30.8; the phone claims are
+> narrowed to the browser HUD with native tracked as new **H18.25** (`mobile/PARITY.md` flips the
+> wall from ➖ to ⬜); and the wall-screen room validation the doc *claimed* was in
+> `docs/OWNER_TASKS.md` is now actually there (legibility, mic pickup, echo, per-room privacy).
+> +13 hostile frontend tests (Vitest 451 → **464**).
 
 ---
 
@@ -2245,6 +2262,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.20 ✅ | **Native artifact workspace parity** — catches the app up to the #652 browser Artifacts tab over the same unchanged `/api/canvas*` contract. Memory tab gains an **Artifacts** view: browse with safe typed rendering on all 7 canvas types (RN Text nodes are inert; remote http(s) images behind an explicit consent tap; protocol-relative/control-char URLs stay plain text), pin/unpin/delete on the existing endpoints, honest loading/empty/error states. Chat gains the **explicit save-response control** (only completed non-error assistant replies, never while streaming, never auto): posts the exact markdown contract with the ACTUAL responding agent (from the stream start event) and truncates at the 4,000-char bound on a **code-point boundary** (no lone-surrogate poisoning). Red/green: `canvasArtifacts.test.ts` first failed on missing `fetchCanvasArtifacts`, then mobile Jest passed (55) + `tsc --noEmit` clean. | 4 | ✅ done (2026-07-10) | H18.1, H18.16 | #652 handoff |
 | H18.23 ✅ | **Mobile spoken morning brief** — the native Status tab gains a "Morning brief" card over the admin-guarded `GET /autonomy/brief`, with a 🔊 Speak/Stop control through the existing hub-TTS + expo-audio path. Honest empty/no-admin-token/TTS-unavailable states; `fetchAutonomyBrief` normalizes kind/text with a bound. Red/green: `autonomyBrief.test.ts` (+3) first failed on the missing client function, then full mobile Jest passed (96) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.5, H18.14 | PARITY.md |
 | H18.24 | **Native voice orb** — bring the browser voice orb (`frontend/src/orb.tsx`) to the native mic surface: the same state→visual contract (listening = measured mic level, every other state a labelled animation, no numeric level), rendered with the platform's canvas/Skia equivalent. No API change — it reads the existing STT/TTS loop. | 3 | P3 | H18.5 | PARITY.md |
+| H18.25 | **Native briefing wall** — the browser wall (`frontend/src/wall.tsx` + `burst.tsx`) is responsive down to phone widths, so a phone browser already gets the portrait layout and hold-to-talk; the **native** apps have neither. Port the field, the chip/edge-tab chrome and the push-to-talk control, carrying the same fail-closed mic rule (current trust evidence + exact `mic === 'on'`, stop on permission loss/unmount) and the default-hidden spoken line. | 5 | P3 | H18.5, H18.24 | PARITY.md |
 | H18.21 ✅ | **Native Media Director parity** — the metadata-only Media tab reads the owner-curated `/api/media/devices` registry and `/api/media/session` board, then exposes explicit user present/restore controls over the unchanged guarded API. Safe bounded normalization preserves disabled/error states and distinguishes queued, refused, unverified, and verified nested outcomes; a stale/unregistered target cannot be submitted. Device register/remove controls are isolated behind the configured admin token and no remote media is embedded. Red/green: missing client/screen contracts failed first, then mobile Jest passed (65) + `tsc --noEmit` clean. | 3 | ✅ done (2026-07-13) | O29 | PARITY.md |
 | H18.22 ✅ | **Mobile capability registry board** — folded into the existing Status tab (not a new top-level tab: 13 tabs already fill the bar) as a **Capabilities** card alongside Trust, over the same user-guarded `GET /api/capabilities` the browser's `ReadinessPanel` reads: SEAM/WIRED/VERIFIED/GA counts + the honest "harness pending — wired, not yet proven" note (never claims VERIFIED it can't back). Read-only — no action execution or token-management controls; approvals stay on H18.11. `fetchCapabilities`/`normalizeCapability` in `mobile/src/api/client.ts`. Red/green: `capabilities.test.ts` (+3: shape mapping, malformed-entry drop + honest defaults, sparse-payload normalization), mobile Jest passed (93) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.1, H27.8 | mobile parity |
 

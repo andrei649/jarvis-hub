@@ -52,8 +52,8 @@
     "H18": {
       "blocked": 0,
       "done": 22,
-      "open": 2,
-      "total": 24
+      "open": 3,
+      "total": 25
     },
     "H19": {
       "blocked": 0,
@@ -215,7 +215,7 @@
   "routes": 405,
   "tests": {
     "backend": 6052,
-    "frontend": 451,
+    "frontend": 464,
     "mobile": 96
   },
   "version": "0.11.0"

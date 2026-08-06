@@ -23,9 +23,9 @@
 | Neural firing field (the actual centrepiece) | ✅ **shipped** — `NeuralBurst`: per-tier dendrite trees grown from a deterministic seed, synapse nodes, long white axon sweeps, and a blown-out core, all bound to the live cabinet. Regions are real tiers, node density follows the real agent count, and only tiers that are actually executing fire. | `frontend/src/burst.tsx` |
 | The full briefing board (chrome + side cards + status rail + spoken line) | ✅ **shipped** — `BriefingWall`, the `brain` stage of cinema mode (`m` then `b`). | `frontend/src/wall.tsx` |
 | Bordered region chips (`190 neurons · firing 0.8%`) | ✅ **shipped** — bordered plate, thick coloured edge bar, region-coloured title, sub-line `N agents · firing X% · N tasks`. The firing share is real (executing ÷ roster), not a decorative percentage. | `frontend/src/burst.tsx` |
-| `HOLD TO TALK` round mic control (phone build) | ✅ **shipped** — wired to the live `useVoice()` loop: press starts, release stops, and it refuses honestly when the mic is muted or the browser cannot capture audio. | `frontend/src/wall.tsx` |
+| `HOLD TO TALK` round mic control (phone build) | ✅ shipped **in the browser HUD** (native: `H18.25`) — wired to the live `useVoice()` loop: press or hold space starts, release stops. It fails closed for the whole lifecycle: capture needs current `sources.trust` evidence **and** an exact `mic === 'on'`, and it stops on permission loss, trust expiry or unmount. | `frontend/src/wall.tsx` |
 | Vertical edge tabs (`AGENT OPS` / `CORTEX`) | ✅ **shipped** as `AGENT OPS` / `CABINET`, carrying live counts; the badge is dropped rather than showing `0` when the feed is unavailable. | `frontend/src/wall.tsx` |
-| Portrait phone layout | ✅ **shipped** — under 820px the cards give way to the edge tabs, the chrome centres and the talk button leads, as in the phone video. | `frontend/src/styles.css` |
+| Portrait phone layout | ✅ shipped **in the browser HUD** — under 820px the cards give way to the edge tabs, the chrome centres and the talk button leads, as in the phone video. The reference's phone build is also a browser on a phone (a Tailscale URL). The **native** iOS/Android apps have none of this: tracked as `H18.25`, and `mobile/PARITY.md` marks the wall ⬜ for native. | `frontend/src/styles.css` |
 | Pop-in "spoken point" card (`1.1M+ VIEWS · LAST 30 DAYS`) | ❌ not built — it belongs to a narrated-briefing flow (a card appearing as the assistant speaks each figure). Worth doing once there is a briefing script to drive it; it must pull from real digest data, not a highlight reel. | — |
 | Live avatar / camera bubble | ➖ not built — decorative in the reference, and a camera feed on a wall screen is a privacy decision for the owner, not a default. | — |
 | Reactive orb (from the written guide, before the frames arrived) | ✅ shipped earlier in the same PR and kept — `VoiceOrb` is a tighter voice-state read than the field, so it stays as the `orb` cinema stage and inline in the voice pill. | `frontend/src/orb.tsx` |
@@ -65,5 +65,8 @@ reason in its `title` — see `wl-miss` in `wall.tsx` and the test that pins it.
    construction), Hue/Govee behind their own opt-in. It must reuse the same state source as the
    orb, so the strip and the sphere can never disagree, and stay silent when the device is
    unreachable rather than guessing. Backlog: H23.x (see `BACKLOG.md`).
-2. **Owner-side hardware validation.** Wall screen, mic placement and echo-cancellation tuning
-   for barge-in are owner-host tasks — see `docs/OWNER_TASKS.md`.
+2. **Owner-side hardware validation — the wall is unproven in a room.** Everything here was
+   verified in a headless browser against reference frames. Legibility at viewing distance, mic
+   pickup from across the room, echo when the reply plays through the TV, and the per-room privacy
+   call on the spoken line are tracked as an explicit owner task ("Wall-screen room validation")
+   in `docs/OWNER_TASKS.md`. Release readiness stays false until that is done.

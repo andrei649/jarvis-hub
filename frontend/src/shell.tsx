@@ -373,7 +373,7 @@ function StagePicker({ stage, setStage, floating = false }: any) {
    Honesty contract: the prototype hardcoded "87% on-device / 0 cloud leaks" — we show only
    REAL figures (live agent count from the roster, %-local from /api/analytics/locality),
    never a fabricated split. */
-export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo = false, localPct, voice, decisions, calendar, heartbeat, serverUp = false, clock, onExit, t }: any) {
+export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo = false, localPct, voice, decisions, calendar, heartbeat, serverUp = false, clock, motion = 'lively', onExit, t }: any) {
   const [tag, setTag] = useState(0);
   // Two stages share the cinema frame: the mesh (who is working) and the voice orb
   // (is Jarvis listening / speaking). Mesh stays the default so an existing demo
@@ -416,7 +416,7 @@ export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo 
         <BriefingWall
           agents={agents} tasks={tasks} decisions={decisions} calendar={calendar} heartbeat={heartbeat}
           llm={llm} trust={trust} sources={sources} localPct={localPct} voice={voice}
-          serverUp={serverUp} demo={demo} clock={clock} onExit={onExit} />
+          serverUp={serverUp} demo={demo} clock={clock} motion={motion} onExit={onExit} />
         <StagePicker stage={stage} setStage={setStage} floating />
       </>
     );
@@ -430,8 +430,8 @@ export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo 
       <div className="cin-stage">
         <StagePicker stage={stage} setStage={setStage} />
         {stage === 'orb'
-          ? <VoiceOrb status={(voice && voice.error) ? 'error' : (voice && voice.status) || 'off'} level={(voice && voice.level) || 0} motion="lively" />
-          : <NeuralMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} cinema={true} motion="lively" onSelect={() => {}} t={t} />}
+          ? <VoiceOrb status={(voice && voice.error) ? 'error' : (voice && voice.status) || 'off'} level={(voice && voice.level) || 0} motion={motion} />
+          : <NeuralMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} cinema={true} motion={motion} onSelect={() => {}} t={t} />}
       </div>
       <div className="cin-bottom">
         <div className="cin-feed"><div className="cin-frow"><span className="cin-dot"></span>{live > 0 || running > 0 ? 'the Cabinet is working…' : 'no live activity'}</div></div>
