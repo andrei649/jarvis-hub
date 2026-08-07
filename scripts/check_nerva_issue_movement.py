@@ -9,19 +9,24 @@ from __future__ import annotations
 
 # The gate contract requires a fixed-argument Git diff subprocess.
 import argparse
+import hashlib
 import json
 import math
 import re
 import subprocess  # nosec B404
 import sys
+import threading
 import unicodedata
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 LEGACY_BASE = "843918848c11bbd3f0099f9504d0e0eaaa56b9d6"
 MARKER = "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->"
 END_MARKER = "<!-- NERVA2:MOVEMENT-ATTESTATION:END -->"
+RECEIPT_MARKER = "<!-- NERVA2:MOVEMENT-RECEIPT:START -->"
+RECEIPT_END_MARKER = "<!-- NERVA2:MOVEMENT-RECEIPT:END -->"
 MAX_JSON_BYTES = 65_536
 MAX_JSON_DEPTH = 32
 MAX_JSON_ITEMS = 1_024
@@ -47,6 +52,12 @@ BOOTSTRAP_REGISTRY = tuple(sorted(REGISTERED))
 
 class MovementError(ValueError):
     """A bounded, safe-to-report rejection reason."""
+
+
+@dataclass(frozen=True)
+class PureProof:
+    status: str
+    scope: dict[str, Any]
 
 
 def _reject(message: str) -> None:
@@ -141,7 +152,7 @@ def strict_json(
 
     try:
         value = json.loads(text, object_pairs_hook=pairs_hook, parse_constant=reject_constant)
-    except (json.JSONDecodeError, RecursionError, UnicodeError) as exc:
+    except (json.JSONDecodeError, RecursionError, UnicodeError, ValueError) as exc:
         raise MovementError("JSON is malformed") from exc
     try:
         _validate_json_tree(
@@ -222,6 +233,8 @@ def parse_diff(
     """Decode only the fixed `git diff --name-status --no-renames -z` format."""
     if not isinstance(raw, bytes) or len(raw) > max_bytes:
         _reject("diff exceeds byte limit")
+    if not raw:
+        return []
     if not raw.endswith(b"\0"):
         _reject("diff is not NUL terminated")
     records = raw[:-1].split(b"\0")
@@ -367,6 +380,25 @@ def compute_name_status_diff(
     """Run the only accepted diff command; arguments are never built from shell text."""
     if not SHA_RE.fullmatch(base) or not SHA_RE.fullmatch(head):
         _reject("diff commit is invalid")
+    raw_parts: list[bytes] = []
+    reader_error: list[BaseException] = []
+    oversized = threading.Event()
+
+    def read_stdout(stream: Any) -> None:
+        try:
+            total = 0
+            while True:
+                chunk = stream.read(8_192)
+                if not chunk:
+                    return
+                total += len(chunk)
+                if total > MAX_DIFF_BYTES:
+                    oversized.set()
+                    return
+                raw_parts.append(chunk)
+        except BaseException as exc:  # The caller reports a fixed safe failure.
+            reader_error.append(exc)
+
     try:
         process = popen_factory(
             [git, "diff", "--name-status", "--no-renames", "-z", base, head, "--"],
@@ -378,39 +410,395 @@ def compute_name_status_diff(
         )
         if process.stdout is None:
             _reject("cannot compute repository diff")
-        raw = process.stdout.read(MAX_DIFF_BYTES + 1)
-        if len(raw) > MAX_DIFF_BYTES:
+        reader = threading.Thread(target=read_stdout, args=(process.stdout,), daemon=True)
+        reader.start()
+        reader.join(timeout=20)
+        if reader.is_alive() or oversized.is_set():
             process.kill()
-            _reject("diff exceeds byte limit")
-        if process.wait(timeout=20) != 0:
+            reader.join(timeout=2)
+            _reject("diff read timed out" if reader.is_alive() else "diff exceeds byte limit")
+        if reader_error or process.wait(timeout=2) != 0:
             _reject("cannot compute repository diff")
     except (AttributeError, OSError, subprocess.SubprocessError) as exc:
         raise MovementError("cannot compute repository diff") from exc
-    return parse_diff(raw)
+    return parse_diff(b"".join(raw_parts))
 
 
-def _event_context(event: Any) -> tuple[str, str, str, str]:
+def _event_context(event: Any) -> tuple[str, int, str, str, str, str, bool]:
     if not isinstance(event, dict):
         _reject("event must be an object")
+    repository = event.get("repository")
     pull_request = event.get("pull_request")
-    if not isinstance(pull_request, dict):
+    if not isinstance(repository, dict) or not isinstance(pull_request, dict):
         _reject("event pull request is invalid")
     base = pull_request.get("base")
     head = pull_request.get("head")
     if not isinstance(base, dict) or not isinstance(head, dict):
         _reject("event pull request refs are invalid")
+    repository_name = repository.get("full_name")
+    number = pull_request.get("number")
     base_sha, head_sha, branch = base.get("sha"), head.get("sha"), head.get("ref")
     body = pull_request.get("body")
+    draft = pull_request.get("draft")
     if body is None:
         body = ""
     if (
-        not all(isinstance(value, str) for value in (base_sha, head_sha, branch, body))
+        not all(
+            isinstance(value, str) for value in (repository_name, base_sha, head_sha, branch, body)
+        )
+        or type(number) is not int
+        or number <= 0
+        or type(draft) is not bool
         or not SHA_RE.fullmatch(base_sha)
         or not SHA_RE.fullmatch(head_sha)
         or not _is_safe_text(branch)
     ):
         _reject("event pull request values are invalid")
-    return base_sha, head_sha, branch, body
+    return repository_name, number, base_sha, head_sha, branch, body, draft
+
+
+def _sha256(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _same_json(left: Any, right: Any) -> bool:
+    return json.dumps(left, sort_keys=True, separators=(",", ":")) == json.dumps(
+        right, sort_keys=True, separators=(",", ":")
+    )
+
+
+def derive_scope(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    """Derive one closed-world program-control or stream movement from manifest data."""
+    candidate_gate = candidate.get("movement_gate")
+    if not isinstance(candidate_gate, dict):
+        _reject("candidate movement gate is missing")
+    baseline_gate = baseline.get("movement_gate")
+    if baseline_gate is None:
+        if any(key != "movement_gate" for key in candidate):
+            _reject("legacy bootstrap changes non-gate manifest data")
+        previous_issues: list[int] = []
+    else:
+        if not isinstance(baseline_gate, dict):
+            _reject("baseline movement gate is invalid")
+        previous_issues = baseline_gate.get("program_control_issues", [])
+        if not isinstance(previous_issues, list):
+            _reject("baseline control issues are invalid")
+    candidate_issues = candidate_gate.get("program_control_issues")
+    if (
+        not isinstance(candidate_issues, list)
+        or candidate_issues[: len(previous_issues)] != previous_issues
+    ):
+        _reject("program control history is not append-only")
+    added_issues = candidate_issues[len(previous_issues) :]
+    if any(type(issue) is not int or issue <= 0 for issue in added_issues):
+        _reject("program control issue is invalid")
+    root_delivery_same = all(
+        key == "movement_gate" or _same_json(baseline.get(key), candidate.get(key))
+        for key in set(baseline) | set(candidate)
+    )
+    if len(added_issues) == 1 and root_delivery_same:
+        return {
+            "kind": "program_control",
+            "implementation_issue": added_issues[0],
+            "stream_id": None,
+            "epic_issue": None,
+        }
+    streams_before, streams_after = baseline.get("streams"), candidate.get("streams")
+    if not isinstance(streams_before, list) or not isinstance(streams_after, list):
+        _reject("movement scope is ambiguous")
+    if added_issues:
+        _reject("stream movement changes program-control issue history")
+    for key in set(baseline) | set(candidate):
+        if key not in {"movement_gate", "streams"} and not _same_json(
+            baseline.get(key), candidate.get(key)
+        ):
+            _reject("stream movement changes unrelated manifest data")
+    if len(streams_before) != len(streams_after):
+        _reject("movement scope is ambiguous")
+    changed = [
+        index
+        for index, (before, after) in enumerate(zip(streams_before, streams_after, strict=True))
+        if not _same_json(before, after)
+    ]
+    if len(changed) != 1:
+        _reject("movement scope is ambiguous")
+    before, after = streams_before[changed[0]], streams_after[changed[0]]
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        _reject("stream movement is invalid")
+    if any(before.get(field) != after.get(field) for field in ("id", "name", "epic_issue")):
+        _reject("stream identity is not immutable")
+    stream_id, epic = after.get("id"), after.get("epic_issue")
+    if not isinstance(stream_id, str) or type(epic) is not int:
+        _reject("stream scope is invalid")
+
+    def issue_values(value: Any) -> set[int]:
+        if isinstance(value, list):
+            return set().union(*(issue_values(item) for item in value)) if value else set()
+        if not isinstance(value, dict):
+            return set()
+        values = {
+            child
+            for key, child in value.items()
+            if key == "issue" and type(child) is int and child > 0
+        }
+        references = value.get("references")
+        if isinstance(references, list):
+            values.update(
+                item["value"]
+                for item in references
+                if isinstance(item, dict)
+                and item.get("kind") == "issue"
+                and type(item.get("value")) is int
+                and item["value"] > 0
+            )
+        for key, child in value.items():
+            if key != "references":
+                values.update(issue_values(child))
+        return values
+
+    new_issue_values = issue_values(after) - issue_values(before)
+    if len(new_issue_values) != 1:
+        _reject("stream movement must introduce exactly one issue")
+    implementation_issue = next(iter(new_issue_values))
+    return {
+        "kind": "stream",
+        "implementation_issue": implementation_issue,
+        "stream_id": stream_id,
+        "epic_issue": epic,
+    }
+
+
+def _require_false(data: Mapping[str, Any]) -> None:
+    for key in ("can_authorize", "can_execute", "completion_authority", "release_ready"):
+        if data.get(key) is not False:
+            _reject("authority claim must be false")
+
+
+def _validate_role_map(roles: Any, scope: Mapping[str, Any]) -> dict[str, Any]:
+    required = {"program", "blocker", "implementation"}
+    if scope["kind"] == "stream":
+        required.add("epic")
+    roles = _closed_object(roles, allowed_keys=required, required_keys=required)
+    ids: set[int] = set()
+    for value in roles.values():
+        entry = _closed_object(
+            value,
+            allowed_keys={"comment_id", "comment_body_sha256", "updated_at"},
+            required_keys={"comment_id", "comment_body_sha256", "updated_at"},
+        )
+        if (
+            type(entry["comment_id"]) is not int
+            or entry["comment_id"] <= 0
+            or not isinstance(entry["updated_at"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", entry["comment_body_sha256"])
+            or entry["comment_id"] in ids
+        ):
+            _reject("attestation role map is invalid")
+        ids.add(entry["comment_id"])
+    return roles
+
+
+def _validate_attestation(
+    body: str,
+    *,
+    repository: str,
+    number: int,
+    base: str,
+    head: str,
+    digest: str,
+    scope: Mapping[str, Any],
+) -> dict[str, Any]:
+    allowed = {
+        "schema_version",
+        "movement_kind",
+        "repository",
+        "pull_request",
+        "base_sha",
+        "head_sha",
+        "manifest_sha256",
+        "program_issue",
+        "blocker_issue",
+        "implementation_issue",
+        "roles",
+        "can_authorize",
+        "can_execute",
+        "completion_authority",
+        "release_ready",
+    }
+    if scope["kind"] == "stream":
+        allowed.update({"stream_id", "epic_issue"})
+    data = parse_marker_json(body, MARKER, END_MARKER, allowed_keys=allowed, required_keys=allowed)
+    if (
+        type(data["schema_version"]) is not int
+        or data["schema_version"] != 1
+        or data["movement_kind"] != scope["kind"]
+        or data["repository"] != repository
+        or data["pull_request"] != number
+        or data["base_sha"] != base
+        or data["head_sha"] != head
+        or data["manifest_sha256"] != digest
+        or data["program_issue"] != 757
+        or data["blocker_issue"] != 778
+        or data["implementation_issue"] != scope["implementation_issue"]
+    ):
+        _reject("attestation does not bind movement proof")
+    if scope["kind"] == "stream" and (
+        data["stream_id"] != scope["stream_id"] or data["epic_issue"] != scope["epic_issue"]
+    ):
+        _reject("attestation stream scope is invalid")
+    _require_false(data)
+    _validate_role_map(data["roles"], scope)
+    return data
+
+
+def _validate_receipt(
+    envelope: Any,
+    *,
+    role: str,
+    issue: int,
+    comment: Mapping[str, Any],
+    repository: str,
+    number: int,
+    base: str,
+    head: str,
+    digest: str,
+    scope: Mapping[str, Any],
+) -> None:
+    if not isinstance(envelope, dict):
+        _reject("snapshot comment is invalid")
+    required_envelope = {
+        "id",
+        "issue_url",
+        "body",
+        "user",
+        "author_association",
+        "created_at",
+        "updated_at",
+    }
+    if not required_envelope <= set(envelope) or envelope["id"] != comment["comment_id"]:
+        _reject("comment identity is invalid")
+    if (
+        envelope["issue_url"] != f"https://api.github.com/repos/{repository}/issues/{issue}"
+        or not isinstance(envelope["body"], str)
+        or not isinstance(envelope["user"], dict)
+        or envelope["user"].get("login") != "andrei649"
+        or envelope["author_association"] != "OWNER"
+        or envelope["created_at"] != envelope["updated_at"]
+        or envelope["updated_at"] != comment["updated_at"]
+        or _sha256(envelope["body"].encode("utf-8")) != comment["comment_body_sha256"]
+    ):
+        _reject("comment envelope does not bind receipt")
+    allowed = {
+        "schema_version",
+        "repository",
+        "issue",
+        "pull_request",
+        "role",
+        "movement_kind",
+        "implementation_issue",
+        "base_sha",
+        "head_sha",
+        "manifest_sha256",
+        "can_authorize",
+        "can_execute",
+        "completion_authority",
+        "release_ready",
+    }
+    if scope["kind"] == "stream":
+        allowed.update({"stream_id", "epic_issue"})
+    receipt = parse_marker_json(
+        envelope["body"],
+        RECEIPT_MARKER,
+        RECEIPT_END_MARKER,
+        allowed_keys=allowed,
+        required_keys=allowed,
+    )
+    if (
+        type(receipt["schema_version"]) is not int
+        or receipt["schema_version"] != 1
+        or receipt["repository"] != repository
+        or receipt["issue"] != issue
+        or receipt["pull_request"] != number
+        or receipt["role"] != role
+        or receipt["movement_kind"] != scope["kind"]
+        or receipt["implementation_issue"] != scope["implementation_issue"]
+        or receipt["base_sha"] != base
+        or receipt["head_sha"] != head
+        or receipt["manifest_sha256"] != digest
+    ):
+        _reject("receipt does not bind movement proof")
+    _require_false(receipt)
+
+
+def _validate_snapshot(
+    transport: Any,
+    *,
+    event_repository: str,
+    number: int,
+    base: str,
+    head: str,
+    branch: str,
+    digest: str,
+    scope: Mapping[str, Any],
+) -> None:
+    try:
+        current = transport("pull_request")
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        raise MovementError("offline pull request snapshot is unavailable") from exc
+    if (
+        not isinstance(current, dict)
+        or current.get("state") != "open"
+        or current.get("draft") is not False
+    ):
+        _reject("current pull request is not ready")
+    current_repo = current.get("repository")
+    current_base, current_head = current.get("base"), current.get("head")
+    if (
+        current.get("number") != number
+        or not isinstance(current_repo, dict)
+        or current_repo.get("full_name") != event_repository
+        or not isinstance(current_base, dict)
+        or not isinstance(current_head, dict)
+        or current_base.get("sha") != base
+        or current_head.get("sha") != head
+        or current_head.get("ref") != branch
+        or not isinstance(current.get("body"), str)
+    ):
+        _reject("current pull request does not bind event")
+    attestation = _validate_attestation(
+        current["body"],
+        repository=event_repository,
+        number=number,
+        base=base,
+        head=head,
+        digest=digest,
+        scope=scope,
+    )
+    roles = attestation["roles"]
+    issue_by_role = {
+        "program": 757,
+        "blocker": 778,
+        "implementation": scope["implementation_issue"],
+    }
+    if scope["kind"] == "stream":
+        issue_by_role["epic"] = scope["epic_issue"]
+    for role, issue in issue_by_role.items():
+        try:
+            envelope = transport(f"comment:{roles[role]['comment_id']}")
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            raise MovementError("offline comment snapshot is unavailable") from exc
+        _validate_receipt(
+            envelope,
+            role=role,
+            issue=issue,
+            comment=roles[role],
+            repository=event_repository,
+            number=number,
+            base=base,
+            head=head,
+            digest=digest,
+            scope=scope,
+        )
 
 
 def run_pure_proof(
@@ -418,14 +806,16 @@ def run_pure_proof(
     event: Any,
     baseline_manifest: Any,
     candidate_manifest: Any,
+    candidate_manifest_bytes: bytes,
     base: str,
     head: str,
     diff: bytes,
-) -> bool:
-    """Bind event, manifests and complete diff before returning a classification."""
+    transport: Any | None = None,
+) -> PureProof:
+    """Prove pure/offline Nerva movement; classification alone is never success."""
     if not SHA_RE.fullmatch(base) or not SHA_RE.fullmatch(head):
         _reject("requested commit is invalid")
-    event_base, event_head, branch, body = _event_context(event)
+    repository, number, event_base, event_head, branch, body, draft = _event_context(event)
     if event_base != base or event_head != head:
         _reject("event commits do not match requested commits")
     if not isinstance(baseline_manifest, dict) or not isinstance(candidate_manifest, dict):
@@ -435,7 +825,9 @@ def run_pure_proof(
     records = parse_diff(diff)
     paths = [path for _, path in records]
     baseline_gate = baseline_manifest.get("movement_gate")
-    candidate_gate = candidate_manifest["movement_gate"]
+    candidate_gate = candidate_manifest.get("movement_gate")
+    if not isinstance(candidate_gate, dict):
+        _reject("candidate movement gate is missing")
     baseline_registry = [] if baseline_gate is None else baseline_gate["registry"]
     candidate_registry = candidate_gate["registry"]
     if base != LEGACY_BASE:
@@ -444,13 +836,74 @@ def run_pure_proof(
             candidate_registry,
             {path for status, path in records if status == "A"},
         )
-    return classify(
+    nerva = classify(
         branch,
         body,
         paths,
         baseline_registry=baseline_registry,
         candidate_registry=candidate_registry,
     )
+    if not nerva:
+        return PureProof("non_nerva", {"kind": None, "implementation_issue": None})
+    if draft and MARKER not in body:
+        return PureProof("draft_hold", {"kind": None, "implementation_issue": None})
+    required_paths = {
+        "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json",
+        "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md",
+    }
+    status_by_path = {path: status for status, path in records}
+    if not required_paths <= set(paths) or any(
+        status_by_path.get(path) not in {"A", "M"} for path in required_paths
+    ):
+        _reject("Nerva movement omits canonical manifest or generated view")
+    scope = derive_scope(baseline_manifest, candidate_manifest)
+    if scope["implementation_issue"] in {757, 778, scope["epic_issue"]}:
+        _reject("implementation issue is reserved")
+    if (
+        not isinstance(candidate_manifest_bytes, bytes)
+        or len(candidate_manifest_bytes) > MAX_JSON_BYTES
+    ):
+        _reject("candidate manifest bytes are invalid")
+    try:
+        parsed_candidate = strict_json(candidate_manifest_bytes)
+    except MovementError as exc:
+        raise MovementError("candidate manifest bytes are invalid") from exc
+    if not isinstance(parsed_candidate, dict) or not _same_json(
+        parsed_candidate, candidate_manifest
+    ):
+        _reject("candidate manifest bytes do not bind parsed manifest")
+    digest = _sha256(candidate_manifest_bytes)
+    if transport is None:
+        _reject("Nerva proof requires offline snapshot transport")
+    _validate_snapshot(
+        transport,
+        event_repository=repository,
+        number=number,
+        base=base,
+        head=head,
+        branch=branch,
+        digest=digest,
+        scope=scope,
+    )
+    return PureProof("proved", scope)
+
+
+def _snapshot_transport(snapshot_dir: Path) -> Any:
+    root = snapshot_dir.resolve()
+
+    def load(name: str) -> Any:
+        if name == "pull_request":
+            path = root / "pull_request.json"
+        elif name.startswith("comment:") and name[8:].isdigit():
+            path = root / "comments" / f"{name[8:]}.json"
+        else:
+            _reject("offline snapshot key is invalid")
+        try:
+            return strict_json(path.read_bytes())
+        except (OSError, MovementError) as exc:
+            raise MovementError("offline snapshot is invalid") from exc
+
+    return load
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -461,19 +914,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", required=True)
     parser.add_argument("--head", required=True)
     parser.add_argument("--diff", type=Path, required=True)
+    parser.add_argument("--snapshot-dir", type=Path)
     args = parser.parse_args(argv)
     try:
-        run_pure_proof(
+        candidate_bytes = args.manifest.read_bytes()
+        result = run_pure_proof(
             event=strict_json(args.event.read_bytes()),
             baseline_manifest=strict_json(args.baseline_manifest.read_bytes()),
-            candidate_manifest=strict_json(args.manifest.read_bytes()),
+            candidate_manifest=strict_json(candidate_bytes),
+            candidate_manifest_bytes=candidate_bytes,
             base=args.base,
             head=args.head,
             diff=args.diff.read_bytes(),
+            transport=_snapshot_transport(args.snapshot_dir) if args.snapshot_dir else None,
         )
     except (MovementError, OSError) as exc:
         print(f"movement gate rejected: {exc}", file=sys.stderr)
         return 1
+    print(result.status)
     return 0
 
 
