@@ -598,3 +598,62 @@ def test_draft_without_marker_is_receipt_free_hold_and_marker_proof_is_validated
         transport=snapshot.__getitem__,
     )
     assert proof.status == "draft_hold"
+
+
+def test_new_prerequisite_accepted_evidence_must_bind_current_pr():
+    baseline = {"completion_evidence": [], "delivery_prerequisites": []}
+    candidate = {
+        "completion_evidence": [],
+        "delivery_prerequisites": [
+            {"source": "E0", "accepted_evidence": [{"issue": 900, "pull_request": 12}]}
+        ],
+    }
+    with pytest.raises(MovementError):
+        validate_stream_evidence_bindings(baseline, candidate, pull_request=849)
+
+
+def test_stream_scope_allows_append_only_evidence_on_existing_prerequisite():
+    baseline = {
+        "movement_gate": valid_gate(),
+        "streams": [
+            {
+                "id": "E1",
+                "name": "Stream",
+                "epic_issue": 759,
+                "references": [{"kind": "issue", "value": 759}],
+                "completion_evidence": [],
+                "delivery_prerequisites": [{"source": "E0", "accepted_evidence": []}],
+                "blockers": [],
+            }
+        ],
+    }
+    candidate = json.loads(json.dumps(baseline))
+    candidate["streams"][0]["references"].append({"kind": "issue", "value": 900})
+    candidate["streams"][0]["delivery_prerequisites"][0]["accepted_evidence"].append(
+        {"issue": 900, "pull_request": 849}
+    )
+    assert derive_scope(baseline, candidate)["implementation_issue"] == 900
+
+
+def test_diff_wait_timeout_kills_and_reaps_before_distinct_timeout():
+    class Process:
+        def __init__(self):
+            self.stdout = __import__("io").BytesIO(b"")
+            self.killed = False
+
+        def wait(self, timeout):
+            if not self.killed:
+                raise subprocess.TimeoutExpired("git", timeout)
+            return 0
+
+        def kill(self):
+            self.killed = True
+
+    process = Process()
+    with pytest.raises(MovementError, match="diff read timed out"):
+        compute_name_status_diff(
+            "a" * 40,
+            "b" * 40,
+            popen_factory=lambda *_args, **_kwargs: process,
+        )
+    assert process.killed

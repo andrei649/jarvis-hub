@@ -428,7 +428,15 @@ def compute_name_status_diff(
             reader.join(timeout=2)
             process.wait(timeout=2)
             _reject("diff read timed out" if reader.is_alive() else "diff exceeds byte limit")
-        if reader_error or process.wait(timeout=2) != 0:
+        if reader_error:
+            _reject("cannot compute repository diff")
+        try:
+            exit_code = process.wait(timeout=2)
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.wait(timeout=2)
+            raise MovementError("diff read timed out") from exc
+        if exit_code != 0:
             _reject("cannot compute repository diff")
     except subprocess.TimeoutExpired as exc:
         raise MovementError("diff read timed out") from exc
@@ -592,7 +600,7 @@ def derive_scope(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
         _reject("stream movement is invalid")
     if any(before.get(field) != after.get(field) for field in ("id", "name", "epic_issue")):
         _reject("stream identity is not immutable")
-    for field in ("references", "completion_evidence", "delivery_prerequisites", "blockers"):
+    for field in ("references", "completion_evidence", "blockers"):
         before_history, after_history = before.get(field, []), after.get(field, [])
         if not isinstance(before_history, list) or not isinstance(after_history, list):
             _reject("stream history is invalid")
@@ -601,6 +609,37 @@ def derive_scope(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
             for previous, observed in zip(before_history, after_history, strict=False)
         ):
             _reject("stream history is not append-only")
+    before_prerequisites = before.get("delivery_prerequisites", [])
+    after_prerequisites = after.get("delivery_prerequisites", [])
+    if (
+        not isinstance(before_prerequisites, list)
+        or not isinstance(after_prerequisites, list)
+        or len(after_prerequisites) < len(before_prerequisites)
+    ):
+        _reject("stream prerequisite history is invalid")
+    for previous, observed in zip(before_prerequisites, after_prerequisites, strict=False):
+        if not isinstance(previous, dict) or not isinstance(observed, dict):
+            _reject("stream prerequisite history is invalid")
+        previous_without_evidence = {
+            key: value for key, value in previous.items() if key != "accepted_evidence"
+        }
+        observed_without_evidence = {
+            key: value for key, value in observed.items() if key != "accepted_evidence"
+        }
+        if not _same_json(previous_without_evidence, observed_without_evidence):
+            _reject("stream prerequisite is rewritten")
+        old_evidence = previous.get("accepted_evidence", [])
+        new_evidence = observed.get("accepted_evidence", [])
+        if (
+            not isinstance(old_evidence, list)
+            or not isinstance(new_evidence, list)
+            or len(new_evidence) < len(old_evidence)
+            or any(
+                not _same_json(old, new)
+                for old, new in zip(old_evidence, new_evidence, strict=False)
+            )
+        ):
+            _reject("prerequisite accepted evidence is not append-only")
     if before.get("program_status") == "building" and after.get("program_status") == "done":
         _reject("stream status cannot move from building to done")
     stream_id, epic = after.get("id"), after.get("epic_issue")
@@ -662,7 +701,7 @@ def validate_stream_evidence_bindings(
     )
     before_edges = baseline_stream.get("delivery_prerequisites", [])
     after_edges = candidate_stream.get("delivery_prerequisites", [])
-    appended(before_edges, after_edges)
+    new_edges = appended(before_edges, after_edges)
     for before_edge, after_edge in zip(before_edges, after_edges, strict=False):
         if not isinstance(before_edge, Mapping) or not isinstance(after_edge, Mapping):
             _reject("stream prerequisite is invalid")
@@ -671,6 +710,13 @@ def validate_stream_evidence_bindings(
                 before_edge.get("accepted_evidence", []), after_edge.get("accepted_evidence", [])
             )
         )
+    for edge in new_edges:
+        if not isinstance(edge, Mapping):
+            _reject("stream prerequisite is invalid")
+        accepted = edge.get("accepted_evidence", [])
+        if not isinstance(accepted, list):
+            _reject("stream prerequisite evidence is invalid")
+        evidence.extend(accepted)
     for record in evidence:
         if not isinstance(record, Mapping) or record.get("pull_request") != pull_request:
             _reject("new stream evidence does not bind current pull request")
@@ -747,6 +793,7 @@ def _validate_attestation(
         or data["manifest_sha256"] != digest
         or data["program_issue"] != 757
         or data["blocker_issue"] != 778
+        or type(data["implementation_issue"]) is not int
         or data["implementation_issue"] != scope["implementation_issue"]
     ):
         _reject("attestation does not bind movement proof")
@@ -829,10 +876,12 @@ def _validate_receipt(
         type(receipt["schema_version"]) is not int
         or receipt["schema_version"] != 1
         or receipt["repository"] != repository
+        or type(receipt["issue"]) is not int
         or receipt["issue"] != issue
         or receipt["pull_request"] != number
         or receipt["role"] != role
         or receipt["movement_kind"] != scope["kind"]
+        or type(receipt["implementation_issue"]) is not int
         or receipt["implementation_issue"] != scope["implementation_issue"]
         or receipt["base_sha"] != base
         or receipt["head_sha"] != head
