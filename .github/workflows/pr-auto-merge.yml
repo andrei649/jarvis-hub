@@ -45,39 +45,180 @@ jobs:
         run: |
           set -euo pipefail
 
-          prs="$(gh pr list --repo "$REPO" --state open --limit 100 \
-            --json number,title,isDraft,mergeStateStatus,headRefOid \
-            | jq -c 'sort_by(.number)[]')"
+          readonly NERVA_BRANCH_PREFIX="nerva2/"
+          readonly NERVA_START_MARKER="<!-- NERVA2:MOVEMENT-ATTESTATION:START -->"
 
-          if [ -z "$prs" ]; then
-            echo "No open PRs."
+          nerva_manual_status() {
+            local record="$1"
+            jq -e \
+              --arg prefix "$NERVA_BRANCH_PREFIX" \
+              --arg marker "$NERVA_START_MARKER" \
+              '(.headRefName | startswith($prefix)) or (.body | contains($marker))' \
+              <<<"$record" >/dev/null 2>&1
+          }
+
+          list_raw=""
+          list_status=0
+          list_raw="$(gh pr list --repo "$REPO" --state open --limit 100 \
+            --json number,isDraft,mergeStateStatus,headRefOid,headRefName,body \
+            2>/dev/null)" \
+            || list_status=$?
+          if [ "$list_status" -ne 0 ]; then
+            printf 'Failed to list pull requests; refusing to merge.\n' >&2
+            exit "$list_status"
+          fi
+
+          prs=""
+          list_parse_status=0
+          prs="$(jq -s -ce '
+            def valid_pr:
+              type == "object"
+              and ((.number | type) == "number")
+              and (.number > 0)
+              and ((.number | floor) == .number)
+              and ((.isDraft | type) == "boolean")
+              and ((.mergeStateStatus | type) == "string")
+              and ((.headRefOid | type) == "string")
+              and (.headRefOid | test("^[0-9a-f]{40}$"))
+              and ((.headRefName | type) == "string")
+              and ((.headRefName | length) > 0)
+              and ((.body | type) == "string");
+
+            if length != 1 then
+              error("expected exactly one list document")
+            elif (.[0] | type) != "array" then
+              error("list document must be an array")
+            elif ((.[0] | all(.[]; valid_pr)) | not) then
+              error("list contains an invalid pull request record")
+            elif ((.[0] | map(.number) | length)
+                  != (.[0] | map(.number) | unique | length)) then
+              error("list contains duplicate pull request numbers")
+            else
+              .[0] | sort_by(.number)
+            end
+          ' <<<"$list_raw" 2>/dev/null)" || list_parse_status=$?
+          if [ "$list_parse_status" -ne 0 ]; then
+            printf 'Invalid pull request list data; refusing to merge.\n' >&2
+            exit 1
+          fi
+
+          if [ "$(jq -r 'length' <<<"$prs")" -eq 0 ]; then
+            printf 'No open PRs.\n'
             exit 0
           fi
 
-          echo "$prs" | while read -r pr; do
+          jq -c '.[]' <<<"$prs" | while IFS= read -r pr; do
             number="$(jq -r '.number' <<<"$pr")"
-            title="$(jq -r '.title' <<<"$pr")"
             draft="$(jq -r '.isDraft' <<<"$pr")"
             state="$(jq -r '.mergeStateStatus' <<<"$pr")"
             sha="$(jq -r '.headRefOid' <<<"$pr")"
 
+            manual_status=0
+            nerva_manual_status "$pr" || manual_status=$?
+            case "$manual_status" in
+              0)
+                printf '#%s: manual Nerva integration required — skipped\n' "$number"
+                continue
+                ;;
+              1) ;;
+              *)
+                printf 'Fatal Nerva policy evaluation error for PR #%s.\n' "$number" >&2
+                exit "$manual_status"
+                ;;
+            esac
+
             if [ "$draft" = "true" ]; then
-              echo "#$number ($title): draft — skipped"
+              printf '#%s: draft — skipped\n' "$number"
               continue
             fi
             if [ "$state" != "CLEAN" ]; then
-              echo "#$number ($title): mergeStateStatus=$state — not ready, skipped"
+              printf '#%s: not CLEAN — skipped\n' "$number"
               continue
             fi
 
             # Re-check right before merging: an earlier merge in this same
             # run may have turned this PR's overlapping-file state stale.
-            recheck="$(gh pr view "$number" --repo "$REPO" --json mergeStateStatus -q .mergeStateStatus)"
-            if [ "$recheck" != "CLEAN" ]; then
-              echo "#$number ($title): re-check now shows mergeStateStatus=$recheck — skipped"
+            recheck_raw=""
+            recheck_status=0
+            recheck_raw="$(gh pr view "$number" --repo "$REPO" \
+              --json number,isDraft,mergeStateStatus,headRefOid,headRefName,body \
+              2>/dev/null)" \
+              || recheck_status=$?
+            if [ "$recheck_status" -ne 0 ]; then
+              printf '#%s: recheck failed; refusing to merge.\n' "$number" >&2
+              exit "$recheck_status"
+            fi
+
+            recheck=""
+            recheck_parse_status=0
+            recheck="$(jq -s -ce '
+              def valid_pr:
+                type == "object"
+                and ((.number | type) == "number")
+                and (.number > 0)
+                and ((.number | floor) == .number)
+                and ((.isDraft | type) == "boolean")
+                and ((.mergeStateStatus | type) == "string")
+                and ((.headRefOid | type) == "string")
+                and (.headRefOid | test("^[0-9a-f]{40}$"))
+                and ((.headRefName | type) == "string")
+                and ((.headRefName | length) > 0)
+                and ((.body | type) == "string");
+
+              if length != 1 then
+                error("expected exactly one recheck document")
+              elif ((.[0] | valid_pr) | not) then
+                error("recheck contains an invalid pull request record")
+              else
+                .[0]
+              end
+            ' <<<"$recheck_raw" 2>/dev/null)" || recheck_parse_status=$?
+            if [ "$recheck_parse_status" -ne 0 ]; then
+              printf '#%s: invalid recheck data; refusing to merge.\n' "$number" >&2
+              exit 1
+            fi
+
+            recheck_number="$(jq -r '.number' <<<"$recheck")"
+            if [ "$recheck_number" != "$number" ]; then
+              printf '#%s: recheck identity mismatch; refusing to merge.\n' "$number" >&2
+              exit 1
+            fi
+
+            manual_status=0
+            nerva_manual_status "$recheck" || manual_status=$?
+            case "$manual_status" in
+              0)
+                printf '#%s: manual Nerva integration required at recheck — skipped\n' "$number"
+                continue
+                ;;
+              1) ;;
+              *)
+                printf 'Fatal Nerva policy evaluation error for PR #%s.\n' "$number" >&2
+                exit "$manual_status"
+                ;;
+            esac
+
+            recheck_draft="$(jq -r '.isDraft' <<<"$recheck")"
+            recheck_state="$(jq -r '.mergeStateStatus' <<<"$recheck")"
+            recheck_sha="$(jq -r '.headRefOid' <<<"$recheck")"
+
+            if [ "$recheck_draft" = "true" ]; then
+              printf '#%s: draft at recheck — skipped\n' "$number"
+              continue
+            fi
+            if [ "$recheck_state" != "CLEAN" ]; then
+              printf '#%s: not CLEAN at recheck — skipped\n' "$number"
+              continue
+            fi
+            if [ "$recheck_sha" != "$sha" ]; then
+              printf '#%s: head changed at recheck — skipped\n' "$number"
               continue
             fi
 
-            echo "#$number ($title): CLEAN at $sha — merging (squash)"
-            gh pr merge "$number" --repo "$REPO" --squash --match-head-commit "$sha"
+            printf '#%s: CLEAN at validated head — merging (squash)\n' "$number"
+            if ! gh pr merge "$number" --repo "$REPO" --squash \
+              --match-head-commit "$sha" >/dev/null 2>&1; then
+              printf '#%s: merge command failed.\n' "$number" >&2
+              exit 1
+            fi
           done
