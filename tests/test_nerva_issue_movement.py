@@ -81,6 +81,73 @@ def binding_repository(tmp_path):
     return git, base, head, event
 
 
+def grafted_unrelated_repository(tmp_path, *, linked_worktree):
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("Git executable unavailable")
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    for args in (
+        ["init"],
+        ["config", "user.email", "test@example.invalid"],
+        ["config", "user.name", "Test"],
+    ):
+        subprocess.run([git, *args], cwd=source_root, check=True, capture_output=True)
+
+    manifest_bytes = json.dumps(candidate_manifest(), separators=(",", ":")).encode()
+    for version in ("base", "head"):
+        if version == "head":
+            subprocess.run(
+                [git, "checkout", "--orphan", "unrelated"],
+                cwd=source_root,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [git, "rm", "-rf", "."], cwd=source_root, check=True, capture_output=True
+            )
+        manifest = source_root / "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json"
+        document = source_root / "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_bytes(manifest_bytes)
+        document.write_text("unchanged\n", encoding="utf-8")
+        subprocess.run([git, "add", "docs"], cwd=source_root, check=True, capture_output=True)
+        subprocess.run(
+            [git, "commit", "-m", version], cwd=source_root, check=True, capture_output=True
+        )
+        commit = subprocess.run(
+            [git, "rev-parse", "HEAD"],
+            cwd=source_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        if version == "base":
+            base = commit
+        else:
+            head = commit
+
+    repository_root = source_root
+    if linked_worktree:
+        repository_root = tmp_path / "linked"
+        subprocess.run(
+            [git, "worktree", "add", "--detach", str(repository_root), head],
+            cwd=source_root,
+            check=True,
+            capture_output=True,
+        )
+    common_dir = subprocess.run(
+        [git, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=repository_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    grafts = Path(common_dir) / "info/grafts"
+    grafts.write_text(f"{head} {base}\n", encoding="ascii", newline="\n")
+    return repository_root, base, head
+
+
 def valid_gate():
     return {
         "schema_version": 1,
@@ -922,6 +989,54 @@ def test_repository_proof_rejects_non_ancestor_base(tmp_path):
             head=head,
             transport=None,
             proof_runner=lambda **_kwargs: pytest.fail("proof must not run"),
+            manifest_validator=lambda *_args: pytest.fail("validator must not run"),
+        )
+
+
+def test_repository_proof_rejects_legacy_graft_before_non_nerva_skip(tmp_path):
+    root, base, head = grafted_unrelated_repository(tmp_path, linked_worktree=False)
+    event = {
+        "repository": {"full_name": REPOSITORY},
+        "pull_request": {
+            "number": PR_NUMBER,
+            "base": {"sha": base},
+            "head": {"sha": head, "ref": "feature/ordinary"},
+            "body": "",
+            "draft": False,
+        },
+    }
+    current = {**event["pull_request"], "repository": event["repository"], "state": "open"}
+    with pytest.raises(MovementError, match="legacy Git grafts"):
+        run_repository_proof(
+            root=root,
+            event=event,
+            base=base,
+            head=head,
+            transport={"pull_request": current}.__getitem__,
+            manifest_validator=lambda *_args: pytest.fail("validator must not run"),
+        )
+
+
+def test_repository_proof_rejects_common_dir_graft_before_unattested_draft_hold(tmp_path):
+    root, base, head = grafted_unrelated_repository(tmp_path, linked_worktree=True)
+    event = {
+        "repository": {"full_name": REPOSITORY},
+        "pull_request": {
+            "number": PR_NUMBER,
+            "base": {"sha": base},
+            "head": {"sha": head, "ref": "nerva2/draft"},
+            "body": "",
+            "draft": True,
+        },
+    }
+    current = {**event["pull_request"], "repository": event["repository"], "state": "open"}
+    with pytest.raises(MovementError, match="legacy Git grafts"):
+        run_repository_proof(
+            root=root,
+            event=event,
+            base=base,
+            head=head,
+            transport={"pull_request": current}.__getitem__,
             manifest_validator=lambda *_args: pytest.fail("validator must not run"),
         )
 
