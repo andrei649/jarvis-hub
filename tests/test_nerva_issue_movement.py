@@ -745,3 +745,34 @@ def test_blocked_reader_reports_timeout_even_if_kill_unblocks_eof():
             timeout_seconds=0.01,
         )
     assert process.killed and process.waits == 1
+
+
+@pytest.mark.parametrize(
+    "field,value", [("issue", True), ("issue", 0), ("pull_request", True), ("pull_request", 0)]
+)
+@pytest.mark.parametrize("kind", ["completion", "accepted"])
+def test_new_evidence_requires_positive_real_issue_and_pull_request(field, value, kind):
+    record = {"issue": 900, "pull_request": 849}
+    record[field] = value
+    baseline = {"completion_evidence": [], "delivery_prerequisites": []}
+    candidate = (
+        {"completion_evidence": [record], "delivery_prerequisites": []}
+        if kind == "completion"
+        else {
+            "completion_evidence": [],
+            "delivery_prerequisites": [{"source": "E0", "accepted_evidence": [record]}],
+        }
+    )
+    with pytest.raises(MovementError):
+        validate_stream_evidence_bindings(baseline, candidate, pull_request=849)
+
+
+def test_new_evidence_accepts_legitimate_positive_issue_reference():
+    baseline = {"completion_evidence": [], "delivery_prerequisites": []}
+    candidate = {
+        "completion_evidence": [{"issue": 900, "pull_request": 849}],
+        "delivery_prerequisites": [
+            {"source": "E0", "accepted_evidence": [{"issue": 900, "pull_request": 849}]}
+        ],
+    }
+    validate_stream_evidence_bindings(baseline, candidate, pull_request=849)

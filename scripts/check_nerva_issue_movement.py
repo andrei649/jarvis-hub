@@ -721,7 +721,14 @@ def validate_stream_evidence_bindings(
             _reject("stream prerequisite evidence is invalid")
         evidence.extend(accepted)
     for record in evidence:
-        if not isinstance(record, Mapping) or record.get("pull_request") != pull_request:
+        if (
+            not isinstance(record, Mapping)
+            or type(record.get("issue")) is not int
+            or record["issue"] <= 0
+            or type(record.get("pull_request")) is not int
+            or record["pull_request"] <= 0
+            or record["pull_request"] != pull_request
+        ):
             _reject("new stream evidence does not bind current pull request")
 
 
