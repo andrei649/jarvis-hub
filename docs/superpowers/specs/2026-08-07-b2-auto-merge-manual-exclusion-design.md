@@ -4,7 +4,8 @@
 **Parent:** #846 / #778 B2
 **Branch:** `nerva2/b2-auto-merge-manual-exclusion`
 **Accepted base:** `main@843918848c11bbd3f0099f9504d0e0eaaa56b9d6`
-**Status:** design only; workflow and tests are not implemented yet
+**Status:** implemented locally; 142/142 policy tests green with official
+`jq`; hosted exact-head CI and integration remain pending
 
 ## Goal
 

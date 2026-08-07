@@ -47,7 +47,7 @@
 - Consumes: the first step's YAML `run` string and a fake `gh` command on `PATH`.
 - Produces: `_run_policy(tmp_path, list_payload, rechecks) -> subprocess.CompletedProcess[str]` and a recorded JSONL command trace used by all behavior tests.
 
-- [ ] **Step 1: Add cross-platform static contract tests**
+- [x] **Step 1: Add cross-platform static contract tests**
 
 Load the workflow with `yaml.load(..., Loader=yaml.BaseLoader)` so the GitHub
 key `on` is not coerced to a YAML 1.1 boolean, then select
@@ -70,7 +70,7 @@ assert "title" not in script
 Also assert the workflow still has only `workflow_dispatch` and `schedule`, the
 same concurrency group, and no permission expansion.
 
-- [ ] **Step 2: Add the hermetic execution harness**
+- [x] **Step 2: Add the hermetic execution harness**
 
 Create a temporary executable named `gh` that:
 
@@ -86,7 +86,7 @@ Run the extracted script with real Bash, the fake directory first on `PATH`,
 and real `jq`. Mark only executable cases skipped when either executable is
 absent; static tests must never skip.
 
-- [ ] **Step 3: Add list-stage RED cases**
+- [x] **Step 3: Add list-stage RED cases**
 
 Use well-formed 40-hex OIDs and assert zero `view`/`merge` calls for:
 
@@ -103,7 +103,7 @@ Also list two records in order: a stable ordinary non-Nerva PR followed by a
 Nerva PR. The first may reach its bounded merge path, while the second must be
 skipped; this catches a stale `manual_status` left at `1` by the first record.
 
-- [ ] **Step 4: Add recheck-stage RED cases**
+- [x] **Step 4: Add recheck-stage RED cases**
 
 List a non-Nerva, non-draft, `CLEAN` PR, then return each fresh state in turn:
 
@@ -118,7 +118,7 @@ headRefOid changes to another valid OID
 Every case must produce one `view`, zero `merge`, and exit zero because normal
 readiness drift is a safe skip.
 
-- [ ] **Step 5: Add fail-closed RED cases and the preserved happy path**
+- [x] **Step 5: Add fail-closed RED cases and the preserved happy path**
 
 At both list and recheck stages cover invalid JSON, two JSON documents, trailing
 JSON, non-object records, every required field missing, every required field
@@ -141,7 +141,7 @@ For a stable ordinary PR, assert exactly one command equivalent to:
 gh pr merge 123 --repo andrei649/jarvis-hub --squash --match-head-commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ```
 
-- [ ] **Step 6: Run the focused test and confirm RED**
+- [x] **Step 6: Run the focused test and confirm RED**
 
 Run:
 
@@ -165,7 +165,7 @@ Expected: static and/or behavioral failures showing that the workflow lacks
   `gh pr merge --squash --match-head-commit` behavior for eligible non-Nerva
   PRs.
 
-- [ ] **Step 1: Add exact constants and strict helpers**
+- [x] **Step 1: Add exact constants and strict helpers**
 
 Inside the existing Bash step, define read-only constants and helpers with this
 shape:
@@ -220,7 +220,7 @@ function.
 Keep all PR-supplied branch/body values inside JSON and out of logs. Fixed text
 may include only the separately validated positive integer PR number.
 
-- [ ] **Step 2: Extend and validate the list stage before readiness checks**
+- [x] **Step 2: Extend and validate the list stage before readiness checks**
 
 Request the complete field set:
 
@@ -240,7 +240,7 @@ and apply the three-way handling above. Log only the validated PR number and
 fixed text on a match, then `continue`. Only then apply the existing draft and
 non-`CLEAN` skips.
 
-- [ ] **Step 3: Replace the scalar recheck with a complete fresh record**
+- [x] **Step 3: Replace the scalar recheck with a complete fresh record**
 
 Use `gh pr view <number> --json` with the same complete field set. Capture its
 stdout separately; a non-zero CLI status discards even valid-looking partial
@@ -257,7 +257,7 @@ Keep the final command exactly bounded by the listed SHA:
 gh pr merge "$number" --repo "$REPO" --squash --match-head-commit "$sha"
 ```
 
-- [ ] **Step 4: Run focused tests and confirm GREEN**
+- [x] **Step 4: Run focused tests and confirm GREEN**
 
 Run:
 
@@ -269,7 +269,7 @@ Expected: all focused tests pass. On a machine without Bash or `jq`, static
 tests pass and executable tests report explicit skips; hosted Ubuntu must later
 run every executable case.
 
-- [ ] **Step 5: Commit the behavior unit after review of the focused diff**
+- [x] **Step 5: Commit the behavior unit after review of the focused diff**
 
 Stage only:
 
@@ -293,7 +293,7 @@ authorizes commit creation.
 - Consumes: the completed workflow/test unit and current `origin/main`.
 - Produces: one independently reviewed exact-head PR that the current conductor may merge, followed by default-branch proof of both exclusions.
 
-- [ ] **Step 1: Check canonical generated truth**
+- [x] **Step 1: Check canonical generated truth**
 
 Run:
 
