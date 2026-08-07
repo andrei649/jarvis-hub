@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import re
 import subprocess  # nosec B404
 import sys
@@ -34,6 +35,9 @@ MAX_DIFF_BYTES = 1_048_576
 MAX_DIFF_RECORDS = 4_096
 BRANCH_PREFIX = "nerva2/"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+MANIFEST_PATH = "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json"
+MANIFEST_VIEW_PATH = "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md"
+MAX_MANIFEST_VIEW_BYTES = MAX_DIFF_BYTES
 REGISTERED = frozenset(
     {
         ".github/workflows/ci.yml",
@@ -379,6 +383,170 @@ def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
         _reject("legacy bootstrap gate is not canonical")
 
 
+def _resolve_git_executable(root: Path, *, environment: Mapping[str, str] | None = None) -> str:
+    """Resolve one absolute Git executable outside the repository and cwd."""
+    source = os.environ if environment is None else environment
+    path_value = next((value for key, value in source.items() if key.upper() == "PATH"), "")
+    try:
+        protected = {root.resolve(strict=True), Path.cwd().resolve(strict=True)}
+    except (OSError, RuntimeError) as exc:
+        raise MovementError("Git trust roots are unavailable") from exc
+    executable_names = ("git.exe", "git") if os.name == "nt" else ("git",)
+    for raw_entry in path_value.split(os.pathsep):
+        entry = raw_entry.strip().strip('"')
+        directory = Path(entry)
+        if not entry or not directory.is_absolute():
+            continue
+        for executable_name in executable_names:
+            try:
+                candidate = (directory / executable_name).resolve(strict=True)
+            except (OSError, RuntimeError):
+                continue
+            if not candidate.is_absolute() or not candidate.is_file():
+                continue
+            if os.name != "nt" and not os.access(candidate, os.X_OK):
+                continue
+            if any(
+                candidate == boundary or candidate.is_relative_to(boundary)
+                for boundary in protected
+            ):
+                continue
+            return str(candidate)
+    _reject("trusted Git executable is unavailable")
+
+
+def _git_environment(git: str, environment: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return a Git-only environment without token, proxy or ambient Git controls."""
+    source = os.environ if environment is None else environment
+    scrubbed: dict[str, str] = {}
+    for key, value in source.items():
+        upper = key.upper()
+        if upper == "PATH" or upper.startswith("GIT_") or "TOKEN" in upper or "PROXY" in upper:
+            continue
+        scrubbed[key] = value
+    scrubbed["PATH"] = str(Path(git).parent)
+    scrubbed["GIT_CONFIG_NOSYSTEM"] = "1"
+    scrubbed["GIT_CONFIG_GLOBAL"] = os.devnull
+    scrubbed["GIT_NO_REPLACE_OBJECTS"] = "1"
+    scrubbed["GIT_OPTIONAL_LOCKS"] = "0"
+    scrubbed["GIT_TERMINAL_PROMPT"] = "0"
+    return scrubbed
+
+
+def _git_output(
+    git: str,
+    root: Path,
+    arguments: tuple[str, ...],
+    *,
+    environment: Mapping[str, str],
+    max_bytes: int,
+    timeout_seconds: float = 20,
+) -> tuple[int, bytes]:
+    """Run one fixed-argv Git query and read stdout with a hard byte bound."""
+    chunks: list[bytes] = []
+    reader_error: list[BaseException] = []
+    oversized = threading.Event()
+
+    def read_stdout(stream: Any) -> None:
+        try:
+            total = 0
+            while True:
+                chunk = stream.read(8_192)
+                if not chunk:
+                    return
+                total += len(chunk)
+                if total > max_bytes:
+                    oversized.set()
+                    return
+                chunks.append(chunk)
+        except BaseException as exc:  # The caller receives only a fixed rejection.
+            reader_error.append(exc)
+
+    process: Any | None = None
+    try:
+        process = subprocess.Popen(  # nosec B603
+            [git, "--no-replace-objects", "-C", str(root), *arguments],
+            shell=False,
+            env=dict(environment),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        if process.stdout is None:
+            _reject("Git query failed")
+        reader = threading.Thread(target=read_stdout, args=(process.stdout,), daemon=True)
+        reader.start()
+        reader.join(timeout=timeout_seconds)
+        if reader.is_alive() or oversized.is_set():
+            process.kill()
+            reader.join(timeout=timeout_seconds)
+            process.wait(timeout=timeout_seconds)
+            _reject("Git query timed out" if reader.is_alive() else "Git output exceeds limit")
+        if reader_error:
+            _reject("Git query failed")
+        try:
+            exit_code = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.wait(timeout=timeout_seconds)
+            raise MovementError("Git query timed out") from exc
+    except MovementError:
+        raise
+    except (AttributeError, OSError, subprocess.SubprocessError) as exc:
+        if process is not None:
+            try:
+                process.kill()
+                process.wait(timeout=timeout_seconds)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        raise MovementError("Git query failed") from exc
+    return exit_code, b"".join(chunks)
+
+
+def _require_git_output(
+    git: str,
+    root: Path,
+    arguments: tuple[str, ...],
+    *,
+    environment: Mapping[str, str],
+    max_bytes: int,
+    error: str,
+) -> bytes:
+    exit_code, output = _git_output(
+        git,
+        root,
+        arguments,
+        environment=environment,
+        max_bytes=max_bytes,
+    )
+    if exit_code != 0:
+        _reject(error)
+    return output
+
+
+def _checkout_head(git: str, root: Path, environment: Mapping[str, str], *, error: str) -> str:
+    output = _require_git_output(
+        git,
+        root,
+        ("rev-parse", "--verify", "HEAD^{commit}"),
+        environment=environment,
+        max_bytes=128,
+        error=error,
+    )
+    try:
+        value = output.decode("ascii", "strict").strip()
+    except UnicodeDecodeError as exc:
+        raise MovementError(error) from exc
+    if SHA_RE.fullmatch(value) is None:
+        _reject(error)
+    return value
+
+
+def _encode_diff(records: Iterable[tuple[str, str]]) -> bytes:
+    return b"".join(
+        status.encode("ascii") + b"\0" + path.encode("utf-8") + b"\0" for status, path in records
+    )
+
+
 def compute_name_status_diff(
     base: str,
     head: str,
@@ -387,6 +555,7 @@ def compute_name_status_diff(
     cwd: Path | None = None,
     popen_factory: Any = subprocess.Popen,
     timeout_seconds: float = 20,
+    environment: Mapping[str, str] | None = None,
 ) -> list[tuple[str, str]]:
     """Run the only accepted diff command; arguments are never built from shell text."""
     if not SHA_RE.fullmatch(base) or not SHA_RE.fullmatch(head):
@@ -412,10 +581,25 @@ def compute_name_status_diff(
 
     try:
         process = popen_factory(
-            [git, "diff", "--name-status", "--no-renames", "-z", base, head, "--"],
+            [
+                git,
+                "--no-replace-objects",
+                "diff",
+                "--no-ext-diff",
+                "--name-status",
+                "--no-renames",
+                "-z",
+                base,
+                head,
+                "--",
+            ],
             shell=False,
             cwd=cwd,
-            env={"PATH": str(Path(git).parent) if Path(git).parent != Path(".") else ""},
+            env=(
+                dict(environment)
+                if environment is not None
+                else {"PATH": str(Path(git).parent) if Path(git).parent != Path(".") else ""}
+            ),
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
@@ -1096,6 +1280,168 @@ def run_pure_proof(
     return PureProof("draft_hold" if draft else "proved", scope)
 
 
+def _validate_candidate_manifest(root: Path, head: str, environment: Mapping[str, str]) -> None:
+    """Run the existing whole-program checker against this exact candidate."""
+    checker = Path(__file__).resolve().with_name("check_nerva_program_manifest.py")
+    try:
+        completed = subprocess.run(  # nosec B603
+            [
+                sys.executable,
+                str(checker),
+                "--check",
+                "--root",
+                str(root),
+                "--candidate-ref",
+                head,
+            ],
+            check=False,
+            env=dict(environment),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise MovementError("candidate manifest validation failed") from exc
+    if completed.returncode != 0:
+        _reject("candidate manifest validation failed")
+
+
+def run_repository_proof(
+    *,
+    root: Path,
+    event: Any,
+    base: str,
+    head: str,
+    transport: Any | None,
+    proof_runner: Any = run_pure_proof,
+    manifest_validator: Any | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> PureProof:
+    """Bind the pure movement proof to one exact repository base and checkout head."""
+    if not isinstance(base, str) or not isinstance(head, str):
+        _reject("requested commit is invalid")
+    if SHA_RE.fullmatch(base) is None or SHA_RE.fullmatch(head) is None:
+        _reject("requested commit is invalid")
+    _repository, _number, event_base, event_head, _branch, _body, _draft = _event_context(event)
+    if event_base != base or event_head != head:
+        _reject("event commits do not match requested commits")
+    try:
+        repository_root = root.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise MovementError("repository root is unavailable") from exc
+    if not repository_root.is_dir():
+        _reject("repository root is unavailable")
+
+    git = _resolve_git_executable(repository_root, environment=environment)
+    git_environment = _git_environment(git, environment)
+    top_level = _require_git_output(
+        git,
+        repository_root,
+        ("rev-parse", "--show-toplevel"),
+        environment=git_environment,
+        max_bytes=4_096,
+        error="repository root is invalid",
+    )
+    try:
+        reported_root = Path(top_level.decode("utf-8", "strict").strip()).resolve(strict=True)
+    except (OSError, RuntimeError, UnicodeError) as exc:
+        raise MovementError("repository root is invalid") from exc
+    if reported_root != repository_root:
+        _reject("repository root is invalid")
+
+    for label, commit in (("base", base), ("head", head)):
+        object_type = _require_git_output(
+            git,
+            repository_root,
+            ("cat-file", "-t", commit),
+            environment=git_environment,
+            max_bytes=64,
+            error=f"{label} commit is unavailable",
+        )
+        if object_type != b"commit\n":
+            _reject(f"{label} must identify an exact commit object")
+    ancestor_code, _ancestor_output = _git_output(
+        git,
+        repository_root,
+        ("merge-base", "--is-ancestor", base, head),
+        environment=git_environment,
+        max_bytes=64,
+    )
+    if ancestor_code != 0:
+        _reject("base is not an ancestor of head")
+    if (
+        _checkout_head(
+            git, repository_root, git_environment, error="checked-out HEAD is unavailable"
+        )
+        != head
+    ):
+        _reject("event head does not equal checked-out HEAD")
+
+    records = compute_name_status_diff(
+        base,
+        head,
+        git=git,
+        cwd=repository_root,
+        environment=git_environment,
+    )
+    baseline_bytes = _require_git_output(
+        git,
+        repository_root,
+        ("cat-file", "blob", f"{base}:{MANIFEST_PATH}"),
+        environment=git_environment,
+        max_bytes=MAX_JSON_BYTES,
+        error="baseline manifest is unavailable",
+    )
+    candidate_bytes = _require_git_output(
+        git,
+        repository_root,
+        ("cat-file", "blob", f"{head}:{MANIFEST_PATH}"),
+        environment=git_environment,
+        max_bytes=MAX_JSON_BYTES,
+        error="candidate manifest is unavailable",
+    )
+    baseline_manifest = strict_json(baseline_bytes)
+    candidate_manifest = strict_json(candidate_bytes)
+    if not isinstance(baseline_manifest, dict) or not isinstance(candidate_manifest, dict):
+        _reject("manifest must be an object")
+
+    result = proof_runner(
+        event=event,
+        baseline_manifest=baseline_manifest,
+        candidate_manifest=candidate_manifest,
+        candidate_manifest_bytes=candidate_bytes,
+        base=base,
+        head=head,
+        diff=_encode_diff(records),
+        transport=transport,
+    )
+    if result.status == "proved" or result.scope.get("kind") is not None:
+        status_by_path = {path: status for status, path in records}
+        required_paths = {MANIFEST_PATH, MANIFEST_VIEW_PATH}
+        if any(status_by_path.get(path) not in {"A", "M"} for path in required_paths):
+            _reject("Nerva movement omits canonical manifest or generated view")
+        _require_git_output(
+            git,
+            repository_root,
+            ("cat-file", "blob", f"{head}:{MANIFEST_VIEW_PATH}"),
+            environment=git_environment,
+            max_bytes=MAX_MANIFEST_VIEW_BYTES,
+            error="generated manifest view is unavailable",
+        )
+        if manifest_validator is None:
+            _validate_candidate_manifest(repository_root, head, git_environment)
+        else:
+            manifest_validator(repository_root, head)
+    if (
+        _checkout_head(
+            git, repository_root, git_environment, error="checked-out HEAD moved during proof"
+        )
+        != head
+    ):
+        _reject("checked-out HEAD moved during proof")
+    return result
+
+
 def _snapshot_transport(snapshot_dir: Path) -> Any:
     root = snapshot_dir.resolve()
 
@@ -1117,23 +1463,22 @@ def _snapshot_transport(snapshot_dir: Path) -> Any:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--event", type=Path, required=True)
-    parser.add_argument("--baseline-manifest", type=Path, required=True)
-    parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--base", required=True)
     parser.add_argument("--head", required=True)
-    parser.add_argument("--diff", type=Path, required=True)
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--snapshot-dir", type=Path)
+    parser.add_argument("--baseline-manifest", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--manifest", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--diff", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
-        candidate_bytes = args.manifest.read_bytes()
-        result = run_pure_proof(
+        if any((args.baseline_manifest, args.manifest, args.diff)):
+            _reject("external manifest and diff inputs are not accepted")
+        result = run_repository_proof(
+            root=args.root,
             event=strict_json(args.event.read_bytes()),
-            baseline_manifest=strict_json(args.baseline_manifest.read_bytes()),
-            candidate_manifest=strict_json(candidate_bytes),
-            candidate_manifest_bytes=candidate_bytes,
             base=args.base,
             head=args.head,
-            diff=args.diff.read_bytes(),
             transport=_snapshot_transport(args.snapshot_dir) if args.snapshot_dir else None,
         )
     except MovementError as exc:

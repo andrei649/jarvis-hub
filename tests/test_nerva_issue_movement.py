@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -13,7 +14,10 @@ from check_nerva_issue_movement import (
     MARKER,
     MAX_DIFF_BYTES,
     MovementError,
+    PureProof,
     _fetch_current_snapshot,
+    _git_environment,
+    _resolve_git_executable,
     _validate_attestation,
     _validate_receipt,
     classify,
@@ -23,6 +27,7 @@ from check_nerva_issue_movement import (
     parse_diff,
     parse_marker_json,
     run_pure_proof,
+    run_repository_proof,
     strict_json,
     validate_manifest_gate,
     validate_registry_evolution,
@@ -33,6 +38,47 @@ BASE = LEGACY_BASE
 HEAD = "b" * 40
 REPOSITORY = "andrei649/jarvis-hub"
 PR_NUMBER = 849
+
+
+def binding_repository(tmp_path):
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("Git executable unavailable")
+    for args in (
+        ["init"],
+        ["config", "user.email", "test@example.invalid"],
+        ["config", "user.name", "Test"],
+    ):
+        subprocess.run([git, *args], cwd=tmp_path, check=True, capture_output=True)
+    manifest = tmp_path / "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json"
+    document = tmp_path / "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_bytes(b'{"version":1}\n')
+    document.write_bytes(b"# version 1\n")
+    subprocess.run([git, "add", "docs"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run([git, "commit", "-m", "base"], cwd=tmp_path, check=True, capture_output=True)
+    base = subprocess.run(
+        [git, "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    manifest.write_bytes(b'{"version":2}\n')
+    document.write_bytes(b"# version 2\n")
+    subprocess.run(
+        [git, "commit", "-am", "candidate"], cwd=tmp_path, check=True, capture_output=True
+    )
+    head = subprocess.run(
+        [git, "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    event = {
+        "repository": {"full_name": REPOSITORY},
+        "pull_request": {
+            "number": PR_NUMBER,
+            "base": {"sha": base},
+            "head": {"sha": head, "ref": "nerva2/binding"},
+            "body": "",
+            "draft": False,
+        },
+    }
+    return git, base, head, event
 
 
 def valid_gate():
@@ -428,6 +474,22 @@ def test_offline_snapshot_proves_attestation_receipt_and_semantic_scope():
     assert derive_scope({}, candidate)["kind"] == "program_control"
 
 
+def test_attestation_digest_binds_exact_candidate_manifest_bytes():
+    event, candidate, _candidate_bytes, snapshot = snapshot_proof()
+    semantically_equal_bytes = json.dumps(candidate, indent=2).encode()
+    with pytest.raises(MovementError, match="attestation does not bind movement proof"):
+        run_pure_proof(
+            event=event,
+            baseline_manifest={},
+            candidate_manifest=candidate,
+            candidate_manifest_bytes=semantically_equal_bytes,
+            base=BASE,
+            head=HEAD,
+            diff=b"M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json\0M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md\0",
+            transport=snapshot.__getitem__,
+        )
+
+
 def test_offline_snapshot_rejects_edited_receipt_and_cross_binding():
     event, candidate, candidate_bytes, snapshot = snapshot_proof(mutate_receipt=True)
     with pytest.raises(MovementError):
@@ -776,3 +838,208 @@ def test_new_evidence_accepts_legitimate_positive_issue_reference():
         ],
     }
     validate_stream_evidence_bindings(baseline, candidate, pull_request=849)
+
+
+def test_git_resolution_is_absolute_and_subprocess_environment_drops_secrets(tmp_path):
+    git = _resolve_git_executable(tmp_path)
+    assert Path(git).is_absolute()
+    environment = _git_environment(
+        git,
+        {
+            "PATH": os.environ.get("PATH", ""),
+            "Path": "C:\\untrusted-path",
+            "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+            "GITHUB_TOKEN": "github-secret",
+            "GH_TOKEN": "gh-secret",
+            "HTTP_PROXY": "http://proxy.invalid",
+            "https_proxy": "http://proxy.invalid",
+            "NO_PROXY": "github.com",
+            "GIT_CONFIG_GLOBAL": "hostile-config",
+        },
+    )
+    upper_keys = {key.upper() for key in environment}
+    assert "GITHUB_TOKEN" not in upper_keys
+    assert "GH_TOKEN" not in upper_keys
+    assert "HTTP_PROXY" not in upper_keys
+    assert "HTTPS_PROXY" not in upper_keys
+    assert "NO_PROXY" not in upper_keys
+    assert environment["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert environment["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert sum(key.upper() == "PATH" for key in environment) == 1
+    assert Path(environment["PATH"]).resolve() == Path(git).parent.resolve()
+
+
+def test_repository_proof_binds_exact_commits_manifest_bytes_and_diff(tmp_path):
+    _git, base, head, event = binding_repository(tmp_path)
+    observed = {}
+
+    def proof_runner(**kwargs):
+        observed.update(kwargs)
+        return PureProof("proved", {"kind": "program_control", "implementation_issue": 846})
+
+    validated = []
+    result = run_repository_proof(
+        root=tmp_path,
+        event=event,
+        base=base,
+        head=head,
+        transport=None,
+        proof_runner=proof_runner,
+        manifest_validator=lambda root, candidate: validated.append((root, candidate)),
+    )
+    assert result.status == "proved"
+    assert observed["candidate_manifest_bytes"] == b'{"version":2}\n'
+    assert observed["candidate_manifest"] == {"version": 2}
+    assert observed["baseline_manifest"] == {"version": 1}
+    assert observed["diff"] == (
+        b"M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json\0"
+        b"M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md\0"
+    )
+    assert validated == [(tmp_path.resolve(), head)]
+
+
+def test_repository_proof_rejects_non_ancestor_base(tmp_path):
+    git, _base, head, event = binding_repository(tmp_path)
+    subprocess.run(
+        [git, "checkout", "--orphan", "unrelated"], cwd=tmp_path, check=True, capture_output=True
+    )
+    subprocess.run([git, "rm", "-rf", "."], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
+    subprocess.run([git, "add", "unrelated.txt"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        [git, "commit", "-m", "unrelated"], cwd=tmp_path, check=True, capture_output=True
+    )
+    unrelated = subprocess.run(
+        [git, "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    subprocess.run([git, "checkout", head], cwd=tmp_path, check=True, capture_output=True)
+    event["pull_request"]["base"]["sha"] = unrelated
+    with pytest.raises(MovementError, match="base is not an ancestor"):
+        run_repository_proof(
+            root=tmp_path,
+            event=event,
+            base=unrelated,
+            head=head,
+            transport=None,
+            proof_runner=lambda **_kwargs: pytest.fail("proof must not run"),
+            manifest_validator=lambda *_args: pytest.fail("validator must not run"),
+        )
+
+
+def test_repository_proof_rejects_event_head_that_is_not_checkout(tmp_path):
+    git, base, head, event = binding_repository(tmp_path)
+    subprocess.run(
+        [git, "commit", "--allow-empty", "-m", "different checkout"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    with pytest.raises(MovementError, match="event head does not equal checked-out HEAD"):
+        run_repository_proof(
+            root=tmp_path,
+            event=event,
+            base=base,
+            head=head,
+            transport=None,
+            proof_runner=lambda **_kwargs: pytest.fail("proof must not run"),
+            manifest_validator=lambda *_args: pytest.fail("validator must not run"),
+        )
+
+
+def test_repository_proof_requires_both_canonical_manifest_files_in_exact_diff(tmp_path):
+    git, base, _head, event = binding_repository(tmp_path)
+    document = tmp_path / "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md"
+    document.write_bytes(b"# version 1\n")
+    subprocess.run(
+        [git, "commit", "-am", "omit generated view"], cwd=tmp_path, check=True, capture_output=True
+    )
+    head = subprocess.run(
+        [git, "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    event["pull_request"]["head"]["sha"] = head
+    with pytest.raises(MovementError, match="omits canonical manifest or generated view"):
+        run_repository_proof(
+            root=tmp_path,
+            event=event,
+            base=base,
+            head=head,
+            transport=None,
+            proof_runner=lambda **_kwargs: PureProof(
+                "proved", {"kind": "program_control", "implementation_issue": 846}
+            ),
+            manifest_validator=lambda *_args: pytest.fail("validator must not run"),
+        )
+
+
+def test_repository_binding_preserves_non_nerva_skip_without_manifest_churn(tmp_path):
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("Git executable unavailable")
+    for args in (
+        ["init"],
+        ["config", "user.email", "test@example.invalid"],
+        ["config", "user.name", "Test"],
+    ):
+        subprocess.run([git, *args], cwd=tmp_path, check=True, capture_output=True)
+    manifest = tmp_path / "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json"
+    document = tmp_path / "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps(candidate_manifest()), encoding="utf-8")
+    document.write_text("unchanged\n", encoding="utf-8")
+    subprocess.run([git, "add", "docs"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run([git, "commit", "-m", "base"], cwd=tmp_path, check=True, capture_output=True)
+    base = subprocess.run(
+        [git, "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    source = tmp_path / "src/app.py"
+    source.parent.mkdir()
+    source.write_text("value = 1\n", encoding="utf-8")
+    subprocess.run([git, "add", "src/app.py"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run([git, "commit", "-m", "ordinary"], cwd=tmp_path, check=True, capture_output=True)
+    head = subprocess.run(
+        [git, "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    event = {
+        "repository": {"full_name": REPOSITORY},
+        "pull_request": {
+            "number": PR_NUMBER,
+            "base": {"sha": base},
+            "head": {"sha": head, "ref": "feature/ordinary"},
+            "body": "",
+            "draft": False,
+        },
+    }
+    current = {**event["pull_request"], "repository": event["repository"], "state": "open"}
+    result = run_repository_proof(
+        root=tmp_path,
+        event=event,
+        base=base,
+        head=head,
+        transport={"pull_request": current}.__getitem__,
+        manifest_validator=lambda *_args: pytest.fail("non-Nerva must not invoke validator"),
+    )
+    assert result.status == "non_nerva"
+
+
+def test_repository_proof_rechecks_head_immediately_before_success(tmp_path):
+    git, base, head, event = binding_repository(tmp_path)
+
+    def move_head(**_kwargs):
+        subprocess.run(
+            [git, "commit", "--allow-empty", "-m", "move head"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+        return PureProof("proved", {"kind": "program_control", "implementation_issue": 846})
+
+    with pytest.raises(MovementError, match="checked-out HEAD moved"):
+        run_repository_proof(
+            root=tmp_path,
+            event=event,
+            base=base,
+            head=head,
+            transport=None,
+            proof_runner=move_head,
+            manifest_validator=lambda *_args: None,
+        )
