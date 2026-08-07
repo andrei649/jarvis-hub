@@ -14,6 +14,7 @@ import json
 import math
 import os
 import re
+import stat
 import subprocess  # nosec B404
 import sys
 import threading
@@ -539,6 +540,53 @@ def _checkout_head(git: str, root: Path, environment: Mapping[str, str], *, erro
     if SHA_RE.fullmatch(value) is None:
         _reject(error)
     return value
+
+
+def _reject_legacy_grafts(git: str, root: Path, environment: Mapping[str, str]) -> None:
+    """Reject active legacy grafts from the repository's resolved common Git dir."""
+    common_output = _require_git_output(
+        git,
+        root,
+        ("rev-parse", "--path-format=absolute", "--git-common-dir"),
+        environment=environment,
+        max_bytes=4_096,
+        error="Git common directory is unavailable",
+    )
+    grafts_output = _require_git_output(
+        git,
+        root,
+        ("rev-parse", "--path-format=absolute", "--git-path", "info/grafts"),
+        environment=environment,
+        max_bytes=4_096,
+        error="legacy Git grafts path is unavailable",
+    )
+    try:
+        common_text = common_output.decode("utf-8", "strict").strip()
+        grafts_text = grafts_output.decode("utf-8", "strict").strip()
+        common = Path(common_text)
+        reported_grafts = Path(grafts_text)
+        if not common_text or not grafts_text or not common.is_absolute():
+            _reject("Git common directory is invalid")
+        if not reported_grafts.is_absolute():
+            _reject("legacy Git grafts path is invalid")
+        common = common.resolve(strict=True)
+        if not common.is_dir():
+            _reject("Git common directory is invalid")
+        expected_grafts = common / "info" / "grafts"
+        if reported_grafts.resolve(strict=False) != expected_grafts.resolve(strict=False):
+            _reject("legacy Git grafts path is invalid")
+        info = common / "info"
+        if info.exists() and (info.is_symlink() or not info.is_dir()):
+            _reject("legacy Git grafts path is unsafe")
+        metadata = reported_grafts.lstat()
+    except FileNotFoundError:
+        return
+    except MovementError:
+        raise
+    except (OSError, RuntimeError, UnicodeError, ValueError) as exc:
+        raise MovementError("cannot inspect legacy Git grafts") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode) or metadata.st_size:
+        _reject("legacy Git grafts are unsupported")
 
 
 def _encode_diff(records: Iterable[tuple[str, str]]) -> bytes:
@@ -1349,6 +1397,7 @@ def run_repository_proof(
     if reported_root != repository_root:
         _reject("repository root is invalid")
 
+    _reject_legacy_grafts(git, repository_root, git_environment)
     for label, commit in (("base", base), ("head", head)):
         object_type = _require_git_output(
             git,
@@ -1432,6 +1481,7 @@ def run_repository_proof(
             _validate_candidate_manifest(repository_root, head, git_environment)
         else:
             manifest_validator(repository_root, head)
+    _reject_legacy_grafts(git, repository_root, git_environment)
     if (
         _checkout_head(
             git, repository_root, git_environment, error="checked-out HEAD moved during proof"
