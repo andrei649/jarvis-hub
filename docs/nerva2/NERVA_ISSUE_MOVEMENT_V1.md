@@ -14,11 +14,18 @@ coverage is append-only, sorted, unique, portable, wildcard-free, and cannot be
 removed, replaced, or narrowed. A post-bootstrap registry addition must cover a
 path added by that same pull request.
 
-The only legacy-empty projection is exact base
-`843918848c11bbd3f0099f9504d0e0eaaa56b9d6`. Its candidate must materialize the
-canonical v1 gate and bootstrap registry. Issue #839 remains only the prior
-repository-manifest `evidence_snapshot.control_issue`; B2.1 adds #846 as the
-sole bootstrap `program_control` issue.
+The historical gate-less shape comes from source
+`843918848c11bbd3f0099f9504d0e0eaaa56b9d6`, but that source SHA is not an
+accepted pull-request base. The sole accepted bootstrap base is
+`e596920ec60f19d2e7f0937819c892746a1c42b2`, and only while its canonical JSON
+manifest bytes and generated Markdown bytes still match the pinned historical
+SHA-256 digests and parsed legacy semantics. Any changed byte, changed parsed
+value, source-SHA base, or arbitrary later base fails closed. The candidate
+must materialize the canonical v1 gate and the registry whose historical seed
+digest is pinned in `movement_gate.bootstrap`; later registry evolution remains
+append-only. Issue #839 remains only the prior repository-manifest
+`evidence_snapshot.control_issue`; B2.1 adds #846 as the sole bootstrap
+`program_control` issue.
 
 While `enforcement_state=required`, issue #847 is a static operational
 invariant. The manifest pins `.github/workflows/pr-auto-merge.yml`,

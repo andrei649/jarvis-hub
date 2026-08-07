@@ -14,7 +14,9 @@
 
 - Schema version: `1`
 - Enforcement state: `required`
-- Historical bootstrap base: `843918848c11bbd3f0099f9504d0e0eaaa56b9d6`
+- Historical bootstrap source: `843918848c11bbd3f0099f9504d0e0eaaa56b9d6`
+- Accepted implementation base: `e596920ec60f19d2e7f0937819c892746a1c42b2`
+- Gate-less bootstrap proof pins unchanged legacy manifest/view bytes: `ab63a42837fb69af901326ffae5052d01c787a913960e2fb6f3bebeaac10ec7f` / `e4480f7c37de768ef59d64a542a2ec6c241b89d44ce89fa329a72ff987c1cfdc`.
 - Program-control issues: [#846](https://github.com/andrei649/jarvis-hub/issues/846)
 - Receipt proof mode: `point_in_time`; continuous currentness: `false`
 - The live pull request must be reread and the unchanged exact head rerun before integration.

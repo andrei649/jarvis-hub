@@ -29,6 +29,10 @@ from pathlib import Path
 from typing import Any
 
 LEGACY_BASE = "843918848c11bbd3f0099f9504d0e0eaaa56b9d6"
+ACCEPTED_BOOTSTRAP_BASE = "e596920ec60f19d2e7f0937819c892746a1c42b2"
+LEGACY_MANIFEST_SHA256 = "ab63a42837fb69af901326ffae5052d01c787a913960e2fb6f3bebeaac10ec7f"
+LEGACY_MANIFEST_VIEW_SHA256 = "e4480f7c37de768ef59d64a542a2ec6c241b89d44ce89fa329a72ff987c1cfdc"
+BOOTSTRAP_REGISTRY_SHA256 = "9ab8aadf4c986e6380e8421225e99de5afc585163366ebb53199eecdf58980fb"
 MARKER = "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->"
 END_MARKER = "<!-- NERVA2:MOVEMENT-ATTESTATION:END -->"
 RECEIPT_MARKER = "<!-- NERVA2:MOVEMENT-RECEIPT:START -->"
@@ -412,19 +416,41 @@ def classify(
     )
 
 
-def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
+def validate_manifest_gate(
+    manifest: Mapping[str, Any],
+    base: str,
+    *,
+    baseline_manifest_bytes: bytes | None = None,
+    baseline_manifest_view_bytes: bytes | None = None,
+) -> None:
     """Validate only the movement-gate shape required by this pure layer."""
     if not isinstance(manifest, Mapping) or not isinstance(base, str):
         _reject("manifest gate input is invalid")
     gate = manifest.get("movement_gate")
     if gate is None:
-        if base == LEGACY_BASE:
-            return
-        _reject("movement gate is required")
+        if base != ACCEPTED_BOOTSTRAP_BASE:
+            _reject("gate-less manifest requires the accepted bootstrap base")
+        if (
+            not isinstance(baseline_manifest_bytes, bytes)
+            or _sha256(baseline_manifest_bytes) != LEGACY_MANIFEST_SHA256
+        ):
+            _reject("gate-less bootstrap legacy manifest bytes do not match")
+        if (
+            not isinstance(baseline_manifest_view_bytes, bytes)
+            or _sha256(baseline_manifest_view_bytes) != LEGACY_MANIFEST_VIEW_SHA256
+        ):
+            _reject("gate-less bootstrap legacy manifest view bytes do not match")
+        try:
+            parsed_baseline = strict_json(baseline_manifest_bytes)
+        except MovementError as exc:
+            raise MovementError("gate-less bootstrap legacy manifest bytes do not match") from exc
+        if not isinstance(parsed_baseline, dict) or not _same_json(parsed_baseline, manifest):
+            _reject("gate-less bootstrap legacy manifest semantics do not match")
+        return
     allowed = {
         "schema_version",
         "enforcement_state",
-        "bootstrap_base",
+        "bootstrap",
         "branch_prefix",
         "attestation_start_marker",
         "registry",
@@ -438,8 +464,31 @@ def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
         _reject("movement gate schema is invalid")
     if gate.get("enforcement_state") not in {"required", "safety_disabled"}:
         _reject("movement gate enforcement state is invalid")
-    if gate.get("bootstrap_base") != LEGACY_BASE:
-        _reject("movement gate bootstrap base is invalid")
+    bootstrap = _closed_object(
+        gate.get("bootstrap"),
+        allowed_keys={
+            "source_sha",
+            "accepted_base_sha",
+            "legacy_manifest_sha256",
+            "legacy_manifest_view_sha256",
+            "registry_seed_sha256",
+        },
+        required_keys={
+            "source_sha",
+            "accepted_base_sha",
+            "legacy_manifest_sha256",
+            "legacy_manifest_view_sha256",
+            "registry_seed_sha256",
+        },
+    )
+    if bootstrap != {
+        "source_sha": LEGACY_BASE,
+        "accepted_base_sha": ACCEPTED_BOOTSTRAP_BASE,
+        "legacy_manifest_sha256": LEGACY_MANIFEST_SHA256,
+        "legacy_manifest_view_sha256": LEGACY_MANIFEST_VIEW_SHA256,
+        "registry_seed_sha256": BOOTSTRAP_REGISTRY_SHA256,
+    }:
+        _reject("movement gate bootstrap provenance is invalid")
     if gate.get("branch_prefix") != BRANCH_PREFIX:
         _reject("movement gate branch prefix is invalid")
     if gate.get("attestation_start_marker") != MARKER:
@@ -448,8 +497,13 @@ def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
     if not isinstance(registry, list):
         _reject("movement gate registry is invalid")
     _validate_registry(registry)
-    if base == LEGACY_BASE and tuple(registry) != BOOTSTRAP_REGISTRY:
-        _reject("legacy bootstrap registry does not match pinned seed")
+    if base == ACCEPTED_BOOTSTRAP_BASE:
+        registry_seed = json.dumps(registry, separators=(",", ":"), ensure_ascii=False).encode()
+        if (
+            tuple(registry) != BOOTSTRAP_REGISTRY
+            or _sha256(registry_seed) != BOOTSTRAP_REGISTRY_SHA256
+        ):
+            _reject("accepted bootstrap registry does not match pinned seed")
     issues = gate.get("program_control_issues")
     if (
         not isinstance(issues, list)
@@ -536,13 +590,13 @@ def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
             or rollback.get("exact_head_checks_required") is not True
         ):
             _reject("movement rollback evidence is invalid")
-    if base == LEGACY_BASE and (
+    if base == ACCEPTED_BOOTSTRAP_BASE and (
         set(gate) != allowed
         or gate["enforcement_state"] != "required"
         or gate["program_control_issues"] != [846]
         or gate["rollback"] is not None
     ):
-        _reject("legacy bootstrap gate is not canonical")
+        _reject("accepted bootstrap gate is not canonical")
 
 
 def _resolve_git_executable(root: Path, *, environment: Mapping[str, str] | None = None) -> str:
@@ -1497,6 +1551,8 @@ def run_pure_proof(
     *,
     event: Any,
     baseline_manifest: Any,
+    baseline_manifest_bytes: bytes | None = None,
+    baseline_manifest_view_bytes: bytes | None = None,
     candidate_manifest: Any,
     candidate_manifest_bytes: bytes,
     base: str,
@@ -1534,7 +1590,12 @@ def run_pure_proof(
     )
     if not isinstance(baseline_manifest, dict) or not isinstance(candidate_manifest, dict):
         _reject("manifest must be an object")
-    validate_manifest_gate(baseline_manifest, base)
+    validate_manifest_gate(
+        baseline_manifest,
+        base,
+        baseline_manifest_bytes=baseline_manifest_bytes,
+        baseline_manifest_view_bytes=baseline_manifest_view_bytes,
+    )
     validate_manifest_gate(candidate_manifest, base)
     records = parse_diff(diff)
     paths = [path for _, path in records]
@@ -1544,7 +1605,7 @@ def run_pure_proof(
         _reject("candidate movement gate is missing")
     baseline_registry = [] if baseline_gate is None else baseline_gate["registry"]
     candidate_registry = candidate_gate["registry"]
-    if base != LEGACY_BASE:
+    if baseline_gate is not None:
         validate_registry_evolution(
             baseline_registry,
             candidate_registry,
@@ -1744,6 +1805,14 @@ def run_repository_proof(
         max_bytes=MAX_JSON_BYTES,
         error="baseline manifest is unavailable",
     )
+    baseline_view_bytes = _require_git_output(
+        git,
+        repository_root,
+        ("cat-file", "blob", f"{base}:{MANIFEST_VIEW_PATH}"),
+        environment=git_environment,
+        max_bytes=MAX_MANIFEST_VIEW_BYTES,
+        error="baseline manifest view is unavailable",
+    )
     candidate_bytes = _require_git_output(
         git,
         repository_root,
@@ -1760,6 +1829,8 @@ def run_repository_proof(
     result = proof_runner(
         event=event,
         baseline_manifest=baseline_manifest,
+        baseline_manifest_bytes=baseline_bytes,
+        baseline_manifest_view_bytes=baseline_view_bytes,
         candidate_manifest=candidate_manifest,
         candidate_manifest_bytes=candidate_bytes,
         base=base,

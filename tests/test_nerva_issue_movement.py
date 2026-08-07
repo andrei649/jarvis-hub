@@ -41,10 +41,21 @@ from check_nerva_issue_movement import (
     validate_stream_evidence_bindings,
 )
 
-BASE = LEGACY_BASE
+BASE = "a" * 40
 HEAD = "b" * 40
 REPOSITORY = "andrei649/jarvis-hub"
 PR_NUMBER = 849
+REPO = Path(__file__).resolve().parent.parent
+ACCEPTED_BOOTSTRAP_BASE = "e596920ec60f19d2e7f0937819c892746a1c42b2"
+
+
+def _committed_blob(ref: str, path: str) -> bytes:
+    return subprocess.run(
+        ["git", "cat-file", "blob", f"{ref}:{path}"],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+    ).stdout
 
 
 def binding_repository(tmp_path):
@@ -160,7 +171,19 @@ def valid_gate():
     return {
         "schema_version": 1,
         "enforcement_state": "required",
-        "bootstrap_base": LEGACY_BASE,
+        "bootstrap": {
+            "source_sha": LEGACY_BASE,
+            "accepted_base_sha": ACCEPTED_BOOTSTRAP_BASE,
+            "legacy_manifest_sha256": (
+                "ab63a42837fb69af901326ffae5052d01c787a913960e2fb6f3bebeaac10ec7f"
+            ),
+            "legacy_manifest_view_sha256": (
+                "e4480f7c37de768ef59d64a542a2ec6c241b89d44ce89fa329a72ff987c1cfdc"
+            ),
+            "registry_seed_sha256": (
+                "9ab8aadf4c986e6380e8421225e99de5afc585163366ebb53199eecdf58980fb"
+            ),
+        },
         "branch_prefix": "nerva2/",
         "attestation_start_marker": MARKER,
         "registry": [
@@ -203,6 +226,12 @@ def valid_gate():
 
 def candidate_manifest():
     return {"movement_gate": valid_gate()}
+
+
+def prior_manifest():
+    baseline = candidate_manifest()
+    baseline["movement_gate"]["program_control_issues"] = []
+    return baseline
 
 
 def snapshot_proof(*, mutate_receipt=False):
@@ -460,7 +489,7 @@ def test_current_pr_is_fetched_first_and_must_exactly_match_event(event_mutation
     with pytest.raises(MovementError, match="current pull request does not bind event"):
         run_pure_proof(
             event=event,
-            baseline_manifest={},
+            baseline_manifest=prior_manifest(),
             candidate_manifest=candidate,
             candidate_manifest_bytes=candidate_bytes,
             base=BASE,
@@ -479,7 +508,7 @@ def test_nullable_empty_pr_bodies_are_normalized_before_exact_current_event_comp
     snapshot["pull_request"]["body"] = None
     result = run_pure_proof(
         event=event,
-        baseline_manifest={},
+        baseline_manifest=prior_manifest(),
         candidate_manifest=candidate,
         candidate_manifest_bytes=candidate_bytes,
         base=BASE,
@@ -495,7 +524,7 @@ def test_receipt_is_closed_world_but_rest_envelope_is_extensible():
     snapshot["comment:1"]["future_github_field"] = {"safe": True}
     result = run_pure_proof(
         event=event,
-        baseline_manifest={},
+        baseline_manifest=prior_manifest(),
         candidate_manifest=candidate,
         candidate_manifest_bytes=candidate_bytes,
         base=BASE,
@@ -519,7 +548,7 @@ def test_receipt_is_closed_world_but_rest_envelope_is_extensible():
     with pytest.raises(MovementError, match="unknown field"):
         run_pure_proof(
             event={**event, "pull_request": dict(attestation)},
-            baseline_manifest={},
+            baseline_manifest=prior_manifest(),
             candidate_manifest=candidate,
             candidate_manifest_bytes=candidate_bytes,
             base=BASE,
@@ -791,7 +820,7 @@ def test_comment_envelope_requires_exact_identity_owner_issue_and_unedited_times
     with pytest.raises(MovementError):
         run_pure_proof(
             event=event,
-            baseline_manifest={},
+            baseline_manifest=prior_manifest(),
             candidate_manifest=candidate,
             candidate_manifest_bytes=candidate_bytes,
             base=BASE,
@@ -826,10 +855,11 @@ def test_snapshot_transport_has_the_same_per_response_count_and_aggregate_bounds
         counted("pull_request")
 
 
-def test_missing_gate_allowed_only_legacy():
-    validate_manifest_gate({}, LEGACY_BASE)
-    with pytest.raises(MovementError):
-        validate_manifest_gate({}, "e596920ec60f19d2e7f0937819c892746a1c42b2")
+def test_missing_gate_rejects_without_pinned_bootstrap_bytes():
+    with pytest.raises(MovementError, match="accepted bootstrap base"):
+        validate_manifest_gate({}, LEGACY_BASE)
+    with pytest.raises(MovementError, match="legacy manifest bytes"):
+        validate_manifest_gate({}, ACCEPTED_BOOTSTRAP_BASE)
 
 
 def test_duplicate_json_rejected():
@@ -920,14 +950,59 @@ def test_registry_rejects_wildcards_and_unrelated_broad_prefixes():
 
 def test_legacy_bootstrap_requires_exact_pinned_seed_and_real_integer_schema_version():
     gate = valid_gate()
-    validate_manifest_gate({"movement_gate": gate}, LEGACY_BASE)
+    validate_manifest_gate({"movement_gate": gate}, ACCEPTED_BOOTSTRAP_BASE)
     gate["schema_version"] = True
     with pytest.raises(MovementError):
-        validate_manifest_gate({"movement_gate": gate}, LEGACY_BASE)
+        validate_manifest_gate({"movement_gate": gate}, ACCEPTED_BOOTSTRAP_BASE)
     gate["schema_version"] = 1
     gate["registry"] = gate["registry"][:-1]
     with pytest.raises(MovementError):
-        validate_manifest_gate({"movement_gate": gate}, LEGACY_BASE)
+        validate_manifest_gate({"movement_gate": gate}, ACCEPTED_BOOTSTRAP_BASE)
+
+
+def test_gate_less_bootstrap_requires_accepted_base_and_exact_historical_bytes() -> None:
+    manifest_bytes = _committed_blob(LEGACY_BASE, "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json")
+    view_bytes = _committed_blob(LEGACY_BASE, "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md")
+    legacy_manifest = strict_json(manifest_bytes)
+
+    validate_manifest_gate(
+        legacy_manifest,
+        ACCEPTED_BOOTSTRAP_BASE,
+        baseline_manifest_bytes=manifest_bytes,
+        baseline_manifest_view_bytes=view_bytes,
+    )
+
+    for disallowed_base in (LEGACY_BASE, "f" * 40):
+        with pytest.raises(MovementError, match="accepted bootstrap base"):
+            validate_manifest_gate(
+                legacy_manifest,
+                disallowed_base,
+                baseline_manifest_bytes=manifest_bytes,
+                baseline_manifest_view_bytes=view_bytes,
+            )
+    with pytest.raises(MovementError, match="legacy manifest bytes"):
+        validate_manifest_gate(
+            legacy_manifest,
+            ACCEPTED_BOOTSTRAP_BASE,
+            baseline_manifest_bytes=manifest_bytes + b" ",
+            baseline_manifest_view_bytes=view_bytes,
+        )
+    with pytest.raises(MovementError, match="legacy manifest view bytes"):
+        validate_manifest_gate(
+            legacy_manifest,
+            ACCEPTED_BOOTSTRAP_BASE,
+            baseline_manifest_bytes=manifest_bytes,
+            baseline_manifest_view_bytes=view_bytes + b" ",
+        )
+    changed_semantics = copy.deepcopy(legacy_manifest)
+    changed_semantics["manifest_id"] = "changed"
+    with pytest.raises(MovementError, match="legacy manifest semantics"):
+        validate_manifest_gate(
+            changed_semantics,
+            ACCEPTED_BOOTSTRAP_BASE,
+            baseline_manifest_bytes=manifest_bytes,
+            baseline_manifest_view_bytes=view_bytes,
+        )
 
 
 def test_required_gate_can_only_forward_disable_with_explicit_rollback_control() -> None:
@@ -1130,7 +1205,7 @@ def test_legacy_baseline_projects_missing_gate_but_candidate_must_materialize_it
     with pytest.raises(MovementError):
         run_pure_proof(
             event=event,
-            baseline_manifest={},
+            baseline_manifest=prior_manifest(),
             candidate_manifest={},
             candidate_manifest_bytes=b"{}",
             base=BASE,
@@ -1144,7 +1219,7 @@ def test_non_draft_nerva_requires_manifest_view_and_injected_snapshot_proof():
     with pytest.raises(MovementError):
         run_pure_proof(
             event=event,
-            baseline_manifest={},
+            baseline_manifest=prior_manifest(),
             candidate_manifest=candidate,
             candidate_manifest_bytes=candidate_bytes,
             base=BASE,
@@ -1157,7 +1232,7 @@ def test_offline_snapshot_proves_attestation_receipt_and_semantic_scope():
     event, candidate, candidate_bytes, snapshot = snapshot_proof()
     result = run_pure_proof(
         event=event,
-        baseline_manifest={},
+        baseline_manifest=prior_manifest(),
         candidate_manifest=candidate,
         candidate_manifest_bytes=candidate_bytes,
         base=BASE,
@@ -1176,7 +1251,7 @@ def test_attestation_digest_binds_exact_candidate_manifest_bytes():
     with pytest.raises(MovementError, match="attestation does not bind movement proof"):
         run_pure_proof(
             event=event,
-            baseline_manifest={},
+            baseline_manifest=prior_manifest(),
             candidate_manifest=candidate,
             candidate_manifest_bytes=semantically_equal_bytes,
             base=BASE,
@@ -1191,7 +1266,7 @@ def test_offline_snapshot_rejects_edited_receipt_and_cross_binding():
     with pytest.raises(MovementError):
         run_pure_proof(
             event=event,
-            baseline_manifest={},
+            baseline_manifest=prior_manifest(),
             candidate_manifest=candidate,
             candidate_manifest_bytes=candidate_bytes,
             base=BASE,
@@ -1274,7 +1349,7 @@ def test_current_snapshot_is_fetched_before_non_nerva_classification():
     with pytest.raises(MovementError):
         run_pure_proof(
             event=event,
-            baseline_manifest={},
+            baseline_manifest=prior_manifest(),
             candidate_manifest=candidate,
             candidate_manifest_bytes=candidate_bytes,
             base=BASE,
@@ -1295,7 +1370,7 @@ def test_legacy_bootstrap_gate_rejects_any_noncanonical_control_state():
         gate = valid_gate()
         gate[key] = value
         with pytest.raises(MovementError):
-            validate_manifest_gate({"movement_gate": gate}, LEGACY_BASE)
+            validate_manifest_gate({"movement_gate": gate}, ACCEPTED_BOOTSTRAP_BASE)
 
 
 def test_program_control_rejects_duplicate_or_replayed_issue_append():
@@ -1322,7 +1397,7 @@ def test_snapshot_rejects_boolean_comment_identifier():
     with pytest.raises(MovementError):
         run_pure_proof(
             event=event,
-            baseline_manifest={},
+            baseline_manifest=prior_manifest(),
             candidate_manifest=candidate,
             candidate_manifest_bytes=candidate_bytes,
             base=BASE,
@@ -1338,7 +1413,7 @@ def test_draft_without_marker_is_receipt_free_hold_and_marker_proof_is_validated
     snapshot["pull_request"]["draft"] = True
     proof = run_pure_proof(
         event=event,
-        baseline_manifest={},
+        baseline_manifest=prior_manifest(),
         candidate_manifest=candidate,
         candidate_manifest_bytes=candidate_bytes,
         base=BASE,
@@ -1351,7 +1426,7 @@ def test_draft_without_marker_is_receipt_free_hold_and_marker_proof_is_validated
     snapshot["pull_request"]["body"] = ""
     proof = run_pure_proof(
         event=event,
-        baseline_manifest={},
+        baseline_manifest=prior_manifest(),
         candidate_manifest=candidate,
         candidate_manifest_bytes=candidate_bytes,
         base=BASE,
@@ -1588,11 +1663,143 @@ def test_repository_proof_binds_exact_commits_manifest_bytes_and_diff(tmp_path):
     assert observed["candidate_manifest_bytes"] == b'{"version":2}\n'
     assert observed["candidate_manifest"] == {"version": 2}
     assert observed["baseline_manifest"] == {"version": 1}
+    assert observed["baseline_manifest_bytes"] == b'{"version":1}\n'
+    assert observed["baseline_manifest_view_bytes"] == b"# version 1\n"
     assert observed["diff"] == (
         b"M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json\0"
         b"M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md\0"
     )
     assert validated == [(tmp_path.resolve(), head)]
+
+
+def test_repository_proof_bootstraps_real_accepted_e596_legacy_bytes(tmp_path: Path) -> None:
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("Git executable unavailable")
+    repository = tmp_path / "repo"
+    subprocess.run(
+        [git, "clone", "--quiet", "--shared", "--no-checkout", str(REPO), str(repository)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [git, "checkout", "--quiet", ACCEPTED_BOOTSTRAP_BASE],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [git, "config", "user.email", "test@example.invalid"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [git, "config", "user.name", "Test"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    for relative in (
+        Path("docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json"),
+        Path("docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md"),
+    ):
+        shutil.copy2(REPO / relative, repository / relative)
+    subprocess.run(
+        [git, "commit", "-am", "candidate"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    head = subprocess.run(
+        [git, "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    pull_request = {
+        "number": PR_NUMBER,
+        "base": {
+            "sha": ACCEPTED_BOOTSTRAP_BASE,
+            "ref": "main",
+            "repo": {"full_name": REPOSITORY},
+        },
+        "head": {"sha": head, "ref": "nerva2/bootstrap"},
+        "body": "",
+        "draft": True,
+        "state": "open",
+        "user": {"login": "andrei649"},
+    }
+    event = {
+        "repository": {"full_name": REPOSITORY},
+        "pull_request": copy.deepcopy(pull_request),
+    }
+
+    result = run_repository_proof(
+        root=repository,
+        event=event,
+        base=ACCEPTED_BOOTSTRAP_BASE,
+        head=head,
+        transport=lambda key: pull_request if key == "pull_request" else None,
+        manifest_validator=lambda _root, _head: None,
+    )
+
+    assert result.status == "draft_hold"
+
+    subprocess.run(
+        [git, "checkout", "--quiet", "-B", "later-base", ACCEPTED_BOOTSTRAP_BASE],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [git, "commit", "--allow-empty", "-m", "unchanged later base"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    later_base = subprocess.run(
+        [git, "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    for relative in (
+        Path("docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json"),
+        Path("docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md"),
+    ):
+        shutil.copy2(REPO / relative, repository / relative)
+    subprocess.run(
+        [git, "commit", "-am", "later candidate"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    later_head = subprocess.run(
+        [git, "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    later_pull_request = copy.deepcopy(pull_request)
+    later_pull_request["base"]["sha"] = later_base
+    later_pull_request["head"]["sha"] = later_head
+    later_event = {
+        "repository": {"full_name": REPOSITORY},
+        "pull_request": copy.deepcopy(later_pull_request),
+    }
+    with pytest.raises(MovementError, match="accepted bootstrap base"):
+        run_repository_proof(
+            root=repository,
+            event=later_event,
+            base=later_base,
+            head=later_head,
+            transport=(lambda key: later_pull_request if key == "pull_request" else None),
+            manifest_validator=lambda _root, _head: None,
+        )
 
 
 def test_repository_proof_rejects_non_ancestor_base(tmp_path):
