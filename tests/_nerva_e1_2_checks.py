@@ -2956,14 +2956,19 @@ def _check_operator_contract_ledgers() -> None:
     ):
         assert _section_contains(e1_2b_task.replace("`", ""), value)
 
-    for path in (
-        "docs/nerva2/M1_DELIVERY.md",
-        "BACKLOG.md",
-        "docs/OWNER_TASKS.md",
-    ):
+    conditional_pending_claims = {
+        "docs/nerva2/M1_DELIVERY.md": (
+            "An unmerged E1.2a / #841 candidate is `integration_pending`"
+        ),
+        "docs/OWNER_TASKS.md": "an unmerged E1.2a PR is `integration_pending`",
+    }
+    for path in (*conditional_pending_claims, "BACKLOG.md"):
         ledger = (repository / path).read_text(encoding="utf-8")
         assert _section_contains(ledger, "accepted on `main`")
-        assert _section_contains(ledger, "integration_pending")
+        if path == "BACKLOG.md":
+            assert "integration_pending" not in ledger
+        else:
+            assert _section_contains(ledger, conditional_pending_claims[path])
         assert "contract_ready" in ledger
         assert "owner_evidence_blocked" in ledger
         assert "real_task_outcome_quality=not_measured" in ledger
