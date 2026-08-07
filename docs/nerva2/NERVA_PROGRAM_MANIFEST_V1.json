@@ -308,15 +308,17 @@
         }
       ],
       "blockers": [
-        {"id": "E8-external-E8_1C", "kind": "external_dependency", "target": "E8_1C", "issue": 804, "artifact": "docs/nerva2/EXECUTION_PROVIDER_E8_1A.md", "reason_code": "provider_preflight_not_accepted"},
         {"id": "E8-program-B7", "kind": "program_gate", "target": "B7", "issue": 818, "artifact": "BACKLOG.md", "reason_code": "task_mediation_decisions_unresolved"},
         {"id": "E8-external-PROVIDER_E9", "kind": "external_dependency", "target": "PROVIDER_E9", "issue": 767, "artifact": "docs/nerva2/RESEARCH_LAB_E9_1.md", "reason_code": "provider_specific_evidence_missing"}
       ],
       "references": [
         {"kind": "issue", "value": 766},
+        {"kind": "issue", "value": 844},
         {"kind": "repo_path", "value": "docs/nerva2/SYNAPSE_E8_0.md"},
         {"kind": "repo_path", "value": "docs/nerva2/EXECUTION_PROVIDER_E8_1A.md"},
-        {"kind": "repo_path", "value": "docs/nerva2/EXECUTION_PROVIDER_E8_1B.md"}
+        {"kind": "repo_path", "value": "docs/nerva2/EXECUTION_PROVIDER_E8_1B.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/EXECUTION_PROVIDER_E8_1C_PREFLIGHT.json"},
+        {"kind": "repo_path", "value": "docs/nerva2/EXECUTION_PROVIDER_E8_1C_PREFLIGHT.md"}
       ]
     },
     {

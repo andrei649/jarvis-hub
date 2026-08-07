@@ -23,6 +23,8 @@ on:
       - "docs/nerva2/EPISODE_RETRIEVAL_E3_1.md"
       - "docs/nerva2/EXECUTION_PROVIDER_E8_1A.md"
       - "docs/nerva2/EXECUTION_PROVIDER_E8_1B.md"
+      - "docs/nerva2/EXECUTION_PROVIDER_E8_1C_PREFLIGHT.json"
+      - "docs/nerva2/EXECUTION_PROVIDER_E8_1C_PREFLIGHT.md"
       - "docs/nerva2/HYBRID_COGNITION_BOUNDARY.md"
       - "docs/nerva2/INNOVATION_LAB_RFC_V1.md"
       - "docs/nerva2/INNOVATION_LAB_V1.schema.json"
@@ -37,12 +39,14 @@ on:
       - "docs/nerva2/SYNAPSE_E8_0.md"
       - "scripts/check_nerva_roadmap.py"
       - "scripts/check_nerva_e0_completion.py"
+      - "scripts/check_nerva_e8_1c_preflight.py"
       - "scripts/check_nerva_innovation_lab.py"
       - "scripts/check_nerva_program_manifest.py"
       - "scripts/reconcile_nerva_repository_ledgers.py"
       - "tests/_nerva_innovation_lab_checks.py"
       - "tests/test_reconcile_nerva_repository_ledgers.py"
       - "tests/test_nerva_e0_completion.py"
+      - "tests/test_nerva_e8_1c_preflight.py"
       - "tests/test_nerva_program_manifest.py"
       - ".github/workflows/nerva-roadmap.yml"
   push:
@@ -68,6 +72,8 @@ on:
       - "docs/nerva2/EPISODE_RETRIEVAL_E3_1.md"
       - "docs/nerva2/EXECUTION_PROVIDER_E8_1A.md"
       - "docs/nerva2/EXECUTION_PROVIDER_E8_1B.md"
+      - "docs/nerva2/EXECUTION_PROVIDER_E8_1C_PREFLIGHT.json"
+      - "docs/nerva2/EXECUTION_PROVIDER_E8_1C_PREFLIGHT.md"
       - "docs/nerva2/HYBRID_COGNITION_BOUNDARY.md"
       - "docs/nerva2/INNOVATION_LAB_RFC_V1.md"
       - "docs/nerva2/INNOVATION_LAB_V1.schema.json"
@@ -82,12 +88,14 @@ on:
       - "docs/nerva2/SYNAPSE_E8_0.md"
       - "scripts/check_nerva_roadmap.py"
       - "scripts/check_nerva_e0_completion.py"
+      - "scripts/check_nerva_e8_1c_preflight.py"
       - "scripts/check_nerva_innovation_lab.py"
       - "scripts/check_nerva_program_manifest.py"
       - "scripts/reconcile_nerva_repository_ledgers.py"
       - "tests/_nerva_innovation_lab_checks.py"
       - "tests/test_reconcile_nerva_repository_ledgers.py"
       - "tests/test_nerva_e0_completion.py"
+      - "tests/test_nerva_e8_1c_preflight.py"
       - "tests/test_nerva_program_manifest.py"
       - ".github/workflows/nerva-roadmap.yml"
   workflow_dispatch:
@@ -126,10 +134,12 @@ jobs:
           python -m py_compile
           scripts/check_nerva_roadmap.py
           scripts/check_nerva_e0_completion.py
+          scripts/check_nerva_e8_1c_preflight.py
           scripts/check_nerva_innovation_lab.py
           scripts/check_nerva_program_manifest.py
           scripts/reconcile_nerva_repository_ledgers.py
           tests/_nerva_innovation_lab_checks.py
+          tests/test_nerva_e8_1c_preflight.py
           tests/test_nerva_program_manifest.py
 
       - name: Validate Nerva roadmap reconciliation
@@ -146,6 +156,9 @@ jobs:
 
       - name: Validate Nerva E0 completion ledger
         run: python scripts/check_nerva_e0_completion.py
+
+      - name: Validate Nerva E8.1c Hermes static preflight
+        run: python scripts/check_nerva_e8_1c_preflight.py --check
 
       - name: Validate Nerva Innovation Lab immutable refs
         run: >-

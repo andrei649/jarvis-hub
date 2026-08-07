@@ -217,6 +217,13 @@ built on your Windows box:
 
 ## Parking lot (decisions, no rush)
 
+- [ ] **Before any future Hermes adapter proposal:** decide whether the four productivity-skill
+  subtrees carrying separate Anthropic terms are legally acceptable for the intended use, and
+  require a fresh CVE, transitive-license, SBOM/provenance and platform review
+  against the exact proposed artifact. E8.1c is static preflight evidence only; this is
+  not a current release blocker and grants no permission to pull, install or execute
+  Hermes.
+
 - [ ] **When does the Action Kernel become the default rail?** Today the always-on risk-tier
   policy is the load-bearing gate; the unifying kernel (`JARVIS_ACTION_KERNEL`) and the unified
   Action API (`JARVIS_UNIFIED_ACTION_API`) are code-complete but opt-in (H27.3/H27.7, docs-vs-code

@@ -134,7 +134,7 @@ Fixture state: `not_executed`. Isolation state: `blocked` on B7/#818.
 
 All provider-specific E9 dimensions remain `not_measured`: quality, latency, cost, reliability, privacy.
 
-Every authority and repository-effect flag is `false`. The preflight cannot install, import, execute, register, route, authorize, approve, mark complete, promote or claim release readiness. Ultron / `nerva.action.v1` remains the sole privileged-action authority.
+Every authority flag and every dependency, third-party-manifest, adapter, provider, route and runtime repository-effect flag is `false`. The same PR reconciles shared documentation, workflow and generated ledgers (`shared_ledgers_changed=true`) without granting runtime authority. The preflight cannot install, import, execute, register, route, authorize, approve, mark complete, promote or claim release readiness. Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 
 ## Remaining blockers
 

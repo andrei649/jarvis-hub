@@ -731,7 +731,7 @@
     "provider_registered": false,
     "route_added": false,
     "runtime_changed": false,
-    "shared_ledgers_changed": false,
+    "shared_ledgers_changed": true,
     "checked_dependency_files": [
       "pyproject.toml",
       "requirements-beta.lock",

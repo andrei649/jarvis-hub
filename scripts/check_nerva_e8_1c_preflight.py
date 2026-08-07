@@ -1744,9 +1744,14 @@ def _validate_repository_effects(value: Any, root: Path | None, errors: list[str
         "provider_registered",
         "route_added",
         "runtime_changed",
-        "shared_ledgers_changed",
     ):
         _expect(item.get(field), False, f"repository_effects.{field}", errors)
+    _expect(
+        item.get("shared_ledgers_changed"),
+        True,
+        "repository_effects.shared_ledgers_changed",
+        errors,
+    )
     dependency_files = _strings(
         item.get("checked_dependency_files"),
         "repository_effects.checked_dependency_files",
@@ -1995,7 +2000,7 @@ def render_markdown(data: dict[str, Any]) -> str:
             + ", ".join(dimension["name"] for dimension in data["e9"]["dimensions"])
             + ".",
             "",
-            "Every authority and repository-effect flag is `false`. The preflight cannot install, import, execute, register, route, authorize, approve, mark complete, promote or claim release readiness. Ultron / `nerva.action.v1` remains the sole privileged-action authority.",
+            "Every authority flag and every dependency, third-party-manifest, adapter, provider, route and runtime repository-effect flag is `false`. The same PR reconciles shared documentation, workflow and generated ledgers (`shared_ledgers_changed=true`) without granting runtime authority. The preflight cannot install, import, execute, register, route, authorize, approve, mark complete, promote or claim release readiness. Ultron / `nerva.action.v1` remains the sole privileged-action authority.",
             "",
             "## Remaining blockers",
             "",

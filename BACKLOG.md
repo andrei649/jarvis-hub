@@ -62,6 +62,16 @@ squash-merged once present on `main`; no item by itself completes a runtime epic
   verification is mandatory. The protocol is inert: no Hermes dependency, manifest
   enrolment, adapter, registry, route, execution or kernel integration is added.
   E8.1 remains `BUILDING`; E8.1c and provider-specific E9 evidence remain separate.
+- ✅ E8.1c / #844 / PR #845 — static Hermes invocation and supply-chain preflight,
+  pinned to tag `v2026.8.3`, commit `3c27eb6`, tree `b217767` and OCI index digest
+  `sha256:16788311e2fa3035456bdc1bafb8ec2b1777db64ebf020af9bb7eb73c3712c9e`.
+  The accepted scope is `preflight_evidence_only`: no image or package artifact was
+  pulled, installed, imported or executed; the OCI/one-shot candidate remains
+  unexecuted; compatibility and provider-specific E9 remain unmeasured; license
+  closure, SBOM/provenance and observed CVEs remain later gates.
+  No dependency, third-party-manifest enrolment, adapter, provider, route, credential,
+  runtime or authority change is added. E8.1 and E8 remain `BUILDING`; #804, B7/#818
+  and provider evidence #767 remain open, and release readiness remains false.
 - ✅ E8.1d / #824 / PR #827 — fail-closed manual-only third-party updater policy;
   `auto_update: false` stays drift-visible and is denied by scheduler and direct updater.
   No Hermes enrolment, provider or authority change; E8.1 remains `BUILDING`.

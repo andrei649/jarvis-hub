@@ -220,6 +220,44 @@ def test_validator_rejects_schema_authority_and_promotion_mutations(
     assert any(message in error for error in validate_evidence(evidence, root=REPO))
 
 
+def test_validator_accepts_shared_ledger_reconciliation_as_only_repository_effect() -> None:
+    evidence = _evidence()
+    evidence["repository_effects"]["shared_ledgers_changed"] = True
+
+    assert validate_evidence(evidence, root=REPO) == []
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "dependency_enrolled",
+        "manifest_enrolled",
+        "adapter_implemented",
+        "provider_registered",
+        "route_added",
+        "runtime_changed",
+    ],
+)
+def test_validator_keeps_runtime_repository_effects_false(field: str) -> None:
+    evidence = _evidence()
+    evidence["repository_effects"][field] = True
+
+    assert any(
+        f"repository_effects.{field}" in error for error in validate_evidence(evidence, root=REPO)
+    )
+
+
+@pytest.mark.parametrize("value", [False, 0, 1, "true"])
+def test_validator_requires_truthful_boolean_shared_ledger_claim(value: object) -> None:
+    evidence = _evidence()
+    evidence["repository_effects"]["shared_ledgers_changed"] = value
+
+    assert any(
+        "repository_effects.shared_ledgers_changed" in error
+        for error in validate_evidence(evidence, root=REPO)
+    )
+
+
 @pytest.mark.parametrize(
     ("mutator", "message"),
     [

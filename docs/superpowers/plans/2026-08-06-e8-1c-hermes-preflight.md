@@ -114,3 +114,22 @@ After #842/#843 resolve, rebase once onto current `origin/main`, reconcile any
 required workflow/program-manifest/BACKLOG/status changes, regenerate derived
 artifacts and rerun the full exact-head envelope. If no shared enrolment is
 required for acceptance, explicitly leave those files unchanged.
+
+### Task 8: Reconcile accepted shared truth after #842/#843
+
+1. Preserve the pre-rebase head with a backup ref, fetch without pruning, and
+   rebase onto current `origin/main`.
+2. Add a failing test that sets
+   `repository_effects.shared_ledgers_changed=true`; confirm the old validator
+   rejects it while the other repository-effect flags remain fail-closed.
+3. Make that one evidence flag truthful, update the renderer wording and
+   regenerate `EXECUTION_PROVIDER_E8_1C_PREFLIGHT.md`.
+4. Update `BACKLOG.md`, the E8 program-manifest blockers/references, the Nerva
+   roadmap workflow and the non-blocking owner legal/supply-chain parking item.
+   Do not add completion evidence or change E8/E8.1 from `BUILDING`.
+5. Regenerate the program-manifest Markdown and the five status-sync surfaces.
+6. Run focused Windows and WSL tests, adjacent and full suites, exact Ruff,
+   Bandit, compile checks, all canonical `--check` modes and diff review.
+7. Commit the reconciled exact candidate before running the manifest
+   `--candidate-ref` gate, then obtain independent exact-head review and hosted
+   Python 3.12 CI before ready/merge.

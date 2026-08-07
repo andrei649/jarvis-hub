@@ -234,3 +234,35 @@ execution remains byte-for-byte unchanged.
 Merging this package may establish only **preflight evidence complete**. E8.1
 remains `BUILDING`; E8.1c adapter execution remains blocked; E9 remains
 unmeasured; owner/hardware and release readiness remain false.
+
+## 11. Final shared-truth reconciliation (2026-08-07)
+
+PRs #842 and #843 are now accepted on `main`; the collision hold in section 6
+is therefore released. The final integration slice rebases onto
+`main@769b6334d5a9cf5f254bb5c754023300e4fcde55` and reconciles only the shared
+truth required to accept this static preflight:
+
+- add E8.1c to the active backlog ledger while keeping E8.1 and E8 `BUILDING`;
+- remove only the `provider_preflight_not_accepted` blocker from the program
+  manifest, retain B7 and provider-specific E9 blockers, and add evidence
+  references without completion evidence;
+- enrol the JSON, generated Markdown, checker and hostile tests in the Nerva
+  roadmap workflow;
+- record the later legal/supply-chain decision in the non-blocking owner
+  parking lot;
+- regenerate the program-manifest view, E8.1c view and repository status
+  surfaces from their canonical generators.
+
+The evidence field `repository_effects.shared_ledgers_changed` becomes `true`
+because these same-PR documentation, workflow and generated-ledger changes are
+real. It is the sole repository-effect flag allowed to be true. Dependency or
+third-party-manifest enrolment, adapter implementation, provider registration,
+route addition and runtime change remain strictly false, as do every authority
+and release-readiness flag.
+
+The implementation uses TDD: first prove that the old checker rejects the
+truthful shared-ledger value, then narrow the validator exception to that one
+field and retain hostile tests for every runtime or authority effect. Rollback
+is the final reconciliation commit plus the original six-file package; no
+runtime, dependency, provider, route, credential or external artifact cleanup
+is required.
