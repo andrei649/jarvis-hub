@@ -416,6 +416,7 @@ def compute_name_status_diff(
         if reader.is_alive() or oversized.is_set():
             process.kill()
             reader.join(timeout=2)
+            process.wait(timeout=2)
             _reject("diff read timed out" if reader.is_alive() else "diff exceeds byte limit")
         if reader_error or process.wait(timeout=2) != 0:
             _reject("cannot compute repository diff")
@@ -457,6 +458,46 @@ def _event_context(event: Any) -> tuple[str, int, str, str, str, str, bool]:
     return repository_name, number, base_sha, head_sha, branch, body, draft
 
 
+def _fetch_current_snapshot(
+    transport: Any,
+    *,
+    repository: str,
+    number: int,
+    base: str,
+    head: str,
+) -> tuple[str, str, bool, dict[str, Any]]:
+    """Fetch current PR before any classifier may observe stale event fields."""
+    if transport is None:
+        _reject("movement proof requires offline snapshot transport")
+    try:
+        current = transport("pull_request")
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        raise MovementError("offline pull request snapshot is unavailable") from exc
+    if not isinstance(current, dict) or current.get("state") != "open":
+        _reject("current pull request is not open")
+    current_repo, current_base, current_head = (
+        current.get("repository"),
+        current.get("base"),
+        current.get("head"),
+    )
+    body, draft = current.get("body"), current.get("draft")
+    if (
+        current.get("number") != number
+        or not isinstance(current_repo, dict)
+        or current_repo.get("full_name") != repository
+        or not isinstance(current_base, dict)
+        or current_base.get("sha") != base
+        or not isinstance(current_head, dict)
+        or current_head.get("sha") != head
+        or not isinstance(current_head.get("ref"), str)
+        or not _is_safe_text(current_head["ref"])
+        or not isinstance(body, str)
+        or type(draft) is not bool
+    ):
+        _reject("current pull request does not bind event")
+    return current_head["ref"], body, draft, current
+
+
 def _sha256(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
@@ -474,7 +515,10 @@ def derive_scope(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
         _reject("candidate movement gate is missing")
     baseline_gate = baseline.get("movement_gate")
     if baseline_gate is None:
-        if any(key != "movement_gate" for key in candidate):
+        if any(
+            key != "movement_gate" and not _same_json(baseline.get(key), candidate.get(key))
+            for key in set(baseline) | set(candidate)
+        ):
             _reject("legacy bootstrap changes non-gate manifest data")
         previous_issues: list[int] = []
     else:
@@ -483,6 +527,13 @@ def derive_scope(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
         previous_issues = baseline_gate.get("program_control_issues", [])
         if not isinstance(previous_issues, list):
             _reject("baseline control issues are invalid")
+        mutable_gate_fields = {"registry", "program_control_issues"}
+        if any(
+            key not in mutable_gate_fields
+            and not _same_json(baseline_gate.get(key), candidate_gate.get(key))
+            for key in set(baseline_gate) | set(candidate_gate)
+        ):
+            _reject("movement gate changes immutable control")
     candidate_issues = candidate_gate.get("program_control_issues")
     if (
         not isinstance(candidate_issues, list)
@@ -527,6 +578,17 @@ def derive_scope(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
         _reject("stream movement is invalid")
     if any(before.get(field) != after.get(field) for field in ("id", "name", "epic_issue")):
         _reject("stream identity is not immutable")
+    for field in ("references", "completion_evidence", "delivery_prerequisites", "blockers"):
+        before_history, after_history = before.get(field, []), after.get(field, [])
+        if not isinstance(before_history, list) or not isinstance(after_history, list):
+            _reject("stream history is invalid")
+        if len(after_history) < len(before_history) or any(
+            not _same_json(previous, observed)
+            for previous, observed in zip(before_history, after_history, strict=False)
+        ):
+            _reject("stream history is not append-only")
+    if before.get("program_status") == "building" and after.get("program_status") == "done":
+        _reject("stream status cannot move from building to done")
     stream_id, epic = after.get("id"), after.get("epic_issue")
     if not isinstance(stream_id, str) or type(epic) is not int:
         _reject("stream scope is invalid")
@@ -727,6 +789,10 @@ def _validate_receipt(
         or receipt["manifest_sha256"] != digest
     ):
         _reject("receipt does not bind movement proof")
+    if scope["kind"] == "stream" and (
+        receipt["stream_id"] != scope["stream_id"] or receipt["epic_issue"] != scope["epic_issue"]
+    ):
+        _reject("receipt stream scope is invalid")
     _require_false(receipt)
 
 
@@ -815,9 +881,14 @@ def run_pure_proof(
     """Prove pure/offline Nerva movement; classification alone is never success."""
     if not SHA_RE.fullmatch(base) or not SHA_RE.fullmatch(head):
         _reject("requested commit is invalid")
-    repository, number, event_base, event_head, branch, body, draft = _event_context(event)
+    repository, number, event_base, event_head, _event_branch, _event_body, _event_draft = (
+        _event_context(event)
+    )
     if event_base != base or event_head != head:
         _reject("event commits do not match requested commits")
+    branch, body, draft, _current = _fetch_current_snapshot(
+        transport, repository=repository, number=number, base=base, head=head
+    )
     if not isinstance(baseline_manifest, dict) or not isinstance(candidate_manifest, dict):
         _reject("manifest must be an object")
     validate_manifest_gate(baseline_manifest, base)
@@ -873,8 +944,6 @@ def run_pure_proof(
     ):
         _reject("candidate manifest bytes do not bind parsed manifest")
     digest = _sha256(candidate_manifest_bytes)
-    if transport is None:
-        _reject("Nerva proof requires offline snapshot transport")
     _validate_snapshot(
         transport,
         event_repository=repository,

@@ -459,3 +459,65 @@ def test_semantic_stream_scope_derives_exactly_one_new_referenced_issue():
         "stream_id": "E1",
         "epic_issue": 759,
     }
+
+
+def test_legacy_bootstrap_preserves_real_baseline_root_data_except_gate_addition():
+    baseline = {"authority": {"can_execute": False}, "streams": []}
+    candidate = {**baseline, "movement_gate": valid_gate()}
+    assert derive_scope(baseline, candidate)["implementation_issue"] == 846
+
+
+def test_program_control_rejects_immutable_gate_transition():
+    baseline = {"movement_gate": valid_gate()}
+    candidate = json.loads(json.dumps(baseline))
+    candidate["movement_gate"]["enforcement_state"] = "safety_disabled"
+    candidate["movement_gate"]["program_control_issues"].append(900)
+    with pytest.raises(MovementError):
+        derive_scope(baseline, candidate)
+
+
+def test_stream_scope_rejects_history_rewrite_and_building_to_done():
+    baseline = {
+        "movement_gate": valid_gate(),
+        "streams": [
+            {
+                "id": "E1",
+                "name": "Stream",
+                "epic_issue": 759,
+                "program_status": "building",
+                "references": [{"kind": "issue", "value": 759}],
+                "completion_evidence": [{"issue": 700}],
+                "delivery_prerequisites": [],
+                "blockers": [],
+            }
+        ],
+    }
+    candidate = json.loads(json.dumps(baseline))
+    candidate["streams"][0]["references"].append({"kind": "issue", "value": 900})
+    candidate["streams"][0]["completion_evidence"] = []
+    candidate["streams"][0]["program_status"] = "done"
+    with pytest.raises(MovementError):
+        derive_scope(baseline, candidate)
+
+
+def test_current_snapshot_is_fetched_before_non_nerva_classification():
+    event, candidate, candidate_bytes, snapshot = snapshot_proof()
+    event["pull_request"]["head"]["ref"] = "feature/event-stale"
+    calls = []
+
+    def transport(key):
+        calls.append(key)
+        return snapshot[key]
+
+    with pytest.raises(MovementError):
+        run_pure_proof(
+            event=event,
+            baseline_manifest={},
+            candidate_manifest=candidate,
+            candidate_manifest_bytes=candidate_bytes,
+            base=BASE,
+            head=HEAD,
+            diff=b"",
+            transport=transport,
+        )
+    assert calls == ["pull_request"]
