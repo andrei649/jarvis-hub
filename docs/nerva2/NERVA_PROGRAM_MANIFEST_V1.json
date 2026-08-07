@@ -10,6 +10,25 @@
     "control_issue": 839,
     "live_issue_state_verified_by_checker": false
   },
+  "movement_gate": {
+    "schema": "nerva.movement-gate.v1",
+    "enforcement_state": "required",
+    "bootstrap_base": "843918848c11bbd3f0099f9504d0e0eaaa56b9d6",
+    "registry": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/nerva-roadmap.yml",
+      "BACKLOG.md",
+      "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json",
+      "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md",
+      "scripts/check_nerva_issue_movement.py",
+      "scripts/check_nerva_program_manifest.py",
+      "tests/test_nerva_issue_movement.py",
+      "tests/test_nerva_program_manifest.py"
+    ],
+    "program_control_issues": [846],
+    "continuous_currentness": false,
+    "live_receipt_control": true
+  },
   "authority": {
     "status_is_evidence_label_only": true,
     "can_authorize": false,
