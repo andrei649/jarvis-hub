@@ -23,6 +23,7 @@ from check_nerva_issue_movement import (
     strict_json,
     validate_manifest_gate,
     validate_registry_evolution,
+    validate_stream_evidence_bindings,
 )
 
 BASE = LEGACY_BASE
@@ -521,3 +522,79 @@ def test_current_snapshot_is_fetched_before_non_nerva_classification():
             transport=transport,
         )
     assert calls == ["pull_request"]
+
+
+def test_legacy_bootstrap_gate_rejects_any_noncanonical_control_state():
+    for key, value in (
+        ("enforcement_state", "safety_disabled"),
+        ("program_control_issues", [999]),
+        ("continuous_currentness", True),
+        ("live_receipt_control", False),
+    ):
+        gate = valid_gate()
+        gate[key] = value
+        with pytest.raises(MovementError):
+            validate_manifest_gate({"movement_gate": gate}, LEGACY_BASE)
+
+
+def test_program_control_rejects_duplicate_or_replayed_issue_append():
+    baseline = {"movement_gate": valid_gate()}
+    candidate = json.loads(json.dumps(baseline))
+    candidate["movement_gate"]["program_control_issues"].append(846)
+    with pytest.raises(MovementError):
+        derive_scope(baseline, candidate)
+
+
+def test_stream_new_evidence_must_bind_current_pull_request():
+    baseline = {"completion_evidence": [], "delivery_prerequisites": []}
+    candidate = {
+        "completion_evidence": [{"issue": 900, "pull_request": 123}],
+        "delivery_prerequisites": [],
+    }
+    with pytest.raises(MovementError):
+        validate_stream_evidence_bindings(baseline, candidate, pull_request=849)
+
+
+def test_snapshot_rejects_boolean_comment_identifier():
+    event, candidate, candidate_bytes, snapshot = snapshot_proof()
+    snapshot["comment:1"]["id"] = True
+    with pytest.raises(MovementError):
+        run_pure_proof(
+            event=event,
+            baseline_manifest={},
+            candidate_manifest=candidate,
+            candidate_manifest_bytes=candidate_bytes,
+            base=BASE,
+            head=HEAD,
+            diff=b"M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json\0M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md\0",
+            transport=snapshot.__getitem__,
+        )
+
+
+def test_draft_without_marker_is_receipt_free_hold_and_marker_proof_is_validated_hold():
+    event, candidate, candidate_bytes, snapshot = snapshot_proof()
+    event["pull_request"]["draft"] = True
+    snapshot["pull_request"]["draft"] = True
+    proof = run_pure_proof(
+        event=event,
+        baseline_manifest={},
+        candidate_manifest=candidate,
+        candidate_manifest_bytes=candidate_bytes,
+        base=BASE,
+        head=HEAD,
+        diff=b"M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json\0M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md\0",
+        transport=snapshot.__getitem__,
+    )
+    assert proof.status == "draft_hold"
+    snapshot["pull_request"]["body"] = ""
+    proof = run_pure_proof(
+        event=event,
+        baseline_manifest={},
+        candidate_manifest=candidate,
+        candidate_manifest_bytes=candidate_bytes,
+        base=BASE,
+        head=HEAD,
+        diff=b"",
+        transport=snapshot.__getitem__,
+    )
+    assert proof.status == "draft_hold"

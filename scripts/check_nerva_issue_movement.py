@@ -363,10 +363,20 @@ def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
     if base == LEGACY_BASE and tuple(registry) != BOOTSTRAP_REGISTRY:
         _reject("legacy bootstrap registry does not match pinned seed")
     issues = gate.get("program_control_issues")
-    if not isinstance(issues, list) or any(
-        type(issue) is not int or issue <= 0 for issue in issues
+    if (
+        not isinstance(issues, list)
+        or any(type(issue) is not int or issue <= 0 for issue in issues)
+        or len(issues) != len(set(issues))
     ):
         _reject("movement control issues are invalid")
+    if base == LEGACY_BASE and (
+        set(gate) != allowed
+        or gate["enforcement_state"] != "required"
+        or gate["program_control_issues"] != [846]
+        or gate["continuous_currentness"] is not False
+        or gate["live_receipt_control"] is not True
+    ):
+        _reject("legacy bootstrap gate is not canonical")
 
 
 def compute_name_status_diff(
@@ -420,6 +430,8 @@ def compute_name_status_diff(
             _reject("diff read timed out" if reader.is_alive() else "diff exceeds byte limit")
         if reader_error or process.wait(timeout=2) != 0:
             _reject("cannot compute repository diff")
+    except subprocess.TimeoutExpired as exc:
+        raise MovementError("diff read timed out") from exc
     except (AttributeError, OSError, subprocess.SubprocessError) as exc:
         raise MovementError("cannot compute repository diff") from exc
     return parse_diff(b"".join(raw_parts))
@@ -541,7 +553,9 @@ def derive_scope(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
     ):
         _reject("program control history is not append-only")
     added_issues = candidate_issues[len(previous_issues) :]
-    if any(type(issue) is not int or issue <= 0 for issue in added_issues):
+    if any(
+        type(issue) is not int or issue <= 0 or issue in previous_issues for issue in added_issues
+    ):
         _reject("program control issue is invalid")
     root_delivery_same = all(
         key == "movement_gate" or _same_json(baseline.get(key), candidate.get(key))
@@ -628,6 +642,38 @@ def derive_scope(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
         "stream_id": stream_id,
         "epic_issue": epic,
     }
+
+
+def validate_stream_evidence_bindings(
+    baseline_stream: Mapping[str, Any], candidate_stream: Mapping[str, Any], *, pull_request: int
+) -> None:
+    """Require all newly appended stream evidence to bind the current pull request."""
+    if type(pull_request) is not int or pull_request <= 0:
+        _reject("current pull request is invalid")
+
+    def appended(before: Any, after: Any) -> list[Any]:
+        if not isinstance(before, list) or not isinstance(after, list) or len(after) < len(before):
+            _reject("stream evidence history is invalid")
+        return after[len(before) :]
+
+    evidence = appended(
+        baseline_stream.get("completion_evidence", []),
+        candidate_stream.get("completion_evidence", []),
+    )
+    before_edges = baseline_stream.get("delivery_prerequisites", [])
+    after_edges = candidate_stream.get("delivery_prerequisites", [])
+    appended(before_edges, after_edges)
+    for before_edge, after_edge in zip(before_edges, after_edges, strict=False):
+        if not isinstance(before_edge, Mapping) or not isinstance(after_edge, Mapping):
+            _reject("stream prerequisite is invalid")
+        evidence.extend(
+            appended(
+                before_edge.get("accepted_evidence", []), after_edge.get("accepted_evidence", [])
+            )
+        )
+    for record in evidence:
+        if not isinstance(record, Mapping) or record.get("pull_request") != pull_request:
+            _reject("new stream evidence does not bind current pull request")
 
 
 def _require_false(data: Mapping[str, Any]) -> None:
@@ -737,7 +783,11 @@ def _validate_receipt(
         "created_at",
         "updated_at",
     }
-    if not required_envelope <= set(envelope) or envelope["id"] != comment["comment_id"]:
+    if (
+        not required_envelope <= set(envelope)
+        or type(envelope["id"]) is not int
+        or envelope["id"] != comment["comment_id"]
+    ):
         _reject("comment identity is invalid")
     if (
         envelope["issue_url"] != f"https://api.github.com/repos/{repository}/issues/{issue}"
@@ -806,6 +856,7 @@ def _validate_snapshot(
     branch: str,
     digest: str,
     scope: Mapping[str, Any],
+    allow_draft: bool,
 ) -> None:
     try:
         current = transport("pull_request")
@@ -814,7 +865,7 @@ def _validate_snapshot(
     if (
         not isinstance(current, dict)
         or current.get("state") != "open"
-        or current.get("draft") is not False
+        or (current.get("draft") is not False and not allow_draft)
     ):
         _reject("current pull request is not ready")
     current_repo = current.get("repository")
@@ -930,6 +981,25 @@ def run_pure_proof(
     scope = derive_scope(baseline_manifest, candidate_manifest)
     if scope["implementation_issue"] in {757, 778, scope["epic_issue"]}:
         _reject("implementation issue is reserved")
+    if scope["kind"] == "stream":
+        baseline_streams = baseline_manifest.get("streams")
+        candidate_streams = candidate_manifest.get("streams")
+        if not isinstance(baseline_streams, list) or not isinstance(candidate_streams, list):
+            _reject("stream evidence scope is invalid")
+        pairs = zip(baseline_streams, candidate_streams, strict=True)
+        for baseline_stream, candidate_stream in pairs:
+            if (
+                isinstance(candidate_stream, dict)
+                and candidate_stream.get("id") == scope["stream_id"]
+            ):
+                if not isinstance(baseline_stream, dict):
+                    _reject("stream evidence scope is invalid")
+                validate_stream_evidence_bindings(
+                    baseline_stream, candidate_stream, pull_request=number
+                )
+                break
+        else:
+            _reject("stream evidence scope is invalid")
     if (
         not isinstance(candidate_manifest_bytes, bytes)
         or len(candidate_manifest_bytes) > MAX_JSON_BYTES
@@ -953,8 +1023,9 @@ def run_pure_proof(
         branch=branch,
         digest=digest,
         scope=scope,
+        allow_draft=draft,
     )
-    return PureProof("proved", scope)
+    return PureProof("draft_hold" if draft else "proved", scope)
 
 
 def _snapshot_transport(snapshot_dir: Path) -> Any:
@@ -997,8 +1068,11 @@ def main(argv: list[str] | None = None) -> int:
             diff=args.diff.read_bytes(),
             transport=_snapshot_transport(args.snapshot_dir) if args.snapshot_dir else None,
         )
-    except (MovementError, OSError) as exc:
+    except MovementError as exc:
         print(f"movement gate rejected: {exc}", file=sys.stderr)
+        return 1
+    except OSError:
+        print("movement gate rejected: input file is unavailable", file=sys.stderr)
         return 1
     print(result.status)
     return 0
