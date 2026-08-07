@@ -2,6 +2,7 @@
    honest placeholder and get ported from the prototype in the next phase. */
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { V2 } from './data';
+import { localityFigure } from './locality';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
@@ -119,8 +120,9 @@ function App() {
   // %-local is honest, in priority order: a real measured split from /api/analytics/
   // locality (the brand metric, from run-history routes) → strict-local proof (100%)
   // → demo sample → unknown (hidden, never faked).
-  const localPct = (locality && locality.local_pct != null) ? locality.local_pct
-    : trust.strict_local ? 100 : (demo ? 87 : null);
+  // …and WHERE it came from, so the wall can label it truthfully: a strict-local 100% is a
+  // correct inference from governance, not a measurement, and must not display as one.
+  const { pct: localPct, source: localPctSource } = localityFigure({ locality, trust, demo });
   const liveModes = useLiveModes(); // P4: stream live data into the capability modes; reports which keys are live
   // H22 — first-party page-view beacon. Fires once on load (privacy-first, no
   // cookies/PII; see analytics.ts), then once per HUD view change. The SPA has no
@@ -423,7 +425,7 @@ function App() {
                       : centerTab === 'cognition'
                         ? <CognitionStream trace={trace} t={t} />
                         : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} />}
-                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} t={t} />
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
@@ -459,7 +461,7 @@ function App() {
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
         ui={{ look, setLook, density, setDensity, motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
-      {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} onExit={() => setCinema(false)} t={t} />}
+      {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} voice={voice} decisions={decisions} calendar={calendar} heartbeat={heartbeat} serverUp={serverUp} clock={clock} motion={motion} localPctSource={localPctSource} onExit={() => setCinema(false)} t={t} />}
     </div>
   );
 }

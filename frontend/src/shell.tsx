@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph, Reactor, Meter, statusClass, fmtTime, fmtTimeShort, fmtDate } from './primitives';
 import { renderRich } from './cockpit';
 import { isExecutingAgent, NeuralMesh } from './mesh';
+import { VoiceOrb } from './orb';
+import { BriefingWall } from './wall';
 import { runningTasks } from './task-state';
 import { V2 } from './data';
 
@@ -354,16 +356,37 @@ function Ambient({ onExit, clock, lang, agents, decisions, motion, localPct, t }
 }
 function stripTags(s){ return String(s).replace(/<[^>]+>/g,'').replace(/\*\*/g,''); }
 
+/* Cinema stage switcher — mesh (who is working) · orb (voice state) · brain (the
+   full briefing wall). Rendered inside the cinema frame, or floating over the wall. */
+function StagePicker({ stage, setStage, floating = false }: any) {
+  return (
+    <div className={'cin-stage-pick' + (floating ? ' wl-pick' : '')}>
+      <button className={stage === 'mesh' ? 'on' : ''} onClick={() => setStage('mesh')} title="neural mesh (n)">mesh</button>
+      <button className={stage === 'orb' ? 'on' : ''} onClick={() => setStage('orb')} title="voice orb (o)">orb</button>
+      <button className={stage === 'brain' ? 'on' : ''} onClick={() => setStage('brain')} title="briefing wall (b)">brain</button>
+    </div>
+  );
+}
+
 /* HUD v3 · CINEMA MODE — full-bleed Neural Mesh framed as a shareable demo (handover §4).
    Port of v3-shell.jsx CinemaMesh; reuses the native NeuralMesh (cinema=true). Esc exits.
    Honesty contract: the prototype hardcoded "87% on-device / 0 cloud leaks" — we show only
    REAL figures (live agent count from the roster, %-local from /api/analytics/locality),
    never a fabricated split. */
-export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo = false, localPct, onExit, t }: any) {
+export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo = false, localPct, voice, decisions, calendar, heartbeat, serverUp = false, clock, motion = 'lively', localPctSource = null, onExit, t }: any) {
   const [tag, setTag] = useState(0);
+  // Two stages share the cinema frame: the mesh (who is working) and the voice orb
+  // (is Jarvis listening / speaking). Mesh stays the default so an existing demo
+  // opens exactly as before; `o` flips to the orb, `n` back.
+  const [stage, setStage] = useState('mesh');
   useEffect(() => { const iv = setInterval(() => setTag((x) => x + 1), 4200); return () => clearInterval(iv); }, []);
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') onExit(); };
+    const h = (e) => {
+      if (e.key === 'Escape') onExit();
+      else if (e.key === 'o' || e.key === 'O') setStage('orb');
+      else if (e.key === 'n' || e.key === 'N') setStage('mesh');
+      else if (e.key === 'b' || e.key === 'B') setStage('brain');
+    };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onExit]);
@@ -385,13 +408,31 @@ export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo 
     ];
   const live = agents.filter(isExecutingAgent).length;
   const running = runningTasks(tasks).length;
+  // The briefing wall owns the whole screen (its own chrome, cards and status rail), so
+  // it replaces the cinema frame rather than sitting inside the mesh stage.
+  if (stage === 'brain') {
+    return (
+      <>
+        <BriefingWall
+          agents={agents} tasks={tasks} decisions={decisions} calendar={calendar} heartbeat={heartbeat}
+          llm={llm} trust={trust} sources={sources} localPct={localPct} voice={voice}
+          serverUp={serverUp} demo={demo} clock={clock} motion={motion} localPctSource={localPctSource} onExit={onExit} />
+        <StagePicker stage={stage} setStage={setStage} floating />
+      </>
+    );
+  }
   return (
     <div className="cinema">
       <div className="cin-top">
         <div className="cin-mark"><Reactor /><span className="cin-word">JARVIS</span></div>
         <div className="cin-tag" key={tag}>{TAGS[tag % TAGS.length]}</div>
       </div>
-      <div className="cin-stage"><NeuralMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} cinema={true} motion="lively" onSelect={() => {}} t={t} /></div>
+      <div className="cin-stage">
+        <StagePicker stage={stage} setStage={setStage} />
+        {stage === 'orb'
+          ? <VoiceOrb status={(voice && voice.error) ? 'error' : (voice && voice.status) || 'off'} level={(voice && voice.level) || 0} motion={motion} />
+          : <NeuralMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} cinema={true} motion={motion} onSelect={() => {}} t={t} />}
+      </div>
       <div className="cin-bottom">
         <div className="cin-feed"><div className="cin-frow"><span className="cin-dot"></span>{live > 0 || running > 0 ? 'the Cabinet is working…' : 'no live activity'}</div></div>
         <div className="cin-stats">

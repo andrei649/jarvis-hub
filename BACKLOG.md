@@ -279,6 +279,157 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > all 28 cross-references updated). Kept: agent personas (Jarvis = the orchestrator
 > agent), `jarvis-hub` repo/engine codename + `JARVIS_*` env prefix. Owner-only rest:
 > the GitHub repo rename (OWNER_TASKS). Decision log: `docs/HISTORY.md`.
+>
+> **Voice orb — the reactive particle sphere** (ad-hoc, owner request 2026-08-06, from the
+> "J.A.R.V.I.S. in the room" build guide): `frontend/src/orb.tsx` adds `VoiceOrb`, a Canvas-2D
+> particle sphere (Fibonacci distribution + yaw/tilt projection + depth-shaded filaments + reactor
+> rings) bound to the live `useVoice()` state machine — off / standing-by / listening / transcribing
+> / speaking / error. Cinema mode gains a stage picker (`o` = orb, `n` = mesh; mesh stays the
+> default so existing demos open unchanged) and the cockpit voice pill gets the same orb inline in
+> place of the flat status dot. **Honesty contract:** only the LISTENING state may be driven by a
+> measured signal (the real mic RMS from `voice.ts`); every other state runs a fixed breathing
+> animation, is labelled `state animation`, and no numeric level is ever rendered — an animation is
+> a state indicator, never a metric. No new dependency (no three.js/WebGL/CDN), no new endpoint, no
+> backend change; degrades to a non-throwing empty shell on a null 2D context and honours
+> `prefers-reduced-motion` + the HUD's calm-motion setting. +14 frontend tests (frontend Vitest
+> 408 → **422**); `tsc --noEmit`, production HUD build, `tests/test_hud_v2_parity.py` and
+> `tests/test_route_parity_guard.py` green. Mobile parity tracked as H18.24; the guide's remaining
+> gap (ambient LED sync) is filed as H30.8. Guide-vs-repo map:
+> [`docs/design/JARVIS_PRESENCE_GAP.md`](docs/design/JARVIS_PRESENCE_GAP.md).
+>
+> **Briefing wall — the reference layout** (same owner request, after five frames of the actual
+> video arrived and materially changed the visual brief): `frontend/src/burst.tsx` adds
+> `NeuralBurst`, a Canvas-2D neural firing field — per-tier dendrite trees grown from a
+> deterministic seed, synapse nodes, long white axon sweeps and a blown-out core — and
+> `frontend/src/wall.tsx` adds `BriefingWall`, the full wall-screen board (letterspaced wordmark,
+> live pill, running clock, four stat cards, subsystem status rail, spoken line, corner brackets)
+> with the field full-bleed behind it. It is the `brain` stage of cinema mode (`m` then `b`; `n`
+> mesh, `o` orb). **Honesty:** regions are real cabinet tiers, node density follows the real agent
+> count, only tiers that are actually executing fire, and `burstEnergy()` reports whether the light
+> comes from a measured mic level, live work, or idle. The reference's agency KPIs are NOT
+> reproduced — the same slots carry provable Nerva figures, and anything unmeasured renders `—`
+> with the reason attached. +15 frontend tests (Vitest 422 → **437**). No new dependency, no
+> endpoint, no backend change.
+>
+> **Wall pass 2 — from the two owner videos** (the still frames were a partial read; the videos
+> showed the mobile build too): region chips are now bordered plates with a thick coloured edge bar
+> and a `N agents · firing X% · N tasks` sub-line (the firing share is real: executing/roster); the
+> wall gains a **HOLD TO TALK** control wired to the live `useVoice()` loop (press starts, release
+> stops, refusing honestly when the mic is muted or the browser cannot capture audio); collapsed
+> **AGENT OPS / CABINET** edge tabs carry live counts and drop the badge instead of showing `0`
+> when the task feed is unavailable; and under 820px the wall takes the reference's portrait
+> layout — cards give way to the edge tabs, chrome centres, and the talk button leads. +5 frontend
+> tests (Vitest 437 → **442**).
+>
+> **Wall pass 3 — integration-review fixes** (owner review on #843, head `9974f81`): two evidence
+> boundaries failed open and are now closed. (a) `sources.tasks` is the proof the task feed answered
+> *this* load; a retained array from an earlier poll no longer reaches `wallState`, `burstEnergy` or
+> `NeuralBurst`, so the wall can never claim WORKING / firing regions / task chips while its own rail
+> reports `task feed · no data`. (b) `trust` is deliberately RETAINED across polls in `app.tsx`
+> (`if (d.trust) setTrust(d.trust)`), so a stale `mic:'on'` could outlive its evidence — the
+> HOLD TO TALK control, and the rail's mic/strict-local rows, now key off `sources.trust` and fail
+> closed with `trust status unavailable` rather than opening a microphone on unproven state. The
+> room-facing spoken line gained a persisted redaction control (`hud.wall.transcript`,
+> `TRANSCRIPT_DEFAULT_VISIBLE` flips the installation default). +9 hostile frontend tests, all
+> red-proved against the pre-fix code (Vitest 442 → **451**).
+>
+> **Wall pass 4 — second integration review** (head `5e8825b`): the microphone now fails closed over
+> its whole *lifecycle*, not just at first render — capture needs current `sources.trust` evidence
+> **and** an exact `mic === 'on'` (missing/unknown/malformed authorizes nothing), and it stops on
+> permission loss, trust expiry and unmount/stage-switch; the control is keyboard-operable
+> (space/enter, repeat-safe). The room-facing spoken line now defaults to **hidden** — the owner
+> reaffirmed default-hide over the reference's always-on line, so showing it is an explicit,
+> persisted per-installation opt-in. Two unevidenced zeros are gone: `EXECUTING` gates on
+> `sources.agents` and `DECISIONS PENDING` on the absence of any live decision feed (there is no
+> endpoint yet — it renders `—` with that reason outside demo). The HUD motion preference is wired
+> end-to-end (app → cinema → orb/mesh/burst and the cockpit's inline orb), so the calm-motion claim
+> in `docs/VOICE.md` is now true instead of aspirational; unknown trust reads `MIC · UNKNOWN`.
+> Docs: the presence doc pointed ambient work at H23.x instead of H30.8; the phone claims are
+> narrowed to the browser HUD with native tracked as new **H18.25** (`mobile/PARITY.md` flips the
+> wall from ➖ to ⬜); and the wall-screen room validation the doc *claimed* was in
+> `docs/OWNER_TASKS.md` is now actually there (legibility, mic pickup, echo, per-room privacy).
+> +13 hostile frontend tests (Vitest 451 → **464**).
+>
+> **Wall pass 5 — third review round** (head `fc9e94e`): a **capture-after-cancellation race** in
+> `frontend/src/voice.ts` is closed. `getUserMedia()` can sit on a permission prompt for seconds;
+> `stop()`/unmount released a stream that did not exist yet, so a late-resolving permission then
+> published the stream, went active and entered the hands-free loop — capture starting *after*
+> authorization was withdrawn. A monotonic `startGenRef` now invalidates pending starts: a stale
+> resolution stops every returned track and publishes nothing. Second: `useVoice()` returns a fresh
+> wrapper each render and the wall's parent rerenders every clock tick, so the wall's unmount
+> cleanup (keyed on that identity) was stopping a valid capture about once a second — release and
+> cleanup now key on a stable `stopRef`, never the wrapper. Third: the roster evidence rule was only
+> half-applied — `evidenceAgents` now gates every roster-derived consumer (`wallState`,
+> `burstEnergy`, `NeuralBurst`, the firing count and the CABINET badge), not just the two cells.
+> Fourth: the footer rendered a malformed `mic` value as OPEN/IDLE; only an exact `on`/`off` maps to
+> OPEN/IDLE/MUTED and everything else reads `UNKNOWN`. +14 tests, all four red-proved against the
+> pre-fix code (Vitest 464 → **478**).
+>
+> **Wall pass 6 — fourth review round** (head `e07b311`): two regressions from the previous pass.
+> (a) The roster evidence gate emptied **demo mode**: `loadJarvisData(true)` seeds the roster while
+> leaving `sources.agents` false on purpose — that flag means *real live* evidence and demo is a
+> separate, watermarked provenance — so the demo wall lost its field, counts and badge.
+> `agentEvidence` now accepts `demo || sources.agents === true`, with a regression shaped like the
+> real loader's demo output (not the convenient `sources.agents:true` the earlier positive control
+> used) plus the non-demo negative control. (b) In `voice.ts`, a **stale permission rejection** from
+> a superseded start still published `error`, overwriting the OFF state a `stop()` had just set; the
+> catch now compares generations first. Noted honestly: the reviewer's second interleaving (stale
+> rejection while a newer capture is live) is covered by the same guard but is **not red-provable**
+> through the hook's public state — the running loop clears status/error every iteration — so no
+> test is claimed for it. Vitest 478 → **482**.
+>
+> **Wall pass 7 — fifth review round** (head `af372eb`): (a) the DEMO corpus was labelled as live
+> at the point it was read — `CABINET · NOW · live`, `THIS SESSION · measured` (over app.tsx's demo
+> `localPct = 87`) and the subsystem rail — even though the page chrome said DEMO. Provenance is now
+> per-card: every stamp reads `demo · seeded` in demo, and the regression is driven by the REAL
+> `loadJarvisData(true)` output instead of a hand-built props shape, asserting each card's stamp.
+> (b) The two stale-rejection interleavings the previous pass called unprovable ARE provable: with a
+> `MediaRecorder` mock that never completes an utterance, the newer session parks in `listening` and
+> a stale write is plainly visible. Older-reject-after-newer-success now red-proves the catch guard;
+> the unmount-then-reject case is kept as an invariant with its weaker status labelled in the test.
+> Vitest 482 → **484**.
+>
+> **Wall pass 8 — sixth review round** (head `6b57faf`): the per-card demo stamp added in pass 7 was
+> the mirror of the bug it fixed. A **connected** demo keeps polling and replaces seeded values with
+> real ones as each source answers (`sources.agents`, `.calendar`, `.heartbeat`, `.tasks`, `.trust`
+> are set independently), so stamping every card `demo · seeded` from `demo === true` relabelled
+> live data as seeded — and one card can legitimately hold both at once, which no single card label
+> can describe. Provenance is now **per cell** (`data-prov`, plus a visible `seeded` tag on seeded
+> values), and the card stamp is *derived* from the cells it actually shows: `live`/`measured`,
+> `demo · seeded`, or `mixed · live + seeded`. `localPct` provenance is passed from `app.tsx`
+> (`measured` / `strict-local` / `seeded`) instead of inferred from `demo`. Vitest 484 → **488**,
+> with connected, partially-connected and mixed-card regressions alongside the offline-demo and
+> non-demo controls.
+>
+> **Wall pass 9 — seventh review round** (head `8d05aab`): a **fail-closed trust parse**. The wall's
+> "exact `mic === 'on'`" rule was defeated upstream by the adapter in `api/loaders.ts`:
+> `mic: d.mic || 'on'` turned a missing/empty/`0`/`false` value into an affirmative permission, and
+> `strict_local: !!d.strict_local` turned the STRING `"false"` into a true governance claim (which
+> also feeds a derived 100% locality figure). Only the literal strings/boolean now count; anything
+> else is `unknown` and refuses capture. Also: `cardStamp()` returned the live label when a card had
+> nothing to show, so an all-`—` card announced evidence it lacked (now `no evidence`); the demo
+> page caption was unconditional, so a fully connected demo described live data as seeded (now
+> derived from the real source mix); a `Cell` with no declared provenance defaulted to `live` (now
+> `unknown`); and an empty seeded decision list rendered `0` rather than `—`. +13 tests, all
+> red-proved (Vitest 488 → **501**).
+>
+> **Wall pass 10 — eighth review round** (head `c4055a2`): provenance labels must name the ACTUAL
+> source. A strict-local 100% is *derived* from a governance flag, not measured, but the wall folded
+> every non-seeded locality source into `live` and `THIS SESSION` then stamped it `measured`. The
+> three-way source is now preserved end to end (`measured` / `strict-local` / `seeded`), a derived
+> value carries its own visible tag, and `cardStamp()` gained `derived` / `mixed · live + derived`.
+> The derivation moved into `frontend/src/locality.ts` so the reachable App path is testable — in
+> demo the app skips locality loading and the loader clears it, so that branch cannot be reached by
+> a props fixture at all. Also: the ATTENTION card passed `queue` (not a provenance) as its all-live
+> label, so a card with live calendar/heartbeat evidence stamped `queue`; it now stamps `live`.
+> +12 tests, red-proved (Vitest 501 → **513**).
+>
+> **Wall pass 11 — ninth review round** (head `13012cf`): `THIS SESSION` stamped `measured` whenever
+> its cells were live, so a card whose only evidence was a trust read (CLOUD LANE) — or a resident
+> model — claimed to have measured something. The live label is now conditional on a genuinely
+> *measured* locality split being among the values shown; otherwise the card reads `live`. One of
+> the previous pass's tests had pinned that contradiction (live cell + `measured` card) and is
+> replaced, with a loader-shaped trust-only regression added. Vitest 513 → **515**.
 
 ---
 
@@ -1329,8 +1480,11 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 | H30.5 ✅ | **`GET /api/house/state` + HUD panel** — the house graph visible, honest empty state · **completed 2026-07-13** — guarded domain router exposes bounded state/proposal/strong-confirmation APIs; browser House HUD and native mobile Home tab share the API and preserve disabled/degraded/private/approval/verified truth. Route, OpenAPI, auth, HUD, and mobile parity ledgers are synchronized. | 3 | P2 | H30.2 | — |
 | H30.6 ✅ | **Room-aware voice** — wyoming/satellite unpark; a satellite's room becomes the default output device for `present()` · **completed 2026-07-13** — paired satellite credentials are digest-only, expiry/peer/transport bound, and replay protected; server-owned room identity ignores client spoofing, privacy/ambiguity refuses output, and exactly one room-default device reaches the existing H29 governed media action. `wyoming` and `satellite_hub` graduated from wave 3; `node_mesh`/`e2e_sync` remain parked. | 3 | P2 | O29, H23.28 | H12.4 |
 | H30.7 ✅ | **House reality-harness pack** — hermetic HA simulator proves the rail; live = owner-gated · **completed 2026-07-13** — the canonical pack passes **7/7 hermetic production-rail cases** across read/reconnect/offline, graph/privacy/purge, reversible actuation, security confirmation, verification/rollback, kernel halt, and room-aware output. The causal ledger measures `ungoverned_actions == 0` and rejects unapproved HA mutations; the read-only live probe requires both generic reality-harness and explicit H30 owner opt-in, with missing configuration reported degraded rather than passed. | 3 | P1 | O24-V1 | — |
+| H30.8 | **Ambient light bridge (assistant state → LAN strip)** — the last open item from the 2026-08-06 "J.A.R.V.I.S. in the room" guide (`docs/design/JARVIS_PRESENCE_GAP.md`): a default-off bridge that maps the SAME voice/assistant state the orb renders onto a LAN light controller, so the strip and the sphere can never disagree. WLED first (plain HTTP JSON on the local network, no cloud account, strict-local by construction); Hue/Govee behind their own opt-in since they reach a vendor cloud. Must go through the existing governed device path, stay silent (not guess) when the device is unreachable, and ship with the light OFF by default. | 3 | P3 | H30.4 | NERVA_VISION §7 |
 
-> **Total ORIZONT 30:** 29/29 SP implementation complete. The browser House HUD and native mobile
+> **Total ORIZONT 30:** 29/29 SP of the original H30.1–H30.7 scope complete. **H30.8 (3 SP,
+> added 2026-08-06) is open and sits OUTSIDE that completion gate** — the ambient light bridge
+> is new scope, not a regression of the closed seven. The browser House HUD and native mobile
 > Home surface share the guarded API; the seven-case hermetic pack proves zero ungoverned actions.
 > Real Home Assistant, physical satellite, and household device execution remain explicit owner-host
 > validation seams and are not claimed by the hermetic completion gate.
@@ -2188,6 +2342,8 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.19 ✅ | **Mobile first-run command center** — native Status tab gains a read-only First-run card over `GET /api/onboarding/command-center`: install ready/version, model truth, wizard progress, and honest per-action ready/reason rows (run affordances stay browser-side). Red/green: `commandCenter.test.ts` first failed on missing `fetchCommandCenter`, then mobile Jest passed (49) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-07, #634) | H18.1 | mobile parity |
 | H18.20 ✅ | **Native artifact workspace parity** — catches the app up to the #652 browser Artifacts tab over the same unchanged `/api/canvas*` contract. Memory tab gains an **Artifacts** view: browse with safe typed rendering on all 7 canvas types (RN Text nodes are inert; remote http(s) images behind an explicit consent tap; protocol-relative/control-char URLs stay plain text), pin/unpin/delete on the existing endpoints, honest loading/empty/error states. Chat gains the **explicit save-response control** (only completed non-error assistant replies, never while streaming, never auto): posts the exact markdown contract with the ACTUAL responding agent (from the stream start event) and truncates at the 4,000-char bound on a **code-point boundary** (no lone-surrogate poisoning). Red/green: `canvasArtifacts.test.ts` first failed on missing `fetchCanvasArtifacts`, then mobile Jest passed (55) + `tsc --noEmit` clean. | 4 | ✅ done (2026-07-10) | H18.1, H18.16 | #652 handoff |
 | H18.23 ✅ | **Mobile spoken morning brief** — the native Status tab gains a "Morning brief" card over the admin-guarded `GET /autonomy/brief`, with a 🔊 Speak/Stop control through the existing hub-TTS + expo-audio path. Honest empty/no-admin-token/TTS-unavailable states; `fetchAutonomyBrief` normalizes kind/text with a bound. Red/green: `autonomyBrief.test.ts` (+3) first failed on the missing client function, then full mobile Jest passed (96) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.5, H18.14 | PARITY.md |
+| H18.24 | **Native voice orb** — bring the browser voice orb (`frontend/src/orb.tsx`) to the native mic surface: the same state→visual contract (listening = measured mic level, every other state a labelled animation, no numeric level), rendered with the platform's canvas/Skia equivalent. No API change — it reads the existing STT/TTS loop. | 3 | P3 | H18.5 | PARITY.md |
+| H18.25 | **Native briefing wall** — the browser wall (`frontend/src/wall.tsx` + `burst.tsx`) is responsive down to phone widths, so a phone browser already gets the portrait layout and hold-to-talk; the **native** apps have neither. Port the field, the chip/edge-tab chrome and the push-to-talk control, carrying the same fail-closed mic rule (current trust evidence + exact `mic === 'on'`, stop on permission loss/unmount) and the default-hidden spoken line. | 5 | P3 | H18.5, H18.24 | PARITY.md |
 | H18.21 ✅ | **Native Media Director parity** — the metadata-only Media tab reads the owner-curated `/api/media/devices` registry and `/api/media/session` board, then exposes explicit user present/restore controls over the unchanged guarded API. Safe bounded normalization preserves disabled/error states and distinguishes queued, refused, unverified, and verified nested outcomes; a stale/unregistered target cannot be submitted. Device register/remove controls are isolated behind the configured admin token and no remote media is embedded. Red/green: missing client/screen contracts failed first, then mobile Jest passed (65) + `tsc --noEmit` clean. | 3 | ✅ done (2026-07-13) | O29 | PARITY.md |
 | H18.22 ✅ | **Mobile capability registry board** — folded into the existing Status tab (not a new top-level tab: 13 tabs already fill the bar) as a **Capabilities** card alongside Trust, over the same user-guarded `GET /api/capabilities` the browser's `ReadinessPanel` reads: SEAM/WIRED/VERIFIED/GA counts + the honest "harness pending — wired, not yet proven" note (never claims VERIFIED it can't back). Read-only — no action execution or token-management controls; approvals stay on H18.11. `fetchCapabilities`/`normalizeCapability` in `mobile/src/api/client.ts`. Red/green: `capabilities.test.ts` (+3: shape mapping, malformed-entry drop + honest defaults, sparse-payload normalization), mobile Jest passed (93) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.1, H27.8 | mobile parity |
 

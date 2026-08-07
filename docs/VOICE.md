@@ -97,6 +97,26 @@ Edited via the ⚙ popover next to the mic (`cockpit.tsx: InputBar`):
 The mic respects `JARVIS_MIC_MUTED` (surfaced via `/api/trust/status` → `trust.mic`): when the
 physical/soft mute is on, the loop won't start.
 
+### The voice orb (what the loop *looks* like)
+
+`frontend/src/orb.tsx` renders `VoiceOrb` — a Canvas-2D particle sphere bound to the same
+`useVoice()` state machine documented above, so a glance from across the room says whether Nerva is
+off, standing by, listening, transcribing, speaking, or broken. Two places use it:
+
+- **cinema mode** (`m` from the HUD, then `o`) — full-bleed on a wall screen; `n` returns to the
+  Neural Mesh, which stays the default stage, and `b` opens the briefing wall (`wall.tsx`), where
+  the same voice state drives the neural field and the spoken line along the bottom;
+- **the cockpit voice pill** — the same orb inline, in place of the old flat status dot.
+
+The honesty rule is narrower than it looks: **only the LISTENING state is driven by a measured
+signal** — the real mic RMS the analyser in `voice.ts` already computes. Every other state has no
+signal to show, so the sphere runs a fixed breathing animation, labels itself `state animation`,
+and never prints a number. An animation is a state indicator; it must never read as a metric.
+
+No new dependency (no three.js, no WebGL, no CDN), no endpoint, no backend change. It degrades the
+same way the Neural Mesh does — a null 2D context leaves a quiet, non-throwing shell — and it
+honours both `prefers-reduced-motion` and the HUD's calm-motion preference.
+
 ---
 
 ## 3. Path A — the server-side pipeline ("Howard")

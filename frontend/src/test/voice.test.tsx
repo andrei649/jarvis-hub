@@ -242,4 +242,148 @@ describe('useVoice state machine', () => {
       }),
     ));
   });
+
+  /* Deferred-permission race (integration review, 2026-08-06). `getUserMedia()` can sit on
+     a permission prompt for seconds. A stop() or unmount in that window used to release a
+     stream that did not exist yet, and the late-resolving permission then opened the mic and
+     entered the hands-free loop anyway — capture beginning AFTER authorization was withdrawn.
+     These tests hold the promise open deliberately, which is the only way to see it. */
+  describe('a permission that resolves after cancellation must not open the mic', () => {
+    function deferredMedia() {
+      const track = { stop: vi.fn() };
+      const stream = { getTracks: () => [track] };
+      let resolve: any;
+      const pending = new Promise((r) => { resolve = r; });
+      const getUserMedia = vi.fn(() => pending);
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+      return { getUserMedia, track, grant: () => { resolve(stream); return pending; } };
+    }
+
+    it('stop() while the prompt is open kills the tracks and never goes active', async () => {
+      const media = deferredMedia();
+      const states: any[] = [];
+      render(<VoiceHarness onState={(st) => states.push(st)} />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/voice/capabilities'));
+
+      fireEvent.click(screen.getByText('start'));          // permission prompt is now up
+      await waitFor(() => expect(media.getUserMedia).toHaveBeenCalled());
+      fireEvent.click(screen.getByText('stop'));           // user releases / trust lost
+
+      await media.grant();                                  // permission arrives LATE
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(media.track.stop).toHaveBeenCalled();          // the granted mic is hung up
+      expect(screen.getByTestId('status').textContent).toBe('off');
+      expect(states.some((st) => st.active)).toBe(false);   // never went active at any point
+    });
+
+    it('a stale REJECTION after stop() must not overwrite the off state', async () => {
+      const track = { stop: vi.fn() };
+      let reject: any;
+      const pending = new Promise((_r, rj) => { reject = rj; });
+      const getUserMedia = vi.fn(() => pending);
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+
+      render(<VoiceHarness />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/voice/capabilities'));
+      fireEvent.click(screen.getByText('start'));
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      fireEvent.click(screen.getByText('stop'));
+
+      reject(new Error('NotAllowedError'));                 // permission denied, LATE
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(screen.getByTestId('status').textContent).toBe('off');
+      expect(screen.getByTestId('error').textContent).toBe('');
+      expect(track.stop).not.toHaveBeenCalled();
+    });
+
+    /* I previously claimed these two interleavings were not red-provable, because the running
+       loop clears status/error on each iteration. That was wrong: the review pointed out the
+       missing piece — hold the NEWER session in `listening` with a recorder that never
+       completes an utterance, and a stale write becomes plainly visible. */
+    function holdingRecorder() {
+      class HoldingRecorder {
+        static isTypeSupported = vi.fn(() => true);
+        state = 'inactive';
+        ondataavailable: any = null;
+        onstop: any = null;
+        constructor(public mediaStream: any, public opts: any = {}) {}
+        start() { this.state = 'recording'; }      // never completes → the loop parks in `listening`
+        stop() { this.state = 'inactive'; }
+      }
+      Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: HoldingRecorder });
+      Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, value: HoldingRecorder });
+    }
+
+    it('an older rejection must not report an error over a newer LIVE capture', async () => {
+      holdingRecorder();
+      const track = { stop: vi.fn() };
+      const stream = { getTracks: () => [track] };
+      let rejectFirst: any;
+      const first = new Promise((_r, rj) => { rejectFirst = rj; });
+      const getUserMedia = vi.fn()
+        .mockImplementationOnce(() => first)
+        .mockImplementationOnce(() => Promise.resolve(stream));
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+
+      render(<VoiceHarness />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/voice/capabilities'));
+      fireEvent.click(screen.getByText('start'));            // gen 1 — hangs on the prompt
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+      fireEvent.click(screen.getByText('stop'));
+      fireEvent.click(screen.getByText('start'));            // gen 2 — succeeds and parks
+      await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('listening'));
+
+      rejectFirst(new Error('NotAllowedError'));             // gen 1 rejects afterwards
+      await new Promise((r) => setTimeout(r, 30));
+
+      expect(screen.getByTestId('status').textContent).toBe('listening');   // newer capture intact
+      expect(screen.getByTestId('error').textContent).toBe('');
+    });
+
+    /* Note on strength: this one asserts the observable contract but does not by itself
+       red-prove the generation guard — React already no-ops setState after unmount, so it
+       passes either way. It is kept because it pins the invariant against a future change
+       that publishes through a store or ref surviving unmount. The guard's actual proofs
+       are the two tests above, which do fail without it. */
+    it('a rejection after unmount must publish nothing at all', async () => {
+      holdingRecorder();
+      let reject: any;
+      const pending = new Promise((_r, rj) => { reject = rj; });
+      const getUserMedia = vi.fn(() => pending);
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+
+      const states: any[] = [];
+      const view = render(<VoiceHarness onState={(st) => states.push(st)} />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/voice/capabilities'));
+      fireEvent.click(screen.getByText('start'));
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      view.unmount();
+      const mark = states.length;
+
+      reject(new Error('NotAllowedError'));                  // permission denied AFTER unmount
+      await new Promise((r) => setTimeout(r, 30));
+
+      expect(states.length).toBe(mark);                      // nothing published post-unmount
+      expect(states.some((st) => st.status === 'error')).toBe(false);
+    });
+
+    it('unmount while the prompt is open kills the tracks and never goes active', async () => {
+      const media = deferredMedia();
+      const states: any[] = [];
+      const view = render(<VoiceHarness onState={(st) => states.push(st)} />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/voice/capabilities'));
+
+      fireEvent.click(screen.getByText('start'));
+      await waitFor(() => expect(media.getUserMedia).toHaveBeenCalled());
+      view.unmount();                                       // Esc out of the wall
+
+      await media.grant();
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(media.track.stop).toHaveBeenCalled();
+      expect(states.some((st) => st.active)).toBe(false);
+    });
+  });
 });

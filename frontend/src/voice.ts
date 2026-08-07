@@ -67,6 +67,12 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const ttsRef = useRef(ttsSource); ttsRef.current = ttsSource;     // 'server' | 'browser' | 'off'
   const micMutedRef = useRef(micMuted); micMutedRef.current = micMuted;
   const bargeRef = useRef(barge); bargeRef.current = barge;          // opt-in talk-over interrupt (experimental)
+  // Monotonic start generation. `getUserMedia()` can sit on a permission prompt for
+  // seconds; a stop(), a lost permission or an unmount in that window must WIN. Every
+  // start takes a generation, and anything that cancels bumps it — so a late-resolving
+  // permission finds itself stale, kills the tracks it was handed, and publishes nothing.
+  // Without this, releasing push-to-talk while the prompt is up still opens the mic.
+  const startGenRef = useRef(0);
   const statusRef = useRef('off');
   const setStat = (s) => { statusRef.current = s; setStatus(s); };  // status + ref (avoids stale-closure reads)
 
@@ -79,9 +85,14 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
 
   const tok = (extra?: any) => { const h = extra || {}; const t = getToken(); if (t) h['X-User-Token'] = t; return h; };
 
-  async function ensureStream() {
+  async function ensureStream(gen) {
     if (streamRef.current) return streamRef.current;
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    if (gen !== startGenRef.current) {
+      // superseded while the prompt was open — hang up on the mic and publish nothing
+      try { stream.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
+      return null;
+    }
     streamRef.current = stream;
     try {
       const AC = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -256,12 +267,23 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     if (micMutedRef.current) { setError('Mic is muted — unmute JARVIS to use voice'); setStat('error'); return; }
     if (caps && caps.stt === false) { setError('Local speech-to-text not installed on the server (pip install faster-whisper)'); setStat('error'); return; }
     setError(null);
-    try { await ensureStream(); } catch { setError('Microphone permission denied'); setStat('error'); return; }
+    const gen = ++startGenRef.current;
+    let stream = null;
+    try { stream = await ensureStream(gen); } catch {
+      // A rejection from a SUPERSEDED start must stay silent: it would otherwise overwrite
+      // the OFF state a stop() just set, or report an error over a newer capture that is
+      // already running. Only the current generation may publish permission-denied.
+      if (gen !== startGenRef.current) return;
+      setError('Microphone permission denied'); setStat('error'); return;
+    }
+    // cancelled while the permission prompt was up: never go active, never enter the loop
+    if (!stream || gen !== startGenRef.current) return;
     activeRef.current = true; setActive(true); setStat('idle');
     loop();
   }, [supported, caps]);
 
   const stop = useCallback(() => {
+    startGenRef.current++;               // invalidate any start still awaiting permission
     activeRef.current = false; setActive(false);
     if (cancelSpeakRef.current) cancelSpeakRef.current();
     releaseStream(); setStat('off'); setLevel(0);
@@ -269,7 +291,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
 
   const toggle = useCallback(() => { if (activeRef.current) stop(); else start(); }, [start, stop]);
 
-  useEffect(() => () => { activeRef.current = false; if (cancelSpeakRef.current) cancelSpeakRef.current(); releaseStream(); }, []);
+  useEffect(() => () => { startGenRef.current++; activeRef.current = false; if (cancelSpeakRef.current) cancelSpeakRef.current(); releaseStream(); }, []);
 
   return { supported, caps, status, error, transcript, level, active, start, stop, toggle, speak, cancelSpeak };
 }

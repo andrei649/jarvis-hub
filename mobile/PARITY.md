@@ -62,6 +62,8 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Owner desk presence (H34.2 — away-notify) | user `GET /api/presence/owner`; admin `POST /api/presence/owner` | ✅ | ➖ | — |
 | Governed browser policy / plan preview | `POST /api/browser/check`, `POST /api/browser/plan/preview` | ✅ | ➖ | — |
 | Windows server-host desktop Operator | `POST /api/desktop/preview`, `POST /api/desktop/run` | ✅ | ➖ | — |
+| Voice orb (particle sphere bound to the voice state machine) | — (client-side, reads the existing `POST /api/voice/stt` + `POST /tts` loop) | ✅ | ⬜ | H18.24 |
+| Briefing wall (neural field + stat board + hold-to-talk) | — (client-side, composed from `/api/agents`, `/tasks`, `/api/trust/status`, `/api/analytics/locality`) | ✅ (responsive: portrait layout under 820px) | ⬜ | H18.25 |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
 
 > **H34.1 ➖ (intentional):** Mission Control is a desktop-operator cockpit (large canvas map,
