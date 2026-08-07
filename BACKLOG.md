@@ -37,11 +37,14 @@ squash-merged once present on `main`; no item by itself completes a runtime epic
 
 - ✅ E1.0 / #780 / PR #791 — typed shadow `nerva.decision.v1` and `ShadowDecisionRouter`.
 - ✅ E1.1 / #792 — bounded current-router comparison over `nerva.cortex.comparison.v1`.
-- E1.2a / #841 — an unmerged PR head is `integration_pending`; once accepted on
-  `main`, the owner-local measured primary-route contract is `contract_ready` but
-  remains `owner_evidence_blocked` pending the five E1.2b owner inputs, with
-  `real_task_outcome_quality=not_measured`. This does not complete E1, B2 live
-  enforcement, the program, or release readiness.
+- ✅ E1.2a / #841 / PR #842 — accepted on `main` as `769b6334`; the owner-local
+  measured primary-route contract is `contract_ready` but remains
+  `owner_evidence_blocked` pending all five E1.2b owner inputs: at least 20 historical
+  Nerva tasks in an ignored local path; acceptable-route labels and task categories;
+  a predeclared sampling and exclusion rule; a retention/access/deletion policy; and
+  permission to execute the local run on the owner host. The fixed outcome remains
+  `real_task_outcome_quality=not_measured`. E1 remains `BUILDING`; this does not
+  complete B2 live enforcement, the program, or release readiness.
 - ✅ E2.0 / #781 — Atlas identity/provenance and read-only snapshot.
 - ✅ E3.0 / #782 / PR #796 — `nerva.episode.v1` schema, lifecycle and manual boundary.
 - ✅ E3.1 / #798 / PR #799 — longitudinal Episode retrieval comparison, evaluation-only.
@@ -105,7 +108,7 @@ squash-merged once present on `main`; no item by itself completes a runtime epic
   byte-checked, and the offline checker fails closed on hostile structure, mutable-only evidence,
   unsafe repository paths, Git/index/worktree drift and candidate-HEAD movement. This closes only
   the repository-manifest portion of B2: parent #778 and program #757 remain open/partial; live
-  issue-ledger reconciliation, B7, E8.1c, provider-specific E9 proof, Night Shift, owner-live and
+  issue-ledger reconciliation, B7, provider-specific E9 proof, Night Shift, owner-live and
   release gates remain separate. No runtime, route, provider, execution, action or completion
   authority is added; Ultron remains the sole privileged-action authority and release readiness
   remains false.

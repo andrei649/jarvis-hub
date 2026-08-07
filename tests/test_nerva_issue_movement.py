@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import io
 import json
@@ -160,20 +161,43 @@ def valid_gate():
         "schema_version": 1,
         "enforcement_state": "required",
         "bootstrap_base": LEGACY_BASE,
+        "branch_prefix": "nerva2/",
+        "attestation_start_marker": MARKER,
         "registry": [
             ".github/workflows/ci.yml",
             ".github/workflows/nerva-roadmap.yml",
+            ".github/workflows/pr-auto-merge.yml",
             "BACKLOG.md",
+            "GO_LIVE_PLAN.md",
+            "NERVA.md",
+            "README.md",
+            "STATUS.md",
+            "docs/nerva2/NERVA_ISSUE_MOVEMENT_V1.md",
             "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json",
             "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md",
+            "docs/superpowers/plans/2026-08-07-b2-live-issue-ledger.md",
+            "docs/superpowers/specs/2026-08-07-b2-live-issue-ledger-design.md",
+            "project-status.json",
             "scripts/check_nerva_issue_movement.py",
             "scripts/check_nerva_program_manifest.py",
             "tests/test_nerva_issue_movement.py",
             "tests/test_nerva_program_manifest.py",
+            "tests/test_pr_auto_merge_policy.py",
         ],
         "program_control_issues": [846],
-        "continuous_currentness": False,
-        "live_receipt_control": True,
+        "receipt_control": {
+            "mode": "point_in_time",
+            "live_pr_reread_required": True,
+            "fresh_exact_head_rerun_required": True,
+            "fresh_owner_receipts_required": True,
+            "continuous_currentness": False,
+        },
+        "manual_integration": {
+            "issue": 847,
+            "workflow_path": ".github/workflows/pr-auto-merge.yml",
+            "policy_test_path": "tests/test_pr_auto_merge_policy.py",
+        },
+        "rollback": None,
     }
 
 
@@ -895,25 +919,7 @@ def test_registry_rejects_wildcards_and_unrelated_broad_prefixes():
 
 
 def test_legacy_bootstrap_requires_exact_pinned_seed_and_real_integer_schema_version():
-    gate = {
-        "schema_version": 1,
-        "enforcement_state": "required",
-        "bootstrap_base": LEGACY_BASE,
-        "registry": [
-            ".github/workflows/ci.yml",
-            ".github/workflows/nerva-roadmap.yml",
-            "BACKLOG.md",
-            "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json",
-            "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md",
-            "scripts/check_nerva_issue_movement.py",
-            "scripts/check_nerva_program_manifest.py",
-            "tests/test_nerva_issue_movement.py",
-            "tests/test_nerva_program_manifest.py",
-        ],
-        "program_control_issues": [846],
-        "continuous_currentness": False,
-        "live_receipt_control": True,
-    }
+    gate = valid_gate()
     validate_manifest_gate({"movement_gate": gate}, LEGACY_BASE)
     gate["schema_version"] = True
     with pytest.raises(MovementError):
@@ -922,6 +928,80 @@ def test_legacy_bootstrap_requires_exact_pinned_seed_and_real_integer_schema_ver
     gate["registry"] = gate["registry"][:-1]
     with pytest.raises(MovementError):
         validate_manifest_gate({"movement_gate": gate}, LEGACY_BASE)
+
+
+def test_required_gate_can_only_forward_disable_with_explicit_rollback_control() -> None:
+    baseline = {"movement_gate": valid_gate()}
+    candidate = copy.deepcopy(baseline)
+    candidate_gate = candidate["movement_gate"]
+    candidate_gate["enforcement_state"] = "safety_disabled"
+    candidate_gate["program_control_issues"].append(900)
+    candidate_gate["rollback"] = {
+        "issue": 900,
+        "rollback_of_issue": 846,
+        "reason": "GitHub receipt reads are unavailable; disable before bounded cleanup.",
+        "fresh_owner_receipts_required": True,
+        "exact_head_checks_required": True,
+    }
+
+    validate_manifest_gate(candidate, "a" * 40)
+    assert derive_scope(baseline, candidate) == {
+        "kind": "program_control",
+        "implementation_issue": 900,
+        "stream_id": None,
+        "epic_issue": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda gate: gate.update(rollback=None),
+        lambda gate: gate["rollback"].update(issue=901),
+        lambda gate: gate["rollback"].update(rollback_of_issue=839),
+        lambda gate: gate["rollback"].update(reason=""),
+        lambda gate: gate["rollback"].update(fresh_owner_receipts_required=False),
+        lambda gate: gate["rollback"].update(exact_head_checks_required=False),
+    ],
+)
+def test_safety_disable_rejects_missing_or_unbound_rollback_evidence(mutate) -> None:
+    baseline = {"movement_gate": valid_gate()}
+    candidate = copy.deepcopy(baseline)
+    gate = candidate["movement_gate"]
+    gate["enforcement_state"] = "safety_disabled"
+    gate["program_control_issues"].append(900)
+    gate["rollback"] = {
+        "issue": 900,
+        "rollback_of_issue": 846,
+        "reason": "Disable the gate before bounded cleanup.",
+        "fresh_owner_receipts_required": True,
+        "exact_head_checks_required": True,
+    }
+    mutate(gate)
+
+    with pytest.raises(MovementError):
+        validate_manifest_gate(candidate, "a" * 40)
+
+
+def test_safety_disabled_gate_cannot_return_to_required_without_new_schema() -> None:
+    baseline = {"movement_gate": valid_gate()}
+    disabled = copy.deepcopy(baseline)
+    disabled_gate = disabled["movement_gate"]
+    disabled_gate["enforcement_state"] = "safety_disabled"
+    disabled_gate["program_control_issues"].append(900)
+    disabled_gate["rollback"] = {
+        "issue": 900,
+        "rollback_of_issue": 846,
+        "reason": "Disable the gate before bounded cleanup.",
+        "fresh_owner_receipts_required": True,
+        "exact_head_checks_required": True,
+    }
+    returned = copy.deepcopy(disabled)
+    returned["movement_gate"]["enforcement_state"] = "required"
+    returned["movement_gate"]["rollback"] = None
+
+    with pytest.raises(MovementError):
+        derive_scope(disabled, returned)
 
 
 def test_compute_diff_parses_the_real_status_nul_path_nul_git_format(tmp_path):

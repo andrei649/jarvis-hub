@@ -61,16 +61,29 @@ REGISTERED = frozenset(
     {
         ".github/workflows/ci.yml",
         ".github/workflows/nerva-roadmap.yml",
+        ".github/workflows/pr-auto-merge.yml",
         "BACKLOG.md",
+        "GO_LIVE_PLAN.md",
+        "NERVA.md",
+        "README.md",
+        "STATUS.md",
+        "docs/nerva2/NERVA_ISSUE_MOVEMENT_V1.md",
         "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json",
         "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md",
+        "docs/superpowers/plans/2026-08-07-b2-live-issue-ledger.md",
+        "docs/superpowers/specs/2026-08-07-b2-live-issue-ledger-design.md",
+        "project-status.json",
         "scripts/check_nerva_issue_movement.py",
         "scripts/check_nerva_program_manifest.py",
         "tests/test_nerva_issue_movement.py",
         "tests/test_nerva_program_manifest.py",
+        "tests/test_pr_auto_merge_policy.py",
     }
 )
 BOOTSTRAP_REGISTRY = tuple(sorted(REGISTERED))
+MANUAL_INTEGRATION_WORKFLOW = ".github/workflows/pr-auto-merge.yml"
+MANUAL_INTEGRATION_POLICY_TEST = "tests/test_pr_auto_merge_policy.py"
+MAX_ROLLBACK_REASON_BYTES = 512
 
 
 class MovementError(ValueError):
@@ -412,18 +425,25 @@ def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
         "schema_version",
         "enforcement_state",
         "bootstrap_base",
+        "branch_prefix",
+        "attestation_start_marker",
         "registry",
         "program_control_issues",
-        "continuous_currentness",
-        "live_receipt_control",
+        "receipt_control",
+        "manual_integration",
+        "rollback",
     }
-    gate = _closed_object(gate, allowed_keys=allowed)
+    gate = _closed_object(gate, allowed_keys=allowed, required_keys=allowed)
     if type(gate.get("schema_version")) is not int or gate["schema_version"] != 1:
         _reject("movement gate schema is invalid")
     if gate.get("enforcement_state") not in {"required", "safety_disabled"}:
         _reject("movement gate enforcement state is invalid")
     if gate.get("bootstrap_base") != LEGACY_BASE:
         _reject("movement gate bootstrap base is invalid")
+    if gate.get("branch_prefix") != BRANCH_PREFIX:
+        _reject("movement gate branch prefix is invalid")
+    if gate.get("attestation_start_marker") != MARKER:
+        _reject("movement gate attestation marker is invalid")
     registry = gate.get("registry")
     if not isinstance(registry, list):
         _reject("movement gate registry is invalid")
@@ -437,12 +457,90 @@ def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
         or len(issues) != len(set(issues))
     ):
         _reject("movement control issues are invalid")
+    receipt_control = _closed_object(
+        gate.get("receipt_control"),
+        allowed_keys={
+            "mode",
+            "live_pr_reread_required",
+            "fresh_exact_head_rerun_required",
+            "fresh_owner_receipts_required",
+            "continuous_currentness",
+        },
+        required_keys={
+            "mode",
+            "live_pr_reread_required",
+            "fresh_exact_head_rerun_required",
+            "fresh_owner_receipts_required",
+            "continuous_currentness",
+        },
+    )
+    if receipt_control != {
+        "mode": "point_in_time",
+        "live_pr_reread_required": True,
+        "fresh_exact_head_rerun_required": True,
+        "fresh_owner_receipts_required": True,
+        "continuous_currentness": False,
+    }:
+        _reject("movement receipt control is invalid")
+    manual = _closed_object(
+        gate.get("manual_integration"),
+        allowed_keys={"issue", "workflow_path", "policy_test_path"},
+        required_keys={"issue", "workflow_path", "policy_test_path"},
+    )
+    if manual != {
+        "issue": 847,
+        "workflow_path": MANUAL_INTEGRATION_WORKFLOW,
+        "policy_test_path": MANUAL_INTEGRATION_POLICY_TEST,
+    }:
+        _reject("movement manual-integration invariant is invalid")
+    for required_path in (MANUAL_INTEGRATION_WORKFLOW, MANUAL_INTEGRATION_POLICY_TEST):
+        if required_path not in registry:
+            _reject("movement registry omits manual-integration invariant")
+    rollback = gate.get("rollback")
+    if gate["enforcement_state"] == "required":
+        if rollback is not None:
+            _reject("required movement gate cannot declare rollback evidence")
+    else:
+        rollback = _closed_object(
+            rollback,
+            allowed_keys={
+                "issue",
+                "rollback_of_issue",
+                "reason",
+                "fresh_owner_receipts_required",
+                "exact_head_checks_required",
+            },
+            required_keys={
+                "issue",
+                "rollback_of_issue",
+                "reason",
+                "fresh_owner_receipts_required",
+                "exact_head_checks_required",
+            },
+        )
+        rollback_issue = _validate_github_identifier(
+            rollback.get("issue"), error="movement rollback issue is invalid"
+        )
+        reason = rollback.get("reason")
+        _bounded_utf8(
+            reason,
+            max_bytes=MAX_ROLLBACK_REASON_BYTES,
+            error="movement rollback reason is invalid",
+        )
+        if not reason or not _is_safe_text(reason):
+            _reject("movement rollback reason is invalid")
+        if (
+            rollback.get("rollback_of_issue") != 846
+            or rollback_issue not in issues[1:]
+            or rollback.get("fresh_owner_receipts_required") is not True
+            or rollback.get("exact_head_checks_required") is not True
+        ):
+            _reject("movement rollback evidence is invalid")
     if base == LEGACY_BASE and (
         set(gate) != allowed
         or gate["enforcement_state"] != "required"
         or gate["program_control_issues"] != [846]
-        or gate["continuous_currentness"] is not False
-        or gate["live_receipt_control"] is not True
+        or gate["rollback"] is not None
     ):
         _reject("legacy bootstrap gate is not canonical")
 
@@ -890,7 +988,14 @@ def derive_scope(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
         previous_issues = baseline_gate.get("program_control_issues", [])
         if not isinstance(previous_issues, list):
             _reject("baseline control issues are invalid")
+        baseline_state = baseline_gate.get("enforcement_state")
+        candidate_state = candidate_gate.get("enforcement_state")
+        if baseline_state == "safety_disabled" and candidate_state != "safety_disabled":
+            _reject("safety-disabled gate cannot return without a new schema")
+        safety_transition = baseline_state == "required" and candidate_state == "safety_disabled"
         mutable_gate_fields = {"registry", "program_control_issues"}
+        if safety_transition:
+            mutable_gate_fields.update({"enforcement_state", "rollback"})
         if any(
             key not in mutable_gate_fields
             and not _same_json(baseline_gate.get(key), candidate_gate.get(key))
@@ -908,6 +1013,20 @@ def derive_scope(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
         type(issue) is not int or issue <= 0 or issue in previous_issues for issue in added_issues
     ):
         _reject("program control issue is invalid")
+    if baseline_gate is not None:
+        baseline_state = baseline_gate.get("enforcement_state")
+        candidate_state = candidate_gate.get("enforcement_state")
+        if baseline_state == "required" and candidate_state == "safety_disabled":
+            rollback = candidate_gate.get("rollback")
+            if (
+                len(added_issues) != 1
+                or not isinstance(rollback, dict)
+                or rollback.get("issue") != added_issues[0]
+                or rollback.get("rollback_of_issue") != 846
+                or rollback.get("fresh_owner_receipts_required") is not True
+                or rollback.get("exact_head_checks_required") is not True
+            ):
+                _reject("safety disable is not bound to one rollback movement")
     root_delivery_same = all(
         key == "movement_gate" or _same_json(baseline.get(key), candidate.get(key))
         for key in set(baseline) | set(candidate)
