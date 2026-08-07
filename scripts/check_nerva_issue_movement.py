@@ -386,6 +386,7 @@ def compute_name_status_diff(
     git: str = "git",
     cwd: Path | None = None,
     popen_factory: Any = subprocess.Popen,
+    timeout_seconds: float = 20,
 ) -> list[tuple[str, str]]:
     """Run the only accepted diff command; arguments are never built from shell text."""
     if not SHA_RE.fullmatch(base) or not SHA_RE.fullmatch(head):
@@ -422,19 +423,20 @@ def compute_name_status_diff(
             _reject("cannot compute repository diff")
         reader = threading.Thread(target=read_stdout, args=(process.stdout,), daemon=True)
         reader.start()
-        reader.join(timeout=20)
-        if reader.is_alive() or oversized.is_set():
+        reader.join(timeout=timeout_seconds)
+        timed_out = reader.is_alive()
+        if timed_out or oversized.is_set():
             process.kill()
-            reader.join(timeout=2)
-            process.wait(timeout=2)
-            _reject("diff read timed out" if reader.is_alive() else "diff exceeds byte limit")
+            reader.join(timeout=timeout_seconds)
+            process.wait(timeout=timeout_seconds)
+            _reject("diff read timed out" if timed_out else "diff exceeds byte limit")
         if reader_error:
             _reject("cannot compute repository diff")
         try:
-            exit_code = process.wait(timeout=2)
+            exit_code = process.wait(timeout=timeout_seconds)
         except subprocess.TimeoutExpired as exc:
             process.kill()
-            process.wait(timeout=2)
+            process.wait(timeout=timeout_seconds)
             raise MovementError("diff read timed out") from exc
         if exit_code != 0:
             _reject("cannot compute repository diff")
@@ -502,7 +504,8 @@ def _fetch_current_snapshot(
     )
     body, draft = current.get("body"), current.get("draft")
     if (
-        current.get("number") != number
+        type(current.get("number")) is not int
+        or current.get("number") != number
         or not isinstance(current_repo, dict)
         or current_repo.get("full_name") != repository
         or not isinstance(current_base, dict)
@@ -787,18 +790,23 @@ def _validate_attestation(
         or data["schema_version"] != 1
         or data["movement_kind"] != scope["kind"]
         or data["repository"] != repository
+        or type(data["pull_request"]) is not int
         or data["pull_request"] != number
         or data["base_sha"] != base
         or data["head_sha"] != head
         or data["manifest_sha256"] != digest
+        or type(data["program_issue"]) is not int
         or data["program_issue"] != 757
+        or type(data["blocker_issue"]) is not int
         or data["blocker_issue"] != 778
         or type(data["implementation_issue"]) is not int
         or data["implementation_issue"] != scope["implementation_issue"]
     ):
         _reject("attestation does not bind movement proof")
     if scope["kind"] == "stream" and (
-        data["stream_id"] != scope["stream_id"] or data["epic_issue"] != scope["epic_issue"]
+        data["stream_id"] != scope["stream_id"]
+        or type(data["epic_issue"]) is not int
+        or data["epic_issue"] != scope["epic_issue"]
     ):
         _reject("attestation stream scope is invalid")
     _require_false(data)
@@ -878,6 +886,7 @@ def _validate_receipt(
         or receipt["repository"] != repository
         or type(receipt["issue"]) is not int
         or receipt["issue"] != issue
+        or type(receipt["pull_request"]) is not int
         or receipt["pull_request"] != number
         or receipt["role"] != role
         or receipt["movement_kind"] != scope["kind"]
@@ -889,7 +898,9 @@ def _validate_receipt(
     ):
         _reject("receipt does not bind movement proof")
     if scope["kind"] == "stream" and (
-        receipt["stream_id"] != scope["stream_id"] or receipt["epic_issue"] != scope["epic_issue"]
+        receipt["stream_id"] != scope["stream_id"]
+        or type(receipt["epic_issue"]) is not int
+        or receipt["epic_issue"] != scope["epic_issue"]
     ):
         _reject("receipt stream scope is invalid")
     _require_false(receipt)
@@ -920,7 +931,8 @@ def _validate_snapshot(
     current_repo = current.get("repository")
     current_base, current_head = current.get("base"), current.get("head")
     if (
-        current.get("number") != number
+        type(current.get("number")) is not int
+        or current.get("number") != number
         or not isinstance(current_repo, dict)
         or current_repo.get("full_name") != event_repository
         or not isinstance(current_base, dict)

@@ -13,6 +13,9 @@ from check_nerva_issue_movement import (
     MARKER,
     MAX_DIFF_BYTES,
     MovementError,
+    _fetch_current_snapshot,
+    _validate_attestation,
+    _validate_receipt,
     classify,
     compute_name_status_diff,
     derive_scope,
@@ -657,3 +660,88 @@ def test_diff_wait_timeout_kills_and_reaps_before_distinct_timeout():
             popen_factory=lambda *_args, **_kwargs: process,
         )
     assert process.killed
+
+
+def test_numeric_cross_bindings_reject_boolean_aliases():
+    event, candidate, candidate_bytes, snapshot = snapshot_proof()
+    scope = derive_scope({}, candidate)
+    digest = hashlib.sha256(candidate_bytes).hexdigest()
+    current = json.loads(json.dumps(snapshot["pull_request"]))
+    current["number"] = True
+    with pytest.raises(MovementError):
+        _fetch_current_snapshot(
+            lambda _key: current,
+            repository=REPOSITORY,
+            number=1,
+            base=BASE,
+            head=HEAD,
+        )
+    attestation_body = snapshot["pull_request"]["body"].replace(
+        '"pull_request":849', '"pull_request":true'
+    )
+    with pytest.raises(MovementError):
+        _validate_attestation(
+            attestation_body,
+            repository=REPOSITORY,
+            number=1,
+            base=BASE,
+            head=HEAD,
+            digest=digest,
+            scope=scope,
+        )
+    receipt_envelope = json.loads(json.dumps(snapshot["comment:1"]))
+    receipt_envelope["body"] = receipt_envelope["body"].replace(
+        '"pull_request":849', '"pull_request":true'
+    )
+    comment = dict(
+        json.loads(json.dumps(snapshot["pull_request"]))["body"]
+        and {"comment_id": 1, "updated_at": "2026-08-07T00:00:00Z"}
+    )
+    comment["comment_body_sha256"] = hashlib.sha256(receipt_envelope["body"].encode()).hexdigest()
+    with pytest.raises(MovementError):
+        _validate_receipt(
+            receipt_envelope,
+            role="program",
+            issue=757,
+            comment=comment,
+            repository=REPOSITORY,
+            number=1,
+            base=BASE,
+            head=HEAD,
+            digest=digest,
+            scope=scope,
+        )
+
+
+def test_blocked_reader_reports_timeout_even_if_kill_unblocks_eof():
+    released = __import__("threading").Event()
+
+    class BlockingStream:
+        def read(self, _size):
+            released.wait()
+            return b""
+
+    class Process:
+        def __init__(self):
+            self.stdout = BlockingStream()
+            self.killed = False
+            self.waits = 0
+
+        def kill(self):
+            self.killed = True
+            released.set()
+
+        def wait(self, timeout):
+            del timeout
+            self.waits += 1
+            return 0
+
+    process = Process()
+    with pytest.raises(MovementError, match="diff read timed out"):
+        compute_name_status_diff(
+            "a" * 40,
+            "b" * 40,
+            popen_factory=lambda *_args, **_kwargs: process,
+            timeout_seconds=0.01,
+        )
+    assert process.killed and process.waits == 1
