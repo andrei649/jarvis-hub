@@ -14,7 +14,32 @@ permissions:
   contents: read
 
 jobs:
+  nerva-movement:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Validate live Nerva movement
+        run: python scripts/check_nerva_issue_movement.py --event "$GITHUB_EVENT_PATH" --manifest docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json --base "$BASE_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+
   test:
+    needs: [nerva-movement]
+    if: always() && (github.event_name != 'pull_request' || needs.nerva-movement.result == 'success')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

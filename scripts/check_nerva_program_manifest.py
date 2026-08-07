@@ -130,6 +130,7 @@ ROOT_FIELDS = {
     "runtime_feedback_edges",
     "known_source_drifts",
     "invariants",
+    "movement_gate",
 }
 SNAPSHOT_FIELDS = {
     "repository",
