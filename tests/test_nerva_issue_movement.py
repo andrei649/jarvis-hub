@@ -11,6 +11,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 import check_nerva_issue_movement as movement
@@ -1713,3 +1714,100 @@ def test_repository_proof_rechecks_head_immediately_before_success(tmp_path):
             proof_runner=move_head,
             manifest_validator=lambda *_args: None,
         )
+
+
+def test_ci_nerva_movement_is_pr_only_exact_head_and_uses_live_checker() -> None:
+    workflow_path = Path(__file__).parents[1] / ".github/workflows/ci.yml"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    workflow = yaml.load(workflow_text, Loader=yaml.BaseLoader)
+
+    assert "pull_request_target" not in workflow_text
+    assert "paths:" not in workflow_text
+    pull_request = workflow["on"]["pull_request"]
+    assert isinstance(pull_request, dict)
+    assert set(pull_request["types"]) == {
+        "opened",
+        "synchronize",
+        "reopened",
+        "edited",
+        "ready_for_review",
+        "converted_to_draft",
+    }
+
+    movement_job = workflow["jobs"]["nerva-movement"]
+    assert movement_job["if"] == "github.event_name == 'pull_request'"
+    assert movement_job["timeout-minutes"] == "10"
+    assert movement_job["permissions"] == {
+        "contents": "read",
+        "issues": "read",
+        "pull-requests": "read",
+    }
+
+    checkout = next(
+        step for step in movement_job["steps"] if "actions/checkout@" in step.get("uses", "")
+    )
+    assert checkout["with"] == {
+        "fetch-depth": "0",
+        "persist-credentials": "false",
+        "ref": "${{ github.event.pull_request.head.sha }}",
+    }
+
+    checker = next(
+        step for step in movement_job["steps"] if step.get("name") == "Validate live Nerva movement"
+    )
+    assert checker["timeout-minutes"] == "5"
+    assert checker["env"] == {
+        "GITHUB_TOKEN": "${{ github.token }}",
+        "NERVA_BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+        "NERVA_HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+    }
+    assert checker["run"].split() == [
+        "python",
+        "scripts/check_nerva_issue_movement.py",
+        "--live",
+        "--event",
+        '"$GITHUB_EVENT_PATH"',
+        "--base",
+        '"$NERVA_BASE_SHA"',
+        "--head",
+        '"$NERVA_HEAD_SHA"',
+        "--root",
+        '"$GITHUB_WORKSPACE"',
+    ]
+    assert "${{" not in checker["run"]
+    assert [step for step in movement_job["steps"] if "GITHUB_TOKEN" in step.get("env", {})] == [
+        checker
+    ]
+
+
+def test_ci_test_matrix_fails_before_setup_when_pr_movement_fails() -> None:
+    workflow_path = Path(__file__).parents[1] / ".github/workflows/ci.yml"
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    test_job = workflow["jobs"]["test"]
+
+    assert test_job["needs"] == ["nerva-movement"]
+    assert test_job["if"] == "always()"
+    assert test_job["strategy"]["matrix"]["os"] == ["ubuntu-latest", "windows-latest"]
+    assert test_job["steps"][0] == {
+        "name": "Require successful Nerva movement on pull requests",
+        "if": "github.event_name == 'pull_request' && needs.nerva-movement.result != 'success'",
+        "run": "exit 1",
+    }
+    assert "uses" not in test_job["steps"][0]
+
+
+def test_ci_movement_permissions_are_read_only_and_runs_are_static() -> None:
+    workflow_path = Path(__file__).parents[1] / ".github/workflows/ci.yml"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    workflow = yaml.load(workflow_text, Loader=yaml.BaseLoader)
+
+    permission_sets = [workflow["permissions"]]
+    permission_sets.extend(
+        job["permissions"] for job in workflow["jobs"].values() if "permissions" in job
+    )
+    assert all(value == "read" for permissions in permission_sets for value in permissions.values())
+
+    movement_runs = [
+        step["run"] for step in workflow["jobs"]["nerva-movement"]["steps"] if "run" in step
+    ]
+    assert all("${{" not in command for command in movement_runs)
