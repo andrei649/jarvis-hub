@@ -15,7 +15,11 @@ against private data.
 
 ## Ground Truth
 
-- Base: `main@4ba1ac26d05c8371ce89d6663a7d7f51457093b6`.
+- Original design base: `main@4ba1ac26d05c8371ce89d6663a7d7f51457093b6`.
+- Rebased acceptance base (2026-08-07):
+  `main@e656e3554c2e7d1d88aee8d7fad91d0b89ff3691` after #843; the post-rebase
+  review input was `bb08303c077da5210ed3263e7777fa6d9a328937` and the final remediation
+  head is bound externally by PR #842 review and CI metadata.
 - Child issue: #841; parent Cortex epic: #759; program: #757; blocker plan: #778.
 - No open pull request, E1.2 issue, or E1.2 remote branch existed when #841 was
   reserved.
@@ -628,7 +632,26 @@ E1.2b remains blocked until the owner provides or approves all five inputs:
 4. retention, access, and deletion policy;
 5. permission to execute the local run on the owner host.
 
-Until this whole-branch HOLD is independently closed, documentation must say
-`design_hold`, `owner_evidence_blocked`, and
-`real_task_outcome_quality=not_measured`. After exact-head code acceptance it may say
-`contract_ready`, while the five owner blockers and release-false state remain.
+The durable repository wording must distinguish publication from capability state:
+an unmerged PR head is `integration_pending`, while the identical accepted code on
+`main` is `contract_ready`. Both states remain `owner_evidence_blocked` with
+`real_task_outcome_quality=not_measured`; neither advances E1, program completion,
+or release readiness.
+
+## Post-rebase integration addendum (2026-08-07)
+
+The rebased exact-head review found two final integration gaps:
+
+1. `_MeasuredStoreBoundary` may validate `BenchmarkStore.root` and then delegate to
+   a caller-owned store whose mutable `suites_dir` points elsewhere. Every delegated
+   operation must instead use a private canonical `BenchmarkStore` constructed from
+   the validated, resolved root. Tests must diverge the caller's derived path for
+   both suite creation and retained-run reads, proving that no outside tree is read
+   or written.
+2. Checked-in documents must not simultaneously claim `design_hold` and
+   `contract_ready`. They must use the durable conditional above: PR publication is
+   `integration_pending`; accepted `main` integration is `contract_ready`; owner
+   evidence and release remain blocked in either case.
+
+No schema, production routing, authority, owner-data execution, or retention-policy
+claim changes in this addendum.

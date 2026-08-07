@@ -1472,8 +1472,11 @@ class _MeasuredStoreBoundary:
     def __init__(self, store: BenchmarkStore) -> None:
         if not isinstance(store, BenchmarkStore):
             raise ValueError("measured store boundary requires a BenchmarkStore")
-        self.store = store
         self.root = _validated_store_root(store.root)
+        # Never delegate through caller-owned derived paths. BenchmarkStore keeps
+        # ``suites_dir`` as mutable convenience state, so a validated ``root`` is
+        # not enough to bind later I/O unless the delegate is rebuilt from it.
+        self.store = BenchmarkStore(self.root)
 
     @staticmethod
     def _require_type(

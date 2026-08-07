@@ -1090,7 +1090,8 @@ def _check_measured_run_batch() -> None:
                 )
             )
         detect.assert_called_once_with(runner_id="owner-local-e1-2a")
-        assert constructed_roots == [(store_root.resolve(),)]
+        assert len(constructed_roots) > 1
+        assert set(constructed_roots) == {(store_root.resolve(),)}
         assert router.classify_calls == 20 * 6
         assert batch.store_root == store_root.resolve()
         assert batch.label_set_fingerprint == label_set.content_fingerprint
@@ -1859,7 +1860,11 @@ def _check_retained_evidence_tamper_matrix() -> None:
             ),
         ):
             with (
-                patch.object(store, "load_suite", return_value=changed_suite),
+                patch.object(
+                    BenchmarkStore,
+                    "load_suite",
+                    return_value=changed_suite,
+                ),
                 pytest.raises(ValueError, match="stored suite"),
             ):
                 _build_report(batch, store, label_set)
@@ -2789,15 +2794,16 @@ def _check_operator_contract_ledgers() -> None:
 
     state = _markdown_section(contract, "State and boundary")
     for value in (
-        "CODE CONTRACT CANDIDATE · WAITING EXACT-HEAD CHECKS",
-        "design_hold",
-        "public PR #842 head",
-        "hosted checks pass",
+        "IMPLEMENTED CONTRACT CANDIDATE · INTEGRATION PENDING",
+        "integration_pending",
+        "accepted onto main",
+        "contract_ready",
         "owner_evidence_blocked",
         "real_task_outcome_quality=not_measured",
         "neither program completion nor release readiness",
     ):
         assert _section_contains(state, value)
+    assert "design_hold" not in state
 
     schema = _markdown_section(contract, "External owner label schema")
     for value in (
@@ -2950,8 +2956,14 @@ def _check_operator_contract_ledgers() -> None:
     ):
         assert _section_contains(e1_2b_task.replace("`", ""), value)
 
-    for path in ("docs/nerva2/M1_DELIVERY.md", "BACKLOG.md"):
+    for path in (
+        "docs/nerva2/M1_DELIVERY.md",
+        "BACKLOG.md",
+        "docs/OWNER_TASKS.md",
+    ):
         ledger = (repository / path).read_text(encoding="utf-8")
+        assert _section_contains(ledger, "accepted on `main`")
+        assert _section_contains(ledger, "integration_pending")
         assert "contract_ready" in ledger
         assert "owner_evidence_blocked" in ledger
         assert "real_task_outcome_quality=not_measured" in ledger
@@ -3626,6 +3638,38 @@ def _special_file_lstat(marked: Path):
 
 
 def _check_exact_store_operation_types() -> None:
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set = _load(_write(directory, _document()))
+        root = directory / "canonical-store"
+        outside = directory / "outside-store"
+        root.mkdir()
+        outside.mkdir()
+        store = BenchmarkStore(root)
+        store.suites_dir = outside
+        suite_name, version, _ = ensure_owner_route_suite(store, label_set)
+        assert version == 1
+        assert (root / "suites" / suite_name / "v1.jsonl").is_file()
+        assert tuple(outside.iterdir()) == ()
+
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        label_set, batch, store, _ = _report_fixture(
+            directory,
+            nonce="divergentstore",
+        )
+        outside = directory / "outside-read-store"
+        outside.mkdir()
+        sentinel = outside / "sentinel.txt"
+        sentinel.write_text("must-remain-unread-and-unchanged", encoding="utf-8")
+        store.suites_dir = outside
+        report = _build_report(batch, store, label_set)
+        assert report.run_fingerprints == batch.run_fingerprints
+        assert sentinel.read_text(encoding="utf-8") == (
+            "must-remain-unread-and-unchanged"
+        )
+        assert tuple(outside.iterdir()) == (sentinel,)
+
     for directory_slot in ("suites", "selected-suite"):
         with TemporaryDirectory() as temporary:
             directory = Path(temporary)

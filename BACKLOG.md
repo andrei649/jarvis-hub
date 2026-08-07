@@ -37,8 +37,9 @@ squash-merged once present on `main`; no item by itself completes a runtime epic
 
 - ✅ E1.0 / #780 / PR #791 — typed shadow `nerva.decision.v1` and `ShadowDecisionRouter`.
 - ✅ E1.1 / #792 — bounded current-router comparison over `nerva.cortex.comparison.v1`.
-- E1.2a / #841 — `contract_ready` owner-local measured primary-route contract;
-  `owner_evidence_blocked` pending the five E1.2b owner inputs, with
+- E1.2a / #841 — an unmerged PR head is `integration_pending`; once accepted on
+  `main`, the owner-local measured primary-route contract is `contract_ready` but
+  remains `owner_evidence_blocked` pending the five E1.2b owner inputs, with
   `real_task_outcome_quality=not_measured`. This does not complete E1, B2 live
   enforcement, the program, or release readiness.
 - ✅ E2.0 / #781 — Atlas identity/provenance and read-only snapshot.

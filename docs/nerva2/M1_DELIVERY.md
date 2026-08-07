@@ -4,6 +4,8 @@ Status date: 2026-08-03
 
 This post-E0 snapshot is additive. The immutable E0 marker blocks in
 `BACKLOG.md` and `STATUS.md` remain historical closure evidence.
+Sections explicitly dated after 2026-08-03 are post-snapshot addenda; they do not
+silently refresh the historical transition or remaining-evidence lists.
 
 ## Accepted
 
@@ -79,14 +81,17 @@ Repository placement determines delivery state. Under the pre-integration rule, 
 - The E0 blocks in `BACKLOG.md` and `STATUS.md` remain immutable historical
   closure evidence; this delivery snapshot carries current post-E0 movement.
 
-## Remaining E1 evidence
+## Post-snapshot E1.2a addendum (2026-08-07)
 
-E1.2a / #841 is `contract_ready`: it validates an owner-local, retained
-primary-route-adequacy contract with one warm-up and five retained runs, but it
-does not supply representative evidence. Its state is `owner_evidence_blocked`
-until the E1.2b owner inputs are supplied, and
+An unmerged E1.2a / #841 candidate is `integration_pending`; once accepted on
+`main`, it is `contract_ready`: an owner-local, retained primary-route-adequacy
+contract with one warm-up and five retained runs. It does not supply representative
+evidence and remains `owner_evidence_blocked` until the E1.2b owner inputs are
+supplied, with
 `real_task_outcome_quality=not_measured`. It leaves E1 `building`, B2 live
 enforcement partial, and program/release completion false.
+
+## Historical remaining E1 evidence (as of 2026-08-03)
 
 - bounded fallback behavior for a future selector;
 - route-level measured cost, latency and outcome quality;
@@ -94,7 +99,7 @@ enforcement partial, and program/release completion false.
   router without safety regression;
 - an independently reviewed selector decision before any production adoption.
 
-## Remaining M1 evidence
+## Historical remaining M1 evidence (as of 2026-08-03)
 
 - independent integration of the E3.0 typed episode/manual-boundary candidate;
 - E8.0 Synapse manifest and conformance evidence;

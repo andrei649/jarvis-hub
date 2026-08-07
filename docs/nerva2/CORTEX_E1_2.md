@@ -5,11 +5,11 @@ E1.1/#792 · E9 store/harness: #784
 
 ## State and boundary
 
-**CODE CONTRACT CANDIDATE · WAITING EXACT-HEAD CHECKS.** The implementation
-remains `design_hold` until the public PR #842 head receives independent review
-and its hosted checks pass; only an accepted main integration may advance it to
-`contract_ready`. It is not representative evidence: `owner_evidence_blocked`
-remains until the E1.2b owner gate is satisfied, and
+**IMPLEMENTED CONTRACT CANDIDATE · INTEGRATION PENDING.** On an unmerged PR
+head, publication remains `integration_pending`; when the identical reviewed code
+is accepted onto main, the durable E1.2a state is `contract_ready`. It is not
+representative evidence: `owner_evidence_blocked` remains until the E1.2b owner
+gate is satisfied, and
 `real_task_outcome_quality=not_measured` is fixed for this slice. E1 remains
 `building`; B2 live enforcement remains partial; neither program completion nor
 release readiness follows from this document.

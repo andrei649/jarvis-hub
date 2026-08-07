@@ -16,7 +16,8 @@
   the label file, E9 suite `vN.jsonl`, `runs.jsonl`, JSON report, and Markdown report; and give
   permission for the local run. `owner_attested=true` is a typed declaration, not proof of consent
   or label correctness; it does not clear this owner gate. Until these five inputs are
-  present, E1.2a is `contract_ready` but `owner_evidence_blocked`, and
+  present, an unmerged E1.2a PR is `integration_pending`; once accepted on `main`,
+  E1.2a is `contract_ready` but remains `owner_evidence_blocked`, and
   `real_task_outcome_quality=not_measured`.
 - [ ] **Run the manual-test runbook on the RTX box** — [`docs/MANUAL_TESTING.md`](MANUAL_TESTING.md),
   full pass incl. §0 sign-off and the ⭐B0 governed-autonomy demo. *This runbook IS the audit

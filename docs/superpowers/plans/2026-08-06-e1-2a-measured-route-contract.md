@@ -10,7 +10,12 @@
 
 ## Global Constraints
 
-- Work only in `nerva2/e1-2a-measured-route-contract` and draft PR #842, based on `main@4ba1ac26d05c8371ce89d6663a7d7f51457093b6`.
+- Work only in `nerva2/e1-2a-measured-route-contract` and draft PR #842. The
+  original design base was `main@4ba1ac26d05c8371ce89d6663a7d7f51457093b6`;
+  the 2026-08-07 acceptance base is
+  `main@e656e3554c2e7d1d88aee8d7fad91d0b89ff3691` after #843, with
+  `bb08303c077da5210ed3263e7777fa6d9a328937` as the post-rebase review input.
+  The final remediation head is bound externally by PR review and CI metadata.
 - Keep the primary checkout and its `docs/qa-runs/2026-07-27-run3.md` state untouched.
 - Refresh the component locks before edits or commits; release them only after the PR is integrated or explicitly parked.
 - Do not modify E1.1, E9.0/E9.1 serialized schemas, the orchestrator, Action
@@ -657,6 +662,21 @@ and latest-commit `git diff --check`, and an exact-head independent functional,
 security, and truth review. Any registry drift that persists, unregistered route,
 99/100 blended report, falsely access-controlled wording, raw topology exception, or
 outside-root I/O is HOLD.
+
+- [ ] **Step 3c: Close the post-rebase store-delegation and truth-state HOLD**
+
+Add RED regressions that mutate a caller-owned `BenchmarkStore.suites_dir` away from
+its validated root during suite creation and report reads. The outside tree must
+remain unread and unchanged; canonical I/O must remain under the validated root.
+Implement the minimum fix by giving `_MeasuredStoreBoundary` a private canonical
+`BenchmarkStore(validated_root)` for every delegated operation.
+
+Replace contradictory `design_hold`/`contract_ready` prose with one durable
+conditional contract: an unmerged candidate is `integration_pending`; the identical
+accepted code on `main` is `contract_ready`; both remain
+`owner_evidence_blocked`, E1 `building`, and release false. Re-run the focused and
+full suites, exact Ruff check, Bandit, compileall, manifest/status/diff checks, and a
+fresh exact-head review before publication.
 
 - [ ] **Step 4: Refresh live GitHub state before publishing**
 
