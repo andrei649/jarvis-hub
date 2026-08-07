@@ -206,6 +206,10 @@ EXPECTED_ELIGIBILITY_DERIVATION = {
 }
 
 LEGACY_MOVEMENT_BASE = "843918848c11bbd3f0099f9504d0e0eaaa56b9d6"
+ACCEPTED_MOVEMENT_BOOTSTRAP_BASE = "e596920ec60f19d2e7f0937819c892746a1c42b2"
+LEGACY_MOVEMENT_MANIFEST_SHA256 = "ab63a42837fb69af901326ffae5052d01c787a913960e2fb6f3bebeaac10ec7f"
+LEGACY_MOVEMENT_VIEW_SHA256 = "e4480f7c37de768ef59d64a542a2ec6c241b89d44ce89fa329a72ff987c1cfdc"
+MOVEMENT_REGISTRY_SEED_SHA256 = "9ab8aadf4c986e6380e8421225e99de5afc585163366ebb53199eecdf58980fb"
 MOVEMENT_BRANCH_PREFIX = "nerva2/"
 MOVEMENT_ATTESTATION_START = "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->"
 MANUAL_INTEGRATION_WORKFLOW = ".github/workflows/pr-auto-merge.yml"
@@ -213,7 +217,7 @@ MANUAL_INTEGRATION_POLICY_TEST = "tests/test_pr_auto_merge_policy.py"
 MOVEMENT_GATE_FIELDS = {
     "schema_version",
     "enforcement_state",
-    "bootstrap_base",
+    "bootstrap",
     "branch_prefix",
     "attestation_start_marker",
     "registry",
@@ -221,6 +225,13 @@ MOVEMENT_GATE_FIELDS = {
     "receipt_control",
     "manual_integration",
     "rollback",
+}
+BOOTSTRAP_FIELDS = {
+    "source_sha",
+    "accepted_base_sha",
+    "legacy_manifest_sha256",
+    "legacy_manifest_view_sha256",
+    "registry_seed_sha256",
 }
 RECEIPT_CONTROL_FIELDS = {
     "mode",
@@ -911,8 +922,21 @@ def _validate_movement_gate(
     state = data.get("enforcement_state")
     if state not in {"required", "safety_disabled"}:
         errors.append("movement_gate.enforcement_state must be required or safety_disabled")
-    if data.get("bootstrap_base") != LEGACY_MOVEMENT_BASE:
-        errors.append("movement_gate.bootstrap_base must match the exact legacy bootstrap")
+    bootstrap = data.get("bootstrap")
+    errors.extend(_field_errors(bootstrap, BOOTSTRAP_FIELDS, "movement_gate.bootstrap"))
+    if isinstance(bootstrap, dict):
+        expected_bootstrap = {
+            "source_sha": LEGACY_MOVEMENT_BASE,
+            "accepted_base_sha": ACCEPTED_MOVEMENT_BOOTSTRAP_BASE,
+            "legacy_manifest_sha256": LEGACY_MOVEMENT_MANIFEST_SHA256,
+            "legacy_manifest_view_sha256": LEGACY_MOVEMENT_VIEW_SHA256,
+            "registry_seed_sha256": MOVEMENT_REGISTRY_SEED_SHA256,
+        }
+        for field, expected in expected_bootstrap.items():
+            if bootstrap.get(field) != expected:
+                errors.append(
+                    f"movement_gate.bootstrap.{field} must match pinned bootstrap provenance"
+                )
     if data.get("branch_prefix") != MOVEMENT_BRANCH_PREFIX:
         errors.append("movement_gate.branch_prefix must be 'nerva2/'")
     if data.get("attestation_start_marker") != MOVEMENT_ATTESTATION_START:
@@ -1770,6 +1794,7 @@ def render_markdown(data: dict[str, Any]) -> str:
 
     snapshot = data["evidence_snapshot"]
     gate = data["movement_gate"]
+    bootstrap = gate["bootstrap"]
     receipt = gate["receipt_control"]
     manual = gate["manual_integration"]
     control_issues = ", ".join(_issue_link(issue) for issue in gate["program_control_issues"])
@@ -1794,7 +1819,13 @@ def render_markdown(data: dict[str, Any]) -> str:
         "",
         f"- Schema version: `{gate['schema_version']}`",
         f"- Enforcement state: `{gate['enforcement_state']}`",
-        f"- Historical bootstrap base: `{gate['bootstrap_base']}`",
+        f"- Historical bootstrap source: `{bootstrap['source_sha']}`",
+        f"- Accepted implementation base: `{bootstrap['accepted_base_sha']}`",
+        (
+            "- Gate-less bootstrap proof pins unchanged legacy manifest/view bytes: "
+            f"`{bootstrap['legacy_manifest_sha256']}` / "
+            f"`{bootstrap['legacy_manifest_view_sha256']}`."
+        ),
         f"- Program-control issues: {control_issues}",
         f"- Receipt proof mode: `{receipt['mode']}`; continuous currentness: `false`",
         "- The live pull request must be reread and the unchanged exact head rerun before integration.",

@@ -71,7 +71,19 @@ def _movement_gate() -> dict:
     return {
         "schema_version": 1,
         "enforcement_state": "required",
-        "bootstrap_base": "843918848c11bbd3f0099f9504d0e0eaaa56b9d6",
+        "bootstrap": {
+            "source_sha": "843918848c11bbd3f0099f9504d0e0eaaa56b9d6",
+            "accepted_base_sha": "e596920ec60f19d2e7f0937819c892746a1c42b2",
+            "legacy_manifest_sha256": (
+                "ab63a42837fb69af901326ffae5052d01c787a913960e2fb6f3bebeaac10ec7f"
+            ),
+            "legacy_manifest_view_sha256": (
+                "e4480f7c37de768ef59d64a542a2ec6c241b89d44ce89fa329a72ff987c1cfdc"
+            ),
+            "registry_seed_sha256": (
+                "9ab8aadf4c986e6380e8421225e99de5afc585163366ebb53199eecdf58980fb"
+            ),
+        },
         "branch_prefix": "nerva2/",
         "attestation_start_marker": "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->",
         "registry": [
@@ -194,7 +206,7 @@ def test_canonical_movement_gate_is_closed_world_point_in_time_and_operationally
     assert set(gate) == {
         "schema_version",
         "enforcement_state",
-        "bootstrap_base",
+        "bootstrap",
         "branch_prefix",
         "attestation_start_marker",
         "registry",
@@ -205,7 +217,7 @@ def test_canonical_movement_gate_is_closed_world_point_in_time_and_operationally
     }
     assert gate["schema_version"] == 1
     assert gate["enforcement_state"] == "required"
-    assert gate["bootstrap_base"] == "843918848c11bbd3f0099f9504d0e0eaaa56b9d6"
+    assert gate["bootstrap"] == _movement_gate()["bootstrap"]
     assert gate["branch_prefix"] == "nerva2/"
     assert gate["attestation_start_marker"] == "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->"
     assert gate["program_control_issues"] == [846]
@@ -230,6 +242,25 @@ def test_canonical_movement_gate_is_closed_world_point_in_time_and_operationally
     assert data["authority"]["release_ready"] is False
     assert _stream(data, "E1")["program_status"] == "building"
     assert _stream(data, "E8")["program_status"] == "building"
+
+
+def test_bootstrap_provenance_pins_historical_source_accepted_base_and_legacy_bytes() -> None:
+    gate = _manifest()["movement_gate"]
+
+    assert "bootstrap_base" not in gate
+    assert gate["bootstrap"] == {
+        "source_sha": "843918848c11bbd3f0099f9504d0e0eaaa56b9d6",
+        "accepted_base_sha": "e596920ec60f19d2e7f0937819c892746a1c42b2",
+        "legacy_manifest_sha256": (
+            "ab63a42837fb69af901326ffae5052d01c787a913960e2fb6f3bebeaac10ec7f"
+        ),
+        "legacy_manifest_view_sha256": (
+            "e4480f7c37de768ef59d64a542a2ec6c241b89d44ce89fa329a72ff987c1cfdc"
+        ),
+        "registry_seed_sha256": (
+            "9ab8aadf4c986e6380e8421225e99de5afc585163366ebb53199eecdf58980fb"
+        ),
+    }
 
 
 def test_movement_registry_contains_every_b2_candidate_and_manual_guard_path() -> None:

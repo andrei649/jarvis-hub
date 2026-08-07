@@ -13,7 +13,13 @@
   "movement_gate": {
     "schema_version": 1,
     "enforcement_state": "required",
-    "bootstrap_base": "843918848c11bbd3f0099f9504d0e0eaaa56b9d6",
+    "bootstrap": {
+      "source_sha": "843918848c11bbd3f0099f9504d0e0eaaa56b9d6",
+      "accepted_base_sha": "e596920ec60f19d2e7f0937819c892746a1c42b2",
+      "legacy_manifest_sha256": "ab63a42837fb69af901326ffae5052d01c787a913960e2fb6f3bebeaac10ec7f",
+      "legacy_manifest_view_sha256": "e4480f7c37de768ef59d64a542a2ec6c241b89d44ce89fa329a72ff987c1cfdc",
+      "registry_seed_sha256": "9ab8aadf4c986e6380e8421225e99de5afc585163366ebb53199eecdf58980fb"
+    },
     "branch_prefix": "nerva2/",
     "attestation_start_marker": "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->",
     "registry": [
