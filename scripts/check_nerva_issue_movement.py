@@ -10,6 +10,7 @@ from __future__ import annotations
 # The gate contract requires a fixed-argument Git diff subprocess.
 import argparse
 import json
+import math
 import re
 import subprocess  # nosec B404
 import sys
@@ -41,6 +42,7 @@ REGISTERED = frozenset(
         "tests/test_nerva_program_manifest.py",
     }
 )
+BOOTSTRAP_REGISTRY = tuple(sorted(REGISTERED))
 
 
 class MovementError(ValueError):
@@ -65,7 +67,11 @@ def _validate_json_tree(
     item_count[0] += 1
     if item_count[0] > max_items:
         _reject("JSON item count exceeds limit")
-    if value is None or type(value) in {bool, int, float}:
+    if value is None or type(value) in {bool, int}:
+        return
+    if type(value) is float:
+        if not math.isfinite(value):
+            _reject("JSON has non-finite number")
         return
     if isinstance(value, str):
         if not _is_safe_text(value):
@@ -135,9 +141,18 @@ def strict_json(
 
     try:
         value = json.loads(text, object_pairs_hook=pairs_hook, parse_constant=reject_constant)
-    except (json.JSONDecodeError, UnicodeError) as exc:
+    except (json.JSONDecodeError, RecursionError, UnicodeError) as exc:
         raise MovementError("JSON is malformed") from exc
-    _validate_json_tree(value, depth=0, item_count=[0], max_depth=max_depth, max_items=max_items)
+    try:
+        _validate_json_tree(
+            value,
+            depth=0,
+            item_count=[0],
+            max_depth=max_depth,
+            max_items=max_items,
+        )
+    except RecursionError as exc:
+        raise MovementError("JSON nesting exceeds limit") from exc
     return value
 
 
@@ -210,18 +225,16 @@ def parse_diff(
     if not raw.endswith(b"\0"):
         _reject("diff is not NUL terminated")
     records = raw[:-1].split(b"\0")
-    if len(records) > max_records:
+    if len(records) % 2 or len(records) // 2 > max_records:
         _reject("diff has too many records")
     seen_casefolded: set[str] = set()
     parsed: list[tuple[str, str]] = []
-    for record in records:
-        if not record:
-            _reject("diff has empty record")
-        fields = record.split(b"\t", 1)
-        if len(fields) != 2 or fields[0] not in {b"A", b"M", b"D"}:
+    for index in range(0, len(records), 2):
+        status, encoded_path = records[index : index + 2]
+        if status not in {b"A", b"M", b"D"} or not encoded_path:
             _reject("diff status is invalid")
         try:
-            path = fields[1].decode("utf-8", "strict")
+            path = encoded_path.decode("utf-8", "strict")
         except UnicodeDecodeError as exc:
             raise MovementError("diff path is not valid UTF-8") from exc
         _validate_repo_path(path)
@@ -229,7 +242,7 @@ def parse_diff(
         if folded in seen_casefolded:
             _reject("diff has case-colliding path")
         seen_casefolded.add(folded)
-        parsed.append((fields[0].decode("ascii"), path))
+        parsed.append((status.decode("ascii"), path))
     return parsed
 
 
@@ -245,6 +258,10 @@ def _validate_registry(registry: Iterable[str]) -> list[str]:
         _reject("registry entry must be text")
     for entry in entries:
         _validate_repo_path(entry, prefix_allowed=True)
+        if any(character in entry for character in "*?[]{}"):
+            _reject("registry entry contains wildcard")
+        if entry.endswith("/") and len(entry.rstrip("/").split("/")) < 2:
+            _reject("registry prefix is too broad")
     if entries != sorted(entries) or len(entries) != len(set(entries)):
         _reject("registry must be sorted and unique")
     folded = [entry.casefold() for entry in entries]
@@ -311,7 +328,6 @@ def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
             return
         _reject("movement gate is required")
     allowed = {
-        "schema",
         "schema_version",
         "enforcement_state",
         "bootstrap_base",
@@ -321,8 +337,7 @@ def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
         "live_receipt_control",
     }
     gate = _closed_object(gate, allowed_keys=allowed)
-    schema_valid = gate.get("schema") == "nerva.movement-gate.v1" or gate.get("schema_version") == 1
-    if not schema_valid:
+    if type(gate.get("schema_version")) is not int or gate["schema_version"] != 1:
         _reject("movement gate schema is invalid")
     if gate.get("enforcement_state") not in {"required", "safety_disabled"}:
         _reject("movement gate enforcement state is invalid")
@@ -332,6 +347,8 @@ def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
     if not isinstance(registry, list):
         _reject("movement gate registry is invalid")
     _validate_registry(registry)
+    if base == LEGACY_BASE and tuple(registry) != BOOTSTRAP_REGISTRY:
+        _reject("legacy bootstrap registry does not match pinned seed")
     issues = gate.get("program_control_issues")
     if not isinstance(issues, list) or any(
         type(issue) is not int or issue <= 0 for issue in issues
@@ -340,44 +357,120 @@ def validate_manifest_gate(manifest: Mapping[str, Any], base: str) -> None:
 
 
 def compute_name_status_diff(
-    base: str, head: str, *, git: str = "git", cwd: Path | None = None
+    base: str,
+    head: str,
+    *,
+    git: str = "git",
+    cwd: Path | None = None,
+    popen_factory: Any = subprocess.Popen,
 ) -> list[tuple[str, str]]:
     """Run the only accepted diff command; arguments are never built from shell text."""
     if not SHA_RE.fullmatch(base) or not SHA_RE.fullmatch(head):
         _reject("diff commit is invalid")
     try:
-        completed = subprocess.run(  # nosec B603
+        process = popen_factory(
             [git, "diff", "--name-status", "--no-renames", "-z", base, head, "--"],
-            check=True,
             shell=False,
             cwd=cwd,
             env={"PATH": str(Path(git).parent) if Path(git).parent != Path(".") else ""},
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            timeout=20,
         )
-    except (OSError, subprocess.SubprocessError) as exc:
+        if process.stdout is None:
+            _reject("cannot compute repository diff")
+        raw = process.stdout.read(MAX_DIFF_BYTES + 1)
+        if len(raw) > MAX_DIFF_BYTES:
+            process.kill()
+            _reject("diff exceeds byte limit")
+        if process.wait(timeout=20) != 0:
+            _reject("cannot compute repository diff")
+    except (AttributeError, OSError, subprocess.SubprocessError) as exc:
         raise MovementError("cannot compute repository diff") from exc
-    return parse_diff(completed.stdout)
+    return parse_diff(raw)
+
+
+def _event_context(event: Any) -> tuple[str, str, str, str]:
+    if not isinstance(event, dict):
+        _reject("event must be an object")
+    pull_request = event.get("pull_request")
+    if not isinstance(pull_request, dict):
+        _reject("event pull request is invalid")
+    base = pull_request.get("base")
+    head = pull_request.get("head")
+    if not isinstance(base, dict) or not isinstance(head, dict):
+        _reject("event pull request refs are invalid")
+    base_sha, head_sha, branch = base.get("sha"), head.get("sha"), head.get("ref")
+    body = pull_request.get("body")
+    if body is None:
+        body = ""
+    if (
+        not all(isinstance(value, str) for value in (base_sha, head_sha, branch, body))
+        or not SHA_RE.fullmatch(base_sha)
+        or not SHA_RE.fullmatch(head_sha)
+        or not _is_safe_text(branch)
+    ):
+        _reject("event pull request values are invalid")
+    return base_sha, head_sha, branch, body
+
+
+def run_pure_proof(
+    *,
+    event: Any,
+    baseline_manifest: Any,
+    candidate_manifest: Any,
+    base: str,
+    head: str,
+    diff: bytes,
+) -> bool:
+    """Bind event, manifests and complete diff before returning a classification."""
+    if not SHA_RE.fullmatch(base) or not SHA_RE.fullmatch(head):
+        _reject("requested commit is invalid")
+    event_base, event_head, branch, body = _event_context(event)
+    if event_base != base or event_head != head:
+        _reject("event commits do not match requested commits")
+    if not isinstance(baseline_manifest, dict) or not isinstance(candidate_manifest, dict):
+        _reject("manifest must be an object")
+    validate_manifest_gate(baseline_manifest, base)
+    validate_manifest_gate(candidate_manifest, base)
+    records = parse_diff(diff)
+    paths = [path for _, path in records]
+    baseline_gate = baseline_manifest.get("movement_gate")
+    candidate_gate = candidate_manifest["movement_gate"]
+    baseline_registry = [] if baseline_gate is None else baseline_gate["registry"]
+    candidate_registry = candidate_gate["registry"]
+    if base != LEGACY_BASE:
+        validate_registry_evolution(
+            baseline_registry,
+            candidate_registry,
+            {path for status, path in records if status == "A"},
+        )
+    return classify(
+        branch,
+        body,
+        paths,
+        baseline_registry=baseline_registry,
+        candidate_registry=candidate_registry,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--event", type=Path, required=True)
+    parser.add_argument("--baseline-manifest", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--base", required=True)
-    parser.add_argument("--diff", type=Path)
+    parser.add_argument("--head", required=True)
+    parser.add_argument("--diff", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        event = strict_json(args.event.read_bytes())
-        if not isinstance(event, dict):
-            _reject("event must be an object")
-        manifest = strict_json(args.manifest.read_bytes())
-        if not isinstance(manifest, dict):
-            _reject("manifest must be an object")
-        validate_manifest_gate(manifest, args.base)
-        if args.diff:
-            parse_diff(args.diff.read_bytes())
+        run_pure_proof(
+            event=strict_json(args.event.read_bytes()),
+            baseline_manifest=strict_json(args.baseline_manifest.read_bytes()),
+            candidate_manifest=strict_json(args.manifest.read_bytes()),
+            base=args.base,
+            head=args.head,
+            diff=args.diff.read_bytes(),
+        )
     except (MovementError, OSError) as exc:
         print(f"movement gate rejected: {exc}", file=sys.stderr)
         return 1
