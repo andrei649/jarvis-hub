@@ -4,8 +4,9 @@
 
 **Issue:** #844 (child of #804; epic #766)
 
-**Status:** Accepted working design for an evidence-only preflight. No Hermes
-runtime, dependency, adapter, registration, route, credentials or authority.
+**Status:** Candidate working design pending independent exact-head acceptance.
+No Hermes runtime, dependency, adapter, registration, route, credentials or
+authority.
 
 ## 1. Goal
 
@@ -47,15 +48,21 @@ The artifact records:
 1. **snapshot identity** — observation time, #844/#804/#766 relationships and
    non-release state;
 2. **upstream identity** — repository, release tag, commit, tree, tag object and
-   exact source blobs/content digests;
-3. **distribution boundary** — source package identity, PyPI channel state and
-   the exact console-script mapping found in the pinned `pyproject.toml`;
-4. **invocation decision** — a future out-of-process console entrypoint is the
-   only candidate; direct internal imports remain rejected/unverified;
+   exact source blobs/content digests, plus a time-bounded comparison showing
+   that `main` had moved 300 commits beyond the immutable pin;
+3. **distribution boundary** — source package identity, the divergent PyPI
+   channel, the exact Docker Hub OCI index and build-provenance metadata, plus
+   console-script mappings from the pinned `pyproject.toml`;
+4. **invocation decision** — `hermes-agent = run_agent:main` is rejected; only
+   `hermes -z/--oneshot` inside the immutable OCI digest remains a future
+   out-of-process candidate, with `HERMES_SAFE_MODE=1` set before process start
+   and never treated as a currently accepted seam;
 5. **side-effect inventory** — statically observed startup/import surfaces,
-   explicitly separated from executed observations;
+   including the container's default root/dispatcher/stage2 path and narrower
+   privilege-drop shim, explicitly separated from executed observations;
 6. **supply chain** — direct requirements, range/pin policy, optional groups,
-   transitive-license/CVE/SBOM evidence and fail-closed unknowns;
+   exact OSV lock-version findings, restrictive bundled-license evidence,
+   provenance/SBOM evidence and fail-closed unknowns;
 7. **compatibility/isolation plan** — an unexecuted fixture and the minimum
    subprocess envelope a later package would need;
 8. **E9 plan** — dimensions and negative cases remain `not_measured`;
@@ -69,23 +76,57 @@ rejectable. Generated Markdown gives reviewers an inspectable, deterministic
 view without maintaining a second source of truth. The artifact is a
 time-bounded evidence snapshot, not a live network health claim.
 
-### Why the console boundary is only a candidate
+### Why the container/one-shot boundary is only a candidate
 
-E8.1a found no stable public Python API. Internal imports would couple Nerva to
-unversioned module initialization and registration behavior. A console script
-provides a narrower process boundary and a complete native rollback path, but
-its actual startup, cancellation, I/O, network, filesystem and retention
-behavior remains untested here. The preflight therefore records
-`candidate_not_executed`, never `compatible` or `approved`.
+E8.1a found no stable public Python API. Static inspection also shows that the
+`hermes-agent` console mapping points directly at a large, human-oriented
+`run_agent.main` graph with no typed result envelope, so it is not the selected
+surface. The narrower `hermes -z` path has useful exit/text framing, but it
+auto-bypasses approvals, reads environment/CWD context before or during startup,
+discovers tools/MCP, opens state and offers no proven zero-tool mode. Even its
+`safe` toolset remains network-capable. The pinned parser exposes the
+`--safe-mode` CLI option only under interactive chat, not top-level one-shot;
+the future child must set `HERMES_SAFE_MODE=1` before import instead. That
+environment flag still does not suppress one-shot config, rules or memory, so
+empty disposable CWD and HERMES_HOME boundaries remain mandatory.
+
+The only distribution matching the pinned 0.20.0 source is the upstream release
+OCI index; PyPI still exposes 0.19.0 and the pinned source blocks ordinary
+wheel/sdist builds. Binding the OCI digest creates a narrower process boundary
+and complete native rollback path, but the image was not pulled or executed.
+Registry manifest/config/provenance metadata payloads were inspected: they bind
+the pinned platform digests and release run, while containing no signature,
+reporting incomplete BuildKit materials, exposing zero referrers and no SBOM.
+Their authenticity was not independently verified. The published image also
+defaults to root, dispatches through `/init`/s6 and runs a root stage2 hook that
+creates, chowns, seeds and migrates `/opt/data` state. A later fixture would
+have to override the entrypoint with `/opt/hermes/bin/hermes`, run as
+`10000:10000`, bypass dispatcher/stage2, and provide a fresh writable
+`/opt/data` mount owned by that identity (for example tmpfs
+`uid=10000,gid=10000,mode=0700`). Even that narrower path is unexecuted.
+Startup, cancellation, I/O, network, filesystem, credentials and retention
+therefore remain untested. The preflight records `candidate_not_executed`,
+never `compatible` or `approved`.
+
+The root repository license is MIT, but the exact pinned tree contains four
+productivity skill subtrees (`docx`, `pdf`, `powerpoint`, `xlsx`) with separate
+restrictive Anthropic terms. The lock provides no license assignments, so use
+and redistribution compatibility is unresolved pending owner/legal acceptance.
+The time-bounded OSV query found six alias-deduplicated CVE groups on locked
+`aiohttp 3.14.1` and `cryptography 48.0.1`; conflicting advisory ranges remain
+fail-closed and are not represented as an exploitability determination.
 
 ## 4. Validation contract
 
 The checker must fail closed on:
 
-- duplicate JSON keys, non-finite numbers, excessive nesting and hostile types;
+- duplicate JSON keys, non-finite numbers, oversized input, excessive nesting
+  and hostile types;
 - unknown fields, missing required fields or non-canonical identifiers;
 - moving refs (`main`, branches, tag-only fetches) used as the evidence pin;
 - inconsistent tag/commit/tree/blob/content-digest relationships;
+- a mutable container tag, substituted OCI index/platform manifest or build run
+  that is not bound to the pinned commit;
 - a console-script mapping that differs from the pinned source evidence;
 - observations without source URL, immutable identity, timestamp or method;
 - inferred/imported/executed claims presented as static inspection;
@@ -97,9 +138,13 @@ The checker must fail closed on:
 - Markdown drift from the canonical JSON.
 
 The checker also verifies repository-local guardrails: no `hermes-agent`
-dependency or manifest enrolment exists while the snapshot says those gates are
-open. Those guards are deliberately expected to require an explicit evidence
-update before a future integration package can land.
+dependency exists in the nine canonical declarative Python manifests and no
+entry exists in either third-party-manifest array while the snapshot says those
+gates are open. The bounded branch diff, not those scans, establishes that this
+package changes no executable/runtime file. The prior
+`agents/core/skills/hermes_pin_v1.json` exact-fetch inventory remains evidence,
+not dependency or updater enrolment. These guards deliberately require an
+explicit evidence update before a future integration package can land.
 
 ## 5. Evidence semantics
 

@@ -21,10 +21,15 @@ artifact or checker.
    exact-commit files.
 2. Query authoritative PyPI project/release metadata without downloading or
    installing artifacts.
-3. Record timestamps, exact identifiers, content digests and query limitations.
-4. Inventory direct requirements and statically visible startup/import effects.
-5. Leave transitive license/CVE/SBOM/runtime facts unresolved unless primary
-   evidence actually closes them.
+3. Query the Docker Registry manifest endpoint and exact upstream release run
+   and provenance metadata without pulling or executing the OCI image/layers;
+   keep signature, referrer, materials-completeness and SBOM states explicit.
+4. Record timestamps, exact identifiers, content digests and query limitations.
+5. Inventory direct requirements, exact lock versions, bundled license files
+   and statically visible startup/import/container effects.
+6. Record time-bounded OSV groups and exact restrictive bundled-license paths,
+   while leaving transitive license/CVE/SBOM/runtime closure unresolved unless
+   primary evidence actually closes it.
 
 ### Task 2: Write failing contract tests
 
@@ -36,6 +41,8 @@ artifact or checker.
 3. Add hostile mutations for moving refs, substituted source identities,
    promoted unknowns, boolean aliases and readiness claims.
 4. Add deterministic Markdown and safe CLI/output tests.
+5. Add strict size/depth/duplicate-key tests and repository dependency/manifest
+   injection guards.
 
 Run:
 

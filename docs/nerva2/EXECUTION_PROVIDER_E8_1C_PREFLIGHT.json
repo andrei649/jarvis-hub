@@ -1,0 +1,748 @@
+{
+  "schema_version": 1,
+  "record_id": "nerva.e8.1c.hermes-preflight.v1",
+  "status": {
+    "observed_at_utc": "2026-08-06T17:17:01Z",
+    "evidence_status": "preflight_evidence_only",
+    "adapter_status": "blocked",
+    "program_status": "building",
+    "release_ready": false,
+    "issue": 844,
+    "parent_issue": 804,
+    "epic_issue": 766
+  },
+  "method": {
+    "network_scope": "read_only_metadata_and_source",
+    "primary_sources_only": true,
+    "upstream_imported": false,
+    "upstream_executed": false,
+    "package_or_image_artifact_downloaded": false,
+    "package_installed": false,
+    "sources": [
+      "github_api",
+      "github_exact_commit_raw",
+      "pypi_json_api",
+      "docker_registry_v2_api",
+      "osv_querybatch_api"
+    ],
+    "limitations": [
+      "Static source inspection does not prove runtime behavior, compatibility, containment, privacy, reliability or safety.",
+      "The transitive import graph and configuration-dependent lazy installation paths were not exhaustively inspected.",
+      "No image layer or PyPI artifact was pulled or executed; only registry manifest, config and provenance metadata payloads were fetched, and their authenticity was not independently verified.",
+      "The upstream workflow tests one build and rebuilds the pushed images, so a successful workflow does not prove that the exact published bytes were the bytes tested.",
+      "PyPI exposes 0.19.0, not the selected 0.20.0 source revision, and cannot be used as the exact distribution route.",
+      "Vulnerability queries are a time-bounded advisory snapshot, not a complete direct, transitive, OS-package, npm-package or container-layer assessment.",
+      "The root MIT license does not establish transitive or bundled-content license closure.",
+      "Repository guards inspect the nine canonical declarative Python dependency manifests and the third-party manifest only; absence of runtime or executable changes is established by this bounded branch diff, not by those dependency scans.",
+      "The existing agents/core/skills/hermes_pin_v1.json is a prior non-executable exact-fetch evidence inventory and is intentionally not classified as dependency or updater enrolment.",
+      "Windows and Linux behavior, process-tree cancellation, output framing, state retention and credential exposure remain unexecuted and unknown."
+    ]
+  },
+  "upstream": {
+    "repository": "NousResearch/hermes-agent",
+    "release_tag": "v2026.8.3",
+    "tag_object_sha": "7de39e700d2c329e15d32eb0b96e2f7cdd9fbdb2",
+    "tag_target_sha": "3c27eb6234bf91b8ceee9e9071591b31e9b148cb",
+    "tag_verification": "valid_ssh_metadata",
+    "commit_sha": "3c27eb6234bf91b8ceee9e9071591b31e9b148cb",
+    "commit_verification": "unsigned",
+    "tree_sha": "b217767ccb994605dad522e693fa1b4cdbc2f352",
+    "release_url": "https://github.com/NousResearch/hermes-agent/releases/tag/v2026.8.3",
+    "default_branch_comparison": {
+      "observed_at_utc": "2026-08-06T23:40:22Z",
+      "ref": "main",
+      "ahead_by": 300,
+      "behind_by": 0,
+      "status": "ahead",
+      "evidence_state": "recorded_metadata"
+    },
+    "source_files": [
+      {
+        "path": ".github/workflows/docker.yml",
+        "blob_sha": "7e47b1db693b68d8b4c68f1d5611c3055c365543",
+        "sha256": "c32901e3327877c14eb57cd9a5d7c4c56a95a5587c09de6aa42d6008d93d2ecc",
+        "size": 11839,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/.github/workflows/docker.yml",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "Dockerfile",
+        "blob_sha": "2de6192715ed9a839c257b1f34f98d0832797159",
+        "sha256": "a11fc9fc39eadcaffd99377d831b5ec2458f1e09a5f5d5312fd8adcec362b7fc",
+        "size": 25687,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/Dockerfile",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "docker/entrypoint-dispatch.sh",
+        "blob_sha": "927ed032f6d821e5bc9d047aed10e37f125d5a6a",
+        "sha256": "d6f8e569fd2bfbf8d1f45619243681b9a1390c5bd3c9c584532692893b1d4fcd",
+        "size": 1123,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/docker/entrypoint-dispatch.sh",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "docker/hermes-exec-shim.sh",
+        "blob_sha": "7f4c5c3c0a0e9216b262e6ecf7b96cf868f0a4ce",
+        "sha256": "57637e73c8db76aa84a38e4a2edb1b155bfd86a2e89a8d4c38c4546ee1175985",
+        "size": 3711,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/docker/hermes-exec-shim.sh",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "docker/stage2-hook.sh",
+        "blob_sha": "899c8e86ac989735a27d67cb3b11df88762bbb9b",
+        "sha256": "942cc3c8c9df4168c58c30dc961b43e322c6d3cfb007e1a56f2c9ede48c710a7",
+        "size": 28558,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/docker/stage2-hook.sh",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "LICENSE",
+        "blob_sha": "75410e73319c72cd3e991a501c5455eb78f38375",
+        "sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6",
+        "size": 1070,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/LICENSE",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "skills/productivity/docx/LICENSE.txt",
+        "blob_sha": "c55ab42224874608473643de0a85736b7fec0730",
+        "sha256": "79f6d8f5b427252fa3b1c11ecdbdb6bf610b944f7530b4de78f770f38741cfaa",
+        "size": 1467,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/skills/productivity/docx/LICENSE.txt",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "skills/productivity/pdf/LICENSE.txt",
+        "blob_sha": "c55ab42224874608473643de0a85736b7fec0730",
+        "sha256": "79f6d8f5b427252fa3b1c11ecdbdb6bf610b944f7530b4de78f770f38741cfaa",
+        "size": 1467,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/skills/productivity/pdf/LICENSE.txt",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "skills/productivity/powerpoint/LICENSE.txt",
+        "blob_sha": "c55ab42224874608473643de0a85736b7fec0730",
+        "sha256": "79f6d8f5b427252fa3b1c11ecdbdb6bf610b944f7530b4de78f770f38741cfaa",
+        "size": 1467,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/skills/productivity/powerpoint/LICENSE.txt",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "skills/productivity/xlsx/LICENSE.txt",
+        "blob_sha": "c55ab42224874608473643de0a85736b7fec0730",
+        "sha256": "79f6d8f5b427252fa3b1c11ecdbdb6bf610b944f7530b4de78f770f38741cfaa",
+        "size": 1467,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/skills/productivity/xlsx/LICENSE.txt",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "hermes_bootstrap.py",
+        "blob_sha": "c0622bb0d96162b825be102896e4c01af6eb5062",
+        "sha256": "225112594c045e57b9413c3054948da865febeba589c0c4d1b5c9c1bda0b5d28",
+        "size": 10514,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/hermes_bootstrap.py",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "hermes_cli/_early_recovery.py",
+        "blob_sha": "7a19167eca04bcd3755fac521fead07529f5e4ef",
+        "sha256": "3215692e4d5e1ab9bf255fd25c5c35f82afe6525bb430c50f9de10e4ad1a7ff4",
+        "size": 10716,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/hermes_cli/_early_recovery.py",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "hermes_cli/_parser.py",
+        "blob_sha": "b5098f6c98d6891d090db73a66d03d3ac6c51ff7",
+        "sha256": "30621be86ee4d30322e106b318b211c7a7ffe1f271688436849a4b80bb3f4d2c",
+        "size": 17625,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/hermes_cli/_parser.py",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "hermes_cli/main.py",
+        "blob_sha": "cd9966cf8cff6b3a93d5a24d61b2a84a9b7d49d8",
+        "sha256": "f27fcee078bc3696d4c37fa98d04972e214d53b01bd6075f12e988ef69d6c241",
+        "size": 504355,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/hermes_cli/main.py",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "hermes_cli/oneshot.py",
+        "blob_sha": "f13fe64029d5cde2acab4584968275a62fa1319a",
+        "sha256": "dab3aea137b5c8f19c0835c7393a729ff982f16c18ded3e155aa549fc087e8c2",
+        "size": 21819,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/hermes_cli/oneshot.py",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "pyproject.toml",
+        "blob_sha": "b9578f3fc53e701c2c9966d7aa5b7eeae574a2db",
+        "sha256": "64d1085ee1c23caf0ae0d9e65c73e280f466362ed43fdda1531f18f3af1d9869",
+        "size": 23044,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/pyproject.toml",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "run_agent.py",
+        "blob_sha": "e2bc5f8660bd6bfd101175cf55131a7c9e253a31",
+        "sha256": "7d22f38b5eac3b2951fa28aec5b2b06ec007bc96d88e5d35278481bf2ab52122",
+        "size": 364804,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/run_agent.py",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "setup.py",
+        "blob_sha": "fac7fe88161e7aae1033f163fb9bf0705b825b73",
+        "sha256": "b81382e9c4d1bc10694c42177edec65fdab9afe6511dd4c43b2279440b6ad13e",
+        "size": 2920,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/setup.py",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "toolsets.py",
+        "blob_sha": "f4bb3c3343a99e3100abfa5e9d8ed10c33fe2efc",
+        "sha256": "35658a881a40913ea3bd54b9bb0b5a355ae0cf18abb2e249b48833218be572b3",
+        "size": 36388,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/toolsets.py",
+        "evidence_state": "verified_static"
+      },
+      {
+        "path": "uv.lock",
+        "blob_sha": "592d5db2612fc0e306a42e8eccabf9b7856cd3c4",
+        "sha256": "aab3c83f71b683507a590b6315b23bdc0abd6b63b76b2349eae15bf00dfbaf2b",
+        "size": 715301,
+        "raw_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/uv.lock",
+        "evidence_state": "verified_static"
+      }
+    ]
+  },
+  "distribution": {
+    "source_distribution": "hermes-agent",
+    "source_version": "0.20.0",
+    "requires_python": ">=3.11,<3.14",
+    "console_scripts": [
+      {
+        "name": "hermes",
+        "mapping": "hermes_cli.main:main",
+        "source_path": "pyproject.toml",
+        "anchor": "L348-L350",
+        "evidence_state": "verified_static"
+      },
+      {
+        "name": "hermes-agent",
+        "mapping": "run_agent:main",
+        "source_path": "pyproject.toml",
+        "anchor": "L348-L350",
+        "evidence_state": "verified_static"
+      }
+    ],
+    "pypi": {
+      "project": "hermes-agent",
+      "observed_version": "0.19.0",
+      "observed_at_utc": "2026-08-06T17:20:15Z",
+      "requires_python": "<3.14,>=3.11",
+      "license_expression": "MIT",
+      "source_commit_distribution_available": false,
+      "wheel_sha256": "bd0bac012aee38a60894781f4597dc29ee7bedb3448540249921f10d3bef327f",
+      "sdist_sha256": "ac986bede64a2785436676c0ea084ec586574f8cb00a9d047e095b435d3e21c0",
+      "response_bytes": 45448,
+      "response_sha256": "af89ca1ed4d433b307b1f3c0b65459424815d83077fa66c2934b61a5d07c15e2",
+      "response_etag": "\"p7GD9lV+0ULm+HAZzyDjPQ\"",
+      "release_count": 11,
+      "evidence_state": "recorded_metadata",
+      "url": "https://pypi.org/pypi/hermes-agent/json"
+    },
+    "container": {
+      "registry": "registry-1.docker.io",
+      "image": "nousresearch/hermes-agent",
+      "tag": "v2026.8.3",
+      "index_digest": "sha256:16788311e2fa3035456bdc1bafb8ec2b1777db64ebf020af9bb7eb73c3712c9e",
+      "media_type": "application/vnd.oci.image.index.v1+json",
+      "platform_manifests": [
+        {
+          "platform": "linux/amd64",
+          "digest": "sha256:c0cab4e3711bcb27a312be1b3776254fc06fd50d5f7a6b8017915fc7171cb39e",
+          "size": 7523
+        },
+        {
+          "platform": "linux/arm64",
+          "digest": "sha256:153a021a0c59f28c1c230b201c8b819403da2a01969b9ffd939f1a429b7af2cd",
+          "size": 7523
+        }
+      ],
+      "attestation_manifests": [
+        {
+          "subject_digest": "sha256:c0cab4e3711bcb27a312be1b3776254fc06fd50d5f7a6b8017915fc7171cb39e",
+          "manifest_digest": "sha256:c2677c3c5a5a4029d40f43b1aa2dd6bfa554753596f2d289e98ce74eca6e5787",
+          "size": 566
+        },
+        {
+          "subject_digest": "sha256:153a021a0c59f28c1c230b201c8b819403da2a01969b9ffd939f1a429b7af2cd",
+          "manifest_digest": "sha256:7e1c68556289212c82671940d827c60a3b859d16e4147cc0f77d51e0d68a3606",
+          "size": 566
+        }
+      ],
+      "provenance": {
+        "state": "recorded_metadata",
+        "authenticity_verified": false,
+        "signature_present": false,
+        "buildkit_materials_complete": false,
+        "registry_referrer_count": 0,
+        "workflow_run": 30834568564,
+        "workflow_attempt": 1,
+        "statements": [
+          {
+            "platform": "linux/amd64",
+            "subject_digest": "sha256:c0cab4e3711bcb27a312be1b3776254fc06fd50d5f7a6b8017915fc7171cb39e",
+            "layer_digest": "sha256:1011de3fa75e1d7fcc3542343a13cf0bf7ef565115a1e091354c0dd0f121f47a",
+            "size": 263204
+          },
+          {
+            "platform": "linux/arm64",
+            "subject_digest": "sha256:153a021a0c59f28c1c230b201c8b819403da2a01969b9ffd939f1a429b7af2cd",
+            "layer_digest": "sha256:87bd0d7e671e0c152d2b813f31c4fd6223a3b99e7e14ad52527ceaf26ac5728c",
+            "size": 340516
+          }
+        ]
+      },
+      "release_workflow_run": 30834568564,
+      "release_workflow_head": "3c27eb6234bf91b8ceee9e9071591b31e9b148cb",
+      "release_workflow_conclusion": "success",
+      "evidence_state": "recorded_metadata",
+      "pulled": false,
+      "executed": false,
+      "attestations_verified": false
+    },
+    "selected_distribution_route": "dockerhub_oci_index_candidate_not_pulled"
+  },
+  "invocation_surfaces": [
+    {
+      "id": "hermes-agent",
+      "console_script": "hermes-agent",
+      "selector": "none",
+      "entrypoint_chain": "run_agent:main",
+      "decision": "rejected",
+      "evidence_state": "verified_static",
+      "reason_codes": [
+        "deep_internal_import_graph",
+        "default_task_when_prompt_missing",
+        "human_oriented_output",
+        "no_typed_result_envelope",
+        "weak_failure_exit_contract"
+      ],
+      "result_contract": "human_text_no_typed_envelope"
+    },
+    {
+      "id": "hermes-oneshot",
+      "console_script": "hermes",
+      "selector": "-z/--oneshot",
+      "entrypoint_chain": "hermes_cli.main:main -> hermes_cli.oneshot:run_oneshot",
+      "decision": "candidate_not_executed",
+      "evidence_state": "verified_static",
+      "reason_codes": [
+        "approval_bypass",
+        "configured_toolset_inheritance",
+        "cwd_context_loading",
+        "import_time_env_loading",
+        "mcp_discovery",
+        "no_zero_tool_mode",
+        "optional_usage_file_write",
+        "process_hard_exit",
+        "recovery_may_mutate_environment",
+        "safe_mode_does_not_skip_context_or_memory",
+        "safe_mode_cli_not_supported_with_oneshot",
+        "safe_toolset_network_capable",
+        "session_database_write",
+        "untyped_final_text"
+      ],
+      "result_contract": "final_text_plus_optional_usage_json"
+    }
+  ],
+  "side_effects": [
+    {
+      "id": "container_default_root_entrypoint",
+      "surface": "hermes-oneshot-oci-candidate",
+      "phase": "startup_static",
+      "evidence_state": "verified_static",
+      "source_path": "Dockerfile",
+      "anchors": ["L298-L312", "L378-L393", "L395-L422", "L424-L456"],
+      "behavior": "The published image selects USER root, HERMES_HOME=/opt/data, a persistent /opt/data volume and /opt/hermes/docker/entrypoint-dispatch.sh as its default entrypoint.",
+      "risk": "The default root and persistent-data startup path is not an acceptable narrow fixture and must be bypassed explicitly rather than treated as container isolation."
+    },
+    {
+      "id": "container_dispatches_via_s6_stage2",
+      "surface": "hermes-oneshot-oci-candidate",
+      "phase": "startup_static",
+      "evidence_state": "verified_static",
+      "source_path": "docker/entrypoint-dispatch.sh",
+      "anchors": ["L18-L25"],
+      "behavior": "The default dispatcher executes /init as PID 1 and otherwise runs the stage2 hook before the main wrapper.",
+      "risk": "Default invocation traverses supervised initialization and state preparation before Hermes, expanding the side-effect surface."
+    },
+    {
+      "id": "container_narrow_shim_candidate",
+      "surface": "hermes-oneshot-oci-candidate",
+      "phase": "startup_static",
+      "evidence_state": "verified_static",
+      "source_path": "docker/hermes-exec-shim.sh",
+      "anchors": ["L43-L87"],
+      "behavior": "The /opt/hermes/bin/hermes shim executes the real venv CLI directly for non-root callers and otherwise attempts a privilege drop or refuses unsafe root execution.",
+      "risk": "A later fixture may override the image entrypoint to this shim as user 10000:10000, but that path remains unexecuted and does not prove zero tools, network denial or state isolation."
+    },
+    {
+      "id": "container_stage2_mutation",
+      "surface": "hermes-oneshot-oci-candidate",
+      "phase": "startup_static",
+      "evidence_state": "verified_static",
+      "source_path": "docker/stage2-hook.sh",
+      "anchors": ["L2-L4", "L76-L86", "L228-L252", "L381-L466"],
+      "behavior": "The root stage2 hook creates and chowns HERMES_HOME trees, seeds configuration and credential files, migrates state and synchronizes startup content.",
+      "risk": "Running stage2 can mutate persistent data before the candidate task begins; the narrow fixture must bypass it and use new disposable storage."
+    },
+    {
+      "id": "import_bootstrap_mutation",
+      "surface": "both_console_mappings",
+      "phase": "import_static",
+      "evidence_state": "verified_static",
+      "source_path": "hermes_bootstrap.py",
+      "anchors": ["L229-L239"],
+      "behavior": "Applies environment, stdio, platform and sys.path bootstrap changes during import.",
+      "risk": "An in-process import can mutate the trusted host before a provider policy is bound."
+    },
+    {
+      "id": "import_dotenv_loading",
+      "surface": "hermes-oneshot",
+      "phase": "import_static",
+      "evidence_state": "verified_static",
+      "source_path": "hermes_cli/main.py",
+      "anchors": ["L690-L697"],
+      "behavior": "Loads the project .env before argparse processes safe-mode flags.",
+      "risk": "Host configuration or credentials could enter the child before CLI controls apply."
+    },
+    {
+      "id": "import_early_recovery",
+      "surface": "hermes-oneshot",
+      "phase": "import_static",
+      "evidence_state": "verified_static",
+      "source_path": "hermes_cli/_early_recovery.py",
+      "anchors": ["L190-L268"],
+      "behavior": "Recovery markers can trigger ensurepip and force-reinstall operations.",
+      "risk": "Import-time recovery can mutate a Python environment; the future route must isolate and make the image immutable."
+    },
+    {
+      "id": "run_agent_import_graph",
+      "surface": "hermes-agent",
+      "phase": "import_static",
+      "evidence_state": "verified_static",
+      "source_path": "run_agent.py",
+      "anchors": ["L23-L223"],
+      "behavior": "Imports agent, terminal, browser, memory, provider, tool and trajectory internals before main runs.",
+      "risk": "The deep unstable import graph is not a narrow programmatic contract."
+    },
+    {
+      "id": "oneshot_auto_approvals",
+      "surface": "hermes-oneshot",
+      "phase": "runtime_static",
+      "evidence_state": "verified_static",
+      "source_path": "hermes_cli/oneshot.py",
+      "anchors": ["L219-L231", "L437-L448"],
+      "behavior": "Sets HERMES_YOLO_MODE and HERMES_ACCEPT_HOOKS and documents dangerous-command and hook approval bypass.",
+      "risk": "Hermes approval semantics cannot be trusted as a Nerva authority boundary."
+    },
+    {
+      "id": "oneshot_cwd_context",
+      "surface": "hermes-oneshot",
+      "phase": "runtime_static",
+      "evidence_state": "verified_static",
+      "source_path": "hermes_cli/oneshot.py",
+      "anchors": ["L1-L20"],
+      "behavior": "Uses normal rules, memory, AGENTS.md, preloaded skills and the caller working directory.",
+      "risk": "Safe-mode does not prove context or memory suppression; empty disposable CWD and HERMES_HOME are mandatory."
+    },
+    {
+      "id": "oneshot_model_network",
+      "surface": "hermes-oneshot",
+      "phase": "runtime_static",
+      "evidence_state": "verified_static",
+      "source_path": "hermes_cli/oneshot.py",
+      "anchors": ["L324-L389", "L424-L458"],
+      "behavior": "Resolves configured provider credentials and invokes a model-backed AIAgent conversation.",
+      "risk": "Network, credential and retention boundaries require an external allowlist and synthetic endpoint."
+    },
+    {
+      "id": "oneshot_toolset_inheritance",
+      "surface": "hermes-oneshot",
+      "phase": "runtime_static",
+      "evidence_state": "verified_static",
+      "source_path": "hermes_cli/oneshot.py",
+      "anchors": ["L391-L410"],
+      "behavior": "Omitted toolsets inherit configured CLI tools and the path starts MCP discovery.",
+      "risk": "There is no proven zero-tool invocation; tool access must remain an explicit blocker."
+    },
+    {
+      "id": "oneshot_plugin_mcp_hook_discovery",
+      "surface": "hermes-oneshot",
+      "phase": "startup_static",
+      "evidence_state": "verified_static",
+      "source_path": "hermes_cli/main.py",
+      "anchors": ["L10733-L10815", "L12470-L12491"],
+      "behavior": "Agent startup can prepare plugins, MCP and hooks before dispatching one-shot mode.",
+      "risk": "HERMES_SAFE_MODE must be set before process start and still is not a complete isolation proof."
+    },
+    {
+      "id": "safe_toolset_not_offline",
+      "surface": "hermes-oneshot",
+      "phase": "startup_static",
+      "evidence_state": "verified_static",
+      "source_path": "toolsets.py",
+      "anchors": ["L364-L368"],
+      "behavior": "The built-in safe toolset includes web, vision and image generation.",
+      "risk": "The name safe cannot be treated as no-tools or no-network evidence."
+    },
+    {
+      "id": "oneshot_session_database",
+      "surface": "hermes-oneshot",
+      "phase": "runtime_static",
+      "evidence_state": "verified_static",
+      "source_path": "hermes_cli/oneshot.py",
+      "anchors": ["L297-L319", "L412-L483"],
+      "behavior": "Creates and closes a SessionDB and constructs an agent with memory lifecycle hooks.",
+      "risk": "State writes and retention must be confined to a disposable mount and externally verified."
+    },
+    {
+      "id": "oneshot_usage_file",
+      "surface": "hermes-oneshot",
+      "phase": "runtime_static",
+      "evidence_state": "verified_static",
+      "source_path": "hermes_cli/oneshot.py",
+      "anchors": ["L127-L167"],
+      "behavior": "An optional usage path creates parent directories and writes best-effort JSON.",
+      "risk": "The result is not a typed Nerva evidence envelope and the path must stay inside disposable storage."
+    },
+    {
+      "id": "oneshot_hard_exit",
+      "surface": "hermes-oneshot",
+      "phase": "shutdown_static",
+      "evidence_state": "verified_static",
+      "source_path": "hermes_cli/main.py",
+      "anchors": ["L105-L221"],
+      "behavior": "Runs best-effort global cleanup and terminates with os._exit, skipping normal finalizers.",
+      "risk": "The parent must own timeout, cancellation, process-tree cleanup and partial-effect evidence."
+    }
+  ],
+  "supply_chain": {
+    "direct_dependencies": {
+      "count": 32,
+      "requirements_sha256": "c42068239c7f78a58e2269f3311623d49b821e29575b2e24b0aa5c8a3602be35",
+      "source_path": "pyproject.toml",
+      "evidence_state": "verified_static",
+      "fully_exact_pinned": false
+    },
+    "optional_dependencies": {
+      "group_count": 45,
+      "default_selected": false,
+      "evidence_state": "verified_static",
+      "source_path": "pyproject.toml"
+    },
+    "lock_snapshot": {
+      "source_path": "uv.lock",
+      "package_records": 250,
+      "unique_names": 249,
+      "license_fields": 0,
+      "evidence_state": "verified_static"
+    },
+    "upstream_license": {
+      "expression": "MIT",
+      "source_path": "LICENSE",
+      "evidence_state": "verified_static"
+    },
+    "bundled_license_findings": {
+      "state": "verified_static",
+      "complete": false,
+      "owner_or_legal_acceptance": false,
+      "findings": [
+        {
+          "path": "skills/productivity/docx/LICENSE.txt",
+          "classification": "separate_restrictive_anthropic_terms",
+          "evidence_state": "verified_static"
+        },
+        {
+          "path": "skills/productivity/pdf/LICENSE.txt",
+          "classification": "separate_restrictive_anthropic_terms",
+          "evidence_state": "verified_static"
+        },
+        {
+          "path": "skills/productivity/powerpoint/LICENSE.txt",
+          "classification": "separate_restrictive_anthropic_terms",
+          "evidence_state": "verified_static"
+        },
+        {
+          "path": "skills/productivity/xlsx/LICENSE.txt",
+          "classification": "separate_restrictive_anthropic_terms",
+          "evidence_state": "verified_static"
+        }
+      ],
+      "blocker": "The repository root is MIT, but four bundled productivity skill subtrees carry separate restrictive Anthropic terms; redistribution and use compatibility remain unresolved pending owner or legal acceptance."
+    },
+    "transitive_license_closure": {
+      "state": "not_verified",
+      "complete": false,
+      "blocker": "The lock has no license fields, four bundled productivity skill subtrees carry separate restrictive Anthropic terms and a complete installed-image license inventory is absent."
+    },
+    "vulnerability_review": {
+      "state": "recorded_metadata",
+      "complete": false,
+      "queried_at_utc": "2026-08-06T16:57:53Z",
+      "alias_deduplication": "cve_group",
+      "finding_count": 6,
+      "affected_lock_packages": [
+        {
+          "package": "aiohttp",
+          "version": "3.14.1",
+          "finding_ids": [
+            "CVE-2026-59881",
+            "CVE-2026-69243",
+            "CVE-2026-69244"
+          ]
+        },
+        {
+          "package": "cryptography",
+          "version": "48.0.1",
+          "finding_ids": [
+            "CVE-2026-69247",
+            "CVE-2026-69248",
+            "CVE-2026-69249"
+          ]
+        }
+      ],
+      "sources": [
+        "https://api.osv.dev/v1/querybatch",
+        "https://github.com/NousResearch/hermes-agent/blob/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/uv.lock",
+        "https://github.com/NousResearch/hermes-agent/blob/3c27eb6234bf91b8ceee9e9071591b31e9b148cb/Dockerfile"
+      ],
+      "finding_ids": [
+        "CVE-2026-59881",
+        "CVE-2026-69243",
+        "CVE-2026-69244",
+        "CVE-2026-69247",
+        "CVE-2026-69248",
+        "CVE-2026-69249"
+      ],
+      "limitations": [
+        "OSV exact-version queries covered PyPI-backed lock records, but not OS packages, npm packages, container base layers or configuration-dependent lazy installs.",
+        "Advisory alias, affected-range and fixed-version metadata conflict for part of the cryptography findings, so ambiguous records remain fail-closed as affected or unknown.",
+        "The scan is a point-in-time metadata query and is not a signed or complete vulnerability attestation for the OCI image."
+      ]
+    },
+    "sbom": {
+      "state": "not_verified",
+      "complete": false,
+      "upstream_document_detected": false,
+      "provenance_field_detected": false,
+      "blocker": "No SBOM descriptor, document or field was observed in the inspected provenance or registry referrers, and no complete source, Python, OS, npm or image-layer SBOM was verified."
+    }
+  },
+  "compatibility": {
+    "repository_python": "3.12",
+    "upstream_python": ">=3.11,<3.14",
+    "target_platforms": ["linux", "windows"],
+    "fixture": {
+      "state": "not_executed",
+      "executed": false,
+      "synthetic_task": "Return the exact literal NERVA_E8_1C_OK without using a tool or producing a host effect.",
+      "required_assertions": [
+        "Bind the OCI index and selected platform manifest by digest and verify the embedded source revision before start.",
+        "Override the default entrypoint with /opt/hermes/bin/hermes and do not invoke /init, the entrypoint dispatcher or the stage2 hook.",
+        "Start as user 10000:10000 with a read-only root filesystem and no privilege escalation.",
+        "Mount a new disposable tmpfs at /opt/data with uid=10000,gid=10000,mode=0700 or an equivalent freshly created writable mount, keep HERMES_HOME=/opt/data and discard it after every outcome.",
+        "Provide a separate new empty CWD with no host rules, memory, profiles, plugins, skills or credentials.",
+        "Scrub the child environment and set HERMES_SAFE_MODE=1 before process start without treating it as sufficient isolation; do not pass the chat-only --safe-mode flag to one-shot.",
+        "Require explicit provider, model and reviewed toolset inputs; keep zero-tool mode blocked until proven.",
+        "Deny filesystem and network access externally except an explicitly bounded synthetic model endpoint.",
+        "Cap time, CPU, memory, stdout, stderr, artifacts and usage output and kill the complete process tree on cancellation.",
+        "Capture exit status, final text, usage JSON, filesystem diff, network attempts and child-process evidence without promoting the result.",
+        "Require an external Nerva verifier and demonstrate native no-provider rollback after every outcome."
+      ]
+    },
+    "isolation": {
+      "state": "blocked",
+      "b7_issue": 818,
+      "requirements": [
+        "immutable OCI index and platform-manifest digests",
+        "explicit /opt/hermes/bin/hermes entrypoint override that bypasses /init dispatcher and stage2",
+        "non-root 10000:10000 process identity",
+        "read-only image root filesystem",
+        "empty isolated working directory",
+        "new writable tmpfs /opt/data owned uid=10000,gid=10000,mode=0700 as empty disposable HERMES_HOME",
+        "scrubbed environment with HERMES_SAFE_MODE=1 set before import",
+        "deny-by-default filesystem mounts",
+        "deny-by-default network egress",
+        "explicit provider model and reviewed toolset",
+        "bounded CPU memory time and output",
+        "parent-owned cancellation and process-tree kill",
+        "external verification and native rollback",
+        "trusted Nerva-side kernel context resolved by B7"
+      ]
+    }
+  },
+  "e9": {
+    "state": "not_measured",
+    "benchmark_issue": 767,
+    "dimensions": [
+      {"name": "quality", "state": "not_measured"},
+      {"name": "latency", "state": "not_measured"},
+      {"name": "cost", "state": "not_measured"},
+      {"name": "reliability", "state": "not_measured"},
+      {"name": "privacy", "state": "not_measured"}
+    ],
+    "negative_cases": [
+      "timeout before first output",
+      "cancellation with child processes alive",
+      "provider or model endpoint failure",
+      "malformed or oversized stdout and usage JSON",
+      "partial filesystem or network effect",
+      "sandbox escape attempt",
+      "native no-provider rollback"
+    ],
+    "can_promote": false
+  },
+  "authority": {
+    "grants_authority": false,
+    "can_install": false,
+    "can_import": false,
+    "can_execute": false,
+    "can_register_provider": false,
+    "can_add_route": false,
+    "can_access_credentials": false,
+    "can_write_canonical_state": false,
+    "can_authorize": false,
+    "can_approve": false,
+    "can_mark_complete": false,
+    "can_promote": false,
+    "release_ready": false
+  },
+  "repository_effects": {
+    "dependency_enrolled": false,
+    "manifest_enrolled": false,
+    "adapter_implemented": false,
+    "provider_registered": false,
+    "route_added": false,
+    "runtime_changed": false,
+    "shared_ledgers_changed": false,
+    "checked_dependency_files": [
+      "pyproject.toml",
+      "requirements-beta.lock",
+      "requirements-beta.txt",
+      "requirements-dev.lock",
+      "requirements-dev.txt",
+      "requirements.lock",
+      "requirements.txt",
+      "worldview/ingestion-workers/pyproject.toml",
+      "worldview/ingestion-workers/requirements.txt"
+    ],
+    "checked_manifest_path": ".github/third-party-manifest.json"
+  }
+}
