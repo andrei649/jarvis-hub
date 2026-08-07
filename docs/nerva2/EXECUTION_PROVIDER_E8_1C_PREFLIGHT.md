@@ -149,4 +149,4 @@ Every authority flag and every dependency, third-party-manifest, adapter, provid
 - Vulnerability queries are a time-bounded advisory snapshot, not a complete direct, transitive, OS-package, npm-package or container-layer assessment.
 - Windows and Linux behavior, process-tree cancellation, output framing, state retention and credential exposure remain unexecuted and unknown.
 
-Completion of this preflight would not complete E8.1c or E8.1. A Hermes-executing adapter, manifest enrolment, supply-chain closure, trusted Nerva kernel context, compatibility runs and E9 comparison remain separate reviewed packages.
+Completing this package completes only the E8.1c static preflight evidence checkpoint. It does not complete an executing Hermes adapter, E8.1, E8, provider-specific E9, the Nerva program or release readiness. Third-party manifest enrolment, supply-chain closure, trusted Nerva kernel context, compatibility runs and E9 comparison remain separate reviewed packages.

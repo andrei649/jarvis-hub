@@ -81,11 +81,29 @@ def _copy_checker_root(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _replace_directory_with_symlink(path: Path, outside: Path) -> None:
+    shutil.move(str(path), str(outside))
+    try:
+        path.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlink creation unavailable: {exc}")
+
+
 def test_canonical_evidence_validates_and_renders_current_document() -> None:
     evidence = _evidence()
 
     assert validate_evidence(evidence, root=REPO) == []
     assert (REPO / DOCUMENT_RELATIVE).read_text(encoding="utf-8") == render_markdown(evidence)
+
+
+def test_completion_truth_is_static_preflight_only() -> None:
+    rendered = render_markdown(_evidence())
+
+    assert (
+        "Completing this package completes only the E8.1c static preflight evidence checkpoint."
+        in rendered
+    )
+    assert "would not complete E8.1c" not in rendered
 
 
 def test_working_design_does_not_claim_premature_acceptance() -> None:
@@ -176,6 +194,17 @@ def test_strict_loader_rejects_symlink(tmp_path: Path) -> None:
 
     with pytest.raises(PreflightError, match="non-symlink regular file"):
         load_json_strict(link)
+
+
+def test_run_rejects_canonical_evidence_parent_symlink(tmp_path: Path) -> None:
+    root = _copy_checker_root(tmp_path / "repo")
+    _replace_directory_with_symlink(root / "docs", tmp_path / "outside-docs")
+
+    with pytest.raises(
+        PreflightError,
+        match="E8.1c evidence JSON: parent must not traverse symlink components",
+    ):
+        run(root, write=False)
 
 
 @pytest.mark.parametrize(
@@ -603,6 +632,31 @@ def test_repository_guard_dependency_file_set_cannot_be_narrowed() -> None:
     assert any(
         "checked_dependency_files: must match the canonical dependency surfaces" in error
         for error in validate_evidence(evidence, root=REPO)
+    )
+
+
+@pytest.mark.parametrize(
+    ("parent", "error_label"),
+    [
+        (
+            "worldview",
+            "repository dependency evidence worldview/ingestion-workers/pyproject.toml",
+        ),
+        (".github", "third-party manifest evidence"),
+    ],
+)
+def test_repository_guard_rejects_parent_directory_symlinks(
+    tmp_path: Path, parent: str, error_label: str
+) -> None:
+    root = _copy_checker_root(tmp_path / "repo")
+    outside = tmp_path / f"outside-{parent.removeprefix('.')}"
+    _replace_directory_with_symlink(root / parent, outside)
+
+    errors = validate_evidence(_evidence(), root=root)
+
+    assert any(
+        error_label in error and "parent must not traverse symlink components" in error
+        for error in errors
     )
 
 

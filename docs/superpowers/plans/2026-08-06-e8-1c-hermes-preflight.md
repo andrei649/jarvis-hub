@@ -133,3 +133,17 @@ required for acceptance, explicitly leave those files unchanged.
 7. Commit the reconciled exact candidate before running the manifest
    `--candidate-ref` gate, then obtain independent exact-head review and hosted
    Python 3.12 CI before ready/merge.
+
+### Task 9: Close exact-head symlink-containment and completion-truth HOLD
+
+1. Record the review finding before implementation.
+2. Add RED hostile tests for out-of-root symlink parents on the nested dependency
+   directory, third-party-manifest directory and canonical evidence directory;
+   add a RED assertion for static-preflight-only completion wording.
+3. Add one reusable root-contained regular-file resolver and route those three
+   read classes through it without weakening the strict JSON loader.
+4. Regenerate the E8.1c Markdown and status surfaces (new tests change the
+   backend count), then run focused Windows and WSL tests, adjacent/full suites,
+   Ruff, Bandit, workflow/ledger/status checks and diff review.
+5. Publish a new exact head; old review and CI results remain historical only.
+   Require fresh independent review and fresh hosted Python 3.12 gates.

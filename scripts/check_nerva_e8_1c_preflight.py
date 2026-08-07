@@ -320,6 +320,52 @@ def _check_depth(data: Any, path: Path) -> None:
             stack.extend((item, depth + 1) for item in value)
 
 
+def _is_link_like(path: Path, metadata: os.stat_result) -> bool:
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    file_attributes = getattr(metadata, "st_file_attributes", 0)
+    return (
+        stat.S_ISLNK(metadata.st_mode)
+        or path.is_symlink()
+        or bool(reparse_flag and file_attributes & reparse_flag)
+    )
+
+
+def _contained_regular_file(root: Path, relative: Path, *, label: str) -> Path:
+    """Return a canonical root-contained file after rejecting link-like parents."""
+
+    try:
+        root_resolved = root.resolve(strict=True)
+        root_metadata = root_resolved.lstat()
+        if not stat.S_ISDIR(root_metadata.st_mode):
+            raise PreflightError(f"{label}: canonical root must be a directory")
+        if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+            raise PreflightError(f"{label}: unsafe relative path {relative!s}")
+
+        cursor = root_resolved
+        for part in relative.parent.parts:
+            if part in {"", "."}:
+                continue
+            cursor /= part
+            metadata = cursor.lstat()
+            if _is_link_like(cursor, metadata):
+                raise PreflightError(f"{label}: parent must not traverse symlink components")
+            if not stat.S_ISDIR(metadata.st_mode):
+                raise PreflightError(f"{label}: parent components must be directories")
+            cursor.resolve(strict=True).relative_to(root_resolved)
+
+        candidate = root_resolved / relative
+        metadata = candidate.lstat()
+        if _is_link_like(candidate, metadata) or not stat.S_ISREG(metadata.st_mode):
+            raise PreflightError(f"{label}: must be a non-symlink regular file")
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(root_resolved)
+        return resolved
+    except PreflightError:
+        raise
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise PreflightError(f"{label}: unsafe contained path: {exc}") from exc
+
+
 def load_json_strict(path: Path) -> Any:
     """Load a regular UTF-8 JSON file with deterministic hostile-input rejection."""
 
@@ -1774,22 +1820,27 @@ def _validate_repository_effects(value: Any, root: Path | None, errors: list[str
         if relative.startswith("/") or "\\" in relative or ".." in Path(relative).parts:
             errors.append(f"repository_effects.checked_dependency_files: unsafe path {relative!r}")
             continue
-        path = root / relative
         try:
-            metadata = path.lstat()
-            if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
-                errors.append(
-                    f"repository dependency evidence {relative}: must be a non-symlink regular file"
-                )
-                continue
+            path = _contained_regular_file(
+                root,
+                Path(relative),
+                label=f"repository dependency evidence {relative}",
+            )
             text = path.read_text(encoding="utf-8")
+        except PreflightError as exc:
+            errors.append(str(exc))
+            continue
         except (OSError, UnicodeError) as exc:
             errors.append(f"repository dependency evidence {relative}: cannot read: {exc}")
             continue
         if "hermes-agent" in _declared_distribution_names(text):
             errors.append(f"repository_effects: hermes-agent is enrolled in {relative}")
-    manifest_path = root / ".github" / "third-party-manifest.json"
     try:
+        manifest_path = _contained_regular_file(
+            root,
+            Path(".github/third-party-manifest.json"),
+            label="third-party manifest evidence",
+        )
         manifest = load_json_strict(manifest_path)
     except PreflightError as exc:
         errors.append(f"repository_effects: cannot inspect third-party manifest: {exc}")
@@ -2011,7 +2062,7 @@ def render_markdown(data: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "Completion of this preflight would not complete E8.1c or E8.1. A Hermes-executing adapter, manifest enrolment, supply-chain closure, trusted Nerva kernel context, compatibility runs and E9 comparison remain separate reviewed packages.",
+            "Completing this package completes only the E8.1c static preflight evidence checkpoint. It does not complete an executing Hermes adapter, E8.1, E8, provider-specific E9, the Nerva program or release readiness. Third-party manifest enrolment, supply-chain closure, trusted Nerva kernel context, compatibility runs and E9 comparison remain separate reviewed packages.",
             "",
         ]
     )
@@ -2083,7 +2134,11 @@ def _read_document_bounded(path: Path) -> bytes:
 
 
 def run(root: Path, *, write: bool) -> list[str]:
-    evidence_path = root / EVIDENCE_RELATIVE
+    evidence_path = _contained_regular_file(
+        root,
+        EVIDENCE_RELATIVE,
+        label="E8.1c evidence JSON",
+    )
     document_path = root / DOCUMENT_RELATIVE
     data = load_json_strict(evidence_path)
     errors = validate_evidence(data, root=root)

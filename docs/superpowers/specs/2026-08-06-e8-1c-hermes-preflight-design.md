@@ -266,3 +266,31 @@ field and retain hostile tests for every runtime or authority effect. Rollback
 is the final reconciliation commit plus the original six-file package; no
 runtime, dependency, provider, route, credential or external artifact cleanup
 is required.
+
+## 12. Exact-head security-review correction (2026-08-07)
+
+Independent review of candidate `3c43b6f3` found two bounded integration
+defects. First, repository dependency and third-party-manifest scans rejected a
+symlink only at the final file, so a symlinked parent directory could redirect a
+read outside the canonical root on Linux. Second, the generated completion text
+said the accepted static checkpoint did not complete E8.1c at all, contradicting
+the issue/BACKLOG meaning.
+
+The correction remains offline and standard-library-only:
+
+- one contained-file helper validates the canonical root, rejects unsafe
+  relative paths, rejects every symlink/reparse parent, requires a regular final
+  file, resolves it, and proves the result remains under the canonical root;
+- repository dependency files, the third-party manifest, and the canonical
+  E8.1c evidence JSON all use that helper before reading;
+- hostile Linux tests replace `worldview`, `.github`, and `docs` parents with
+  out-of-root directory symlinks and require fail-closed errors;
+- generated completion wording says only the E8.1c static preflight evidence
+  checkpoint completes, while an executing adapter, E8.1/E8, provider E9, the
+  program and release remain incomplete.
+
+Non-goals remain unchanged: no dependency enrolment, runtime, provider, route,
+credential, kernel context, execution, compatibility proof, authority or release
+claim. The risk is filesystem portability; Windows may skip symlink creation, so
+the same hostile cases must pass under Linux/WSL and hosted Ubuntu. Rollback is
+the correction commit only; it changes no runtime or external state.
