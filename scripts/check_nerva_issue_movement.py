@@ -10,15 +10,19 @@ from __future__ import annotations
 # The gate contract requires a fixed-argument Git diff subprocess.
 import argparse
 import hashlib
+import http.client
 import json
 import math
 import os
 import re
+import ssl
 import stat
 import subprocess  # nosec B404
 import sys
 import threading
 import unicodedata
+import urllib.error
+import urllib.request
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,10 +36,24 @@ RECEIPT_END_MARKER = "<!-- NERVA2:MOVEMENT-RECEIPT:END -->"
 MAX_JSON_BYTES = 65_536
 MAX_JSON_DEPTH = 32
 MAX_JSON_ITEMS = 1_024
+MAX_EVENT_BYTES = 131_072
+MAX_BODY_BYTES = 131_072
+MAX_RESPONSE_BYTES = 262_144
+MAX_RESPONSE_COUNT = 5
+MAX_AGGREGATE_RESPONSE_BYTES = 1_048_576
+MAX_TOKEN_BYTES = 8_192
 MAX_DIFF_BYTES = 1_048_576
 MAX_DIFF_RECORDS = 4_096
+MAX_GITHUB_IDENTIFIER = 9_007_199_254_740_991
+MAX_REPOSITORY_BYTES = 201
+MAX_REF_BYTES = 256
+REST_TIMEOUT_SECONDS = 20.0
 BRANCH_PREFIX = "nerva2/"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+REPOSITORY_RE = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99})/[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99})$"
+)
+TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 MANIFEST_PATH = "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json"
 MANIFEST_VIEW_PATH = "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md"
 MAX_MANIFEST_VIEW_BYTES = MAX_DIFF_BYTES
@@ -65,6 +83,22 @@ class PureProof:
     scope: dict[str, Any]
 
 
+@dataclass
+class _ResponseBudget:
+    count: int = 0
+    aggregate_bytes: int = 0
+
+    def begin(self) -> None:
+        self.count += 1
+        if self.count > MAX_RESPONSE_COUNT:
+            _reject("REST response count exceeds limit")
+
+    def add_bytes(self, size: int) -> None:
+        self.aggregate_bytes += size
+        if self.aggregate_bytes > MAX_AGGREGATE_RESPONSE_BYTES:
+            _reject("REST aggregate bytes exceed limit")
+
+
 def _reject(message: str) -> None:
     raise MovementError(message)
 
@@ -73,6 +107,35 @@ def _is_safe_text(value: str) -> bool:
     return unicodedata.normalize("NFC", value) == value and all(
         character.isprintable() and ord(character) != 0x7F for character in value
     )
+
+
+def _bounded_utf8(value: Any, *, max_bytes: int, error: str) -> bytes:
+    if not isinstance(value, str):
+        _reject(error)
+    try:
+        encoded = value.encode("utf-8", "strict")
+    except UnicodeEncodeError as exc:
+        raise MovementError(error) from exc
+    if len(encoded) > max_bytes:
+        _reject(error)
+    return encoded
+
+
+def _validate_github_identifier(value: Any, *, error: str) -> int:
+    if type(value) is not int or not 0 < value <= MAX_GITHUB_IDENTIFIER:
+        _reject(error)
+    return value
+
+
+def _validate_repository_name(value: Any) -> str:
+    if not isinstance(value, str):
+        _reject("repository name is invalid")
+    encoded = _bounded_utf8(
+        value, max_bytes=MAX_REPOSITORY_BYTES, error="repository name is invalid"
+    )
+    if len(encoded) > MAX_REPOSITORY_BYTES or REPOSITORY_RE.fullmatch(value) is None:
+        _reject("repository name is invalid")
+    return value
 
 
 def _validate_json_tree(
@@ -679,7 +742,7 @@ def compute_name_status_diff(
     return parse_diff(b"".join(raw_parts))
 
 
-def _event_context(event: Any) -> tuple[str, int, str, str, str, str, bool]:
+def _event_context(event: Any) -> tuple[str, int, str, str, str, str, str, bool, str]:
     if not isinstance(event, dict):
         _reject("event must be an object")
     repository = event.get("repository")
@@ -692,24 +755,32 @@ def _event_context(event: Any) -> tuple[str, int, str, str, str, str, bool]:
         _reject("event pull request refs are invalid")
     repository_name = repository.get("full_name")
     number = pull_request.get("number")
-    base_sha, head_sha, branch = base.get("sha"), head.get("sha"), head.get("ref")
+    base_sha, base_branch = base.get("sha"), base.get("ref")
+    head_sha, branch = head.get("sha"), head.get("ref")
     body = pull_request.get("body")
     draft = pull_request.get("draft")
+    state = pull_request.get("state")
     if body is None:
         body = ""
+    _validate_github_identifier(number, error="event pull request values are invalid")
+    _validate_repository_name(repository_name)
     if (
         not all(
-            isinstance(value, str) for value in (repository_name, base_sha, head_sha, branch, body)
+            isinstance(value, str)
+            for value in (repository_name, base_sha, base_branch, head_sha, branch, body)
         )
-        or type(number) is not int
-        or number <= 0
         or type(draft) is not bool
+        or state not in {"open", "closed"}
         or not SHA_RE.fullmatch(base_sha)
         or not SHA_RE.fullmatch(head_sha)
+        or not _is_safe_text(base_branch)
         or not _is_safe_text(branch)
     ):
         _reject("event pull request values are invalid")
-    return repository_name, number, base_sha, head_sha, branch, body, draft
+    _bounded_utf8(base_branch, max_bytes=MAX_REF_BYTES, error="event base ref exceeds limit")
+    _bounded_utf8(branch, max_bytes=MAX_REF_BYTES, error="event head ref exceeds limit")
+    _bounded_utf8(body, max_bytes=MAX_BODY_BYTES, error="event pull request body exceeds limit")
+    return repository_name, number, base_sha, base_branch, head_sha, branch, body, draft, state
 
 
 def _fetch_current_snapshot(
@@ -719,38 +790,75 @@ def _fetch_current_snapshot(
     number: int,
     base: str,
     head: str,
+    base_branch: str | None = None,
+    branch: str | None = None,
+    body: str | None = None,
+    draft: bool | None = None,
+    state: str | None = None,
 ) -> tuple[str, str, bool, dict[str, Any]]:
     """Fetch current PR before any classifier may observe stale event fields."""
     if transport is None:
         _reject("movement proof requires offline snapshot transport")
     try:
         current = transport("pull_request")
+    except MovementError:
+        raise
     except (KeyError, OSError, TypeError, ValueError) as exc:
-        raise MovementError("offline pull request snapshot is unavailable") from exc
-    if not isinstance(current, dict) or current.get("state") != "open":
+        raise MovementError("pull request response is unavailable") from exc
+    if not isinstance(current, dict):
+        _reject("current pull request response is invalid")
+    if current.get("state") != "open":
         _reject("current pull request is not open")
-    current_repo, current_base, current_head = (
-        current.get("repository"),
-        current.get("base"),
-        current.get("head"),
+    current_base, current_head = current.get("base"), current.get("head")
+    current_body, current_draft, current_state = (
+        current.get("body"),
+        current.get("draft"),
+        current.get("state"),
     )
-    body, draft = current.get("body"), current.get("draft")
+    if current_body is None:
+        current_body = ""
+        current = {**current, "body": current_body}
+    current_repo = current_base.get("repo") if isinstance(current_base, dict) else None
     if (
-        type(current.get("number")) is not int
-        or current.get("number") != number
+        _validate_github_identifier(
+            current.get("number"), error="current pull request does not bind event"
+        )
+        != number
         or not isinstance(current_repo, dict)
         or current_repo.get("full_name") != repository
         or not isinstance(current_base, dict)
         or current_base.get("sha") != base
+        or not isinstance(current_base.get("ref"), str)
+        or not _is_safe_text(current_base["ref"])
         or not isinstance(current_head, dict)
         or current_head.get("sha") != head
         or not isinstance(current_head.get("ref"), str)
         or not _is_safe_text(current_head["ref"])
-        or not isinstance(body, str)
-        or type(draft) is not bool
+        or not isinstance(current_body, str)
+        or type(current_draft) is not bool
+        or (base_branch is not None and current_base["ref"] != base_branch)
+        or (branch is not None and current_head["ref"] != branch)
+        or (body is not None and current_body != body)
+        or (draft is not None and current_draft is not draft)
+        or (state is not None and current_state != state)
     ):
         _reject("current pull request does not bind event")
-    return current_head["ref"], body, draft, current
+    _bounded_utf8(
+        current_base["ref"],
+        max_bytes=MAX_REF_BYTES,
+        error="current base ref exceeds limit",
+    )
+    _bounded_utf8(
+        current_head["ref"],
+        max_bytes=MAX_REF_BYTES,
+        error="current head ref exceeds limit",
+    )
+    _bounded_utf8(
+        current_body,
+        max_bytes=MAX_BODY_BYTES,
+        error="current pull request body exceeds limit",
+    )
+    return current_head["ref"], current_body, current_draft, current
 
 
 def _sha256(payload: bytes) -> str:
@@ -982,10 +1090,10 @@ def _validate_role_map(roles: Any, scope: Mapping[str, Any]) -> dict[str, Any]:
             allowed_keys={"comment_id", "comment_body_sha256", "updated_at"},
             required_keys={"comment_id", "comment_body_sha256", "updated_at"},
         )
+        _validate_github_identifier(entry["comment_id"], error="attestation role map is invalid")
         if (
-            type(entry["comment_id"]) is not int
-            or entry["comment_id"] <= 0
-            or not isinstance(entry["updated_at"], str)
+            not isinstance(entry["updated_at"], str)
+            or TIMESTAMP_RE.fullmatch(entry["updated_at"]) is None
             or not re.fullmatch(r"[0-9a-f]{64}", entry["comment_body_sha256"])
             or entry["comment_id"] in ids
         ):
@@ -1053,21 +1161,16 @@ def _validate_attestation(
     return data
 
 
-def _validate_receipt(
+def _validate_comment_envelope(
     envelope: Any,
     *,
-    role: str,
     issue: int,
     comment: Mapping[str, Any],
     repository: str,
-    number: int,
-    base: str,
-    head: str,
-    digest: str,
-    scope: Mapping[str, Any],
-) -> None:
+) -> str:
+    """Validate consumed GitHub fields while allowing unrelated envelope additions."""
     if not isinstance(envelope, dict):
-        _reject("snapshot comment is invalid")
+        _reject("REST comment response is invalid")
     required_envelope = {
         "id",
         "issue_url",
@@ -1077,23 +1180,44 @@ def _validate_receipt(
         "created_at",
         "updated_at",
     }
+    comment_id = comment.get("comment_id")
+    updated_at = comment.get("updated_at")
+    body = envelope.get("body")
+    user = envelope.get("user")
     if (
         not required_envelope <= set(envelope)
-        or type(envelope["id"]) is not int
-        or envelope["id"] != comment["comment_id"]
-    ):
-        _reject("comment identity is invalid")
-    if (
-        envelope["issue_url"] != f"https://api.github.com/repos/{repository}/issues/{issue}"
-        or not isinstance(envelope["body"], str)
-        or not isinstance(envelope["user"], dict)
-        or envelope["user"].get("login") != "andrei649"
-        or envelope["author_association"] != "OWNER"
-        or envelope["created_at"] != envelope["updated_at"]
-        or envelope["updated_at"] != comment["updated_at"]
-        or _sha256(envelope["body"].encode("utf-8")) != comment["comment_body_sha256"]
+        or _validate_github_identifier(envelope.get("id"), error="comment identity is invalid")
+        != _validate_github_identifier(comment_id, error="comment identity is invalid")
+        or envelope.get("issue_url") != f"https://api.github.com/repos/{repository}/issues/{issue}"
+        or not isinstance(user, dict)
+        or user.get("login") != "andrei649"
+        or envelope.get("author_association") != "OWNER"
+        or not isinstance(updated_at, str)
+        or TIMESTAMP_RE.fullmatch(updated_at) is None
+        or envelope.get("created_at") != envelope.get("updated_at")
+        or envelope.get("updated_at") != updated_at
     ):
         _reject("comment envelope does not bind receipt")
+    body_bytes = _bounded_utf8(
+        body, max_bytes=MAX_BODY_BYTES, error="comment envelope does not bind receipt"
+    )
+    if _sha256(body_bytes) != comment.get("comment_body_sha256"):
+        _reject("comment envelope does not bind receipt")
+    return body
+
+
+def _validate_receipt_payload(
+    body: str,
+    *,
+    role: str,
+    issue: int,
+    repository: str,
+    number: int,
+    base: str,
+    head: str,
+    digest: str,
+    scope: Mapping[str, Any],
+) -> None:
     allowed = {
         "schema_version",
         "repository",
@@ -1113,11 +1237,12 @@ def _validate_receipt(
     if scope["kind"] == "stream":
         allowed.update({"stream_id", "epic_issue"})
     receipt = parse_marker_json(
-        envelope["body"],
+        body,
         RECEIPT_MARKER,
         RECEIPT_END_MARKER,
         allowed_keys=allowed,
         required_keys=allowed,
+        max_body_bytes=MAX_BODY_BYTES,
     )
     if (
         type(receipt["schema_version"]) is not int
@@ -1145,9 +1270,42 @@ def _validate_receipt(
     _require_false(receipt)
 
 
+def _validate_receipt(
+    envelope: Any,
+    *,
+    role: str,
+    issue: int,
+    comment: Mapping[str, Any],
+    repository: str,
+    number: int,
+    base: str,
+    head: str,
+    digest: str,
+    scope: Mapping[str, Any],
+) -> None:
+    body = _validate_comment_envelope(
+        envelope,
+        issue=issue,
+        comment=comment,
+        repository=repository,
+    )
+    _validate_receipt_payload(
+        body,
+        role=role,
+        issue=issue,
+        repository=repository,
+        number=number,
+        base=base,
+        head=head,
+        digest=digest,
+        scope=scope,
+    )
+
+
 def _validate_snapshot(
     transport: Any,
     *,
+    current: Mapping[str, Any],
     event_repository: str,
     number: int,
     base: str,
@@ -1157,18 +1315,14 @@ def _validate_snapshot(
     scope: Mapping[str, Any],
     allow_draft: bool,
 ) -> None:
-    try:
-        current = transport("pull_request")
-    except (KeyError, OSError, TypeError, ValueError) as exc:
-        raise MovementError("offline pull request snapshot is unavailable") from exc
     if (
         not isinstance(current, dict)
         or current.get("state") != "open"
         or (current.get("draft") is not False and not allow_draft)
     ):
         _reject("current pull request is not ready")
-    current_repo = current.get("repository")
     current_base, current_head = current.get("base"), current.get("head")
+    current_repo = current_base.get("repo") if isinstance(current_base, dict) else None
     if (
         type(current.get("number")) is not int
         or current.get("number") != number
@@ -1202,8 +1356,10 @@ def _validate_snapshot(
     for role, issue in issue_by_role.items():
         try:
             envelope = transport(f"comment:{roles[role]['comment_id']}")
+        except MovementError:
+            raise
         except (KeyError, OSError, TypeError, ValueError) as exc:
-            raise MovementError("offline comment snapshot is unavailable") from exc
+            raise MovementError("comment response is unavailable") from exc
         _validate_receipt(
             envelope,
             role=role,
@@ -1232,13 +1388,30 @@ def run_pure_proof(
     """Prove pure/offline Nerva movement; classification alone is never success."""
     if not SHA_RE.fullmatch(base) or not SHA_RE.fullmatch(head):
         _reject("requested commit is invalid")
-    repository, number, event_base, event_head, _event_branch, _event_body, _event_draft = (
-        _event_context(event)
-    )
+    (
+        repository,
+        number,
+        event_base,
+        event_base_branch,
+        event_head,
+        event_branch,
+        event_body,
+        event_draft,
+        event_state,
+    ) = _event_context(event)
     if event_base != base or event_head != head:
         _reject("event commits do not match requested commits")
-    branch, body, draft, _current = _fetch_current_snapshot(
-        transport, repository=repository, number=number, base=base, head=head
+    branch, body, draft, current = _fetch_current_snapshot(
+        transport,
+        repository=repository,
+        number=number,
+        base=base,
+        head=head,
+        base_branch=event_base_branch,
+        branch=event_branch,
+        body=event_body,
+        draft=event_draft,
+        state=event_state,
     )
     if not isinstance(baseline_manifest, dict) or not isinstance(candidate_manifest, dict):
         _reject("manifest must be an object")
@@ -1316,6 +1489,7 @@ def run_pure_proof(
     digest = _sha256(candidate_manifest_bytes)
     _validate_snapshot(
         transport,
+        current=current,
         event_repository=repository,
         number=number,
         base=base,
@@ -1370,7 +1544,17 @@ def run_repository_proof(
         _reject("requested commit is invalid")
     if SHA_RE.fullmatch(base) is None or SHA_RE.fullmatch(head) is None:
         _reject("requested commit is invalid")
-    _repository, _number, event_base, event_head, _branch, _body, _draft = _event_context(event)
+    (
+        _repository,
+        _number,
+        event_base,
+        _base_branch,
+        event_head,
+        _branch,
+        _body,
+        _draft,
+        _state,
+    ) = _event_context(event)
     if event_base != base or event_head != head:
         _reject("event commits do not match requested commits")
     try:
@@ -1492,19 +1676,240 @@ def run_repository_proof(
     return result
 
 
-def _snapshot_transport(snapshot_dir: Path) -> Any:
-    root = snapshot_dir.resolve()
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Turn every redirect into an HTTP failure before credentials can be resent."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> None:
+        del req, fp, code, msg, headers, newurl
+        return None
+
+
+def _build_live_opener(context: ssl.SSLContext) -> urllib.request.OpenerDirector:
+    """Build a verified-TLS opener with neither proxies nor redirect following."""
+    if not isinstance(context, ssl.SSLContext):
+        _reject("verified TLS context is unavailable")
+    if context.verify_mode != ssl.CERT_REQUIRED or not context.check_hostname:
+        _reject("verified TLS context is required")
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _NoRedirectHandler(),
+        urllib.request.HTTPSHandler(context=context),
+    )
+
+
+def _read_live_token(environment: Mapping[str, str]) -> str:
+    """Read the sole live credential source without echoing rejected bytes."""
+    try:
+        token = environment.get("GITHUB_TOKEN")
+    except (AttributeError, OSError) as exc:
+        raise MovementError("GITHUB_TOKEN is unavailable") from exc
+    if not isinstance(token, str):
+        _reject("GITHUB_TOKEN is unavailable")
+    try:
+        encoded = token.encode("ascii", "strict")
+    except UnicodeEncodeError as exc:
+        raise MovementError("GITHUB_TOKEN is invalid") from exc
+    if (
+        not encoded
+        or len(encoded) > MAX_TOKEN_BYTES
+        or any(character < 0x21 or character > 0x7E for character in encoded)
+    ):
+        _reject("GITHUB_TOKEN is invalid")
+    return token
+
+
+def _comment_identifier(name: str) -> int | None:
+    if name == "pull_request":
+        return None
+    if not isinstance(name, str) or not name.startswith("comment:"):
+        _reject("REST response key is invalid")
+    raw_identifier = name[8:]
+    if (
+        not raw_identifier
+        or len(raw_identifier) > 16
+        or not raw_identifier.isascii()
+        or not raw_identifier.isdigit()
+        or raw_identifier.startswith("0")
+    ):
+        _reject("comment identifier is invalid")
+    comment_id = _validate_github_identifier(
+        int(raw_identifier), error="comment identifier is invalid"
+    )
+    if str(comment_id) != raw_identifier:
+        _reject("comment identifier is invalid")
+    return comment_id
+
+
+def _response_url(repository: str, number: int, name: str) -> str:
+    """Construct one fixed GitHub REST URL only after bounded identifier validation."""
+    repository = _validate_repository_name(repository)
+    number = _validate_github_identifier(number, error="pull request identifier is invalid")
+    comment_id = _comment_identifier(name)
+    if comment_id is None:
+        return f"https://api.github.com/repos/{repository}/pulls/{number}"
+    return f"https://api.github.com/repos/{repository}/issues/comments/{comment_id}"
+
+
+def _header_value(headers: Any, name: str) -> str | None:
+    try:
+        get_all = getattr(headers, "get_all", None)
+        if callable(get_all):
+            values = get_all(name)
+            if values is not None:
+                if len(values) != 1 or not isinstance(values[0], str):
+                    _reject("GitHub REST response headers are invalid")
+                return values[0]
+        value = headers.get(name)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise MovementError("GitHub REST response headers are invalid") from exc
+    if value is not None and not isinstance(value, str):
+        _reject("GitHub REST response headers are invalid")
+    return value
+
+
+def _read_rest_response(response: Any, *, expected_url: str, budget: _ResponseBudget) -> Any:
+    try:
+        status = response.status
+        final_url = response.geturl()
+        headers = response.headers
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise MovementError("GitHub REST response is invalid") from exc
+    if status != 200:
+        _reject("GitHub REST response status is not successful")
+    if final_url != expected_url:
+        _reject("GitHub REST response URL changed")
+    content_encoding = _header_value(headers, "Content-Encoding")
+    if content_encoding not in {None, "identity"}:
+        _reject("GitHub REST response encoding is invalid")
+    content_length_value = _header_value(headers, "Content-Length")
+    declared_length: int | None = None
+    if content_length_value is not None:
+        if (
+            not content_length_value
+            or len(content_length_value) > 9
+            or not content_length_value.isascii()
+            or not content_length_value.isdigit()
+            or (content_length_value.startswith("0") and content_length_value != "0")
+        ):
+            _reject("GitHub REST response length is invalid")
+        declared_length = int(content_length_value)
+        if declared_length > MAX_RESPONSE_BYTES:
+            _reject("GitHub REST response exceeds limit")
+    try:
+        raw = response.read(MAX_RESPONSE_BYTES + 1)
+    except (http.client.HTTPException, OSError, TimeoutError, ValueError) as exc:
+        raise MovementError("GitHub REST response read failed") from exc
+    if not isinstance(raw, bytes):
+        _reject("GitHub REST response is invalid")
+    if len(raw) > MAX_RESPONSE_BYTES:
+        _reject("GitHub REST response exceeds limit")
+    if declared_length is not None and declared_length != len(raw):
+        _reject("GitHub REST response is truncated")
+    budget.add_bytes(len(raw))
+    try:
+        return strict_json(raw, max_bytes=MAX_RESPONSE_BYTES)
+    except MovementError as exc:
+        raise MovementError("GitHub REST response JSON is invalid") from exc
+
+
+def _live_transport(
+    repository: str,
+    number: int,
+    *,
+    environment: Mapping[str, str] | None = None,
+    opener: Any | None = None,
+    timeout_seconds: float = REST_TIMEOUT_SECONDS,
+) -> Any:
+    """Return one bounded callable for current PR and exact issue-comment GETs."""
+    repository = _validate_repository_name(repository)
+    number = _validate_github_identifier(number, error="pull request identifier is invalid")
+    token = _read_live_token(os.environ if environment is None else environment)
+    if (
+        type(timeout_seconds) not in {int, float}
+        or not math.isfinite(timeout_seconds)
+        or timeout_seconds <= 0
+        or timeout_seconds > 60
+    ):
+        _reject("REST timeout is invalid")
+    if opener is None:
+        try:
+            context = ssl.create_default_context()
+        except (OSError, ssl.SSLError) as exc:
+            raise MovementError("verified TLS context is unavailable") from exc
+        opener = _build_live_opener(context)
+    budget = _ResponseBudget()
 
     def load(name: str) -> Any:
-        if name == "pull_request":
-            path = root / "pull_request.json"
-        elif name.startswith("comment:") and name[8:].isdigit():
-            path = root / "comments" / f"{name[8:]}.json"
-        else:
-            _reject("offline snapshot key is invalid")
+        url = _response_url(repository, number, name)
+        budget.begin()
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Accept-Encoding": "identity",
+                "Authorization": f"Bearer {token}",
+                "User-Agent": "nerva-movement-gate/1",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            method="GET",
+        )
         try:
-            return strict_json(path.read_bytes())
-        except (OSError, MovementError) as exc:
+            with opener.open(request, timeout=float(timeout_seconds)) as response:
+                return _read_rest_response(response, expected_url=url, budget=budget)
+        except MovementError:
+            raise
+        except (
+            http.client.HTTPException,
+            OSError,
+            TimeoutError,
+            urllib.error.HTTPError,
+            urllib.error.URLError,
+            ValueError,
+        ) as exc:
+            raise MovementError("GitHub REST request failed") from exc
+
+    return load
+
+
+def _read_bounded_file(path: Path, *, max_bytes: int, error: str) -> bytes:
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(max_bytes + 1)
+    except OSError as exc:
+        raise MovementError(error) from exc
+    if len(raw) > max_bytes:
+        _reject(error)
+    return raw
+
+
+def _snapshot_transport(snapshot_dir: Path) -> Any:
+    root = snapshot_dir.resolve()
+    budget = _ResponseBudget()
+
+    def load(name: str) -> Any:
+        comment_id = _comment_identifier(name)
+        budget.begin()
+        if comment_id is None:
+            path = root / "pull_request.json"
+        else:
+            path = root / "comments" / f"{comment_id}.json"
+        try:
+            raw = _read_bounded_file(
+                path,
+                max_bytes=MAX_RESPONSE_BYTES,
+                error="offline snapshot is invalid",
+            )
+            budget.add_bytes(len(raw))
+            return strict_json(raw, max_bytes=MAX_RESPONSE_BYTES)
+        except MovementError as exc:
             raise MovementError("offline snapshot is invalid") from exc
 
     return load
@@ -1516,7 +1921,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", required=True)
     parser.add_argument("--head", required=True)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
-    parser.add_argument("--snapshot-dir", type=Path)
+    transport_mode = parser.add_mutually_exclusive_group(required=True)
+    transport_mode.add_argument("--live", action="store_true")
+    transport_mode.add_argument("--snapshot-dir", type=Path)
     parser.add_argument("--baseline-manifest", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--manifest", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--diff", type=Path, help=argparse.SUPPRESS)
@@ -1524,12 +1931,39 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if any((args.baseline_manifest, args.manifest, args.diff)):
             _reject("external manifest and diff inputs are not accepted")
+        event = strict_json(
+            _read_bounded_file(
+                args.event,
+                max_bytes=MAX_EVENT_BYTES,
+                error="event file is unavailable or exceeds limit",
+            ),
+            max_bytes=MAX_EVENT_BYTES,
+        )
+        (
+            repository,
+            number,
+            _base,
+            _base_branch,
+            _head,
+            _branch,
+            _body,
+            _draft,
+            _state,
+        ) = _event_context(event)
+        if args.live:
+            transport = _live_transport(
+                repository,
+                number,
+                environment=os.environ,
+            )
+        else:
+            transport = _snapshot_transport(args.snapshot_dir)
         result = run_repository_proof(
             root=args.root,
-            event=strict_json(args.event.read_bytes()),
+            event=event,
             base=args.base,
             head=args.head,
-            transport=_snapshot_transport(args.snapshot_dir) if args.snapshot_dir else None,
+            transport=transport,
         )
     except MovementError as exc:
         print(f"movement gate rejected: {exc}", file=sys.stderr)
