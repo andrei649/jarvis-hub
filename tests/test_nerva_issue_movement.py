@@ -1,3 +1,5 @@
+import hashlib
+import json
 import shutil
 import subprocess
 import sys
@@ -13,13 +15,127 @@ from check_nerva_issue_movement import (
     MovementError,
     classify,
     compute_name_status_diff,
+    derive_scope,
     main,
     parse_diff,
     parse_marker_json,
+    run_pure_proof,
     strict_json,
     validate_manifest_gate,
     validate_registry_evolution,
 )
+
+BASE = LEGACY_BASE
+HEAD = "b" * 40
+REPOSITORY = "andrei649/jarvis-hub"
+PR_NUMBER = 849
+
+
+def valid_gate():
+    return {
+        "schema_version": 1,
+        "enforcement_state": "required",
+        "bootstrap_base": LEGACY_BASE,
+        "registry": [
+            ".github/workflows/ci.yml",
+            ".github/workflows/nerva-roadmap.yml",
+            "BACKLOG.md",
+            "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json",
+            "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md",
+            "scripts/check_nerva_issue_movement.py",
+            "scripts/check_nerva_program_manifest.py",
+            "tests/test_nerva_issue_movement.py",
+            "tests/test_nerva_program_manifest.py",
+        ],
+        "program_control_issues": [846],
+        "continuous_currentness": False,
+        "live_receipt_control": True,
+    }
+
+
+def candidate_manifest():
+    return {"movement_gate": valid_gate()}
+
+
+def snapshot_proof(*, mutate_receipt=False):
+    candidate = candidate_manifest()
+    candidate_bytes = json.dumps(candidate, separators=(",", ":")).encode()
+    digest = hashlib.sha256(candidate_bytes).hexdigest()
+    receipt_fields = {
+        "schema_version": 1,
+        "repository": REPOSITORY,
+        "pull_request": PR_NUMBER,
+        "movement_kind": "program_control",
+        "implementation_issue": 846,
+        "base_sha": BASE,
+        "head_sha": HEAD,
+        "manifest_sha256": digest,
+        "can_authorize": False,
+        "can_execute": False,
+        "completion_authority": False,
+        "release_ready": False,
+    }
+    comments = {}
+    roles = {}
+    for role, issue, comment_id in (
+        ("program", 757, 1),
+        ("blocker", 778, 2),
+        ("implementation", 846, 3),
+    ):
+        receipt = {**receipt_fields, "role": role, "issue": issue}
+        body = (
+            "<!-- NERVA2:MOVEMENT-RECEIPT:START -->"
+            + json.dumps(receipt, separators=(",", ":"))
+            + "<!-- NERVA2:MOVEMENT-RECEIPT:END -->"
+        )
+        roles[role] = {
+            "comment_id": comment_id,
+            "comment_body_sha256": hashlib.sha256(body.encode()).hexdigest(),
+            "updated_at": "2026-08-07T00:00:00Z",
+        }
+        comments[f"comment:{comment_id}"] = {
+            "id": comment_id,
+            "issue_url": f"https://api.github.com/repos/{REPOSITORY}/issues/{issue}",
+            "body": body + ("x" if mutate_receipt and role == "program" else ""),
+            "user": {"login": "andrei649"},
+            "author_association": "OWNER",
+            "created_at": "2026-08-07T00:00:00Z",
+            "updated_at": "2026-08-07T00:00:00Z",
+        }
+    attestation = {
+        "schema_version": 1,
+        "movement_kind": "program_control",
+        "repository": REPOSITORY,
+        "pull_request": PR_NUMBER,
+        "base_sha": BASE,
+        "head_sha": HEAD,
+        "manifest_sha256": digest,
+        "program_issue": 757,
+        "blocker_issue": 778,
+        "implementation_issue": 846,
+        "roles": roles,
+        "can_authorize": False,
+        "can_execute": False,
+        "completion_authority": False,
+        "release_ready": False,
+    }
+    body = (
+        "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->"
+        + json.dumps(attestation, separators=(",", ":"))
+        + "<!-- NERVA2:MOVEMENT-ATTESTATION:END -->"
+    )
+    event = {
+        "repository": {"full_name": REPOSITORY},
+        "pull_request": {
+            "number": PR_NUMBER,
+            "base": {"sha": BASE},
+            "head": {"sha": HEAD, "ref": "nerva2/b2"},
+            "body": body,
+            "draft": False,
+        },
+    }
+    current = {**event["pull_request"], "repository": {"full_name": REPOSITORY}, "state": "open"}
+    return event, candidate, candidate_bytes, {"pull_request": current, **comments}
 
 
 def test_missing_gate_allowed_only_legacy():
@@ -252,3 +368,94 @@ def test_classifier_is_deterministic():
     assert classify("nerva2/x", "", [])
     assert classify("feature/x", MARKER, [])
     assert not classify("feature/x", "", ["src/app.py"])
+
+
+def test_strict_json_normalizes_huge_integer_parser_failure():
+    with pytest.raises(MovementError):
+        strict_json("9" * 5_000)
+
+
+def test_empty_diff_is_a_valid_zero_record_diff():
+    assert parse_diff(b"") == []
+
+
+def test_legacy_baseline_projects_missing_gate_but_candidate_must_materialize_it():
+    event, _candidate, _candidate_bytes, _snapshot = snapshot_proof()
+    with pytest.raises(MovementError):
+        run_pure_proof(
+            event=event,
+            baseline_manifest={},
+            candidate_manifest={},
+            candidate_manifest_bytes=b"{}",
+            base=BASE,
+            head=HEAD,
+            diff=b"",
+        )
+
+
+def test_non_draft_nerva_requires_manifest_view_and_injected_snapshot_proof():
+    event, candidate, candidate_bytes, _snapshot = snapshot_proof()
+    with pytest.raises(MovementError):
+        run_pure_proof(
+            event=event,
+            baseline_manifest={},
+            candidate_manifest=candidate,
+            candidate_manifest_bytes=candidate_bytes,
+            base=BASE,
+            head=HEAD,
+            diff=b"M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json\0M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md\0",
+        )
+
+
+def test_offline_snapshot_proves_attestation_receipt_and_semantic_scope():
+    event, candidate, candidate_bytes, snapshot = snapshot_proof()
+    result = run_pure_proof(
+        event=event,
+        baseline_manifest={},
+        candidate_manifest=candidate,
+        candidate_manifest_bytes=candidate_bytes,
+        base=BASE,
+        head=HEAD,
+        diff=b"M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json\0M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md\0",
+        transport=snapshot.__getitem__,
+    )
+    assert result.status == "proved"
+    assert result.scope["implementation_issue"] == 846
+    assert derive_scope({}, candidate)["kind"] == "program_control"
+
+
+def test_offline_snapshot_rejects_edited_receipt_and_cross_binding():
+    event, candidate, candidate_bytes, snapshot = snapshot_proof(mutate_receipt=True)
+    with pytest.raises(MovementError):
+        run_pure_proof(
+            event=event,
+            baseline_manifest={},
+            candidate_manifest=candidate,
+            candidate_manifest_bytes=candidate_bytes,
+            base=BASE,
+            head=HEAD,
+            diff=b"M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json\0M\0docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md\0",
+            transport=snapshot.__getitem__,
+        )
+
+
+def test_semantic_stream_scope_derives_exactly_one_new_referenced_issue():
+    baseline = {
+        "movement_gate": valid_gate(),
+        "streams": [
+            {
+                "id": "E1",
+                "name": "Stream",
+                "epic_issue": 759,
+                "references": [{"kind": "issue", "value": 759}],
+            }
+        ],
+    }
+    candidate = json.loads(json.dumps(baseline))
+    candidate["streams"][0]["references"].append({"kind": "issue", "value": 900})
+    assert derive_scope(baseline, candidate) == {
+        "kind": "stream",
+        "implementation_issue": 900,
+        "stream_id": "E1",
+        "epic_issue": 759,
+    }
