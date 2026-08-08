@@ -26,11 +26,14 @@ can audit why the manifest is not trustworthy.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import re
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+import check_nerva_program_manifest as checker_module
 from check_nerva_program_manifest import (
     DOCUMENT_RELATIVE,
     MANIFEST_RELATIVE,
@@ -45,6 +48,11 @@ from check_nerva_program_manifest import (
 
 REPO = Path(__file__).resolve().parent.parent
 ACTIVE_STATUSES = frozenset({"discovery", "building", "verifying"})
+
+_CHECKER_SHA256 = "a57c2d06fcecf75b3b693733e6d7fa2059190752365c85086c2972c0dcd3af58"
+_SELF_PIN = b'_VERIFIER_SHA256 = "<self>"'
+_SELF_PIN_RE = re.compile(rb'_VERIFIER_SHA256\s*=\s*"[0-9a-f]{64}"')
+_VERIFIER_SHA256 = "a1b4e3381717e826329af0070b85e4b30f5f526dc408973a90df3c4010e9e0d8"
 
 
 @dataclass(frozen=True)
@@ -75,8 +83,17 @@ class AuthorityPosture:
 
     @property
     def non_enforcing(self) -> bool:
-        return not any(
-            (self.can_authorize, self.can_execute, self.completion_authority, self.release_ready)
+        return (
+            self.status_is_evidence_label_only
+            and self.ultron_remains_sole_action_authority
+            and not any(
+                (
+                    self.can_authorize,
+                    self.can_execute,
+                    self.completion_authority,
+                    self.release_ready,
+                )
+            )
         )
 
 
@@ -91,7 +108,10 @@ class ManifestVerdict:
     streams: tuple[StreamAssessment, ...]
     authority: AuthorityPosture | None
     release_ready: bool
-    render_current: bool | None
+    all_streams_done: bool = False
+    trusted_source: bool = True
+    source_errors: tuple[str, ...] = ()
+    render_current: bool | None = None
 
 
 def verdict_label(program_status: str, derived_eligibility: str) -> str:
@@ -178,6 +198,41 @@ def read_authority(data: Any) -> AuthorityPosture | None:
     )
 
 
+def _normalized_source_bytes(path: Path) -> tuple[bytes, str]:
+    """Return LF-normalized source bytes plus a stable digest for a file.
+
+    The verifier's own digest is computed over the file with its self-pin
+    literal blanked out, so embedding the accepted digest never circularly
+    changes the value that must match it.
+    """
+    raw = path.read_bytes().replace(b"\r\n", b"\n")
+    if path.resolve() == Path(__file__).resolve():
+        raw = _SELF_PIN_RE.sub(_SELF_PIN, raw)
+    return raw, hashlib.sha256(raw).hexdigest()
+
+
+def verify_trusted_source() -> tuple[bool, tuple[str, ...]]:
+    """Verify that the accepted verifier/checker bytes match the pins.
+
+    Anti-counterfeit proof: the verifier and the canonical checker must be
+    byte-identical (LF-normalized) to the versions accepted at release time.
+    Returns ``(trusted, errors)``; a failure is reported, never enforced.
+    """
+    errors: list[str] = []
+    for label, path, expected in (
+        ("checker", Path(checker_module.__file__), _CHECKER_SHA256),
+        ("verifier", Path(__file__), _VERIFIER_SHA256),
+    ):
+        try:
+            _normalized, digest = _normalized_source_bytes(path)
+        except (OSError, ValueError) as exc:
+            errors.append(f"{label} unreadable: {exc}")
+            continue
+        if digest != expected:
+            errors.append(f"{label} sha256 mismatch: expected {expected}, got {digest}")
+    return (not errors, tuple(errors))
+
+
 def verify_data(
     data: Any,
     *,
@@ -206,11 +261,14 @@ def verify_data(
         schema_version = 0
         streams = ()
         authority = None
+    all_streams_done = bool(streams) and all(item.verdict_label == "DONE" for item in streams)
     release_ready = (
         structurally_valid
-        and bool(streams)
-        and all(item.verdict_label == "DONE" for item in streams)
+        and all_streams_done
+        and authority is not None
+        and authority.release_ready is True
     )
+    trusted_source, source_errors = verify_trusted_source()
     return ManifestVerdict(
         manifest_id=manifest_id,
         schema_version=schema_version,
@@ -219,8 +277,25 @@ def verify_data(
         streams=streams,
         authority=authority,
         release_ready=release_ready,
+        all_streams_done=all_streams_done,
+        trusted_source=trusted_source,
+        source_errors=source_errors,
         render_current=None,
     )
+
+
+def _discover_repo_root(manifest_path: Path) -> Path | None:
+    """Walk upward from the manifest to find the repository root.
+
+    The root is the nearest ancestor containing a ``.git`` entry (a directory
+    in a working copy, or a ``gitdir:`` file in a linked worktree). ``None``
+    when no repository is discoverable.
+    """
+    current = manifest_path.resolve().parent
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
 
 
 def verify_path(
@@ -234,7 +309,17 @@ def verify_path(
     """Verify a manifest from disk, failing closed on unreadable input."""
 
     if root is None:
-        root = manifest_path.resolve().parent.parent
+        root = _discover_repo_root(manifest_path)
+        if root is None:
+            return ManifestVerdict(
+                manifest_id="",
+                schema_version=0,
+                structurally_valid=False,
+                errors=(f"unable to discover repository root from {manifest_path}",),
+                streams=(),
+                authority=None,
+                release_ready=False,
+            )
     if registry_path is None:
         registry_path = root / REGISTRY_RELATIVE
     try:
@@ -268,6 +353,11 @@ def _print_verdict(verdict: ManifestVerdict) -> None:
     print(f"schema_version={verdict.schema_version}")
     print(f"structurally_valid={'yes' if verdict.structurally_valid else 'no'}")
     print(f"release_ready={'yes' if verdict.release_ready else 'no'}")
+    print(f"all_streams_done={'yes' if verdict.all_streams_done else 'no'}")
+    print(f"trusted_source={'yes' if verdict.trusted_source else 'no'}")
+    if verdict.source_errors:
+        for error in verdict.source_errors:
+            print(f"source-error: {error}")
     if verdict.authority is not None:
         posture = "non_enforcing" if verdict.authority.non_enforcing else "reports_authority"
         print(f"authority={posture}")
