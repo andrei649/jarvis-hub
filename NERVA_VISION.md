@@ -42,7 +42,7 @@ a restart:
 | **Observe** | `core/autonomy/observer.py` + watchers, `passive_capture.py`, channels, heartbeat |
 | **Understand** | memory fusion (vector ⊕ graph, RRF), bi-temporal KG (H14), ingestion pipeline |
 | **Decide** | orchestrator + 17 specialist agents, autonomy policy, `agent_runtime.py` model-directed loop (H20.R1) |
-| **Act** | the **Action Kernel** (O24 — Gate-K complete, 11 action kinds mediated), brokers, ToolRPC, sandbox |
+| **Act** | the **Action Kernel** (O24 — Gate-K, 18 action kinds mediated), brokers, ToolRPC, sandbox |
 | **Verify** | the **Verification Fabric** (O24 — reality harness, SEAM→WIRED→VERIFIED→GA registry) |
 | **Learn** | the governed per-turn learning loop (O20 — `learning/background_review.py`, CoreMemory, skill curator) |
 
@@ -95,11 +95,13 @@ and verifies.**
 
 - **v0.11.0**, feature-complete + refactored; test/route counts are auto-synced in
   [STATUS.md](STATUS.md) (never trust hand-written numbers elsewhere).
-- **Ultron / Gate-K complete**: every one of the 11 privileged action kinds crosses
-  `kernel.authorize` (action-auth snapshot has zero `pending`).
+- **Ultron / Gate-K**: every one of the 18 registered privileged action kinds crosses
+  `kernel.authorize` (action-auth snapshot has zero `pending`; the matrix cannot see a kind that
+  was never registered).
 - **Synapse seeds — ORIZONT 20 (Hermes Mining) 6/6 + live wave**: the governed per-turn learning
-  loop is merged (default-off), skill lifecycle + curator live, ToolRPC spine + execution
-  environments (local/docker/ssh) merged.
+  loop is merged (default-off — and still off in the Design-Partner posture, which omits
+  `cognition.review_enabled`), skill lifecycle + curator live, ToolRPC spine + execution
+  environments (local/docker) merged (no SSH transport exists).
 - **H15 computer-use**: governance complete (egress allowlist, approval queue, injection defense,
   a11y fusion) but **actuation is stubbed** — `NullBrowserDriver`/`NullDesktopDriver`; no real
   Playwright/VM driver in-repo.
@@ -334,9 +336,15 @@ Reference research: [2026-06-07-hermes-agent.md](docs/research/2026-06-07-hermes
 **Verdict.** Hermes Agent is ahead on execution maturity: the closed skill-creation loop, a mature
 multi-provider browser stack, portable terminal backends, gateway polish. Nerva is ahead on
 governance (Action Kernel, contracts, taint, tamper-evident audit), the personal-world ontology
-(Atlas), physical/multimedia presence, and local-first as a non-negotiable. **Hermes-derived
-components are hands and procedural learning. Nerva remains the brain, identity, policy layer and
-house operating model.**
+(Atlas), physical/multimedia presence, and local-first as a non-negotiable. The moat, stated where
+it survives contact: **Hermes has HA as a tool; Nerva has a house model** — Hermes's Home Assistant
+support is an `area` name filter over its entities plus per-family-member profile isolation, not a
+model of the house — and **Hermes declined to build an action-level audit chain; we built one and
+have not turned it on.** Honest counterweight: Hermes gates less than its approval story implies —
+`ha_call_service` has no approval, container isolation *replaces* command checks, smart approvals
+auto-approve low risk, and memory writes default to no approval. **Hermes-derived components are
+hands and procedural learning. Nerva remains the brain, identity, policy layer and house operating
+model.**
 
 **Strategy.** Do **not** rebuild Hermes feature-by-feature. Adopt its mechanisms under Nerva
 governance — ORIZONT 20 is the precedent and the lane (MIT, vendored at
