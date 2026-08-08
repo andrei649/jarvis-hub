@@ -81,13 +81,13 @@ Repository placement determines delivery state. Under the pre-integration rule, 
 - The E0 blocks in `BACKLOG.md` and `STATUS.md` remain immutable historical
   closure evidence; this delivery snapshot carries current post-E0 movement.
 
-## Post-snapshot E1.2a addendum (2026-08-07)
+## Post-snapshot E1.2a addendum (2026-08-07, merged)
 
-An unmerged E1.2a / #841 candidate is `integration_pending`; once accepted on
-`main`, it is `contract_ready`: an owner-local, retained primary-route-adequacy
-contract with one warm-up and five retained runs. It does not supply representative
-evidence and remains `owner_evidence_blocked` until the E1.2b owner inputs are
-supplied, with
+E1.2a / #841 / PR #842 is merged onto `main` as commit `769b633`
+(2026-08-07); it is `contract_ready`: an owner-local, retained
+primary-route-adequacy contract with one warm-up and five retained runs. It
+does not supply representative evidence and remains `owner_evidence_blocked`
+until the E1.2b owner inputs are supplied, with
 `real_task_outcome_quality=not_measured`. It leaves E1 `building`, B2 live
 enforcement partial, and program/release completion false.
 
