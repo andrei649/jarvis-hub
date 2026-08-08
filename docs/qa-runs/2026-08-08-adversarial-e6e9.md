@@ -13,21 +13,37 @@
 
 ## Verbatim test results
 
+### Before fixes (QA-only pass)
+
 - `tests/test_adversarial_e6_e9.py` → **17 passed, 3 xfailed (0 failed)**
 - `tests/test_daily_reflection.py` → **14 passed** (unchanged)
 - `tests/test_nerva_benchmark_e9_0.py` → **12 passed** (unchanged)
 
 ```
 tests\test_adversarial_e6_e9.py .................x..xx  [100%]
-======================== 17 passed, 3 xfailed in 1.90s ========================
+======================== 17 passed, 3 xfailed in 1.90s =========================
 ```
+
+### After fixes (ADV-03 + ADV-09 implemented, same worktree)
+
+- `tests/test_adversarial_e6_e9.py` → **20 passed (0 failed, 0 xfailed)**
+- `tests/test_daily_reflection.py` → **14 passed** (unchanged)
+- `tests/test_nerva_benchmark_e9_0.py` → **12 passed** (unchanged)
+
+```
+46 passed in 2.39s
+```
+
+The three `xfail(strict=False)` regression tests flipped to plain tests
+(only the decorator removed; bodies unchanged) and now pass against the
+production emission-time fixes.
 
 ## Findings
 
 | ID | Epic | Severity | Evidence | Required correction | Regression test |
 | --- | --- | --- | --- | --- | --- |
-| ADV-03 | E6.0 + E9.1 | medium | The `init=False` authority-ceiling fields (`can_execute`, `can_authorize`, `can_change_routing`, ...) are frozen against the *constructor*, but `object.__setattr__` still flips them after `__post_init__`, and the mutated value is serialized into the canonical payload (`canonical_payload()` / `to_dict()`). Probe on `OutcomeObservation` and `LessonProposal` (E6.0) and `RegressionReport` (E9.1) confirms the flipped flag reaches JSON. Contradicts the "immutable `init=False` fields, so the ceiling is serialized into every record" claim in `docs/nerva2/REFLECTION_E6_0.md` (§authority ceiling) and `docs/nerva2/RESEARCH_LAB_E9_1.md` (line 29). | Serialize the authority fields from module constants at emission time (e.g. always re-assert `False`/`proposal_only`/`evaluation_only` inside `canonical_payload`/`to_dict`), or hash the authority block into the replay fingerprint so a mutated flag invalidates the fingerprint. | `test_e60_authority_ceiling_is_immutable`, `test_e91_authority_ceiling_is_immutable` (both `xfail(strict=False)` with `ADV-03`) |
-| ADV-09 | E9.1 | low | `_validate_totals()` accepts a summary with `scored > 0` and `quality_mean is None`, but a real `BenchmarkRun.summary` always derives `quality_mean` from the measured candidate values, so no real run can produce that summary. The validator is documented to "reject a summary that cannot describe a real benchmark run" but does not reject this impossible combination. | Add the converse invariant in `_validate_totals`: `scored > 0` implies `quality_mean` is not null (mirror of the existing `scored == 0` rule). | `test_e91_totals_cannot_say_scored_without_quality` (`xfail(strict=False)` with `ADV-09`) |
+| ADV-03 | E6.0 + E9.1 | medium | The `init=False` authority-ceiling fields (`can_execute`, `can_authorize`, `can_change_routing`, ...) are frozen against the *constructor*, but `object.__setattr__` still flips them after `__post_init__`, and the mutated value was serialized into the canonical payload (`canonical_payload()` / `to_dict()`). Probe on `OutcomeObservation` and `LessonProposal` (E6.0) and `RegressionReport` (E9.1) confirmed the flipped flag reached JSON. Contradicts the "immutable `init=False` fields, so the ceiling is serialized into every record" claim in `docs/nerva2/REFLECTION_E6_0.md` (§authority ceiling) and `docs/nerva2/RESEARCH_LAB_E9_1.md` (line 29). | **FIXED:** serialize the authority fields from module constants at emission time — `_PROPOSAL_ONLY_CEILING` in `reflection_lesson.py`, hard-coded `evaluation_only` flags in `reflection_evaluation.py`, `cortex_measured_compare.py` and `scheduled_report.py`. A post-construction mutation never reaches the emitted payload. | `test_e60_authority_ceiling_is_immutable`, `test_e91_authority_ceiling_is_immutable` (plain, green) |
+| ADV-09 | E9.1 | low | `_validate_totals()` accepted a summary with `scored > 0` and `quality_mean is None`, but a real `BenchmarkRun.summary` always derives `quality_mean` from the measured candidate values, so no real run can produce that summary. The validator is documented to "reject a summary that cannot describe a real benchmark run" but did not reject this impossible combination. | **FIXED:** added the converse invariant in `_validate_totals` (`scheduled_report.py`): `scored > 0` implies `quality_mean` is not null (mirror of the existing `scored == 0` rule). | `test_e91_totals_cannot_say_scored_without_quality` (plain, green) |
 
 ## Candidates probed and rejected (no defect)
 
@@ -47,13 +63,27 @@ tests\test_adversarial_e6_e9.py .................x..xx  [100%]
 
 ## Files changed
 
-- `tests/test_adversarial_e6_e9.py` — new (20 tests: 17 green + 3 `xfail(strict=False)`).
+- `tests/test_adversarial_e6_e9.py` — new (20 tests; the 3 ADV-03/ADV-09 xfails
+  flipped to plain tests once the production fixes landed).
 - `docs/qa-runs/2026-08-08-adversarial-e6e9.md` — this report.
-- No production module touched; no existing test touched; no `BACKLOG.md` / `STATUS.md` change (this is a QA-only branch, not merged).
+- `agents/core/reflection_lesson.py` — ADV-03: `_PROPOSAL_ONLY_CEILING` module
+  constant re-asserted in `OutcomeObservation.canonical_payload` and
+  `LessonProposal.canonical_payload` (emission-time only; fields, constructors
+  and guards unchanged).
+- `agents/core/reflection_evaluation.py` — ADV-03: `LessonEvaluationReport.to_dict`
+  emits the `evaluation_only` ceiling constants (emission-time only).
+- `agents/core/cortex_measured_compare.py` — ADV-03: `MeasuredComparisonReport._payload`
+  emits the `evaluation_only` ceiling constants (emission-time only).
+- `agents/core/observability/scheduled_report.py` — ADV-03: `RegressionReport.to_dict`
+  emits the `evaluation_only` ceiling constants; ADV-09: `_validate_totals` rejects
+  `scored > 0` with `quality_mean is None`.
+- No existing test touched beyond the hostile file; no `BACKLOG.md` / `STATUS.md`
+  change (this is a QA branch, not merged).
 
 ## Final status
 
-`draft-hold` — findings ADV-03 (medium) and ADV-09 (low) are real and now
-regression-pinned. Branch pushed (`qa/adversarial-e6e9-exact-head`), **not
-merged**. Fixes belong in production modules, which were out of scope for this
-QA-only pass.
+`draft-hold` — findings ADV-03 (medium) and ADV-09 (low) were real, are now
+regression-pinned AND fixed by the production emission-time changes in the
+same worktree. Full matrix green (20 + 14 + 12 = 46). Branch pushed
+(`qa/adversarial-e6e9-exact-head`), **not merged**. Rollback: revert the
+production changes; the three flipped tests go back to `xfail`.

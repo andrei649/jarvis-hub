@@ -11,15 +11,22 @@ documents a confirmed defect via ``@pytest.mark.xfail(strict=False)`` with an
 ``ADV-`` reason. Defects are proven by a failing probe before being marked
 xfail; nothing here fabricates a finding.
 
-Confirmed finding at this head:
+Findings at this head, now FIXED by the production emission-time changes:
 
 - ADV-03 (medium): the ``init=False`` authority ceiling fields
   (``can_execute``, ``can_authorize``, ...) are only immutable against the
   *dataclass* construction path. ``object.__setattr__`` still flips them after
-  ``__post_init__`` and the flipped value serializes into the canonical JSON /
+  ``__post_init__`` and the flipped value serialized into the canonical JSON /
   ``to_dict`` output, contradicting the "immutable init=False fields, so the
   ceiling is serialized into every record" claim in
   ``docs/nerva2/REFLECTION_E6_0.md`` and ``docs/nerva2/RESEARCH_LAB_E9_1.md``.
+  Serialization now re-asserts the authority ceiling from module constants
+  (``_PROPOSAL_ONLY_CEILING`` / hard-coded ``evaluation_only`` flags), so a
+  post-construction mutation never reaches the emitted payload.
+- ADV-09 (low): ``_validate_totals()`` accepted a ``scored > 0`` summary whose
+  ``quality_mean`` is null, but a real ``BenchmarkRun.summary`` always derives
+  ``quality_mean`` from the measured results. The validator now rejects the
+  impossible combination (converse of the existing ``scored == 0`` rule).
 
 Rejected candidates (verified non-defects): ADV-01 (no prereq shortcut; the
 CLI fails visibly with exit 2 on ``PrerequisiteError``), ADV-02 (canonical
@@ -47,18 +54,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agents.core.memory.atlas_snapshot import AtlasConfidence  # noqa: E402
 from agents.core.memory.episodes import EpisodeReference  # noqa: E402
+from agents.core.observability.scheduled_report import (  # noqa: E402
+    EnvironmentProfile,
+    RegressionReport,
+    build_report,
+)
 from agents.core.reflection_lesson import (  # noqa: E402
     LessonProposal,
     OutcomeObservation,
     compare_outcome,
     load_lesson_proposal,
     propose_lesson,
-)
-
-from agents.core.observability.scheduled_report import (  # noqa: E402
-    EnvironmentProfile,
-    RegressionReport,
-    build_report,
 )
 
 _DIGEST = "a" * 64
@@ -260,7 +266,6 @@ def test_e60_canonical_json_stable_across_dict_insertion_order():
     a = prop.to_json()
     payload = json.loads(a)
     reversed_payload = {key: payload[key] for key in reversed(list(payload))}
-    rebuilt = json.loads(json.dumps(reversed_payload))
     # load_lesson_proposal rejects a reordered payload only because it requires
     # byte-identical canonical JSON; the canonical serializer itself must still
     # produce one stable ordering regardless of the input order.
@@ -326,16 +331,6 @@ def test_e91_metric_comparison_rejects_lie_about_delta():
         )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "ADV-09: _validate_totals accepts a scored>0 summary whose quality_mean "
-        "is null, but a real BenchmarkRun.summary always derives quality_mean "
-        "from the measured results, so no real run can produce that summary. "
-        "The validator was documented to reject summaries that cannot describe "
-        "a real benchmark run but does not reject this one."
-    ),
-)
 def test_e91_totals_cannot_say_scored_without_quality():
     from agents.core.observability.scheduled_report import _validate_totals
 
@@ -402,19 +397,9 @@ def test_e91_no_credential_keys_in_serialized_payloads(tmp_path):
             assert not secret_pattern.search(key), f"credential-like key leaked: {key}"
 
 
-# ── ADV-03: authority ceiling is NOT truly immutable (confirmed defect) ────
+# ── ADV-03: authority ceiling is immutable at emission (fixed) ────────────
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "ADV-03: E6.0 OutcomeObservation/LessonProposal authority flags "
-        "(init=False, frozen) are still mutable via object.__setattr__ after "
-        "__post_init__, and the mutated value serializes into the canonical "
-        "payload — contradicting the immutable-authority claim in "
-        "REFLECTION_E6_0.md"
-    ),
-)
 def test_e60_authority_ceiling_is_immutable():
     observation = _confirmed()
     object.__setattr__(observation, "can_authorize", True)
@@ -425,15 +410,6 @@ def test_e60_authority_ceiling_is_immutable():
     assert proposal.canonical_payload()["can_execute"] is False
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "ADV-03: E9.1 RegressionReport authority flags (init=False, frozen) "
-        "are still mutable via object.__setattr__ after __post_init__, and "
-        "to_dict serializes the mutated value — contradicting the "
-        "evaluation_only ceiling claim in RESEARCH_LAB_E9_1.md"
-    ),
-)
 def test_e91_authority_ceiling_is_immutable(tmp_path):
     import asyncio
 

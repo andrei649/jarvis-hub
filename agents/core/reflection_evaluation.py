@@ -868,13 +868,16 @@ class LessonEvaluationReport:
             "deletion_behavior": self.deletion_behavior,
             "schema": self.schema,
             "kind": self.kind,
-            "authority": self.authority,
-            "can_promote_lesson": self.can_promote_lesson,
-            "can_write_memory": self.can_write_memory,
-            "can_change_routing": self.can_change_routing,
-            "can_authorize": self.can_authorize,
-            "can_execute": self.can_execute,
-            "can_mark_complete": self.can_mark_complete,
+            # E6.1 reports are evaluation_only; the ceiling is a module constant
+            # re-asserted at emission (init=False fields can still be flipped
+            # with object.__setattr__ after construction).
+            "authority": "evaluation_only",
+            "can_promote_lesson": False,
+            "can_write_memory": False,
+            "can_change_routing": False,
+            "can_authorize": False,
+            "can_execute": False,
+            "can_mark_complete": False,
         }
 
     def to_json(self) -> str:

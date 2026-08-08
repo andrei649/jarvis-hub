@@ -385,12 +385,12 @@ class RegressionReport:
         # mapping is serialized from immutable state.
         return {
             "schema": self.schema,
-            "authority": self.authority,
-            "can_change_routing": self.can_change_routing,
-            "can_authorize": self.can_authorize,
-            "can_execute": self.can_execute,
-            "can_promote_capability": self.can_promote_capability,
-            "can_mark_complete": self.can_mark_complete,
+            "authority": "evaluation_only",
+            "can_change_routing": False,
+            "can_authorize": False,
+            "can_execute": False,
+            "can_promote_capability": False,
+            "can_mark_complete": False,
             "suite_name": self.suite_name,
             "suite_version": self.suite_version,
             "run_id": self.run_id,
@@ -627,6 +627,8 @@ def _validate_totals(totals: Mapping[str, Any]) -> None:
             raise ValueError(f"report totals {name} must be a ratio")
     if counts["scored"] == 0 and totals["quality_mean"] is not None:
         raise ValueError("report totals cannot score an unscored run")
+    if counts["scored"] > 0 and totals["quality_mean"] is None:
+        raise ValueError("report totals cannot leave scored results unmeasured")
 
 
 def _metrics_from_totals(totals: Mapping[str, Any]) -> dict[str, float | None]:

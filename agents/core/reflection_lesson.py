@@ -109,6 +109,19 @@ _MAX_CLAIM_CHARS = 2048
 _MAX_SCOPE_CHARS = 256
 _MAX_LIMITATION_CHARS = 512
 
+# E6.0 records are ``proposal_only``. The serialized authority ceiling is a
+# module constant re-asserted at emission time: the ``init=False`` dataclass
+# fields can still be flipped with ``object.__setattr__`` after construction,
+# so ``canonical_payload`` must never trust the instance state for these keys.
+_PROPOSAL_ONLY_CEILING: dict[str, Any] = {
+    "authority": "proposal_only",
+    "can_rewrite_source_evidence": False,
+    "can_promote_lesson": False,
+    "can_authorize": False,
+    "can_execute": False,
+    "can_mark_complete": False,
+}
+
 
 @dataclass(frozen=True)
 class OutcomeVerdict:
@@ -349,7 +362,9 @@ class OutcomeObservation:
         }
 
     def canonical_payload(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        payload.update(_PROPOSAL_ONLY_CEILING)
+        return payload
 
     def to_json(self) -> str:
         return _canonical_json(self.canonical_payload())
@@ -543,6 +558,7 @@ class LessonProposal:
         payload = asdict(self)
         # The construction guard is never serialized or fingerprinted.
         payload.pop("guard", None)
+        payload.update(_PROPOSAL_ONLY_CEILING)
         return payload
 
     def to_json(self) -> str:
