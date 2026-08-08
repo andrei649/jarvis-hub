@@ -2794,15 +2794,18 @@ def _check_operator_contract_ledgers() -> None:
 
     state = _markdown_section(contract, "State and boundary")
     for value in (
-        "IMPLEMENTED CONTRACT CANDIDATE · INTEGRATION PENDING",
-        "integration_pending",
-        "accepted onto main",
+        "IMPLEMENTED CONTRACT · MERGED",
+        "CONTRACT READY",
+        "merged onto `main`",
+        "PR #842",
+        "769b633",
         "contract_ready",
         "owner_evidence_blocked",
         "real_task_outcome_quality=not_measured",
         "neither program completion nor release readiness",
     ):
         assert _section_contains(state, value)
+    assert "integration_pending" not in state
     assert "design_hold" not in state
 
     schema = _markdown_section(contract, "External owner label schema")
@@ -2962,8 +2965,9 @@ def _check_operator_contract_ledgers() -> None:
         "docs/OWNER_TASKS.md",
     ):
         ledger = (repository / path).read_text(encoding="utf-8")
-        assert _section_contains(ledger, "accepted on `main`")
-        assert _section_contains(ledger, "integration_pending")
+        assert _section_contains(ledger, "merged")
+        assert "#842" in ledger
+        assert "integration_pending" not in ledger
         assert "contract_ready" in ledger
         assert "owner_evidence_blocked" in ledger
         assert "real_task_outcome_quality=not_measured" in ledger
