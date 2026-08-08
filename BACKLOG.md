@@ -154,8 +154,9 @@ Discovery found six owner decisions that must be resolved before branch creation
 has not started, and acceptance evidence is still required. B7 therefore remains open.
 
 B3 / Continuity Core (#731) mapping — all six #778 unblock items now have an explicit
-destination epic, prior-art citation where accepted evidence exists, and an honestly
-recorded gap where it doesn't, in
+destination, prior-art citation where accepted evidence exists (including `RISKS.md`'s
+prior `MEM-03`/`SEC-05` ownership of the memory-taint check), and an honestly recorded
+gap where it doesn't, in
 [`docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md`](docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md).
 No epic gained a typed contract or acceptance test from this document; #731 stays open
 per its own bar ("close it only after every requirement has a destination and

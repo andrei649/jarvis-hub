@@ -38,6 +38,7 @@ explicitly, not smoothed over.
 | E10 Experience | #768 | — | `NOT STARTED` |
 | E11 Proof & Release | #769 | — | `NOT STARTED` |
 | E12 Hybrid Cognition | #773 | — | tracked separately, advisory-only per #778 §2.2 |
+| E9 Research Lab | #767 | #784 (PR #803), #807 (PR #809) | `BUILDING · E9.0 ACCEPTED` (per #767 itself; E9.1/#807 accepted per `BACKLOG.md`) |
 
 ## Primitive-by-primitive mapping
 
@@ -123,13 +124,20 @@ away," a direct match to #731's contradiction/supersession check. E3.0's typed
 provenance/confidence values are relevant prior art. E12/#773 is the natural home for
 the calibration/abstention half ("whether abstention is safer").
 
-**Gap, and the one worth flagging most clearly:** #731's trust-gate checklist includes
-**"instruction-vs-data taint"** — treating recalled memory content as data, never as
-executable instruction. No destination issue (#761, #764, or #773) currently names this
-check anywhere in its acceptance criteria. This is a prompt-injection-adjacent concern
-directly relevant to Episodes/Reflection recall paths, and it currently has no owner.
-Recorded here rather than silently dropped; assigning it is an owner/security-architect
-decision, not one this document makes unilaterally.
+**Not a gap — already owned, missed on first pass of this document.** #731's
+trust-gate checklist includes **"instruction-vs-data taint"** — treating recalled
+memory content as data, never as executable instruction. `docs/nerva2/RISKS.md`
+(accepted E0.3a risk-register evidence, cited in #757/#778 §B1) already assigns this
+exact concern an owner: `MEM-03` — "Similarity-only retrieval admits irrelevant, stale,
+private or instruction-bearing memory... Continuity Core #731 identifies the missing
+trust/admission gate," mitigation explicitly naming "taint," **Owner: E3/E6/E12** —
+the same three epics this section maps to independently. `SEC-05` covers the broader
+instruction/data trust-boundary version of the same concern, **Owner: E2/E3/E8/E11**.
+The narrower, accurate claim is: no epic's own *formal acceptance criteria* (the
+`- [ ]` checklists in #761/#764/#773) names the taint check yet, even though the risk
+register already does. That is a smaller gap than "no owner" — it is "owned in the risk
+register, not yet promoted into an epic's acceptance list" — and closing it is an
+epic-owner decision, not one this document makes unilaterally.
 
 ## Delivery slices A–E
 
@@ -137,7 +145,7 @@ decision, not one this document makes unilaterally.
 |---|---|---|---|
 | A — schema and ledger | E2 + E3 | `nerva.observation.v1`, `nerva.atlas.snapshot.v1`, `nerva.episode.v1` cover versioned schema, append/correct/supersede, provenance, temporal validity | export/import round-trip test not yet proven — E3's own "residual risks" says so |
 | B — identity and autobiography | E4 (gap) | none | see primitive 1/3 gap above |
-| C — trusted recall | E3 + E6 | typed provenance (E3.0), contradiction-surfacing acceptance (E6) | admission-gate taint check gap above |
+| C — trusted recall | E3 + E6 | typed provenance (E3.0), contradiction-surfacing acceptance (E6), `RISKS.md` `MEM-03`/`SEC-05` already own the taint check | not yet promoted from risk register into an epic's formal acceptance criteria |
 | D — proactive relief loop | E5 + E10 | time-ROI formula, Build/acceptance shape already match | implementation not started (`NOT STARTED`) |
 | E — migration harness | E11 | backup/restore/export/delete/rollback drills named | bundle-content detail gap above |
 
@@ -159,9 +167,10 @@ decision, not one this document makes unilaterally.
 #731's evaluation suite (multi-session recall, temporal reasoning, contradiction/
 retraction handling, cross-topic/person leakage, abstention calibration, identity
 consistency across base models, privacy boundary tests, proactive precision/interruption
-burden, migration parity) maps naturally to **E9 Research Lab** (#784) as the harness
-that would run it — E9's own stream description is "continuous model/tool benchmark
-harness using real Nerva task suites." This connection is not stated anywhere in #731,
+burden, migration parity) maps naturally to **E9 Research Lab** (#767, epic; accepted
+first slice E9.0/#784/PR #803) as the harness that would run it — E9's own stream
+description is "continuous model/tool benchmark harness using real Nerva task suites."
+This connection is not stated anywhere in #731,
 #778 B3, or the owner's #731 comment; it is this document's own inference, flagged as
 such rather than presented as an existing decision. E9.0/#784/PR #803 and E9.1/#807/
 PR #809 are accepted evaluation-only foundations that a future Continuity Core suite
