@@ -43,6 +43,34 @@ def _stream(data: dict, stream_id: str) -> dict:
     return next(item for item in data["streams"] if item["id"] == stream_id)
 
 
+def _evidence(claim: str) -> dict:
+    return {
+        "commit": "458df5afabdf12536236522034e7c84493200147",
+        "repo_path": "docs/nerva2/DEPENDENCIES.md",
+        "issue": 757,
+        "pull_request": 852,
+        "claim_code": claim,
+    }
+
+
+def _all_done_manifest() -> dict:
+    data = _manifest()
+    for stream in data["streams"]:
+        stream_id = stream["id"]
+        stream["program_status"] = "done"
+        stream["delivery_eligibility"] = "satisfied"
+        for edge in stream["delivery_prerequisites"]:
+            edge["gate_state"] = "satisfied"
+            edge["accepted_evidence"] = [_evidence("consumer_delivery_gate_accepted")]
+        stream["blockers"] = []
+        stream["completion_evidence"] = [
+            _evidence(
+                "e0_control_gate_accepted" if stream_id == "E0" else "stream_completion_accepted"
+            )
+        ]
+    return data
+
+
 class TestGolden:
     def test_canonical_manifest_verdict_is_clean_and_non_enforcing(self) -> None:
         verdict = _verify()
@@ -148,7 +176,9 @@ class TestHostileStructures:
         e1 = next(a for a in verdict.streams if a.stream_id == "E1")
 
         assert verdict.structurally_valid is False
-        assert any("E1: delivery_eligibility must be 'in_progress'" in error for error in verdict.errors)
+        assert any(
+            "E1: delivery_eligibility must be 'in_progress'" in error for error in verdict.errors
+        )
         assert e1.eligibility_matches is False
         assert e1.derived_eligibility == "in_progress"
 
@@ -219,7 +249,9 @@ class TestHostileJsonLoad:
 
     def test_verify_path_fails_closed_on_non_finite_json(self, tmp_path: Path) -> None:
         path = tmp_path / "manifest.json"
-        path.write_text('{"schema_version": NaN, "manifest_id": "nerva.program-manifest.v1"}', encoding="utf-8")
+        path.write_text(
+            '{"schema_version": NaN, "manifest_id": "nerva.program-manifest.v1"}', encoding="utf-8"
+        )
 
         verdict = verifier.verify_path(path, registry_path=REGISTRY, root=REPO)
 
@@ -227,7 +259,9 @@ class TestHostileJsonLoad:
         assert verdict.errors[0].startswith("failed to load")
 
     def test_verify_path_fails_closed_on_missing_file(self) -> None:
-        verdict = verifier.verify_path(MANIFEST / "does-not-exist.json", registry_path=REGISTRY, root=REPO)
+        verdict = verifier.verify_path(
+            MANIFEST / "does-not-exist.json", registry_path=REGISTRY, root=REPO
+        )
 
         assert verdict.structurally_valid is False
         assert verdict.errors[0].startswith("failed to load")
@@ -268,7 +302,9 @@ class TestVerdictLabels:
 
 
 class TestCli:
-    def test_main_is_informational_and_non_enforcing(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_main_is_informational_and_non_enforcing(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         before = DOCUMENT.read_bytes()
 
         exit_code = verifier.main(["--manifest", str(MANIFEST)])
@@ -279,7 +315,9 @@ class TestCli:
         assert captured.out.strip()
         assert before == after
 
-    def test_main_returns_zero_even_for_hostile_manifest(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_main_returns_zero_even_for_hostile_manifest(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         path = tmp_path / "manifest.json"
         path.write_text('{"schema_version": NaN}', encoding="utf-8")
 
@@ -288,3 +326,117 @@ class TestCli:
         captured = capsys.readouterr()
         assert exit_code == 0
         assert captured.out.strip()
+
+
+class TestTrustedSource:
+    def test_verify_trusted_source_is_true_on_canonical_repo(self) -> None:
+        trusted, errors = verifier.verify_trusted_source()
+
+        assert trusted is True
+        assert errors == ()
+
+    def test_verify_data_reports_trusted_source_true(self) -> None:
+        verdict = _verify()
+
+        assert verdict.trusted_source is True
+        assert verdict.source_errors == ()
+
+    def test_tampered_checker_bytes_are_detected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        tampered = tmp_path / "check_nerva_program_manifest.py"
+        tampered.write_text(
+            "def validate_manifest(*args, **kwargs):\n    return []\n", encoding="utf-8"
+        )
+        monkeypatch.setattr(sys.modules["check_nerva_program_manifest"], "__file__", str(tampered))
+
+        trusted, errors = verifier.verify_trusted_source()
+
+        assert trusted is False
+        assert errors
+        assert any("sha256" in error or "digest" in error for error in errors)
+
+    def test_verify_data_reports_untrusted_source_for_tampered_checker(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        tampered = tmp_path / "check_nerva_program_manifest.py"
+        tampered.write_text("# weakened\n", encoding="utf-8")
+        monkeypatch.setattr(sys.modules["check_nerva_program_manifest"], "__file__", str(tampered))
+
+        verdict = _verify()
+
+        assert verdict.trusted_source is False
+        assert verdict.source_errors
+
+
+class TestReleaseAuthority:
+    def test_all_streams_done_does_not_imply_release_ready(self) -> None:
+        verdict = _verify(_all_done_manifest())
+
+        assert verdict.structurally_valid is True
+        assert verdict.all_streams_done is True
+        assert verdict.release_ready is False
+
+    def test_canonical_manifest_is_not_all_streams_done(self) -> None:
+        verdict = _verify()
+
+        assert verdict.all_streams_done is False
+        assert verdict.release_ready is False
+
+
+class TestNonEnforcingInvariants:
+    @pytest.mark.parametrize(
+        "posture",
+        [
+            {"status_is_evidence_label_only": False},
+            {"can_authorize": True},
+            {"can_execute": True},
+            {"completion_authority": True},
+            {"release_ready": True},
+            {"ultron_remains_sole_action_authority": False},
+        ],
+    )
+    def test_every_false_invariant_flips_non_enforcing(self, posture: dict) -> None:
+        base = {
+            "status_is_evidence_label_only": True,
+            "can_authorize": False,
+            "can_execute": False,
+            "completion_authority": False,
+            "release_ready": False,
+            "ultron_remains_sole_action_authority": True,
+        }
+        base.update(posture)
+
+        assert verifier.AuthorityPosture(**base).non_enforcing is False
+
+    def test_verify_data_reports_non_enforcing_false_for_tampered_invariant(self) -> None:
+        data = _manifest()
+        data["authority"]["ultron_remains_sole_action_authority"] = False
+
+        verdict = _verify(data)
+
+        assert verdict.structurally_valid is False
+        assert verdict.authority is not None
+        assert verdict.authority.ultron_remains_sole_action_authority is False
+        assert verdict.authority.non_enforcing is False
+
+
+class TestRootDiscovery:
+    def test_verify_path_discovers_repo_root_from_manifest(self) -> None:
+        verdict = verifier.verify_path(
+            MANIFEST,
+            document_path=DOCUMENT,
+            verify_git=False,
+        )
+
+        assert verdict.structurally_valid is True
+        assert verdict.render_current is True
+
+    def test_verify_path_fails_closed_when_root_not_discoverable(self, tmp_path: Path) -> None:
+        path = tmp_path / "manifest.json"
+        path.write_text("{}", encoding="utf-8")
+
+        verdict = verifier.verify_path(path, verify_git=False)
+
+        assert verdict.structurally_valid is False
+        assert verdict.errors
