@@ -153,6 +153,17 @@ is open and reserved to the Ultron Security Architect on `nerva2/b7-task-mediati
 Discovery found six owner decisions that must be resolved before branch creation; implementation
 has not started, and acceptance evidence is still required. B7 therefore remains open.
 
+B3 / Continuity Core (#731) mapping — all six #778 unblock items now have an explicit
+destination, prior-art citation where accepted evidence exists (including `RISKS.md`'s
+prior `MEM-03`/`SEC-05` ownership of the memory-taint check), and an honestly recorded
+gap where it doesn't, in
+[`docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md`](docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md).
+No epic gained a typed contract or acceptance test from this document; #731 stays open
+per its own bar ("close it only after every requirement has a destination and
+acceptance test") not yet being met. The clearest open gap is Jarvis's own Identity
+Manifest, which has no destination issue — #762/E4 is scoped to Howard's preference
+prediction only, not Jarvis's continuity identity.
+
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**
 
 ## Run
