@@ -51,7 +51,7 @@ ACTIVE_STATUSES = frozenset({"discovery", "building", "verifying"})
 _CHECKER_SHA256 = "a57c2d06fcecf75b3b693733e6d7fa2059190752365c85086c2972c0dcd3af58"
 _SELF_PIN = b'_VERIFIER_SHA256 = "<self>"'
 _SELF_PIN_RE = re.compile(rb'_VERIFIER_SHA256\s*=\s*"[0-9a-f]{64}"')
-_VERIFIER_SHA256 = "a1b4e3381717e826329af0070b85e4b30f5f526dc408973a90df3c4010e9e0d8"
+_VERIFIER_SHA256 = "64bca18bd7245ece332dc544eaf2df4f57b7691e6d0438905e998e8fb6a9a190"
 
 
 @dataclass(frozen=True)
@@ -216,10 +216,16 @@ def verify_trusted_source() -> tuple[bool, tuple[str, ...]]:
     Anti-counterfeit proof: the verifier and the canonical checker must be
     byte-identical (LF-normalized) to the versions accepted at release time.
     Returns ``(trusted, errors)``; a failure is reported, never enforced.
+
+    The checker's module object is reached through ``sys.modules`` so the
+    module is only ever imported with a single import style (CodeQL
+    Py/import-and-import-from), while ``__file__`` stays observable for
+    tamper tests.
     """
+    checker_path = Path(sys.modules["check_nerva_program_manifest"].__file__)
     errors: list[str] = []
     for label, path, expected in (
-        ("checker", Path(checker_module.__file__), _CHECKER_SHA256),
+        ("checker", checker_path, _CHECKER_SHA256),
         ("verifier", Path(__file__), _VERIFIER_SHA256),
     ):
         try:

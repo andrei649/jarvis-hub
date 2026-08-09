@@ -11,7 +11,6 @@ SCRIPTS = REPO / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import check_nerva_program_manifest as checker_module  # noqa: E402
 import nerva_trusted_verifier as verifier  # noqa: E402
 from check_nerva_program_manifest import load_json_strict  # noqa: E402
 
@@ -349,7 +348,7 @@ class TestTrustedSource:
         tampered.write_text(
             "def validate_manifest(*args, **kwargs):\n    return []\n", encoding="utf-8"
         )
-        monkeypatch.setattr(checker_module, "__file__", str(tampered))
+        monkeypatch.setattr(sys.modules["check_nerva_program_manifest"], "__file__", str(tampered))
 
         trusted, errors = verifier.verify_trusted_source()
 
@@ -362,7 +361,7 @@ class TestTrustedSource:
     ) -> None:
         tampered = tmp_path / "check_nerva_program_manifest.py"
         tampered.write_text("# weakened\n", encoding="utf-8")
-        monkeypatch.setattr(checker_module, "__file__", str(tampered))
+        monkeypatch.setattr(sys.modules["check_nerva_program_manifest"], "__file__", str(tampered))
 
         verdict = _verify()
 
