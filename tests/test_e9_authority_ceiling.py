@@ -35,6 +35,7 @@ def _build_report(store_root):
 def test_e91_authority_ceiling_is_immutable(tmp_path) -> None:
     report = _build_report(tmp_path)
 
+    object.__setattr__(report, "authority", "operator")
     object.__setattr__(report, "can_change_routing", True)
     object.__setattr__(report, "can_authorize", True)
     object.__setattr__(report, "can_execute", True)
