@@ -17,8 +17,12 @@ def test_e1_authority_ceiling_is_immutable(tmp_path: Path) -> None:
     label_set, batch, store, _environment = _report_fixture(tmp_path)
     report = _build_report(batch, store, label_set)
 
-    object.__setattr__(report, "can_execute", True)
     object.__setattr__(report, "authority", "operator")
+    object.__setattr__(report, "can_authorize", True)
+    object.__setattr__(report, "can_change_routing", True)
+    object.__setattr__(report, "can_execute", True)
+    object.__setattr__(report, "can_mark_complete", True)
+    object.__setattr__(report, "can_promote", True)
 
     payload = report.to_dict()
     assert payload["authority"] == "evaluation_only"
