@@ -76,8 +76,12 @@ def _proposal() -> LessonProposal:
 
 def test_e6_observation_ceiling_is_immutable() -> None:
     observation = _confirmed()
+    object.__setattr__(observation, "authority", "operator")
+    object.__setattr__(observation, "can_rewrite_source_evidence", True)
+    object.__setattr__(observation, "can_promote_lesson", True)
     object.__setattr__(observation, "can_authorize", True)
     object.__setattr__(observation, "can_execute", True)
+    object.__setattr__(observation, "can_mark_complete", True)
 
     payload = observation.canonical_payload()
     assert payload["authority"] == "proposal_only"
@@ -90,8 +94,12 @@ def test_e6_observation_ceiling_is_immutable() -> None:
 
 def test_e6_proposal_ceiling_is_immutable() -> None:
     proposal = _proposal()
+    object.__setattr__(proposal, "authority", "operator")
+    object.__setattr__(proposal, "can_rewrite_source_evidence", True)
+    object.__setattr__(proposal, "can_promote_lesson", True)
     object.__setattr__(proposal, "can_authorize", True)
     object.__setattr__(proposal, "can_execute", True)
+    object.__setattr__(proposal, "can_mark_complete", True)
 
     payload = proposal.canonical_payload()
     assert payload["authority"] == "proposal_only"
@@ -130,9 +138,13 @@ def test_e61_evaluation_report_ceiling_is_immutable(tmp_path) -> None:
     report = asyncio.run(_evaluation_report(tmp_path))
     assert isinstance(report, LessonEvaluationReport)
 
-    object.__setattr__(report, "can_execute", True)
-    object.__setattr__(report, "can_authorize", True)
+    object.__setattr__(report, "authority", "operator")
+    object.__setattr__(report, "can_promote_lesson", True)
+    object.__setattr__(report, "can_write_memory", True)
     object.__setattr__(report, "can_change_routing", True)
+    object.__setattr__(report, "can_authorize", True)
+    object.__setattr__(report, "can_execute", True)
+    object.__setattr__(report, "can_mark_complete", True)
 
     payload = report.to_dict()
     assert payload["authority"] == "evaluation_only"
@@ -142,4 +154,3 @@ def test_e61_evaluation_report_ceiling_is_immutable(tmp_path) -> None:
     assert payload["can_promote_lesson"] is False
     assert payload["can_write_memory"] is False
     assert payload["can_mark_complete"] is False
-
