@@ -92,6 +92,13 @@ squash-merged once present on `main`; no item by itself completes a runtime epic
   explicit false/hallucinated-recall metrics and strict retained-evidence preflight. Reports remain
   `evaluation_only`; no lesson promotion, memory write, routing, execution or completion authority
   is added. E6 remains `BUILDING`, and owner-live benefit is still unproven.
+- ✅ E1/E6/E9 authority-ceiling successors (from closed #854, `21a37f81`) — emission-time constants
+  on the E1 measured report (#859), E6 observation/proposal/evaluation payloads (#860), the E9
+  regression report (#861) and the E9 totals invariant (#864); post-merge hostile-proof evidence
+  completed for E1 (#865) and coordination truth retired to history-only (#866). All fail-closed:
+  `evaluation_only`/`proposal_only` ceilings and `can_*`/`can_grant_*` = false are hard-coded at
+  serialization. No authority, routing, execution or promotion change; #856/B2 remains first and
+  the epics stay `BUILDING`.
 - ✅ Innovation Lab control v1 / #805 / PRs #831 and #837 — versioned RFC and Knowledge Garden
   contracts, fail-closed lifecycle/lineage validation, immutable retained evidence and the
   documented no-delivery-authority boundary. The governed synthetic-public examples complete
