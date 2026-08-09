@@ -349,7 +349,14 @@ class OutcomeObservation:
         }
 
     def canonical_payload(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        payload["authority"] = "proposal_only"
+        payload["can_rewrite_source_evidence"] = False
+        payload["can_promote_lesson"] = False
+        payload["can_authorize"] = False
+        payload["can_execute"] = False
+        payload["can_mark_complete"] = False
+        return payload
 
     def to_json(self) -> str:
         return _canonical_json(self.canonical_payload())
@@ -543,6 +550,12 @@ class LessonProposal:
         payload = asdict(self)
         # The construction guard is never serialized or fingerprinted.
         payload.pop("guard", None)
+        payload["authority"] = "proposal_only"
+        payload["can_rewrite_source_evidence"] = False
+        payload["can_promote_lesson"] = False
+        payload["can_authorize"] = False
+        payload["can_execute"] = False
+        payload["can_mark_complete"] = False
         return payload
 
     def to_json(self) -> str:
