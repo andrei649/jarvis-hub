@@ -7,6 +7,13 @@ This document contains no provider contract, adapter, dependency, manifest
 enrolment or capability claim.
 It does not assert that any Hermes interface has been tested against Nerva.
 
+> **Refresh notice (2026-08-08):** the upstream grounding in this accepted
+> discovery was re-verified on 2026-08-08 against primary sources, read-only.
+> The pinned release `v2026.8.3` / commit `3c27eb6` is still the latest release
+> and remains the pin; nothing in the refresh changes this discovery or its
+> classification. See
+> [`EXECUTION_PROVIDER_E8_1_REFRESH_2026-08-08.md`](EXECUTION_PROVIDER_E8_1_REFRESH_2026-08-08.md).
+
 ## Scope and method
 
 The original E8.1a discovery slice was documentation-only. The merged PR #834 package for issue #830

@@ -88,7 +88,7 @@ been wrong if taken from memory or from a year-old blog post:
 | **Piper TTS** | reported **archived / read-only since 2025-10-06**; still functions as a Home Assistant Wyoming add-on | fine to consume, wrong to build new work on |
 | **Zep** | reported to have **retired the self-hosted Community Edition**; Graphiti itself stays open source | self-hosting story changed under the same brand |
 | **MCP Registry** | its official README documents a local PostgreSQL development environment, offline file seeding and pre-built GHCR images | the previous categorical claim against self-hosting was false; local runnability does not establish production suitability or support |
-| **Hermes Agent** | **no public API contract found** (primary-verified in accepted E8.1a) | argues for thin adapters everywhere, not deep coupling |
+| **Hermes Agent** | **no public API contract found** (primary-verified in accepted E8.1a; re-verified 2026-08-08 — no newer release, pinned `v2026.8.3` / `3c27eb6` still current: [E8.1 refresh](EXECUTION_PROVIDER_E8_1_REFRESH_2026-08-08.md)) | argues for thin adapters everywhere, not deep coupling |
 | **This repository's auto-update lane** | before #824, every `DRIFT` source could enter mutation; #824 requires a literal boolean `auto_update`, while `false` stays drift-visible and is denied by both the scheduler and direct updater | this clears only the generic policy prerequisite; Hermes enrolment still requires a short pin record, dual GitHub/PyPI drift, adapter compatibility/supply-chain/E9 gates, and exact-revision/content-integrity binding |
 
 **MCP Registry correction evidence — Primary (read), 2026-08-06.** A live read
@@ -142,7 +142,7 @@ primary artifact or decision that would reopen it.
 |---|---|---|---|---|---|
 | **MCP servers ecosystem** | a standardised tool surface behind a protocol Nerva already speaks | mixed per server | `thin_adapter` | `PARKED` | primary pass on one chosen server: LICENSE read, exact pin, interface inventory |
 | **MCP Registry codebase** | an official registry service with a documented local PostgreSQL development path | not assessed in this correction | `reuse` | `PARKED` — README feasibility only | select an exact adoption pin; assess `LICENSE`, dependencies, API stability and operations; then complete the full #805 contract and every §4 gate |
-| **Home Assistant** | device/room/occupant graph and governed actuation (B6) | Apache-2.0 (unverified) | `thin_adapter` | `PARKED` | primary pass; Hermes also ships a `homeassistant` extra |
+| **Home Assistant** | device/room/occupant graph and governed actuation (B6) | Apache-2.0 (unverified) | `thin_adapter` | `PARKED` | primary pass; Hermes also ships a `homeassistant` extra (re-verified 2026-08-08) |
 | **Frigate** | local camera event detection, no cloud | MIT (unverified) | `thin_adapter` | `PARKED` | primary pass; matches the local-first non-negotiable |
 | **Playwright** (already in-repo) | deterministic browser control | Apache-2.0 (not re-read upstream here) | `reuse` | `PARKED` as a *provider surface* | dependency, runtime and test surfaces already exist; only promotion to a governed capability needs the additive §4 gates |
 
@@ -151,7 +151,7 @@ primary artifact or decision that would reopen it.
 | Candidate | Gives Nerva | License (secondary) | Class | Status | Reconsideration trigger |
 |---|---|---|---|---|---|
 | **E2B** | Firecracker microVM isolation for untrusted code | Apache-2.0 | `thin_adapter` | `PARKED` — self-host is heavy | self-host requirements and session-lifetime limits read in upstream docs at source, plus an owner decision that a KVM control plane is acceptable |
-| **browser-use** | LLM-driven browser agent over DOM + vision | permissive (unverified) | `thin_adapter` | `PARKED` — overlaps Hermes | an E8.1b decision on which single browser surface Nerva adopts; two stacks are not an option |
+| **browser-use** | LLM-driven browser agent over DOM + vision | permissive (unverified) | `thin_adapter` | `PARKED` — overlaps Hermes (overlap re-verified 2026-08-08) | an E8.1b decision on which single browser surface Nerva adopts; two stacks are not an option |
 | **Stagehand** | typed `act`/`extract`/`observe` over Playwright | permissive (unverified) | `thin_adapter` | `PARKED` — TypeScript in a Python core | a decision that a TypeScript sidecar is acceptable, plus a LICENSE and API pass at source |
 | **Letta** | OS-style tiered agent memory | Apache-2.0 (unverified) | `reject` **as memory authority** | `PARKED` — experiment only | an architecture decision that Atlas/Episodes cede memory authority. Currently forbidden by B3, so this is a CEO-level call, not a project comparison |
 | **Graphiti** | temporal knowledge graph | open source (unverified) | `native_fallback` | `PARKED` — native surface exists | a measured comparison against `agents/core/memory/bitemporal.py` on a real temporal query set, through the E9 lane |
