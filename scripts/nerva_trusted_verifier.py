@@ -33,7 +33,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-import check_nerva_program_manifest as checker_module
 from check_nerva_program_manifest import (
     DOCUMENT_RELATIVE,
     MANIFEST_RELATIVE,
