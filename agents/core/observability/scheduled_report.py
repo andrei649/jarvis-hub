@@ -627,6 +627,8 @@ def _validate_totals(totals: Mapping[str, Any]) -> None:
             raise ValueError(f"report totals {name} must be a ratio")
     if counts["scored"] == 0 and totals["quality_mean"] is not None:
         raise ValueError("report totals cannot score an unscored run")
+    if counts["scored"] > 0 and totals["quality_mean"] is None:
+        raise ValueError("report totals cannot claim scored cases without a quality_mean")
 
 
 def _metrics_from_totals(totals: Mapping[str, Any]) -> dict[str, float | None]:
