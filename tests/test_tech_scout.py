@@ -17,6 +17,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 from agents.core.autonomy import AutonomyPolicy, AutonomyWorker, TaskQueue  # noqa: E402
 from agents.core.autonomy.policy import RiskTier  # noqa: E402
 from agents.core.autonomy.tech_scout import TechScout, TechScoutStore  # noqa: E402
+from agents.core.security import taint  # noqa: E402
 
 
 def _worker() -> AutonomyWorker:
@@ -69,11 +70,14 @@ async def test_scan_files_a_read_only_informational_task_per_new_result():
     for task in tasks:
         assert task.kind == "tech_scout.finding"
         assert task.risk_tier == int(RiskTier.READ_ONLY)
-        # READ_ONLY auto-acts under the balanced default policy — no approval
-        # needed, but nothing executes either (no executor registered for the
-        # kind), matching observer.py's "observations inform" plain-alert model.
-        assert task.autonomy_level == "act"
-        assert task.status == "approved"
+        # SEC-B5: the finding is DERIVED from websearch material, so its
+        # payload carries the ingress taint (origin=websearch); the worker's
+        # taint→ask enforcement then routes it to the decision inbox instead
+        # of auto-approving. READ_ONLY-bounded — no authority gain.
+        assert task.origin == "websearch"
+        assert taint.is_tainted(task.payload) is True
+        assert task.autonomy_level == "ask"
+        assert task.status == "blocked"
         assert task.payload["url"] in (RESULT_A["url"], RESULT_B["url"])
 
 
