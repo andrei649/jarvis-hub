@@ -328,8 +328,12 @@ def test_status_sync_check_against_real_repo_is_clean():
 def test_status_sync_check_runs_the_full_generated_artifact_gate():
     seen = []
     assert gate.check_status_sync(runner=lambda args: seen.append(args) or 0)["status"] == "PASS"
-    assert seen == [[str(gate.REPO / "scripts" / "status_sync.py"), "--check", "--reuse-js-counts"]]
-    assert gate.check_status_sync(runner=lambda args: 1)["status"] == "FAIL"
+    assert seen == [
+        [str(gate.REPO / "scripts" / "status_sync.py"), "--check", "--reuse-test-counts"]
+    ]
+    failed = gate.check_status_sync(runner=lambda args: 1)
+    assert failed["status"] == "FAIL"
+    assert "python scripts/status_sync.py --reuse-test-counts" in failed["detail"]
 
 
 def test_doc_links_real_canon_is_clean_and_broken_is_reported(tmp_path, monkeypatch):

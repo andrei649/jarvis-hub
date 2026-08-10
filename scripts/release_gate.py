@@ -84,6 +84,7 @@ def check_suite(*, skip: bool, runner=None) -> dict:
 
 
 def check_status_sync(*, runner=None) -> dict:
+    """Run the cheap generated-projection gate without recursively collecting pytest."""
     script = str(REPO / "scripts" / "status_sync.py")
     runner = runner or (
         lambda args: (
@@ -92,10 +93,21 @@ def check_status_sync(*, runner=None) -> dict:
             ).returncode
         )
     )
-    code = runner([script, "--check", "--reuse-js-counts"])
+    code = runner([script, "--check", "--reuse-test-counts"])
     if code == 0:
-        return _result("machine", "status-sync", PASS, "all generated artifacts in sync")
-    return _result("machine", "status-sync", FAIL, f"status_sync.py --check failed ({code})")
+        return _result(
+            "machine",
+            "status-sync",
+            PASS,
+            "all generated artifacts in sync (tracked test counts)",
+        )
+    return _result(
+        "machine",
+        "status-sync",
+        FAIL,
+        f"fast status check failed ({code}); fix: python scripts/status_sync.py "
+        "--reuse-test-counts",
+    )
 
 
 def check_doc_links(files: list[str] | None = None) -> dict:
