@@ -207,9 +207,14 @@ retaining Reject/Defer. Evidence: `operator-contract.test.ts`, `operator-panel.t
 **H34.1 Mission Control (2026-07-24):** the swarm cockpit ships as a **standalone
 brain.html-pattern page** at `/mission-control` (self-contained dark HUD; polls the new read-only
 `GET /api/swarm/summary`; steering reuses the existing governed autonomy/missions/A2A endpoints
-with the shared `hud.admin_token`). Both routes are mapped to `observe` in the parity RULES. A
-React `SwarmPanel` inside Console → Observe is the queued follow-up (**H34.4** in `BACKLOG.md`)
-so the cockpit becomes one keystroke from chat; the standalone page stays either way.
+with the shared `hud.admin_token`). Both routes are mapped to `observe` in the parity RULES.
+
+**H34.4 SwarmPanel (2026-08-10, done):** a React `SwarmPanel` inside Console → Observe reads the
+same `GET /api/swarm/summary` feed read-only — kernel halt/armed status, the autonomy funnel,
+workspace counts (missions/workflow runs/sub-agents), the A2A inbox when enabled, and which
+dev-swarm agent (`claude`/`codex`/`opencode`/`antigravity`) currently holds a `lock.py` lock — then
+links out to the standalone `/mission-control` page for the full HITL controls. Zero new backend
+route; the cockpit is now one keystroke from chat, and the standalone page stays either way.
 
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
