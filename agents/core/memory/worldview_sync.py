@@ -25,6 +25,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ..security import taint
+
 logger = logging.getLogger("jarvis.memory.worldview_sync")
 
 # Ontology object types that represent geo-events worth surfacing in recall.
@@ -73,7 +75,13 @@ class WorldViewKGSync:
             await self.memory.add_fact(
                 name=title,
                 entity_type="geo_aoi",
-                properties={"worldview_type": "Aoi", "worldview_id": oid, **_details(obj)},
+                # SEC-B5: WorldView is an OSINT surface — OSINT-derived entities
+                # stored into memory carry the untrusted taint, so a later recall
+                # (rag_guard.provenance_from_hit) recognises them as untrusted.
+                properties=taint.mark(
+                    {"worldview_type": "Aoi", "worldview_id": oid, **_details(obj)},
+                    source="worldview",
+                ),
             )
             summary["aois"] += 1
         return titles
@@ -100,23 +108,29 @@ class WorldViewKGSync:
             await self.memory.add_fact(
                 name=name,
                 entity_type="geo_event",
-                properties={
-                    "worldview_type": obj_type,
-                    "worldview_id": oid,
-                    "title": base_title,
-                    "aoi": aoi_label,
-                    "source": prov.get("source"),
-                    "valid_time": prov.get("ts"),
-                    "transaction_time": prov.get("ingestedAt"),
-                    **_details(obj),
-                },
+                # SEC-B5: OSINT-derived properties carry the untrusted taint.
+                properties=taint.mark(
+                    {
+                        "worldview_type": obj_type,
+                        "worldview_id": oid,
+                        "title": base_title,
+                        "aoi": aoi_label,
+                        "source": prov.get("source"),
+                        "valid_time": prov.get("ts"),
+                        "transaction_time": prov.get("ingestedAt"),
+                        **_details(obj),
+                    },
+                    source="worldview",
+                ),
             )
             summary["events"] += 1
             if aoi_label:
                 # Ensure the AOI entity exists (recon AOIs aren't geofence AOIs), then link.
                 if aoi_label not in aoi_titles.values():
                     await self.memory.add_fact(
-                        name=aoi_label, entity_type="geo_aoi", properties={"worldview_type": "Aoi"}
+                        name=aoi_label,
+                        entity_type="geo_aoi",
+                        properties=taint.mark({"worldview_type": "Aoi"}, source="worldview"),
                     )
                 await self.memory.add_fact(
                     name=None, source=name, relation="IN_AOI", target=aoi_label
