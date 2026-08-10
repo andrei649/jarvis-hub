@@ -1,10 +1,9 @@
 """Tests for scripts/status_sync.py (CDX-5).
 
 Only the pure / fast parts are exercised — the route count (from the snapshot),
-the STATUS.md rewrite, and the parse. `count_tests()` is deliberately NOT called:
-it shells out to a full `pytest --collect-only`, which would recurse into this very
-collection. The script is loaded by path (scripts/ is not a package), mirroring
-tests/test_release_build.py.
+the STATUS.md rewrite, and the parse. ``count_tests()`` refuses to start a nested
+``pytest --collect-only`` while this suite is running. The script is loaded by path
+(scripts/ is not a package), mirroring tests/test_release_build.py.
 """
 
 import importlib.util
@@ -43,6 +42,12 @@ def test_pytest_collection_parser_fails_closed_on_collection_error():
         status_sync.parse_pytest_count("12 tests collected\nERROR broken import", 1)
     with pytest.raises(RuntimeError):
         status_sync.parse_pytest_count("collection output without a count", 0)
+
+
+def test_count_tests_refuses_nested_pytest_collection(monkeypatch):
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "tests/test_status_sync.py::nested")
+    with pytest.raises(RuntimeError, match="refusing nested pytest collection"):
+        status_sync.count_tests()
 
 
 def test_apply_to_status_rewrites_both_tokens():
@@ -202,8 +207,22 @@ def test_generated_snippets_include_all_counts_and_open_gates():
 def test_json_test_count_parser_accepts_vitest_and_jest_key_order():
     vitest = 'npm preface\n{"numTotalTestSuites": 2, "numTotalTests": 8, "success": true}'
     jest = 'console noise\n{"numFailedTestSuites": 0, "numTotalTests": 55, "success": true}'
+    junit = (
+        '<?xml version="1.0"?><testsuites name="pytest tests">'
+        '<testsuite failures="0" tests="6540"></testsuite></testsuites>'
+    )
     assert status_sync.parse_json_test_count(vitest) == 8
     assert status_sync.parse_json_test_count(jest) == 55
+    assert status_sync.parse_junit_test_count(junit) == 6540
+    assert status_sync.reported_test_count_result(
+        "backend", junit, existing={"tests": {"backend": 6540}}
+    ) == {"status": "in_sync", "surface": "backend", "expected": 6540, "actual": 6540}
+    assert status_sync.reported_test_count_result(
+        "frontend", vitest, existing={"tests": {"frontend": 8}}
+    ) == {"status": "in_sync", "surface": "frontend", "expected": 8, "actual": 8}
+    assert status_sync.reported_test_count_result(
+        "mobile", jest, existing={"tests": {"mobile": 54}}
+    ) == {"status": "out_of_sync", "surface": "mobile", "expected": 54, "actual": 55}
 
 
 def test_reuse_js_counts_is_explicit_and_reads_tracked_status_only():
@@ -211,6 +230,30 @@ def test_reuse_js_counts_is_explicit_and_reads_tracked_status_only():
     assert status_sync.js_test_counts(reuse=True, existing=existing) == (208, 55)
     with pytest.raises(RuntimeError):
         status_sync.js_test_counts(reuse=True, existing={})
+
+
+def test_all_test_counts_can_reuse_tracked_status_without_any_test_runner():
+    existing = {"tests": {"backend": 6341, "frontend": 515, "mobile": 96}}
+    assert status_sync.tracked_test_counts(existing) == (6341, 515, 96)
+    with pytest.raises(RuntimeError, match="backend/frontend/mobile"):
+        status_sync.tracked_test_counts({"tests": {"backend": True}})
+
+
+def test_collect_project_status_tracked_mode_never_calls_test_runners(monkeypatch):
+    monkeypatch.setattr(status_sync, "tracked_test_counts", lambda: (10, 20, 30))
+    monkeypatch.setattr(status_sync, "load_registry", lambda: {"agents": {}})
+    monkeypatch.setattr(
+        status_sync,
+        "count_tests",
+        lambda: pytest.fail("live backend collection must not run"),
+    )
+    monkeypatch.setattr(
+        status_sync,
+        "js_test_counts",
+        lambda **kwargs: pytest.fail("live JS suites must not run"),
+    )
+    result = status_sync.collect_project_status(reuse_test_counts=True)
+    assert result["tests"] == {"backend": 10, "frontend": 20, "mobile": 30}
 
 
 def test_update_message_is_safe_on_default_windows_console():
@@ -316,14 +359,35 @@ def test_check_ignores_lagging_commit_stamp(tmp_path, monkeypatch):
     live = {"latest_ci_commit": "newtip99tip99", "tests": {"backend": 1}}
     checked = status_sync._status_for_check(live)
     assert checked["latest_ci_commit"] == "oldbase00base"  # adopted the committed stamp
-    assert checked["tests"] == {"backend": 1}              # every other field preserved
-    assert live["latest_ci_commit"] == "newtip99tip99"     # input dict not mutated
+    assert checked["tests"] == {"backend": 1}  # every other field preserved
+    assert live["latest_ci_commit"] == "newtip99tip99"  # input dict not mutated
 
 
 def test_status_for_check_is_noop_without_committed_file(tmp_path, monkeypatch):
     monkeypatch.setattr(status_sync, "PROJECT_STATUS", tmp_path / "absent.json")
     live = {"latest_ci_commit": "keepme", "tests": {}}
     assert status_sync._status_for_check(live)["latest_ci_commit"] == "keepme"
+
+
+def test_changed_status_keys_are_stable_and_specific():
+    current = {"horizons": {"H35": {"open": 2, "total": 2}}, "tests": {"backend": 5}}
+    expected = {
+        "horizons": {"H35": {"open": 3, "total": 3}},
+        "tests": {"backend": 5},
+        "version": "0.27.0",
+    }
+    assert status_sync.changed_status_keys(current, expected) == [
+        "horizons.H35.open",
+        "horizons.H35.total",
+        "version",
+    ]
+
+
+def test_fast_gate_reports_the_exact_cheap_fix_command():
+    assert (
+        status_sync.fix_command(reuse_js_counts=False, reuse_test_counts=True)
+        == "python scripts/status_sync.py --reuse-test-counts"
+    )
 
 
 def test_latest_ci_commit_feature_branch_at_main_tip_does_not_step_back():
@@ -338,6 +402,7 @@ def test_latest_ci_commit_feature_branch_at_main_tip_does_not_step_back():
         ("git", "rev-parse", "HEAD"): (0, "current123\n"),
         ("git", "rev-parse", "--abbrev-ref", "HEAD"): (0, "claude/feature-branch\n"),
     }
-    assert status_sync.latest_ci_commit(
-        env={}, runner=lambda args: outputs[tuple(args)]
-    ) == "current123"
+    assert (
+        status_sync.latest_ci_commit(env={}, runner=lambda args: outputs[tuple(args)])
+        == "current123"
+    )
