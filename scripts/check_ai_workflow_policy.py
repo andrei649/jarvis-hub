@@ -136,19 +136,14 @@ def _string_set(value: object, location: str, errors: list[str]) -> set[str]:
     return set(value)
 
 
-def validate_policy(data: object) -> list[str]:
-    """Validate safety and lifecycle invariants in parsed policy data."""
-
-    errors: list[str] = []
-    policy = _as_mapping(data, "policy", errors)
-    if not policy:
-        return errors
-
+def _validate_policy_identity(policy: dict[str, Any], errors: list[str]) -> None:
     if policy.get("schema_version") != 1:
         errors.append("schema_version must be 1")
     if policy.get("policy_id") != "nerva-ai-development-v1":
         errors.append("policy_id must be nerva-ai-development-v1")
 
+
+def _validate_authority(policy: dict[str, Any], errors: list[str]) -> None:
     authority = _as_mapping(policy.get("authority"), "authority", errors)
     if authority.get("canonical") is not True:
         errors.append("authority.canonical must be true")
@@ -161,6 +156,8 @@ def validate_policy(data: object) -> list[str]:
     if historical != {str(path) for path in HISTORICAL_DOCUMENTS}:
         errors.append("authority.historical_documents must name all legacy context documents")
 
+
+def _validate_preflight(policy: dict[str, Any], errors: list[str]) -> None:
     preflight = _as_mapping(policy.get("preflight"), "preflight", errors)
     if preflight.get("automatic_rebase") is not False:
         errors.append("preflight.automatic_rebase must be false")
@@ -179,6 +176,8 @@ def validate_policy(data: object) -> list[str]:
         if forbidden not in rebase_forbidden:
             errors.append(f"preflight.rebase_forbidden_when missing {forbidden}")
 
+
+def _validate_risk_tiers(policy: dict[str, Any], errors: list[str]) -> None:
     tiers = _as_mapping(policy.get("risk_tiers"), "risk_tiers", errors)
     if set(tiers) != EXPECTED_RISK_TIERS:
         errors.append("risk_tiers must be exactly R0, R1, R2, and R3")
@@ -186,17 +185,19 @@ def validate_policy(data: object) -> list[str]:
     for tier_id in sorted(EXPECTED_RISK_TIERS):
         tier = _as_mapping(tiers.get(tier_id), f"risk_tiers.{tier_id}", errors)
         tier_mappings[tier_id] = tier
-        _string_set(tier.get("required_controls"), f"risk_tiers.{tier_id}.required_controls", errors)
+        _string_set(
+            tier.get("required_controls"), f"risk_tiers.{tier_id}.required_controls", errors
+        )
     r3_controls = set(tier_mappings["R3"].get("required_controls", []))
     if "separate_builder_reviewer_integrator" not in r3_controls:
         errors.append("R3 must require separate builder, reviewer, and integrator")
 
+
+def _validate_automated_risk_mapping(policy: dict[str, Any], errors: list[str]) -> None:
     automated_risk = _as_mapping(
         policy.get("automated_risk_mapping"), "automated_risk_mapping", errors
     )
-    mapping = _as_mapping(
-        automated_risk.get("mapping"), "automated_risk_mapping.mapping", errors
-    )
+    mapping = _as_mapping(automated_risk.get("mapping"), "automated_risk_mapping.mapping", errors)
     if mapping != EXPECTED_AUTOMATED_RISK_MAPPING:
         errors.append(
             "automated_risk_mapping.mapping must conservatively map "
@@ -207,9 +208,8 @@ def validate_policy(data: object) -> list[str]:
     if automated_risk.get("source") != ".github/change-risk.json:risk_level":
         errors.append("automated_risk_mapping.source must name change-risk.json:risk_level")
 
-    coordination = _as_mapping(policy.get("coordination"), "coordination", errors)
-    if coordination.get("draft_pr_is_lock") is not False:
-        errors.append("coordination.draft_pr_is_lock must be false")
+
+def _validate_lease_status(coordination: dict[str, Any], errors: list[str]) -> None:
     if coordination.get("lease_system_of_record") != "none":
         errors.append("coordination.lease_system_of_record must be none until enforcement exists")
     if coordination.get("planned_lease_system_of_record") != "github":
@@ -218,6 +218,9 @@ def validate_policy(data: object) -> list[str]:
         errors.append("coordination.lease_enforcement_status must be not_implemented")
     if coordination.get("active_lease_claims_allowed") is not False:
         errors.append("coordination.active_lease_claims_allowed must be false")
+
+
+def _validate_planned_lease_contract(coordination: dict[str, Any], errors: list[str]) -> None:
     if coordination.get("planned_lease_granularity") != "path-prefix":
         errors.append("coordination.planned_lease_granularity must be path-prefix")
     planned_lease_fields = _string_set(
@@ -235,6 +238,14 @@ def validate_policy(data: object) -> list[str]:
     for active_key in ("lease_granularity", "lease_required_fields"):
         if active_key in coordination:
             errors.append(f"coordination.{active_key} must remain absent until enforcement exists")
+
+
+def _validate_coordination(policy: dict[str, Any], errors: list[str]) -> None:
+    coordination = _as_mapping(policy.get("coordination"), "coordination", errors)
+    if coordination.get("draft_pr_is_lock") is not False:
+        errors.append("coordination.draft_pr_is_lock must be false")
+    _validate_lease_status(coordination, errors)
+    _validate_planned_lease_contract(coordination, errors)
     if coordination.get("local_lock_files_are_advisory") is not True:
         errors.append("coordination.local_lock_files_are_advisory must be true")
     if coordination.get("capability_based_routing") is not True:
@@ -245,6 +256,8 @@ def validate_policy(data: object) -> list[str]:
     if role_separation != {"builder", "reviewer", "integrator"}:
         errors.append("coordination.r3_role_separation must be builder/reviewer/integrator")
 
+
+def _validate_review(policy: dict[str, Any], errors: list[str]) -> None:
     review = _as_mapping(policy.get("review"), "review", errors)
     if review.get("max_normal_rounds") != 2:
         errors.append("review.max_normal_rounds must be 2")
@@ -253,37 +266,50 @@ def validate_policy(data: object) -> list[str]:
     if review.get("new_head_invalidates_prior_approval") is not True:
         errors.append("review.new_head_invalidates_prior_approval must be true")
 
+
+def _validate_state_machine(
+    machine_name: str,
+    expected_states: set[str],
+    machines: dict[str, Any],
+    errors: list[str],
+) -> None:
+    machine = _as_mapping(machines.get(machine_name), f"state_machines.{machine_name}", errors)
+    transitions = _as_mapping(
+        machine.get("transitions"), f"state_machines.{machine_name}.transitions", errors
+    )
+    if set(transitions) != expected_states:
+        errors.append(f"state_machines.{machine_name} must define every expected state")
+    if machine.get("initial") not in expected_states:
+        errors.append(f"state_machines.{machine_name}.initial must be a known state")
+    terminals = _string_set(
+        machine.get("terminal"), f"state_machines.{machine_name}.terminal", errors
+    )
+    if not terminals <= expected_states:
+        errors.append(f"state_machines.{machine_name}.terminal contains an unknown state")
+    for source, targets in transitions.items():
+        target_set = _string_set(
+            targets, f"state_machines.{machine_name}.transitions.{source}", errors
+        )
+        unknown = target_set - expected_states
+        if unknown:
+            errors.append(
+                f"state_machines.{machine_name}.{source} targets unknown states: "
+                + ", ".join(sorted(unknown))
+            )
+
+
+def _validate_state_machines(policy: dict[str, Any], errors: list[str]) -> None:
     machines = _as_mapping(policy.get("state_machines"), "state_machines", errors)
     if set(machines) != set(EXPECTED_STATE_SETS):
         errors.append("state_machines must separate delivery, ci, governance, and lease")
     for machine_name, expected_states in EXPECTED_STATE_SETS.items():
-        machine = _as_mapping(machines.get(machine_name), f"state_machines.{machine_name}", errors)
-        transitions = _as_mapping(
-            machine.get("transitions"), f"state_machines.{machine_name}.transitions", errors
-        )
-        if set(transitions) != expected_states:
-            errors.append(f"state_machines.{machine_name} must define every expected state")
-        if machine.get("initial") not in expected_states:
-            errors.append(f"state_machines.{machine_name}.initial must be a known state")
-        terminals = _string_set(
-            machine.get("terminal"), f"state_machines.{machine_name}.terminal", errors
-        )
-        if not terminals <= expected_states:
-            errors.append(f"state_machines.{machine_name}.terminal contains an unknown state")
-        for source, targets in transitions.items():
-            target_set = _string_set(
-                targets, f"state_machines.{machine_name}.transitions.{source}", errors
-            )
-            unknown = target_set - expected_states
-            if unknown:
-                errors.append(
-                    f"state_machines.{machine_name}.{source} targets unknown states: "
-                    + ", ".join(sorted(unknown))
-                )
+        _validate_state_machine(machine_name, expected_states, machines, errors)
     lease_machine = _as_mapping(machines.get("lease"), "state_machines.lease", errors)
     if lease_machine.get("implementation_status") != "planned_not_implemented":
         errors.append("state_machines.lease.implementation_status must be planned_not_implemented")
 
+
+def _validate_evidence_receipt_policy(policy: dict[str, Any], errors: list[str]) -> None:
     receipt = _as_mapping(policy.get("evidence_receipt"), "evidence_receipt", errors)
     if receipt.get("bind_to") != "exact_head_sha":
         errors.append("evidence_receipt.bind_to must be exact_head_sha")
@@ -302,12 +328,16 @@ def validate_policy(data: object) -> list[str]:
     if reuse.get("otherwise_state") != "stale":
         errors.append("evidence_receipt.reuse.otherwise_state must be stale")
 
+
+def _validate_context(policy: dict[str, Any], errors: list[str]) -> None:
     context = _as_mapping(policy.get("context"), "context", errors)
     if context.get("stale_session_summaries_are_instructions") is not False:
         errors.append("context.stale_session_summaries_are_instructions must be false")
     if context.get("historical_documents_are_current_state") is not False:
         errors.append("context.historical_documents_are_current_state must be false")
 
+
+def _validate_change_control(policy: dict[str, Any], errors: list[str]) -> None:
     change_control = _as_mapping(policy.get("change_control"), "change_control", errors)
     if change_control.get("default_branch") != "main":
         errors.append("change_control.default_branch must be main")
@@ -318,18 +348,32 @@ def validate_policy(data: object) -> list[str]:
     if change_control.get("unrelated_cleanup_allowed") is not False:
         errors.append("change_control.unrelated_cleanup_allowed must be false")
 
+
+def validate_policy(data: object) -> list[str]:
+    """Validate safety and lifecycle invariants in parsed policy data."""
+
+    errors: list[str] = []
+    policy = _as_mapping(data, "policy", errors)
+    if not policy:
+        return errors
+
+    _validate_policy_identity(policy, errors)
+    _validate_authority(policy, errors)
+    _validate_preflight(policy, errors)
+    _validate_risk_tiers(policy, errors)
+    _validate_automated_risk_mapping(policy, errors)
+    _validate_coordination(policy, errors)
+    _validate_review(policy, errors)
+    _validate_state_machines(policy, errors)
+    _validate_evidence_receipt_policy(policy, errors)
+    _validate_context(policy, errors)
+    _validate_change_control(policy, errors)
     return errors
 
 
-def validate_evidence_receipt(receipt_data: object, policy_data: object) -> list[str]:
-    """Validate the canonical exact-head receipt emitted by verification tooling."""
-
-    errors: list[str] = []
-    receipt = _as_mapping(receipt_data, "receipt", errors)
-    policy = _as_mapping(policy_data, "policy", errors)
-    if not receipt or not policy:
-        return errors
-
+def _validate_receipt_identity(
+    receipt: dict[str, Any], policy: dict[str, Any], errors: list[str]
+) -> None:
     missing = sorted(RECEIPT_FIELDS - set(receipt))
     if missing:
         errors.append("receipt missing canonical fields: " + ", ".join(missing))
@@ -343,6 +387,11 @@ def validate_evidence_receipt(receipt_data: object, policy_data: object) -> list
         errors.append("receipt.head_sha must be an exact lowercase 40-hex commit")
     if receipt.get("risk_tier") not in EXPECTED_RISK_TIERS:
         errors.append("receipt.risk_tier must be R0, R1, R2, or R3")
+
+
+def _validate_receipt_classification(
+    receipt: dict[str, Any], policy: dict[str, Any], errors: list[str]
+) -> None:
     classification = receipt.get("classification")
     if isinstance(classification, dict):
         risk_level = classification.get("risk_level")
@@ -353,9 +402,11 @@ def validate_evidence_receipt(receipt_data: object, policy_data: object) -> list
             errors.append("receipt.risk_tier does not match the automated change-risk mapping")
         metadata = classification.get("metadata")
         classified_head = metadata.get("head_sha") if isinstance(metadata, dict) else None
-        if classified_head and classified_head != head_sha:
+        if classified_head and classified_head != receipt.get("head_sha"):
             errors.append("receipt.head_sha does not match classification.metadata.head_sha")
 
+
+def _validate_receipt_changed_paths(receipt: dict[str, Any], errors: list[str]) -> None:
     changed_paths = receipt.get("changed_paths")
     if not isinstance(changed_paths, list) or not all(
         isinstance(path, str) and path for path in changed_paths
@@ -364,52 +415,69 @@ def validate_evidence_receipt(receipt_data: object, policy_data: object) -> list
     elif changed_paths != sorted(set(changed_paths)):
         errors.append("receipt.changed_paths must be sorted and unique")
 
+
+def _validate_receipt_command(command: object, index: int, errors: list[str]) -> None:
+    if not isinstance(command, dict):
+        errors.append(f"receipt.commands[{index}] must be an object")
+        return
+    argv = command.get("argv")
+    if (
+        not isinstance(argv, list)
+        or not argv
+        or not all(isinstance(part, str) and part for part in argv)
+    ):
+        errors.append(f"receipt.commands[{index}].argv must be a non-empty string list")
+    if not isinstance(command.get("cwd"), str) or not command["cwd"]:
+        errors.append(f"receipt.commands[{index}].cwd must be a non-empty string")
+
+
+def _validate_receipt_commands(receipt: dict[str, Any], errors: list[str]) -> None:
     commands = receipt.get("commands")
     if not isinstance(commands, list):
         errors.append("receipt.commands must be a list")
-    else:
-        for index, command in enumerate(commands):
-            if not isinstance(command, dict):
-                errors.append(f"receipt.commands[{index}] must be an object")
-                continue
-            argv = command.get("argv")
-            if not isinstance(argv, list) or not argv or not all(
-                isinstance(part, str) and part for part in argv
-            ):
-                errors.append(f"receipt.commands[{index}].argv must be a non-empty string list")
-            if not isinstance(command.get("cwd"), str) or not command["cwd"]:
-                errors.append(f"receipt.commands[{index}].cwd must be a non-empty string")
+        return
+    for index, command in enumerate(commands):
+        _validate_receipt_command(command, index, errors)
 
+
+def _validate_receipt_result(result: object, index: int, errors: list[str]) -> None:
+    if not isinstance(result, dict):
+        errors.append(f"receipt.results[{index}] must be an object")
+        return
+    missing_result = {
+        "command",
+        "exit_code",
+        "summary",
+    } - set(result)
+    if missing_result:
+        errors.append(
+            f"receipt.results[{index}] missing fields: " + ", ".join(sorted(missing_result))
+        )
+        return
+    command = result["command"]
+    if (
+        not isinstance(command, list)
+        or not command
+        or not all(isinstance(part, str) and part for part in command)
+    ):
+        errors.append(f"receipt.results[{index}].command must be a string list")
+    exit_code = result["exit_code"]
+    if not isinstance(exit_code, int) or isinstance(exit_code, bool):
+        errors.append(f"receipt.results[{index}].exit_code must be an integer")
+    if not isinstance(result["summary"], str) or not result["summary"]:
+        errors.append(f"receipt.results[{index}].summary must be non-empty")
+
+
+def _validate_receipt_results(receipt: dict[str, Any], errors: list[str]) -> None:
     results = receipt.get("results")
     if not isinstance(results, list):
         errors.append("receipt.results must be a list")
-    else:
-        for index, result in enumerate(results):
-            if not isinstance(result, dict):
-                errors.append(f"receipt.results[{index}] must be an object")
-                continue
-            missing_result = {
-                "command",
-                "exit_code",
-                "summary",
-            } - set(result)
-            if missing_result:
-                errors.append(
-                    f"receipt.results[{index}] missing fields: "
-                    + ", ".join(sorted(missing_result))
-                )
-                continue
-            command = result["command"]
-            if not isinstance(command, list) or not command or not all(
-                isinstance(part, str) and part for part in command
-            ):
-                errors.append(f"receipt.results[{index}].command must be a string list")
-            exit_code = result["exit_code"]
-            if not isinstance(exit_code, int) or isinstance(exit_code, bool):
-                errors.append(f"receipt.results[{index}].exit_code must be an integer")
-            if not isinstance(result["summary"], str) or not result["summary"]:
-                errors.append(f"receipt.results[{index}].summary must be non-empty")
+        return
+    for index, result in enumerate(results):
+        _validate_receipt_result(result, index, errors)
 
+
+def _validate_receipt_provenance(receipt: dict[str, Any], errors: list[str]) -> None:
     producer = receipt.get("producer")
     if not isinstance(producer, str) or not producer.strip():
         errors.append("receipt.producer must be a non-empty actor or automation identity")
@@ -423,6 +491,23 @@ def validate_evidence_receipt(receipt_data: object, policy_data: object) -> list
             timestamp = None
         if timestamp is None or timestamp.tzinfo is None:
             errors.append("receipt.generated_at must be a timezone-aware ISO-8601 timestamp")
+
+
+def validate_evidence_receipt(receipt_data: object, policy_data: object) -> list[str]:
+    """Validate the canonical exact-head receipt emitted by verification tooling."""
+
+    errors: list[str] = []
+    receipt = _as_mapping(receipt_data, "receipt", errors)
+    policy = _as_mapping(policy_data, "policy", errors)
+    if not receipt or not policy:
+        return errors
+
+    _validate_receipt_identity(receipt, policy, errors)
+    _validate_receipt_classification(receipt, policy, errors)
+    _validate_receipt_changed_paths(receipt, errors)
+    _validate_receipt_commands(receipt, errors)
+    _validate_receipt_results(receipt, errors)
+    _validate_receipt_provenance(receipt, errors)
     return errors
 
 
@@ -434,14 +519,7 @@ def _read_text(path: Path, errors: list[str]) -> str:
         return ""
 
 
-def validate_repository(root: Path) -> list[str]:
-    """Validate policy plus the maintained and historical documentation contract."""
-
-    root = root.resolve()
-    data, errors = load_policy(root / POLICY_RELATIVE)
-    if data is not None:
-        errors.extend(validate_policy(data))
-
+def _validate_active_documents(root: Path, errors: list[str]) -> None:
     active_documents = (*DERIVED_DOCUMENTS, PR_TEMPLATE_RELATIVE)
     for relative in active_documents:
         text = _read_text(root / relative, errors)
@@ -452,6 +530,8 @@ def validate_repository(root: Path) -> list[str]:
             if phrase in folded:
                 errors.append(f"{relative}: contains {reason}: {phrase!r}")
 
+
+def _validate_historical_documents(root: Path, errors: list[str]) -> None:
     for relative in HISTORICAL_DOCUMENTS:
         text = _read_text(root / relative, errors)
         banner = "\n".join(text.splitlines()[:12]).casefold()
@@ -462,32 +542,49 @@ def validate_repository(root: Path) -> list[str]:
         if ".github/ai-development-policy.json" not in text:
             errors.append(f"{relative}: must point readers to the canonical policy")
 
+
+def _validate_template_receipt_block(template: str, errors: list[str]) -> None:
+    receipt_match = RECEIPT_BLOCK.search(template)
+    if not receipt_match:
+        return
+    top_level_keys = re.findall(r"^([a-z][a-z0-9_]*):", receipt_match.group(1), re.MULTILINE)
+    missing_fields = sorted(RECEIPT_FIELDS - set(top_level_keys))
+    if missing_fields:
+        errors.append(
+            f"{PR_TEMPLATE_RELATIVE}: receipt block missing canonical fields: "
+            + ", ".join(missing_fields)
+        )
+    duplicates = sorted({key for key in top_level_keys if top_level_keys.count(key) > 1})
+    if duplicates:
+        errors.append(
+            f"{PR_TEMPLATE_RELATIVE}: receipt block has duplicate fields: " + ", ".join(duplicates)
+        )
+    for legacy in ("receipt_producer", "receipt_generated_at"):
+        if legacy in top_level_keys:
+            errors.append(
+                f"{PR_TEMPLATE_RELATIVE}: use canonical field name without legacy prefix: {legacy}"
+            )
+
+
+def _validate_pr_template(root: Path, errors: list[str]) -> None:
     template = _read_text(root / PR_TEMPLATE_RELATIVE, errors)
     for marker in PR_TEMPLATE_MARKERS:
         if marker not in template:
             errors.append(f"{PR_TEMPLATE_RELATIVE}: missing required marker {marker!r}")
-    receipt_match = RECEIPT_BLOCK.search(template)
-    if receipt_match:
-        top_level_keys = re.findall(r"^([a-z][a-z0-9_]*):", receipt_match.group(1), re.MULTILINE)
-        missing_fields = sorted(RECEIPT_FIELDS - set(top_level_keys))
-        if missing_fields:
-            errors.append(
-                f"{PR_TEMPLATE_RELATIVE}: receipt block missing canonical fields: "
-                + ", ".join(missing_fields)
-            )
-        duplicates = sorted({key for key in top_level_keys if top_level_keys.count(key) > 1})
-        if duplicates:
-            errors.append(
-                f"{PR_TEMPLATE_RELATIVE}: receipt block has duplicate fields: "
-                + ", ".join(duplicates)
-            )
-        for legacy in ("receipt_producer", "receipt_generated_at"):
-            if legacy in top_level_keys:
-                errors.append(
-                    f"{PR_TEMPLATE_RELATIVE}: use canonical field name without legacy prefix: "
-                    f"{legacy}"
-                )
+    _validate_template_receipt_block(template, errors)
 
+
+def validate_repository(root: Path) -> list[str]:
+    """Validate policy plus the maintained and historical documentation contract."""
+
+    root = root.resolve()
+    data, errors = load_policy(root / POLICY_RELATIVE)
+    if data is not None:
+        errors.extend(validate_policy(data))
+
+    _validate_active_documents(root, errors)
+    _validate_historical_documents(root, errors)
+    _validate_pr_template(root, errors)
     return errors
 
 

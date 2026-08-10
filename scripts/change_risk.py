@@ -27,6 +27,35 @@ EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 SECURITY_JOBS = frozenset({"scope", "gitleaks", "semgrep", "dependency-audit", "bandit"})
 SECURITY_SAST_LANES = frozenset({"python-ubuntu", "contracts-security", "full-suite"})
 SECURITY_DEPENDENCY_LANES = frozenset({"dependency-integrity", "full-suite"})
+REQUIRED_POLICY_KEYS = frozenset(
+    {
+        "schema_version",
+        "classifier_version",
+        "sentinel_check",
+        "risk_order",
+        "scope_order",
+        "all_lanes",
+        "ci_jobs",
+        "lane_jobs",
+        "scopes",
+        "documentation_patterns",
+        "nerva_patterns",
+        "rules",
+    }
+)
+EXPECTED_SCOPES = frozenset(
+    {
+        "docs-only",
+        "generated-truth",
+        "python-runtime",
+        "frontend",
+        "mobile",
+        "contracts-security",
+        "workflows",
+        "dependencies",
+    }
+)
+STABLE_CI_JOBS = frozenset({"classify", "fast-gate", "nerva-integrity"})
 
 
 class PolicyError(ValueError):
@@ -41,30 +70,10 @@ def _policy_digest(policy: dict[str, Any]) -> str:
     return hashlib.sha256(_compact_json(policy).encode()).hexdigest()
 
 
-def load_policy(path: Path = DEFAULT_POLICY) -> dict[str, Any]:
-    try:
-        policy = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise PolicyError(f"cannot read change-risk policy {path}: {exc}") from exc
-
-    required = {
-        "schema_version",
-        "classifier_version",
-        "sentinel_check",
-        "risk_order",
-        "scope_order",
-        "all_lanes",
-        "ci_jobs",
-        "lane_jobs",
-        "scopes",
-        "documentation_patterns",
-        "nerva_patterns",
-        "rules",
-    }
-    missing = sorted(required - policy.keys())
+def _validate_policy_contract(policy: dict[str, Any]) -> None:
+    missing = sorted(REQUIRED_POLICY_KEYS - policy.keys())
     if missing:
         raise PolicyError(f"policy missing keys: {', '.join(missing)}")
-
     if policy["schema_version"] != 1:
         raise PolicyError("unsupported policy schema_version; expected 1")
     if policy["risk_order"] != ["low", "medium", "high"]:
@@ -73,9 +82,11 @@ def load_policy(path: Path = DEFAULT_POLICY) -> dict[str, Any]:
         raise PolicyError("all_lanes must be a non-empty unique list")
     if not policy["ci_jobs"] or len(policy["ci_jobs"]) != len(set(policy["ci_jobs"])):
         raise PolicyError("ci_jobs must be a non-empty unique list")
-    stable_jobs = {"classify", "fast-gate", "nerva-integrity"}
-    if stable_jobs - set(policy["ci_jobs"]):
+    if STABLE_CI_JOBS - set(policy["ci_jobs"]):
         raise PolicyError("ci_jobs must include classify, fast-gate, and nerva-integrity")
+
+
+def _validate_nerva_patterns(policy: dict[str, Any]) -> None:
     nerva_patterns = policy["nerva_patterns"]
     if (
         not isinstance(nerva_patterns, list)
@@ -84,6 +95,9 @@ def load_policy(path: Path = DEFAULT_POLICY) -> dict[str, Any]:
         or len(nerva_patterns) != len(set(nerva_patterns))
     ):
         raise PolicyError("nerva_patterns must be a non-empty unique list of strings")
+
+
+def _validate_lane_jobs(policy: dict[str, Any]) -> None:
     lane_jobs = policy["lane_jobs"]
     if not isinstance(lane_jobs, dict) or set(lane_jobs) != set(policy["all_lanes"]):
         raise PolicyError("lane_jobs must map every configured lane exactly once")
@@ -91,21 +105,13 @@ def load_policy(path: Path = DEFAULT_POLICY) -> dict[str, Any]:
         if not isinstance(jobs, list) or not jobs or not set(jobs) <= set(policy["ci_jobs"]):
             raise PolicyError(f"lane_jobs.{lane} has invalid CI jobs")
 
+
+def _validate_scopes(policy: dict[str, Any]) -> None:
     scope_order = policy["scope_order"]
     scopes = policy["scopes"]
     if set(scope_order) != set(scopes) or len(scope_order) != len(set(scope_order)):
         raise PolicyError("scope_order must list every configured scope exactly once")
-    expected_scopes = {
-        "docs-only",
-        "generated-truth",
-        "python-runtime",
-        "frontend",
-        "mobile",
-        "contracts-security",
-        "workflows",
-        "dependencies",
-    }
-    if set(scopes) != expected_scopes:
+    if set(scopes) != EXPECTED_SCOPES:
         raise PolicyError("policy scopes do not match the required classifier contract")
 
     all_lanes = set(policy["all_lanes"])
@@ -117,6 +123,9 @@ def load_policy(path: Path = DEFAULT_POLICY) -> dict[str, Any]:
         if not isinstance(lanes, list) or not lanes or not set(lanes) <= all_lanes:
             raise PolicyError(f"scope {scope!r} has invalid lanes")
 
+
+def _validate_rules(policy: dict[str, Any]) -> None:
+    scopes = policy["scopes"]
     rule_scopes = set()
     for index, rule in enumerate(policy["rules"]):
         scope = rule.get("scope")
@@ -132,8 +141,21 @@ def load_policy(path: Path = DEFAULT_POLICY) -> dict[str, Any]:
         if not isinstance(rule.get("reason"), str) or not rule["reason"]:
             raise PolicyError(f"rule {index} must have a reason")
         rule_scopes.add(scope)
-    if rule_scopes != expected_scopes - {"docs-only"}:
+    if rule_scopes != EXPECTED_SCOPES - {"docs-only"}:
         raise PolicyError("every non-docs scope must have at least one rule")
+
+
+def load_policy(path: Path = DEFAULT_POLICY) -> dict[str, Any]:
+    try:
+        policy = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PolicyError(f"cannot read change-risk policy {path}: {exc}") from exc
+
+    _validate_policy_contract(policy)
+    _validate_nerva_patterns(policy)
+    _validate_lane_jobs(policy)
+    _validate_scopes(policy)
+    _validate_rules(policy)
     return policy
 
 
@@ -229,18 +251,8 @@ def _paths_for(change: dict[str, str]) -> list[str]:
     return paths
 
 
-def classify_changes(
-    changes: list[dict[str, str]],
-    policy: dict[str, Any],
-    *,
-    base_sha: str | None = None,
-    head_sha: str | None = None,
-    event_name: str | None = None,
-) -> dict[str, Any]:
-    risk_rank = {risk: index for index, risk in enumerate(policy["risk_order"])}
-    scope_rank = {scope: index for index, scope in enumerate(policy["scope_order"])}
-    lane_rank = {lane: index for index, lane in enumerate(policy["all_lanes"])}
-    normalized_changes = sorted(
+def _normalize_changes(changes: list[dict[str, str]]) -> list[dict[str, str]]:
+    return sorted(
         (
             {
                 **change,
@@ -257,6 +269,73 @@ def classify_changes(
         key=lambda change: (change["path"], change["status"], change.get("old_path", "")),
     )
 
+
+def _record_change_status(
+    change: dict[str, str],
+    status_counts: Counter[str],
+    fail_safe_codes: set[str],
+    reasons: list[dict[str, str]],
+) -> None:
+    status = change["status"]
+    status_counts[status] += 1
+    if status not in SUPPORTED_STATUSES:
+        fail_safe_codes.add("unsupported-status")
+    if status not in FAIL_SAFE_STATUSES:
+        return
+
+    code = "rename-or-copy" if status in {"R", "C"} else "non-content-status"
+    fail_safe_codes.add(code)
+    reasons.append(
+        {
+            "code": code,
+            "path": change["path"],
+            "scope": "all",
+            "detail": f"git status {change.get('status_detail', status)} requires full validation",
+        }
+    )
+
+
+def _classify_path(
+    path: str,
+    policy: dict[str, Any],
+    scopes: set[str],
+    reasons: list[dict[str, str]],
+    unknown_paths: set[str],
+) -> tuple[bool, bool]:
+    is_doc = _matches(path, policy["documentation_patterns"])
+    matched = False
+    for rule in policy["rules"]:
+        if not _matches(path, rule["patterns"]):
+            continue
+        matched = True
+        scope = rule["scope"]
+        scopes.add(scope)
+        reasons.append(
+            {
+                "code": "scope-match",
+                "path": path,
+                "scope": scope,
+                "detail": rule["reason"],
+            }
+        )
+    if _unsafe_path(path) or (not is_doc and not matched):
+        unknown_paths.add(path)
+    return is_doc, matched
+
+
+def classify_changes(
+    changes: list[dict[str, str]],
+    policy: dict[str, Any],
+    *,
+    base_sha: str | None = None,
+    head_sha: str | None = None,
+    event_name: str | None = None,
+) -> dict[str, Any]:
+    risk_rank = {risk: index for index, risk in enumerate(policy["risk_order"])}
+    scope_rank = {scope: index for index, scope in enumerate(policy["scope_order"])}
+    lane_rank = {lane: index for index, lane in enumerate(policy["all_lanes"])}
+    normalized_changes = _normalize_changes(changes)
+
     scopes: set[str] = set()
     reasons: list[dict[str, str]] = []
     unknown_paths: set[str] = set()
@@ -270,40 +349,9 @@ def classify_changes(
     )
 
     for change in normalized_changes:
-        status = change["status"]
-        status_counts[status] += 1
-        if status not in SUPPORTED_STATUSES:
-            fail_safe_codes.add("unsupported-status")
-        if status in FAIL_SAFE_STATUSES:
-            code = "rename-or-copy" if status in {"R", "C"} else "non-content-status"
-            fail_safe_codes.add(code)
-            reasons.append(
-                {
-                    "code": code,
-                    "path": change["path"],
-                    "scope": "all",
-                    "detail": f"git status {change.get('status_detail', status)} requires full validation",
-                }
-            )
-
+        _record_change_status(change, status_counts, fail_safe_codes, reasons)
         for path in _paths_for(change):
-            is_doc = _matches(path, policy["documentation_patterns"])
-            matched = False
-            for rule in policy["rules"]:
-                if _matches(path, rule["patterns"]):
-                    matched = True
-                    scope = rule["scope"]
-                    scopes.add(scope)
-                    reasons.append(
-                        {
-                            "code": "scope-match",
-                            "path": path,
-                            "scope": scope,
-                            "detail": rule["reason"],
-                        }
-                    )
-            if _unsafe_path(path) or (not is_doc and not matched):
-                unknown_paths.add(path)
+            is_doc, matched = _classify_path(path, policy, scopes, reasons, unknown_paths)
             all_documentation = all_documentation and is_doc and not matched
 
     if all_documentation:
@@ -552,6 +600,25 @@ def aggregate_ci_results(
     }
 
 
+def _validated_security_lanes(
+    required_lanes: Any, policy: dict[str, Any], failures: list[str]
+) -> set[str]:
+    if (
+        not isinstance(required_lanes, list)
+        or not required_lanes
+        or not all(isinstance(lane, str) and lane for lane in required_lanes)
+        or len(required_lanes) != len(set(required_lanes))
+    ):
+        failures.append("classifier emitted malformed or empty required lanes")
+        return set()
+
+    lanes = set(required_lanes)
+    unknown_lanes = lanes - set(policy["all_lanes"])
+    if unknown_lanes:
+        failures.append(f"classifier emitted unknown lanes: {sorted(unknown_lanes)}")
+    return lanes
+
+
 def aggregate_security_results(
     required_lanes: Any,
     job_results: Any,
@@ -573,19 +640,7 @@ def aggregate_security_results(
     ):
         failures.append("classification_id is not a lowercase SHA-256 digest")
 
-    lanes: set[str] = set()
-    if (
-        not isinstance(required_lanes, list)
-        or not required_lanes
-        or not all(isinstance(lane, str) and lane for lane in required_lanes)
-        or len(required_lanes) != len(set(required_lanes))
-    ):
-        failures.append("classifier emitted malformed or empty required lanes")
-    else:
-        lanes = set(required_lanes)
-        unknown_lanes = lanes - set(policy["all_lanes"])
-        if unknown_lanes:
-            failures.append(f"classifier emitted unknown lanes: {sorted(unknown_lanes)}")
+    lanes = _validated_security_lanes(required_lanes, policy, failures)
 
     expected_sast = bool(lanes & SECURITY_SAST_LANES)
     expected_dependency = bool(lanes & SECURITY_DEPENDENCY_LANES)

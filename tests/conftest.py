@@ -8,7 +8,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-from support.hermetic_dns import install_hermetic_dns
+# Pytest can load this conftest by absolute path before adding ``tests/`` to
+# sys.path (notably on hosted runners). Make the local support package available
+# before importing the collection-time DNS guard.
+tests_root = Path(__file__).resolve().parent
+sys.path.insert(0, str(tests_root))
+
+from support.hermetic_dns import install_hermetic_dns  # noqa: E402
 
 # Test processes must never inherit an operator's runtime-data roots. Assign,
 # rather than setdefault, before any Jarvis module can be imported. Every serial
@@ -69,8 +75,9 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 
-def make_app(module_path: str, fallback_name: str, prefix: str = "",
-             fallback_routes: dict | None = None) -> FastAPI:
+def make_app(
+    module_path: str, fallback_name: str, prefix: str = "", fallback_routes: dict | None = None
+) -> FastAPI:
     """Create a FastAPI app that imports a real module or falls back to dummy routes.
 
     Args:
@@ -131,6 +138,7 @@ def _disable_user_guard():
     # routes behave like the inline ones did under TestClient.
     try:
         from agents.core.routers._deps import user_guard as _ru
+
         web.app.dependency_overrides[_ru] = lambda: None
     except Exception:
         _ru = None

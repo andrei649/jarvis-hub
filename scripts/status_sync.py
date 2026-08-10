@@ -568,7 +568,7 @@ def fix_command(*, reuse_js_counts: bool, reuse_test_counts: bool) -> str:
     return "python scripts/status_sync.py"
 
 
-def main(argv: list[str]) -> int:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true")
     parser.add_argument(
@@ -588,32 +588,89 @@ def main(argv: list[str]) -> int:
         help="verify an existing Vitest/Jest JSON report against tracked status",
     )
     parser.add_argument("--test-result", type=Path, help="Vitest/Jest JSON report path")
-    args = parser.parse_args(argv)
-    if args.verify_test_count:
-        if args.test_result is None:
-            parser.error("--verify-test-count requires --test-result")
-        try:
-            result = reported_test_count_result(
-                args.verify_test_count,
-                args.test_result.read_text(encoding="utf-8", errors="replace"),
-            )
-        except (OSError, RuntimeError) as exc:
-            result = {"status": "error", "error": str(exc)}
-            print(
-                json.dumps(result, sort_keys=True)
-                if args.json
-                else f"Test-count check failed: {exc}"
-            )
-            return 2
+    return parser
+
+
+def _verify_test_count(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    if args.test_result is None:
+        parser.error("--verify-test-count requires --test-result")
+    try:
+        result = reported_test_count_result(
+            args.verify_test_count,
+            args.test_result.read_text(encoding="utf-8", errors="replace"),
+        )
+    except (OSError, RuntimeError) as exc:
+        result = {"status": "error", "error": str(exc)}
         print(
-            json.dumps(result, sort_keys=True)
-            if args.json
-            else (
-                f"{result['surface']} test count: {result['actual']} "
-                f"(tracked {result['expected']})"
+            json.dumps(result, sort_keys=True) if args.json else f"Test-count check failed: {exc}"
+        )
+        return 2
+    print(
+        json.dumps(result, sort_keys=True)
+        if args.json
+        else (f"{result['surface']} test count: {result['actual']} (tracked {result['expected']})")
+    )
+    return 0 if result["status"] == "in_sync" else 1
+
+
+def _report_check_result(
+    status: dict,
+    drift: dict[str, list[str]],
+    command: str,
+    *,
+    json_output: bool,
+) -> int:
+    if drift["files"]:
+        payload = {
+            "status": "out_of_sync",
+            **drift,
+            "fix_command": command,
+        }
+        if json_output:
+            print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        else:
+            print("Generated project status out of sync:", ", ".join(drift["files"]))
+            print("Changed status keys:", ", ".join(drift["changed_keys"]) or "none")
+            print(f"Fix with: {command}")
+        return 1
+    payload = {
+        "status": "in_sync",
+        **drift,
+        "fix_command": None,
+        "tests": status["tests"],
+    }
+    if json_output:
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print("Generated project status in sync:", json.dumps(status["tests"]))
+    return 0
+
+
+def _write_generated_status(
+    status: dict,
+    expected_docs: dict[Path, str],
+    drift: dict[str, list[str]],
+    *,
+    json_output: bool,
+) -> int:
+    expected_json = json.dumps(status, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    PROJECT_STATUS.write_text(expected_json, encoding="utf-8", newline="\n")
+    for path, expected in expected_docs.items():
+        path.write_text(expected, encoding="utf-8", newline="\n")
+    if json_output:
+        print(
+            json.dumps(
+                {"status": "updated", **drift, "fix_command": None, "tests": status["tests"]},
+                ensure_ascii=False,
+                sort_keys=True,
             )
         )
-        return 0 if result["status"] == "in_sync" else 1
+    else:
+        print(format_update_message(status))
+    return 0
+
+
+def _sync_project_status(args: argparse.Namespace) -> int:
     try:
         status = collect_project_status(
             reuse_js_counts=args.reuse_js_counts,
@@ -642,46 +699,21 @@ def main(argv: list[str]) -> int:
         reuse_test_counts=args.reuse_test_counts,
     )
     if args.check:
-        if drift["files"]:
-            payload = {
-                "status": "out_of_sync",
-                **drift,
-                "fix_command": command,
-            }
-            if args.json:
-                print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
-            else:
-                print("Generated project status out of sync:", ", ".join(drift["files"]))
-                print("Changed status keys:", ", ".join(drift["changed_keys"]) or "none")
-                print(f"Fix with: {command}")
-            return 1
-        payload = {
-            "status": "in_sync",
-            **drift,
-            "fix_command": None,
-            "tests": status["tests"],
-        }
-        if args.json:
-            print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
-        else:
-            print("Generated project status in sync:", json.dumps(status["tests"]))
-        return 0
+        return _report_check_result(status, drift, command, json_output=args.json)
+    return _write_generated_status(
+        status,
+        expected_docs,
+        drift,
+        json_output=args.json,
+    )
 
-    expected_json = json.dumps(status, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    PROJECT_STATUS.write_text(expected_json, encoding="utf-8", newline="\n")
-    for path, expected in expected_docs.items():
-        path.write_text(expected, encoding="utf-8", newline="\n")
-    if args.json:
-        print(
-            json.dumps(
-                {"status": "updated", **drift, "fix_command": None, "tests": status["tests"]},
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-        )
-    else:
-        print(format_update_message(status))
-    return 0
+
+def main(argv: list[str]) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.verify_test_count:
+        return _verify_test_count(args, parser)
+    return _sync_project_status(args)
 
 
 if __name__ == "__main__":
