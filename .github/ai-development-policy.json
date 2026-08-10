@@ -1,0 +1,355 @@
+{
+  "schema_version": 1,
+  "policy_id": "nerva-ai-development-v1",
+  "authority": {
+    "canonical": true,
+    "applies_to": [
+      "human-contributors",
+      "ai-contributors",
+      "automation"
+    ],
+    "derived_documents": [
+      "AGENTS.md",
+      "PARALLEL_WORKFLOW.md",
+      "docs/AGENT_WORKFLOW.md"
+    ],
+    "historical_documents": [
+      ".opencode/plans/dev-methodology.md",
+      ".opencode/summary.md",
+      "docs/SPRINT.md"
+    ]
+  },
+  "preflight": {
+    "required_observations": [
+      "git_status",
+      "current_branch",
+      "changed_paths",
+      "overlapping_open_work",
+      "authorization_scope",
+      "risk_tier"
+    ],
+    "fetch_when": [
+      "remote_state_is_needed",
+      "a_merge_or_rebase_is_being_prepared"
+    ],
+    "automatic_rebase": false,
+    "rebase_requires": [
+      "explicit_task_need",
+      "owned_feature_branch",
+      "clean_worktree",
+      "no_uncommitted_user_changes",
+      "known_remote_base"
+    ],
+    "rebase_forbidden_when": [
+      "read_only_task",
+      "dirty_worktree",
+      "unowned_changes_present",
+      "authorization_is_unclear"
+    ],
+    "preserve_unrelated_changes": true
+  },
+  "risk_tiers": {
+    "R0": {
+      "name": "documentation-only",
+      "examples": [
+        "prose",
+        "comments",
+        "non-executable diagrams"
+      ],
+      "required_controls": [
+        "scope_review",
+        "policy_lint",
+        "relevant_content_check"
+      ]
+    },
+    "R1": {
+      "name": "bounded-internal",
+      "examples": [
+        "tests",
+        "developer tooling",
+        "internal refactor without contract change"
+      ],
+      "required_controls": [
+        "design_summary",
+        "targeted_tests",
+        "diff_review"
+      ]
+    },
+    "R2": {
+      "name": "runtime-or-contract",
+      "examples": [
+        "runtime behavior",
+        "public API",
+        "dependency change",
+        "generated truth",
+        "user-facing behavior"
+      ],
+      "required_controls": [
+        "design_receipt",
+        "regression_test",
+        "independent_review",
+        "relevant_full_ci",
+        "rollback_plan"
+      ]
+    },
+    "R3": {
+      "name": "authority-or-high-impact",
+      "examples": [
+        "security boundary",
+        "credentials",
+        "external write",
+        "destructive action",
+        "release governance",
+        "production migration"
+      ],
+      "required_controls": [
+        "threat_or_failure_model",
+        "separate_builder_reviewer_integrator",
+        "owner_or_policy_gate",
+        "independent_verification",
+        "relevant_full_ci",
+        "rollback_rehearsal_or_proof"
+      ]
+    }
+  },
+  "automated_risk_mapping": {
+    "source": ".github/change-risk.json:risk_level",
+    "mapping": {
+      "low": "R0",
+      "medium": "R2",
+      "high": "R3"
+    },
+    "posture": "conservative",
+    "note": "R1 remains available for a justified human classification of bounded internal work; automated receipts do not under-classify ambiguous runtime changes."
+  },
+  "coordination": {
+    "draft_pr_is_lock": false,
+    "overlap_behavior": "inspect_then_coordinate",
+    "lease_system_of_record": "none",
+    "planned_lease_system_of_record": "github",
+    "lease_enforcement_status": "not_implemented",
+    "planned_lease_granularity": "path-prefix",
+    "planned_lease_fields": [
+      "holder",
+      "path_prefixes",
+      "purpose",
+      "base_sha",
+      "expires_at",
+      "heartbeat_at"
+    ],
+    "active_lease_claims_allowed": false,
+    "local_lock_files_are_advisory": true,
+    "capability_based_routing": true,
+    "roles": [
+      "planner",
+      "builder",
+      "verifier",
+      "reviewer",
+      "integrator"
+    ],
+    "r3_role_separation": [
+      "builder",
+      "reviewer",
+      "integrator"
+    ]
+  },
+  "review": {
+    "max_normal_rounds": 2,
+    "round_definition": "one consolidated findings pass followed by one consolidated fix verification",
+    "after_limit": "escalate_with_unresolved_findings",
+    "new_head_invalidates_prior_approval": true,
+    "r0_independent_review_optional": true,
+    "r2_r3_independent_review_required": true
+  },
+  "state_machines": {
+    "delivery": {
+      "initial": "planned",
+      "terminal": [
+        "merged",
+        "superseded"
+      ],
+      "transitions": {
+        "planned": [
+          "in_progress",
+          "superseded"
+        ],
+        "in_progress": [
+          "draft",
+          "blocked",
+          "superseded"
+        ],
+        "draft": [
+          "ready",
+          "blocked",
+          "superseded"
+        ],
+        "ready": [
+          "merged",
+          "blocked",
+          "superseded"
+        ],
+        "blocked": [
+          "in_progress",
+          "superseded"
+        ],
+        "merged": [],
+        "superseded": []
+      }
+    },
+    "ci": {
+      "initial": "not_run",
+      "terminal": [],
+      "transitions": {
+        "not_run": [
+          "running",
+          "skipped"
+        ],
+        "running": [
+          "passed",
+          "failed",
+          "cancelled"
+        ],
+        "passed": [
+          "stale"
+        ],
+        "failed": [
+          "running",
+          "stale"
+        ],
+        "cancelled": [
+          "running",
+          "stale"
+        ],
+        "skipped": [
+          "stale"
+        ],
+        "stale": [
+          "not_run",
+          "running"
+        ]
+      }
+    },
+    "governance": {
+      "initial": "unclassified",
+      "terminal": [],
+      "transitions": {
+        "unclassified": [
+          "review_required",
+          "owner_hold"
+        ],
+        "review_required": [
+          "approved",
+          "changes_requested",
+          "owner_hold"
+        ],
+        "changes_requested": [
+          "review_required",
+          "owner_hold"
+        ],
+        "approved": [
+          "stale",
+          "owner_hold"
+        ],
+        "owner_hold": [
+          "review_required",
+          "approved"
+        ],
+        "stale": [
+          "review_required",
+          "owner_hold"
+        ]
+      }
+    },
+    "lease": {
+      "implementation_status": "planned_not_implemented",
+      "initial": "none",
+      "terminal": [],
+      "transitions": {
+        "none": [
+          "requested"
+        ],
+        "requested": [
+          "active",
+          "contested",
+          "released"
+        ],
+        "active": [
+          "released",
+          "expired",
+          "contested"
+        ],
+        "contested": [
+          "active",
+          "released"
+        ],
+        "expired": [
+          "requested",
+          "released"
+        ],
+        "released": [
+          "requested"
+        ]
+      }
+    }
+  },
+  "evidence_receipt": {
+    "bind_to": "exact_head_sha",
+    "required_fields": [
+      "policy_id",
+      "policy_schema_version",
+      "head_sha",
+      "risk_tier",
+      "changed_paths",
+      "commands",
+      "results",
+      "producer",
+      "generated_at"
+    ],
+    "command_result_fields": [
+      "command",
+      "exit_code",
+      "summary"
+    ],
+    "reuse": {
+      "allowed": true,
+      "requires_same_head_sha": true,
+      "requires_same_policy_id": true,
+      "requires_same_policy_schema_version": true,
+      "requires_unchanged_relevant_inputs": true,
+      "otherwise_state": "stale"
+    },
+    "claims_without_receipt_are_advisory": true
+  },
+  "context": {
+    "routing_basis": "task-and-path-relevance",
+    "default_entrypoints": [
+      ".github/ai-development-policy.json",
+      "AGENTS.md",
+      "docs/ARCHITECTURE.md"
+    ],
+    "load_backlog_when": [
+      "prioritizing",
+      "changing_delivery_scope",
+      "updating_roadmap_status"
+    ],
+    "session_capsule_required_fields": [
+      "goal",
+      "base_sha",
+      "head_sha",
+      "changed_paths",
+      "risk_tier",
+      "next_action",
+      "generated_at"
+    ],
+    "stale_session_summaries_are_instructions": false,
+    "historical_documents_are_current_state": false
+  },
+  "change_control": {
+    "default_branch": "main",
+    "direct_push_to_default_branch": false,
+    "feature_branch_and_pr": true,
+    "remote_mutations_require_authorization": true,
+    "unrelated_cleanup_allowed": false,
+    "coherent_rollback_unit": true
+  }
+}
