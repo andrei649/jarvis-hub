@@ -13,7 +13,7 @@ import fnmatch
 import hashlib
 import json
 import os
-import subprocess
+import subprocess  # nosec B404
 import sys
 from collections import Counter
 from pathlib import Path
@@ -205,7 +205,8 @@ def git_changes(base: str | None, head: str, repo: Path = REPO_ROOT) -> list[dic
     first_commit = False
     if unusable_base:
         try:
-            base = subprocess.check_output(
+            # Git is invoked as fixed argv without a shell; revisions remain data.
+            base = subprocess.check_output(  # noqa: S603  # nosec B603, B607
                 ["git", "rev-parse", f"{head}^"], cwd=repo, text=True, stderr=subprocess.DEVNULL
             ).strip()
         except subprocess.CalledProcessError:
@@ -214,7 +215,8 @@ def git_changes(base: str | None, head: str, repo: Path = REPO_ROOT) -> list[dic
     revision_range = [base, head] if first_commit else [f"{base}...{head}"]
     command = ["git", "diff", "--name-status", "-z", "--find-renames", *revision_range]
     try:
-        raw = subprocess.check_output(command, cwd=repo)
+        # The command prefix is fixed above and shell execution is never used.
+        raw = subprocess.check_output(command, cwd=repo)  # noqa: S603  # nosec B603
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"git change discovery failed for {base}...{head}") from exc
     return parse_name_status_z(raw)

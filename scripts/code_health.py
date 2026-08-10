@@ -44,6 +44,7 @@ EXIT_OK = 0
 EXIT_FINDINGS = 1
 EXIT_INFRA = 2
 VULTURE_FINDING = re.compile(r"^.+:\d+: .+ \(\d+% confidence\)$")
+RUFF_FORMAT_FINDING = re.compile(r"^(?P<path>.+):\d+:\d+: unformatted: File would be reformatted$")
 
 
 @dataclass(frozen=True)
@@ -278,6 +279,15 @@ def _parse_lint(output: str) -> ParsedFindings:
 
 def _parse_format(output: str) -> ParsedFindings:
     files = [
+        match.group("path")
+        for line in output.splitlines()
+        if (match := RUFF_FORMAT_FINDING.match(line.strip()))
+    ]
+    if files:
+        return ParsedFindings(len(files), files)
+
+    # Retain compatibility with Ruff's older human-readable formatter output.
+    files = [
         line.split("Would reformat:", 1)[1].strip()
         for line in output.splitlines()
         if "Would reformat:" in line
@@ -304,7 +314,7 @@ def step_lint(fix: bool, tool: dict[str, Any]) -> dict[str, Any]:
 
 
 def step_format(tool: dict[str, Any]) -> dict[str, Any]:
-    command = ["ruff", "format", "--check", "."]
+    command = ["ruff", "format", "--check", "--output-format=concise", "."]
     return _execute_step("format", tool, command, _parse_format)
 
 
@@ -312,9 +322,7 @@ def step_dead_code(tool: dict[str, Any]) -> dict[str, Any]:
     command = ["vulture"]
     # Vulture's public exit contract is 0=no debt, 3=dead code, while 1 and 2
     # mean invalid input/CLI. Treat only the measured-debt code as a finding.
-    return _execute_step(
-        "dead-code", tool, command, _parse_dead_code, expected_exit_codes={0, 3}
-    )
+    return _execute_step("dead-code", tool, command, _parse_dead_code, expected_exit_codes={0, 3})
 
 
 def step_complexity(tool: dict[str, Any]) -> dict[str, Any]:
@@ -356,10 +364,7 @@ def print_digest(report: dict[str, Any]) -> None:
     print("\n┌─ Nerva · code health ──────────────────────────────────")
     for result in report["steps"]:
         if result["status"] == "infra_error":
-            print(
-                f"│ ❌  {result['name']:<11} infrastructure error "
-                f"[{result['infra_kind']}]"
-            )
+            print(f"│ ❌  {result['name']:<11} infrastructure error [{result['infra_kind']}]")
             if result["raw"]:
                 print(f"│       {result['raw'].splitlines()[0]}")
             continue

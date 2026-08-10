@@ -36,7 +36,7 @@ CommandRunner = Callable[[list[str], Path], tuple[int, str]]
 
 def _run_git(args: list[str]) -> bytes:
     try:
-        return subprocess.check_output(  # noqa: S603  # nosec B603
+        return subprocess.check_output(  # noqa: S603  # nosec B603, B607
             ["git", *args], cwd=REPO, stderr=subprocess.PIPE
         )
     except subprocess.CalledProcessError as exc:
@@ -67,7 +67,9 @@ def _local_changes() -> list[dict[str, str]]:
     return tracked
 
 
-def discover_changes(base_sha: str, head_sha: str, *, include_worktree: bool) -> list[dict[str, str]]:
+def discover_changes(
+    base_sha: str, head_sha: str, *, include_worktree: bool
+) -> list[dict[str, str]]:
     changes = change_risk.git_changes(base_sha, head_sha, REPO)
     if include_worktree:
         changes.extend(_local_changes())
@@ -149,9 +151,7 @@ def _python_test_targets(changes: list[dict[str, str]]) -> list[str]:
             targets.add(path)
             continue
         candidate: str | None = None
-        if (
-            path.startswith("agents/") or path.startswith("scripts/")
-        ) and path.endswith(".py"):
+        if (path.startswith("agents/") or path.startswith("scripts/")) and path.endswith(".py"):
             candidate = f"tests/test_{Path(path).stem}.py"
         if candidate and (REPO / candidate).is_file():
             targets.add(candidate)

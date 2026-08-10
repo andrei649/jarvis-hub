@@ -35,7 +35,7 @@ class AnalyzerError(RuntimeError):
 
 def _git(args: list[str], *, check: bool = True) -> bytes:
     try:
-        proc = subprocess.run(  # noqa: S603  # nosec B603
+        proc = subprocess.run(  # noqa: S603  # nosec B603, B607
             ["git", *args],
             cwd=REPO,
             capture_output=True,
@@ -60,9 +60,9 @@ def _name_status(raw: bytes) -> dict[str, str]:
             if index + 1 >= len(tokens):
                 raise AnalyzerError("malformed rename/copy status from git")
             old_path = tokens[index].decode("utf-8", errors="surrogateescape").replace("\\", "/")
-            new_path = tokens[index + 1].decode(
-                "utf-8", errors="surrogateescape"
-            ).replace("\\", "/")
+            new_path = (
+                tokens[index + 1].decode("utf-8", errors="surrogateescape").replace("\\", "/")
+            )
             index += 2
             changed[new_path] = old_path if status.startswith("R") else new_path
         else:
@@ -119,7 +119,7 @@ def changed_paths(base: str) -> list[str]:
 
 def _base_content(base: str, path: str) -> str:
     try:
-        proc = subprocess.run(  # noqa: S603  # nosec B603
+        proc = subprocess.run(  # noqa: S603  # nosec B603, B607
             ["git", "show", f"{base}:{path}"],
             cwd=REPO,
             stdout=subprocess.PIPE,
@@ -144,7 +144,7 @@ def _ruff_complexity(content: str, filename: str) -> list[dict[str, Any]]:
     if shutil.which("ruff") is None:
         raise AnalyzerError("required analyzer ruff is not installed")
     try:
-        proc = subprocess.run(  # noqa: S603  # nosec B603
+        proc = subprocess.run(  # noqa: S603  # nosec B603, B607
             [
                 "ruff",
                 "check",

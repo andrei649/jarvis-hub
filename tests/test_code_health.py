@@ -46,8 +46,10 @@ def test_run_executes_each_selected_analyzer_once(monkeypatch: pytest.MonkeyPatc
         ("ruff", "check", ".", "--statistics"): health.CommandOutcome(
             1, "2\tF401\tunused import", 11
         ),
-        ("ruff", "format", "--check", "."): health.CommandOutcome(
-            0, "10 files already formatted", 12
+        ("ruff", "format", "--check", "--output-format=concise", "."): health.CommandOutcome(
+            1,
+            "agents/needs_format.py:1:1: unformatted: File would be reformatted",
+            12,
         ),
         ("vulture",): health.CommandOutcome(
             3, "agents/old.py:4: unused function 'old' (90% confidence)", 13
@@ -74,11 +76,11 @@ def test_run_executes_each_selected_analyzer_once(monkeypatch: pytest.MonkeyPatc
 
     assert calls == list(outcomes)
     assert report["status"] == "findings"
-    assert report["total_findings"] == 3
+    assert report["total_findings"] == 4
     assert report["infrastructure_failures"] == 0
     assert [step["status"] for step in report["steps"]] == [
         "findings",
-        "clean",
+        "findings",
         "findings",
         "clean",
     ]
