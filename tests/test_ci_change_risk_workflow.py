@@ -115,6 +115,7 @@ def test_ubuntu_full_test_lane_revalidates_live_collection_truth():
     steps = CI["jobs"]["test"]["steps"]
     live_truth = next(step for step in steps if step.get("name") == "Verify live backend test-count truth")
 
+    assert steps[0]["with"]["fetch-depth"] == "0"
     assert live_truth["if"] == "${{ matrix.os == 'ubuntu-latest' }}"
     assert "status_sync.py --check --reuse-js-counts --json" in live_truth["run"]
 
