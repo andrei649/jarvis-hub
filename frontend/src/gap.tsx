@@ -707,6 +707,80 @@ export function SelfImprovementPanel() {
     </Card>
   );
 }
+
+/* H34.4 — SwarmPanel: a compact read-only Console/Observe view over the H34.1
+   swarm feed (`GET /api/swarm/summary`, open/user-tier), so the cabinet, the
+   autonomy funnel and the *dev* swarm (Claude/Codex/opencode/Antigravity via
+   `lock.py`) are one keystroke from chat. Pure read — no new route, no
+   mutating control; the full HITL cockpit stays the standalone
+   `/mission-control` page this panel links out to. */
+export function SwarmPanel() {
+  const { d, e, loading, reload } = useApi('/api/swarm/summary');  // open
+  const agents = arr(d, 'agents');
+  const activeAgents = agents.filter((a) => (a.events || 0) > 0).length;
+  const autonomy = (d && d.autonomy) || {};
+  const missions = arr(d, 'missions');
+  const runs = arr((d && d.workflows) || {}, 'runs');
+  const subagents = (d && d.subagents) || {};
+  const a2a = (d && d.a2a) || {};
+  const locks = (d && d.dev_locks) || {};
+  const lockedAgents = arr(locks, 'agents');
+  const knownDev = arr(locks, 'known');
+  return (
+    <Card
+      title="MISSION CONTROL"
+      live={asLive(d, d && d.initialized)}
+      sub={d ? `${autonomy.pending_count ?? 0} pending decision${(autonomy.pending_count ?? 0) === 1 ? '' : 's'}` : null}
+      onReload={reload}
+    >
+      <State e={e} loading={loading} n={d ? 1 : 0} />
+      {d && (
+        <>
+          <Row><span style={mono}>kernel</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={d.halted === true ? 'var(--red)' : d.halted === false ? 'var(--green)' : undefined}>
+                {d.halted === true ? 'HALTED' : d.halted === false ? 'armed' : '—'}
+              </Tag>
+              <Tag>{activeAgents}/{agents.length} agents active</Tag>
+            </span>
+          </Row>
+          <Row><span style={mono}>autonomy</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag>{autonomy.mode || '—'}</Tag>
+              <Tag c={(autonomy.pending_count ?? 0) > 0 ? 'var(--amber)' : 'var(--green)'}>{autonomy.pending_count ?? 0} pending</Tag>
+            </span>
+          </Row>
+          <Row><span style={mono}>workspaces</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag>{missions.length} missions</Tag>
+              <Tag>{runs.length} workflow runs</Tag>
+              <Tag>{subagents.spawns ?? 0} sub-agents</Tag>
+            </span>
+          </Row>
+          {a2a.enabled && (
+            <Row><span style={mono}>a2a inbox</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+                <Tag c={(a2a.pending ?? 0) > 0 ? 'var(--amber)' : 'var(--green)'}>{a2a.pending ?? 0} pending</Tag>
+              </span>
+            </Row>
+          )}
+          <Row><span style={mono}>dev swarm</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+              {locks.available ? knownDev.map((name) => {
+                const on = lockedAgents.some((l) => l.agent === name && !l.stale);
+                return <Tag key={name} c={on ? 'var(--green)' : 'var(--ink-3)'}>{name}</Tag>;
+              }) : <Tag>no lock data</Tag>}
+            </span>
+          </Row>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+            <a className="tool-btn" href="/mission-control" target="_blank" rel="noopener noreferrer">open full cockpit →</a>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 /* HUD-v3 C8 (arena + quality-threshold; evals/review already shipped). Two Observe
    panels: the model arena leaderboard (read-only) + the answer-quality gate (read +
    admin set-threshold). Honesty: real ELO/scores; empty-state when no matches yet. */
@@ -2899,7 +2973,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
-  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel, SelfImprovementPanel]],
+  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel, SelfImprovementPanel, SwarmPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, OperatorPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],
