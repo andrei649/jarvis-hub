@@ -4,9 +4,31 @@ name: Smoke Test
 # so this workflow only verifies the app actually starts and serves a request.
 on:
   pull_request:
+    paths:
+      - "agents/**"
+      - "skills/**"
+      - "serve.py"
+      - "requirements*.txt"
+      - "requirements*.lock"
+      - "pyproject.toml"
+      - "packaging/**"
+      - ".github/workflows/smoke.yml"
   push:
     branches: [main]
+    paths:
+      - "agents/**"
+      - "skills/**"
+      - "serve.py"
+      - "requirements*.txt"
+      - "requirements*.lock"
+      - "pyproject.toml"
+      - "packaging/**"
+      - ".github/workflows/smoke.yml"
   workflow_dispatch:
+
+concurrency:
+  group: smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

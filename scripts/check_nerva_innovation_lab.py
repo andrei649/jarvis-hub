@@ -1865,14 +1865,17 @@ def validate_repository(repo: Path, baseline_ref: str, candidate_ref: str) -> li
     else:
         workflow = workflow_raw.decode("utf-8", errors="replace")
         for phrase in (
+            "workflow_call:",
+            "enabled:",
+            "baseline_ref:",
+            "candidate_ref:",
+            "NERVA_ENABLED",
+            "inputs.baseline_ref",
+            "inputs.candidate_ref",
             "fetch-depth: 0",
             "persist-credentials: false",
             "--baseline-ref",
             "--candidate-ref",
-            "github.event.pull_request.base.sha",
-            "github.event.pull_request.head.sha",
-            "github.event.before",
-            "github.event.after",
         ):
             if phrase not in workflow:
                 errors.append(f"Nerva roadmap workflow is missing fail-closed input: {phrase}")

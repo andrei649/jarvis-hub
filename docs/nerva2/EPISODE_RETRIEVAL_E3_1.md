@@ -28,7 +28,9 @@ The package reuses:
   `agents/core/memory/eval.py`;
 - accepted immutable Episode records, current-revision selection, tombstone
   behavior, `EpisodeQuery`, and `retrieve_episodes` from E3.0;
-- the existing H14.1 regression hook and full cross-platform repository CI.
+- the shared Nerva direct-collection adapter and full cross-platform repository
+  CI. The accepted E3.1 slice originally used the H14.1 regression hook to keep
+  the then-pinned test ledger unchanged; that historical embedding is removed.
 
 No second memory store, scorer, permission system, or signing mechanism is
 introduced.
@@ -43,8 +45,8 @@ boundary, test surface, and rollback:
 2. `tests/_nerva_e3_1_checks.py` — longitudinal, privacy, provenance, budget,
    revision, determinism, failure-isolation, oracle-query, and canonical
    query-parity regressions;
-3. `tests/test_h14_1_bitemporal_kg.py` — count-neutral invocation through the
-   established E2/E3 full-suite hook;
+3. `tests/test_nerva_e3_1_collected.py` — direct collection as an independently
+   attributable E3.1 contract node;
 4. this evidence document.
 
 Splitting these files would leave either an untested contract or tests without
@@ -205,7 +207,7 @@ fresh independent review.
 ## Rollback
 
 Revert the four-file E3.1 diff as one unit. This removes the comparison module,
-its focused checks, the H14.1 hook, and this document. Accepted E3.0, the
+its focused checks, its direct collector, and this document. Accepted E3.0, the
 existing memory evaluation harness, production recall, and stored data are
 unchanged; no migration or compensating action is required.
 

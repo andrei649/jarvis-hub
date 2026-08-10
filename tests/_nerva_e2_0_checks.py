@@ -1,9 +1,4 @@
-"""Assertions invoked by the existing bi-temporal test for Atlas E2.0.
-
-The helper is deliberately not a pytest collection target. The repository pins
-its generated test count, so the bounded Atlas assertions are called from the
-existing H14.1 regression test rather than creating test-count-only churn.
-"""
+"""Bounded Atlas E2.0 assertions collected by ``test_nerva_e2_0_collected.py``."""
 
 from __future__ import annotations
 

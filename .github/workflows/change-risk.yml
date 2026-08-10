@@ -1,0 +1,90 @@
+name: Change risk classifier
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Optional base commit (defaults to the parent of head)
+        required: false
+        type: string
+      head_sha:
+        description: Commit to classify
+        required: false
+        default: HEAD
+        type: string
+  workflow_call:
+    inputs:
+      base_sha:
+        description: Optional base commit (defaults to the parent of head)
+        required: false
+        type: string
+      head_sha:
+        description: Commit to classify
+        required: false
+        default: HEAD
+        type: string
+    outputs:
+      risk_level:
+        description: low, medium, or high
+        value: ${{ jobs.classify.outputs.risk_level }}
+      scopes_json:
+        description: JSON array of the eight stable change scopes
+        value: ${{ jobs.classify.outputs.scopes_json }}
+      required_lanes_json:
+        description: JSON array of lanes that consumers must run
+        value: ${{ jobs.classify.outputs.required_lanes_json }}
+      full_suite_required:
+        description: Whether the full-suite lane is required
+        value: ${{ jobs.classify.outputs.full_suite_required }}
+      fail_safe:
+        description: Whether ambiguity escalated the change to all lanes
+        value: ${{ jobs.classify.outputs.fail_safe }}
+      nerva_relevant:
+        description: Whether a Nerva-owned path requires integrity validation
+        value: ${{ jobs.classify.outputs.nerva_relevant }}
+      metrics_json:
+        description: Stable counts and identifiers for CI-efficiency measurement
+        value: ${{ jobs.classify.outputs.metrics_json }}
+
+concurrency:
+  group: ai-change-risk-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    name: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      aggregate_ready: ${{ steps.risk.outputs.aggregate_ready }}
+      classification_id: ${{ steps.risk.outputs.classification_id }}
+      policy_sha256: ${{ steps.risk.outputs.policy_sha256 }}
+      risk_level: ${{ steps.risk.outputs.risk_level }}
+      risk_score: ${{ steps.risk.outputs.risk_score }}
+      scopes_json: ${{ steps.risk.outputs.scopes_json }}
+      required_lanes_json: ${{ steps.risk.outputs.required_lanes_json }}
+      full_suite_required: ${{ steps.risk.outputs.full_suite_required }}
+      fail_safe: ${{ steps.risk.outputs.fail_safe }}
+      nerva_relevant: ${{ steps.risk.outputs.nerva_relevant }}
+      changed_count: ${{ steps.risk.outputs.changed_count }}
+      unknown_count: ${{ steps.risk.outputs.unknown_count }}
+      rename_or_copy_count: ${{ steps.risk.outputs.rename_or_copy_count }}
+      metrics_json: ${{ steps.risk.outputs.metrics_json }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Classify changed paths
+        id: risk
+        env:
+          CHANGE_RISK_BASE: ${{ github.event.pull_request.base.sha || inputs.base_sha || github.event.before }}
+          CHANGE_RISK_HEAD: ${{ github.event.pull_request.head.sha || inputs.head_sha || github.sha }}
+        run: >-
+          python scripts/change_risk.py
+          --output "${RUNNER_TEMP}/change-risk.json"
+          --github-output "${GITHUB_OUTPUT}"
+          --summary "${GITHUB_STEP_SUMMARY}"
+          --quiet

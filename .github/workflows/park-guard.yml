@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited, ready_for_review]
 
+concurrency:
+  group: park-guard-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: read
@@ -11,8 +15,9 @@ permissions:
 jobs:
   parked-modules:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
       - name: Select last merged park policy
@@ -24,13 +29,34 @@ jobs:
           else
             cp scripts/park_guard.py "$RUNNER_TEMP/park_guard.py"
           fi
+      - name: Verify exact-head repository-owner approval
+        id: owner-approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: |
+          reviews="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews")"
+          approved=false
+          if jq -e \
+            --arg owner "$REPOSITORY_OWNER" \
+            --arg head "$HEAD_SHA" \
+            '[.[][] | select(.user.login == $owner and .commit_id == $head)] | sort_by(.submitted_at) | last | .state == "APPROVED"' \
+            <<< "$reviews" >/dev/null; then
+            approved=true
+          fi
+          echo "approved=$approved" >> "$GITHUB_OUTPUT"
       - name: Enforce phased unpark policy
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          OWNER_APPROVAL_ARG: ${{ steps.owner-approval.outputs.approved == 'true' && '--owner-approved' || '' }}
         run: >-
           python "$RUNNER_TEMP/park_guard.py"
           --base "$BASE_SHA"
           --head "$HEAD_SHA"
+          $OWNER_APPROVAL_ARG

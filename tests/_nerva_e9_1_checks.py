@@ -1,10 +1,4 @@
-"""Assertions invoked by the existing E9.0 benchmark test for E9.1.
-
-The helper is deliberately not a pytest collection target. The repository pins
-its generated test count, so the bounded scheduled-reporting assertions are
-called from an existing Research Lab regression rather than creating count-only
-churn.
-"""
+"""E9.1 scheduled-reporting assertions and direct-collection case manifest."""
 
 from __future__ import annotations
 
@@ -36,6 +30,7 @@ from agents.core.observability.scheduled_report import (
     source_revision,
     validate_report_against_run,
 )
+from tests.nerva_check_cases import case, run_cases
 
 ROOT = Path(__file__).resolve().parent.parent
 _REVISION = "a" * 40
@@ -51,13 +46,13 @@ def _check_suite_is_synthetic_public_and_ci_only() -> None:
 
     cases = scheduled_cases()
     assert cases, "the scheduled suite cannot be empty"
-    for case in cases:
-        assert case.privacy_class == "synthetic_public"
-        assert case.allowed_lanes == ("ci",)
+    for scheduled_case in cases:
+        assert scheduled_case.privacy_class == "synthetic_public"
+        assert scheduled_case.allowed_lanes == ("ci",)
         # An owner-private or sanitized case would be refused by the lane gate.
         with pytest.raises(PermissionError):
-            case.enforce_lane("local")
-    assert len({case.case_id for case in cases}) == len(cases)
+            scheduled_case.enforce_lane("local")
+    assert len({scheduled_case.case_id for scheduled_case in cases}) == len(cases)
 
 
 def _check_suite_version_is_stable_until_content_changes(tmp_path) -> None:
@@ -1034,30 +1029,82 @@ def _with_unscored_case(run):
     return replace(run, results=(unscored, *rest))
 
 
-def run_e9_1_checks(tmp_path, monkeypatch) -> None:
-    """Run every bounded E9.1 scheduled-reporting assertion."""
+NERVA_E9_1_CASES = (
+    case("e9.1", _check_suite_is_synthetic_public_and_ci_only),
+    case("e9.1", _check_suite_version_is_stable_until_content_changes, fixtures=("tmp_path",)),
+    case(
+        "e9.1",
+        _check_scheduled_run_persists_through_the_accepted_store,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e9.1",
+        _check_first_run_has_no_baseline_and_cannot_claim_a_regression,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e9.1",
+        _check_regression_and_improvement_are_decided_only_on_measured_metrics,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e9.1",
+        _check_unmeasured_metrics_are_never_coerced_into_a_score,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e9.1",
+        _check_report_is_deterministic_and_evaluation_only,
+        fixtures=("tmp_path",),
+    ),
+    case("e9.1", _check_report_invariants_reject_incoherent_summaries),
+    case("e9.1", _check_report_cannot_claim_a_bad_revision_or_hardware),
+    case("e9.1", _check_comparison_semantics_cannot_be_self_asserted),
+    case("e9.1", _check_totals_are_frozen_after_construction),
+    case("e9.1", _check_totals_semantics_and_comparison_agreement),
+    case("e9.1", _check_report_is_bound_to_the_retained_run, fixtures=("tmp_path",)),
+    case(
+        "e9.1",
+        _check_unretained_evidence_cannot_become_canonical,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e9.1",
+        _check_environment_is_detected_bounded_and_validated,
+        fixtures=("tmp_path",),
+    ),
+    case("e9.1", _check_baseline_identity_matches_baseline_evidence),
+    case(
+        "e9.1",
+        _check_legal_baseline_failure_states_still_report,
+        fixtures=("tmp_path", "monkeypatch"),
+    ),
+    case(
+        "e9.1",
+        _check_json_report_is_replaced_not_appended,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e9.1",
+        _check_comparison_requires_matching_evaluator_identities,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e9.1",
+        _check_missing_prerequisites_fail_visibly,
+        fixtures=("tmp_path", "monkeypatch"),
+    ),
+    case("e9.1", _check_revision_must_be_an_exact_commit_sha, fixtures=("tmp_path",)),
+    case(
+        "e9.1",
+        _check_regressed_run_is_retained_but_not_promoted,
+        fixtures=("tmp_path", "monkeypatch"),
+    ),
+    case("e9.1", _check_workflow_separates_retention_from_promotion),
+    case("e9.1", _check_cli_reports_without_changing_routing, fixtures=("tmp_path",)),
+)
 
-    _check_suite_is_synthetic_public_and_ci_only()
-    _check_suite_version_is_stable_until_content_changes(tmp_path)
-    _check_scheduled_run_persists_through_the_accepted_store(tmp_path)
-    _check_first_run_has_no_baseline_and_cannot_claim_a_regression(tmp_path)
-    _check_regression_and_improvement_are_decided_only_on_measured_metrics(tmp_path)
-    _check_unmeasured_metrics_are_never_coerced_into_a_score(tmp_path)
-    _check_report_is_deterministic_and_evaluation_only(tmp_path)
-    _check_report_invariants_reject_incoherent_summaries()
-    _check_report_cannot_claim_a_bad_revision_or_hardware()
-    _check_comparison_semantics_cannot_be_self_asserted()
-    _check_totals_are_frozen_after_construction()
-    _check_totals_semantics_and_comparison_agreement()
-    _check_report_is_bound_to_the_retained_run(tmp_path)
-    _check_unretained_evidence_cannot_become_canonical(tmp_path)
-    _check_environment_is_detected_bounded_and_validated(tmp_path)
-    _check_baseline_identity_matches_baseline_evidence()
-    _check_legal_baseline_failure_states_still_report(tmp_path, monkeypatch)
-    _check_json_report_is_replaced_not_appended(tmp_path)
-    _check_comparison_requires_matching_evaluator_identities(tmp_path)
-    _check_missing_prerequisites_fail_visibly(tmp_path, monkeypatch)
-    _check_revision_must_be_an_exact_commit_sha(tmp_path)
-    _check_regressed_run_is_retained_but_not_promoted(tmp_path, monkeypatch)
-    _check_workflow_separates_retention_from_promotion()
-    _check_cli_reports_without_changing_routing(tmp_path)
+
+def run_e9_1_checks(tmp_path, monkeypatch) -> None:
+    """Compatibility entrypoint; direct pytest collection uses the same manifest."""
+    run_cases(NERVA_E9_1_CASES, tmp_path=tmp_path, monkeypatch=monkeypatch)

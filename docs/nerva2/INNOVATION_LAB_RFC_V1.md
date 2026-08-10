@@ -9,8 +9,15 @@ The governed sources are:
 - `INNOVATION_LAB_V1.schema.json` — the pinned structural contract;
 - `KNOWLEDGE_GARDEN_V1.json` — the append-only canonical registry;
 - `scripts/check_nerva_innovation_lab.py` — the standard-library trust boundary;
-- `tests/_nerva_innovation_lab_checks.py` — a count-neutral hostile matrix;
+- `tests/_nerva_innovation_lab_checks.py` — the directly executable hostile
+  matrix;
+- `tests/test_nerva_innovation_lab_collected.py` — direct pytest collection of
+  that matrix as an attributable Nerva contract node;
 - `.github/workflows/nerva-roadmap.yml` — immutable-ref CI wiring.
+
+The matrix originally ran only as a script so it would remain count-neutral.
+The roadmap keeps that direct execution, while the repository suite now also
+collects it explicitly through the dedicated collector above.
 
 ## 1. Outcome and non-goals
 
@@ -275,10 +282,11 @@ not signatures, authenticity, acceptance, or implementation authority.
 - normal security, privacy, architecture, CI, and independent review remain
   external publication gates.
 
-Run the hostile matrix directly:
+Run the hostile matrix directly or through its collected pytest node:
 
 ```powershell
 python tests/_nerva_innovation_lab_checks.py
+pytest -q tests/test_nerva_innovation_lab_collected.py
 ```
 
 It covers schema mutations, nested invalid types, orphans, multiple ownership,
@@ -290,7 +298,7 @@ Even after this control passes independent review and exact-head CI, it supplies
 only the process/schema foundation. #805 remains open and enters `BUILDING`; it still
 needs real, separately evidenced examples before any completion claim.
 
-Rollback is one atomic revert of these six control files. It changes no runtime
+Rollback is one atomic revert of these seven control files. It changes no runtime
 state, provider, private data, or authority.
 
 ## 12. Governed evidence examples v1

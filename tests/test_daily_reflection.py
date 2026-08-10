@@ -15,9 +15,6 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _nerva_e6_0_checks import run_e6_0_checks  # noqa: E402
-from _nerva_e6_1_checks import run_e6_1_checks  # noqa: E402
-
 from agents.core.autonomy.reflection import DailyReflector, ReflectionRunStore  # noqa: E402
 from agents.core.cognition.memory import LivingMemory  # noqa: E402
 from agents.core.memory.manager import MemoryManager  # noqa: E402
@@ -46,16 +43,12 @@ def _llm_returning(payload: dict):
 
 
 @pytest.mark.asyncio
-async def test_reflection_skips_when_disabled(tmp_path):
+async def test_reflection_skips_when_disabled():
     m = await _mem_with_turns(("user", "Hello"), ("assistant", "Hi"))
     r = DailyReflector(m, _llm_returning({}))
     result = await r.run(enabled=False)
     assert result["skipped"] is True
     assert result["reason"] == "disabled"
-    # Bounded Nerva E6.0 contract assertions; DailyReflector behavior is unchanged.
-    run_e6_0_checks()
-    # Bounded E6.1 evaluation assertions; still no production reflection behavior.
-    await run_e6_1_checks(tmp_path)
 
 
 @pytest.mark.asyncio

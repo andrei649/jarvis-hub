@@ -1,9 +1,6 @@
-"""Hostile, count-neutral checks for the fail-closed Innovation Lab control.
+"""Hostile checks for the fail-closed Innovation Lab control.
 
-The repository runs this file directly so strengthening the control plane does
-not manufacture a collected-pytest count change.  The matrix exercises the
-real standard-library validator, including its closed schema profile and Git
-reference boundary.
+The matrix remains directly executable and is also exposed as one pytest case.
 """
 
 from __future__ import annotations

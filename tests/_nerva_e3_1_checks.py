@@ -1,4 +1,4 @@
-"""Privacy, determinism and real-path checks for Nerva Episodes E3.1."""
+"""Directly collected privacy and determinism checks for Nerva Episodes E3.1."""
 
 from __future__ import annotations
 

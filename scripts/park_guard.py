@@ -56,7 +56,12 @@ def declarations(text: str) -> set[str]:
     return tokens
 
 
-def _allowed(module: str, phase: str, declared: set[str]) -> bool:
+def _allowed(module: str, phase: str, declared: set[str], *, owner_approved: bool) -> bool:
+    # Owner-only and policy-control surfaces require an exact-head GitHub review
+    # from the repository owner. PR-authored text remains descriptive scope,
+    # never the authority signal by itself.
+    if phase in {"owner", "policy"} and not owner_approved:
+        return False
     if module in declared:
         return True
     if phase in _PHASE_ALIASES and declared.intersection(_PHASE_ALIASES[phase]):
@@ -68,7 +73,7 @@ def _allowed(module: str, phase: str, declared: set[str]) -> bool:
     return False
 
 
-def evaluate(changed_paths: list[str], pr_text: str) -> dict:
+def evaluate(changed_paths: list[str], pr_text: str, *, owner_approved: bool = False) -> dict:
     declared = declarations(pr_text)
     violations = []
     parked_touches = []
@@ -78,7 +83,12 @@ def evaluate(changed_paths: list[str], pr_text: str) -> dict:
             if not any(_matches(path, pattern) for pattern in rule["paths"]):
                 continue
             parked_touches.append({"path": path, "module": module, "phase": rule["phase"]})
-            if not _allowed(module, rule["phase"], declared):
+            if not _allowed(
+                module,
+                rule["phase"],
+                declared,
+                owner_approved=owner_approved,
+            ):
                 expected = (
                     f"unpark: owner {module}"
                     if rule["phase"] == "owner"
@@ -95,6 +105,7 @@ def evaluate(changed_paths: list[str], pr_text: str) -> dict:
             break
     return {
         "ok": not violations,
+        "owner_approved": owner_approved,
         "declarations": sorted(declared),
         "parked_touches": parked_touches,
         "violations": violations,
@@ -124,6 +135,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--changed-path", action="append", default=[])
     parser.add_argument("--text", help="PR title/body; defaults to CI environment")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--owner-approved",
+        action="store_true",
+        help="exact-head repository-owner approval was verified by the trusted workflow",
+    )
     args = parser.parse_args(argv)
     paths: list[str] = []
     if args.changed_path:
@@ -135,7 +151,7 @@ def main(argv: list[str]) -> int:
     pr_text = args.text
     if pr_text is None:
         pr_text = f"{os.environ.get('PR_TITLE', '')}\n{os.environ.get('PR_BODY', '')}"
-    result = evaluate(paths, pr_text)
+    result = evaluate(paths, pr_text, owner_approved=args.owner_approved)
     if args.json:
         print(json.dumps(result, indent=2))
     elif result["ok"]:

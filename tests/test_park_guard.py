@@ -30,6 +30,7 @@ def test_wave_one_modules_are_permanently_removed_from_park_policy():
     )
     assert result == {
         "ok": True,
+        "owner_approved": False,
         "declarations": [],
         "parked_touches": [],
         "violations": [],
@@ -50,6 +51,7 @@ def test_wave_two_modules_are_permanently_removed_from_park_policy():
     )
     assert result == {
         "ok": True,
+        "owner_approved": False,
         "declarations": [],
         "parked_touches": [],
         "violations": [],
@@ -66,6 +68,7 @@ def test_wave_three_room_voice_modules_are_permanently_removed_from_park_policy(
     )
     assert result == {
         "ok": True,
+        "owner_approved": False,
         "declarations": [],
         "parked_touches": [],
         "violations": [],
@@ -134,14 +137,27 @@ def test_wave_three_does_not_unpark_owner_pull_modules():
     assert result["ok"] is False
     assert [item["module"] for item in result["violations"]] == ["training"]
     owner = guard.evaluate(["training/sft_grpo.py"], "unpark: owner training")
-    assert owner["ok"] is True
+    assert owner["ok"] is False
+    approved = guard.evaluate(
+        ["training/sft_grpo.py"],
+        "unpark: owner training",
+        owner_approved=True,
+    )
+    assert approved["ok"] is True
 
 
 def test_policy_files_are_self_protected():
     result = guard.evaluate(["scripts/park_guard.py"], "chore: weaken guard")
     assert result["ok"] is False
     assert result["violations"][0]["module"] == "park-policy"
-    assert guard.evaluate([".github/workflows/park-guard.yml"], "unpark: park-policy")["ok"]
+    assert not guard.evaluate(
+        [".github/workflows/park-guard.yml"], "unpark: park-policy"
+    )["ok"]
+    assert guard.evaluate(
+        [".github/workflows/park-guard.yml"],
+        "unpark: park-policy",
+        owner_approved=True,
+    )["ok"]
 
 
 def test_windows_paths_and_deleted_files_match_identically():
@@ -170,3 +186,6 @@ def test_workflow_runs_base_policy_when_guard_already_exists():
     workflow = (REPO / ".github" / "workflows" / "park-guard.yml").read_text(encoding="utf-8")
     assert 'git show "$BASE_SHA:scripts/park_guard.py"' in workflow
     assert 'python "$RUNNER_TEMP/park_guard.py"' in workflow
+    assert "pulls/$PR_NUMBER/reviews" in workflow
+    assert ".commit_id == $head" in workflow
+    assert "--owner-approved" in workflow

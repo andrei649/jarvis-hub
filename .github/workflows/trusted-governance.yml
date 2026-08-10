@@ -1,0 +1,95 @@
+name: AI Governance
+
+# pull_request_target deliberately executes the last merged workflow and policy,
+# never candidate scripts. The token is read-only and candidate bytes are only
+# inspected as Git objects.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+concurrency:
+  group: trusted-governance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  trusted-base:
+    name: trusted-base
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the immutable base control plane
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch candidate as data and bind the exact head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          git fetch --no-tags origin "pull/$PR_NUMBER/head"
+          observed="$(git rev-parse FETCH_HEAD)"
+          if [[ "$observed" != "$EXPECTED_HEAD" ]]; then
+            echo "::error::Fetched PR head $observed does not match event head $EXPECTED_HEAD"
+            exit 1
+          fi
+
+      - name: Classify with the last merged policy
+        id: risk
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          python scripts/change_risk.py \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA" \
+            --output "$RUNNER_TEMP/trusted-classification.json" \
+            --quiet
+          risk="$(jq -r '.risk_level' "$RUNNER_TEMP/trusted-classification.json")"
+          classification_id="$(jq -r '.classification_id' "$RUNNER_TEMP/trusted-classification.json")"
+          if [[ ! "$risk" =~ ^(low|medium|high)$ ]] || [[ ! "$classification_id" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Trusted classifier emitted malformed evidence"
+            exit 1
+          fi
+          echo "risk=$risk" >> "$GITHUB_OUTPUT"
+          echo "classification_id=$classification_id" >> "$GITHUB_OUTPUT"
+          echo "Trusted exact-head classification: **$risk** (`$classification_id`)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require independent exact-head approval for R2/R3
+        if: ${{ steps.risk.outputs.risk != 'low' }}
+        env:
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          RISK: ${{ steps.risk.outputs.risk }}
+        shell: bash
+        run: |
+          reviews="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews")"
+          latest="$(jq -c \
+            --arg head "$HEAD_SHA" \
+            '[.[][] | select(.commit_id == $head)] | group_by(.user.login) | map(sort_by(.submitted_at) | last)' \
+            <<< "$reviews")"
+          if [[ "$RISK" == "high" ]]; then
+            approved="$(jq -r --arg owner "$REPOSITORY_OWNER" \
+              'any(.[]; .user.login == $owner and .state == "APPROVED")' <<< "$latest")"
+            requirement="exact-head repository-owner approval"
+          else
+            approved="$(jq -r --arg author "$AUTHOR" \
+              'any(.[]; .user.login != $author and .state == "APPROVED")' <<< "$latest")"
+            requirement="independent exact-head approval"
+          fi
+          if [[ "$approved" != "true" ]]; then
+            echo "::error::$RISK change requires $requirement; previous-head approvals are stale"
+            exit 1
+          fi
+          echo "$requirement verified for $HEAD_SHA." >> "$GITHUB_STEP_SUMMARY"

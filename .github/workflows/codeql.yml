@@ -1,10 +1,30 @@
-name: CodeQL
+name: CodeQL (advisory)
 
 on:
   push:
     branches: [main]
+    paths:
+      - "agents/**/*.py"
+      - "scripts/**/*.py"
+      - "skills/**/*.py"
+      - "serve.py"
+      - "requirements*.txt"
+      - "requirements*.lock"
+      - "pyproject.toml"
+      - ".github/codeql/**"
+      - ".github/workflows/codeql.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "agents/**/*.py"
+      - "scripts/**/*.py"
+      - "skills/**/*.py"
+      - "serve.py"
+      - "requirements*.txt"
+      - "requirements*.lock"
+      - "pyproject.toml"
+      - ".github/codeql/**"
+      - ".github/workflows/codeql.yml"
   schedule:
     # Weekly scan to catch advisories published after the last commit.
     - cron: "27 4 * * 1"
@@ -15,8 +35,9 @@ concurrency:
 
 jobs:
   analyze:
-    name: Analyze (python)
+    name: Advisory analysis (python)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       actions: read
       contents: read
@@ -33,6 +54,7 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
+        id: codeql
         # Code scanning (SARIF upload) needs GitHub Advanced Security, which is
         # org-only — unavailable on this private personal repo, so the upload
         # always errors. Keep the scan running but don't fail CI on it. Re-enable
@@ -41,3 +63,16 @@ jobs:
         uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38  # v4
         with:
           category: "/language:python"
+
+      - name: Record advisory outcome honestly
+        if: ${{ always() }}
+        env:
+          CODEQL_OUTCOME: ${{ steps.codeql.outcome }}
+        shell: bash
+        run: |
+          if [[ "$CODEQL_OUTCOME" == "success" ]]; then
+            echo "CodeQL advisory analysis completed successfully." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::CodeQL advisory analysis did not complete (${CODEQL_OUTCOME}). This is not security acceptance; the blocking Semgrep, Bandit and secret-scan checks remain authoritative."
+            echo "CodeQL advisory outcome: **${CODEQL_OUTCOME}**. Do not cite this job as a green security gate." >> "$GITHUB_STEP_SUMMARY"
+          fi

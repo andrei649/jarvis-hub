@@ -42,7 +42,10 @@ The package reuses rather than rebuilds:
   so missing evidence stays qualified instead of becoming a guessed number;
 - the canonical-JSON and SHA-256 replay-fingerprint convention established by
   E1.0 `nerva.decision.v1` in `agents/core/cortex_decision.py`;
-- the existing `tests/test_daily_reflection.py` regression surface.
+- the shared Nerva direct-collection adapter and the existing
+  `tests/test_daily_reflection.py` regression surface. The accepted E6.0 slice
+  originally invoked its helper from that regression to keep the then-pinned
+  test ledger unchanged; that historical embedding is removed.
 
 No second memory store, scorer, scheduler, permission system, or reflector is
 introduced. `DailyReflector` production behavior is untouched.
@@ -215,13 +218,14 @@ Privacy escalates with combined evidence and can never downgrade. A proposal
 derived from `restricted` evidence may only target the `human_review`
 destination. Free-text `claim` and `scope` are length-bounded.
 
-## Test surface and test-count neutrality
+## Directly collected test surface
 
-The repository pins its generated test count. Following the E3.0/E3.1 convention,
-the bounded assertions live in `tests/_nerva_e6_0_checks.py` and are invoked from
-the existing `tests/test_daily_reflection.py` regression, so the collected test
-count is unchanged (5767 before and after). Fourteen assertion groups cover the
-four comparison paths, retention of ineligible evidence with its classification,
+The bounded assertions live in `tests/_nerva_e6_0_checks.py` and its ordered
+manifest is directly parametrized by `tests/test_nerva_e6_0_collected.py`.
+Historical acceptance evidence recorded 5,767 collected tests before and after
+the original count-neutral embedding; the current generated ledger instead
+counts each of these fourteen independently attributable assertion groups. They
+cover the four comparison paths, retention of ineligible evidence with its classification,
 partial-evidence fail-closure, deterministic fingerprints, immutability and
 authority flags, insufficient-evidence fail-closure, evidence/chronology
 validation, forged evidence-graph and forged-payload rejection, privacy
@@ -251,10 +255,12 @@ to the destination slice, not to this contract.
 
 ## Migration and rollback
 
-The change is purely additive: one new module, one new test helper, four added
-lines in an existing test, and this document. Rollback is one atomic revert of
-those files. No data migration, no schema change to existing records, and no
-compensating external action is required. Existing Episode, Atlas, run-history,
+The accepted slice was purely additive and originally included four helper-call
+lines in an existing test. Current wiring replaces those historical lines with
+`tests/test_nerva_e6_0_collected.py`. Rollback is one atomic revert of the
+module, helper, direct collector, and this document. No data migration, no schema
+change to existing records, and no compensating external action is required.
+Existing Episode, Atlas, run-history,
 feedback and `DailyReflector` data is neither rewritten nor deleted.
 
 ## Next coherent package

@@ -1,15 +1,16 @@
-name: Hourly PR Auto-Merge
+name: Manual PR Integration
 
-# Conductor-agent automation (AGENTS.md "Pattern conductor agent" /
-# docs/AGENT_WORKFLOW.md): an hourly sweep of open PRs that merges only the
+# Temporary governance-safe integration lane: an explicitly confirmed sweep of
+# open PRs that merges only the
 # ones GitHub itself already reports as fully ready. It never makes that
 # judgement call itself — it trusts `mergeStateStatus` (computed server-side
 # from branch protection: required checks, conflicts, required reviews).
 #
 # Safety rules (do not weaken without updating AGENTS.md too):
-#   - draft PRs are a file lock owned by their author — never touched.
+#   - draft PRs are visibility state, not locks, and are never merged.
+#   - Nerva and vendored-dependency updates require separate manual integration.
 #   - only mergeStateStatus == CLEAN is merged. BLOCKED/DIRTY/BEHIND/UNSTABLE
-#     are left for the next hourly run — no force-push, no conflict
+#     are left for the next explicitly approved manual run — no force-push, no conflict
 #     resolution, no rebasing someone else's branch.
 #   - re-checked immediately before merging (a same-run earlier merge can
 #     turn a CLEAN PR into BEHIND/DIRTY if it touched the same files).
@@ -20,11 +21,12 @@ name: Hourly PR Auto-Merge
 #   - squash merge, one commit per PR — matches this repo's existing history.
 
 on:
-  workflow_dispatch: {}
-  schedule:
-    # :13 past the hour — off the round-number mark so this doesn't land on
-    # GitHub's scheduler at the same instant as everyone else's "hourly" jobs.
-    - cron: "13 * * * *"
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type MERGE APPROVED PRS to run the bounded integration sweep
+        required: true
+        type: string
 
 concurrency:
   group: pr-auto-merge
@@ -36,7 +38,9 @@ permissions:
 
 jobs:
   auto-merge:
+    if: ${{ inputs.confirm == 'MERGE APPROVED PRS' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Merge PRs that are fully green
         env:
@@ -47,20 +51,29 @@ jobs:
 
           readonly NERVA_BRANCH_PREFIX="nerva2/"
           readonly NERVA_START_MARKER="<!-- NERVA2:MOVEMENT-ATTESTATION:START -->"
+          readonly THIRD_PARTY_BRANCH_PREFIX="chore/thirdparty-update-"
 
           nerva_manual_status() {
             local record="$1"
             jq -e \
               --arg prefix "$NERVA_BRANCH_PREFIX" \
               --arg marker "$NERVA_START_MARKER" \
-              '(.headRefName | startswith($prefix)) or (.body | contains($marker))' \
+              'def nerva_path: . == "BACKLOG.md" or . == "STATUS.md" or . == "NERVA.md" or . == "NERVA_VISION.md" or startswith("docs/nerva2/") or test("^scripts/(check_nerva_[^/]*|reconcile_nerva_repository_ledgers)\\.py$") or . == "tests/nerva_check_cases.py" or test("^tests/(_nerva_[^/]*_checks|test_nerva_[^/]*|test_reconcile_nerva_repository_ledgers)\\.py$") or . == ".github/workflows/nerva-roadmap.yml"; (.headRefName | startswith($prefix)) or (.body | contains($marker)) or any(.files[]; .path | nerva_path)' \
+              <<<"$record" >/dev/null 2>&1
+          }
+
+          thirdparty_manual_status() {
+            local record="$1"
+            jq -e \
+              --arg prefix "$THIRD_PARTY_BRANCH_PREFIX" \
+              'def thirdparty_path: . == ".github/third-party-manifest.json" or startswith(".claude/plugins/superpowers/") or . == ".claude/plugins/README.md" or . == "LICENSES/superpowers-MIT.txt" or . == "docs/dev/codebase-memory-mcp.md" or startswith("vendor/") or startswith("vendors/") or startswith("vendored/") or startswith("third_party/") or startswith("third-party/"); (.headRefName | startswith($prefix)) or any(.files[]; .path | thirdparty_path)' \
               <<<"$record" >/dev/null 2>&1
           }
 
           list_raw=""
           list_status=0
           list_raw="$(gh pr list --repo "$REPO" --state open --limit 100 \
-            --json number,isDraft,mergeStateStatus,headRefOid,headRefName,body \
+            --json number,isDraft,mergeStateStatus,headRefOid,headRefName,body,changedFiles,files \
             2>/dev/null)" \
             || list_status=$?
           if [ "$list_status" -ne 0 ]; then
@@ -82,7 +95,17 @@ jobs:
               and (.headRefOid | test("^[0-9a-f]{40}$"))
               and ((.headRefName | type) == "string")
               and ((.headRefName | length) > 0)
-              and ((.body | type) == "string");
+              and ((.body | type) == "string")
+              and ((.changedFiles | type) == "number")
+              and (.changedFiles > 0)
+              and ((.changedFiles | floor) == .changedFiles)
+              and ((.files | type) == "array")
+              and (.changedFiles == (.files | length))
+              and (.files | all(.[];
+                type == "object"
+                and ((.path | type) == "string")
+                and ((.path | length) > 0)))
+              and (([.files[].path] | length) == ([.files[].path] | unique | length));
 
             if length != 1 then
               error("expected exactly one list document")
@@ -113,6 +136,20 @@ jobs:
             state="$(jq -r '.mergeStateStatus' <<<"$pr")"
             sha="$(jq -r '.headRefOid' <<<"$pr")"
 
+            thirdparty_status=0
+            thirdparty_manual_status "$pr" || thirdparty_status=$?
+            case "$thirdparty_status" in
+              0)
+                printf '#%s: manual vendored-dependency integration required — skipped\n' "$number"
+                continue
+                ;;
+              1) ;;
+              *)
+                printf 'Fatal third-party policy evaluation error for PR #%s.\n' "$number" >&2
+                exit "$thirdparty_status"
+                ;;
+            esac
+
             manual_status=0
             nerva_manual_status "$pr" || manual_status=$?
             case "$manual_status" in
@@ -141,7 +178,7 @@ jobs:
             recheck_raw=""
             recheck_status=0
             recheck_raw="$(gh pr view "$number" --repo "$REPO" \
-              --json number,isDraft,mergeStateStatus,headRefOid,headRefName,body \
+              --json number,isDraft,mergeStateStatus,headRefOid,headRefName,body,changedFiles,files \
               2>/dev/null)" \
               || recheck_status=$?
             if [ "$recheck_status" -ne 0 ]; then
@@ -163,7 +200,17 @@ jobs:
                 and (.headRefOid | test("^[0-9a-f]{40}$"))
                 and ((.headRefName | type) == "string")
                 and ((.headRefName | length) > 0)
-                and ((.body | type) == "string");
+                and ((.body | type) == "string")
+                and ((.changedFiles | type) == "number")
+                and (.changedFiles > 0)
+                and ((.changedFiles | floor) == .changedFiles)
+                and ((.files | type) == "array")
+                and (.changedFiles == (.files | length))
+                and (.files | all(.[];
+                  type == "object"
+                  and ((.path | type) == "string")
+                  and ((.path | length) > 0)))
+                and (([.files[].path] | length) == ([.files[].path] | unique | length));
 
               if length != 1 then
                 error("expected exactly one recheck document")
@@ -183,6 +230,20 @@ jobs:
               printf '#%s: recheck identity mismatch; refusing to merge.\n' "$number" >&2
               exit 1
             fi
+
+            thirdparty_status=0
+            thirdparty_manual_status "$recheck" || thirdparty_status=$?
+            case "$thirdparty_status" in
+              0)
+                printf '#%s: manual vendored-dependency integration required at recheck — skipped\n' "$number"
+                continue
+                ;;
+              1) ;;
+              *)
+                printf 'Fatal third-party policy evaluation error for PR #%s.\n' "$number" >&2
+                exit "$thirdparty_status"
+                ;;
+            esac
 
             manual_status=0
             nerva_manual_status "$recheck" || manual_status=$?

@@ -114,6 +114,14 @@ revision and runner identity produce stable fixture, suite, and plan digests.
 The actual predeclaration and expiry timestamps remain separate wall-clock retention
 metadata; their exact values still bind the retained run and reconstructed report.
 
+## Directly collected test surface
+
+The 22 bounded assertion groups live in `tests/_nerva_e6_1_checks.py` and are
+directly parametrized by `tests/test_nerva_e6_1_collected.py`, with a fresh
+`tmp_path` fixture for every case that needs one. The accepted slice originally
+invoked the helper from `tests/test_daily_reflection.py` to keep the then-pinned
+test ledger unchanged; that historical embedding is removed.
+
 ## Authority and rollback
 
 The report fixes all of the following to false: lesson promotion, memory write,
@@ -121,8 +129,8 @@ routing change, authorization, execution, and completion. Success is evidence
 about this fixture set, not authority and not an owner-live benefit claim.
 
 Rollback is one independently revertible package: remove the evaluator, its
-count-neutral checks, this nightly job, and this document. E6.0 and E9.0 types,
-stores, lifecycle records, and production behavior remain untouched.
+check helper and direct collector, this nightly job, and this document. E6.0 and
+E9.0 types, stores, lifecycle records, and production behavior remain untouched.
 
 ## Residual risks
 

@@ -1,9 +1,4 @@
-"""Assertions invoked by the existing bi-temporal test for Episodes E3.0.
-
-The helper is deliberately not a pytest collection target. The repository pins
-its generated test count, so the bounded Episodes assertions are called from an
-existing memory regression test rather than creating count-only churn.
-"""
+"""Bounded Episodes E3.0 assertions collected by ``test_nerva_e3_0_collected.py``."""
 
 from __future__ import annotations
 

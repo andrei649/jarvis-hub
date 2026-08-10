@@ -1,4 +1,4 @@
-"""Fail-closed policy tests for the hourly pull-request conductor."""
+"""Fail-closed policy tests for the manually approved pull-request conductor."""
 
 from __future__ import annotations
 
@@ -19,14 +19,14 @@ REPO = Path(__file__).resolve().parent.parent
 WORKFLOW_PATH = REPO / ".github" / "workflows" / "pr-auto-merge.yml"
 
 NERVA_PREFIX = "nerva2/"
+THIRD_PARTY_PREFIX = "chore/thirdparty-update-"
 START_MARKER = "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->"
 END_MARKER = "<!-- NERVA2:MOVEMENT-ATTESTATION:END -->"
 OID_A = "a" * 40
 OID_B = "b" * 40
-PR_FIELDS = "number,isDraft,mergeStateStatus,headRefOid,headRefName,body"
-PREDICATE_FILTER = (
-    "(.headRefName | startswith($prefix)) or (.body | contains($marker))"
-)
+PR_FIELDS = "number,isDraft,mergeStateStatus,headRefOid,headRefName,body,changedFiles,files"
+PREDICATE_FILTER = r'def nerva_path: . == "BACKLOG.md" or . == "STATUS.md" or . == "NERVA.md" or . == "NERVA_VISION.md" or startswith("docs/nerva2/") or test("^scripts/(check_nerva_[^/]*|reconcile_nerva_repository_ledgers)\\.py$") or . == "tests/nerva_check_cases.py" or test("^tests/(_nerva_[^/]*_checks|test_nerva_[^/]*|test_reconcile_nerva_repository_ledgers)\\.py$") or . == ".github/workflows/nerva-roadmap.yml"; (.headRefName | startswith($prefix)) or (.body | contains($marker)) or any(.files[]; .path | nerva_path)'
+
 
 def _select_bash() -> str | None:
     """Prefer Git Bash on Windows; fall back to the ambient Bash."""
@@ -166,7 +166,7 @@ if [ "$#" -eq 8 ] \
   && [ "$5" = "--arg" ] \
   && [ "$6" = "marker" ] \
   && [ "$7" = "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->" ] \
-  && [ "${8}" = '(.headRefName | startswith($prefix)) or (.body | contains($marker))' ]; then
+  && [ "${8}" = 'def nerva_path: . == "BACKLOG.md" or . == "STATUS.md" or . == "NERVA.md" or . == "NERVA_VISION.md" or startswith("docs/nerva2/") or test("^scripts/(check_nerva_[^/]*|reconcile_nerva_repository_ledgers)\\.py$") or . == "tests/nerva_check_cases.py" or test("^tests/(_nerva_[^/]*_checks|test_nerva_[^/]*|test_reconcile_nerva_repository_ledgers)\\.py$") or . == ".github/workflows/nerva-roadmap.yml"; (.headRefName | startswith($prefix)) or (.body | contains($marker)) or any(.files[]; .path | nerva_path)' ]; then
   count=0
   if [ -f "$PREDICATE_COUNT_PATH" ]; then
     count="$(cat "$PREDICATE_COUNT_PATH")"
@@ -210,6 +210,7 @@ def _record(
     oid: object = OID_A,
     branch: object = "feature/ordinary",
     body: object = "",
+    paths: tuple[str, ...] = ("agents/core/router.py",),
 ) -> dict[str, object]:
     return {
         "number": number,
@@ -218,6 +219,8 @@ def _record(
         "headRefOid": oid,
         "headRefName": branch,
         "body": body,
+        "changedFiles": len(paths),
+        "files": [{"path": path} for path in paths],
     }
 
 
@@ -371,8 +374,15 @@ def test_workflow_preserves_triggers_permissions_and_concurrency() -> None:
     workflow = _workflow()
 
     assert workflow["on"] == {
-        "workflow_dispatch": {},
-        "schedule": [{"cron": "13 * * * *"}],
+        "workflow_dispatch": {
+            "inputs": {
+                "confirm": {
+                    "description": "Type MERGE APPROVED PRS to run the bounded integration sweep",
+                    "required": "true",
+                    "type": "string",
+                }
+            }
+        },
     }
     assert workflow["concurrency"] == {
         "group": "pr-auto-merge",
@@ -390,6 +400,8 @@ def test_workflow_preserves_triggers_permissions_and_concurrency() -> None:
     job = jobs["auto-merge"]
     assert isinstance(job, dict)
     assert job["runs-on"] == "ubuntu-latest"
+    assert job["if"] == "${{ inputs.confirm == 'MERGE APPROVED PRS' }}"
+    assert job["timeout-minutes"] == "10"
     assert "permissions" not in job
     assert "defaults" not in job
     assert "continue-on-error" not in job
@@ -411,6 +423,16 @@ def test_workflow_pins_exact_nerva_contract_bytes() -> None:
 
     assert f'readonly NERVA_BRANCH_PREFIX="{NERVA_PREFIX}"' in script
     assert f'readonly NERVA_START_MARKER="{START_MARKER}"' in script
+    assert f'readonly THIRD_PARTY_BRANCH_PREFIX="{THIRD_PARTY_PREFIX}"' in script
+    for protected_path in (
+        "BACKLOG.md",
+        "docs/nerva2/",
+        "check_nerva_",
+        ".github/third-party-manifest.json",
+        ".claude/plugins/superpowers/",
+        "docs/dev/codebase-memory-mcp.md",
+    ):
+        assert protected_path in script
     assert END_MARKER not in script
 
 
@@ -425,11 +447,15 @@ def test_workflow_has_two_explicit_fail_closed_predicate_calls() -> None:
     script = _workflow_script()
 
     assert script.count("manual_status=0") == 2
-    assert script.count('|| manual_status=$?') == 2
+    assert script.count("|| manual_status=$?") == 2
+    assert script.count("thirdparty_status=0") == 2
+    assert script.count("|| thirdparty_status=$?") == 2
     assert script.count("jq -s") >= 2
     assert script.count(PREDICATE_FILTER) == 1
     assert script.count('case "$manual_status" in') == 2
+    assert script.count('case "$thirdparty_status" in') == 2
     assert script.count("Fatal Nerva policy evaluation error") == 2
+    assert script.count("Fatal third-party policy evaluation error") == 2
 
 
 def test_workflow_preserves_bounded_squash_merge() -> None:
@@ -453,12 +479,39 @@ def test_workflow_preserves_bounded_squash_merge() -> None:
 def test_list_stage_skips_exact_nerva_branch_or_marker(
     tmp_path: Path, branch: str, body: str
 ) -> None:
-    record = _record(branch=branch, body=body)
+    records = [_record(branch=branch, body=body)]
+    if branch.startswith(NERVA_PREFIX):
+        records.extend(
+            [
+                _record(paths=("docs/nerva2/CONTRACT_REGISTRY.json",)),
+                _record(paths=("BACKLOG.md",)),
+                _record(paths=("scripts/check_nerva_roadmap.py",)),
+            ]
+        )
+    for index, record in enumerate(records):
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result = _run_policy(case_path, [record], {123: record})
 
-    result = _run_policy(tmp_path, [record], {123: record})
+        assert result.returncode == 0, result.stderr
+        _assert_no_view_or_merge(case_path)
 
-    assert result.returncode == 0, result.stderr
-    _assert_no_view_or_merge(tmp_path)
+
+@requires_policy_runtime
+def test_list_stage_skips_vendored_dependency_update_branch(tmp_path: Path) -> None:
+    records = [
+        _record(branch=f"{THIRD_PARTY_PREFIX}superpowers"),
+        _record(paths=(".github/third-party-manifest.json",)),
+        _record(paths=(".claude/plugins/superpowers/SKILL.md",)),
+        _record(paths=("vendor/example/runtime.py",)),
+    ]
+    for index, record in enumerate(records):
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result = _run_policy(case_path, [record], {123: record})
+
+        assert result.returncode == 0, result.stderr
+        _assert_no_view_or_merge(case_path)
 
 
 @requires_policy_runtime
@@ -546,6 +599,12 @@ def _recheck_drift(kind: str) -> dict[str, object]:
         return _record(branch="nerva2/recheck")
     if kind == "marker":
         return _record(body=START_MARKER)
+    if kind == "thirdparty-branch":
+        return _record(branch=f"{THIRD_PARTY_PREFIX}codebase-memory-mcp")
+    if kind == "nerva-path":
+        return _record(paths=("docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json",))
+    if kind == "thirdparty-path":
+        return _record(paths=(".claude/plugins/superpowers/CHANGELOG.md",))
     if kind == "draft":
         return _record(is_draft=True)
     if kind == "blocked":
@@ -556,15 +615,24 @@ def _recheck_drift(kind: str) -> dict[str, object]:
 
 
 @requires_policy_runtime
-@pytest.mark.parametrize("kind", ["nerva-branch", "marker", "draft", "blocked", "head"])
+@pytest.mark.parametrize(
+    "kind", ["nerva-branch", "marker", "thirdparty-branch", "draft", "blocked", "head"]
+)
 def test_recheck_stage_skips_nerva_or_readiness_drift(tmp_path: Path, kind: str) -> None:
     listed = _record()
+    fresh_records = [_recheck_drift(kind)]
+    if kind == "nerva-branch":
+        fresh_records.append(_recheck_drift("nerva-path"))
+    if kind == "thirdparty-branch":
+        fresh_records.append(_recheck_drift("thirdparty-path"))
+    for index, fresh in enumerate(fresh_records):
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result = _run_policy(case_path, [listed], {123: fresh})
 
-    result = _run_policy(tmp_path, [listed], {123: _recheck_drift(kind)})
-
-    assert result.returncode == 0, result.stderr
-    assert len(_calls(tmp_path, "view")) == 1
-    assert _calls(tmp_path, "merge") == []
+        assert result.returncode == 0, result.stderr
+        assert len(_calls(case_path, "view")) == 1
+        assert _calls(case_path, "merge") == []
 
 
 @requires_policy_runtime
@@ -619,6 +687,7 @@ _REQUIRED_FIELDS = [
     "headRefName",
     "body",
 ]
+_EXTRA_REQUIRED_FIELDS = ["changedFiles", "files"]
 
 
 @requires_policy_runtime
@@ -626,13 +695,18 @@ _REQUIRED_FIELDS = [
 def test_list_record_missing_any_required_field_fails_before_effects(
     tmp_path: Path, field: str
 ) -> None:
-    malformed = _record()
-    malformed.pop(field)
+    fields = [field]
+    if field == "number":
+        fields.extend(_EXTRA_REQUIRED_FIELDS)
+    for index, missing_field in enumerate(fields):
+        malformed = _record()
+        malformed.pop(missing_field)
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result = _run_policy(case_path, [malformed])
 
-    result = _run_policy(tmp_path, [malformed])
-
-    assert result.returncode != 0
-    _assert_no_view_or_merge(tmp_path)
+        assert result.returncode != 0
+        _assert_no_view_or_merge(case_path)
 
 
 _JSON_TYPE_SAMPLES = {
@@ -657,6 +731,12 @@ _WRONG_FIELD_TYPES = [
     for type_name, value in _JSON_TYPE_SAMPLES.items()
     if type_name != expected_type
 ]
+_EXTRA_WRONG_FIELD_TYPES = [
+    ("changedFiles", None),
+    ("changedFiles", "wrong-type"),
+    ("files", None),
+    ("files", {}),
+]
 
 
 @requires_policy_runtime
@@ -664,13 +744,18 @@ _WRONG_FIELD_TYPES = [
 def test_list_record_wrong_field_type_fails_before_effects(
     tmp_path: Path, field: str, value: object
 ) -> None:
-    malformed = _record()
-    malformed[field] = value
+    cases = [(field, value)]
+    if field == "number" and value is None:
+        cases.extend(_EXTRA_WRONG_FIELD_TYPES)
+    for index, (wrong_field, wrong_value) in enumerate(cases):
+        malformed = _record()
+        malformed[wrong_field] = wrong_value
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result = _run_policy(case_path, [malformed])
 
-    result = _run_policy(tmp_path, [malformed])
-
-    assert result.returncode != 0
-    _assert_no_view_or_merge(tmp_path)
+        assert result.returncode != 0
+        _assert_no_view_or_merge(case_path)
 
 
 _INVALID_FIELD_VALUES = [
@@ -682,6 +767,16 @@ _INVALID_FIELD_VALUES = [
     pytest.param("headRefOid", "A" * 40, id="oid-uppercase"),
     pytest.param("headRefOid", "z" * 40, id="oid-non-hex"),
 ]
+_EXTRA_INVALID_FIELD_VALUES = [
+    ("changedFiles", 0),
+    ("changedFiles", -1),
+    ("changedFiles", 1.5),
+    ("changedFiles", 2),
+    ("files", []),
+    ("files", [{"path": "same"}, {"path": "same"}]),
+    ("files", [{"path": ""}]),
+    ("files", [{}]),
+]
 
 
 @requires_policy_runtime
@@ -689,13 +784,18 @@ _INVALID_FIELD_VALUES = [
 def test_list_record_invalid_value_fails_before_effects(
     tmp_path: Path, field: str, value: object
 ) -> None:
-    malformed = _record()
-    malformed[field] = value
+    cases = [(field, value)]
+    if field == "number" and value == 0:
+        cases.extend(_EXTRA_INVALID_FIELD_VALUES)
+    for index, (invalid_field, invalid_value) in enumerate(cases):
+        malformed = _record()
+        malformed[invalid_field] = invalid_value
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result = _run_policy(case_path, [malformed])
 
-    result = _run_policy(tmp_path, [malformed])
-
-    assert result.returncode != 0
-    _assert_no_view_or_merge(tmp_path)
+        assert result.returncode != 0
+        _assert_no_view_or_merge(case_path)
 
 
 @requires_policy_runtime
@@ -737,9 +837,7 @@ _MALFORMED_RECHECK_DOCUMENTS = [
 
 @requires_policy_runtime
 @pytest.mark.parametrize("payload", _MALFORMED_RECHECK_DOCUMENTS)
-def test_malformed_recheck_document_fails_without_merge(
-    tmp_path: Path, payload: object
-) -> None:
+def test_malformed_recheck_document_fails_without_merge(tmp_path: Path, payload: object) -> None:
     result = _run_policy(tmp_path, [_record()], {123: payload})
 
     assert result.returncode != 0
@@ -749,17 +847,20 @@ def test_malformed_recheck_document_fails_without_merge(
 
 @requires_policy_runtime
 @pytest.mark.parametrize("field", _REQUIRED_FIELDS)
-def test_recheck_missing_any_required_field_fails_without_merge(
-    tmp_path: Path, field: str
-) -> None:
-    malformed = _record()
-    malformed.pop(field)
+def test_recheck_missing_any_required_field_fails_without_merge(tmp_path: Path, field: str) -> None:
+    fields = [field]
+    if field == "number":
+        fields.extend(_EXTRA_REQUIRED_FIELDS)
+    for index, missing_field in enumerate(fields):
+        malformed = _record()
+        malformed.pop(missing_field)
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result = _run_policy(case_path, [_record()], {123: malformed})
 
-    result = _run_policy(tmp_path, [_record()], {123: malformed})
-
-    assert result.returncode != 0
-    assert len(_calls(tmp_path, "view")) == 1
-    assert _calls(tmp_path, "merge") == []
+        assert result.returncode != 0
+        assert len(_calls(case_path, "view")) == 1
+        assert _calls(case_path, "merge") == []
 
 
 @requires_policy_runtime
@@ -767,14 +868,19 @@ def test_recheck_missing_any_required_field_fails_without_merge(
 def test_recheck_wrong_field_type_fails_without_merge(
     tmp_path: Path, field: str, value: object
 ) -> None:
-    malformed = _record()
-    malformed[field] = value
+    cases = [(field, value)]
+    if field == "number" and value is None:
+        cases.extend(_EXTRA_WRONG_FIELD_TYPES)
+    for index, (wrong_field, wrong_value) in enumerate(cases):
+        malformed = _record()
+        malformed[wrong_field] = wrong_value
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result = _run_policy(case_path, [_record()], {123: malformed})
 
-    result = _run_policy(tmp_path, [_record()], {123: malformed})
-
-    assert result.returncode != 0
-    assert len(_calls(tmp_path, "view")) == 1
-    assert _calls(tmp_path, "merge") == []
+        assert result.returncode != 0
+        assert len(_calls(case_path, "view")) == 1
+        assert _calls(case_path, "merge") == []
 
 
 @requires_policy_runtime
@@ -782,14 +888,19 @@ def test_recheck_wrong_field_type_fails_without_merge(
 def test_recheck_invalid_value_fails_without_merge(
     tmp_path: Path, field: str, value: object
 ) -> None:
-    malformed = _record()
-    malformed[field] = value
+    cases = [(field, value)]
+    if field == "number" and value == 0:
+        cases.extend(_EXTRA_INVALID_FIELD_VALUES)
+    for index, (invalid_field, invalid_value) in enumerate(cases):
+        malformed = _record()
+        malformed[invalid_field] = invalid_value
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result = _run_policy(case_path, [_record()], {123: malformed})
 
-    result = _run_policy(tmp_path, [_record()], {123: malformed})
-
-    assert result.returncode != 0
-    assert len(_calls(tmp_path, "view")) == 1
-    assert _calls(tmp_path, "merge") == []
+        assert result.returncode != 0
+        assert len(_calls(case_path, "view")) == 1
+        assert _calls(case_path, "merge") == []
 
 
 @requires_policy_runtime
@@ -818,45 +929,57 @@ def test_skip_paths_never_log_untrusted_record_bytes(tmp_path: Path, kind: str) 
     token = f"UNTRUSTED-{kind.upper()}-TOKEN"
     hostile_bytes = f"{token}\n::stop-commands::hostile\n\x1b[31m$(false)\x1b[0m"
     if kind == "nerva-branch":
-        record = _record(branch=f"nerva2/{hostile_bytes}")
+        records = [
+            _record(branch=f"nerva2/{hostile_bytes}"),
+            _record(paths=(f"docs/nerva2/{hostile_bytes}",)),
+            _record(paths=(f".claude/plugins/superpowers/{hostile_bytes}",)),
+        ]
     elif kind == "nerva-marker":
-        record = _record(body=f"{START_MARKER}\n{hostile_bytes}")
+        records = [_record(body=f"{START_MARKER}\n{hostile_bytes}")]
     else:
-        record = _record(state=hostile_bytes)
+        records = [_record(state=hostile_bytes)]
 
-    result = _run_policy(tmp_path, [record])
+    for index, record in enumerate(records):
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result = _run_policy(case_path, [record])
 
-    assert result.returncode == 0, result.stderr
-    _assert_no_view_or_merge(tmp_path)
-    combined_log = result.stdout + result.stderr
-    assert token not in combined_log
-    assert "::stop-commands::" not in combined_log
-    assert "\x1b" not in combined_log
+        assert result.returncode == 0, result.stderr
+        _assert_no_view_or_merge(case_path)
+        combined_log = result.stdout + result.stderr
+        assert token not in combined_log
+        assert "::stop-commands::" not in combined_log
+        assert "\x1b" not in combined_log
 
 
 @requires_policy_runtime
 @pytest.mark.parametrize("kind", ["nerva-branch", "nerva-marker", "state-skip"])
-def test_recheck_skip_paths_never_log_untrusted_record_bytes(
-    tmp_path: Path, kind: str
-) -> None:
+def test_recheck_skip_paths_never_log_untrusted_record_bytes(tmp_path: Path, kind: str) -> None:
     token = f"UNTRUSTED-RECHECK-{kind.upper()}-TOKEN"
     hostile_bytes = f"{token}\n::stop-commands::hostile\n\x1b[31m$(false)\x1b[0m"
     if kind == "nerva-branch":
-        fresh = _record(branch=f"nerva2/{hostile_bytes}")
+        fresh_records = [
+            _record(branch=f"nerva2/{hostile_bytes}"),
+            _record(paths=(f"docs/nerva2/{hostile_bytes}",)),
+            _record(paths=(f".claude/plugins/superpowers/{hostile_bytes}",)),
+        ]
     elif kind == "nerva-marker":
-        fresh = _record(body=f"{START_MARKER}\n{hostile_bytes}")
+        fresh_records = [_record(body=f"{START_MARKER}\n{hostile_bytes}")]
     else:
-        fresh = _record(state=hostile_bytes)
+        fresh_records = [_record(state=hostile_bytes)]
 
-    result = _run_policy(tmp_path, [_record()], {123: fresh})
+    for index, fresh in enumerate(fresh_records):
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result = _run_policy(case_path, [_record()], {123: fresh})
 
-    assert result.returncode == 0, result.stderr
-    assert _calls(tmp_path, "view") == [_expected_view_call(123)]
-    assert _calls(tmp_path, "merge") == []
-    combined_log = result.stdout + result.stderr
-    assert token not in combined_log
-    assert "::stop-commands::" not in combined_log
-    assert "\x1b" not in combined_log
+        assert result.returncode == 0, result.stderr
+        assert _calls(case_path, "view") == [_expected_view_call(123)]
+        assert _calls(case_path, "merge") == []
+        combined_log = result.stdout + result.stderr
+        assert token not in combined_log
+        assert "::stop-commands::" not in combined_log
+        assert "\x1b" not in combined_log
 
 
 @requires_policy_runtime
@@ -867,10 +990,7 @@ def test_untrusted_branch_and_body_bytes_are_inert_and_not_logged(tmp_path: Path
     body_token = "UNTRUSTED-BODY-TOKEN"
     hostile = _record(
         branch=f"feature/{branch_token}-$(touch {sentinel_arg})",
-        body=(
-            f"{body_token}\n::stop-commands::hostile\n"
-            f"\x1b[31m$(touch {sentinel_arg})\x1b[0m"
-        ),
+        body=(f"{body_token}\n::stop-commands::hostile\n\x1b[31m$(touch {sentinel_arg})\x1b[0m"),
     )
 
     result = _run_policy(tmp_path, [hostile], {123: hostile})

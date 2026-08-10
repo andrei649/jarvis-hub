@@ -72,12 +72,18 @@ Ultron / `nerva.action.v1` remains the sole privileged-action authority.
 Adoption is explicit: callers import and run `compare_router()` in tests or an
 evaluation process. No production construction path is changed.
 
+The E1.1 helper was originally invoked from `tests/test_router_v2.py` to keep
+the then-pinned collected-test ledger unchanged. That historical embedding has
+been removed: `tests/test_nerva_e1_1_collected.py` now collects the helper as an
+independent Nerva contract node, while the router regression remains focused on
+router behavior.
+
 Rollback requires one coherent revert:
 
 - delete `agents/core/cortex_compare.py`;
 - delete `tests/_nerva_e1_1_checks.py`;
+- delete `tests/test_nerva_e1_1_collected.py`;
 - delete `tests/fixtures/nerva/cortex_e1_1_cases.json`;
-- remove the E1.1 helper import and invocation from `tests/test_router_v2.py`;
 - delete this document and `docs/nerva2/M1_DELIVERY.md`.
 
 Removing that complete set leaves the existing router and E1.0 shadow contract

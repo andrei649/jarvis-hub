@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "classifier_version": "1.0.0",
+  "sentinel_check": "CI / required",
+  "risk_order": [
+    "low",
+    "medium",
+    "high"
+  ],
+  "scope_order": [
+    "docs-only",
+    "generated-truth",
+    "python-runtime",
+    "frontend",
+    "mobile",
+    "contracts-security",
+    "workflows",
+    "dependencies"
+  ],
+  "all_lanes": [
+    "docs-policy",
+    "generated-truth",
+    "python-ubuntu",
+    "python-windows",
+    "frontend",
+    "mobile",
+    "contracts-security",
+    "workflow-policy",
+    "dependency-integrity",
+    "full-suite"
+  ],
+  "ci_jobs": [
+    "classify",
+    "fast-gate",
+    "nerva-integrity",
+    "lint",
+    "test",
+    "sandbox-isolation",
+    "signal-layer-smoke",
+    "frontend",
+    "hud-v2-build",
+    "openapi-types",
+    "mobile"
+  ],
+  "lane_jobs": {
+    "docs-policy": [
+      "fast-gate"
+    ],
+    "generated-truth": [
+      "fast-gate"
+    ],
+    "python-ubuntu": [
+      "lint",
+      "test"
+    ],
+    "python-windows": [
+      "test"
+    ],
+    "frontend": [
+      "signal-layer-smoke",
+      "frontend",
+      "hud-v2-build",
+      "openapi-types"
+    ],
+    "mobile": [
+      "mobile"
+    ],
+    "contracts-security": [
+      "lint",
+      "test",
+      "sandbox-isolation",
+      "openapi-types"
+    ],
+    "workflow-policy": [
+      "fast-gate",
+      "lint"
+    ],
+    "dependency-integrity": [
+      "lint",
+      "test",
+      "sandbox-isolation"
+    ],
+    "full-suite": [
+      "lint",
+      "test",
+      "sandbox-isolation",
+      "signal-layer-smoke",
+      "frontend",
+      "hud-v2-build",
+      "openapi-types",
+      "mobile"
+    ]
+  },
+  "scopes": {
+    "docs-only": {
+      "risk": "low",
+      "lanes": [
+        "docs-policy"
+      ]
+    },
+    "generated-truth": {
+      "risk": "medium",
+      "lanes": [
+        "generated-truth"
+      ]
+    },
+    "python-runtime": {
+      "risk": "medium",
+      "lanes": [
+        "python-ubuntu",
+        "python-windows"
+      ]
+    },
+    "frontend": {
+      "risk": "medium",
+      "lanes": [
+        "frontend"
+      ]
+    },
+    "mobile": {
+      "risk": "medium",
+      "lanes": [
+        "mobile"
+      ]
+    },
+    "contracts-security": {
+      "risk": "high",
+      "lanes": [
+        "contracts-security",
+        "python-ubuntu",
+        "python-windows",
+        "full-suite"
+      ]
+    },
+    "workflows": {
+      "risk": "high",
+      "lanes": [
+        "workflow-policy",
+        "full-suite"
+      ]
+    },
+    "dependencies": {
+      "risk": "high",
+      "lanes": [
+        "dependency-integrity",
+        "python-ubuntu",
+        "python-windows",
+        "full-suite"
+      ]
+    }
+  },
+  "documentation_patterns": [
+    "docs/**",
+    "**/README.md",
+    "*.md",
+    "LICENSE",
+    "LICENSES/**",
+    "TRADEMARKS.md",
+    ".github/pull_request_template.md"
+  ],
+  "nerva_patterns": [
+    "BACKLOG.md",
+    "STATUS.md",
+    "docs/nerva2/**",
+    "scripts/check_nerva_*.py",
+    "scripts/reconcile_nerva_repository_ledgers.py",
+    "tests/nerva_check_cases.py",
+    "tests/_nerva_*_checks.py",
+    "tests/test_nerva_*.py",
+    "tests/test_reconcile_nerva_repository_ledgers.py",
+    ".github/workflows/nerva-roadmap.yml"
+  ],
+  "rules": [
+    {
+      "scope": "generated-truth",
+      "reason": "canonical or generated project truth changed",
+      "patterns": [
+        "BACKLOG.md",
+        "STATUS.md",
+        "project-status.json",
+        "NERVA.md",
+        "GO_LIVE_PLAN.md"
+      ]
+    },
+    {
+      "scope": "python-runtime",
+      "reason": "Python runtime, test, packaging, or automation code changed",
+      "patterns": [
+        "agents/**",
+        "skills/**",
+        "scripts/*.py",
+        "scripts/**/*.py",
+        "tests/*.py",
+        "tests/**/*.py",
+        "serve.py",
+        "export_repo.py",
+        "test_lms.py",
+        "packaging/**"
+      ]
+    },
+    {
+      "scope": "frontend",
+      "reason": "browser HUD, generated browser bundle, or Node service changed",
+      "patterns": [
+        "frontend/**",
+        "tests/frontend/**",
+        "agents/web/static/**",
+        "agents/web/v2/**",
+        "services/signal-layer/**",
+        "package.json",
+        "package-lock.json"
+      ]
+    },
+    {
+      "scope": "mobile",
+      "reason": "native mobile application or parity ledger changed",
+      "patterns": [
+        "mobile/**"
+      ]
+    },
+    {
+      "scope": "contracts-security",
+      "reason": "security boundary, authorization contract, or generated API contract changed",
+      "patterns": [
+        ".bandit-baseline.json",
+        ".gitleaks.toml",
+        ".github/codeql/**",
+        "SECURITY.md",
+        "docs/PRIVACY.md",
+        "docs/THREAT_MODEL.md",
+        "docs/CAMERA_PRIVACY.md",
+        "agents/core/security*.py",
+        "agents/core/security/**",
+        "agents/core/auth*.py",
+        "agents/core/auth/**",
+        "agents/core/approval*.py",
+        "agents/core/approval/**",
+        "agents/core/routers/**",
+        "frontend/src/api/**",
+        "tests/test_*security*.py",
+        "tests/test_*auth*.py",
+        "tests/test_*approval*.py",
+        "tests/test_*guard*.py",
+        "tests/test_*openapi*.py"
+      ]
+    },
+    {
+      "scope": "workflows",
+      "reason": "CI, agent coordination, or change-classification policy changed",
+      "patterns": [
+        ".github/workflows/**",
+        ".github/CODEOWNERS",
+        ".github/actions/**",
+        ".github/ai-development-policy.json",
+        ".github/change-risk.json",
+        ".claude/**",
+        ".opencode/**",
+        ".mcp.json.example",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "PARALLEL_WORKFLOW.md",
+        "lock.py",
+        "docs/AGENT_WORKFLOW.md",
+        "docs/AI_CONTEXT.md",
+        "docs/CHATGPT_CUSTOM_INSTRUCTIONS.md",
+        "scripts/check_ai_workflow_policy.py",
+        "scripts/check_new_health_debt.py",
+        "scripts/ci_metrics.py",
+        "scripts/change_risk.py",
+        "scripts/verify_change.py",
+        "tests/test_ai_workflow_policy.py",
+        "tests/test_change_risk.py",
+        "tests/test_ci_metrics.py",
+        "tests/test_ci_change_risk_workflow.py",
+        "tests/test_new_health_debt.py",
+        "tests/test_verify_change.py"
+      ]
+    },
+    {
+      "scope": "dependencies",
+      "reason": "dependency, toolchain, container, or installation surface changed",
+      "patterns": [
+        "requirements*.txt",
+        "requirements*.lock",
+        "package.json",
+        "package-lock.json",
+        "**/package.json",
+        "**/package-lock.json",
+        "**/Cargo.toml",
+        "**/Cargo.lock",
+        "Dockerfile*",
+        "docker-compose*.yml",
+        ".github/dependabot.yml",
+        ".github/security-tools/**",
+        ".pre-commit-config.yaml",
+        "pyproject.toml",
+        "pytest.ini",
+        "ruff-baseline.toml",
+        "install.sh",
+        "install.ps1",
+        "INSTALL.bat",
+        "UPDATE.bat",
+        "start.sh",
+        "START.bat"
+      ]
+    }
+  ]
+}

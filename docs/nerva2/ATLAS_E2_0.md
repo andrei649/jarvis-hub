@@ -43,9 +43,13 @@ not add a replacement database or migrate existing data.
   - immutable values and no writable store handle;
   - deterministic replay, integrity, truncation and malformed-input failures;
   - direct-construction rejection of forged or inconsistent snapshots.
+- `tests/test_nerva_e2_0_collected.py`
+  - directly collects the bounded Atlas helper with its own `tmp_path` fixture
+    and attributable pytest node.
 - `tests/test_h14_1_bitemporal_kg.py`
-  - invokes the bounded Atlas checks from an existing collected test so the
-    repository's pinned test-count contract is not changed for bookkeeping.
+  - remains the focused legacy bi-temporal regression. The accepted E2.0 slice
+    originally invoked the Atlas helper there to keep the then-pinned test
+    ledger unchanged; that historical embedding is now removed.
 - `tests/_nerva_e1_1_checks.py`
   - keeps the accepted E1.1 M1 ledger guard aligned with the durable E2.0
     delivery-state wording and the coherent rollback contract.
@@ -137,9 +141,10 @@ This slice does not provide:
 Focused verification:
 
 ```bash
-pytest -q tests/test_h14_1_bitemporal_kg.py
+pytest -q tests/test_nerva_e2_0_collected.py tests/test_h14_1_bitemporal_kg.py
 ruff check agents/core/memory/atlas_snapshot.py \
-  tests/_nerva_e2_0_checks.py tests/test_h14_1_bitemporal_kg.py \
+  tests/_nerva_e2_0_checks.py tests/test_nerva_e2_0_collected.py \
+  tests/test_h14_1_bitemporal_kg.py \
   tests/_nerva_e1_1_checks.py
 ```
 
@@ -155,8 +160,7 @@ The coherent rollback is:
 
 1. delete `agents/core/memory/atlas_snapshot.py`;
 2. delete `tests/_nerva_e2_0_checks.py`;
-3. remove the helper import and invocation from
-   `tests/test_h14_1_bitemporal_kg.py`;
+3. delete `tests/test_nerva_e2_0_collected.py`;
 4. restore the pre-E2.0 M1 assertions in `tests/_nerva_e1_1_checks.py` together
    with the pre-E2.0 `docs/nerva2/M1_DELIVERY.md` content;
 5. remove this E2.0 contract document.

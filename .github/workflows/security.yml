@@ -12,18 +12,51 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    # Weekly full audit catches advisories disclosed after the last dependency change.
+    - cron: "43 5 * * 1"
 
 permissions:
   contents: read
 
 concurrency:
-  group: security-${{ github.ref }}
+  group: security-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  scope:
+    name: Change risk
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      aggregate_ready: ${{ steps.risk.outputs.aggregate_ready }}
+      classification_id: ${{ steps.risk.outputs.classification_id }}
+      required_lanes_json: ${{ steps.risk.outputs.required_lanes_json }}
+      security_sast_required: ${{ steps.risk.outputs.security_sast_required }}
+      security_dependency_required: ${{ steps.risk.outputs.security_dependency_required }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Classify exact changed paths
+        id: risk
+        env:
+          CHANGE_RISK_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CHANGE_RISK_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+            python scripts/change_risk.py \
+              --changed-file .github/workflows/security.yml \
+              --github-output "$GITHUB_OUTPUT" --quiet
+          else
+            python scripts/change_risk.py --github-output "$GITHUB_OUTPUT" --quiet
+          fi
+
   gitleaks:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -42,16 +75,27 @@ jobs:
         # fixtures, doc examples, settings-schema key names) are allowlisted in
         # .gitleaks.toml (which extends the default ruleset), so only NEW secrets
         # fail the build. Re-scan locally with the same command after edits.
-        run: ./gitleaks dir . --config .gitleaks.toml --redact --no-banner --verbose
+        run: |
+          if ! ./gitleaks dir . --config .gitleaks.toml --redact --no-banner --verbose; then
+            echo "::error title=Secret scan failed::Potential secret detected. Reproduce with: ./gitleaks dir . --config .gitleaks.toml --redact --no-banner --verbose"
+            echo "### Secret scan failed" >> "$GITHUB_STEP_SUMMARY"
+            echo 'Run `./gitleaks dir . --config .gitleaks.toml --redact --no-banner --verbose` after installing gitleaks 8.30.1.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
   sast:
     name: SAST (semgrep)
+    needs: scope
+    if: ${{ needs.scope.outputs.security_sast_required == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: .github/security-tools/semgrep.txt
       - name: Semgrep scan (blocking)
         # AUD-10 (F35): blocking SAST gate. --error makes semgrep exit non-zero on any
         # finding. The current tree is clean: the 2 real findings (stdlib xml.etree on
@@ -59,19 +103,29 @@ jobs:
         # false positives are suppressed at the call site with a named `# nosemgrep:`
         # (so the rule still fires on genuinely new code). New findings fail the build.
         run: |
-          python -m pip install --quiet 'semgrep==1.167.0'
-          semgrep scan --config p/python --config p/security-audit \
-            --error --quiet --metrics off --disable-version-check \
-            agents worldview
+          python -m pip install --quiet -r .github/security-tools/semgrep.txt
+          if ! semgrep scan --config p/python --config p/security-audit \
+              --error --quiet --metrics off --disable-version-check \
+              agents worldview; then
+            echo "::error title=Semgrep failed::New SAST finding or scanner failure. Reproduce with the pinned command in the Security workflow."
+            echo "### Semgrep failed" >> "$GITHUB_STEP_SUMMARY"
+            echo 'Install `.github/security-tools/semgrep.txt`, then run `semgrep scan --config p/python --config p/security-audit --error --quiet --metrics off --disable-version-check agents worldview`.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
   dependency-audit:
     name: Dependency audit (pip-audit)
+    needs: scope
+    if: ${{ needs.scope.outputs.security_dependency_required == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: .github/security-tools/pip-audit.txt
       - name: pip-audit (blocking)
         # AUD-10 (F34): blocking dependency-CVE gate against the hash-pinned lockfile
         # (F33) — auditing the exact resolved versions, not the loose constraints. A
@@ -81,22 +135,56 @@ jobs:
         #   pip-audit -r requirements-beta.lock --desc --ignore-vuln GHSA-xxxx-xxxx-xxxx
         # The ignore-list is intentionally empty today — the lockfile audits clean.
         run: |
-          python -m pip install --quiet 'pip-audit==2.10.1'
-          pip-audit -r requirements-beta.lock --desc
+          python -m pip install --quiet -r .github/security-tools/pip-audit.txt
+          if ! pip-audit -r requirements-beta.lock --desc; then
+            echo "::error title=Dependency audit failed::A pinned dependency is vulnerable or the audit failed. Reproduce with: pip-audit -r requirements-beta.lock --desc"
+            echo "### Dependency audit failed" >> "$GITHUB_STEP_SUMMARY"
+            echo 'Run `pip-audit -r requirements-beta.lock --desc`; update and re-lock with `./scripts/lock_deps.sh` when a fixed version exists.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
   bandit:
     name: SAST (bandit — blocking gate)
+    needs: scope
+    if: ${{ needs.scope.outputs.security_sast_required == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: .github/security-tools/bandit.txt
       - name: Bandit (blocking, baselined)
         # AUD-10 (F34/F35): blocking SAST gate over the hub source. Pre-existing
         # findings are frozen in .bandit-baseline.json so this fails only on NEW
         # issues. Regenerate the baseline after an intentional change with:
         #   python -m bandit -r agents scripts -q -f json -o .bandit-baseline.json
         run: |
-          python -m pip install --quiet 'bandit==1.9.4'
-          python -m bandit -r agents scripts -q -b .bandit-baseline.json
+          python -m pip install --quiet -r .github/security-tools/bandit.txt
+          if ! python -m bandit -r agents scripts -q -b .bandit-baseline.json; then
+            echo "::error title=Bandit failed::New Python security finding or stale baseline. Reproduce with: python -m bandit -r agents scripts -q -b .bandit-baseline.json"
+            echo "### Bandit failed" >> "$GITHUB_STEP_SUMMARY"
+            echo 'Run `python -m bandit -r agents scripts -q -b .bandit-baseline.json`; only regenerate the baseline after reviewing every intentional finding.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+  required:
+    name: required
+    if: ${{ always() }}
+    needs: [scope, gitleaks, sast, dependency-audit, bandit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CHANGE_RISK_AGGREGATE_READY: ${{ needs.scope.outputs.aggregate_ready }}
+      CHANGE_RISK_CLASSIFICATION_ID: ${{ needs.scope.outputs.classification_id }}
+      CHANGE_RISK_REQUIRED_LANES: ${{ needs.scope.outputs.required_lanes_json }}
+      CHANGE_RISK_SECURITY_SAST_REQUIRED: ${{ needs.scope.outputs.security_sast_required }}
+      CHANGE_RISK_SECURITY_DEPENDENCY_REQUIRED: ${{ needs.scope.outputs.security_dependency_required }}
+      CHANGE_RISK_SECURITY_JOB_RESULTS: >-
+        {"scope":"${{ needs.scope.result }}","gitleaks":"${{ needs.gitleaks.result }}","semgrep":"${{ needs.sast.result }}","dependency-audit":"${{ needs.dependency-audit.result }}","bandit":"${{ needs.bandit.result }}"}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Enforce every selected security lane
+        run: python scripts/change_risk.py --aggregate-security-results

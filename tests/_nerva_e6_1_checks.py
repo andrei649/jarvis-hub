@@ -1,9 +1,4 @@
-"""Count-neutral hostile checks for Nerva E6.1 lesson evaluation.
-
-The repository pins the collected-test ledger, so these assertions are invoked
-explicitly from the existing Daily Reflection test instead of adding a new
-pytest collection target.
-"""
+"""Nerva E6.1 lesson-evaluation checks and direct-collection case manifest."""
 
 from __future__ import annotations
 
@@ -41,6 +36,7 @@ from agents.core.reflection_evaluation import (
     validate_report_against_retained,
 )
 from agents.core.reflection_lesson import compare_outcome, propose_lesson
+from tests.nerva_check_cases import case, run_cases_async
 
 _REVISION = "a" * 40
 _NOW = "2026-08-05T22:00:00.000Z"
@@ -1278,28 +1274,80 @@ def _check_workflow_and_docs(repo_root: Path) -> None:
         assert phrase in doc
 
 
-async def run_e6_1_checks(tmp_path: Path) -> None:
-    """Run every bounded E6.1 contract and hostile assertion."""
+NERVA_E6_1_CASES = (
+    case("e6.1", _check_predeclared_split_privacy_and_identity),
+    case("e6.1", _check_happy_path_and_oracle_isolation, fixtures=("tmp_path",)),
+    case("e6.1", _check_fail_closed_outcomes_and_error_matrix, fixtures=("tmp_path",)),
+    case(
+        "e6.1",
+        _check_false_hallucinated_and_subgroup_masking,
+        fixtures=("tmp_path",),
+    ),
+    case("e6.1", _check_tampering_totals_and_retention, fixtures=("tmp_path",)),
+    case("e6.1", _check_retained_json_decoding_is_strict, fixtures=("tmp_path",)),
+    case("e6.1", _check_strict_preflight_is_unconditional, fixtures=("tmp_path",)),
+    case(
+        "e6.1",
+        _check_truncated_empty_suite_is_rejected_before_mutation,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e6.1",
+        _check_duplicate_suite_case_ids_are_rejected_before_mutation,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e6.1",
+        _check_duplicate_retained_run_ids_are_rejected_before_mutation,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e6.1",
+        _check_retained_run_suite_name_must_match_store_path,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e6.1",
+        _check_duplicate_run_id_is_rejected_before_mutation,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e6.1",
+        _check_auto_run_id_collision_is_rejected_before_mutation,
+        fixtures=("tmp_path",),
+    ),
+    case("e6.1", _check_execution_environment_is_redetected, fixtures=("tmp_path",)),
+    case("e6.1", _check_report_output_is_create_once, fixtures=("tmp_path",)),
+    case("e6.1", _check_report_is_reserved_before_evaluation, fixtures=("tmp_path",)),
+    case("e6.1", _check_reservation_tampering_fails_closed, fixtures=("tmp_path",)),
+    case(
+        "e6.1",
+        _check_reverse_hardlinks_are_blocked_during_evaluation,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e6.1",
+        _check_final_output_collision_does_not_write_store,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e6.1",
+        _check_report_path_swap_cannot_redirect_write,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e6.1",
+        _check_disjoint_report_path_and_deterministic_fixture,
+        fixtures=("tmp_path",),
+    ),
+    case(
+        "e6.1",
+        _check_workflow_and_docs,
+        args=(Path(__file__).resolve().parent.parent,),
+    ),
+)
 
-    _check_predeclared_split_privacy_and_identity()
-    await _check_happy_path_and_oracle_isolation(tmp_path)
-    await _check_fail_closed_outcomes_and_error_matrix(tmp_path)
-    await _check_false_hallucinated_and_subgroup_masking(tmp_path)
-    await _check_tampering_totals_and_retention(tmp_path)
-    await _check_retained_json_decoding_is_strict(tmp_path)
-    await _check_strict_preflight_is_unconditional(tmp_path)
-    await _check_truncated_empty_suite_is_rejected_before_mutation(tmp_path)
-    await _check_duplicate_suite_case_ids_are_rejected_before_mutation(tmp_path)
-    await _check_duplicate_retained_run_ids_are_rejected_before_mutation(tmp_path)
-    await _check_retained_run_suite_name_must_match_store_path(tmp_path)
-    await _check_duplicate_run_id_is_rejected_before_mutation(tmp_path)
-    await _check_auto_run_id_collision_is_rejected_before_mutation(tmp_path)
-    await _check_execution_environment_is_redetected(tmp_path)
-    await _check_report_output_is_create_once(tmp_path)
-    await _check_report_is_reserved_before_evaluation(tmp_path)
-    await _check_reservation_tampering_fails_closed(tmp_path)
-    await _check_reverse_hardlinks_are_blocked_during_evaluation(tmp_path)
-    await _check_final_output_collision_does_not_write_store(tmp_path)
-    await _check_report_path_swap_cannot_redirect_write(tmp_path)
-    await _check_disjoint_report_path_and_deterministic_fixture(tmp_path)
-    _check_workflow_and_docs(Path(__file__).resolve().parent.parent)
+
+async def run_e6_1_checks(tmp_path: Path) -> None:
+    """Compatibility entrypoint; direct pytest collection uses the same manifest."""
+    await run_cases_async(NERVA_E6_1_CASES, tmp_path=tmp_path)

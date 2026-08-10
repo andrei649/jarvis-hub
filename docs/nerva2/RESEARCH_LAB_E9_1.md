@@ -37,7 +37,10 @@ report payload.
   transparent `KeywordRouteBaseline`;
 - the existing **Eval Nightly** workflow, its cache-restore/save pattern and its
   `$GITHUB_STEP_SUMMARY` reporting convention;
-- the existing `tests/test_nerva_benchmark_e9_0.py` regression surface.
+- the shared Nerva direct-collection adapter and the existing
+  `tests/test_nerva_benchmark_e9_0.py` regression surface. The accepted E9.1
+  slice originally invoked its helper from that regression to keep the
+  then-pinned test ledger unchanged; that historical embedding is removed.
 
 No second store, scorer, scheduler or permission system is introduced.
 
@@ -222,13 +225,14 @@ The cache and artifact hold only synthetic-public suite content and run evidence
 — no owner data, no provider secrets, no credentials. The job writes to
 `$GITHUB_STEP_SUMMARY` and `--json-out`.
 
-## Test surface and test-count neutrality
+## Directly collected test surface
 
-The repository pins its generated test count. Following the E3.0/E3.1/E6.0
-convention, the bounded assertions live in `tests/_nerva_e9_1_checks.py` and are
-invoked from the existing `tests/test_nerva_benchmark_e9_0.py` regression, so the
-collected test count is unchanged (5767 before and after). Twenty-four assertion groups
-cover synthetic-public/CI-only enforcement, suite-version stability, persistence
+The bounded assertions live in `tests/_nerva_e9_1_checks.py` and its ordered
+manifest is directly parametrized by `tests/test_nerva_e9_1_collected.py`.
+Historical acceptance evidence recorded 5,767 collected tests before and after
+the original count-neutral embedding; the current generated ledger instead
+counts each of these 24 independently attributable assertion groups. They cover
+synthetic-public/CI-only enforcement, suite-version stability, persistence
 through the accepted store, the first-run `no_baseline` state, regression and
 improvement decisions, refusal to coerce unmeasured metrics, deterministic
 evaluation-only reports, report invariants, visible prerequisite failure,
@@ -265,8 +269,8 @@ retain linkable metadata.
 
 ## Rollback
 
-Revert the suite/reporting module, the workflow job, the test helper, its
-four-line invocation and this document as one unit. Accepted E9.0 contracts and
+Revert the suite/reporting module, the workflow job, the test helper, its direct
+collector and this document as one unit. Accepted E9.0 contracts and
 existing retained records are untouched; production routing and capability state
 are unaffected. No data migration is required — deleting the cache key is
 sufficient to discard retained scheduled evidence.

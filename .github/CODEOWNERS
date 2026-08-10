@@ -1,0 +1,15 @@
+# Governance and integration controls require repository-owner review. The
+# matching branch rules must require Code Owner approval and dismiss stale
+# approvals; this file alone does not create an authority boundary.
+/.github/CODEOWNERS @andrei649
+/.github/workflows/ @andrei649
+/.github/*.json @andrei649
+/scripts/change_risk.py @andrei649
+/scripts/check_ai_workflow_policy.py @andrei649
+/scripts/verify_change.py @andrei649
+/scripts/status_preflight.py @andrei649
+/scripts/status_sync.py @andrei649
+/scripts/release_gate.py @andrei649
+/scripts/park_guard.py @andrei649
+/scripts/update_thirdparty.py @andrei649
+/docs/nerva2/ @andrei649

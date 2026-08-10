@@ -63,11 +63,27 @@
 
 ## 🟠 GitHub settings (5 minutes, Settings → …)
 
+- [ ] **Apply the AI control-plane ruleset atomically before enabling any merger** — require the
+  stable `CI / required`, `Security / required`, and `AI Governance / trusted-base` contexts on
+  `main`; remove path-filtered
+  `Smoke Test`, advisory CodeQL, and individual matrix jobs from the required-context list so an
+  irrelevant skipped job cannot remain `Expected` forever. Require one Code Owner approval,
+  dismiss approvals when the head changes, require approval of the most recent push, disallow
+  force-push/deletion, and remove builder-token bypass. `.github/CODEOWNERS` protects the policy,
+  workflow, Nerva, status-truth and third-party update surfaces, but it is effective only after
+  these settings are enabled. Keep the manual merge conductor disabled until a test PR proves
+  skipped lanes, failed lanes, stale approvals and a policy-changing head all behave fail-closed.
+- [ ] **Separate builder and integrator credentials** — the builder GitHub App/token may create
+  branches and draft PRs only; a different owner-controlled identity performs exact-head review
+  and integration. Neither identity may bypass the required ruleset. Record the installed App IDs
+  and permissions (never tokens) in the owner run evidence.
 - [ ] **Repo description + topics + social preview** — paste-ready strings in
   [`docs/BRAND_BOOK.md`](BRAND_BOOK.md) §9 (current description is just "Personal AI").
-- [ ] **Enable code scanning** (Settings → Code security) or make the `Analyze (python)` CodeQL
-  check non-required — it intermittently fails with "Code scanning is not enabled"
-  ([`HUD_V2_REMAINING.md`](design/HUD_V2_REMAINING.md) §9).
+- [ ] **Decide whether to enable GitHub Advanced Security** — CodeQL is now explicitly advisory
+  because SARIF upload is unavailable in the current private personal repository. The required
+  SAST evidence is Semgrep + Bandit in `Security / required`; do not make the path-filtered
+  advisory CodeQL context required. If GHAS is enabled later, remove its tolerated upload failure
+  and promote it in a separate, proven ruleset change.
 - [ ] **Dismiss resolved scanning alerts** (Security → Secret/Code scanning) — the code-side fixes
   merged 2026-06-17 (#215, #216); these remaining ones are false positives / won't-fix:
   - Secret scanning **#1** (OpenAI key) → "Used in tests" — it's a synthetic guardrail fixture (#215).

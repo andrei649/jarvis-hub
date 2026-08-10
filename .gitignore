@@ -35,6 +35,7 @@ agents/*/SOUL.local.md
 agents/*/HEARTBEAT.local.md
 /dist/
 /build/
+.artifacts/
 *.tar.gz
 
 # Playwright E2E artifacts (H23.17)

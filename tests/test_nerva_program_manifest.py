@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 import pytest
@@ -1290,9 +1291,14 @@ def test_canonical_json_input_symlink_is_rejected(tmp_path: Path, relative: Path
 
 def test_roadmap_workflow_wires_every_static_input_and_check_only_command() -> None:
     workflow = (REPO / ".github" / "workflows" / "nerva-roadmap.yml").read_text(encoding="utf-8")
+    policy = json.loads((REPO / ".github" / "change-risk.json").read_text(encoding="utf-8"))
     for relative in manifest_static_paths(_manifest()):
-        assert workflow.count(f'- "{relative}"') == 2
-    assert workflow.count("scripts/check_nerva_program_manifest.py") == 4
+        assert any(fnmatchcase(relative, pattern) for pattern in policy["nerva_patterns"])
+    assert "  workflow_call:" in workflow
+    assert "  workflow_dispatch:" in workflow
+    assert "  pull_request:" not in workflow
+    assert "  push:" not in workflow
+    assert workflow.count("scripts/check_nerva_program_manifest.py") == 2
     assert workflow.count("          --check\n") == 1
     assert workflow.count('--candidate-ref "${NERVA_CANDIDATE_REF}"') == 2
     assert "fetch-depth: 0" in workflow

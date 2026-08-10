@@ -1,4 +1,4 @@
-"""Focused revision-ledger regressions for the Episodes E3.0 facade."""
+"""Directly collected revision-ledger regressions for the Episodes E3.0 facade."""
 
 from __future__ import annotations
 

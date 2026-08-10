@@ -160,8 +160,12 @@ implement the external source deletion executor or a durable episode database.
 ## Tests and evidence
 
 `tests/_nerva_e3_0_checks.py` and
-`tests/_nerva_e3_0_revision_checks.py`, invoked by the existing bi-temporal
-regression test, cover:
+`tests/_nerva_e3_0_revision_checks.py` are directly collected by
+`tests/test_nerva_e3_0_collected.py` and
+`tests/test_nerva_e3_0_revision_collected.py`. The accepted E3.0 slice
+originally invoked both helpers from the existing bi-temporal regression to
+avoid changing the then-pinned test ledger; that historical embedding has been
+removed. The directly collected checks cover:
 
 - deterministic open/replay with reordered inputs;
 - Atlas integrity, content-free source projection and migration raw-key
@@ -211,16 +215,16 @@ Revert the complete E3.0 candidate as one unit:
    `agents/core/memory/_episode_values.py`,
    `agents/core/memory/_episode_operations.py` and
    `agents/core/memory/_episode_retrieval.py`;
-2. remove `tests/_nerva_e3_0_checks.py` and
-   `tests/_nerva_e3_0_revision_checks.py`;
-3. remove their imports and invocations from
-   `tests/test_h14_1_bitemporal_kg.py`;
-4. remove `docs/nerva2/EPISODES_E3_0.md`;
-5. restore the prior `docs/nerva2/M1_DELIVERY.md` transition snapshot.
+2. remove `tests/_nerva_e3_0_checks.py`,
+   `tests/_nerva_e3_0_revision_checks.py`,
+   `tests/test_nerva_e3_0_collected.py` and
+   `tests/test_nerva_e3_0_revision_collected.py`;
+3. remove `docs/nerva2/EPISODES_E3_0.md`;
+4. restore the prior `docs/nerva2/M1_DELIVERY.md` transition snapshot.
 
 No source `BiTemporalKG`, Atlas observation or existing memory record is
 modified by this package. Partial rollback is invalid because leaving the test
-hook, documentation, or delivery snapshot without the contract would make the
+wiring, documentation, or delivery snapshot without the contract would make the
 repository fail or misstate delivery truth.
 
 ## Next coherent package

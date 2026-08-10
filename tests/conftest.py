@@ -8,6 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from support.hermetic_dns import install_hermetic_dns
+
 # Test processes must never inherit an operator's runtime-data roots. Assign,
 # rather than setdefault, before any Jarvis module can be imported. Every serial
 # process and every xdist worker gets its own disposable root.
@@ -50,6 +52,14 @@ os.environ.setdefault("JARVIS_RATE_LIMIT", "0")
 # non-strict so plugin tests that hit real/mock hosts aren't blocked; the
 # dedicated egress tests opt back into strict via monkeypatch.setenv.
 os.environ.setdefault("JARVIS_STRICT_EGRESS", "0")
+
+# Keep DNS hermetic as well as TCP. pytest-socket blocks connect(), but the
+# resolver call happens first and previously leaked test hostnames to the
+# runner's configured DNS service. External names receive stable public
+# documentation addresses, so allowlist/SSRF code still exercises its public-IP
+# branch before pytest-socket blocks any accidental connection. Tests of resolver
+# edge cases explicitly monkeypatch socket.getaddrinfo and remain authoritative.
+install_hermetic_dns()
 
 from fastapi import APIRouter, FastAPI
 

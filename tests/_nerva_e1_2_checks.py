@@ -1,4 +1,4 @@
-"""Uncollected E1.2a contract assertions for owner-local route labels."""
+"""E1.2a assertions and the manifest used for direct pytest collection."""
 
 from __future__ import annotations
 
@@ -45,6 +45,7 @@ from agents.core.observability.scheduled_report import (
     run_fingerprint,
 )
 from agents.core.router import Intent, IntentRouter
+from tests.nerva_check_cases import case, run_cases
 
 _REVISION = "a" * 40
 _ARBITRARY_NOTE_SENTINEL = "arbitrary-note-sentinel"
@@ -2758,32 +2759,6 @@ def _markdown_table_row(section: str, label: str) -> tuple[str, ...]:
     return matches[0]
 
 
-def _workflow_event_paths(workflow: str, event: str) -> tuple[str, ...]:
-    """Parse one event's indented paths list rather than globally counting text."""
-
-    lines = workflow.splitlines()
-    start = next(
-        index for index, line in enumerate(lines) if line == f"  {event}:"
-    )
-    paths_start: int | None = None
-    for index in range(start + 1, len(lines)):
-        line = lines[index]
-        if line.startswith("  ") and not line.startswith("    "):
-            break
-        if line == "    paths:":
-            paths_start = index
-            break
-    assert paths_start is not None
-    paths: list[str] = []
-    for line in lines[paths_start + 1 :]:
-        if line.startswith("  ") and not line.startswith("      "):
-            break
-        match = re.fullmatch(r'      - "([^"]+)"', line)
-        if match is not None:
-            paths.append(match.group(1))
-    return tuple(paths)
-
-
 def _check_operator_contract_ledgers() -> None:
     """Keep E1.2a operator claims aligned with the checked-in contract."""
 
@@ -2990,9 +2965,19 @@ def _check_operator_contract_ledgers() -> None:
     workflow = (repository / ".github/workflows/nerva-roadmap.yml").read_text(
         encoding="utf-8"
     )
-    for event in ("pull_request", "push"):
-        paths = _workflow_event_paths(workflow, event)
-        assert paths.count("docs/nerva2/CORTEX_E1_2.md") == 1
+    ci_workflow = (repository / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    change_risk = json.loads(
+        (repository / ".github/change-risk.json").read_text(encoding="utf-8")
+    )
+    # The reusable workflow has one stable CI caller; the broad owned-directory
+    # glob remains classifier policy so new contracts cannot silently miss it.
+    assert "  workflow_call:" in workflow
+    assert "  workflow_dispatch:" in workflow
+    assert "  pull_request:" not in workflow
+    assert "  push:" not in workflow
+    assert change_risk["nerva_patterns"].count("docs/nerva2/**") == 1
+    assert "uses: ./.github/workflows/nerva-roadmap.yml" in ci_workflow
+    assert "needs.classify.outputs.nerva_relevant" in ci_workflow
 
 
 class _LateInjectingNormalRouter(IntentRouter):
@@ -3865,21 +3850,27 @@ def _check_security_hold_remediation() -> None:
     assert not failures, "security HOLD probes failed: " + " | ".join(failures)
 
 
+NERVA_E1_2_CASES = (
+    case("e1.2", _check_route_registry_binding),
+    case("e1.2", _check_security_hold_remediation),
+    case("e1.2", _check_exact_store_operation_types),
+    case("e1.2", _check_strict_route_labels),
+    case("e1.2", _check_suite_binding),
+    case("e1.2", _check_measured_runner),
+    case("e1.2", _check_measured_run_batch),
+    case("e1.2", _check_measured_report),
+    case("e1.2", _check_unique_task_consensus),
+    case("e1.2", _check_measured_report_adversarial),
+    case("e1.2", _check_report_count_parser_attacks),
+    case("e1.2", _check_report_environment_parser_attacks),
+    case("e1.2", _check_environment_digest_privacy),
+    case("e1.2", _check_report_parser_strictness),
+    case("e1.2", _check_retained_evidence_tamper_matrix),
+    case("e1.2", _check_measurement_provider_privacy_matrix),
+    case("e1.2", _check_operator_contract_ledgers),
+)
+
+
 def run_e1_2_checks() -> None:
-    _check_route_registry_binding()
-    _check_security_hold_remediation()
-    _check_exact_store_operation_types()
-    _check_strict_route_labels()
-    _check_suite_binding()
-    _check_measured_runner()
-    _check_measured_run_batch()
-    _check_measured_report()
-    _check_unique_task_consensus()
-    _check_measured_report_adversarial()
-    _check_report_count_parser_attacks()
-    _check_report_environment_parser_attacks()
-    _check_environment_digest_privacy()
-    _check_report_parser_strictness()
-    _check_retained_evidence_tamper_matrix()
-    _check_measurement_provider_privacy_matrix()
-    _check_operator_contract_ledgers()
+    """Compatibility entrypoint; direct pytest collection uses the same manifest."""
+    run_cases(NERVA_E1_2_CASES)

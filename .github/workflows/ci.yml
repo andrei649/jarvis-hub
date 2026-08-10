@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [main]
 
@@ -14,14 +15,124 @@ permissions:
   contents: read
 
 jobs:
+  classify:
+    name: change-risk
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      aggregate_ready: ${{ steps.risk.outputs.aggregate_ready }}
+      required_lanes_json: ${{ steps.risk.outputs.required_lanes_json }}
+      risk_level: ${{ steps.risk.outputs.risk_level }}
+      classification_id: ${{ steps.risk.outputs.classification_id }}
+      nerva_relevant: ${{ steps.risk.outputs.nerva_relevant }}
+      # Draft PRs receive only the deterministic fast gate. Ready low/medium
+      # changes run classified lanes; high-risk changes and main pushes get the
+      # full matrix. ready_for_review/converted_to_draft events make transitions explicit.
+      expensive_enabled: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
+      full_validation: ${{ github.event_name == 'push' || (github.event.pull_request.draft == false && steps.risk.outputs.risk_level == 'high') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Classify exact changed paths
+        id: risk
+        env:
+          CHANGE_RISK_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CHANGE_RISK_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python scripts/change_risk.py --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY" --quiet
+
+  fast-gate:
+    name: fast-gate
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Reject malformed diffs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            git show --check --format= "$HEAD_SHA"
+          else
+            git diff --check "${BASE_SHA}...${HEAD_SHA}"
+          fi
+      - name: Validate the canonical AI workflow policy
+        run: python scripts/check_ai_workflow_policy.py --json
+      - name: Check generated status without running test suites
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/status_preflight.py --base "$BASE_SHA" --json
+
+  nerva-integrity:
+    name: nerva-integrity
+    needs: [classify, fast-gate]
+    uses: ./.github/workflows/nerva-roadmap.yml
+    with:
+      enabled: ${{ needs.classify.outputs.nerva_relevant == 'true' }}
+      baseline_ref: ${{ github.event.pull_request.base.sha || github.event.before }}
+      candidate_ref: ${{ github.event.pull_request.head.sha || github.sha }}
+    permissions:
+      contents: read
+
+  lint:
+    name: lint
+    needs: [classify, fast-gate]
+    if: >-
+      ${{
+        needs.classify.outputs.expensive_enabled == 'true' &&
+        (
+          needs.classify.outputs.full_validation == 'true' ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'python-ubuntu') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'python-windows') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'contracts-security') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'workflow-policy') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'dependency-integrity') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'full-suite')
+        )
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - run: pip install --require-hashes -r requirements-dev.lock
+      - name: Ruff (blocking gate)
+        run: ruff check .
+      - name: Reject newly introduced complexity and TypeScript suppression debt
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/check_new_health_debt.py --base "$BASE_SHA" --json
+
   test:
+    needs: [classify, fast-gate]
+    if: >-
+      ${{
+        needs.classify.outputs.expensive_enabled == 'true' &&
+        (
+          needs.classify.outputs.full_validation == 'true' ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'python-ubuntu') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'python-windows') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'full-suite')
+        )
+      }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
-        # Full matrix (ubuntu + windows) on every PR and push — Windows is a
-        # first-class target (Jarvis runs on Windows), so `test (windows-latest)`
-        # is a required check on PRs, not just post-merge.
+        # Windows is a first-class runtime target. Drafts stop at fast-gate;
+        # classified ready changes execute both supported operating systems.
         os: ["ubuntu-latest", "windows-latest"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -30,20 +141,10 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-beta.lock
-      # AUD-10 (F33): install from the hash-pinned lock. --require-hashes makes pip
-      # abort if any artifact's sha256 doesn't match the lock — a tampered index,
-      # typosquat, or compromised transitive release can't land. beta.lock and
-      # dev.lock share no packages, so the two installs can't version-skew.
+      # AUD-10 (F33): install runtime + test dependencies from the hash-pinned
+      # beta lock. Static analyzers belong only to the dedicated lint job.
       # Regenerate with ./scripts/lock_deps.sh; lockfile.yml guards against drift.
       - run: pip install --require-hashes -r requirements-beta.lock
-      - run: pip install --require-hashes -r requirements-dev.lock
-      - name: Lint (ruff — blocking gate)
-        # AUD-10 (F34/F35): blocking lint gate. Pre-existing findings are frozen
-        # in ruff-baseline.toml (per-file-ignores, extended from pyproject) so this
-        # passes today and fails only on NEW findings. Burn the baseline down with
-        # `python scripts/code_health.py --fix`, then trim cleared entries. The full
-        # advisory digest (format/dead-code/complexity) still lives in code-health.yml.
-        run: ruff check .
       - name: Test
         # -n auto: parallelize across runner cores (Windows full-suite goes from
         # ~15min to a few). --dist loadfile keeps each test file on one worker, and
@@ -51,13 +152,31 @@ jobs:
         run: python -m pytest tests/ -n auto --dist loadfile --timeout=90 -q --tb=short
         env:
           JARVIS_TESTING: "1"
+      - name: Verify live backend test-count truth
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        # The dependency-free fast gate verifies projection drift. This exact
+        # ready-head check proves a changed tracked count came from real pytest
+        # collection rather than a manually invented number.
+        run: python scripts/status_sync.py --check --reuse-js-counts --json
 
   sandbox-isolation:
+    needs: [classify, fast-gate]
+    if: >-
+      ${{
+        needs.classify.outputs.expensive_enabled == 'true' &&
+        (
+          needs.classify.outputs.full_validation == 'true' ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'contracts-security') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'dependency-integrity') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'full-suite')
+        )
+      }}
     # AUD-11: prove the Docker sandbox actually CONTAINS code — no network and a
     # read-only filesystem. The gating tests skip the moment Docker is present, so
     # containment was never exercised; this dedicated, Docker-enabled lane runs the
     # real test (RUN_SANDBOX_ISOLATION=1) so it can't silently be skipped away.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
@@ -65,13 +184,10 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-beta.lock
-      # AUD-10 (F33): install from the hash-pinned lock. --require-hashes makes pip
-      # abort if any artifact's sha256 doesn't match the lock — a tampered index,
-      # typosquat, or compromised transitive release can't land. beta.lock and
-      # dev.lock share no packages, so the two installs can't version-skew.
+      # AUD-10 (F33): containment tests use the same hash-pinned runtime + test
+      # lock; static analyzers are installed only in the dedicated lint job.
       # Regenerate with ./scripts/lock_deps.sh; lockfile.yml guards against drift.
       - run: pip install --require-hashes -r requirements-beta.lock
-      - run: pip install --require-hashes -r requirements-dev.lock
       - name: Pre-pull sandbox image
         run: docker pull python:3.12-slim
       - name: Resolve acquisition sandbox digest
@@ -90,9 +206,20 @@ jobs:
           JARVIS_TESTING: "1"
 
   signal-layer-smoke:
+    needs: [classify, fast-gate]
+    if: >-
+      ${{
+        needs.classify.outputs.expensive_enabled == 'true' &&
+        (
+          needs.classify.outputs.full_validation == 'true' ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'frontend') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'full-suite')
+        )
+      }}
     # Proves the provider-neutral Signal Layer can run its deterministic replay
     # path without WorldMonitor, Docker, API keys, or network access.
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -107,9 +234,20 @@ jobs:
         working-directory: services/signal-layer
 
   frontend:
+    needs: [classify, fast-gate]
+    if: >-
+      ${{
+        needs.classify.outputs.expensive_enabled == 'true' &&
+        (
+          needs.classify.outputs.full_validation == 'true' ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'frontend') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'full-suite')
+        )
+      }}
     # HUD (React-via-globals) unit tests. Runs the real shipped static
     # artifacts inside JSDOM — see tests/frontend/README.md.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
@@ -122,9 +260,20 @@ jobs:
       - run: npm run test:coverage
 
   hud-v2-build:
+    needs: [classify, fast-gate]
+    if: >-
+      ${{
+        needs.classify.outputs.expensive_enabled == 'true' &&
+        (
+          needs.classify.outputs.full_validation == 'true' ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'frontend') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'full-suite')
+        )
+      }}
     # Build the v2 HUD (Vite + React + TS) and verify the committed bundle is
     # current — so agents/web/v2 (served at /v2) can't silently go stale.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
@@ -138,8 +287,14 @@ jobs:
         run: npx tsc --noEmit
         working-directory: frontend
       - name: Test (vitest)
-        run: npm test
+        run: npm test -- --reporter=json --outputFile="$RUNNER_TEMP/frontend-tests.json"
         working-directory: frontend
+      - name: Verify live frontend test-count truth
+        run: >-
+          python scripts/status_sync.py
+          --verify-test-count frontend
+          --test-result "$RUNNER_TEMP/frontend-tests.json"
+          --json
       - name: Build
         run: npm run build
         working-directory: frontend
@@ -149,10 +304,22 @@ jobs:
             || { echo "::error::agents/web/v2 is stale — run 'cd frontend && npm run build' and commit."; exit 1; }
 
   openapi-types:
+    needs: [classify, fast-gate]
+    if: >-
+      ${{
+        needs.classify.outputs.expensive_enabled == 'true' &&
+        (
+          needs.classify.outputs.full_validation == 'true' ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'frontend') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'contracts-security') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'full-suite')
+        )
+      }}
     # M2.3 / AUD-16: generated TypeScript must match the live FastAPI OpenAPI
     # schema. This is intentionally a separate lane because it boots the backend
     # plus the frontend toolchain, and reports a readable git diff on drift.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
@@ -214,3 +381,65 @@ jobs:
           path: openapi-server.log
           if-no-files-found: ignore
           retention-days: 7
+
+  mobile:
+    needs: [classify, fast-gate]
+    if: >-
+      ${{
+        needs.classify.outputs.expensive_enabled == 'true' &&
+        (
+          needs.classify.outputs.full_validation == 'true' ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'mobile') ||
+          contains(fromJSON(needs.classify.outputs.required_lanes_json || '[]'), 'full-suite')
+        )
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+        working-directory: mobile
+      - name: Test and emit exact Jest count
+        run: npm test -- --runInBand --json --outputFile="$RUNNER_TEMP/mobile-tests.json"
+        working-directory: mobile
+      - name: Verify live mobile test-count truth
+        run: >-
+          python scripts/status_sync.py
+          --verify-test-count mobile
+          --test-result "$RUNNER_TEMP/mobile-tests.json"
+          --json
+
+  required:
+    name: required
+    if: ${{ always() }}
+    needs:
+      - classify
+      - fast-gate
+      - nerva-integrity
+      - lint
+      - test
+      - sandbox-isolation
+      - signal-layer-smoke
+      - frontend
+      - hud-v2-build
+      - openapi-types
+      - mobile
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CHANGE_RISK_REQUIRED_LANES: ${{ needs.classify.outputs.required_lanes_json }}
+      CHANGE_RISK_AGGREGATE_READY: ${{ needs.classify.outputs.aggregate_ready }}
+      CHANGE_RISK_CLASSIFICATION_ID: ${{ needs.classify.outputs.classification_id }}
+      CHANGE_RISK_EXPENSIVE_ENABLED: ${{ needs.classify.outputs.expensive_enabled }}
+      CHANGE_RISK_FULL_VALIDATION: ${{ needs.classify.outputs.full_validation }}
+      CHANGE_RISK_JOB_RESULTS: >-
+        {"classify":"${{ needs.classify.result }}","fast-gate":"${{ needs.fast-gate.result }}","nerva-integrity":"${{ needs.nerva-integrity.result }}","lint":"${{ needs.lint.result }}","test":"${{ needs.test.result }}","sandbox-isolation":"${{ needs.sandbox-isolation.result }}","signal-layer-smoke":"${{ needs.signal-layer-smoke.result }}","frontend":"${{ needs.frontend.result }}","hud-v2-build":"${{ needs.hud-v2-build.result }}","openapi-types":"${{ needs.openapi-types.result }}","mobile":"${{ needs.mobile.result }}"}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Enforce every classified lane
+        run: python scripts/change_risk.py --aggregate-results

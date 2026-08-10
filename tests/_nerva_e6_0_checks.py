@@ -1,9 +1,4 @@
-"""Assertions invoked by the existing Daily Reflection test for E6.0.
-
-The helper is deliberately not a pytest collection target. The repository pins
-its generated test count, so the bounded Reflection assertions are called from
-an existing reflection regression test rather than creating count-only churn.
-"""
+"""E6.0 Reflection assertions and their direct-collection case manifest."""
 
 from __future__ import annotations
 
@@ -27,6 +22,7 @@ from agents.core.reflection_lesson import (
     transition_lesson,
     validate_proposal_evidence,
 )
+from tests.nerva_check_cases import case, run_cases
 
 _DIGEST = "a" * 64
 
@@ -891,20 +887,24 @@ def _check_serialization_round_trip() -> None:
     assert _TRANSITION_GUARD is not None
 
 
-def run_e6_0_checks() -> None:
-    """Run every bounded E6.0 Reflection assertion."""
+NERVA_E6_0_CASES = (
+    case("e6.0", _check_four_comparison_paths),
+    case("e6.0", _check_ineligible_evidence_is_retained_with_its_classification),
+    case("e6.0", _check_partial_evidence_fails_closed),
+    case("e6.0", _check_deterministic_fingerprints),
+    case("e6.0", _check_immutability_and_authority),
+    case("e6.0", _check_insufficient_evidence_cannot_produce_a_proposal),
+    case("e6.0", _check_evidence_and_chronology_validation),
+    case("e6.0", _check_forged_evidence_graph_is_rejected),
+    case("e6.0", _check_privacy_cannot_downgrade),
+    case("e6.0", _check_acceptance_requires_a_destination_owned_transition),
+    case("e6.0", _check_lifecycle_audit_is_reversible_and_bound),
+    case("e6.0", _check_audit_events_cannot_self_assert_history),
+    case("e6.0", _check_counter_evidence_is_retained),
+    case("e6.0", _check_serialization_round_trip),
+)
 
-    _check_four_comparison_paths()
-    _check_ineligible_evidence_is_retained_with_its_classification()
-    _check_partial_evidence_fails_closed()
-    _check_deterministic_fingerprints()
-    _check_immutability_and_authority()
-    _check_insufficient_evidence_cannot_produce_a_proposal()
-    _check_evidence_and_chronology_validation()
-    _check_forged_evidence_graph_is_rejected()
-    _check_privacy_cannot_downgrade()
-    _check_acceptance_requires_a_destination_owned_transition()
-    _check_lifecycle_audit_is_reversible_and_bound()
-    _check_audit_events_cannot_self_assert_history()
-    _check_counter_evidence_is_retained()
-    _check_serialization_round_trip()
+
+def run_e6_0_checks() -> None:
+    """Compatibility entrypoint; direct pytest collection uses the same manifest."""
+    run_cases(NERVA_E6_0_CASES)

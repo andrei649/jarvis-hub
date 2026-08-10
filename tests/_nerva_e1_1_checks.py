@@ -1,8 +1,6 @@
-"""Assertions invoked by an existing router test for the E1.1 baseline.
+"""Bounded E1.1 assertions collected by ``test_nerva_e1_1_collected.py``.
 
-The helper deliberately is not a pytest collection target. The repository pins
-its generated test count, so bounded Nerva assertions are called from the
-existing router regression test rather than creating status-only churn.
+The ``run_e1_1_checks`` entrypoint remains available for compatibility.
 """
 
 from __future__ import annotations
@@ -164,7 +162,7 @@ def run_e1_1_checks() -> None:
         encoding="utf-8"
     )
     assert "`tests/_nerva_e1_1_checks.py`" in cortex_doc
-    assert "`tests/test_router_v2.py`" in cortex_doc
+    assert "`tests/test_nerva_e1_1_collected.py`" in cortex_doc
     assert "Partial deletion is not a valid rollback" in cortex_doc
     assert "tests/test_cortex_compare.py" not in cortex_doc
 
