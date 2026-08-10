@@ -70,8 +70,8 @@ ones, and it is structurally incapable of merging its own code — not by conven
 | "Don't touch this path without an explicit unlock" | `.github/workflows/park-guard.yml` + `scripts/park_guard.py` `PARK_POLICY` | Reuse directly for the frozen zone (§4.3) instead of a second denylist mechanism. The loop must never be the one writing the `unpark:` override. |
 | Sandboxed execution | `agents/core/sandbox.py` (Docker, `--network none`, read-only + explicit rw allowlist), `acquisition/sandbox_profile.py` (digest-pinned, proven by the mandatory `sandbox-isolation` CI job) | The patch is written and tested inside one of these, never against the live server's checkout. |
 | Capability lifecycle + promotion-only-by-proof | `agents/core/observability/capability_registry.py` (`MISSING→SEAM→WIRED→VERIFIED→GA`, `record_verification()` is the only promotion path) and its reality-harness siblings (`operator_reality.py`, `media_reality.py`, …) | Register `repo.propose_change` here too; promote only via a new hermetic `self_patch_reality.py` probe, same pattern as every other pillar. |
-| Mechanical merge, once a human says "ready" | `.github/workflows/pr-auto-merge.yml` — hourly `gh pr merge --squash` on PRs GitHub already reports `mergeStateStatus==CLEAN`, drafts untouched | Jarvis never calls a merge API. It opens a **draft** PR; a human converting draft → ready-for-review *is* the approval act; the existing workflow performs the mechanical merge once CI is green. |
-| Repo-level (not just code-level) exclusion from that auto-merge conductor | Issue #847, merged: the conductor already skips any PR whose head branch starts with `nerva2/` or whose body carries a specific marker | The stronger backstop for §4.2's "never auto-merge" invariant — extend this same conductor-level allowlist to self-patch PRs (e.g. a branch-name pattern or body marker the conductor refuses to touch) instead of relying only on "Jarvis's code never calls the merge API," which is a promise about this feature's code, not a guarantee enforced against the whole repo's automation. |
+| Existing general auto-merge conductor (self-patch PRs opt out of this — see next row) | `.github/workflows/pr-auto-merge.yml` — hourly `gh pr merge --squash` on ordinary PRs GitHub already reports `mergeStateStatus==CLEAN`, drafts untouched | Confirms the baseline mechanism exists; **self-patch PRs deliberately do not use it** (next row) — for this feature, draft→ready is review, never merge. |
+| Repo-level (not just code-level) exclusion from that auto-merge conductor | Issue #847, merged: the conductor already skips any PR whose head branch starts with `nerva2/` or whose body carries a specific marker | **This is the invariant H35.6 uses.** Extend the same conductor-level allowlist to self-patch PRs (a branch-name pattern or body marker the conductor refuses to touch), so merge always needs one further, distinct human action beyond draft→ready — enforced against the whole repo's automation, not just "Jarvis's code never calls the merge API." |
 | Understanding its own source before proposing a change | `agents/core/codeintel/index.py` (AST symbol index, "0.31 Code Intelligence") | Cheap reuse for the design step instead of grepping blind. |
 
 ## 3. The gap, stated precisely
@@ -97,7 +97,10 @@ SELF_PATCH_CONTRACT + kernel.authorize(repo.propose_change)  →  Verdict.QUEUE 
 owner approves in the existing approval queue  →  push branch + open DRAFT PR  →  human reviews
         │
         ▼
-human marks "ready for review" (= the actual merge approval)  →  existing pr-auto-merge.yml merges on green CI
+human marks "ready for review"  →  self-patch PRs stay excluded from pr-auto-merge.yml (extends #847)
+        │                            so merge itself needs one further, distinct human action
+        ▼
+merged (never by Jarvis)
 ```
 
 - **Agent/persona:** `steve` — already `claude`-policy-routed per `hybrid_router.py` (CTO & Builds is
@@ -175,7 +178,7 @@ unlock.
 | H35.3 | Sandboxed implementation | New ToolRPC handlers + throwaway worktree/Docker; Steve writes+commits a patch on a scratch branch; frozen-zone check enforced at the RPC layer, not just prompted | contained by sandbox network-none + rw allowlist |
 | H35.4 | Verification gate | Full pytest + ruff + bandit + code_health + route-parity/OpenAPI snapshots, run inside the sandbox; any failure discards the patch (never proposed) and logs a rejected attempt | none — pure gate |
 | H35.5 | Contract + kernel + approval | `SELF_PATCH_CONTRACT` eval → `kernel.authorize(repo.propose_change)` → `Verdict.QUEUE` → lands in the existing web/admin approval queue | this is the trust boundary; everything above is inert until owner approval |
-| H35.6 | Draft PR on approval | Minimal, narrowly-scoped GitHub-write helper pushes the branch + opens a **draft** PR (design doc in the body); human review + draft→ready is the merge approval; existing `pr-auto-merge.yml` does the mechanical merge on green CI | PR-only; no push to `main`, no merge call anywhere in Jarvis |
+| H35.6 | Draft PR on approval | Minimal, narrowly-scoped GitHub-write helper pushes the branch + opens a **draft** PR (design doc in the body); extends #847's `pr-auto-merge.yml` exclusion list to self-patch PRs, so draft→ready is review, not merge — an explicit, separate human merge action is always required | PR-only; no push to `main`, no merge call anywhere in Jarvis, no auto-merge conductor eligibility either |
 | H35.7 | Audit + telemetry + HUD | Hash-chained audit entries per stage; outcome tracking (proposed/approved/rejected/merged/reverted) feeding a per-capability confidence stat; extend the existing self-improvement router/HUD surface with a card for this | none |
 | H35.8 | Hermetic eval (Hermes-parity style, mirrors H32.7) | Offline CI lane with a fake coding backend proving the full loop end-to-end, plus negatives: frozen-zone violation rejected, failing tests never proposed, budget cap enforced, no live GitHub calls in CI | promotes `repo.propose_change` from SEAM→VERIFIED in the capability registry |
 
@@ -211,7 +214,10 @@ research to become delivery silently").
 - No bypassing any existing CI gate (ruff/pytest/bandit/semgrep/gitleaks/sandbox-isolation/route-parity/OpenAPI).
 - Not a general coding-agent-for-hire — candidates only from BACKLOG/diagnostics, never a free-text
   chat prompt (that capability already exists as Claude Code itself).
-- Does not touch or depend on the Nerva-2.0 E0–E12 program's files or gates (§0).
+- Does not touch or depend on the Nerva-2.0 E0–E12 program's files or gates **as long as it stays
+  scoped as an independent horizon** (§0's default). That changes only if §0's open classification
+  question is later resolved toward formal Nerva integration — in which case §4.2's conditional
+  B7/#818 note applies to H35.3+, and this line is no longer unconditional.
 - Default OFF (`autonomy.self_patch_enabled=false`), hard weekly proposal cap even when on.
 
 ## 8. Verification plan
