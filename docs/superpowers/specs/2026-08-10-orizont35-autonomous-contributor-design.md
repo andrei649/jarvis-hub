@@ -28,6 +28,13 @@ this through the formal Nerva-2.0 epic ceremony, this document should be redone 
 process — slower (each E-epic slice so far took a dedicated contract+schema+hostile-test PR before
 any capability existed) but more consistent with that program's rigor.
 
+*(Review note, PR #875: a "Nerva coordinator" comment raised this exact classification question and
+asked that it be "recorded." It stays deliberately open here, as originally written — this is the
+owner's call to make explicitly, not something a PR comment resolves by assertion. What the same
+comment got right and is incorporated below: §2's `pr-auto-merge.yml` row and §4.2's merge-invariant
+bullet, both strengthened with a real, already-merged repo-level precedent — issue #847 — instead of
+relying only on a code-level promise.)*
+
 ## 1. Why
 
 Nothing today reads `agents/core/**`, proposes a diff, and opens a PR against jarvis-hub itself:
@@ -64,6 +71,7 @@ ones, and it is structurally incapable of merging its own code — not by conven
 | Sandboxed execution | `agents/core/sandbox.py` (Docker, `--network none`, read-only + explicit rw allowlist), `acquisition/sandbox_profile.py` (digest-pinned, proven by the mandatory `sandbox-isolation` CI job) | The patch is written and tested inside one of these, never against the live server's checkout. |
 | Capability lifecycle + promotion-only-by-proof | `agents/core/observability/capability_registry.py` (`MISSING→SEAM→WIRED→VERIFIED→GA`, `record_verification()` is the only promotion path) and its reality-harness siblings (`operator_reality.py`, `media_reality.py`, …) | Register `repo.propose_change` here too; promote only via a new hermetic `self_patch_reality.py` probe, same pattern as every other pillar. |
 | Mechanical merge, once a human says "ready" | `.github/workflows/pr-auto-merge.yml` — hourly `gh pr merge --squash` on PRs GitHub already reports `mergeStateStatus==CLEAN`, drafts untouched | Jarvis never calls a merge API. It opens a **draft** PR; a human converting draft → ready-for-review *is* the approval act; the existing workflow performs the mechanical merge once CI is green. |
+| Repo-level (not just code-level) exclusion from that auto-merge conductor | Issue #847, merged: the conductor already skips any PR whose head branch starts with `nerva2/` or whose body carries a specific marker | The stronger backstop for §4.2's "never auto-merge" invariant — extend this same conductor-level allowlist to self-patch PRs (e.g. a branch-name pattern or body marker the conductor refuses to touch) instead of relying only on "Jarvis's code never calls the merge API," which is a promise about this feature's code, not a guarantee enforced against the whole repo's automation. |
 | Understanding its own source before proposing a change | `agents/core/codeintel/index.py` (AST symbol index, "0.31 Code Intelligence") | Cheap reuse for the design step instead of grepping blind. |
 
 ## 3. The gap, stated precisely
@@ -123,6 +131,18 @@ MOONSHOT.md §5.7 and `docs/nerva2/RISKS.md`'s stop-ship invariants apply direct
   candidates, above) and **AUTO-05** ("irreversible action with no independent verification/
   rollback" — mitigated because the entire output of a run is a closable draft PR until a human
   merges; nothing is irreversible before that point).
+- **The "never auto-merge" invariant must be machine-enforced at the repo-automation level, not just
+  promised in Jarvis's code.** §2 already has the precedent: issue #847 made `pr-auto-merge.yml`
+  itself skip any PR on a `nerva2/`-prefixed branch or carrying a specific body marker. H35.6 should
+  extend that same conductor-side allowlist to self-patch branches/PRs, so the guarantee holds even
+  against a bug in this feature's own code, a different tool, or a future refactor — the same lesson
+  as the `ACTION_REGISTRY` blind spot in §2.
+- **If this work is ever formally folded into the Nerva-2.0 program** (see §0's open classification
+  question), its execution phases (H35.3+) would additionally need to satisfy B7/#818 — "task-persisted
+  Ultron mediation evidence," currently `DISCOVERY · SPEC REFINEMENT REQUIRED · NO BRANCH` and already
+  the blocker on E5 Night Shift for the same reason (proving every queued task was actually
+  kernel-mediated, restart-survivable, tamper-evident). That dependency does not block the read-only
+  H35.1–H35.2 slices proposed here, only any later formal-Nerva integration claim.
 
 ### 4.3 Frozen zone
 
