@@ -207,8 +207,16 @@ def test_generated_snippets_include_all_counts_and_open_gates():
 def test_json_test_count_parser_accepts_vitest_and_jest_key_order():
     vitest = 'npm preface\n{"numTotalTestSuites": 2, "numTotalTests": 8, "success": true}'
     jest = 'console noise\n{"numFailedTestSuites": 0, "numTotalTests": 55, "success": true}'
+    junit = (
+        '<?xml version="1.0"?><testsuites name="pytest tests">'
+        '<testsuite failures="0" tests="6540"></testsuite></testsuites>'
+    )
     assert status_sync.parse_json_test_count(vitest) == 8
     assert status_sync.parse_json_test_count(jest) == 55
+    assert status_sync.parse_junit_test_count(junit) == 6540
+    assert status_sync.reported_test_count_result(
+        "backend", junit, existing={"tests": {"backend": 6540}}
+    ) == {"status": "in_sync", "surface": "backend", "expected": 6540, "actual": 6540}
     assert status_sync.reported_test_count_result(
         "frontend", vitest, existing={"tests": {"frontend": 8}}
     ) == {"status": "in_sync", "surface": "frontend", "expected": 8, "actual": 8}
@@ -351,8 +359,8 @@ def test_check_ignores_lagging_commit_stamp(tmp_path, monkeypatch):
     live = {"latest_ci_commit": "newtip99tip99", "tests": {"backend": 1}}
     checked = status_sync._status_for_check(live)
     assert checked["latest_ci_commit"] == "oldbase00base"  # adopted the committed stamp
-    assert checked["tests"] == {"backend": 1}              # every other field preserved
-    assert live["latest_ci_commit"] == "newtip99tip99"     # input dict not mutated
+    assert checked["tests"] == {"backend": 1}  # every other field preserved
+    assert live["latest_ci_commit"] == "newtip99tip99"  # input dict not mutated
 
 
 def test_status_for_check_is_noop_without_committed_file(tmp_path, monkeypatch):
@@ -394,6 +402,7 @@ def test_latest_ci_commit_feature_branch_at_main_tip_does_not_step_back():
         ("git", "rev-parse", "HEAD"): (0, "current123\n"),
         ("git", "rev-parse", "--abbrev-ref", "HEAD"): (0, "claude/feature-branch\n"),
     }
-    assert status_sync.latest_ci_commit(
-        env={}, runner=lambda args: outputs[tuple(args)]
-    ) == "current123"
+    assert (
+        status_sync.latest_ci_commit(env={}, runner=lambda args: outputs[tuple(args)])
+        == "current123"
+    )

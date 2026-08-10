@@ -27,6 +27,10 @@ There are deliberately two policies:
   refresh. The header carries a ``~`` because count freshness itself is informative,
   not a reason to nest a second full test run inside the release-gate test.
 
+Ready-head CI does not re-collect the backend suite after executing it. Pytest writes
+one JUnit result and ``--verify-test-count backend`` compares that exact run with the
+tracked count; Vitest and Jest use their equivalent JSON results.
+
 ``--check`` deliberately ignores the ``latest_ci_commit`` stamp (it adopts whatever
 the committed files carry): the stamp is cosmetic provenance and inherently
 self-referential — a merge advances main's tip but leaves the stamp pointing at the
@@ -68,6 +72,7 @@ _MOBILE_TESTS_RE = re.compile(r"(mobile \*\*)([\d,]+)( jest\*\*)")
 _ROUTES_RE = re.compile(r"(HTTP routes:\*\* )(\d+)")
 _LANE_ROW_RE = re.compile(r"^\|\s*(A\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|", re.MULTILINE)
 _VERSION_RE = re.compile(r"__version__\s*=\s*[\"']([^\"']+)[\"']")
+_JUNIT_TESTS_RE = re.compile(r"<testsuites?\b[^>]*\btests=[\"'](\d+)[\"']", re.IGNORECASE)
 FAST_FIX_COMMAND = "python scripts/status_sync.py --reuse-test-counts"
 
 
@@ -134,12 +139,20 @@ def parse_json_test_count(output: str) -> int:
     raise ValueError("JSON test result with numTotalTests not found")
 
 
+def parse_junit_test_count(output: str) -> int:
+    """Read the aggregate test count from pytest's JUnit testsuite element."""
+    match = _JUNIT_TESTS_RE.search(output)
+    if match is None:
+        raise ValueError("JUnit test result with aggregate tests count not found")
+    return int(match.group(1))
+
+
 def reported_test_count_result(
     surface: str, output: str, *, existing: dict | None = None
 ) -> dict[str, object]:
-    """Compare an already-produced JS reporter result with tracked truth."""
-    if surface not in {"frontend", "mobile"}:
-        raise ValueError(f"unsupported JS test surface: {surface}")
+    """Compare an already-produced test-run result with tracked truth."""
+    if surface not in {"backend", "frontend", "mobile"}:
+        raise ValueError(f"unsupported test surface: {surface}")
     if existing is None:
         try:
             existing = json.loads(PROJECT_STATUS.read_text(encoding="utf-8"))
@@ -149,10 +162,11 @@ def reported_test_count_result(
     expected = tests.get(surface)
     if not isinstance(expected, int) or isinstance(expected, bool):
         raise RuntimeError(f"tracked project status has no reusable {surface} count")
+    parser = parse_junit_test_count if surface == "backend" else parse_json_test_count
     try:
-        actual = parse_json_test_count(output)
+        actual = parser(output)
     except ValueError as exc:
-        raise RuntimeError(f"test-count JSON missing for {surface}") from exc
+        raise RuntimeError(f"test-count result missing for {surface}") from exc
     return {
         "status": "in_sync" if actual == expected else "out_of_sync",
         "surface": surface,
@@ -584,10 +598,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="emit a machine-readable result")
     parser.add_argument(
         "--verify-test-count",
-        choices=("frontend", "mobile"),
-        help="verify an existing Vitest/Jest JSON report against tracked status",
+        choices=("backend", "frontend", "mobile"),
+        help="verify an existing pytest/Vitest/Jest result against tracked status",
     )
-    parser.add_argument("--test-result", type=Path, help="Vitest/Jest JSON report path")
+    parser.add_argument("--test-result", type=Path, help="pytest/Vitest/Jest result path")
     return parser
 
 

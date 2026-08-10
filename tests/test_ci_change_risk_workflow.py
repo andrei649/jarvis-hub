@@ -113,11 +113,17 @@ def test_lint_and_static_analyzer_install_run_once():
 
 def test_ubuntu_full_test_lane_revalidates_live_collection_truth():
     steps = CI["jobs"]["test"]["steps"]
-    live_truth = next(step for step in steps if step.get("name") == "Verify live backend test-count truth")
+    test_step = next(step for step in steps if step.get("name") == "Test")
+    live_truth = next(
+        step for step in steps if step.get("name") == "Verify live backend test-count truth"
+    )
 
     assert steps[0]["with"]["fetch-depth"] == "0"
+    assert "--junitxml=pytest-results.xml" in test_step["run"]
     assert live_truth["if"] == "${{ matrix.os == 'ubuntu-latest' }}"
-    assert "status_sync.py --check --reuse-js-counts --json" in live_truth["run"]
+    assert "--verify-test-count backend" in live_truth["run"]
+    assert "--test-result pytest-results.xml" in live_truth["run"]
+    assert "--reuse-js-counts" not in live_truth["run"]
 
 
 def test_health_debt_delta_gate_runs_once_after_ruff():

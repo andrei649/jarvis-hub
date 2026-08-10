@@ -154,15 +154,21 @@ jobs:
         # -n auto: parallelize across runner cores (Windows full-suite goes from
         # ~15min to a few). --dist loadfile keeps each test file on one worker, and
         # conftest gives each worker an isolated JARVIS_HOME so file stores don't race.
-        run: python -m pytest tests/ -n auto --dist loadfile --timeout=90 -q --tb=short
+        run: >-
+          python -m pytest tests/ -n auto --dist loadfile --timeout=90 -q --tb=short
+          --junitxml=pytest-results.xml
         env:
           JARVIS_TESTING: "1"
       - name: Verify live backend test-count truth
         if: ${{ matrix.os == 'ubuntu-latest' }}
         # The dependency-free fast gate verifies projection drift. This exact
-        # ready-head check proves a changed tracked count came from real pytest
-        # collection rather than a manually invented number.
-        run: python scripts/status_sync.py --check --reuse-js-counts --json
+        # ready-head check consumes the result produced above, proving the count
+        # without a second 4.5-minute collection of the same 6,540 tests.
+        run: >-
+          python scripts/status_sync.py
+          --verify-test-count backend
+          --test-result pytest-results.xml
+          --json
 
   sandbox-isolation:
     needs: [classify, fast-gate]
