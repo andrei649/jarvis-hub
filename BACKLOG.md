@@ -11,6 +11,39 @@
 > **Pre-go-live stakeholder sync (2026-07-07 — 5-seat agent panel, conditional GO, Gate-2 checklist):** [docs/meetings/2026-07-07-pre-go-live-sync.md](docs/meetings/2026-07-07-pre-go-live-sync.md)
 > **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
+<!-- AUDIT-2026-08-10:STABILIZATION:START -->
+## Immediate stabilization backlog — 2026-08-10 audit
+
+> **Priority override:** freeze new Nerva contracts, horizons and Autonomous Contributor
+> implementation until every P0 row below has accepted evidence and every P1 row has a bounded
+> owner/branch. Keep already-landed, fail-closed work unless a row explicitly requires replacement;
+> this is a selective stabilization pass, not a rewrite of the latest PRs. ORIZONT 35 is now
+> accepted for **roadmap inclusion** by the owner (2026-08-10), but remains design-only: inclusion
+> is not implementation authority, and H35.3+ stays behind the gates recorded below.
+>
+> **Version truth:** the product has advanced far beyond the scope described by `v0.11.0`, but the
+> canonical `agents.__version__` has not moved since 2026-06-25 and no release tag exists. Do not
+> silently claim that all interleaved `0.12`–`0.27` roadmap themes are released. Until the next
+> release gate is accepted, identify `main` with an honest SemVer pre-release line. The `0.12.0`
+> scope is code-complete but was never audited or tagged, so the proposed current development
+> version is `0.12.0-dev`; `0.13.0` remains the next incomplete roadmap milestone. Keep
+> delivered-theme status separate from released-version status.
+
+| ID | Priority | Remediation | Acceptance evidence |
+|---|---:|---|---|
+| **STAB-0 Version truth** | **P0** | Decide and apply the post-`0.11.0` development version; synchronize `agents.__version__`, compatibility/security support lines, README/STATUS/NERVA surfaces, upgrade notes and generated project status. Cut a release tag only after the release gate passes. | One canonical version; generated docs byte-clean; compatibility/version tests green; `main` is clearly labelled development vs released; tag and bundle provenance agree when a release is eventually cut. |
+| **STAB-1 Enforced merge authority** | **P0** | Replace prose-only builder/integrator separation. A builder identity may create a branch and draft PR but cannot approve, bypass or merge it. Require exact-head independent acceptance, dismiss stale approval after head changes, and keep Nerva plus third-party updates outside every generic auto-merge lane. | Protected ruleset uses distinct builder/integrator credentials; a hostile fixture proves builder self-merge, stale acceptance and direct/API bypass all fail; current-head attestation is a required check. |
+| **STAB-2 Trusted verifier repair** | **P0** | Forward-fix #852/#858 under #856 before B2 enforcement: trust defaults false; omitted sole-Ultron evidence fails closed; authenticate verifier/checker bytes before importing or executing candidate code; store accepted pins/policy outside candidate-controlled bytes. | Hostile tests cover root/load failure, omitted authority fields, candidate pin rotation and checker replacement; independent exact-head review accepts the implementation; verifier remains non-enforcing until then. |
+| **STAB-3 Third-party update chain** | **P0** | Remove the updater's fallback from a missing requested tag to the upstream default branch. Resolve exact tag → commit → tree/digest, record the real revision, and make generated vendoring PRs draft/manual-only with mandatory supply-chain approval. | Missing/unsigned/moved tags fail closed; version labels cannot disagree with fetched bytes; digest/tree verification and human approval are blocking. Keep the reviewed #833 bytes; repair the updater introduced around #827. |
+| **STAB-4 Governed email replies** | **P0** | Do not merge #869 as submitted. Bind IMAP `Reply-To`/`From` to the outbound recipient, require paired/allowlisted senders, rate-limit replies, and route the external effect through governed `channel.reply` (or prove a narrowly bounded exception). | End-to-end IMAP → orchestrator → kernel/channel → SMTP tests prove the actual sender is used, default-recipient leakage cannot occur, unknown senders cannot trigger outbound mail, and audit/approval policy is preserved. |
+| **STAB-5 Open Nerva PR reconciliation** | **P1** | #868: retain taint propagation but resolve Windows ambient failure, existing-data backfill/recall semantics and approval-spam UX. #870: apply findings to canonical status/issues instead of adding another truth ledger. #871: fix 18→20 action kinds but replace unsupported percentages and distinguish hermetic/code-complete from owner-live delivery. #872: redesign browser/HTTP SSRF mitigation; no manifest-less LAN bypass and no claim that double DNS resolution closes connect-time TOCTOU. | Each PR is rebased, generated truth is clean, full CI is green, claims match the program manifest, and the security-sensitive PRs receive exact-head independent acceptance. |
+| **STAB-6 Honest test architecture** | **P1** | Convert count-neutral `_nerva_*_checks.py` helper suites into normally collected, parametrized tests with meaningful IDs. Do not hide thousands of assertions inside unrelated legacy tests merely to preserve a headline count. | Pytest discovers every case directly; failures identify contract/scenario; parallelization works; generated counts are allowed to change; no private mega-suite is invoked from an unrelated test. |
+| **STAB-7 Contract/module consolidation** | **P1** | Split the largest Cortex, manifest, Reflection, benchmark and execution-provider modules; extract H34 UI work from `frontend/src/gap.tsx`; centralize canonical JSON, strict-key, identifier, finite-number, timestamp, digest and revision validators. | Bounded modules have real runtime consumers or are explicitly archived as evaluation-only; duplication falls under a measured threshold; no new `@ts-nocheck`; behavior and contract fixtures remain green. |
+| **STAB-8 CI and generated truth** | **P1** | Make one status source authoritative instead of repeatedly editing five truth surfaces. Repair Park-list handling for edited/closed PRs by fetching explicit refs or not running on that event. Turn code-health complexity deltas and new `@ts-nocheck` usage into blocking checks. | Current `main` commit/counts/action registry are generated consistently; closed-PR edits cannot create false red runs; blocking checks fail on new complexity and type-check suppression rather than reporting green with findings. |
+| **STAB-9 Owner-live product proof** | **P0 for release** | Stop treating additional contracts as product progress. Complete the manual RTX run, 72-hour soak, restore drill, real browser/desktop/house/camera/media proof, recurring-workflow evidence, live zero-bypass measurement and 1–3 non-owner design partners for at least two weeks. | The Nerva manifest may set `release_ready=true` only when A1–A9 and E11 evidence are accepted; owner-live results and failures are retained, reproducible and linked to the exact release candidate. |
+
+<!-- AUDIT-2026-08-10:STABILIZATION:END -->
+
 <!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
 ## Nerva 2.0 program control — E0 DONE
 
@@ -1001,7 +1034,71 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 | **v0.25.0** 📷 | **Camera Intelligence** (AI-OS Phase 4) | ORIZONT 31 (Nerva Program E) — privacy contract first, then RTSP/ONVIF ingest + local detection + event index + NL clip retrieval |
 | **v0.26.0** 🌱 | **Capability Acquisition** (AI-OS Phase 5) | ORIZONT 32 (Nerva Program F) — the gap→search→research→generate→sandbox→approve→register→reuse loop |
 | **v0.27.0** 👁️ | **Ambient Intelligence** (AI-OS Phase 6) | ORIZONT 33 (Nerva Program G) — monitor framework + the ignore/remember/monitor/act-silently/ask/interrupt ladder |
+| **v0.28.0** 🛡️ | **Stabilization & executable governance** | STAB-0–STAB-8; trustworthy B2 program control; exact-head independent merge authority; QA4 live zero-bypass measurement; reconcile the held security/truth/email PRs before new execution scope |
+| **v0.29.0** 🧠 | **Evidence, identity & memory** | Nerva E1 Cortex + E2 Atlas + E3 Episodes + E6 Reflection; finish Continuity Core identity/admission mapping and real owner/live evidence without promoting shadow/read-only slices to epic completion |
+| **v0.30.0** 🧪 | **Research & governed execution** | E9 Research Lab + E8 Synapse/execution-provider; B7 restart-safe, task-persisted Ultron mediation; provider/calibration proof and exact supply-chain evidence before execution is called verified |
+| **v0.31.0** 🧩 | **Personal & hybrid cognition** | E4 Howard + E12 Hybrid Cognition, including the strict-local boundary and the real GPU/owner proof; blocked until their E1/E2/E3/E6/E9 prerequisites are accepted |
+| **v0.32.0** 🌙 | **Bounded autonomy & world model** | E5 Night Shift + E7 World Model; immutable owner goals, checkpoint/idempotency/rollback, advisory-only belief/simulation boundaries and recurring-workflow evidence |
+| **v0.33.0** 🛰️ | **Mission Control & owner experience** | ORIZONT 34 + E10; finish the dev-swarm/Console cockpit, reconcile the legacy World Intelligence tickets against current code, and prove honest live owner workflows (H34 does not substitute for E10) |
+| **v0.34.0** 🤖 | **Autonomous Contributor — default off** | ORIZONT 35 H35.1–H35.8; read-only selection/design first, then only sandboxed draft-PR proposals behind STAB P0, B7 if formally Nerva, frozen paths, a separate integration identity and a machine-enforced **never auto-merge** rule |
+| **v0.35.0** 🧪 | **Owner-host release engineering** | E11 proof rails + A1–A8: full manual RTX/Windows/house/camera/media run, restore and failure drills, packaging, GitHub settings, legal/brand decisions and a reproducible release-candidate bundle |
+| **v0.36.0** 📈 | **Partner proof & burn-in** | STAB-9: 72-hour soak, live zero-bypass evidence, recurring workflows/time-return measurement and 1–3 non-owner design partners for at least two weeks |
+| **1.0.0-rc.1** | 🧪 **Owned release candidate** | E11 accepted, A1–A8 complete, no open P0/security blocker, exact bundle/SBOM/checksum provenance and full manual/audit pass; failures return to the owning minor instead of being waived |
 | **1.0.0** | 🎯 **The governed Personal AI OS — owned & proven** | **proof track done** (H23 spine + ⭐B0 + 72h soak + 1–3 partners ≥2 weeks) **+ six pillars at their v1 bar** ([NERVA_VISION.md](NERVA_VISION.md) §10) **+** owner legal/brand; manual-test/audit pass → tag |
+
+> **Release-truth guard:** the `v0.28.0…v0.36.0` rows are provisional planning clusters added on
+> 2026-08-10 to close the roadmap gap; they are not tags or claims that earlier minors shipped.
+> Current code still reports `0.11.0`, no release tags exist, and STAB-0 proposes `0.12.0-dev` until
+> version truth and release evidence are synchronized. A row becomes released only through the
+> release gate.
+
+### v0.28→1.0 live inventory — audited 2026-08-10
+
+> **Inventory rule:** live GitHub state outranks stale checkboxes. At this snapshot there are
+> **6 open PRs** (all drafts; none merge-ready) and **33 open issues** (none use a reliable release
+> milestone). Every live PR and issue is assigned exactly once below so it has an owner cluster;
+> assignment does not mean the ticket is fresh or accepted. Historical plans with unchecked boxes
+> are not silently revived: they are either linked as current evidence or explicitly reconciled/
+> closed against current code. The Nerva status source is
+> [`NERVA_PROGRAM_MANIFEST_V1.json`](docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json):
+> `release_ready=false`; E1/E2/E3/E6/E8/E9 `building`; E12 `discovery`; E4/E5/E7/E10/E11
+> `not_started`/blocked.
+
+| Bridge release | Open PRs at snapshot | Open-issue assignment | Current docs and disposition |
+|---|---|---|---|
+| **v0.28** | **#868** split taint work into rollback units and fix Windows/backfill/approval UX; **#869** block/refactor IMAP→SMTP through governed `channel.reply`; **#870** rebase and write truth into canonical surfaces; **#871** narrow unsupported delivery claims; **#872** redesign SSRF/LAN/Playwright connect-time enforcement | **#757** master ledger; **#778** blocker plan; **#241** residual egress ticket (prove or close against current manifest policy); **#242** required checks/rulesets; **#846** B2.1 exact-head ledger; **#856** trusted-verifier P0; **#857** vision truth; **#873** landed-vs-accepted provenance | STAB-0–STAB-8 above; [`RISKS.md`](docs/nerva2/RISKS.md); [`REUSE_BUILD_RETIRE.md`](docs/nerva2/REUSE_BUILD_RETIRE.md); [finish-line residual plan](docs/superpowers/plans/2026-08-01-finish-line-plan.md); [QA4 live-counter plan](docs/superpowers/plans/2026-08-02-qa4-ungoverned-counter-park.md). Keep accepted fail-closed bytes; repair governance and evidence forward. |
+| **v0.29** | — | **#759** E1; **#760** E2; **#761** E3; **#764** E6; **#731** Continuity Core; **#170** live Neo4j property-search proof | [`CORTEX_E1_2.md`](docs/nerva2/CORTEX_E1_2.md); [`ATLAS_E2_0.md`](docs/nerva2/ATLAS_E2_0.md); [`EPISODES_E3_0.md`](docs/nerva2/EPISODES_E3_0.md); [`EPISODE_RETRIEVAL_E3_1.md`](docs/nerva2/EPISODE_RETRIEVAL_E3_1.md); [`REFLECTION_E6_0.md`](docs/nerva2/REFLECTION_E6_0.md); [`REFLECTION_E6_1.md`](docs/nerva2/REFLECTION_E6_1.md); [`CONTINUITY_CORE_RECONCILIATION.md`](docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md). Mapping-only evidence does not close live identity/admission/privacy/retention work. |
+| **v0.30** | — | **#767** E9; **#766** E8; **#804** E8.1 provider/Hermes; **#818** B7 task mediation; **#836** Innovation Lab drift (triage/park, not a 1.0 gate) | [`RESEARCH_LAB_E9_0.md`](docs/nerva2/RESEARCH_LAB_E9_0.md); [`RESEARCH_LAB_E9_1.md`](docs/nerva2/RESEARCH_LAB_E9_1.md); [`SYNAPSE_E8_0.md`](docs/nerva2/SYNAPSE_E8_0.md); [`EXECUTION_PROVIDER_E8_1B.md`](docs/nerva2/EXECUTION_PROVIDER_E8_1B.md); [E8.1C preflight](docs/nerva2/EXECUTION_PROVIDER_E8_1C_PREFLIGHT.md); [2026-08-08 refresh](docs/nerva2/EXECUTION_PROVIDER_E8_1_REFRESH_2026-08-08.md). The preflight remains `not_executed` and grants no install/execute authority. |
+| **v0.31** | — | **#762** E4 Howard; **#773** E12 Hybrid Cognition | [`HYBRID_COGNITION_BOUNDARY.md`](docs/nerva2/HYBRID_COGNITION_BOUNDARY.md); [`DEPENDENCIES.md`](docs/nerva2/DEPENDENCIES.md); [`GPU_RUNBOOK.md`](docs/GPU_RUNBOOK.md). E4 is blocked and E12 is discovery; shipped routing substrate is not completion evidence. |
+| **v0.32** | — | **#763** E5 Night Shift; **#765** E7 World Model | [`DEPENDENCIES.md`](docs/nerva2/DEPENDENCIES.md); [`RISKS.md`](docs/nerva2/RISKS.md); [`HYBRID_COGNITION_BOUNDARY.md`](docs/nerva2/HYBRID_COGNITION_BOUNDARY.md). E5 waits on E1/E2/E3/E6+B7; E7 waits on E1/E2/E3/E4. Existing schedulers, observers and missions are substrate only. |
+| **v0.33** | **#874** H34.4 `SwarmPanel`: green but held behind #873, then rebase/regenerate truth | **#768** E10; legacy World Intelligence **#254**, **#255**, **#256**, **#257**, **#258**, **#259**, **#265** | ORIZONT 34 below; [`HUD_V2_REMAINING.md`](docs/design/HUD_V2_REMAINING.md); [`MANUAL_TESTING.md`](docs/MANUAL_TESTING.md); [`docs/worldview/backlog-next-versions.md`](docs/worldview/backlog-next-versions.md). The WorldView document's V0.2/V0.3/V0.4 are **subproject** labels, not product SemVer; execute or close the seven old tickets against current code instead of carrying them indefinitely. |
+| **v0.34** | — (merged #875 supplied the design only) | No live implementation issue yet; create bounded H35 issues only after the preceding governance gates and explicit phase authorization | [ORIZONT 35 design](docs/superpowers/specs/2026-08-10-orizont35-autonomous-contributor-design.md) + the new backlog horizon below. H35.1–H35.2 are read-only; H35.3+ is not authorized by roadmap inclusion. |
+| **v0.35** | — | **#769** E11 proof/release; **#182** owner-to-1.0 ledger (reconcile into E11 rather than maintain duplicate truth) | [`OWNER_TASKS.md`](docs/OWNER_TASKS.md); [`MANUAL_TESTING.md`](docs/MANUAL_TESTING.md); [`RELEASE.md`](docs/RELEASE.md); [`LICENSE_DECISION.md`](docs/LICENSE_DECISION.md). Owner-host and exact-release-candidate evidence only; no contract-count proxy. |
+| **v0.36** | — | No separate issue at snapshot; create evidence tasks under E11 rather than another umbrella ledger | STAB-9; [`GO_LIVE_PLAN.md`](GO_LIVE_PLAN.md); [`MANUAL_TESTING.md`](docs/MANUAL_TESTING.md); [`DESIGN_PARTNER_PROGRAM.md`](docs/DESIGN_PARTNER_PROGRAM.md). Requires real soak, restore, recurring-workflow and partner evidence. |
+| **1.0.0-rc.1 → 1.0.0** | — | Close only from accepted exact-head evidence; A9 performs the final tag | [`OWNER_TASKS.md`](docs/OWNER_TASKS.md); [`MANUAL_TESTING.md`](docs/MANUAL_TESTING.md); [`RELEASE.md`](docs/RELEASE.md). RC failures return to the owning bridge row; they are not waived at release. |
+
+#### Active backlog and plan tail without a dedicated live issue
+
+| Bridge release | Carried-forward IDs / evidence work | Honest status at snapshot |
+|---|---|---|
+| **v0.28** | QA4 persisted mediation counter; finish-line **Q13/SEC-B6**, **Q14/R8 repro**, **Q4 off-loop I/O** and **Q16 truth sync**; **SEC-B4/B5/B6**; **GAP-6/GAP-7/GAP-8/GAP-9**; decide the Vault/Video scope contradiction rather than silently promoting it | 🟥 blocked/partial — QA4 was withdrawn; SEC-B4/B5 have held PRs; R8 remains expected to reproduce; truth and default-flag decisions are open |
+| **v0.29** | E1.2b owner route dataset/labels/sampling/retention/run permission; owned Nerva identity manifest; production Episode admission/taint/privacy/deletion lineage; held-out Reflection promotion evidence | 🟨 building — accepted slices are shadow/read-only/evaluation-only, not epic completion |
+| **v0.30** | Provider-specific E9 calibration; E8.1C real preflight/zero-tool/platform evidence; optional H12.26 artifact wave only after explicit legal/supply-chain decision; B7 owner decisions and restart/tamper proof | 🟥 blocked/partial — current preflight says `not_executed`; no provider execution authority |
+| **v0.31** | H12.14/H13.3/TASK-1 real Howard GPU run; strictest-contributor local synthesis and hybrid-boundary owner evidence | 🟥 E4 blocked; E12 discovery |
+| **v0.32** | Approved immutable goals; checkpoint/idempotency/retry/rollback semantics; advisory-only belief/simulation outputs; measured recurring-workflow value | 🟥 E5/E7 not started and dependency-blocked |
+| **v0.33** | **H30.8** ambient light bridge; **H34.3/H34.4/H34.5**; finish-line **Q12 / SHL-102/103** demo and decision-queue honesty; manual **R9** recall-without-Ollama repro/fix; owner live-data/plugin setup | 🟨 H34 3/6 landed; E10 not started; H30.8 and R9 open |
+| **v0.34** | **H35.1–H35.8** below, one phase/rollback unit at a time | ⬜ roadmap only; no implementation issue or authority |
+| **v0.35** | **A1, A3, A4, A5, A6, A8**; **GAP-1** owner-host first and **GAP-4** honest Hermes head-to-head; full manual/adversarial pass, packaging, GitHub settings, license/brand and demo evidence | 🟥 owner/live and engineering gates open; hermetic/code-complete claims do not clear them |
+| **v0.36** | **A2** 72-hour soak; **A7** 1–3 design partners ≥2 weeks; **GAP-0** activation/distribution; restore/failure injection, recurring workflows and measured time return | ⬜ real-usage evidence missing |
+| **1.0.0-rc.1 → 1.0.0** | **A9** final no-blocker sign-off and tag | ⬜ ineligible while `release_ready=false` |
+
+> **Docs triage:** E0/M1 completion records and most older `docs/superpowers/plans/*` are historical
+> evidence even where template checkboxes remain empty. `INTEGRATION_CATALOGUE_RFC.md` is parked
+> hypothesis scope. Old HUD/computer-use plans describe already-landed code and contribute only
+> manual re-proof. The 2026-07-20 H23 claim of "zero code blockers" is superseded by the live
+> manifest, STAB rows, QA4/B2/B7 and current manual-test failures. Orphan design
+> [`2026-07-20-owner-portfolio-control-center-design.md`](docs/superpowers/specs/2026-07-20-owner-portfolio-control-center-design.md)
+> stays in owner triage and is not silently promoted into the 1.0 gate.
 
 > **The active execution ORDER for what remains is ORIZONT 25 — M1→1.0** (2026-07-02, section below):
 > milestone tables + a model-agnostic execution protocol + the companion-quality charter, backed by the
@@ -1617,6 +1714,43 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 | H34.6 ✅ | **Projects workspace + activity timeline** — DONE (via #724). The historical / per-project counterpart to H34.1's live cockpit: a unified **Projects** mode (nav rail + palette) over **Rooms** (topic threads with persistent history + `@mention` roster), **Missions** (budgeted governed workspaces) and **Sessions** (resume an old chat), plus an **activity timeline** that fuses the hash-chained audit (`/api/admin/audit`, admin) with the autonomy queue (`/tasks?view=history`, user) under an all/audit/tasks filter. Titles/decisions/status only — **never payload/result** (no tier leak). Pure frontend — **zero new backend routes** (no snapshot reseed). Closes items 1–3 of `docs/design/HUD_FOLLOWUPS_COWORK_SPEC.md`. | 3 | P1 | H34.1 | #724 |
 
 > **Total ORIZONT 34:** ~19 SP (H34.1–H34.2 + H34.6 delivered 2026-07-24)
+
+---
+
+## 🤖 ORIZONT 35 — Autonomous Contributor: governed self-patching (roadmap direction 2026-08-10)
+
+> **Owner decision:** include this horizon in the roadmap as provisional **v0.34.0**. This accepts
+> the direction and backlog decomposition only; it does **not** authorize implementation, GitHub
+> writes or runtime enablement. The canonical design remains
+> [`2026-08-10-orizont35-autonomous-contributor-design.md`](docs/superpowers/specs/2026-08-10-orizont35-autonomous-contributor-design.md).
+>
+> **Mission:** select one bounded, approved maintenance candidate; produce a reviewable design;
+> implement only in a networkless throwaway worktree; prove the patch; queue a tier-3
+> `repo.propose_change` decision; and, only after owner approval, open a **draft PR** that Jarvis can
+> never merge. Reuse Missions, ToolRPC, the Action Kernel, approval queue, Park guard, sandbox and
+> capability reality harness rather than building a parallel authority system.
+>
+> **Classification remains explicit:** H35 is currently an independent horizon that may later feed
+> E8/E5. If the owner classifies it as formal Nerva, H35.3+ also requires B7/#818 task-persisted
+> mediation evidence. Either way, every implementation phase waits for the immediate STAB P0 gates,
+> an independently protected builder/integrator identity boundary and exact-head acceptance.
+
+| # | Phase / backlog item | Authority and acceptance boundary | Status |
+|---|---|---|---|
+| H35.1 | **Candidate selection (read-only)** — choose one unblocked, bounded candidate from approved BACKLOG IDs or trusted diagnostics; never accept free-text/chat scope | No source mutation; deterministic eligibility/size/frozen-path tests; candidate provenance retained for owner review | ⬜ planned |
+| H35.2 | **Design document (read-only)** — generate goal, non-goals, files, risks, tests and rollback for the chosen candidate | Persisted artifact only; explicit owner checkpoint before any coding tool exists; diagnostic and retrieved text remain tainted/untrusted input | ⬜ planned |
+| H35.3 | **Sandboxed implementation** — narrow ToolRPC file/git/test handlers in a throwaway worktree/Docker sandbox | Default off; `--network none`; explicit read/write allowlist; symlink/path-escape, subprocess, secret and token-permission negatives; no live checkout writes | ⬜ blocked by STAB P0; B7 if formal Nerva |
+| H35.4 | **Verification gate** — full collected tests, ruff, bandit, code-health, route/auth/OpenAPI/parity and relevant hostile fixtures | Any failure discards the proposal; exact command/image/source digests and results are immutable evidence; the patch cannot grade or alter its own gate | ⬜ blocked by H35.3 |
+| H35.5 | **Contract, kernel and owner approval** — `SELF_PATCH_CONTRACT` → `kernel.authorize(repo.propose_change)` → `Verdict.QUEUE` | Tier 3 never earns auto-execution; `repo.propose_change` must be in `ACTION_REGISTRY`; approval identity differs from builder; restart/tamper evidence is retained | ⬜ blocked by H35.4 + governance gates |
+| H35.6 | **Draft PR only after approval** — push a bounded branch and open a draft with design/evidence/rollback | No direct `main` push and no merge API. Self-patch branches are excluded from every auto-merge lane **and** the ruleset denies the builder identity approval/bypass/merge; stale acceptance is dismissed on head change | ⬜ blocked by H35.5 + STAB-1 |
+| H35.7 | **Audit, telemetry and HUD** — hash-chained stage/outcome records and proposed/approved/rejected/merged/reverted confidence | No payload/tier leak; outcome is read from GitHub/reality evidence, never self-asserted; owner can disable, revoke and inspect every attempt | ⬜ blocked by H35.5 |
+| H35.8 | **Hermetic reality/eval lane** — fake coding backend proves the loop plus hostile negatives | Frozen-zone, failing-test, budget/deadline, prompt-injection, path/symlink escape, ToolRPC scope, network and credential negatives must pass before `SEAM→VERIFIED`; no live GitHub calls in CI | ⬜ blocked by H35.3–H35.7 |
+
+> **Frozen zone / non-goals:** the loop cannot edit the kernel, security, contracts, policy, its own
+> implementation, workflows, Park guard or release/packaging paths; it cannot create its own
+> unlock marker; it cannot widen scope from chat; and it can never auto-merge at any confidence.
+> Start, if separately authorized after stabilization, with H35.1–H35.2 only. One independently
+> reviewable PR/rollback unit per later phase.
 
 ---
 
