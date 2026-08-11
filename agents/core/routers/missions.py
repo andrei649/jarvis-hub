@@ -34,7 +34,7 @@ def _mission_payload(store, m) -> dict:
     return d
 
 
-@router.get("/api/missions")
+@router.get("/api/missions", dependencies=[Depends(user_guard)])
 async def missions_list(status: str = Query(None), limit: int = Query(50, ge=1, le=500)):
     """List mission workspaces (most-recent first), optionally by status."""
     store = _store()
@@ -70,7 +70,7 @@ async def missions_create(req: Request):
     return nocache_json({"ok": True, "mission": _mission_payload(store, m)})
 
 
-@router.get("/api/missions/{mission_id}")
+@router.get("/api/missions/{mission_id}", dependencies=[Depends(user_guard)])
 async def mission_get(mission_id: int):
     """Mission detail + budget + audit-trail events."""
     store = _store()

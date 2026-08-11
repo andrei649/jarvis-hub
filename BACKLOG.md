@@ -668,8 +668,16 @@ owner's machine in 30 seconds, read-only.
   (+2 teste în `test_h27_capability_verification.py`). `qa_audit_probes.py` raportează toate cele
   nouă claim-uri CLOSED.
 
-- [ ] **SEC-B6 — gate hardening.** Extend `test_route_auth_matrix.py` to require classification of
-  *read* routes touching personal data, so the theme-B read/write asymmetry can't regress open.
+- [x] ✅ **SEC-B6 — gate hardening.** **DONE** (Max run «nimble-beacon», PR #894) — `test_route_auth_matrix.py`
+  now has a *read* half: `test_no_unclassified_open_read` forces every OPEN GET to be classified by the
+  **substance of its handler** (`INTENTIONALLY_OPEN_READS`, each with a reason) or carry `user_guard`,
+  and `test_read_classifications_are_honest` keeps both sets shrink-only so the allowlist can't mask a
+  later guard. The classification pass found 13 personal-content reads shipping open (per-agent
+  run history + SOUL, quality scores, review queue, missions, workflows, learning, arena match,
+  oracle conflicts, reflection status, worldview overview) — all flipped to `user_guard`, snapshot
+  re-seeded. The read/write asymmetry the 2026-07-25 audit named can no longer regress open.
+  *Open follow-up (gap, not a regression):* the forget export/purge lists are maintained separately —
+  add a test asserting `export_manifest ⊆ (purged ∪ KEEP)` (noted in `docs/qa-runs/2026-08-11-hermetic-adv-run.md`).
 
 **Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
 3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source
