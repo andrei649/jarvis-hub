@@ -50,7 +50,9 @@ _TAGLINES = {
 
 
 def draw(seed: int | None = None) -> tuple[str, str]:
-    rng = random.Random(seed)
+    # Cosmetic run-name draw, never a security decision — a predictable name is a
+    # feature (--seed reproduces it), so the non-crypto PRNG is the right tool.
+    rng = random.Random(seed)  # nosec B311
     adj = rng.choice(ADJECTIVES)
     noun = rng.choice(NOUNS)
     return f"{adj}-{noun}", _TAGLINES.get(noun, "a run with a name")
