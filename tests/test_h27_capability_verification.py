@@ -204,3 +204,39 @@ async def test_component_and_skill_construction_mismatches_fail_closed():
         "skill:Missing Module": False,
         "skill:Loaded Module": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_action_case_fails_closed_when_manifest_implementation_is_missing():
+    """ADV-087: a green action case must certify the declared actuator exists —
+    a manifest whose implementation does not resolve may not pass its rail probe."""
+    from dataclasses import replace
+
+    from agents.core.observability.reality_harness import _make_action_kernel_probe
+
+    manifest = ACTION_CAPABILITY_MANIFESTS["node.dispatch"]
+    broken = replace(manifest, implementation="agents.core.node_mesh:NodeMesh.no_such_actuator")
+    case = RealityCase(
+        broken.id,
+        "action-broken-implementation",
+        "a manifest whose declared implementation does not resolve must not certify",
+        _make_action_kernel_probe(broken),
+    )
+
+    result = await run_reality([case], promote=False, now="2026-08-11T00:00:00+00:00")
+
+    assert result["passed"] == 0
+    assert result["results"][0]["passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_action_case_records_the_implementation_it_certified():
+    """The green case's evidence names the resolved actuator, not just the refusal."""
+    case = ACTION_CAPABILITY_CASES[0]
+
+    result = await run_reality([case], promote=False, now="2026-08-11T00:00:00+00:00")
+
+    item = result["results"][0]
+    assert item["passed"] is True
+    assert item["metadata"]["implementation_resolves"] is True
+    assert ":" in item["metadata"]["implementation"]

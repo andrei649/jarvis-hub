@@ -661,6 +661,12 @@ six refuted ones (so nobody chases them), the never-measured surfaces, and a **3
 missing-code/missing-feature gap ledger**: [`docs/test-manual/15-audit-gap-verification.md`](docs/test-manual/15-audit-gap-verification.md)
 (160 cases, `ADV` prefix) + `scripts/qa_audit_probes.py`, which reproduces nine of the claims on the
 owner's machine in 30 seconds, read-only.
+  *Update 2026-08-11 (Max run «nimble-beacon»):* ultimul probe încă OPEN pe `main` — **ADV-087**,
+  „capability probe registering its own lambda" — e **FIXED**: `_make_action_kernel_probe` rezolvă
+  acum `manifest.implementation` la actuatorul real înainte de rail-ul de refuz și pică fail-closed
+  când implementarea declarată nu există; evidența cazului verde numește implementarea certificată
+  (+2 teste în `test_h27_capability_verification.py`). `qa_audit_probes.py` raportează toate cele
+  nouă claim-uri CLOSED.
 
 - [ ] **SEC-B6 — gate hardening.** Extend `test_route_auth_matrix.py` to require classification of
   *read* routes touching personal data, so the theme-B read/write asymmetry can't regress open.
