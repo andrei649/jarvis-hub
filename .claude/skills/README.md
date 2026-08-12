@@ -17,6 +17,7 @@ Bodies use progressive disclosure and stay short (<200 words for hot skills).
 ## Skills here
 | Skill | Triggers on |
 |-------|-------------|
+| `max` | the codename **"Max"** (any casing) — starts/continues the finishing protocol in `MAX.md`, no questions asked |
 | `jarvis-load-context` | start of any task — what to read instead of the ~2M-token repo |
 | `jarvis-add-route` | adding/moving an HTTP endpoint (per-domain router + parity re-seed) |
 | `jarvis-write-test` | writing/fixing a pytest test (sys.path bootstrap, offline fakes) |

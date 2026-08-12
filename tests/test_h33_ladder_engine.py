@@ -12,6 +12,7 @@ from agents.core.ambient.engine import AmbientEngine
 from agents.core.ambient.proposals import AmbientProposalSink
 from agents.core.ambient.registry import MonitorRegistry
 from agents.core.ambient.store import AmbientStore
+from agents.core.security import taint
 
 
 def _event(event_id: str, *, tainted: bool = False, confidence: float = 1.0):
@@ -105,7 +106,7 @@ def test_proposal_sink_queues_only_sanitized_governed_task(tmp_path):
         decision_sink=sink,
     )
 
-    event = _event("private-event")
+    event = _event("private-event", tainted=True)
     engine.submit(event)
     [decision] = engine.process_tick()
 
@@ -116,19 +117,25 @@ def test_proposal_sink_queues_only_sanitized_governed_task(tmp_path):
     assert kwargs["attention_mode"] == "digest"
     assert kwargs["autonomy_level"] == "ask"
     payload = kwargs["payload"]
-    assert payload == {
-        "ambient_generation": 9,
-        "consent_generation": 4,
-        "event_fingerprint": event.fingerprint,
-        "monitor_hash": definition.definition_hash,
-        "monitor_id": "monitor.front.person",
-        "monitor_version": 1,
-        "rung": "ask",
-        "source": "camera",
-    }
+    assert payload["ambient_generation"] == 9
+    assert payload["consent_generation"] == 4
+    assert payload["event_fingerprint"] == event.fingerprint
+    assert payload["monitor_hash"] == definition.definition_hash
+    assert payload["monitor_id"] == "monitor.front.person"
+    assert payload["monitor_version"] == 1
+    assert payload["rung"] == "ask"
+    assert payload["source"] == "camera"
+    assert taint.is_tainted(payload) is True
+    assert payload["taint_source"] == "ambient:camera"
     encoded = json.dumps(payload)
     assert "camera.front" not in encoded
     assert "private-event" not in encoded
+
+    # A trusted event through the same rebuild path stays trusted. This guards
+    # against turning taint propagation into indiscriminate over-tainting.
+    sink(decision, _event("trusted-event", tainted=False), definition)
+    assert len(calls) == 2
+    assert taint.is_tainted(calls[1][1]["payload"]) is False
 
 
 def test_ignore_monitor_and_remember_do_not_create_unsolicited_delivery(tmp_path):

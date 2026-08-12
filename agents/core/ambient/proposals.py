@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from ..security import taint
 from .contracts import AmbientDecision, AmbientEvent, MonitorDefinition
 
 
@@ -54,6 +55,12 @@ class AmbientProposalSink:
             "source": event.source,
         }
         silent = decision.rung == "act_silently"
+        if event.tainted:
+            # SEC-B5: the proposal is DERIVED from a tainted ambient event. The
+            # ladder already downgrades tainted act_silently/interrupt requests
+            # to ask; carrying the flag here is the defense-in-depth that keeps
+            # a bypassed/misconfigured ladder from auto-executing the material.
+            payload = taint.mark(payload, source=f"ambient:{event.source}")
         return self._enqueue(
             "jarvis",
             "ambient.action" if silent else "ambient.decision",
