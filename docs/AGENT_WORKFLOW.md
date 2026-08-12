@@ -1,142 +1,167 @@
-# Jarvis Hub Agent Workflow
+# Nerva AI Development Workflow
 
-This document adapts the useful parts of the external Superpowers methodology to Jarvis Hub.
-It is an operating protocol for coding agents, not a runtime dependency and not vendored code.
+> **Derived human-readable guide.** The executable source of truth is
+> [`.github/ai-development-policy.json`](../.github/ai-development-policy.json). When this guide
+> disagrees with that file, the policy wins. Validate it with
+> `python scripts/check_ai_workflow_policy.py`.
 
-Source reference: `obra/superpowers` describes itself as a software-development methodology for coding agents, built from composable skills and startup instructions. Its core workflow emphasizes brainstorming, worktrees, plans, TDD, review, and finishing branches cleanly.
+This workflow keeps AI-assisted development fast without converting speed into rework. It applies
+to feature work, fixes, refactors, security changes, CI/governance work, and multi-agent sessions.
 
-## Scope
+## Risk first
 
-Use this workflow for any non-trivial Jarvis Hub work:
+Classify the smallest coherent change before implementation:
 
-- security hardening,
-- feature work,
-- refactors,
-- bug fixes with uncertain root cause,
-- multi-agent sessions,
-- release-gate or branch-protection changes.
+| Tier | Typical scope | Minimum posture |
+|---|---|---|
+| `R0` | prose, comments, non-executable diagrams | scope/content check + policy lint |
+| `R1` | tests, developer tooling, internal no-contract refactor | design summary + targeted tests + diff review |
+| `R2` | runtime, API/contract, dependency, generated truth, user-facing behavior | design receipt + regression + independent review + relevant full CI + rollback |
+| `R3` | security/authority, credentials, destructive/external writes, release governance, migrations | failure model + separated roles + owner/policy gate + independent verification + rollback proof |
 
-For tiny docs fixes or Dependabot bumps, apply the lightweight path only: inspect, verify checks, report risk, merge only when safe.
+When uncertain, choose the higher tier until evidence narrows it. Split mixed-risk work when the
+pieces can ship independently.
 
-## Non-negotiables
+Automated verification receipts map CI risk conservatively: `low -> R0`, `medium -> R2`, and
+`high -> R3`. `R1` remains available for a justified bounded-internal human classification.
 
-1. **No big code before design.** For feature/security/refactor work, write a short design note first: goal, constraints, files likely touched, risk, tests, and rollback.
-2. **Work in branches.** Do not push directly to `main`; use a feature branch and draft PR unless the user explicitly asks for a direct emergency hotfix.
-3. **Evidence over claims.** Every PR must include the exact verification command and result. If a failure is unrelated, prove or explain why.
-4. **TDD where practical.** For bug fixes and core behavior changes, add or update a failing regression test before the fix. Then make it pass.
-5. **Keep work small.** Prefer small PRs that can merge independently. Do not bundle cleanup, refactor, dependency bumps, and feature work unless necessary.
-6. **Respect active draft PRs.** A draft PR owns its touched files until it merges, closes, or the user explicitly reassigns the work.
-7. **Finish the branch.** A task is not done until status is reported: merged, queued for auto-merge, blocked by checks, draft/hold, or closed as superseded.
+## 1. Observe before mutating
 
-## Standard workflow
+Capture:
 
-### 1. Understand and triage
+- requested outcome and authorization boundary;
+- `git status`, current branch, base SHA, and pre-existing changes;
+- exact paths and contracts likely to change;
+- overlapping open work when current remote state matters;
+- owner, hardware, credential, or live-service gates.
 
-Before editing:
+Do not automatically fetch/rebase for every task. Fetch when remote truth is necessary. Rebase only
+an owned feature branch when the worktree is clean, the base is known, no user changes are present,
+and the task actually needs the rebase. A dirty worktree or read-only task is a stop condition for
+automatic history mutation.
 
-- read `BACKLOG.md`, `STATUS.md`, and relevant docs,
-- inspect open PRs touching the same area,
-- check whether the work is owner-gated, hardware-gated, or blocked by live credentials,
-- identify the smallest safe change.
+## 2. Create a design receipt
 
-### 2. Design note
-
-For non-trivial work, include a short design note in the PR body or a `docs/plan-*.md` file:
+For `R1+`, record enough for a fresh contributor to execute or reject the approach:
 
 ```text
 Goal:
 Non-goals:
-Files likely touched:
-Risk:
-Tests:
+Risk tier and reason:
+Likely changed paths/contracts:
+Test strategy:
 Rollback:
-Merge order / dependencies:
+Dependencies and path lease:
 ```
 
-Large features should not proceed beyond scaffolding until the design is reviewed.
+For `R3`, add a threat/failure model, authority boundary, separate builder/reviewer/integrator, and
+the owner or policy gate. Design is a decision aid, not permission to expand scope.
 
-### 3. Implementation plan
+## 3. Plan a coherent rollback unit
 
-Break the change into steps a fresh agent could execute:
+Prefer steps that produce one independently reviewable outcome. Each step names exact paths,
+behavior, checks, and expected result. Local checkpoints may be fine-grained; do not push after
+arbitrary two-to-five-minute units and restart CI without useful new evidence.
 
-- exact file paths,
-- exact behavioral change,
-- tests to add or update,
-- verification command,
-- expected result.
+Use TDD when behavior can be pinned by a regression:
 
-### 4. Implementation
+1. demonstrate the failure;
+2. implement the narrow fix;
+3. demonstrate the targeted pass;
+4. refactor only inside the authorized scope while keeping evidence green.
 
-Use the narrowest change that satisfies the design. Avoid opportunistic cleanup outside touched files unless the user asked for an audit/cleanup pass.
+## 4. Coordinate by intent, not vendor
 
-### 5. Verification
+Route roles by capability: planner, builder, verifier, reviewer, integrator. A draft PR advertises
+unfinished delivery; it does not lock its paths. GitHub-backed path leases are planned but not
+implemented, so inspect open work and arrange an explicit handoff when overlap needs serialization.
+Local `lock.py` state is only an advisory same-machine hint.
 
-At minimum, run the most relevant targeted tests. For merge candidates, prefer:
+For parallel waves, compare both direct paths and indirect collision surfaces:
 
-```bash
-python -m pytest tests/<targeted_test>.py -q
-python -m pytest tests/ -q
-npm test
-npm run test:coverage
+- generated documents and registries;
+- public schemas/routes/contracts;
+- migrations and dependencies;
+- branch/governance configuration;
+- status and roadmap ledgers.
+
+For `R3`, builder, reviewer, and integrator are separate actors.
+
+## 5. Verify the exact head
+
+At minimum, run targeted checks for the changed surface. Broader suites are selected by risk and
+merge policy, not by habit. An evidence receipt contains:
+
+```text
+policy_id=nerva-ai-development-v1
+policy_schema_version=1
+head_sha=<exact 40-character commit>
+risk_tier=<R0|R1|R2|R3>
+changed_paths=<path manifest>
+commands=<ordered command manifest>
+results=<command, exit_code, summary records>
+producer=<actor/automation>
+generated_at=<timestamp>
 ```
 
-Use the actual commands for the touched surface. Do not claim a suite passed unless it was run and returned success.
+A test claim without a receipt is advisory. Evidence can be reused only for the identical head SHA
+and policy version with unchanged relevant inputs. Any new commit makes prior check and approval
+state stale.
 
-### 6. Review
+## 6. Review with a bounded loop
 
-Before marking ready:
+Normal review is capped at two consolidated rounds:
 
-- re-read the diff,
-- check for branch conflicts,
-- check security/privacy implications,
-- check UI/mobile/HUD parity ledgers when user-facing APIs changed,
-- update `BACKLOG.md`, `STATUS.md`, or owner tasks only when the change actually moves those trackers.
+1. spec, correctness, security/privacy, test, and scope findings in one deduplicated pass;
+2. verification of fixes at the new exact head.
 
-### 7. Finish
+After round two, escalate unresolved material findings with severity, evidence, options, owner, and
+the recommended decision. Do not create an unbounded reviewer/fixer loop. A new high-severity issue
+or genuinely new scope is labeled as a new review event.
 
-End every work session with one of these statuses:
+## 7. Keep state dimensions separate
 
-- `merged`,
-- `auto-merge enabled`,
-- `ready but waiting checks`,
-- `draft / hold`,
-- `blocked by owner action`,
-- `closed as superseded`.
+Report all relevant state machines rather than compressing them into “green”:
 
-Also state the next safe action.
+- delivery: `planned` → `in_progress` → `draft` → `ready` → `merged`;
+- CI: `not_run` / `running` / `passed` / `failed` / `cancelled` / `skipped` / `stale`;
+- governance: `unclassified` / `review_required` / `changes_requested` / `approved` /
+  `owner_hold` / `stale`;
+- lease: `none` today; the other canonical states are reserved for the planned enforced service.
 
-## PR queue policy
+The canonical JSON defines all allowed transitions, including blocked and superseded delivery.
 
-When many PRs are open, prioritize in this order:
+## 8. Integrate and finish
 
-1. real production/runtime bugfixes,
-2. security hardening,
-3. CI or branch-rule fixes that improve merge confidence,
-4. small dependency updates with green checks,
-5. docs truth-sync,
-6. large dependency surfaces that need manual validation,
-7. draft feature scaffolds.
+Before ready/merge:
 
-Hold mobile, WorldView/live integration, GPU, mic, and owner-settings PRs until the relevant real hardware or live service has been validated.
+- re-read the scoped diff and confirm no unrelated changes;
+- confirm the PR template names exact head, risk, states, and receipts;
+- confirm required controls for the tier and any parity/generated consumers;
+- ensure approval and CI refer to the current head;
+- record the overlap/handoff disposition without claiming a remote lease.
 
-## ChatGPT / Jarvis operator mode
+Finish with delivery, CI, governance, and lease states plus one next safe action. Examples:
 
-When ChatGPT is used as the repo conductor, it should:
+```text
+delivery=ready ci=passed governance=approved lease=none
+head=<SHA> next=integrator may merge
+```
 
-- inspect open PRs before suggesting new work,
-- avoid opening overlapping work while draft PRs exist,
-- prefer queue reduction over feature expansion near v1.0,
-- explicitly separate what it can change in GitHub from what Andrei must do in ChatGPT settings or on the RTX box.
+```text
+delivery=blocked ci=failed governance=owner_hold lease=none
+head=<SHA> next=owner chooses rollback or credentialed live validation
+```
+
+## Queue posture near 1.0
+
+Prefer runtime bugs, security boundaries, CI/governance confidence, dependency safety, and truth
+repair before new scaffolding. Hardware/live-service work stays held until its real environment can
+produce evidence. Historical plans and unchecked boxes do not override the current machine ledger
+or an explicit owner decision.
 
 ## Privacy and external tooling
 
-Do not vendor external agent-methodology repositories into Jarvis runtime unless explicitly approved.
-If using Superpowers in a local coding harness, set telemetry opt-outs in the shell or `.env` used by that harness:
-
-```bash
-SUPERPOWERS_DISABLE_TELEMETRY=true
-DISABLE_TELEMETRY=true
-CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=true
-```
-
-These are development-environment settings. Jarvis runtime must remain local-first and privacy-first.
+Nerva remains local-first. Do not vendor an external agent-methodology runtime or transmit private
+context because a development plugin suggests it. External tools must stay inside the task's
+authorization, privacy, and risk controls.
