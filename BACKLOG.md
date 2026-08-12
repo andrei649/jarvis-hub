@@ -661,9 +661,25 @@ six refuted ones (so nobody chases them), the never-measured surfaces, and a **3
 missing-code/missing-feature gap ledger**: [`docs/test-manual/15-audit-gap-verification.md`](docs/test-manual/15-audit-gap-verification.md)
 (160 cases, `ADV` prefix) + `scripts/qa_audit_probes.py`, which reproduces nine of the claims on the
 owner's machine in 30 seconds, read-only.
+  *Update 2026-08-11 (successor of split #894):* the last probe still OPEN on `main` — **ADV-087**,
+  "capability probe registering its own lambda" — is **FIXED**: `_make_action_kernel_probe` now
+  resolves `manifest.implementation` to the real actuator before the refusal rail and fails closed
+  when the declared implementation does not resolve; the green case's evidence names the certified
+  implementation (+2 tests in `test_h27_capability_verification.py`). `qa_audit_probes.py` reports all
+  nine claims CLOSED.
 
-- [ ] **SEC-B6 — gate hardening.** Extend `test_route_auth_matrix.py` to require classification of
-  *read* routes touching personal data, so the theme-B read/write asymmetry can't regress open.
+- [ ] 🟡 **SEC-B6 — gate hardening.** *In review (successor of split #894), not yet accepted truth.*
+  `test_route_auth_matrix.py` gains a *read* half: `test_no_unclassified_open_read` forces every OPEN
+  GET to be classified by the **substance of its handler** (`INTENTIONALLY_OPEN_READS`, each with a
+  reason) or carry `user_guard`; `test_read_classifications_are_honest` keeps both sets shrink-only so
+  the allowlist can't mask a later guard. The classification pass found 13 personal-content reads
+  shipping open (per-agent run history + SOUL, quality scores, review queue, missions, workflows,
+  learning, arena match, oracle conflicts, reflection status, worldview overview) — all flipped to
+  `user_guard`, snapshot re-seeded, generated chapter-14 sweep regenerated. Per-handler substance
+  evidence: [`docs/security/SEC-B6-open-reads-evidence.md`](docs/security/SEC-B6-open-reads-evidence.md).
+  **Mark ✅ DONE only when the successor PR passes fresh exact-head CI + independent review** (owner
+  integrator directive, #894). *Open follow-up (gap):* forget export/purge lists are maintained
+  separately — add a test asserting `export_manifest ⊆ (purged ∪ KEEP)`.
 
 **Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
 3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source
