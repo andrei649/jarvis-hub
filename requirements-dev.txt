@@ -8,5 +8,5 @@
 # AUD-10 (F33): editable source. CI installs from the hash-pinned
 # requirements-dev.lock; regenerate it with ./scripts/lock_deps.sh after edits.
 
-ruff>=0.16.1
+ruff>=0.16.2
 vulture>=2.16
