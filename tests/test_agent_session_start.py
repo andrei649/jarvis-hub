@@ -9,7 +9,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 HOOK = REPO / ".claude" / "hooks" / "session-start.sh"
-GIT_BASH = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
+GIT_BASH = Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
 
 
 def _fake_npm(bin_dir: Path) -> Path:
