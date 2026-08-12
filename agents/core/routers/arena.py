@@ -66,7 +66,7 @@ async def arena_vote(req: Request):
         return error_json(e, 400, "invalid vote")
 
 
-@router.get("/api/arena/match/{match_id}")
+@router.get("/api/arena/match/{match_id}", dependencies=[Depends(user_guard)])
 async def arena_match(match_id: str):
     orch = get_orch()
     arena = getattr(orch, "arena", None) if orch else None

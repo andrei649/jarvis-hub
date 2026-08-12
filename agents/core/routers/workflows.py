@@ -51,7 +51,7 @@ class WorkflowSaveBody(BaseModel):
     steps: list[dict] = []
 
 
-@router.get("/api/workflows")
+@router.get("/api/workflows", dependencies=[Depends(user_guard)])
 async def list_workflows():
     """List all registered workflow pipelines (H5.6 + H9.1 user-defined)."""
     orch = get_orch()
