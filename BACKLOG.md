@@ -661,6 +661,12 @@ six refuted ones (so nobody chases them), the never-measured surfaces, and a **3
 missing-code/missing-feature gap ledger**: [`docs/test-manual/15-audit-gap-verification.md`](docs/test-manual/15-audit-gap-verification.md)
 (160 cases, `ADV` prefix) + `scripts/qa_audit_probes.py`, which reproduces nine of the claims on the
 owner's machine in 30 seconds, read-only.
+  *Update 2026-08-11 (successor of split #894):* the last probe still OPEN on `main` — **ADV-087**,
+  "capability probe registering its own lambda" — is **FIXED**: `_make_action_kernel_probe` now
+  resolves `manifest.implementation` to the real actuator before the refusal rail and fails closed
+  when the declared implementation does not resolve; the green case's evidence names the certified
+  implementation (+2 tests in `test_h27_capability_verification.py`). `qa_audit_probes.py` reports all
+  nine claims CLOSED.
 
 - [ ] 🟡 **SEC-B6 — gate hardening.** *In review (successor of split #894), not yet accepted truth.*
   `test_route_auth_matrix.py` gains a *read* half: `test_no_unclassified_open_read` forces every OPEN
