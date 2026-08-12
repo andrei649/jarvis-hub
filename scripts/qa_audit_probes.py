@@ -493,9 +493,8 @@ def probe_cost() -> dict:
 def probe_reality() -> dict:
     """Does the promotable action-capability case import the implementation it certifies?
 
-    ``_make_action_kernel_probe`` registers its own handler on ``CapabilityActionAPI`` and
-    asserts the kill-switch refuses the call. ``manifest.implementation`` is never
-    resolved, so the promotion criterion is independent of whether any actuator exists.
+    The refusal rail still uses a bounded handler on ``CapabilityActionAPI``, but it must
+    first resolve ``manifest.implementation`` so a missing actuator cannot be certified.
     """
     src = (ROOT / "agents/core/observability/reality_harness.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
@@ -503,7 +502,7 @@ def probe_reality() -> dict:
                if isinstance(n, ast.FunctionDef) and n.name == "_make_action_kernel_probe"), None)
     body = ast.unparse(fn) if fn else ""
     return {
-        "claim": "the only promotable action-capability case registers its own lambda and never imports the manifest implementation",
+        "claim": "the promotable action-capability case resolves the declared manifest implementation before certification",
         "verdict": OPEN if (body and "api.register" in body
                             and "manifest.implementation" not in body) else CLOSED,
         "detail": {
@@ -511,9 +510,8 @@ def probe_reality() -> dict:
             "resolves_manifest_implementation": "manifest.implementation" in body,
         },
         "means": ("OPEN: a green action case proves the kill-switch refuses a lambda, not "
-                  "that an actuator exists. Mitigating and worth recording: run_reality has "
-                  "no caller under agents/, promotion is in-process, and the registry "
-                  "reseeds each boot — so a running install still reports verified: 0."),
+                  "that an actuator exists. CLOSED: the proof resolves the declared actuator "
+                  "before certification; a missing implementation fails closed."),
     }
 
 

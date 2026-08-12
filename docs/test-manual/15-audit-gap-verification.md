@@ -1001,14 +1001,14 @@ Three cost endpoints are wired and all green-looking.
 *shape* of a claim rather than its substance. These are not the same bug; they are the same reflex —
 build a gate, watch it go green, write the green into `STATUS.md`. This section tests the gates.
 
-#### ADV-087 — The action-capability probe certifies its own lambda  ⏱
-- **Surface:** `agents/core/observability/reality_harness.py` · `agents/core/capability_manifests.py` · **Auto:** ⚠️tests/test_reality_harness.py (pins the present behaviour — see ADV-092)
-- **Why it matters:** for 17 of 18 `action:*` capabilities, the only promotable case registers a throwaway handler and asserts the kill-switch refuses *that*. `manifest.implementation` is never imported.
-- **Steps:** `python scripts/qa_audit_probes.py reality`. Then read `_make_action_kernel_probe` and confirm `api.register(manifest.id, lambda ...)` with no resolution of the manifest's implementation.
-- **Expected:** `registers_own_handler: True`, `resolves_manifest_implementation: False`.
-- **FAIL if:** confirmed → the promotion criterion is provably independent of whether any actuator exists.
+#### ADV-087 — The action-capability probe certifies its declared actuator  ⏱ ✅
+- **Surface:** `agents/core/observability/reality_harness.py` · `agents/core/capability_manifests.py` · **Auto:** `tests/test_h27_capability_verification.py`
+- **Why it matters:** a refusal rail is not proof that the declared actuator exists. The promotable case must resolve `manifest.implementation` before it may certify the capability.
+- **Steps:** `python scripts/qa_audit_probes.py reality`. Then run the missing-implementation and implementation-evidence tests in `tests/test_h27_capability_verification.py`.
+- **Expected:** the probe reports implementation resolution; a nonexistent actuator fails closed; a green result names the resolved implementation in evidence metadata.
+- **FAIL if:** a missing implementation still passes or the green evidence cannot identify what it certified.
 - **CROSS:** ADV-088's import-blocking run — that is the empirical half.
-- **Evidence:** the probe output and the excerpt.
+- **Evidence:** fixed by PR #897; cross-confirmed in the [ADV-098 coverage run](../qa-runs/2026-08-12-hermetic-adv-reality-coverage.md).
 
 #### ADV-088 — Block the actuator imports; the pack still passes  ⏱
 - **Surface:** `agents/core/observability/reality_harness.py`
@@ -1100,14 +1100,14 @@ build a gate, watch it go green, write the green into `STATUS.md`. This section 
 - **CROSS:** chapter 14's generated sweep, which enumerates the same route set from the same snapshot.
 - **Evidence:** the list, the exclusions, and the count.
 
-#### ADV-098 — The capability-readiness matrix's escape set  ⏱
-- **Surface:** `agents/core/observability/capability_registry.py`
-- **Why it matters:** the matrix calls its escape set "intentionally empty, kept honest below", while (per the audit) most wired capabilities have no reality case. An empty escape set is only meaningful if something enforces coverage.
-- **Steps:** find the escape set; find whatever asserts coverage; count wired capabilities with and without a case.
-- **Expected:** your own two numbers.
-- **FAIL if:** nothing enforces coverage → the phrase is load-bearing in the docs and decorative in the assertion. **MAJOR** as a gate defect.
+#### ADV-098 — The capability-readiness matrix's escape set  ⏱ ✅
+- **Surface:** `agents/core/observability/reality_harness.py` · `tests/test_capability_readiness_matrix.py`
+- **Why it matters:** an empty escape set is meaningful only when computed against the declared proof cases. The matrix must reject missing, duplicate, mismatched, and explicitly non-promotable bindings.
+- **Steps:** run the readiness-matrix coverage test and the adversarial binding test in `tests/test_h27_capability_verification.py`; count proof-eligible records and gaps.
+- **Expected:** `PENDING_VERIFY` exactly equals the computed gap IDs, with a reason for each. On current `main`: 94 records, 93 proof-eligible, 133 cases, 0 gaps.
+- **FAIL if:** the computed gap IDs differ from `PENDING_VERIFY`, or any malformed binding is accepted as coverage.
 - **CROSS:** `GET /api/metrics/capabilities` (open).
-- **Evidence:** the counts and the endpoint.
+- **Evidence:** [2026-08-12 hermetic ADV reality-coverage run](../qa-runs/2026-08-12-hermetic-adv-reality-coverage.md).
 
 #### ADV-099 — The route-auth matrix is the counter-example — verify it  ⏱
 - **Surface:** `tests/_snapshots/route_auth.json` · `tests/test_hud_v2_parity.py`
@@ -1795,10 +1795,10 @@ does not prove it. They get triaged differently.
 | G21 | Cost persistence across a restart | GAP | `agents/core/cost_tracker.py` | Medium | ✅ | | ADV-082 |
 | G22 | `None` for an unpriced model instead of `0.0` | BUG | `agents/core/llm/cost_estimator.py` | Medium | ✅ | | ADV-079 |
 | G23 | A daily spend cap checked before a cloud route | GAP | `agents/core/llm/hybrid_router.py` | Medium | ✅ | | ADV-083 |
-| G24 | The action-capability probe resolving `manifest.implementation` | BUG | `agents/core/observability/reality_harness.py` | Medium · PARTIAL | — | | ADV-087 |
+| G24 | The action-capability probe resolving `manifest.implementation` | BUG | `agents/core/observability/reality_harness.py` | Medium · PARTIAL | ✅ | | ADV-087, #897 |
 | G25 | Measured (not literal) safety counters in the ambient pack | EVIDENCE | `agents/core/observability/ambient_reality.py` | Medium | ✅ | | ADV-091 |
 | G26 | A parity gate that greps for a caller instead of classifying a prefix | EVIDENCE | `tests/test_hud_v2_parity.py` | Medium · PARTIAL | ✅ | | ADV-096 |
-| G27 | Enforced reality-case coverage for wired capabilities | EVIDENCE | `agents/core/observability/capability_registry.py` | Medium | — | | ADV-098 |
+| G27 | Enforced reality-case coverage for wired capabilities | EVIDENCE | `agents/core/observability/reality_harness.py`, `tests/test_capability_readiness_matrix.py` | Medium | ✅ | | ADV-098 |
 | G28 | `is_degraded()` consulted before recording a capability success | BUG | `agents/core/autonomy/worker.py` | Medium | ✅ | | ADV-094 |
 | G29 | Telegram allowed-user-id parsing, and owner binding on the callback | GAP | `agents/web.py`, `agents/core/channels/telegram.py` | Medium · PARTIAL | ✅ | | §15.9, SEC-B3 |
 | G30 | The pairing gate failing closed on a store error | BUG | `agents/core/channels/gateway.py` | Medium | ✅ | | ADV-108 |
