@@ -247,7 +247,7 @@ async def metrics_kernel():
     return nocache_json(KERNEL_METRICS.snapshot())
 
 
-@router.get("/api/reflection/status")
+@router.get("/api/reflection/status", dependencies=[Depends(user_guard)])
 async def reflection_status():
     """Daily reflection status (H5.15)."""
     orch = get_orch()

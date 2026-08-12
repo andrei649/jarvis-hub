@@ -79,6 +79,12 @@
 - [ ] **Paste the remaining ~12 CodeQL alerts** to the agent — only 13 of the 25 selected came
   through and there's no MCP tool to list code-scanning alerts, so the rest need a manual paste to
   finish triage (6 real ones fixed in #216; the 7 above are FPs/won't-fix).
+- [ ] **(optional) Wire "Max" on the GitHub side** — the codename already auto-triggers the
+  finishing protocol ([`MAX.md`](../MAX.md)) in any Claude Code session via
+  `.claude/skills/max/`. To also make a bare **"Max"** issue/PR comment start a run with no
+  session open, install the Claude GitHub App on the repo (or add a `claude.yml` workflow with
+  an `ANTHROPIC_API_KEY` secret) — app install + secret are owner-only. Until then, the trigger
+  path is: open any Claude session on the repo and say "Max".
 
 ## 🟡 GPU-host work (the last 2 backlog items + Howard)
 

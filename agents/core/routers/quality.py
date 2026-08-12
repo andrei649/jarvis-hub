@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
 
-from agents.core.routers._deps import admin_guard
+from agents.core.routers._deps import admin_guard, user_guard
 
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
@@ -22,7 +22,7 @@ async def quality_status():
     return nocache_json({"stats": q.stats(), "alert": q.check_alert()})
 
 
-@router.get("/api/quality/scores")
+@router.get("/api/quality/scores", dependencies=[Depends(user_guard)])
 async def quality_scores(limit: int = Query(50, ge=1, le=500)):
     """Recent per-request quality scores (most recent first)."""
     orch = get_orch()
