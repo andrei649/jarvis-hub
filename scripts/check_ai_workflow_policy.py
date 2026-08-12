@@ -94,6 +94,12 @@ FORBIDDEN_ACTIVE_GUIDANCE = {
 }
 
 
+def _policy_path(path: Path) -> str:
+    """Return repository-relative paths in the policy's canonical POSIX form."""
+
+    return path.as_posix()
+
+
 class DuplicateKeyError(ValueError):
     """Raised when a JSON object contains an ambiguous duplicate key."""
 
@@ -148,12 +154,12 @@ def _validate_authority(policy: dict[str, Any], errors: list[str]) -> None:
     if authority.get("canonical") is not True:
         errors.append("authority.canonical must be true")
     derived = _string_set(authority.get("derived_documents"), "authority.derived_documents", errors)
-    if derived != {str(path) for path in DERIVED_DOCUMENTS}:
+    if derived != {_policy_path(path) for path in DERIVED_DOCUMENTS}:
         errors.append("authority.derived_documents must name the three maintained guides exactly")
     historical = _string_set(
         authority.get("historical_documents"), "authority.historical_documents", errors
     )
-    if historical != {str(path) for path in HISTORICAL_DOCUMENTS}:
+    if historical != {_policy_path(path) for path in HISTORICAL_DOCUMENTS}:
         errors.append("authority.historical_documents must name all legacy context documents")
 
 
@@ -524,11 +530,13 @@ def _validate_active_documents(root: Path, errors: list[str]) -> None:
     for relative in active_documents:
         text = _read_text(root / relative, errors)
         if ".github/ai-development-policy.json" not in text:
-            errors.append(f"{relative}: must link to the canonical AI development policy")
+            errors.append(
+                f"{_policy_path(relative)}: must link to the canonical AI development policy"
+            )
         folded = text.casefold()
         for phrase, reason in FORBIDDEN_ACTIVE_GUIDANCE.items():
             if phrase in folded:
-                errors.append(f"{relative}: contains {reason}: {phrase!r}")
+                errors.append(f"{_policy_path(relative)}: contains {reason}: {phrase!r}")
 
 
 def _validate_historical_documents(root: Path, errors: list[str]) -> None:
@@ -536,11 +544,13 @@ def _validate_historical_documents(root: Path, errors: list[str]) -> None:
         text = _read_text(root / relative, errors)
         banner = "\n".join(text.splitlines()[:12]).casefold()
         if "historical" not in banner and "superseded" not in banner:
-            errors.append(f"{relative}: missing historical/superseded status near the top")
+            errors.append(
+                f"{_policy_path(relative)}: missing historical/superseded status near the top"
+            )
         if "instructional: false" not in banner:
-            errors.append(f"{relative}: missing instructional: false near the top")
+            errors.append(f"{_policy_path(relative)}: missing instructional: false near the top")
         if ".github/ai-development-policy.json" not in text:
-            errors.append(f"{relative}: must point readers to the canonical policy")
+            errors.append(f"{_policy_path(relative)}: must point readers to the canonical policy")
 
 
 def _validate_template_receipt_block(template: str, errors: list[str]) -> None:
@@ -551,18 +561,20 @@ def _validate_template_receipt_block(template: str, errors: list[str]) -> None:
     missing_fields = sorted(RECEIPT_FIELDS - set(top_level_keys))
     if missing_fields:
         errors.append(
-            f"{PR_TEMPLATE_RELATIVE}: receipt block missing canonical fields: "
+            f"{_policy_path(PR_TEMPLATE_RELATIVE)}: receipt block missing canonical fields: "
             + ", ".join(missing_fields)
         )
     duplicates = sorted({key for key in top_level_keys if top_level_keys.count(key) > 1})
     if duplicates:
         errors.append(
-            f"{PR_TEMPLATE_RELATIVE}: receipt block has duplicate fields: " + ", ".join(duplicates)
+            f"{_policy_path(PR_TEMPLATE_RELATIVE)}: receipt block has duplicate fields: "
+            + ", ".join(duplicates)
         )
     for legacy in ("receipt_producer", "receipt_generated_at"):
         if legacy in top_level_keys:
             errors.append(
-                f"{PR_TEMPLATE_RELATIVE}: use canonical field name without legacy prefix: {legacy}"
+                f"{_policy_path(PR_TEMPLATE_RELATIVE)}: "
+                f"use canonical field name without legacy prefix: {legacy}"
             )
 
 
@@ -570,7 +582,9 @@ def _validate_pr_template(root: Path, errors: list[str]) -> None:
     template = _read_text(root / PR_TEMPLATE_RELATIVE, errors)
     for marker in PR_TEMPLATE_MARKERS:
         if marker not in template:
-            errors.append(f"{PR_TEMPLATE_RELATIVE}: missing required marker {marker!r}")
+            errors.append(
+                f"{_policy_path(PR_TEMPLATE_RELATIVE)}: missing required marker {marker!r}"
+            )
     _validate_template_receipt_block(template, errors)
 
 
