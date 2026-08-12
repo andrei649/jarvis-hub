@@ -1,60 +1,23 @@
-# Dev Methodology — Superpowers-inspired (jarvis-hub)
-
-> Sursă: github.com/obra/superpowers (plugin de metodologie pentru agenți).
-> Pluginul în sine se instalează în Claude Code (vezi mai jos), NU în acest repo.
-> Acest fișier adoptă PRINCIPIILE lui ca reguli de lucru pentru Claude + opencode,
-> complementar lui PARALLEL_WORKFLOW.md (ownership: opencode — nu-l editez).
-
-## Cum instalezi pluginul în Claude Code (Andrei rulează)
-
-```
-/plugin marketplace add obra/superpowers-marketplace
-/plugin install superpowers@superpowers-marketplace
-```
-După instalare, workflow-urile se activează automat înainte de task-uri relevante.
-
+---
+status: superseded
+instructional: false
+superseded_by: .github/ai-development-policy.json
+last_reviewed: 2026-08-10
 ---
 
-## Principiile adoptate (le respect chiar și fără plugin instalat)
+# Archived OpenCode development methodology
 
-### 1. Brainstorm înainte de cod
-Pentru orice task ne-trivial: clarific cerința prin întrebări, propun alternative,
-prezint designul pe secțiuni pentru validare — ÎNAINTE de a scrie cod.
-(Deja fac asta prin `AskUserQuestion` la decizii de arhitectură.)
+This file is retained only to prevent older OpenCode sessions and links from failing closed into
+invented instructions. It is **not an active plan** and must not be used as current repository
+policy.
 
-### 2. Plan scris, în pași mici
-Sparg munca în task-uri de 2-5 minute. Fiecare task are: cale de fișier exactă,
-ce se schimbă, pas de verificare. Plan-urile trăiesc în `.opencode/plans/`.
+The former methodology contained stale assumptions about `master`, push-per-microtask behavior,
+vendor-owned files, and local locks. Those rules are superseded by:
 
-### 3. TDD: RED → GREEN → REFACTOR
-- Scriu testul întâi, îl văd PICÂND (red)
-- Scriu codul minim cât să treacă (green)
-- Curăț, păstrând testele verzi (refactor)
-- Commit după fiecare ciclu
-(Notă: testele router-HTTP din sesiunile trecute treceau FALS pe dummy —
-exact ce previne disciplina „watch it fail": un test care nu pică întâi nu dovedește nimic.)
+- [the canonical AI development policy](../../.github/ai-development-policy.json);
+- [`AGENTS.md`](../../AGENTS.md), the concise contributor entrypoint;
+- [`docs/AGENT_WORKFLOW.md`](../../docs/AGENT_WORKFLOW.md), the derived human guide;
+- [`PARALLEL_WORKFLOW.md`](../../PARALLEL_WORKFLOW.md), the derived coordination playbook.
 
-### 4. Subagent-driven, cu review în 2 etape
-Pentru task-uri paralele/independente: dispatch subagent per task, apoi review
-în două straturi — (a) conformitate cu spec-ul, (b) calitatea codului.
-
-### 5. Git worktrees pentru paralelism
-Lucru izolat pe branch/worktree propriu → zero coliziuni. Se leagă direct de
-PARALLEL_WORKFLOW.md (locks + ownership Claude/opencode).
-
-### 6. Commit mic + push după fiecare unitate
-Niciodată „big bang" la final. Fiecare skill/fix = commit+push imediat, ca munca
-să nu se piardă dacă sesiunea se termină. (Regulă deja activă.)
-
-### 7. Finalizare branch
-Înainte de merge: rulez TOATE testele, raportez pe severitate, prezint opțiunile
-(merge/PR) — nu fac merge cu teste roșii.
-
----
-
-## Checklist de început de sesiune (Claude)
-1. `git pull --rebase origin master` — sync cu opencode
-2. `python lock.py status` — văd ce e blocat
-3. `python lock.py check <cale>` înainte de a edita orice
-4. Lucrez în pattern loader (`skills/<name>/`), nu router HTTP
-5. Commit + push după fiecare unitate; eliberez lock-urile la final
+Run `python scripts/check_ai_workflow_policy.py` from the repository root before treating workflow
+changes as valid. Historical content remains available in Git history.
