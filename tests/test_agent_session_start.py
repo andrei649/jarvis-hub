@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 HOOK = REPO / ".claude" / "hooks" / "session-start.sh"
+GIT_BASH = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
 
 
 def _fake_npm(bin_dir: Path) -> Path:
@@ -28,8 +30,10 @@ def _run_hook(project: Path, bin_dir: Path, call_log: Path, *, remote: bool = Tr
         "NPM_CALL_LOG": str(call_log),
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
     }
+    bash = str(GIT_BASH) if os.name == "nt" and GIT_BASH.exists() else shutil.which("bash")
+    assert bash is not None, "bash is required to execute the session-start hook"
     return subprocess.run(
-        ["bash", str(HOOK)],
+        [bash, str(HOOK)],
         env=env,
         capture_output=True,
         text=True,
