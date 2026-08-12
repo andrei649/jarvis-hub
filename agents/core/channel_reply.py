@@ -160,8 +160,12 @@ class ChannelReplyBroker:
         if self._channel_manager is None:
             return {"status": "failed", "reason": "channel_manager_unavailable",
                     "channel": channel}
+        send_reply = getattr(self._channel_manager, "send_channel_reply", None)
+        if not callable(send_reply):
+            return {"status": "failed", "reason": "reply_transport_unavailable",
+                    "channel": channel}
         try:
-            sent = await self._channel_manager.send(channel, text, **reply)
+            sent = await send_reply(channel, text, **reply)
         except Exception:
             logger.warning("channel reply send failed", exc_info=True)
             return {"status": "failed", "reason": "send_failed", "channel": channel}
