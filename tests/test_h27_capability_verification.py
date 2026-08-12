@@ -5,6 +5,7 @@ import pytest
 
 from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
 from agents.core.observability import capability_registry as cr
+from agents.core.observability import reality_harness as rh
 from agents.core.observability.reality_harness import (
     ACTION_CAPABILITY_CASES,
     CASES,
@@ -48,6 +49,67 @@ def test_reality_case_has_stable_reference():
 
     case = RealityCase("tool:x", "tool-x-protocol", "works", probe)
     assert case.ref == "reality-v1:tool-x-protocol"
+
+
+def test_reality_coverage_gate_explains_every_invalid_proof_binding():
+    async def probe():
+        return True
+
+    checker = getattr(rh, "reality_coverage_gaps", None)
+    assert checker is not None, "the readiness matrix has no executable coverage gate"
+
+    records = [
+        cr.CapabilityRecord(
+            id="tool:healthy",
+            kind="tool",
+            state=cr.WIRED,
+            verification="reality-v1:healthy",
+        ),
+        cr.CapabilityRecord(
+            id="tool:missing",
+            kind="tool",
+            state=cr.WIRED,
+            verification="reality-v1:missing",
+        ),
+        cr.CapabilityRecord(
+            id="tool:duplicate",
+            kind="tool",
+            state=cr.WIRED,
+            verification="reality-v1:duplicate",
+        ),
+        cr.CapabilityRecord(
+            id="tool:mismatch",
+            kind="tool",
+            state=cr.WIRED,
+            verification="reality-v1:mismatch",
+        ),
+        cr.CapabilityRecord(
+            id="tool:non-promotable",
+            kind="tool",
+            state=cr.WIRED,
+            verification="reality-v1:non-promotable",
+        ),
+    ]
+    cases = [
+        RealityCase("tool:healthy", "healthy", "covered", probe),
+        RealityCase("tool:duplicate", "duplicate", "first", probe),
+        RealityCase("tool:duplicate", "duplicate", "second", probe),
+        RealityCase("tool:someone-else", "mismatch", "wrong capability", probe),
+        RealityCase(
+            "tool:non-promotable",
+            "non-promotable",
+            "cannot certify readiness",
+            probe,
+            metadata={"promotable": False},
+        ),
+    ]
+
+    assert checker(records, cases) == {
+        "tool:missing": "missing-case",
+        "tool:duplicate": "duplicate-case",
+        "tool:mismatch": "capability-mismatch",
+        "tool:non-promotable": "non-promotable-case",
+    }
 
 
 def test_every_action_and_live_tool_verification_ref_matches_a_real_case():

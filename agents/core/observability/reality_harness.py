@@ -53,6 +53,28 @@ def reality_enabled() -> bool:
     return env_flag("JARVIS_REALITY_HARNESS")
 
 
+def reality_coverage_gaps(records: list, cases: list[RealityCase]) -> dict[str, str]:
+    """Explain every live readiness record without one promotable declared proof case."""
+    cases_by_ref: dict[str, list[RealityCase]] = {}
+    for case in cases:
+        cases_by_ref.setdefault(case.ref, []).append(case)
+
+    gaps: dict[str, str] = {}
+    for record in sorted(records, key=lambda item: item.id):
+        if record.state not in {"wired", "verified", "ga"}:
+            continue
+        matches = cases_by_ref.get(record.verification, [])
+        if not matches:
+            gaps[record.id] = "missing-case"
+        elif len(matches) != 1:
+            gaps[record.id] = "duplicate-case"
+        elif matches[0].capability_id != record.id:
+            gaps[record.id] = "capability-mismatch"
+        elif matches[0].metadata.get("promotable", True) is False:
+            gaps[record.id] = "non-promotable-case"
+    return gaps
+
+
 async def run_reality(
     cases: list[RealityCase], *, promote: bool = True, now: str | None = None
 ) -> dict:

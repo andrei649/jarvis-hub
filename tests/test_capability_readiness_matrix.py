@@ -138,6 +138,20 @@ def test_escape_sets_are_honest():
     assert not stale_pending, f"PENDING_VERIFY is stale (verified / gone): {stale_pending}"
 
 
+def test_pending_verify_exactly_matches_reality_coverage_gaps():
+    from agents.core.observability.reality_harness import (
+        all_reality_cases,
+        reality_coverage_gaps,
+    )
+
+    orch = _booted_orchestrator()
+    gaps = reality_coverage_gaps(_records(), all_reality_cases(orch))
+    assert set(gaps) == PENDING_VERIFY, (
+        "PENDING_VERIFY must exactly classify every wired capability whose declared "
+        f"verification is not backed by one promotable reality case: {gaps}"
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     if "--update" in sys.argv:
         SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
