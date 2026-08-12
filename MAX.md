@@ -101,7 +101,8 @@ A product with zero randomness is a spreadsheet. Nerva carries a controlled dose
 and Max is its custodian. Two instruments, both bounded:
 
 **The run name.** Draw one word from each column at random (re-draw on collision with
-`docs/MAX_RUNS.md`):
+`docs/MAX_RUNS.md`) — or let `python scripts/max_run_name.py` draw it for you (Spark S-002; add
+`--seed N` to reproduce a name, `--plain` for the bare `adj-noun`):
 
 | | adjectives | nouns |
 |---|---|---|
