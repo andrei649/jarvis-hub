@@ -49,7 +49,7 @@ async def api_agents():
     return nocache_json({"agents": _enrich_agents()})
 
 
-@router.get("/api/agents/{agent_id}/soul")
+@router.get("/api/agents/{agent_id}/soul", dependencies=[Depends(user_guard)])
 async def get_agent_soul(agent_id: str):
     """Read and return the live SOUL.md content for an agent."""
     agent_id = agent_id.strip().lower()
@@ -106,7 +106,7 @@ async def get_agents():
     return {"agents": result}
 
 
-@router.get("/api/agents/history")
+@router.get("/api/agents/history", dependencies=[Depends(user_guard)])
 async def agents_history():
     """H10.17 — per-agent run-history rollup (runs, last, ok-rate, avg latency)."""
     orch = get_orch()
@@ -115,7 +115,7 @@ async def agents_history():
     return nocache_json({"agents": orch.run_history.agents()})
 
 
-@router.get("/api/agents/{agent_id}/history")
+@router.get("/api/agents/{agent_id}/history", dependencies=[Depends(user_guard)])
 async def agent_history(agent_id: str, limit: int = Query(50, ge=1, le=200)):
     """H10.17 — recent runs for one agent (most-recent first)."""
     agent_id = agent_id.strip().lower()
