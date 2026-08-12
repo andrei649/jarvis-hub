@@ -1,0 +1,57 @@
+name: CI Metrics
+
+on:
+  workflow_run:
+    workflows: ["CI", "Security", "Code Health"]
+    types: [completed]
+
+concurrency:
+  group: ci-metrics-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        # workflow_run executes with default-branch authority. Never execute
+        # scripts from the triggering PR head; the head SHA is evidence only.
+
+      - name: Fetch exact run evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_JSON: ${{ toJson(github.event.workflow_run) }}
+        shell: bash
+        run: |
+          printf '%s' "$RUN_JSON" > "$RUNNER_TEMP/run.json"
+          gh api --paginate --slurp \
+            "/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" \
+            > "$RUNNER_TEMP/jobs.json"
+
+      - name: Calculate feedback metrics
+        run: >-
+          python scripts/ci_metrics.py
+          --run-json "$RUNNER_TEMP/run.json"
+          --jobs-json "$RUNNER_TEMP/jobs.json"
+          --json-output "$RUNNER_TEMP/ci-metrics.json"
+          --markdown-output "$RUNNER_TEMP/ci-metrics.md"
+
+      - name: Publish job summary
+        if: ${{ always() }}
+        run: cat "$RUNNER_TEMP/ci-metrics.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve measured evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ci-metrics-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ci-metrics.json
+            ${{ runner.temp }}/ci-metrics.md
+          retention-days: 90

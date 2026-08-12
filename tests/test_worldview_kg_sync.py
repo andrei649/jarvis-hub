@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import types
 
+from agents.core.memory.fusion import FusedHit
 from agents.core.memory.manager import MemoryManager
 from agents.core.memory.worldview_sync import WorldViewKGSync
+from agents.core.security import taint
+from agents.core.security.rag_guard import provenance_from_hit, wrap_memory
 
 
 class FakeWorldView:
@@ -66,10 +69,17 @@ async def test_sync_ingests_geo_events_into_graph():
     ev = next(h for h in hits if h["type"] == "geo_event")
     assert ev["properties"]["source"] == "demo"
     assert ev["properties"]["aoi"] == "Strait of Hormuz"
+    assert taint.is_tainted(ev["properties"]) is True
+    assert ev["properties"]["taint_source"] == "worldview"
 
     # The IN_AOI edge connects the event to the AOI.
     rels = mm.graph.get_relations("Strait of Hormuz")
     assert any(r["relation"] == "IN_AOI" for r in rels)
+
+    # Persisting OSINT taint must not contaminate a later local/trusted fact.
+    await mm.add_fact("Home server", entity_type="server", properties={"location": "living room"})
+    server = next(h for h in mm.graph.search("Home") if h["type"] == "server")
+    assert taint.is_tainted(server["properties"]) is False
 
 
 async def test_recall_returns_geo_event_via_rrf():
@@ -82,6 +92,17 @@ async def test_recall_returns_geo_event_via_rrf():
     # At least one fused hit came from the graph source and is the geo-event.
     assert any("graph" in fh.sources for fh in fused)
     assert any("Hormuz" in fh.id and fh.payload.get("type") == "geo_event" for fh in fused)
+
+    geo = next(fh for fh in fused if "Hormuz" in fh.id and fh.payload.get("type") == "geo_event")
+    snippet = provenance_from_hit(FusedHit(
+        id=geo.id,
+        score=geo.score,
+        sources=list(geo.sources),
+        payload=geo.payload,
+    ))
+    assert snippet.source == "worldview"
+    assert taint.is_untrusted_source(snippet.source) is True
+    assert wrap_memory([snippet], datamark=False).tainted is True
 
 
 async def test_repeated_sync_upserts_one_node_per_event():

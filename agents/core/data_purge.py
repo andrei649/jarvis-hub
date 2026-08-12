@@ -28,6 +28,8 @@ pass ``--no-backup``.
 This list mirrors the export's content set; when the export module lands on main its
 ``EXPORT_DBS`` and these allow-lists should be reconciled (the export branch migrated notes
 to a SQLite ``notes.db``; on main notes is still ``notes.json``, hence ``PURGE_JSON``).
+The reconciliation invariant — nothing the export names may be on the forget KEEP list —
+is now enforced by ``tests/test_forget_export_purge_parity.py``.
 """
 
 from __future__ import annotations

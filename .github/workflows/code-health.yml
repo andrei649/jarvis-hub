@@ -1,8 +1,11 @@
 name: Code Health
 
-# Advisory static-analysis pass (lint, format, dead-code, complexity).
-# Non-blocking by design — Jarvis ships "verde devreme peste perfecțiune".
-# It surfaces improvement candidates without gating merges.
+permissions:
+  contents: read
+
+# Static-analysis findings are advisory. Missing/crashed analyzers are an
+# infrastructure failure and fail closed so a green job always means the pinned
+# toolchain actually ran.
 on:
   pull_request:
     paths:
@@ -16,9 +19,14 @@ on:
     # Mondays 06:00 UTC — a weekly health digest on the default branch.
     - cron: "0 6 * * 1"
 
+concurrency:
+  group: code-health-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -32,8 +40,8 @@ jobs:
 
       - name: Run code-health pass
         run: |
-          python scripts/code_health.py | tee code_health.txt
-          python scripts/code_health.py --json > code_health.json
+          set -o pipefail
+          python scripts/code_health.py --json-output code_health.json | tee code_health.txt
 
       - name: Publish digest to job summary
         if: always()
@@ -41,9 +49,13 @@ jobs:
           {
             echo '## 🩺 Code health digest'
             echo '```'
-            cat code_health.txt
+            if [[ -f code_health.txt ]]; then
+              cat code_health.txt
+            else
+              echo 'Code-health execution did not produce a text report.'
+            fi
             echo '```'
-            echo '_Advisory only — does not block this PR. Run locally with `python scripts/code_health.py`._'
+            echo '_Findings are advisory; missing/crashed analyzers fail the job. Run locally with `python scripts/code_health.py`._'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload report artifact
