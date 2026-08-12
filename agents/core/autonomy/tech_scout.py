@@ -172,7 +172,10 @@ class TechScout:
                             "query": query,
                             "source": "websearch",
                         },
-                        origin="generated",
+                        # SEC-B5: the finding is REBUILT from websearch results,
+                        # so it must carry the websearch origin (and with it the
+                        # ingress taint) instead of being declared "generated".
+                        origin="websearch",
                         risk_tier=int(RiskTier.READ_ONLY),
                     )
                 except Exception:
