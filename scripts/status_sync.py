@@ -13,11 +13,23 @@ Sources (reused, not duplicated):
   * routes → ``tests/_snapshots/route_surface.json`` — the route-parity guard's
     canonical, de-duplicated METHOD+PATH surface, already kept honest by CI. Reading
     the snapshot avoids importing the whole app just to count routes.
-  * tests  → ``pytest --collect-only -q`` — the exact collected-test count.
+  * tests  → ``pytest --collect-only -q`` — the exact collected-test count when
+    explicitly refreshing counts; ``project-status.json`` is the tracked count source
+    for the fast generated-artifact gate.
 
-Intentionally NOT wired as a blocking CI gate: the header count carries a ``~`` to
-signal it's approximate, so a one-test drift shouldn't fail a build. ``--check`` is
-here for whoever wants a periodic nudge, not a merge wall.
+There are deliberately two policies:
+
+* ``--check --reuse-test-counts`` is the cheap, blocking generated-artifact gate. It
+  recomputes version/routes/agents/backlog projections but reuses all three tracked
+  test counts, so it is safe to invoke from pytest and catches BACKLOG-only drift
+  without recursively collecting the full suite.
+* ``--check`` (or the default write command) performs the slower live test-count
+  refresh. The header carries a ``~`` because count freshness itself is informative,
+  not a reason to nest a second full test run inside the release-gate test.
+
+Ready-head CI does not re-collect the backend suite after executing it. Pytest writes
+one JUnit result and ``--verify-test-count backend`` compares that exact run with the
+tracked count; Vitest and Jest use their equivalent JSON results.
 
 ``--check`` deliberately ignores the ``latest_ci_commit`` stamp (it adopts whatever
 the committed files carry): the stamp is cosmetic provenance and inherently
@@ -60,6 +72,8 @@ _MOBILE_TESTS_RE = re.compile(r"(mobile \*\*)([\d,]+)( jest\*\*)")
 _ROUTES_RE = re.compile(r"(HTTP routes:\*\* )(\d+)")
 _LANE_ROW_RE = re.compile(r"^\|\s*(A\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|", re.MULTILINE)
 _VERSION_RE = re.compile(r"__version__\s*=\s*[\"']([^\"']+)[\"']")
+_JUNIT_TESTS_RE = re.compile(r"<testsuites?\b[^>]*\btests=[\"'](\d+)[\"']", re.IGNORECASE)
+FAST_FIX_COMMAND = "python scripts/status_sync.py --reuse-test-counts"
 
 
 def count_routes() -> int:
@@ -76,6 +90,10 @@ def count_tests(repo: Path = REPO) -> int:
     every test module) — call only from the CLI paths, never from a unit test (it
     would recurse into a full collection).
     """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        raise RuntimeError(
+            "refusing nested pytest collection; use --reuse-test-counts inside a pytest run"
+        )
     proc = subprocess.run(  # noqa: S603  # nosec B603
         [
             sys.executable,
@@ -121,6 +139,42 @@ def parse_json_test_count(output: str) -> int:
     raise ValueError("JSON test result with numTotalTests not found")
 
 
+def parse_junit_test_count(output: str) -> int:
+    """Read the aggregate test count from pytest's JUnit testsuite element."""
+    match = _JUNIT_TESTS_RE.search(output)
+    if match is None:
+        raise ValueError("JUnit test result with aggregate tests count not found")
+    return int(match.group(1))
+
+
+def reported_test_count_result(
+    surface: str, output: str, *, existing: dict | None = None
+) -> dict[str, object]:
+    """Compare an already-produced test-run result with tracked truth."""
+    if surface not in {"backend", "frontend", "mobile"}:
+        raise ValueError(f"unsupported test surface: {surface}")
+    if existing is None:
+        try:
+            existing = json.loads(PROJECT_STATUS.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError("tracked project status is missing or invalid") from exc
+    tests = existing.get("tests", {}) if isinstance(existing, dict) else {}
+    expected = tests.get(surface)
+    if not isinstance(expected, int) or isinstance(expected, bool):
+        raise RuntimeError(f"tracked project status has no reusable {surface} count")
+    parser = parse_junit_test_count if surface == "backend" else parse_json_test_count
+    try:
+        actual = parser(output)
+    except ValueError as exc:
+        raise RuntimeError(f"test-count result missing for {surface}") from exc
+    return {
+        "status": "in_sync" if actual == expected else "out_of_sync",
+        "surface": surface,
+        "expected": expected,
+        "actual": actual,
+    }
+
+
 def _json_test_count(package_dir: Path, extra_args: list[str]) -> int:
     """Run a JS test suite with its JSON reporter and return the collected count."""
     npm = shutil.which("npm.cmd") or shutil.which("npm") or "npm"
@@ -163,6 +217,25 @@ def js_test_counts(*, reuse: bool, existing: dict | None = None) -> tuple[int, i
     if not isinstance(frontend, int) or not isinstance(mobile, int):
         raise RuntimeError("tracked project status has no reusable frontend/mobile counts")
     return frontend, mobile
+
+
+def tracked_test_counts(existing: dict | None = None) -> tuple[int, int, int]:
+    """Return backend/frontend/mobile counts from the tracked status artifact.
+
+    This is intentionally a consistency source, not a claim that the counts were
+    freshly collected. A live refresh remains available through the default CLI.
+    """
+    if existing is None:
+        try:
+            existing = json.loads(PROJECT_STATUS.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError("tracked project status is missing or invalid") from exc
+    tests = existing.get("tests", {}) if isinstance(existing, dict) else {}
+    names = ("backend", "frontend", "mobile")
+    values = tuple(tests.get(name) for name in names)
+    if not all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+        raise RuntimeError("tracked project status has no reusable backend/frontend/mobile counts")
+    return int(values[0]), int(values[1]), int(values[2])
 
 
 def count_active_agents(registry: dict) -> int:
@@ -342,11 +415,17 @@ def latest_ci_commit(*, env=None, runner=None) -> str:
     return main_sha
 
 
-def collect_project_status(*, reuse_js_counts: bool = False) -> dict:
-    frontend_tests, mobile_tests = js_test_counts(reuse=reuse_js_counts)
+def collect_project_status(
+    *, reuse_js_counts: bool = False, reuse_test_counts: bool = False
+) -> dict:
+    if reuse_test_counts:
+        backend_tests, frontend_tests, mobile_tests = tracked_test_counts()
+    else:
+        backend_tests = count_tests()
+        frontend_tests, mobile_tests = js_test_counts(reuse=reuse_js_counts)
     return build_project_status(
         version=_version(),
-        backend_tests=count_tests(),
+        backend_tests=backend_tests,
         frontend_tests=frontend_tests,
         mobile_tests=mobile_tests,
         routes=count_routes(),
@@ -454,7 +533,56 @@ def _status_for_check(status: dict) -> dict:
     return status
 
 
-def main(argv: list[str]) -> int:
+def changed_status_keys(current: object, expected: object, prefix: str = "") -> list[str]:
+    """Return stable dotted paths for semantic JSON differences."""
+    if isinstance(current, dict) and isinstance(expected, dict):
+        changed = []
+        for key in sorted(set(current) | set(expected)):
+            path = f"{prefix}.{key}" if prefix else str(key)
+            if key not in current or key not in expected:
+                changed.append(path)
+            else:
+                changed.extend(changed_status_keys(current[key], expected[key], path))
+        return changed
+    if current != expected:
+        return [prefix or "$root"]
+    return []
+
+
+def generated_drift(status: dict, expected_docs: dict[Path, str]) -> dict[str, list[str]]:
+    """Describe generated JSON keys and files that differ without mutating them."""
+    try:
+        current_status = json.loads(PROJECT_STATUS.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        current_status = None
+    keys = changed_status_keys(current_status, status)
+    files = []
+    expected_json = json.dumps(status, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    try:
+        current_json = PROJECT_STATUS.read_text(encoding="utf-8")
+    except OSError:
+        current_json = ""
+    if current_json != expected_json:
+        files.append(str(PROJECT_STATUS.relative_to(REPO)))
+    for path, expected in expected_docs.items():
+        try:
+            current = path.read_text(encoding="utf-8")
+        except OSError:
+            current = ""
+        if current != expected:
+            files.append(str(path.relative_to(REPO)))
+    return {"changed_keys": keys, "files": files}
+
+
+def fix_command(*, reuse_js_counts: bool, reuse_test_counts: bool) -> str:
+    if reuse_test_counts:
+        return FAST_FIX_COMMAND
+    if reuse_js_counts:
+        return "python scripts/status_sync.py --reuse-js-counts"
+    return "python scripts/status_sync.py"
+
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true")
     parser.add_argument(
@@ -462,41 +590,144 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="reuse tracked frontend/mobile counts (for Python-only CI jobs)",
     )
-    args = parser.parse_args(argv)
-    status = collect_project_status(reuse_js_counts=args.reuse_js_counts)
-    if args.check:
-        # Exclude the volatile, self-referential commit stamp from the gate.
-        status = _status_for_check(status)
-    expected_json = json.dumps(status, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    try:
-        expected_docs = _expected_docs(status)
-    except ValueError as exc:
-        print(f"Generated project status cannot be synchronized: {exc}")
-        return 1
-    if args.check:
-        drift = []
-        if (
-            not PROJECT_STATUS.exists()
-            or PROJECT_STATUS.read_text(encoding="utf-8") != expected_json
-        ):
-            drift.append(str(PROJECT_STATUS.relative_to(REPO)))
-        drift.extend(
-            str(path.relative_to(REPO))
-            for path, expected in expected_docs.items()
-            if path.read_text(encoding="utf-8") != expected
-        )
-        if drift:
-            print("Generated project status out of sync:", ", ".join(drift))
-            print("Fix with: python scripts/status_sync.py")
-            return 1
-        print("Generated project status in sync:", json.dumps(status["tests"]))
-        return 0
+    parser.add_argument(
+        "--reuse-test-counts",
+        action="store_true",
+        help="reuse all tracked test counts for the fast generated-artifact gate",
+    )
+    parser.add_argument("--json", action="store_true", help="emit a machine-readable result")
+    parser.add_argument(
+        "--verify-test-count",
+        choices=("backend", "frontend", "mobile"),
+        help="verify an existing pytest/Vitest/Jest result against tracked status",
+    )
+    parser.add_argument("--test-result", type=Path, help="pytest/Vitest/Jest result path")
+    return parser
 
+
+def _verify_test_count(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    if args.test_result is None:
+        parser.error("--verify-test-count requires --test-result")
+    try:
+        result = reported_test_count_result(
+            args.verify_test_count,
+            args.test_result.read_text(encoding="utf-8", errors="replace"),
+        )
+    except (OSError, RuntimeError) as exc:
+        result = {"status": "error", "error": str(exc)}
+        print(
+            json.dumps(result, sort_keys=True) if args.json else f"Test-count check failed: {exc}"
+        )
+        return 2
+    print(
+        json.dumps(result, sort_keys=True)
+        if args.json
+        else (f"{result['surface']} test count: {result['actual']} (tracked {result['expected']})")
+    )
+    return 0 if result["status"] == "in_sync" else 1
+
+
+def _report_check_result(
+    status: dict,
+    drift: dict[str, list[str]],
+    command: str,
+    *,
+    json_output: bool,
+) -> int:
+    if drift["files"]:
+        payload = {
+            "status": "out_of_sync",
+            **drift,
+            "fix_command": command,
+        }
+        if json_output:
+            print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        else:
+            print("Generated project status out of sync:", ", ".join(drift["files"]))
+            print("Changed status keys:", ", ".join(drift["changed_keys"]) or "none")
+            print(f"Fix with: {command}")
+        return 1
+    payload = {
+        "status": "in_sync",
+        **drift,
+        "fix_command": None,
+        "tests": status["tests"],
+    }
+    if json_output:
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print("Generated project status in sync:", json.dumps(status["tests"]))
+    return 0
+
+
+def _write_generated_status(
+    status: dict,
+    expected_docs: dict[Path, str],
+    drift: dict[str, list[str]],
+    *,
+    json_output: bool,
+) -> int:
+    expected_json = json.dumps(status, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     PROJECT_STATUS.write_text(expected_json, encoding="utf-8", newline="\n")
     for path, expected in expected_docs.items():
         path.write_text(expected, encoding="utf-8", newline="\n")
-    print(format_update_message(status))
+    if json_output:
+        print(
+            json.dumps(
+                {"status": "updated", **drift, "fix_command": None, "tests": status["tests"]},
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(format_update_message(status))
     return 0
+
+
+def _sync_project_status(args: argparse.Namespace) -> int:
+    try:
+        status = collect_project_status(
+            reuse_js_counts=args.reuse_js_counts,
+            reuse_test_counts=args.reuse_test_counts,
+        )
+    except RuntimeError as exc:
+        payload = {"status": "error", "error": str(exc)}
+        print(json.dumps(payload, sort_keys=True) if args.json else f"Status sync failed: {exc}")
+        return 2
+    if args.check:
+        # Exclude the volatile, self-referential commit stamp from the gate.
+        status = _status_for_check(status)
+    try:
+        expected_docs = _expected_docs(status)
+    except ValueError as exc:
+        payload = {"status": "error", "error": str(exc)}
+        print(
+            json.dumps(payload, sort_keys=True)
+            if args.json
+            else f"Generated project status cannot be synchronized: {exc}"
+        )
+        return 1
+    drift = generated_drift(status, expected_docs)
+    command = fix_command(
+        reuse_js_counts=args.reuse_js_counts,
+        reuse_test_counts=args.reuse_test_counts,
+    )
+    if args.check:
+        return _report_check_result(status, drift, command, json_output=args.json)
+    return _write_generated_status(
+        status,
+        expected_docs,
+        drift,
+        json_output=args.json,
+    )
+
+
+def main(argv: list[str]) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.verify_test_count:
+        return _verify_test_count(args, parser)
+    return _sync_project_status(args)
 
 
 if __name__ == "__main__":

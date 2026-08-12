@@ -380,10 +380,26 @@ async def _probe_creative_release_queued() -> bool:
         shutil.rmtree(d, ignore_errors=True)
 
 
-def _make_action_kernel_probe(manifest):
-    """Build a hermetic probe through the real H27 action facade and kernel."""
+def _resolve_implementation(spec: str):
+    """Resolve a manifest's ``module:attr[.attr…]`` implementation to the real object."""
+    import importlib
 
-    async def _probe() -> bool:
+    module_name, _, attr_path = spec.partition(":")
+    target = importlib.import_module(module_name)
+    for attr in attr_path.split("."):
+        target = getattr(target, attr)
+    return target
+
+
+def _make_action_kernel_probe(manifest):
+    """Build a hermetic probe through the real H27 action facade and kernel.
+
+    ADV-087: the refusal rail alone would certify a self-registered lambda, so the
+    probe first resolves ``manifest.implementation`` — a manifest whose declared
+    actuator does not exist fails closed instead of promoting.
+    """
+
+    async def _probe():
         import tempfile
         from unittest.mock import patch
 
@@ -391,6 +407,10 @@ def _make_action_kernel_probe(manifest):
         from agents.core.capability_actions import CapabilityActionAPI
         from agents.core.kernel import authorize
         from agents.core.security.capability import CapabilityBroker, KillSwitch
+
+        implementation = _resolve_implementation(manifest.implementation)
+        if not callable(implementation):
+            return False
 
         executed = []
         with tempfile.TemporaryDirectory(prefix="reality-action-") as directory:
@@ -417,7 +437,14 @@ def _make_action_kernel_probe(manifest):
                 {"JARVIS_UNIFIED_ACTION_API": "1", "JARVIS_ACTION_KERNEL": "1"},
             ):
                 result = await api.perform(manifest.id, params)
-        return result.status == "refused" and "kill-switch" in result.reason and not executed
+        passed = result.status == "refused" and "kill-switch" in result.reason and not executed
+        return {
+            "passed": passed,
+            "metadata": {
+                "implementation": manifest.implementation,
+                "implementation_resolves": True,
+            },
+        }
 
     return _probe
 
