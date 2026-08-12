@@ -17,3 +17,4 @@
 | id | date | run | what | where | status |
 |----|------|-----|------|-------|--------|
 | S-001 | 2026-08-11 | 000 | Max runs draw two-word names at random (amber-quill, feral-lantern…) — entropy as identity: every run is nameable, greppable, and slightly unpredictable | `MAX.md` §6 + branch/PR names | live |
+| S-002 | 2026-08-11 | nimble-beacon | `scripts/max_run_name.py` — the entropy ritual made real: draws the two-word name (seedable, `--plain`), each noun carrying one honest wink of a tagline ("beacon — lit so the next run finds its way"). Stdlib only, no side effects but stdout, deletable in one commit. | `scripts/max_run_name.py` | live |
