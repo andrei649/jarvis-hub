@@ -661,9 +661,25 @@ six refuted ones (so nobody chases them), the never-measured surfaces, and a **3
 missing-code/missing-feature gap ledger**: [`docs/test-manual/15-audit-gap-verification.md`](docs/test-manual/15-audit-gap-verification.md)
 (160 cases, `ADV` prefix) + `scripts/qa_audit_probes.py`, which reproduces nine of the claims on the
 owner's machine in 30 seconds, read-only.
+  *Update 2026-08-11 (successor of split #894):* the last probe still OPEN on `main` — **ADV-087**,
+  "capability probe registering its own lambda" — is **FIXED**: `_make_action_kernel_probe` now
+  resolves `manifest.implementation` to the real actuator before the refusal rail and fails closed
+  when the declared implementation does not resolve; the green case's evidence names the certified
+  implementation (+2 tests in `test_h27_capability_verification.py`). `qa_audit_probes.py` reports all
+  nine claims CLOSED.
 
-- [ ] **SEC-B6 — gate hardening.** Extend `test_route_auth_matrix.py` to require classification of
-  *read* routes touching personal data, so the theme-B read/write asymmetry can't regress open.
+- [ ] 🟡 **SEC-B6 — gate hardening.** *In review (successor of split #894), not yet accepted truth.*
+  `test_route_auth_matrix.py` gains a *read* half: `test_no_unclassified_open_read` forces every OPEN
+  GET to be classified by the **substance of its handler** (`INTENTIONALLY_OPEN_READS`, each with a
+  reason) or carry `user_guard`; `test_read_classifications_are_honest` keeps both sets shrink-only so
+  the allowlist can't mask a later guard. The classification pass found 13 personal-content reads
+  shipping open (per-agent run history + SOUL, quality scores, review queue, missions, workflows,
+  learning, arena match, oracle conflicts, reflection status, worldview overview) — all flipped to
+  `user_guard`, snapshot re-seeded, generated chapter-14 sweep regenerated. Per-handler substance
+  evidence: [`docs/security/SEC-B6-open-reads-evidence.md`](docs/security/SEC-B6-open-reads-evidence.md).
+  **Mark ✅ DONE only when the successor PR passes fresh exact-head CI + independent review** (owner
+  integrator directive, #894). *Open follow-up (gap):* forget export/purge lists are maintained
+  separately — add a test asserting `export_manifest ⊆ (purged ∪ KEEP)`.
 
 **Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
 3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source
@@ -2654,6 +2670,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H22.9 ✅ | **Rute guvernate via MCP server** (BuilderIO/agent-native, *pattern*) — manifest acțiuni din OpenAPI; `mcp/server.py` expune rute allow-listed ca tool-uri MCP lângă agenți, reutilizând permission gate. **Spec:** `docs/superpowers/specs/2026-06-20-h22.9-agent-native-routes-design.md`. **Cod livrat:** read-only (PR #272) — `core/mcp/route_tools.py` derivă scheme din semnăturile handlerelor + allow-list; + mutating writes (PR #279) **în spatele unui al doilea kill-switch, default-off**; +`tests/test_mcp_route_tools.py`. | 5 | P3 | — | un client MCP poate conduce hub-ul prin rute guvernate |
 | H22.11 ✅ | **Drift-check surse 3rd-party vendorate** — golul pe care Dependabot nu-l vede (cod vendorat: superpowers; tool doc-pinned: codebase-memory-mcp). `.github/third-party-manifest.json` + `scripts/check_thirdparty_drift.py` (consistency offline + drift vs ultimul release GitHub; fetcher injectabil) + workflow săptămânal `.github/workflows/thirdparty-drift.yml` (PR-gate consistency, deschide issue pe drift). Dependabot rămâne pt. pip/npm/actions. **Done 2026-06-20** (+`tests/test_thirdparty_drift.py`, 7 teste). **Refresh acceptat pe head exact (#829/#833, 2026-08-06):** Superpowers `6.1.1 → 6.2.0` este vendorat în `.claude/plugins/superpowers/` ca arborele upstream exact `da1e7bb99212a060f90ffd6def69ff606775a79c` din tagul adnotat `v6.2.0` (`0e5cc50e782429b95f933e46443898435b8b37a8` → commit `3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9`; ambele nesemnate); `LICENSE` upstream și `LICENSES/superpowers-MIT.txt` sunt MIT byte-identice (blob `abf0390320aa14406af7a520b9b0739fdda9bf08`, SHA-256 `0da33ed814ee87e72db078f489c4447af72f13d9f25d9e17476f32efd77705fc`); manifestul păstrează booleanul literal `auto_update: true` și toate câmpurile non-pin; nu se schimbă runtime-ul aplicației sau autoritatea/policy Nerva; rezidual Windows: updaterul poate primi `WinError 5` dacă directorul destinație are atributul ReadOnly, iar recovery-ul a fost strict path-scoped, fără schimbarea policy-ului. | 3 | P2 | H22.7, H22.8 | ✅ versiune vendorată în urma upstream → issue automat; manifest stale → PR roșu |
 | H22.10 ✅ | **Follow-up `oauth.py` → vault** (bitwarden/H21.A) — `_resolve_token_key()` ia cheia din **vault/env `JARVIS_TOKEN_KEY`** (via `secrets_vault.VaultResolver`, H21.A) → cheia nu atinge discul; fallback legacy fișier **hardening 0600** + warning. `.env.example` documentează cheia. **Done** (+`tests/test_oauth_token_key.py`, 4 teste; 99 teste oauth/token verzi). | 3 | P2 | H21.A | ✅ cheia de criptare nu mai stă în plaintext pe disc; vault/env primar, fișier 0600 fallback |
+| H22.12 ✅ | **Protocolul „Max"** (meta, 2026-08-11) — **`MAX.md`** (root): protocolul de finisare reutilizabil care duce tot ce promit docurile în produsul final — misiune, load de context redus, bucla run→slice→PR, **Feel Contract** (Nerva se simte la fel pe măsură ce motoarele/hardware-ul evoluează), **desirability gate** („AI for everyone": finish > polish > new), **entropie guvernată** (run names + Sparks). Trigger automat: skill `.claude/skills/max/` — codename-ul „Max" pornește/continuă protocolul fără întrebări. Ledgere: `docs/MAX_RUNS.md` (run-uri) + `docs/SPARKS.md` (entropie). Reguli relaxate în Max mode: `AGENTS.md` → „Max mode". | 2 | P1 | H22.7 | „Max" (orice casing) → run pornit fără explicații; fiecare run = un slice shippabil + rând în ledger; Sparks bounded, default-off, deletabile |
 
 > **Stare (toate cele 3 valuri procesate):**
 > - **Livrate cod+teste:** H22.1–3 (PR #264) · **H22.10** (securitate) · **H22.6** (workflow bound) ·

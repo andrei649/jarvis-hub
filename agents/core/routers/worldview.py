@@ -9,9 +9,10 @@ honest connected/not-connected signal to render next to it, reusing the existing
 chat-agent `WorldViewPlugin` client rather than adding a second one.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from agents.core.app_state import get_orch
+from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["observe"])
@@ -31,7 +32,7 @@ async def worldview_status():
     return nocache_json(await plugin.status())
 
 
-@router.get("/api/worldview/overview")
+@router.get("/api/worldview/overview", dependencies=[Depends(user_guard)])
 async def worldview_overview():
     """Liveness + the flagship read data (recon windows / due alerts) in one call.
 
