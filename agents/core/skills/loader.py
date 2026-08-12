@@ -5,6 +5,7 @@ Agents can generate new skills from successful task completions.
 """
 
 import importlib.util
+import json
 import keyword
 import logging
 import re
@@ -31,6 +32,8 @@ logger = logging.getLogger("jarvis.skills")
 from agents.core.paths import app_root as _app_root  # noqa: E402
 
 SKILLS_DIR = _app_root() / "skills"
+EXTERNAL_SOURCE_MARKER = "EXTERNAL_SOURCE"
+OWNER_APPROVED_MARKER = "OWNER_APPROVED_IN_PROCESS"
 
 
 def _user_skills_dir() -> Optional[Path]:
@@ -50,6 +53,37 @@ def _writable_skills_dir() -> Path:
     """
     user_dir = _user_skills_dir()
     return user_dir if user_dir is not None else SKILLS_DIR
+
+
+def _is_external_skill(path: Path) -> bool:
+    """Return whether a skill came from outside the shipped skill tree."""
+    path = path.resolve()
+    user_dir = _user_skills_dir()
+    if user_dir is not None:
+        user_root = user_dir.resolve()
+        if path == user_root or user_root in path.parents:
+            return True
+    if (path / EXTERNAL_SOURCE_MARKER).is_file():
+        return True
+
+    sidecar = path / "manifest.json"
+    if not sidecar.exists():
+        return False
+    try:
+        manifest = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        # An untrusted, malformed provenance sidecar cannot relax the boundary.
+        return True
+    return isinstance(manifest, dict) and manifest.get("imported") is True
+
+
+def _external_skill_may_import(path: Path, signature_reason: str) -> bool:
+    if not _is_external_skill(path):
+        return True
+    owner_approved = (path / OWNER_APPROVED_MARKER).is_file()
+    return signature_reason == "signed" or (
+        owner_approved and signature_reason == "integrity-only"
+    )
 
 
 # Generated command names become both a Python `def` and a `\w+` token in SKILL.md.
@@ -293,14 +327,27 @@ class SkillLoader:
         require_signed = signing.require_signed()
 
         py_file = path / "main.py"
-        if py_file.exists() and require_signed and not skill.trusted:
+        external_import_allowed = _external_skill_may_import(path, skill.signature_reason)
+        if py_file.exists() and (
+            (require_signed and not skill.trusted) or not external_import_allowed
+        ):
             # Strict mode: refuse to exec untrusted code in-process. The skill is
             # flagged sandboxed; the HUD/executor can run it via the Sandbox.
             skill.sandboxed = True
-            logger.warning(
-                "Skill '%s' is %s and JARVIS_REQUIRE_SIGNED_SKILLS=1 — module NOT loaded "
-                "in-process (flagged sandboxed)", name, skill.signature_reason,
-            )
+            if not external_import_allowed:
+                logger.warning(
+                    "External skill '%s' is %s without owner approval — module NOT "
+                    "loaded in-process (flagged sandboxed)",
+                    name,
+                    skill.signature_reason,
+                )
+            else:
+                logger.warning(
+                    "Skill '%s' is %s and JARVIS_REQUIRE_SIGNED_SKILLS=1 — module NOT "
+                    "loaded in-process (flagged sandboxed)",
+                    name,
+                    skill.signature_reason,
+                )
         elif py_file.exists():
             if not skill.trusted:
                 logger.info(
@@ -648,6 +695,9 @@ def register(skill):
         }):
             return False
         signing.sign_skill(skill_dir)
+        (skill_dir / OWNER_APPROVED_MARKER).write_text(
+            "owner-approved\n", encoding="utf-8"
+        )
         (skill_dir / "PENDING_REVIEW").unlink()
         self._load_skill(skill_dir)
         logger.info("Generated skill '%s' approved + activated", name)

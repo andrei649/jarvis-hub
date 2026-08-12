@@ -138,6 +138,7 @@ def test_install_zip_workflow(marketplace, temp_skills_dir):
 """
         zip_file.writestr("SKILL.md", skill_md)
         zip_file.writestr("main.py", "# mock python")
+        zip_file.writestr("OWNER_APPROVED_IN_PROCESS", "package-supplied")
         
     zip_data = zip_buffer.getvalue()
     
@@ -149,6 +150,8 @@ def test_install_zip_workflow(marketplace, temp_skills_dir):
     assert installed_dir.exists()
     assert (installed_dir / "SKILL.md").exists()
     assert (installed_dir / "main.py").exists()
+    assert (installed_dir / "EXTERNAL_SOURCE").exists()
+    assert not (installed_dir / "OWNER_APPROVED_IN_PROCESS").exists()
 
 
 def test_web_endpoints_integration(token_client, monkeypatch, tmp_path):

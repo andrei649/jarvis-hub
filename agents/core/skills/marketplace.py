@@ -25,7 +25,7 @@ from agents.core.paths import data_path
 from agents.core.persistence.migrations import apply_migrations
 
 from . import signing
-from .loader import SkillLoader
+from .loader import EXTERNAL_SOURCE_MARKER, OWNER_APPROVED_MARKER, SkillLoader
 from .skill_history import SkillHistory
 
 logger = logging.getLogger("jarvis.skills.marketplace")
@@ -717,6 +717,15 @@ class SkillMarketplace:
             shutil.rmtree(target_dir, ignore_errors=True)
             raise PermissionError(
                 f"Skill '{skill_name}' rejected: {reason} (JARVIS_REQUIRE_SIGNED_SKILLS)."
+            )
+
+        # Marketplace content remains external after extraction. A package cannot
+        # self-grant the separate owner approval used for in-process execution.
+        provenance_dirs = {target_dir, sig_dir}
+        for provenance_dir in provenance_dirs:
+            (provenance_dir / OWNER_APPROVED_MARKER).unlink(missing_ok=True)
+            (provenance_dir / EXTERNAL_SOURCE_MARKER).write_text(
+                "source=marketplace\n", encoding="utf-8"
             )
 
         # Avoid logging the package-derived name/path (log-injection); signature
