@@ -4,6 +4,11 @@ Instrucțiunile pentru asistenți sunt în **`AGENTS.md`** (sursă unică, parta
 Arhitectura e în **`NERVA.md`**; harta de navigare pentru AI (entry points, lifecycle, index de module,
 rețete) e în **`docs/ARCHITECTURE.md`** — începe acolo ca să găsești rapid unde trăiește codul.
 
+**⚡ Max:** când owner-ul scrie **„Max"** (singur sau drept codename, orice casing) → invocă skill-ul
+`max` / execută **`MAX.md`** imediat — fără întrebări, fără explicații; continuă din `docs/MAX_RUNS.md`.
+În timpul unui run Max, `MAX.md` §7 + `AGENTS.md` → „Max mode" streamline-uiesc ceremonia (context load
+redus, design inline în PR); non-negociabilele din `MOONSHOT.md` §5 rămân intacte.
+
 **Context mare (Fable 5 / 1M tokens):** `docs/AI_CONTEXT.md` — ce fișiere încarci, în ce ordine,
 pe tier-uri și bundle-uri per task, cu estimări de tokeni. Nu încărca repo-ul brut (~2M tokeni).
 
