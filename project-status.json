@@ -129,8 +129,8 @@
     },
     "H34": {
       "blocked": 0,
-      "done": 3,
-      "open": 3,
+      "done": 4,
+      "open": 2,
       "total": 6
     },
     "H5": {
@@ -164,7 +164,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "7d45153bfbb77ab9abbcfb53e564bd761d52f783",
+  "latest_ci_commit": "d4ffe2703ed9a51d80de51336b43e05faa998098",
   "open_release_gates": [
     {
       "id": "A1",
@@ -215,7 +215,7 @@
   "routes": 405,
   "tests": {
     "backend": 6394,
-    "frontend": 516,
+    "frontend": 521,
     "mobile": 96
   },
   "version": "0.11.0"
