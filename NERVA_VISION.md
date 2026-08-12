@@ -42,7 +42,7 @@ a restart:
 | **Observe** | `core/autonomy/observer.py` + watchers, `passive_capture.py`, channels, heartbeat |
 | **Understand** | memory fusion (vector ⊕ graph, RRF), bi-temporal KG (H14), ingestion pipeline |
 | **Decide** | orchestrator + 17 specialist agents, autonomy policy, `agent_runtime.py` model-directed loop (H20.R1) |
-| **Act** | the **Action Kernel** (O24 — Gate-K, 18 action kinds mediated), brokers, ToolRPC, sandbox |
+| **Act** | the **Action Kernel** (O24 — Gate-K, 20 action kinds mediated), brokers, ToolRPC, sandbox |
 | **Verify** | the **Verification Fabric** (O24 — reality harness, SEAM→WIRED→VERIFIED→GA registry) |
 | **Learn** | the governed per-turn learning loop (O20 — `learning/background_review.py`, CoreMemory, skill curator) |
 
@@ -91,11 +91,11 @@ Atlas provides the shared state against which Cortex reasons. **Vision observes.
 contextualizes. Cortex decides. Synapse supplies the capability. Ultron authorizes. Nerva executes
 and verifies.**
 
-## 3. Honest baseline (2026-07-11)
+## 3. Honest baseline (2026-08-09)
 
 - **v0.11.0**, feature-complete + refactored; test/route counts are auto-synced in
   [STATUS.md](STATUS.md) (never trust hand-written numbers elsewhere).
-- **Ultron / Gate-K**: every one of the 18 registered privileged action kinds crosses
+- **Ultron / Gate-K**: every one of the 20 registered privileged action kinds crosses
   `kernel.authorize` (action-auth snapshot has zero `pending`; the matrix cannot see a kind that
   was never registered).
 - **Synapse seeds — ORIZONT 20 (Hermes Mining) 6/6 + live wave**: the governed per-turn learning
@@ -103,13 +103,22 @@ and verifies.**
   `cognition.review_enabled`), skill lifecycle + curator live, ToolRPC spine + execution
   environments (local/docker) merged (no SSH transport exists).
 - **H15 computer-use**: governance complete (egress allowlist, approval queue, injection defense,
-  a11y fusion) but **actuation is stubbed** — `NullBrowserDriver`/`NullDesktopDriver`; no real
-  Playwright/VM driver in-repo.
-- **Media**: Spotify control is real; there is **no** Chromecast / `media_player` abstraction.
-- **House (Atlas)**: Homebridge + Tuya + Wyoming voice satellite exist; there is **no** Home
-  Assistant state API integration and no room/occupant/device graph. WorldView + Signal Layer are
+  a11y fusion) and the real drivers are now in-repo as **owner-enabled opt-in host seams** — the
+  Playwright browser driver (`browser_playwright.py`) + Windows desktop driver (`desktop_host.py`,
+  O28, #673); hermetic CI proves the rail, but live owner-hardware validation is owner-gated and
+  not claimed by CI.
+- **Media**: Spotify control is real; the O29 Media Director (`media_director.py`, #669/#674) now
+  delivers the `media_player` abstraction + device registry + kernel-mediated `present()`
+  (`media.present`/`media.restore`); real Chromecast/Spotify-Connect actuation remains an
+  owner-wired host seam — `NullMediaDriver` refuses honestly by default.
+- **House (Atlas)**: the O30 House Brain (#675) delivers the read-first Home Assistant
+  REST/WebSocket state adapter (`house/home_assistant.py`), the device/room/occupant graph
+  (`house/graph.py` + the encrypted `house/private_store.py` for occupant/presence) and governed
+  actuation; Homebridge + Tuya + Wyoming voice satellite also exist. WorldView + Signal Layer are
   substantial but not yet unified with house/device/execution state.
-- **Cameras (Vision)**: nothing exists (no RTSP/ONVIF/Frigate code anywhere).
+- **Cameras (Vision)**: H31 (#676) delivers read-only, LAN-pinned Frigate metadata +
+  discovery-only ONVIF behind versioned consent and mandatory privacy masks
+  (`agents/core/cameras/`); direct RTSP ingest is not shipped (no decoder/stream surface).
 - **Proof**: single-user; ⭐B0 manual run, 72h soak and design partners still pending (the proof
   track — unchanged, see §10).
 
@@ -128,10 +137,15 @@ event, query or policy requires it.*
 
 - **Exists:** voice pipeline (`core/voice/` — wake word, STT), VLM eyes (`llm/vlm.py`,
   `/api/vlm/describe`), screen grounding (`screen_grounding.py`), opt-in passive capture,
-  7-phase ingestion pipeline, host observer (`autonomy/observer.py`), channel inbounds.
-- **Missing:** cameras entirely; house sensor streams; vehicle telemetry; continuous ambient
-  observation with event correlation over time; desktop observation as a routine perception source.
-- **Closed by:** ORIZONT 31 (cameras), ORIZONT 30 (house sensors/presence), ORIZONT 33 (ambient).
+  7-phase ingestion pipeline, host observer (`autonomy/observer.py`), channel inbounds;
+  read-only camera perception (H31 — Frigate metadata + discovery-only ONVIF) and house
+  sensor state/presence (H30 — HA adapter + presence inference).
+- **Missing:** direct RTSP/camera stream intelligence (H31 is read-only metadata + discovery,
+  with no Jarvis decoder/stream surface); vehicle telemetry; desktop observation as a routine
+  perception source; ambient correlation depth beyond the delivered H33 monitors.
+- **Closed by:** ORIZONT 31 (delivered — wave-1 read-only perception; RTSP ingest stays a
+  post-1.0 seam), ORIZONT 30 (delivered — house sensors/presence), ORIZONT 33 (delivered —
+  ambient monitors); vehicle/desktop perception ride the post-1.0 depth lanes.
 
 ### P2 — Communication (~70–80%) — the Nerva experience
 
@@ -142,14 +156,16 @@ phone, headphones) for the person, room, privacy and urgency.*
 - **Exists:** web SSE, voice, Telegram, Discord, email, Slack; `channels/session.py` +
   `gateway.py`; channel inbox transport v0; interrupt budgets (≤4 push/day); Wyoming satellite
   protocol for room voice endpoints.
-- **Missing:** presence-aware delivery; speaker/room identity; media surfaces (TV, speakers,
-  displays) as first-class output channels; ambient vs private delivery decisions. **Personality
+- **Missing:** presence-aware delivery as a finished policy (H34.2 owner-presence and H30.6
+  room-aware voice ship the rails, not the full delivery ladder); ambient vs private delivery
+  decisions at scale. **Personality
   and humour as social policy** — contextual humour with callbacks, household-safe modes,
   user-specific tone and timing, no repetitive or forced jokes, the ability to shift between
   concise operational mode and richer conversational mode (a persistent companion, not a command
   shell — and not a standalone joke generator).
-- **Closed by:** ORIZONT 29 (output routing / `present()`), ORIZONT 30 (room context),
-  ORIZONT 33 (delivery ladder); personality depth rides the existing cognition/persona lane (O21).
+- **Closed by:** ORIZONT 29 (delivered — `present()` output routing), ORIZONT 30 (delivered —
+  room context), ORIZONT 33 (delivered — ambient ladder); personality depth rides the existing
+  cognition/persona lane (O21, delivered).
 
 ### P3 — Action (~45%) — Synapse + Ultron
 
@@ -158,14 +174,19 @@ automation → visual mouse/keyboard fallback** *(visual is the fallback, never 
 post-action verification and rollback where possible.*
 
 - **Exists:** the Action Kernel (O24) with contracts (`automation_contracts.py`), budgets,
-  kill-switch, audit chain; write-back + connector builders (~27 SaaS actions); ToolRPC
+  kill-switch, audit chain; write-back + connector builders (12 cataloged SaaS actions in
+  `writeback.py` + `writeback_connectors.py`); ToolRPC
   (`tool_rpc.py`) + the model-directed tool loop (`agent_runtime.py`, default-off); execution
-  environments local/docker/ssh; sandbox with output caps; governed browser/desktop **policy**
-  layers (H15).
-- **Missing:** real browser/desktop actuation (the drivers are Null host-seams); the action
-  hierarchy as an explicit router that picks the lowest-risk implementation; a single unified
-  call path (`perform(capability, params)`) instead of per-surface broker wiring.
-- **Closed by:** ORIZONT 27 (unified Action API), ORIZONT 28 (real operators).
+  environments local/docker (SSH is policy-plane inventory only — no transport exists);
+  sandbox with output caps; the unified Action API (O27 — `perform(capability, params)` + the
+  Capability Registry); the action-hierarchy router + Playwright/Windows desktop drivers as
+  owner-gated host seams (O28).
+- **Missing:** live owner-hardware proof of the O28 browser/desktop drivers (hermetic CI is
+  green; real Windows UIA + installed-Playwright validation is owner-gated and unclaimed);
+  cross-surface breadth beyond the O28 first slice (the action hierarchy exists as a router but
+  the full API→CLI→UI→visual surface breadth still lands with real operators).
+- **Closed by:** ORIZONT 27 (delivered — unified Action API), ORIZONT 28 (delivered — real
+  operators; owner hardware validation pending).
 
 ### P4 — Environment / House Brain (~20%) — Atlas
 
@@ -174,12 +195,17 @@ permissions; sensors, cameras, displays, speakers and actuators; routines, prese
 patterns; climate, lighting, energy, security and media; household privacy and interruption
 policies.*
 
-- **Exists:** `plugins/homebridge.py` (HomeKit accessories, LOCAL_ONLY), `plugins/iot_control.py`
+- **Exists:** the O30 House Brain (`agents/core/house/` — read-first Home Assistant REST/WebSocket
+  state adapter `home_assistant.py`, device/room/occupant topology `graph.py`, encrypted private
+  occupant/presence store, presence inference, governed actuation through the Action Kernel);
+  `plugins/homebridge.py` (HomeKit accessories, LOCAL_ONLY), `plugins/iot_control.py`
   (Tuya, partly mock), `voice/wyoming.py` (HA Voice PE satellites); the bi-temporal KG as the
-  natural home for the house graph; WorldView/Signal Layer as Atlas's external-world half.
-- **Missing:** Home Assistant REST/WebSocket **state** integration; the device/room/occupant
-  graph; presence & context inference; household policies (privacy zones, per-person authority).
-- **Closed by:** ORIZONT 30. Home Assistant/Homebridge provide device abstraction, but **Nerva
+  house graph's home; WorldView/Signal Layer as Atlas's external-world half.
+- **Missing:** household policies (privacy zones, per-person authority); the last open O30 item —
+  the ambient light bridge (H30.8); live owner-hardware HA integration (the H30 reality pack is
+  hermetic; the live read probe is double opt-in).
+- **Closed by:** ORIZONT 30 (delivered — H30.1–H30.7; H30.8 ambient light bridge still open).
+  Home Assistant/Homebridge provide device abstraction, but **Nerva
   owns reasoning, memory, policy, natural interaction and cross-domain coordination**.
 
 ### P5 — Media (~15%) — the presentation fabric
@@ -194,11 +220,14 @@ present(content, target, mode, privacy, urgency, duration)
 ```
 
 - **Exists:** real Spotify control (`plugins/spotify_plugin.py` — OAuth, playback, devices);
-  generated-media catalog/exports (`media_catalog.py`, `media_gen.py`).
-- **Missing:** a `media_player` abstraction and device registry (Chromecast, AirPlay, TVs,
-  browser-tab kiosk, local players); the `present()` capability itself; content resolvers;
-  media-session etiquette (don't interrupt a movie for a P3 nudge); cross-room media movement.
-- **Closed by:** ORIZONT 29.
+  generated-media catalog/exports (`media_catalog.py`, `media_gen.py`); the O29 Media Director
+  (`media_director.py`) — `media_player` abstraction + device registry, kernel-mediated
+  `present()` (`media.present`/`media.restore`), content resolvers and session etiquette.
+- **Missing:** real Chromecast/Spotify-Connect/AirPlay actuation (drivers are owner-wired host
+  seams — `NullMediaDriver` refuses honestly by default; AirPlay is not a registered device kind);
+  cross-room media movement.
+- **Closed by:** ORIZONT 29 (delivered — wave 1; real driver actuation + cross-room movement are
+  owner-wired host seams / post-1.0).
 
 ### P6 — Capability Evolution (~10%) — Synapse
 
@@ -208,13 +237,17 @@ implementation plan → generate a temporary skill or adapter → test it in iso
 read-only behavior first → request approval according to risk → execute and verify the real
 outcome → promote the validated capability for reuse.*
 
-- **Exists:** the full skill lifecycle (loader, importer, usage telemetry, nightly curator,
-  proposals, signing, marketplace with rollback); `self_evolution.py` (governed prompt
-  optimization); the per-turn learning loop (O20.L — facts + skill patches distilled under
-  governance); sandbox + quarantine.
-- **Missing:** the **closed acquisition loop** above, end-to-end. Generated capabilities never
-  bypass Synapse validation or Ultron governance.
-- **Closed by:** ORIZONT 32 (loop) + ORIZONT 27 (the registry it feeds).
+- **Exists:** the O32 acquisition loop (gap detection → reuse-first search → governed research →
+  strict-local generate + sandbox-test → permanent owner approval + Action Kernel mediation →
+  signing → registry → rollback; H32.1–H32.7); the full skill lifecycle (loader, importer, usage
+  telemetry, nightly curator, proposals, signing, marketplace with rollback); `self_evolution.py`
+  (governed prompt optimization); the per-turn learning loop (O20.L — facts + skill patches
+  distilled under governance); sandbox + quarantine.
+- **Missing:** real-world acquisition at scale (the hermetic O32 loop is proven; generated
+  capabilities still need sandboxed live execution and owner-hardware breadth). Generated
+  capabilities never bypass Synapse validation or Ultron governance.
+- **Closed by:** ORIZONT 32 (delivered — the loop) + ORIZONT 27 (delivered — the registry it
+  feeds).
 
 ## 5. Target architecture
 
@@ -247,9 +280,10 @@ outcome → promote the validated capability for reuse.*
 
 Layer → repo mapping: **Experience** = channels/HUD/voice/mobile (exists). **Cortex/Atlas** =
 memory fusion + bi-temporal KG + cognition layer + the 17 specialists + autonomy stack (exists;
-house state is new, O30; WorldView/Signal Layer fold in as Atlas's external half). **Ultron** =
+house state = O30, delivered; WorldView/Signal Layer fold in as Atlas's external half). **Ultron** =
 O24 (exists; the boundary). **Synapse execution plane** = O20/H20 ToolRPC + environments + skills +
-subagents (exists; operators land in O28). **Physical Adapters** = O29/O30/O31 (mostly new).
+subagents (exists; operators = O28, delivered — owner hardware validation pending).
+**Physical Adapters** = O29/O30/O31 (delivered; real driver actuation stays owner-gated).
 
 **The kernel is the boundary:** nothing from the execution plane touches a physical adapter
 without crossing `kernel.authorize`. Agents become personalities and specialists; **capabilities
@@ -473,3 +507,60 @@ The product is not complete because it can answer anything. It is complete when 
 | What to build next, prioritized | [BACKLOG.md](BACKLOG.md) (wins on priorities) |
 | Where the strategy came from | [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md) (immutable) |
 | What only the owner can do (incl. the jarvis-hub→Nerva rename) | [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md) |
+
+<!-- GAP-8 re-baseline evidence (2026-08-09):
+What changed (all in this doc; no other file touched) and the evidence for each:
+
+1. §1 table + §3 Gate-K bullet: action-kind count 18 → 20. Evidence: the 20 KERNEL entries in
+   `agents/core/kernel/registry.py` ACTION_REGISTRY (lines 32–96) == the 20 keys of
+   `tests/_snapshots/action_auth.json` (zero `pending`); the count was 18 before #746
+   (f2cfe7f4) registered `channel.reply` + `skill.install`. The "11"/"12" figures are
+   historical (pre-#746); the §6 registry-field table already points at the snapshot as truth.
+2. §3 H15 bullet: "actuation is stubbed … no real Playwright/VM driver in-repo" → real drivers
+   now exist as owner-gated host seams. Evidence: `agents/core/browser_playwright.py:39`
+   (`PlaywrightBrowserDriver`), `agents/core/desktop_host.py` (Windows desktop driver),
+   BACKLOG.md H28.1/H28.4 (delivered 2026-07-12, #673).
+3. §3 Media bullet: "no Chromecast / media_player abstraction" → O29 delivered it. Evidence:
+   `agents/core/media_director.py` (DeviceRegistry/MediaDirector/present, #669/#674),
+   BACKLOG.md H29.1–H29.6 (19/19 SP complete); real driver actuation stays an owner-wired
+   host seam (`NullMediaDriver` default).
+4. §3 House bullet: "no Home Assistant state API integration and no room/occupant/device graph"
+   → delivered. Evidence: `agents/core/house/home_assistant.py` (H30.1 read-first HA
+   REST/WebSocket adapter), `house/graph.py` (H30.2 topology), `house/private_store.py` +
+   `house/presence.py` (H30.3), BACKLOG.md H30.1–H30.7 (29/29 SP, #675).
+5. §3 Cameras bullet: "nothing exists (no RTSP/ONVIF/Frigate code anywhere)" → H31 delivered
+   read-only Frigate + discovery-only ONVIF; direct RTSP ingest still absent. Evidence:
+   `agents/core/cameras/` (frigate.py, onvif.py, privacy.py, vault.py, vlm.py), BACKLOG.md
+   H31.1–H31.6 (#676); `rg -n "RTSP|rtsp://" agents/core/cameras/` → 0 hits.
+6. §3 header date: baseline re-dated 2026-07-11 → 2026-08-09 (the re-baseline date). §4's
+   "(owner-session estimates 2026-07-11)" note is untouched — the percentages still originate
+   from that session and are correct (P1 ~35%, P2 ~70–80%, P3 ~45%, P4 ~20%, P5 ~15%,
+   P6 ~10%; no pillar 0% or unstated) → no §4 percentage change was needed.
+7. §4 P1 Exists/Missing/Closed-by: cameras + house sensor streams + ambient now delivered.
+   Evidence: H31 (#676) and H30 (#675) and H33.1–H33.6 (BACKLOG.md) all ✅; RTSP/vehicle/
+   desktop remain open.
+8. §4 P2 Missing/Closed-by: "speaker/room identity" + "media surfaces" removed (delivered via
+   H30.6 room-aware voice and O29 present()); presence ladder + ambient delivery kept as open;
+   O21 persona lane delivered. Evidence: BACKLOG.md H30.6, H29.x, ORIZONT 21 10/10 ✅ (line 2569).
+9. §4 P3 Exists/Missing/Closed-by: "local/docker/ssh" → "local/docker (SSH is policy-plane
+   inventory only — no transport)" per the accepted GAP-9/#855 finding; "~27 SaaS actions" →
+   12 cataloged (`writeback.py` 5 + `writeback_connectors.py` 7 `_reg` entries); unified Action
+   API + hierarchy router + real drivers delivered (O27/O28, H27.3/H28.2/H28.1/H28.4);
+   owner-hardware validation remains open. Evidence: `agents/core/environments/targets.py:3`
+   ("never launches a subprocess, container, or SSH session") and :343 ("host/SSH transports
+   remain disabled by default"), BACKLOG.md O27/O28 items.
+10. §4 P4 Exists/Missing/Closed-by: HA state integration / device-room-occupant graph / presence
+    removed from Missing (delivered, H30.1–H30.3); household policies + H30.8 ambient light
+    bridge + live owner-hardware HA remain open. Evidence: BACKLOG.md H30.1–H30.8.
+11. §4 P5 Exists/Missing/Closed-by: media_player abstraction + device registry + present() +
+    resolvers + etiquette delivered (H29.1–H29.4); real driver actuation (host seam) + AirPlay
+    (not a registered kind: chromecast/spotify_connect/browser_tab/local/speaker/tv) +
+    cross-room movement remain open. Evidence: BACKLOG.md H29.1–H29.4, media_director.py kinds.
+12. §4 P6 Exists/Missing/Closed-by: the closed acquisition loop is delivered (H32.1–H32.7);
+    live acquisition at scale remains open. Evidence: BACKLOG.md H32.1–H32.7 ✅.
+13. Unchanged after verification: v0.11.0 + 17 specialists (STATUS.md current-version line),
+    O20 6/6 (BACKLOG.md ORIZONT 20 6/6 ✅), the proof track still pending (BACKLOG.md A1/A2/A7 ⬜).
+14. §5 layer-mapping parentheticals: "house state is new, O30 / operators land in O28 / O29·O30·O31
+    (mostly new)" → delivered markers, same evidence as items 2–5 (O28 #673, O29 #669/#674,
+    O30 #675, O31 #676); owner-gated hardware validation explicitly left pending.
+--> 
