@@ -668,8 +668,18 @@ owner's machine in 30 seconds, read-only.
   implementation (+2 tests in `test_h27_capability_verification.py`). `qa_audit_probes.py` reports all
   nine claims CLOSED.
 
-- [ ] **SEC-B6 — gate hardening.** Extend `test_route_auth_matrix.py` to require classification of
-  *read* routes touching personal data, so the theme-B read/write asymmetry can't regress open.
+- [ ] 🟡 **SEC-B6 — gate hardening.** *In review (successor of split #894), not yet accepted truth.*
+  `test_route_auth_matrix.py` gains a *read* half: `test_no_unclassified_open_read` forces every OPEN
+  GET to be classified by the **substance of its handler** (`INTENTIONALLY_OPEN_READS`, each with a
+  reason) or carry `user_guard`; `test_read_classifications_are_honest` keeps both sets shrink-only so
+  the allowlist can't mask a later guard. The classification pass found 13 personal-content reads
+  shipping open (per-agent run history + SOUL, quality scores, review queue, missions, workflows,
+  learning, arena match, oracle conflicts, reflection status, worldview overview) — all flipped to
+  `user_guard`, snapshot re-seeded, generated chapter-14 sweep regenerated. Per-handler substance
+  evidence: [`docs/security/SEC-B6-open-reads-evidence.md`](docs/security/SEC-B6-open-reads-evidence.md).
+  **Mark ✅ DONE only when the successor PR passes fresh exact-head CI + independent review** (owner
+  integrator directive, #894). *Open follow-up (gap):* forget export/purge lists are maintained
+  separately — add a test asserting `export_manifest ⊆ (purged ∪ KEEP)`.
 
 **Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
 3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source
