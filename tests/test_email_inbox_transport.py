@@ -77,7 +77,7 @@ def test_email_reply_broker_queues_and_approved_task_sends(tmp_path):
     sends = []
 
     class FakeChannelManager:
-        async def send(self, channel, text, **kwargs):
+        async def send_channel_reply(self, channel, text, **kwargs):
             sends.append((channel, text, kwargs))
             return True
 
