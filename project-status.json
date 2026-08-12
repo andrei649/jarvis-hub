@@ -133,12 +133,6 @@
       "open": 3,
       "total": 6
     },
-    "H35": {
-      "blocked": 6,
-      "done": 1,
-      "open": 1,
-      "total": 8
-    },
     "H5": {
       "blocked": 0,
       "done": 16,
@@ -170,7 +164,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "ba77fb49ccaecace128f56b4f8addf00b95d52df",
+  "latest_ci_commit": "011cb854f67320ff33d5c89bf3d1d49425ec5af6",
   "open_release_gates": [
     {
       "id": "A1",
@@ -220,7 +214,7 @@
   ],
   "routes": 405,
   "tests": {
-    "backend": 6362,
+    "backend": 6381,
     "frontend": 515,
     "mobile": 96
   },
