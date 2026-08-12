@@ -131,7 +131,11 @@ Record what you **exercised**, not what you read. A short honest run beats a ful
 ☐ Every **BLOCKER** closed or explicitly accepted as out-of-scope (say which)
 ☐ Chapter 12 (A8 owner-host) passed **or** honestly recorded as `skipped — owner-host gate`
 ☐ Chapters 01, 02, 07, 08 fully exercised (the truth, governance and security core)
-☐ Chapter 15's §15.1 and §15.2 run, with a verdict recorded for each (they need no hardware)
+◐ Chapter 15's §15.1 and §15.2 run, with a verdict recorded for each (they need no hardware) —
+  **hermetic half done** ([`docs/qa-runs/2026-08-11-hermetic-adv-run.md`](qa-runs/2026-08-11-hermetic-adv-run.md)):
+  ADV-001 audit-chain forgery + ADV-015 forget file-half both **FIXED-SINCE**, each cross-confirmed
+  (probe + hand/seeded repro). Live-endpoint (ADV-009/010) and destructive backend (ADV-016–024)
+  cases remain NOT-REPRODUCIBLE without the RTX box.
 ☐ The offline suite green locally, matching `project-status.json` → `tests.*`
 ☐ Every 🔑/🖥/🌐 skip carries a written reason
 
