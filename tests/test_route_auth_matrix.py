@@ -43,6 +43,93 @@ INTENTIONALLY_OPEN = {
 # lands guards and the snapshot flips those routes to user/admin.
 PENDING_GUARD = set()  # SEC-3 COMPLETE — every open mutator is now guarded or in INTENTIONALLY_OPEN.
 
+# ── SEC-B6: the read half of the matrix ──────────────────────────────────────
+# The 2026-07-25 audit's theme B: mutators had a forcing function (above) while
+# reads had none, so a personal-content GET could ship open silently. From here
+# on every OPEN GET must be classified by the *substance of its handler* (what
+# the response body contains), never by its URL shape:
+#   INTENTIONALLY_OPEN_READS — verified to expose no personal content;
+#   PENDING_READ_GUARD       — touches personal data, guard still owed (debt,
+#                              shrink-only, same contract as PENDING_GUARD).
+INTENTIONALLY_OPEN_READS = {
+    # App shell + static assets (serve markup/bytes, never user data).
+    "GET /",
+    "GET /v1",
+    "GET /v2",
+    "GET /v2/{path:path}",
+    "GET /admin",            # page shell only; every admin API behind it is admin-guarded
+    "GET /favicon.ico",
+    "GET /sw.js",
+    # FastAPI scaffolding (route schema, no stored data).
+    "GET /docs",
+    "GET /docs/oauth2-redirect",
+    "GET /redoc",
+    "GET /openapi.json",
+    # Public protocol surfaces / self-authenticating token in the path.
+    "GET /.well-known/agent-card",
+    "GET /.well-known/oauth-protected-resource",
+    "GET /api/mcp/server",               # status of a disabled-by-default surface
+    "GET /api/widget/{token}",           # widget capability token authenticates
+    "GET /api/widget/{token}/config",
+    # Liveness / ops meters (aggregate counters, degradation flags).
+    "GET /healthz",
+    "GET /readyz",
+    "GET /metrics",
+    "GET /api/resilience",
+    "GET /api/health/components",
+    "GET /api/status",
+    "GET /status",
+    "GET /api/local-docs",
+    # Catalogs shipped in code (templates, specs, synthetic fixtures).
+    "GET /api/agent-templates",
+    "GET /api/memory/tool-spec",
+    "GET /api/memory/eval/corpus",       # owned synthetic corpus, not user memory
+    "GET /api/voice/capabilities",
+    "GET /api/voice/wyoming",
+    "GET /skills",
+    "GET /skills/imported",
+    "GET /sandbox/status",
+    "GET /plugins",                      # config presence booleans, never key values
+    "GET /agents",                       # roster + aggregate stats + skill names
+    # Aggregate observability (counts/rates/percentiles — no message content).
+    "GET /api/analytics/cost",
+    "GET /api/analytics/locality",
+    "GET /api/analytics/model-tiers",
+    "GET /api/metrics/capabilities",
+    "GET /api/metrics/kernel",
+    "GET /api/metrics/north-star",
+    "GET /api/quality",                  # rolling average + alert flag; scores are guarded
+    "GET /api/review/stats",
+    "GET /learning/stats",
+    "GET /bench",
+    "GET /bench/stats",
+    "GET /memory/stats",
+    "GET /heartbeat/status",
+    "GET /api/arena/leaderboard",        # scores only; match bodies are guarded
+    "GET /api/eval/datasets",
+    "GET /api/eval/datasets/{name}/runs",
+    "GET /api/eval/datasets/{name}/compare",
+    "GET /api/autonomy/escalation/targets",
+    # Deliberate transparency: the trust surface is readable by design (H18.18
+    # reads it from mobile without tokens; writes stay admin-guarded).
+    "GET /api/security/capabilities/check",
+    "GET /api/security/governance",
+    "GET /api/security/kill-switch",
+    "GET /api/security/loop-breaker",
+    "GET /api/trust/status",
+    "GET /security",
+    "GET /security/status",
+    # OAuth connect flow (pre-auth by nature: presence booleans + public URLs).
+    "GET /api/oauth/status",
+    "GET /api/oauth/auth-url",
+    "GET /api/oracle/status",
+    # WorldView liveness booleans; the overview (recon/alerts) is guarded.
+    "GET /api/worldview/status",
+}
+
+# Personal-data reads still open — SEC-B6 debt. Shrink-only.
+PENDING_READ_GUARD = set()  # SEC-B6 COMPLETE — every personal-content read now carries user_guard.
+
 
 def _runtime_guards():
     """Map "METHOD /path" -> "open|user|admin" from the live app's dependant graph."""
@@ -113,3 +200,30 @@ def test_pending_guard_is_honest():
         "PENDING_GUARD lists routes that are no longer open (guarded or removed) — "
         "remove them from the set:\n" + "\n".join(stale)
     )
+
+
+def test_no_unclassified_open_read():
+    """SEC-B6: an open GET is a decision, not a default — classify it or guard it."""
+    runtime = _runtime_guards()
+    open_reads = {k for k, g in runtime.items() if g == "open" and k.startswith("GET ")}
+    unclassified = sorted(open_reads - INTENTIONALLY_OPEN_READS - PENDING_READ_GUARD)
+    assert not unclassified, (
+        "OPEN read route(s) with no classification. Add user_guard, or list under "
+        "INTENTIONALLY_OPEN_READS (with the substance-of-handler reason) / "
+        "PENDING_READ_GUARD:\n" + "\n".join(unclassified)
+    )
+
+
+def test_read_classifications_are_honest():
+    """SEC-B6: both read sets may only name routes that are actually open GETs —
+    a guarded or removed entry is stale and must be dropped, so the debt list
+    can only shrink and the allowlist can't mask a later guard."""
+    runtime = _runtime_guards()
+    stale_pending = sorted(k for k in PENDING_READ_GUARD if runtime.get(k) != "open")
+    stale_allow = sorted(k for k in INTENTIONALLY_OPEN_READS if runtime.get(k) != "open")
+    problems = []
+    if stale_pending:
+        problems.append("PENDING_READ_GUARD lists non-open routes: " + ", ".join(stale_pending))
+    if stale_allow:
+        problems.append("INTENTIONALLY_OPEN_READS lists non-open routes: " + ", ".join(stale_allow))
+    assert not problems, "\n".join(problems)

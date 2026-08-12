@@ -11,7 +11,7 @@ from agents.core.app_state import get_orch
 router = APIRouter(tags=["review"])
 
 
-@router.get("/api/review/queue")
+@router.get("/api/review/queue", dependencies=[Depends(user_guard)])
 async def review_queue_list(status: str = Query("", max_length=20)):
     orch = get_orch()
     q = getattr(orch, "review_queue", None) if orch else None

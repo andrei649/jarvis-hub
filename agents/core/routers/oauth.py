@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from agents.core.app_state import get_orch
 from agents.core.env_config import env_flag, truthy as _env_truthy
-from agents.core.routers._deps import admin_guard
+from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import nocache_json
 
 from core.plugins.oauth import (
@@ -149,7 +149,7 @@ async def oracle_sync():
     return nocache_json(result)
 
 
-@router.get("/api/oracle/conflicts")
+@router.get("/api/oracle/conflicts", dependencies=[Depends(user_guard)])
 async def oracle_conflicts():
     orch = get_orch()
     bridge = getattr(orch, "oracle_bridge", None)
