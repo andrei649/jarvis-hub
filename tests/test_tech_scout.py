@@ -54,7 +54,7 @@ async def test_scan_without_queries_skips():
     assert result["reason"] == "no_queries_configured"
 
 
-async def test_scan_files_a_read_only_informational_task_per_new_result():
+async def test_scan_files_a_tainted_read_only_proposal_per_new_result():
     w = _worker()
     scout = TechScout(w, _fake_search({"q": [RESULT_A, RESULT_B]}), queries=["q"])
 
@@ -69,11 +69,14 @@ async def test_scan_files_a_read_only_informational_task_per_new_result():
     for task in tasks:
         assert task.kind == "tech_scout.finding"
         assert task.risk_tier == int(RiskTier.READ_ONLY)
-        # READ_ONLY auto-acts under the balanced default policy — no approval
-        # needed, but nothing executes either (no executor registered for the
-        # kind), matching observer.py's "observations inform" plain-alert model.
-        assert task.autonomy_level == "act"
-        assert task.status == "approved"
+        # Web-search results are untrusted input. Even though the finding itself
+        # is READ_ONLY, the existing autonomy worker forces tainted origins to
+        # ASK rather than silently auto-approving a derived task.
+        assert task.origin == "websearch"
+        assert task.autonomy_level == "ask"
+        assert task.status == "blocked"
+        assert task.payload["tainted"] is True
+        assert task.payload["taint_source"] == "websearch"
         assert task.payload["url"] in (RESULT_A["url"], RESULT_B["url"])
 
 
