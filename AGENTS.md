@@ -51,6 +51,23 @@ python -m pytest tests/ -v
 Verde devreme peste perfecțiune · teste peste documentație · livrare peste analiză.
 Branch de feature per task → PR draft în `main`. Nu împinge direct în `main`.
 
+## ⚡ Max mode — protocolul de finisare
+
+Codename-ul **„Max"** (orice casing, oriunde în repo) pornește sau continuă **`MAX.md`** —
+protocolul care duce tot ce promit docurile în produsul final. Fără întrebări, fără explicații;
+starea run-urilor e în `docs/MAX_RUNS.md`, entropia (Sparks) în `docs/SPARKS.md`.
+
+În timpul unui run Max, următoarele reguli generale sunt **relaxate deliberat** (eficiența
+protocolului > ceremonie; lista canonică e `MAX.md` §7):
+- spec/plan doc separat → design inline în corpul PR-ului (10 linii), pentru slice-uri non-arhitecturale;
+- ceremonia conductor/multi-agent → doar când există efectiv un alt agent cu PR draft deschis;
+- re-citirea Tier-0 → sărită cât timp `MAX.md` e proaspăt în context (§2 definește load-ul redus);
+- naraverea pas-cu-pas în chat → linia de ignition + finding-uri load-bearing + linia de exit.
+
+**Nimic altceva nu se relaxează.** Non-negociabilele (`MOONSHOT.md` §5, convențiile de mai sus:
+local-first, teste cu feature-ul, BACKLOG sync în același PR, gate-urile de rute/paritate,
+respectul pentru PR-urile draft ale altora, raportare onestă) rămân în vigoare și în Max mode.
+
 ## Superpowers-style workflow pentru agenți
 
 Jarvis adoptă Superpowers ca metodologie de lucru pentru agenți, nu ca runtime dependency vendored în repo.
