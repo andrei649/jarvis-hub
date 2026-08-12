@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agents.core.app_state import get_orch
-from agents.core.routers._deps import admin_guard
+from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import nocache_json
 
 logger = logging.getLogger("jarvis.web")
@@ -37,7 +37,7 @@ async def learning_propose():
     return nocache_json({"ok": True, "proposed": proposals, "count": len(proposals)})
 
 
-@router.get("/learning")
+@router.get("/learning", dependencies=[Depends(user_guard)])
 async def get_learning():
     orch = get_orch()
     if not orch:
