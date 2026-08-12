@@ -97,6 +97,82 @@ def test_loader_flags_unsigned_skill(tmp_path, monkeypatch):
     assert sk.module is not None
 
 
+def test_unsigned_user_home_skill_is_visible_but_never_imported(tmp_path, monkeypatch):
+    """Owner/imported code must not execute merely because discovery found it."""
+    from agents.core.skills import loader as loader_mod
+
+    bundled_root = tmp_path / "bundled"
+    user_root = tmp_path / "owner" / "skills"
+    _make_skill(
+        bundled_root / "bundled",
+        name="Bundled",
+        body="MARKER = 'bundled-loaded'\n",
+    )
+    _make_skill(
+        user_root / "personal",
+        name="Personal",
+        body="raise RuntimeError('unsigned owner code executed')\n",
+    )
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", bundled_root)
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: user_root)
+
+    skills = SkillLoader().discover()
+
+    assert skills["Bundled"].module is not None
+    assert skills["Personal"].module is None
+    assert skills["Personal"].sandboxed is True
+    assert skills["Personal"].signature_reason == "unsigned"
+
+
+def test_keyed_user_home_skill_may_load_in_process(tmp_path, monkeypatch):
+    """A real HMAC signature remains the non-interactive external-code trust path."""
+    from agents.core.skills import loader as loader_mod
+
+    bundled_root = tmp_path / "bundled"
+    bundled_root.mkdir()
+    user_root = tmp_path / "owner" / "skills"
+    skill_dir = _make_skill(
+        user_root / "personal",
+        name="Personal",
+        body="MARKER = 'keyed-loaded'\n",
+    )
+    monkeypatch.setenv("JARVIS_SKILL_SIGNING_KEY", "project-key")
+    signing.sign_skill(skill_dir)
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", bundled_root)
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: user_root)
+
+    skill = SkillLoader().discover()["Personal"]
+
+    assert skill.signature_reason == "signed"
+    assert skill.sandboxed is False
+    assert skill.module is not None
+
+
+def test_imported_skill_sidecar_blocks_unsigned_in_process_import(tmp_path, monkeypatch):
+    """Imported provenance is external even when the skill lives under the app root."""
+    from agents.core.skills import loader as loader_mod
+
+    skills_root = tmp_path / "skills"
+    skill_dir = _make_skill(
+        skills_root / "imported",
+        name="Imported",
+        body='raise RuntimeError("unsigned imported module executed")\n',
+    )
+    (skill_dir / "manifest.json").write_text(
+        '{"imported": true, "source": "external"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills")
+    monkeypatch.setenv("JARVIS_REQUIRE_SIGNED_SKILLS", "0")
+
+    skill = SkillLoader().discover()["Imported"]
+
+    assert skill.module is None
+    assert skill.sandboxed is True
+    assert skill.signature_reason == "unsigned"
+
+
 def test_loader_loads_signed_skill_trusted(tmp_path, monkeypatch):
     from agents.core.skills import loader as loader_mod
     skills_root = tmp_path / "skills"

@@ -134,11 +134,12 @@ Record what you **exercised**, not what you read. A short honest run beats a ful
 ◐ Chapter 15's §15.1, §15.2, and §15.3 signing-gate probe run, with a verdict recorded for each
   no-hardware claim — **hermetic pass partial**
   ([`§15.1/15.2 evidence`](qa-runs/2026-08-11-hermetic-adv-run.md) ·
-  [`§15.3 signing evidence`](qa-runs/2026-08-12-hermetic-adv-signing.md)):
+  [`§15.3 signing evidence`](qa-runs/2026-08-12-hermetic-adv-signing.md) ·
+  [`ADV-038 closure`](qa-runs/2026-08-12-hermetic-adv-exec-boundary.md)):
   ADV-001 audit-chain forgery + ADV-015 forget file-half both **FIXED-SINCE**, each cross-confirmed
   (probe + hand/seeded repro). ADV-035/036 signing enforcement is **FIXED-SINCE** and ADV-037's
-  keyed refusal is confirmed; ADV-038's default unsigned import remains OPEN and is not hidden by
-  that closure. Live-endpoint (ADV-009/010) and destructive backend (ADV-016–024) cases remain
+  keyed refusal is confirmed; ADV-038's external unsigned import is **FIXED-SINCE**, with bundled
+  behavior and keyed external imports preserved. Live-endpoint (ADV-009/010) and destructive backend (ADV-016–024) cases remain
   NOT-REPRODUCIBLE without the RTX box.
 ☐ The offline suite green locally, matching `project-status.json` → `tests.*`
 ☐ Every 🔑/🖥/🌐 skip carries a written reason

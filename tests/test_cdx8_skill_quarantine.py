@@ -18,6 +18,7 @@ from agents.core.skills.loader import SkillLoader
 @pytest.fixture
 def loader(tmp_path, monkeypatch):
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", tmp_path)
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: tmp_path)
     return SkillLoader()
 
 
@@ -85,9 +86,28 @@ def test_approve_activates_the_skill(loader, tmp_path):
     skill_dir = tmp_path / name
     assert not (skill_dir / "PENDING_REVIEW").exists()  # marker cleared
     assert (skill_dir / "SKILL.sig").exists()           # now signed
+    assert (skill_dir / "OWNER_APPROVED_IN_PROCESS").exists()
     skill = _registered(loader, skill_dir)
     assert skill is not None
     assert skill.sandboxed is False and skill.module is not None   # exec'd in-process now
+
+
+def test_approved_skill_change_returns_to_quarantine(loader, tmp_path):
+    name = _gen(loader)
+    assert loader.approve_generated_skill(name) is True
+    skill_dir = tmp_path / name
+    (skill_dir / "main.py").write_text(
+        'raise RuntimeError("changed code executed under stale approval")\n',
+        encoding="utf-8",
+    )
+
+    loader._load_skill(skill_dir)
+
+    skill = _registered(loader, skill_dir)
+    assert skill is not None
+    assert skill.signature_reason == "signature-mismatch"
+    assert skill.sandboxed is True
+    assert skill.module is None
 
 
 def test_approve_is_safe_on_unknown_or_non_pending(loader):

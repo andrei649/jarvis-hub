@@ -496,14 +496,14 @@ owner who did harden.
 - **CROSS:** `GET /skills` (open) — what does the listing say about each one's trust state?
 - **Evidence:** the refusal list and the listing.
 
-#### ADV-038 — The real primitive: `exec_module` at load time  ⏱
+#### ADV-038 — The real primitive: `exec_module` at load time  ⏱ ✅
 - **Surface:** `agents/core/skills/loader.py`
-- **Why it matters:** the audit is unambiguous that this, not the hash, is what to fix. `_load_skill` executes module top-level code.
-- **Steps:** read `_load_skill` around the `spec.loader.exec_module(mod)` call. Then install an inert skill whose module body prints a marker, at the **shipped default** (`JARVIS_REQUIRE_SIGNED_SKILLS` unset, no signature at all).
-- **Expected:** the marker prints. Arbitrary code runs at install, with the server's privileges, with no signature and no sandbox.
-- **FAIL if:** confirmed → **BLOCKER**, and it is the item to fix first in this section. Note the process privileges you were running as; "as root" and "as an unprivileged service account" are different findings.
+- **Why it matters:** the audit is unambiguous that this, not the hash, is the execution boundary. `_load_skill` may execute module top-level code.
+- **Steps:** read `_load_skill` around the `spec.loader.exec_module(mod)` call. Then install an external inert skill whose module body writes a marker, at the **shipped default** (`JARVIS_REQUIRE_SIGNED_SKILLS` unset, no signature at all). Repeat with a repository-bundled skill and with a keyed HMAC signature.
+- **Expected:** the unsigned external marker does not appear; the skill remains visible with `sandboxed=true` and no loaded module. Repository-bundled behavior is unchanged, and a keyed external skill may load in-process. Marketplace extraction stamps external provenance and discards any package-supplied owner-approval marker.
+- **FAIL if:** unsigned owner/imported/marketplace code reaches `exec_module`, or if the boundary disables repository-bundled skills. Treat either result as a **BLOCKER**.
 - **CROSS:** `POST /api/skills/marketplace/install-zip` (admin) — does the HTTP path reach the same loader? Check before claiming remote reachability.
-- **Evidence:** the marker output and the code excerpt.
+- **Evidence:** [`2026-08-12 ADV-038 execution-boundary run`](../qa-runs/2026-08-12-hermetic-adv-exec-boundary.md).
 
 #### ADV-039 — What tier can reach the installer?  🌐
 - **Surface:** `POST /api/skills/marketplace/install-zip` (admin) · `POST /skills/import` (user) · `POST /api/skills/{name}/approve` (admin)
@@ -1784,7 +1784,7 @@ does not prove it. They get triaged differently.
 | G10 | Export/purge allowlist reconciliation the module docstring already promises | BUG | `agents/core/data_purge.py`, `agents/core/data_export.py` | High | ✅ | | ADV-019 |
 | G11 | A per-store report in the forget response | GAP | `agents/core/routers/backup.py` | — | ✅ | | ADV-027 |
 | G12 | `require_signed()` failing closed when enforcement is on and no key exists | BUG | `agents/core/skills/signing.py` | High → scoped | ✅ | | ADV-035 |
-| G13 | Sandboxing or deferring `exec_module` at skill load | GAP | `agents/core/skills/loader.py` | High (audit: fix first) | — | | ADV-038 |
+| G13 | Defer `exec_module` for unsigned external skills; preserve bundled behavior | GAP | `agents/core/skills/loader.py` | High (audit: fix first) | ✅ | | ADV-038 |
 | G14 | A policy floor over synthesis contributors | BUG | `agents/core/agent.py` | High · PARTIAL | ✅ | | §15.4, SEC-B1 |
 | G15 | Any test at the synthesize boundary, and any coverage of the handoff path | GAP | `tests/` | High | ✅ | | ADV-054, ADV-055 |
 | G16 | A `{agent_id: route}` map carried into the interaction record | BUG | `agents/core/orchestrator.py` | Medium · PARTIAL | ✅ | | §15.5 |
