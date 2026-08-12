@@ -1,117 +1,147 @@
-# Parallel Development Protocol
+# Parallel Development Playbook
 
-> Reguli pentru lucrul simultan: **Big Pickle / Opus 4.8** (opencode) ↔ **Claude Code** ↔ **Antigravity**
->
-> **Topologie (citește `docs/handoff-antigravity.md`):** Antigravity lucrează DOAR local (fără
-> acces GitHub); Andrei sincronizează prin **GitHub Desktop** pe singurul branch, `main`. Claude
-> împinge commit-uri mici direct pe `main`. Coordonarea reală = **lane-uri separate de fișiere** +
-> **tabla de coordonare urmărită în git** din handoff. ⚠️ Lock-urile (`memory_logs/oracle/locks/`)
-> sunt **gitignored → NU se sincronizează între mașini**; `lock.py` rămâne util doar local.
+> **Derived guidance.** The canonical source is
+> [`.github/ai-development-policy.json`](.github/ai-development-policy.json). Run
+> `python scripts/check_ai_workflow_policy.py` after changing either file.
 
-## 1. File Ownership
+This playbook replaces the former vendor-specific OpenCode/Claude ownership table and local-only
+lock protocol. Work is assigned by capability, risk, and current path intent—not by model brand.
 
-| Cale | Stăpân | Regulă |
-|------|--------|--------|
-| `agents/core/plugins/oracle_bridge.py` | opencode | Only opencode edits. Claude reads-only. |
-| `agents/core/llm/` | opencode | Hybrid router, Gemini backend, tokenizer. Claude reads-only. |
-| `agents/web/static/admin.js` | opencode | Admin panel UI. Merge manual dacă ambii editează. |
-| `agents/web/static/i18n.js` | opencode | String dictionary. Doar opencode adaugă stringuri noi. |
-| `agents/web.py` | opencode | API endpoints pentru Oracle. Claude poate adăuga endpointuri NOI la sfârșitul fișierului. |
-| `agents/core/orchestrator.py` | opencode | Wiring Oracle. Claude poate adăuga pluginuri NOI, NU atinge cod Oracle existent. |
-| `BACKLOG.md` | opencode | Status și estimări. |
-| `PARALLEL_WORKFLOW.md` | opencode | Acest fișier. |
-| `agents/core/skills/` | Claude | Toate skill-urile H2.x. opencode nu atinge. |
-| `tests/test_*.py` | Claude | Teste noi pentru skill-uri H2.x. opencode nu atinge. |
-| `agents/core/plugins/<new_plugin>.py` | Claude | Pluginuri H2.x (calendar, spotify, etc.). |
-| `agents/core/security/` | Claude | S4, S-PKCE hardening. |
-| `agents/web/static/*.js` (except admin.js/i18n.js) | Claude | Componente vizuale HUD. |
-| `agents/web/static/*.css` | Claude | CSS. |
-| `agents/web/templates/` | Claude | Template-uri. |
-| `agents/_system/agents.yaml` | **AMBII** | Merge manual. Adăugați secțiuni, NU ștergeți. |
-| `.env.example` | **AMBII** | Merge manual. Adăugați variabile, NU ștergeți. |
+## 1. Build a wave from path intent
 
-## 2. Lock Protocol
+For every proposed task, record:
 
-Înainte de a edita ORICE fișier, verificați lock-ul:
-
-### Lock files
-
-Lock-urile sunt în `memory_logs/oracle/locks/`:
-```
-memory_logs/oracle/locks/
-  claude.active     → Claude Code e activ
-  opencode.active   → OpenCode e activ
-  <file>.lock       → Fișier individual blocat
+```text
+goal=<one outcome>
+role=<planner|builder|verifier|reviewer|integrator>
+risk=<R0|R1|R2|R3>
+base_sha=<40-character SHA>
+paths=<exact files or narrow path prefixes>
+depends_on=<task/PR or none>
+lease_expiry=<timestamp>
 ```
 
-### Reguli
+Automated verification receipts map CI risk conservatively (`low -> R0`, `medium -> R2`,
+`high -> R3`). Use `R1` only with a specific bounded-internal justification.
 
-1. **Verifică înainte de editare**: dacă `claude.active` există, NU edita fișiere din ownership Claude. Dacă `opencode.active` există, Claude NU editează fișiere opencode.
-2. **Shared files** (`agents.yaml`, `.env.example`, `orchestrator.py`, `web.py`): verificați dacă fișierul e deja modificat local (`git status`) înainte de a-l edita. Dacă da, NU editați — lăsați celălalt agent să termine și faceți merge manual.
-3. **La pornire**: scrieți lock-ul vostru (`claude.active` sau `opencode.active`) cu conținut = ce intenționați să faceți.
-4. **La terminare**: ștergeți lock-ul.
+Parallelize tasks only when their paths and contracts are independent. Shared generated files,
+public contracts, migrations, branch policy, and status ledgers are serialization points even when
+the implementation files differ.
 
-### Comenzi (folosește `lock.py`)
+## 2. Inspect before coordinating
 
-```bash
-# Agent-level lock (întreaga sesiune)
-python lock.py acquire opencode "building Oracle Bridge, admin panel"
-python lock.py acquire claude   "implementing H2.x skills"
+Before editing:
 
-# Component-level lock (fișier sau director specific)
-python lock.py acquire-component opencode agents/web.py "adding oracle endpoints"
-python lock.py acquire-component claude   agents/core/llm/ "refactoring hybrid router"
+1. Inspect the worktree and preserve all pre-existing changes.
+2. Inspect open work when remote truth is relevant.
+3. Compare exact paths, generated consumers, contracts, and merge order.
+4. Continue when there is no material overlap.
+5. When overlap exists, narrow the task, arrange an explicit handoff, or stop that mutation and
+   escalate.
 
-# Verifică dacă o componentă e blocată
-python lock.py check agents/web.py
-python lock.py check agents/core/llm/
+A draft PR does not own every file it touches. Draft status means “delivery is not ready”; it says
+nothing about lease, CI, or governance state.
 
-# Status complet (agent locks + component locks)
-python lock.py status
+## 3. Planned GitHub-backed path leases
 
-# Release
-python lock.py release opencode
-python lock.py release-component claude agents/core/llm/
-python lock.py release-component opencode agents/web.py --force
+GitHub-backed path-prefix leases are the intended future coordination system, but they are not
+implemented or enforced. Until a real service exists, report `lease=none`, inspect open work, and
+coordinate overlaps explicitly. Do not claim `requested`, `active`, `contested`, `expired`, or
+`released` as remotely verified state.
+
+The planned lease record will contain:
+
+- holder and purpose;
+- exact path prefixes;
+- base SHA;
+- `requested`, `active`, `contested`, `expired`, or `released` state;
+- expiry and last heartbeat.
+
+Planned lease rules:
+
+- keep path prefixes as narrow as possible;
+- heartbeat only while work is active;
+- expiry never proves another agent's work is safe to overwrite;
+- contested leases stop the overlapping mutation, not unrelated work;
+- release the lease immediately after handoff or abandonment.
+
+`lock.py` remains an optional same-machine collision hint. Its local files do not synchronize,
+cannot establish authority, and must not be treated as a repository-wide lock.
+
+## 4. Capability roles and separation
+
+| Role | Responsibility | Must not claim |
+|---|---|---|
+| Planner | scope, dependencies, risk, rollback | implementation verified |
+| Builder | narrow implementation and targeted checks | independent approval |
+| Verifier | reproduce and record exact commands/results | governance approval |
+| Reviewer | consolidated spec/quality/security findings | merge authority by default |
+| Integrator | confirm exact-head evidence and merge eligibility | fresh evidence after head changes |
+
+Use the best available agent for the role and surface. For `R3`, builder, reviewer, and integrator
+must be different actors/identities. For lower risk, roles may be combined when the policy permits.
+
+## 5. Independent state dimensions
+
+Report these four dimensions separately:
+
+| Dimension | Typical states |
+|---|---|
+| Delivery | `planned`, `in_progress`, `draft`, `ready`, `blocked`, `merged`, `superseded` |
+| CI | `not_run`, `running`, `passed`, `failed`, `cancelled`, `skipped`, `stale` |
+| Governance | `unclassified`, `review_required`, `changes_requested`, `approved`, `owner_hold`, `stale` |
+| Lease | `none`, `requested`, `active`, `contested`, `expired`, `released` |
+
+Examples:
+
+```text
+delivery=draft ci=passed governance=review_required lease=none
+delivery=ready ci=stale governance=stale lease=none
 ```
 
-## 3. Commit Protocol
+“Green”, “draft”, or “locked” alone is never a complete handoff.
 
-### Commit-uri separate
+## 6. Review loop budget
 
-- **OpenCode**: prefix `feat(oracle):`, `feat(admin):`, `docs(backlog):`
-- **Claude**: prefix `feat(H2.x):`, `feat(H3.x):`, `feat(H4.x):`, `fix:`
-- **Ambii**: prefix `merge:`
+Normal review has at most two consolidated rounds:
 
-### Ordine
+1. one findings pass, grouped by severity and deduplicated;
+2. one fix-verification pass against the new exact head.
 
-1. OpenCode face commit + push PRIMUL (dacă e cazul)
-2. Claude face `git pull --rebase` înainte de a începe
-3. Claude face commit + push la final
-4. OpenCode face `git pull --rebase` după ce Claude termină
+If material findings remain, stop bouncing patches between agents. Escalate with the unresolved
+finding, risk, options, recommended owner decision, and exact current head. A genuinely new scope or
+new high-severity defect starts a separately identified review, not a hidden third round.
 
-### Evitare conflicte
+## 7. Evidence handoff
 
-- **NU editați fișiere care au fost modificate în ultimele 24h de celălalt agent** (verificați `git log --oneline <file>`)
-- Dacă un fișier e în `ownership` celuilalt agent și trebuie modificat, creați un ticket în `BACKLOG.md` secțiunea `# Atenționări conflicte`
-- Pentru `agents.yaml` și `.env.example`: adăugați la sfârșit, NU în mijloc
+Handoffs and PRs use the receipt fields in `.github/pull_request_template.md`. Verification binds
+to the exact head SHA and includes command, exit code, and result. A new commit moves prior CI and
+governance evidence to `stale`; it must not be copied forward as if still current.
 
-## 4. Detecție automată
+Evidence reuse is allowed only when:
 
-Oracle Bridge (panoul Admin → Oracle) detectează automat conflicte prin:
+- head SHA and policy version are identical;
+- relevant inputs and environment class are unchanged;
+- the receipt names its producer and generation time.
 
-- **Hash comparison** — compară MD5 local vs hash-ul din ultimul sync
-- **Git log** — verifică cine a modificat ultimul un fișier
-- **Lock files** — ce agent e activ
+## 8. Safe Git sequencing
 
-> Rulează `python -c "from agents.core.plugins.oracle_bridge import check_conflicts; print(check_conflicts())"` pentru verificare manuală.
+- Branch from a known base and keep unrelated work outside the task diff.
+- Do not automatically rebase at session start. Rebase only an owned, clean feature branch when
+  required for the task and safe for all present work.
+- Prefer coherent rollback units. Local checkpoints are cheap; pushing every two-minute step is not
+  a recovery strategy and needlessly restarts CI.
+- Never push directly to `main` under the normal workflow.
+- Integrate in dependency order after the exact-head receipt and required controls are current.
 
-## 5. Recovery
+## 9. Recovery from collision
 
-Dacă apar conflicte:
+1. Stop only the overlapping mutation.
+2. Capture `git status`, exact paths, current heads, overlapping open work, and uncommitted owners.
+3. Preserve both contributions in separate branches/worktrees.
+4. Decide the contract owner and merge order.
+5. Re-run affected verification at the integrated head.
+6. Record the explicit handoff/overlap disposition and report all four state dimensions
+   (`lease=none` until enforcement exists).
 
-1. **Nu panică** — conflictele sunt așteptate în paralel development
-2. **Verifică** `git status` și `git diff`
-3. **Rezolvă** manual în editor (păstrează ambele contribuții)
-4. **Commit** cu `git commit -m "merge: resolve <file> conflict between opencode and claude"`
-5. **Mark resolved** în Oracle → butonul "✅ Rezolvă conflictele" din Admin
+Do not use age-of-file rules, local MD5 markers, or a model name as evidence that an edit is safe.

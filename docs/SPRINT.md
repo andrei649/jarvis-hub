@@ -1,11 +1,14 @@
-# SPRINT.md — stare partajată între agenți (sesiune curentă)
+# SPRINT.md — arhivă de sesiune legacy
 
-> Fișier viu. Actualizat de conductor agent sau lead agent după fiecare wave.
-> La start de sesiune: copiază template-ul de mai jos și completează câmpurile.
+> **Status: historical · instructional: false.** Acest fișier păstrează snapshot-ul sesiunii din
+> 2026-07-06 și nu este stare curentă, registru de lock-uri sau autoritate de livrare. Politica
+> canonică este [`.github/ai-development-policy.json`](../.github/ai-development-policy.json).
+> Stările delivery, CI, governance și lease se raportează separat și se leagă de head SHA exact.
+> Nu copia acest snapshot într-o sesiune nouă; construiește un capsule proaspăt din repo/PR-uri.
 
 ---
 
-## Sesiune curentă
+## Snapshot istoric al sesiunii
 
 **Data:** 2026-07-06 (AUD-14 trust env-flags active)
 **Lead agent / Conductor:** Codex
@@ -60,7 +63,7 @@ main by parallel agents.
 
 ---
 
-## Wave-uri active
+## Wave-uri din snapshot-ul istoric
 
 | Wave | Branch | PR | Status | Agenți | Note |
 |------|--------|----|--------|--------|------|
@@ -142,16 +145,18 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ---
 
-## Fișiere blocate (în PR activ)
+## Notă legacy despre lock-uri (neautoritativă)
 
-No active PR lock in this docs branch. The primary main workspace has a separate staged Hermes migration implementation batch; this docs PR does not touch those files.
+Textul vechi despre lock-uri este retras. Un draft PR nu este lock; coordonarea curentă folosește
+lease-uri GitHub pe path-prefix, iar `lock.py` este doar un indiciu local. Verifică starea curentă,
+overlap-ul real și politica înainte de a edita.
 
 ---
 
 ## Ordine de merge (Wave 1 — de venit)
 
 ```
-Current order:
+Merge order recorded in this snapshot:
   1. O26-P2.2 living-memory turn seam + nightly maintenance (#501) ✅
   2. O26-P2.3 dormant-module disposition (#502) ✅
   3. O26-P2.4 Product Posture (#503) ✅
@@ -168,7 +173,7 @@ Current backlog state: **0.45 High-Risk Automation Contracts — payment + signa
 
 ---
 
-## Recomandare — următorul thread (drum spre 1.0)
+## Recomandare istorică pentru următorul thread (la data snapshot-ului)
 
 > Cântărit față de north-star (MOONSHOT §1/§3/§5) și ce s-a livrat în Wave 0 (securitatea H12.1).
 > Acum că **1.0 = tot backlogul**, secvențierea contează: alegem ce ridică cel mai mult valoarea pe-misiune.

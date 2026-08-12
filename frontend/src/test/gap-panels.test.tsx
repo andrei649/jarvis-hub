@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import gapSource from '../gap.tsx?raw';
-import { CapabilitiesPanel, DataSpacesPanel, LMStudioPanel, PairingPanel, RoomsPanel, SandboxPanel } from '../gap';
+import { CapabilitiesPanel, DataSpacesPanel, LMStudioPanel, PairingPanel, RoomsPanel, SandboxPanel, SwarmPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
 
@@ -20,9 +20,60 @@ function mockFetch(routes) {
 }
 
 describe('Console Build registry', () => {
-  it('imports and registers the governed Operator panel in Build', () => {
+  it('imports governed panels and keeps the read-only SwarmPanel honest', async () => {
     expect(gapSource).toMatch(/import\s+\{\s*OperatorPanel\s*\}\s+from\s+['"]\.\/operator-panel['"]/);
     expect(gapSource).toMatch(/\['Build', \[[^\]]*\bOperatorPanel\b/);
+    expect(gapSource).toMatch(/\bSwarmPanel\b/);
+
+    const summary = {
+      generated_at: 1780900000,
+      initialized: true,
+      halted: false,
+      agents: [
+        { id: 'jarvis', model: 'local', events: 12, tokens_out: 400, cost_eur: 0, last_ts: 1780899000 },
+        { id: 'friday', model: 'local', events: 0, tokens_out: 0, cost_eur: 0, last_ts: 0 },
+      ],
+      activity: [],
+      autonomy: { stats: {}, mode: 'auto', budget: { remaining: 3, per_day: 4 }, pending_count: 2, pending_preview: [] },
+      presence: null,
+      missions: [{ id: 'm1' }],
+      workflows: { runs: [{ id: 'r1' }, { id: 'r2' }] },
+      subagents: { spawns: 5, stats: {} },
+      a2a: { enabled: true, pending: 1 },
+      dev_locks: {
+        known: ['claude', 'codex', 'opencode', 'antigravity'],
+        agents: [{ agent: 'opencode', message: 'building oracle', since: 't', age_s: 60, stale: false }],
+        components: [{ component: 'web.py', path: '/x/web.py', entity: 'opencode', task: '', age_s: 60, stale: false }],
+        available: true,
+      },
+    };
+
+    const liveFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => summary });
+    global.fetch = liveFetch;
+    const live = render(<SwarmPanel />);
+    await waitFor(() => expect(screen.getByText('armed')).toBeTruthy());
+    expect(liveFetch.mock.calls.some((c) => String(c[0]).includes('/api/swarm/summary'))).toBe(true);
+    expect(screen.getByText('1/2 agents active')).toBeTruthy();
+    expect(screen.getByText('2 pending')).toBeTruthy();
+    expect(screen.getByText('opencode').style.color).toBe('var(--green)');
+    expect(screen.getByText('claude').style.color).not.toBe('var(--green)');
+    expect(screen.getByText('open full cockpit →').closest('a')?.getAttribute('href')).toBe('/mission-control');
+    live.unmount();
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ...summary, halted: true }),
+    });
+    const halted = render(<SwarmPanel />);
+    expect((await screen.findByText('HALTED')).style.color).toBe('var(--red)');
+    halted.unmount();
+
+    global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
+    const offline = render(<SwarmPanel />);
+    await waitFor(() => expect(screen.getByText(/offline/)).toBeTruthy());
+    expect(screen.queryByText('armed')).toBeNull();
+    offline.unmount();
   });
 });
 
