@@ -1445,14 +1445,16 @@ what I did not open" is worth more than a thin pass over all of them.
 
 The audit flags three as most likely to hide something. Do those first.
 
-#### ADV-131 — The ingestion / archive twin (flagged: most likely)  ⏱
-- **Surface:** the WhatsApp and Facebook parsers, the stylometry module, `agents/core/data_purge.py`
-- **Why it matters:** these create the private archive the entire local-only argument exists to protect — and the critic's census found the archive directories in **none** of the purge, retention or export sets.
-- **Steps:** locate every directory the ingestion path writes to. Check each against `PURGE_*`, the retention config and `EXPORT_DBS`.
-- **Expected:** an explicit coverage table.
-- **FAIL if:** the most personal archive in the system is outside all three → **BLOCKER**, and it is the highest-value thing this chapter can find. It is §15.2's finding at a larger scale.
-- **CROSS:** run ADV-023's directory diff again with an ingested archive present.
-- **Evidence:** the table and the diff.
+#### ADV-131 — The ingestion / archive twin (flagged: most likely)  ⏱ ✅
+- **Verdict:** **CONFIRMED → CLOSED in the G35 candidate.** The raw drop and derived archive had no shared lifecycle inventory; export and retention omitted both, while forget reached the archive only implicitly through its KEEP-inverted sweep.
+- **Canonical roots:** `ingestion/` (raw Facebook/WhatsApp drop) and `archive/` (SQLite, JSONL, stylometry, knowledge, watcher/provenance state and embedding cache), both below the configured runtime data root.
+- **Coverage:** `EXPORT_PRIVATE_DIRS == RETENTION_PRIVATE_DIRS == PURGE_PRIVATE_DIRS == PRIVATE_INGESTION_ROOTS`; future nested artifacts export recursively and are forgotten by default.
+- **Retention:** `retention.ingestion_ttl_days`, default `0` (keep forever), prunes a root only when its newest artifact is stale; any symlink fails closed.
+- **Export safety:** SQLite is dumped structurally, text/JSON/JSONL remains inspectable, binary is base64, and symlinks are refused with `private_ingestion_complete=false`.
+- **Upgrade safety:** a non-empty pre-G35 repo-local `data/` stays watched but is reported as outside authority; export and forget cannot claim completion until the owner resolves it.
+- **Live retention:** the scheduled path clears both the watcher writer and the distinct shared RAG reader, including raw-text embedding keys.
+- **CROSS:** the hermetic proof seeds raw text plus SQLite/JSONL/profile/cache markers, exports every marker, prunes stale roots and verifies a full forget leaves no marker bytes.
+- **Evidence:** [`2026-08-13 hermetic ingestion-lifecycle run`](../qa-runs/2026-08-13-hermetic-adv-ingestion-lifecycle.md).
 
 #### ADV-132 — The MCP server surface (flagged: most likely)  🌐
 - **Surface:** `POST /api/mcp/server/rpc` (open) · `GET /api/mcp/server` (open) · `agents/core/mcp/server.py`
@@ -1806,7 +1808,7 @@ does not prove it. They get triaged differently.
 | G32 | `JARVIS_ACTION_KERNEL` and the hardening flags in the example env | GAP | `.env.example` | Minor | ✅ | | ADV-117 |
 | G33 | `docs/THREAT_MODEL.md` "single front door" and T5 corrections | DOC | `docs/THREAT_MODEL.md` | Minor | ✅ | | ADV-112, ADV-113 |
 | G34 | `docs/PRIVACY.md` forget wording | DOC | `docs/PRIVACY.md` | High | ✅ | | ADV-111 |
-| G35 | The ingestion archive in the purge, retention and export sets | GAP | `agents/core/data_purge.py` | unmeasured | — | | ADV-131 |
+| G35 | The ingestion archive in the purge, retention and export sets | GAP | `agents/core/ingestion/lifecycle.py`, `agents/core/{data_export,retention,data_purge}.py` | High · CONFIRMED → CLOSED | ✅ | | ADV-131 |
 | G36 | A governed/ungoverned inventory for the MCP RPC tool surface | GAP | `agents/core/mcp/server.py` | unmeasured | — | | ADV-132 |
 | G37 | Any exercise of the upgrade path against a populated data root | GAP | `agents/core/persistence/migrations.py` | unmeasured | — | | ADV-133 |
 | G38 | A protocol for orchestrator attributes written by other modules | GAP | `agents/core/orchestrator.py` | Minor · REFUTED-with-residue | — | | ADV-130 |

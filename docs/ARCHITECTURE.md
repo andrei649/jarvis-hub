@@ -265,6 +265,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
 | `agents/core/ingestion/embedder.py` | Text embedding + cache layers | `Embedder.embed`, `Embedder.from_env`, `EmbeddingCache`, `_PROC_CACHE` (LRU) |
+| `agents/core/ingestion/lifecycle.py` | Canonical private raw-import + archive roots shared by export, retention and forget; detects the pre-G35 repo-local import root without silently moving owner data | `PRIVATE_INGESTION_ROOTS`, `default_import_root`, `default_archive_root`, `legacy_import_status` |
 | `agents/core/ingestion/pipeline.py` | Facebook/WhatsApp → vectors | `IngestionPipeline.run`, `search_similar` |
 | `agents/core/ingestion/normalizer.py` | Message normalization | `NormalizedMessage` |
 | `agents/core/ingestion/parser_facebook.py` | Facebook JSON parser | `FacebookParser` |

@@ -284,6 +284,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="retention", key="enabled",               value=False, label="Enable data-retention sweeps", kind="toggle"),
     dict(category="retention", key="conversation_ttl_days", value=90,    label="Delete conversation transcripts older than (days; 0 = keep forever)", kind="number"),
     dict(category="retention", key="audit_ttl_days",        value=365,   label="Prune audit-log rows older than (days; 0 = keep forever)", kind="number"),
+    dict(category="retention", key="ingestion_ttl_days",   value=0,     label="Delete stale Howard imports/archive after (days; 0 = keep forever)", kind="number"),
 ]
 
 # ── lazy init — called on first use, not at import time ───────────

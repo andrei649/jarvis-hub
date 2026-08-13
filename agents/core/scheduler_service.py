@@ -147,7 +147,7 @@ class SchedulerService:
             logger.warning(f"Failed to schedule WorldView KG sync: {e}")
 
     def schedule_retention(self):
-        """Daily data-retention sweep (H23.10) — prune transcripts/audit past their TTL.
+        """Daily data-retention sweep (H23.10) — prune transcripts, audit and private ingestion past TTL.
 
         Always registered, but a no-op at run time unless ``retention.enabled`` is
         set, so the job is harmless by default. Runs at 03:30, off the busy hours.
@@ -298,10 +298,15 @@ class SchedulerService:
 
         from agents.core import retention
         try:
+            watcher = getattr(self._orch, "ingestion_watcher", None)
             result = await asyncio.to_thread(
-                retention.run_retention, self._orch.get_setting, getattr(self._orch, "audit", None)
+                retention.run_retention,
+                self._orch.get_setting,
+                getattr(self._orch, "audit", None),
+                ingestion_pipeline=getattr(watcher, "pipeline", None),
             )
             logger.info("Retention sweep complete: %s", result)
+            return result
         except Exception as e:
             logger.warning(f"Retention sweep failed: {e}")
 

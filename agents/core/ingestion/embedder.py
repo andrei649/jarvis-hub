@@ -76,6 +76,19 @@ def _proc_cache_put(key: tuple, vec: list[float]) -> None:
             _PROC_CACHE.popitem(last=False)  # evict LRU entry
 
 
+def clear_process_cache() -> int:
+    """Drop in-process embeddings and their raw-text keys; return entries removed.
+
+    The disk cache participates in the data-root lifecycle, but this LRU lives
+    outside it. Forget and ingestion-retention paths call this so a deleted
+    archive cannot remain reconstructable from process memory.
+    """
+    with _PROC_CACHE_LOCK:
+        removed = len(_PROC_CACHE)
+        _PROC_CACHE.clear()
+    return removed
+
+
 class EmbeddingCache:
     """Content-addressed on-disk cache for embeddings.
 

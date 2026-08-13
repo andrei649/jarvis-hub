@@ -16,6 +16,7 @@ _server_out*.txt
 .worktrees/
 .mcp.json
 agents/data/
+/data/
 
 # Runtime SQLite databases (created by the app/tests, e.g. H8 MemoryStore)
 agents/data/
