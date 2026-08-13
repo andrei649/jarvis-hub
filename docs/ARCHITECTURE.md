@@ -285,6 +285,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | `agents/core/plugin_gate.py` | Per-agent plugin permission | `PermissionGate.check_call` |
 | `agents/core/learning/loop.py` | Agent health + promotion loop | `LearningLoop.record`, `rank_candidates`, `suggest_promotions`, `is_unhealthy` |
 | `agents/core/mcp/client.py` | MCP client (stdio/SSE) | `MCPManager`, `MCPServer.connect`, `MCPTool` |
+| `agents/core/mcp/server.py`, `route_tools.py` | MCP server RPC: explicit agent/read/write inventory; hidden direct skill commands refused; writes require identity + contract + audit + an enabled, bound Action Kernel GRANT | `JarvisMCPServer.tool_inventory`, `MutatingRouteTool.call` |
 | `agents/core/workflows/` | Multi-agent workflow engine | `WorkflowEngine` (engine.py), `WorkflowRegistry` (registry.py), `Pipeline`, `WorkflowStep` (pipeline.py), storage (storage.py) |
 | `agents/core/observability/tracer.py` | Request tracing | `Tracer`, trace context |
 | `agents/core/observability/eval.py` | LLM evaluation harness | `EvalRunner` |

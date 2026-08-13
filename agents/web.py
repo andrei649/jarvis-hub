@@ -1349,6 +1349,26 @@ def _get_payment_broker():
 
 # ── H10.5 MCP Server Mode (expose Jarvis agents as governed MCP tools) ─
 
+def _mcp_agent_request_guard(_agent_id: str, text: str) -> Optional[str]:
+    """Refuse direct skill commands hidden inside an ``ask_*`` MCP call.
+
+    MCP tools must expose their mutation surface explicitly. The orchestrator's
+    command fast-path executes a parsed skill before normal agent routing, so
+    allowing it here would create undeclared write tools behind a conversational
+    descriptor. Normal conversation still reaches the orchestrator, whose
+    downstream action paths retain their own governance.
+    """
+    skills = getattr(orch, "skills", None)
+    parser = getattr(skills, "parse_command", None)
+    if not callable(parser):
+        return "MCP agent request guard unavailable"
+    if parser(text) is not None:
+        return (
+            "direct skill commands are not exposed over MCP; "
+            "use an explicitly listed governed tool"
+        )
+    return None
+
 def _build_mcp_server():
     """Build a JarvisMCPServer over the live orchestrator's agents."""
     from agents.core.mcp.server import JarvisMCPServer
@@ -1371,6 +1391,7 @@ def _build_mcp_server():
         lan_only=True,
         route_tools=route_tools,
         mutating_route_tools=mutating_route_tools,
+        agent_request_guard=_mcp_agent_request_guard,
     )
 
 
@@ -1437,9 +1458,8 @@ def _build_mcp_mutating_route_tools():
 
     invokers = {"memory_remember": _invoke_memory_remember}
     auditor = orch.audit if orch else None
-    # ORIZONT-24 wave-3: mediate MCP writes through the Action Kernel (default-off).
-    # A halted kill-switch / over-budget / runaway loop blocks the write after the
-    # identity gate. None if the policy isn't reachable → kernel-less, unchanged.
+    # MCP writes require the Action Kernel. Disabled/unavailable, DENY, and QUEUE
+    # all fail closed after identity; only an explicit GRANT reaches the adapter.
     from agents.core.kernel.binding import make_action_kernel
     return build_mutating_route_tools(
         invokers, auditor=auditor, identity_check=_mcp_identity_check,

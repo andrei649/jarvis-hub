@@ -82,7 +82,10 @@ async def test_mcp_mutating_route_contract_denial_blocks_write_and_audits(monkey
 
 
 @pytest.mark.asyncio
-async def test_mcp_mutating_route_contract_allows_existing_success_path():
+async def test_mcp_mutating_route_contract_allows_existing_success_path(monkeypatch):
+    from agents.core.kernel import Decision, Verdict
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
     invoke, calls = _fake_remember_invoker()
     auditor = _FakeAuditor()
     tools = build_mutating_route_tools(
@@ -91,6 +94,7 @@ async def test_mcp_mutating_route_contract_allows_existing_success_path():
         read_only_enabled=True,
         mutating_enabled=True,
         identity_check=lambda _token: True,
+        kernel=lambda _action: Decision(Verdict.GRANT, reason="test grant"),
     )
     server = JarvisMCPServer(
         _runner,

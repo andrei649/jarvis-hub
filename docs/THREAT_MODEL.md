@@ -62,7 +62,7 @@ that drove `PENDING_GUARD` to empty in SEC-3:
 ## 5. Residual risks & out of scope (honest)
 
 - **Single-user model.** No per-user isolation/RLS today (a 1.0 decision — `docs/SINGLE_USER_NOTE.md` / H23.23). Multi-tenant is **out of scope** for 0.x.
-- **Kernel default-off.** The action kernel (`JARVIS_ACTION_KERNEL`) is opt-in; all 11 privileged-action kinds are kernel-mediated (zero `PENDING_KERNEL` remain) once enabled, including admin security routes (B1) and the audited strict-egress downgrade (B3). A capability token is now mandatory for admin.\*/kg.write (wave-4b/K2) — the operator's already-authenticated request mints its own short-lived token when none is presented, so this doesn't add a new credential the operator must obtain.
+- **Kernel default-off, with a fail-closed MCP exception.** The action kernel (`JARVIS_ACTION_KERNEL`) remains opt-in for legacy action families; all privileged-action kinds are kernel-mediated (zero `PENDING_KERNEL` remain) once enabled. MCP mutating route tools are stricter: disabled/unavailable kernel, `DENY`, and `QUEUE` all refuse before the adapter, so only an explicit `GRANT` can write. A capability token is mandatory for admin.\*/kg.write; the already-authenticated operator route mints its own short-lived token when absent.
 - **Taint-tracking is a flag, not full data-flow analysis** (H23.6).
 - **Physical/host compromise** (a rooted machine, a malicious OS) is out of scope — Jarvis trusts the host it runs on.
 - **The cloud providers you opt into** (LLM APIs, channels) handle data under *their* policies once you enable them — see [`docs/PRIVACY.md`](PRIVACY.md).

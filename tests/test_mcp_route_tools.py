@@ -44,6 +44,12 @@ from agents.core.mcp.route_tools import (
 from agents.core.mcp.server import JarvisMCPServer
 
 
+@pytest.fixture(autouse=True)
+def _enable_action_kernel_for_mutating_route_tests(monkeypatch):
+    """Mutation-success tests must opt into the now-mandatory kernel."""
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+
+
 # Per-identity gate fakes (H22.9 hardening). A mutating tool now fails CLOSED
 # unless an ``identity_check`` is bound, so the default helper binds a permissive
 # one (mirroring the unset-token localhost-trust dev posture). Tests that exercise
@@ -138,7 +144,8 @@ def _fake_remember_invoker():
 
 
 def _mutating_server(
-    *, read_only=True, mutating=True, auditor=None, invokers=None, identity_check=None
+    *, read_only=True, mutating=True, auditor=None, invokers=None,
+    identity_check=None, kernel=None
 ):
     """Server with read tools always + mutating tools gated on both switches.
 
@@ -153,6 +160,13 @@ def _mutating_server(
         invokers = {"memory_remember": invoke}
     if identity_check is None:
         identity_check = _allow_identity
+    if kernel is None:
+        from agents.core.kernel import Decision, Verdict
+
+        def _grant_kernel(_action):
+            return Decision(Verdict.GRANT, reason="test grant")
+
+        kernel = _grant_kernel
     if auditor is None:
         # Mutating tools fail closed without an auditor (SEC F3); production always
         # has orch.audit, so default one here for the dispatch/gate tests.
@@ -164,6 +178,7 @@ def _mutating_server(
         read_only_enabled=read_only,
         mutating_enabled=mutating,
         identity_check=identity_check,
+        kernel=kernel,
     )
     return JarvisMCPServer(
         _runner, AGENTS, route_tools=route_tools, mutating_route_tools=mut_tools
@@ -235,6 +250,27 @@ def test_status_surfaces_exposed_routes():
     assert set(st["exposed_routes"]) == {"status", "memory_search", "dashboard"}
     st_off = _server(with_routes=False).status()
     assert st_off["exposed_routes"] == []
+
+
+def test_complete_inventory_classifies_read_and_mutating_routes():
+    srv = _mutating_server()
+    inventory = {row["name"]: row for row in srv.tool_inventory()}
+    assert set(inventory) == {tool["name"] for tool in srv.list_tools()}
+    for name in ("route_status", "route_memory_search", "route_dashboard"):
+        assert inventory[name]["governance"] == "governed"
+        assert inventory[name]["direct_mutation"] is False
+        assert "read_only_allowlist" in inventory[name]["controls"]
+    mutation = inventory["route_memory_remember"]
+    assert mutation["governance"] == "governed"
+    assert mutation["direct_mutation"] is True
+    assert mutation["controls"] == [
+        "mutating_allowlist",
+        "identity_required",
+        "contract_required",
+        "audit_required",
+        "action_kernel_required",
+        "kernel_grant_required",
+    ]
 
 
 # ── calling route tools (in-process dispatch) ───────────────────────────────

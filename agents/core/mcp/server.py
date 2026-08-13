@@ -39,6 +39,7 @@ INTERNAL_ERROR = -32603
 
 # Agent runner: ``async (agent_id, text) -> str``
 AgentRunner = Callable[[str, str], Awaitable[str]]
+AgentRequestGuard = Callable[[str, str], Optional[str]]
 
 
 def _tool_name(agent_id: str) -> str:
@@ -54,6 +55,7 @@ class JarvisMCPServer:
         lan_only: bool = True,
         route_tools: Optional[list[RouteTool]] = None,
         mutating_route_tools: Optional[list[MutatingRouteTool]] = None,
+        agent_request_guard: Optional[AgentRequestGuard] = None,
     ) -> None:
         """
         Parameters
@@ -76,6 +78,7 @@ class JarvisMCPServer:
         self.agents = agents
         self.allowed = set(allowed_agents if allowed_agents is not None else agents.keys())
         self.lan_only = lan_only
+        self.agent_request_guard = agent_request_guard
         # Map ``route_<name>`` → RouteTool. Only allow-listed, read-only routes
         # ever land here (the allow-list IS the gate — see route_tools.py).
         self.route_tools: dict[str, RouteTool] = {
@@ -153,6 +156,13 @@ class JarvisMCPServer:
         text = arguments.get("text")
         if not isinstance(text, str) or not text.strip():
             return self._tool_error("missing required string argument: text")
+        if self.agent_request_guard is not None:
+            try:
+                refusal = self.agent_request_guard(agent_id, text)
+            except Exception:
+                return self._tool_error("agent request guard unavailable")
+            if refusal:
+                return self._tool_error(str(refusal))
         try:
             reply = await self.runner(agent_id, text)
         except Exception as exc:  # never leak a stack trace to an external client
@@ -264,4 +274,45 @@ class JarvisMCPServer:
                 mt.spec.name for mt in self.mutating_route_tools.values()
             ],
             "tools": [t["name"] for t in self.list_tools()],
+            "tool_inventory": self.tool_inventory(),
         }
+
+    def tool_inventory(self) -> list[dict]:
+        """Complete direct-dispatch inventory for the exposed MCP tool surface."""
+        inventory = []
+        for agent_id in self._exposed():
+            controls = ["agent_allowlist", "orchestrator_runner"]
+            governed = self.agent_request_guard is not None
+            if governed:
+                controls.append("direct_skill_commands_refused")
+            inventory.append({
+                "name": _tool_name(agent_id),
+                "tool_class": "agent",
+                "direct_mutation": False,
+                "governance": "governed" if governed else "runner_defined",
+                "controls": controls,
+            })
+        for tool in self.route_tools.values():
+            inventory.append({
+                "name": tool.tool_name,
+                "tool_class": "route",
+                "direct_mutation": False,
+                "governance": "governed",
+                "controls": ["read_only_allowlist", "schema_reflection"],
+            })
+        for tool in self.mutating_route_tools.values():
+            inventory.append({
+                "name": tool.tool_name,
+                "tool_class": "route",
+                "direct_mutation": True,
+                "governance": "governed",
+                "controls": [
+                    "mutating_allowlist",
+                    "identity_required",
+                    "contract_required",
+                    "audit_required",
+                    "action_kernel_required",
+                    "kernel_grant_required",
+                ],
+            })
+        return inventory

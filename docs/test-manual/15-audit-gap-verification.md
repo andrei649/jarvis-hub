@@ -1456,14 +1456,15 @@ The audit flags three as most likely to hide something. Do those first.
 - **CROSS:** the hermetic proof seeds raw text plus SQLite/JSONL/profile/cache markers, exports every marker, prunes stale roots and verifies a full forget leaves no marker bytes.
 - **Evidence:** [`2026-08-13 hermetic ingestion-lifecycle run`](../qa-runs/2026-08-13-hermetic-adv-ingestion-lifecycle.md).
 
-#### ADV-132 — The MCP server surface (flagged: most likely)  🌐
+#### ADV-132 — The MCP server surface (flagged: most likely)  🌐 ✅
+- **Verdict:** **CONFIRMED → CLOSED in the G36 candidate.** Two bypasses existed: the sole mutating route wrote with the kernel disabled/unbound, and a kernel `QUEUE` verdict fell through as execution authority. The conversational `ask_*` tools also accepted direct skill commands that were absent from the advertised MCP tool list.
 - **Surface:** `POST /api/mcp/server/rpc` (open) · `GET /api/mcp/server` (open) · `agents/core/mcp/server.py`
-- **Why it matters:** the audit calls this "the one place a remote client reaches the action layer" — and the RPC entry point is **open**-tier in the auth snapshot.
-- **Steps:** enumerate every tool the RPC surface exposes. For each, determine whether it can mutate, and whether the call goes through the action kernel and the permission gate. Then call the surface with no token.
-- **Expected:** a tool inventory with a governed/ungoverned column.
-- **FAIL if:** any mutating tool is reachable unauthenticated, or bypasses the kernel → **BLOCKER**. This is the single most likely place in the product for an ungoverned action to exist.
-- **CROSS:** `GET /api/metrics/kernel` (open) before and after each mutating call — a mutation with no kernel row is the proof.
-- **Evidence:** the inventory, the status codes, the kernel deltas.
+- **Inventory:** `GET /api/mcp/server` now returns `tool_inventory` for every exposed `ask_*`, allow-listed read route, and allow-listed mutating route. Each row declares direct-mutation ability, governed state, and controls; the inventory is checked against `tools/list` so no advertised tool is omitted.
+- **Agent boundary:** `ask_*` remains conversational/orchestrator-routed, but a parsed direct skill command is refused before the runner. Hidden calendar/Spotify/project/family/content writes cannot masquerade as an agent conversation tool.
+- **Mutation boundary:** `route_memory_remember` still requires both MCP switches, transport/per-tool identity, the reusable contract, and audit. It now additionally requires `JARVIS_ACTION_KERNEL=1`, a bound kernel, and verdict `GRANT`; `DENY` and `QUEUE` both refuse without invoking the adapter.
+- **No-token proof:** default server mode returns 403; enabled mode with a configured user token returns 401 without the token; unset-token non-local access returns 403. Local-dev read/conversation posture remains available, but mutation still cannot cross the kernel requirement.
+- **CROSS:** a real bound kernel over the default policy records an `mcp.mutating` `queue` delta while the adapter call count stays zero.
+- **Evidence:** [`2026-08-13 hermetic MCP RPC governance run`](../qa-runs/2026-08-13-hermetic-mcp-rpc-governance.md).
 
 #### ADV-133 — Upgrade and migration safety (flagged: most likely)  ⏱ 🖥
 - **Surface:** `agents/core/persistence/migrations.py` · `agents/core/paths.py`
@@ -1809,7 +1810,7 @@ does not prove it. They get triaged differently.
 | G33 | `docs/THREAT_MODEL.md` "single front door" and T5 corrections | DOC | `docs/THREAT_MODEL.md` | Minor | ✅ | | ADV-112, ADV-113 |
 | G34 | `docs/PRIVACY.md` forget wording | DOC | `docs/PRIVACY.md` | High | ✅ | | ADV-111 |
 | G35 | The ingestion archive in the purge, retention and export sets | GAP | `agents/core/ingestion/lifecycle.py`, `agents/core/{data_export,retention,data_purge}.py` | High · CONFIRMED → CLOSED | ✅ | | ADV-131 |
-| G36 | A governed/ungoverned inventory for the MCP RPC tool surface | GAP | `agents/core/mcp/server.py` | unmeasured | — | | ADV-132 |
+| G36 | A governed/ungoverned inventory for the MCP RPC tool surface | GAP | `agents/core/mcp/server.py` | High · CONFIRMED → CLOSED | ✅ | | ADV-132 |
 | G37 | Any exercise of the upgrade path against a populated data root | GAP | `agents/core/persistence/migrations.py` | unmeasured | — | | ADV-133 |
 | G38 | A protocol for orchestrator attributes written by other modules | GAP | `agents/core/orchestrator.py` | Minor · REFUTED-with-residue | — | | ADV-130 |
 

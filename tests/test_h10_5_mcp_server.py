@@ -27,6 +27,21 @@ def _server(allowed=None, calls=None):
     return JarvisMCPServer(runner, agents, allowed_agents=allowed)
 
 
+def _guarded_server(calls):
+    agents = {"jarvis": "Prime orchestrator"}
+
+    async def runner(agent_id, text):
+        calls.append((agent_id, text))
+        return "ran"
+
+    def guard(_agent_id, text):
+        if text == "add event":
+            return "direct skill commands are not exposed over MCP"
+        return None
+
+    return JarvisMCPServer(runner, agents, agent_request_guard=guard)
+
+
 # ── tool listing ────────────────────────────────────────────────────────────
 
 def test_list_tools_one_per_agent():
@@ -86,6 +101,23 @@ async def test_runner_exception_does_not_leak():
     assert "agent error" in res["content"][0]["text"]
 
 
+@pytest.mark.asyncio
+async def test_agent_request_guard_refuses_hidden_skill_command_before_runner():
+    calls = []
+    res = await _guarded_server(calls).call_tool("ask_jarvis", {"text": "add event"})
+    assert res["isError"] is True
+    assert "direct skill commands" in res["content"][0]["text"]
+    assert calls == []
+
+
+def test_complete_tool_inventory_classifies_every_exposed_tool():
+    inventory = _guarded_server([]).tool_inventory()
+    assert {row["name"] for row in inventory} == {"ask_jarvis"}
+    assert all(row["governance"] == "governed" for row in inventory)
+    assert all(row["direct_mutation"] is False for row in inventory)
+    assert all("direct_skill_commands_refused" in row["controls"] for row in inventory)
+
+
 # ── JSON-RPC dispatch ───────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -132,6 +164,8 @@ def test_mcp_endpoints():
         body = status.json()
         assert body["enabled"] is False           # disabled by default
         assert body["lan_only"] is True
+        assert body["tool_inventory"]
+        assert all(row["governance"] == "governed" for row in body["tool_inventory"])
         # RPC is gated off by default
         rpc = c.post("/api/mcp/server/rpc", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         assert rpc.status_code == 403
@@ -159,3 +193,21 @@ def test_rpc_transport_gate_enforces_user_token(monkeypatch):
         # Valid user token → passes the gate to the JSON-RPC handler.
         ok = c.post("/api/mcp/server/rpc", json=body, headers={"x-user-token": "secret-tok"})
         assert ok.status_code == 200
+
+
+def test_production_agent_guard_recognizes_direct_skill_commands(monkeypatch):
+    from types import SimpleNamespace
+
+    from agents import web
+
+    monkeypatch.setattr(
+        web,
+        "orch",
+        SimpleNamespace(
+            skills=SimpleNamespace(
+                parse_command=lambda text: ("calendar", "add_event", text)
+            )
+        ),
+    )
+    refusal = web._mcp_agent_request_guard("jarvis", "add_event tomorrow")
+    assert "not exposed over MCP" in refusal

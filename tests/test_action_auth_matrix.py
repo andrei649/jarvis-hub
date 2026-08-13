@@ -128,9 +128,16 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             hc.set_egress_kernel_hook(None)
     elif kind == "mcp.mutating":
         # An MCP mutating tool routes through the kernel after the identity gate.
+        # Unlike legacy brokers, it now fails closed when the kernel flag is off;
+        # that refusal is expected and still proves the spy was not consulted.
         import asyncio
 
-        from agents.core.mcp.route_tools import MUTATING_ROUTE_ALLOWLIST, MutatingRouteTool
+        from agents.core.kernel import kernel_enabled
+        from agents.core.mcp.route_tools import (
+            MUTATING_ROUTE_ALLOWLIST,
+            MutatingKernelError,
+            MutatingRouteTool,
+        )
 
         async def _invoke(_kwargs):
             return {"ok": True}
@@ -142,7 +149,11 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             identity_check=lambda _t: True,
             kernel=spy,
         )
-        asyncio.run(tool.call({"text": "x"}, token="ok"))
+        try:
+            asyncio.run(tool.call({"text": "x"}, token="ok"))
+        except MutatingKernelError:
+            if kernel_enabled():
+                raise
     elif kind == "tool.rpc":
         # A gated Tool-RPC call is mediated by the kernel before it can enqueue.
         import asyncio
