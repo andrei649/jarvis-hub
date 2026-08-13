@@ -298,10 +298,15 @@ class SchedulerService:
 
         from agents.core import retention
         try:
+            watcher = getattr(self._orch, "ingestion_watcher", None)
             result = await asyncio.to_thread(
-                retention.run_retention, self._orch.get_setting, getattr(self._orch, "audit", None)
+                retention.run_retention,
+                self._orch.get_setting,
+                getattr(self._orch, "audit", None),
+                ingestion_pipeline=getattr(watcher, "pipeline", None),
             )
             logger.info("Retention sweep complete: %s", result)
+            return result
         except Exception as e:
             logger.warning(f"Retention sweep failed: {e}")
 

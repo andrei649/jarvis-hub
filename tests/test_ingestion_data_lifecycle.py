@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from agents.core import data_export, data_purge, retention, settings_db
+from agents.core.ingestion import lifecycle as ingestion_lifecycle
 from agents.core.ingestion.lifecycle import (
     INGESTION_ARCHIVE_ROOT,
     INGESTION_IMPORT_ROOT,
@@ -24,6 +27,7 @@ from agents.core.ingestion.lifecycle import (
 from agents.core.ingestion.normalizer import NormalizedMessage
 from agents.core.ingestion.pipeline import IngestionPipeline
 from agents.core.ingestion.watcher import IngestionWatcher
+from agents.core.scheduler_service import SchedulerService
 
 _DAY = 86400
 
@@ -56,6 +60,63 @@ def test_default_ingestion_paths_are_inside_runtime_data_root(tmp_path, monkeypa
     assert pipeline.output_root == runtime_root / INGESTION_ARCHIVE_ROOT
     assert watcher.data_root == runtime_root / INGESTION_IMPORT_ROOT
     assert watcher.state_path == runtime_root / INGESTION_ARCHIVE_ROOT / "watcher_state.json"
+
+
+def test_legacy_default_is_detected_watched_and_reported_until_owner_resolves(
+    tmp_path, monkeypatch
+):
+    repo_root = tmp_path / "checkout"
+    runtime_root = tmp_path / "nerva-memory"
+    legacy_root = repo_root / "data"
+    marker = legacy_root / "whatsapp" / "chat.txt"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("LEGACY-PRIVATE-MARKER", encoding="utf-8")
+    monkeypatch.setattr(ingestion_lifecycle, "app_root", lambda: repo_root)
+    monkeypatch.setenv("JARVIS_HOME", str(runtime_root))
+
+    watcher = IngestionWatcher()
+    export = data_export.export_data(
+        source_root=str(runtime_root), out_dir=str(tmp_path / "exports")
+    )
+    document = json.loads(Path(export["export"]).read_text(encoding="utf-8"))
+    forget = data_purge.purge_data(
+        source_root=str(runtime_root), backup_first=False
+    )
+
+    assert watcher.data_root == legacy_root
+    assert export["private_ingestion_complete"] is False
+    assert export["legacy_private_ingestion"] == {
+        "detected": True,
+        "path": str(legacy_root),
+        "reason": "legacy_repo_local_imports_require_owner_resolution",
+    }
+    assert document["legacy_private_ingestion"] == export["legacy_private_ingestion"]
+    assert forget["ok"] is False
+    assert str(legacy_root) in " ".join(forget["not_erased"])
+    assert marker.read_text(encoding="utf-8") == "LEGACY-PRIVATE-MARKER"
+
+
+def test_documented_rollback_staging_restores_old_default_discoverability(
+    tmp_path, monkeypatch
+):
+    repo_root = tmp_path / "checkout"
+    runtime_root = tmp_path / "nerva-memory"
+    current_root = runtime_root / INGESTION_IMPORT_ROOT
+    marker = current_root / "whatsapp" / "chat.txt"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("ROLLBACK-DISCOVERY-MARKER", encoding="utf-8")
+    legacy_root = repo_root / "data"
+    monkeypatch.setattr(ingestion_lifecycle, "app_root", lambda: repo_root)
+    monkeypatch.setenv("JARVIS_HOME", str(runtime_root))
+
+    # Operational rollback rehearsal: while this candidate is still running,
+    # stage a verified copy at the old version's default before reverting code.
+    shutil.copytree(current_root, legacy_root)
+
+    assert ingestion_lifecycle.default_import_root() == legacy_root
+    assert (legacy_root / "whatsapp" / "chat.txt").read_text(
+        encoding="utf-8"
+    ) == "ROLLBACK-DISCOVERY-MARKER"
 
 
 def test_private_ingestion_roots_have_identical_lifecycle_sets():
@@ -195,6 +256,71 @@ def test_retention_prunes_stale_private_roots_and_keeps_fresh_one(tmp_path):
     assert report["live_ingestion"]["embedding_entries"] >= 1
     assert not stale_imports.exists()
     assert fresh_archive.exists()
+    assert embedder._proc_cache_get(key) is None
+    assert pipeline_module._SHARED_PIPELINE is None
+
+
+@pytest.mark.asyncio
+async def test_scheduled_retention_clears_distinct_watcher_and_shared_pipelines(
+    tmp_path, monkeypatch
+):
+    from agents.core.ingestion import embedder
+    from agents.core.ingestion import pipeline as pipeline_module
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    imports = tmp_path / INGESTION_IMPORT_ROOT
+    archive = tmp_path / INGESTION_ARCHIVE_ROOT
+    imports.mkdir()
+    (imports / "chat.txt").write_text("old private import", encoding="utf-8")
+    writer = IngestionPipeline(data_root=imports, output_root=archive)
+    reader = IngestionPipeline(data_root=imports, output_root=archive)
+    writer_private = NormalizedMessage(
+        source="whatsapp",
+        conversation_id="writer",
+        sender="Andrei",
+        is_me=True,
+        text="WATCHER-LIVE-PRIVATE-MARKER",
+        timestamp=1.0,
+    )
+    reader_private = NormalizedMessage(
+        source="whatsapp",
+        conversation_id="reader",
+        sender="Andrei",
+        is_me=True,
+        text="RAG-LIVE-PRIVATE-MARKER",
+        timestamp=1.0,
+    )
+    writer.messages.append(writer_private)
+    writer.my_messages.append(writer_private)
+    writer.stylometry.profile.total_messages = 1
+    writer.knowledge.decisions.append(object())
+    reader.messages.append(reader_private)
+    reader.my_messages.append(reader_private)
+    key = ("hash", "scheduled-retention", writer_private.text)
+    embedder._proc_cache_put(key, [0.5])
+    monkeypatch.setattr(pipeline_module, "_SHARED_PIPELINE", reader)
+    _age_tree(imports, age_days=120)
+    _age_tree(archive, age_days=120)
+    settings = {
+        "retention.enabled": True,
+        "retention.conversation_ttl_days": 0,
+        "retention.audit_ttl_days": 0,
+        "retention.ingestion_ttl_days": 90,
+    }
+    orch = SimpleNamespace(
+        audit=None,
+        ingestion_watcher=SimpleNamespace(pipeline=writer),
+        get_setting=lambda key, default=None: settings.get(key, default),
+    )
+
+    await SchedulerService(orch).run_retention_purge()
+
+    assert writer.messages == []
+    assert writer.my_messages == []
+    assert writer.stylometry.profile.total_messages == 0
+    assert writer.knowledge.decisions == []
+    assert reader.messages == []
+    assert reader.my_messages == []
     assert embedder._proc_cache_get(key) is None
     assert pipeline_module._SHARED_PIPELINE is None
 

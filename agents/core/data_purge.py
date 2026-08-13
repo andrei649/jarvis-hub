@@ -47,7 +47,7 @@ from typing import Iterable, Optional
 
 from agents.core import backup as _backup
 from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
-from agents.core.ingestion.lifecycle import PRIVATE_INGESTION_ROOTS
+from agents.core.ingestion.lifecycle import PRIVATE_INGESTION_ROOTS, legacy_import_status
 from agents.core.paths import data_root
 from agents.core.session_files import NON_SESSION_STEMS
 from agents.core.validation import is_valid_session_id
@@ -553,7 +553,14 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
         raise PurgeError(f"contract denied: {denial}")
 
     root = Path(source_root) if source_root else data_root()
-    report: dict = {"ok": True, "backup": None, "purged": {}, "total_rows": 0}
+    legacy_ingestion = legacy_import_status()
+    report: dict = {
+        "ok": True,
+        "backup": None,
+        "purged": {},
+        "total_rows": 0,
+        "legacy_private_ingestion": legacy_ingestion,
+    }
 
     if backup_first:
         # AUDIT-2c. Three deliberate changes from the old call, each closing a way the
@@ -617,9 +624,17 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
     sweep = _purge_everything_but_keep(root)
     report["purged"]["sweep"] = sweep
     report["total_rows"] += sweep["rows"]
-    if sweep.get("failed"):
+    not_erased = list(sweep.get("failed") or [])
+    legacy_remaining = legacy_import_status()
+    report["legacy_private_ingestion"] = legacy_remaining
+    if legacy_remaining["detected"]:
+        not_erased.append(
+            "legacy ingestion root outside configured data authority: "
+            + str(legacy_remaining["path"])
+        )
+    if not_erased:
         report["ok"] = False
-        report["not_erased"] = sweep["failed"]
+        report["not_erased"] = not_erased
 
     logger.info("forget purge complete: %s rows across %s targets (memory=%s, backup=%s)",
                 report["total_rows"], len(report["purged"]), memory,

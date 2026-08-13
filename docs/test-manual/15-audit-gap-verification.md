@@ -1451,6 +1451,8 @@ The audit flags three as most likely to hide something. Do those first.
 - **Coverage:** `EXPORT_PRIVATE_DIRS == RETENTION_PRIVATE_DIRS == PURGE_PRIVATE_DIRS == PRIVATE_INGESTION_ROOTS`; future nested artifacts export recursively and are forgotten by default.
 - **Retention:** `retention.ingestion_ttl_days`, default `0` (keep forever), prunes a root only when its newest artifact is stale; any symlink fails closed.
 - **Export safety:** SQLite is dumped structurally, text/JSON/JSONL remains inspectable, binary is base64, and symlinks are refused with `private_ingestion_complete=false`.
+- **Upgrade safety:** a non-empty pre-G35 repo-local `data/` stays watched but is reported as outside authority; export and forget cannot claim completion until the owner resolves it.
+- **Live retention:** the scheduled path clears both the watcher writer and the distinct shared RAG reader, including raw-text embedding keys.
 - **CROSS:** the hermetic proof seeds raw text plus SQLite/JSONL/profile/cache markers, exports every marker, prunes stale roots and verifies a full forget leaves no marker bytes.
 - **Evidence:** [`2026-08-13 hermetic ingestion-lifecycle run`](../qa-runs/2026-08-13-hermetic-adv-ingestion-lifecycle.md).
 

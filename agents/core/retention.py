@@ -90,7 +90,8 @@ def purge_old_audit(ttl_days: int, audit_logger, now: Optional[float] = None) ->
 
 
 def purge_old_private_ingestion(ttl_days: int, root: Optional[Path] = None,
-                                now: Optional[float] = None) -> dict:
+                                now: Optional[float] = None,
+                                live_pipeline=None) -> dict:
     """Prune stale raw imports and derived Howard archives as coherent roots.
 
     Age is the newest mtime anywhere in each root, so a recently refreshed
@@ -140,12 +141,12 @@ def purge_old_private_ingestion(ttl_days: int, root: Optional[Path] = None,
         # The process-wide Howard reader and embedding LRU otherwise outlive the
         # filesystem TTL and keep serving text the retention policy just pruned.
         from agents.core.ingestion.pipeline import clear_live_ingestion
-        report["live_ingestion"] = clear_live_ingestion()
+        report["live_ingestion"] = clear_live_ingestion(live_pipeline)
     return report
 
 
 def run_retention(get_setting: Callable, audit_logger=None, root: Optional[Path] = None,
-                  now: Optional[float] = None) -> dict:
+                  now: Optional[float] = None, ingestion_pipeline=None) -> dict:
     """Run the configured retention sweeps. No-op unless ``retention.enabled``.
 
     *get_setting* is the orchestrator's ``get_setting(key, default)`` accessor.
@@ -158,7 +159,9 @@ def run_retention(get_setting: Callable, audit_logger=None, root: Optional[Path]
     ingestion_ttl = int(get_setting("retention.ingestion_ttl_days", 0) or 0)
     conv = purge_old_conversations(conv_ttl, root=root, now=now)
     audit = purge_old_audit(audit_ttl, audit_logger, now=now)
-    ingestion = purge_old_private_ingestion(ingestion_ttl, root=root, now=now)
+    ingestion = purge_old_private_ingestion(
+        ingestion_ttl, root=root, now=now, live_pipeline=ingestion_pipeline
+    )
     logger.info("retention sweep: %d conversation(s), %d audit row(s), %d ingestion root(s) pruned",
                 len(conv["deleted"]), audit["deleted"], len(ingestion["deleted"]))
     return {"enabled": True, "conversations": conv, "audit": audit,

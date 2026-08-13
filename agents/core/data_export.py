@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from agents.core.ingestion.lifecycle import PRIVATE_INGESTION_ROOTS
+from agents.core.ingestion.lifecycle import PRIVATE_INGESTION_ROOTS, legacy_import_status
 from agents.core.paths import data_root
 
 logger = logging.getLogger("jarvis.data_export")
@@ -176,6 +176,7 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
     src = Path(source_root) if source_root else data_root()
     out = Path(out_dir) if out_dir else (src / "exports")
     out.mkdir(parents=True, exist_ok=True)
+    legacy_ingestion = legacy_import_status()
 
     databases: dict[str, dict] = {}
     row_counts: dict[str, int] = {}
@@ -201,7 +202,10 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
         name: _dump_private_dir(src / name)
         for name in EXPORT_PRIVATE_DIRS
     }
-    private_complete = all(not item["skipped"] for item in private_ingestion.values())
+    private_complete = (
+        all(not item["skipped"] for item in private_ingestion.values())
+        and not legacy_ingestion["detected"]
+    )
 
     doc = {
         "version": EXPORT_VERSION,
@@ -210,6 +214,7 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
         "databases": databases,
         "json_stores": json_stores,
         "private_ingestion": private_ingestion,
+        "legacy_private_ingestion": legacy_ingestion,
     }
     # Filename is a server-generated timestamp only — no user value in the path.
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
@@ -224,6 +229,7 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
         "json_stores": sorted(json_stores.keys()),
         "private_ingestion_roots": list(EXPORT_PRIVATE_DIRS),
         "private_ingestion_complete": private_complete,
+        "legacy_private_ingestion": legacy_ingestion,
         "row_counts": row_counts,
     }
 
