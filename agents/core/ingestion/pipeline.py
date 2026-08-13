@@ -22,10 +22,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
-from agents.core.paths import data_path
-
-from .embedder import Embedder
+from .embedder import Embedder, clear_process_cache
 from .knowledge import KnowledgeExtractor
+from .lifecycle import default_archive_root, default_import_root
 from .normalizer import NormalizedMessage
 from .parser_facebook import FacebookParser
 from .parser_whatsapp import WhatsAppParser
@@ -56,19 +55,50 @@ def reset_shared_pipeline() -> None:
     _SHARED_PIPELINE = None
 
 
+def clear_live_ingestion(pipeline: Optional["IngestionPipeline"] = None) -> dict:
+    """Forget Howard archive content retained by live process objects.
+
+    ``pipeline`` is normally the watcher's long-lived writer; the process-wide
+    RAG reader is cleared automatically. The operation is idempotent and does
+    not write anything back to disk.
+    """
+    global _SHARED_PIPELINE
+    targets = []
+    for candidate in (_SHARED_PIPELINE, pipeline):
+        if candidate is not None and all(candidate is not item for item in targets):
+            targets.append(candidate)
+
+    messages = 0
+    for item in targets:
+        messages += len(item.messages)
+        item.messages.clear()
+        item.my_messages.clear()
+        item.stylometry.profile = type(item.stylometry.profile)()
+        item.knowledge.entities.clear()
+        item.knowledge.decisions.clear()
+        item.knowledge.relationships.clear()
+        item.knowledge.topic_clusters.clear()
+    _SHARED_PIPELINE = None
+    return {
+        "pipelines": len(targets),
+        "messages": messages,
+        "embedding_entries": clear_process_cache(),
+    }
+
+
 class IngestionPipeline:
     def __init__(
         self,
-        data_root: str = "data",
-        output_root: str = None,
+        data_root: str | Path | None = None,
+        output_root: str | Path | None = None,
         my_name: str = "Andrei Tarcomnicu",
         my_short_name: str = "Andrei",
         *,
         ledger: Optional[ProvenanceLedger] = None,
         clock: Optional[Callable[[], float]] = None,
     ):
-        self.data_root = Path(data_root)
-        self.output_root = Path(output_root) if output_root is not None else data_path("archive")
+        self.data_root = Path(data_root) if data_root is not None else default_import_root()
+        self.output_root = Path(output_root) if output_root is not None else default_archive_root()
         self.output_root.mkdir(parents=True, exist_ok=True)
 
         self.fb_parser = FacebookParser(my_name=my_name)

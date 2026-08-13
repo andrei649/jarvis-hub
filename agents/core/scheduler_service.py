@@ -147,7 +147,7 @@ class SchedulerService:
             logger.warning(f"Failed to schedule WorldView KG sync: {e}")
 
     def schedule_retention(self):
-        """Daily data-retention sweep (H23.10) — prune transcripts/audit past their TTL.
+        """Daily data-retention sweep (H23.10) — prune transcripts, audit and private ingestion past TTL.
 
         Always registered, but a no-op at run time unless ``retention.enabled`` is
         set, so the job is harmless by default. Runs at 03:30, off the busy hours.

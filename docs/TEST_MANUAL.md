@@ -136,13 +136,15 @@ Record what you **exercised**, not what you read. A short honest run beats a ful
   ([`§15.1/15.2 evidence`](qa-runs/2026-08-11-hermetic-adv-run.md) ·
   [`§15.3 signing evidence`](qa-runs/2026-08-12-hermetic-adv-signing.md) ·
   [`ADV-038 closure`](qa-runs/2026-08-12-hermetic-adv-exec-boundary.md) ·
-  [`§15.8 reality coverage`](qa-runs/2026-08-12-hermetic-adv-reality-coverage.md)):
+  [`§15.8 reality coverage`](qa-runs/2026-08-12-hermetic-adv-reality-coverage.md) ·
+  [`ADV-131 ingestion lifecycle`](qa-runs/2026-08-13-hermetic-adv-ingestion-lifecycle.md)):
   ADV-001 audit-chain forgery + ADV-015 forget file-half both **FIXED-SINCE**, each cross-confirmed
   (probe + hand/seeded repro). ADV-035/036 signing enforcement is **FIXED-SINCE** and ADV-037's
   keyed refusal is confirmed; ADV-038's external unsigned import is **FIXED-SINCE**, with bundled
   behavior and keyed external imports preserved. ADV-087 and ADV-098 are **FIXED-SINCE**:
   declared actuators resolve before certification and the readiness matrix computes zero unclassified
-  proof gaps across 93 eligible records. Live-endpoint (ADV-009/010) and destructive backend (ADV-016–024) cases remain
+  proof gaps across 93 eligible records. ADV-131 is **CONFIRMED → CLOSED** hermetically: both Howard
+  private roots share one export/retention/forget inventory. Live-endpoint (ADV-009/010) and destructive backend (ADV-016–024) cases remain
   NOT-REPRODUCIBLE without the RTX box.
 ☐ The offline suite green locally, matching `project-status.json` → `tests.*`
 ☐ Every 🔑/🖥/🌐 skip carries a written reason

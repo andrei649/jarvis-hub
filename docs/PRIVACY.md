@@ -28,8 +28,10 @@ by default.
 ## What's stored, and where
 
 All runtime data lives under the **gitignored data root** (`agents/data/`, `memory_logs/`):
-conversation transcripts, `memory.db` + the knowledge graph, the embedding cache, the
-local analytics table, and the audit log. Credentials in `settings.db` are
+conversation transcripts, `memory.db` + the knowledge graph, the embedding cache, Howard's
+raw `ingestion/` drop and derived `archive/`, the local analytics table, and the audit log.
+Legacy repo-local `data/` is also gitignored, but the shipped Howard default now uses the
+central data root so export, retention and forget can cover it. Credentials in `settings.db` are
 **Fernet-encrypted at rest**; backups can be written **encrypted** (`.tar.gz.enc`).
 
 ## What can leave the machine — and only when you opt in
@@ -51,7 +53,9 @@ hop. Local-first is enforced, not just promised.
 
 ## Your controls
 
-- **Export** everything you hold — `POST /api/admin/export` (portable bundle, secrets stripped).
+- **Export** everything you hold — `POST /api/admin/export` (portable bundle, secrets stripped),
+  including raw Howard imports and every derived archive artifact. Symlinks are never followed and
+  make the export report `private_ingestion_complete: false` instead of silently leaking a target.
 - **Forget / delete** — `POST /api/admin/forget` erases everything under the data root except
   your settings/credentials, the installed-skill catalogue and the append-only audit chain:
   memory, transcripts, notes, run history, channel threads, vectors and the knowledge graph.
@@ -60,7 +64,9 @@ hop. Local-first is enforced, not just promised.
   A pre-forget archive is taken by default so an accidental forget is recoverable — it is
   **encrypted** and kept **outside** the data root, only the newest is retained, and you can
   decline it with `{"backup_first": false}`.
-- **Retention** — TTLs prune old transcripts/audit rows automatically (off by default; `retention` settings).
+- **Retention** — TTLs prune old transcripts/audit rows automatically; Howard imports/archive have
+  their own `retention.ingestion_ttl_days` and default to `0` (keep forever). Retention is globally
+  off by default.
 - **Kill-switch** — one engage halts new privileged actions (and, as the kernel syscall lands, quarantines credentials).
 - **Encryption** — secret columns + opt-in encrypted backups.
 

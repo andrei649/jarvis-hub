@@ -10,6 +10,7 @@ Scope is the user's **structured content** at rest:
 
   * ``missions.db`` / ``autonomy.db`` / ``analytics.db`` — rows deleted, schema kept
   * ``notes.json`` / ``canvas.json``                     — reset to an empty object
+  * Howard's raw ``ingestion/`` drop and derived ``archive/`` — covered recursively
   * the **memory subsystem** (when ``memory=True``, the CLI + ``/api/admin/forget`` default,
     AUD-2) — the fixed graph/entity/decay/cognition stores, the embedding cache, and
     conversation transcripts for confirmed sessions (see ``_purge_memory_at_rest``)
@@ -46,6 +47,7 @@ from typing import Iterable, Optional
 
 from agents.core import backup as _backup
 from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
+from agents.core.ingestion.lifecycle import PRIVATE_INGESTION_ROOTS
 from agents.core.paths import data_root
 from agents.core.session_files import NON_SESSION_STEMS
 from agents.core.validation import is_valid_session_id
@@ -77,6 +79,12 @@ KEEP_FILES: frozenset[str] = frozenset({
 KEEP_DIRS: frozenset[str] = frozenset({
     "security",         # append-only audit chain + intent log: compliance evidence
 })
+
+# Explicit lifecycle inventory for ADV-131/G35. The KEEP-inverted sweep below
+# erases these recursively; naming them here lets parity tests and the runtime
+# preflight catch a future exemption before a forget can claim success.
+PURGE_PRIVATE_DIRS: tuple[str, ...] = PRIVATE_INGESTION_ROOTS
+
 # `backups` used to be on that list, justified as "includes the pre-forget archive;
 # deleting it mid-purge is absurd". That rationale was already stale when it was
 # written: AUDIT-2c moved the pre-forget archive OUT of the data root — it is
@@ -314,10 +322,22 @@ def _purge_everything_but_keep(root: Path) -> dict:
     if not root.is_dir():
         return report
     for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
         rel = path.relative_to(root)
         if _is_kept(rel):
+            continue
+        name = rel.as_posix()
+        # Never follow an owner-controlled symlink during destructive erasure.
+        # Remove the reference itself, whether it points at a file, directory, or
+        # missing target; an external target is outside this data root's authority.
+        if path.is_symlink():
+            try:
+                path.unlink()
+                report["files"].append(name)
+            except OSError:
+                logger.warning("purge: could not unlink symlink %s", name, exc_info=True)
+                report.setdefault("failed", []).append(name)
+            continue
+        if not path.is_file():
             continue
         # Never unlink a sidecar, even of a database we ARE purging. Its content is
         # erased through the connection by `_purge_db` (DELETE + VACUUM + a TRUNCATE
@@ -325,7 +345,6 @@ def _purge_everything_but_keep(root: Path) -> dict:
         # database corrupts it instead.
         if _is_sqlite_sidecar(rel.name):
             continue
-        name = rel.as_posix()
         try:
             if path.suffix == ".db":
                 deleted = _purge_db(path)
@@ -480,6 +499,14 @@ async def clear_live_memory(orch) -> tuple[list[str], list[str]]:
     if getattr(orch, "_core_block_cache", None) is not None:
         orch._core_block_cache = None
         cleared.append("core_block_cache")
+    try:
+        from agents.core.ingestion.pipeline import clear_live_ingestion
+        watcher = getattr(orch, "ingestion_watcher", None)
+        ingestion = clear_live_ingestion(getattr(watcher, "pipeline", None))
+        if ingestion["pipelines"] or ingestion["embedding_entries"]:
+            cleared.append("ingestion_archive")
+    except Exception as exc:
+        _note_failure("ingestion_archive", exc)
     return cleared, failed
 
 
@@ -508,6 +535,12 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
 
     Returns ``{ok, backup, purged, total_rows}``.
     """
+    lifecycle_conflicts = sorted(set(PURGE_PRIVATE_DIRS) & set(KEEP_DIRS))
+    if lifecycle_conflicts:
+        raise PurgeError(
+            "private ingestion root exempted from forget: " + ", ".join(lifecycle_conflicts)
+        )
+
     sessions = tuple(session_ids or ())
     denial = purge_contract_denial(
         source="function",
@@ -550,6 +583,12 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
             "outside_data_root": True,
             "pruned": _backup.prune_pre_forget_archives(source_root=root),
         }
+
+    # Howard's RAG reader and embedding LRU hold private text outside the data
+    # root. Drop them before erasing files so a successful forget is process-wide,
+    # including the CLI/direct-function path that has no live orchestrator.
+    from agents.core.ingestion.pipeline import clear_live_ingestion
+    report["purged"]["live_ingestion"] = clear_live_ingestion()
 
     for name in PURGE_DBS:
         p = root / name
