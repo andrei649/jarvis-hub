@@ -34,7 +34,7 @@ def _guarded_server(calls):
         calls.append((agent_id, text))
         return "ran"
 
-    def guard(_agent_id, text):
+    def guard(_agent_id, text, identity):
         if text == "add event":
             return "direct skill commands are not exposed over MCP"
         return None
@@ -110,6 +110,35 @@ async def test_agent_request_guard_refuses_hidden_skill_command_before_runner():
     assert calls == []
 
 
+@pytest.mark.asyncio
+async def test_agent_request_guard_receives_identity_before_runner():
+    seen = []
+
+    async def runner(agent_id, text):
+        seen.append(("runner", agent_id, text))
+        return "ran"
+
+    def guard(agent_id, text, identity):
+        seen.append(("guard", agent_id, text, identity))
+        return None if identity == "owner-token" else "owner identity required"
+
+    srv = JarvisMCPServer(
+        runner, {"jarvis": "Prime orchestrator"}, agent_request_guard=guard
+    )
+    refused = await srv.call_tool("ask_jarvis", {"text": "start LM Studio"})
+    allowed = await srv.call_tool(
+        "ask_jarvis", {"text": "start LM Studio"}, identity="owner-token"
+    )
+
+    assert refused["isError"] is True
+    assert allowed["isError"] is False
+    assert seen == [
+        ("guard", "jarvis", "start LM Studio", None),
+        ("guard", "jarvis", "start LM Studio", "owner-token"),
+        ("runner", "jarvis", "start LM Studio"),
+    ]
+
+
 def test_complete_tool_inventory_classifies_every_exposed_tool():
     inventory = _guarded_server([]).tool_inventory()
     assert {row["name"] for row in inventory} == {"ask_jarvis"}
@@ -119,6 +148,14 @@ def test_complete_tool_inventory_classifies_every_exposed_tool():
     assert all("conversation_user_turn" in row["state_effects"] for row in inventory)
     assert all("conversation_assistant_turn" in row["state_effects"] for row in inventory)
     assert all("direct_skill_commands_refused" in row["controls"] for row in inventory)
+    assert all(
+        "local_model_lifecycle_identity_required" in row["controls"]
+        for row in inventory
+    )
+    assert all(
+        "local_model_lifecycle_when_explicitly_requested" in row["state_effects"]
+        for row in inventory
+    )
 
 
 @pytest.mark.asyncio
@@ -294,5 +331,41 @@ def test_production_agent_guard_recognizes_direct_skill_commands(monkeypatch):
             )
         ),
     )
-    refusal = web._mcp_agent_request_guard("jarvis", "add_event tomorrow")
+    refusal = web._mcp_agent_request_guard("jarvis", "add_event tomorrow", "owner")
     assert "not exposed over MCP" in refusal
+
+
+def test_production_agent_guard_requires_owner_identity_for_model_lifecycle(monkeypatch):
+    from types import SimpleNamespace
+
+    from agents import web
+
+    old_user, old_admin = web.USER_TOKEN, web.ADMIN_TOKEN
+    try:
+        web.USER_TOKEN = "owner-token"
+        web.ADMIN_TOKEN = "admin-token"
+        monkeypatch.setattr(
+            web,
+            "orch",
+            SimpleNamespace(skills=SimpleNamespace(parse_command=lambda _text: None)),
+        )
+
+        assert "owner identity" in web._mcp_agent_request_guard(
+            "jarvis", "start LM Studio", None
+        )
+        assert "owner identity" in web._mcp_agent_request_guard(
+            "jarvis", "ollama load qwen2.5:7b", "wrong"
+        )
+        assert web._mcp_agent_request_guard(
+            "jarvis", "ollama load qwen2.5:7b", "owner-token"
+        ) is None
+        from agents.core.mcp.server import VerifiedMCPIdentity
+
+        assert web._mcp_agent_request_guard(
+            "jarvis", "start Ollama", VerifiedMCPIdentity("oauth-owner")
+        ) is None
+        assert "ask_jarvis" in web._mcp_agent_request_guard(
+            "frigga", "start Ollama", "owner-token"
+        )
+    finally:
+        web.USER_TOKEN, web.ADMIN_TOKEN = old_user, old_admin

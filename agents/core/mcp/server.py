@@ -18,6 +18,8 @@ Design goals:
 from __future__ import annotations
 
 import json
+from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
 from agents.core.mcp.route_tools import (
@@ -39,7 +41,31 @@ INTERNAL_ERROR = -32603
 
 # Agent runner: ``async (agent_id, text) -> str``
 AgentRunner = Callable[[str, str], Awaitable[str]]
-AgentRequestGuard = Callable[[str, str], Optional[str]]
+AgentRequestGuard = Callable[[str, str, object | None], Optional[str]]
+
+
+@dataclass(frozen=True)
+class VerifiedMCPIdentity:
+    """Transport-verified MCP identity, constructed only after OAuth validation.
+
+    A distinct type avoids treating an attacker-controlled header string such as
+    ``"oauth:anyone"`` as proof that the resource-server signature, audience and
+    scope checks succeeded.
+    """
+
+    subject: str
+    mechanism: str = "oauth2.1"
+
+
+_agent_request_authorized: ContextVar[bool] = ContextVar(
+    "jarvis_mcp_agent_request_authorized", default=False
+)
+
+
+def current_mcp_agent_request_authorized() -> bool:
+    """Whether the current MCP ``ask_*`` call passed its production guard."""
+
+    return bool(_agent_request_authorized.get())
 
 
 def _tool_name(agent_id: str) -> str:
@@ -136,15 +162,15 @@ class JarvisMCPServer:
         self,
         name: str,
         arguments: Optional[dict] = None,
-        identity: Optional[str] = None,
+        identity: object | None = None,
     ) -> dict:
         """Run a tool; return an MCP tool-result ({content, isError}).
 
-        ``identity`` is the caller's presented credential (e.g. ``JARVIS_USER_TOKEN``),
-        threaded from the MCP transport. It is required only by MUTATING route
-        tools, which enforce it with the same rule as the HTTP ``user_guard``; a
-        missing/invalid identity refuses the write. Read-only tools and agent
-        tools ignore it (unchanged behaviour).
+        ``identity`` is the caller's presented credential (e.g. ``JARVIS_USER_TOKEN``)
+        or a :class:`VerifiedMCPIdentity` produced by the OAuth transport. It is
+        threaded into mutating route gates and the agent-request guard. Agent
+        conversation remains identity-optional, but any lifecycle mutation
+        hidden in an ``ask_*`` request can therefore require verified authority.
         """
         arguments = arguments or {}
         if name.startswith(ROUTE_TOOL_PREFIX):
@@ -159,19 +185,27 @@ class JarvisMCPServer:
             return self._tool_error("missing required string argument: text")
         if self.agent_request_guard is not None:
             try:
-                refusal = self.agent_request_guard(agent_id, text)
+                refusal = self.agent_request_guard(agent_id, text, identity)
             except Exception:
                 return self._tool_error("agent request guard unavailable")
             if refusal:
                 return self._tool_error(str(refusal))
+        # The marker is scoped to this awaited runner call and cannot be forged by
+        # calling Orchestrator.handle_input(channel="mcp") directly. Lifecycle
+        # control checks it again immediately before kernel authorization.
+        authority_token = _agent_request_authorized.set(
+            self.agent_request_guard is not None
+        )
         try:
             reply = await self.runner(agent_id, text)
         except Exception as exc:  # never leak a stack trace to an external client
             return self._tool_error(f"agent error: {exc}")
+        finally:
+            _agent_request_authorized.reset(authority_token)
         return {"content": [{"type": "text", "text": str(reply)}], "isError": False}
 
     async def _call_route_tool(
-        self, name: str, arguments: dict, identity: Optional[str] = None
+        self, name: str, arguments: dict, identity: object | None = None
     ) -> dict:
         """Dispatch an allow-listed route tool IN-PROCESS (read or write).
 
@@ -223,13 +257,14 @@ class JarvisMCPServer:
 
     # ── JSON-RPC dispatch ────────────────────────────────────────────────────
 
-    async def handle(self, message: dict, identity: Optional[str] = None) -> Optional[dict]:
+    async def handle(self, message: dict, identity: object | None = None) -> Optional[dict]:
         """Dispatch one JSON-RPC 2.0 message; return the response (or None for a notification).
 
         ``identity`` is the caller's credential, supplied by the transport (the
         HTTP/SSE route in web.py reads the ``X-User-Token``/``X-Admin-Token``
         header; a stdio loop may pass it explicitly). It is forwarded to
-        ``call_tool`` and enforced only for mutating route tools.
+        ``call_tool`` and enforced by mutating route tools and any hidden
+        lifecycle intent inside an agent request.
         """
         msg_id = message.get("id")
         method = message.get("method", "")
@@ -291,7 +326,12 @@ class JarvisMCPServer:
             controls = ["agent_allowlist", "orchestrator_runner"]
             governed = self.agent_request_guard is not None
             if governed:
-                controls.append("direct_skill_commands_refused")
+                controls.extend([
+                    "direct_skill_commands_refused",
+                    "local_model_lifecycle_identity_required",
+                    "local_model_lifecycle_kernel_grant_only",
+                    "local_model_lifecycle_audit_preflight",
+                ])
             inventory.append({
                 "name": _tool_name(agent_id),
                 "tool_class": "agent",
@@ -301,16 +341,27 @@ class JarvisMCPServer:
                     "conversation_user_turn",
                     "conversation_assistant_turn",
                     "possible_downstream_governed_actions",
+                    "local_model_lifecycle_when_explicitly_requested",
                 ],
                 "authority_boundary": (
                     "conversation persistence uses the orchestrator retention boundary; "
-                    "downstream actions retain their own authority gates"
+                    "local-model lifecycle additionally requires verified MCP owner "
+                    "identity, system-control permission, host contract, Action Kernel "
+                    "GRANT and durable audit preflight; other downstream actions retain "
+                    "their own authority gates"
                 ),
-                "identity_posture": "MCP transport authentication/local-boundary policy",
-                "audit_posture": "no mandatory audit precondition for conversation turns",
+                "identity_posture": (
+                    "conversation uses MCP transport policy; local-model lifecycle "
+                    "requires the per-call owner identity gate"
+                ),
+                "audit_posture": (
+                    "conversation turns have no audit precondition; local-model lifecycle "
+                    "requires a durable authorization row before effect"
+                ),
                 "retention_posture": "conversation transcript retention settings",
                 "kernel_posture": (
-                    "conversation persistence is outside Action Kernel; downstream "
+                    "conversation persistence is outside Action Kernel; local-model "
+                    "lifecycle requires enabled/bound host.control GRANT; other downstream "
                     "actions keep action-specific kernel/authority gates"
                 ),
                 "governance": "governed" if governed else "runner_defined",

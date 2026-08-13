@@ -25,9 +25,11 @@
    → if skill match: execute + persist + return early
 2b. detect_llm_control(text)                           [orchestrator.py:detect_llm_control]
    → if LLM-control intent (start/load/unload/status) AND _chat_control_enabled():
-     _run_llm_control → LMStudioController → narrate REAL result + return early.
+     _run_llm_control → host.control authority boundary → LM Studio/Ollama controller
+     → narrate REAL result + return early. Mutations require permission + contract +
+     enabled/bound Action Kernel GRANT + durable audit; MCP also requires owner identity.
      Conservative: a load needs a plausible model token, so "load up the data"
-     never fires. Kill-switch gated (§5 LM Studio control).
+     never fires. Kill-switch gated (§5 local-model control).
 3. router.classify(text, agents) → Intent              [router.py:IntentRouter.classify]
    → deterministic keyword/phrase matching, bilingual RO/EN
 4. _gather_plugin_data(text, intent)                   [orchestrator.py:_gather_plugin_data]
@@ -96,7 +98,8 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/llm/router.py` | Auto-detect LMStudio → Ollama | `LLMRouter.detect` |
 | `agents/core/llm/hybrid_router.py` | Multi-tier routing engine | `HybridRouter.select_backend`, `is_heavy_request`, `LOCAL_ONLY_AGENTS`, `CLAUDE_AGENTS`, `DEEP_THINK_AGENTS` |
 | `agents/core/llm/lmstudio_control.py` | Start LM Studio server + load/unload models via `lms` CLI (no-shell, probed); refreshes live router; `enabled` kill-switch makes mutating ops no-ops | `LMStudioController.start_server/load_model/unload_model/status/set_enabled` |
-| `agents/core/orchestrator.py` (chat control) | Detect + run LLM control from a chat message ("load gemma", "start LM Studio", "what model?") and narrate the real result | `detect_llm_control`, `_run_llm_control`, `_control_master_enabled`, `_chat_control_enabled` |
+| `agents/core/llm/ollama_control.py` | Start Ollama via fixed no-shell argv; load/pin and unload via localhost `keep_alive`; validate/probe/refresh with injectable I/O | `OllamaController.start_server/load_model/unload_model/status` |
+| `agents/core/llm_control.py` + orchestrator chat control | Detect LM Studio/Ollama requests, enforce identity/permission/contract/kernel/audit before mutation, and narrate the real result | `detect_llm_control`, `authorize_local_model_lifecycle`, `run_llm_control`, `_run_llm_control` |
 | `agents/core/llm/anthropic.py` | Claude API backend | `ClaudeBackend` |
 | `agents/core/llm/gemini.py` | Gemini API backend | `GeminiBackend` |
 | `agents/core/llm/gemini_cache.py` | Gemini context cache | `ContextCache`, `create_or_extend` |
@@ -398,43 +401,56 @@ Returns `True` if:
 | `ANTHROPIC_API_KEY` | — | Enables Claude tiering |
 | `GEMINI_API_KEY` | — | Enables cloud (Gemini) fallback |
 
-### LM Studio lifecycle control + kill-switch
+### Governed local-model lifecycle control + kill-switch
 
-Jarvis connects to a *running* LM Studio and auto-detects the loaded model. It can
-also **start the server and load/unload models** via the `lms` CLI — from the admin
-UI and from chat. This is mutating control of the host, so it is gated.
+Jarvis connects to LM Studio and Ollama and can **start either local server and
+load/unload models**. LM Studio uses the `lms` CLI; Ollama uses fixed
+`ollama serve` argv plus its local `/api/generate` residency contract. This is
+mutating control of the host, so chat/MCP effects cross one shared authority boundary.
 
 **Entry points**
-- **Chat (natural language):** `detect_llm_control(text)` → `_run_llm_control(action, model)`
-  in the request lifecycle (step 2b). Handles `start` / `load` / `unload` / `status`
-  in EN+RO, plus the explicit `llm <sub>` form. Deliberately conservative — a load/
+- **Chat (natural language):** `detect_llm_control(text)` → `_run_llm_control(action, model,
+  channel=...)` in the request lifecycle (step 2b). Handles LM Studio and explicit
+  `ollama <sub>` `start` / `load` / `unload` / `status` in EN+RO. Deliberately
+  conservative — a load/
   unload needs a *plausible* model token (a digit, a `path/`, or a known family like
   gemma/qwen/deepseek), so ordinary chatter never triggers a model load. The reply
   narrates what **actually** happened (it reads the controller result, no theatre).
 - **Admin API:** `POST /api/llm/server/start | /api/llm/load | /api/llm/unload`
-  (`agents/web.py`, behind `_admin_guard`). HUD badge + admin buttons call these.
-- **Controller:** `LMStudioController` (`llm/lmstudio_control.py`) — argv-only (no shell),
+  (`agents/web.py`, behind `_admin_guard`) remains the explicit LM Studio HUD path.
+- **Controllers:** `LMStudioController` (`llm/lmstudio_control.py`) — argv-only (no shell),
   fixed verb set, model-id regex, per-action timeout + port recovery probe. Refreshes
   the live router after a model change so routing + the runtime-state block report the
-  real model with no restart.
+  real model with no restart. `OllamaController` (`llm/ollama_control.py`) starts only
+  fixed `ollama serve` argv (detached/no shell), loads with `keep_alive=-1`, unloads
+  with `keep_alive=0`, validates model ids, probes localhost, and refreshes the router.
+- **Authority before effect:** MCP server-scoped owner identity (for MCP only) →
+  `system-control` permission → `HOST_CONTROL_CONTRACT` → enabled/bound Action Kernel
+  `host.control` `GRANT` → durable `AuditLogger` authorization row → controller. Any
+  missing/raising gate, `DENY`, or `QUEUE` refuses without effect. Status is read-only.
+  Reversible tier-1 actions run autonomously only while the autonomy dial is `AUTO`;
+  `ASK`/`OFF` and the global kill-switch hold them.
 
 **Kill-switch (how to disable / "undo" without a revert)** — layered, any one signal wins:
 
 | Lever | Scope | Effect |
 |-------|-------|--------|
-| env `JARVIS_LMSTUDIO_CONTROL=0` | master (chat + admin + HUD) | boot-time hard off; all mutating ops return `status:"disabled"` (read/status still works) |
-| setting `llm.control_enabled=false` | master | same, **live** — propagates in ≤30s via the settings watcher, no restart |
+| env `JARVIS_LMSTUDIO_CONTROL=0` | local-model master (legacy name; LM Studio + Ollama chat, LM Studio admin/HUD) | boot-time hard off; all mutating ops return `status:"disabled"` (read/status still works) |
+| setting `llm.control_enabled=false` | local-model master | same, **live** — propagates to both controllers in ≤30s via the settings watcher, no restart |
 | env `JARVIS_LMSTUDIO_CHAT_CONTROL=0` | chat only | mutes ambient NL detection; admin buttons stay live |
 | setting `llm.chat_control=false` | chat only | same, live |
+| env `JARVIS_ACTION_KERNEL=0` | all chat/MCP lifecycle mutation | fail closed before controller execution; set `1` to exercise the owner-authorized reversible autonomy policy |
 
 Resolution: `_control_master_enabled()` = env AND `llm.control_enabled`; `_chat_control_enabled()`
 = master AND chat env AND `llm.chat_control`. `load_runtime_settings()` pushes the master
-result into `LMStudioController.set_enabled()` on every 30s reload. Ultimate undo: revert the
-squash commit.
+result into both controllers on every 30s reload. Unload is the bounded rollback for
+model residency; server-process shutdown remains an explicit owner/host operation.
 
 **Troubleshooting**
 - *Chat says "LM Studio control is disabled"* → a kill-switch is off; check the env vars
   and the `llm.control_enabled` / `llm.chat_control` settings.
+- *Chat says the Action Kernel is required* → set `JARVIS_ACTION_KERNEL=1`; the lifecycle
+  path intentionally refuses to fall back to an unmediated controller call.
 - *`status:"failed"`, reason mentions `lms`* → the `lms` CLI isn't on PATH or LM Studio
   isn't installed where the server runs. The controller never starts LM Studio the app,
   only its server via `lms server start`.
@@ -468,7 +484,7 @@ squash commit.
 | `llm.max_tokens` | `2048` | Deep route uses `llm.deep_max_tokens` (`8192`) |
 | `llm.default_model` | `google/gemma-4-31b-a4b` | |
 | `llm.cloud_fallback` | `on-demand` | `never`/`on-demand`/`always` — governs cloud *escalation* for auto-policy agents (never = stay local even oversized; honored live, ≤30s). Explicit cloud policies (athena) are unaffected |
-| `llm.control_enabled` | `true` | Master kill-switch for LM Studio start/load/unload (chat + admin) |
+| `llm.control_enabled` | `true` | Master kill-switch for LM Studio/Ollama chat lifecycle (and LM Studio admin lifecycle) |
 | `llm.chat_control` | `true` | Allow natural-language LLM control in chat (admin buttons unaffected) |
 | `memory.context_window` | `6` | Turns in each prompt |
 | `memory.checkpoint_every` | `5` | Checkpoint debounce |

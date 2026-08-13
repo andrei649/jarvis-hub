@@ -1349,14 +1349,19 @@ def _get_payment_broker():
 
 # ── H10.5 MCP Server Mode (expose Jarvis agents as governed MCP tools) ─
 
-def _mcp_agent_request_guard(_agent_id: str, text: str) -> Optional[str]:
-    """Refuse direct skill commands hidden inside an ``ask_*`` MCP call.
+def _mcp_agent_request_guard(
+    agent_id: str, text: str, identity: object | None = None
+) -> Optional[str]:
+    """Govern hidden mutation paths inside an ``ask_*`` MCP call.
 
     MCP tools must expose their mutation surface explicitly. The orchestrator's
     command fast-path executes a parsed skill before normal agent routing, so
     allowing it here would create undeclared write tools behind a conversational
-    descriptor. Normal conversation still reaches the orchestrator, whose
-    downstream action paths retain their own governance.
+    descriptor. Local-model lifecycle intent is the one explicitly authorized
+    conversational effect: only ``ask_jarvis`` with a transport-verified owner
+    identity may reach it, after which the lifecycle executor still requires
+    system-control permission, host contract, Action Kernel GRANT and durable
+    audit preflight.
     """
     skills = getattr(orch, "skills", None)
     parser = getattr(skills, "parse_command", None)
@@ -1367,6 +1372,14 @@ def _mcp_agent_request_guard(_agent_id: str, text: str) -> Optional[str]:
             "direct skill commands are not exposed over MCP; "
             "use an explicitly listed governed tool"
         )
+    from agents.core.llm_control import detect_llm_control
+
+    request = detect_llm_control(text)
+    if request is not None and not request[0].endswith("status"):
+        if agent_id != "jarvis":
+            return "local model lifecycle control is available only through ask_jarvis"
+        if not _mcp_agent_identity_check(identity):
+            return "a valid MCP owner identity is required for local model lifecycle control"
     return None
 
 def _build_mcp_server():
@@ -1480,6 +1493,20 @@ def _mcp_identity_check(token: Optional[str]) -> bool:
     if not _user_token_required():
         return True
     return _user_credential_ok(user_supplied=token or "", admin_supplied=token or "")
+
+
+def _mcp_agent_identity_check(identity: object | None) -> bool:
+    """Accept a user/admin credential or a transport-verified OAuth identity.
+
+    OAuth proof is represented by a non-string marker created only after the MCP
+    resource server validates signature, audience, expiry and scope. Header text
+    can therefore never imitate that proof.
+    """
+    from agents.core.mcp.server import VerifiedMCPIdentity
+
+    if isinstance(identity, VerifiedMCPIdentity):
+        return bool(identity.subject.strip())
+    return _mcp_identity_check(identity if isinstance(identity, str) else None)
 
 
 
