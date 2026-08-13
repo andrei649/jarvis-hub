@@ -75,9 +75,10 @@ autonomous process-kill path.
   Studio and Ollama. Permission denial, kernel-off, `DENY`, `QUEUE`, audit failure,
   invalid identity, non-Jarvis agent, and direct-MCP-context bypass all keep effect
   calls at zero.
-- The action-auth registry and machine-readable capability manifest now classify
-  `host.control` as reversible and kernel-mediated; drift snapshots fail if it is
-  silently removed.
+- The action-auth registry, machine-readable capability manifest, readiness matrix,
+  and executable reality case now classify `host.control` as reversible and
+  kernel-mediated; drift snapshots and pinned proof counts fail if it is silently
+  removed.
 
 ## Verification commands
 
@@ -97,8 +98,15 @@ autonomous process-kill path.
 .venv/bin/ruff check .
 passed
 
-.venv/bin/pytest -q tests/test_local_model_lifecycle_governance.py tests/test_ollama_control.py tests/test_h10_5_mcp_server.py tests/test_mcp_route_tools.py tests/test_mcp_kernel_wave.py tests/test_r3_b4_mcp_route_tool_contracts.py tests/test_kernel_bypass_regressions.py tests/test_action_auth_matrix.py tests/test_route_auth_matrix.py tests/test_h16_1_mcp_oauth.py tests/test_codeintel_mcp_tool.py tests/test_mcp_api.py tests/test_mcp_admin.py tests/test_llm_control_intent.py tests/test_llm_control_status_model.py tests/test_o45_b1_contracts.py tests/test_h27_capability_manifests.py tests/test_shutdown_cleanup.py tests/test_shutdown_releases_resources.py tests/test_lifespan_smoke.py tests/test_worldview_mcp_write_transport.py tests/test_llm_down_graceful.py tests/test_llm_warmup.py tests/test_model_manager.py
-332 passed; one existing Starlette/httpx deprecation warning
+.venv/bin/pytest -q tests/test_local_model_lifecycle_governance.py tests/test_ollama_control.py tests/test_h10_5_mcp_server.py tests/test_mcp_route_tools.py tests/test_mcp_kernel_wave.py tests/test_r3_b4_mcp_route_tool_contracts.py tests/test_kernel_bypass_regressions.py tests/test_action_auth_matrix.py tests/test_route_auth_matrix.py tests/test_h16_1_mcp_oauth.py tests/test_codeintel_mcp_tool.py tests/test_mcp_api.py tests/test_mcp_admin.py tests/test_llm_control_intent.py tests/test_llm_control_status_model.py tests/test_o45_b1_contracts.py tests/test_h27_capability_manifests.py tests/test_h27_capability_verification.py tests/test_capability_readiness_matrix.py tests/test_shutdown_cleanup.py tests/test_shutdown_releases_resources.py tests/test_lifespan_smoke.py tests/test_worldview_mcp_write_transport.py tests/test_llm_down_graceful.py tests/test_llm_warmup.py tests/test_model_manager.py
+349 passed; one existing Starlette/httpx deprecation warning
+
+The first hosted Ubuntu test job on candidate `abb187b` correctly caught three
+intentional-drift guards: the new action case changed two pinned reality-harness
+counts, and `action:host.control` was absent from the committed readiness snapshot.
+The snapshot was regenerated with the repository's update command, both proof counts
+were advanced by one, the three exact failing tests passed locally, and the 349-test
+hermetic sweep above was rerun. A new hosted exact-head run is still required.
 
 The local unrestricted full-suite command was not run: this execution environment
 identified a collected banking-provider path that can initiate external HTTPS. No
