@@ -430,6 +430,12 @@ mutating control of the host, so chat/MCP effects cross one shared authority bou
   missing/raising gate, `DENY`, or `QUEUE` refuses without effect. Status is read-only.
   Reversible tier-1 actions run autonomously only while the autonomy dial is `AUTO`;
   `ASK`/`OFF` and the global kill-switch hold them.
+- **Composite load:** when the requested provider is offline, start and load are two
+  effects, never one implied controller operation. Jarvis authorizes, audits and starts
+  the server, then re-evaluates every live gate before authorizing/auditing the model
+  load. Direct controller loads refuse while offline. Ollama unload-all similarly
+  refuses when `/api/ps` cannot prove the active-model inventory; status reports
+  unknown residency instead of claiming an empty set.
 
 **Kill-switch (how to disable / "undo" without a revert)** — layered, any one signal wins:
 

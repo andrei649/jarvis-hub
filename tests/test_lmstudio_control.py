@@ -115,18 +115,17 @@ async def test_load_model_ok_refreshes_router():
     assert router.refreshed == 1
 
 
-async def test_load_model_starts_server_if_down():
+async def test_load_model_refuses_to_auto_start_if_down():
     ex = _Exec()
     router = _Router()
-    # down at load pre-check, down at start pre-check, up at start verify
-    ctrl = _ctrl(exec_fn=ex, probe_fn=_Probe([False, False, True]), router=router)
+    ctrl = _ctrl(exec_fn=ex, probe_fn=_Probe([False]), router=router)
     out = await ctrl.load_model("m/x")
-    assert out["status"] == "ok"
-    assert ["lms", "server", "start"] in ex.calls
-    assert ["lms", "load", "m/x", "-y"] in ex.calls
+    assert out["status"] == "failed"
+    assert "authorize and start" in out["reason"]
+    assert ex.calls == []
 
 
-async def test_load_model_start_fails_then_no_load():
+async def test_load_model_offline_never_executes_load():
     ex = _Exec()
     ctrl = _ctrl(exec_fn=ex, probe_fn=_Probe([False]))  # never comes up
     out = await ctrl.load_model("m/x")

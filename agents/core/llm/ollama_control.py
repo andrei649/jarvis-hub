@@ -72,13 +72,24 @@ class OllamaController:
 
     async def status(self) -> dict:
         online = self._probe()
-        models = await self._active_models() if online else []
-        return {
+        result = {
             "online": online,
             "enabled": self.enabled,
             "server_url": self.server_url,
-            "active_models": models,
+            "active_models": [],
+            "status": "ok",
         }
+        if not online:
+            return result
+        try:
+            result["active_models"] = await self._active_models()
+        except RuntimeError as exc:
+            result.update(
+                status="unknown",
+                active_models=None,
+                reason=str(exc),
+            )
+        return result
 
     async def start_server(self, agent: str = "jarvis") -> dict:
         if not self.enabled:
@@ -122,12 +133,12 @@ class OllamaController:
         if blocked:
             return blocked
         if not self._probe():
-            started = await self.start_server(agent=agent)
-            if started.get("status") != "ok":
-                return self._done(
-                    "failed", "load_model", model=model,
-                    reason="Ollama server not running and could not be started",
-                )
+            return self._done(
+                "failed",
+                "load_model",
+                model=model,
+                reason="Ollama server is not running; authorize and start it first",
+            )
         try:
             response = await self._http_client().post("/api/generate", json={
                 "model": model,
@@ -161,7 +172,15 @@ class OllamaController:
         if not self._probe():
             return self._done("failed", "unload_model", model=model,
                               reason="Ollama server is not running")
-        targets = [model] if model else await self._active_models()
+        if model:
+            targets = [model]
+        else:
+            try:
+                targets = await self._active_models()
+            except RuntimeError as exc:
+                return self._done(
+                    "failed", "unload_model", model=None, reason=str(exc)
+                )
         for target in targets:
             if not _MODEL_RE.fullmatch(target or ""):
                 return self._done("rejected", "unload_model", model=target,
@@ -236,14 +255,22 @@ class OllamaController:
             response = await self._http_client().get("/api/ps")
             response.raise_for_status()
             payload = response.json() or {}
-            return [
-                str(row.get("name") or row.get("model") or "").strip()
-                for row in (payload.get("models") or [])
-                if str(row.get("name") or row.get("model") or "").strip()
-            ]
-        except Exception:
+            if not isinstance(payload, dict):
+                raise ValueError("response is not an object")
+            rows = payload.get("models", [])
+            if not isinstance(rows, list):
+                raise ValueError("models is not a list")
+            names = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise ValueError("model entry is not an object")
+                name = str(row.get("name") or row.get("model") or "").strip()
+                if name:
+                    names.append(name)
+            return names
+        except Exception as exc:
             logger.warning("Ollama active-model listing failed", exc_info=True)
-            return []
+            raise RuntimeError("active model inventory is unavailable") from exc
 
     def _http_client(self):
         """Create the pooled localhost client only when an HTTP operation needs it."""

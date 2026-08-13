@@ -43,6 +43,19 @@ class _Gate:
         return self.allowed and plugin == "system-control" and agent == "jarvis"
 
 
+class _BrokenListClient(_Client):
+    def __init__(self, *, payload=None, raises=False):
+        super().__init__()
+        self.payload = payload
+        self.raises = raises
+
+    async def get(self, path):
+        self.calls.append(("GET", path, None))
+        if self.raises:
+            raise OSError("/api/ps unavailable")
+        return _Response(self.payload)
+
+
 @pytest.mark.asyncio
 async def test_start_uses_fixed_no_shell_detached_argv():
     calls = []
@@ -93,6 +106,30 @@ async def test_load_and_unload_use_keep_alive_without_shell():
 
 
 @pytest.mark.asyncio
+async def test_load_refuses_to_auto_start_when_server_is_offline():
+    exec_calls = []
+    client = _Client()
+
+    async def exec_fn(argv, timeout, detach):
+        exec_calls.append((argv, timeout, detach))
+        return ExecResult(exit_code=0)
+
+    ctrl = OllamaController(
+        permission_gate=_Gate(),
+        client=client,
+        exec_fn=exec_fn,
+        probe_fn=lambda _h, _p: False,
+    )
+
+    result = await ctrl.load_model("qwen2.5:7b", agent="jarvis")
+
+    assert result["status"] == "failed"
+    assert "authorize and start" in result["reason"]
+    assert exec_calls == []
+    assert client.calls == []
+
+
+@pytest.mark.asyncio
 async def test_invalid_model_and_permission_denial_never_touch_ollama():
     client = _Client()
     ctrl = OllamaController(
@@ -108,3 +145,38 @@ async def test_invalid_model_and_permission_denial_never_touch_ollama():
     blocked = await ctrl.unload_model("qwen2.5:7b", agent="jarvis")
     assert blocked["status"] == "blocked"
     assert client.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "client",
+    [
+        _BrokenListClient(raises=True),
+        _BrokenListClient(payload={"models": "not-a-list"}),
+    ],
+)
+async def test_unload_all_fails_closed_when_active_model_inventory_is_unknown(client):
+    ctrl = OllamaController(
+        permission_gate=_Gate(), client=client, probe_fn=lambda _h, _p: True
+    )
+
+    result = await ctrl.unload_model(None, agent="jarvis")
+
+    assert result["status"] == "failed"
+    assert "active model" in result["reason"].lower()
+    assert not [call for call in client.calls if call[0] == "POST"]
+
+
+@pytest.mark.asyncio
+async def test_status_reports_unknown_instead_of_no_resident_models_on_list_failure():
+    client = _BrokenListClient(raises=True)
+    ctrl = OllamaController(
+        permission_gate=_Gate(), client=client, probe_fn=lambda _h, _p: True
+    )
+
+    result = await ctrl.status()
+
+    assert result["online"] is True
+    assert result["status"] == "unknown"
+    assert result["active_models"] is None
+    assert "active model" in result["reason"].lower()

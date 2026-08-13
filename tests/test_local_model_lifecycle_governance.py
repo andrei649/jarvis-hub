@@ -12,7 +12,10 @@ from types import SimpleNamespace
 import pytest
 
 from agents.core import llm_control
+from agents.core.autonomy.remediation import ExecResult
 from agents.core.kernel import Decision, Verdict
+from agents.core.llm.lmstudio_control import LMStudioController
+from agents.core.llm.ollama_control import OllamaController
 from agents.core.mcp.server import JarvisMCPServer
 
 
@@ -261,3 +264,177 @@ async def test_guarded_mcp_owner_call_reaches_governed_effect(monkeypatch):
     assert "up" in response["content"][0]["text"].lower()
     assert order == ["kernel", "audit", "effect"]
     assert orch.lmstudio.calls == [("start", None)]
+
+
+class _HTTPResponse:
+    status_code = 200
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"models": []}
+
+
+class _HTTPClient:
+    def __init__(self, order):
+        self.order = order
+
+    async def get(self, _path):
+        return _HTTPResponse()
+
+    async def post(self, path, json):
+        self.order.append(f"effect:http:{path}:{json['keep_alive']}")
+        return _HTTPResponse()
+
+
+def _production_controller_orch(provider, order):
+    online = {"value": False}
+    gate = _PermissionGate()
+    router = SimpleNamespace(
+        name="local",
+        active_model="qwen2.5:7b",
+        refresh_active_model=None,
+        detect=None,
+    )
+
+    async def exec_fn(argv, _timeout, _detach):
+        order.append(f"effect:subprocess:{' '.join(argv)}")
+        if "start" in argv or "serve" in argv:
+            online["value"] = True
+        return ExecResult(exit_code=0)
+
+    if provider == "lmstudio":
+        ctrl = LMStudioController(
+            permission_gate=gate,
+            router=router,
+            exec_fn=exec_fn,
+            probe_fn=lambda _host, _port: online["value"],
+            models_fn=lambda: _async_value(["qwen2.5:7b"]),
+            verify_attempts=1,
+            verify_delay=0,
+        )
+    else:
+        ctrl = OllamaController(
+            permission_gate=gate,
+            router=router,
+            exec_fn=exec_fn,
+            probe_fn=lambda _host, _port: online["value"],
+            client=_HTTPClient(order),
+            verify_attempts=1,
+            verify_delay=0,
+        )
+    return SimpleNamespace(
+        **{provider: ctrl},
+        llm_router=router,
+        permission_gate=gate,
+        audit=_Audit(order),
+    )
+
+
+async def _async_value(value):
+    return value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "action", "start_effect", "load_effect"),
+    [
+        ("lmstudio", "load", "effect:subprocess:lms server start", "effect:subprocess:lms load qwen2.5:7b -y"),
+        ("ollama", "ollama.load", "effect:subprocess:ollama serve", "effect:http:/api/generate:-1"),
+    ],
+)
+async def test_offline_load_authorizes_and_audits_start_and_load_separately(
+    monkeypatch, provider, action, start_effect, load_effect
+):
+    order = []
+    orch = _production_controller_orch(provider, order)
+
+    class _PhaseKernel:
+        def __call__(self, action):
+            order.append(f"kernel:{action.payload['action']}")
+            return Decision(Verdict.GRANT, reason="test", tier=1)
+
+    class _PhaseAudit(_Audit):
+        def log(self, event):
+            order.append(f"audit:{event.action_taken.split()[0]}")
+            self.events.append(event)
+
+    orch.audit = _PhaseAudit(order)
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setattr(llm_control, "make_action_kernel", lambda _orch: _PhaseKernel())
+
+    reply = await llm_control.run_llm_control(
+        orch, action, "qwen2.5:7b", channel="web"
+    )
+
+    assert "Loaded" in reply
+    assert order == [
+        f"kernel:{provider}.start",
+        f"audit:{provider}.start",
+        start_effect,
+        f"kernel:{provider}.load",
+        f"audit:{provider}.load",
+        load_effect,
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("second_phase", [Verdict.DENY, Verdict.QUEUE, "audit_failure"])
+async def test_offline_load_second_phase_failure_never_loads_model(
+    monkeypatch, second_phase
+):
+    order = []
+    orch = _production_controller_orch("lmstudio", order)
+    kernel_calls = 0
+
+    def kernel(action):
+        nonlocal kernel_calls
+        kernel_calls += 1
+        order.append(f"kernel:{action.payload['action']}")
+        verdict = Verdict.GRANT if kernel_calls == 1 or second_phase == "audit_failure" else second_phase
+        return Decision(verdict, reason="second phase blocked", tier=1)
+
+    class _PhaseAudit(_Audit):
+        def log(self, event):
+            action = event.action_taken.split()[0]
+            order.append(f"audit:{action}")
+            if second_phase == "audit_failure" and action == "lmstudio.load":
+                raise OSError("audit unavailable")
+            self.events.append(event)
+
+    orch.audit = _PhaseAudit(order)
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setattr(llm_control, "make_action_kernel", lambda _orch: kernel)
+
+    reply = await llm_control.run_llm_control(
+        orch, "load", "qwen2.5:7b", channel="web"
+    )
+
+    assert "could not load" in reply.lower()
+    assert "effect:subprocess:lms server start" in order
+    assert "effect:subprocess:lms load qwen2.5:7b -y" not in order
+
+
+@pytest.mark.asyncio
+async def test_ollama_status_does_not_claim_empty_residency_when_inventory_is_unknown():
+    class _UnknownStatusController:
+        async def status(self):
+            return {
+                "online": True,
+                "status": "unknown",
+                "active_models": None,
+                "reason": "active model inventory is unavailable",
+            }
+
+    orch = SimpleNamespace(
+        ollama=_UnknownStatusController(),
+        llm_router=SimpleNamespace(name="local"),
+    )
+
+    reply = await llm_control.run_llm_control(
+        orch, "ollama.status", None, channel="web"
+    )
+
+    assert "could not verify" in reply.lower()
+    assert "no model currently resident" not in reply.lower()

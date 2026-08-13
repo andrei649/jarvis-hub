@@ -35,6 +35,12 @@ advertised tool cannot silently escape classification.
    but did not classify the pre-routing LM Studio fast-path. An MCP request could reach
    `start_server`/`load_model`/`unload_model` without MCP-specific identity, Action
    Kernel mediation, or mandatory audit preflight.
+8. A later builder adversarial trace found that an offline `load` authorized and
+   audited only `<provider>.load`, while each controller auto-started the server as a
+   second host effect. The implicit start had no distinct kernel decision or audit row.
+9. Ollama `/api/ps` failure or malformed output degraded to an empty model list, so
+   unload-all could perform no unload and still report success; status could likewise
+   claim that no model was resident without evidence.
 
 The candidate now describes agent persistence and route mutation separately and
 refuses the hidden-command/kernel/audit bypasses before route mutation. Only an
@@ -53,10 +59,18 @@ Kernel `GRANT`, and a durable authorization row before any subprocess/API effect
 `DENY`, `QUEUE`, missing/raising kernel, failed audit, invalid model id and live
 revocation all preserve a zero controller-call count.
 
+An offline load is now an explicit two-phase operation: authorize/audit/start, then
+re-evaluate the live permission, contract, kernel and audit gates for load. Both
+production controllers refuse to auto-start when called directly. A second-phase
+`DENY`, `QUEUE`, or audit failure can therefore leave the separately authorized server
+start in place while proving that the model-load effect remained zero.
+
 Ollama uses only fixed `ollama serve` argv (`create_subprocess_exec`, detached, no
 shell) and localhost `/api/generate`: `keep_alive=-1` loads/pins and `keep_alive=0`
 unloads. Unload is the bounded residency rollback; this slice does not add an
-autonomous process-kill path.
+autonomous process-kill path. Unload-all first requires a valid `/api/ps` inventory;
+transport errors and malformed payloads now fail closed. Read-only status reports
+residency as unknown instead of converting that same failure into an empty list.
 
 ## Transport and metrics proof
 
@@ -71,10 +85,14 @@ autonomous process-kill path.
 - The production MCP builder over a real hermetic orchestrator changes a dedicated
   persisted transcript from zero to one user and one assistant turn, matching the
   advertised `ask_*` state effects.
-- Hostile lifecycle tests prove the order `kernel → durable audit → effect` for LM
-  Studio and Ollama. Permission denial, kernel-off, `DENY`, `QUEUE`, audit failure,
-  invalid identity, non-Jarvis agent, and direct-MCP-context bypass all keep effect
-  calls at zero.
+- Hostile lifecycle tests prove the order `kernel → durable audit → effect` for each
+  LM Studio and Ollama effect. Offline loads prove `start kernel → start audit → start
+  effect → load kernel → load audit → load effect`; second-phase `DENY`, `QUEUE`, and
+  audit failure keep the load effect at zero. Permission denial, kernel-off, invalid
+  identity, non-Jarvis agent, and direct-MCP-context bypass also keep effects at zero.
+- Ollama inventory-error tests prove unload-all emits no `keep_alive=0` calls and no
+  false success when `/api/ps` raises or returns a malformed model list; status emits
+  an explicit unknown-residency result.
 - The action-auth registry, machine-readable capability manifest, readiness matrix,
   and executable reality case now classify `host.control` as reversible and
   kernel-mediated; drift snapshots and pinned proof counts fail if it is silently
@@ -98,15 +116,17 @@ autonomous process-kill path.
 .venv/bin/ruff check .
 passed
 
-.venv/bin/pytest -q tests/test_local_model_lifecycle_governance.py tests/test_ollama_control.py tests/test_h10_5_mcp_server.py tests/test_mcp_route_tools.py tests/test_mcp_kernel_wave.py tests/test_r3_b4_mcp_route_tool_contracts.py tests/test_kernel_bypass_regressions.py tests/test_action_auth_matrix.py tests/test_route_auth_matrix.py tests/test_h16_1_mcp_oauth.py tests/test_codeintel_mcp_tool.py tests/test_mcp_api.py tests/test_mcp_admin.py tests/test_llm_control_intent.py tests/test_llm_control_status_model.py tests/test_o45_b1_contracts.py tests/test_h27_capability_manifests.py tests/test_h27_capability_verification.py tests/test_capability_readiness_matrix.py tests/test_shutdown_cleanup.py tests/test_shutdown_releases_resources.py tests/test_lifespan_smoke.py tests/test_worldview_mcp_write_transport.py tests/test_llm_down_graceful.py tests/test_llm_warmup.py tests/test_model_manager.py
-349 passed; one existing Starlette/httpx deprecation warning
+.venv/bin/pytest -q tests/test_local_model_lifecycle_governance.py tests/test_ollama_control.py tests/test_lmstudio_control.py tests/test_h10_5_mcp_server.py tests/test_mcp_route_tools.py tests/test_mcp_kernel_wave.py tests/test_r3_b4_mcp_route_tool_contracts.py tests/test_kernel_bypass_regressions.py tests/test_action_auth_matrix.py tests/test_route_auth_matrix.py tests/test_h16_1_mcp_oauth.py tests/test_codeintel_mcp_tool.py tests/test_mcp_api.py tests/test_mcp_admin.py tests/test_llm_control_intent.py tests/test_llm_control_status_model.py tests/test_o45_b1_contracts.py tests/test_h27_capability_manifests.py tests/test_h27_capability_verification.py tests/test_capability_readiness_matrix.py tests/test_shutdown_cleanup.py tests/test_shutdown_releases_resources.py tests/test_lifespan_smoke.py tests/test_worldview_mcp_write_transport.py tests/test_llm_down_graceful.py tests/test_llm_warmup.py tests/test_model_manager.py
+380 passed; one existing Starlette/httpx deprecation warning
 
 The first hosted Ubuntu test job on candidate `abb187b` correctly caught three
 intentional-drift guards: the new action case changed two pinned reality-harness
 counts, and `action:host.control` was absent from the committed readiness snapshot.
 The snapshot was regenerated with the repository's update command, both proof counts
-were advanced by one, the three exact failing tests passed locally, and the 349-test
-hermetic sweep above was rerun. A new hosted exact-head run is still required.
+were advanced by one, the three exact failing tests passed locally, and the then-current
+349-test sweep passed. After the composite-effect and residency-honesty remediation,
+the expanded 380-test hermetic sweep above passed. A new hosted exact-head run is still
+required.
 
 The local unrestricted full-suite command was not run: this execution environment
 identified a collected banking-provider path that can initiate external HTTPS. No

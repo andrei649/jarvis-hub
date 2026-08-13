@@ -277,7 +277,13 @@ async def run_llm_control(
         if not st.get("online"):
             return f"{display} is offline, sir. Say 'start {display}' and I will bring it up."
         if provider == "ollama":
-            active = st.get("active_models") or []
+            active = st.get("active_models")
+            if active is None:
+                reason = st.get("reason") or "active model inventory is unavailable"
+                return (
+                    "Ollama is online, but I could not verify which models are "
+                    f"resident, sir — {reason}."
+                )
             names = ", ".join(active) if active else "no model currently resident"
             return f"Ollama is online with {names}, sir."
         # Report the model ACTUALLY loaded now. A model loaded directly in LM Studio
@@ -301,6 +307,29 @@ async def run_llm_control(
         return "Which model would you like me to load, sir?"
     if model and not _MODEL_ID_RE.fullmatch(model):
         return f"That is not a valid model id, sir: {model!r}."
+
+    # Loading an offline provider is a composite request with two distinct host
+    # effects. Authorize/audit/start first, then re-run every live gate for load.
+    # Controllers refuse to auto-start on their own so no direct call can collapse
+    # those effects behind a single kernel decision or audit row.
+    if verb == "load":
+        try:
+            server_state = await ctrl.status()
+        except Exception:
+            return (
+                f"I could not load {model}, sir — {display} server status is unavailable."
+            )
+        if not server_state.get("online"):
+            start_denied = authorize_local_model_lifecycle(
+                orch, provider, "start", None, channel=channel
+            )
+            if start_denied:
+                return f"I could not load {model}, sir — {start_denied}."
+            started = await ctrl.start_server(agent="jarvis")
+            if started.get("status") != "ok":
+                reason = started.get("reason") or "the server did not come up"
+                return f"I could not load {model}, sir — {reason}."
+
     denied = authorize_local_model_lifecycle(
         orch, provider, verb, model, channel=channel
     )
