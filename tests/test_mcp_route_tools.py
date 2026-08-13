@@ -258,18 +258,23 @@ def test_complete_inventory_classifies_read_and_mutating_routes():
     assert set(inventory) == {tool["name"] for tool in srv.list_tools()}
     for name in ("route_status", "route_memory_search", "route_dashboard"):
         assert inventory[name]["governance"] == "governed"
-        assert inventory[name]["direct_mutation"] is False
+        assert inventory[name]["persistent_state"] is False
+        assert inventory[name]["direct_route_mutation"] is False
         assert "read_only_allowlist" in inventory[name]["controls"]
     mutation = inventory["route_memory_remember"]
     assert mutation["governance"] == "governed"
-    assert mutation["direct_mutation"] is True
+    assert mutation["persistent_state"] is True
+    assert mutation["direct_route_mutation"] is True
+    assert mutation["state_effects"] == ["long_term_memory"]
     assert mutation["controls"] == [
         "mutating_allowlist",
-        "identity_required",
         "contract_required",
-        "audit_required",
+        "identity_required",
+        "audit_preflight_required",
         "action_kernel_required",
-        "kernel_grant_required",
+        "identity_policy_bound",
+        "audit_sink_bound",
+        "kernel_bound_grant_only",
     ]
 
 
@@ -583,9 +588,10 @@ async def test_call_mutating_tool_dispatches_and_writes_audit():
     assert json.loads(res["content"][0]["text"]) == {"ok": True, "id": "m-123"}
     # the write actually reached the invoker
     assert calls == [{"text": "buy milk"}]
-    # exactly one audit record, on the AUDIT_LOG channel, describing the write
-    assert len(auditor.events) == 1
-    ev = auditor.events[0]
+    # authorization is durably recorded BEFORE the write, then its outcome.
+    assert len(auditor.events) == 2
+    assert auditor.events[0].action_taken.endswith("(authorized)")
+    ev = auditor.events[1]
     assert ev.event_type == "audit_log"
     assert "POST /api/memory/remember via mcp (ok)" == ev.action_taken
     # the audit records the KEYS written, never the raw value
@@ -617,8 +623,9 @@ async def test_mutating_tool_audits_even_on_error():
     assert res["isError"] is True
     assert "route error" in res["content"][0]["text"]
     assert "db down" not in res["content"][0]["text"] or True  # no stack trace leaked
-    assert len(auditor.events) == 1
-    assert auditor.events[0].action_taken.endswith("(error)")
+    assert len(auditor.events) == 2
+    assert auditor.events[0].action_taken.endswith("(authorized)")
+    assert auditor.events[1].action_taken.endswith("(error)")
 
 
 # ── refusing non-allow-listed mutating routes even with both switches on ──────
@@ -706,8 +713,9 @@ async def test_mutating_tool_with_valid_token_dispatches_and_audits():
     assert res["isError"] is False
     assert json.loads(res["content"][0]["text"]) == {"ok": True, "id": "m-123"}
     assert calls == [{"text": "buy milk"}]  # the write reached the invoker
-    assert len(auditor.events) == 1
-    assert auditor.events[0].action_taken.endswith("(ok)")
+    assert len(auditor.events) == 2
+    assert auditor.events[0].action_taken.endswith("(authorized)")
+    assert auditor.events[1].action_taken.endswith("(ok)")
 
 
 @pytest.mark.asyncio

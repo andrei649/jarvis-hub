@@ -145,7 +145,7 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         tool = MutatingRouteTool(
             spec=MUTATING_ROUTE_ALLOWLIST[0],
             invoke=_invoke,
-            auditor=None,
+            auditor=type("_Audit", (), {"log": lambda self, _event: None})(),
             identity_check=lambda _t: True,
             kernel=spy,
         )

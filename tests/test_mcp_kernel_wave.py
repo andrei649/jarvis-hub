@@ -12,6 +12,7 @@ import pytest
 from agents.core.kernel import Action, Decision, Verdict
 from agents.core.mcp.route_tools import (
     MUTATING_ROUTE_ALLOWLIST,
+    MutatingAuditError,
     MutatingIdentityError,
     MutatingKernelError,
     MutatingRouteTool,
@@ -94,8 +95,45 @@ def test_kernel_grant_allows_write(monkeypatch):
     monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
     spy = _SpyKernel(verdict=Verdict.GRANT)
     invoked = []
-    asyncio.run(_tool(kernel=spy, invoked=invoked).call({"text": "hi"}, token="ok"))
+    asyncio.run(
+        _tool(kernel=spy, auditor=_Audit(), invoked=invoked).call(
+            {"text": "hi"}, token="ok"
+        )
+    )
     assert invoked and spy.calls                      # mediated, then written
+
+
+@pytest.mark.parametrize("auditor", [None, object()])
+def test_kernel_grant_cannot_write_without_working_audit_sink(monkeypatch, auditor):
+    """A bound object is insufficient: its log call must succeed before write."""
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    invoked = []
+    tool = _tool(
+        kernel=_SpyKernel(verdict=Verdict.GRANT), auditor=auditor, invoked=invoked
+    )
+
+    with pytest.raises(MutatingAuditError, match="audit sink"):
+        asyncio.run(tool.call({"text": "private"}, token="ok"))
+
+    assert invoked == []
+
+
+def test_raising_kernel_fails_closed_and_records_refusal(monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    audit, invoked = _Audit(), []
+
+    def _raising_kernel(_action):
+        raise RuntimeError("kernel backend down")
+
+    with pytest.raises(MutatingKernelError, match="kernel unavailable"):
+        asyncio.run(
+            _tool(kernel=_raising_kernel, auditor=audit, invoked=invoked).call(
+                {"text": "private"}, token="ok"
+            )
+        )
+
+    assert invoked == []
+    assert any("refused-kernel" in outcome for outcome in audit.outcomes)
 
 
 def test_kernel_queue_refuses_write_and_audits(monkeypatch):

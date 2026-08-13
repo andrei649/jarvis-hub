@@ -107,5 +107,6 @@ async def test_mcp_mutating_route_contract_allows_existing_success_path(monkeypa
     assert result["isError"] is False
     assert json.loads(result["content"][0]["text"]) == {"ok": True, "id": "m-123"}
     assert calls == [{"text": "buy milk"}]
-    assert len(auditor.events) == 1
-    assert auditor.events[0].action_taken.endswith("(ok)")
+    assert len(auditor.events) == 2
+    assert auditor.events[0].action_taken.endswith("(authorized)")
+    assert auditor.events[1].action_taken.endswith("(ok)")

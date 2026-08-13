@@ -72,7 +72,8 @@ class JarvisMCPServer:
             (write) route tools (``route_<name>``, marked ``"mutating": True``).
             ``None``/empty → no write tools. The caller gates these on BOTH the
             ``JARVIS_MCP_ROUTE_TOOLS`` AND ``JARVIS_MCP_MUTATING_TOOLS`` switches
-            (see ``build_mutating_route_tools``). Every invocation is audited.
+            (see ``build_mutating_route_tools``). Every adapter invocation requires
+            a successful durable audit authorization row first.
         """
         self.runner = runner
         self.agents = agents
@@ -278,7 +279,13 @@ class JarvisMCPServer:
         }
 
     def tool_inventory(self) -> list[dict]:
-        """Complete direct-dispatch inventory for the exposed MCP tool surface."""
+        """Complete state-effect inventory for the exposed MCP tool surface.
+
+        ``direct_route_mutation`` is deliberately narrower than
+        ``persistent_state``: agent calls do not invoke a route adapter directly,
+        but the production orchestrator persists conversation turns and may
+        dispatch separately governed downstream actions.
+        """
         inventory = []
         for agent_id in self._exposed():
             controls = ["agent_allowlist", "orchestrator_runner"]
@@ -288,7 +295,24 @@ class JarvisMCPServer:
             inventory.append({
                 "name": _tool_name(agent_id),
                 "tool_class": "agent",
-                "direct_mutation": False,
+                "persistent_state": True,
+                "direct_route_mutation": False,
+                "state_effects": [
+                    "conversation_user_turn",
+                    "conversation_assistant_turn",
+                    "possible_downstream_governed_actions",
+                ],
+                "authority_boundary": (
+                    "conversation persistence uses the orchestrator retention boundary; "
+                    "downstream actions retain their own authority gates"
+                ),
+                "identity_posture": "MCP transport authentication/local-boundary policy",
+                "audit_posture": "no mandatory audit precondition for conversation turns",
+                "retention_posture": "conversation transcript retention settings",
+                "kernel_posture": (
+                    "conversation persistence is outside Action Kernel; downstream "
+                    "actions keep action-specific kernel/authority gates"
+                ),
                 "governance": "governed" if governed else "runner_defined",
                 "controls": controls,
             })
@@ -296,23 +320,52 @@ class JarvisMCPServer:
             inventory.append({
                 "name": tool.tool_name,
                 "tool_class": "route",
-                "direct_mutation": False,
+                "persistent_state": False,
+                "direct_route_mutation": False,
+                "state_effects": [],
+                "authority_boundary": "read-only allow-listed route",
+                "identity_posture": f"route guard: {tool.spec.guard}",
+                "audit_posture": "no mutation audit",
+                "retention_posture": "no state written",
+                "kernel_posture": "not applicable to read-only dispatch",
                 "governance": "governed",
                 "controls": ["read_only_allowlist", "schema_reflection"],
             })
         for tool in self.mutating_route_tools.values():
+            controls = [
+                "mutating_allowlist",
+                "contract_required",
+                "identity_required",
+                "audit_preflight_required",
+                "action_kernel_required",
+            ]
+            controls.append(
+                "identity_policy_bound" if callable(tool.identity_check)
+                else "identity_unavailable_fail_closed"
+            )
+            controls.append(
+                "audit_sink_bound" if callable(getattr(tool.auditor, "log", None))
+                else "audit_sink_unavailable_fail_closed"
+            )
+            controls.append(
+                "kernel_bound_grant_only" if callable(tool.kernel)
+                else "kernel_unavailable_fail_closed"
+            )
             inventory.append({
                 "name": tool.tool_name,
                 "tool_class": "route",
-                "direct_mutation": True,
+                "persistent_state": True,
+                "direct_route_mutation": True,
+                "state_effects": ["long_term_memory"],
+                "authority_boundary": (
+                    "identity, contract, durable audit preflight, and explicit "
+                    "Action Kernel GRANT are required before adapter execution"
+                ),
+                "identity_posture": f"route guard: {tool.spec.guard}; per-tool gate required",
+                "audit_posture": "durable authorization row required before mutation",
+                "retention_posture": "target-store retention policy",
+                "kernel_posture": "enabled, bound, explicit GRANT required",
                 "governance": "governed",
-                "controls": [
-                    "mutating_allowlist",
-                    "identity_required",
-                    "contract_required",
-                    "audit_required",
-                    "action_kernel_required",
-                    "kernel_grant_required",
-                ],
+                "controls": controls,
             })
         return inventory

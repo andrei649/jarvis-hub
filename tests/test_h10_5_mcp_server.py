@@ -114,8 +114,93 @@ def test_complete_tool_inventory_classifies_every_exposed_tool():
     inventory = _guarded_server([]).tool_inventory()
     assert {row["name"] for row in inventory} == {"ask_jarvis"}
     assert all(row["governance"] == "governed" for row in inventory)
-    assert all(row["direct_mutation"] is False for row in inventory)
+    assert all(row["persistent_state"] is True for row in inventory)
+    assert all(row["direct_route_mutation"] is False for row in inventory)
+    assert all("conversation_user_turn" in row["state_effects"] for row in inventory)
+    assert all("conversation_assistant_turn" in row["state_effects"] for row in inventory)
     assert all("direct_skill_commands_refused" in row["controls"] for row in inventory)
+
+
+@pytest.mark.asyncio
+async def test_production_mcp_runner_inventory_matches_durable_conversation_state(
+    tmp_path, monkeypatch
+):
+    """The production builder's ``ask_*`` runner persists MCP conversation turns.
+
+    This deliberately uses the real Orchestrator entry point and durable
+    ConversationMemory, with only the LLM-facing seams replaced by hermetic
+    stubs. The inventory must advertise the before/after state effect.
+    """
+    from types import SimpleNamespace
+
+    from agents import web
+    from agents.core.config import JarvisConfig
+    from agents.core.memory import conversation, persistence
+    from agents.core.orchestrator import Orchestrator
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(conversation, "MEMORY_DIR", tmp_path)
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
+    monkeypatch.delenv("JARVIS_MCP_ROUTE_TOOLS", raising=False)
+    monkeypatch.delenv("JARVIS_MCP_MUTATING_TOOLS", raising=False)
+
+    orch = Orchestrator(JarvisConfig())
+    orch.agents = {"jarvis": SimpleNamespace(config={"name": "Jarvis", "tier": "prime"})}
+    orch.session_id = await orch.memory.new_session("session_mcp_inventory")
+
+    class _Intent:
+        target_agents = ["jarvis"]
+        is_general = True
+        confidence = 1.0
+        context = {}
+
+    async def _classify(_text, _agents):
+        return _Intent()
+
+    async def _plugin_data(_text, _intent):
+        return {}
+
+    async def _parallel(_agent_ids, _text, _context, _plugin_data=None):
+        return {"jarvis": "durable reply"}
+
+    async def _complete(**kwargs):
+        await orch.memory.add_turn(
+            orch.session_id,
+            "assistant",
+            kwargs["synthesized"],
+            agent_id=kwargs["responder_id"],
+        )
+
+    orch.router.classify = _classify
+    orch._gather_plugin_data = _plugin_data
+    orch._call_agents_parallel = _parallel
+    orch._complete_llm_turn = _complete
+    orch.llm_router.select_backend = lambda _agent, _text: (None, "", "local")
+    monkeypatch.setattr(web, "orch", orch)
+
+    server = web._build_mcp_server()
+    row = next(item for item in server.tool_inventory() if item["name"] == "ask_jarvis")
+    assert row["persistent_state"] is True
+    assert row["state_effects"][:2] == [
+        "conversation_user_turn",
+        "conversation_assistant_turn",
+    ]
+
+    before = await orch.memory.get_history("session_mcp_inventory")
+    result = await server.call_tool("ask_jarvis", {"text": "persist this turn"})
+    after = await orch.memory.get_history("session_mcp_inventory")
+
+    assert result["isError"] is False
+    assert before == []
+    assert [(turn["role"], turn["content"]) for turn in after] == [
+        ("user", "persist this turn"),
+        ("assistant", "durable reply"),
+    ]
+    snapshot = persistence.load_memory("session_mcp_inventory")
+    assert [(turn["role"], turn["content"]) for turn in snapshot] == [
+        ("user", "persist this turn"),
+        ("assistant", "durable reply"),
+    ]
 
 
 # ── JSON-RPC dispatch ───────────────────────────────────────────────────────
