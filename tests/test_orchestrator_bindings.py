@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 import inspect
 import textwrap
+from collections import defaultdict
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -17,19 +19,131 @@ from agents.core.orchestrator_bindings import (
     bind_external_orchestrator_attribute,
 )
 
+BINDING_API_NAME = "bind_external_orchestrator_attribute"
+
+
+def _dotted_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        owner = _dotted_name(node.value)
+        return f"{owner}.{node.attr}" if owner else None
+    return None
+
+
+def _binding_api_call_names(
+    source: str,
+    *,
+    filename: str,
+) -> tuple[set[str], list[str]]:
+    tree = ast.parse(source, filename=filename)
+    function_aliases: set[str] = set()
+    module_aliases: set[str] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for imported in node.names:
+                if (
+                    module.endswith("orchestrator_bindings")
+                    and imported.name == BINDING_API_NAME
+                ):
+                    function_aliases.add(imported.asname or imported.name)
+                if imported.name == "orchestrator_bindings":
+                    module_aliases.add(imported.asname or imported.name)
+        elif isinstance(node, ast.Import):
+            for imported in node.names:
+                if imported.name.endswith(".orchestrator_bindings"):
+                    module_aliases.add(imported.asname or imported.name)
+
+    def is_binding_reference(node: ast.expr) -> bool:
+        dotted = _dotted_name(node)
+        if dotted is None:
+            return False
+        if dotted in function_aliases:
+            return True
+        if dotted.endswith(f".orchestrator_bindings.{BINDING_API_NAME}"):
+            return True
+        return any(
+            dotted == f"{module_alias}.{BINDING_API_NAME}"
+            for module_alias in module_aliases
+        )
+
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            value = node.value
+            if value is None or not is_binding_reference(value):
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id not in function_aliases:
+                    function_aliases.add(target.id)
+                    changed = True
+
+    calls: set[str] = set()
+    errors: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not is_binding_reference(node.func):
+            continue
+        if (
+            len(node.args) < 2
+            or not isinstance(node.args[1], ast.Constant)
+            or not isinstance(node.args[1].value, str)
+        ):
+            errors.append(f"{filename}:{node.lineno}:dynamic-binding-name")
+            continue
+        name = node.args[1].value
+        if name not in EXTERNAL_BINDING_WRITERS:
+            errors.append(f"{filename}:{node.lineno}:undeclared-binding:{name}")
+            continue
+        calls.add(name)
+    return calls, errors
+
 
 def _binding_api_calls(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    return {
-        node.args[1].value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "bind_external_orchestrator_attribute"
-        and len(node.args) >= 2
-        and isinstance(node.args[1], ast.Constant)
-        and isinstance(node.args[1].value, str)
-    }
+    calls, _errors = _binding_api_call_names(
+        path.read_text(encoding="utf-8"), filename=str(path)
+    )
+    return calls
+
+
+def _observed_binding_writer_map(
+    repo_root: Path,
+) -> tuple[dict[str, set[str]], list[str]]:
+    observed: defaultdict[str, set[str]] = defaultdict(set)
+    errors: list[str] = []
+    binding_module = repo_root / "agents/core/orchestrator_bindings.py"
+    for path in (repo_root / "agents").rglob("*.py"):
+        if path == binding_module:
+            continue
+        relative_path = str(path.relative_to(repo_root))
+        calls, call_errors = _binding_api_call_names(
+            path.read_text(encoding="utf-8"), filename=relative_path
+        )
+        for attribute in calls:
+            observed[attribute].add(relative_path)
+        errors.extend(call_errors)
+    return dict(observed), errors
+
+
+def _writer_inventory_mismatches(
+    observed: Mapping[str, set[str]],
+    expected: Mapping[str, tuple[str, ...]] = EXTERNAL_BINDING_WRITERS,
+) -> list[str]:
+    mismatches: list[str] = []
+    for attribute in sorted(set(expected) | set(observed)):
+        expected_paths = set(expected.get(attribute, ()))
+        observed_paths = observed.get(attribute, set())
+        if observed_paths != expected_paths:
+            mismatches.append(
+                f"{attribute}: expected={sorted(expected_paths)!r} "
+                f"observed={sorted(observed_paths)!r}"
+            )
+    return mismatches
 
 
 def _annotation_names(annotation: ast.expr | None) -> set[str]:
@@ -150,15 +264,12 @@ def test_orchestrator_exposes_external_binding_protocol_before_wiring() -> None:
     assert not isinstance(orch, ExternalOrchestratorBindings)
 
 
-def test_external_binding_writer_inventory_matches_production_assignments() -> None:
+def test_external_binding_writer_inventory_exactly_matches_production_calls() -> None:
     repo_root = Path(__file__).resolve().parent.parent
+    observed, parse_errors = _observed_binding_writer_map(repo_root)
 
-    for attribute, writer_paths in EXTERNAL_BINDING_WRITERS.items():
-        assert writer_paths, attribute
-        assert any(
-            attribute in _binding_api_calls(repo_root / writer_path)
-            for writer_path in writer_paths
-        ), attribute
+    assert parse_errors == []
+    assert _writer_inventory_mismatches(observed) == []
 
 
 def test_external_writers_cannot_create_undeclared_orchestrator_attributes() -> None:
@@ -202,6 +313,65 @@ def test_unrelated_same_named_assignment_cannot_satisfy_inventory(tmp_path: Path
     writer.write_text(source, encoding="utf-8")
 
     assert "argus" not in _binding_api_calls(writer)
+
+
+def test_binding_api_call_parser_tracks_import_alias(tmp_path: Path) -> None:
+    source = """
+from agents.core.orchestrator_bindings import (
+    bind_external_orchestrator_attribute as write_binding,
+)
+
+def wire(orchestrator, value):
+    write_binding(orchestrator, "argus", value)
+"""
+    writer = tmp_path / "writer.py"
+    writer.write_text(source, encoding="utf-8")
+
+    assert "argus" in _binding_api_calls(writer)
+
+
+def test_binding_api_call_parser_tracks_qualified_call(tmp_path: Path) -> None:
+    source = """
+import agents.core.orchestrator_bindings as bindings
+
+def wire(orchestrator, value):
+    bindings.bind_external_orchestrator_attribute(orchestrator, "argus", value)
+"""
+    writer = tmp_path / "writer.py"
+    writer.write_text(source, encoding="utf-8")
+
+    assert "argus" in _binding_api_calls(writer)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
+def wire(orchestrator, value):
+    bind_external_orchestrator_attribute(orchestrator, "argus", value)
+""",
+        """
+from agents.core.orchestrator_bindings import (
+    bind_external_orchestrator_attribute as write_binding,
+)
+
+def wire(orchestrator, value):
+    write_binding(orchestrator, "argus", value)
+""",
+    ],
+)
+def test_unlisted_binding_api_writer_fails_inventory_closure(source: str) -> None:
+    path = "agents/core/rogue_writer.py"
+    calls, parse_errors = _binding_api_call_names(source, filename=path)
+    observed = {attribute: {path} for attribute in calls}
+
+    assert parse_errors == []
+    assert _writer_inventory_mismatches(
+        observed,
+        expected={"argus": EXTERNAL_BINDING_WRITERS["argus"]},
+    )
 
 
 def test_binding_api_rejects_undeclared_binding_names() -> None:
