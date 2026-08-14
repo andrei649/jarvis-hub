@@ -19,26 +19,24 @@ from agents.core.paths import data_path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.channels.discord import DiscordChannel
-from core.channels.email import EmailChannel
-from core.channels.gateway import Gateway
-from core.channels.slack import SlackChannel
-from core.channels.telegram import TelegramChannel
-from core.channels.voice import VoiceChannel
-from core.channels.web import WebChannel
-from core.config import JarvisConfig
-from core.errors import E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED, JarvisError
-from core.log import log_error, setup_logging
-from core.log_safe import log_safe
-from core.orchestrator import Orchestrator
-from core.orchestrator_bindings import bind_external_orchestrator_attribute
-from core.security.guardrails import SecurityBlockError
-from core.web_helpers import error_json
-
+from agents.core.channels.discord import DiscordChannel
+from agents.core.channels.email import EmailChannel
+from agents.core.channels.gateway import Gateway
+from agents.core.channels.slack import SlackChannel
+from agents.core.channels.telegram import TelegramChannel
+from agents.core.channels.voice import VoiceChannel
+from agents.core.channels.web import WebChannel
+from agents.core.config import JarvisConfig
+from agents.core.errors import E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED, JarvisError
+from agents.core.log import log_error, setup_logging
+from agents.core.log_safe import log_safe
+from agents.core.orchestrator import Orchestrator
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+from agents.core.security.guardrails import SecurityBlockError
 # Pure response/format helpers live in core.web_helpers (CLN-3 shared kernel) so
 # the extracted routers can import them without reaching back into this module.
 # Re-exported here under their original private names for backward compatibility.
-from core.web_helpers import nocache_json as _nocache_json
+from agents.core.web_helpers import nocache_json as _nocache_json
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -333,7 +331,7 @@ async def lifespan(application: FastAPI):
     orch = Orchestrator(config)
 
     from core.channel_inbox import ChannelInboxStore
-    from core.settings_db import get_value
+    from agents.core.settings_db import get_value
     bind_external_orchestrator_attribute(
         orch, "channel_inbox", ChannelInboxStore()
     )
@@ -1245,14 +1243,14 @@ async def _list_local_models() -> dict:
 
 def _save_mcp_config():
     """Persist MCP servers configuration to settings DB."""
-    from core.settings_db import put_category
+    from agents.core.settings_db import put_category
     config = orch.mcp.to_config()
     put_category("mcp", {"servers": config})  # return value intentionally unused
 
 
 def _load_mcp_config():
     """Load MCP servers configuration from settings DB."""
-    from core.settings_db import get_category
+    from agents.core.settings_db import get_category
     items = get_category("mcp")
     for item in items:
         if item["key"] == "servers":

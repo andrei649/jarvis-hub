@@ -51,11 +51,11 @@ produce exact hostile evidence without broadening Action Kernel authority.
 **Files:** `agents/web.py`, `agents/run.py`, relevant autonomy router imports,
 queue/kernel/mediation modules and tests
 
-- [ ] Red hostile import-order test proving no distinct queue/kernel/metrics/evidence
+- [x] Red hostile import-order test proving no distinct queue/kernel/metrics/evidence
   modules or singletons can be created as `core.*` and `agents.core.*`.
-- [ ] Canonicalize production authority imports to `agents.core.*` and fail closed on
+- [x] Canonicalize production authority imports to `agents.core.*` and fail closed on
   non-canonical direct imports of the B7 authority modules.
-- [ ] Update only tests that intentionally exercised the legacy import spelling.
+- [x] Update only tests that intentionally exercised the legacy import spelling.
 
 ## Task 5 — proof, ledgers and draft delivery
 

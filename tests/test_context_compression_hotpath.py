@@ -16,8 +16,8 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from core import context_compressor as cc_mod  # noqa: E402
-from core.orchestrator import Orchestrator  # noqa: E402
+from agents.core import context_compressor as cc_mod  # noqa: E402
+from agents.core.orchestrator import Orchestrator  # noqa: E402
 
 
 class _FakeMemory:

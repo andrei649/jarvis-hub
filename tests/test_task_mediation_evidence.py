@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import json
 import sqlite3
 import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -946,6 +948,67 @@ def test_cross_process_legacy_migration_is_serialized(tmp_path):
     assert results == [("", "", 0)] * 8
 
 
+@pytest.mark.parametrize("canonical_first", [False, True])
+def test_authority_modules_reject_legacy_import_identity(canonical_first):
+    program = f"""
+import importlib
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path.cwd() / "agents"))
+canonical = [
+    "agents.core.autonomy.queue",
+    "agents.core.autonomy.worker",
+    "agents.core.autonomy.mediation",
+    "agents.core.autonomy.executor",
+    "agents.core.kernel",
+    "agents.core.kernel.metrics",
+]
+legacy = [name.removeprefix("agents.") for name in canonical]
+
+if {canonical_first!r}:
+    expected = {{name: id(importlib.import_module(name)) for name in canonical}}
+
+rejected = []
+for name in legacy:
+    try:
+        importlib.import_module(name)
+    except ImportError:
+        rejected.append(name)
+
+loaded = {{name: id(importlib.import_module(name)) for name in canonical}}
+print(json.dumps({{
+    "rejected": rejected,
+    "legacy_loaded": sorted(name for name in legacy if name in sys.modules),
+    "canonical_stable": not {canonical_first!r} or loaded == expected,
+}}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=45,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    outcome = json.loads(result.stdout)
+    assert outcome == {
+        "rejected": [
+            "core.autonomy.queue",
+            "core.autonomy.worker",
+            "core.autonomy.mediation",
+            "core.autonomy.executor",
+            "core.kernel",
+            "core.kernel.metrics",
+        ],
+        "legacy_loaded": [],
+        "canonical_stable": True,
+    }
+
+
 class _AskPolicy:
     def decide(self, _action):
         return SimpleNamespace(outcome="ask", tier=2, reason="owner approval required")
@@ -1060,6 +1123,68 @@ def test_worker_preserves_exact_broker_authority_scope(tmp_path, monkeypatch):
     task = queue.get(task_id)
     assert task.mediation_scope == "node:laptop"
     assert task.mediation_receipt["scope"] == "node:laptop"
+
+
+def test_bridge_rejects_payload_mutated_after_kernel_decision():
+    observed = []
+
+    def kernel(action):
+        observed.append(dict(action.payload))
+        return Decision(Verdict.GRANT, reason="authorized", tier=1)
+
+    payload = {"path": "safe.txt"}
+    action = Action(
+        kind="filesystem.write",
+        agent="ultron",
+        title="Write bounded report",
+        payload=payload,
+        scope="global",
+        origin="generated",
+    )
+    bridge = MediationKernelBridge(kernel)
+    bridge(action)
+    payload["path"] = "changed.txt"
+
+    assert (
+        bridge.consume_for_enqueue(
+            agent="ultron",
+            kind="filesystem.write",
+            title="Write bounded report",
+            payload=payload,
+            origin="generated",
+        )
+        is None
+    )
+    assert observed == [{"path": "safe.txt"}]
+
+
+def test_bridge_decision_is_one_use_across_copied_async_contexts():
+    async def scenario():
+        action = Action(
+            kind="filesystem.write",
+            agent="ultron",
+            title="Write bounded report",
+            payload=_worker_payload(),
+            scope="global",
+            origin="generated",
+        )
+        decision = Decision(Verdict.GRANT, reason="authorized", tier=1)
+        bridge = MediationKernelBridge(lambda _action: decision)
+        bridge(action)
+        release = asyncio.Event()
+
+        async def consume():
+            await release.wait()
+            return bridge.consume(action)
+
+        consumers = [asyncio.create_task(consume()) for _ in range(2)]
+        release.set()
+        return decision, await asyncio.gather(*consumers)
+
+    decision, results = asyncio.run(scenario())
+
+    assert sum(result is decision for result in results) == 1
+    assert sum(result is None for result in results) == 1
 
 
 def test_worker_holds_when_persisted_authority_scope_is_halted(tmp_path, monkeypatch):
@@ -1277,6 +1402,56 @@ def test_worker_claims_before_execution_and_direct_executor_call_is_refused(tmp_
 
     assert summary["done"] == 1
     assert handled == [task.id]
+    assert queue.get(task.id).status == TaskStatus.DONE.value
+    assert queue.verified_mediation_stats()["governed"] == 1
+
+
+def test_mediated_execution_context_cannot_replay_from_child_task(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+
+    async def scenario():
+        handled = []
+        replay_release = asyncio.Event()
+        replay_started = asyncio.Event()
+        replay_task = None
+        queue, worker, _bridge = _mediated_worker(tmp_path, _kernel_decision())
+
+        async def handler(task):
+            nonlocal replay_task
+            handled.append(task.id)
+            if replay_task is None:
+
+                async def replay():
+                    replay_started.set()
+                    await replay_release.wait()
+                    return await executor.execute(task)
+
+                replay_task = asyncio.create_task(replay())
+            return {"status": "ok"}
+
+        executor = TaskExecutor(execution_guard=worker.execution_allowed).register(
+            "filesystem.write", handler
+        )
+        worker.executor = executor.execute
+        task = await worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+        await worker.apply_decision(task.id, "accept")
+
+        summary = await worker.tick()
+        await replay_started.wait()
+        replay_release.set()
+        replay_result = await replay_task
+        return queue, task, handled, summary, replay_result
+
+    queue, task, handled, summary, replay_result = asyncio.run(scenario())
+
+    assert summary["done"] == 1
+    assert handled == [task.id]
+    assert replay_result == {
+        "status": "refused",
+        "reason": "mediation_execution_context_required",
+    }
     assert queue.get(task.id).status == TaskStatus.DONE.value
     assert queue.verified_mediation_stats()["governed"] == 1
 

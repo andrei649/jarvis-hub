@@ -7,9 +7,9 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from core import llm_control as llm_control_module
-from core.kernel import Decision, Verdict
-from core.orchestrator import Orchestrator, detect_llm_control
+from agents.core import llm_control as llm_control_module
+from agents.core.kernel import Decision, Verdict
+from agents.core.orchestrator import Orchestrator, detect_llm_control
 
 
 # ── detector: positives ──────────────────────────────────────────

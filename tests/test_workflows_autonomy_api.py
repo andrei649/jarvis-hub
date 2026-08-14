@@ -315,7 +315,7 @@ def test_autonomy_decision_accept_returns_ok(monkeypatch):
 
 
 def test_autonomy_decision_conflict_returns_409(monkeypatch):
-    from core.autonomy.queue import TaskQueueError
+    from agents.core.autonomy.queue import TaskQueueError
     mock = _mock_autonomy_orch()
     mock.autonomy.apply_decision = AsyncMock(side_effect=TaskQueueError("already decided"))
     monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)

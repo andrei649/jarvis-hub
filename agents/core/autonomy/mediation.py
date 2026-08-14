@@ -9,6 +9,9 @@ entry points are total: malformed or unavailable evidence returns ``False`` or
 
 from __future__ import annotations
 
+if __name__ != "agents.core.autonomy.mediation":
+    raise ImportError("mediation evidence must be imported as agents.core.autonomy.mediation")
+
 import hashlib
 import hmac
 import json

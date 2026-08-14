@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import functools
 import os
+import threading
 from contextvars import ContextVar
+from copy import deepcopy
 
 from ..action_origin import current_action_origin
 from .budget import BudgetLedger, BudgetLimits
@@ -30,6 +32,23 @@ _BUDGET_ENV = {
     "max_wall_seconds": "JARVIS_BUDGET_MAX_WALL_SECONDS",
     "max_depth": "JARVIS_BUDGET_MAX_DEPTH",
 }
+
+
+class _OneShotDecision:
+    """A pending decision shared by every copied async context, consumed once."""
+
+    def __init__(self, action, decision) -> None:
+        self._action = action
+        self._decision = decision
+        self._consumed = False
+        self._lock = threading.Lock()
+
+    def take(self):
+        with self._lock:
+            if self._consumed:
+                return None
+            self._consumed = True
+            return self._action, self._decision
 
 
 class MediationKernelBridge:
@@ -49,21 +68,27 @@ class MediationKernelBridge:
     def __call__(self, action, capability=None, budget=None):
         if not callable(self._kernel):
             raise RuntimeError("action kernel is unavailable")
+        self._pending.set(None)
+        try:
+            authorized_action = deepcopy(action)
+        except Exception as exc:
+            raise RuntimeError("action could not be snapshotted for mediation") from exc
         if capability is None and budget is None:
             decision = self._kernel(action)
         elif budget is None:
             decision = self._kernel(action, capability)
         else:
             decision = self._kernel(action, capability=capability, budget=budget)
-        self._pending.set((action, decision))
+        self._pending.set(_OneShotDecision(authorized_action, decision))
         return decision
 
     def consume(self, action):
         pending = self._pending.get()
         self._pending.set(None)
-        if pending is None or pending[0] != action:
+        released = pending.take() if isinstance(pending, _OneShotDecision) else None
+        if released is None or released[0] != action:
             return None
-        return pending[1]
+        return released[1]
 
     def consume_for_enqueue(self, *, agent, kind, title, payload, origin):
         """Release a broker decision matching the exact persisted task fields.
@@ -74,9 +99,10 @@ class MediationKernelBridge:
 
         pending = self._pending.get()
         self._pending.set(None)
-        if pending is None:
+        released = pending.take() if isinstance(pending, _OneShotDecision) else None
+        if released is None:
             return None
-        action, decision = pending
+        action, decision = released
         if (
             action.agent != agent
             or action.kind != kind

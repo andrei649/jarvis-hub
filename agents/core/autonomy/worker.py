@@ -15,8 +15,12 @@ stays free of orchestrator/Telegram imports and is unit-testable offline.
 
 from __future__ import annotations
 
+if __name__ != "agents.core.autonomy.worker":
+    raise ImportError("AutonomyWorker authority must be imported as agents.core.autonomy.worker")
+
 import inspect
 import logging
+import threading
 import time
 import uuid
 from contextvars import ContextVar
@@ -37,6 +41,35 @@ INTERRUPT_BUDGET_PER_DAY = 4
 # executor(task) -> dict result ; notifier(task) -> bool (pushed ok)
 Executor = Callable[[Task], Awaitable[dict]]
 Notifier = Callable[[Task], Awaitable[bool]]
+
+
+class _ExecutionPermit:
+    """Shared one-use permit that cannot be replayed by a copied ContextVar."""
+
+    def __init__(self, task: Task) -> None:
+        self._identity = (
+            task.id,
+            task.mediation_execution_id,
+            task.mediation_task_sha256,
+        )
+        self._active = True
+        self._lock = threading.Lock()
+
+    def consume(self, task: Task) -> bool:
+        identity = (
+            task.id,
+            task.mediation_execution_id,
+            task.mediation_task_sha256,
+        )
+        with self._lock:
+            if not self._active or identity != self._identity:
+                return False
+            self._active = False
+            return task.status == TaskStatus.RUNNING.value
+
+    def revoke(self) -> None:
+        with self._lock:
+            self._active = False
 
 
 def is_night_window(hour: int, start: int = 23, end: int = 6) -> bool:
@@ -207,14 +240,8 @@ class AutonomyWorker:
             return True
         if self.queue.mediation_mode != "enforce" or classification is not True:
             return False
-        context = self._execution_context.get()
-        return bool(
-            context
-            and context[0] == task.id
-            and context[1] == task.mediation_execution_id
-            and context[2] == task.mediation_task_sha256
-            and task.status == TaskStatus.RUNNING.value
-        )
+        permit = self._execution_context.get()
+        return isinstance(permit, _ExecutionPermit) and permit.consume(task)
 
     def _kernel_action(self, agent: str, kind: str, title: str, payload: dict, origin: str):
         from ..kernel import Action
@@ -774,11 +801,8 @@ class AutonomyWorker:
                 task = self.queue.get(task.id)
             ran += 1
             attempts = self.queue.increment_attempts(task.id)
-            execution_token = self._execution_context.set(
-                (task.id, task.mediation_execution_id, task.mediation_task_sha256)
-                if mediated
-                else None
-            )
+            execution_permit = _ExecutionPermit(task) if mediated else None
+            execution_token = self._execution_context.set(execution_permit)
             try:
                 result = await self._execute(task)
                 self.queue.transition(task.id, TaskStatus.DONE, result=result)
@@ -797,6 +821,8 @@ class AutonomyWorker:
                     self.queue.transition(task.id, TaskStatus.APPROVED)
                     logger.info(f"Task #{task.id} failed (attempt {attempts}), will retry: {e}")
             finally:
+                if execution_permit is not None:
+                    execution_permit.revoke()
                 self._execution_context.reset(execution_token)
         return {"ran": ran, "done": done, "failed": failed, "held": held, "reaped": reaped}
 

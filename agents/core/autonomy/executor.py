@@ -12,6 +12,9 @@ dispatch pure makes it unit-testable offline.
 
 from __future__ import annotations
 
+if __name__ != "agents.core.autonomy.executor":
+    raise ImportError("TaskExecutor authority must be imported as agents.core.autonomy.executor")
+
 import asyncio
 import logging
 from typing import Awaitable, Callable, Optional

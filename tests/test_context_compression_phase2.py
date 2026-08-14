@@ -26,8 +26,8 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from core.context_compressor import ContextCompressor  # noqa: E402
-from core.orchestrator import Orchestrator  # noqa: E402
+from agents.core.context_compressor import ContextCompressor  # noqa: E402
+from agents.core.orchestrator import Orchestrator  # noqa: E402
 
 
 def _turn(role, content, agent_id=None):

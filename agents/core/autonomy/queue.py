@@ -15,6 +15,9 @@ worker). See docs/superpowers/specs/2026-05-31-horizon6-autonomous-jarvis-design
 
 from __future__ import annotations
 
+if __name__ != "agents.core.autonomy.queue":
+    raise ImportError("TaskQueue authority must be imported as agents.core.autonomy.queue")
+
 import json
 import logging
 import math
