@@ -41,10 +41,12 @@ already-convinced.
 ## 2. Context load — 60 seconds, not 2M tokens
 
 Load in this order, nothing more: this file → `docs/MAX_RUNS.md` (last 3 rows) → `BACKLOG.md`
-header + the one section you'll touch → the single task bundle from
+header + the one section you'll touch → the integration constraints in `AGENTS.md` under
+"Delivery workflow" and "Evidence and completion" → the single task bundle from
 `.claude/skills/jarvis-load-context/SKILL.md`. `BACKLOG.md` outranks every other doc when they
 disagree; fix the stale one in the same PR. While this file is fresh in context, it **replaces**
-the Tier-0 doc sweep — that is a deliberate efficiency rule, not a shortcut.
+the Tier-0 doc sweep — that is a deliberate efficiency rule, not a shortcut. Before choosing PR
+shape, also inspect open draft PRs for overlapping paths or authority contracts.
 
 ## 3. The loop — one run = one shippable slice
 
@@ -58,11 +60,22 @@ the Tier-0 doc sweep — that is a deliberate efficiency rule, not a shortcut.
    rollback). No separate spec doc unless the slice is genuinely architectural.
 3. **Build test-first where it bites** — red → minimal fix → green.
 4. **Gate** — full relevant test sweep, route/parity re-seeds if routes changed, ruff clean.
-5. **Ship** — branch `max/<run-name>`, draft PR, `BACKLOG.md` sync *in the same PR*.
+5. **Ship** — branch `max/<run-name>`, draft PR, `BACKLOG.md` sync *in the same PR*. One
+   independently reversible slice maps to one branch, one PR and one rollback decision. A Max
+   builder never accepts or merges their own Nerva work; draft delivery proceeds to an independent
+   reviewer/integrator and only that role records the merge decision.
 6. **Record** — append one row to `docs/MAX_RUNS.md`: run name, slice, PR, and the *next*
    highest-leverage item (so the next run boots instantly).
-7. **Spark** — if the primary slice is green and budget remains, ship one Spark (§6).
-8. Repeat while the session has budget; otherwise exit (§8).
+7. **Spark** — if the primary slice is green and budget remains, ship one Spark (§6). It uses a
+   separate branch/PR unless it genuinely shares the primary slice's dependency gate, authority
+   boundary, test surface **and** rollback path.
+8. Repeat while the session has budget, but start a new run name, branch and PR for the next
+   independently reversible slice; otherwise exit (§8).
+
+PR shape is determined by rollback and authority, never by remaining session budget. Security or
+authority-posture changes, cross-epic work and otherwise independent changes always split. For
+example, an SEC-B6 route-auth change, an ADV capability-proof change and a Spark are three rollback
+units; a green aggregate PR is not an acceptable shortcut.
 
 ## 4. The Feel Contract — Nerva feels the same, forever
 
@@ -129,7 +142,10 @@ its "Max mode" section):
 
 **Never streamlined, under any pressure:** `MOONSHOT.md` §5 non-negotiables · tests ship with
 the feature · `BACKLOG.md` sync in the same PR · route/OpenAPI/parity gates · respect for other
-agents' draft PRs · honest reporting (a red test is reported red).
+agents' draft PRs · honest reporting (a red test is reported red) · one reversible slice per PR ·
+separate builder/reviewer/integrator roles where the risk policy requires them · exact-head
+independent acceptance before Nerva integration. A subsequent Max run never appends unrelated work
+to an earlier PR merely because the session still has time.
 
 ## 8. Exit
 

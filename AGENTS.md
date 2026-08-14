@@ -41,6 +41,14 @@ protocolului > ceremonie; lista canonică e `MAX.md` §7):
 **Nimic altceva nu se relaxează.** Non-negociabilele (`MOONSHOT.md` §5, convențiile de mai sus:
 local-first, teste cu feature-ul, BACKLOG sync în același PR, gate-urile de rute/paritate,
 respectul pentru PR-urile draft ale altora, raportare onestă) rămân în vigoare și în Max mode.
+Înainte de alegerea formei PR-ului, contextul redus Max încarcă și constrângerile curente de
+delivery/evidence din acest fișier. Un slice reversibil înseamnă un branch, un PR și o decizie de
+rollback; o repetare Max pornește un branch/PR nou. Un Spark se separă implicit și poate rămâne cu
+slice-ul primar numai dacă are aceeași dependență, limită de autoritate, suprafață de teste și cale
+de rollback. Schimbările de securitate/autoritate, cross-epic și alte unități independent
+revertibile se separă întotdeauna. De exemplu, SEC-B6 + un proof ADV + un Spark nu formează un PR
+valid doar fiindcă au fost produse în aceeași sesiune. Builder-ul Max nu își acceptă sau integrează
+singur munca Nerva; exact-head review și decizia integratorului independent rămân obligatorii.
 
 ## Context routing
 
