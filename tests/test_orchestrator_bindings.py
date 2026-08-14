@@ -28,6 +28,7 @@ _BUILTIN_OBJECT = "builtin-object"
 _BUILTIN_SETATTR = "builtin-setattr"
 _OBJECT_SETATTR = "object-setattr"
 _ORCHESTRATOR_RECEIVER = "orchestrator-receiver"
+_ORCHESTRATOR_SETATTR = "orchestrator-setattr"
 _PYTHON_MODULE_PREFIX = "python-module:"
 
 _BINDING_MODULE_NAMES = frozenset(
@@ -37,7 +38,7 @@ _BINDING_MODULE_NAMES = frozenset(
     }
 )
 
-_LexicalSymbol = str | tuple[object | None, ...]
+_LexicalSymbol = str | tuple[object | None, ...] | frozenset[object | None]
 
 # These are lexically identical to orchestrator-slot writes but are writes to an
 # unrelated domain object. Keep the exception exact so a moved or duplicated write
@@ -158,6 +159,29 @@ def _module_name(symbol: object) -> str | None:
     return None
 
 
+def _symbol_options(symbol: _LexicalSymbol | None) -> frozenset[object | None]:
+    if isinstance(symbol, frozenset):
+        return symbol
+    return frozenset({symbol})
+
+
+def _merge_symbols(*symbols: _LexicalSymbol | None) -> _LexicalSymbol | None:
+    options = frozenset(option for symbol in symbols for option in _symbol_options(symbol))
+    if len(options) == 1:
+        return next(iter(options))  # type: ignore[return-value]
+    return options
+
+
+def _has_symbol(symbol: _LexicalSymbol | None, expected: str) -> bool:
+    return expected in _symbol_options(symbol)
+
+
+def _module_names(symbol: _LexicalSymbol | None) -> set[str]:
+    return {
+        module for option in _symbol_options(symbol) if (module := _module_name(option)) is not None
+    }
+
+
 def _builtin_symbol(name: str) -> str | None:
     return {
         "getattr": _BUILTIN_GETATTR,
@@ -181,25 +205,17 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
     def _resolve(self, node: ast.expr) -> _LexicalSymbol | None:
         if isinstance(node, ast.Name):
             return self.scope.resolve(node.id)
+        if isinstance(node, ast.NamedExpr):
+            symbol = self._resolve(node.value)
+            self._bind_symbol(node.target, symbol)
+            return symbol
         if isinstance(node, ast.Attribute):
             owner = self._resolve(node.value)
-            if owner == _BINDING_MODULE and node.attr == BINDING_API_NAME:
-                return _BINDING_FUNCTION
-            if owner == _BUILTIN_OBJECT and node.attr == "__setattr__":
-                return _OBJECT_SETATTR
             if node.attr in {"orchestrator", "_orch"}:
                 return _ORCHESTRATOR_RECEIVER
-            module = _module_name(owner)
-            if module is not None:
-                member = f"{module}.{node.attr}"
-                if member in _BINDING_MODULE_NAMES:
-                    return _BINDING_MODULE
-                if module == "builtins":
-                    builtin = _builtin_symbol(node.attr)
-                    if builtin is not None:
-                        return builtin
-                return _module_symbol(member)
-            return None
+            return _merge_symbols(
+                *(self._resolve_attribute(option, node.attr) for option in _symbol_options(owner))
+            )
         if isinstance(node, ast.Tuple):
             return tuple(self._resolve(element) for element in node.elts)
         if isinstance(node, ast.Subscript):
@@ -217,21 +233,37 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
                 return owner[index]
         if (
             isinstance(node, ast.Call)
-            and self._resolve(node.func) == _BUILTIN_GETATTR
+            and _has_symbol(self._resolve(node.func), _BUILTIN_GETATTR)
             and len(node.args) >= 2
             and isinstance(node.args[1], ast.Constant)
             and isinstance(node.args[1].value, str)
         ):
             owner = self._resolve(node.args[0])
             attribute = node.args[1].value
-            if owner == _BINDING_MODULE and attribute == BINDING_API_NAME:
-                return _BINDING_FUNCTION
-            if owner == _BUILTIN_OBJECT and attribute == "__setattr__":
-                return _OBJECT_SETATTR
-            module = _module_name(owner)
-            if module == "builtins":
-                return _builtin_symbol(attribute)
+            return _merge_symbols(
+                *(self._resolve_attribute(option, attribute) for option in _symbol_options(owner))
+            )
         return None
+
+    @staticmethod
+    def _resolve_attribute(owner: object | None, attribute: str) -> _LexicalSymbol | None:
+        if owner == _BINDING_MODULE and attribute == BINDING_API_NAME:
+            return _BINDING_FUNCTION
+        if owner == _BUILTIN_OBJECT and attribute == "__setattr__":
+            return _OBJECT_SETATTR
+        if owner == _ORCHESTRATOR_RECEIVER and attribute == "__setattr__":
+            return _ORCHESTRATOR_SETATTR
+        module = _module_name(owner)
+        if module is None:
+            return None
+        member = f"{module}.{attribute}"
+        if member in _BINDING_MODULE_NAMES:
+            return _BINDING_MODULE
+        if module == "builtins":
+            builtin = _builtin_symbol(attribute)
+            if builtin is not None:
+                return builtin
+        return _module_symbol(member)
 
     def _absolute_import_module(self, module: str, level: int) -> str:
         if level == 0:
@@ -246,19 +278,43 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
         return ".".join((*package, *(module.split(".") if module else ())))
 
     def _bind_target(self, target: ast.expr, value: ast.expr) -> None:
+        self._bind_symbol(target, self._resolve(value))
+
+    def _bind_symbol(
+        self,
+        target: ast.expr,
+        symbol: _LexicalSymbol | None,
+    ) -> None:
         if isinstance(target, ast.Name):
-            self.scope.bindings[target.id] = self._resolve(value)
+            self.scope.bindings[target.id] = symbol
             return
         if (
             isinstance(target, (ast.Tuple, ast.List))
-            and isinstance(value, (ast.Tuple, ast.List))
-            and len(target.elts) == len(value.elts)
+            and isinstance(symbol, tuple)
+            and len(target.elts) == len(symbol)
         ):
-            for child_target, child_value in zip(target.elts, value.elts, strict=True):
-                self._bind_target(child_target, child_value)
+            for child_target, child_symbol in zip(target.elts, symbol, strict=True):
+                self._bind_symbol(child_target, child_symbol)  # type: ignore[arg-type]
             return
         for name in _stored_names(target):
             self.scope.bindings[name] = None
+
+    def _merged_bindings(
+        self,
+        *states: dict[str, _LexicalSymbol | None],
+    ) -> dict[str, _LexicalSymbol | None]:
+        return {
+            name: _merge_symbols(*(state.get(name) for state in states))
+            for name in set().union(*(state.keys() for state in states))
+        }
+
+    def _iterated_symbol(self, expression: ast.expr) -> _LexicalSymbol | None:
+        if isinstance(expression, (ast.Tuple, ast.List, ast.Set)):
+            return _merge_symbols(*(self._resolve(element) for element in expression.elts))
+        symbol = self._resolve(expression)
+        if isinstance(symbol, tuple):
+            return _merge_symbols(*symbol)  # type: ignore[arg-type]
+        return None
 
     def _check_attribute_target(self, target: ast.expr) -> None:
         if self.allowed_attributes is None or not isinstance(target, ast.Attribute):
@@ -275,7 +331,7 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
         ):
             self.contract_violations.append(f"{self.filename}:{target.lineno}:direct:{target.attr}")
         elif (
-            self._resolve(target.value) == _ORCHESTRATOR_RECEIVER
+            _has_symbol(self._resolve(target.value), _ORCHESTRATOR_RECEIVER)
             and target.attr not in self.allowed_attributes
         ):
             self.contract_violations.append(
@@ -342,6 +398,36 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
         self.visit(node.value)
         self._bind_target(node.target, node.value)
 
+    def visit_If(self, node: ast.If) -> None:
+        self.visit(node.test)
+        before = self.scope.bindings.copy()
+
+        self.scope.bindings = before.copy()
+        for statement in node.body:
+            self.visit(statement)
+        body = self.scope.bindings.copy()
+
+        self.scope.bindings = before.copy()
+        for statement in node.orelse:
+            self.visit(statement)
+        orelse = self.scope.bindings.copy()
+
+        self.scope.bindings = self._merged_bindings(body, orelse)
+
+    def _visit_for(self, node: ast.For | ast.AsyncFor) -> None:
+        self.visit(node.iter)
+        before = self.scope.bindings.copy()
+        self._bind_symbol(node.target, self._iterated_symbol(node.iter))
+        for statement in node.body:
+            self.visit(statement)
+        after_iteration = self.scope.bindings.copy()
+        self.scope.bindings = self._merged_bindings(before, after_iteration)
+        for statement in node.orelse:
+            self.visit(statement)
+
+    visit_For = _visit_for
+    visit_AsyncFor = _visit_for
+
     def _visit_function(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -372,7 +458,7 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         symbol = self._resolve(node.func)
-        if symbol == _BINDING_FUNCTION:
+        if _has_symbol(symbol, _BINDING_FUNCTION):
             if (
                 len(node.args) < 2
                 or not isinstance(node.args[1], ast.Constant)
@@ -387,7 +473,7 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
                     )
                 else:
                     self.binding_calls.append((name, node.lineno, node.col_offset))
-        elif symbol == _BUILTIN_GETATTR and node.args:
+        if _has_symbol(symbol, _BUILTIN_GETATTR) and node.args:
             owner = self._resolve(node.args[0])
             attribute_is_literal = (
                 len(node.args) >= 2
@@ -395,23 +481,32 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
                 and isinstance(node.args[1].value, str)
             )
             if (
-                owner in {_BINDING_MODULE, _BUILTIN_OBJECT} or _module_name(owner) == "builtins"
+                _has_symbol(owner, _BINDING_MODULE)
+                or _has_symbol(owner, _BUILTIN_OBJECT)
+                or "builtins" in _module_names(owner)
             ) and not attribute_is_literal:
                 self.call_errors.append(
                     f"{self.filename}:{node.lineno}:dynamic-binding-api-reference"
                 )
-        elif (
-            symbol in {_BUILTIN_SETATTR, _OBJECT_SETATTR}
-            and self.allowed_attributes is not None
-            and len(node.args) >= 2
-        ):
-            name_arg = node.args[1]
-            name = name_arg.value if isinstance(name_arg, ast.Constant) else "<dynamic>"
+        if self.allowed_attributes is not None:
+            setter_names: set[str] = set()
             if (
-                name in EXTERNAL_BINDING_WRITERS
-                or self._resolve(node.args[0]) == _ORCHESTRATOR_RECEIVER
+                any(_has_symbol(symbol, setter) for setter in (_BUILTIN_SETATTR, _OBJECT_SETATTR))
+                and len(node.args) >= 2
             ):
-                self.contract_violations.append(f"{self.filename}:{node.lineno}:setattr:{name}")
+                name_arg = node.args[1]
+                name = name_arg.value if isinstance(name_arg, ast.Constant) else "<dynamic>"
+                if name in EXTERNAL_BINDING_WRITERS or _has_symbol(
+                    self._resolve(node.args[0]), _ORCHESTRATOR_RECEIVER
+                ):
+                    setter_names.add(name)
+            if _has_symbol(symbol, _ORCHESTRATOR_SETATTR) and node.args:
+                name_arg = node.args[0]
+                name = name_arg.value if isinstance(name_arg, ast.Constant) else "<dynamic>"
+                setter_names.add(name)
+            self.contract_violations.extend(
+                f"{self.filename}:{node.lineno}:setattr:{name}" for name in sorted(setter_names)
+            )
         self.generic_visit(node)
 
 
@@ -637,6 +732,73 @@ def wire(target, replacement, value):
     assert _binding_contract_violations(textwrap.dedent(source), initialized=set())
 
 
+def test_named_expression_setter_alias_is_rejected() -> None:
+    source = """
+def wire(target, value):
+    (write_attribute := setattr)(target, "argus", value)
+"""
+
+    assert _binding_contract_violations(textwrap.dedent(source), initialized=set())
+
+
+def test_conditional_setter_reassignment_remains_conservative() -> None:
+    source = """
+def wire(target, replacement, value, condition):
+    write_attribute = setattr
+    if condition:
+        write_attribute = replacement
+    write_attribute(target, "argus", value)
+"""
+
+    assert _binding_contract_violations(textwrap.dedent(source), initialized=set())
+
+
+def test_for_loop_setter_target_alias_is_rejected() -> None:
+    source = """
+def wire(target, value):
+    for write_attribute in (setattr,):
+        write_attribute(target, "argus", value)
+"""
+
+    assert _binding_contract_violations(textwrap.dedent(source), initialized=set())
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+def wire(orchestrator, value):
+    orchestrator.__setattr__("undeclared", value)
+""",
+        """
+def wire(orchestrator, value):
+    getattr(orchestrator, "__setattr__")("undeclared", value)
+""",
+    ],
+)
+def test_receiver_bound_setters_are_rejected(source: str) -> None:
+    assert _binding_contract_violations(textwrap.dedent(source), initialized=set())
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+def wire(orchestrator, unrelated, value):
+    orchestrator = unrelated
+    orchestrator.__setattr__("undeclared", value)
+""",
+        """
+def wire(orchestrator, unrelated, value):
+    orchestrator = unrelated
+    getattr(orchestrator, "__setattr__")("undeclared", value)
+""",
+    ],
+)
+def test_replaced_receiver_bound_setters_are_not_rejected(source: str) -> None:
+    assert _binding_contract_violations(textwrap.dedent(source), initialized=set()) == []
+
+
 def test_literal_getattr_from_builtins_module_is_rejected() -> None:
     source = """
 import builtins
@@ -798,6 +960,60 @@ def wire(orchestrator, replacement, value):
 
     assert errors == []
     assert calls == [("argus", 6, 4)]
+
+
+def test_named_expression_binding_alias_is_inventoried() -> None:
+    source = """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
+def wire(orchestrator, value):
+    (write_binding := bind_external_orchestrator_attribute)(
+        orchestrator, "argus", value
+    )
+"""
+
+    calls, errors = _binding_api_call_names(
+        textwrap.dedent(source), filename="agents/core/fixture.py"
+    )
+
+    assert errors == []
+    assert calls == [("argus", 5, 4)]
+
+
+def test_conditional_binding_reassignment_remains_conservative() -> None:
+    source = """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
+def wire(orchestrator, replacement, value, condition):
+    write_binding = bind_external_orchestrator_attribute
+    if condition:
+        write_binding = replacement
+    write_binding(orchestrator, "argus", value)
+"""
+
+    calls, errors = _binding_api_call_names(
+        textwrap.dedent(source), filename="agents/core/fixture.py"
+    )
+
+    assert errors == []
+    assert calls == [("argus", 8, 4)]
+
+
+def test_for_loop_binding_target_alias_is_inventoried() -> None:
+    source = """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
+def wire(orchestrator, value):
+    for write_binding in (bind_external_orchestrator_attribute,):
+        write_binding(orchestrator, "argus", value)
+"""
+
+    calls, errors = _binding_api_call_names(
+        textwrap.dedent(source), filename="agents/core/fixture.py"
+    )
+
+    assert errors == []
+    assert calls == [("argus", 6, 8)]
 
 
 def test_dynamic_getattr_binding_api_reference_fails_closed() -> None:
