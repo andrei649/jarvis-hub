@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from agents.core.memory.bitemporal import BiTemporalKG
 from agents.core.memory.decay import DecayMemory
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 from agents.core.paths import data_path
 
 from .engine import AmbientEngine
@@ -212,7 +213,7 @@ def get_ambient_runtime(
             _RUNTIMES[key] = runtime
         if orch is not None:
             with contextlib.suppress(AttributeError, TypeError):
-                orch.ambient_runtime = runtime
+                bind_external_orchestrator_attribute(orch, "ambient_runtime", runtime)
         return runtime
 
 

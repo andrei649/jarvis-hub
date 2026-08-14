@@ -1420,14 +1420,14 @@ refutation will re-file the claim. **A REFUTED verdict here is a PASS.**
 - **CROSS:** the AST count both ways (`Assign` only, then `Assign + AnnAssign`) — the difference *is* the lesson.
 - **Evidence:** both counts and the live attribute check.
 
-#### ADV-130 — The real residue: silent degradation to a default  ⏱
-- **Surface:** `agents/core/orchestrator.py` · `agents/web.py`
-- **Why it matters:** the honest remainder of ADV-129 — a handful of attributes are written by other modules, and a missing one degrades to a default rather than failing loudly.
-- **Steps:** for each externally-written attribute, remove the writer and see what happens.
-- **Expected:** a silent default.
-- **FAIL if:** confirmed → **MINOR**; the audit's suggestion (a Protocol) is proportionate. Note it as a gap, not a bug.
-- **CROSS:** the writers.
-- **Evidence:** the list and one demonstration.
+#### ADV-130 — External orchestrator binding residue — CLOSED  ⏱
+- **Surface:** `agents/core/orchestrator.py` · `agents/core/orchestrator_bindings.py` · external lifecycle writers
+- **Why it matters:** the honest remainder of ADV-129 was 15 attributes populated by plugin, web, autonomy, ambient, or scheduler wiring without an initial declaration. A missing writer therefore looked identical to an intentionally unavailable feature.
+- **Steps:** run `pytest -q tests/test_orchestrator_bindings.py`; inspect `EXTERNAL_BINDING_WRITERS` and `bind_external_orchestrator_attribute`; instantiate `Orchestrator` before any external wiring.
+- **Expected:** the instance structurally satisfies `ExternalOrchestratorBindings`; all 15 slots exist with explicit `None`; observed direct, qualified, and imported-aliased binding API calls match the inventoried writer paths exactly in both directions; hostile typed, aliased, nested, and `setattr` receivers cannot bypass the undeclared-write guard; unrelated same-named assignments cannot satisfy the inventory; and consumers test availability rather than `hasattr` presence.
+- **FAIL if:** a slot is absent, a declared writer no longer assigns it, or a new external write bypasses the initialized surface → reopen **MINOR**.
+- **CROSS:** the writer inventory is checked against production AST assignments, independently of the runtime structural check.
+- **Evidence:** `tests/test_orchestrator_bindings.py` (14 hermetic cases); the explicit boot defaults in `Orchestrator.__init__`; all external writers routed through `bind_external_orchestrator_attribute`; production callsite map equals `EXTERNAL_BINDING_WRITERS` exactly.
 
 ---
 
@@ -1813,7 +1813,7 @@ does not prove it. They get triaged differently.
 | G35 | The ingestion archive in the purge, retention and export sets | GAP | `agents/core/ingestion/lifecycle.py`, `agents/core/{data_export,retention,data_purge}.py` | High · CONFIRMED → CLOSED | ✅ | | ADV-131 |
 | G36 | A governed/ungoverned inventory for the MCP RPC tool surface | GAP | `agents/core/mcp/server.py` | High · CONFIRMED → CLOSED | ✅ | | ADV-132 |
 | G37 | Any exercise of the upgrade path against a populated data root | GAP | `agents/core/persistence/migrations.py` | unmeasured | — | | ADV-133 |
-| G38 | A protocol for orchestrator attributes written by other modules | GAP | `agents/core/orchestrator.py` | Minor · REFUTED-with-residue | — | | ADV-130 |
+| G38 | A protocol for orchestrator attributes written by other modules | GAP | `agents/core/orchestrator.py`, `agents/core/orchestrator_bindings.py` | Minor · REFUTED-with-residue → CLOSED | ✅ | | ADV-130 |
 
 ---
 

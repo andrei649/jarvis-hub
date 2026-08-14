@@ -162,6 +162,27 @@ class Orchestrator:
         self._cache_tasks: set[asyncio.Task] = set()
         self.memory = MemoryManager()
 
+        # G38 / ADV-130: lifecycle owners outside this module populate these
+        # extension slots. Declare every slot before those writers run so a
+        # consumer sees an explicit unavailable state rather than relying on a
+        # missing attribute plus ``getattr(..., default)``. The structural
+        # contract and writer inventory live in orchestrator_bindings.py.
+        self.ambient_runtime = None
+        self.acquisition = None
+        self.tool_rpc = None
+        self.agent_tool_runtime = None
+        self.writeback = None
+        self.social = None
+        self.channel_replies = None
+        self.call_broker = None
+        self.node_mesh = None
+        self.subagents = None
+        self.task_executor = None
+        self.last_memory_maintenance = None
+        self.channel_inbox = None
+        self.oracle_bridge = None
+        self.argus = None
+
         # ── optional components via the registry (A2: tames the god-object) ──
         from .component_registry import ComponentRegistry
         self.components = ComponentRegistry(self, logger)
@@ -898,7 +919,11 @@ class Orchestrator:
         # dev/dogfooding feature — enable with JARVIS_ORACLE_WATCH=1 or the
         # `oracle.watch_enabled` setting.
         _oracle_watch = env_flag("JARVIS_ORACLE_WATCH") or self.get_setting("oracle.watch_enabled", False)
-        if hasattr(self, 'oracle_bridge') and not env_flag("JARVIS_TESTING") and _oracle_watch:
+        if (
+            self.oracle_bridge is not None
+            and not env_flag("JARVIS_TESTING")
+            and _oracle_watch
+        ):
             self.oracle_bridge.start_watcher()
         if not env_flag("JARVIS_TESTING"):
             from agents.core.learning_loop import run_learning_loop

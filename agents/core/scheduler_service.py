@@ -22,6 +22,7 @@ import os
 from agents.core.paths import data_path
 
 from .autonomy.digest import build_evening_retro, build_morning_brief
+from .orchestrator_bindings import bind_external_orchestrator_attribute
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -279,7 +280,9 @@ class SchedulerService:
             "reprojection": reprojection,
             "decay": decay_summary,
         }
-        self._orch.last_memory_maintenance = result
+        bind_external_orchestrator_attribute(
+            self._orch, "last_memory_maintenance", result
+        )
         logger.info(
             "Memory maintenance complete: nrem_total=%s rem_recombined=%s "
             "reprojected=%s decay_ranked=%s decay_candidates=%s",
