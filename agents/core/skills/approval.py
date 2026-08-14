@@ -67,7 +67,7 @@ class SkillApprovalStore(JsonStore):
         registry_path = Path(path or data_path("security", "skill_approvals.json"))
         shared_lock = _registry_lock(registry_path)
         super().__init__(registry_path)
-        self._lock = shared_lock
+        self._registry_lock = shared_lock
 
     def _deserialize(self, raw: Any) -> None:
         records = (
@@ -110,7 +110,7 @@ class SkillApprovalStore(JsonStore):
 
     def approve(self, path: Path) -> dict[str, str]:
         canonical = self._canonical_path(path)
-        with self._lock, _process_registry_lock(self.path):
+        with self._registry_lock, _process_registry_lock(self.path):
             if not self._reload_locked():
                 raise SkillApprovalStoreError(
                     "cannot merge a corrupt or unknown skill approval registry"
@@ -133,7 +133,7 @@ class SkillApprovalStore(JsonStore):
     ) -> SkillSourceSnapshot | None:
         """Return the exact approved bytes, or ``None`` on any state failure."""
         canonical = self._canonical_path(path)
-        with self._lock, _process_registry_lock(self.path):
+        with self._registry_lock, _process_registry_lock(self.path):
             if not self._reload_locked():
                 return None
             record = self._records.get(self._key(canonical))
@@ -158,7 +158,7 @@ class SkillApprovalStore(JsonStore):
         provenance sidecar could make changed bytes inherit bundled trust.
         """
         canonical = self._canonical_path(path)
-        with self._lock, _process_registry_lock(self.path):
+        with self._registry_lock, _process_registry_lock(self.path):
             if not self._reload_locked():
                 return False
             record = self._records.get(self._key(canonical))
