@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import shutil
 from pathlib import Path
 
@@ -50,5 +52,29 @@ def test_corrupt_approval_registry_fails_closed(tmp_path: Path) -> None:
     registry = tmp_path / "private" / "approvals.json"
     registry.parent.mkdir(parents=True)
     registry.write_text("not-json", encoding="utf-8")
+
+    assert not SkillApprovalStore(registry).is_approved(skill)
+
+
+def test_unknown_approval_registry_schema_fails_closed(tmp_path: Path) -> None:
+    skill = _make_skill(tmp_path / "skills" / "demo")
+    canonical = str(skill.resolve())
+    key = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    registry = tmp_path / "private" / "approvals.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        json.dumps(
+            {
+                "version": 999,
+                "approvals": {
+                    key: {
+                        "canonical_path": canonical,
+                        "source_fingerprint": source_fingerprint(skill),
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
     assert not SkillApprovalStore(registry).is_approved(skill)

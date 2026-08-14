@@ -21,7 +21,11 @@ class SkillApprovalStore(JsonStore):
         super().__init__(path or data_path("security", "skill_approvals.json"))
 
     def _deserialize(self, raw: Any) -> None:
-        records = raw.get("approvals", {}) if isinstance(raw, dict) else {}
+        records = (
+            raw.get("approvals", {})
+            if isinstance(raw, dict) and raw.get("version") == _SCHEMA_VERSION
+            else {}
+        )
         self._records = records if isinstance(records, dict) else {}
 
     def _serialize(self) -> dict[str, Any]:
