@@ -8,23 +8,23 @@ produce exact hostile evidence without broadening Action Kernel authority.
 **Files:** `agents/core/autonomy/mediation.py`,
 `tests/test_task_mediation_evidence.py`
 
-- [ ] Red tests for deterministic payload/action digests, exact receipt binding,
+- [x] Red tests for deterministic payload/action digests, exact receipt binding,
   expiry/revision/substitution/replay rejection, signed event chaining and tamper.
-- [ ] Implement frozen v1 receipt/event types and a signer adapter over the existing
+- [x] Implement frozen v1 receipt/event types and a signer adapter over the existing
   owner-held HMAC primitive.
-- [ ] Prove malformed values and signing failures deny without raising authority.
+- [x] Prove malformed values and signing failures deny without raising authority.
 
 ## Task 2 — atomic queue persistence and migration
 
 **Files:** `agents/core/autonomy/queue.py`,
 `tests/test_task_mediation_evidence.py`, adjacent queue tests
 
-- [ ] Red tests for atomic task+receipt insertion, unique enqueue identity, raw
+- [x] Red tests for atomic task+receipt insertion, unique enqueue identity, raw
   classified enqueue refusal, evidence-write rollback and restart reconstruction.
-- [ ] Add additive task columns plus the append-only mediation-event table/indexes.
-- [ ] Implement configured `off|enforce|hold` mediation, atomic mediated enqueue,
+- [x] Add additive task columns plus the append-only mediation-event table/indexes.
+- [x] Implement configured `off|enforce|hold` mediation, atomic mediated enqueue,
   CAS worker claim, verified counters and planted-bypass detection.
-- [ ] Quarantine legacy classified proposed/approved/running rows under enforce/hold.
+- [x] Quarantine legacy classified proposed/approved/running rows under enforce/hold.
 
 ## Task 3 — worker and kernel wiring
 

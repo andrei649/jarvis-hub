@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
 import pytest
@@ -20,6 +21,7 @@ from agents.core.autonomy.mediation import (
     verify_event_chain,
     verify_receipt,
 )
+from agents.core.autonomy.queue import TaskQueue, TaskQueueError, TaskStatus
 
 KEY = b"owner-held-test-key-that-is-long-enough"
 NOW_MS = 1_786_662_000_000
@@ -293,3 +295,260 @@ def test_invalid_event_or_signing_failure_returns_none_without_authority():
         )
         is None
     )
+
+
+def _queue(tmp_path, *, mode="enforce", signer=None):
+    return TaskQueue(
+        db_path=str(tmp_path / "mediation.db"),
+        mediation_mode=mode,
+        mediation_signer=signer or _signer(),
+        mediation_classifier=lambda kind: kind == "filesystem.write",
+        mediation_scope="global",
+        mediation_policy_revision="policy-17",
+        mediation_clock_ms=lambda: NOW_MS,
+    ).initialize()
+
+
+def _enqueue_mediated(queue: TaskQueue, *, receipt=None, payload=None) -> int:
+    return queue.enqueue_mediated(
+        "ultron",
+        "filesystem.write",
+        "Write bounded report",
+        payload or {"path": "reports/summary.json", "body": "caf\u00e9"},
+        receipt=receipt or _receipt(),
+        autonomy_level="ask",
+        origin="generated",
+    )
+
+
+def test_enforce_raw_classified_enqueue_refuses_and_persists_real_event(tmp_path):
+    queue = _queue(tmp_path)
+
+    with pytest.raises(TaskQueueError, match="requires mediation"):
+        queue.enqueue(
+            "ultron",
+            "filesystem.write",
+            "Write bounded report",
+            {"path": "reports/summary.json"},
+        )
+
+    assert queue.list() == []
+    stats = queue.verified_mediation_stats()
+    assert stats["valid"] is True
+    assert stats["refused_unmediated"] == 1
+    assert stats["governed"] == 0
+
+
+def test_nonclassified_raw_enqueue_remains_compatible_under_enforce(tmp_path):
+    queue = _queue(tmp_path)
+
+    task_id = queue.enqueue("jarvis", "draft_email", "Draft reply", {"to": "x"})
+
+    assert queue.get(task_id).status == "proposed"
+    assert queue.get(task_id).mediation_enqueue_id is None
+
+
+def test_mediated_enqueue_atomically_persists_exact_receipt_and_restart_state(tmp_path):
+    queue = _queue(tmp_path)
+    task_id = _enqueue_mediated(queue)
+    task = queue.get(task_id)
+
+    assert task.mediation_enqueue_id == ENQUEUE_ID
+    assert task.mediation_enqueue_revision == 1
+    assert task.mediation_receipt["receipt_id"] == RECEIPT_ID
+    assert len(task.mediation_task_sha256) == 64
+    assert queue.verified_mediation_stats() == {
+        "valid": True,
+        "authorized_enqueue": 1,
+        "governed": 0,
+        "refused_unmediated": 0,
+        "ungoverned_detected": 0,
+    }
+
+    queue.close()
+    reopened = _queue(tmp_path)
+    assert reopened.get(task_id).mediation_receipt["signature"] == _receipt().signature
+    assert reopened.verified_mediation_stats()["authorized_enqueue"] == 1
+
+
+def test_mediated_enqueue_rejects_replay_and_rolls_back_on_event_failure(tmp_path):
+    queue = _queue(tmp_path)
+    _enqueue_mediated(queue)
+    with pytest.raises(TaskQueueError, match="invalid mediation receipt"):
+        _enqueue_mediated(queue)
+    assert len(queue.list()) == 1
+
+    other_path = tmp_path / "other"
+    other_path.mkdir()
+    other = _queue(other_path)
+    other._conn.execute(
+        """CREATE TRIGGER deny_mediation_events BEFORE INSERT ON task_mediation_events
+           BEGIN SELECT RAISE(ABORT, 'evidence unavailable'); END"""
+    )
+    with pytest.raises(TaskQueueError, match="persist mediation evidence"):
+        _enqueue_mediated(other)
+    assert other.list() == []
+
+
+def test_claim_is_compare_and_set_and_payload_tamper_quarantines(tmp_path):
+    queue = _queue(tmp_path)
+    task_id = _enqueue_mediated(queue)
+    queue.transition(task_id, TaskStatus.APPROVED)
+    execution_id = "16cb1ba3-b0c3-4200-9a7c-548472343049"
+
+    claimed = queue.claim_mediated(task_id, execution_id=execution_id)
+
+    assert claimed is not None
+    assert claimed.status == "running"
+    assert claimed.mediation_execution_id == execution_id
+    assert queue.claim_mediated(task_id, execution_id=execution_id) is None
+    assert queue.verified_mediation_stats()["governed"] == 1
+
+    second_id = _enqueue_mediated(
+        queue,
+        receipt=_receipt(
+            receipt_id="ea4d1520-a888-4eed-864f-7987fb540253",
+            expectation=_expectation(enqueue_id="f55b8111-2ca4-4dc7-8d43-91fe674c7b5c"),
+        ),
+    )
+    queue.transition(second_id, TaskStatus.APPROVED)
+    queue.update_payload(second_id, {"path": "attacker", "body": "changed"})
+    assert (
+        queue.claim_mediated(
+            second_id,
+            execution_id="f02d92f4-bf11-4dba-a583-97717764f0cb",
+        )
+        is None
+    )
+    assert queue.get(second_id).status == "quarantined"
+    assert queue.verified_mediation_stats()["ungoverned_detected"] == 1
+
+
+@pytest.mark.parametrize(
+    "column,value",
+    [
+        ("risk_tier", 0),
+        ("mediation_receipt", "{malformed"),
+        ("mediation_task_sha256", "0" * 64),
+    ],
+)
+def test_claim_quarantines_persisted_binding_corruption(tmp_path, column, value):
+    queue = _queue(tmp_path)
+    task_id = _enqueue_mediated(queue)
+    queue.transition(task_id, TaskStatus.APPROVED)
+    queue._conn.execute(f"UPDATE tasks SET {column}=? WHERE id=?", (value, task_id))
+    queue._conn.commit()
+
+    assert (
+        queue.claim_mediated(
+            task_id,
+            execution_id="16cb1ba3-b0c3-4200-9a7c-548472343049",
+        )
+        is None
+    )
+    assert queue.get(task_id).status == "quarantined"
+    assert queue.verified_mediation_stats()["ungoverned_detected"] == 1
+
+
+def test_enforce_startup_quarantines_legacy_classified_rows_and_hold_never_claims(tmp_path):
+    path = str(tmp_path / "mediation.db")
+    off = TaskQueue(db_path=path).initialize()
+    legacy_id = off.enqueue("ultron", "filesystem.write", "Legacy write", {"path": "legacy"})
+    off.transition(legacy_id, TaskStatus.APPROVED)
+    off.close()
+
+    held = TaskQueue(
+        db_path=path,
+        mediation_mode="hold",
+        mediation_signer=_signer(),
+        mediation_classifier=lambda kind: kind == "filesystem.write",
+        mediation_scope="global",
+        mediation_policy_revision="policy-17",
+        mediation_clock_ms=lambda: NOW_MS,
+    ).initialize()
+
+    assert held.get(legacy_id).status == "quarantined"
+    assert held.verified_mediation_stats()["ungoverned_detected"] == 1
+    with pytest.raises(TaskQueueError, match="mediation hold"):
+        held.enqueue("ultron", "filesystem.write", "Held write", {})
+
+
+def test_corrupt_event_chain_never_contributes_verified_counters(tmp_path):
+    queue = _queue(tmp_path)
+    _enqueue_mediated(queue)
+    queue._conn.execute(
+        "UPDATE task_mediation_events SET event_hash=? WHERE sequence=1",
+        ("f" * 64,),
+    )
+    queue._conn.commit()
+
+    assert queue.verified_mediation_stats() == {
+        "valid": False,
+        "authorized_enqueue": 0,
+        "governed": 0,
+        "refused_unmediated": 0,
+        "ungoverned_detected": 0,
+    }
+
+
+def test_concurrent_double_claim_produces_one_execution_event(tmp_path):
+    queue = _queue(tmp_path)
+    task_id = _enqueue_mediated(queue)
+    queue.transition(task_id, TaskStatus.APPROVED)
+    execution_ids = (
+        "16cb1ba3-b0c3-4200-9a7c-548472343049",
+        "f02d92f4-bf11-4dba-a583-97717764f0cb",
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                lambda execution_id: queue.claim_mediated(task_id, execution_id=execution_id),
+                execution_ids,
+            )
+        )
+
+    assert sum(result is not None for result in results) == 1
+    assert queue.verified_mediation_stats()["governed"] == 1
+
+
+def test_planted_classified_row_is_detected_and_quarantined(tmp_path):
+    queue = _queue(tmp_path)
+    now = "2026-08-14T00:00:00+00:00"
+    queue._conn.execute(
+        """INSERT INTO tasks
+               (agent, kind, title, payload, risk_tier, status, autonomy_level,
+                attention_mode, origin, attempts, pushed, created_at, updated_at)
+           VALUES ('ultron', 'filesystem.write', 'Planted', '{}', 2, 'approved',
+                   'ask', 'interrupt', 'generated', 0, 0, ?, ?)""",
+        (now, now),
+    )
+    queue._conn.commit()
+    task_id = queue._conn.execute("SELECT MAX(id) FROM tasks").fetchone()[0]
+
+    assert queue.scan_unmediated_tasks() == [task_id]
+    assert queue.get(task_id).status == "quarantined"
+    assert queue.verified_mediation_stats()["ungoverned_detected"] == 1
+
+
+def test_classifier_or_signer_failure_refuses_without_creating_authority(tmp_path):
+    broken_classifier = TaskQueue(
+        db_path=str(tmp_path / "classifier.db"),
+        mediation_mode="enforce",
+        mediation_signer=_signer(),
+        mediation_classifier=lambda _kind: (_ for _ in ()).throw(RuntimeError("down")),
+    ).initialize()
+    with pytest.raises(TaskQueueError, match="requires mediation"):
+        broken_classifier.enqueue("jarvis", "draft_email", "Unknown", {})
+    assert broken_classifier.list() == []
+
+    signer_path = tmp_path / "signer"
+    signer_path.mkdir()
+    broken_signer = _queue(
+        signer_path,
+        signer=DetachedHMACSigner(lambda _payload: "invalid"),
+    )
+    with pytest.raises(TaskQueueError, match="requires mediation"):
+        broken_signer.enqueue("ultron", "filesystem.write", "Unsigned", {})
+    assert broken_signer.list() == []
+    assert broken_signer.verified_mediation_stats()["governed"] == 0

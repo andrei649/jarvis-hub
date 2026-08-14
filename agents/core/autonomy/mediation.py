@@ -34,7 +34,9 @@ _MAX_INTEGER = (1 << 63) - 1
 _TOKEN = re.compile(r"[A-Za-z0-9_.:@/-]{1,128}")
 _HASH = re.compile(r"[0-9a-f]{64}")
 _VERDICTS = frozenset({"deny", "grant", "queue"})
-_OUTCOMES = frozenset({"governed", "refused_unmediated", "ungoverned_detected"})
+_OUTCOMES = frozenset(
+    {"authorized_enqueue", "governed", "refused_unmediated", "ungoverned_detected"}
+)
 
 
 def _bounded_int(value: object, label: str, *, minimum: int = 0) -> int:
@@ -421,6 +423,13 @@ class MediationEvent:
                 raise ValueError("governed event requires task, receipt, and execution identity")
             if self.receipt_sha256 == ZERO_HASH:
                 raise ValueError("governed event requires a receipt digest")
+        elif self.outcome == "authorized_enqueue":
+            if task_id == 0 or not self.receipt_id or self.execution_id:
+                raise ValueError(
+                    "authorized enqueue requires task and receipt without execution identity"
+                )
+            if self.receipt_sha256 == ZERO_HASH:
+                raise ValueError("authorized enqueue requires a receipt digest")
         elif self.execution_id:
             raise ValueError("non-governed event cannot carry an execution identity")
         if bool(self.receipt_id) != (self.receipt_sha256 != ZERO_HASH):
