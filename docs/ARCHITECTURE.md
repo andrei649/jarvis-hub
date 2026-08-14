@@ -433,9 +433,12 @@ mutating control of the host, so chat/MCP effects cross one shared authority bou
 - **Composite load:** when the requested provider is offline, start and load are two
   effects, never one implied controller operation. Jarvis authorizes, audits and starts
   the server, then re-evaluates every live gate before authorizing/auditing the model
-  load. Direct controller loads refuse while offline. Ollama unload-all similarly
-  refuses when `/api/ps` cannot prove the active-model inventory; status reports
-  unknown residency instead of claiming an empty set.
+  load. Direct controller loads refuse while offline. Ollama unload-all first
+  validates the complete `/api/ps` inventory before any effect, then re-evaluates
+  every live authority gate and writes a value-free audit row separately for each
+  model immediately before its `keep_alive=0` effect. A later refusal or failure
+  reports the already-completed targets honestly. Unknown/invalid inventory refuses
+  before any effect; status reports unknown residency instead of an empty set.
 
 **Kill-switch (how to disable / "undo" without a revert)** — layered, any one signal wins:
 

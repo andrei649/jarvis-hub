@@ -91,6 +91,10 @@ class OllamaController:
             )
         return result
 
+    async def active_models(self) -> list[str]:
+        """Return a fully validated residency snapshot without causing an effect."""
+        return await self._active_models()
+
     async def start_server(self, agent: str = "jarvis") -> dict:
         if not self.enabled:
             return self._done("disabled", "start_server", reason="Ollama control is disabled")
@@ -266,6 +270,8 @@ class OllamaController:
                     raise ValueError("model entry is not an object")
                 name = str(row.get("name") or row.get("model") or "").strip()
                 if name:
+                    if not _MODEL_RE.fullmatch(name):
+                        raise ValueError("active model id is invalid")
                     names.append(name)
             return names
         except Exception as exc:

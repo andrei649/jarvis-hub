@@ -168,6 +168,20 @@ async def test_unload_all_fails_closed_when_active_model_inventory_is_unknown(cl
 
 
 @pytest.mark.asyncio
+async def test_unload_all_prevalidates_every_inventory_entry_before_effect():
+    client = _Client(active=["qwen2.5:7b", "invalid model id"])
+    ctrl = OllamaController(
+        permission_gate=_Gate(), client=client, probe_fn=lambda _h, _p: True
+    )
+
+    result = await ctrl.unload_model(None, agent="jarvis")
+
+    assert result["status"] == "failed"
+    assert "active model" in result["reason"].lower()
+    assert not [call for call in client.calls if call[0] == "POST"]
+
+
+@pytest.mark.asyncio
 async def test_status_reports_unknown_instead_of_no_resident_models_on_list_failure():
     client = _BrokenListClient(raises=True)
     ctrl = OllamaController(

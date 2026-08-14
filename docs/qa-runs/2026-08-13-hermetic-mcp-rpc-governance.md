@@ -68,9 +68,12 @@ start in place while proving that the model-load effect remained zero.
 Ollama uses only fixed `ollama serve` argv (`create_subprocess_exec`, detached, no
 shell) and localhost `/api/generate`: `keep_alive=-1` loads/pins and `keep_alive=0`
 unloads. Unload is the bounded residency rollback; this slice does not add an
-autonomous process-kill path. Unload-all first requires a valid `/api/ps` inventory;
-transport errors and malformed payloads now fail closed. Read-only status reports
-residency as unknown instead of converting that same failure into an empty list.
+autonomous process-kill path. Unload-all first validates the complete `/api/ps`
+inventory, then repeats the live authority/audit sequence for every target before
+that target's effect. Transport errors, malformed payloads and invalid later entries
+fail closed before the first effect. A later policy or HTTP failure reports any
+separately authorized completed targets. Read-only status reports residency as
+unknown instead of converting that same failure into an empty list.
 
 ## Transport and metrics proof
 
@@ -91,8 +94,10 @@ residency as unknown instead of converting that same failure into an empty list.
   audit failure keep the load effect at zero. Permission denial, kernel-off, invalid
   identity, non-Jarvis agent, and direct-MCP-context bypass also keep effects at zero.
 - Ollama inventory-error tests prove unload-all emits no `keep_alive=0` calls and no
-  false success when `/api/ps` raises or returns a malformed model list; status emits
-  an explicit unknown-residency result.
+  false success when `/api/ps` raises or contains a malformed/invalid model entry.
+  Multi-target tests prove `kernel → value-free audit → effect` repeats per model and
+  a later `DENY`/`QUEUE` stops the next effect while reporting completed targets;
+  status emits an explicit unknown-residency result.
 - The action-auth registry, machine-readable capability manifest, readiness matrix,
   and executable reality case now classify `host.control` as reversible and
   kernel-mediated; drift snapshots and pinned proof counts fail if it is silently

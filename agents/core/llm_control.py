@@ -247,8 +247,8 @@ def authorize_local_model_lifecycle(
             timestamp=time.time(),
             findings=[],
             content_preview=(
-                f"local model lifecycle provider={provider} model={model or '<all>'}"
-            )[:100],
+                "local model lifecycle keys=action,model,provider,target"
+            ),
             action_taken=f"{contract_action} authorized before effect",
         ))
     except Exception:
@@ -307,6 +307,44 @@ async def run_llm_control(
         return "Which model would you like me to load, sir?"
     if model and not _MODEL_ID_RE.fullmatch(model):
         return f"That is not a valid model id, sir: {model!r}."
+
+    # Ollama exposes unload-all as one intent but implements it as one HTTP effect
+    # per resident model.  Inventory must be completely valid before the first
+    # mutation, and every target gets fresh live authority immediately before its
+    # own effect.  This also makes any partial result explicit instead of claiming
+    # an atomic batch that the Ollama API does not provide.
+    if provider == "ollama" and verb == "unload" and model is None:
+        inventory = getattr(ctrl, "active_models", None)
+        if not callable(inventory):
+            return "I could not unload Ollama, sir — active model inventory is unavailable."
+        try:
+            targets = await inventory()
+        except Exception:
+            return "I could not unload Ollama, sir — active model inventory is unavailable."
+        if not targets:
+            return "Ollama has no resident models to unload, sir."
+
+        unloaded: list[str] = []
+        for target in targets:
+            denied = authorize_local_model_lifecycle(
+                orch, provider, verb, target, channel=channel
+            )
+            if denied:
+                completed = ", ".join(unloaded) or "none"
+                return (
+                    f"I unloaded {completed}, but stopped before {target}, sir — "
+                    f"{denied}."
+                )
+            res = await ctrl.unload_model(target, agent="jarvis")
+            if res.get("status") != "ok":
+                completed = ", ".join(unloaded) or "none"
+                reason = res.get("reason") or "the unload failed"
+                return (
+                    f"I unloaded {completed}, but could not unload {target}, sir — "
+                    f"{reason}."
+                )
+            unloaded.append(target)
+        return f"All models unloaded, sir: {', '.join(unloaded)}."
 
     # Loading an offline provider is a composite request with two distinct host
     # effects. Authorize/audit/start first, then re-run every live gate for load.

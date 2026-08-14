@@ -17,6 +17,7 @@ from agents.core.kernel import Decision, Verdict
 from agents.core.llm.lmstudio_control import LMStudioController
 from agents.core.llm.ollama_control import OllamaController
 from agents.core.mcp.server import JarvisMCPServer
+from agents.core.security.audit import AuditLogger
 
 
 class _Controller:
@@ -126,6 +127,36 @@ async def test_lmstudio_effect_runs_only_after_kernel_and_durable_audit(monkeypa
     assert action.payload["risk_tier"] == 1
     assert action.payload["reversible"] is True
     assert orch.audit.events[0].action_taken == "lmstudio.load authorized before effect"
+    assert "qwen2.5:7b" not in orch.audit.events[0].content_preview
+    assert "keys=action,model,provider,target" in orch.audit.events[0].content_preview
+
+
+def test_lifecycle_audit_does_not_persist_raw_model_value(monkeypatch, tmp_path):
+    order = []
+    audit = AuditLogger(str(tmp_path / "audit.db"))
+    orch = SimpleNamespace(
+        permission_gate=_PermissionGate(),
+        audit=audit,
+    )
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    try:
+        denied = llm_control.authorize_local_model_lifecycle(
+            orch,
+            "ollama",
+            "load",
+            "private-project/model-7b",
+            channel="web",
+            kernel=_Kernel(order),
+        )
+
+        assert denied is None
+        row = audit.query(limit=1)[0]
+        assert "private-project/model-7b" not in row.content_preview
+        assert row.content_preview == (
+            "local model lifecycle keys=action,model,provider,target"
+        )
+    finally:
+        audit.close()
 
 
 @pytest.mark.asyncio
@@ -438,3 +469,205 @@ async def test_ollama_status_does_not_claim_empty_residency_when_inventory_is_un
 
     assert "could not verify" in reply.lower()
     assert "no model currently resident" not in reply.lower()
+
+
+class _InventoryResponse(_HTTPResponse):
+    def __init__(self, payload=None):
+        self._payload = payload or {}
+
+    def json(self):
+        return self._payload
+
+
+class _InventoryClient:
+    def __init__(self, order, active, *, fail_model=None):
+        self.order = order
+        self.active = active
+        self.fail_model = fail_model
+
+    async def get(self, _path):
+        return _InventoryResponse({
+            "models": [{"name": name} for name in self.active]
+        })
+
+    async def post(self, _path, json):
+        self.order.append(f"effect:{json['model']}")
+        if json["model"] == self.fail_model:
+            raise OSError("Ollama request failed")
+        return _InventoryResponse()
+
+
+def _ollama_inventory_orch(order, active):
+    gate = _PermissionGate()
+    ctrl = OllamaController(
+        permission_gate=gate,
+        router=SimpleNamespace(detect=None),
+        client=_InventoryClient(order, active),
+        probe_fn=lambda _host, _port: True,
+    )
+    return SimpleNamespace(
+        ollama=ctrl,
+        llm_router=SimpleNamespace(name="local"),
+        permission_gate=gate,
+        audit=_Audit(order),
+    )
+
+
+@pytest.mark.asyncio
+async def test_ollama_unload_all_authorizes_and_audits_each_target_separately(
+    monkeypatch,
+):
+    order = []
+    orch = _ollama_inventory_orch(order, ["qwen2.5:7b", "llama3.2:3b"])
+
+    def kernel(action):
+        order.append(f"kernel:{action.payload['model']}")
+        return Decision(Verdict.GRANT, reason="test", tier=1)
+
+    class _TargetAudit(_Audit):
+        def log(self, event):
+            order.append("audit")
+            self.events.append(event)
+
+    orch.audit = _TargetAudit(order)
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setattr(llm_control, "make_action_kernel", lambda _orch: kernel)
+
+    reply = await llm_control.run_llm_control(
+        orch, "ollama.unload", None, channel="web"
+    )
+
+    assert "All models unloaded" in reply
+    assert order == [
+        "kernel:qwen2.5:7b",
+        "audit",
+        "effect:qwen2.5:7b",
+        "kernel:llama3.2:3b",
+        "audit",
+        "effect:llama3.2:3b",
+    ]
+    assert all(
+        "qwen2.5:7b" not in event.content_preview
+        and "llama3.2:3b" not in event.content_preview
+        for event in orch.audit.events
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("second_verdict", [Verdict.DENY, Verdict.QUEUE])
+async def test_ollama_unload_all_live_revocation_stops_before_second_target(
+    monkeypatch, second_verdict
+):
+    order = []
+    orch = _ollama_inventory_orch(order, ["qwen2.5:7b", "llama3.2:3b"])
+    calls = 0
+
+    def kernel(action):
+        nonlocal calls
+        calls += 1
+        order.append(f"kernel:{action.payload['model']}")
+        verdict = Verdict.GRANT if calls == 1 else second_verdict
+        return Decision(verdict, reason="live policy changed", tier=1)
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setattr(llm_control, "make_action_kernel", lambda _orch: kernel)
+
+    reply = await llm_control.run_llm_control(
+        orch, "ollama.unload", None, channel="web"
+    )
+
+    assert "qwen2.5:7b" in reply
+    assert "llama3.2:3b" in reply
+    assert order == [
+        "kernel:qwen2.5:7b",
+        "audit",
+        "effect:qwen2.5:7b",
+        "kernel:llama3.2:3b",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ollama_unload_all_second_audit_failure_stops_next_effect(monkeypatch):
+    order = []
+    orch = _ollama_inventory_orch(order, ["qwen2.5:7b", "llama3.2:3b"])
+    audit_calls = 0
+
+    def kernel(action):
+        order.append(f"kernel:{action.payload['model']}")
+        return Decision(Verdict.GRANT, reason="test", tier=1)
+
+    class _SecondAuditFails(_Audit):
+        def log(self, event):
+            nonlocal audit_calls
+            audit_calls += 1
+            order.append("audit")
+            if audit_calls == 2:
+                raise OSError("audit unavailable")
+            self.events.append(event)
+
+    orch.audit = _SecondAuditFails(order)
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setattr(llm_control, "make_action_kernel", lambda _orch: kernel)
+
+    reply = await llm_control.run_llm_control(
+        orch, "ollama.unload", None, channel="web"
+    )
+
+    assert "qwen2.5:7b" in reply
+    assert "llama3.2:3b" in reply
+    assert "audit" in reply.lower()
+    assert order == [
+        "kernel:qwen2.5:7b",
+        "audit",
+        "effect:qwen2.5:7b",
+        "kernel:llama3.2:3b",
+        "audit",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ollama_unload_all_reports_partial_result_on_second_http_failure(
+    monkeypatch,
+):
+    order = []
+    gate = _PermissionGate()
+    client = _InventoryClient(
+        order,
+        ["qwen2.5:7b", "llama3.2:3b"],
+        fail_model="llama3.2:3b",
+    )
+    ctrl = OllamaController(
+        permission_gate=gate,
+        router=SimpleNamespace(detect=None),
+        client=client,
+        probe_fn=lambda _host, _port: True,
+    )
+    orch = SimpleNamespace(
+        ollama=ctrl,
+        llm_router=SimpleNamespace(name="local"),
+        permission_gate=gate,
+        audit=_Audit(order),
+    )
+
+    def kernel(action):
+        order.append(f"kernel:{action.payload['model']}")
+        return Decision(Verdict.GRANT, reason="test", tier=1)
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setattr(llm_control, "make_action_kernel", lambda _orch: kernel)
+
+    reply = await llm_control.run_llm_control(
+        orch, "ollama.unload", None, channel="web"
+    )
+
+    assert "qwen2.5:7b" in reply
+    assert "could not unload llama3.2:3b" in reply
+    assert "Ollama request failed" in reply
+    assert order == [
+        "kernel:qwen2.5:7b",
+        "audit",
+        "effect:qwen2.5:7b",
+        "kernel:llama3.2:3b",
+        "audit",
+        "effect:llama3.2:3b",
+    ]
