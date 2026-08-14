@@ -120,7 +120,7 @@ def _observed_binding_writer_map(
     for path in (repo_root / "agents").rglob("*.py"):
         if path == binding_module:
             continue
-        relative_path = str(path.relative_to(repo_root))
+        relative_path = path.relative_to(repo_root).as_posix()
         calls, call_errors = _binding_api_call_names(
             path.read_text(encoding="utf-8"), filename=relative_path
         )
