@@ -1,10 +1,9 @@
 """ORIZONT-24 K1 wave-3 (mcp.mutating slice) — MCP mutating tools route through the
 Action Kernel.
 
-The per-identity gate proves *who*; the kernel decides *whether the write may run now*
-(a halted kill-switch / over-budget / runaway loop blocks it). The kernel runs AFTER
-identity and BEFORE the write; a DENY is audited (``refused-kernel``) and raises
-``MutatingKernelError`` — no write happens. Default-off behind ``JARVIS_ACTION_KERNEL``.
+The per-identity gate proves *who*; the kernel decides *whether the write may run now*.
+It runs AFTER identity and BEFORE the write. Disabled/unavailable, DENY, and QUEUE
+all audit ``refused-kernel`` and raise ``MutatingKernelError``; only GRANT executes.
 """
 import asyncio
 
@@ -13,6 +12,7 @@ import pytest
 from agents.core.kernel import Action, Decision, Verdict
 from agents.core.mcp.route_tools import (
     MUTATING_ROUTE_ALLOWLIST,
+    MutatingAuditError,
     MutatingIdentityError,
     MutatingKernelError,
     MutatingRouteTool,
@@ -48,21 +48,33 @@ def _tool(*, kernel=None, auditor=None, identity=lambda _t: True, invoked=None):
                              identity_check=identity, kernel=kernel)
 
 
-# ── default-off ────────────────────────────────────────────────────────────────
-def test_flag_off_skips_kernel_even_when_bound(monkeypatch):
+# ── fail-closed kernel requirement ─────────────────────────────────────────────
+def test_flag_off_refuses_write_even_when_kernel_is_bound(monkeypatch):
     monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
-    spy = _SpyKernel(verdict=Verdict.DENY)        # would block — but flag is off
-    invoked = []
-    out = asyncio.run(_tool(kernel=spy, invoked=invoked).call({"text": "hi"}, token="ok"))
-    assert out == {"ok": True} and invoked            # the write ran
-    assert spy.calls == []                            # kernel never consulted while off
+    spy = _SpyKernel(verdict=Verdict.GRANT)
+    audit, invoked = _Audit(), []
+    with pytest.raises(MutatingKernelError, match="action kernel is required"):
+        asyncio.run(
+            _tool(kernel=spy, auditor=audit, invoked=invoked).call(
+                {"text": "hi"}, token="ok"
+            )
+        )
+    assert invoked == []
+    assert spy.calls == []
+    assert any("refused-kernel" in outcome for outcome in audit.outcomes)
 
 
-def test_no_kernel_bound_writes(monkeypatch):
+def test_no_kernel_bound_refuses_write(monkeypatch):
     monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
-    invoked = []
-    asyncio.run(_tool(kernel=None, invoked=invoked).call({"text": "hi"}, token="ok"))
-    assert invoked                                    # unchanged behavior when no kernel
+    audit, invoked = _Audit(), []
+    with pytest.raises(MutatingKernelError, match="action kernel is unavailable"):
+        asyncio.run(
+            _tool(kernel=None, auditor=audit, invoked=invoked).call(
+                {"text": "hi"}, token="ok"
+            )
+        )
+    assert invoked == []
+    assert any("refused-kernel" in outcome for outcome in audit.outcomes)
 
 
 # ── flag-on routing ──────────────────────────────────────────────────────────────
@@ -83,8 +95,58 @@ def test_kernel_grant_allows_write(monkeypatch):
     monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
     spy = _SpyKernel(verdict=Verdict.GRANT)
     invoked = []
-    asyncio.run(_tool(kernel=spy, invoked=invoked).call({"text": "hi"}, token="ok"))
+    asyncio.run(
+        _tool(kernel=spy, auditor=_Audit(), invoked=invoked).call(
+            {"text": "hi"}, token="ok"
+        )
+    )
     assert invoked and spy.calls                      # mediated, then written
+
+
+@pytest.mark.parametrize("auditor", [None, object()])
+def test_kernel_grant_cannot_write_without_working_audit_sink(monkeypatch, auditor):
+    """A bound object is insufficient: its log call must succeed before write."""
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    invoked = []
+    tool = _tool(
+        kernel=_SpyKernel(verdict=Verdict.GRANT), auditor=auditor, invoked=invoked
+    )
+
+    with pytest.raises(MutatingAuditError, match="audit sink"):
+        asyncio.run(tool.call({"text": "private"}, token="ok"))
+
+    assert invoked == []
+
+
+def test_raising_kernel_fails_closed_and_records_refusal(monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    audit, invoked = _Audit(), []
+
+    def _raising_kernel(_action):
+        raise RuntimeError("kernel backend down")
+
+    with pytest.raises(MutatingKernelError, match="kernel unavailable"):
+        asyncio.run(
+            _tool(kernel=_raising_kernel, auditor=audit, invoked=invoked).call(
+                {"text": "private"}, token="ok"
+            )
+        )
+
+    assert invoked == []
+    assert any("refused-kernel" in outcome for outcome in audit.outcomes)
+
+
+def test_kernel_queue_refuses_write_and_audits(monkeypatch):
+    """A QUEUE verdict is not execution authority; the adapter must not run."""
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    spy = _SpyKernel(verdict=Verdict.QUEUE, reason="approval required")
+    audit, invoked = _Audit(), []
+    tool = _tool(kernel=spy, auditor=audit, invoked=invoked)
+    with pytest.raises(MutatingKernelError, match="approval required"):
+        asyncio.run(tool.call({"text": "hi"}, token="ok"))
+    assert invoked == []
+    assert spy.calls and spy.calls[-1].kind == "mcp.mutating"
+    assert any("refused-kernel" in outcome for outcome in audit.outcomes)
 
 
 def test_identity_failure_precedes_kernel(monkeypatch):
@@ -132,5 +194,14 @@ def test_real_bound_kernel_halt_blocks_write(tmp_path, monkeypatch):
     assert invoked == []                              # halt → no write
 
     kill.disengage("global")
-    asyncio.run(tool.call({"text": "hi"}, token="ok"))
-    assert invoked                                    # released → write ran
+    # Authenticated MCP remains an external origin. The default policy QUEUEs
+    # this write; queue is not execution authority.
+    from agents.core.kernel.metrics import KERNEL_METRICS
+
+    before = KERNEL_METRICS.snapshot()
+    with pytest.raises(MutatingKernelError, match="approval"):
+        asyncio.run(tool.call({"text": "hi"}, token="ok"))
+    after = KERNEL_METRICS.snapshot()
+    assert invoked == []
+    assert after["total"] == before["total"] + 1
+    assert after["by_kind"]["mcp.mutating"]["queue"] >= 1

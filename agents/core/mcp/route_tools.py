@@ -376,8 +376,9 @@ def normalize_result(result: Any) -> Any:
 #     Starlette ``Request`` and read ``await req.json()`` — they cannot be driven
 #     by kwargs. So a mutating tool carries an explicit ``invoke`` adapter that
 #     performs the same write the HTTP route would, plus an explicit input schema.
-#   * Every mutating invocation is AUDITED through ``AuditLogger.log`` before the
-#     result is returned, so the write surface always leaves a hash-chained trail.
+#   * Every mutating invocation must write an ``authorized`` audit row through
+#     ``AuditLogger.log`` BEFORE the adapter runs. Result/refusal rows add outcome
+#     detail; a missing or failing preflight sink refuses the write.
 #
 # ✅  PER-IDENTITY ENFORCEMENT (H22.9 hardening)  ✅
 # The in-process dispatch path still has NO ``Request`` object, so the HTTP
@@ -398,8 +399,8 @@ def normalize_result(result: Any) -> Any:
 #     allowed with no credential. This keeps local dev working unchanged.
 #
 # The gate is therefore now: (1) the explicit mutating allow-list, (2) the DOUBLE
-# default-OFF kill-switch, (3) the per-identity check above, and (4) the audit
-# record.
+# default-OFF kill-switch, (3) the per-identity check above, and (4) a durable
+# audit authorization row before mutation.
 #
 # ⚠️  RESIDUAL GAP  ⚠️
 # The identity is a bearer credential threaded from the MCP transport into the
@@ -480,12 +481,20 @@ class MutatingIdentityError(PermissionError):
 
 
 class MutatingKernelError(PermissionError):
-    """Raised when the Action Kernel DENYs a mutating tool call (ORIZONT-24 wave-3).
+    """Raised when the Action Kernel does not GRANT a mutating tool call.
 
     Distinct from the identity error: identity proves *who*; the kernel decides
-    *whether the action may run now* (kill-switch engaged / over-budget / runaway
-    loop). Audited as ``refused-kernel`` before it propagates. Default-off, so this
-    only ever fires when ``JARVIS_ACTION_KERNEL`` is set and a kernel is bound.
+    *whether the action may run now*. A missing/disabled kernel, DENY, or QUEUE all
+    refuse the adapter; QUEUE is approval intent, never execution authority.
+    Refusals are audited as ``refused-kernel`` before they propagate.
+    """
+
+
+class MutatingAuditError(PermissionError):
+    """Raised when the mandatory pre-mutation audit row cannot be written.
+
+    A mutating adapter must never run merely because an auditor object was bound:
+    the sink has to accept the authorization row for this exact invocation first.
     """
 
 
@@ -545,9 +554,9 @@ MUTATING_ALLOWLIST_BY_NAME: dict[str, MutatingRouteSpec] = {
 class MutatingRouteTool:
     """An allow-listed MUTATING route bound to its in-process write adapter.
 
-    Every call is AUDITED (through the injected ``auditor.log``) before the
-    result is returned. The descriptor is marked ``"mutating": True`` so a client
-    can tell a write tool from a read tool.
+    Every authorized call is AUDITED (through the injected ``auditor.log``)
+    before the adapter runs. The descriptor is marked ``"mutating": True`` so a
+    client can tell a write tool from a read tool.
     """
 
     spec: MutatingRouteSpec
@@ -557,9 +566,8 @@ class MutatingRouteTool:
     # ``user_guard`` (see web.py). ``None`` → fail closed (every call refused),
     # so a write tool can never be reachable without an explicit identity policy.
     identity_check: Optional[IdentityCheck] = None
-    # ORIZONT-24 wave-3: bound ``kernel.authorize`` (default-off). Runs AFTER the
-    # identity gate — a DENY (kill-switch / budget / loop) refuses the write. ``None``
-    # → no kernel mediation (unchanged behavior), the default everywhere today.
+    # Bound ``kernel.authorize``. Runs AFTER the identity gate; MCP mutation now
+    # fails closed unless the kernel is enabled, bound, and returns GRANT.
     kernel: Optional[Callable] = None
 
     @property
@@ -580,15 +588,19 @@ class MutatingRouteTool:
         allowed = set(self.spec.input_schema.get("properties", {}).keys())
         return {k: v for k, v in (arguments or {}).items() if k in allowed}
 
-    def _audit(self, arguments: dict, outcome: str) -> None:
+    def _audit(self, arguments: dict, outcome: str, *, required: bool = False) -> bool:
         """Append one hash-chained audit row for this write invocation.
 
-        Best-effort: an auditor failure must never break the tool call (the write
-        either happened or not regardless), but it is logged. Reuses the same
-        ``SecurityEvent``/``AuditLogger.log`` path the HTTP turn-loop uses.
+        Refusal/result rows are best-effort because no mutation follows them.
+        The ``authorized`` row is different: it is a mandatory precondition and
+        raises ``MutatingAuditError`` if the sink is absent or rejects the row.
+        Reuses the same ``SecurityEvent``/``AuditLogger.log`` path the HTTP
+        turn-loop uses.
         """
         if self.auditor is None:
-            return
+            if required:
+                raise MutatingAuditError("audit sink is unavailable")
+            return False
         try:
             import time
 
@@ -605,12 +617,16 @@ class MutatingRouteTool:
                 action_taken=f"{self.spec.method} {self.spec.path} via mcp ({outcome})",
             )
             self.auditor.log(event)
-        except Exception:  # pragma: no cover - auditing is best-effort
+            return True
+        except Exception as exc:
             import logging
 
             logging.getLogger(__name__).warning(
                 "audit log failed for mutating tool %s", self.tool_name, exc_info=True
             )
+            if required:
+                raise MutatingAuditError("audit sink rejected authorization row") from exc
+            return False
 
     def _identity_ok(self, token: Optional[str]) -> bool:
         """Apply the bound per-identity gate. No gate bound → fail CLOSED."""
@@ -627,25 +643,30 @@ class MutatingRouteTool:
             return False
 
     def _kernel_denial(self, arguments: dict | None) -> Optional[str]:
-        """ORIZONT-24 wave-3: ask the Action Kernel whether this write may run now.
+        """Ask the Action Kernel whether this write may run now.
 
-        Returns a deny-reason string (block) or ``None`` (allow). Default-off: no
-        kernel bound, or ``JARVIS_ACTION_KERNEL`` unset → ``None`` (unchanged behavior).
-        The MCP write originates from an external client, so the action is tagged
-        ``origin="external"``. Only the written *keys* go in the payload, never values.
+        Returns a refusal reason unless an enabled, bound kernel explicitly GRANTs.
+        MCP mutation is already behind two opt-in switches, so failing closed here
+        cannot affect the default surface. The write originates from an external
+        client and remains ``origin="external"``. Only argument keys enter the
+        kernel payload; values never do.
         """
-        if self.kernel is None:
-            return None
         from agents.core.kernel import Action, Verdict, kernel_enabled
         if not kernel_enabled():
-            return None
+            return "action kernel is required"
+        if self.kernel is None:
+            return "action kernel is unavailable"
         decision = self.kernel(Action(
             kind="mcp.mutating", agent="mcp",
             title=f"mcp write {self.spec.name}",
             payload={"tool": self.spec.name, "path": self.spec.path,
                      "keys": sorted(self.filtered_kwargs(arguments).keys())},
             origin="external"))
-        return decision.reason if decision.verdict is Verdict.DENY else None
+        if decision.verdict is Verdict.GRANT:
+            return None
+        if decision.verdict is Verdict.QUEUE:
+            return f"approval required: {decision.reason or 'kernel queued action'}"
+        return decision.reason or "kernel denied action"
 
     def _contract_payload(self, arguments: dict | None) -> dict:
         keys = sorted(self.filtered_kwargs(arguments).keys())
@@ -684,9 +705,10 @@ class MutatingRouteTool:
         A missing/wrong identity REFUSES the call (no write happens) and audits
         the refusal, then raises ``MutatingIdentityError``.
 
-        The audit row is written whether the invoke succeeds, raises, or is
-        refused, so an attempted write is never invisible. Exceptions propagate
-        to the server, which converts them to a tool error (no stack trace leaks).
+        A durable ``authorized`` audit row is required before invoke; a missing
+        or failing sink refuses the write. Result and refusal rows are additional
+        best-effort outcome detail. Exceptions propagate to the server, which
+        converts them to a tool error (no stack trace leaks).
         """
         if not self._identity_ok(token):
             self._audit(arguments, outcome="refused-identity")
@@ -697,15 +719,27 @@ class MutatingRouteTool:
         if contract_blocked is not None:
             self._audit(arguments, outcome="refused-contract")
             raise MutatingContractError(f"contract denied: {contract_blocked}")
-        # ORIZONT-24 wave-3: kernel mediation (default-off). Identity proves *who*;
-        # the kernel decides *whether it may run now* (a halted kill-switch / over-budget
-        # / runaway loop blocks the write). Refusal is audited before it propagates.
-        denied = self._kernel_denial(arguments)
+        # Identity proves *who*; an enabled, bound kernel must explicitly GRANT.
+        # Disabled/unavailable, DENY, and QUEUE all block before the adapter.
+        try:
+            denied = self._kernel_denial(arguments)
+        except Exception:
+            # A faulty/unavailable kernel is never execution authority. Preserve
+            # an attempt row when the audit sink is healthy, but do not expose the
+            # kernel exception or let the adapter run.
+            self._audit(arguments, outcome="refused-kernel")
+            raise MutatingKernelError(
+                f"mutating tool {self.tool_name} blocked by kernel: action kernel unavailable"
+            ) from None
         if denied is not None:
             self._audit(arguments, outcome="refused-kernel")
             raise MutatingKernelError(
                 f"mutating tool {self.tool_name} blocked by kernel: {denied}"
             )
+        # The audit sink must durably accept this exact authorization row before
+        # the adapter receives caller data. A merely bound-but-broken sink is
+        # therefore fail closed, not a silent governance downgrade.
+        self._audit(arguments, outcome="authorized", required=True)
         kwargs = self.filtered_kwargs(arguments)
         try:
             result = await self.invoke(kwargs)
@@ -738,9 +772,9 @@ def build_mutating_route_tools(
     ``None`` each tool fails CLOSED: a mutating call is refused unless an explicit
     identity policy is bound, so a write tool is never reachable unauthenticated.
 
-    ``kernel`` is the optional bound ``kernel.authorize`` (ORIZONT-24 wave-3),
-    threaded onto every tool: after identity passes, a kernel DENY (kill-switch /
-    budget / loop) refuses the write. ``None`` → no kernel mediation (default-off).
+    ``kernel`` is the bound ``kernel.authorize`` threaded onto every tool. After
+    identity passes, only GRANT may reach the adapter. A disabled/unavailable
+    kernel, DENY, or QUEUE all refuse the write.
     """
     if read_only_enabled is None:
         read_only_enabled = route_tools_enabled()

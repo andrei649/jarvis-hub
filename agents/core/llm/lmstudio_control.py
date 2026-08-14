@@ -156,10 +156,12 @@ class LMStudioController:
         if blocked:
             return blocked
         if not self._probe():
-            started = await self.start_server(agent=agent)
-            if started.get("status") != "ok":
-                return self._done("failed", "load_model", model=model,
-                                  reason="LM Studio server not running and could not be started")
+            return self._done(
+                "failed",
+                "load_model",
+                model=model,
+                reason="LM Studio server is not running; authorize and start it first",
+            )
         # Resolve a partial name to the full servable id (the server is up by now,
         # so /v1/models is reachable). Best-effort: no list / no match → use the
         # literal name (unchanged); several matches → stop and report them.

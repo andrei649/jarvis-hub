@@ -1456,14 +1456,16 @@ The audit flags three as most likely to hide something. Do those first.
 - **CROSS:** the hermetic proof seeds raw text plus SQLite/JSONL/profile/cache markers, exports every marker, prunes stale roots and verifies a full forget leaves no marker bytes.
 - **Evidence:** [`2026-08-13 hermetic ingestion-lifecycle run`](../qa-runs/2026-08-13-hermetic-adv-ingestion-lifecycle.md).
 
-#### ADV-132 — The MCP server surface (flagged: most likely)  🌐
+#### ADV-132 — The MCP server surface (flagged: most likely)  🌐 ✅
+- **Verdict:** **CONFIRMED → initial candidate HOLD → owner-authorized remediation implemented; fresh independent review required.** The initial G36 candidate closed route-tool and hidden-skill bypasses, but independent review found that the pre-routing LM Studio lifecycle fast-path was still reachable through `ask_*` without MCP-specific identity/kernel/audit mediation. The owner then explicitly authorized governed LM Studio **and Ollama** lifecycle autonomy; the same run now closes that remaining path without weakening review separation.
 - **Surface:** `POST /api/mcp/server/rpc` (open) · `GET /api/mcp/server` (open) · `agents/core/mcp/server.py`
-- **Why it matters:** the audit calls this "the one place a remote client reaches the action layer" — and the RPC entry point is **open**-tier in the auth snapshot.
-- **Steps:** enumerate every tool the RPC surface exposes. For each, determine whether it can mutate, and whether the call goes through the action kernel and the permission gate. Then call the surface with no token.
-- **Expected:** a tool inventory with a governed/ungoverned column.
-- **FAIL if:** any mutating tool is reachable unauthenticated, or bypasses the kernel → **BLOCKER**. This is the single most likely place in the product for an ungoverned action to exist.
-- **CROSS:** `GET /api/metrics/kernel` (open) before and after each mutating call — a mutation with no kernel row is the proof.
-- **Evidence:** the inventory, the status codes, the kernel deltas.
+- **Inventory:** `GET /api/mcp/server` now returns `tool_inventory` for every exposed `ask_*`, allow-listed read route, and allow-listed mutating route. Each row declares persistent state effects separately from direct route mutation plus identity, audit, retention, kernel and governance posture; names are checked against `tools/list` so no advertised tool is omitted.
+- **Agent boundary:** `ask_*` is not non-mutating: the production orchestrator durably stores the user turn before routing and normally stores the assistant turn afterward. That conversation write is transport-authenticated, governed by transcript retention, outside the Action Kernel, and has no mandatory pre-write security-audit row. Parsed direct skill commands are refused. Explicit start/load/unload is restricted to `ask_jarvis`; it additionally requires owner token/verified OAuth identity (or the enforced localhost-only no-token posture), system-control permission, host contract, enabled/bound `host.control` kernel `GRANT`, and durable audit preflight. A direct `handle_input(channel="mcp")` call cannot acquire the server-scoped authority marker.
+- **Mutation boundary:** `route_memory_remember` still requires both MCP switches, transport/per-tool identity and the reusable contract. It now additionally requires `JARVIS_ACTION_KERNEL=1`, a bound kernel, verdict `GRANT`, and successful durable `authorized` audit write before invoking the adapter. Disabled/unbound/raising kernel, `DENY`, `QUEUE`, and missing/raising audit sink all refuse without mutation.
+- **No-token proof:** default server mode returns 403; enabled mode with a configured user token returns 401 without the token; unset-token non-local access returns 403. Local-dev read/conversation posture remains available, but mutation still cannot cross the kernel requirement.
+- **CROSS:** a real bound kernel over the default policy records an `mcp.mutating` `queue` delta while the adapter call count stays zero; production-topology evidence also proves an ordinary `ask_jarvis` call changes the dedicated transcript before/after state exactly as inventoried.
+- **Lifecycle CROSS:** hostile tests bind fake controllers behind the production authorization function and prove `kernel → audit → effect` order for LM Studio and Ollama. Missing/wrong identity, non-Jarvis agent, direct MCP context, permission denial, kernel-off/unbound/raising, `DENY`, `QUEUE`, audit failure and invalid model id all leave effect count zero. Ollama start is fixed argv/no-shell; load/unload use only localhost `keep_alive=-1/0`.
+- **Evidence:** [`2026-08-13 hermetic MCP RPC governance run`](../qa-runs/2026-08-13-hermetic-mcp-rpc-governance.md).
 
 #### ADV-133 — Upgrade and migration safety (flagged: most likely)  ⏱ 🖥
 - **Surface:** `agents/core/persistence/migrations.py` · `agents/core/paths.py`
@@ -1809,7 +1811,7 @@ does not prove it. They get triaged differently.
 | G33 | `docs/THREAT_MODEL.md` "single front door" and T5 corrections | DOC | `docs/THREAT_MODEL.md` | Minor | ✅ | | ADV-112, ADV-113 |
 | G34 | `docs/PRIVACY.md` forget wording | DOC | `docs/PRIVACY.md` | High | ✅ | | ADV-111 |
 | G35 | The ingestion archive in the purge, retention and export sets | GAP | `agents/core/ingestion/lifecycle.py`, `agents/core/{data_export,retention,data_purge}.py` | High · CONFIRMED → CLOSED | ✅ | | ADV-131 |
-| G36 | A governed/ungoverned inventory for the MCP RPC tool surface | GAP | `agents/core/mcp/server.py` | unmeasured | — | | ADV-132 |
+| G36 | A governed/ungoverned inventory for the MCP RPC tool surface | GAP | `agents/core/mcp/server.py` | High · CONFIRMED → CLOSED | ✅ | | ADV-132 |
 | G37 | Any exercise of the upgrade path against a populated data root | GAP | `agents/core/persistence/migrations.py` | unmeasured | — | | ADV-133 |
 | G38 | A protocol for orchestrator attributes written by other modules | GAP | `agents/core/orchestrator.py` | Minor · REFUTED-with-residue | — | | ADV-130 |
 

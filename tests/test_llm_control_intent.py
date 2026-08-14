@@ -7,6 +7,8 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
+from core import llm_control as llm_control_module
+from core.kernel import Decision, Verdict
 from core.orchestrator import Orchestrator, detect_llm_control
 
 
@@ -133,15 +135,15 @@ class _FakeCtrl:
         return {"online": self._online,
                 "active_model": "google/gemma-4-12b" if self._online else None}
 
-    async def start_server(self):
+    async def start_server(self, agent="jarvis"):
         self.calls.append("start")
         return {"status": "ok"}
 
-    async def load_model(self, model):
+    async def load_model(self, model, agent="jarvis"):
         self.calls.append(("load", model))
         return {"status": "ok"}
 
-    async def unload_model(self, model=None):
+    async def unload_model(self, model=None, agent="jarvis"):
         self.calls.append(("unload", model))
         return {"status": "ok"}
 
@@ -155,7 +157,22 @@ def _orch(online=True):
     o = Orchestrator.__new__(Orchestrator)
     o.lmstudio = _FakeCtrl(status_online=online)
     o.llm_router = _FakeRouter()
+    o.permission_gate = type("_Gate", (), {
+        "check_call": lambda self, plugin, agent: (
+            plugin == "system-control" and agent == "jarvis"
+        )
+    })()
+    o.audit = type("_Audit", (), {"log": lambda self, event: None})()
     return o
+
+
+def _enable_governance(monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setattr(
+        llm_control_module,
+        "make_action_kernel",
+        lambda _orch: lambda _action: Decision(Verdict.GRANT, reason="test", tier=1),
+    )
 
 
 async def test_run_status_reports_real_model():
@@ -168,13 +185,15 @@ async def test_run_status_offline():
     assert "offline" in r.lower()
 
 
-async def test_run_start():
+async def test_run_start(monkeypatch):
+    _enable_governance(monkeypatch)
     o = _orch()
     r = await o._run_llm_control("start", None)
     assert "up" in r.lower() and "start" in o.lmstudio.calls
 
 
-async def test_run_load_invokes_controller():
+async def test_run_load_invokes_controller(monkeypatch):
+    _enable_governance(monkeypatch)
     o = _orch()
     r = await o._run_llm_control("load", "google/gemma-4-12b")
     assert "Loaded" in r and ("load", "google/gemma-4-12b") in o.lmstudio.calls
@@ -185,10 +204,11 @@ async def test_run_load_missing_model_asks():
     assert "Which model" in r
 
 
-async def test_run_load_narrates_resolved_id():
+async def test_run_load_narrates_resolved_id(monkeypatch):
+    _enable_governance(monkeypatch)
     o = _orch()
 
-    async def _load(model):
+    async def _load(model, agent="jarvis"):
         return {"status": "ok", "model": "google/gemma-4-12b", "resolved_from": model}
     o.lmstudio.load_model = _load
     o.llm_router.active_model = None  # force narration to use the controller result
@@ -196,10 +216,11 @@ async def test_run_load_narrates_resolved_id():
     assert "gemma" in r and "google/gemma-4-12b" in r
 
 
-async def test_run_load_ambiguous_asks_to_pick():
+async def test_run_load_ambiguous_asks_to_pick(monkeypatch):
+    _enable_governance(monkeypatch)
     o = _orch()
 
-    async def _load(model):
+    async def _load(model, agent="jarvis"):
         return {"status": "ambiguous",
                 "candidates": ["google/gemma-4-12b", "google/gemma-2-9b"]}
     o.lmstudio.load_model = _load
@@ -207,7 +228,8 @@ async def test_run_load_ambiguous_asks_to_pick():
     assert "match" in r.lower() and "gemma-2-9b" in r and "Which one" in r
 
 
-async def test_run_unload_all():
+async def test_run_unload_all(monkeypatch):
+    _enable_governance(monkeypatch)
     o = _orch()
     r = await o._run_llm_control("unload", None)
     assert "All models" in r and ("unload", None) in o.lmstudio.calls

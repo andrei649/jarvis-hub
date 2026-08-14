@@ -289,13 +289,22 @@ class Orchestrator:
         from .kernel.binding import make_action_kernel, make_egress_kernel_hook
         _http_client.set_egress_kernel_hook(
             make_egress_kernel_hook(lambda: make_action_kernel(self)))
-        # LM Studio lifecycle control (start server / load / unload). Shares the
-        # live router so a model change refreshes routing + reported state.
+        # Governed local-model lifecycle control (start / load / unload). Both
+        # controllers share the live router and the system-control permission
+        # gate; the chat entry point additionally requires host contract, Action
+        # Kernel GRANT and durable audit preflight.
         from .llm.lmstudio_control import LMStudioController
+        from .llm.ollama_control import OllamaController
         # enabled is re-synced from live settings in load_runtime_settings(); the
         # env var is the boot-time default and a hard kill-switch (see docs).
         self.lmstudio = LMStudioController(
             router=self.llm_router,
+            permission_gate=self.permission_gate,
+            enabled=env_flag("JARVIS_LMSTUDIO_CONTROL", True),
+        )
+        self.ollama = OllamaController(
+            router=self.llm_router,
+            permission_gate=self.permission_gate,
             enabled=env_flag("JARVIS_LMSTUDIO_CONTROL", True),
         )
         # H22.5 — attach the LRU residency manager, backed by the LM Studio
@@ -804,9 +813,10 @@ class Orchestrator:
                 self.memory.embed_turns = bool(flat["memory.embed_turns"])
             # Propagate the live kill-switch to the controller (≤30s to take
             # effect via the settings watcher) — no restart needed to disable.
-            ctrl = getattr(self, "lmstudio", None)
-            if ctrl is not None:
-                ctrl.set_enabled(self._control_master_enabled())
+            for ctrl_name in ("lmstudio", "ollama"):
+                ctrl = getattr(self, ctrl_name, None)
+                if ctrl is not None:
+                    ctrl.set_enabled(self._control_master_enabled())
             # Propagate llm.cloud_fallback (never|on-demand|always) to the router
             # so the /admin privacy knob actually governs cloud escalation live.
             router = getattr(self, "llm_router", None)
@@ -1085,7 +1095,7 @@ class Orchestrator:
         if self._chat_control_enabled():
             llm_ctl = detect_llm_control(text)
             if llm_ctl:
-                reply = await self._run_llm_control(*llm_ctl)
+                reply = await self._run_llm_control(*llm_ctl, channel=channel)
                 if reply:
                     await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
                     self.last_cognition = self._control_cognition(llm_ctl[0])
@@ -1239,7 +1249,7 @@ class Orchestrator:
         if self._chat_control_enabled():
             llm_ctl = detect_llm_control(text)
             if llm_ctl:
-                reply = await self._run_llm_control(*llm_ctl)
+                reply = await self._run_llm_control(*llm_ctl, channel=channel)
                 if reply:
                     await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
                     if on_token:
@@ -1646,9 +1656,11 @@ class Orchestrator:
     def _control_cognition(self, action: str) -> dict:
         return llm_control.control_cognition(action)
 
-    async def _run_llm_control(self, action: str, model: Optional[str]) -> Optional[str]:
+    async def _run_llm_control(
+        self, action: str, model: Optional[str], *, channel: str = "internal"
+    ) -> Optional[str]:
         """Execute a detected LLM-control action (delegates to llm_control, CLN-2)."""
-        return await llm_control.run_llm_control(self, action, model)
+        return await llm_control.run_llm_control(self, action, model, channel=channel)
 
     async def _recall_block(self, text: str) -> str:
         """Long-term memory recall injected into the prompt (RAG, all agents).
@@ -2479,6 +2491,13 @@ class Orchestrator:
                 await router.aclose()
             except Exception as e:
                 logger.warning(f"Error closing LLM router: {e}")
+        ollama_control = getattr(self, "ollama", None)
+        ollama_close = getattr(ollama_control, "aclose", None)
+        if ollama_close is not None:
+            try:
+                await ollama_close()
+            except Exception as e:
+                logger.warning(f"Error closing Ollama lifecycle client: {e}")
         # Close MCP sessions (httpx/stdio transports) if any are open.
         mcp = getattr(self, "mcp", None)
         close_all = getattr(mcp, "close_all", None)

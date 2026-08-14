@@ -203,6 +203,23 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         ),
         implementation="agents.core.mcp.route_tools:MutatingRouteTool.call",
     ),
+    "host.control": _action(
+        "host.control",
+        "Start a local model server or load/unload a local LM Studio or Ollama model.",
+        required=("provider", "action"),
+        risk="reversible",
+        supports=("start", "load", "unload"),
+        rollback=RollbackContract(
+            mode="restore",
+            description="Unload the selected model or stop the separately managed local server.",
+            limitations=(
+                "The controller does not kill a server process; process shutdown remains an "
+                "explicit owner/host operation."
+            ),
+        ),
+        implementation="agents.core.llm_control:run_llm_control",
+        contract_ref="agents.core.autonomy.remediation:HOST_CONTROL_CONTRACT",
+    ),
     "tool.rpc": _action(
         "tool.rpc",
         "Invoke a gated ToolRPC tool through its approval and sandbox boundary.",
