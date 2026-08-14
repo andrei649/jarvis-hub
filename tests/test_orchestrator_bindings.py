@@ -443,15 +443,19 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
         for statement in node.body:
             self.visit(statement)
         after_iteration = self.scope.bindings.copy()
-        self.scope.bindings = self._merged_bindings(before, after_iteration)
+        loop_exit = self._merged_bindings(before, after_iteration)
+        self.scope.bindings = loop_exit.copy()
         for statement in node.orelse:
             self.visit(statement)
+        self.scope.bindings = self._merged_bindings(loop_exit, self.scope.bindings.copy())
 
     def _visit_try(self, node: ast.Try | ast.TryStar) -> None:
         before = self.scope.bindings.copy()
         self.scope.bindings = before.copy()
+        try_prefixes = [before]
         for statement in node.body:
             self.visit(statement)
+            try_prefixes.append(self.scope.bindings.copy())
         body = self.scope.bindings.copy()
 
         self.scope.bindings = body.copy()
@@ -459,7 +463,7 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
             self.visit(statement)
         paths = [before, self.scope.bindings.copy()]
 
-        handler_start = self._merged_bindings(before, body)
+        handler_start = self._merged_bindings(*try_prefixes)
         for handler in node.handlers:
             self.scope.bindings = handler_start.copy()
             if handler.type is not None:
@@ -839,9 +843,29 @@ def wire(target, replacement, value, condition):
     write_attribute(target, "argus", value)
 """,
         """
+def wire(target, replacement, value, condition):
+    write_attribute = setattr
+    while condition:
+        break
+    else:
+        write_attribute = replacement
+    write_attribute(target, "argus", value)
+""",
+        """
 def wire(target, replacement, value):
     write_attribute = setattr
     try:
+        write_attribute = replacement
+    except Exception:
+        pass
+    write_attribute(target, "argus", value)
+""",
+        """
+def wire(target, replacement, value):
+    write_attribute = replacement
+    try:
+        write_attribute = setattr
+        may_raise()
         write_attribute = replacement
     except Exception:
         pass
@@ -1127,9 +1151,33 @@ def wire(orchestrator, replacement, value, condition):
         """
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
+def wire(orchestrator, replacement, value, condition):
+    write_binding = bind_external_orchestrator_attribute
+    while condition:
+        break
+    else:
+        write_binding = replacement
+    write_binding(orchestrator, "argus", value)
+""",
+        """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
 def wire(orchestrator, replacement, value):
     write_binding = bind_external_orchestrator_attribute
     try:
+        write_binding = replacement
+    except Exception:
+        pass
+    write_binding(orchestrator, "argus", value)
+""",
+        """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
+def wire(orchestrator, replacement, value):
+    write_binding = replacement
+    try:
+        write_binding = bind_external_orchestrator_attribute
+        may_raise()
         write_binding = replacement
     except Exception:
         pass
