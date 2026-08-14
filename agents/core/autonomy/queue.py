@@ -35,6 +35,7 @@ from agents.core.autonomy.mediation import (
     MediationReceipt,
     ReceiptExpectation,
     canonical_digest,
+    canonical_json,
     make_event,
     verify_event_chain,
     verify_receipt,
@@ -45,6 +46,7 @@ logger = logging.getLogger("jarvis.autonomy.queue")
 
 DEFAULT_DB = data_path("autonomy.db")
 MAX_ATTEMPTS = 3
+_DATABASE_INIT_LOCK = threading.Lock()
 
 
 class TaskStatus(str, Enum):
@@ -167,10 +169,21 @@ class TaskQueue:
 
     # ── lifecycle ─────────────────────────────────────────────────
     def initialize(self) -> "TaskQueue":
+        with _DATABASE_INIT_LOCK:
+            try:
+                return self._initialize_locked()
+            except Exception:
+                if self._conn is not None:
+                    self._conn.close()
+                    self._conn = None
+                raise
+
+    def _initialize_locked(self) -> "TaskQueue":
         # check_same_thread=False: queue is accessed from asyncio.to_thread
         # helpers; the threading.Lock above serialises every operation.
-        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
         self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA busy_timeout=30000")
         # WAL + synchronous=NORMAL: the autonomy worker commits on every task
         # state transition in a continuous loop — keep those commits cheap.
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -233,6 +246,12 @@ class TaskQueue:
                ON tasks(mediation_enqueue_id)
                WHERE mediation_enqueue_id IS NOT NULL"""
         )
+        had_events_table = (
+            self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_mediation_events'"
+            ).fetchone()
+            is not None
+        )
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS task_mediation_events (
                 sequence INTEGER PRIMARY KEY,
@@ -255,6 +274,17 @@ class TaskQueue:
             "ON task_mediation_events(execution_id) WHERE execution_id != ''"
         )
         self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS task_mediation_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                version INTEGER NOT NULL,
+                last_sequence INTEGER NOT NULL,
+                last_event_hash TEXT NOT NULL,
+                event_count INTEGER NOT NULL,
+                integrity_broken INTEGER NOT NULL DEFAULT 0,
+                signature TEXT NOT NULL
+            )
+        """)
+        self._conn.execute("""
             CREATE TABLE IF NOT EXISTS capability_outcomes (
                 capability_id TEXT PRIMARY KEY,
                 successes INTEGER NOT NULL DEFAULT 0,
@@ -263,6 +293,32 @@ class TaskQueue:
             )
         """)
         self._conn.commit()
+        with self._lock:
+            state = self._conn.execute("SELECT * FROM task_mediation_state WHERE id=1").fetchone()
+            if state is None:
+                mediated_tasks = self._conn.execute(
+                    "SELECT 1 FROM tasks WHERE mediation_enqueue_id IS NOT NULL LIMIT 1"
+                ).fetchone()
+                event = self._conn.execute("SELECT 1 FROM task_mediation_events LIMIT 1").fetchone()
+                self._initialize_mediation_state_locked(
+                    broken=bool(had_events_table or mediated_tasks or event),
+                    uninitialized=(
+                        self.mediation_mode == "off"
+                        and not had_events_table
+                        and not mediated_tasks
+                        and not event
+                    ),
+                )
+                self._conn.commit()
+            elif state["integrity_broken"] == 2 and self.mediation_mode in {"enforce", "hold"}:
+                event = self._conn.execute("SELECT 1 FROM task_mediation_events LIMIT 1").fetchone()
+                mediated_tasks = self._conn.execute(
+                    "SELECT 1 FROM tasks WHERE mediation_enqueue_id IS NOT NULL LIMIT 1"
+                ).fetchone()
+                self._initialize_mediation_state_locked(
+                    broken=bool(event or mediated_tasks), uninitialized=False
+                )
+                self._conn.commit()
         if self.mediation_mode in {"enforce", "hold"}:
             self.scan_unmediated_tasks()
         return self
@@ -284,10 +340,12 @@ class TaskQueue:
             value = self._mediation_classifier(str(kind))
             if isinstance(value, bool):
                 return value
+            if value is None:
+                return None
             normalized = str(value).strip().lower()
             if normalized == "kernel":
                 return True
-            if normalized in {"", "none", "direct", "pending"}:
+            if normalized == "direct":
                 return False
             return None
         except Exception:
@@ -301,6 +359,87 @@ class TaskQueue:
             return value
         except Exception as exc:
             raise TaskQueueError("mediation clock unavailable") from exc
+
+    @staticmethod
+    def _mediation_state_payload(
+        *, last_sequence: int, last_event_hash: str, event_count: int
+    ) -> dict[str, object]:
+        return {
+            "version": 1,
+            "last_sequence": last_sequence,
+            "last_event_hash": last_event_hash,
+            "event_count": event_count,
+        }
+
+    def _current_mediation_head_locked(self) -> tuple[int, str, int]:
+        row = self._conn.execute(
+            """SELECT sequence, event_hash,
+                      (SELECT COUNT(*) FROM task_mediation_events) AS event_count
+                 FROM task_mediation_events
+                ORDER BY sequence DESC LIMIT 1"""
+        ).fetchone()
+        if row is None:
+            return 0, ZERO_HASH, 0
+        return int(row["sequence"]), str(row["event_hash"]), int(row["event_count"])
+
+    def _initialize_mediation_state_locked(
+        self, *, broken: bool, uninitialized: bool = False
+    ) -> None:
+        sequence, event_hash, count = self._current_mediation_head_locked()
+        payload = self._mediation_state_payload(
+            last_sequence=sequence,
+            last_event_hash=event_hash,
+            event_count=count,
+        )
+        signature = (
+            None
+            if broken or uninitialized
+            else self._mediation_signer.sign(canonical_json(payload))
+        )
+        self._conn.execute(
+            """INSERT OR REPLACE INTO task_mediation_state
+                   (id, version, last_sequence, last_event_hash, event_count,
+                    integrity_broken, signature)
+               VALUES (1, 1, ?, ?, ?, ?, ?)""",
+            (
+                sequence,
+                event_hash,
+                count,
+                2 if uninitialized else (1 if broken or signature is None else 0),
+                signature or "",
+            ),
+        )
+
+    def _update_mediation_state_locked(self) -> None:
+        sequence, event_hash, count = self._current_mediation_head_locked()
+        payload = self._mediation_state_payload(
+            last_sequence=sequence,
+            last_event_hash=event_hash,
+            event_count=count,
+        )
+        signature = self._mediation_signer.sign(canonical_json(payload))
+        if signature is None:
+            raise TaskQueueError("could not seal mediation chain head")
+        updated = self._conn.execute(
+            """UPDATE task_mediation_state
+                  SET version=1, last_sequence=?, last_event_hash=?, event_count=?,
+                      integrity_broken=0, signature=?
+                WHERE id=1 AND integrity_broken=0""",
+            (sequence, event_hash, count, signature),
+        )
+        if updated.rowcount != 1:
+            raise TaskQueueError("mediation chain head is unavailable")
+
+    def _mark_mediation_integrity_broken_locked(self) -> None:
+        sequence, event_hash, count = self._current_mediation_head_locked()
+        self._conn.execute(
+            """INSERT INTO task_mediation_state
+                   (id, version, last_sequence, last_event_hash, event_count,
+                    integrity_broken, signature)
+               VALUES (1, 1, ?, ?, ?, 1, '')
+               ON CONFLICT(id) DO UPDATE SET integrity_broken=1, signature=''""",
+            (sequence, event_hash, count),
+        )
 
     @staticmethod
     def _task_binding(
@@ -376,6 +515,7 @@ class TaskQueue:
                 value["signature"],
             ),
         )
+        self._update_mediation_state_locked()
         return event
 
     def mediation_events(self) -> list[dict[str, object]]:
@@ -394,12 +534,63 @@ class TaskQueue:
             "refused_unmediated": 0,
             "ungoverned_detected": 0,
         }
-        events = self.mediation_events()
-        if not events:
-            counters["valid"] = True
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM task_mediation_events ORDER BY sequence"
+            ).fetchall()
+            state = self._conn.execute("SELECT * FROM task_mediation_state WHERE id=1").fetchone()
+            task_rows = self._conn.execute(
+                """SELECT id, mediation_enqueue_id, mediation_execution_id
+                     FROM tasks WHERE mediation_enqueue_id IS NOT NULL"""
+            ).fetchall()
+        fields = MediationEvent.__dataclass_fields__
+        events = [{name: row[name] for name in fields} for row in rows]
+        if state is None or state["integrity_broken"] != 0 or state["version"] != 1:
             return counters
-        if not verify_event_chain(self._mediation_signer, events):
+        sequence = int(rows[-1]["sequence"]) if rows else 0
+        event_hash = str(rows[-1]["event_hash"]) if rows else ZERO_HASH
+        state_payload = self._mediation_state_payload(
+            last_sequence=int(state["last_sequence"]),
+            last_event_hash=str(state["last_event_hash"]),
+            event_count=int(state["event_count"]),
+        )
+        state_matches = (
+            int(state["last_sequence"]) == sequence
+            and str(state["last_event_hash"]) == event_hash
+            and int(state["event_count"]) == len(events)
+            and self._mediation_signer.verify(canonical_json(state_payload), state["signature"])
+        )
+        if not state_matches:
             return counters
+        if events and not verify_event_chain(self._mediation_signer, events):
+            return counters
+
+        task_by_id = {int(row["id"]): row for row in task_rows}
+        authorized: dict[int, list[dict[str, object]]] = {}
+        governed: dict[int, list[dict[str, object]]] = {}
+        for event in events:
+            if event["outcome"] == "authorized_enqueue":
+                authorized.setdefault(int(event["task_id"]), []).append(event)
+            elif event["outcome"] == "governed":
+                governed.setdefault(int(event["task_id"]), []).append(event)
+        for task_id, row in task_by_id.items():
+            auth_events = authorized.get(task_id, [])
+            if len(auth_events) != 1 or auth_events[0]["enqueue_id"] != row["mediation_enqueue_id"]:
+                return counters
+            execution_id = row["mediation_execution_id"]
+            run_events = governed.get(task_id, [])
+            if execution_id:
+                if (
+                    len(run_events) != 1
+                    or run_events[0]["execution_id"] != execution_id
+                    or run_events[0]["enqueue_id"] != row["mediation_enqueue_id"]
+                ):
+                    return counters
+            elif run_events:
+                return counters
+        if any(task_id not in task_by_id for task_id in authorized | governed):
+            return counters
+
         counters["valid"] = True
         for event in events:
             outcome = event["outcome"]
@@ -442,6 +633,12 @@ class TaskQueue:
                     self._conn.commit()
                 except Exception:
                     self._conn.rollback()
+                    try:
+                        self._conn.execute("BEGIN IMMEDIATE")
+                        self._mark_mediation_integrity_broken_locked()
+                        self._conn.commit()
+                    except Exception:
+                        self._conn.rollback()
             raise TaskQueueError(message)
         now = _now()
         with self._lock:
@@ -645,6 +842,7 @@ class TaskQueue:
         except Exception:
             # Quarantine is the authority boundary. A missing signer must never
             # keep a suspicious row executable merely because evidence degraded.
+            self._mark_mediation_integrity_broken_locked()
             logger.exception("Could not persist B7 quarantine evidence")
 
     def claim_mediated(self, task_id: int, *, execution_id: str) -> Optional[Task]:
@@ -675,6 +873,8 @@ class TaskQueue:
                     valid = (
                         row["mediation_execution_id"] is None
                         and int(row["risk_tier"]) == receipt.tier
+                        and expectation.scope == self._mediation_scope
+                        and expectation.policy_revision == self._mediation_policy_revision
                         and authorized is not None
                         and current_sha256 == row["mediation_task_sha256"]
                         and self._event_chain_valid_locked()
@@ -745,6 +945,8 @@ class TaskQueue:
                         ).fetchone()
                         valid = (
                             int(row["risk_tier"]) == receipt.tier
+                            and expectation.scope == self._mediation_scope
+                            and expectation.policy_revision == self._mediation_policy_revision
                             and current_sha256 == row["mediation_task_sha256"]
                             and authorized is not None
                             and self._event_chain_valid_locked()

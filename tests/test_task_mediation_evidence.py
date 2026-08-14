@@ -552,3 +552,75 @@ def test_classifier_or_signer_failure_refuses_without_creating_authority(tmp_pat
         broken_signer.enqueue("ultron", "filesystem.write", "Unsigned", {})
     assert broken_signer.list() == []
     assert broken_signer.verified_mediation_stats()["governed"] == 0
+    assert broken_signer.verified_mediation_stats()["valid"] is False
+
+
+@pytest.mark.parametrize(
+    ("scope", "policy_revision"),
+    [("node:laptop", "policy-17"), ("global", "policy-18")],
+)
+def test_restart_rejects_live_scope_or_policy_revision_drift(tmp_path, scope, policy_revision):
+    queue = _queue(tmp_path)
+    task_id = _enqueue_mediated(queue)
+    queue.transition(task_id, TaskStatus.APPROVED)
+    queue.close()
+
+    reopened = TaskQueue(
+        db_path=str(tmp_path / "mediation.db"),
+        mediation_mode="enforce",
+        mediation_signer=_signer(),
+        mediation_classifier=lambda kind: kind == "filesystem.write",
+        mediation_scope=scope,
+        mediation_policy_revision=policy_revision,
+        mediation_clock_ms=lambda: NOW_MS,
+    ).initialize()
+
+    assert reopened.get(task_id).status == "quarantined"
+    assert (
+        reopened.claim_mediated(task_id, execution_id="16cb1ba3-b0c3-4200-9a7c-548472343049")
+        is None
+    )
+
+
+def test_unknown_registry_classification_is_fail_closed(tmp_path):
+    queue = TaskQueue(
+        db_path=str(tmp_path / "unknown.db"),
+        mediation_mode="enforce",
+        mediation_signer=_signer(),
+        mediation_classifier=lambda _kind: None,
+    ).initialize()
+
+    with pytest.raises(TaskQueueError, match="requires mediation"):
+        queue.enqueue("jarvis", "unknown.effect", "Unknown", {})
+    assert queue.list() == []
+    assert queue.verified_mediation_stats()["refused_unmediated"] == 1
+
+
+@pytest.mark.parametrize("delete_where", ["outcome='governed'", "1=1"])
+def test_event_tail_or_total_deletion_invalidates_counters(tmp_path, delete_where):
+    queue = _queue(tmp_path)
+    task_id = _enqueue_mediated(queue)
+    queue.transition(task_id, TaskStatus.APPROVED)
+    assert queue.claim_mediated(task_id, execution_id="16cb1ba3-b0c3-4200-9a7c-548472343049")
+    queue._conn.execute(f"DELETE FROM task_mediation_events WHERE {delete_where}")
+    queue._conn.commit()
+
+    stats = queue.verified_mediation_stats()
+    assert stats["valid"] is False
+    assert stats["governed"] == 0
+
+
+def test_concurrent_new_and_legacy_initialization_is_lock_safe(tmp_path):
+    for name, legacy in (("new.db", False), ("legacy.db", True)):
+        path = tmp_path / name
+        if legacy:
+            seed = TaskQueue(str(path)).initialize()
+            seed.close()
+
+        def initialize_once(_index, db_path=path):
+            queue = TaskQueue(str(db_path)).initialize()
+            queue.close()
+            return True
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            assert all(pool.map(initialize_once, range(8)))
