@@ -42,6 +42,10 @@ loader instances cannot lose approvals.
 An existing private record also remains durable provenance for its canonical path
 after source drift, so deleting an in-tree sidecar cannot reclassify changed
 external bytes as bundled.
+Bundled provenance is a product-owned allowlist of exact shipped relative files and
+normalized content hashes. A missing/corrupt registry, new or relocated directory,
+extra payload, or changed shipped byte therefore resolves to external rather than
+using absence of evidence as bundled trust.
 
 `agents/core/skills/signing.py` exposes the stable source fingerprint independently
 from HMAC configuration. Its purpose is byte binding, not author authentication.
@@ -60,15 +64,17 @@ execution by itself.
 
 1. Discovery classifies bundled versus external provenance from the discovery
    boundary, link state, in-tree import marker, and any canonical path retained in
-   the private approval registry. Fingerprint drift never removes that provenance.
+   the private approval registry. Only an exact product-manifest match is bundled;
+   fingerprint drift or unknown registry state never grants that provenance.
 2. Signature verification labels keyed HMAC as `signed`; an unkeyed digest remains
    `integrity-only`.
 3. For external code, the loader checks keyed signature or the private approval
    record against one immutable source snapshot. The validated tree is materialized
    in a private temporary directory retained with the module, and its `main.py`
-   is loaded from that private copy through the standard import loader; the loader
-   never reopens candidate-controlled source or relative artifacts after the trust
-   decision.
+   is loaded from that private copy through a source-only standard import loader;
+   candidate bytecode caches are never consulted. Bundled modules use the same
+   immutable snapshot path after their product manifest match, so neither boundary
+   reopens mutable source after the trust decision.
 4. Missing, corrupt, wrong-path, stale-digest, or unreadable approval state fails
    closed: the skill remains visible with `module is None` and `sandboxed=True`.
 5. Approval writes the registry first. Only after that succeeds may pending/legacy
@@ -108,6 +114,10 @@ execution by itself.
   invalidate approval; linked artifacts fail closed.
 - Removing an imported/marketplace sidecar after approval leaves the canonical path
   external, while changed bytes remain unapproved and unexecuted.
+- Missing, corrupt, and unknown-schema private state plus an external directory
+  relocation remain external even after all candidate sidecars are removed.
+- The exact bundled manifest matches every shipped skill and rejects extra files,
+  changed bytes, unknown names, and check-to-exec mutation.
 - A hardlinked `SKILL.sig` is rejected without modifying its other link target.
 - Missing/corrupt live registry changes revoke decision-time authority, and stale
   store instances/processes merge independent approvals without loss.

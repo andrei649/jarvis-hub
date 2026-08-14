@@ -1,4 +1,5 @@
 """Tests for skill signature verification + sandboxing (H12.1)."""
+import hashlib
 import os
 import subprocess
 import sys
@@ -117,7 +118,19 @@ def test_loader_flags_unsigned_skill(tmp_path, monkeypatch):
     from agents.core.skills import loader as loader_mod
     skills_root = tmp_path / "skills"
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
-    _make_skill(skills_root / "demo", body="def register(skill):\n    pass\n")
+    bundled = _make_skill(
+        skills_root / "demo", body="def register(skill):\n    pass\n"
+    )
+    monkeypatch.setattr(
+        loader_mod,
+        "_matches_bundled_source",
+        lambda path, root: path.resolve() == bundled.resolve(),
+    )
+    monkeypatch.setattr(
+        loader_mod,
+        "_snapshot_matches_bundled",
+        lambda snapshot, name: name == "demo",
+    )
     loader = SkillLoader()
     loader.discover()
     sk = loader.get_skill("DemoSkill")
@@ -147,6 +160,16 @@ def test_unsigned_user_home_skill_is_visible_but_never_imported(tmp_path, monkey
     )
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", bundled_root)
     monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: user_root)
+    monkeypatch.setattr(
+        loader_mod,
+        "_matches_bundled_source",
+        lambda path, root: path.resolve() == (bundled_root / "bundled").resolve(),
+    )
+    monkeypatch.setattr(
+        loader_mod,
+        "_snapshot_matches_bundled",
+        lambda snapshot, name: name == "bundled",
+    )
 
     skills = SkillLoader().discover()
 
@@ -387,10 +410,14 @@ def test_imported_skill_sidecar_blocks_unsigned_in_process_import(tmp_path, monk
 
 
 @pytest.mark.parametrize("external_marker", ["manifest.json", "EXTERNAL_SOURCE"])
+@pytest.mark.parametrize(
+    "registry_state", ["intact", "missing", "corrupt", "unknown-schema"]
+)
 def test_removing_external_sidecar_cannot_shed_private_provenance(
     tmp_path,
     monkeypatch,
     external_marker,
+    registry_state,
 ):
     """A changed approved import remains external after deleting its sidecar."""
     from agents.core.skills import loader as loader_mod
@@ -425,14 +452,122 @@ def test_removing_external_sidecar_cannot_shed_private_provenance(
         f"Path({str(marker)!r}).write_text('attacker', encoding='utf-8')\n",
         encoding="utf-8",
     )
+    if registry_state == "missing":
+        store.path.unlink()
+    elif registry_state == "corrupt":
+        store.path.write_text("not-json", encoding="utf-8")
+    elif registry_state == "unknown-schema":
+        store.path.write_text(
+            '{"version": 999, "approvals": {}}', encoding="utf-8"
+        )
 
     second = SkillLoader(approval_store=store).discover()["Imported"]
 
     assert second.module is None
     assert second.sandboxed is True
-    assert store.tracks_path(skill_dir)
+    assert store.tracks_path(skill_dir) is (registry_state == "intact")
     assert not store.is_approved(skill_dir)
     assert not marker.exists()
+
+
+def test_relocated_external_skill_cannot_inherit_bundled_provenance(
+    tmp_path,
+    monkeypatch,
+):
+    from agents.core.skills import loader as loader_mod
+
+    skills_root = tmp_path / "skills"
+    marker = tmp_path / "executed.txt"
+    original = _make_skill(
+        skills_root / "original", name="Imported", body="VALUE = 'approved'\n"
+    )
+    (original / "manifest.json").write_text(
+        '{"imported": true}', encoding="utf-8"
+    )
+    store = SkillApprovalStore(tmp_path / "private" / "approvals.json")
+    store.approve(original)
+    moved = original.rename(skills_root / "moved")
+    (moved / "manifest.json").unlink()
+    (moved / "main.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('attacker', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
+    monkeypatch.setattr(
+        loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills"
+    )
+
+    skill = SkillLoader(approval_store=store).discover()["Imported"]
+
+    assert skill.module is None
+    assert skill.sandboxed is True
+    assert not marker.exists()
+
+
+def test_product_bundled_manifest_matches_exact_shipped_sources():
+    from agents.core.skills import loader as loader_mod
+
+    shipped = {
+        path.name for path in loader_mod.SKILLS_DIR.iterdir() if path.is_dir()
+    }
+
+    assert shipped == set(loader_mod._BUNDLED_SKILL_MANIFEST)
+    assert all(
+        loader_mod._matches_bundled_source(
+            loader_mod.SKILLS_DIR / name, loader_mod.SKILLS_DIR
+        )
+        for name in shipped
+    )
+
+
+def test_exact_bundled_source_executes_same_validated_snapshot(
+    tmp_path,
+    monkeypatch,
+):
+    from agents.core.skills import loader as loader_mod
+
+    skills_root = tmp_path / "skills"
+    marker = tmp_path / "executed.txt"
+    approved_body = (
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('shipped', encoding='utf-8')\n"
+    )
+    attacker_body = (
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('attacker', encoding='utf-8')\n"
+    )
+    skill_dir = _make_skill(
+        skills_root / "demo", name="Demo", body=approved_body
+    )
+    expected = {
+        relative: hashlib.sha256(
+            (skill_dir / relative).read_bytes().replace(b"\r\n", b"\n")
+        ).hexdigest()
+        for relative in ("SKILL.md", "main.py")
+    }
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
+    monkeypatch.setattr(
+        loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills"
+    )
+    monkeypatch.setattr(loader_mod, "_BUNDLED_SKILL_MANIFEST", {"demo": expected})
+    original_spec = loader_mod.importlib.util.spec_from_file_location
+
+    def mutate_after_snapshot(*args, **kwargs):
+        (skill_dir / "main.py").write_text(attacker_body, encoding="utf-8")
+        return original_spec(*args, **kwargs)
+
+    monkeypatch.setattr(
+        loader_mod.importlib.util,
+        "spec_from_file_location",
+        mutate_after_snapshot,
+    )
+
+    skill = SkillLoader().discover()["Demo"]
+
+    assert skill.module is not None
+    assert skill.sandboxed is False
+    assert marker.read_text(encoding="utf-8") == "shipped"
 
 
 @pytest.mark.parametrize("external_marker", ["manifest.json", "EXTERNAL_SOURCE"])
@@ -476,6 +611,16 @@ def test_loader_loads_signed_skill_trusted(tmp_path, monkeypatch):
     skills_root = tmp_path / "skills"
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
     sk_dir = _make_skill(skills_root / "demo", body="def register(skill):\n    pass\n")
+    monkeypatch.setattr(
+        loader_mod,
+        "_matches_bundled_source",
+        lambda path, root: path.resolve() == sk_dir.resolve(),
+    )
+    monkeypatch.setattr(
+        loader_mod,
+        "_snapshot_matches_bundled",
+        lambda snapshot, name: name == "demo",
+    )
     signing.sign_skill(sk_dir)
     loader = SkillLoader()
     loader.discover()
