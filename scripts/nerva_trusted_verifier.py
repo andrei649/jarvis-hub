@@ -251,7 +251,7 @@ def verify_path(manifest_path: Path) -> ManifestVerdict:
 
     try:
         data = _strict_json_data(manifest_path)
-    except (OSError, UnicodeError, ValueError) as exc:
+    except (OSError, UnicodeError, ValueError, RecursionError) as exc:
         return _informational_verdict(
             None,
             errors=(
@@ -262,17 +262,24 @@ def verify_path(manifest_path: Path) -> ManifestVerdict:
     return _informational_verdict(data)
 
 
+def _ascii_cli_value(value: object) -> str:
+    """Escape one untrusted value as ASCII without embedded line breaks."""
+
+    encoded = json.dumps(str(value), ensure_ascii=True)
+    return encoded[1:-1]
+
+
 def _print_verdict(verdict: ManifestVerdict) -> None:
     labels = ("DONE", "BUILDING", "OPEN", "BLOCKED", "PARTIAL", "UNKNOWN")
     counts = [sum(1 for item in verdict.streams if item.verdict_label == label) for label in labels]
-    print(f"manifest_id={verdict.manifest_id or '(unreadable)'}")
-    print(f"schema_version={verdict.schema_version}")
+    print(f"manifest_id={_ascii_cli_value(verdict.manifest_id or '(unreadable)')}")
+    print(f"schema_version={_ascii_cli_value(verdict.schema_version)}")
     print(f"structurally_valid={'yes' if verdict.structurally_valid else 'no'}")
     print(f"release_ready={'yes' if verdict.release_ready else 'no'}")
     print(f"all_streams_done={'yes' if verdict.all_streams_done else 'no'}")
     print(f"trusted_source={'yes' if verdict.trusted_source else 'no'}")
     for error in verdict.source_errors:
-        print(f"source-error: {error}")
+        print(f"source-error: {_ascii_cli_value(error)}")
     if verdict.authority is not None:
         posture = (
             "declares_non_enforcing"
@@ -289,14 +296,17 @@ def _print_verdict(verdict: ManifestVerdict) -> None:
         )
         for item in verdict.streams:
             print(
-                f"{item.stream_id}: {item.verdict_label} "
-                f"status={item.program_status} eligibility={item.delivery_eligibility} "
-                f"derived={item.derived_eligibility} "
-                f"open_gates={item.open_gate_count} "
-                f"open_blockers={item.open_blocker_count} evidence={item.evidence_count}"
+                f"{_ascii_cli_value(item.stream_id)}: "
+                f"{_ascii_cli_value(item.verdict_label)} "
+                f"status={_ascii_cli_value(item.program_status)} "
+                f"eligibility={_ascii_cli_value(item.delivery_eligibility)} "
+                f"derived={_ascii_cli_value(item.derived_eligibility)} "
+                f"open_gates={_ascii_cli_value(item.open_gate_count)} "
+                f"open_blockers={_ascii_cli_value(item.open_blocker_count)} "
+                f"evidence={_ascii_cli_value(item.evidence_count)}"
             )
     for error in verdict.errors:
-        print(f"error: {error}")
+        print(f"error: {_ascii_cli_value(error)}")
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:

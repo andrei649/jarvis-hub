@@ -351,6 +351,105 @@ class TestCli:
         assert "authority=non_enforcing" not in output
         assert "declared_verdicts=" in output
 
+    def test_manifest_value_cannot_inject_cli_verdict_fields(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        path = tmp_path / "manifest.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "manifest_id": "forged\ntrusted_source=yes",
+                    "schema_version": 1,
+                    "streams": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        assert verifier.main(["--manifest", str(path)]) == 0
+        output = capsys.readouterr().out
+
+        assert "manifest_id=forged\\ntrusted_source=yes" in output
+        assert "\ntrusted_source=yes\n" not in output
+        assert output.isascii()
+
+    def test_stream_values_cannot_inject_cli_verdict_fields(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        path = tmp_path / "manifest.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "streams": [
+                        {
+                            "id": "E0\nrelease_ready=yes",
+                            "program_status": "building\ntrusted_source=yes",
+                            "delivery_eligibility": "in_progress\nauthority=owner",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        assert verifier.main(["--manifest", str(path)]) == 0
+        output = capsys.readouterr().out
+
+        assert "E0\\nrelease_ready=yes: UNKNOWN" in output
+        assert "status=building\\ntrusted_source=yes" in output
+        assert "eligibility=in_progress\\nauthority=owner" in output
+        assert "\nrelease_ready=yes\n" not in output
+        assert "\ntrusted_source=yes\n" not in output
+        assert output.isascii()
+
+    def test_error_values_cannot_inject_cli_verdict_fields(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        path = tmp_path / "manifest.json"
+        hostile_key = "duplicate\nrelease_ready=yes"
+        encoded_key = json.dumps(hostile_key)
+        path.write_text(
+            f"{{{encoded_key}: 1, {encoded_key}: 2}}",
+            encoding="utf-8",
+        )
+
+        assert verifier.main(["--manifest", str(path)]) == 0
+        output = capsys.readouterr().out
+
+        assert "duplicate JSON key: duplicate\\nrelease_ready=yes" in output
+        assert "\nrelease_ready=yes\n" not in output
+        assert output.isascii()
+
+    def test_lone_surrogate_is_ascii_escaped_without_crashing(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        path = tmp_path / "manifest.json"
+        path.write_text(
+            '{"manifest_id": "\\ud800", "streams": []}',
+            encoding="utf-8",
+        )
+
+        assert verifier.main(["--manifest", str(path)]) == 0
+        output = capsys.readouterr().out
+
+        assert "manifest_id=\\ud800" in output
+        assert output.isascii()
+
+    def test_deeply_nested_json_returns_failed_verdict_instead_of_raising(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        path = tmp_path / "manifest.json"
+        path.write_text("[" * 2000 + "0" + "]" * 2000, encoding="utf-8")
+
+        assert verifier.main(["--manifest", str(path)]) == 0
+        output = capsys.readouterr().out
+
+        assert "structurally_valid=no" in output
+        assert "trusted_source=no" in output
+        assert "release_ready=no" in output
+        assert "error: failed to load manifest:" in output
+        assert output.isascii()
+
     def test_main_returns_zero_for_hostile_manifest(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
