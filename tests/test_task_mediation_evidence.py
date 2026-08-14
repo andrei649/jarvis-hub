@@ -1009,6 +1009,40 @@ print(json.dumps({{
     }
 
 
+@pytest.mark.parametrize(
+    ("working_directory", "entrypoint"),
+    [(".", "agents.run"), ("agents", "run")],
+)
+def test_cli_entrypoint_imports_canonical_graph_without_order_dependency(
+    working_directory, entrypoint
+):
+    repository = Path(__file__).resolve().parents[1]
+    program = f"""
+import importlib
+import json
+import sys
+
+importlib.import_module({entrypoint!r})
+forbidden = sorted(
+    name
+    for name in sys.modules
+    if name == "core.autonomy" or name.startswith("core.autonomy.")
+)
+print(json.dumps(forbidden))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=repository / working_directory,
+        capture_output=True,
+        text=True,
+        timeout=45,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == []
+
+
 class _AskPolicy:
     def decide(self, _action):
         return SimpleNamespace(outcome="ask", tier=2, reason="owner approval required")

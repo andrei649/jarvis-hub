@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass, fields
 
 import httpx
 
-from core.settings_db import ensure_initialized, get_conn
+from ..settings_db import ensure_initialized, get_conn
 
 from .auth_rotation import AuthLease, AuthProfilePool, is_rotatable_status
 from .gemini_context import GeminiRequestBinding
@@ -122,9 +122,7 @@ class ContextCache:
         if type(values["prefix_count"]) is not int:
             return None
         if any(
-            not isinstance(value, str)
-            for name, value in values.items()
-            if name != "prefix_count"
+            not isinstance(value, str) for name, value in values.items() if name != "prefix_count"
         ):
             return None
         return CacheEntry(**values)
@@ -176,8 +174,7 @@ class ContextCache:
         serialized = {
             session_id: asdict(entry)
             for session_id in tuple(self._cache_map)
-            if isinstance(session_id, str)
-            and (entry := self._entry_for(session_id)) is not None
+            if isinstance(session_id, str) and (entry := self._entry_for(session_id)) is not None
         }
         conn = None
         try:
@@ -332,10 +329,7 @@ class ContextCache:
         url = f"{GEMINI_API_BASE}/cachedContents"
         payload = {
             "model": f"models/{model}",
-            "contents": [
-                {"role": "user", "parts": [{"text": part}]}
-                for part in history
-            ],
+            "contents": [{"role": "user", "parts": [{"text": part}]} for part in history],
             "systemInstruction": {"parts": [{"text": system_instruction}]},
             "ttl": f"{ttl_seconds}s",
         }
@@ -387,8 +381,7 @@ class ContextCache:
         sessions = [
             session_id
             for session_id in tuple(self._cache_map)
-            if (entry := self._entry_for(session_id)) is not None
-            and entry.cache_name == cache_name
+            if (entry := self._entry_for(session_id)) is not None and entry.cache_name == cache_name
         ]
         for session_id in sessions:
             await self.invalidate(
