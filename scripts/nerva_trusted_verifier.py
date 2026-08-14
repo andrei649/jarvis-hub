@@ -11,8 +11,15 @@ This module is deliberately NON-ENFORCING and read-only:
 
 It performs strict, deterministic, fail-closed verification of the offline
 Nerva v1 program manifest (``docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json``)
-by reusing the canonical loader and validator primitives from
-``check_nerva_program_manifest``, then reports an honest per-stream verdict
+only after an explicit ``--trust-anchor`` outside the candidate repository
+authenticates both this verifier and ``check_nerva_program_manifest``. The
+checker is compiled from the authenticated byte snapshot instead of imported
+before trust is established. With no accepted external anchor, source trust
+and structural validation fail closed. A later control-plane step remains
+responsible for provisioning and protecting the anchor itself.
+
+After source authentication, the verifier reuses the canonical loader and
+validator primitives and reports an honest per-stream verdict
 (``DONE``/``BUILDING``/``OPEN``/``BLOCKED``/``PARTIAL``/``UNKNOWN``), the
 declared authority posture, whether release readiness is derived, and whether
 the generated Markdown is byte-identical to the committed document.
@@ -27,31 +34,24 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import re
+import json
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import ModuleType
 from typing import Any
-
-from check_nerva_program_manifest import (
-    DOCUMENT_RELATIVE,
-    MANIFEST_RELATIVE,
-    PROGRAM_STATES,
-    REGISTRY_RELATIVE,
-    ManifestError,
-    _derive_eligibility,
-    load_json_strict,
-    render_markdown,
-    validate_manifest,
-)
 
 REPO = Path(__file__).resolve().parent.parent
 ACTIVE_STATUSES = frozenset({"discovery", "building", "verifying"})
-
-_CHECKER_SHA256 = "a57c2d06fcecf75b3b693733e6d7fa2059190752365c85086c2972c0dcd3af58"
-_SELF_PIN = b'_VERIFIER_SHA256 = "<self>"'
-_SELF_PIN_RE = re.compile(rb'_VERIFIER_SHA256\s*=\s*"[0-9a-f]{64}"')
-_VERIFIER_SHA256 = "64bca18bd7245ece332dc544eaf2df4f57b7691e6d0438905e998e8fb6a9a190"
+PROGRAM_STATES = frozenset(
+    {"not_started", "discovery", "building", "verifying", "blocked", "done"}
+)
+MANIFEST_RELATIVE = Path("docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json")
+DOCUMENT_RELATIVE = Path("docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md")
+REGISTRY_RELATIVE = Path("docs/nerva2/CONTRACT_REGISTRY.json")
+VERIFIER_RELATIVE = Path("scripts/nerva_trusted_verifier.py")
+CHECKER_RELATIVE = Path("scripts/check_nerva_program_manifest.py")
+TRUSTED_SOURCE_PATHS = (VERIFIER_RELATIVE, CHECKER_RELATIVE)
 
 
 @dataclass(frozen=True)
@@ -108,7 +108,7 @@ class ManifestVerdict:
     authority: AuthorityPosture | None
     release_ready: bool
     all_streams_done: bool = False
-    trusted_source: bool = True
+    trusted_source: bool = False
     source_errors: tuple[str, ...] = ()
     render_current: bool | None = None
 
@@ -125,6 +125,16 @@ def verdict_label(program_status: str, derived_eligibility: str) -> str:
     if program_status == "not_started":
         return "OPEN" if derived_eligibility == "eligible" else "BLOCKED"
     return "UNKNOWN"
+
+
+def _derive_eligibility(status: str, has_open_gate_or_blocker: bool) -> str:
+    if status == "done":
+        return "blocked" if has_open_gate_or_blocker else "satisfied"
+    if status == "blocked":
+        return "blocked"
+    if status in ACTIVE_STATUSES:
+        return "in_progress"
+    return "blocked" if has_open_gate_or_blocker else "eligible"
 
 
 def assess_stream(stream: Any) -> StreamAssessment:
@@ -192,50 +202,113 @@ def read_authority(data: Any) -> AuthorityPosture | None:
         completion_authority=raw.get("completion_authority", False) is True,
         release_ready=raw.get("release_ready", False) is True,
         ultron_remains_sole_action_authority=(
-            raw.get("ultron_remains_sole_action_authority", True) is True
+            raw.get("ultron_remains_sole_action_authority", False) is True
         ),
     )
 
 
 def _normalized_source_bytes(path: Path) -> tuple[bytes, str]:
-    """Return LF-normalized source bytes plus a stable digest for a file.
-
-    The verifier's own digest is computed over the file with its self-pin
-    literal blanked out, so embedding the accepted digest never circularly
-    changes the value that must match it.
-    """
+    """Return LF-normalized source bytes plus a stable SHA-256 digest."""
     raw = path.read_bytes().replace(b"\r\n", b"\n")
-    if path.resolve() == Path(__file__).resolve():
-        raw = _SELF_PIN_RE.sub(_SELF_PIN, raw)
     return raw, hashlib.sha256(raw).hexdigest()
 
 
-def verify_trusted_source() -> tuple[bool, tuple[str, ...]]:
-    """Verify that the accepted verifier/checker bytes match the pins.
+def _strict_json_data(path: Path) -> Any:
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
 
-    Anti-counterfeit proof: the verifier and the canonical checker must be
-    byte-identical (LF-normalized) to the versions accepted at release time.
-    Returns ``(trusted, errors)``; a failure is reported, never enforced.
+    def reject_constant(value: str) -> None:
+        raise ValueError(f"non-finite JSON number: {value}")
 
-    The checker's module object is reached through ``sys.modules`` so the
-    module is only ever imported with a single import style (CodeQL
-    Py/import-and-import-from), while ``__file__`` stays observable for
-    tamper tests.
-    """
-    checker_path = Path(sys.modules["check_nerva_program_manifest"].__file__)
+    return json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=reject_duplicate_keys,
+        parse_constant=reject_constant,
+    )
+
+
+def _trusted_checker(
+    *, root: Path, trust_anchor_path: Path | None
+) -> tuple[ModuleType | None, tuple[str, ...]]:
+    """Authenticate source bytes as data, then execute the accepted checker snapshot."""
+
+    if trust_anchor_path is None:
+        return None, ("external trust anchor is required",)
+    try:
+        canonical_root = root.resolve(strict=True)
+        canonical_anchor = trust_anchor_path.resolve(strict=True)
+    except OSError as exc:
+        return None, (f"trust anchor or repository root unreadable: {exc}",)
+    if canonical_anchor.is_relative_to(canonical_root):
+        return None, ("trust anchor must be outside the candidate repository",)
+
+    try:
+        anchor = _strict_json_data(canonical_anchor)
+    except (OSError, UnicodeError, ValueError) as exc:
+        return None, (f"trust anchor unreadable or invalid: {exc}",)
+    expected_top = {"schema_version", "sources"}
+    if not isinstance(anchor, dict) or set(anchor) != expected_top:
+        return None, ("trust anchor must contain exactly schema_version and sources",)
+    if anchor.get("schema_version") != 1:
+        return None, ("unsupported trust anchor schema_version",)
+    sources = anchor.get("sources")
+    expected_paths = {path.as_posix() for path in TRUSTED_SOURCE_PATHS}
+    if not isinstance(sources, dict) or set(sources) != expected_paths:
+        return None, ("trust anchor source inventory is incomplete or has unknown paths",)
+
+    accepted: dict[str, bytes] = {}
     errors: list[str] = []
-    for label, path, expected in (
-        ("checker", checker_path, _CHECKER_SHA256),
-        ("verifier", Path(__file__), _VERIFIER_SHA256),
-    ):
+    for relative in TRUSTED_SOURCE_PATHS:
+        label = relative.as_posix()
+        expected = sources.get(label)
+        if not (
+            isinstance(expected, str)
+            and len(expected) == 64
+            and all(character in "0123456789abcdef" for character in expected)
+        ):
+            errors.append(f"{label}: invalid sha256")
+            continue
+        source_path = canonical_root / relative
         try:
-            _normalized, digest = _normalized_source_bytes(path)
+            normalized, digest = _normalized_source_bytes(source_path)
         except (OSError, ValueError) as exc:
-            errors.append(f"{label} unreadable: {exc}")
+            errors.append(f"{label}: unreadable: {exc}")
             continue
         if digest != expected:
-            errors.append(f"{label} sha256 mismatch: expected {expected}, got {digest}")
-    return (not errors, tuple(errors))
+            errors.append(f"{label}: sha256 mismatch: expected {expected}, got {digest}")
+            continue
+        accepted[label] = normalized
+    if errors:
+        return None, tuple(errors)
+
+    checker_path = canonical_root / CHECKER_RELATIVE
+    checker = ModuleType("_nerva_trusted_checker_snapshot")
+    checker.__file__ = str(checker_path)
+    try:
+        code = compile(accepted[CHECKER_RELATIVE.as_posix()], str(checker_path), "exec")
+        exec(code, checker.__dict__)  # noqa: S102 - exact externally authenticated snapshot
+    except Exception as exc:
+        return None, (f"trusted checker snapshot failed to load: {exc}",)
+    return checker, ()
+
+
+def verify_trusted_source(
+    *, root: Path = REPO, trust_anchor_path: Path | None = None
+) -> tuple[bool, tuple[str, ...]]:
+    """Report whether the supplied external anchor authenticates both snapshots.
+
+    This Step-2 function verifies content binding, not the caller's authority to
+    provision the anchor. Protecting that input belongs to the separate Step-3
+    control-plane package.
+    """
+
+    checker, errors = _trusted_checker(root=root, trust_anchor_path=trust_anchor_path)
+    return checker is not None, errors
 
 
 def verify_data(
@@ -244,12 +317,47 @@ def verify_data(
     registry: Any = None,
     root: Path = REPO,
     verify_git: bool = False,
+    trust_anchor_path: Path | None = None,
 ) -> ManifestVerdict:
     """Verify an already-parsed manifest value and return a total verdict."""
 
+    checker, source_errors = _trusted_checker(
+        root=root, trust_anchor_path=trust_anchor_path
+    )
+    if checker is None:
+        return ManifestVerdict(
+            manifest_id="",
+            schema_version=0,
+            structurally_valid=False,
+            errors=("structural validation unavailable without a trusted checker",),
+            streams=(),
+            authority=None,
+            release_ready=False,
+            trusted_source=False,
+            source_errors=source_errors,
+        )
+    return _verify_data_with_checker(
+        data,
+        checker=checker,
+        registry=registry,
+        root=root,
+        verify_git=verify_git,
+    )
+
+
+def _verify_data_with_checker(
+    data: Any,
+    *,
+    checker: ModuleType,
+    registry: Any,
+    root: Path,
+    verify_git: bool,
+) -> ManifestVerdict:
     if registry is None:
-        registry = load_json_strict(root / REGISTRY_RELATIVE)
-    errors = validate_manifest(data, root=root, registry=registry, verify_git=verify_git)
+        registry = checker.load_json_strict(root / REGISTRY_RELATIVE)
+    errors = checker.validate_manifest(
+        data, root=root, registry=registry, verify_git=verify_git
+    )
     structurally_valid = not errors
     if isinstance(data, dict):
         raw_id = data.get("manifest_id")
@@ -273,7 +381,6 @@ def verify_data(
         and authority is not None
         and authority.release_ready is True
     )
-    trusted_source, source_errors = verify_trusted_source()
     return ManifestVerdict(
         manifest_id=manifest_id,
         schema_version=schema_version,
@@ -283,10 +390,24 @@ def verify_data(
         authority=authority,
         release_ready=release_ready,
         all_streams_done=all_streams_done,
-        trusted_source=trusted_source,
-        source_errors=source_errors,
+        trusted_source=True,
+        source_errors=(),
         render_current=None,
     )
+
+
+def render_markdown(
+    data: Any,
+    *,
+    root: Path = REPO,
+    trust_anchor_path: Path | None = None,
+) -> str:
+    """Render only through an externally authenticated checker snapshot."""
+
+    checker, errors = _trusted_checker(root=root, trust_anchor_path=trust_anchor_path)
+    if checker is None:
+        raise ValueError("trusted checker unavailable: " + "; ".join(errors))
+    return checker.render_markdown(data)
 
 
 def _discover_repo_root(manifest_path: Path) -> Path | None:
@@ -310,6 +431,7 @@ def verify_path(
     document_path: Path | None = None,
     root: Path | None = None,
     verify_git: bool = False,
+    trust_anchor_path: Path | None = None,
 ) -> ManifestVerdict:
     """Verify a manifest from disk, failing closed on unreadable input."""
 
@@ -324,13 +446,31 @@ def verify_path(
                 streams=(),
                 authority=None,
                 release_ready=False,
+                trusted_source=False,
+                source_errors=("source trust not evaluated without a repository root",),
             )
+    checker, source_errors = _trusted_checker(
+        root=root, trust_anchor_path=trust_anchor_path
+    )
+    if checker is None:
+        return ManifestVerdict(
+            manifest_id="",
+            schema_version=0,
+            structurally_valid=False,
+            errors=("structural validation unavailable without a trusted checker",),
+            streams=(),
+            authority=None,
+            release_ready=False,
+            trusted_source=False,
+            source_errors=source_errors,
+            render_current=None,
+        )
     if registry_path is None:
         registry_path = root / REGISTRY_RELATIVE
     try:
-        data = load_json_strict(manifest_path)
-        registry = load_json_strict(registry_path)
-    except (OSError, ValueError, ManifestError) as exc:
+        data = checker.load_json_strict(manifest_path)
+        registry = checker.load_json_strict(registry_path)
+    except (OSError, ValueError, checker.ManifestError) as exc:
         return ManifestVerdict(
             manifest_id="",
             schema_version=0,
@@ -339,13 +479,23 @@ def verify_path(
             streams=(),
             authority=None,
             release_ready=False,
+            trusted_source=True,
+            source_errors=(),
             render_current=None,
         )
-    verdict = verify_data(data, registry=registry, root=root, verify_git=verify_git)
+    verdict = _verify_data_with_checker(
+        data,
+        checker=checker,
+        registry=registry,
+        root=root,
+        verify_git=verify_git,
+    )
     render_current: bool | None = None
     if verdict.structurally_valid and document_path is not None:
         try:
-            render_current = render_markdown(data) == document_path.read_text(encoding="utf-8")
+            render_current = checker.render_markdown(data) == document_path.read_text(
+                encoding="utf-8"
+            )
         except (KeyError, TypeError, UnicodeError, OSError):
             render_current = None
     return replace(verdict, render_current=render_current)
@@ -387,6 +537,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--registry", type=Path, default=None)
     parser.add_argument("--document", type=Path, default=None)
     parser.add_argument("--root", type=Path, default=None)
+    parser.add_argument(
+        "--trust-anchor",
+        type=Path,
+        default=None,
+        help="strict trusted-source manifest located outside the candidate repository",
+    )
     return parser.parse_args(argv)
 
 
@@ -400,6 +556,7 @@ def main(argv: list[str] | None = None) -> int:
         document_path=document,
         root=root,
         verify_git=False,
+        trust_anchor_path=args.trust_anchor,
     )
     _print_verdict(verdict)
     return 0

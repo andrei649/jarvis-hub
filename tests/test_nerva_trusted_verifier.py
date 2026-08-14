@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -12,30 +13,65 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import nerva_trusted_verifier as verifier  # noqa: E402
-from check_nerva_program_manifest import load_json_strict  # noqa: E402
 
 MANIFEST = REPO / "docs" / "nerva2" / "NERVA_PROGRAM_MANIFEST_V1.json"
 REGISTRY = REPO / "docs" / "nerva2" / "CONTRACT_REGISTRY.json"
 DOCUMENT = REPO / "docs" / "nerva2" / "NERVA_PROGRAM_MANIFEST_V1.md"
+_TRUST_ANCHOR: Path | None = None
+
+
+def _strict_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _source_digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+@pytest.fixture(autouse=True)
+def _external_trust_anchor(tmp_path: Path) -> None:
+    global _TRUST_ANCHOR
+    anchor = tmp_path / "trusted-sources.json"
+    anchor.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "sources": {
+                    "scripts/nerva_trusted_verifier.py": _source_digest(
+                        REPO / "scripts" / "nerva_trusted_verifier.py"
+                    ),
+                    "scripts/check_nerva_program_manifest.py": _source_digest(
+                        REPO / "scripts" / "check_nerva_program_manifest.py"
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    _TRUST_ANCHOR = anchor
+    yield
+    _TRUST_ANCHOR = None
 
 
 def _manifest() -> dict:
-    return load_json_strict(MANIFEST)
+    return _strict_json(MANIFEST)
 
 
 def _registry() -> dict:
-    return load_json_strict(REGISTRY)
+    return _strict_json(REGISTRY)
 
 
 _MISSING = object()
 
 
 def _verify(data: object = _MISSING) -> verifier.ManifestVerdict:
+    assert _TRUST_ANCHOR is not None
     return verifier.verify_data(
         _manifest() if data is _MISSING else data,
         registry=_registry(),
         root=REPO,
         verify_git=False,
+        trust_anchor_path=_TRUST_ANCHOR,
     )
 
 
@@ -87,7 +123,10 @@ class TestGolden:
         assert verdict.authority.release_ready is False
 
     def test_canonical_manifest_golden_render_is_byte_identical(self) -> None:
-        assert verifier.render_markdown(_manifest()) == DOCUMENT.read_text(encoding="utf-8")
+        assert _TRUST_ANCHOR is not None
+        assert verifier.render_markdown(
+            _manifest(), root=REPO, trust_anchor_path=_TRUST_ANCHOR
+        ) == DOCUMENT.read_text(encoding="utf-8")
 
     def test_canonical_manifest_path_verdict_confirms_no_render_drift(self) -> None:
         verdict = verifier.verify_path(
@@ -96,6 +135,7 @@ class TestGolden:
             document_path=DOCUMENT,
             root=REPO,
             verify_git=False,
+            trust_anchor_path=_TRUST_ANCHOR,
         )
 
         assert verdict.structurally_valid is True
@@ -241,7 +281,9 @@ class TestHostileJsonLoad:
             encoding="utf-8",
         )
 
-        verdict = verifier.verify_path(path, registry_path=REGISTRY, root=REPO)
+        verdict = verifier.verify_path(
+            path, registry_path=REGISTRY, root=REPO, trust_anchor_path=_TRUST_ANCHOR
+        )
 
         assert verdict.structurally_valid is False
         assert verdict.errors
@@ -253,14 +295,19 @@ class TestHostileJsonLoad:
             '{"schema_version": NaN, "manifest_id": "nerva.program-manifest.v1"}', encoding="utf-8"
         )
 
-        verdict = verifier.verify_path(path, registry_path=REGISTRY, root=REPO)
+        verdict = verifier.verify_path(
+            path, registry_path=REGISTRY, root=REPO, trust_anchor_path=_TRUST_ANCHOR
+        )
 
         assert verdict.structurally_valid is False
         assert verdict.errors[0].startswith("failed to load")
 
     def test_verify_path_fails_closed_on_missing_file(self) -> None:
         verdict = verifier.verify_path(
-            MANIFEST / "does-not-exist.json", registry_path=REGISTRY, root=REPO
+            MANIFEST / "does-not-exist.json",
+            registry_path=REGISTRY,
+            root=REPO,
+            trust_anchor_path=_TRUST_ANCHOR,
         )
 
         assert verdict.structurally_valid is False
@@ -270,7 +317,9 @@ class TestHostileJsonLoad:
         path = tmp_path / "manifest.json"
         path.write_text("{}", encoding="utf-8")
 
-        verdict = verifier.verify_path(path, registry_path=REGISTRY, root=REPO)
+        verdict = verifier.verify_path(
+            path, registry_path=REGISTRY, root=REPO, trust_anchor_path=_TRUST_ANCHOR
+        )
 
         assert verdict.structurally_valid is False
         assert verdict.errors
@@ -307,7 +356,10 @@ class TestCli:
     ) -> None:
         before = DOCUMENT.read_bytes()
 
-        exit_code = verifier.main(["--manifest", str(MANIFEST)])
+        assert _TRUST_ANCHOR is not None
+        exit_code = verifier.main(
+            ["--manifest", str(MANIFEST), "--trust-anchor", str(_TRUST_ANCHOR)]
+        )
 
         after = DOCUMENT.read_bytes()
         captured = capsys.readouterr()
@@ -321,7 +373,10 @@ class TestCli:
         path = tmp_path / "manifest.json"
         path.write_text('{"schema_version": NaN}', encoding="utf-8")
 
-        exit_code = verifier.main(["--manifest", str(path)])
+        assert _TRUST_ANCHOR is not None
+        exit_code = verifier.main(
+            ["--manifest", str(path), "--trust-anchor", str(_TRUST_ANCHOR)]
+        )
 
         captured = capsys.readouterr()
         assert exit_code == 0
@@ -330,7 +385,9 @@ class TestCli:
 
 class TestTrustedSource:
     def test_verify_trusted_source_is_true_on_canonical_repo(self) -> None:
-        trusted, errors = verifier.verify_trusted_source()
+        trusted, errors = verifier.verify_trusted_source(
+            root=REPO, trust_anchor_path=_TRUST_ANCHOR
+        )
 
         assert trusted is True
         assert errors == ()
@@ -341,29 +398,120 @@ class TestTrustedSource:
         assert verdict.trusted_source is True
         assert verdict.source_errors == ()
 
-    def test_tampered_checker_bytes_are_detected(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        tampered = tmp_path / "check_nerva_program_manifest.py"
+    def test_missing_external_anchor_fails_closed_without_loading_checker(self) -> None:
+        sys.modules.pop("check_nerva_program_manifest", None)
+
+        verdict = verifier.verify_data(
+            _manifest(),
+            registry=_registry(),
+            root=REPO,
+            verify_git=False,
+            trust_anchor_path=None,
+        )
+
+        assert verdict.trusted_source is False
+        assert verdict.structurally_valid is False
+        assert verdict.source_errors
+        assert "check_nerva_program_manifest" not in sys.modules
+
+    def test_candidate_repository_anchor_is_rejected(self, tmp_path: Path) -> None:
+        fake_root = tmp_path / "candidate"
+        scripts = fake_root / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "nerva_trusted_verifier.py").write_bytes(
+            (REPO / "scripts" / "nerva_trusted_verifier.py").read_bytes()
+        )
+        (scripts / "check_nerva_program_manifest.py").write_bytes(
+            (REPO / "scripts" / "check_nerva_program_manifest.py").read_bytes()
+        )
+        local_anchor = fake_root / "trusted-sources.json"
+        local_anchor.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "sources": {
+                        "scripts/nerva_trusted_verifier.py": _source_digest(
+                            scripts / "nerva_trusted_verifier.py"
+                        ),
+                        "scripts/check_nerva_program_manifest.py": _source_digest(
+                            scripts / "check_nerva_program_manifest.py"
+                        ),
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        trusted, errors = verifier.verify_trusted_source(
+            root=fake_root, trust_anchor_path=local_anchor
+        )
+
+        assert trusted is False
+        assert any("outside" in error for error in errors)
+
+    def test_untrusted_checker_bytes_are_never_executed(self, tmp_path: Path) -> None:
+        fake_root = tmp_path / "candidate"
+        scripts = fake_root / "scripts"
+        scripts.mkdir(parents=True)
+        verifier_source = REPO / "scripts" / "nerva_trusted_verifier.py"
+        (scripts / "nerva_trusted_verifier.py").write_bytes(verifier_source.read_bytes())
+        marker = tmp_path / "executed.txt"
+        checker = scripts / "check_nerva_program_manifest.py"
+        checker.write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n",
+            encoding="utf-8",
+        )
+        assert _TRUST_ANCHOR is not None
+        anchor_data = _strict_json(_TRUST_ANCHOR)
+        external_anchor = tmp_path / "external-anchor.json"
+        external_anchor.write_text(json.dumps(anchor_data), encoding="utf-8")
+
+        trusted, errors = verifier.verify_trusted_source(
+            root=fake_root, trust_anchor_path=external_anchor
+        )
+
+        assert trusted is False
+        assert errors
+        assert not marker.exists()
+
+    def test_tampered_checker_bytes_are_detected(self, tmp_path: Path) -> None:
+        fake_root = tmp_path / "candidate"
+        scripts = fake_root / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "nerva_trusted_verifier.py").write_bytes(
+            (REPO / "scripts" / "nerva_trusted_verifier.py").read_bytes()
+        )
+        tampered = scripts / "check_nerva_program_manifest.py"
         tampered.write_text(
             "def validate_manifest(*args, **kwargs):\n    return []\n", encoding="utf-8"
         )
-        monkeypatch.setattr(sys.modules["check_nerva_program_manifest"], "__file__", str(tampered))
 
-        trusted, errors = verifier.verify_trusted_source()
+        trusted, errors = verifier.verify_trusted_source(
+            root=fake_root, trust_anchor_path=_TRUST_ANCHOR
+        )
 
         assert trusted is False
         assert errors
         assert any("sha256" in error or "digest" in error for error in errors)
 
     def test_verify_data_reports_untrusted_source_for_tampered_checker(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path
     ) -> None:
-        tampered = tmp_path / "check_nerva_program_manifest.py"
+        fake_root = tmp_path / "candidate"
+        scripts = fake_root / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "nerva_trusted_verifier.py").write_bytes(
+            (REPO / "scripts" / "nerva_trusted_verifier.py").read_bytes()
+        )
+        tampered = scripts / "check_nerva_program_manifest.py"
         tampered.write_text("# weakened\n", encoding="utf-8")
-        monkeypatch.setattr(sys.modules["check_nerva_program_manifest"], "__file__", str(tampered))
-
-        verdict = _verify()
+        verdict = verifier.verify_data(
+            _manifest(),
+            registry=_registry(),
+            root=fake_root,
+            verify_git=False,
+            trust_anchor_path=_TRUST_ANCHOR,
+        )
 
         assert verdict.trusted_source is False
         assert verdict.source_errors
@@ -420,6 +568,17 @@ class TestNonEnforcingInvariants:
         assert verdict.authority.ultron_remains_sole_action_authority is False
         assert verdict.authority.non_enforcing is False
 
+    def test_missing_sole_ultron_evidence_fails_closed(self) -> None:
+        data = _manifest()
+        del data["authority"]["ultron_remains_sole_action_authority"]
+
+        verdict = _verify(data)
+
+        assert verdict.structurally_valid is False
+        assert verdict.authority is not None
+        assert verdict.authority.ultron_remains_sole_action_authority is False
+        assert verdict.authority.non_enforcing is False
+
 
 class TestRootDiscovery:
     def test_verify_path_discovers_repo_root_from_manifest(self) -> None:
@@ -427,6 +586,7 @@ class TestRootDiscovery:
             MANIFEST,
             document_path=DOCUMENT,
             verify_git=False,
+            trust_anchor_path=_TRUST_ANCHOR,
         )
 
         assert verdict.structurally_valid is True
@@ -436,7 +596,23 @@ class TestRootDiscovery:
         path = tmp_path / "manifest.json"
         path.write_text("{}", encoding="utf-8")
 
-        verdict = verifier.verify_path(path, verify_git=False)
+        verdict = verifier.verify_path(
+            path, verify_git=False, trust_anchor_path=_TRUST_ANCHOR
+        )
 
         assert verdict.structurally_valid is False
         assert verdict.errors
+        assert verdict.trusted_source is False
+        assert verdict.source_errors
+
+    def test_load_failure_without_anchor_cannot_report_trusted_source(self) -> None:
+        verdict = verifier.verify_path(
+            MANIFEST / "missing.json",
+            registry_path=REGISTRY,
+            root=REPO,
+            trust_anchor_path=None,
+        )
+
+        assert verdict.structurally_valid is False
+        assert verdict.trusted_source is False
+        assert verdict.source_errors
