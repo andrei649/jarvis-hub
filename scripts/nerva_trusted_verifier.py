@@ -199,11 +199,21 @@ def _strict_json_data(path: Path) -> Any:
     def reject_constant(value: str) -> None:
         raise ValueError(f"non-finite JSON number: {value}")
 
-    return json.loads(
+    data = json.loads(
         path.read_text(encoding="utf-8"),
         object_pairs_hook=reject_duplicate_keys,
         parse_constant=reject_constant,
     )
+    stack: list[tuple[Any, int]] = [(data, 0)]
+    while stack:
+        value, depth = stack.pop()
+        if depth > 64:
+            raise ValueError("JSON nesting exceeds the structural bound")
+        if isinstance(value, dict):
+            stack.extend((item, depth + 1) for item in value.values())
+        elif isinstance(value, list):
+            stack.extend((item, depth + 1) for item in value)
+    return data
 
 
 def _informational_verdict(
