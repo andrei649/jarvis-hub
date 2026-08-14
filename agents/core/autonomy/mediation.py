@@ -204,6 +204,65 @@ class DetachedHMACSigner:
 
 
 @dataclass(frozen=True, slots=True)
+class MediationHead:
+    """Authenticated latest-head value held outside the rollbackable queue DB."""
+
+    version: int
+    last_sequence: int
+    last_event_hash: str
+    event_count: int
+    signature: str
+
+    def __post_init__(self) -> None:
+        if self.version != SCHEMA_VERSION:
+            raise ValueError("mediation head version is unsupported")
+        _bounded_int(self.last_sequence, "last_sequence")
+        _digest(self.last_event_hash, "last_event_hash")
+        _bounded_int(self.event_count, "event_count")
+        if self.event_count != self.last_sequence:
+            raise ValueError("mediation head count must equal its sequence")
+        _digest(self.signature, "signature")
+
+
+class MonotonicHeadAnchor:
+    """Fail-closed adapter for a trusted external latest-head CAS store.
+
+    The callbacks own durability and monotonicity outside the queue database.
+    Restoring an older SQLite snapshot therefore cannot restore execution
+    authority. Callback failure or malformed state is treated as unavailable.
+    """
+
+    __slots__ = ("_compare_and_swap", "_read")
+
+    def __init__(
+        self,
+        read: Callable[[], MediationHead | None] | None,
+        compare_and_swap: Callable[[MediationHead | None, MediationHead], bool] | None,
+    ) -> None:
+        self._read = read
+        self._compare_and_swap = compare_and_swap
+
+    def read(self) -> MediationHead | None:
+        try:
+            if not callable(self._read):
+                return None
+            value = self._read()
+            return value if isinstance(value, MediationHead) else None
+        except Exception:
+            return None
+
+    def advance(self, expected: MediationHead | None, replacement: MediationHead) -> bool:
+        try:
+            return (
+                callable(self._compare_and_swap)
+                and isinstance(replacement, MediationHead)
+                and self._compare_and_swap(expected, replacement) is True
+            )
+        except Exception:
+            return False
+
+
+@dataclass(frozen=True, slots=True)
 class ReceiptExpectation:
     """The exact proposed task identity a signed receipt must authorize."""
 
@@ -561,8 +620,10 @@ __all__ = [
     "SCHEMA_VERSION",
     "ZERO_HASH",
     "DetachedHMACSigner",
+    "MediationHead",
     "MediationEvent",
     "MediationReceipt",
+    "MonotonicHeadAnchor",
     "ReceiptExpectation",
     "canonical_digest",
     "canonical_json",

@@ -12,6 +12,8 @@ produce exact hostile evidence without broadening Action Kernel authority.
   expiry/revision/substitution/replay rejection, signed event chaining and tamper.
 - [x] Implement frozen v1 receipt/event types and a signer adapter over the existing
   owner-held HMAC primitive.
+- [x] Add a fail-closed adapter for a trusted monotonic latest-head CAS store outside
+  the rollbackable queue database.
 - [x] Prove malformed values and signing failures deny without raising authority.
 
 ## Task 2 — atomic queue persistence and migration
@@ -24,6 +26,10 @@ produce exact hostile evidence without broadening Action Kernel authority.
 - [x] Add additive task columns plus the append-only mediation-event table/indexes.
 - [x] Implement configured `off|enforce|hold` mediation, atomic mediated enqueue,
   CAS worker claim, verified counters and planted-bypass detection.
+- [x] Gate every evidence append/claim on the authenticated external latest head;
+  reject valid signed-prefix rollback, global task/event mismatch and anchor outage.
+- [x] Serialize additive legacy-schema migration across processes with a database
+  write transaction and bounded WAL acquisition retry.
 - [x] Quarantine legacy classified proposed/approved/running rows under enforce/hold.
 
 ## Task 3 — worker and kernel wiring

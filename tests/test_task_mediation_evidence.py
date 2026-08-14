@@ -7,6 +7,7 @@ import hmac
 import sqlite3
 import subprocess
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
@@ -15,6 +16,8 @@ import pytest
 from agents.core.autonomy.mediation import (
     ZERO_HASH,
     DetachedHMACSigner,
+    MediationHead,
+    MonotonicHeadAnchor,
     ReceiptExpectation,
     canonical_digest,
     issue_receipt,
@@ -31,6 +34,32 @@ NOW_MS = 1_786_662_000_000
 RECEIPT_ID = "59cf2075-3397-43d7-8035-185a4ef4c1e7"
 ENQUEUE_ID = "c01a535d-7f1d-474c-a352-f06af437314a"
 REFUSED_ENQUEUE_ID = "f55b8111-2ca4-4dc7-8d43-91fe674c7b5c"
+
+
+class _MemoryHeadStore:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._head: MediationHead | None = None
+
+    def read(self) -> MediationHead | None:
+        with self._lock:
+            return self._head
+
+    def compare_and_swap(self, expected: MediationHead | None, replacement: MediationHead) -> bool:
+        with self._lock:
+            if self._head != expected:
+                return False
+            self._head = replacement
+            return True
+
+
+_HEAD_STORES: dict[str, _MemoryHeadStore] = {}
+
+
+def _head_anchor(path) -> MonotonicHeadAnchor:
+    key = str(path.resolve())
+    store = _HEAD_STORES.setdefault(key, _MemoryHeadStore())
+    return MonotonicHeadAnchor(store.read, store.compare_and_swap)
 
 
 def _mac(payload: bytes) -> str:
@@ -199,6 +228,22 @@ def test_receipt_parsing_and_signer_failures_are_total_and_fail_closed():
     assert not DetachedHMACSigner(None).verify(b"payload", "0" * 64)
 
 
+def test_monotonic_head_anchor_is_exact_and_fail_closed():
+    initial = MediationHead(1, 0, ZERO_HASH, 0, "1" * 64)
+    replacement = MediationHead(1, 1, "2" * 64, 1, "3" * 64)
+    store = _MemoryHeadStore()
+    anchor = MonotonicHeadAnchor(store.read, store.compare_and_swap)
+
+    assert anchor.read() is None
+    assert anchor.advance(None, initial)
+    assert anchor.read() == initial
+    assert not anchor.advance(None, replacement)
+    assert anchor.advance(initial, replacement)
+    assert anchor.read() == replacement
+    assert MonotonicHeadAnchor(lambda: object(), lambda _old, _new: True).read() is None
+    assert not MonotonicHeadAnchor(None, None).advance(None, replacement)
+
+
 def test_signed_event_chain_verifies_and_detects_field_hash_signature_and_link_tamper():
     signer = _signer()
     receipt = _receipt()
@@ -301,10 +346,12 @@ def test_invalid_event_or_signing_failure_returns_none_without_authority():
 
 
 def _queue(tmp_path, *, mode="enforce", signer=None):
+    path = tmp_path / "mediation.db"
     return TaskQueue(
-        db_path=str(tmp_path / "mediation.db"),
+        db_path=str(path),
         mediation_mode=mode,
         mediation_signer=signer or _signer(),
+        mediation_head_anchor=_head_anchor(path),
         mediation_classifier=lambda kind: kind == "filesystem.write",
         mediation_scope="global",
         mediation_policy_revision="policy-17",
@@ -464,6 +511,7 @@ def test_enforce_startup_quarantines_legacy_classified_rows_and_hold_never_claim
         db_path=path,
         mediation_mode="hold",
         mediation_signer=_signer(),
+        mediation_head_anchor=_head_anchor(tmp_path / "mediation.db"),
         mediation_classifier=lambda kind: kind == "filesystem.write",
         mediation_scope="global",
         mediation_policy_revision="policy-17",
@@ -535,10 +583,12 @@ def test_planted_classified_row_is_detected_and_quarantined(tmp_path):
 
 
 def test_classifier_or_signer_failure_refuses_without_creating_authority(tmp_path):
+    classifier_path = tmp_path / "classifier.db"
     broken_classifier = TaskQueue(
-        db_path=str(tmp_path / "classifier.db"),
+        db_path=str(classifier_path),
         mediation_mode="enforce",
         mediation_signer=_signer(),
+        mediation_head_anchor=_head_anchor(classifier_path),
         mediation_classifier=lambda _kind: (_ for _ in ()).throw(RuntimeError("down")),
     ).initialize()
     with pytest.raises(TaskQueueError, match="requires mediation"):
@@ -572,6 +622,7 @@ def test_restart_rejects_live_scope_or_policy_revision_drift(tmp_path, scope, po
         db_path=str(tmp_path / "mediation.db"),
         mediation_mode="enforce",
         mediation_signer=_signer(),
+        mediation_head_anchor=_head_anchor(tmp_path / "mediation.db"),
         mediation_classifier=lambda kind: kind == "filesystem.write",
         mediation_scope=scope,
         mediation_policy_revision=policy_revision,
@@ -586,10 +637,12 @@ def test_restart_rejects_live_scope_or_policy_revision_drift(tmp_path, scope, po
 
 
 def test_unknown_registry_classification_is_fail_closed(tmp_path):
+    path = tmp_path / "unknown.db"
     queue = TaskQueue(
-        db_path=str(tmp_path / "unknown.db"),
+        db_path=str(path),
         mediation_mode="enforce",
         mediation_signer=_signer(),
+        mediation_head_anchor=_head_anchor(path),
         mediation_classifier=lambda _kind: None,
     ).initialize()
 
@@ -676,6 +729,112 @@ def test_corrupt_signed_head_blocks_refusal_append_without_self_healing(tmp_path
 
     assert queue.verified_mediation_stats()["valid"] is False
     assert queue.verified_mediation_stats()["refused_unmediated"] == 0
+
+
+def test_valid_signed_database_prefix_replay_cannot_reclaim_task(tmp_path):
+    queue = _queue(tmp_path)
+    task_id = _enqueue_mediated(queue)
+    queue.transition(task_id, TaskStatus.APPROVED)
+    saved_state = dict(
+        queue._conn.execute("SELECT * FROM task_mediation_state WHERE id=1").fetchone()
+    )
+
+    assert queue.claim_mediated(
+        task_id,
+        execution_id="16cb1ba3-b0c3-4200-9a7c-548472343049",
+    )
+    queue._conn.execute(
+        "UPDATE tasks SET status='approved', mediation_execution_id=NULL WHERE id=?",
+        (task_id,),
+    )
+    queue._conn.execute("DELETE FROM task_mediation_events WHERE outcome='governed'")
+    queue._conn.execute(
+        """UPDATE task_mediation_state
+              SET version=?, last_sequence=?, last_event_hash=?, event_count=?,
+                  integrity_broken=?, signature=?
+            WHERE id=1""",
+        (
+            saved_state["version"],
+            saved_state["last_sequence"],
+            saved_state["last_event_hash"],
+            saved_state["event_count"],
+            saved_state["integrity_broken"],
+            saved_state["signature"],
+        ),
+    )
+    queue._conn.commit()
+
+    assert queue.verified_mediation_stats()["valid"] is False
+    assert (
+        queue.claim_mediated(
+            task_id,
+            execution_id="f02d92f4-bf11-4dba-a583-97717764f0cb",
+        )
+        is None
+    )
+    assert queue.get(task_id).status == "approved"
+
+
+def test_total_database_prefix_rollback_cannot_restore_append_authority(tmp_path):
+    queue = _queue(tmp_path)
+    empty_state = dict(
+        queue._conn.execute("SELECT * FROM task_mediation_state WHERE id=1").fetchone()
+    )
+    _enqueue_mediated(queue)
+    queue._conn.execute("DELETE FROM tasks")
+    queue._conn.execute("DELETE FROM task_mediation_events")
+    queue._conn.execute(
+        """UPDATE task_mediation_state
+              SET version=?, last_sequence=?, last_event_hash=?, event_count=?,
+                  integrity_broken=?, signature=?
+            WHERE id=1""",
+        (
+            empty_state["version"],
+            empty_state["last_sequence"],
+            empty_state["last_event_hash"],
+            empty_state["event_count"],
+            empty_state["integrity_broken"],
+            empty_state["signature"],
+        ),
+    )
+    queue._conn.commit()
+
+    assert queue.verified_mediation_stats()["valid"] is False
+    with pytest.raises(TaskQueueError, match="mediation"):
+        queue.enqueue("ultron", "filesystem.write", "Replay", {})
+    assert queue.verified_mediation_stats()["valid"] is False
+
+
+def test_enforce_mode_without_external_latest_head_anchor_is_fail_closed(tmp_path):
+    queue = TaskQueue(
+        db_path=str(tmp_path / "unanchored.db"),
+        mediation_mode="enforce",
+        mediation_signer=_signer(),
+        mediation_classifier=lambda kind: kind == "filesystem.write",
+        mediation_scope="global",
+        mediation_policy_revision="policy-17",
+        mediation_clock_ms=lambda: NOW_MS,
+    ).initialize()
+
+    assert queue.verified_mediation_stats()["valid"] is False
+    with pytest.raises(TaskQueueError, match="mediation"):
+        _enqueue_mediated(queue)
+
+
+def test_latest_head_cas_failure_rolls_back_task_and_event(tmp_path):
+    queue = _queue(tmp_path)
+    anchored = queue._mediation_head_anchor.read()
+    queue._mediation_head_anchor = MonotonicHeadAnchor(
+        lambda: anchored,
+        lambda _expected, _replacement: False,
+    )
+
+    with pytest.raises(TaskQueueError, match="latest-head anchor"):
+        _enqueue_mediated(queue)
+
+    assert queue.list() == []
+    assert queue.mediation_events() == []
+    assert queue.verified_mediation_stats()["valid"] is True
 
 
 def test_concurrent_new_and_legacy_initialization_is_lock_safe(tmp_path):

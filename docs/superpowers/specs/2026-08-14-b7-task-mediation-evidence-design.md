@@ -37,7 +37,11 @@ B7 measures mediation; it does not widen authority or implement Night Shift.
 
 `agents/core/autonomy/mediation.py` owns canonical serialization, digests, and
 detached HMAC validation. It receives an existing owner-held signing primitive; it
-does not decide policy. A version-1 receipt binds:
+does not decide policy. It also accepts a trusted monotonic latest-head adapter
+whose durable state lives outside the rollbackable queue database. Enforce/hold
+mode cannot bootstrap against a non-empty database without that anchor and fails
+closed whenever the anchor is missing, unavailable, stale, or rejects an exact
+compare-and-swap. A version-1 receipt binds:
 
 - receipt and enqueue UUIDs;
 - agent, kind, title, origin, scope and canonical payload digest;
@@ -50,6 +54,10 @@ enqueue identity/revision and receipt, plus `task_mediation_events`. Events bind
 task/enqueue/receipt/execution identity, outcome, timestamp, previous event hash,
 event hash and HMAC. Required outcomes are `governed`, `refused_unmediated`, and
 `ungoverned_detected`; counters group only events whose chain and signature verify.
+The signed SQLite chain head must also equal the external monotonic head before any
+classified enqueue, refusal append, quarantine append, or claim. Advancing the
+external head occurs before the SQLite commit: a crash can stop availability, but
+cannot restore authority to an older valid database prefix.
 
 `enqueue_mediated()` verifies the receipt and exact proposed fields, then inserts
 the task, receipt binding and enqueue event atomically. Raw `enqueue()` refuses a
@@ -87,13 +95,18 @@ no counter is calculated by subtraction or literal zero.
 ## Failure and concurrency model
 
 - SQLite `BEGIN IMMEDIATE` plus the queue lock serializes insert, claim and event
-  chain updates.
+  chain updates; schema discovery/migration is serialized by the database lock
+  across processes rather than only by an interpreter-local lock.
+- A trusted external latest-head store atomically compares and advances the signed
+  `(version, sequence, event hash, count, signature)` tuple. Whole-file or complete
+  signed-prefix SQLite rollback therefore denies instead of replaying authority.
 - Receipt and event comparison uses constant-time HMAC verification.
 - One enqueue UUID and revision can produce one task; one task/revision can produce
   one worker claim. Retries require a new execution event but cannot authorize a
   different task or payload.
 - Restart reconstruction reads and verifies persisted rows only; process memory is
-  not evidence.
+  not evidence. The external monotonic head is required durable authority state,
+  not a derived counter or candidate database row.
 - Corrupt schemas, malformed JSON, signing-key failure, evidence-write failure and
   classifier failure all deny or hold classified execution.
 
@@ -104,8 +117,11 @@ substitution; post-approval edit; stale revision/expiry; replay; concurrent doub
 claim; restart/retry; legacy approved/running quarantine; event-write rollback;
 kernel off/unbound; raw enqueue and direct-executor bypass; event tampering; planted
 ungoverned rows; real-event counters; hold rollback; and `core.*`/`agents.core.*`
-import order. Adjacent queue/worker/broker/action-auth/lifespan suites, Ruff, security
-gates, status synchronization and exact-head hosted Windows/Linux CI remain required.
+import order. They also cover corrupt and replayed signed heads, total database-prefix
+rollback, external-anchor outage/CAS refusal, orphan reconciliation, and concurrent
+legacy-schema migration across real processes. Adjacent queue/worker/broker/
+action-auth/lifespan suites, Ruff, security gates, status synchronization and
+exact-head hosted Windows/Linux CI remain required.
 
 ## Rollback
 
