@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import pytest
 
+import services.integration_authority.state as state_module
 from services.integration_authority import (
     AcceptanceStateMachine,
     AtomicStateStore,
@@ -147,6 +148,83 @@ def test_non_approved_review_state_is_rejected(
     assert result.accepted is False
     assert result.reason == "review_not_approved"
     assert authority.verdict_for(subject).accepted is False
+
+
+@pytest.mark.parametrize("review_state", ["dismissed", "changes_requested", "commented"])
+def test_later_non_approval_for_same_review_revokes_acceptance(
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+    review_state: str,
+) -> None:
+    authority, store = machine(policy)
+    approved = review(subject)
+    assert authority.process_review(approved).accepted is True
+
+    revoked = authority.process_review(
+        replace(approved, delivery_id="delivery-2", review_state=review_state)
+    )
+
+    assert revoked.accepted is False
+    assert revoked.reason == "review_not_approved"
+    assert store.write_count == 2
+    assert authority.verdict_for(subject).accepted is False
+
+
+def test_unrelated_non_approved_review_does_not_revoke_acceptance(
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+) -> None:
+    authority, _store = machine(policy)
+    assert authority.process_review(review(subject)).accepted is True
+
+    unrelated = replace(
+        review(subject),
+        delivery_id="delivery-2",
+        review_id=502,
+        review_state="dismissed",
+    )
+    assert authority.process_review(unrelated).accepted is False
+
+    assert authority.verdict_for(subject).accepted is True
+
+
+def test_new_review_can_restore_acceptance_after_revocation(
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+) -> None:
+    authority, store = machine(policy)
+    approved = review(subject)
+    assert authority.process_review(approved).accepted is True
+    assert (
+        authority.process_review(
+            replace(approved, delivery_id="delivery-2", review_state="dismissed")
+        ).accepted
+        is False
+    )
+
+    replacement_review = replace(approved, delivery_id="delivery-3", review_id=502)
+    assert authority.process_review(replacement_review).accepted is True
+
+    assert store.write_count == 3
+    assert authority.verdict_for(subject).accepted is True
+
+
+def test_state_capacity_exhaustion_fails_closed_without_another_write(
+    monkeypatch: pytest.MonkeyPatch,
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+) -> None:
+    monkeypatch.setattr(state_module, "_MAX_STATE_RECORDS", 1, raising=False)
+    authority, store = machine(policy)
+    assert authority.process_review(review(subject)).accepted is True
+
+    result = authority.process_review(
+        replace(review(subject), delivery_id="delivery-2", review_id=502)
+    )
+
+    assert result.accepted is False
+    assert result.reason == "state_capacity_exceeded"
+    assert store.write_count == 1
 
 
 @pytest.mark.parametrize(

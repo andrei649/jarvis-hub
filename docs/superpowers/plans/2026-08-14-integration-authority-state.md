@@ -21,6 +21,8 @@ credential, check-publication, or merge capability.
   this library to support a protected App check.
 - No GitHub App/settings/secrets/rulesets, runtime code, status ledgers, or current draft paths.
 - Missing, malformed, unavailable, or concurrently changed external state always denies.
+- Review dismissal/state changes revoke the matching accepted review; state and collections are
+  bounded and fail closed at capacity without candidate-controlled pruning.
 - No third-party dependency.
 
 ---
@@ -108,3 +110,9 @@ credential, check-publication, or merge capability.
   ```powershell
   git commit -m "feat(governance): add external acceptance state core"
   ```
+
+- [x] **Step 10: Close exact-head review revocation and capacity findings**
+
+  Add hostile tests for post-approval dismissal/change/comment events, unrelated-review isolation,
+  fresh-review restoration and capacity exhaustion. Persist immutable revocation records, derive
+  verdicts only from unrevoked acceptances, and bound every state collection.

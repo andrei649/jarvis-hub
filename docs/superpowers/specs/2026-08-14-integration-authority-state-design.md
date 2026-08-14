@@ -56,7 +56,9 @@ Every acceptance binds all of:
 - lowercase 40-hex head SHA.
 
 An acceptance for a previous head is never returned for a new tuple. Old records remain immutable
-history and are logically stale. Candidate-editable prose and labels are absent from the API.
+history and are logically stale. A later authenticated non-approved state for the same review ID
+appends a revocation and removes that review from the current verdict; a new review ID is required
+to restore acceptance. Candidate-editable prose and labels are absent from the API.
 
 ## Components and data flow
 
@@ -75,9 +77,14 @@ missing state.
 3. Check whether the delivery ID was already processed. An identical replay returns the recorded
    result idempotently; conflicting reuse returns `delivery_conflict` without writing.
 4. Validate the exact tuple, review state, and independent reviewer.
-5. Append the delivery result and, only for a valid approval, one acceptance record.
+5. Append the delivery result and either one valid acceptance or a revocation for a previously
+   accepted matching review that is no longer approved.
 6. Compare-and-swap the new state. A concurrent write returns `state_conflict`; it never returns
    acceptance until a retry observes committed state.
+
+Each state collection is capped at 4,096 records. Capacity exhaustion fails closed and requires an
+externally governed archival/rotation operation; candidate events cannot trigger pruning or erase
+immutable history.
 
 `verdict_for()` reads state and returns acceptance only for an exact valid tuple and configured
 repository/base. It fails closed on missing, corrupt, or unavailable state.
@@ -107,8 +114,11 @@ The hostile unit suite proves:
 - an allowlisted distinct reviewer can accept one exact tuple;
 - repository, PR, base ref, base SHA, and head SHA mismatches never inherit acceptance;
 - author, last pusher, owner, unallowlisted reviewer, and non-approved review states are rejected;
+- later dismissal/change/comment state for the same review revokes it, while an unrelated review
+  cannot revoke another review and a fresh review ID can restore acceptance;
 - a head change makes the prior acceptance ineligible;
 - identical delivery replay is idempotent, while conflicting reuse is rejected;
+- capacity-exhausted state fails closed without another write;
 - missing, invalid JSON, duplicate-key, unsupported-schema, malformed-record, unavailable-store,
   and compare-and-swap-conflict cases fail closed.
 

@@ -13,7 +13,8 @@ from hashlib import sha256
 from typing import Any, Protocol
 
 _SCHEMA_VERSION = 1
-_STATE_KEYS = frozenset({"schema_version", "acceptances", "deliveries"})
+_MAX_STATE_RECORDS = 4_096
+_STATE_KEYS = frozenset({"schema_version", "acceptances", "deliveries", "revocations"})
 _SUBJECT_KEYS = frozenset(
     {
         "repository_id",
@@ -27,6 +28,16 @@ _SUBJECT_KEYS = frozenset(
 )
 _ACCEPTANCE_KEYS = frozenset({"delivery_id", "fingerprint", "review_id", "reviewer_id", "subject"})
 _DELIVERY_KEYS = frozenset({"delivery_id", "fingerprint", "accepted", "reason"})
+_REVOCATION_KEYS = frozenset(
+    {
+        "delivery_id",
+        "fingerprint",
+        "review_id",
+        "reviewer_id",
+        "review_state",
+        "subject",
+    }
+)
 _SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 _DELIVERY_PATTERN = re.compile(r"[A-Za-z0-9-]{1,128}\Z")
 _REVIEW_STATE_PATTERN = re.compile(r"[a-z_]{1,32}\Z")
@@ -149,6 +160,7 @@ def empty_state_bytes() -> bytes:
         {
             "acceptances": [],
             "deliveries": [],
+            "revocations": [],
             "schema_version": _SCHEMA_VERSION,
         }
     )
@@ -215,10 +227,18 @@ def _parse_state(raw: bytes, policy: AuthorityPolicy) -> dict[str, Any]:
     state = _require_exact_keys(parsed, _STATE_KEYS)
     if isinstance(state["schema_version"], bool) or state["schema_version"] != _SCHEMA_VERSION:
         raise ValueError("unsupported schema version")
-    if not isinstance(state["acceptances"], list) or not isinstance(state["deliveries"], list):
+    if (
+        not isinstance(state["acceptances"], list)
+        or not isinstance(state["deliveries"], list)
+        or not isinstance(state["revocations"], list)
+    ):
         raise ValueError("state collections must be lists")
+    if any(
+        len(state[key]) > _MAX_STATE_RECORDS for key in ("acceptances", "deliveries", "revocations")
+    ):
+        raise ValueError("state collection exceeds its record bound")
 
-    accepted_subjects: set[tuple[object, ...]] = set()
+    accepted_reviews: set[tuple[object, ...]] = set()
     acceptances_by_delivery: dict[str, dict[str, Any]] = {}
     for value in state["acceptances"]:
         record = _require_exact_keys(value, _ACCEPTANCE_KEYS)
@@ -245,10 +265,14 @@ def _parse_state(raw: bytes, policy: AuthorityPolicy) -> dict[str, Any]:
         )
         if fingerprint != expected_fingerprint:
             raise ValueError("acceptance fingerprint does not match its canonical event")
-        subject_key = tuple(_subject_dict(subject).values())
-        if subject_key in accepted_subjects:
-            raise ValueError("duplicate acceptance tuple")
-        accepted_subjects.add(subject_key)
+        review_key = (
+            *tuple(_subject_dict(subject).values()),
+            record["review_id"],
+            record["reviewer_id"],
+        )
+        if review_key in accepted_reviews:
+            raise ValueError("duplicate acceptance review")
+        accepted_reviews.add(review_key)
         acceptances_by_delivery[delivery_id] = record
 
     delivery_ids: set[str] = set()
@@ -277,6 +301,57 @@ def _parse_state(raw: bytes, policy: AuthorityPolicy) -> dict[str, Any]:
             accepted_delivery_ids.add(delivery_id)
     if accepted_delivery_ids != set(acceptances_by_delivery):
         raise ValueError("acceptance has no matching accepted delivery")
+
+    revoked_reviews: set[tuple[object, ...]] = set()
+    for value in state["revocations"]:
+        record = _require_exact_keys(value, _REVOCATION_KEYS)
+        delivery_id = record["delivery_id"]
+        fingerprint = record["fingerprint"]
+        review_state = record["review_state"]
+        if not isinstance(delivery_id, str) or not _DELIVERY_PATTERN.fullmatch(delivery_id):
+            raise ValueError("invalid revocation delivery ID")
+        if not isinstance(fingerprint, str) or not _FINGERPRINT_PATTERN.fullmatch(fingerprint):
+            raise ValueError("invalid revocation fingerprint")
+        _require_positive_int(record["review_id"], "review_id")
+        _require_positive_int(record["reviewer_id"], "reviewer_id")
+        if (
+            not isinstance(review_state, str)
+            or not _REVIEW_STATE_PATTERN.fullmatch(review_state)
+            or review_state == "approved"
+        ):
+            raise ValueError("invalid revocation review state")
+        subject = _parse_subject(record["subject"])
+        if subject.repository_id != policy.repository_id or subject.base_ref != policy.base_ref:
+            raise ValueError("revocation is outside configured authority")
+        if _reviewer_rejection(policy, subject, record["reviewer_id"]) is not None:
+            raise ValueError("revocation reviewer is not independent")
+        expected_fingerprint = _review_fingerprint(
+            review_id=record["review_id"],
+            review_state=review_state,
+            reviewer_id=record["reviewer_id"],
+            subject=subject,
+        )
+        if fingerprint != expected_fingerprint:
+            raise ValueError("revocation fingerprint does not match its canonical event")
+        delivery = next(
+            (item for item in state["deliveries"] if item["delivery_id"] == delivery_id),
+            None,
+        )
+        if (
+            delivery is None
+            or delivery["accepted"]
+            or delivery["reason"] != "review_not_approved"
+            or delivery["fingerprint"] != fingerprint
+        ):
+            raise ValueError("revocation has no matching rejected delivery")
+        review_key = (
+            *tuple(_subject_dict(subject).values()),
+            record["review_id"],
+            record["reviewer_id"],
+        )
+        if review_key not in accepted_reviews or review_key in revoked_reviews:
+            raise ValueError("revocation has no unique matching acceptance")
+        revoked_reviews.add(review_key)
     return state
 
 
@@ -320,9 +395,17 @@ class AcceptanceStateMachine:
                 idempotent=True,
             )
 
+        if len(state["deliveries"]) >= _MAX_STATE_RECORDS:
+            return AcceptanceResult(False, "state_capacity_exceeded")
+
         result = self._assess_review(event)
         subject_data = _subject_dict(event.subject)
-        already_accepted = any(record["subject"] == subject_data for record in state["acceptances"])
+        revoked_reviews = self._revoked_reviews(state)
+        already_accepted = any(
+            record["subject"] == subject_data
+            and self._acceptance_key(record) not in revoked_reviews
+            for record in state["acceptances"]
+        )
         if result.accepted and already_accepted:
             return AcceptanceResult(True, "accepted", idempotent=True)
         state["deliveries"].append(
@@ -343,6 +426,29 @@ class AcceptanceStateMachine:
                     "subject": subject_data,
                 }
             )
+        elif result.reason == "review_not_approved":
+            matching_acceptance = next(
+                (
+                    record
+                    for record in state["acceptances"]
+                    if record["review_id"] == event.review_id
+                    and record["reviewer_id"] == event.reviewer_id
+                    and record["subject"] == subject_data
+                    and self._acceptance_key(record) not in revoked_reviews
+                ),
+                None,
+            )
+            if matching_acceptance is not None:
+                state["revocations"].append(
+                    {
+                        "delivery_id": event.delivery_id,
+                        "fingerprint": fingerprint,
+                        "review_id": event.review_id,
+                        "reviewer_id": event.reviewer_id,
+                        "review_state": event.review_state,
+                        "subject": subject_data,
+                    }
+                )
 
         try:
             written = self._store.compare_and_swap(raw, _encode_state(state))
@@ -362,7 +468,12 @@ class AcceptanceStateMachine:
             return loaded
         _raw, state = loaded
         expected = _subject_dict(subject)
-        accepted = any(record.get("subject") == expected for record in state["acceptances"])
+        revoked_reviews = self._revoked_reviews(state)
+        accepted = any(
+            record.get("subject") == expected
+            and self._acceptance_key(record) not in revoked_reviews
+            for record in state["acceptances"]
+        )
         return AcceptanceResult(accepted, "accepted" if accepted else "not_accepted")
 
     def _read_state(self) -> tuple[bytes, dict[str, object]] | AcceptanceResult:
@@ -409,3 +520,15 @@ class AcceptanceStateMachine:
             and record["subject"] == expected_subject
             for record in state["acceptances"]
         )
+
+    @staticmethod
+    def _acceptance_key(record: dict[str, Any]) -> tuple[object, ...]:
+        return (
+            *tuple(record["subject"].values()),
+            record["review_id"],
+            record["reviewer_id"],
+        )
+
+    @classmethod
+    def _revoked_reviews(cls, state: dict[str, Any]) -> set[tuple[object, ...]]:
+        return {cls._acceptance_key(record) for record in state["revocations"]}
