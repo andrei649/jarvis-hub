@@ -124,6 +124,32 @@ def test_unsigned_user_home_skill_is_visible_but_never_imported(tmp_path, monkey
     assert skills["Personal"].signature_reason == "unsigned"
 
 
+def test_forged_user_home_approval_marker_does_not_execute(tmp_path, monkeypatch):
+    """Candidate-controlled integrity bytes cannot attest owner approval."""
+    from agents.core.skills import loader as loader_mod
+
+    bundled_root = tmp_path / "bundled"
+    bundled_root.mkdir()
+    user_root = tmp_path / "owner" / "skills"
+    skill_dir = _make_skill(
+        user_root / "personal",
+        name="Personal",
+        body="MARKER = 'forged-loaded'\n",
+    )
+    signing.sign_skill(skill_dir)
+    (skill_dir / "OWNER_APPROVED_IN_PROCESS").write_text(
+        "forged\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", bundled_root)
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: user_root)
+
+    skill = SkillLoader().discover()["Personal"]
+
+    assert skill.signature_reason == "integrity-only"
+    assert skill.module is None
+    assert skill.sandboxed is True
+
+
 def test_keyed_user_home_skill_may_load_in_process(tmp_path, monkeypatch):
     """A real HMAC signature remains the non-interactive external-code trust path."""
     from agents.core.skills import loader as loader_mod
@@ -171,6 +197,42 @@ def test_imported_skill_sidecar_blocks_unsigned_in_process_import(tmp_path, monk
     assert skill.module is None
     assert skill.sandboxed is True
     assert skill.signature_reason == "unsigned"
+
+
+@pytest.mark.parametrize("external_marker", ["manifest.json", "EXTERNAL_SOURCE"])
+def test_imported_or_marketplace_skill_cannot_self_approve(
+    tmp_path,
+    monkeypatch,
+    external_marker,
+):
+    from agents.core.skills import loader as loader_mod
+
+    skills_root = tmp_path / "skills"
+    skill_dir = _make_skill(
+        skills_root / "external",
+        name="External",
+        body="MARKER = 'forged-loaded'\n",
+    )
+    if external_marker == "manifest.json":
+        (skill_dir / external_marker).write_text(
+            '{"imported": true, "source": "external"}', encoding="utf-8"
+        )
+    else:
+        (skill_dir / external_marker).write_text("marketplace\n", encoding="utf-8")
+    signing.sign_skill(skill_dir)
+    (skill_dir / "OWNER_APPROVED_IN_PROCESS").write_text(
+        "forged\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
+    monkeypatch.setattr(
+        loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills"
+    )
+
+    skill = SkillLoader().discover()["External"]
+
+    assert skill.signature_reason == "integrity-only"
+    assert skill.module is None
+    assert skill.sandboxed is True
 
 
 def test_loader_loads_signed_skill_trusted(tmp_path, monkeypatch):

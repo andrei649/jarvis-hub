@@ -22,6 +22,7 @@ from agents.core.automation_contracts import (
 )
 
 from . import signing
+from .approval import SkillApprovalStore
 
 logger = logging.getLogger("jarvis.skills")
 
@@ -33,6 +34,8 @@ from agents.core.paths import app_root as _app_root  # noqa: E402
 
 SKILLS_DIR = _app_root() / "skills"
 EXTERNAL_SOURCE_MARKER = "EXTERNAL_SOURCE"
+# Legacy eligibility marker only. Candidate-controlled bytes inside a skill tree
+# are never consulted as trust evidence (SEC-B8).
 OWNER_APPROVED_MARKER = "OWNER_APPROVED_IN_PROCESS"
 
 
@@ -77,13 +80,14 @@ def _is_external_skill(path: Path) -> bool:
     return isinstance(manifest, dict) and manifest.get("imported") is True
 
 
-def _external_skill_may_import(path: Path, signature_reason: str) -> bool:
+def _external_skill_may_import(
+    path: Path,
+    signature_reason: str,
+    approval_store: SkillApprovalStore,
+) -> bool:
     if not _is_external_skill(path):
         return True
-    owner_approved = (path / OWNER_APPROVED_MARKER).is_file()
-    return signature_reason == "signed" or (
-        owner_approved and signature_reason == "integrity-only"
-    )
+    return signature_reason == "signed" or approval_store.is_approved(path)
 
 
 # Generated command names become both a Python `def` and a `\w+` token in SKILL.md.
@@ -257,11 +261,12 @@ class Skill:
 
 
 class SkillLoader:
-    def __init__(self):
+    def __init__(self, approval_store: SkillApprovalStore | None = None):
         self.skills: dict[str, Skill] = {}
         # H20.5 — optional usage-telemetry sidecar (SkillUsageStore); attached by
         # the orchestrator. None → zero behavior change.
         self._usage = None
+        self._approval_store = approval_store or SkillApprovalStore()
 
     def attach_usage(self, store) -> None:
         """Attach a SkillUsageStore; hooks existing and future skills."""
@@ -327,7 +332,11 @@ class SkillLoader:
         require_signed = signing.require_signed()
 
         py_file = path / "main.py"
-        external_import_allowed = _external_skill_may_import(path, skill.signature_reason)
+        external_import_allowed = _external_skill_may_import(
+            path,
+            skill.signature_reason,
+            self._approval_store,
+        )
         if py_file.exists() and (
             (require_signed and not skill.trusted) or not external_import_allowed
         ):
