@@ -77,8 +77,10 @@ missing state.
 
 1. Read external state. Missing, unavailable, or malformed state returns a non-accepting result.
 2. Parse a closed JSON schema with duplicate-key rejection and canonical serialization.
-3. Check whether the delivery ID was already processed. An identical replay returns the recorded
-   result idempotently; conflicting reuse returns `delivery_conflict` without writing.
+3. Check bounded capacity, then whether the delivery ID was already processed. An identical replay
+   normally returns the recorded result idempotently; once saturated, capacity denial overrides
+   replay results so an old acceptance cannot leak through this API. Conflicting reuse returns
+   `delivery_conflict` without writing.
 4. Validate the exact tuple, trusted monotonic review revision, review state, and independent
    reviewer. Reject stale revisions and all later approvals for a terminally revoked review ID.
 5. Append the delivery result and either one valid acceptance or an immutable terminal revocation.
@@ -122,6 +124,7 @@ The hostile unit suite proves:
 - out-of-order, duplicate, decreasing, conflicting, or post-revocation review revisions deny;
 - a head change makes the prior acceptance ineligible;
 - identical delivery replay is idempotent, while conflicting reuse is rejected;
+- saturated state overrides even identical accepted replay with a non-accepting capacity result;
 - capacity-exhausted state fails closed without another write or a surviving old verdict;
 - missing, invalid JSON, duplicate-key, unsupported-schema, malformed-record, unavailable-store,
   and compare-and-swap-conflict cases fail closed.

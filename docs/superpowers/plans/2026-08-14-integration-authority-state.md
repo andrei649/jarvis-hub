@@ -123,4 +123,5 @@ credential, check-publication, or merge capability.
 
   Bind fingerprints and persisted observations to a trusted monotonic review revision, reject
   delayed/conflicting approvals and terminally revoked review IDs, and deny existing verdicts when
-  the bounded ledger is saturated and cannot record a required revocation.
+  the bounded ledger is saturated and cannot record a required revocation. The revision is a
+  required constructor input; saturated capacity explicitly overrides accepted delivery replay.

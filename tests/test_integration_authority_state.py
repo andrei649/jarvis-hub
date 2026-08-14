@@ -246,6 +246,23 @@ def test_state_capacity_exhaustion_fails_closed_without_another_write(
     assert authority.verdict_for(subject).reason == "state_capacity_exceeded"
 
 
+def test_saturated_state_overrides_identical_delivery_replay(
+    monkeypatch: pytest.MonkeyPatch,
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+) -> None:
+    authority, store = machine(policy)
+    approved = review(subject)
+    assert authority.process_review(approved).accepted is True
+    monkeypatch.setattr(state_module, "_MAX_STATE_RECORDS", 1, raising=False)
+
+    replay = authority.process_review(approved)
+
+    assert replay == state_module.AcceptanceResult(False, "state_capacity_exceeded")
+    assert store.write_count == 1
+    assert authority.verdict_for(subject).accepted is False
+
+
 def test_late_approval_for_revoked_review_is_terminally_rejected(
     policy: AuthorityPolicy,
     subject: PullRequestTuple,
@@ -473,11 +490,23 @@ def test_review_event_rejects_invalid_identity(kwargs: dict[str, object], subjec
         "reviewer_id": REVIEWER_ID,
         "review_state": "approved",
         "subject": subject,
+        "review_revision": 1,
     }
     values.update(kwargs)
 
     with pytest.raises(ValueError):
         ReviewEvent(**values)
+
+
+def test_review_event_requires_trusted_revision(subject: PullRequestTuple) -> None:
+    with pytest.raises(TypeError):
+        ReviewEvent(
+            delivery_id="delivery-1",
+            review_id=501,
+            reviewer_id=REVIEWER_ID,
+            review_state="approved",
+            subject=subject,
+        )
 
 
 def _state_bytes(**updates: object) -> bytes:

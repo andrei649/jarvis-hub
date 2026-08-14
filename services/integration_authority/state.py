@@ -121,7 +121,7 @@ class ReviewEvent:
     reviewer_id: int
     review_state: str
     subject: PullRequestTuple
-    review_revision: int = 1
+    review_revision: int
 
     def __post_init__(self) -> None:
         if not isinstance(self.delivery_id, str) or not _DELIVERY_PATTERN.fullmatch(
