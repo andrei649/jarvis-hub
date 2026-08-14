@@ -9,6 +9,9 @@ import json
 import keyword
 import logging
 import re
+import stat
+import tempfile
+import types
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -58,12 +61,59 @@ def _writable_skills_dir() -> Path:
     return user_dir if user_dir is not None else SKILLS_DIR
 
 
-def _is_external_skill(path: Path) -> bool:
+def _is_link_like(path: Path) -> bool:
+    try:
+        if path.is_symlink():
+            return True
+        is_junction = getattr(path, "is_junction", None)
+        if is_junction and is_junction():
+            return True
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        return bool(reparse and attributes & reparse)
+    except OSError:
+        return True
+
+
+def _crosses_link_boundary(path: Path, root: Path) -> bool:
+    """Treat linked/junction discovery roots and entries as external provenance."""
+    path = Path(path).absolute()
+    root = Path(root).absolute()
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return True
+    current = root
+    if _is_link_like(current):
+        return True
+    for part in relative.parts:
+        current = current / part
+        if _is_link_like(current):
+            return True
+    try:
+        resolved_path = path.resolve()
+        resolved_root = root.resolve()
+    except OSError:
+        return True
+    return resolved_path != resolved_root and resolved_root not in resolved_path.parents
+
+
+def _is_external_skill(path: Path, *, discovery_root: Path | None = None) -> bool:
     """Return whether a skill came from outside the shipped skill tree."""
-    path = path.resolve()
+    lexical_path = Path(path)
+    root = Path(discovery_root) if discovery_root is not None else SKILLS_DIR
+    if _crosses_link_boundary(lexical_path, root):
+        return True
+    try:
+        path = lexical_path.resolve()
+    except OSError:
+        return True
     user_dir = _user_skills_dir()
     if user_dir is not None:
-        user_root = user_dir.resolve()
+        try:
+            user_root = user_dir.resolve()
+        except OSError:
+            return True
         if path == user_root or user_root in path.parents:
             return True
     if (path / EXTERNAL_SOURCE_MARKER).is_file():
@@ -73,21 +123,42 @@ def _is_external_skill(path: Path) -> bool:
     if not sidecar.exists():
         return False
     try:
-        manifest = json.loads(sidecar.read_text(encoding="utf-8"))
+        json.loads(sidecar.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         # An untrusted, malformed provenance sidecar cannot relax the boundary.
         return True
-    return isinstance(manifest, dict) and manifest.get("imported") is True
+    # Bundled skills do not ship sidecars. Importers create this provenance file;
+    # its presence stays external even if candidate-controlled fields are edited.
+    return True
 
 
 def _external_skill_may_import(
     path: Path,
     signature_reason: str,
     approval_store: SkillApprovalStore,
+    snapshot: signing.SkillSourceSnapshot,
 ) -> bool:
-    if not _is_external_skill(path):
-        return True
-    return signature_reason == "signed" or approval_store.is_approved(path)
+    return signature_reason == "signed" or approval_store.approved_snapshot(
+        path,
+        snapshot=snapshot,
+    ) is not None
+
+
+def _materialize_source_snapshot(
+    snapshot: signing.SkillSourceSnapshot,
+) -> tuple[tempfile.TemporaryDirectory, Path]:
+    """Write validated bytes to a private tree retained with the loaded module."""
+    holder = tempfile.TemporaryDirectory(prefix="jarvis-skill-snapshot-")
+    root = Path(holder.name)
+    try:
+        for item in snapshot.files:
+            target = root.joinpath(*Path(item.relative_path).parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(item.content)
+    except Exception:
+        holder.cleanup()
+        raise
+    return holder, root
 
 
 # Generated command names become both a Python `def` and a `\w+` token in SKILL.md.
@@ -289,11 +360,11 @@ class SkillLoader:
         for root in roots:
             for skill_dir in sorted(root.iterdir()):
                 if skill_dir.is_dir():
-                    self._load_skill(skill_dir)
+                    self._load_skill(skill_dir, discovery_root=root)
         logger.info(f"Skills loaded: {list(self.skills.keys())}")
         return self.skills
 
-    def _load_skill(self, path: Path):
+    def _load_skill(self, path: Path, *, discovery_root: Path | None = None):
         # H32.5: acquired packages are signed for integrity but are NEVER trusted
         # for in-process import. Their only execution path is the acquired Docker/
         # WASM runner registered through ToolRPC.
@@ -304,7 +375,19 @@ class SkillLoader:
         if not skill_file.exists():
             return
 
-        manifest = self._parse_manifest(skill_file)
+        external = _is_external_skill(path, discovery_root=discovery_root)
+        snapshot: signing.SkillSourceSnapshot | None = None
+        if external and not (path / "PENDING_REVIEW").exists():
+            try:
+                snapshot = signing.source_snapshot(path)
+            except OSError:
+                logger.warning(
+                    "External skill source snapshot failed closed",
+                    exc_info=True,
+                )
+
+        snapshot_manifest = snapshot.read_bytes("SKILL.md") if snapshot else None
+        manifest = self._parse_manifest(skill_file, source_bytes=snapshot_manifest)
         name = manifest.get("name", path.name)
         skill = Skill(name, path, manifest)
         if self._usage is not None:
@@ -322,22 +405,40 @@ class SkillLoader:
             logger.info("Skill '%s' is PENDING REVIEW — NOT loaded in-process (quarantined)", name)
             return
 
+        if external and snapshot is None:
+            skill.trusted = False
+            skill.sandboxed = True
+            skill.signature_reason = "source-snapshot-invalid"
+            self.skills[name] = skill
+            logger.warning(
+                "External skill '%s' source was not a stable regular-file snapshot — "
+                "module NOT loaded in-process",
+                name,
+            )
+            return
+
         # H12.1 — verify signature (advisory). Unsigned/invalid skills load but
         # are flagged untrusted; when JARVIS_REQUIRE_SIGNED_SKILLS=1 their Python
         # module is not exec'd in-process (sandboxed/flagged instead).
-        skill.trusted, skill.signature_reason = signing.verify_skill(path)
+        skill.trusted, skill.signature_reason = signing.verify_skill(
+            path,
+            snapshot=snapshot,
+        )
         # SEC-B2: raises when enforcement is on with no signing key — a gate that cannot
         # tell an attacker's signature from ours must stop the load rather than wave it
         # through. Deliberately NOT caught here: the operator has to see it.
         require_signed = signing.require_signed()
 
         py_file = path / "main.py"
-        external_import_allowed = _external_skill_may_import(
+        snapshot_main = snapshot.read_bytes("main.py") if snapshot else None
+        py_exists = snapshot_main is not None if external else py_file.exists()
+        external_import_allowed = not external or _external_skill_may_import(
             path,
             skill.signature_reason,
             self._approval_store,
+            snapshot,
         )
-        if py_file.exists() and (
+        if py_exists and (
             (require_signed and not skill.trusted) or not external_import_allowed
         ):
             # Strict mode: refuse to exec untrusted code in-process. The skill is
@@ -357,32 +458,67 @@ class SkillLoader:
                     name,
                     skill.signature_reason,
                 )
-        elif py_file.exists():
+        elif py_exists:
             if not skill.trusted:
                 logger.info(
                     "Skill '%s' is %s — loaded in advisory mode (flagged untrusted)",
                     name, skill.signature_reason,
                 )
             try:
-                spec = importlib.util.spec_from_file_location(f"skill_{name}", py_file)
-                if spec and spec.loader:
+                if external:
+                    module_name = f"skill_{name}"
+                    snapshot_holder, snapshot_root = _materialize_source_snapshot(
+                        snapshot
+                    )
+                    snapshot_py_file = snapshot_root / "main.py"
+                    mod = types.ModuleType(module_name)
+                    mod.__file__ = str(snapshot_py_file)
+                    mod.__package__ = ""
+                    mod.__loader__ = None
+                    mod.__spec__ = importlib.util.spec_from_loader(
+                        module_name,
+                        loader=None,
+                        origin=str(snapshot_py_file),
+                    )
+                    mod.__skill_snapshot__ = snapshot_holder
+                    exec(
+                        compile(snapshot_main, str(snapshot_py_file), "exec"),
+                        mod.__dict__,
+                    )
+                else:
+                    spec = importlib.util.spec_from_file_location(
+                        f"skill_{name}", py_file
+                    )
+                    if not spec or not spec.loader:
+                        raise ImportError(f"no loader for skill module: {name}")
                     mod = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(mod)
-                    skill.module = mod
-                    if hasattr(mod, "register"):
-                        mod.register(skill)
-                    if hasattr(mod, "get_commands"):
-                        for cmd in mod.get_commands():
-                            skill.register_command(cmd, getattr(mod, cmd))
-                    logger.info(f"Loaded skill module: {name}")
+                skill.module = mod
+                if hasattr(mod, "register"):
+                    mod.register(skill)
+                if hasattr(mod, "get_commands"):
+                    for cmd in mod.get_commands():
+                        skill.register_command(cmd, getattr(mod, cmd))
+                logger.info(f"Loaded skill module: {name}")
             except Exception as e:
+                if external:
+                    skill.sandboxed = True
                 logger.warning(f"Failed to load skill module {name}: {e}")
 
         self.skills[name] = skill
         logger.info(f"Loaded skill: {name} v{skill.version}")
 
-    def _parse_manifest(self, path: Path) -> dict:
-        content = path.read_text(encoding="utf-8")
+    def _parse_manifest(
+        self,
+        path: Path,
+        *,
+        source_bytes: bytes | None = None,
+    ) -> dict:
+        content = (
+            source_bytes.decode("utf-8")
+            if source_bytes is not None
+            else path.read_text(encoding="utf-8")
+        )
         default_name = path.parent.name
 
         # SKILL.md comes in two dialects: our own Markdown-heading style

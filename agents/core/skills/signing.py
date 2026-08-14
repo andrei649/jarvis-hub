@@ -2,8 +2,8 @@
 signing.py — Skill signature verification (H12.1, anti-ClawHub).
 
 A skill pack is "signed" by shipping a ``SKILL.sig`` file next to ``SKILL.md``.
-The signature is a deterministic content hash over the skill's source files
-(SKILL.md + main.py), optionally HMAC-keyed when a project signing key is set.
+The signature is a deterministic content hash over every relevant source/artifact
+file in the skill tree, optionally HMAC-keyed when a project signing key is set.
 
 This is **opt-in / advisory by default**: unsigned skills still load, but they
 are flagged ``trusted=False`` so the loader can sandbox them and the HUD can
@@ -22,31 +22,161 @@ import hashlib
 import hmac
 import logging
 import os
+import stat
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("jarvis.skills.signing")
 
-# Files that contribute to a skill's signature, in a stable order.
-_SIGNED_FILES = ("SKILL.md", "main.py")
 SIG_FILENAME = "SKILL.sig"
+# Host-managed control files are not executable skill artifacts and may change
+# as part of approval/install lifecycle. Everything else below the skill root is
+# byte-bound, including nested Python, manifests, prompts, templates and assets.
+_CONTROL_METADATA = frozenset(
+    {
+        SIG_FILENAME,
+        "PENDING_REVIEW",
+        "OWNER_APPROVED_IN_PROCESS",
+        "EXTERNAL_SOURCE",
+    }
+)
+
+
+class SkillSourceSnapshotError(OSError):
+    """The source tree could not be captured as stable regular-file bytes."""
+
+
+@dataclass(frozen=True)
+class SkillSourceFile:
+    relative_path: str
+    kind: str
+    content: bytes
+
+
+@dataclass(frozen=True)
+class SkillSourceSnapshot:
+    """Immutable bytes used for both trust validation and external execution."""
+
+    files: tuple[SkillSourceFile, ...]
+    fingerprint: str
+
+    @property
+    def digest_bytes(self) -> bytes:
+        return bytes.fromhex(self.fingerprint.removeprefix("sha256:"))
+
+    def read_bytes(self, relative_path: str) -> bytes | None:
+        relative_path = Path(relative_path).as_posix()
+        return next(
+            (
+                item.content
+                for item in self.files
+                if item.relative_path == relative_path and item.kind == "file"
+            ),
+            None,
+        )
+
+
+def _is_link_like(path: Path) -> bool:
+    try:
+        if path.is_symlink():
+            return True
+        is_junction = getattr(path, "is_junction", None)
+        if is_junction and is_junction():
+            return True
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        return bool(reparse and attributes & reparse)
+    except OSError:
+        return True
+
+
+def _excluded_source_path(relative_path: Path) -> bool:
+    return len(relative_path.parts) == 1 and relative_path.name in _CONTROL_METADATA
+
+
+def source_snapshot(skill_dir: Path) -> SkillSourceSnapshot:
+    """Capture every relevant regular file by relative path, type and bytes.
+
+    Link-like and non-regular artifacts fail closed. Per-file metadata is checked
+    before and after reading so the returned bytes are the exact validated input,
+    rather than a path that will be reopened later.
+    """
+    root = Path(skill_dir)
+    if _is_link_like(root):
+        raise SkillSourceSnapshotError(f"linked skill root refused: {root}")
+    try:
+        candidates = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+    except OSError as exc:
+        raise SkillSourceSnapshotError(f"cannot enumerate skill source: {root}") from exc
+
+    files: list[SkillSourceFile] = []
+    digest = hashlib.sha256()
+    for path in candidates:
+        relative = path.relative_to(root)
+        if _excluded_source_path(relative):
+            continue
+        if _is_link_like(path):
+            raise SkillSourceSnapshotError(
+                f"linked skill artifact refused: {relative.as_posix()}"
+            )
+        try:
+            before = path.stat(follow_symlinks=False)
+        except OSError as exc:
+            raise SkillSourceSnapshotError(
+                f"cannot stat skill artifact: {relative.as_posix()}"
+            ) from exc
+        if stat.S_ISDIR(before.st_mode):
+            continue
+        if not stat.S_ISREG(before.st_mode):
+            raise SkillSourceSnapshotError(
+                f"non-regular skill artifact refused: {relative.as_posix()}"
+            )
+        try:
+            content = path.read_bytes()
+            after = path.stat(follow_symlinks=False)
+        except OSError as exc:
+            raise SkillSourceSnapshotError(
+                f"cannot read skill artifact: {relative.as_posix()}"
+            ) from exc
+        identity_before = (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+        )
+        identity_after = (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+        )
+        if identity_before != identity_after or len(content) != after.st_size:
+            raise SkillSourceSnapshotError(
+                f"skill artifact changed while reading: {relative.as_posix()}"
+            )
+
+        relative_name = relative.as_posix()
+        kind = "file"
+        digest.update(relative_name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(kind.encode("ascii"))
+        digest.update(b"\0")
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+        files.append(SkillSourceFile(relative_name, kind, content))
+
+    fingerprint = f"sha256:{digest.hexdigest()}"
+    return SkillSourceSnapshot(tuple(files), fingerprint)
 
 
 def _source_digest_bytes(skill_dir: Path) -> bytes:
-    digest = hashlib.sha256()
-    for name in _SIGNED_FILES:
-        path = Path(skill_dir) / name
-        if path.exists():
-            digest.update(name.encode("utf-8"))
-            digest.update(b"\0")
-            digest.update(path.read_bytes())
-            digest.update(b"\0")
-    return digest.digest()
+    return source_snapshot(Path(skill_dir)).digest_bytes
 
 
 def source_fingerprint(skill_dir: Path) -> str:
     """Return a stable byte-binding fingerprint, not an authorship claim."""
-    return f"sha256:{_source_digest_bytes(Path(skill_dir)).hex()}"
+    return source_snapshot(Path(skill_dir)).fingerprint
 
 
 class SkillSigningMisconfigured(RuntimeError):
@@ -58,12 +188,20 @@ def _signing_key() -> Optional[bytes]:
     return key.encode("utf-8") if key else None
 
 
-def compute_digest(skill_dir: Path) -> tuple[str, str]:
+def compute_digest(
+    skill_dir: Path,
+    *,
+    snapshot: SkillSourceSnapshot | None = None,
+) -> tuple[str, str]:
     """Return ``(algo, hexdigest)`` for the skill's source files.
 
     ``algo`` is ``hmac-sha256`` when a signing key is configured, else ``sha256``.
     """
-    content_digest = _source_digest_bytes(Path(skill_dir))
+    content_digest = (
+        snapshot.digest_bytes
+        if snapshot is not None
+        else _source_digest_bytes(Path(skill_dir))
+    )
 
     key = _signing_key()
     if key:
@@ -74,13 +212,18 @@ def compute_digest(skill_dir: Path) -> tuple[str, str]:
 
 def sign_skill(skill_dir: Path) -> str:
     """Write a ``SKILL.sig`` for the skill and return the signature line."""
-    algo, digest = compute_digest(Path(skill_dir))
+    snapshot = source_snapshot(Path(skill_dir))
+    algo, digest = compute_digest(Path(skill_dir), snapshot=snapshot)
     line = f"{algo}:{digest}"
     (Path(skill_dir) / SIG_FILENAME).write_text(line + "\n", encoding="utf-8")
     return line
 
 
-def verify_skill(skill_dir: Path) -> tuple[bool, str]:
+def verify_skill(
+    skill_dir: Path,
+    *,
+    snapshot: SkillSourceSnapshot | None = None,
+) -> tuple[bool, str]:
     """Verify a skill's signature.
 
     Returns ``(trusted, reason)``. ``trusted`` is True only when a ``SKILL.sig``
@@ -98,7 +241,7 @@ def verify_skill(skill_dir: Path) -> tuple[bool, str]:
         return (False, "malformed-signature")
     sig_algo, _, sig_value = raw.partition(":")
 
-    algo, digest = compute_digest(skill_dir)
+    algo, digest = compute_digest(skill_dir, snapshot=snapshot)
     if sig_algo != algo:
         # e.g. sig is hmac but no key configured locally (or vice-versa).
         return (False, "algo-mismatch")

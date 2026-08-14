@@ -1,4 +1,6 @@
 """Tests for skill signature verification + sandboxing (H12.1)."""
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,6 +11,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.skills import signing
+from agents.core.skills.approval import SkillApprovalStore
 from agents.core.skills.loader import SkillLoader
 
 
@@ -20,6 +23,23 @@ def _make_skill(path: Path, name="DemoSkill", body="x = 1\n"):
     )
     (path / "main.py").write_text(body, encoding="utf-8")
     return path
+
+
+def _directory_link(link: Path, target: Path) -> None:
+    if os.name == "nt":
+        result = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            pytest.skip(f"junction creation unavailable: {result.stderr or result.stdout}")
+    else:
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"symlink creation unavailable: {exc}")
 
 
 def test_unsigned_skill_flagged_untrusted(tmp_path):
@@ -68,6 +88,18 @@ def test_hmac_signing_with_key(tmp_path, monkeypatch):
     line = signing.sign_skill(sk)
     assert line.startswith("hmac-sha256:")
     trusted, reason = signing.verify_skill(sk)
+    assert trusted is True and reason == "signed"
+
+
+def test_host_provenance_marker_does_not_break_keyed_signature(tmp_path, monkeypatch):
+    """Marketplace provenance is trusted control metadata, not package source."""
+    monkeypatch.setenv("JARVIS_SKILL_SIGNING_KEY", "project-key")
+    sk = _make_skill(tmp_path / "demo")
+    signing.sign_skill(sk)
+    (sk / "EXTERNAL_SOURCE").write_text("source=marketplace\n", encoding="utf-8")
+
+    trusted, reason = signing.verify_skill(sk)
+
     assert trusted is True and reason == "signed"
 
 
@@ -124,6 +156,38 @@ def test_unsigned_user_home_skill_is_visible_but_never_imported(tmp_path, monkey
     assert skills["Personal"].signature_reason == "unsigned"
 
 
+@pytest.mark.parametrize("linked_root", [True, False], ids=["root", "entry"])
+def test_linked_bundled_discovery_provenance_fails_closed(
+    tmp_path,
+    monkeypatch,
+    linked_root,
+):
+    """A link or junction cannot turn outside bytes into bundled code."""
+    from agents.core.skills import loader as loader_mod
+
+    outside_root = tmp_path / "outside"
+    _make_skill(
+        outside_root / "linked",
+        name="Linked",
+        body="MARKER = 'outside-code-executed'\n",
+    )
+    bundled_root = tmp_path / "bundled"
+    if linked_root:
+        _directory_link(bundled_root, outside_root)
+    else:
+        bundled_root.mkdir()
+        _directory_link(bundled_root / "linked", outside_root / "linked")
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", bundled_root)
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: None)
+
+    skill = SkillLoader(
+        approval_store=SkillApprovalStore(tmp_path / "private" / "approvals.json")
+    ).discover()["Linked"]
+
+    assert skill.module is None
+    assert skill.sandboxed is True
+
+
 def test_forged_user_home_approval_marker_does_not_execute(tmp_path, monkeypatch):
     """Candidate-controlled integrity bytes cannot attest owner approval."""
     from agents.core.skills import loader as loader_mod
@@ -172,6 +236,114 @@ def test_keyed_user_home_skill_may_load_in_process(tmp_path, monkeypatch):
     assert skill.signature_reason == "signed"
     assert skill.sandboxed is False
     assert skill.module is not None
+
+
+@pytest.mark.parametrize("trust_path", ["approval", "keyed-signature"])
+def test_external_execution_uses_validated_source_snapshot(
+    tmp_path,
+    monkeypatch,
+    trust_path,
+):
+    """Changing disk after the trust decision cannot change executed bytes."""
+    from agents.core.skills import loader as loader_mod
+
+    bundled_root = tmp_path / "bundled"
+    bundled_root.mkdir()
+    user_root = tmp_path / "owner" / "skills"
+    marker = tmp_path / "executed.txt"
+    approved_body = (
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('approved', encoding='utf-8')\n"
+    )
+    attacker_body = (
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('attacker', encoding='utf-8')\n"
+    )
+    skill_dir = _make_skill(
+        user_root / "personal",
+        name="Personal",
+        body=approved_body,
+    )
+    store = SkillApprovalStore(tmp_path / "private" / "approvals.json")
+    if trust_path == "approval":
+        store.approve(skill_dir)
+    else:
+        monkeypatch.setenv("JARVIS_SKILL_SIGNING_KEY", "project-key")
+        signing.sign_skill(skill_dir)
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", bundled_root)
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: user_root)
+    original_spec = loader_mod.importlib.util.spec_from_file_location
+
+    def swap_before_disk_loader(*args, **kwargs):
+        (skill_dir / "main.py").write_text(attacker_body, encoding="utf-8")
+        return original_spec(*args, **kwargs)
+
+    monkeypatch.setattr(
+        loader_mod.importlib.util,
+        "spec_from_file_location",
+        swap_before_disk_loader,
+    )
+
+    skill = SkillLoader(approval_store=store).discover()["Personal"]
+
+    assert skill.module is not None
+    assert marker.read_text(encoding="utf-8") == "approved"
+
+
+@pytest.mark.parametrize("trust_path", ["approval", "keyed-signature"])
+def test_external_execution_reads_artifacts_from_validated_snapshot(
+    tmp_path,
+    monkeypatch,
+    trust_path,
+):
+    """Relative artifact reads cannot reopen swapped candidate-controlled bytes."""
+    from agents.core.skills import loader as loader_mod
+
+    bundled_root = tmp_path / "bundled"
+    bundled_root.mkdir()
+    user_root = tmp_path / "owner" / "skills"
+    marker = tmp_path / "artifact-result.txt"
+    body = (
+        "from pathlib import Path\n"
+        "payload = Path(__file__).with_name('payload.txt').read_text(encoding='utf-8')\n"
+        f"Path({str(marker)!r}).write_text(payload, encoding='utf-8')\n"
+    )
+    skill_dir = _make_skill(user_root / "personal", name="Personal", body=body)
+    payload = skill_dir / "payload.txt"
+    payload.write_text("approved", encoding="utf-8")
+    store = SkillApprovalStore(tmp_path / "private" / "approvals.json")
+
+    def mutate_source() -> None:
+        payload.write_text("attacker", encoding="utf-8")
+
+    if trust_path == "approval":
+        store.approve(skill_dir)
+        approved_snapshot = store.approved_snapshot
+
+        def approve_then_mutate(*args, **kwargs):
+            result = approved_snapshot(*args, **kwargs)
+            mutate_source()
+            return result
+
+        monkeypatch.setattr(store, "approved_snapshot", approve_then_mutate)
+    else:
+        monkeypatch.setenv("JARVIS_SKILL_SIGNING_KEY", "project-key")
+        signing.sign_skill(skill_dir)
+        verify_skill = signing.verify_skill
+
+        def verify_then_mutate(*args, **kwargs):
+            result = verify_skill(*args, **kwargs)
+            mutate_source()
+            return result
+
+        monkeypatch.setattr(signing, "verify_skill", verify_then_mutate)
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", bundled_root)
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: user_root)
+
+    skill = SkillLoader(approval_store=store).discover()["Personal"]
+
+    assert skill.module is not None
+    assert marker.read_text(encoding="utf-8") == "approved"
 
 
 def test_imported_skill_sidecar_blocks_unsigned_in_process_import(tmp_path, monkeypatch):
