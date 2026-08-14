@@ -23,6 +23,8 @@ credential, check-publication, or merge capability.
 - Missing, malformed, unavailable, or concurrently changed external state always denies.
 - Review dismissal/state changes revoke the matching accepted review; state and collections are
   bounded and fail closed at capacity without candidate-controlled pruning.
+- Review revisions come from trusted external GitHub/ledger state, advance monotonically for an
+  exact review tuple, and make revocation terminal for that review ID.
 - No third-party dependency.
 
 ---
@@ -116,3 +118,9 @@ credential, check-publication, or merge capability.
   Add hostile tests for post-approval dismissal/change/comment events, unrelated-review isolation,
   fresh-review restoration and capacity exhaustion. Persist immutable revocation records, derive
   verdicts only from unrevoked acceptances, and bound every state collection.
+
+- [x] **Step 11: Close hostile ordering and saturated-state authority findings**
+
+  Bind fingerprints and persisted observations to a trusted monotonic review revision, reject
+  delayed/conflicting approvals and terminally revoked review IDs, and deny existing verdicts when
+  the bounded ledger is saturated and cannot record a required revocation.

@@ -56,9 +56,12 @@ Every acceptance binds all of:
 - lowercase 40-hex head SHA.
 
 An acceptance for a previous head is never returned for a new tuple. Old records remain immutable
-history and are logically stale. A later authenticated non-approved state for the same review ID
-appends a revocation and removes that review from the current verdict; a new review ID is required
-to restore acceptance. Candidate-editable prose and labels are absent from the API.
+history and are logically stale. Every event carries a trusted positive `review_revision` obtained
+by the future external adapter from GitHub or its own authenticated monotonic ledger, never from
+candidate-controlled ordering. A later authenticated non-approved state for the same review ID
+appends a terminal revocation and removes that review from the current verdict; stale or conflicting
+revisions reject, and a new review ID is required to restore acceptance. Candidate-editable prose
+and labels are absent from the API.
 
 ## Components and data flow
 
@@ -76,15 +79,15 @@ missing state.
 2. Parse a closed JSON schema with duplicate-key rejection and canonical serialization.
 3. Check whether the delivery ID was already processed. An identical replay returns the recorded
    result idempotently; conflicting reuse returns `delivery_conflict` without writing.
-4. Validate the exact tuple, review state, and independent reviewer.
-5. Append the delivery result and either one valid acceptance or a revocation for a previously
-   accepted matching review that is no longer approved.
+4. Validate the exact tuple, trusted monotonic review revision, review state, and independent
+   reviewer. Reject stale revisions and all later approvals for a terminally revoked review ID.
+5. Append the delivery result and either one valid acceptance or an immutable terminal revocation.
 6. Compare-and-swap the new state. A concurrent write returns `state_conflict`; it never returns
    acceptance until a retry observes committed state.
 
-Each state collection is capped at 4,096 records. Capacity exhaustion fails closed and requires an
-externally governed archival/rotation operation; candidate events cannot trigger pruning or erase
-immutable history.
+Each state collection is capped at 4,096 records. Capacity exhaustion invalidates existing verdicts
+as well as rejecting writes, and requires an externally governed archival/rotation operation;
+candidate events cannot trigger pruning or erase immutable history.
 
 `verdict_for()` reads state and returns acceptance only for an exact valid tuple and configured
 repository/base. It fails closed on missing, corrupt, or unavailable state.
@@ -116,9 +119,10 @@ The hostile unit suite proves:
 - author, last pusher, owner, unallowlisted reviewer, and non-approved review states are rejected;
 - later dismissal/change/comment state for the same review revokes it, while an unrelated review
   cannot revoke another review and a fresh review ID can restore acceptance;
+- out-of-order, duplicate, decreasing, conflicting, or post-revocation review revisions deny;
 - a head change makes the prior acceptance ineligible;
 - identical delivery replay is idempotent, while conflicting reuse is rejected;
-- capacity-exhausted state fails closed without another write;
+- capacity-exhausted state fails closed without another write or a surviving old verdict;
 - missing, invalid JSON, duplicate-key, unsupported-schema, malformed-record, unavailable-store,
   and compare-and-swap-conflict cases fail closed.
 

@@ -90,6 +90,7 @@ def review(subject: PullRequestTuple, reviewer_id: int = REVIEWER_ID) -> ReviewE
         reviewer_id=reviewer_id,
         review_state="approved",
         subject=subject,
+        review_revision=1,
     )
 
 
@@ -161,7 +162,12 @@ def test_later_non_approval_for_same_review_revokes_acceptance(
     assert authority.process_review(approved).accepted is True
 
     revoked = authority.process_review(
-        replace(approved, delivery_id="delivery-2", review_state=review_state)
+        replace(
+            approved,
+            delivery_id="delivery-2",
+            review_state=review_state,
+            review_revision=2,
+        )
     )
 
     assert revoked.accepted is False
@@ -182,6 +188,7 @@ def test_unrelated_non_approved_review_does_not_revoke_acceptance(
         delivery_id="delivery-2",
         review_id=502,
         review_state="dismissed",
+        review_revision=2,
     )
     assert authority.process_review(unrelated).accepted is False
 
@@ -197,7 +204,12 @@ def test_new_review_can_restore_acceptance_after_revocation(
     assert authority.process_review(approved).accepted is True
     assert (
         authority.process_review(
-            replace(approved, delivery_id="delivery-2", review_state="dismissed")
+            replace(
+                approved,
+                delivery_id="delivery-2",
+                review_state="dismissed",
+                review_revision=2,
+            )
         ).accepted
         is False
     )
@@ -214,17 +226,96 @@ def test_state_capacity_exhaustion_fails_closed_without_another_write(
     policy: AuthorityPolicy,
     subject: PullRequestTuple,
 ) -> None:
-    monkeypatch.setattr(state_module, "_MAX_STATE_RECORDS", 1, raising=False)
     authority, store = machine(policy)
     assert authority.process_review(review(subject)).accepted is True
+    monkeypatch.setattr(state_module, "_MAX_STATE_RECORDS", 1, raising=False)
 
     result = authority.process_review(
-        replace(review(subject), delivery_id="delivery-2", review_id=502)
+        replace(
+            review(subject),
+            delivery_id="delivery-2",
+            review_state="dismissed",
+            review_revision=2,
+        )
     )
 
     assert result.accepted is False
     assert result.reason == "state_capacity_exceeded"
     assert store.write_count == 1
+    assert authority.verdict_for(subject).accepted is False
+    assert authority.verdict_for(subject).reason == "state_capacity_exceeded"
+
+
+def test_late_approval_for_revoked_review_is_terminally_rejected(
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+) -> None:
+    authority, store = machine(policy)
+    approved = review(subject)
+    assert authority.process_review(approved).accepted is True
+    assert (
+        authority.process_review(
+            replace(
+                approved,
+                delivery_id="delivery-2",
+                review_state="dismissed",
+                review_revision=3,
+            )
+        ).accepted
+        is False
+    )
+
+    late = authority.process_review(replace(approved, delivery_id="delivery-3", review_revision=4))
+
+    assert late == state_module.AcceptanceResult(False, "review_superseded")
+    assert store.write_count == 2
+    assert authority.verdict_for(subject).accepted is False
+
+
+def test_out_of_order_approval_after_newer_dismissal_is_rejected(
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+) -> None:
+    authority, store = machine(policy)
+    dismissed = replace(
+        review(subject),
+        delivery_id="delivery-2",
+        review_state="dismissed",
+        review_revision=3,
+    )
+    assert authority.process_review(dismissed).accepted is False
+
+    delayed = authority.process_review(review(subject))
+
+    assert delayed == state_module.AcceptanceResult(False, "review_superseded")
+    assert store.write_count == 1
+    assert authority.verdict_for(subject).accepted is False
+
+
+def test_new_review_id_can_restore_after_terminal_revocation(
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+) -> None:
+    authority, _store = machine(policy)
+    approved = review(subject)
+    authority.process_review(approved)
+    authority.process_review(
+        replace(
+            approved,
+            delivery_id="delivery-2",
+            review_state="dismissed",
+            review_revision=2,
+        )
+    )
+
+    replacement = replace(
+        approved,
+        delivery_id="delivery-3",
+        review_id=502,
+        review_revision=1,
+    )
+    assert authority.process_review(replacement).accepted is True
+    assert authority.verdict_for(subject).accepted is True
 
 
 @pytest.mark.parametrize(
@@ -371,6 +462,8 @@ def test_policy_rejects_invalid_external_identity(kwargs: dict[str, object]) -> 
         {"review_id": True},
         {"reviewer_id": 0},
         {"review_state": "approved\nforged"},
+        {"review_revision": True},
+        {"review_revision": 0},
     ],
 )
 def test_review_event_rejects_invalid_identity(kwargs: dict[str, object], subject) -> None:
@@ -568,3 +661,71 @@ def test_acceptance_without_matching_delivery_is_corrupt(
 
     assert verdict.accepted is False
     assert verdict.reason == "state_corrupt"
+
+
+def test_persisted_non_monotonic_revocation_revision_is_corrupt(
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+) -> None:
+    authority, store = machine(policy)
+    approved = review(subject)
+    authority.process_review(approved)
+    dismissed = replace(
+        approved,
+        delivery_id="delivery-2",
+        review_state="dismissed",
+        review_revision=2,
+    )
+    authority.process_review(dismissed)
+    state = json.loads(store.value)
+    fingerprint = state_module._review_fingerprint(
+        review_id=dismissed.review_id,
+        review_revision=1,
+        review_state=dismissed.review_state,
+        reviewer_id=dismissed.reviewer_id,
+        subject=dismissed.subject,
+    )
+    state["revocations"][0]["review_revision"] = 1
+    state["revocations"][0]["fingerprint"] = fingerprint
+    state["deliveries"][1]["fingerprint"] = fingerprint
+    store.value = _encoded_state(state)
+
+    assert authority.verdict_for(subject).reason == "state_corrupt"
+
+
+def test_persisted_conflicting_same_revision_observation_is_corrupt(
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+) -> None:
+    authority, store = machine(policy)
+    dismissed = replace(
+        review(subject),
+        review_state="dismissed",
+        review_revision=3,
+    )
+    authority.process_review(dismissed)
+    state = json.loads(store.value)
+    conflicting = replace(
+        dismissed,
+        delivery_id="delivery-2",
+        review_state="changes_requested",
+    )
+    fingerprint = state_module._event_fingerprint(conflicting)
+    record = dict(state["revocations"][0])
+    record.update(
+        delivery_id=conflicting.delivery_id,
+        fingerprint=fingerprint,
+        review_state=conflicting.review_state,
+    )
+    state["revocations"].append(record)
+    state["deliveries"].append(
+        {
+            "delivery_id": conflicting.delivery_id,
+            "fingerprint": fingerprint,
+            "accepted": False,
+            "reason": "review_not_approved",
+        }
+    )
+    store.value = _encoded_state(state)
+
+    assert authority.verdict_for(subject).reason == "state_corrupt"
