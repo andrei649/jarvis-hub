@@ -102,8 +102,9 @@ no counter is calculated by subtraction or literal zero.
   signed-prefix SQLite rollback therefore denies instead of replaying authority.
 - Receipt and event comparison uses constant-time HMAC verification.
 - One enqueue UUID and revision can produce one task; one task/revision can produce
-  one worker claim. Retries require a new execution event but cannot authorize a
-  different task or payload.
+  one worker claim. A failed mediated execution is terminal in v1; retry requires a
+  new kernel decision and enqueue revision, never reuse of the prior stamp for a
+  different execution, task or payload.
 - Restart reconstruction reads and verifies persisted rows only; process memory is
   not evidence. The external monotonic head is required durable authority state,
   not a derived counter or candidate database row.

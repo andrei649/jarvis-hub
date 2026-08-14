@@ -51,6 +51,22 @@ MAX_ATTEMPTS = 3
 _DATABASE_INIT_LOCK = threading.Lock()
 
 
+def _canonical_mediation_classification(kind: str) -> bool | None:
+    """Project the canonical Action Kernel registry into the persisted-task universe."""
+
+    try:
+        from agents.core.kernel.registry import Mediation, classify
+
+        mediation = classify(kind)
+        if mediation is Mediation.KERNEL:
+            return True
+        if mediation is Mediation.INTENTIONALLY_DIRECT:
+            return False
+    except Exception:
+        logger.warning("canonical mediation classification failed closed", exc_info=True)
+    return None
+
+
 class TaskStatus(str, Enum):
     PROPOSED = "proposed"
     APPROVED = "approved"
@@ -166,7 +182,7 @@ class TaskQueue:
         self.mediation_mode = mode
         self._mediation_signer = mediation_signer or DetachedHMACSigner(None)
         self._mediation_head_anchor = mediation_head_anchor or MonotonicHeadAnchor(None, None)
-        self._mediation_classifier = mediation_classifier
+        self._mediation_classifier = mediation_classifier or _canonical_mediation_classification
         self._mediation_scope = str(mediation_scope or "").strip()
         self._mediation_policy_revision = str(mediation_policy_revision or "").strip()
         self._mediation_clock_ms = mediation_clock_ms or (lambda: int(time.time() * 1000))
@@ -686,6 +702,46 @@ class TaskQueue:
                 counters[outcome] = int(counters[outcome]) + 1
         return counters
 
+    def classify_mediation(self, kind: str) -> bool | None:
+        """Return this queue's trusted classification result for *kind*."""
+
+        return self._classification(kind)
+
+    @property
+    def mediation_policy_revision(self) -> str:
+        return self._mediation_policy_revision
+
+    def _scope_allowed(self, scope: str) -> bool:
+        return self._mediation_scope == "*" or scope == self._mediation_scope
+
+    def record_mediation_refusal(self, kind: str) -> bool:
+        """Persist one real refused-classified event without creating a task."""
+
+        if self.mediation_mode not in {"enforce", "hold"}:
+            return False
+        if self._classification(kind) is False:
+            return False
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                self._append_mediation_event_locked(
+                    outcome="refused_unmediated",
+                    task_id=0,
+                    enqueue_id=str(uuid.uuid4()),
+                    receipt=None,
+                )
+                self._conn.commit()
+                return True
+            except Exception:
+                self._conn.rollback()
+                try:
+                    self._conn.execute("BEGIN IMMEDIATE")
+                    self._mark_mediation_integrity_broken_locked()
+                    self._conn.commit()
+                except Exception:
+                    self._conn.rollback()
+                return False
+
     # ── writes ────────────────────────────────────────────────────
     def enqueue(
         self,
@@ -703,30 +759,12 @@ class TaskQueue:
             raise ValueError("attention mode is invalid")
         classification = self._classification(kind)
         if self.mediation_mode in {"enforce", "hold"} and classification is not False:
-            enqueue_id = str(uuid.uuid4())
             message = (
                 "mediation hold refuses classified enqueue"
                 if self.mediation_mode == "hold"
                 else "classified task requires mediation"
             )
-            with self._lock:
-                try:
-                    self._conn.execute("BEGIN IMMEDIATE")
-                    self._append_mediation_event_locked(
-                        outcome="refused_unmediated",
-                        task_id=0,
-                        enqueue_id=enqueue_id,
-                        receipt=None,
-                    )
-                    self._conn.commit()
-                except Exception:
-                    self._conn.rollback()
-                    try:
-                        self._conn.execute("BEGIN IMMEDIATE")
-                        self._mark_mediation_integrity_broken_locked()
-                        self._conn.commit()
-                    except Exception:
-                        self._conn.rollback()
+            self.record_mediation_refusal(kind)
             raise TaskQueueError(message)
         now = _now()
         with self._lock:
@@ -759,6 +797,7 @@ class TaskQueue:
         payload: dict | None = None,
         *,
         receipt: MediationReceipt | Mapping[str, object],
+        scope: str | None = None,
         autonomy_level: str = "ask",
         origin: str = "generated",
         attention_mode: str = "interrupt",
@@ -778,14 +817,20 @@ class TaskQueue:
                 if isinstance(receipt, MediationReceipt)
                 else MediationReceipt.from_dict(receipt)
             )
-            body = payload or {}
+            # Detach exact bounded task bytes before verification so a caller that
+            # retains and mutates its input dict cannot race the receipt check versus
+            # the later SQLite serialization.
+            body = json.loads(canonical_json(payload or {}).decode("utf-8"))
+            authority_scope = self._mediation_scope if scope is None else str(scope)
+            if not self._scope_allowed(authority_scope):
+                raise TaskQueueError("invalid mediation receipt")
             expectation = ReceiptExpectation(
                 enqueue_id=sealed.enqueue_id,
                 agent=agent,
                 kind=kind,
                 title=title,
                 origin=origin,
-                scope=self._mediation_scope,
+                scope=authority_scope,
                 payload=body,
                 policy_revision=self._mediation_policy_revision,
                 enqueue_revision=sealed.enqueue_revision,
@@ -802,7 +847,7 @@ class TaskQueue:
                 kind=kind,
                 title=title,
                 origin=origin,
-                scope=self._mediation_scope,
+                scope=authority_scope,
                 payload=body,
                 policy_revision=self._mediation_policy_revision,
                 enqueue_revision=sealed.enqueue_revision,
@@ -852,7 +897,7 @@ class TaskQueue:
                         origin,
                         sealed.enqueue_id,
                         sealed.enqueue_revision,
-                        self._mediation_scope,
+                        authority_scope,
                         self._mediation_policy_revision,
                         receipt_json,
                         task_sha256,
@@ -977,7 +1022,7 @@ class TaskQueue:
                     valid = (
                         row["mediation_execution_id"] is None
                         and int(row["risk_tier"]) == receipt.tier
-                        and expectation.scope == self._mediation_scope
+                        and self._scope_allowed(expectation.scope)
                         and expectation.policy_revision == self._mediation_policy_revision
                         and authorized is not None
                         and current_sha256 == row["mediation_task_sha256"]
@@ -1050,7 +1095,7 @@ class TaskQueue:
                         ).fetchone()
                         valid = (
                             int(row["risk_tier"]) == receipt.tier
-                            and expectation.scope == self._mediation_scope
+                            and self._scope_allowed(expectation.scope)
                             and expectation.policy_revision == self._mediation_policy_revision
                             and current_sha256 == row["mediation_task_sha256"]
                             and authorized is not None

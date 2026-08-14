@@ -35,14 +35,16 @@ produce exact hostile evidence without broadening Action Kernel authority.
 ## Task 3 — worker and kernel wiring
 
 **Files:** `agents/core/autonomy/worker.py`,
-`agents/core/autonomy_coordinator.py`, `agents/core/kernel/binding.py`, tests
+`agents/core/autonomy/{queue,executor}.py`, `agents/core/autonomy_coordinator.py`,
+`agents/core/kernel/binding.py`, `agents/core/security/anchor.py`,
+`agents/core/orchestrator.py`, tests
 
-- [ ] Red tests for kernel `DENY|QUEUE|GRANT`, missing/disabled/failing authority,
+- [x] Red tests for kernel `DENY|QUEUE|GRANT`, missing/disabled/failing authority,
   human approval, edit requiring a new revision, retry, hold and direct execution.
-- [ ] Bind the existing kernel plus signer to the worker after coordinator startup.
-- [ ] Route classified `govern_enqueue()`/`submit()` through sealed mediated enqueue.
-- [ ] Route classified `tick()` through atomic validated claim before executor call.
-- [ ] Keep mode `off` byte-compatible and preserve policy/taint/kill-switch floors.
+- [x] Bind the existing kernel plus signer to the worker after coordinator startup.
+- [x] Route classified `govern_enqueue()`/`submit()` through sealed mediated enqueue.
+- [x] Route classified `tick()` through atomic validated claim before executor call.
+- [x] Keep mode `off` byte-compatible and preserve policy/taint/kill-switch floors.
 
 ## Task 4 — canonical authority identity
 

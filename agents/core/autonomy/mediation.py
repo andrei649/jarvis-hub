@@ -214,7 +214,7 @@ class MediationHead:
     signature: str
 
     def __post_init__(self) -> None:
-        if self.version != SCHEMA_VERSION:
+        if isinstance(self.version, bool) or self.version != SCHEMA_VERSION:
             raise ValueError("mediation head version is unsupported")
         _bounded_int(self.last_sequence, "last_sequence")
         _digest(self.last_event_hash, "last_event_hash")

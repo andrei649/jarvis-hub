@@ -22,9 +22,13 @@ Handler = Callable[[object], Awaitable[dict]]
 
 
 class TaskExecutor:
-    def __init__(self, fallback: Optional[Handler] = None,
-                 max_wall_seconds: Optional[float] = None,
-                 budget_ledger=None):
+    def __init__(
+        self,
+        fallback: Optional[Handler] = None,
+        max_wall_seconds: Optional[float] = None,
+        budget_ledger=None,
+        execution_guard=None,
+    ):
         self._handlers: dict[str, Handler] = {}
         self.fallback = fallback
         # K3 (OWASP unbounded-consumption): a per-task wall-time budget. None = unbounded
@@ -32,6 +36,7 @@ class TaskExecutor:
         # worker. A task that overruns is cancelled and returns a clean failed result.
         self.max_wall_seconds = max_wall_seconds
         self.budget_ledger = budget_ledger
+        self.execution_guard = execution_guard
 
     def register(self, prefix: str, handler: Handler) -> "TaskExecutor":
         """Register a handler for any task kind starting with `prefix`."""
@@ -48,6 +53,16 @@ class TaskExecutor:
         return self._handlers[best] if best is not None else self.fallback
 
     async def execute(self, task) -> dict:
+        if self.execution_guard is not None:
+            try:
+                allowed = self.execution_guard(task) is True
+            except Exception:
+                allowed = False
+            if not allowed:
+                return {
+                    "status": "refused",
+                    "reason": "mediation_execution_context_required",
+                }
         handler = self.resolve(getattr(task, "kind", ""))
         if handler is None:
             return {"status": "noop", "note": f"no handler for kind={getattr(task, 'kind', '?')}"}
@@ -55,10 +70,16 @@ class TaskExecutor:
             try:
                 result = await asyncio.wait_for(handler(task), timeout=self.max_wall_seconds)
             except TimeoutError:
-                logger.warning("task wall-time budget exceeded (kind=%s, %.0fs)",
-                               getattr(task, "kind", "?"), self.max_wall_seconds)
-                return {"status": "failed", "reason": "wall_time_budget_exceeded",
-                        "budget_seconds": self.max_wall_seconds}
+                logger.warning(
+                    "task wall-time budget exceeded (kind=%s, %.0fs)",
+                    getattr(task, "kind", "?"),
+                    self.max_wall_seconds,
+                )
+                return {
+                    "status": "failed",
+                    "reason": "wall_time_budget_exceeded",
+                    "budget_seconds": self.max_wall_seconds,
+                }
         else:
             result = await handler(task)
         result = result if isinstance(result, dict) else {"status": "ok", "output": result}

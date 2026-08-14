@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import sqlite3
@@ -10,9 +11,12 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
+import agents.core.autonomy.queue as queue_module
+from agents.core.autonomy.executor import TaskExecutor
 from agents.core.autonomy.mediation import (
     ZERO_HASH,
     DetachedHMACSigner,
@@ -28,6 +32,10 @@ from agents.core.autonomy.mediation import (
     verify_receipt,
 )
 from agents.core.autonomy.queue import TaskQueue, TaskQueueError, TaskStatus
+from agents.core.autonomy.worker import AutonomyWorker
+from agents.core.kernel import Action, Decision, Verdict
+from agents.core.kernel.binding import MediationKernelBridge
+from agents.core.security.anchor import IntentLog
 
 KEY = b"owner-held-test-key-that-is-long-enough"
 NOW_MS = 1_786_662_000_000
@@ -244,6 +252,11 @@ def test_monotonic_head_anchor_is_exact_and_fail_closed():
     assert not MonotonicHeadAnchor(None, None).advance(None, replacement)
 
 
+def test_mediation_head_rejects_boolean_schema_version():
+    with pytest.raises(ValueError, match="version"):
+        MediationHead(True, 0, ZERO_HASH, 0, "1" * 64)
+
+
 def test_signed_event_chain_verifies_and_detects_field_hash_signature_and_link_tamper():
     signer = _signer()
     receipt = _receipt()
@@ -345,7 +358,7 @@ def test_invalid_event_or_signing_failure_returns_none_without_authority():
     )
 
 
-def _queue(tmp_path, *, mode="enforce", signer=None):
+def _queue(tmp_path, *, mode="enforce", signer=None, scope="global"):
     path = tmp_path / "mediation.db"
     return TaskQueue(
         db_path=str(path),
@@ -353,7 +366,7 @@ def _queue(tmp_path, *, mode="enforce", signer=None):
         mediation_signer=signer or _signer(),
         mediation_head_anchor=_head_anchor(path),
         mediation_classifier=lambda kind: kind == "filesystem.write",
-        mediation_scope="global",
+        mediation_scope=scope,
         mediation_policy_revision="policy-17",
         mediation_clock_ms=lambda: NOW_MS,
     ).initialize()
@@ -389,6 +402,25 @@ def test_enforce_raw_classified_enqueue_refuses_and_persists_real_event(tmp_path
     assert stats["governed"] == 0
 
 
+def test_default_queue_classifier_uses_canonical_kernel_registry(tmp_path):
+    off = TaskQueue(str(tmp_path / "off.db")).initialize()
+    assert off.mediation_mode == "off"
+    assert off.enqueue("ultron", "writeback.notion.page", "Compatibility insert") == 1
+
+    path = tmp_path / "default-classifier.db"
+    enforced = TaskQueue(
+        str(path),
+        mediation_mode="enforce",
+        mediation_signer=_signer(),
+        mediation_head_anchor=_head_anchor(path),
+        mediation_scope="global",
+        mediation_policy_revision="policy-17",
+        mediation_clock_ms=lambda: NOW_MS,
+    ).initialize()
+    assert enforced.classify_mediation("writeback.notion.page") is True
+    assert enforced.classify_mediation("not.registered") is None
+
+
 def test_nonclassified_raw_enqueue_remains_compatible_under_enforce(tmp_path):
     queue = _queue(tmp_path)
 
@@ -419,6 +451,23 @@ def test_mediated_enqueue_atomically_persists_exact_receipt_and_restart_state(tm
     reopened = _queue(tmp_path)
     assert reopened.get(task_id).mediation_receipt["signature"] == _receipt().signature
     assert reopened.verified_mediation_stats()["authorized_enqueue"] == 1
+
+
+def test_mediated_enqueue_snapshots_payload_before_verification_toctou(tmp_path, monkeypatch):
+    queue = _queue(tmp_path)
+    source = _worker_payload()
+    original_verify = queue_module.verify_receipt
+
+    def mutate_after_verify(*args, **kwargs):
+        valid = original_verify(*args, **kwargs)
+        source["path"] = "attacker.txt"
+        return valid
+
+    monkeypatch.setattr(queue_module, "verify_receipt", mutate_after_verify)
+    task_id = _enqueue_mediated(queue, payload=source)
+
+    assert source["path"] == "attacker.txt"
+    assert queue.get(task_id).payload == _worker_payload()
 
 
 def test_mediated_enqueue_rejects_replay_and_rolls_back_on_event_failure(tmp_path):
@@ -895,3 +944,408 @@ def test_cross_process_legacy_migration_is_serialized(tmp_path):
     results = [process.communicate(timeout=45) + (process.returncode,) for process in processes]
 
     assert results == [("", "", 0)] * 8
+
+
+class _AskPolicy:
+    def decide(self, _action):
+        return SimpleNamespace(outcome="ask", tier=2, reason="owner approval required")
+
+
+class _ActPolicy:
+    def decide(self, _action):
+        return SimpleNamespace(outcome="act", tier=1, reason="reversible")
+
+
+class _BrokenPolicy:
+    def decide(self, _action):
+        raise RuntimeError("policy unavailable")
+
+
+def _mediated_worker(tmp_path, kernel, *, mode="enforce", executor=None):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    queue = _queue(tmp_path, mode=mode)
+    bridge = MediationKernelBridge(kernel) if kernel is not None else None
+    worker = AutonomyWorker(
+        queue,
+        policy=_AskPolicy(),
+        executor=executor,
+        kernel=bridge,
+        mediation_signer=_signer(),
+        mediation_clock_ms=lambda: NOW_MS,
+    )
+    return queue, worker, bridge
+
+
+def _kernel_decision(verdict=Verdict.QUEUE, *, calls=None, reason="kernel decision"):
+    def decide(action, capability=None, budget=None):
+        if calls is not None:
+            calls.append((action, capability, budget))
+        return Decision(verdict, reason=reason, tier=2)
+
+    return decide
+
+
+def _worker_payload():
+    return {"path": "reports/summary.json", "body": "café"}
+
+
+@pytest.mark.parametrize("verdict", [Verdict.QUEUE, Verdict.GRANT])
+def test_worker_consumes_exact_broker_decision_once_and_persists_receipt(
+    tmp_path, monkeypatch, verdict
+):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    calls = []
+    queue, worker, bridge = _mediated_worker(tmp_path, _kernel_decision(verdict, calls=calls))
+    action = Action(
+        kind="filesystem.write",
+        agent="ultron",
+        title="Write bounded report",
+        payload=_worker_payload(),
+        scope="global",
+        origin="generated",
+    )
+
+    assert bridge(action).verdict is verdict
+    task_id = worker.govern_enqueue(
+        "ultron",
+        "filesystem.write",
+        "Write bounded report",
+        payload=_worker_payload(),
+        autonomy_level="act",
+    )
+
+    task = queue.get(task_id)
+    assert len(calls) == 1
+    assert task.status == TaskStatus.BLOCKED.value
+    assert task.mediation_receipt["verdict"] == verdict.value
+    assert task.mediation_receipt["tier"] == task.risk_tier
+    assert queue.verified_mediation_stats()["authorized_enqueue"] == 1
+
+
+def test_worker_preserves_exact_broker_authority_scope(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    path = tmp_path / "scoped.db"
+    queue = TaskQueue(
+        db_path=str(path),
+        mediation_mode="enforce",
+        mediation_signer=_signer(),
+        mediation_head_anchor=_head_anchor(path),
+        mediation_classifier=lambda kind: kind == "filesystem.write",
+        mediation_scope="*",
+        mediation_policy_revision="policy-17",
+        mediation_clock_ms=lambda: NOW_MS,
+    ).initialize()
+    bridge = MediationKernelBridge(_kernel_decision())
+    worker = AutonomyWorker(
+        queue,
+        policy=_AskPolicy(),
+        kernel=bridge,
+        mediation_signer=_signer(),
+        mediation_clock_ms=lambda: NOW_MS,
+    )
+    action = Action(
+        kind="filesystem.write",
+        agent="ultron",
+        title="Write bounded report",
+        payload=_worker_payload(),
+        scope="node:laptop",
+        origin="generated",
+    )
+
+    bridge(action)
+    task_id = worker.govern_enqueue(
+        "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+    )
+
+    task = queue.get(task_id)
+    assert task.mediation_scope == "node:laptop"
+    assert task.mediation_receipt["scope"] == "node:laptop"
+
+
+def test_worker_holds_when_persisted_authority_scope_is_halted(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    path = tmp_path / "halted-scope.db"
+    queue = TaskQueue(
+        db_path=str(path),
+        mediation_mode="enforce",
+        mediation_signer=_signer(),
+        mediation_head_anchor=_head_anchor(path),
+        mediation_classifier=lambda kind: kind == "filesystem.write",
+        mediation_scope="*",
+        mediation_policy_revision="policy-17",
+        mediation_clock_ms=lambda: NOW_MS,
+    ).initialize()
+    bridge = MediationKernelBridge(_kernel_decision())
+
+    class _KillSwitch:
+        @staticmethod
+        def is_halted(scope=None):
+            return scope == "node:laptop"
+
+    worker = AutonomyWorker(
+        queue,
+        policy=_AskPolicy(),
+        kernel=bridge,
+        mediation_signer=_signer(),
+        mediation_clock_ms=lambda: NOW_MS,
+        kill_switch=_KillSwitch(),
+    )
+    action = Action(
+        kind="filesystem.write",
+        agent="ultron",
+        title="Write bounded report",
+        payload=_worker_payload(),
+        scope="node:laptop",
+        origin="generated",
+    )
+    bridge(action)
+    task = asyncio.run(
+        worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+    )
+    asyncio.run(worker.apply_decision(task.id, "accept"))
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["held"] == 1
+    assert summary["ran"] == 0
+    assert queue.get(task.id).status == TaskStatus.APPROVED.value
+    assert queue.verified_mediation_stats()["governed"] == 0
+
+
+def test_disabled_flag_rejects_previously_captured_decision(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    calls = []
+    queue, worker, bridge = _mediated_worker(tmp_path, _kernel_decision(Verdict.GRANT, calls=calls))
+    action = Action(
+        kind="filesystem.write",
+        agent="ultron",
+        title="Write bounded report",
+        payload=_worker_payload(),
+        origin="generated",
+    )
+    bridge(action)
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL")
+
+    with pytest.raises(TaskQueueError, match="authority is unavailable"):
+        worker.govern_enqueue(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+
+    assert len(calls) == 1
+    assert queue.list() == []
+    assert queue.verified_mediation_stats()["refused_unmediated"] == 1
+
+
+def test_kernel_queue_and_tier_are_floors_over_worker_policy(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    queue = _queue(tmp_path)
+    bridge = MediationKernelBridge(lambda _action: Decision(Verdict.QUEUE, reason="queue", tier=3))
+    worker = AutonomyWorker(
+        queue,
+        policy=_ActPolicy(),
+        kernel=bridge,
+        mediation_signer=_signer(),
+        mediation_clock_ms=lambda: NOW_MS,
+    )
+
+    task = asyncio.run(
+        worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+    )
+
+    assert task.status == TaskStatus.BLOCKED.value
+    assert task.risk_tier == 3
+    assert task.mediation_receipt["tier"] == 3
+
+
+def test_worker_records_refusal_when_policy_fails_after_kernel(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    queue = _queue(tmp_path)
+    worker = AutonomyWorker(
+        queue,
+        policy=_BrokenPolicy(),
+        kernel=MediationKernelBridge(_kernel_decision()),
+        mediation_signer=_signer(),
+        mediation_clock_ms=lambda: NOW_MS,
+    )
+
+    with pytest.raises(TaskQueueError, match="policy is unavailable"):
+        worker.govern_enqueue(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+
+    assert queue.list() == []
+    assert queue.verified_mediation_stats()["refused_unmediated"] == 1
+
+
+def test_mediated_edit_refuses_in_place_mutation_and_requires_new_enqueue(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    queue, worker, _bridge = _mediated_worker(tmp_path, _kernel_decision())
+    task = asyncio.run(
+        worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+    )
+
+    with pytest.raises(TaskQueueError, match="new enqueue revision"):
+        asyncio.run(worker.apply_decision(task.id, "edit", payload={"path": "changed"}))
+
+    unchanged = queue.get(task.id)
+    assert unchanged.payload == _worker_payload()
+    assert unchanged.status == TaskStatus.BLOCKED.value
+
+
+def test_intent_log_detached_signer_is_stable_and_total(tmp_path):
+    log = IntentLog(tmp_path / "intent.json", secret_key="owner-key-material")
+    signer = DetachedHMACSigner(log.sign_detached)
+
+    assert signer.sign(b"canonical") == signer.sign(b"canonical")
+    assert signer.verify(b"canonical", signer.sign(b"canonical"))
+    assert log.sign_detached(b"") is None
+
+
+@pytest.mark.parametrize("failure", ["disabled", "missing", "raised"])
+def test_worker_refuses_classified_task_when_authority_is_unavailable(
+    tmp_path, monkeypatch, failure
+):
+    if failure == "disabled":
+        monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+        kernel = _kernel_decision()
+    elif failure == "missing":
+        monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+        kernel = None
+    else:
+        monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+
+        def kernel(*_args, **_kwargs):
+            raise RuntimeError("authority unavailable")
+
+    queue, worker, _bridge = _mediated_worker(tmp_path / failure, kernel)
+
+    with pytest.raises(TaskQueueError, match="mediation"):
+        worker.govern_enqueue(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+
+    assert queue.list() == []
+    assert queue.verified_mediation_stats()["refused_unmediated"] == 1
+
+
+def test_worker_persists_kernel_deny_without_creating_task(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    queue, worker, _bridge = _mediated_worker(
+        tmp_path, _kernel_decision(Verdict.DENY, reason="halted")
+    )
+
+    with pytest.raises(TaskQueueError, match="kernel denied"):
+        worker.govern_enqueue(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+
+    assert queue.list() == []
+    assert queue.verified_mediation_stats()["refused_unmediated"] == 1
+
+
+def test_worker_claims_before_execution_and_direct_executor_call_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    handled = []
+
+    async def handler(task):
+        handled.append(task.id)
+        return {"status": "ok"}
+
+    queue, worker, _bridge = _mediated_worker(tmp_path, _kernel_decision())
+    executor = TaskExecutor(execution_guard=worker.execution_allowed).register(
+        "filesystem.write", handler
+    )
+    worker.executor = executor.execute
+    task = asyncio.run(
+        worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+    )
+
+    direct = asyncio.run(executor.execute(task))
+    assert direct == {"status": "refused", "reason": "mediation_execution_context_required"}
+    assert handled == []
+
+    asyncio.run(worker.apply_decision(task.id, "accept"))
+    summary = asyncio.run(worker.tick())
+
+    assert summary["done"] == 1
+    assert handled == [task.id]
+    assert queue.get(task.id).status == TaskStatus.DONE.value
+    assert queue.verified_mediation_stats()["governed"] == 1
+
+
+def test_worker_quarantines_edited_task_before_executor(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    handled = []
+
+    async def handler(task):
+        handled.append(task.id)
+        return {"status": "ok"}
+
+    queue, worker, _bridge = _mediated_worker(tmp_path, _kernel_decision(), executor=handler)
+    task = asyncio.run(
+        worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+    )
+    asyncio.run(worker.apply_decision(task.id, "accept"))
+    queue.update_payload(task.id, {"path": "attacker.txt", "body": "changed"})
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["ran"] == 0
+    assert handled == []
+    assert queue.get(task.id).status == TaskStatus.QUARANTINED.value
+    assert queue.verified_mediation_stats()["ungoverned_detected"] == 1
+
+
+def test_mediated_execution_failure_cannot_reuse_receipt_for_retry(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    attempts = []
+
+    async def failing(task):
+        attempts.append(task.id)
+        raise RuntimeError("failed")
+
+    queue, worker, _bridge = _mediated_worker(tmp_path, _kernel_decision(), executor=failing)
+    task = asyncio.run(
+        worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+    )
+    asyncio.run(worker.apply_decision(task.id, "accept"))
+
+    first = asyncio.run(worker.tick())
+    second = asyncio.run(worker.tick())
+
+    assert first["failed"] == 1
+    assert second["ran"] == 0
+    assert attempts == [task.id]
+    assert queue.get(task.id).status == TaskStatus.FAILED.value
+    assert queue.verified_mediation_stats()["governed"] == 1
+
+
+def test_hold_worker_preserves_stamped_approved_task_without_execution(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    queue, worker, _bridge = _mediated_worker(tmp_path, _kernel_decision())
+    task = asyncio.run(
+        worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+    )
+    asyncio.run(worker.apply_decision(task.id, "accept"))
+    queue.close()
+
+    held_queue, held_worker, _bridge = _mediated_worker(tmp_path, _kernel_decision(), mode="hold")
+    summary = asyncio.run(held_worker.tick())
+
+    assert summary["held"] == 1
+    assert summary["ran"] == 0
+    assert held_queue.get(task.id).status == TaskStatus.APPROVED.value
