@@ -194,6 +194,22 @@ def _reviewer_rejection(
     return None
 
 
+def _review_fingerprint(
+    *,
+    review_id: int,
+    review_state: str,
+    reviewer_id: int,
+    subject: PullRequestTuple,
+) -> str:
+    payload = {
+        "review_id": review_id,
+        "review_state": review_state,
+        "reviewer_id": reviewer_id,
+        "subject": _subject_dict(subject),
+    }
+    return sha256(_encode_state(payload)).hexdigest()
+
+
 def _parse_state(raw: bytes, policy: AuthorityPolicy) -> dict[str, Any]:
     parsed = json.loads(raw.decode("ascii"), object_pairs_hook=_reject_duplicate_keys)
     state = _require_exact_keys(parsed, _STATE_KEYS)
@@ -221,6 +237,14 @@ def _parse_state(raw: bytes, policy: AuthorityPolicy) -> dict[str, Any]:
             raise ValueError("acceptance is outside configured authority")
         if _reviewer_rejection(policy, subject, record["reviewer_id"]) is not None:
             raise ValueError("acceptance reviewer is not independent")
+        expected_fingerprint = _review_fingerprint(
+            review_id=record["review_id"],
+            review_state="approved",
+            reviewer_id=record["reviewer_id"],
+            subject=subject,
+        )
+        if fingerprint != expected_fingerprint:
+            raise ValueError("acceptance fingerprint does not match its canonical event")
         subject_key = tuple(_subject_dict(subject).values())
         if subject_key in accepted_subjects:
             raise ValueError("duplicate acceptance tuple")
@@ -257,13 +281,12 @@ def _parse_state(raw: bytes, policy: AuthorityPolicy) -> dict[str, Any]:
 
 
 def _event_fingerprint(event: ReviewEvent) -> str:
-    payload = {
-        "review_id": event.review_id,
-        "review_state": event.review_state,
-        "reviewer_id": event.reviewer_id,
-        "subject": _subject_dict(event.subject),
-    }
-    return sha256(_encode_state(payload)).hexdigest()
+    return _review_fingerprint(
+        review_id=event.review_id,
+        review_state=event.review_state,
+        reviewer_id=event.reviewer_id,
+        subject=event.subject,
+    )
 
 
 class AcceptanceStateMachine:
@@ -325,7 +348,7 @@ class AcceptanceStateMachine:
             written = self._store.compare_and_swap(raw, _encode_state(state))
         except Exception:
             return AcceptanceResult(False, "store_unavailable")
-        if not written:
+        if written is not True:
             return AcceptanceResult(False, "state_conflict")
         return result
 

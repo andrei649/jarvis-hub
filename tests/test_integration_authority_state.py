@@ -54,6 +54,11 @@ class ConflictStore(MemoryStore):
         return False
 
 
+class NonBooleanSuccessStore(MemoryStore):
+    def compare_and_swap(self, expected: bytes, replacement: bytes) -> bool:
+        return 1
+
+
 @pytest.fixture
 def policy() -> AuthorityPolicy:
     return AuthorityPolicy(
@@ -391,6 +396,20 @@ def test_atomic_write_conflict_never_returns_acceptance(
     assert result.reason == "state_conflict"
 
 
+def test_non_boolean_cas_result_never_returns_acceptance(
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+) -> None:
+    store = NonBooleanSuccessStore(empty_state_bytes())
+    authority = AcceptanceStateMachine(policy=policy, store=store)
+
+    result = authority.process_review(review(subject))
+
+    assert result.accepted is False
+    assert result.reason == "state_conflict"
+    assert authority.verdict_for(subject).accepted is False
+
+
 def test_persisted_owner_acceptance_is_corrupt_not_trusted(
     policy: AuthorityPolicy,
     subject: PullRequestTuple,
@@ -399,6 +418,23 @@ def test_persisted_owner_acceptance_is_corrupt_not_trusted(
     assert authority.process_review(review(subject)).accepted is True
     state = json.loads(store.value)
     state["acceptances"][0]["reviewer_id"] = OWNER_ID
+    store.value = _encoded_state(state)
+
+    verdict = authority.verdict_for(subject)
+
+    assert verdict.accepted is False
+    assert verdict.reason == "state_corrupt"
+
+
+def test_persisted_acceptance_fingerprint_is_recomputed(
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+) -> None:
+    authority, store = machine(policy)
+    assert authority.process_review(review(subject)).accepted is True
+    state = json.loads(store.value)
+    state["acceptances"][0]["fingerprint"] = "0" * 64
+    state["deliveries"][0]["fingerprint"] = "0" * 64
     store.value = _encoded_state(state)
 
     verdict = authority.verdict_for(subject)
