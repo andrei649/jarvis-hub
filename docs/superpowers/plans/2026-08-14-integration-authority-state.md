@@ -43,13 +43,13 @@ credential, check-publication, or merge capability.
   `AcceptanceStateMachine.verdict_for(subject) -> AcceptanceResult`, and
   `empty_state_bytes() -> bytes` for explicit owner provisioning.
 
-- [ ] **Step 1: Write the failing exact-tuple and independent-review tests**
+- [x] **Step 1: Write the failing exact-tuple and independent-review tests**
 
   Add tests constructing an in-memory compare-and-swap store, a policy for repository `42` and
   base `main`, and a pull-request tuple. Assert a distinct allowlisted reviewer accepts, while
   author, last-pusher, owner, unallowlisted reviewer, and a non-approved review state do not.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
   Run:
 
@@ -59,36 +59,36 @@ credential, check-publication, or merge capability.
 
   Expected: collection/import failure because `services.integration_authority` does not exist.
 
-- [ ] **Step 3: Implement the minimal immutable inputs, policy validation, and acceptance path**
+- [x] **Step 3: Implement the minimal immutable inputs, policy validation, and acceptance path**
 
   Define frozen dataclasses for the policy, tuple, review event, and result. Reject booleans and
   non-positive numeric identities, non-canonical SHAs, empty/mismatched base refs, empty reviewer
   allowlists, and non-approved review states. Export the public API from `__init__.py`.
 
-- [ ] **Step 4: Run the focused tests and verify GREEN**
+- [x] **Step 4: Run the focused tests and verify GREEN**
 
   Run the focused pytest command. Expected: the first test group passes.
 
-- [ ] **Step 5: Add failing exact-match, stale-head, replay, and corrupt-state tests**
+- [x] **Step 5: Add failing exact-match, stale-head, replay, and corrupt-state tests**
 
   Parameterize mutations of repository ID, PR number, base ref, base SHA, and head SHA. Add tests
   for changed-head invalidation; identical and conflicting delivery replay; missing state; invalid
   JSON; duplicate keys; unsupported schema; malformed records; store exceptions; and atomic-write
   conflicts.
 
-- [ ] **Step 6: Run the focused tests and verify RED**
+- [x] **Step 6: Run the focused tests and verify RED**
 
   Expected failures must identify the missing strict parser, replay ledger, or fail-closed branch,
   not test syntax or fixture errors.
 
-- [ ] **Step 7: Implement strict canonical state and compare-and-swap persistence**
+- [x] **Step 7: Implement strict canonical state and compare-and-swap persistence**
 
   Parse a closed schema with duplicate-key rejection. Record bounded delivery fingerprints and
   results, append one acceptance for a valid exact tuple, serialize deterministically, and publish
   acceptance only after compare-and-swap succeeds. `verdict_for()` must use an exact full-tuple
   comparison and deny on every state/store failure.
 
-- [ ] **Step 8: Run focused and adjacent verification**
+- [x] **Step 8: Run focused and adjacent verification**
 
   ```powershell
   .venv\Scripts\python.exe -m pytest tests/test_integration_authority_state.py tests/test_ai_workflow_policy.py -q
@@ -100,7 +100,7 @@ credential, check-publication, or merge capability.
 
   Expected: exit `0` for every command, with no test failures or Ruff findings.
 
-- [ ] **Step 9: Review the exact diff and commit the coherent rollback unit**
+- [x] **Step 9: Review the exact diff and commit the coherent rollback unit**
 
   Confirm only the five planned paths changed, no generated status/ledger changed, and no App or
   settings code exists. Stage only those paths and commit with:
@@ -108,4 +108,3 @@ credential, check-publication, or merge capability.
   ```powershell
   git commit -m "feat(governance): add external acceptance state core"
   ```
-

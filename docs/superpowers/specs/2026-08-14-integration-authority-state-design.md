@@ -82,12 +82,19 @@ missing state.
 `verdict_for()` reads state and returns acceptance only for an exact valid tuple and configured
 repository/base. It fails closed on missing, corrupt, or unavailable state.
 
+The stored delivery fingerprint is an unkeyed replay/deduplication key, not a signature or source
+authenticator. Trust comes only from the future external host, GitHub webhook authentication, and
+the App-bound ruleset; candidate possession of the fingerprint algorithm grants nothing.
+
 ## Failure semantics
 
-All errors are data: `AcceptanceResult(accepted=False, reason=...)`. Untrusted values are not
-reflected in reasons. Missing and corrupt state are different bounded reasons for operations, but
-both deny. Store exceptions and compare-and-swap conflicts deny. Rejected reviews are recorded so
-an identical delivery is idempotent and a conflicting payload cannot reuse its delivery ID.
+Operation and store failures are data: `AcceptanceResult(accepted=False, reason=...)`. Invalid
+constructor inputs raise `ValueError` before state-machine execution; the future webhook adapter
+must translate that boundary failure into a failing check without reflecting input. Untrusted
+values are not reflected in operation reasons. Missing and corrupt state are different bounded
+reasons, but both deny. Store exceptions and compare-and-swap conflicts deny. Rejected reviews are
+recorded so an identical delivery is idempotent and a conflicting payload cannot reuse its
+delivery ID.
 
 `empty_state_bytes()` is an explicit provisioning primitive for the external owner/deployer. The
 state machine never calls it automatically; deletion or replacement of the external state cannot

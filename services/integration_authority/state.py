@@ -1,0 +1,388 @@
+"""Fail-closed state machine for exact-head integration acceptance.
+
+This module has no GitHub, network, filesystem, credential, or merge capability. A separately
+hosted service must provide authoritative live inputs and an atomic external store.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import asdict, dataclass
+from hashlib import sha256
+from typing import Any, Protocol
+
+_SCHEMA_VERSION = 1
+_STATE_KEYS = frozenset({"schema_version", "acceptances", "deliveries"})
+_SUBJECT_KEYS = frozenset(
+    {
+        "repository_id",
+        "pull_request_number",
+        "base_ref",
+        "base_sha",
+        "head_sha",
+        "author_id",
+        "last_pusher_id",
+    }
+)
+_ACCEPTANCE_KEYS = frozenset({"delivery_id", "fingerprint", "review_id", "reviewer_id", "subject"})
+_DELIVERY_KEYS = frozenset({"delivery_id", "fingerprint", "accepted", "reason"})
+_SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
+_DELIVERY_PATTERN = re.compile(r"[A-Za-z0-9-]{1,128}\Z")
+_REVIEW_STATE_PATTERN = re.compile(r"[a-z_]{1,32}\Z")
+_REF_PATTERN = re.compile(r"[A-Za-z0-9._/-]{1,255}\Z")
+_FINGERPRINT_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+_RESULT_REASONS = frozenset(
+    {
+        "accepted",
+        "base_ref_mismatch",
+        "repository_mismatch",
+        "review_not_approved",
+        "reviewer_is_author",
+        "reviewer_is_last_pusher",
+        "reviewer_is_owner",
+        "reviewer_not_allowed",
+    }
+)
+
+
+def _require_positive_int(value: object, field: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{field} must be a positive integer")
+
+
+def _require_ref(value: object, field: str) -> None:
+    if not isinstance(value, str) or not _REF_PATTERN.fullmatch(value):
+        raise ValueError(f"{field} must be a canonical ref name")
+    if value.startswith("/") or value.endswith("/") or "//" in value or ".." in value:
+        raise ValueError(f"{field} must be a canonical ref name")
+
+
+def _require_sha(value: object, field: str) -> None:
+    if not isinstance(value, str) or not _SHA_PATTERN.fullmatch(value):
+        raise ValueError(f"{field} must be lowercase 40-hex")
+
+
+@dataclass(frozen=True)
+class AuthorityPolicy:
+    repository_id: int
+    base_ref: str
+    owner_id: int
+    reviewer_ids: frozenset[int]
+
+    def __post_init__(self) -> None:
+        _require_positive_int(self.repository_id, "repository_id")
+        _require_ref(self.base_ref, "base_ref")
+        _require_positive_int(self.owner_id, "owner_id")
+        if not isinstance(self.reviewer_ids, frozenset) or not self.reviewer_ids:
+            raise ValueError("reviewer_ids must be a non-empty frozenset")
+        for reviewer_id in self.reviewer_ids:
+            _require_positive_int(reviewer_id, "reviewer_id")
+
+
+@dataclass(frozen=True)
+class PullRequestTuple:
+    repository_id: int
+    pull_request_number: int
+    base_ref: str
+    base_sha: str
+    head_sha: str
+    author_id: int
+    last_pusher_id: int
+
+    def __post_init__(self) -> None:
+        _require_positive_int(self.repository_id, "repository_id")
+        _require_positive_int(self.pull_request_number, "pull_request_number")
+        _require_ref(self.base_ref, "base_ref")
+        _require_sha(self.base_sha, "base_sha")
+        _require_sha(self.head_sha, "head_sha")
+        _require_positive_int(self.author_id, "author_id")
+        _require_positive_int(self.last_pusher_id, "last_pusher_id")
+
+
+@dataclass(frozen=True)
+class ReviewEvent:
+    delivery_id: str
+    review_id: int
+    reviewer_id: int
+    review_state: str
+    subject: PullRequestTuple
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.delivery_id, str) or not _DELIVERY_PATTERN.fullmatch(
+            self.delivery_id
+        ):
+            raise ValueError("delivery_id must be a bounded ASCII identifier")
+        _require_positive_int(self.review_id, "review_id")
+        _require_positive_int(self.reviewer_id, "reviewer_id")
+        if not isinstance(self.review_state, str) or not _REVIEW_STATE_PATTERN.fullmatch(
+            self.review_state
+        ):
+            raise ValueError("review_state must be a bounded lowercase identifier")
+        if not isinstance(self.subject, PullRequestTuple):
+            raise ValueError("subject must be a PullRequestTuple")
+
+
+@dataclass(frozen=True)
+class AcceptanceResult:
+    accepted: bool
+    reason: str
+    idempotent: bool = False
+
+
+class AtomicStateStore(Protocol):
+    """External store boundary; replacement must be an atomic compare-and-swap."""
+
+    def read(self) -> bytes | None: ...
+
+    def compare_and_swap(self, expected: bytes, replacement: bytes) -> bool: ...
+
+
+def _encode_state(state: dict[str, object]) -> bytes:
+    return (json.dumps(state, sort_keys=True, separators=(",", ":")) + "\n").encode("ascii")
+
+
+def empty_state_bytes() -> bytes:
+    """Return explicit bootstrap state for an owner-controlled external store."""
+
+    return _encode_state(
+        {
+            "acceptances": [],
+            "deliveries": [],
+            "schema_version": _SCHEMA_VERSION,
+        }
+    )
+
+
+def _subject_dict(subject: PullRequestTuple) -> dict[str, object]:
+    return asdict(subject)
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    parsed: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in parsed:
+            raise ValueError("duplicate JSON key")
+        parsed[key] = value
+    return parsed
+
+
+def _require_exact_keys(value: object, expected: frozenset[str]) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("state object has unexpected keys")
+    return value
+
+
+def _parse_subject(value: object) -> PullRequestTuple:
+    subject = _require_exact_keys(value, _SUBJECT_KEYS)
+    return PullRequestTuple(**subject)
+
+
+def _reviewer_rejection(
+    policy: AuthorityPolicy,
+    subject: PullRequestTuple,
+    reviewer_id: int,
+) -> str | None:
+    if reviewer_id == subject.author_id:
+        return "reviewer_is_author"
+    if reviewer_id == subject.last_pusher_id:
+        return "reviewer_is_last_pusher"
+    if reviewer_id == policy.owner_id:
+        return "reviewer_is_owner"
+    if reviewer_id not in policy.reviewer_ids:
+        return "reviewer_not_allowed"
+    return None
+
+
+def _parse_state(raw: bytes, policy: AuthorityPolicy) -> dict[str, Any]:
+    parsed = json.loads(raw.decode("ascii"), object_pairs_hook=_reject_duplicate_keys)
+    state = _require_exact_keys(parsed, _STATE_KEYS)
+    if isinstance(state["schema_version"], bool) or state["schema_version"] != _SCHEMA_VERSION:
+        raise ValueError("unsupported schema version")
+    if not isinstance(state["acceptances"], list) or not isinstance(state["deliveries"], list):
+        raise ValueError("state collections must be lists")
+
+    accepted_subjects: set[tuple[object, ...]] = set()
+    acceptances_by_delivery: dict[str, dict[str, Any]] = {}
+    for value in state["acceptances"]:
+        record = _require_exact_keys(value, _ACCEPTANCE_KEYS)
+        delivery_id = record["delivery_id"]
+        fingerprint = record["fingerprint"]
+        if not isinstance(delivery_id, str) or not _DELIVERY_PATTERN.fullmatch(delivery_id):
+            raise ValueError("invalid acceptance delivery ID")
+        if delivery_id in acceptances_by_delivery:
+            raise ValueError("duplicate acceptance delivery ID")
+        if not isinstance(fingerprint, str) or not _FINGERPRINT_PATTERN.fullmatch(fingerprint):
+            raise ValueError("invalid acceptance fingerprint")
+        _require_positive_int(record["review_id"], "review_id")
+        _require_positive_int(record["reviewer_id"], "reviewer_id")
+        subject = _parse_subject(record["subject"])
+        if subject.repository_id != policy.repository_id or subject.base_ref != policy.base_ref:
+            raise ValueError("acceptance is outside configured authority")
+        if _reviewer_rejection(policy, subject, record["reviewer_id"]) is not None:
+            raise ValueError("acceptance reviewer is not independent")
+        subject_key = tuple(_subject_dict(subject).values())
+        if subject_key in accepted_subjects:
+            raise ValueError("duplicate acceptance tuple")
+        accepted_subjects.add(subject_key)
+        acceptances_by_delivery[delivery_id] = record
+
+    delivery_ids: set[str] = set()
+    accepted_delivery_ids: set[str] = set()
+    for value in state["deliveries"]:
+        record = _require_exact_keys(value, _DELIVERY_KEYS)
+        delivery_id = record["delivery_id"]
+        fingerprint = record["fingerprint"]
+        accepted = record["accepted"]
+        reason = record["reason"]
+        if not isinstance(delivery_id, str) or not _DELIVERY_PATTERN.fullmatch(delivery_id):
+            raise ValueError("invalid delivery ID")
+        if delivery_id in delivery_ids:
+            raise ValueError("duplicate delivery ID")
+        delivery_ids.add(delivery_id)
+        if not isinstance(fingerprint, str) or not _FINGERPRINT_PATTERN.fullmatch(fingerprint):
+            raise ValueError("invalid delivery fingerprint")
+        if not isinstance(accepted, bool) or reason not in _RESULT_REASONS:
+            raise ValueError("invalid delivery result")
+        if accepted is not (reason == "accepted"):
+            raise ValueError("inconsistent delivery result")
+        if accepted:
+            acceptance = acceptances_by_delivery.get(delivery_id)
+            if acceptance is None or acceptance["fingerprint"] != fingerprint:
+                raise ValueError("accepted delivery has no matching acceptance")
+            accepted_delivery_ids.add(delivery_id)
+    if accepted_delivery_ids != set(acceptances_by_delivery):
+        raise ValueError("acceptance has no matching accepted delivery")
+    return state
+
+
+def _event_fingerprint(event: ReviewEvent) -> str:
+    payload = {
+        "review_id": event.review_id,
+        "review_state": event.review_state,
+        "reviewer_id": event.reviewer_id,
+        "subject": _subject_dict(event.subject),
+    }
+    return sha256(_encode_state(payload)).hexdigest()
+
+
+class AcceptanceStateMachine:
+    def __init__(self, *, policy: AuthorityPolicy, store: AtomicStateStore) -> None:
+        self._policy = policy
+        self._store = store
+
+    def process_review(self, event: ReviewEvent) -> AcceptanceResult:
+        loaded = self._read_state()
+        if isinstance(loaded, AcceptanceResult):
+            return loaded
+        raw, state = loaded
+
+        fingerprint = _event_fingerprint(event)
+        previous = next(
+            (
+                delivery
+                for delivery in state["deliveries"]
+                if delivery["delivery_id"] == event.delivery_id
+            ),
+            None,
+        )
+        if previous is not None:
+            if previous["fingerprint"] != fingerprint:
+                return AcceptanceResult(False, "delivery_conflict")
+            if previous["accepted"] and not self._has_matching_acceptance(state, event):
+                return AcceptanceResult(False, "state_corrupt")
+            return AcceptanceResult(
+                previous["accepted"],
+                previous["reason"],
+                idempotent=True,
+            )
+
+        result = self._assess_review(event)
+        subject_data = _subject_dict(event.subject)
+        already_accepted = any(record["subject"] == subject_data for record in state["acceptances"])
+        if result.accepted and already_accepted:
+            return AcceptanceResult(True, "accepted", idempotent=True)
+        state["deliveries"].append(
+            {
+                "delivery_id": event.delivery_id,
+                "fingerprint": fingerprint,
+                "accepted": result.accepted,
+                "reason": result.reason,
+            }
+        )
+        if result.accepted:
+            state["acceptances"].append(
+                {
+                    "delivery_id": event.delivery_id,
+                    "fingerprint": fingerprint,
+                    "review_id": event.review_id,
+                    "reviewer_id": event.reviewer_id,
+                    "subject": subject_data,
+                }
+            )
+
+        try:
+            written = self._store.compare_and_swap(raw, _encode_state(state))
+        except Exception:
+            return AcceptanceResult(False, "store_unavailable")
+        if not written:
+            return AcceptanceResult(False, "state_conflict")
+        return result
+
+    def verdict_for(self, subject: PullRequestTuple) -> AcceptanceResult:
+        if subject.repository_id != self._policy.repository_id:
+            return AcceptanceResult(False, "repository_mismatch")
+        if subject.base_ref != self._policy.base_ref:
+            return AcceptanceResult(False, "base_ref_mismatch")
+        loaded = self._read_state()
+        if isinstance(loaded, AcceptanceResult):
+            return loaded
+        _raw, state = loaded
+        expected = _subject_dict(subject)
+        accepted = any(record.get("subject") == expected for record in state["acceptances"])
+        return AcceptanceResult(accepted, "accepted" if accepted else "not_accepted")
+
+    def _read_state(self) -> tuple[bytes, dict[str, object]] | AcceptanceResult:
+        try:
+            raw = self._store.read()
+        except Exception:
+            return AcceptanceResult(False, "store_unavailable")
+        if raw is None:
+            return AcceptanceResult(False, "state_missing")
+        try:
+            state = _parse_state(raw, self._policy)
+        except (
+            KeyError,
+            RecursionError,
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ):
+            return AcceptanceResult(False, "state_corrupt")
+        return raw, state
+
+    def _assess_review(self, event: ReviewEvent) -> AcceptanceResult:
+        subject = event.subject
+        if subject.repository_id != self._policy.repository_id:
+            return AcceptanceResult(False, "repository_mismatch")
+        if subject.base_ref != self._policy.base_ref:
+            return AcceptanceResult(False, "base_ref_mismatch")
+        if event.review_state != "approved":
+            return AcceptanceResult(False, "review_not_approved")
+        reviewer_rejection = _reviewer_rejection(self._policy, subject, event.reviewer_id)
+        if reviewer_rejection is not None:
+            return AcceptanceResult(False, reviewer_rejection)
+        return AcceptanceResult(True, "accepted")
+
+    @staticmethod
+    def _has_matching_acceptance(state: dict[str, Any], event: ReviewEvent) -> bool:
+        expected_subject = _subject_dict(event.subject)
+        return any(
+            record["delivery_id"] == event.delivery_id
+            and record["fingerprint"] == _event_fingerprint(event)
+            and record["review_id"] == event.review_id
+            and record["reviewer_id"] == event.reviewer_id
+            and record["subject"] == expected_subject
+            for record in state["acceptances"]
+        )
