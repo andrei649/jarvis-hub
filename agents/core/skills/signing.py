@@ -23,6 +23,7 @@ import hmac
 import logging
 import os
 import stat
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -115,6 +116,24 @@ def source_snapshot(skill_dir: Path) -> SkillSourceSnapshot:
     for path in candidates:
         relative = path.relative_to(root)
         if _excluded_source_path(relative):
+            if _is_link_like(path):
+                raise SkillSourceSnapshotError(
+                    f"linked control artifact refused: {relative.as_posix()}"
+                )
+            try:
+                control_stat = path.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise SkillSourceSnapshotError(
+                    f"cannot stat control artifact: {relative.as_posix()}"
+                ) from exc
+            if not stat.S_ISREG(control_stat.st_mode):
+                raise SkillSourceSnapshotError(
+                    f"non-regular control artifact refused: {relative.as_posix()}"
+                )
+            if control_stat.st_nlink != 1:
+                raise SkillSourceSnapshotError(
+                    f"hardlinked control artifact refused: {relative.as_posix()}"
+                )
             continue
         if _is_link_like(path):
             raise SkillSourceSnapshotError(
@@ -212,10 +231,30 @@ def compute_digest(
 
 def sign_skill(skill_dir: Path) -> str:
     """Write a ``SKILL.sig`` for the skill and return the signature line."""
-    snapshot = source_snapshot(Path(skill_dir))
-    algo, digest = compute_digest(Path(skill_dir), snapshot=snapshot)
+    skill_dir = Path(skill_dir)
+    snapshot = source_snapshot(skill_dir)
+    algo, digest = compute_digest(skill_dir, snapshot=snapshot)
     line = f"{algo}:{digest}"
-    (Path(skill_dir) / SIG_FILENAME).write_text(line + "\n", encoding="utf-8")
+    sig_file = skill_dir / SIG_FILENAME
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=skill_dir,
+            prefix=f".{SIG_FILENAME}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            handle.write(line + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, sig_file)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
     return line
 
 

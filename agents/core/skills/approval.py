@@ -150,5 +150,22 @@ class SkillApprovalStore(JsonStore):
                 return None
             return current
 
+    def tracks_path(self, path: Path) -> bool:
+        """Return whether private control state identifies this as external.
+
+        Source drift is intentionally ignored here. A stale approval must keep
+        the path on the external-code path; otherwise deleting an in-tree
+        provenance sidecar could make changed bytes inherit bundled trust.
+        """
+        canonical = self._canonical_path(path)
+        with self._lock, _process_registry_lock(self.path):
+            if not self._reload_locked():
+                return False
+            record = self._records.get(self._key(canonical))
+            return bool(
+                isinstance(record, dict)
+                and record.get("canonical_path") == canonical
+            )
+
     def is_approved(self, path: Path) -> bool:
         return self.approved_snapshot(path) is not None

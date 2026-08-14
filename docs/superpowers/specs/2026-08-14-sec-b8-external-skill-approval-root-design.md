@@ -39,6 +39,9 @@ bytes, and an approval timestamp. Only non-source lifecycle metadata
 excluded; bytecode caches and every other artifact remain bound. Atomic replacement is combined with a path-scoped
 in-process lock, a Windows/POSIX process lock, and reload-before-merge so concurrent
 loader instances cannot lose approvals.
+An existing private record also remains durable provenance for its canonical path
+after source drift, so deleting an in-tree sidecar cannot reclassify changed
+external bytes as bundled.
 
 `agents/core/skills/signing.py` exposes the stable source fingerprint independently
 from HMAC configuration. Its purpose is byte binding, not author authentication.
@@ -55,14 +58,17 @@ execution by itself.
 
 ## Data and failure flow
 
-1. Discovery classifies bundled versus external provenance as it does today.
+1. Discovery classifies bundled versus external provenance from the discovery
+   boundary, link state, in-tree import marker, and any canonical path retained in
+   the private approval registry. Fingerprint drift never removes that provenance.
 2. Signature verification labels keyed HMAC as `signed`; an unkeyed digest remains
    `integrity-only`.
 3. For external code, the loader checks keyed signature or the private approval
    record against one immutable source snapshot. The validated tree is materialized
    in a private temporary directory retained with the module, and its `main.py`
-   bytes are compiled directly; the loader never reopens candidate-controlled
-   source or relative artifacts after the trust decision.
+   is loaded from that private copy through the standard import loader; the loader
+   never reopens candidate-controlled source or relative artifacts after the trust
+   decision.
 4. Missing, corrupt, wrong-path, stale-digest, or unreadable approval state fails
    closed: the skill remains visible with `module is None` and `sandboxed=True`.
 5. Approval writes the registry first. Only after that succeeds may pending/legacy
@@ -75,6 +81,10 @@ execution by itself.
    source-tree links and non-regular artifacts cannot receive or satisfy approval.
 8. Each decision reloads the registry. Missing, corrupt, or unknown-schema state
    clears authority rather than retaining a boot-time in-memory approval.
+9. Excluded top-level lifecycle metadata is still validated as a single-link
+   regular file before fingerprinting. Signature writes use a private temporary
+   file plus atomic replacement, so a candidate hardlink/symlink cannot redirect
+   an approval-time write outside the skill tree.
 
 ## Security invariants
 
@@ -96,6 +106,9 @@ execution by itself.
 - A copied approval record fails on path mismatch and on one-byte source change.
 - Nested artifact additions, renames, byte changes, and provenance-sidecar changes
   invalidate approval; linked artifacts fail closed.
+- Removing an imported/marketplace sidecar after approval leaves the canonical path
+  external, while changed bytes remain unapproved and unexecuted.
+- A hardlinked `SKILL.sig` is rejected without modifying its other link target.
 - Missing/corrupt live registry changes revoke decision-time authority, and stale
   store instances/processes merge independent approvals without loss.
 - Deterministic check-to-exec mutations execute the validated module and relative

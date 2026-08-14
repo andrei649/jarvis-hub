@@ -346,6 +346,21 @@ def test_external_execution_reads_artifacts_from_validated_snapshot(
     assert marker.read_text(encoding="utf-8") == "approved"
 
 
+def test_signing_refuses_hardlinked_control_file_without_overwriting_target(
+    tmp_path,
+):
+    victim = tmp_path / "victim.txt"
+    victim.write_text("DO-NOT-TOUCH", encoding="utf-8")
+    skill_dir = _make_skill(tmp_path / "skill", name="Demo")
+    os.link(victim, skill_dir / "SKILL.sig")
+
+    with pytest.raises(signing.SkillSourceSnapshotError, match="hardlinked control"):
+        signing.sign_skill(skill_dir)
+
+    assert victim.read_text(encoding="utf-8") == "DO-NOT-TOUCH"
+    assert (skill_dir / "SKILL.sig").samefile(victim)
+
+
 def test_imported_skill_sidecar_blocks_unsigned_in_process_import(tmp_path, monkeypatch):
     """Imported provenance is external even when the skill lives under the app root."""
     from agents.core.skills import loader as loader_mod
@@ -369,6 +384,55 @@ def test_imported_skill_sidecar_blocks_unsigned_in_process_import(tmp_path, monk
     assert skill.module is None
     assert skill.sandboxed is True
     assert skill.signature_reason == "unsigned"
+
+
+@pytest.mark.parametrize("external_marker", ["manifest.json", "EXTERNAL_SOURCE"])
+def test_removing_external_sidecar_cannot_shed_private_provenance(
+    tmp_path,
+    monkeypatch,
+    external_marker,
+):
+    """A changed approved import remains external after deleting its sidecar."""
+    from agents.core.skills import loader as loader_mod
+
+    skills_root = tmp_path / "skills"
+    marker = tmp_path / "executed.txt"
+    skill_dir = _make_skill(
+        skills_root / "imported",
+        name="Imported",
+        body="VALUE = 'approved'\n",
+    )
+    provenance = skill_dir / external_marker
+    provenance.write_text(
+        '{"imported": true, "source": "external"}'
+        if external_marker == "manifest.json"
+        else "marketplace\n",
+        encoding="utf-8",
+    )
+    store = SkillApprovalStore(tmp_path / "private" / "approvals.json")
+    store.approve(skill_dir)
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
+    monkeypatch.setattr(
+        loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills"
+    )
+
+    first = SkillLoader(approval_store=store).discover()["Imported"]
+    assert first.module is not None
+
+    provenance.unlink()
+    (skill_dir / "main.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('attacker', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+
+    second = SkillLoader(approval_store=store).discover()["Imported"]
+
+    assert second.module is None
+    assert second.sandboxed is True
+    assert store.tracks_path(skill_dir)
+    assert not store.is_approved(skill_dir)
+    assert not marker.exists()
 
 
 @pytest.mark.parametrize("external_marker", ["manifest.json", "EXTERNAL_SOURCE"])

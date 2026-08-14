@@ -11,7 +11,6 @@ import logging
 import re
 import stat
 import tempfile
-import types
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -130,6 +129,18 @@ def _is_external_skill(path: Path, *, discovery_root: Path | None = None) -> boo
     # Bundled skills do not ship sidecars. Importers create this provenance file;
     # its presence stays external even if candidate-controlled fields are edited.
     return True
+
+
+def _is_external_for_loader(
+    path: Path,
+    *,
+    discovery_root: Path | None,
+    approval_store: SkillApprovalStore,
+) -> bool:
+    """Classify using discovery evidence and durable private provenance."""
+    return _is_external_skill(
+        path, discovery_root=discovery_root
+    ) or approval_store.tracks_path(path)
 
 
 def _external_skill_may_import(
@@ -375,7 +386,11 @@ class SkillLoader:
         if not skill_file.exists():
             return
 
-        external = _is_external_skill(path, discovery_root=discovery_root)
+        external = _is_external_for_loader(
+            path,
+            discovery_root=discovery_root,
+            approval_store=self._approval_store,
+        )
         snapshot: signing.SkillSourceSnapshot | None = None
         if external and not (path / "PENDING_REVIEW").exists():
             try:
@@ -471,20 +486,14 @@ class SkillLoader:
                         snapshot
                     )
                     snapshot_py_file = snapshot_root / "main.py"
-                    mod = types.ModuleType(module_name)
-                    mod.__file__ = str(snapshot_py_file)
-                    mod.__package__ = ""
-                    mod.__loader__ = None
-                    mod.__spec__ = importlib.util.spec_from_loader(
-                        module_name,
-                        loader=None,
-                        origin=str(snapshot_py_file),
+                    spec = importlib.util.spec_from_file_location(
+                        module_name, snapshot_py_file
                     )
+                    if not spec or not spec.loader:
+                        raise ImportError(f"no snapshot loader for skill module: {name}")
+                    mod = importlib.util.module_from_spec(spec)
                     mod.__skill_snapshot__ = snapshot_holder
-                    exec(
-                        compile(snapshot_main, str(snapshot_py_file), "exec"),
-                        mod.__dict__,
-                    )
+                    spec.loader.exec_module(mod)
                 else:
                     spec = importlib.util.spec_from_file_location(
                         f"skill_{name}", py_file

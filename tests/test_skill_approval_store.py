@@ -40,6 +40,19 @@ def test_approval_is_bound_to_canonical_path_and_source(tmp_path: Path) -> None:
     assert not store.is_approved(skill)
 
 
+def test_private_record_keeps_drifted_path_classified_as_external(
+    tmp_path: Path,
+) -> None:
+    skill = _make_skill(tmp_path / "external")
+    store = SkillApprovalStore(tmp_path / "private" / "approvals.json")
+    store.approve(skill)
+
+    (skill / "main.py").write_text("VALUE = 'changed'\n", encoding="utf-8")
+
+    assert store.tracks_path(skill)
+    assert not store.is_approved(skill)
+
+
 def test_copied_approval_registry_cannot_approve_another_path(tmp_path: Path) -> None:
     skill = _make_skill(tmp_path / "skills" / "demo")
     registry = tmp_path / "private" / "approvals.json"
