@@ -10,7 +10,25 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
+
+ExternalBindingName = Literal[
+    "ambient_runtime",
+    "acquisition",
+    "tool_rpc",
+    "agent_tool_runtime",
+    "writeback",
+    "social",
+    "channel_replies",
+    "call_broker",
+    "node_mesh",
+    "subagents",
+    "task_executor",
+    "last_memory_maintenance",
+    "channel_inbox",
+    "oracle_bridge",
+    "argus",
+]
 
 EXTERNAL_BINDING_WRITERS: Mapping[str, tuple[str, ...]] = MappingProxyType(
     {
@@ -54,4 +72,20 @@ class ExternalOrchestratorBindings(Protocol):
     argus: Any | None
 
 
-__all__ = ["EXTERNAL_BINDING_WRITERS", "ExternalOrchestratorBindings"]
+def bind_external_orchestrator_attribute(
+    orchestrator: ExternalOrchestratorBindings,
+    name: ExternalBindingName,
+    value: Any,
+) -> None:
+    """Write one inventoried external slot through the sole supported API."""
+    if name not in EXTERNAL_BINDING_WRITERS:
+        raise ValueError(f"undeclared external orchestrator binding: {name}")
+    setattr(orchestrator, name, value)
+
+
+__all__ = [
+    "EXTERNAL_BINDING_WRITERS",
+    "ExternalBindingName",
+    "ExternalOrchestratorBindings",
+    "bind_external_orchestrator_attribute",
+]

@@ -23,6 +23,7 @@ from datetime import datetime
 from .autonomy import TaskExecutor
 from .autonomy.inbox import build_decision_card
 from .autonomy.worker import is_night_window
+from .orchestrator_bindings import bind_external_orchestrator_attribute
 from .system_profiles import active_posture
 from .workflows.pending_queue import WorkflowPendingQueue
 
@@ -410,7 +411,7 @@ class AutonomyCoordinator:
         acquisition = AcquisitionRuntime(
             enabled=lambda: _get_setting("acquisition.enabled", False) is True,
         )
-        self._orch.acquisition = acquisition
+        bind_external_orchestrator_attribute(self._orch, "acquisition", acquisition)
 
         runtime = AgentToolRuntime(
             server,
@@ -422,8 +423,10 @@ class AutonomyCoordinator:
             max_iterations=lambda: _get_setting("llm.tool_loop_max_iterations", 8),
             gap_callback=acquisition.capture_gap,
         )
-        self._orch.tool_rpc = server
-        self._orch.agent_tool_runtime = runtime
+        bind_external_orchestrator_attribute(self._orch, "tool_rpc", server)
+        bind_external_orchestrator_attribute(
+            self._orch, "agent_tool_runtime", runtime
+        )
 
         async def _approved_desktop_tool_rpc_execute(task):
             return await server.execute(task, execution_context=execution_token)
@@ -506,11 +509,15 @@ class AutonomyCoordinator:
         )
 
         from .writeback import WriteBackBroker
-        self._orch.writeback = WriteBackBroker(
-            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
-            secret_broker=getattr(self._orch, "secret_broker", None),
-            audit=getattr(self._orch, "audit", None),
-            kernel=_action_kernel,
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "writeback",
+            WriteBackBroker(
+                enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
+                secret_broker=getattr(self._orch, "secret_broker", None),
+                audit=getattr(self._orch, "audit", None),
+                kernel=_action_kernel,
+            ),
         )
         executor.register("writeback", self._orch.writeback.execute)
 
@@ -518,14 +525,18 @@ class AutonomyCoordinator:
         # governance: approved `social.*` tasks resolve OAuth/bearer credentials
         # at action time (behind approval) and post via an injectable client.
         from .social import SocialBroker
-        self._orch.social = SocialBroker(
-            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
-            secret_broker=getattr(self._orch, "secret_broker", None),
-            audit=getattr(self._orch, "audit", None),
-            kernel=_action_kernel,
-            # 0.69: approved postiz.schedule tasks execute through the live
-            # PostizPlugin (resolved lazily — plugins may rebuild at runtime).
-            postiz_resolver=lambda: self._orch.plugins.get("postiz"),
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "social",
+            SocialBroker(
+                enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
+                secret_broker=getattr(self._orch, "secret_broker", None),
+                audit=getattr(self._orch, "audit", None),
+                kernel=_action_kernel,
+                # 0.69: approved postiz.schedule tasks execute through the live
+                # PostizPlugin (resolved lazily — plugins may rebuild at runtime).
+                postiz_resolver=lambda: self._orch.plugins.get("postiz"),
+            ),
         )
         executor.register("social", self._orch.social.execute)
 
@@ -534,12 +545,16 @@ class AutonomyCoordinator:
         # already-registered ChannelManager and record the outbound message in
         # the same bounded inbox thread.
         from .channel_reply import ChannelReplyBroker
-        self._orch.channel_replies = ChannelReplyBroker(
-            inbox=getattr(self._orch, "channel_inbox", None),
-            enqueue=self._governed_enqueue,
-            channel_manager=getattr(self._orch, "channel_manager", None),
-            audit=getattr(self._orch, "audit", None),
-            kernel=_action_kernel,
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "channel_replies",
+            ChannelReplyBroker(
+                inbox=getattr(self._orch, "channel_inbox", None),
+                enqueue=self._governed_enqueue,
+                channel_manager=getattr(self._orch, "channel_manager", None),
+                audit=getattr(self._orch, "audit", None),
+                kernel=_action_kernel,
+            ),
         )
         executor.register("channel.reply", self._orch.channel_replies.execute)
 
@@ -549,14 +564,18 @@ class AutonomyCoordinator:
         from .autonomy.call_broker import CallBroker
         from .env_config import env_json_object
         _call_cfg = env_json_object("JARVIS_CALL_CONFIG", {})
-        self._orch.call_broker = CallBroker(
-            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
-            secret_broker=getattr(self._orch, "secret_broker", None),
-            audit=getattr(self._orch, "audit", None),
-            budget=getattr(self._orch.autonomy, "budget", None),
-            config=_call_cfg,
-            kernel=_action_kernel,
-            ledger=_budget_ledger,
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "call_broker",
+            CallBroker(
+                enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
+                secret_broker=getattr(self._orch, "secret_broker", None),
+                audit=getattr(self._orch, "audit", None),
+                budget=getattr(self._orch.autonomy, "budget", None),
+                config=_call_cfg,
+                kernel=_action_kernel,
+                ledger=_budget_ledger,
+            ),
         )
         executor.register("call", self._orch.call_broker.execute)
 
@@ -564,12 +583,16 @@ class AutonomyCoordinator:
         # scoped (H17.3 broker + kill-switch) + approval-gated; the on-device run
         # is a host seam (Tauri/phone client).
         from .node_mesh import NodeMesh
-        self._orch.node_mesh = NodeMesh(
-            capability_broker=getattr(self._orch, "capabilities", None),
-            kill_switch=getattr(self._orch, "kill_switch", None),
-            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
-            audit=getattr(self._orch, "audit", None),
-            kernel=_action_kernel,
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "node_mesh",
+            NodeMesh(
+                capability_broker=getattr(self._orch, "capabilities", None),
+                kill_switch=getattr(self._orch, "kill_switch", None),
+                enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
+                audit=getattr(self._orch, "audit", None),
+                kernel=_action_kernel,
+            ),
         )
         executor.register("node", self._orch.node_mesh.execute)
 
@@ -620,16 +643,22 @@ class AutonomyCoordinator:
             out = await self._orch.process(task, agent=picked, channel="subagent")
             return {"output": out, "session_id": session_id}
 
-        self._orch.subagents = SubAgentManager(
-            runner=_subagent_runner,
-            max_concurrent=self._subagent_concurrency(),
-            max_depth=int(self._orch.get_setting("autonomy.max_subagent_depth", 8) or 8),
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "subagents",
+            SubAgentManager(
+                runner=_subagent_runner,
+                max_concurrent=self._subagent_concurrency(),
+                max_depth=int(
+                    self._orch.get_setting("autonomy.max_subagent_depth", 8) or 8
+                ),
+            ),
         )
 
         # Domain routers may register late-bound host handlers (for example the
         # default-off House Brain after owner configuration is available). Keep
         # the concrete executor; the worker still receives only ``execute``.
-        self._orch.task_executor = executor
+        bind_external_orchestrator_attribute(self._orch, "task_executor", executor)
         return executor
 
     def _subagent_concurrency(self) -> int:

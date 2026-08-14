@@ -21,6 +21,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .argus import ArgusInterface
+from .orchestrator_bindings import bind_external_orchestrator_attribute
 from .plugins.analytics import AnalyticsPlugin
 from .plugins.apple_health import AppleHealthPlugin
 from .plugins.balance import BalanceReaderPlugin
@@ -138,7 +139,9 @@ class PluginManager:
         self.plugins["oracle-bridge"] = OracleBridgePlugin(
             github_token=os.environ.get("GITHUB_TOKEN", ""),
         )
-        orch.oracle_bridge = self.plugins["oracle-bridge"]
+        bind_external_orchestrator_attribute(
+            orch, "oracle_bridge", self.plugins["oracle-bridge"]
+        )
         self.plugins["n8n"] = N8NPlugin(
             base_url=os.environ.get("N8N_BASE_URL", ""),
             api_key=os.environ.get("N8N_API_KEY", ""),
@@ -182,7 +185,9 @@ class PluginManager:
         )
         # Argus — one governed facade over WorldView + Signal Layer for world-intel
         # queries. Built after both backends are registered; every call is gated.
-        orch.argus = ArgusInterface.from_orchestrator(orch)
+        bind_external_orchestrator_attribute(
+            orch, "argus", ArgusInterface.from_orchestrator(orch)
+        )
 
     async def close_all(self) -> None:
         """Close all active plugins gracefully (was Orchestrator.stop_channels inline)."""

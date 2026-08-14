@@ -31,6 +31,7 @@ from core.errors import E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED, JarvisError
 from core.log import log_error, setup_logging
 from core.log_safe import log_safe
 from core.orchestrator import Orchestrator
+from core.orchestrator_bindings import bind_external_orchestrator_attribute
 from core.security.guardrails import SecurityBlockError
 from core.web_helpers import error_json
 
@@ -333,7 +334,9 @@ async def lifespan(application: FastAPI):
 
     from core.channel_inbox import ChannelInboxStore
     from core.settings_db import get_value
-    orch.channel_inbox = ChannelInboxStore()
+    bind_external_orchestrator_attribute(
+        orch, "channel_inbox", ChannelInboxStore()
+    )
     gateway = Gateway(
         handler=orch.channel_handler,
         pairing=getattr(orch, "sender_pairing", None),

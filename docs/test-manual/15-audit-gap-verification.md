@@ -1423,11 +1423,11 @@ refutation will re-file the claim. **A REFUTED verdict here is a PASS.**
 #### ADV-130 — External orchestrator binding residue — CLOSED  ⏱
 - **Surface:** `agents/core/orchestrator.py` · `agents/core/orchestrator_bindings.py` · external lifecycle writers
 - **Why it matters:** the honest remainder of ADV-129 was 15 attributes populated by plugin, web, autonomy, ambient, or scheduler wiring without an initial declaration. A missing writer therefore looked identical to an intentionally unavailable feature.
-- **Steps:** run `pytest -q tests/test_orchestrator_bindings.py`; inspect `EXTERNAL_BINDING_WRITERS`; instantiate `Orchestrator` before any external wiring.
-- **Expected:** the instance structurally satisfies `ExternalOrchestratorBindings`; all 15 slots exist with explicit `None`; every inventoried production writer still assigns its slot; the AST drift check rejects any future external writer that creates an undeclared orchestrator attribute; and consumers test availability rather than `hasattr` presence.
+- **Steps:** run `pytest -q tests/test_orchestrator_bindings.py`; inspect `EXTERNAL_BINDING_WRITERS` and `bind_external_orchestrator_attribute`; instantiate `Orchestrator` before any external wiring.
+- **Expected:** the instance structurally satisfies `ExternalOrchestratorBindings`; all 15 slots exist with explicit `None`; every inventoried production writer calls the typed binding API for its slot; hostile typed, aliased, nested, and `setattr` receivers cannot bypass the undeclared-write guard; unrelated same-named assignments cannot satisfy the inventory; and consumers test availability rather than `hasattr` presence.
 - **FAIL if:** a slot is absent, a declared writer no longer assigns it, or a new external write bypasses the initialized surface → reopen **MINOR**.
 - **CROSS:** the writer inventory is checked against production AST assignments, independently of the runtime structural check.
-- **Evidence:** `tests/test_orchestrator_bindings.py` (4 hermetic cases); the explicit boot defaults in `Orchestrator.__init__`.
+- **Evidence:** `tests/test_orchestrator_bindings.py` (10 hermetic cases); the explicit boot defaults in `Orchestrator.__init__`; all external writers routed through `bind_external_orchestrator_attribute`.
 
 ---
 
