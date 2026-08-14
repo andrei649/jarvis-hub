@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 
 from agents.core.skills import loader as loader_mod
+from agents.core.skills import signing
+from agents.core.skills.approval import SkillApprovalStore
 from agents.core.skills.loader import SkillLoader
 
 
@@ -19,7 +21,9 @@ from agents.core.skills.loader import SkillLoader
 def loader(tmp_path, monkeypatch):
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", tmp_path)
     monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: tmp_path)
-    return SkillLoader()
+    return SkillLoader(
+        approval_store=SkillApprovalStore(tmp_path / "private" / "approvals.json")
+    )
 
 
 def _gen(loader, task="organize the morning inbox", cmd="tidy_inbox"):
@@ -86,10 +90,45 @@ def test_approve_activates_the_skill(loader, tmp_path):
     skill_dir = tmp_path / name
     assert not (skill_dir / "PENDING_REVIEW").exists()  # marker cleared
     assert (skill_dir / "SKILL.sig").exists()           # now signed
-    assert (skill_dir / "OWNER_APPROVED_IN_PROCESS").exists()
+    assert not (skill_dir / "OWNER_APPROVED_IN_PROCESS").exists()
     skill = _registered(loader, skill_dir)
     assert skill is not None
     assert skill.sandboxed is False and skill.module is not None   # exec'd in-process now
+
+
+def test_approval_persists_across_loader_restart(loader, tmp_path):
+    name = _gen(loader)
+    assert loader.approve_generated_skill(name) is True
+    skill_dir = tmp_path / name
+
+    restarted = SkillLoader(
+        approval_store=SkillApprovalStore(tmp_path / "private" / "approvals.json")
+    )
+    restarted._load_skill(skill_dir)
+
+    skill = _registered(restarted, skill_dir)
+    assert skill is not None
+    assert skill.sandboxed is False
+    assert skill.module is not None
+
+
+def test_legacy_marker_requires_explicit_owner_reapproval(loader, tmp_path):
+    name = _gen(loader)
+    skill_dir = tmp_path / name
+    signing.sign_skill(skill_dir)
+    (skill_dir / "OWNER_APPROVED_IN_PROCESS").write_text(
+        "legacy-owner-approved\n", encoding="utf-8"
+    )
+    (skill_dir / "PENDING_REVIEW").unlink()
+    loader._load_skill(skill_dir)
+    skill = _registered(loader, skill_dir)
+    assert skill is not None and skill.module is None and skill.sandboxed is True
+
+    assert loader.approve_generated_skill(name) is True
+
+    skill = _registered(loader, skill_dir)
+    assert skill is not None and skill.module is not None
+    assert not (skill_dir / "OWNER_APPROVED_IN_PROCESS").exists()
 
 
 def test_approved_skill_change_returns_to_quarantine(loader, tmp_path):

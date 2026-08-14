@@ -678,9 +678,12 @@ def register(skill):
         return skill_name
 
     def approve_generated_skill(self, name: str) -> bool:
-        """CDX-8: owner-approve a quarantined auto-generated skill — sign it, clear the
-        PENDING_REVIEW marker, and load it in-process. Returns True if a pending skill was
-        promoted, False if there was no such pending skill (idempotent / safe)."""
+        """Persist an owner approval outside the skill tree, then activate it.
+
+        Pending generated skills and quarantined legacy approvals are eligible.
+        The legacy in-tree marker can identify a re-approval candidate but never
+        authorizes import by itself.
+        """
         # Resolve to the skill dir: accept the registry name (manifest title, what the
         # pending-list endpoint exposes) OR the on-disk dir slug.
         reg = self.skills.get(name)
@@ -693,7 +696,23 @@ def register(skill):
             candidates = [SKILLS_DIR / name] + ([user_dir / name] if user_dir else [])
             skill_dir = next((c for c in candidates if (c / "PENDING_REVIEW").exists()),
                              candidates[0])
-        if not (skill_dir / "PENDING_REVIEW").exists():
+        pending_marker = skill_dir / "PENDING_REVIEW"
+        legacy_marker = skill_dir / OWNER_APPROVED_MARKER
+        registered = next(
+            (
+                skill
+                for skill in self.skills.values()
+                if Path(getattr(skill, "path", "")).resolve() == skill_dir.resolve()
+            ),
+            None,
+        )
+        legacy_reapproval = bool(
+            legacy_marker.exists()
+            and registered is not None
+            and registered.sandboxed
+            and _is_external_skill(skill_dir)
+        )
+        if not pending_marker.exists() and not legacy_reapproval:
             return False
         if not _skill_generation_allowed({
             "kind": SKILL_GENERATION_CONTRACT_KIND,
@@ -704,10 +723,9 @@ def register(skill):
         }):
             return False
         signing.sign_skill(skill_dir)
-        (skill_dir / OWNER_APPROVED_MARKER).write_text(
-            "owner-approved\n", encoding="utf-8"
-        )
-        (skill_dir / "PENDING_REVIEW").unlink()
+        self._approval_store.approve(skill_dir)
+        legacy_marker.unlink(missing_ok=True)
+        pending_marker.unlink(missing_ok=True)
         self._load_skill(skill_dir)
         logger.info("Generated skill '%s' approved + activated", name)
         return True

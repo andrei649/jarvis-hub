@@ -28,13 +28,16 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.skills import loader as loader_mod  # noqa: E402
+from agents.core.skills.approval import SkillApprovalStore  # noqa: E402
 from agents.core.skills.loader import SkillLoader  # noqa: E402
 
 
 @pytest.fixture
 def loader(tmp_path, monkeypatch):
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", tmp_path)
-    return SkillLoader()
+    return SkillLoader(
+        approval_store=SkillApprovalStore(tmp_path / "private" / "approvals.json")
+    )
 
 
 def _gen(loader, task="organize the morning inbox", cmd="tidy_inbox"):
