@@ -5,9 +5,9 @@ from __future__ import annotations
 import ast
 import inspect
 import textwrap
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -23,11 +23,20 @@ BINDING_API_NAME = "bind_external_orchestrator_attribute"
 
 _BINDING_FUNCTION = "binding-function"
 _BINDING_MODULE = "binding-module"
-_BINDING_ROOT = "binding-root"
 _BUILTIN_GETATTR = "builtin-getattr"
 _BUILTIN_OBJECT = "builtin-object"
 _BUILTIN_SETATTR = "builtin-setattr"
 _OBJECT_SETATTR = "object-setattr"
+_PYTHON_MODULE_PREFIX = "python-module:"
+
+_BINDING_MODULE_NAMES = frozenset(
+    {
+        "agents.core.orchestrator_bindings",
+        "core.orchestrator_bindings",
+    }
+)
+
+_LexicalSymbol = str | tuple[object | None, ...]
 
 # These are lexically identical to orchestrator-slot writes but are writes to an
 # unrelated domain object. Keep the exception exact so a moved or duplicated write
@@ -42,11 +51,15 @@ class _Scope:
         self,
         parent: _Scope | None = None,
         local_names: set[str] | None = None,
+        blocked_names: set[str] | None = None,
     ) -> None:
         self.parent = parent
-        self.bindings: dict[str, str | None] = dict.fromkeys(local_names or set())
+        self.bindings: dict[str, _LexicalSymbol | None] = dict.fromkeys(local_names or set())
+        self.blocked_names = blocked_names or set()
 
-    def resolve(self, name: str) -> str | None:
+    def resolve(self, name: str) -> _LexicalSymbol | None:
+        if name in self.blocked_names:
+            return None
         if name in self.bindings:
             return self.bindings[name]
         if self.parent is not None:
@@ -68,73 +81,122 @@ def _stored_names(target: ast.AST) -> set[str]:
 
 class _LocalNameCollector(ast.NodeVisitor):
     def __init__(self) -> None:
-        self.names: set[str] = set()
+        self.counts: Counter[str] = Counter()
+
+    @property
+    def names(self) -> set[str]:
+        return set(self.counts)
+
+    def _record(self, name: str) -> None:
+        self.counts[name] += 1
 
     def visit_Name(self, node: ast.Name) -> None:
         if isinstance(node.ctx, ast.Store):
-            self.names.add(node.id)
+            self._record(node.id)
 
     def visit_Import(self, node: ast.Import) -> None:
         for imported in node.names:
-            self.names.add(imported.asname or imported.name.split(".")[0])
+            self._record(imported.asname or imported.name.split(".")[0])
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         for imported in node.names:
-            self.names.add(imported.asname or imported.name)
+            self._record(imported.asname or imported.name)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        self.names.add(node.name)
+        self._record(node.name)
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        self.names.add(node.name)
+        self._record(node.name)
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         return
 
 
-def _function_local_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+def _function_scope_names(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[set[str], set[str]]:
     collector = _LocalNameCollector()
     for statement in node.body:
         collector.visit(statement)
-    arguments = {
+    arguments = [
         argument.arg
         for argument in (
             *node.args.posonlyargs,
             *node.args.args,
             *node.args.kwonlyargs,
         )
-    }
+    ]
     if node.args.vararg is not None:
-        arguments.add(node.args.vararg.arg)
+        arguments.append(node.args.vararg.arg)
     if node.args.kwarg is not None:
-        arguments.add(node.args.kwarg.arg)
-    return collector.names | arguments
+        arguments.append(node.args.kwarg.arg)
+    for argument in arguments:
+        collector._record(argument)
+    blocked = {name for name, count in collector.counts.items() if count > 1}
+    return collector.names, blocked
+
+
+def _module_symbol(module: str) -> str:
+    return f"{_PYTHON_MODULE_PREFIX}{module}"
+
+
+def _module_name(symbol: object) -> str | None:
+    if isinstance(symbol, str) and symbol.startswith(_PYTHON_MODULE_PREFIX):
+        return symbol.removeprefix(_PYTHON_MODULE_PREFIX)
+    return None
+
+
+def _builtin_symbol(name: str) -> str | None:
+    return {
+        "getattr": _BUILTIN_GETATTR,
+        "object": _BUILTIN_OBJECT,
+        "setattr": _BUILTIN_SETATTR,
+    }.get(name)
 
 
 class _LexicalBindingPolicy(ast.NodeVisitor):
     """Conservative lexical resolver for the CI policy, not Python execution proof."""
 
-    def __init__(self, filename: str) -> None:
+    def __init__(self, filename: str, *, blocked_names: set[str] | None = None) -> None:
         self.filename = filename
-        self.scope = _Scope()
+        self.scope = _Scope(blocked_names=blocked_names)
         self.binding_calls: list[tuple[str, int, int]] = []
         self.call_errors: list[str] = []
         self.setter_calls: list[ast.Call] = []
 
-    def _resolve(self, node: ast.expr) -> str | None:
+    def _resolve(self, node: ast.expr) -> _LexicalSymbol | None:
         if isinstance(node, ast.Name):
             return self.scope.resolve(node.id)
         if isinstance(node, ast.Attribute):
             owner = self._resolve(node.value)
-            if owner == _BINDING_ROOT:
-                return _BINDING_MODULE if node.attr == "orchestrator_bindings" else owner
             if owner == _BINDING_MODULE and node.attr == BINDING_API_NAME:
                 return _BINDING_FUNCTION
             if owner == _BUILTIN_OBJECT and node.attr == "__setattr__":
                 return _OBJECT_SETATTR
+            module = _module_name(owner)
+            if module is not None:
+                member = f"{module}.{node.attr}"
+                if member in _BINDING_MODULE_NAMES:
+                    return _BINDING_MODULE
+                if module == "builtins":
+                    builtin = _builtin_symbol(node.attr)
+                    if builtin is not None:
+                        return builtin
+                return _module_symbol(member)
             return None
+        if isinstance(node, ast.Tuple):
+            return tuple(self._resolve(element) for element in node.elts)
+        if (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.slice, ast.Constant)
+            and isinstance(node.slice.value, int)
+        ):
+            owner = self._resolve(node.value)
+            index = node.slice.value
+            if isinstance(owner, tuple) and -len(owner) <= index < len(owner):
+                return owner[index]
         if (
             isinstance(node, ast.Call)
             and self._resolve(node.func) == _BUILTIN_GETATTR
@@ -149,6 +211,18 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
             if owner == _BUILTIN_OBJECT and attribute == "__setattr__":
                 return _OBJECT_SETATTR
         return None
+
+    def _absolute_import_module(self, module: str, level: int) -> str:
+        if level == 0:
+            return module
+        path_parts = list(PurePosixPath(self.filename.replace("\\", "/")).parent.parts)
+        if "agents" in path_parts:
+            path_parts = path_parts[path_parts.index("agents") :]
+        trim = level - 1
+        if trim > len(path_parts):
+            return ""
+        package = path_parts[: len(path_parts) - trim] if trim else path_parts
+        return ".".join((*package, *(module.split(".") if module else ())))
 
     def _bind_target(self, target: ast.expr, value: ast.expr) -> None:
         if isinstance(target, ast.Name):
@@ -168,21 +242,23 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
     def visit_Import(self, node: ast.Import) -> None:
         for imported in node.names:
             local_name = imported.asname or imported.name.split(".")[0]
-            if imported.name.endswith(".orchestrator_bindings"):
-                self.scope.bindings[local_name] = (
-                    _BINDING_MODULE if imported.asname else _BINDING_ROOT
-                )
+            if imported.asname and imported.name in _BINDING_MODULE_NAMES:
+                symbol: _LexicalSymbol | None = _BINDING_MODULE
             else:
-                self.scope.bindings[local_name] = None
+                module = imported.name if imported.asname else imported.name.split(".")[0]
+                symbol = _module_symbol(module)
+            self.scope.bindings[local_name] = symbol
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        module = node.module or ""
+        module = self._absolute_import_module(node.module or "", node.level)
         for imported in node.names:
             local_name = imported.asname or imported.name
-            if module.endswith("orchestrator_bindings") and imported.name == BINDING_API_NAME:
+            if module in _BINDING_MODULE_NAMES and imported.name == BINDING_API_NAME:
                 symbol = _BINDING_FUNCTION
-            elif imported.name == "orchestrator_bindings":
+            elif f"{module}.{imported.name}" in _BINDING_MODULE_NAMES:
                 symbol = _BINDING_MODULE
+            elif module == "builtins":
+                symbol = _builtin_symbol(imported.name)
             else:
                 symbol = None
             self.scope.bindings[local_name] = symbol
@@ -213,7 +289,8 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
             if expression is not None:
                 self.visit(expression)
         previous = self.scope
-        self.scope = _Scope(previous, _function_local_names(node))
+        local_names, blocked_names = _function_scope_names(node)
+        self.scope = _Scope(previous, local_names, blocked_names)
         try:
             for statement in node.body:
                 self.visit(statement)
@@ -257,8 +334,12 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
 
 
 def _lexical_policy(source: str, *, filename: str) -> _LexicalBindingPolicy:
-    policy = _LexicalBindingPolicy(filename)
-    policy.visit(ast.parse(source, filename=filename))
+    tree = ast.parse(source, filename=filename)
+    collector = _LocalNameCollector()
+    collector.visit(tree)
+    blocked_names = {name for name, count in collector.counts.items() if count > 1}
+    policy = _LexicalBindingPolicy(filename, blocked_names=blocked_names)
+    policy.visit(tree)
     return policy
 
 
@@ -301,7 +382,16 @@ def _writer_inventory_mismatches(
 ) -> list[str]:
     mismatches: list[str] = []
     for attribute in sorted(set(expected) | set(observed)):
-        expected_paths = set(expected.get(attribute, ()))
+        expected_entries = expected.get(attribute, ())
+        expected_counts = Counter(expected_entries)
+        duplicate_paths = sorted(
+            path for path, count in expected_counts.items() if count > 1
+        )
+        if duplicate_paths:
+            mismatches.append(
+                f"{attribute}: duplicate expected callsites={duplicate_paths!r}"
+            )
+        expected_paths = set(expected_entries)
         observed_paths = observed.get(attribute, set())
         if observed_paths != expected_paths:
             mismatches.append(
@@ -512,6 +602,33 @@ def test_aliased_external_binding_setters_are_rejected(source: str) -> None:
     "source",
     [
         """
+from builtins import setattr as write_attribute
+
+def wire(target, value):
+    write_attribute(target, "argus", value)
+""",
+        """
+from builtins import object as root_object
+
+def wire(target, value):
+    root_object.__setattr__(target, "argus", value)
+""",
+        """
+import builtins
+
+def wire(target, value):
+    builtins.setattr(target, "argus", value)
+""",
+    ],
+)
+def test_imported_builtin_setter_aliases_are_rejected(source: str) -> None:
+    assert _binding_contract_violations(textwrap.dedent(source), initialized=set())
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
 def wire(target, value, setattr):
     setattr(target, "argus", value)
 """,
@@ -597,6 +714,23 @@ def test_binding_api_parser_tracks_lexical_alias_forms(
     assert calls == [("argus", expected_line, 0)]
 
 
+def test_binding_api_parser_tracks_tuple_subscript_alias() -> None:
+    source = """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
+binding_apis = (bind_external_orchestrator_attribute,)
+write_binding = binding_apis[0]
+write_binding(orchestrator, "argus", value)
+"""
+
+    calls, errors = _binding_api_call_names(
+        textwrap.dedent(source), filename="agents/core/fixture.py"
+    )
+
+    assert errors == []
+    assert calls == [("argus", 6, 0)]
+
+
 def test_dynamic_getattr_binding_api_reference_fails_closed() -> None:
     source = """
 import agents.core.orchestrator_bindings as bindings
@@ -620,6 +754,51 @@ from agents.core.orchestrator_bindings import bind_external_orchestrator_attribu
 
 def wire(bind_external_orchestrator_attribute, orchestrator, value):
     bind_external_orchestrator_attribute(orchestrator, "argus", value)
+"""
+
+    calls, errors = _binding_api_call_names(
+        textwrap.dedent(source), filename="agents/core/fixture.py"
+    )
+
+    assert errors == []
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+from unrelated import orchestrator_bindings
+
+orchestrator_bindings.bind_external_orchestrator_attribute(
+    orchestrator, "argus", value
+)
+""",
+        """
+from unrelated.orchestrator_bindings import bind_external_orchestrator_attribute
+
+bind_external_orchestrator_attribute(orchestrator, "argus", value)
+""",
+    ],
+)
+def test_unrelated_same_named_imports_cannot_satisfy_inventory(source: str) -> None:
+    calls, errors = _binding_api_call_names(
+        textwrap.dedent(source), filename="agents/core/fixture.py"
+    )
+
+    assert errors == []
+    assert calls == []
+
+
+def test_late_global_shadow_cannot_satisfy_inventory() -> None:
+    source = """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
+def wire(orchestrator, value):
+    bind_external_orchestrator_attribute(orchestrator, "argus", value)
+
+def bind_external_orchestrator_attribute(*args):
+    return None
 """
 
     calls, errors = _binding_api_call_names(
@@ -655,6 +834,18 @@ def test_exact_callsite_inventory_reports_missing_and_extra_locations() -> None:
     ) == [
         "argus: expected=[('agents/core/plugin_manager.py', 188, 8)] "
         "observed=[('agents/core/plugin_manager.py', 189, 8)]"
+    ]
+
+
+def test_exact_callsite_inventory_rejects_duplicate_declared_locations() -> None:
+    callsite = ("agents/core/plugin_manager.py", 188, 8)
+
+    assert _writer_inventory_mismatches(
+        {"argus": {callsite}},
+        expected={"argus": (callsite, callsite)},
+    ) == [
+        "argus: duplicate expected callsites="
+        "[('agents/core/plugin_manager.py', 188, 8)]"
     ]
 
 
