@@ -240,6 +240,17 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
                     )
                 else:
                     self.binding_calls.append((name, node.lineno, node.col_offset))
+        elif symbol == _BUILTIN_GETATTR and node.args:
+            owner = self._resolve(node.args[0])
+            attribute_is_literal = (
+                len(node.args) >= 2
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)
+            )
+            if owner in {_BINDING_MODULE, _BUILTIN_OBJECT} and not attribute_is_literal:
+                self.call_errors.append(
+                    f"{self.filename}:{node.lineno}:dynamic-binding-api-reference"
+                )
         elif symbol in {_BUILTIN_SETATTR, _OBJECT_SETATTR}:
             self.setter_calls.append(node)
         self.generic_visit(node)
@@ -584,6 +595,23 @@ def test_binding_api_parser_tracks_lexical_alias_forms(
 
     assert errors == []
     assert calls == [("argus", expected_line, 0)]
+
+
+def test_dynamic_getattr_binding_api_reference_fails_closed() -> None:
+    source = """
+import agents.core.orchestrator_bindings as bindings
+
+API_NAME = "bind_external_orchestrator_attribute"
+write_binding = getattr(bindings, API_NAME)
+write_binding(orchestrator, "argus", value)
+"""
+
+    calls, errors = _binding_api_call_names(
+        textwrap.dedent(source), filename="agents/core/fixture.py"
+    )
+
+    assert calls == []
+    assert errors == ["agents/core/fixture.py:5:dynamic-binding-api-reference"]
 
 
 def test_shadowed_binding_api_name_is_not_counted() -> None:
