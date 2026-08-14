@@ -32,6 +32,23 @@ _SIGNED_FILES = ("SKILL.md", "main.py")
 SIG_FILENAME = "SKILL.sig"
 
 
+def _source_digest_bytes(skill_dir: Path) -> bytes:
+    digest = hashlib.sha256()
+    for name in _SIGNED_FILES:
+        path = Path(skill_dir) / name
+        if path.exists():
+            digest.update(name.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
+    return digest.digest()
+
+
+def source_fingerprint(skill_dir: Path) -> str:
+    """Return a stable byte-binding fingerprint, not an authorship claim."""
+    return f"sha256:{_source_digest_bytes(Path(skill_dir)).hex()}"
+
+
 class SkillSigningMisconfigured(RuntimeError):
     """Enforcement is on but no signing key exists — the gate cannot do its job."""
 
@@ -46,16 +63,7 @@ def compute_digest(skill_dir: Path) -> tuple[str, str]:
 
     ``algo`` is ``hmac-sha256`` when a signing key is configured, else ``sha256``.
     """
-    h = hashlib.sha256()
-    for name in _SIGNED_FILES:
-        fpath = skill_dir / name
-        if fpath.exists():
-            # Include the filename so reordering/renaming changes the digest.
-            h.update(name.encode("utf-8"))
-            h.update(b"\0")
-            h.update(fpath.read_bytes())
-            h.update(b"\0")
-    content_digest = h.digest()
+    content_digest = _source_digest_bytes(Path(skill_dir))
 
     key = _signing_key()
     if key:
