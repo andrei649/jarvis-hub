@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import sqlite3
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
@@ -610,6 +613,71 @@ def test_event_tail_or_total_deletion_invalidates_counters(tmp_path, delete_wher
     assert stats["governed"] == 0
 
 
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("signature", "0" * 64),
+        ("event_count", 99),
+        ("last_event_hash", "f" * 64),
+        ("version", 2),
+    ],
+)
+def test_corrupt_signed_head_blocks_claim_without_self_healing(tmp_path, column, value):
+    queue = _queue(tmp_path)
+    task_id = _enqueue_mediated(queue)
+    queue.transition(task_id, TaskStatus.APPROVED)
+    queue._conn.execute(f"UPDATE task_mediation_state SET {column}=? WHERE id=1", (value,))
+    queue._conn.commit()
+
+    assert queue.verified_mediation_stats()["valid"] is False
+    assert (
+        queue.claim_mediated(
+            task_id,
+            execution_id="16cb1ba3-b0c3-4200-9a7c-548472343049",
+        )
+        is None
+    )
+    assert queue.get(task_id).status == "approved"
+    assert queue.verified_mediation_stats()["valid"] is False
+
+
+def test_global_task_event_mismatch_blocks_other_claims(tmp_path):
+    queue = _queue(tmp_path)
+    first_id = _enqueue_mediated(queue)
+    second_id = _enqueue_mediated(
+        queue,
+        receipt=_receipt(
+            receipt_id="ea4d1520-a888-4eed-864f-7987fb540253",
+            expectation=_expectation(enqueue_id=REFUSED_ENQUEUE_ID),
+        ),
+    )
+    queue.transition(second_id, TaskStatus.APPROVED)
+    queue._conn.execute("DELETE FROM tasks WHERE id=?", (first_id,))
+    queue._conn.commit()
+
+    assert queue.verified_mediation_stats()["valid"] is False
+    assert (
+        queue.claim_mediated(
+            second_id,
+            execution_id="16cb1ba3-b0c3-4200-9a7c-548472343049",
+        )
+        is None
+    )
+    assert queue.get(second_id).status == "approved"
+
+
+def test_corrupt_signed_head_blocks_refusal_append_without_self_healing(tmp_path):
+    queue = _queue(tmp_path)
+    queue._conn.execute("UPDATE task_mediation_state SET signature='corrupt' WHERE id=1")
+    queue._conn.commit()
+
+    with pytest.raises(TaskQueueError, match="requires mediation"):
+        queue.enqueue("ultron", "filesystem.write", "Unsigned", {})
+
+    assert queue.verified_mediation_stats()["valid"] is False
+    assert queue.verified_mediation_stats()["refused_unmediated"] == 0
+
+
 def test_concurrent_new_and_legacy_initialization_is_lock_safe(tmp_path):
     for name, legacy in (("new.db", False), ("legacy.db", True)):
         path = tmp_path / name
@@ -624,3 +692,47 @@ def test_concurrent_new_and_legacy_initialization_is_lock_safe(tmp_path):
 
         with ThreadPoolExecutor(max_workers=8) as pool:
             assert all(pool.map(initialize_once, range(8)))
+
+
+def test_cross_process_legacy_migration_is_serialized(tmp_path):
+    path = tmp_path / "legacy-process.db"
+    connection = sqlite3.connect(path)
+    connection.execute(
+        """CREATE TABLE tasks (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               agent TEXT NOT NULL,
+               kind TEXT NOT NULL,
+               title TEXT NOT NULL,
+               payload TEXT NOT NULL DEFAULT '{}',
+               risk_tier INTEGER NOT NULL DEFAULT 3,
+               status TEXT NOT NULL DEFAULT 'proposed',
+               autonomy_level TEXT NOT NULL DEFAULT 'ask',
+               origin TEXT NOT NULL DEFAULT 'generated',
+               attempts INTEGER NOT NULL DEFAULT 0,
+               result TEXT,
+               decided_by TEXT,
+               decision TEXT,
+               pushed INTEGER NOT NULL DEFAULT 0,
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL
+           )"""
+    )
+    connection.commit()
+    connection.close()
+    program = (
+        "from agents.core.autonomy.queue import TaskQueue; "
+        f"q=TaskQueue({str(path)!r}).initialize(); q.close()"
+    )
+
+    processes = [
+        subprocess.Popen(
+            [sys.executable, "-c", program],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(8)
+    ]
+    results = [process.communicate(timeout=45) + (process.returncode,) for process in processes]
+
+    assert results == [("", "", 0)] * 8
