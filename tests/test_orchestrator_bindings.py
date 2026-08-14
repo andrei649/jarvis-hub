@@ -200,7 +200,13 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
         self.call_errors: list[str] = []
         self.contract_violations: list[str] = []
         self.allowed_attributes = None if initialized is None else initialized | {"session_id"}
-        self._deferred_functions: list[tuple[ast.FunctionDef | ast.AsyncFunctionDef, _Scope]] = []
+        self._deferred_functions: list[
+            tuple[
+                ast.FunctionDef | ast.AsyncFunctionDef,
+                _Scope,
+                dict[str, _LexicalSymbol | None],
+            ]
+        ] = []
 
     def _resolve(self, node: ast.expr) -> _LexicalSymbol | None:
         if isinstance(node, ast.Name):
@@ -209,6 +215,8 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
             symbol = self._resolve(node.value)
             self._bind_symbol(node.target, symbol)
             return symbol
+        if isinstance(node, ast.IfExp):
+            return _merge_symbols(self._resolve(node.body), self._resolve(node.orelse))
         if isinstance(node, ast.Attribute):
             owner = self._resolve(node.value)
             if node.attr in {"orchestrator", "_orch"}:
@@ -343,9 +351,9 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
             self.visit(statement)
         index = 0
         while index < len(self._deferred_functions):
-            function, parent = self._deferred_functions[index]
+            function, parent, default_symbols = self._deferred_functions[index]
             index += 1
-            self._visit_function_body(function, parent)
+            self._visit_function_body(function, parent, default_symbols)
 
     def visit_Import(self, node: ast.Import) -> None:
         for imported in node.names:
@@ -428,6 +436,47 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
     visit_For = _visit_for
     visit_AsyncFor = _visit_for
 
+    def visit_While(self, node: ast.While) -> None:
+        self.visit(node.test)
+        before = self.scope.bindings.copy()
+        self.scope.bindings = before.copy()
+        for statement in node.body:
+            self.visit(statement)
+        after_iteration = self.scope.bindings.copy()
+        self.scope.bindings = self._merged_bindings(before, after_iteration)
+        for statement in node.orelse:
+            self.visit(statement)
+
+    def _visit_try(self, node: ast.Try | ast.TryStar) -> None:
+        before = self.scope.bindings.copy()
+        self.scope.bindings = before.copy()
+        for statement in node.body:
+            self.visit(statement)
+        body = self.scope.bindings.copy()
+
+        self.scope.bindings = body.copy()
+        for statement in node.orelse:
+            self.visit(statement)
+        paths = [before, self.scope.bindings.copy()]
+
+        handler_start = self._merged_bindings(before, body)
+        for handler in node.handlers:
+            self.scope.bindings = handler_start.copy()
+            if handler.type is not None:
+                self.visit(handler.type)
+            if handler.name is not None:
+                self.scope.bindings[handler.name] = None
+            for statement in handler.body:
+                self.visit(statement)
+            paths.append(self.scope.bindings.copy())
+
+        self.scope.bindings = self._merged_bindings(*paths)
+        for statement in node.finalbody:
+            self.visit(statement)
+
+    visit_Try = _visit_try
+    visit_TryStar = _visit_try
+
     def _visit_function(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -436,15 +485,38 @@ class _LexicalBindingPolicy(ast.NodeVisitor):
         for expression in (*node.decorator_list, *node.args.defaults, *node.args.kw_defaults):
             if expression is not None:
                 self.visit(expression)
-        self._deferred_functions.append((node, self.scope))
+        positional = (*node.args.posonlyargs, *node.args.args)
+        positional_defaults = positional[len(positional) - len(node.args.defaults) :]
+        default_symbols = {
+            argument.arg: _merge_symbols(self._resolve(default), None)
+            for argument, default in zip(
+                positional_defaults,
+                node.args.defaults,
+                strict=True,
+            )
+        }
+        default_symbols.update(
+            {
+                argument.arg: _merge_symbols(self._resolve(default), None)
+                for argument, default in zip(
+                    node.args.kwonlyargs,
+                    node.args.kw_defaults,
+                    strict=True,
+                )
+                if default is not None
+            }
+        )
+        self._deferred_functions.append((node, self.scope, default_symbols))
 
     def _visit_function_body(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
         parent: _Scope,
+        default_symbols: dict[str, _LexicalSymbol | None],
     ) -> None:
         previous = self.scope
         self.scope = _Scope(parent, _function_scope_names(node))
+        self.scope.bindings.update(default_symbols)
         for name in _orchestrator_argument_names(node):
             self.scope.bindings[name] = _ORCHESTRATOR_RECEIVER
         try:
@@ -742,15 +814,52 @@ def wire(target, value):
 
 
 def test_conditional_setter_reassignment_remains_conservative() -> None:
-    source = """
+    sources = [
+        """
 def wire(target, replacement, value, condition):
     write_attribute = setattr
     if condition:
         write_attribute = replacement
     write_attribute(target, "argus", value)
-"""
+""",
+        """
+def wire(target, replacement, value, condition):
+    write_attribute = setattr if condition else replacement
+    write_attribute(target, "argus", value)
+""",
+        """
+def wire(target, replacement, value, condition):
+    (write_attribute := setattr if condition else replacement)(target, "argus", value)
+""",
+        """
+def wire(target, replacement, value, condition):
+    write_attribute = setattr
+    while condition:
+        write_attribute = replacement
+    write_attribute(target, "argus", value)
+""",
+        """
+def wire(target, replacement, value):
+    write_attribute = setattr
+    try:
+        write_attribute = replacement
+    except Exception:
+        pass
+    write_attribute(target, "argus", value)
+""",
+        """
+def wire(target, value, write_attribute=setattr):
+    write_attribute(target, "argus", value)
+""",
+        """
+def wire(target, replacement, value, condition):
+    for write_attribute in (setattr if condition else replacement,):
+        write_attribute(target, "argus", value)
+""",
+    ]
 
-    assert _binding_contract_violations(textwrap.dedent(source), initialized=set())
+    for source in sources:
+        assert _binding_contract_violations(textwrap.dedent(source), initialized=set())
 
 
 def test_for_loop_setter_target_alias_is_rejected() -> None:
@@ -981,7 +1090,8 @@ def wire(orchestrator, value):
 
 
 def test_conditional_binding_reassignment_remains_conservative() -> None:
-    source = """
+    sources = [
+        """
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
 def wire(orchestrator, replacement, value, condition):
@@ -989,14 +1099,66 @@ def wire(orchestrator, replacement, value, condition):
     if condition:
         write_binding = replacement
     write_binding(orchestrator, "argus", value)
-"""
+""",
+        """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
-    calls, errors = _binding_api_call_names(
-        textwrap.dedent(source), filename="agents/core/fixture.py"
+def wire(orchestrator, replacement, value, condition):
+    write_binding = bind_external_orchestrator_attribute if condition else replacement
+    write_binding(orchestrator, "argus", value)
+""",
+        """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
+def wire(orchestrator, replacement, value, condition):
+    (write_binding := bind_external_orchestrator_attribute if condition else replacement)(
+        orchestrator, "argus", value
     )
+""",
+        """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
-    assert errors == []
-    assert calls == [("argus", 8, 4)]
+def wire(orchestrator, replacement, value, condition):
+    write_binding = bind_external_orchestrator_attribute
+    while condition:
+        write_binding = replacement
+    write_binding(orchestrator, "argus", value)
+""",
+        """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
+def wire(orchestrator, replacement, value):
+    write_binding = bind_external_orchestrator_attribute
+    try:
+        write_binding = replacement
+    except Exception:
+        pass
+    write_binding(orchestrator, "argus", value)
+""",
+        """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
+def wire(orchestrator, value, write_binding=bind_external_orchestrator_attribute):
+    write_binding(orchestrator, "argus", value)
+""",
+        """
+from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
+
+def wire(orchestrator, replacement, value, condition):
+    for write_binding in (
+        bind_external_orchestrator_attribute if condition else replacement,
+    ):
+        write_binding(orchestrator, "argus", value)
+""",
+    ]
+
+    for source in sources:
+        calls, errors = _binding_api_call_names(
+            textwrap.dedent(source), filename="agents/core/fixture.py"
+        )
+
+        assert errors == []
+        assert [name for name, _line, _column in calls] == ["argus"]
 
 
 def test_for_loop_binding_target_alias_is_inventoried() -> None:
