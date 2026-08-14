@@ -1,0 +1,111 @@
+# Integration Authority State Machine Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
+> (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
+> checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build and verify the fail-closed external acceptance state-machine library for issue #906.
+
+**Architecture:** A deterministic Python library validates an externally provisioned policy and
+exact pull-request tuple against a strictly parsed, externally stored JSON state. State writes use
+an injected compare-and-swap interface; the package has no GitHub client, network, filesystem,
+credential, check-publication, or merge capability.
+
+**Tech Stack:** Python 3.12 standard library, dataclasses, typing protocols, JSON, pytest, Ruff.
+
+## Global Constraints
+
+- Base is `origin/main@4b854d8cfde98615bccf47285b3709aa9970fdc3`.
+- Risk is `R3`; builder, reviewer, and integrator remain separate before activation.
+- Candidate-controlled files are not authority; only an owner-pinned external deployment may use
+  this library to support a protected App check.
+- No GitHub App/settings/secrets/rulesets, runtime code, status ledgers, or current draft paths.
+- Missing, malformed, unavailable, or concurrently changed external state always denies.
+- No third-party dependency.
+
+---
+
+### Task 1: Exact-head external acceptance state machine
+
+**Files:**
+
+- Create: `services/integration_authority/__init__.py`
+- Create: `services/integration_authority/state.py`
+- Test: `tests/test_integration_authority_state.py`
+
+**Interfaces:**
+
+- Consumes: `AuthorityPolicy`, `PullRequestTuple`, `ReviewEvent`, and an injected
+  `AtomicStateStore` whose `read() -> bytes | None` and
+  `compare_and_swap(expected: bytes, replacement: bytes) -> bool` operations are externally
+  atomic.
+- Produces: `AcceptanceStateMachine.process_review(event) -> AcceptanceResult`,
+  `AcceptanceStateMachine.verdict_for(subject) -> AcceptanceResult`, and
+  `empty_state_bytes() -> bytes` for explicit owner provisioning.
+
+- [ ] **Step 1: Write the failing exact-tuple and independent-review tests**
+
+  Add tests constructing an in-memory compare-and-swap store, a policy for repository `42` and
+  base `main`, and a pull-request tuple. Assert a distinct allowlisted reviewer accepts, while
+  author, last-pusher, owner, unallowlisted reviewer, and a non-approved review state do not.
+
+- [ ] **Step 2: Run the focused tests and verify RED**
+
+  Run:
+
+  ```powershell
+  .venv\Scripts\python.exe -m pytest tests/test_integration_authority_state.py -q
+  ```
+
+  Expected: collection/import failure because `services.integration_authority` does not exist.
+
+- [ ] **Step 3: Implement the minimal immutable inputs, policy validation, and acceptance path**
+
+  Define frozen dataclasses for the policy, tuple, review event, and result. Reject booleans and
+  non-positive numeric identities, non-canonical SHAs, empty/mismatched base refs, empty reviewer
+  allowlists, and non-approved review states. Export the public API from `__init__.py`.
+
+- [ ] **Step 4: Run the focused tests and verify GREEN**
+
+  Run the focused pytest command. Expected: the first test group passes.
+
+- [ ] **Step 5: Add failing exact-match, stale-head, replay, and corrupt-state tests**
+
+  Parameterize mutations of repository ID, PR number, base ref, base SHA, and head SHA. Add tests
+  for changed-head invalidation; identical and conflicting delivery replay; missing state; invalid
+  JSON; duplicate keys; unsupported schema; malformed records; store exceptions; and atomic-write
+  conflicts.
+
+- [ ] **Step 6: Run the focused tests and verify RED**
+
+  Expected failures must identify the missing strict parser, replay ledger, or fail-closed branch,
+  not test syntax or fixture errors.
+
+- [ ] **Step 7: Implement strict canonical state and compare-and-swap persistence**
+
+  Parse a closed schema with duplicate-key rejection. Record bounded delivery fingerprints and
+  results, append one acceptance for a valid exact tuple, serialize deterministically, and publish
+  acceptance only after compare-and-swap succeeds. `verdict_for()` must use an exact full-tuple
+  comparison and deny on every state/store failure.
+
+- [ ] **Step 8: Run focused and adjacent verification**
+
+  ```powershell
+  .venv\Scripts\python.exe -m pytest tests/test_integration_authority_state.py tests/test_ai_workflow_policy.py -q
+  .venv\Scripts\python.exe -m ruff format --check services/integration_authority tests/test_integration_authority_state.py
+  .venv\Scripts\python.exe -m ruff check services/integration_authority tests/test_integration_authority_state.py
+  .venv\Scripts\python.exe scripts/check_ai_workflow_policy.py
+  git diff --check
+  ```
+
+  Expected: exit `0` for every command, with no test failures or Ruff findings.
+
+- [ ] **Step 9: Review the exact diff and commit the coherent rollback unit**
+
+  Confirm only the five planned paths changed, no generated status/ledger changed, and no App or
+  settings code exists. Stage only those paths and commit with:
+
+  ```powershell
+  git commit -m "feat(governance): add external acceptance state core"
+  ```
+
