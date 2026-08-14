@@ -30,7 +30,7 @@
 - Produces: `SkillApprovalStore.approve(path: Path) -> dict[str, str]`
 - Produces: `SkillApprovalStore.is_approved(path: Path) -> bool`
 
-- [ ] **Step 1: Write failing store tests**
+- [x] **Step 1: Write failing store tests**
 
 ```python
 def test_approval_is_bound_to_canonical_path_and_source(tmp_path):
@@ -44,13 +44,13 @@ def test_approval_is_bound_to_canonical_path_and_source(tmp_path):
     assert not store.is_approved(skill)
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_skill_approval_store.py -q`
 
 Expected: collection fails because `agents.core.skills.approval` does not exist.
 
-- [ ] **Step 3: Implement the stable fingerprint and store**
+- [x] **Step 3: Implement the stable fingerprint and store**
 
 ```python
 def source_fingerprint(skill_dir: Path) -> str:
@@ -88,13 +88,13 @@ class SkillApprovalStore(JsonStore):
         )
 ```
 
-- [ ] **Step 4: Verify green and adjacent signing tests**
+- [x] **Step 4: Verify green and adjacent signing tests**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_skill_approval_store.py tests/test_skill_signing.py -q`
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- agents/core/skills/signing.py agents/core/skills/approval.py tests/test_skill_approval_store.py
@@ -111,7 +111,7 @@ git commit -m "feat(security): add external skill approval store"
 - Consumes: `SkillApprovalStore.is_approved(path)`
 - Produces: `SkillLoader(approval_store: SkillApprovalStore | None = None)`
 
-- [ ] **Step 1: Add hostile failing tests**
+- [x] **Step 1: Add hostile failing tests**
 
 ```python
 def test_forged_external_marker_and_unkeyed_signature_do_not_execute(...):
@@ -129,13 +129,13 @@ def test_imported_sidecar_cannot_self_approve(...):
     assert skill.module is None
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_skill_signing.py -k "forged or self_approve" -q`
 
 Expected: both hostile skills execute under the current marker gate.
 
-- [ ] **Step 3: Inject the store and replace marker authority**
+- [x] **Step 3: Inject the store and replace marker authority**
 
 ```python
 def _external_skill_may_import(
@@ -154,13 +154,13 @@ class SkillLoader:
         self._approval_store = approval_store or SkillApprovalStore()
 ```
 
-- [ ] **Step 4: Verify green plus bundled/keyed controls**
+- [x] **Step 4: Verify green plus bundled/keyed controls**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_skill_signing.py -q`
 
 Expected: hostile marker tests pass; keyed external and bundled controls remain green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- agents/core/skills/loader.py tests/test_skill_signing.py
@@ -178,7 +178,7 @@ git commit -m "fix(security): remove in-tree skill approval authority"
 - Consumes: `SkillApprovalStore.approve(path)`
 - Preserves: `SkillLoader.approve_generated_skill(name) -> bool`
 
-- [ ] **Step 1: Write persistence, restart, and mutation tests**
+- [x] **Step 1: Write persistence, restart, and mutation tests**
 
 ```python
 def test_approve_activates_and_persists_outside_skill_tree(loader, store, tmp_path):
@@ -196,13 +196,13 @@ def test_approved_skill_change_returns_to_quarantine(loader, store, tmp_path):
     assert skill.module is None and skill.sandboxed is True
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_cdx8_skill_quarantine.py tests/test_generated_skill_contract.py -q`
 
 Expected: restart cannot use the external registry because approval is still stored in-tree.
 
-- [ ] **Step 3: Record approval before activation and clean legacy markers**
+- [x] **Step 3: Record approval before activation and clean legacy markers**
 
 ```python
 self._approval_store.approve(skill_dir)
@@ -212,13 +212,13 @@ legacy_marker.unlink(missing_ok=True)
 self._load_skill(skill_dir)
 ```
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_cdx8_skill_quarantine.py tests/test_generated_skill_contract.py -q`
 
 Expected: explicit approval persists; source changes fail closed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- agents/core/skills/loader.py tests/test_cdx8_skill_quarantine.py tests/test_generated_skill_contract.py
