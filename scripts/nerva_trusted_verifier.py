@@ -319,14 +319,43 @@ def _print_verdict(verdict: ManifestVerdict) -> None:
         print(f"error: {_ascii_cli_value(error)}")
 
 
+class _NonExitingArgumentParser(argparse.ArgumentParser):
+    """Return parser failures to the verdict path without writing raw input."""
+
+    def error(self, message: str) -> None:
+        raise ValueError(message)
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = _NonExitingArgumentParser(add_help=False, exit_on_error=False)
+    parser.add_argument("-h", "--help", action="store_true")
     parser.add_argument("--manifest", type=Path, default=REPO / MANIFEST_RELATIVE)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(sys.argv[1:] if argv is None else argv)
+    try:
+        args = _parse_args(sys.argv[1:] if argv is None else argv)
+    except (argparse.ArgumentError, UnicodeError, ValueError) as exc:
+        _print_verdict(
+            _informational_verdict(
+                None,
+                errors=(
+                    STRUCTURAL_VALIDATION_ERROR,
+                    f"invalid command line: {exc}",
+                ),
+            )
+        )
+        return 2
+    if args.help:
+        _print_verdict(
+            _informational_verdict(
+                None,
+                errors=(STRUCTURAL_VALIDATION_ERROR, "help requested"),
+            )
+        )
+        print("usage=nerva_trusted_verifier.py [--manifest PATH]")
+        return 0
     _print_verdict(verify_path(args.manifest))
     return 0
 

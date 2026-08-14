@@ -247,7 +247,7 @@ class TestCandidateSideTrustIsImpossible:
         assert "root" not in inspect.signature(verifier.verify_path).parameters
 
     def test_cli_has_no_candidate_supplied_trust_anchor_option(self) -> None:
-        with pytest.raises(SystemExit):
+        with pytest.raises(ValueError, match="unrecognized arguments"):
             verifier._parse_args(["--trust-anchor", "candidate-controlled.json"])
 
     def test_module_import_never_imports_candidate_checker(self) -> None:
@@ -339,6 +339,41 @@ class TestCandidateSideTrustIsImpossible:
 
 
 class TestCli:
+    @pytest.mark.parametrize(
+        ("args", "expected_code"),
+        [(["--help"], 0), (["--unknown\ntrusted_source=yes"], 2)],
+    )
+    def test_process_level_parser_paths_emit_ascii_fail_closed_verdict(
+        self, args: list[str], expected_code: int
+    ) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "nerva_trusted_verifier.py"), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert completed.returncode == expected_code
+        assert completed.stderr == ""
+        assert "structurally_valid=no" in completed.stdout
+        assert "trusted_source=no" in completed.stdout
+        assert "release_ready=no" in completed.stdout
+        assert "\ntrusted_source=yes\n" not in completed.stdout
+        assert completed.stdout.isascii()
+
+    def test_direct_hostile_surrogate_argument_is_sanitized(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        assert verifier.main(["\ud800"]) == 2
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert "structurally_valid=no" in captured.out
+        assert "trusted_source=no" in captured.out
+        assert "release_ready=no" in captured.out
+        assert "\\ud800" in captured.out
+        assert captured.out.isascii()
+
     def test_main_is_informational_and_non_enforcing(self, capsys: pytest.CaptureFixture) -> None:
         exit_code = verifier.main(["--manifest", str(MANIFEST)])
         output = capsys.readouterr().out
