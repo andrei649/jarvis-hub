@@ -112,6 +112,7 @@ def _user_skills_dir() -> Optional[Path]:
     Resolved at call time (not import) so tests/env changes are honored.
     """
     from agents.core.paths import user_skills_dir
+
     return user_skills_dir()
 
 
@@ -243,9 +244,9 @@ def _is_external_for_loader(
     approval_store: SkillApprovalStore,
 ) -> bool:
     """Classify using discovery evidence and durable private provenance."""
-    return _is_external_skill(
-        path, discovery_root=discovery_root
-    ) or approval_store.tracks_path(path)
+    return _is_external_skill(path, discovery_root=discovery_root) or approval_store.tracks_path(
+        path
+    )
 
 
 def _external_skill_may_import(
@@ -254,10 +255,14 @@ def _external_skill_may_import(
     approval_store: SkillApprovalStore,
     snapshot: signing.SkillSourceSnapshot,
 ) -> bool:
-    return signature_reason == "signed" or approval_store.approved_snapshot(
-        path,
-        snapshot=snapshot,
-    ) is not None
+    return (
+        signature_reason == "signed"
+        or approval_store.approved_snapshot(
+            path,
+            snapshot=snapshot,
+        )
+        is not None
+    )
 
 
 def _materialize_source_snapshot(
@@ -309,8 +314,13 @@ def _safe_command_name(raw: Optional[str], fallback: str) -> str:
 
 def _generated_skill_name_safe(view, now) -> bool:
     name = str(view.get("name") or view.get("command_name") or "").strip()
-    return bool(name and name not in (".", "..")
-                and "/" not in name and "\\" not in name and "\x00" not in name)
+    return bool(
+        name
+        and name not in (".", "..")
+        and "/" not in name
+        and "\\" not in name
+        and "\x00" not in name
+    )
 
 
 def _skill_generation_contract_template() -> ContractTemplate:
@@ -320,8 +330,9 @@ def _skill_generation_contract_template() -> ContractTemplate:
         constraints=(
             field_present("action", "agent"),
             one_of("action", {"generate", "approve"}),
-            predicate("generated_skill_name_safe", _generated_skill_name_safe,
-                      reason="invalid_skill_name"),
+            predicate(
+                "generated_skill_name_safe", _generated_skill_name_safe, reason="invalid_skill_name"
+            ),
         ),
     )
 
@@ -358,10 +369,11 @@ def _split_frontmatter(content: str) -> tuple[Optional[dict], str]:
         if lines[i].strip() == "---":
             try:
                 import yaml
+
                 data = yaml.safe_load("\n".join(lines[1:i]))
             except Exception:
                 return None, content
-            body = "\n".join(lines[i + 1:])
+            body = "\n".join(lines[i + 1 :])
             return (data, body) if isinstance(data, dict) else (None, content)
     return None, content
 
@@ -441,7 +453,9 @@ class Skill:
             try:
                 return await self.module.handle(command, args, context or {})
             except Exception as e:
-                logger.warning("Skill '%s' handle() raised for command '%s'", self.name, command, exc_info=True)
+                logger.warning(
+                    "Skill '%s' handle() raised for command '%s'", self.name, command, exc_info=True
+                )
                 return f"[skill:{self.name}] error: {e}"
 
         return ""
@@ -471,7 +485,11 @@ class SkillLoader:
         # The owner's personal skills (Documents/Jarvis/skills) load AFTER the
         # bundled tree so a same-named user skill wins the registry slot.
         user_dir = _user_skills_dir()
-        if user_dir is not None and user_dir.is_dir() and user_dir.resolve() != SKILLS_DIR.resolve():
+        if (
+            user_dir is not None
+            and user_dir.is_dir()
+            and user_dir.resolve() != SKILLS_DIR.resolve()
+        ):
             roots.append(user_dir)
         for root in roots:
             for skill_dir in sorted(root.iterdir()):
@@ -559,9 +577,7 @@ class SkillLoader:
             self._approval_store,
             snapshot,
         )
-        if py_exists and (
-            (require_signed and not skill.trusted) or not external_import_allowed
-        ):
+        if py_exists and ((require_signed and not skill.trusted) or not external_import_allowed):
             # Strict mode: refuse to exec untrusted code in-process. The skill is
             # flagged sandboxed; the HUD/executor can run it via the Sandbox.
             skill.sandboxed = True
@@ -583,17 +599,14 @@ class SkillLoader:
             if not skill.trusted:
                 logger.info(
                     "Skill '%s' is %s — loaded in advisory mode (flagged untrusted)",
-                    name, skill.signature_reason,
+                    name,
+                    skill.signature_reason,
                 )
             try:
                 module_name = f"skill_{name}"
-                snapshot_holder, snapshot_root = _materialize_source_snapshot(
-                    snapshot
-                )
+                snapshot_holder, snapshot_root = _materialize_source_snapshot(snapshot)
                 snapshot_py_file = snapshot_root / "main.py"
-                source_loader = _SourceOnlyLoader(
-                    module_name, str(snapshot_py_file)
-                )
+                source_loader = _SourceOnlyLoader(module_name, str(snapshot_py_file))
                 spec = importlib.util.spec_from_file_location(
                     module_name,
                     snapshot_py_file,
@@ -668,9 +681,12 @@ class SkillLoader:
 
     def _manifest_from_headings(self, content: str, default_name: str) -> dict:
         manifest = {
-            "name": default_name, "description": "",
-            "version": "0.1.0", "agents": [],
-            "requires": [], "commands": [],
+            "name": default_name,
+            "description": "",
+            "version": "0.1.0",
+            "agents": [],
+            "requires": [],
+            "commands": [],
         }
 
         in_commands = False
@@ -697,11 +713,13 @@ class SkillLoader:
             elif in_commands and stripped.startswith("- `"):
                 match = re.match(r"- `(\w+)(?:\s+<([^>]+)>)?`\s*—\s*(.+)", stripped)
                 if match:
-                    manifest["commands"].append({
-                        "command": match.group(1),
-                        "args": match.group(2) or "",
-                        "description": match.group(3),
-                    })
+                    manifest["commands"].append(
+                        {
+                            "command": match.group(1),
+                            "args": match.group(2) or "",
+                            "description": match.group(3),
+                        }
+                    )
 
         return manifest
 
@@ -737,11 +755,13 @@ class SkillLoader:
             elif in_commands and stripped.startswith("- `"):
                 match = re.match(r"- `(\w+)(?:\s+<([^>]+)>)?`\s*—\s*(.+)", stripped)
                 if match:
-                    commands.append({
-                        "command": match.group(1),
-                        "args": match.group(2) or "",
-                        "description": match.group(3),
-                    })
+                    commands.append(
+                        {
+                            "command": match.group(1),
+                            "args": match.group(2) or "",
+                            "description": match.group(3),
+                        }
+                    )
         return commands
 
     def parse_command(self, text: str) -> Optional[tuple[str, str, str]]:
@@ -794,25 +814,29 @@ class SkillLoader:
             return None
         cmd = command_name or skill_name
 
-        if not _skill_generation_allowed({
-            "kind": SKILL_GENERATION_CONTRACT_KIND,
-            "action": "generate",
-            "agent": agent_id,
-            "name": skill_name,
-            "command_name": cmd,
-            "steps_count": len(solution_steps or []),
-            "has_output": bool(output),
-        }):
+        if not _skill_generation_allowed(
+            {
+                "kind": SKILL_GENERATION_CONTRACT_KIND,
+                "action": "generate",
+                "agent": agent_id,
+                "name": skill_name,
+                "command_name": cmd,
+                "steps_count": len(solution_steps or []),
+                "has_output": bool(output),
+            }
+        ):
             return None
 
         # CDX-8: the [learn:…] task/steps/command are UNTRUSTED LLM output (an injected
         # response could mint an attacker-named, attacker-described skill). Scan before we
         # create anything; never write injection-flagged content to disk as a skill.
         from ..security import quarantine
+
         flags = quarantine.detect_injection(" ".join([task_description, *solution_steps, str(cmd)]))
         if flags:
-            logger.warning("Skill generation blocked — injection-flagged content from %s: %s",
-                           agent_id, flags)
+            logger.warning(
+                "Skill generation blocked — injection-flagged content from %s: %s", agent_id, flags
+            )
             return None
 
         # The scanner above has now seen the raw command name; from here on the value is
@@ -822,9 +846,9 @@ class SkillLoader:
 
         skill_dir.mkdir(parents=True, exist_ok=True)
 
-        steps_text = "\n".join(f"{i+1}. {s}" for i, s in enumerate(solution_steps))
+        steps_text = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(solution_steps))
 
-        skill_md = f"""# {skill_name.replace('_', ' ').title()}
+        skill_md = f"""# {skill_name.replace("_", " ").title()}
 
 > {task_description}
 
@@ -890,8 +914,8 @@ def register(skill):
     """Register commands with the skill system."""
     skill.register_command("$cmd", $cmd)
 '''
-        main_py = (main_py
-            .replace("$skill_name", skill_name)
+        main_py = (
+            main_py.replace("$skill_name", skill_name)
             .replace("$agent_id", agent_id)
             .replace("$cmd", cmd)
             .replace("$timestamp", datetime.now(timezone.utc).isoformat())
@@ -906,7 +930,9 @@ def register(skill):
         # signs + activates it. Auto-generation stays on; only promotion-to-reusable is gated.
         (skill_dir / "PENDING_REVIEW").write_text(
             f"agent={agent_id}\ntask={task_description}\n"
-            f"generated={datetime.now(timezone.utc).isoformat()}\n", encoding="utf-8")
+            f"generated={datetime.now(timezone.utc).isoformat()}\n",
+            encoding="utf-8",
+        )
         self._load_skill(skill_dir)
         # H20.5 — provenance: agent-created skills are the only curatable ones.
         # Record under the REGISTERED name (the manifest title, which is what
@@ -915,13 +941,21 @@ def register(skill):
         if self._usage is not None:
             try:
                 registered = next(
-                    (n for n, s in self.skills.items()
-                     if Path(getattr(s, "path", "")) == skill_dir), skill_name)
+                    (
+                        n
+                        for n, s in self.skills.items()
+                        if Path(getattr(s, "path", "")) == skill_dir
+                    ),
+                    skill_name,
+                )
                 self._usage.note_created(registered, "agent")
             except Exception:
                 logger.debug("usage provenance note skipped", exc_info=True)
-        logger.info("Generated skill '%s' from %s — quarantined PENDING REVIEW (not active)",
-                    skill_name, agent_id)
+        logger.info(
+            "Generated skill '%s' from %s — quarantined PENDING REVIEW (not active)",
+            skill_name,
+            agent_id,
+        )
         return skill_name
 
     def approve_generated_skill(self, name: str) -> bool:
@@ -941,8 +975,9 @@ def register(skill):
             # user data home when active) — resolve to whichever holds the marker.
             user_dir = _user_skills_dir()
             candidates = [SKILLS_DIR / name] + ([user_dir / name] if user_dir else [])
-            skill_dir = next((c for c in candidates if (c / "PENDING_REVIEW").exists()),
-                             candidates[0])
+            skill_dir = next(
+                (c for c in candidates if (c / "PENDING_REVIEW").exists()), candidates[0]
+            )
         pending_marker = skill_dir / "PENDING_REVIEW"
         legacy_marker = skill_dir / OWNER_APPROVED_MARKER
         registered = next(
@@ -961,13 +996,15 @@ def register(skill):
         )
         if not pending_marker.exists() and not legacy_reapproval:
             return False
-        if not _skill_generation_allowed({
-            "kind": SKILL_GENERATION_CONTRACT_KIND,
-            "action": "approve",
-            "agent": "owner",
-            "name": skill_dir.name,
-            "command_name": name,
-        }):
+        if not _skill_generation_allowed(
+            {
+                "kind": SKILL_GENERATION_CONTRACT_KIND,
+                "action": "approve",
+                "agent": "owner",
+                "name": skill_dir.name,
+                "command_name": name,
+            }
+        ):
             return False
         signing.sign_skill(skill_dir)
         self._approval_store.approve(skill_dir)
@@ -988,7 +1025,11 @@ def register(skill):
 
     def _name_from_task(self, task: str) -> str:
         words = re.sub(r"[^a-zA-Z0-9\s]", "", task).lower().split()
-        important = [w for w in words if w not in ("the", "a", "an", "for", "to", "in", "of", "and", "is", "at")]
+        important = [
+            w
+            for w in words
+            if w not in ("the", "a", "an", "for", "to", "in", "of", "and", "is", "at")
+        ]
         if not important:
             important = ["custom"]
         name = "_".join(important[:4])

@@ -35,15 +35,16 @@ from agents.core.skills.loader import SkillLoader  # noqa: E402
 @pytest.fixture
 def loader(tmp_path, monkeypatch):
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", tmp_path)
-    return SkillLoader(
-        approval_store=SkillApprovalStore(tmp_path / "private" / "approvals.json")
-    )
+    return SkillLoader(approval_store=SkillApprovalStore(tmp_path / "private" / "approvals.json"))
 
 
 def _gen(loader, task="organize the morning inbox", cmd="tidy_inbox"):
-    return loader.generate_skill(agent_id="pepper", task_description=task,
-                                 solution_steps=["read inbox", "label", "archive"],
-                                 command_name=cmd)
+    return loader.generate_skill(
+        agent_id="pepper",
+        task_description=task,
+        solution_steps=["read inbox", "label", "archive"],
+        command_name=cmd,
+    )
 
 
 def _registered(loader, skill_dir):
@@ -66,6 +67,7 @@ def _approved(loader, tmp_path, cmd="tidy_inbox"):
 
 
 # ── the dispatcher contract: a generated command must actually execute ────────
+
 
 async def test_generated_command_executes_with_context(loader, tmp_path):
     skill, _ = _approved(loader, tmp_path)
@@ -96,7 +98,9 @@ def test_get_commands_names_resolve_on_the_module(loader, tmp_path):
     names = skill.module.get_commands()
     assert names
     for name in names:
-        assert hasattr(skill.module, name), f"get_commands() names {name!r}, module does not define it"
+        assert hasattr(skill.module, name), (
+            f"get_commands() names {name!r}, module does not define it"
+        )
 
 
 def test_approved_skill_loads_without_a_failure_warning(loader, tmp_path, caplog):
@@ -121,11 +125,11 @@ def test_registered_command_matches_the_manifest(loader, tmp_path):
 # ── command_name is untrusted LLM output substituted into Python source ───────
 
 HOSTILE_COMMAND_NAMES = [
-    'x", print("pwned")) or ("',      # break out of the register_command string literal
+    'x", print("pwned")) or ("',  # break out of the register_command string literal
     "run\n\nimport os; os.system('id')",
-    "tidy-inbox",                      # not an identifier
-    "123start",                        # identifiers cannot start with a digit
-    "def",                             # reserved word
+    "tidy-inbox",  # not an identifier
+    "123start",  # identifiers cannot start with a digit
+    "def",  # reserved word
     "",
 ]
 
@@ -135,10 +139,10 @@ def test_generated_main_py_is_always_valid_python(loader, tmp_path, hostile):
     """A hostile command_name must never produce a broken or injected main.py."""
     name = _gen(loader, cmd=hostile)
     if name is None:
-        return                                   # refused outright is also a valid outcome
+        return  # refused outright is also a valid outcome
     src = (tmp_path / name / "main.py").read_text(encoding="utf-8")
-    compile(src, "main.py", "exec")              # must parse
-    assert "os.system" not in src and "print(\"pwned\")" not in src
+    compile(src, "main.py", "exec")  # must parse
+    assert "os.system" not in src and 'print("pwned")' not in src
 
 
 @pytest.mark.parametrize("hostile", HOSTILE_COMMAND_NAMES)
@@ -156,6 +160,7 @@ def test_hostile_command_name_becomes_an_identifier(loader, tmp_path, hostile):
 
 
 # ── catalog ratchet: shipped skills answer the commands they document ────────
+
 
 def test_shipped_skills_resolve_their_documented_commands():
     """Every `## Commands` entry in skills/*/SKILL.md must resolve to something callable.
@@ -183,7 +188,7 @@ def test_shipped_skills_resolve_their_documented_commands():
                 continue
             if skill.module is not None and hasattr(skill.module, "handle"):
                 continue
-            if skill.sandboxed:          # quarantined/untrusted: not loaded by design
+            if skill.sandboxed:  # quarantined/untrusted: not loaded by design
                 continue
             unresolved.append(f"{skill.name}:{cmd}")
     assert not unresolved, f"documented commands with no implementation: {unresolved}"

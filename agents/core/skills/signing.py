@@ -136,9 +136,7 @@ def source_snapshot(skill_dir: Path) -> SkillSourceSnapshot:
                 )
             continue
         if _is_link_like(path):
-            raise SkillSourceSnapshotError(
-                f"linked skill artifact refused: {relative.as_posix()}"
-            )
+            raise SkillSourceSnapshotError(f"linked skill artifact refused: {relative.as_posix()}")
         try:
             before = path.stat(follow_symlinks=False)
         except OSError as exc:
@@ -217,9 +215,7 @@ def compute_digest(
     ``algo`` is ``hmac-sha256`` when a signing key is configured, else ``sha256``.
     """
     content_digest = (
-        snapshot.digest_bytes
-        if snapshot is not None
-        else _source_digest_bytes(Path(skill_dir))
+        snapshot.digest_bytes if snapshot is not None else _source_digest_bytes(Path(skill_dir))
     )
 
     key = _signing_key()
@@ -321,6 +317,7 @@ def signing_posture() -> dict:
     verified are keyed at all.
     """
     from agents.core.env_config import env_flag
+
     enforced = env_flag("JARVIS_REQUIRE_SIGNED_SKILLS")
     keyed = signing_key_configured()
     return {
@@ -351,6 +348,7 @@ def require_signed() -> bool:
     top-level code. That is the primitive; this is the label on it.
     """
     from agents.core.env_config import env_flag
+
     enforced = env_flag("JARVIS_REQUIRE_SIGNED_SKILLS")
     if enforced and not signing_key_configured():
         raise SkillSigningMisconfigured(

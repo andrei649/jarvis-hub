@@ -1,4 +1,5 @@
 """Tests for skill signature verification + sandboxing (H12.1)."""
+
 import hashlib
 import os
 import subprocess
@@ -116,11 +117,10 @@ def test_hmac_sig_algo_mismatch_without_key(tmp_path, monkeypatch):
 
 def test_loader_flags_unsigned_skill(tmp_path, monkeypatch):
     from agents.core.skills import loader as loader_mod
+
     skills_root = tmp_path / "skills"
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
-    bundled = _make_skill(
-        skills_root / "demo", body="def register(skill):\n    pass\n"
-    )
+    bundled = _make_skill(skills_root / "demo", body="def register(skill):\n    pass\n")
     monkeypatch.setattr(
         loader_mod,
         "_matches_bundled_source",
@@ -224,9 +224,7 @@ def test_forged_user_home_approval_marker_does_not_execute(tmp_path, monkeypatch
         body="MARKER = 'forged-loaded'\n",
     )
     signing.sign_skill(skill_dir)
-    (skill_dir / "OWNER_APPROVED_IN_PROCESS").write_text(
-        "forged\n", encoding="utf-8"
-    )
+    (skill_dir / "OWNER_APPROVED_IN_PROCESS").write_text("forged\n", encoding="utf-8")
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", bundled_root)
     monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: user_root)
 
@@ -410,9 +408,7 @@ def test_imported_skill_sidecar_blocks_unsigned_in_process_import(tmp_path, monk
 
 
 @pytest.mark.parametrize("external_marker", ["manifest.json", "EXTERNAL_SOURCE"])
-@pytest.mark.parametrize(
-    "registry_state", ["intact", "missing", "corrupt", "unknown-schema"]
-)
+@pytest.mark.parametrize("registry_state", ["intact", "missing", "corrupt", "unknown-schema"])
 def test_removing_external_sidecar_cannot_shed_private_provenance(
     tmp_path,
     monkeypatch,
@@ -439,9 +435,7 @@ def test_removing_external_sidecar_cannot_shed_private_provenance(
     store = SkillApprovalStore(tmp_path / "private" / "approvals.json")
     store.approve(skill_dir)
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
-    monkeypatch.setattr(
-        loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills"
-    )
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills")
 
     first = SkillLoader(approval_store=store).discover()["Imported"]
     assert first.module is not None
@@ -457,9 +451,7 @@ def test_removing_external_sidecar_cannot_shed_private_provenance(
     elif registry_state == "corrupt":
         store.path.write_text("not-json", encoding="utf-8")
     elif registry_state == "unknown-schema":
-        store.path.write_text(
-            '{"version": 999, "approvals": {}}', encoding="utf-8"
-        )
+        store.path.write_text('{"version": 999, "approvals": {}}', encoding="utf-8")
 
     second = SkillLoader(approval_store=store).discover()["Imported"]
 
@@ -478,12 +470,8 @@ def test_relocated_external_skill_cannot_inherit_bundled_provenance(
 
     skills_root = tmp_path / "skills"
     marker = tmp_path / "executed.txt"
-    original = _make_skill(
-        skills_root / "original", name="Imported", body="VALUE = 'approved'\n"
-    )
-    (original / "manifest.json").write_text(
-        '{"imported": true}', encoding="utf-8"
-    )
+    original = _make_skill(skills_root / "original", name="Imported", body="VALUE = 'approved'\n")
+    (original / "manifest.json").write_text('{"imported": true}', encoding="utf-8")
     store = SkillApprovalStore(tmp_path / "private" / "approvals.json")
     store.approve(original)
     moved = original.rename(skills_root / "moved")
@@ -494,9 +482,7 @@ def test_relocated_external_skill_cannot_inherit_bundled_provenance(
         encoding="utf-8",
     )
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
-    monkeypatch.setattr(
-        loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills"
-    )
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills")
 
     skill = SkillLoader(approval_store=store).discover()["Imported"]
 
@@ -508,15 +494,11 @@ def test_relocated_external_skill_cannot_inherit_bundled_provenance(
 def test_product_bundled_manifest_matches_exact_shipped_sources():
     from agents.core.skills import loader as loader_mod
 
-    shipped = {
-        path.name for path in loader_mod.SKILLS_DIR.iterdir() if path.is_dir()
-    }
+    shipped = {path.name for path in loader_mod.SKILLS_DIR.iterdir() if path.is_dir()}
 
     assert shipped == set(loader_mod._BUNDLED_SKILL_MANIFEST)
     assert all(
-        loader_mod._matches_bundled_source(
-            loader_mod.SKILLS_DIR / name, loader_mod.SKILLS_DIR
-        )
+        loader_mod._matches_bundled_source(loader_mod.SKILLS_DIR / name, loader_mod.SKILLS_DIR)
         for name in shipped
     )
 
@@ -530,16 +512,13 @@ def test_exact_bundled_source_executes_same_validated_snapshot(
     skills_root = tmp_path / "skills"
     marker = tmp_path / "executed.txt"
     approved_body = (
-        "from pathlib import Path\n"
-        f"Path({str(marker)!r}).write_text('shipped', encoding='utf-8')\n"
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('shipped', encoding='utf-8')\n"
     )
     attacker_body = (
         "from pathlib import Path\n"
         f"Path({str(marker)!r}).write_text('attacker', encoding='utf-8')\n"
     )
-    skill_dir = _make_skill(
-        skills_root / "demo", name="Demo", body=approved_body
-    )
+    skill_dir = _make_skill(skills_root / "demo", name="Demo", body=approved_body)
     expected = {
         relative: hashlib.sha256(
             (skill_dir / relative).read_bytes().replace(b"\r\n", b"\n")
@@ -547,9 +526,7 @@ def test_exact_bundled_source_executes_same_validated_snapshot(
         for relative in ("SKILL.md", "main.py")
     }
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
-    monkeypatch.setattr(
-        loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills"
-    )
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills")
     monkeypatch.setattr(loader_mod, "_BUNDLED_SKILL_MANIFEST", {"demo": expected})
     original_spec = loader_mod.importlib.util.spec_from_file_location
 
@@ -591,13 +568,9 @@ def test_imported_or_marketplace_skill_cannot_self_approve(
     else:
         (skill_dir / external_marker).write_text("marketplace\n", encoding="utf-8")
     signing.sign_skill(skill_dir)
-    (skill_dir / "OWNER_APPROVED_IN_PROCESS").write_text(
-        "forged\n", encoding="utf-8"
-    )
+    (skill_dir / "OWNER_APPROVED_IN_PROCESS").write_text("forged\n", encoding="utf-8")
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
-    monkeypatch.setattr(
-        loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills"
-    )
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: tmp_path / "user-skills")
 
     skill = SkillLoader().discover()["External"]
 
@@ -608,6 +581,7 @@ def test_imported_or_marketplace_skill_cannot_self_approve(
 
 def test_loader_loads_signed_skill_trusted(tmp_path, monkeypatch):
     from agents.core.skills import loader as loader_mod
+
     skills_root = tmp_path / "skills"
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
     sk_dir = _make_skill(skills_root / "demo", body="def register(skill):\n    pass\n")
@@ -631,6 +605,7 @@ def test_loader_loads_signed_skill_trusted(tmp_path, monkeypatch):
 
 def test_require_signed_sandboxes_unsigned(tmp_path, monkeypatch):
     from agents.core.skills import loader as loader_mod
+
     monkeypatch.setenv("JARVIS_REQUIRE_SIGNED_SKILLS", "1")
     # SEC-B2: enforcement now requires a key. Without one the "signature" is a plain
     # sha256 an attacker can recompute and ship themselves, so the gate would block
@@ -649,6 +624,7 @@ def test_require_signed_sandboxes_unsigned(tmp_path, monkeypatch):
 
 def test_loader_sign_skill_helper(tmp_path, monkeypatch):
     from agents.core.skills import loader as loader_mod
+
     skills_root = tmp_path / "skills"
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
     _make_skill(skills_root / "demo", body="def register(skill):\n    pass\n")
@@ -661,6 +637,7 @@ def test_loader_sign_skill_helper(tmp_path, monkeypatch):
 
 def test_to_dict_shape(tmp_path, monkeypatch):
     from agents.core.skills import loader as loader_mod
+
     skills_root = tmp_path / "skills"
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
     _make_skill(skills_root / "demo", body="def register(skill):\n    pass\n")
@@ -718,7 +695,7 @@ def test_posture_reports_effectiveness_not_just_the_flag(monkeypatch):
     """A status surface must not let 'the flag is on' read as 'signatures are enforced'."""
     monkeypatch.setenv("JARVIS_REQUIRE_SIGNED_SKILLS", "1")
     monkeypatch.delenv("JARVIS_SKILL_SIGNING_KEY", raising=False)
-    posture = signing.signing_posture()          # must not raise, unlike require_signed()
+    posture = signing.signing_posture()  # must not raise, unlike require_signed()
     assert posture["require_signed"] is True
     assert posture["signing_key_configured"] is False
     assert posture["effective"] is False

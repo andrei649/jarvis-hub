@@ -137,10 +137,7 @@ class SkillApprovalStore(JsonStore):
             if not self._reload_locked():
                 return None
             record = self._records.get(self._key(canonical))
-            if (
-                not isinstance(record, dict)
-                or record.get("canonical_path") != canonical
-            ):
+            if not isinstance(record, dict) or record.get("canonical_path") != canonical:
                 return None
             try:
                 current = snapshot or source_snapshot(path)
@@ -162,10 +159,7 @@ class SkillApprovalStore(JsonStore):
             if not self._reload_locked():
                 return False
             record = self._records.get(self._key(canonical))
-            return bool(
-                isinstance(record, dict)
-                and record.get("canonical_path") == canonical
-            )
+            return bool(isinstance(record, dict) and record.get("canonical_path") == canonical)
 
     def is_approved(self, path: Path) -> bool:
         return self.approved_snapshot(path) is not None
