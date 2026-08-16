@@ -15,6 +15,7 @@ request / base / head tuple.
 - `tests/test_integration_authority_state.py`
 - `docs/superpowers/specs/2026-08-14-integration-authority-state-design.md`
 - `docs/superpowers/plans/2026-08-14-integration-authority-state.md`
+- `docs/MAX_RUNS.md`
 
 **Risk tier:** `R3` — this library is intended to become part of repository integration authority.
 It is not authority merely because its source is present in this repository.
@@ -56,12 +57,19 @@ Every acceptance binds all of:
 - lowercase 40-hex head SHA.
 
 An acceptance for a previous head is never returned for a new tuple. Old records remain immutable
-history and are logically stale. Every event carries a trusted positive `review_revision` obtained
-by the future external adapter from GitHub or its own authenticated monotonic ledger, never from
-candidate-controlled ordering. A later authenticated non-approved state for the same review ID
-appends a terminal revocation and removes that review from the current verdict; stale or conflicting
-revisions reject, and a new review ID is required to restore acceptance. Candidate-editable prose
-and labels are absent from the API.
+history and are logically stale. Within the configured repository, one review ID is immutably
+bound by its first processed observation to the exact subject and reviewer identity; rejected
+in-repository observations establish that binding too, so an invalid reviewer or wrong-base event
+cannot be replayed later as a different identity. Changing either requires a new review ID. Every
+event carries a trusted positive signed-64-bit `review_revision` obtained by the future external
+adapter from GitHub or its own authenticated monotonic ledger, never from candidate-controlled
+ordering. Every delivery persists the canonical event fields as well as its result, making the
+maximum observed revision independently parseable even when the first result was rejected. A later
+authenticated non-approved state for the same repository-scoped review ID appends a terminal
+revocation and removes all of that review's accepted revisions from the current verdict; stale or
+conflicting revisions reject, any observed identity conflict invalidates that review's earlier
+acceptances, replaying the original accepted delivery remains non-accepting, and a new review ID is
+required to restore acceptance. Candidate-editable prose and labels are absent from the API.
 
 ## Components and data flow
 
@@ -76,20 +84,29 @@ missing state.
 `process_review()` performs this sequence:
 
 1. Read external state. Missing, unavailable, or malformed state returns a non-accepting result.
-2. Parse a closed JSON schema with duplicate-key rejection and canonical serialization.
+2. Parse a closed JSON schema with an exact integer schema version, duplicate-key rejection, and
+   canonical serialization. Every delivery's full review observation, fingerprint, result,
+   identity binding, revision ordering, and acceptance/revocation linkage are recomputed rather
+   than trusted as stored claims.
 3. Check bounded capacity, then whether the delivery ID was already processed. An identical replay
-   normally returns the recorded result idempotently; once saturated, capacity denial overrides
-   replay results so an old acceptance cannot leak through this API. Conflicting reuse returns
-   `delivery_conflict` without writing.
-4. Validate the exact tuple, trusted monotonic review revision, review state, and independent
-   reviewer. Reject stale revisions and all later approvals for a terminally revoked review ID.
-5. Append the delivery result and either one valid acceptance or an immutable terminal revocation.
+   normally returns the recorded result idempotently, except that replay of an accepted delivery
+   whose review was later revoked returns `review_superseded`. Once saturated, capacity denial
+   overrides replay results so an old acceptance cannot leak through this API. Conflicting reuse
+   returns `delivery_conflict` without writing.
+4. Validate the exact tuple, immutable repository-scoped review identity, trusted monotonic review
+   revision, review state, and independent reviewer. Reject stale revisions, identity rebinding,
+   and all later approvals for a terminally revoked review ID.
+5. Append the full delivery observation and result, plus either one valid acceptance or an
+   immutable terminal revocation when applicable.
 6. Compare-and-swap the new state. A concurrent write returns `state_conflict`; it never returns
    acceptance until a retry observes committed state.
 
 Each state collection is capped at 4,096 records. Capacity exhaustion invalidates existing verdicts
-as well as rejecting writes, and requires an externally governed archival/rotation operation;
-candidate events cannot trigger pruning or erase immutable history.
+as well as rejecting writes, and requires an externally governed archival/rotation operation. The
+event that fills the final delivery slot is durably recorded but returns capacity denial; it can
+never briefly publish acceptance before `verdict_for()` notices saturation. Candidate events
+cannot trigger pruning or erase immutable history. Raw store state is capped at 16 MiB before
+decoding, comfortably above the maximum canonical bounded ledger representation.
 
 `verdict_for()` reads state and returns acceptance only for an exact valid tuple and configured
 repository/base. It fails closed on missing, corrupt, or unavailable state.
@@ -103,10 +120,14 @@ the App-bound ruleset; candidate possession of the fingerprint algorithm grants 
 Operation and store failures are data: `AcceptanceResult(accepted=False, reason=...)`. Invalid
 constructor inputs raise `ValueError` before state-machine execution; the future webhook adapter
 must translate that boundary failure into a failing check without reflecting input. Untrusted
-values are not reflected in operation reasons. Missing and corrupt state are different bounded
-reasons, but both deny. Store exceptions and compare-and-swap conflicts deny. Rejected reviews are
-recorded so an identical delivery is idempotent and a conflicting payload cannot reuse its
-delivery ID.
+values are not reflected in operation reasons. Numeric identities and revisions are bounded to
+positive signed 64-bit values before serialization. Policy, tuple, event, integer, string,
+frozenset, and store-byte security primitives must be exact built-in/public API types; subclasses
+cannot override comparison, membership, decoding, or bounds. Missing and corrupt state are
+different bounded reasons, but both deny. Store exceptions and compare-and-swap conflicts deny.
+Rejected reviews retain their canonical identity/revision observation so an identical delivery is
+idempotent, a lower revision cannot reappear as current, and a conflicting payload cannot reuse
+its delivery ID.
 
 `empty_state_bytes()` is an explicit provisioning primitive for the external owner/deployer. The
 state machine never calls it automatically; deletion or replacement of the external state cannot
@@ -122,19 +143,24 @@ The hostile unit suite proves:
 - later dismissal/change/comment state for the same review revokes it, while an unrelated review
   cannot revoke another review and a fresh review ID can restore acceptance;
 - out-of-order, duplicate, decreasing, conflicting, or post-revocation review revisions deny;
+- a review ID cannot move to another subject or reviewer, including in persisted state;
+- rejected first observations still bind the review ID and maximum revision;
+- replaying an accepted delivery after its review is revoked remains non-accepting;
 - a head change makes the prior acceptance ineligible;
-- identical delivery replay is idempotent, while conflicting reuse is rejected;
+- identical delivery replay is idempotent, every distinct delivery is bound in the ledger, and
+  conflicting reuse is rejected;
 - saturated state overrides even identical accepted replay with a non-accepting capacity result;
+- the delivery that exactly reaches capacity also returns only capacity denial;
 - capacity-exhausted state fails closed without another write or a surviving old verdict;
 - missing, invalid JSON, duplicate-key, unsupported-schema, malformed-record, unavailable-store,
-  and compare-and-swap-conflict cases fail closed.
+  non-built-in primitive, oversized-integer, and compare-and-swap-conflict cases fail closed.
 
 Focused pytest, adjacent policy tests, Ruff format/check, the AI workflow policy checker, and
 `git diff --check` are required before publication.
 
 ## Rollback and dependencies
 
-Rollback deletes this isolated library, tests, design, and plan. No migrations, runtime product
-state, repository settings, or credentials are touched. The only dependency is Python 3.12's
-standard library. Path lease is `none`; live draft PR inspection found no overlap with the planned
-paths.
+Rollback deletes this isolated library, tests, design, and plan and reverts the corresponding Max
+ledger row. No migrations, runtime product state, repository settings, or credentials are touched.
+The only dependency is Python 3.12's standard library. Path lease is `none`; live draft PR
+inspection found no overlap with the planned paths.

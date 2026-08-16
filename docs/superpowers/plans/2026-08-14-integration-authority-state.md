@@ -19,12 +19,15 @@ credential, check-publication, or merge capability.
 - Risk is `R3`; builder, reviewer, and integrator remain separate before activation.
 - Candidate-controlled files are not authority; only an owner-pinned external deployment may use
   this library to support a protected App check.
-- No GitHub App/settings/secrets/rulesets, runtime code, status ledgers, or current draft paths.
+- No GitHub App/settings/secrets/rulesets, runtime code, generated status ledgers, or current draft
+  paths. The required Max run receipt is the only append-only delivery-ledger change.
 - Missing, malformed, unavailable, or concurrently changed external state always denies.
 - Review dismissal/state changes revoke the matching accepted review; state and collections are
   bounded and fail closed at capacity without candidate-controlled pruning.
-- Review revisions come from trusted external GitHub/ledger state, advance monotonically for an
-  exact review tuple, and make revocation terminal for that review ID.
+- Review revisions come from trusted external GitHub/ledger state, advance monotonically for a
+  repository-scoped review ID, are bounded before serialization, cannot rebind that ID to another
+  subject or reviewer even after a rejected first observation, and make revocation terminal for
+  that review ID.
 - No third-party dependency.
 
 ---
@@ -106,7 +109,7 @@ credential, check-publication, or merge capability.
 
 - [x] **Step 9: Review the exact diff and commit the coherent rollback unit**
 
-  Confirm only the five planned paths changed, no generated status/ledger changed, and no App or
+  Confirm only the six planned paths changed, no generated status ledger changed, and no App or
   settings code exists. Stage only those paths and commit with:
 
   ```powershell
@@ -125,3 +128,13 @@ credential, check-publication, or merge capability.
   delayed/conflicting approvals and terminally revoked review IDs, and deny existing verdicts when
   the bounded ledger is saturated and cannot record a required revocation. The revision is a
   required constructor input; saturated capacity explicitly overrides accepted delivery replay.
+
+- [x] **Step 12: Close exact-head replay, identity-binding, and delivery-ledger findings**
+
+  Make terminal revocation apply to the repository-scoped review ID, deny accepted-delivery replay
+  after revocation, reject subject or reviewer rebinding, validate those immutable bindings while
+  parsing persisted state, and persist every distinct processed delivery with its full canonical
+  event identity and revision. Bind rejected first observations, reject oversized numeric inputs,
+  reject security-primitive subclasses, make the final capacity-filling write return denial, and
+  bound non-built-in-byte store output to a fail-closed result rather than allowing backend behavior
+  to escape.
