@@ -92,13 +92,17 @@ squash-merged once present on `main`; no item by itself completes a runtime epic
   explicit false/hallucinated-recall metrics and strict retained-evidence preflight. Reports remain
   `evaluation_only`; no lesson promotion, memory write, routing, execution or completion authority
   is added. E6 remains `BUILDING`, and owner-live benefit is still unproven.
-- ✅ E1/E6/E9 authority-ceiling successors (from closed #854, `21a37f81`) — emission-time constants
-  on the E1 measured report (#859), E6 observation/proposal/evaluation payloads (#860), the E9
-  regression report (#861) and the E9 totals invariant (#864); post-merge hostile-proof evidence
-  completed for E1 (#865) and coordination truth retired to history-only (#866). All fail-closed:
-  `evaluation_only`/`proposal_only` ceilings and `can_*`/`can_grant_*` = false are hard-coded at
-  serialization. No authority, routing, execution or promotion change; #856/B2 remains first and
-  the epics stay `BUILDING`.
+- 🟡 E1/E6/E9 authority-ceiling successors from closed #854 — the E1 measured report (#859), E6
+  observation/proposal/evaluation payloads (#860), and E9 regression report (#861) landed before
+  their required #856 Step-2 predecessor was accepted. That predecessor is now satisfied by #913,
+  but its later acceptance does not retroactively validate those merge procedures. The original
+  #859 merge remains historically invalid; its missing E1 hostile-proof evidence was separately
+  accepted in #865 and that E1 side gate is closed. The retained E6 (#860), E9 (#861), and separate
+  E9 totals-validation (#864) bytes still await their own fresh post-B2 acceptance decisions. The
+  #866 coordination-only history cleanup was separately accepted and grants no functional
+  acceptance. Serialization still
+  hard-codes `evaluation_only`/`proposal_only` and `can_* = false`; no authority, routing, execution
+  or promotion changed, B2 remains `PARTIAL` beyond Step 2, and the epics stay `BUILDING`.
 - ✅ Innovation Lab control v1 / #805 / PRs #831 and #837 — versioned RFC and Knowledge Garden
   contracts, fail-closed lifecycle/lineage validation, immutable retained evidence and the
   documented no-delivery-authority boundary. The governed synthetic-public examples complete
@@ -157,8 +161,11 @@ E1 and E6 remain `BUILDING`. E5 Night Shift stays blocked: it needs sufficient E
 behavior **plus** the B7 task-level Ultron mediation evidence. B7 status per the #757/#778
 work-claim ledger: discovery child [#818](https://github.com/andrei649/jarvis-hub/issues/818)
 is open and reserved to the Ultron Security Architect on `nerva2/b7-task-mediation-evidence`.
-Discovery found six owner decisions that must be resolved before branch creation; implementation
-has not started, and acceptance evidence is still required. B7 therefore remains open.
+The six owner decisions are resolved, and draft PR #912 implements the bounded default-off
+candidate: task-bound receipts, a durable external-head CAS, atomic enqueue/claim validation,
+tamper-evident persisted events, legacy quarantine, hold rollback, and canonical authority
+identity. This is candidate-fixed, not accepted: fresh exact-head R3 acceptance and live #906
+integration authority are still pending. B7 therefore remains open, and E5/E8 stay blocked.
 
 B3 / Continuity Core (#731) mapping — all six #778 unblock items now have an explicit
 destination, prior-art citation where accepted evidence exists (including `RISKS.md`'s

@@ -66,7 +66,7 @@ truth changes; `BACKLOG.md`, `docs/MAX_RUNS.md`, generated status surfaces
   suites on Windows.
 - [ ] Run repository Ruff and format check, AI policy, Bandit/Semgrep-compatible
   checks, roadmap/status preflight and `git diff --check`.
-- [ ] Update B7/#818 as candidate-fixed only; E5/E8 remain blocked until acceptance
+- [x] Update B7/#818 as candidate-fixed only; E5/E8 remain blocked until acceptance
   and no release/live-hardware claim moves.
 - [ ] Commit in bounded steps, push one draft PR, request fresh exact-head security
   review, and wait for terminal hosted Windows/Linux CI.

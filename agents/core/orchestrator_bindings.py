@@ -30,23 +30,26 @@ ExternalBindingName = Literal[
     "argus",
 ]
 
-EXTERNAL_BINDING_WRITERS: Mapping[str, tuple[str, ...]] = MappingProxyType(
+ExternalBindingCallsite = tuple[str, int, int]
+
+
+EXTERNAL_BINDING_WRITERS: Mapping[str, tuple[ExternalBindingCallsite, ...]] = MappingProxyType(
     {
-        "ambient_runtime": ("agents/core/ambient/runtime.py",),
-        "acquisition": ("agents/core/autonomy_coordinator.py",),
-        "tool_rpc": ("agents/core/autonomy_coordinator.py",),
-        "agent_tool_runtime": ("agents/core/autonomy_coordinator.py",),
-        "writeback": ("agents/core/autonomy_coordinator.py",),
-        "social": ("agents/core/autonomy_coordinator.py",),
-        "channel_replies": ("agents/core/autonomy_coordinator.py",),
-        "call_broker": ("agents/core/autonomy_coordinator.py",),
-        "node_mesh": ("agents/core/autonomy_coordinator.py",),
-        "subagents": ("agents/core/autonomy_coordinator.py",),
-        "task_executor": ("agents/core/autonomy_coordinator.py",),
-        "last_memory_maintenance": ("agents/core/scheduler_service.py",),
-        "channel_inbox": ("agents/web.py",),
-        "oracle_bridge": ("agents/core/plugin_manager.py",),
-        "argus": ("agents/core/plugin_manager.py",),
+        "ambient_runtime": (("agents/core/ambient/runtime.py", 216, 16),),
+        "acquisition": (("agents/core/autonomy_coordinator.py", 414, 8),),
+        "tool_rpc": (("agents/core/autonomy_coordinator.py", 426, 8),),
+        "agent_tool_runtime": (("agents/core/autonomy_coordinator.py", 427, 8),),
+        "writeback": (("agents/core/autonomy_coordinator.py", 512, 8),),
+        "social": (("agents/core/autonomy_coordinator.py", 528, 8),),
+        "channel_replies": (("agents/core/autonomy_coordinator.py", 548, 8),),
+        "call_broker": (("agents/core/autonomy_coordinator.py", 567, 8),),
+        "node_mesh": (("agents/core/autonomy_coordinator.py", 586, 8),),
+        "subagents": (("agents/core/autonomy_coordinator.py", 646, 8),),
+        "task_executor": (("agents/core/autonomy_coordinator.py", 661, 8),),
+        "last_memory_maintenance": (("agents/core/scheduler_service.py", 283, 8),),
+        "channel_inbox": (("agents/web.py", 337, 4),),
+        "oracle_bridge": (("agents/core/plugin_manager.py", 142, 8),),
+        "argus": (("agents/core/plugin_manager.py", 188, 8),),
     }
 )
 
@@ -85,6 +88,7 @@ def bind_external_orchestrator_attribute(
 
 __all__ = [
     "EXTERNAL_BINDING_WRITERS",
+    "ExternalBindingCallsite",
     "ExternalBindingName",
     "ExternalOrchestratorBindings",
     "bind_external_orchestrator_attribute",
