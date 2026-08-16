@@ -42,7 +42,7 @@ a restart:
 | **Observe** | `core/autonomy/observer.py` + watchers, `passive_capture.py`, channels, heartbeat |
 | **Understand** | memory fusion (vector ⊕ graph, RRF), bi-temporal KG (H14), ingestion pipeline |
 | **Decide** | orchestrator + 17 specialist agents, autonomy policy, `agent_runtime.py` model-directed loop (H20.R1) |
-| **Act** | the **Action Kernel** (O24 — Gate-K, 20 action kinds mediated), brokers, ToolRPC, sandbox |
+| **Act** | the **Action Kernel** (O24 — Gate-K, 21 action kinds mediated), brokers, ToolRPC, sandbox |
 | **Verify** | the **Verification Fabric** (O24 — reality harness, SEAM→WIRED→VERIFIED→GA registry) |
 | **Learn** | the governed per-turn learning loop (O20 — `learning/background_review.py`, CoreMemory, skill curator) |
 
@@ -95,7 +95,7 @@ and verifies.**
 
 - **v0.11.0**, feature-complete + refactored; test/route counts are auto-synced in
   [STATUS.md](STATUS.md) (never trust hand-written numbers elsewhere).
-- **Ultron / Gate-K**: every one of the 20 registered privileged action kinds crosses
+- **Ultron / Gate-K**: every one of the 21 registered privileged action kinds crosses
   `kernel.authorize` (action-auth snapshot has zero `pending`; the matrix cannot see a kind that
   was never registered).
 - **Synapse seeds — ORIZONT 20 (Hermes Mining) 6/6 + live wave**: the governed per-turn learning
