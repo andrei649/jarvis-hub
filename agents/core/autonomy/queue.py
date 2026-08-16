@@ -605,6 +605,7 @@ class TaskQueue:
         origin: str,
         scope: str,
         payload: object,
+        effective_tier: int,
         policy_revision: str,
         enqueue_revision: int,
     ) -> dict:
@@ -615,6 +616,7 @@ class TaskQueue:
             "origin": origin,
             "scope": scope,
             "payload": payload,
+            "effective_tier": effective_tier,
             "policy_revision": policy_revision,
             "enqueue_revision": enqueue_revision,
         }
@@ -636,6 +638,16 @@ class TaskQueue:
             verified_state = snapshot[0]
         sequence = verified_state.last_sequence + 1
         previous_hash = verified_state.last_event_hash
+        occurred_at_ms = self._clock_ms()
+        if verified_state.last_sequence:
+            previous_event = self._conn.execute(
+                "SELECT occurred_at_ms FROM task_mediation_events WHERE sequence=?",
+                (verified_state.last_sequence,),
+            ).fetchone()
+            if previous_event is None:
+                raise TaskQueueError("mediation chain head is invalid")
+            if occurred_at_ms < int(previous_event["occurred_at_ms"]):
+                raise TaskQueueError("mediation clock regressed")
         event = make_event(
             self._mediation_signer,
             event_id=str(uuid.uuid4()),
@@ -645,7 +657,7 @@ class TaskQueue:
             enqueue_id=enqueue_id,
             receipt=receipt,
             execution_id=execution_id,
-            occurred_at_ms=self._clock_ms(),
+            occurred_at_ms=occurred_at_ms,
             previous_event_hash=previous_hash,
         )
         if event is None:
@@ -709,6 +721,50 @@ class TaskQueue:
         """Return this queue's trusted classification result for *kind*."""
 
         return self._classification(kind)
+
+    @staticmethod
+    def _row_has_mediation_provenance(row: sqlite3.Row) -> bool:
+        """Treat every persisted B7 binding field as an irreversible boundary."""
+
+        return any(
+            row[name] is not None and row[name] != ""
+            for name in (
+                "mediation_enqueue_id",
+                "mediation_enqueue_revision",
+                "mediation_scope",
+                "mediation_policy_revision",
+                "mediation_receipt",
+                "mediation_task_sha256",
+                "mediation_execution_id",
+            )
+        )
+
+    def _row_requires_mediation_locked(self, row: sqlite3.Row) -> bool:
+        if self._classification(row["kind"]) is not False:
+            return True
+        if self._row_has_mediation_provenance(row):
+            return True
+        return (
+            self._conn.execute(
+                "SELECT 1 FROM task_mediation_events WHERE task_id=? LIMIT 1",
+                (row["id"],),
+            ).fetchone()
+            is not None
+        )
+
+    def mediation_required(self, task_id: int, *, kind: str = "") -> bool:
+        """Return the durable boundary for a task, never just its mutable kind."""
+
+        if self.mediation_mode == "off":
+            return False
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row is not None:
+                return (
+                    self._row_requires_mediation_locked(row)
+                    or self._classification(kind) is not False
+                )
+        return self._classification(kind) is not False
 
     @property
     def mediation_policy_revision(self) -> str:
@@ -835,6 +891,7 @@ class TaskQueue:
                 origin=origin,
                 scope=authority_scope,
                 payload=body,
+                effective_tier=sealed.effective_tier,
                 policy_revision=self._mediation_policy_revision,
                 enqueue_revision=sealed.enqueue_revision,
             )
@@ -852,6 +909,7 @@ class TaskQueue:
                 origin=origin,
                 scope=authority_scope,
                 payload=body,
+                effective_tier=sealed.effective_tier,
                 policy_revision=self._mediation_policy_revision,
                 enqueue_revision=sealed.enqueue_revision,
             )
@@ -894,7 +952,7 @@ class TaskQueue:
                         kind,
                         title,
                         payload_json,
-                        sealed.tier,
+                        sealed.effective_tier,
                         autonomy_level,
                         attention_mode,
                         origin,
@@ -938,6 +996,7 @@ class TaskQueue:
             origin=row["origin"],
             scope=row["mediation_scope"],
             payload=payload,
+            effective_tier=int(row["risk_tier"]),
             policy_revision=row["mediation_policy_revision"],
             enqueue_revision=row["mediation_enqueue_revision"],
         )
@@ -949,6 +1008,7 @@ class TaskQueue:
                 origin=expectation.origin,
                 scope=expectation.scope,
                 payload=expectation.payload,
+                effective_tier=expectation.effective_tier,
                 policy_revision=expectation.policy_revision,
                 enqueue_revision=expectation.enqueue_revision,
             )
@@ -1024,7 +1084,7 @@ class TaskQueue:
                     ).fetchone()
                     valid = (
                         row["mediation_execution_id"] is None
-                        and int(row["risk_tier"]) == receipt.tier
+                        and int(row["risk_tier"]) == receipt.effective_tier
                         and self._scope_allowed(expectation.scope)
                         and expectation.policy_revision == self._mediation_policy_revision
                         and authorized is not None
@@ -1081,7 +1141,7 @@ class TaskQueue:
             ).fetchall()
             for row in rows:
                 classification = self._classification(row["kind"])
-                if classification is False:
+                if classification is False and not self._row_requires_mediation_locked(row):
                     continue
                 valid = False
                 if classification is True and row["mediation_receipt"]:
@@ -1097,7 +1157,7 @@ class TaskQueue:
                             (row["id"], expectation.enqueue_id),
                         ).fetchone()
                         valid = (
-                            int(row["risk_tier"]) == receipt.tier
+                            int(row["risk_tier"]) == receipt.effective_tier
                             and self._scope_allowed(expectation.scope)
                             and expectation.policy_revision == self._mediation_policy_revision
                             and current_sha256 == row["mediation_task_sha256"]

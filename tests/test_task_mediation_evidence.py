@@ -89,6 +89,7 @@ def _expectation(**overrides) -> ReceiptExpectation:
         "origin": "generated",
         "scope": "global",
         "payload": {"path": "reports/summary.json", "body": "caf\u00e9"},
+        "effective_tier": 2,
         "policy_revision": "policy-17",
         "enqueue_revision": 1,
     }
@@ -155,7 +156,8 @@ def test_receipt_signature_covers_every_canonical_field_and_exact_task_binding()
         {"scope": "node:laptop"},
         {"payload_sha256": "1" * 64},
         {"verdict": "grant"},
-        {"tier": 3},
+        {"tier": 1},
+        {"effective_tier": 3},
         {"reason_sha256": "2" * 64},
         {"policy_revision": "policy-18"},
         {"issued_at_ms": NOW_MS - 1},
@@ -174,6 +176,7 @@ def test_receipt_signature_covers_every_canonical_field_and_exact_task_binding()
         _expectation(kind="filesystem.delete"),
         _expectation(scope="node:laptop"),
         _expectation(title="Edited after approval"),
+        _expectation(effective_tier=3),
         _expectation(enqueue_revision=2),
         _expectation(policy_revision="policy-18"),
     ],
@@ -1115,7 +1118,8 @@ def test_worker_consumes_exact_broker_decision_once_and_persists_receipt(
     assert len(calls) == 1
     assert task.status == TaskStatus.BLOCKED.value
     assert task.mediation_receipt["verdict"] == verdict.value
-    assert task.mediation_receipt["tier"] == task.risk_tier
+    assert task.mediation_receipt["tier"] == 2
+    assert task.mediation_receipt["effective_tier"] == task.risk_tier
     assert queue.verified_mediation_stats()["authorized_enqueue"] == 1
 
 
@@ -1179,7 +1183,7 @@ def test_bridge_rejects_payload_mutated_after_kernel_decision():
     bridge(action)
     payload["path"] = "changed.txt"
 
-    assert (
+    with pytest.raises(RuntimeError, match="does not match finalized task"):
         bridge.consume_for_enqueue(
             agent="ultron",
             kind="filesystem.write",
@@ -1187,9 +1191,34 @@ def test_bridge_rejects_payload_mutated_after_kernel_decision():
             payload=payload,
             origin="generated",
         )
-        is None
-    )
     assert observed == [{"path": "safe.txt"}]
+
+
+def test_worker_refuses_mismatched_pending_decision_without_reauthorization(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    calls = []
+    queue, worker, bridge = _mediated_worker(tmp_path, _kernel_decision(Verdict.GRANT, calls=calls))
+    action = Action(
+        kind="filesystem.write",
+        agent="ultron",
+        title="Write bounded report",
+        payload={"path": "safe.txt"},
+        scope="global",
+        origin="generated",
+    )
+    bridge(action)
+
+    with pytest.raises(TaskQueueError, match="does not match finalized task"):
+        worker.govern_enqueue(
+            "ultron",
+            "filesystem.write",
+            "Write bounded report",
+            payload={"path": "changed.txt"},
+        )
+
+    assert len(calls) == 1
+    assert queue.list() == []
+    assert queue.verified_mediation_stats()["refused_unmediated"] == 1
 
 
 def test_bridge_decision_is_one_use_across_copied_async_contexts():
@@ -1320,6 +1349,137 @@ def test_kernel_queue_and_tier_are_floors_over_worker_policy(tmp_path, monkeypat
     assert task.mediation_receipt["tier"] == 3
 
 
+def test_mediated_kind_downgrade_never_becomes_direct(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    handled = []
+
+    async def direct_handler(task):
+        handled.append((task.id, task.kind, task.payload))
+        return {"status": "executed"}
+
+    queue, worker, _bridge = _mediated_worker(tmp_path, _kernel_decision())
+    executor = TaskExecutor(execution_guard=worker.execution_allowed).register(
+        "draft_email", direct_handler
+    )
+    worker.executor = executor.execute
+    task = asyncio.run(
+        worker.submit(
+            "ultron",
+            "filesystem.write",
+            "Write bounded report",
+            payload={"path": "safe"},
+        )
+    )
+    asyncio.run(worker.apply_decision(task.id, "accept"))
+    queue._conn.execute("UPDATE tasks SET kind='draft_email' WHERE id=?", (task.id,))
+    queue._conn.commit()
+
+    direct = asyncio.run(executor.execute(queue.get(task.id)))
+    summary = asyncio.run(worker.tick())
+
+    assert direct == {
+        "status": "refused",
+        "reason": "mediation_execution_context_required",
+    }
+    assert handled == []
+    assert summary["ran"] == summary["done"] == 0
+    assert queue.get(task.id).status == TaskStatus.QUARANTINED.value
+    assert queue.verified_mediation_stats()["valid"] is True
+    assert queue.verified_mediation_stats()["ungoverned_detected"] == 1
+
+
+def test_successful_claim_never_commits_a_time_regressing_invalid_chain(tmp_path):
+    now = [NOW_MS + 100]
+    path = tmp_path / "clock-rollback.db"
+    queue = TaskQueue(
+        str(path),
+        mediation_mode="enforce",
+        mediation_signer=_signer(),
+        mediation_head_anchor=_head_anchor(path),
+        mediation_classifier=lambda kind: kind == "filesystem.write",
+        mediation_scope="global",
+        mediation_policy_revision="policy-17",
+        mediation_clock_ms=lambda: now[0],
+    ).initialize()
+    task_id = _enqueue_mediated(
+        queue,
+        receipt=_receipt(issued_at_ms=NOW_MS, expires_at_ms=NOW_MS + 60_000),
+    )
+    queue.transition(task_id, TaskStatus.BLOCKED)
+    queue.transition(task_id, TaskStatus.APPROVED)
+    now[0] = NOW_MS + 50
+
+    claimed = queue.claim_mediated(
+        task_id,
+        execution_id="2462731a-c8c3-4ada-8aee-32d9bc18839f",
+    )
+    events = queue.mediation_events()
+    stats = queue.verified_mediation_stats()
+
+    assert claimed is None or stats["valid"] is True
+    assert claimed is None or events[-1]["occurred_at_ms"] >= events[-2]["occurred_at_ms"]
+    assert stats["valid"] is True
+    if claimed is None:
+        assert queue.get(task_id).status != TaskStatus.RUNNING.value
+
+
+def test_receipt_seals_exact_kernel_payload_and_kernel_tier(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    seen = []
+
+    class TierThreePolicy:
+        def decide(self, _action):
+            return SimpleNamespace(
+                outcome="ask",
+                tier=3,
+                reason="policy requires tier three",
+            )
+
+    def kernel(action, capability=None, budget=None):
+        seen.append(dict(action.payload))
+        return Decision(Verdict.GRANT, reason="kernel grant tier one", tier=1)
+
+    path = tmp_path / "exact-decision.db"
+    queue = TaskQueue(
+        str(path),
+        mediation_mode="enforce",
+        mediation_signer=_signer(),
+        mediation_head_anchor=_head_anchor(path),
+        mediation_classifier=lambda kind: kind == "filesystem.write",
+        mediation_scope="global",
+        mediation_policy_revision="policy-17",
+        mediation_clock_ms=lambda: NOW_MS,
+    ).initialize()
+    worker = AutonomyWorker(
+        queue,
+        policy=TierThreePolicy(),
+        kernel=MediationKernelBridge(kernel),
+        mediation_signer=_signer(),
+        mediation_clock_ms=lambda: NOW_MS,
+    )
+
+    task = asyncio.run(
+        worker.submit(
+            "ultron",
+            "filesystem.write",
+            "Write bounded report",
+            payload={"path": "safe"},
+            origin="inbound",
+        )
+    )
+    persisted = queue.get(task.id)
+
+    assert seen == [persisted.payload]
+    assert persisted.payload == {
+        "path": "safe",
+        "taint_source": "inbound",
+        "tainted": True,
+    }
+    assert persisted.mediation_receipt["tier"] == 1
+    assert persisted.mediation_receipt["effective_tier"] == 3
+    assert persisted.risk_tier == 3
+
+
 def test_worker_records_refusal_when_policy_fails_after_kernel(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
     queue = _queue(tmp_path)
@@ -1421,6 +1581,13 @@ def test_worker_claims_before_execution_and_direct_executor_call_is_refused(tmp_
         "filesystem.write", handler
     )
     worker.executor = executor.execute
+    direct_id = queue.enqueue("jarvis", "draft_email", "Direct row", {})
+    disguised = queue.get(direct_id)
+    disguised.kind = "filesystem.write"
+    assert asyncio.run(executor.execute(disguised)) == {
+        "status": "refused",
+        "reason": "mediation_execution_context_required",
+    }
     task = asyncio.run(
         worker.submit(
             "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()

@@ -51,6 +51,10 @@ class _OneShotDecision:
             return self._action, self._decision
 
 
+class MediationDecisionMismatch(RuntimeError):
+    """A broker decision was presented for different persisted task bytes."""
+
+
 class MediationKernelBridge:
     """One-use handoff from a broker kernel call to its immediate queue insert.
 
@@ -110,7 +114,9 @@ class MediationKernelBridge:
             or action.payload != payload
             or action.origin != origin
         ):
-            return None
+            raise MediationDecisionMismatch(
+                "pending mediation decision does not match finalized task"
+            )
         return action, decision
 
 

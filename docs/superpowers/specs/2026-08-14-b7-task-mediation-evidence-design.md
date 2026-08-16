@@ -24,6 +24,8 @@ B7 measures mediation; it does not widen authority or implement Night Shift.
    as `Mediation.KERNEL`.
 2. The broker obtains a kernel decision first. A signed decision receipt is then
    verified and inserted with the task and initial event in one SQLite transaction.
+   Server-owned origin and taint metadata are finalized before the kernel call, so
+   the kernel action, receipt digest and persisted payload always name identical bytes.
 3. `enforce` mode fails closed when the kernel, signer, receipt, or evidence write
    is unavailable. `off` is the compatibility default, not a proof state.
 4. Pre-B7 classified rows without valid receipts become `quarantined`; they are
@@ -45,7 +47,8 @@ compare-and-swap. A version-1 receipt binds:
 
 - receipt and enqueue UUIDs;
 - agent, kind, title, origin, scope and canonical payload digest;
-- kernel verdict, tier, reason digest and policy revision;
+- kernel verdict, kernel tier, effective policy/task tier, reason digest and policy
+  revision (the effective tier may tighten, but never undercut, the kernel tier);
 - issued/expiry time and single-use enqueue revision;
 - signature over every field above.
 
@@ -58,6 +61,8 @@ The signed SQLite chain head must also equal the external monotonic head before 
 classified enqueue, refusal append, quarantine append, or claim. Advancing the
 external head occurs before the SQLite commit: a crash can stop availability, but
 cannot restore authority to an older valid database prefix.
+Every candidate event time is compared with the last verified event before either
+the SQLite row or external head can advance; a backward clock fails the transaction.
 
 `enqueue_mediated()` verifies the receipt and exact proposed fields, then inserts
 the task, receipt binding and enqueue event atomically. Raw `enqueue()` refuses a
@@ -82,7 +87,9 @@ quarantined and recorded as refusal/detection; the executor is never called.
 - missing/disabled/failing kernel: persist refusal, create no executable task.
 
 The existing autonomy policy may still tighten a kernel result, but never loosen
-it. Human approval changes task state only; it does not rewrite the sealed receipt.
+it. The receipt preserves the actual kernel tier and separately signs the effective
+policy/task tier used for queue filtering and claim validation. Human approval
+changes task state only; it does not rewrite the sealed receipt.
 Payload edits require a new enqueue revision and kernel decision, never mutation of
 the old governed row. `tick()` uses `claim_mediated()` before executing classified
 tasks. `hold` reports them held without state mutation.
@@ -91,12 +98,17 @@ At startup under `enforce` or `hold`, the queue quarantines classified legacy ro
 that lack a valid receipt, including approved/running recovery rows. A detector
 persists `ungoverned_detected` for planted or externally modified classified rows;
 no counter is calculated by subtraction or literal zero.
+Once a row has any B7 binding field or task event, that provenance is an irreversible
+mediation boundary. Mutating its current kind to an intentionally-direct kind cannot
+route it around claim validation or the executor guard; it is denied and quarantined.
 
 ## Failure and concurrency model
 
 - SQLite `BEGIN IMMEDIATE` plus the queue lock serializes insert, claim and event
   chain updates; schema discovery/migration is serialized by the database lock
   across processes rather than only by an interpreter-local lock.
+- Event timestamps are nondecreasing. A regressing clock aborts before the external
+  head compare-and-swap, so a method never returns new authority with an invalid chain.
 - A trusted external latest-head store atomically compares and advances the signed
   `(version, sequence, event hash, count, signature)` tuple. Whole-file or complete
   signed-prefix SQLite rollback therefore denies instead of replaying authority.
@@ -120,7 +132,9 @@ kernel off/unbound; raw enqueue and direct-executor bypass; event tampering; pla
 ungoverned rows; real-event counters; hold rollback; and `core.*`/`agents.core.*`
 import order. They also cover corrupt and replayed signed heads, total database-prefix
 rollback, external-anchor outage/CAS refusal, orphan reconciliation, and concurrent
-legacy-schema migration across real processes. Adjacent queue/worker/broker/
+legacy-schema migration across real processes; kind-downgrade attempts; backward
+clock claims; exact taint-marked kernel payloads; distinct signed kernel/effective
+tiers; and pending-decision substitution without reauthorization. Adjacent queue/worker/broker/
 action-auth/lifespan suites, Ruff, security gates, status synchronization and
 exact-head hosted Windows/Linux CI remain required.
 

@@ -216,16 +216,28 @@ class AutonomyWorker:
         kernel = self._mediation_kernel
         if not callable(kernel):
             raise RuntimeError("action kernel is unavailable")
-        decision = kernel(action, capability=capability, budget=budget)
+        from ..kernel import Action
+
+        origin = self._effective_origin(getattr(action, "origin", "generated"))
+        payload, _tainted = self._mark_payload_for_origin(getattr(action, "payload", None), origin)
+        finalized_action = Action(
+            kind=action.kind,
+            agent=action.agent,
+            title=action.title,
+            payload=payload,
+            scope=action.scope,
+            origin=origin,
+        )
+        decision = kernel(finalized_action, capability=capability, budget=budget)
         try:
             from ..kernel import Verdict
 
             if (
                 decision.verdict is Verdict.DENY
                 and self.queue.mediation_mode in {"enforce", "hold"}
-                and self.queue.classify_mediation(action.kind) is not False
+                and self.queue.classify_mediation(finalized_action.kind) is not False
             ):
-                self.queue.record_mediation_refusal(action.kind)
+                self.queue.record_mediation_refusal(finalized_action.kind)
         except Exception:
             logger.warning("could not persist kernel refusal evidence", exc_info=True)
         return decision
@@ -235,10 +247,11 @@ class AutonomyWorker:
 
         if self.queue.mediation_mode == "off":
             return True
-        classification = self.queue.classify_mediation(getattr(task, "kind", ""))
-        if classification is False:
+        if not self.queue.mediation_required(
+            getattr(task, "id", 0), kind=getattr(task, "kind", "")
+        ):
             return True
-        if self.queue.mediation_mode != "enforce" or classification is not True:
+        if self.queue.mediation_mode != "enforce":
             return False
         permit = self._execution_context.get()
         return isinstance(permit, _ExecutionPermit) and permit.consume(task)
@@ -295,25 +308,30 @@ class AutonomyWorker:
         self, *, agent: str, kind: str, title: str, payload: dict, origin: str
     ):
         from ..kernel import kernel_enabled
+        from ..kernel.binding import MediationDecisionMismatch
 
         kernel = self._mediation_kernel
         consume = getattr(kernel, "consume_for_enqueue", None)
-        if not kernel_enabled():
+        try:
+            if not kernel_enabled():
+                if callable(consume):
+                    consume(agent=agent, kind=kind, title=title, payload=payload, origin=origin)
+                action = self._kernel_action(agent, kind, title, payload, origin)
+                return action, None
             if callable(consume):
-                consume(agent=agent, kind=kind, title=title, payload=payload, origin=origin)
-            action = self._kernel_action(agent, kind, title, payload, origin)
-            return action, None
-        if callable(consume):
-            pending = consume(
-                agent=agent,
-                kind=kind,
-                title=title,
-                payload=payload,
-                origin=origin,
-            )
-            if pending is not None:
-                action, decision = pending
-                return action, self._validated_kernel_decision(decision)
+                pending = consume(
+                    agent=agent,
+                    kind=kind,
+                    title=title,
+                    payload=payload,
+                    origin=origin,
+                )
+                if pending is not None:
+                    action, decision = pending
+                    return action, self._validated_kernel_decision(decision)
+        except MediationDecisionMismatch as exc:
+            self.queue.record_mediation_refusal(kind)
+            raise TaskQueueError("pending kernel decision does not match finalized task") from exc
         action = self._kernel_action(agent, kind, title, payload, origin)
         return action, self._kernel_decision(action)
 
@@ -356,6 +374,7 @@ class AutonomyWorker:
             origin=action.origin,
             scope=action.scope,
             payload=payload,
+            effective_tier=risk_tier,
             policy_revision=self.queue.mediation_policy_revision,
             enqueue_revision=1,
         )
@@ -364,7 +383,7 @@ class AutonomyWorker:
             receipt_id=str(uuid.uuid4()),
             expectation=expectation,
             verdict=decision.verdict.value,
-            tier=risk_tier,
+            tier=int(decision.tier),
             reason=str(decision.reason or ""),
             issued_at_ms=now_ms,
             expires_at_ms=now_ms + self._mediation_receipt_ttl_ms,
@@ -542,6 +561,7 @@ class AutonomyWorker:
         """
         origin = self._effective_origin(origin)
         proposed_payload = payload or {}
+        payload, tainted = self._mark_payload_for_origin(proposed_payload, origin)
         classification = self.queue.classify_mediation(kind)
         mediated = self.queue.mediation_mode in {"enforce", "hold"} and classification is not False
         action = kernel_decision = None
@@ -561,10 +581,9 @@ class AutonomyWorker:
                 agent=agent,
                 kind=kind,
                 title=title,
-                payload=proposed_payload,
+                payload=payload,
                 origin=origin,
             )
-        payload, tainted = self._mark_payload_for_origin(proposed_payload, origin)
         try:
             decision, tier, must_ask = self._policy_decision(
                 self._policy_action(agent, kind, payload, origin),
@@ -652,6 +671,7 @@ class AutonomyWorker:
         """Propose a task, gate it through the policy, and route it."""
         origin = self._effective_origin(origin)
         proposed_payload = payload or {}
+        payload, tainted = self._mark_payload_for_origin(proposed_payload, origin)
         classification = self.queue.classify_mediation(kind)
         mediated = self.queue.mediation_mode in {"enforce", "hold"} and classification is not False
         action = kernel_decision = None
@@ -672,10 +692,9 @@ class AutonomyWorker:
                 agent=agent,
                 kind=kind,
                 title=title,
-                payload=proposed_payload,
+                payload=payload,
                 origin=origin,
             )
-        payload, tainted = self._mark_payload_for_origin(proposed_payload, origin)
         try:
             decision, tier, must_ask = self._policy_decision(
                 self._policy_action(agent, kind, payload, origin),
@@ -781,10 +800,7 @@ class AutonomyWorker:
             if self._halted(task.agent):
                 held += 1
                 continue
-            classification = self.queue.classify_mediation(task.kind)
-            mediated = (
-                self.queue.mediation_mode in {"enforce", "hold"} and classification is not False
-            )
+            mediated = self.queue.mediation_required(task.id, kind=task.kind)
             if mediated and self.queue.mediation_mode == "hold":
                 held += 1
                 continue

@@ -276,6 +276,7 @@ class ReceiptExpectation:
     origin: str
     scope: str
     payload: object
+    effective_tier: int
     policy_revision: str
     enqueue_revision: int
 
@@ -287,6 +288,9 @@ class ReceiptExpectation:
         _token(self.origin, "origin")
         _token(self.scope, "scope")
         payload_digest(self.payload)
+        effective_tier = _bounded_int(self.effective_tier, "effective task tier")
+        if effective_tier > 3:
+            raise ValueError("effective task tier is outside the bounded range")
         _token(self.policy_revision, "policy revision")
         _bounded_int(self.enqueue_revision, "enqueue revision", minimum=1)
 
@@ -306,6 +310,7 @@ class MediationReceipt:
     payload_sha256: str
     verdict: str
     tier: int
+    effective_tier: int
     reason_sha256: str
     policy_revision: str
     issued_at_ms: int
@@ -326,9 +331,12 @@ class MediationReceipt:
         _digest(self.payload_sha256, "payload digest")
         if self.verdict not in _VERDICTS:
             raise ValueError("kernel verdict is invalid")
-        _bounded_int(self.tier, "kernel tier")
-        if self.tier > 3:
+        kernel_tier = _bounded_int(self.tier, "kernel tier")
+        if kernel_tier > 3:
             raise ValueError("kernel tier is outside the bounded range")
+        effective_tier = _bounded_int(self.effective_tier, "effective task tier")
+        if effective_tier > 3 or effective_tier < kernel_tier:
+            raise ValueError("effective task tier is outside the bounded range")
         _digest(self.reason_sha256, "reason digest")
         _token(self.policy_revision, "policy revision")
         issued = _bounded_int(self.issued_at_ms, "issued time")
@@ -382,6 +390,7 @@ def issue_receipt(
             "payload_sha256": payload_digest(expectation.payload),
             "verdict": verdict,
             "tier": tier,
+            "effective_tier": expectation.effective_tier,
             "reason_sha256": reason_digest(reason),
             "policy_revision": expectation.policy_revision,
             "issued_at_ms": issued_at_ms,
@@ -439,6 +448,7 @@ def verify_receipt(
             and value.origin == expected.origin
             and value.scope == expected.scope
             and value.payload_sha256 == payload_digest(expected.payload)
+            and value.effective_tier == expected.effective_tier
             and value.policy_revision == expected.policy_revision
             and value.enqueue_revision == expected.enqueue_revision
         )

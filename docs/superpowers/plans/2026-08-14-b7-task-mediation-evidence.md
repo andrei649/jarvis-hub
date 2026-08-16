@@ -31,6 +31,8 @@ produce exact hostile evidence without broadening Action Kernel authority.
 - [x] Serialize additive legacy-schema migration across processes with a database
   write transaction and bounded WAL acquisition retry.
 - [x] Quarantine legacy classified proposed/approved/running rows under enforce/hold.
+- [x] Make persisted B7 provenance irreversible across mutable kind changes and
+  reject event timestamps that regress behind the last verified chain event.
 
 ## Task 3 — worker and kernel wiring
 
@@ -45,6 +47,8 @@ produce exact hostile evidence without broadening Action Kernel authority.
 - [x] Route classified `govern_enqueue()`/`submit()` through sealed mediated enqueue.
 - [x] Route classified `tick()` through atomic validated claim before executor call.
 - [x] Keep mode `off` byte-compatible and preserve policy/taint/kill-switch floors.
+- [x] Finalize server taint bytes before the kernel call and sign the actual kernel
+  tier separately from the effective policy/task tier; mismatched pending decisions deny.
 
 ## Task 4 — canonical authority identity
 
