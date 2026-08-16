@@ -500,10 +500,11 @@ owner who did harden.
 - **Surface:** `agents/core/skills/loader.py`
 - **Why it matters:** the audit is unambiguous that this, not the hash, is the execution boundary. `_load_skill` may execute module top-level code.
 - **Steps:** read `_load_skill` around the `spec.loader.exec_module(mod)` call. Then install an external inert skill whose module body writes a marker, at the **shipped default** (`JARVIS_REQUIRE_SIGNED_SKILLS` unset, no signature at all). Repeat with a repository-bundled skill and with a keyed HMAC signature.
-- **Expected:** the unsigned external marker does not appear; the skill remains visible with `sandboxed=true` and no loaded module. Repository-bundled behavior is unchanged, and a keyed external skill may load in-process. Marketplace extraction stamps external provenance and discards any package-supplied owner-approval marker.
+- **Expected:** the unsigned external marker does not appear; the skill remains visible with `sandboxed=true` and no loaded module. Repository-bundled behavior is unchanged, and a keyed external skill may load in-process. Marketplace extraction stamps external provenance and discards any package-supplied owner-approval marker. Bundled-root links/junctions remain external; approval fingerprints all relevant nested source/artifact bytes; execution uses the validated snapshot; missing/corrupt live registry state denies; and concurrent store instances/processes merge approvals under a shared lock.
 - **FAIL if:** unsigned owner/imported/marketplace code reaches `exec_module`, or if the boundary disables repository-bundled skills. Treat either result as a **BLOCKER**.
 - **CROSS:** `POST /api/skills/marketplace/install-zip` (admin) — does the HTTP path reach the same loader? Check before claiming remote reachability.
-- **Evidence:** [`2026-08-12 ADV-038 execution-boundary run`](../qa-runs/2026-08-12-hermetic-adv-exec-boundary.md).
+- **Evidence:** [`2026-08-12 ADV-038 execution-boundary run`](../qa-runs/2026-08-12-hermetic-adv-exec-boundary.md). SEC-B8 remediation tests additionally cover discovery-root junctions, nested artifact drift, check-to-exec swaps, live registry loss/corruption, and concurrent merge behavior.
+- **Residual:** approval rows and their lock file are not pruned/revoked automatically when a skill is removed. They cannot authorize missing or changed bytes, but recreating identical bytes at the same canonical path remains approved until an explicit lifecycle/revoke follow-up is implemented.
 
 #### ADV-039 — What tier can reach the installer?  🌐
 - **Surface:** `POST /api/skills/marketplace/install-zip` (admin) · `POST /skills/import` (user) · `POST /api/skills/{name}/approve` (admin)
