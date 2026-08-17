@@ -44,12 +44,12 @@ def test_the_orchestrator_records_cost_for_every_agent_turn():
 
 
 def test_recorded_spend_is_priced_per_call_and_totalled():
-    cost_tracker.record("stark", 1_000_000, 0, model="claude-sonnet")   # $3.00 in
-    cost_tracker.record("athena", 0, 1_000_000, model="claude-sonnet")  # $15.00 out
+    cost_tracker.record("stark", 1_000_000, 0, model="claude-sonnet")   # $2.00 in
+    cost_tracker.record("athena", 0, 1_000_000, model="claude-sonnet")  # $10.00 out
     summary = cost_tracker.get_summary()
-    assert summary["agents"]["stark"]["cost_usd"] == pytest.approx(3.0)
-    assert summary["agents"]["athena"]["cost_usd"] == pytest.approx(15.0)
-    assert summary["total_cost_usd"] == pytest.approx(18.0)
+    assert summary["agents"]["stark"]["cost_usd"] == pytest.approx(2.0)
+    assert summary["agents"]["athena"]["cost_usd"] == pytest.approx(10.0)
+    assert summary["total_cost_usd"] == pytest.approx(12.0)
 
 
 def test_a_local_turn_costs_nothing_but_is_still_counted():
@@ -66,14 +66,14 @@ def test_spend_persists_across_a_restart(tmp_path, monkeypatch):
     """Process-memory only meant last month was unanswerable even once fed."""
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
     cost_tracker.record("stark", 1_000_000, 0, model="claude-sonnet")
-    assert cost_tracker.spend_today_usd() == pytest.approx(3.0)
+    assert cost_tracker.spend_today_usd() == pytest.approx(2.0)
 
     # simulate a reboot: drop every in-process counter, then read again
     cost_tracker._usage.clear()
     cost_tracker._daily.clear()
     cost_tracker._state["loaded"] = False
 
-    assert cost_tracker.spend_today_usd() == pytest.approx(3.0), (
+    assert cost_tracker.spend_today_usd() == pytest.approx(2.0), (
         "spend reset at boot — 'what did this cost me last month' is unanswerable"
     )
     assert cost_tracker.daily_spend(), "no per-day rollup to answer a monthly question"

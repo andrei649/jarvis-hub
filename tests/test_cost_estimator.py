@@ -21,18 +21,18 @@ def test_estimate_cost_local_is_free():
 
 def test_estimate_cost_gemini_flash():
     cost = estimate_cost("gemini-2.5-flash", 1000, 500, cached_tokens=800)
-    expected_input = (1000 - 800) / 1_000_000 * 0.15
-    expected_output = 500 / 1_000_000 * 0.60
+    expected_input = (1000 - 800) / 1_000_000 * 0.30
+    expected_output = 500 / 1_000_000 * 2.50
     assert cost["input_cost"] == round(expected_input, 10)
     assert cost["output_cost"] == round(expected_output, 10)
     assert cost["total"] == round(expected_input + expected_output, 10)
     assert cost["cached_input"] == 800
-    assert cost["savings"] == round(800 / 1_000_000 * 0.15, 10)
+    assert cost["savings"] == round(800 / 1_000_000 * 0.30, 10)
 
 
 def test_estimate_cost_gemini_pro():
     cost = estimate_cost("gemini-2.5-pro", 100_000, 2000)
-    assert cost["total"] == 100_000 / 1_000_000 * 2.00 + 2000 / 1_000_000 * 10.00
+    assert cost["total"] == 100_000 / 1_000_000 * 1.25 + 2000 / 1_000_000 * 10.00
 
 
 def test_estimate_cost_claude():
