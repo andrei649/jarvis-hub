@@ -23,28 +23,53 @@ from pathlib import Path
 
 logger = logging.getLogger("jarvis.cost")
 
-# Price per 1M tokens (input/output) — update as needed.
+# Price per 1M tokens (input/output), USD. These are *family* keys: `_price_for` falls
+# back to the longest matching substring, so "claude-opus-5" and "claude-opus-4-8" both
+# resolve to the "claude-opus" row without an entry per released model, while the more
+# specific "gpt-4o-mini" still beats "gpt-4o". Exact per-model figures — and the
+# provider source URLs — live in `agents/core/llm/cost_estimator.py`; a test pins each
+# row below to that table's newest member so the two cannot drift apart silently.
 #
-# The Anthropic rows are *family* keys on purpose: `_price_for` falls back to a substring
-# match, so "claude-opus-5" and "claude-opus-4-8" both resolve to the "claude-opus" row
-# without needing an entry per released model. Keep them coarse; the exact per-model
-# figures live in `agents/core/llm/cost_estimator.py`.
-#
-# Anthropic list prices verified 2026-08-17. The Haiku row was still Haiku 3.5 pricing
-# ($0.25/$1.25) and the Opus row still Opus 3 pricing ($15/$75) — Haiku was under-billing
-# ~4x and Opus over-billing 3x, which fed `spend_today_usd()` and therefore the
+# Prices verified 2026-08-17. Three rows were priced for models retired months earlier:
+# Haiku was on Haiku 3's $0.25/$1.25 (~4x under), Opus on Opus 3/4's $15/$75 (3x over),
+# and gpt-4o on the superseded 2024-05-13 snapshot's $5/$15 (2x over). This meter is not
+# cosmetic: `record()` feeds `spend_today_usd()`, which backs the
 # `llm.daily_cost_cap_usd` check in the router.
 MODEL_PRICES = {
     "default":         {"input": 3.00,  "output": 15.00},
-    "claude-haiku":    {"input": 1.00,  "output": 5.00},
-    "claude-sonnet":   {"input": 3.00,  "output": 15.00},
-    "claude-opus":     {"input": 5.00,  "output": 25.00},
+    # Anthropic
     "claude-fable":    {"input": 10.00, "output": 50.00},
     "claude-mythos":   {"input": 10.00, "output": 50.00},
-    "gpt-4o":          {"input": 5.00,  "output": 15.00},
+    "claude-opus":     {"input": 5.00,  "output": 25.00},
+    "claude-sonnet":   {"input": 2.00,  "output": 10.00},
+    "claude-haiku":    {"input": 1.00,  "output": 5.00},
+    # Google Gemini. "gemini-pro" is the legacy catch-all and tracks 2.5 Pro.
+    "gemini-pro":      {"input": 1.25,  "output": 10.00},
+    "gemini-2.5-pro":  {"input": 1.25,  "output": 10.00},
+    "gemini-3.1-pro":  {"input": 2.00,  "output": 12.00},
+    "gemini-flash-lite": {"input": 0.25, "output": 1.50},
+    "gemini-flash":    {"input": 0.30,  "output": 2.50},
+    # OpenAI, via OpenRouter or an OpenAI-compatible base URL.
+    "gpt-5-nano":      {"input": 0.05,  "output": 0.40},
+    "gpt-5-mini":      {"input": 0.25,  "output": 2.00},
+    "gpt-5-pro":       {"input": 15.00, "output": 120.00},
+    "gpt-5":           {"input": 1.25,  "output": 10.00},
+    "gpt-4.1-nano":    {"input": 0.10,  "output": 0.40},
+    "gpt-4.1-mini":    {"input": 0.40,  "output": 1.60},
+    "gpt-4.1":         {"input": 2.00,  "output": 8.00},
     "gpt-4o-mini":     {"input": 0.15,  "output": 0.60},
-    "gemini-pro":      {"input": 1.25,  "output": 5.00},
+    "gpt-4o":          {"input": 2.50,  "output": 10.00},
+    # Local backends bill nothing. Named explicitly because a local id such as
+    # "google/gemma-4-31b-a4b" matches no family and would otherwise fall through to
+    # `default` and be billed at cloud rates — the opposite of what the caller in
+    # `orchestrator.py` documents ("A local route prices at zero").
     "local":           {"input": 0.00,  "output": 0.00},
+    "gemma":           {"input": 0.00,  "output": 0.00},
+    "qwen":            {"input": 0.00,  "output": 0.00},
+    "deepseek":        {"input": 0.00,  "output": 0.00},
+    "llama":           {"input": 0.00,  "output": 0.00},
+    "mistral":         {"input": 0.00,  "output": 0.00},
+    "phi":             {"input": 0.00,  "output": 0.00},
 }
 
 _lock = threading.RLock()
@@ -120,12 +145,52 @@ def daily_spend() -> dict[str, float]:
         return {day: round(v, 6) for day, v in sorted(_daily.items())}
 
 
+def _exact_prices() -> dict:
+    """The per-model table from `llm/cost_estimator.py`, imported lazily.
+
+    Lazy because `cost_tracker` is imported very early (the orchestrator pulls it in at
+    turn time) and the LLM package drags in env/config; deferring keeps import order the
+    same as before this table was consulted.
+    """
+    try:
+        from agents.core.llm.cost_estimator import MODELS
+    except Exception:  # pragma: no cover - defensive; family table still prices the call
+        logger.debug("exact price table unavailable", exc_info=True)
+        return {}
+    return MODELS
+
+
 def _price_for(model: str) -> dict:
+    """Price row for a model id, most specific source first.
+
+    1. an exact row in this module's family table (covers "default", "local");
+    2. an exact row in the per-model table — **version-aware**, and the reason a
+       generation-specific price is never flattened by its family;
+    3. the **longest** matching family substring;
+    4. `default`.
+
+    Steps 2 and 3 both matter. A single coarse family row cannot price two live
+    generations at once: Sonnet 5 is $2/$10 while Sonnet 4.5/4.6 remain $3/$15, so
+    resolving "claude-sonnet-4-6" through the `claude-sonnet` row would under-bill it by
+    a third. The exact table settles those; the family row only catches ids nobody has
+    priced yet, so an unrecognised "claude-sonnet-*" still meters as *something*.
+
+    Longest-match on step 3, not first-match: the old `next(...)` took whichever family
+    happened to be inserted first, so "gpt-4o-mini-2024-07-18" billed at the `gpt-4o`
+    rate purely because that row sat higher in the literal. The more specific family is
+    always the longer string ("gpt-4o-mini" > "gpt-4o").
+    """
     key = (model or "default").lower()
-    return MODEL_PRICES.get(key) or MODEL_PRICES.get(
-        next((k for k in MODEL_PRICES if k in key), "default"),
-        MODEL_PRICES["default"],
-    )
+    exact = MODEL_PRICES.get(key)
+    if exact is not None:
+        return exact
+    per_model = _exact_prices().get(key)
+    if per_model is not None:
+        return per_model
+    matches = [k for k in MODEL_PRICES if k != "default" and k in key]
+    if not matches:
+        return MODEL_PRICES["default"]
+    return MODEL_PRICES[max(matches, key=len)]
 
 
 def record(agent_name: str, input_tokens: int, output_tokens: int, model: str = "default"):
