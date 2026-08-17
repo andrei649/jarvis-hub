@@ -90,7 +90,7 @@ REFERENCE_KINDS = {"issue", "repo_path"}
 BLOCKER_KINDS = {"delivery_gate", "program_gate", "owner_live", "external_dependency"}
 BLOCKER_REASON_TEXT = {
     "upstream_gate_not_accepted": "Consumer-specific upstream gate evidence is not accepted.",
-    "task_mediation_decisions_unresolved": "Task-mediation decisions remain unresolved.",
+    "task_mediation_acceptance_pending": "Task-mediation evidence awaits exact-head acceptance.",
     "provider_preflight_not_accepted": "Execution-provider preflight is not accepted.",
     "provider_specific_evidence_missing": "Provider-specific evidence is missing.",
     "owner_live_proof_missing": "Owner-host live proof is missing.",
@@ -99,7 +99,7 @@ BLOCKER_REASON_TEXT = {
 }
 BLOCKER_REASON_CONTRACT = {
     "upstream_gate_not_accepted": ("delivery_gate", None),
-    "task_mediation_decisions_unresolved": ("program_gate", "B7"),
+    "task_mediation_acceptance_pending": ("program_gate", "B7"),
     "provider_preflight_not_accepted": ("external_dependency", "E8_1C"),
     "provider_specific_evidence_missing": ("external_dependency", "PROVIDER_E9"),
     "owner_live_proof_missing": ("owner_live", "OWNER_LIVE"),

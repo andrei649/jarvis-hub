@@ -161,8 +161,11 @@ E1 and E6 remain `BUILDING`. E5 Night Shift stays blocked: it needs sufficient E
 behavior **plus** the B7 task-level Ultron mediation evidence. B7 status per the #757/#778
 work-claim ledger: discovery child [#818](https://github.com/andrei649/jarvis-hub/issues/818)
 is open and reserved to the Ultron Security Architect on `nerva2/b7-task-mediation-evidence`.
-Discovery found six owner decisions that must be resolved before branch creation; implementation
-has not started, and acceptance evidence is still required. B7 therefore remains open.
+The six owner decisions are resolved, and draft PR #912 implements the bounded default-off
+candidate: task-bound receipts, a durable external-head CAS, atomic enqueue/claim validation,
+tamper-evident persisted events, legacy quarantine, hold rollback, and canonical authority
+identity. This is candidate-fixed, not accepted: fresh exact-head R3 acceptance and live #906
+integration authority are still pending. B7 therefore remains open, and E5/E8 stay blocked.
 
 B3 / Continuity Core (#731) mapping — all six #778 unblock items now have an explicit
 destination, prior-art citation where accepted evidence exists (including `RISKS.md`'s

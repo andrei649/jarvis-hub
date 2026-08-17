@@ -17,6 +17,9 @@ the kernel only decides grant/deny/queue. Default-OFF behind ``JARVIS_ACTION_KER
 
 from __future__ import annotations
 
+if __name__ != "agents.core.kernel":
+    raise ImportError("Action Kernel authority must be imported as agents.core.kernel")
+
 import contextlib
 from dataclasses import dataclass, field
 from enum import StrEnum

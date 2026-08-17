@@ -350,7 +350,16 @@ class Orchestrator:
         self._last_channel: str = "unknown"
         self._settings_watcher_task: Optional[asyncio.Task] = None
         # ── Autonomy / Proactive Cortex (H6.1–H6.6) ──
-        self.autonomy_queue = TaskQueue()
+        from .autonomy.mediation import DetachedHMACSigner
+
+        _task_mediation_signer = DetachedHMACSigner(
+            getattr(getattr(self, "intent_log", None), "sign_detached", None)
+        )
+        self.autonomy_queue = TaskQueue(
+            mediation_signer=_task_mediation_signer,
+            mediation_scope="*",
+            mediation_policy_revision="nerva.action.v1",
+        )
         self.autonomy_prefs = PreferenceStore()
         # Mission Workspaces (0.32): persistent long-horizon workspaces — goal,
         # plan, budget, pause/resume, on-disk artifacts + an append-only event

@@ -14,7 +14,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from core.autonomy.transcript_watcher import extract_action_items, TranscriptWatcher  # noqa: E402
+from agents.core.autonomy.transcript_watcher import extract_action_items, TranscriptWatcher  # noqa: E402
 import agents.web as web  # noqa: E402
 
 
@@ -121,7 +121,7 @@ def test_invalid_target_falls_back_to_todoist():
 # ── endpoint ──────────────────────────────────────────────────────
 
 def _client(monkeypatch, tmp_path):
-    from core.autonomy.queue import TaskQueue
+    from agents.core.autonomy.queue import TaskQueue
     q = TaskQueue(str(tmp_path / "q.db")).initialize()
     monkeypatch.setattr(web, "orch", type("O", (), {"autonomy_queue": q})())
     monkeypatch.setattr(web, "USER_TOKEN", "usr")

@@ -125,6 +125,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
 | `agents/core/autonomy/queue.py` | SQLite task queue + state machine | `TaskQueue`, `Task`, `TaskStatus`, `TaskQueueError` |
+| `agents/core/autonomy/mediation.py` | B7 bounded task-evidence primitives: canonical task digests, signed one-use kernel receipts, tamper-evident event chains, and a detached monotonic-head anchor; owns no policy or signing key and fails closed on malformed evidence | `DetachedHMACSigner`, `MonotonicHeadAnchor`, `MediationReceipt`, `issue_receipt`, `verify_receipt`, `MediationEvent`, `verify_event_chain` |
 | `agents/core/autonomy/worker.py` | Queue + policy glue | `AutonomyWorker.submit`, `AutonomyWorker.tick`, `AutonomyWorker.apply_decision`, `InterruptBudget`, `is_night_window` |
 | `agents/core/autonomy/policy.py` | Risk gate | `AutonomyPolicy`, `RiskTier`, `ACT/NOTIFY/ASK` |
 | `agents/core/autonomy/inbox.py` | Decision card builder | `build_decision_card` |

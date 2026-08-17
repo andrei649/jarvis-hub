@@ -12,7 +12,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from core.llm.lmstudio_control import LMStudioController
-from core.autonomy.remediation import ExecResult
+from agents.core.autonomy.remediation import ExecResult
 
 
 class _Exec:
