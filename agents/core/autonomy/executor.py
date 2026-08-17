@@ -19,6 +19,8 @@ import asyncio
 import logging
 from typing import Awaitable, Callable, Optional
 
+from .queue import TaskQueue
+
 logger = logging.getLogger("jarvis.autonomy.executor")
 
 Handler = Callable[[object], Awaitable[dict]]
@@ -56,9 +58,20 @@ class TaskExecutor:
         return self._handlers[best] if best is not None else self.fallback
 
     async def execute(self, task) -> dict:
+        # The guard and handler must observe the same detached bytes.  Without
+        # this snapshot, a caller can mutate the original Task after the
+        # synchronous guard returns but before an async handler reads it.
+        dispatch_task = task
+        if self.execution_guard is not None:
+            dispatch_task = TaskQueue.detach_execution_task(task)
+            if dispatch_task is None:
+                return {
+                    "status": "refused",
+                    "reason": "mediation_execution_context_required",
+                }
         if self.execution_guard is not None:
             try:
-                allowed = self.execution_guard(task) is True
+                allowed = self.execution_guard(dispatch_task) is True
             except Exception:
                 allowed = False
             if not allowed:
@@ -66,16 +79,21 @@ class TaskExecutor:
                     "status": "refused",
                     "reason": "mediation_execution_context_required",
                 }
-        handler = self.resolve(getattr(task, "kind", ""))
+        handler = self.resolve(getattr(dispatch_task, "kind", ""))
         if handler is None:
-            return {"status": "noop", "note": f"no handler for kind={getattr(task, 'kind', '?')}"}
+            return {
+                "status": "noop",
+                "note": f"no handler for kind={getattr(dispatch_task, 'kind', '?')}",
+            }
         if self.max_wall_seconds is not None:
             try:
-                result = await asyncio.wait_for(handler(task), timeout=self.max_wall_seconds)
+                result = await asyncio.wait_for(
+                    handler(dispatch_task), timeout=self.max_wall_seconds
+                )
             except TimeoutError:
                 logger.warning(
                     "task wall-time budget exceeded (kind=%s, %.0fs)",
-                    getattr(task, "kind", "?"),
+                    getattr(dispatch_task, "kind", "?"),
                     self.max_wall_seconds,
                 )
                 return {
@@ -84,7 +102,7 @@ class TaskExecutor:
                     "budget_seconds": self.max_wall_seconds,
                 }
         else:
-            result = await handler(task)
+            result = await handler(dispatch_task)
         result = result if isinstance(result, dict) else {"status": "ok", "output": result}
         self._record_tokens(result)
         return result
