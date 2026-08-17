@@ -51,11 +51,39 @@ def test_get_summary_calculates_cost_default():
 
 def test_get_summary_calculates_cost_haiku():
     from agents.core import cost_tracker
-    # claude-haiku: $0.25 input / $1.25 output per 1M tokens
+    # claude-haiku: $1.00 input / $5.00 output per 1M tokens (Haiku 4.5 list price)
     cost_tracker.record("agent-y", input_tokens=1_000_000, output_tokens=1_000_000, model="claude-haiku")
     summary = cost_tracker.get_summary()
     cost = summary["agents"]["agent-y"]["cost_usd"]
-    assert abs(cost - 1.50) < 0.001  # $0.25 + $1.25
+    assert abs(cost - 6.00) < 0.001  # $1.00 + $5.00
+
+
+def test_get_summary_calculates_cost_opus():
+    from agents.core import cost_tracker
+    # claude-opus: $5.00 input / $25.00 output per 1M tokens (Opus 5 / 4.8 list price)
+    cost_tracker.record("agent-o", input_tokens=1_000_000, output_tokens=1_000_000, model="claude-opus")
+    summary = cost_tracker.get_summary()
+    assert abs(summary["agents"]["agent-o"]["cost_usd"] - 30.00) < 0.001
+
+
+def test_versioned_model_ids_resolve_to_their_family_price():
+    """A concrete model id must price at its family rate, not the $3/$15 `default`.
+
+    The orchestrator records the model that actually ran (e.g. "claude-opus-5"), never a
+    bare family name, so this substring fallback is the path every real call takes.
+    """
+    from agents.core import cost_tracker
+    for model, expected in (
+        ("claude-opus-5", 30.00),      # $5 + $25
+        ("claude-opus-4-8", 30.00),
+        ("claude-sonnet-5", 18.00),    # $3 + $15
+        ("claude-haiku-4-5", 6.00),    # $1 + $5
+        ("claude-fable-5", 60.00),     # $10 + $50
+    ):
+        cost_tracker.reset()
+        cost_tracker.record("a", input_tokens=1_000_000, output_tokens=1_000_000, model=model)
+        cost = cost_tracker.get_summary()["agents"]["a"]["cost_usd"]
+        assert abs(cost - expected) < 0.001, f"{model} priced at {cost}, expected {expected}"
 
 
 def test_get_summary_local_model_zero_cost():

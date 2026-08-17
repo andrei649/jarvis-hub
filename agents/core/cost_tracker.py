@@ -23,12 +23,24 @@ from pathlib import Path
 
 logger = logging.getLogger("jarvis.cost")
 
-# Price per 1M tokens (input/output) — update as needed
+# Price per 1M tokens (input/output) — update as needed.
+#
+# The Anthropic rows are *family* keys on purpose: `_price_for` falls back to a substring
+# match, so "claude-opus-5" and "claude-opus-4-8" both resolve to the "claude-opus" row
+# without needing an entry per released model. Keep them coarse; the exact per-model
+# figures live in `agents/core/llm/cost_estimator.py`.
+#
+# Anthropic list prices verified 2026-08-17. The Haiku row was still Haiku 3.5 pricing
+# ($0.25/$1.25) and the Opus row still Opus 3 pricing ($15/$75) — Haiku was under-billing
+# ~4x and Opus over-billing 3x, which fed `spend_today_usd()` and therefore the
+# `llm.daily_cost_cap_usd` check in the router.
 MODEL_PRICES = {
     "default":         {"input": 3.00,  "output": 15.00},
-    "claude-haiku":    {"input": 0.25,  "output": 1.25},
+    "claude-haiku":    {"input": 1.00,  "output": 5.00},
     "claude-sonnet":   {"input": 3.00,  "output": 15.00},
-    "claude-opus":     {"input": 15.00, "output": 75.00},
+    "claude-opus":     {"input": 5.00,  "output": 25.00},
+    "claude-fable":    {"input": 10.00, "output": 50.00},
+    "claude-mythos":   {"input": 10.00, "output": 50.00},
     "gpt-4o":          {"input": 5.00,  "output": 15.00},
     "gpt-4o-mini":     {"input": 0.15,  "output": 0.60},
     "gemini-pro":      {"input": 1.25,  "output": 5.00},

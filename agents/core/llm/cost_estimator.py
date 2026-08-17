@@ -11,6 +11,15 @@ MODELS = {
     "gemini-3.5-flash":    {"input": 1.50,  "output": 9.00},
     "gemini-3-flash":      {"input": 0.50,  "output": 3.00},
     "gemini-3.1-flash-lite": {"input": 0.25, "output": 1.50},
+    # Anthropic list prices per 1M tokens, verified 2026-08-17. Current generation is
+    # listed explicitly so a run on any of these is priced instead of falling through to
+    # `priced: False`. The 4.x entries stay: those models are still served, and persisted
+    # history references them by id, so removing a row would silently unprice past runs.
+    "claude-fable-5":          {"input": 10.00, "output": 50.00},
+    "claude-opus-5":           {"input": 5.00, "output": 25.00},
+    "claude-opus-4-8":         {"input": 5.00, "output": 25.00},
+    "claude-sonnet-5":         {"input": 3.00, "output": 15.00},
+    "claude-haiku-4-5":        {"input": 1.00, "output": 5.00},
     DEFAULT_CLAUDE_MODEL:      {"input": 3.00, "output": 15.00},
     RETIRED_CLAUDE_DEFAULT:    {"input": 3.00, "output": 15.00},
     "local":               {"input": 0,     "output": 0},
