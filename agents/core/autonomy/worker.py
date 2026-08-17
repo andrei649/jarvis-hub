@@ -47,25 +47,23 @@ class _ExecutionPermit:
     """Shared one-use permit that cannot be replayed by a copied ContextVar."""
 
     def __init__(self, task: Task) -> None:
-        self._identity = (
-            task.id,
-            task.mediation_execution_id,
-            task.mediation_task_sha256,
-        )
+        self._fingerprint = TaskQueue.execution_fingerprint(task)
         self._active = True
         self._lock = threading.Lock()
 
-    def consume(self, task: Task) -> bool:
-        identity = (
-            task.id,
-            task.mediation_execution_id,
-            task.mediation_task_sha256,
-        )
+    def consume(self, task: Task, *, validate: Callable[[Task, str], bool]) -> bool:
         with self._lock:
-            if not self._active or identity != self._identity:
+            if not self._active:
                 return False
             self._active = False
-            return task.status == TaskStatus.RUNNING.value
+            fingerprint = TaskQueue.execution_fingerprint(task)
+            if (
+                not self._fingerprint
+                or fingerprint != self._fingerprint
+                or task.status != TaskStatus.RUNNING.value
+            ):
+                return False
+        return validate(task, self._fingerprint)
 
     def revoke(self) -> None:
         with self._lock:
@@ -247,14 +245,27 @@ class AutonomyWorker:
 
         if self.queue.mediation_mode == "off":
             return True
-        if not self.queue.mediation_required(
-            getattr(task, "id", 0), kind=getattr(task, "kind", "")
+        persisted, mediated = self.queue.execution_snapshot(
+            getattr(task, "id", 0), presented_kind=getattr(task, "kind", "")
+        )
+        persisted_fingerprint = (
+            TaskQueue.execution_fingerprint(persisted) if persisted is not None else None
+        )
+        presented_fingerprint = TaskQueue.execution_fingerprint(task)
+        if (
+            persisted is None
+            or not persisted_fingerprint
+            or persisted_fingerprint != presented_fingerprint
         ):
+            return False
+        if not mediated:
             return True
         if self.queue.mediation_mode != "enforce":
             return False
         permit = self._execution_context.get()
-        return isinstance(permit, _ExecutionPermit) and permit.consume(task)
+        return isinstance(permit, _ExecutionPermit) and permit.consume(
+            task, validate=self.queue.validate_mediated_execution
+        )
 
     def _kernel_action(self, agent: str, kind: str, title: str, payload: dict, origin: str):
         from ..kernel import Action
@@ -800,7 +811,16 @@ class AutonomyWorker:
             if self._halted(task.agent):
                 held += 1
                 continue
-            mediated = self.queue.mediation_required(task.id, kind=task.kind)
+            if self.queue.mediation_mode == "off":
+                mediated = False
+            else:
+                persisted, mediated = self.queue.execution_snapshot(
+                    task.id, presented_kind=task.kind
+                )
+                if persisted is None:
+                    held += 1
+                    continue
+                task = persisted
             if mediated and self.queue.mediation_mode == "hold":
                 held += 1
                 continue
@@ -817,10 +837,44 @@ class AutonomyWorker:
                 task = self.queue.get(task.id)
             ran += 1
             attempts = self.queue.increment_attempts(task.id)
+            # Bind the permit to the exact durable snapshot after the attempt
+            # counter/update timestamp mutation and before handler dispatch.
+            task = self.queue.get(task.id)
+            if self.queue.mediation_mode != "off":
+                persisted, still_mediated = self.queue.execution_snapshot(
+                    task.id, presented_kind=task.kind
+                )
+                fingerprint = TaskQueue.execution_fingerprint(task)
+                valid = (
+                    persisted is not None
+                    and still_mediated == mediated
+                    and fingerprint is not None
+                    and TaskQueue.execution_fingerprint(persisted) == fingerprint
+                    and persisted.status == TaskStatus.RUNNING.value
+                )
+                if valid and mediated:
+                    valid = self.queue.validate_mediated_execution(task, fingerprint)
+                if not valid:
+                    if mediated:
+                        self.queue.transition(
+                            task.id,
+                            TaskStatus.FAILED,
+                            result={"error": "mediation execution validation failed"},
+                        )
+                        failed += 1
+                    else:
+                        self.queue.transition(task.id, TaskStatus.APPROVED)
+                        held += 1
+                    continue
+                task = persisted
             execution_permit = _ExecutionPermit(task) if mediated else None
             execution_token = self._execution_context.set(execution_permit)
             try:
                 result = await self._execute(task)
+                if result.get("status") == "refused" and result.get("reason") == (
+                    "mediation_execution_context_required"
+                ):
+                    raise TaskQueueError("mediation execution context refused")
                 self.queue.transition(task.id, TaskStatus.DONE, result=result)
                 self._record_capability_outcome(task, success=True, result=result)
                 self._settle_spend(task)
@@ -846,7 +900,12 @@ class AutonomyWorker:
         if self.executor is None:
             # No executor wired → no-op success so the loop is observable.
             return {"status": "noop", "note": "no executor configured"}
-        return await self.executor(task)
+        if self.queue.mediation_mode == "off":
+            return await self.executor(task)
+        dispatch_task = TaskQueue.detach_execution_task(task)
+        if dispatch_task is None:
+            raise TaskQueueError("could not snapshot execution task")
+        return await self.executor(dispatch_task)
 
     def _settle_spend(self, task: Task) -> None:
         amount = task.payload.get("amount") if task.payload else None

@@ -1607,6 +1607,316 @@ def test_worker_claims_before_execution_and_direct_executor_call_is_refused(tmp_
     assert queue.verified_mediation_stats()["governed"] == 1
 
 
+@pytest.mark.parametrize("mode", ["enforce", "hold"])
+@pytest.mark.parametrize("degradation", ["local_signature", "external_head"])
+def test_degraded_global_head_refuses_intentionally_direct_executor(
+    tmp_path, mode, degradation
+):
+    handled = []
+
+    async def handler(task):
+        handled.append(task.id)
+        return {"status": "ok"}
+
+    queue = _queue(tmp_path, mode=mode)
+    worker = AutonomyWorker(queue)
+    executor = TaskExecutor(execution_guard=worker.execution_allowed).register(
+        "draft_email", handler
+    )
+    task_id = queue.enqueue("jarvis", "draft_email", "Draft reply", {"to": "x"})
+    assert asyncio.run(executor.execute(queue.get(task_id))) == {"status": "ok"}
+    handled.clear()
+    if degradation == "local_signature":
+        queue._conn.execute("UPDATE task_mediation_state SET signature='corrupt' WHERE id=1")
+        queue._conn.commit()
+    else:
+        anchored = queue._mediation_head_anchor.read()
+        queue._mediation_head_anchor = MonotonicHeadAnchor(
+            lambda: replace(anchored, signature=ZERO_HASH),
+            None,
+        )
+
+    result = asyncio.run(executor.execute(queue.get(task_id)))
+
+    assert result == {
+        "status": "refused",
+        "reason": "mediation_execution_context_required",
+    }
+    assert handled == []
+
+
+def test_raw_worker_executor_holds_direct_task_when_global_head_is_degraded(tmp_path):
+    handled = []
+
+    async def handler(task):
+        handled.append(task.id)
+        return {"status": "ok"}
+
+    queue = _queue(tmp_path)
+    task_id = queue.enqueue("jarvis", "draft_email", "Draft reply", {"to": "x"})
+    queue.transition(task_id, TaskStatus.APPROVED)
+    queue._conn.execute("UPDATE task_mediation_state SET signature='corrupt' WHERE id=1")
+    queue._conn.commit()
+    worker = AutonomyWorker(queue, executor=handler)
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["held"] == 1
+    assert summary["ran"] == summary["done"] == summary["failed"] == 0
+    assert queue.get(task_id).status == TaskStatus.APPROVED.value
+    assert handled == []
+
+
+def test_large_intentionally_direct_task_keeps_legacy_execution_compatibility(tmp_path):
+    handled = []
+
+    async def handler(task):
+        handled.append(task.id)
+        return {"status": "ok"}
+
+    queue = _queue(tmp_path)
+    worker = AutonomyWorker(queue)
+    executor = TaskExecutor(execution_guard=worker.execution_allowed).register(
+        "draft_email", handler
+    )
+    task_id = queue.enqueue(
+        "jarvis", "draft_email", "Large draft", {"body": "x" * 17_000}
+    )
+
+    assert asyncio.run(executor.execute(queue.get(task_id))) == {"status": "ok"}
+    assert handled == [task_id]
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_intentionally_direct_payload_keeps_legacy_compatibility(tmp_path, value):
+    handled = []
+
+    async def handler(task):
+        handled.append(task.id)
+        return {"status": "ok"}
+
+    queue = _queue(tmp_path)
+    worker = AutonomyWorker(queue)
+    executor = TaskExecutor(execution_guard=worker.execution_allowed).register(
+        "draft_email", handler
+    )
+    task_id = queue.enqueue("jarvis", "draft_email", "Numeric draft", {"value": value})
+
+    assert asyncio.run(executor.execute(queue.get(task_id))) == {"status": "ok"}
+    assert handled == [task_id]
+
+
+def test_mode_off_worker_preserves_executor_object_compatibility(tmp_path, monkeypatch):
+    handled = []
+
+    def refuse_snapshot(_task):
+        raise TypeError("legacy executor task cannot use the mediated snapshotter")
+
+    async def handler(task):
+        handled.append(task.id)
+        return {"status": "ok"}
+
+    monkeypatch.setattr(TaskQueue, "detach_execution_task", refuse_snapshot)
+    queue = TaskQueue(str(tmp_path / "off.db")).initialize()
+    task_id = queue.enqueue("jarvis", "draft_email", "Legacy draft", {"to": "x"})
+    queue.transition(task_id, TaskStatus.APPROVED)
+    worker = AutonomyWorker(queue, executor=handler)
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["done"] == 1
+    assert handled == [task_id]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", 2_147_483_647),
+        ("agent", "attacker"),
+        ("kind", "filesystem.delete"),
+        ("title", "Altered after claim"),
+        ("payload", {"path": "attacker.txt", "body": "changed"}),
+        ("risk_tier", 0),
+        ("autonomy_level", "auto"),
+        ("attention_mode", "none"),
+        ("origin", "manual"),
+        ("decided_by", "attacker"),
+        ("decision", "reject"),
+        ("created_at", "1970-01-01T00:00:00+00:00"),
+        ("mediation_enqueue_id", "00000000-0000-0000-0000-000000000000"),
+        ("mediation_enqueue_revision", 2),
+        ("mediation_scope", "node:attacker"),
+        ("mediation_policy_revision", "attacker-policy"),
+        ("mediation_receipt", {"receipt_id": "forged"}),
+        ("mediation_task_sha256", "0" * 64),
+        ("mediation_execution_id", "00000000-0000-0000-0000-000000000000"),
+    ],
+)
+def test_mediated_execution_permit_binds_complete_task_tuple(
+    tmp_path, monkeypatch, field, value
+):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    handled = []
+
+    async def handler(task):
+        handled.append(task.id)
+        return {"status": "ok"}
+
+    queue, worker, _bridge = _mediated_worker(tmp_path, _kernel_decision())
+    guarded = TaskExecutor(execution_guard=worker.execution_allowed).register(
+        "filesystem.write", handler
+    )
+
+    async def alter_inside_permit(task):
+        original = getattr(task, field)
+        try:
+            setattr(task, field, value)
+            return await guarded.execute(task)
+        finally:
+            setattr(task, field, original)
+
+    worker.executor = alter_inside_permit
+    task = asyncio.run(
+        worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+    )
+    asyncio.run(worker.apply_decision(task.id, "accept"))
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["ran"] == 1
+    assert summary["done"] == 0
+    assert summary["failed"] == 1
+    assert handled == []
+    assert queue.get(task.id).status == TaskStatus.FAILED.value
+
+
+def test_mediated_execution_revalidates_persisted_tuple_before_dispatch(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    handled = []
+
+    async def handler(task):
+        handled.append(task.id)
+        return {"status": "ok"}
+
+    queue, worker, _bridge = _mediated_worker(tmp_path, _kernel_decision())
+    guarded = TaskExecutor(execution_guard=worker.execution_allowed).register(
+        "filesystem.write", handler
+    )
+
+    async def alter_persisted_tuple(task):
+        queue._conn.execute(
+            "UPDATE tasks SET title='Altered after claim' WHERE id=?",
+            (task.id,),
+        )
+        queue._conn.commit()
+        return await guarded.execute(task)
+
+    worker.executor = alter_persisted_tuple
+    task = asyncio.run(
+        worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+    )
+    asyncio.run(worker.apply_decision(task.id, "accept"))
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["ran"] == 1
+    assert summary["done"] == 0
+    assert summary["failed"] == 1
+    assert handled == []
+    assert queue.get(task.id).status == TaskStatus.FAILED.value
+
+
+def test_guard_and_handler_share_detached_immutable_dispatch_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    observed = []
+
+    async def handler(task):
+        await asyncio.sleep(0)
+        observed.append((task.title, task.payload))
+        return {"status": "ok"}
+
+    queue, worker, _bridge = _mediated_worker(tmp_path, _kernel_decision())
+    guarded = TaskExecutor(execution_guard=worker.execution_allowed).register(
+        "filesystem.write", handler
+    )
+
+    async def mutate_after_guard(task):
+        def mutate_original():
+            task.title = "Altered after guard"
+            task.payload = {"path": "attacker.txt", "body": "changed"}
+
+        asyncio.get_running_loop().call_soon(mutate_original)
+        return await guarded.execute(task)
+
+    worker.executor = mutate_after_guard
+    task = asyncio.run(
+        worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+    )
+    asyncio.run(worker.apply_decision(task.id, "accept"))
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["done"] == 1
+    assert summary["failed"] == 0
+    assert observed == [("Write bounded report", _worker_payload())]
+    assert queue.get(task.id).status == TaskStatus.DONE.value
+
+
+def test_hostile_deepcopy_hooks_cannot_mutate_after_guard(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    observed = []
+
+    class EvilPayload(dict):
+        def __deepcopy__(self, _memo):
+            return self
+
+    class EvilTask(queue_module.Task):
+        def __deepcopy__(self, _memo):
+            return self
+
+    async def handler(task):
+        await asyncio.sleep(0)
+        observed.append((task.title, task.payload, type(task), type(task.payload)))
+        return {"status": "ok"}
+
+    queue, worker, _bridge = _mediated_worker(tmp_path, _kernel_decision())
+    guarded = TaskExecutor(execution_guard=worker.execution_allowed).register(
+        "filesystem.write", handler
+    )
+
+    async def substitute_hostile_task(task):
+        evil = EvilTask(**task.to_dict())
+        evil.payload = EvilPayload(evil.payload)
+
+        def mutate_hostile():
+            evil.title = "Altered after guard"
+            evil.payload["path"] = "attacker.txt"
+
+        asyncio.get_running_loop().call_soon(mutate_hostile)
+        return await guarded.execute(evil)
+
+    worker.executor = substitute_hostile_task
+    task = asyncio.run(
+        worker.submit(
+            "ultron", "filesystem.write", "Write bounded report", payload=_worker_payload()
+        )
+    )
+    asyncio.run(worker.apply_decision(task.id, "accept"))
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["done"] == 1
+    assert observed == [
+        ("Write bounded report", _worker_payload(), queue_module.Task, dict)
+    ]
+
+
 def test_mediated_execution_context_cannot_replay_from_child_task(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
 

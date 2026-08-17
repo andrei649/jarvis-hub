@@ -18,6 +18,7 @@ from __future__ import annotations
 if __name__ != "agents.core.autonomy.queue":
     raise ImportError("TaskQueue authority must be imported as agents.core.autonomy.queue")
 
+import hashlib
 import json
 import logging
 import math
@@ -717,6 +718,104 @@ class TaskQueue:
                 counters[outcome] = int(counters[outcome]) + 1
         return counters
 
+    @staticmethod
+    def execution_fingerprint(task: Task) -> str | None:
+        """Digest every immutable persisted execution/authority field."""
+
+        try:
+            immutable = {
+                "id": task.id,
+                "agent": task.agent,
+                "kind": task.kind,
+                "title": task.title,
+                "payload": task.payload,
+                "risk_tier": task.risk_tier,
+                "autonomy_level": task.autonomy_level,
+                "attention_mode": task.attention_mode,
+                "origin": task.origin,
+                "decided_by": task.decided_by,
+                "decision": task.decision,
+                "created_at": task.created_at,
+                "mediation_enqueue_id": task.mediation_enqueue_id,
+                "mediation_enqueue_revision": task.mediation_enqueue_revision,
+                "mediation_scope": task.mediation_scope,
+                "mediation_policy_revision": task.mediation_policy_revision,
+                "mediation_receipt": task.mediation_receipt,
+                "mediation_task_sha256": task.mediation_task_sha256,
+                "mediation_execution_id": task.mediation_execution_id,
+            }
+            # Queue rows historically accept JSON larger than the bounded B7
+            # receipt domain.  Fingerprinting must not add a new eligibility
+            # limit to intentionally-direct tasks, while still rejecting
+            # non-JSON or otherwise unserialisable substitutions.
+            encoded = json.dumps(
+                immutable,
+                # Preserve the queue's legacy JSON domain: enqueue() has always
+                # accepted Python's deterministic NaN/Infinity spellings.
+                allow_nan=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+            return hashlib.sha256(encoded).hexdigest()
+        except Exception:
+            return None
+
+    @staticmethod
+    def detach_execution_task(task: Task) -> Task | None:
+        """Rebuild an untrusted task as a plain, recursively detached ``Task``.
+
+        ``copy.deepcopy`` delegates to attacker-controlled ``__deepcopy__``
+        hooks on Task/container subclasses.  A JSON round trip over the exact
+        persisted schema strips those hooks; the subsequent fingerprint check
+        still requires the rebuilt values to equal the authenticated row.
+        """
+
+        try:
+            values = {
+                name: getattr(task, name)
+                for name in Task.__dataclass_fields__
+            }
+            encoded = json.dumps(
+                values,
+                allow_nan=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            return Task(**json.loads(encoded))
+        except Exception:
+            return None
+
+    def execution_snapshot(
+        self, task_id: int, *, presented_kind: str
+    ) -> tuple[Task | None, bool]:
+        """Authenticate the head, load the row, and classify it atomically.
+
+        A missing/malformed row or degraded global head returns a fail-closed
+        sentinel.  The caller must not infer direct authority from missing
+        task-local provenance.
+        """
+
+        with self._lock:
+            try:
+                if (
+                    self.mediation_mode in {"enforce", "hold"}
+                    and self._validated_mediation_snapshot_locked() is None
+                ):
+                    return None, True
+                row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                if row is None:
+                    return None, True
+                task = _row_to_task(row)
+                required = (
+                    self._row_requires_mediation_locked(row)
+                    or self._classification(presented_kind) is not False
+                )
+                return task, required
+            except Exception:
+                return None, True
+
     def classify_mediation(self, kind: str) -> bool | None:
         """Return this queue's trusted classification result for *kind*."""
 
@@ -1126,6 +1225,91 @@ class TaskQueue:
                 self._conn.rollback()
                 return None
         return self.get(task_id)
+
+    def validate_mediated_execution(self, task: Task, expected_fingerprint: str) -> bool:
+        """Revalidate a claimed task and its full persisted tuple at dispatch.
+
+        The one-use worker permit proves which in-memory snapshot was claimed;
+        this check independently proves that the same snapshot is still the
+        authenticated RUNNING row in durable storage immediately before a
+        handler receives it.
+        """
+
+        if self.mediation_mode != "enforce" or not expected_fingerprint:
+            return False
+        with self._lock:
+            try:
+                snapshot = self._validated_mediation_snapshot_locked()
+                if snapshot is None:
+                    return False
+                row = self._conn.execute(
+                    "SELECT * FROM tasks WHERE id=?", (getattr(task, "id", 0),)
+                ).fetchone()
+                if (
+                    row is None
+                    or row["status"] != TaskStatus.RUNNING.value
+                    or self._classification(row["kind"]) is not True
+                    or not self._row_requires_mediation_locked(row)
+                ):
+                    return False
+
+                persisted = _row_to_task(row)
+                persisted_fingerprint = self.execution_fingerprint(persisted)
+                presented_fingerprint = self.execution_fingerprint(task)
+                if not (
+                    persisted_fingerprint
+                    and persisted_fingerprint == expected_fingerprint
+                    and presented_fingerprint == expected_fingerprint
+                    and persisted.mediation_execution_id
+                    and task.status == TaskStatus.RUNNING.value
+                ):
+                    return False
+
+                receipt, expectation, current_sha256 = self._row_receipt_and_expectation(row)
+                receipt_sha256 = canonical_digest(receipt.to_dict())
+                authorized = self._conn.execute(
+                    """SELECT COUNT(*) AS count FROM task_mediation_events
+                       WHERE task_id=? AND enqueue_id=?
+                         AND outcome='authorized_enqueue'
+                         AND receipt_id=? AND receipt_sha256=?""",
+                    (
+                        task.id,
+                        expectation.enqueue_id,
+                        receipt.receipt_id,
+                        receipt_sha256,
+                    ),
+                ).fetchone()
+                governed = self._conn.execute(
+                    """SELECT COUNT(*) AS count FROM task_mediation_events
+                       WHERE task_id=? AND enqueue_id=?
+                         AND outcome='governed' AND execution_id=?
+                         AND receipt_id=? AND receipt_sha256=?""",
+                    (
+                        task.id,
+                        expectation.enqueue_id,
+                        persisted.mediation_execution_id,
+                        receipt.receipt_id,
+                        receipt_sha256,
+                    ),
+                ).fetchone()
+                return (
+                    int(row["risk_tier"]) == receipt.effective_tier
+                    and self._scope_allowed(expectation.scope)
+                    and expectation.policy_revision == self._mediation_policy_revision
+                    and current_sha256 == row["mediation_task_sha256"]
+                    and authorized is not None
+                    and int(authorized["count"]) == 1
+                    and governed is not None
+                    and int(governed["count"]) == 1
+                    and verify_receipt(
+                        self._mediation_signer,
+                        receipt,
+                        expected=expectation,
+                        now_ms=self._clock_ms(),
+                    )
+                )
+            except Exception:
+                return False
 
     def scan_unmediated_tasks(self) -> list[int]:
         """Quarantine executable classified rows without a valid B7 binding."""
