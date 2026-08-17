@@ -1,2446 +1,869 @@
-# Jarvis Hub â€” Backlog Multi-Agent
-
-> Owner: Andrei Â· Planificat: 2026-05-30 Â· EchipÄƒ: agenÈ›i Claude + opencode
-> HUD: http://127.0.0.1:8080/ Â· Admin: /admin
-
-> **North Star (vision, principles, phase gates):** [MOONSHOT.md](MOONSHOT.md) â€” re-rank this backlog against it
-> **Go-Live Plan (features, roadmap, marketing brief):** [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md)
-> **Delivery History (H1â€“H8 completed sprints):** [docs/HISTORY.md](docs/HISTORY.md)
-> **Hermes migration v3 plan (reviewed by Fable 2026-07-07 â€” APPROVED with notes):** [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md) Â· review verdict + remaining-phase order in [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md) Â§5
-> **Last-day Fable handoff (2026-07-07 â€” ordered owner/AI task lanes, risk register):** [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md)
-> **Pre-go-live stakeholder sync (2026-07-07 â€” 5-seat agent panel, conditional GO, Gate-2 checklist):** [docs/meetings/2026-07-07-pre-go-live-sync.md](docs/meetings/2026-07-07-pre-go-live-sync.md)
-> **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) â€” brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27â€“33 (= Nerva Programs Aâ€“G) below Â· provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
-
-<!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
-## Nerva 2.0 program control â€” E0 DONE
-
-> Canonical program: [#757](https://github.com/andrei649/jarvis-hub/issues/757) Â· E0 epic:
-> [#758](https://github.com/andrei649/jarvis-hub/issues/758) Â· blocker plan:
-> [#778](https://github.com/andrei649/jarvis-hub/issues/778) Â· machine-readable completion ledger:
-> [`docs/nerva2/E0_COMPLETION.json`](docs/nerva2/E0_COMPLETION.json).
-
-- Accepted E0 evidence is complete through #789: baseline, ownership, dependencies, authority,
-  risks, ORIZONT mapping, issue ledgers and repository ledgers were independently reviewed.
-- E0 is **DONE** with `close_e0=true`. This closes the baseline/control gate only; it does not claim
-  that Cortex, Atlas, Episodes, Synapse SDK or Research Lab runtime capabilities are implemented.
-- #780 (Cortex), #781 (Atlas), #783 (Synapse) and #784 (Research Lab) are no longer blocked by E0 and
-  may proceed as separate bounded slices. #782 (Episodes) still waits for the minimum Atlas slice #781.
-- Ultron / `nerva.action.v1` remains the sole privileged-action authority. Cortex is shadow/no-action,
-  Atlas is read-only to consumers, Episodes is memory-record-only, Synapse is description-only and
-  Research Lab is evaluation-only in the first wave.
-- Historical ORIZONT delivery remains intact. Broader program-manifest work, Continuity Core mapping,
-  live task-level mediation, real adapters, Night Shift prerequisites and release proof remain open.
-<!-- NERVA2:E0-REPOSITORY-LEDGER:END -->
-
-**Accepted M1 slices and bounded program controls since E0** (each independently reviewed and
-squash-merged once present on `main`; no item by itself completes a runtime epic or release gate):
-
-- âœ… E1.0 / #780 / PR #791 â€” typed shadow `nerva.decision.v1` and `ShadowDecisionRouter`.
-- âœ… E1.1 / #792 â€” bounded current-router comparison over `nerva.cortex.comparison.v1`.
-- âœ… E1.2a / #841 / PR #842 â€” merged onto `main` as commit `769b633`
-  (2026-08-07); the owner-local measured primary-route contract is
-  `contract_ready`, but remains `owner_evidence_blocked` pending the five
-  E1.2b owner inputs, with `real_task_outcome_quality=not_measured`. This
-  does not complete E1, B2 live enforcement, the program, or release
-  readiness.
-- âœ… E2.0 / #781 â€” Atlas identity/provenance and read-only snapshot.
-- âœ… E3.0 / #782 / PR #796 â€” `nerva.episode.v1` schema, lifecycle and manual boundary.
-- âœ… E3.1 / #798 / PR #799 â€” longitudinal Episode retrieval comparison, evaluation-only.
-- âœ… E8.0 / #783 / PR #797 â€” Synapse manifest conformance, description-only.
-- âœ… E8.1a / #804 / PR #819 â€” read-only Hermes upstream discovery and compatibility map,
-  pinned to source tag `v2026.8.3` / commit `3c27eb6`. No dependency, provider contract,
-  adapter, execution or authority change. Merged as `a6e85854`; E8.1 remains `BUILDING`.
-- âœ… E8.1a exact-fetch integrity / #830 / PR #834 â€” Hermes imports pin the signed
-  annotated `v2026.8.3` tag, unsigned commit `3c27eb6`, exact tree and all 71
-  allowlisted `SKILL.md` byte digests; exact-commit fetches verify URL, digest
-  and frontmatter before mutation. No manifest enrolment, provider contract,
-  adapter, execution or authority change; E8.1 remains `BUILDING`.
-- âœ… E8.1b / #835 / PR #838 â€” strict, versioned `nerva.execution-provider.v1`
-  descriptor/request/result/health value types bind exact provider revision and
-  fingerprints, deep-freeze bounded JSON, and fail closed across sandbox,
-  filesystem, network, secret-reference, budget and lifecycle policy. Provider-local
-  results remain `unverified`; all authority fields are immutable false and external
-  verification is mandatory. The protocol is inert: no Hermes dependency, manifest
-  enrolment, adapter, registry, route, execution or kernel integration is added.
-  E8.1 remains `BUILDING`; E8.1c and provider-specific E9 evidence remain separate.
-- âœ… E8.1c / #844 / PR #845 â€” static Hermes invocation and supply-chain preflight,
-  pinned to tag `v2026.8.3`, commit `3c27eb6`, tree `b217767` and OCI index digest
-  `sha256:16788311e2fa3035456bdc1bafb8ec2b1777db64ebf020af9bb7eb73c3712c9e`.
-  The accepted scope is `preflight_evidence_only`: no image or package artifact was
-  pulled, installed, imported or executed; the OCI/one-shot candidate remains
-  unexecuted; compatibility and provider-specific E9 remain unmeasured; license
-  closure, SBOM/provenance and observed CVEs remain later gates.
-  No dependency, third-party-manifest enrolment, adapter, provider, route, credential,
-  runtime or authority change is added. E8.1 and E8 remain `BUILDING`; #804, B7/#818
-  and provider evidence #767 remain open, and release readiness remains false.
-- âœ… E8.1d / #824 / PR #827 â€” fail-closed manual-only third-party updater policy;
-  `auto_update: false` stays drift-visible and is denied by scheduler and direct updater.
-  No Hermes enrolment, provider or authority change; E8.1 remains `BUILDING`.
-- âœ… E9.0 / #784 / PR #803 â€” versioned `nerva.benchmark.v1` contract and task suite.
-- âœ… E9.1 / #807 / PR #809 â€” scheduled current-router shadow comparison and
-  `nerva.benchmark.report.v1` regression report, `evaluation_only`. Runs through the existing
-  Eval Nightly lane on synthetic-public fixtures; reports, never routes. Merged as `f59191c`;
-  docs in [`docs/nerva2/RESEARCH_LAB_E9_1.md`](docs/nerva2/RESEARCH_LAB_E9_1.md).
-- âœ… E6.0 / #806 / PR #808 â€” evidence-bound `OutcomeObservation` / `nerva.lesson.v1`
-  proposal contract, `proposal_only`. Reflection may propose a lesson; destinations own
-  promotion. Merged as `df0d529`; docs in [`docs/nerva2/REFLECTION_E6_0.md`](docs/nerva2/REFLECTION_E6_0.md).
-- âœ… E6.0 integrity correction / #820 / PR #823 â€” every lesson lifecycle sink revalidates
-  canonical observations before producing audit or advanced state; a correctly re-hashed forged
-  proposal is rejected at `accepted_by_destination`. E6 remains `BUILDING`.
-- âœ… E6.1 / #817 / PR #832 â€” synthetic-public held-out lesson-proposal evaluation reuses the
-  accepted E9.0 store/harness with immutable fixture splits, equal candidate/baseline budgets,
-  explicit false/hallucinated-recall metrics and strict retained-evidence preflight. Reports remain
-  `evaluation_only`; no lesson promotion, memory write, routing, execution or completion authority
-  is added. E6 remains `BUILDING`, and owner-live benefit is still unproven.
-- ğŸŸ¡ E1/E6/E9 authority-ceiling successors from closed #854 â€” the E1 measured report (#859), E6
-  observation/proposal/evaluation payloads (#860), and E9 regression report (#861) landed before
-  their required #856 Step-2 predecessor was accepted. That predecessor is now satisfied by #913,
-  but its later acceptance does not retroactively validate those merge procedures. The original
-  #859 merge remains historically invalid; its missing E1 hostile-proof evidence was separately
-  accepted in #865 and that E1 side gate is closed. The retained E6 (#860), E9 (#861), and separate
-  E9 totals-validation (#864) bytes still await their own fresh post-B2 acceptance decisions. The
-  #866 coordination-only history cleanup was separately accepted and grants no functional
-  acceptance. Serialization still
-  hard-codes `evaluation_only`/`proposal_only` and `can_* = false`; no authority, routing, execution
-  or promotion changed, B2 remains `PARTIAL` beyond Step 2, and the epics stay `BUILDING`.
-- âœ… Innovation Lab control v1 / #805 / PRs #831 and #837 â€” versioned RFC and Knowledge Garden
-  contracts, fail-closed lifecycle/lineage validation, immutable retained evidence and the
-  documented no-delivery-authority boundary. The governed synthetic-public examples complete
-  acceptance items 7â€“9: Alpha reaches `ACCEPTED_FOR_EPIC` only through the separate, proposed and
-  unscheduled #836, while Beta retains an evidence-backed `REJECTED` decision. Together the two
-  control-only packages satisfy all ten #805 acceptance items. No runtime, provider, routing,
-  deployment, privileged action, automatic promotion, prototype outcome or owner-live capability
-  is added; #836 remains open and grants no implementation authority.
-- âœ… B2 repository-manifest control / #839 / PR #840 â€” effective only when this PR is
-  squash-merged after exact-head hosted gates, versioned JSON becomes the sole current
-  dependency/status/gate/blocker/runtime truth for E0â€“E12; its Markdown view is deterministic and
-  byte-checked, and the offline checker fails closed on hostile structure, mutable-only evidence,
-  unsafe repository paths, Git/index/worktree drift and candidate-HEAD movement. This closes only
-  the repository-manifest portion of B2: parent #778 and program #757 remain open/partial; live
-  issue-ledger reconciliation, B7, E8.1c, provider-specific E9 proof, Night Shift, owner-live and
-  release gates remain separate. No runtime, route, provider, execution, action or completion
-  authority is added; Ultron remains the sole privileged-action authority and release readiness
-  remains false.
-
-**Innovation Lab precursor documents** (merged, but **not** epic slices â€” neither satisfies a
-#805 checkbox and neither promotes, adopts or adds an integration/dependency pin):
-
-- âœ… Integration catalogue RFC / #805-adjacent / PR #821 â€” survey of external open-source
-  candidates Nerva could wire in, in
-  [`docs/nerva2/INTEGRATION_CATALOGUE_RFC.md`](docs/nerva2/INTEGRATION_CATALOGUE_RFC.md).
-  Merged as `ccc36e8`. Explicitly a *precursor catalogue*: it does not implement the #805 control
-  slice (RFC template, status transitions, Knowledge Garden links, integrity check), and its
-  acceptance satisfies no #805 checkbox. Every row carries a #805-canonical status â€” all `PARKED`
-  except one durable `REJECTED` (external agent framework as Nerva's brain) resting on in-repo
-  primary evidence. The accepted catalogue already distinguishes Playwright as an in-repository
-  fact, queues official-but-unread artifacts as primary follow-up, makes its six adoption gates
-  additive to the #805 minimum contract, and records #819 as accepted at `a6e8585`. #805 itself
-  therefore stays open.
-- âœ… MCP Registry evidence correction / #825 / PR #826 â€” merged as `72dca7e`. Replaces the
-  catalogue's categorical "not designed for self-hosting" claim with a recorded primary read of
-  the upstream README blob `33ce337` at commit `0b5cc0f`, which documents a local PostgreSQL dev
-  path, offline seeding and pre-built GHCR images. Local runnability is **not** adoption
-  readiness; the row stays `PARKED`. PR #826 changed only this MCP Registry evidence path. No
-  dependency, manifest, updater, provider, routing or authority change entered either PR.
-
-The catalogue's own Â§5 recommendation stands and is not yet scheduled: take **one** Tier A
-candidate through a complete adoption-grade primary-source pass plus the additive Â§4 gates before
-touching a second. E8.1d / #824 / PR #827 resolved the no-opt-out part of the auto-update hazard:
-every source declares a literal boolean `auto_update`, while `false` remains drift-visible and is
-denied by both the scheduler and direct updater before mutation. Broad version-token replacement
-remains a reviewed risk for explicitly auto-enabled non-vendored entries with an `update_doc`.
-A short pin record, dual GitHub/PyPI drift, exact revision/content integrity, adapter compatibility,
-supply-chain and E9 gates still precede Hermes enrolment or promotion.
-
-E1, E6 and E9 remain `BUILDING` â€” E9.1 proves scheduled reporting only, not routing
-superiority or Research Lab completion. Its residual limits are recorded in the slice doc:
-four synthetic cases may overfit, shared-runner latency is deliberately unmeasured, and the
-module-private construction guards are boundaries, not cryptographic capabilities.
-
-E1 and E6 remain `BUILDING`. E5 Night Shift stays blocked: it needs sufficient E1/E2/E3/E6
-behavior **plus** the B7 task-level Ultron mediation evidence. B7 status per the #757/#778
-work-claim ledger: discovery child [#818](https://github.com/andrei649/jarvis-hub/issues/818)
-is open and reserved to the Ultron Security Architect on `nerva2/b7-task-mediation-evidence`.
-The six owner decisions are resolved, and draft PR #912 implements the bounded default-off
-candidate: task-bound receipts, a durable external-head CAS, atomic enqueue/claim validation,
-tamper-evident persisted events, legacy quarantine, hold rollback, and canonical authority
-identity. This is candidate-fixed, not accepted: fresh exact-head R3 acceptance and live #906
-integration authority are still pending. B7 therefore remains open, and E5/E8 stay blocked.
-
-B3 / Continuity Core (#731) mapping â€” all six #778 unblock items now have an explicit
-destination, prior-art citation where accepted evidence exists (including `RISKS.md`'s
-prior `MEM-03`/`SEC-05` ownership of the memory-taint check), and an honestly recorded
-gap where it doesn't, in
-[`docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md`](docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md).
-No epic gained a typed contract or acceptance test from this document; #731 stays open
-per its own bar ("close it only after every requirement has a destination and
-acceptance test") not yet being met. The clearest open gap is Jarvis's own Identity
-Manifest, which has no destination issue â€” #762/E4 is scoped to Howard's preference
-prediction only, not Jarvis's continuity identity.
-
-**S = story points (1 = ~jumÄƒtate de zi) Â· P = prioritate (P0â€“P3)**
-
-## Run
-
-```bash
-pip install -r requirements-beta.txt
-python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
-#   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
-python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~5,790 collected (counter synced via scripts/status_sync.py)
-```
-
-> Singurul skip rÄƒmas e heartbeat-ul opÈ›ional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
-> fost eliminat Ã®n CLN-1; Spotify (H2.5) **funcÈ›ioneazÄƒ** via `skills/spotify/main.py`, acoperit
-> de `tests/test_spotify_skill.py`.)
-
-**Rulare autonomÄƒ (10h):** coada aprobatÄƒ + protocolul complet + promptul de shift sunt Ã®n
-[`docs/superpowers/plans/2026-08-01-finish-line-plan.md`](docs/superpowers/plans/2026-08-01-finish-line-plan.md)
-â€” A8-unblockers Ã®ntÃ¢i (trigger achiziÈ›ie Â· seam MediaDriver Â· presenceâ†’media Â· Q1 stream-synthesis);
-statusul per item se È›ine Ã®n tabelul Â§3 al planului, nu aici.
-
-**DupÄƒ modificÄƒri JS/CSS:** Ctrl+F5 Ã®n browser (cache bust).
-**DupÄƒ modificÄƒri Python:** repornire server (Ctrl+C, re-executÄƒ comanda uvicorn).
-**Server curent** (dacÄƒ e pornit): PID vezi `netstat -ano | findstr ":8080 "`.
-**Stack:** Python 3.12 + FastAPI + vanilla React (createElement, no JSX).
-
-> **Recent hardening (2026-07-05):** #549 closes the H17.1a inbound-origin
-> bypass noted in the frontier audit: `handle_input` and `handle_input_stream`
-> now bind turn origin by construction, internal orchestrator channels stay
-> trusted, an upstream inbound context cannot be downgraded, and plugin-egress
-> actions carry the current origin instead of hard-coding `generated`.
-> #550 continued 0.45 Batch B1: skill marketplace/generation and
-> host-control seams now evaluate live reusable contracts before package,
-> promotion, restart, or LM Studio subprocess control. #551 moves
-> Safe Comms from preview to transport v0: telegram/web inbound threads persist,
-> governed replies enter the approval funnel, and approved replies send through
-> the live channel manager. #552 fixes the eval-nightly workflow parser by
-> moving cache hash expressions out of job-level `env`. #553 wires H21.3
-> metadata into live recall ordering and adds
-> `/api/memory/eval/run?mode=recall` as a real-path eval smoke. #554 persists
-> DailyReflector run idempotency and hands distilled lessons to LivingMemory
-> when cognition memory is enabled. #555 injects bounded LivingMemory core
-> facts into the shared prompt path. #556 makes `LivingMemory.core` survive
-> process restarts. #557 makes LivingMemory tier metadata durable too. #558
-> closes the matching AUD-2 privacy gap: explicit user-forget now clears those
-> cognition stores live and at rest. #559 wires the default-off re-projection
-> maintenance hook. #560 passes the existing local memory embedder into
-> that hook so old tier records can be upgraded during maintenance. #561
-> reactivates matched LivingMemory recall hits, refreshing both tier activation
-> and the H14 decay access ledger. #562 rejects exact duplicate LivingMemory
-> turn digests before they create another tier/decay record. #578 gates
-> Oracle's external commit pull/test loop behind a live
-> repo-sync contract plus the Action Kernel, default-refuses when the kernel is
-> off, and removes shell execution from MCP stdio startup while gating outbound
-> MCP tool calls through a live contract. R2 is merged in #580: inbound taint
-> now has kernel-independent teeth at the autonomy queue, edited inbound tasks
-> are re-marked before policy re-evaluation, and inbound memory embeddings stay
-> visibly tainted through recall provenance. R3-B2 is merged in #582: live
-> contract gates to external KG writes and destructive forget purge before state
-> mutation. R3-B3 is merged in #584: inbound A2A task intake and autonomy
-> escalation fan-out now have contract-denial teeth before inbox writes or
-> channel sends. R3-B4 is merged in #586: mutating MCP route tools now have a
-> reusable contract gate after identity and before kernel mediation or adapter
-> writes; full PR CI was green before merge. R3-B5 is merged in #588: the
-> generic ChannelManager send boundary has a shape-only contract gate before
-> adapter I/O; full PR CI was green before merge. TASK-3 channel-ingress
-> taint is merged in #590: the gateway marks untrusted inbound channel messages
-> with private taint metadata, persists only public taint fields in the Safe
-> Comms inbox, and strips private metadata before outbound adapter sends; full
-> PR CI was green before merge. AUD-14 channel send-rate env-int is merged in
-> #592: the global `JARVIS_CHANNEL_SEND_RATE` cap now uses shared `env_int()`
-> parsing with malformed/negative values pinned as unlimited; full PR CI was
-> green before merge. M3.5/#169 WorldView MCP write transport is merged in
-> #594: Argus can reach `watch_aoi` and `reconstruct_event` only through
-> plugin-gate + Action Kernel + scoped HMAC MCP token; full PR CI was green
-> before merge. AUD-14 LLM model-name config is merged in #596: LLM
-> model-name defaults and the `JARVIS_DEEP_MODEL` override now live in one
-> shared config module. AUD-14 task-budget env-float is merged in #598:
-> `JARVIS_TASK_MAX_SECONDS` now uses shared `env_float(..., minimum=0.0)`
-> instead of local try/except parsing. AUD-14 analytics max-events env-int is
-> merged in #600: malformed `JARVIS_ANALYTICS_MAX_EVENTS` no longer crashes
-> analytics import. AUD-14 STT beam-size env-int is merged in #602:
-> `JARVIS_STT_BEAM_SIZE` now uses shared `env_int(..., minimum=1)` parsing.
-> AUD-14 log rotation env-int is merged in #604: `JARVIS_LOG_MAX_MB` and
-> `JARVIS_LOG_BACKUPS` now use shared `env_int()` parsing while keeping
-> settings-DB fallback intact. AUD-14 call-config env-json is merged in #606:
-> `JARVIS_CALL_CONFIG` now uses shared `env_json_object()` parsing. AUD-14
-> channel-rates env-map is merged in #608: `JARVIS_CHANNEL_SEND_RATES` now
-> uses shared `env_int_map()` parsing. AUD-14 email-port env-int is merged in
-> #610: `SMTP_PORT` and `IMAP_PORT` now use shared `env_int()` parsing.
-> AUD-14 vector-dimension env-int is merged in #612: `VECTOR_DIMENSION` now
-> uses shared `env_int(..., minimum=1)` parsing. AUD-14 skill-history env-flag
-> is merged in #614: `JARVIS_SKILL_HISTORY` now uses shared `env_flag()`
-> parsing. AUD-14 webhook-channels env-json is merged in #616:
-> `JARVIS_WEBHOOK_CHANNELS` now uses shared `env_json_object()` parsing.
-> AUD-14 CORS-origins env-list is merged in #618: `JARVIS_CORS_ORIGINS` now
-> uses shared `env_list()` parsing. AUD-14 plugin-grants env-list is merged in
-> #620: `JARVIS_PLUGIN_GRANTS` now uses shared `env_list()` parsing. AUD-14
-> trust env-flags is merged in #622: trust-status mic/strict-local env reads
-> now use shared `env_flag()` parsing. Visual-artifact lane wave 1 is merged in
-> #652: the cockpit gains an Artifacts tab over the unchanged `/api/canvas*`
-> surface (safe typed rendering, consent-gated remote images, pin/unpin/delete)
-> plus an explicit save-response control (markdown contract, visible 4,000-char
-> truncation, never auto); `_safe_url` now rejects protocol-relative and
-> control-char URLs, `_s()` drops lone UTF-16 surrogates (store-poisoning fix),
-> and forget-me resets `canvas.json` + clears the live canvas store without
-> emptying the file before the pre-forget backup. Mobile parity is tracked as
-> H18.20 (ORIZONT 18). Self-Improvement (ad-hoc, owner request 2026-07-18) adds
-> the missing *proactive* half next to the reactive H32 Capability Acquisition
-> loop: `agents/core/autonomy/tech_scout.py` is a default-off, weekly, read-only
-> websearch scan that dedupes findings and files them as `RiskTier.READ_ONLY`
-> informational autonomy tasks (no executor â€” same "observations inform,
-> decisions interrupt" posture as `observer.py`). `GET /api/self-improvement/status`
-> aggregates error diagnostics + Observer + Acquisition + Ambient status in one
-> read; `POST /api/self-improvement/enable` flips the documented bundle of
-> already-existing default-off settings in one call (no new capability, no
-> changed shipped default). New HUD `SelfImprovementPanel` (Console â†’ Observe).
-> `cognition.review_enabled` also gained its missing `settings_db` row (was
-> read via `get_setting` with no DEFAULTS entry â€” invisible/unsettable from the
-> admin API; now visible, default unchanged). +17 new backend tests, +3
-> frontend; full backend (5,101) and frontend (361) suites green, route/OpenAPI/
-> route-auth snapshots and the HUD-v2 parity map re-seeded for the 2 new routes.
-> Packaged-app groundwork (ad-hoc, owner request 2026-07-18): Jarvis now builds
-> as a PyInstaller onedir executable (`packaging/jarvis.spec` +
-> `scripts/build_exe.py` with a real boot smoke test, `packaging/windows/install.ps1`,
-> `docs/PACKAGING.md`), and a packaged install keeps ALL personal state in one
-> owner-visible **user data home** (`~/Documents/Jarvis`: README, `.env`,
-> `memory/`, `skills/`, `souls/` overlays â€” `agents/core/paths.py:user_home()/
-> ensure_user_home()`). Formerly CWD-relative reads (skills, souls, heartbeats,
-> `agents.yaml`, `.env`) are anchored on `app_root()`; generated/marketplace
-> skills write to the user home when active; `$JARVIS_HOME` keeps winning for
-> the data root, and a plain dev checkout is byte-identical (user home inert).
-> Linux-verified end-to-end (built exe boots, `/readyz` green, scaffold
-> created); the Windows exe build is an owner task (`docs/OWNER_TASKS.md`).
-> +14 backend tests (`tests/test_user_home_packaging.py` + soul-overlay case).
-> The **Nerva in-product rename** (owner decision 2026-07-19, per NERVA_VISION Â§2)
-> shipped in the same wave: every user-facing surface says Nerva (HUD chrome/titles,
-> `nerva[.exe]` + `Documents/Nerva`, landing, README hero, new neural-N logo
-> `docs/brand/nerva-mark.svg`, wake word `nerva` added, `JARVIS.md` â†’ `NERVA.md` with
-> all 28 cross-references updated). Kept: agent personas (Jarvis = the orchestrator
-> agent), `jarvis-hub` repo/engine codename + `JARVIS_*` env prefix. Owner-only rest:
-> the GitHub repo rename (OWNER_TASKS). Decision log: `docs/HISTORY.md`.
->
-> **Voice orb â€” the reactive particle sphere** (ad-hoc, owner request 2026-08-06, from the
-> "J.A.R.V.I.S. in the room" build guide): `frontend/src/orb.tsx` adds `VoiceOrb`, a Canvas-2D
-> particle sphere (Fibonacci distribution + yaw/tilt projection + depth-shaded filaments + reactor
-> rings) bound to the live `useVoice()` state machine â€” off / standing-by / listening / transcribing
-> / speaking / error. Cinema mode gains a stage picker (`o` = orb, `n` = mesh; mesh stays the
-> default so existing demos open unchanged) and the cockpit voice pill gets the same orb inline in
-> place of the flat status dot. **Honesty contract:** only the LISTENING state may be driven by a
-> measured signal (the real mic RMS from `voice.ts`); every other state runs a fixed breathing
-> animation, is labelled `state animation`, and no numeric level is ever rendered â€” an animation is
-> a state indicator, never a metric. No new dependency (no three.js/WebGL/CDN), no new endpoint, no
-> backend change; degrades to a non-throwing empty shell on a null 2D context and honours
-> `prefers-reduced-motion` + the HUD's calm-motion setting. +14 frontend tests (frontend Vitest
-> 408 â†’ **422**); `tsc --noEmit`, production HUD build, `tests/test_hud_v2_parity.py` and
-> `tests/test_route_parity_guard.py` green. Mobile parity tracked as H18.24; the guide's remaining
-> gap (ambient LED sync) is filed as H30.8. Guide-vs-repo map:
-> [`docs/design/JARVIS_PRESENCE_GAP.md`](docs/design/JARVIS_PRESENCE_GAP.md).
->
-> **Briefing wall â€” the reference layout** (same owner request, after five frames of the actual
-> video arrived and materially changed the visual brief): `frontend/src/burst.tsx` adds
-> `NeuralBurst`, a Canvas-2D neural firing field â€” per-tier dendrite trees grown from a
-> deterministic seed, synapse nodes, long white axon sweeps and a blown-out core â€” and
-> `frontend/src/wall.tsx` adds `BriefingWall`, the full wall-screen board (letterspaced wordmark,
-> live pill, running clock, four stat cards, subsystem status rail, spoken line, corner brackets)
-> with the field full-bleed behind it. It is the `brain` stage of cinema mode (`m` then `b`; `n`
-> mesh, `o` orb). **Honesty:** regions are real cabinet tiers, node density follows the real agent
-> count, only tiers that are actually executing fire, and `burstEnergy()` reports whether the light
-> comes from a measured mic level, live work, or idle. The reference's agency KPIs are NOT
-> reproduced â€” the same slots carry provable Nerva figures, and anything unmeasured renders `â€”`
-> with the reason attached. +15 frontend tests (Vitest 422 â†’ **437**). No new dependency, no
-> endpoint, no backend change.
->
-> **Wall pass 2 â€” from the two owner videos** (the still frames were a partial read; the videos
-> showed the mobile build too): region chips are now bordered plates with a thick coloured edge bar
-> and a `N agents Â· firing X% Â· N tasks` sub-line (the firing share is real: executing/roster); the
-> wall gains a **HOLD TO TALK** control wired to the live `useVoice()` loop (press starts, release
-> stops, refusing honestly when the mic is muted or the browser cannot capture audio); collapsed
-> **AGENT OPS / CABINET** edge tabs carry live counts and drop the badge instead of showing `0`
-> when the task feed is unavailable; and under 820px the wall takes the reference's portrait
-> layout â€” cards give way to the edge tabs, chrome centres, and the talk button leads. +5 frontend
-> tests (Vitest 437 â†’ **442**).
->
-> **Wall pass 3 â€” integration-review fixes** (owner review on #843, head `9974f81`): two evidence
-> boundaries failed open and are now closed. (a) `sources.tasks` is the proof the task feed answered
-> *this* load; a retained array from an earlier poll no longer reaches `wallState`, `burstEnergy` or
-> `NeuralBurst`, so the wall can never claim WORKING / firing regions / task chips while its own rail
-> reports `task feed Â· no data`. (b) `trust` is deliberately RETAINED across polls in `app.tsx`
-> (`if (d.trust) setTrust(d.trust)`), so a stale `mic:'on'` could outlive its evidence â€” the
-> HOLD TO TALK control, and the rail's mic/strict-local rows, now key off `sources.trust` and fail
-> closed with `trust status unavailable` rather than opening a microphone on unproven state. The
-> room-facing spoken line gained a persisted redaction control (`hud.wall.transcript`,
-> `TRANSCRIPT_DEFAULT_VISIBLE` flips the installation default). +9 hostile frontend tests, all
-> red-proved against the pre-fix code (Vitest 442 â†’ **451**).
->
-> **Wall pass 4 â€” second integration review** (head `5e8825b`): the microphone now fails closed over
-> its whole *lifecycle*, not just at first render â€” capture needs current `sources.trust` evidence
-> **and** an exact `mic === 'on'` (missing/unknown/malformed authorizes nothing), and it stops on
-> permission loss, trust expiry and unmount/stage-switch; the control is keyboard-operable
-> (space/enter, repeat-safe). The room-facing spoken line now defaults to **hidden** â€” the owner
-> reaffirmed default-hide over the reference's always-on line, so showing it is an explicit,
-> persisted per-installation opt-in. Two unevidenced zeros are gone: `EXECUTING` gates on
-> `sources.agents` and `DECISIONS PENDING` on the absence of any live decision feed (there is no
-> endpoint yet â€” it renders `â€”` with that reason outside demo). The HUD motion preference is wired
-> end-to-end (app â†’ cinema â†’ orb/mesh/burst and the cockpit's inline orb), so the calm-motion claim
-> in `docs/VOICE.md` is now true instead of aspirational; unknown trust reads `MIC Â· UNKNOWN`.
-> Docs: the presence doc pointed ambient work at H23.x instead of H30.8; the phone claims are
-> narrowed to the browser HUD with native tracked as new **H18.25** (`mobile/PARITY.md` flips the
-> wall from â– to â¬œ); and the wall-screen room validation the doc *claimed* was in
-> `docs/OWNER_TASKS.md` is now actually there (legibility, mic pickup, echo, per-room privacy).
-> +13 hostile frontend tests (Vitest 451 â†’ **464**).
->
-> **Wall pass 5 â€” third review round** (head `fc9e94e`): a **capture-after-cancellation race** in
-> `frontend/src/voice.ts` is closed. `getUserMedia()` can sit on a permission prompt for seconds;
-> `stop()`/unmount released a stream that did not exist yet, so a late-resolving permission then
-> published the stream, went active and entered the hands-free loop â€” capture starting *after*
-> authorization was withdrawn. A monotonic `startGenRef` now invalidates pending starts: a stale
-> resolution stops every returned track and publishes nothing. Second: `useVoice()` returns a fresh
-> wrapper each render and the wall's parent rerenders every clock tick, so the wall's unmount
-> cleanup (keyed on that identity) was stopping a valid capture about once a second â€” release and
-> cleanup now key on a stable `stopRef`, never the wrapper. Third: the roster evidence rule was only
-> half-applied â€” `evidenceAgents` now gates every roster-derived consumer (`wallState`,
-> `burstEnergy`, `NeuralBurst`, the firing count and the CABINET badge), not just the two cells.
-> Fourth: the footer rendered a malformed `mic` value as OPEN/IDLE; only an exact `on`/`off` maps to
-> OPEN/IDLE/MUTED and everything else reads `UNKNOWN`. +14 tests, all four red-proved against the
-> pre-fix code (Vitest 464 â†’ **478**).
->
-> **Wall pass 6 â€” fourth review round** (head `e07b311`): two regressions from the previous pass.
-> (a) The roster evidence gate emptied **demo mode**: `loadJarvisData(true)` seeds the roster while
-> leaving `sources.agents` false on purpose â€” that flag means *real live* evidence and demo is a
-> separate, watermarked provenance â€” so the demo wall lost its field, counts and badge.
-> `agentEvidence` now accepts `demo || sources.agents === true`, with a regression shaped like the
-> real loader's demo output (not the convenient `sources.agents:true` the earlier positive control
-> used) plus the non-demo negative control. (b) In `voice.ts`, a **stale permission rejection** from
-> a superseded start still published `error`, overwriting the OFF state a `stop()` had just set; the
-> catch now compares generations first. Noted honestly: the reviewer's second interleaving (stale
-> rejection while a newer capture is live) is covered by the same guard but is **not red-provable**
-> through the hook's public state â€” the running loop clears status/error every iteration â€” so no
-> test is claimed for it. Vitest 478 â†’ **482**.
->
-> **Wall pass 7 â€” fifth review round** (head `af372eb`): (a) the DEMO corpus was labelled as live
-> at the point it was read â€” `CABINET Â· NOW Â· live`, `THIS SESSION Â· measured` (over app.tsx's demo
-> `localPct = 87`) and the subsystem rail â€” even though the page chrome said DEMO. Provenance is now
-> per-card: every stamp reads `demo Â· seeded` in demo, and the regression is driven by the REAL
-> `loadJarvisData(true)` output instead of a hand-built props shape, asserting each card's stamp.
-> (b) The two stale-rejection interleavings the previous pass called unprovable ARE provable: with a
-> `MediaRecorder` mock that never completes an utterance, the newer session parks in `listening` and
-> a stale write is plainly visible. Older-reject-after-newer-success now red-proves the catch guard;
-> the unmount-then-reject case is kept as an invariant with its weaker status labelled in the test.
-> Vitest 482 â†’ **484**.
->
-> **Wall pass 8 â€” sixth review round** (head `6b57faf`): the per-card demo stamp added in pass 7 was
-> the mirror of the bug it fixed. A **connected** demo keeps polling and replaces seeded values with
-> real ones as each source answers (`sources.agents`, `.calendar`, `.heartbeat`, `.tasks`, `.trust`
-> are set independently), so stamping every card `demo Â· seeded` from `demo === true` relabelled
-> live data as seeded â€” and one card can legitimately hold both at once, which no single card label
-> can describe. Provenance is now **per cell** (`data-prov`, plus a visible `seeded` tag on seeded
-> values), and the card stamp is *derived* from the cells it actually shows: `live`/`measured`,
-> `demo Â· seeded`, or `mixed Â· live + seeded`. `localPct` provenance is passed from `app.tsx`
-> (`measured` / `strict-local` / `seeded`) instead of inferred from `demo`. Vitest 484 â†’ **488**,
-> with connected, partially-connected and mixed-card regressions alongside the offline-demo and
-> non-demo controls.
->
-> **Wall pass 9 â€” seventh review round** (head `8d05aab`): a **fail-closed trust parse**. The wall's
-> "exact `mic === 'on'`" rule was defeated upstream by the adapter in `api/loaders.ts`:
-> `mic: d.mic || 'on'` turned a missing/empty/`0`/`false` value into an affirmative permission, and
-> `strict_local: !!d.strict_local` turned the STRING `"false"` into a true governance claim (which
-> also feeds a derived 100% locality figure). Only the literal strings/boolean now count; anything
-> else is `unknown` and refuses capture. Also: `cardStamp()` returned the live label when a card had
-> nothing to show, so an all-`â€”` card announced evidence it lacked (now `no evidence`); the demo
-> page caption was unconditional, so a fully connected demo described live data as seeded (now
-> derived from the real source mix); a `Cell` with no declared provenance defaulted to `live` (now
-> `unknown`); and an empty seeded decision list rendered `0` rather than `â€”`. +13 tests, all
-> red-proved (Vitest 488 â†’ **501**).
->
-> **Wall pass 10 â€” eighth review round** (head `c4055a2`): provenance labels must name the ACTUAL
-> source. A strict-local 100% is *derived* from a governance flag, not measured, but the wall folded
-> every non-seeded locality source into `live` and `THIS SESSION` then stamped it `measured`. The
-> three-way source is now preserved end to end (`measured` / `strict-local` / `seeded`), a derived
-> value carries its own visible tag, and `cardStamp()` gained `derived` / `mixed Â· live + derived`.
-> The derivation moved into `frontend/src/locality.ts` so the reachable App path is testable â€” in
-> demo the app skips locality loading and the loader clears it, so that branch cannot be reached by
-> a props fixture at all. Also: the ATTENTION card passed `queue` (not a provenance) as its all-live
-> label, so a card with live calendar/heartbeat evidence stamped `queue`; it now stamps `live`.
-> +12 tests, red-proved (Vitest 501 â†’ **513**).
->
-> **Wall pass 11 â€” ninth review round** (head `13012cf`): `THIS SESSION` stamped `measured` whenever
-> its cells were live, so a card whose only evidence was a trust read (CLOUD LANE) â€” or a resident
-> model â€” claimed to have measured something. The live label is now conditional on a genuinely
-> *measured* locality split being among the values shown; otherwise the card reads `live`. One of
-> the previous pass's tests had pinned that contradiction (live cell + `measured` card) and is
-> replaced, with a loader-shaped trust-only regression added. Vitest 513 â†’ **515**.
-
----
-
-## ğŸ“‹ Docs-vs-code accuracy pass (2026-07-24 â€” feature-sheet audit)
-
-> 47 claims from `README.md`/`docs/FEATURES.md` verified against source (6 parallel research
-> passes): **36 live Â· 11 partial/default-off Â· 0 fabricated**. Complements the 2026-07-18
-> live-vs-plumbing audit below â€” that epic fixes *code* honesty (MOCK badges, degraded stamps);
-> this pass fixed the *docs*, which narrated opt-in rails as generally on. BACKLOG was already
-> accurate (H27.3 says default-off) â€” per the house rule, the stale docs were fixed to match it.
-
-- [x] `docs/FEATURES.md` â€” Action Kernel bullet now names the always-on risk-tier gate and marks
-  the kernel opt-in (`JARVIS_ACTION_KERNEL`); ORIZONT 27 "delivered" â†’ code-complete with the
-  `perform()` facade + earned autonomy explicitly default-off; earned-autonomy sentence carries
-  its flag; voice reworded (browser-mic loop ships; server wake word = optional native deps);
-  Discord/Slack marked SDK-install; plugin bullet advertises the MOCK/degraded honesty layer;
-  stale counts refreshed (369â†’400 routes; 4,300+/209/55 â†’ 5,300+/370/96 tests; date 2026-07-24).
-- [x] `README.md` â€” thesis line "every autonomous action crosses one Action Kernel" â†’ honest
-  "risk-gated â€¦, converging on one Action Kernel mediation point (opt-in while it hardens)".
-- [ ] Owner decision (parked in `docs/OWNER_TASKS.md`, not sprint scope): define the flip-on
-  criteria for `JARVIS_ACTION_KERNEL` + `JARVIS_UNIFIED_ACTION_API` â€” when does the kernel
-  become the default rail instead of the opt-in one?
-
----
-
-## ğŸ¥Š Nerva vs Hermes Agent â€” honest gap analysis (2026-07-25)
-
-> Full analysis + evidence: [`docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md`](docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md).
-> Hermes side re-grounded live (repo + releases + docs, 2026-07-25): **v0.19.0** (07-20), 220.1kâ˜…,
-> releases every ~2â€“3 weeks; it now ships **real desktop computer-use** (`cua-driver`, mac/win/linux,
-> a11y + screenshots, per-action approval), real browser automation (local CDP + Browserbase +
-> Browser Use), **Home Assistant device control** (`ha_list_entities`/`ha_get_state`/`ha_list_services`/
-> `ha_call_service`), smart approvals **by default**, Bitwarden/1Password secret sources, `/goal`
-> completion contracts verified against evidence, and Skills-Hub security scanning.
-> **Verification:** the analysis was itself put through an 11-agent adversarial pass (6 refuters +
-> 5 deepening passes) â€” **103 claims audited, 46 confirmed, 56 refuted-or-partial, 16
-> story-changing**. The items below are the *corrected* ones; the draft's own errors are recorded in
-> Â§9 of the doc.
-> **Headline:** architecturally ahead, operationally behind â€” and three of our "gated" behaviours are
-> **broken rather than gated** (Â§3.2 of the doc). Corrected S-bar count: **4 of 8 bars have a CI-green
-> artifact (S1/S2/S3/S5), 4 have none (S4/S6/S7/S8), and 8 of 8 have no artifact produced on real
-> hardware or scored against Hermes** â€” the earlier "7 of 8 have no artifact" was wrong. S7 is
-> *unreachable by construction* (every P4â€“P6 reality pack is `promotable: False` while the harness is
-> the only path to VERIFIED). Strongest fact for our moat: Hermes issue #487 (SHA-256 hash-chained
-> action log) was closed **"not planned"** â€” they have declined to build the thing we built and left
-> disconnected in production.
-
-- [ ] ğŸ”´ **GAP-0 â€” distribution is the binding constraint, and we have the data.** The repo is
-  **public** (4â˜…, 979 commits) and `marketing/alpha-testing/2026-07-10-fb-response-triage.md` records
-  a campaign that reached **24,182 unique visitors / 165 interactions / ~16 warm leads** and converted
-  **0** design partners (A7 still â¬œ fifteen days later). Demand exists; time-to-first-value is what
-  fails. This outranks every capability item below.
-- [ ] ğŸ”´ **GAP-1 â€” A8 first, everything else after.** Note the pillar taxonomy: house + cameras are
-  *configuration* work (real clients ship, only the LAN device is missing); **media is driver-missing**
-  (no `MediaDriver` implementation exists and `routers/media_director.py` has no injection point â€” the
-  owner must write driver code); **acquisition is caller-missing** (needs a contract factory + a
-  trigger, not just a caller). A8's `present()` line is not a config task.
-- [x] ğŸ”´ **GAP-2a/b/c â€” three of the four one-line fixes: DONE.** Shipped together as
-  "defaults that are broken, not off":
-  - [x] **(a) the learning loop was unreachable** â€” `cognition.review_enabled` added to `WAVE1_FLAGS`
-    (`product_posture.py`). Both wave-1 postures (Companion / Design Partner) enabled the master flag,
-    memory, learning and personality but omitted `review_enabled`, and `sub_enabled()` needs both â€” so
-    the ORIZONT 20 per-turn review had never run for anyone. Provenance is automatic (`_SNAPSHOT_FLAGS`
-    derives from `WAVE1_FLAGS`, so all three trust surfaces show `source=product.posture:<name>`,
-    satisfying O26-P2.4/D1). Cost was already bounded: daily budget 20 + cadence knob + strict-local
-    `local_backend` that fails closed.
-  - [x] **(b) default-install memory lost history on restart** â€” `list_sessions()` globbed every
-    `*.json` in the data root and ranked `entities.json` (rewritten by the KG on any turn with a proper
-    noun) as the newest session, so restore picked a session with no turns. NEW
-    `agents/core/session_files.py` holds one rule â€” denylist + valid-id + *payload-shape confirmation*
-    â€” and `persistence`, `retention` and `data_purge` now share it instead of carrying two partial
-    copies. Also closed the restore half: `_boot` now resumes the checkpoint-restored session, which
-    `ConversationMemory` never loaded (it only auto-loads the newest at construction).
-  - [x] **(c) no action was ever audited in production** â€” `AutonomyWorker` got no `audit` sink, and
-    the one place a sink *was* passed (`RemediationRunner` â† `orch.audit`) could not work because
-    `log(event_str, dict)` â‰  `AuditLogger.log(SecurityEvent)`. NEW
-    `agents/core/autonomy/audit_sink.py` (`ActionAuditSink`) adapts that shape onto **`IntentLog`** â€”
-    always HMAC-signed with an out-of-tree key, and it already models intent â€” so auto-approve, human
-    decision, execution and failure now leave signed records with causal attribution. Both call sites
-    share `orch.action_audit`. Best-effort contract preserved: a failed audit write never aborts an
-    authorized action. (+9 tests across a/b/c; backend counter 5430 â†’ 5439 after rebase onto #729.)
-- [x] âœ… **GAP-2d â€” SEC-B3 Telegram owner binding.** **Owner-binding half done** â€” the approval sink
-  now checks owner chat id **and** user id and fails closed with neither configured, and
-  `TELEGRAM_ALLOWED_USER_IDS` is parsed so the channel guards are reachable at all (they were
-  unreachable no-ops). *Still open:* channel pairing ON by default, which is the defaults lane.
-- [x] âœ… **GAP-3 â€” register the escaping action kinds.** **DONE** â€” `channel.reply` and `skill.install`
-  are registered KERNEL in `ACTION_REGISTRY` + `tests/_snapshots/action_auth.json`, enumerated in
-  `known_broker_action_kinds()` (from their own KIND constants, so the matrix discovers them), carry
-  full H27 capability manifests, and both have real matrix exercisers (kernel-on invokes / kernel-off
-  doesn't). The acquisition gate now goes through the shared `make_skill_install_kernel_gate` factory,
-  which also closes its kernel-off gap: it used to call `authorize` even with `JARVIS_ACTION_KERNEL`
-  unset, unlike every sibling broker. Original: both kinds called `kernel.authorize` but were absent
-  from the registry, and the matrix's broker enumeration was a hand-maintained import list.
-- [ ] ğŸŸ  **GAP-4 â€” run the head-to-head once.** Install Hermes on the same box; **10** tasks
-  (browser Â· desktop Â· house Â· one acquisition); publish the table including the losses. Aim at where
-  Hermes documents *limits* â€” Windows admin-integrity windows (UIPI), Wayland without XWayland,
-  password entry. ~1 day. Feeds S1/S2.
-- [x] âœ… **GAP-5 â€” SEC-B1 with its preconditions stated.** **FIXED**, and the preconditions were right
-  to insist on: cloud configured AND (`cloud_fallback=always` OR local down OR a prompt over the local
-  window) â€” not a default-install leak. The adversarial audit independently reached the same
-  correction after its first pass overstated it. Overstating a real finding is how it gets dismissed.
-- [ ] ğŸŸ  **GAP-6 â€” flags: know what flipping costs.** `JARVIS_ACTION_KERNEL` is **not pure hardening**
-  â€” with it on, a broker GRANT sets `autonomy_level="act"`, removing the wave-1 unconditional `ask`
-  floor; and the O27â€“O30 facades need **two** flags (`JARVIS_UNIFIED_ACTION_API` too), so the kernel
-  flag alone does not light up house/media/desktop. Cheapest real win instead: the five governed
-  webhook channels (WhatsApp/Signal/Matrix/Teams/Google Chat) need **no extra pip dependency**, only
-  `JARVIS_WEBHOOK_CHANNELS`.
-- [ ] ğŸŸ¡ **GAP-7 â€” restate the Hermes verdict** in `NERVA_VISION.md` Â§8. Drop "Hermes can't touch a
-  light" and "no household story" (it has an HA `area` filter and per-family-member profile
-  isolation) â€” both refute in one link. Defensible: **"Hermes has HA as a tool; Nerva has a house
-  model"** and **"Hermes declined to build an action-level audit chain; we built one and have not
-  turned it on."** Also credit what Hermes *doesn't* gate: `ha_call_service` has no approval,
-  container isolation *replaces* command checks, smart approvals auto-approve low risk, memory writes
-  default to no approval.
-- [ ] ğŸŸ¡ **GAP-8 â€” re-baseline `NERVA_VISION.md`** Â§3's prose *and* Â§4's percentages (P1 ~35%, P4 ~20%,
-  P5 ~15% â€” no pillar is stated as 0%), plus Â§98's "11 privileged action kinds" (the snapshot now
-  covers 18).
-- [ ] ğŸŸ¡ **GAP-9 â€” honesty debt found by the pass** (each traced to file:line in the doc):
-  `/api/house/state.presence` is structurally always `[]` in every production configuration (the only
-  writer of those predicates has no prod caller); ONVIF discovery needs the undeclared `wsdiscovery`
-  package; the camera VLM leg needs a self-hosted VLM server; `environments/` is a policy plane that
-  never executes and **no SSH transport exists in the repo**; the reality harness persists nothing
-  (in-process registry, no uploaded artifact); README's voice stack lists engines no install path
-  ships.
-
----
-
-## ğŸ›¡ï¸ Governance-rails security audit (2026-07-24 â€” 8-reviewer adversarial pass)
-
-> Full findings + severities + evidence: [`docs/research/2026-07-24-governance-rails-security-audit.md`](docs/research/2026-07-24-governance-rails-security-audit.md).
-> One reviewer per invariant (kernel bypass Â· taint Â· approval queue Â· strict-local Â· secret/audit
-> crypto Â· SSRF Â· skill signing Â· router auth), each required to trace enforcement code and build a
-> concrete bypass. **Headline: the core "can't act ungoverned by default" invariant HOLDS**
-> (kernel-off path verified across all six action families; classifier fails closed). The holes are
-> data-exposure, one strict-local leak, and integrity labels that over-promise. Feeds the
-> 2026-07-16 security-correctness wave (`docs/superpowers/plans/2026-07-16-security-correctness-wave.md`).
-
-**Delivered (PR #711, merged):**
-- [x] **SEC-A1 â€” unguarded personal-data reads.** Added `user_guard` to 10 read routes whose sibling
-  writes were already guarded (KG entities/facts, `/memory/{agent_id}`, `/api/actions[/pending]`,
-  `/api/traces[/{id}]`, `/api/cost`). Re-seeded `tests/_snapshots/route_auth.json` (openâ†’user).
-- [x] **SEC-A2 â€” audit empty-hash bypass.** `verify_chain` now fails closed on a blank `row_hash`
-  after the chain starts (previously `continue`'d past it, so a forged row passed even in HMAC
-  mode), while still tolerating a legitimate legacy pre-Merkle prefix. +3 regression tests.
-
-**Deferred â€” needs design/posture work (ranked):**
-- [x] âœ… **SEC-B1 â€” Frigga family data â†’ cloud via synthesis.** **FIXED** â€” `Agent.synthesize` now computes a policy floor over CONTRIBUTORS and pins the merge to `llm_router.local_backend` (the fail-closed accessor `_compression_summarizer` already used), falling back to the deterministic join when no local backend exists. Tested at the synthesize boundary, per the audit. Original: `Agent.synthesize` runs
-  under jarvis's cloud-eligible policy and embeds a strict-local agent's raw output; a direct-to-Frigga
-  turn triggers synthesis. Fix: synthesis inherits the strictest contributor policy (pin local if any
-  responder âˆˆ `LOCAL_ONLY_AGENTS`) + a test that frigga-containing responses never select cloud.
-  Precondition: cloud configured + (`cloud_fallback=always` or large prompt). Breaks the hardest promise.
-- [x] âœ… **SEC-B2 â€” unkeyed-hash-as-signature (audit #3 + skill signing #9).** **FIXED both halves** â€” `require_signed()` fails closed when enforcement is on with no key; `verify_skill` returns `integrity-only` rather than `signed` for an unkeyed digest; `signing_posture()` surfaces `effective`/`integrity_only` on `/api/security/posture`; and the audit-chain half is AUDIT-1 above. Original: `REQUIRE_SIGNED_SKILLS`
-  and the "tamper-evident" audit claim only hold when an optional key env var is set. Fail closed /
-  label unkeyed digests as integrity-only; surface the distinction in `/api/security/posture`.
-- [x] âœ… **SEC-B3 â€” Telegram approval owner-binding.** **FIXED** â€” `TELEGRAM_ALLOWED_USER_IDS` is parsed and passed (the guards were unreachable no-ops before), the decision callback checks owner chat **and** user id and fails closed with neither, and the pairing gate no longer defaults to allow on a store error. Original: Callback handler has no owner check when
-  constructed without `allowed_user_ids` (the production wiring). Implement the 2-factor callback
-  check (owner `chat_id` + `user_id`, fail closed on empty allowlist) the wave plan already specifies.
-- [ ] ğŸŸ¡ **SEC-B4 â€” SSRF IP-pinning coverage.** *(still open â€” needs a live network/browser host to demonstrate; chapter 15 ADV-142.)* The checker is sound but the Playwright path and the
-  central `PluginHTTPClient` don't route through `resolve_and_validate` with pinning (rebinding TOCTOU).
-- [ ] ğŸŸ¡ **SEC-B5 â€” taint by dataflow, not just declared origin.** Proactive/recall/ambient payloads
-  rebuilt outside an inbound turn drop ingress taint (worst confirmed case is READ_ONLY-bounded).
-**Adversarial audit, 2026-07-25 (26 agents Â· 18 findings tested Â· 2 confirmed Â· 10 corrected down Â·
-6 refuted Â· 3 new from the completeness critic).** Its headline is a compliment: independent agents
-trying hard to embarrass this codebase mostly re-discovered SEC-B1â€¦B6 above. Two need owner triage
-because they are **not** on that list:
-
-- [x] âœ… **AUDIT-1 (High, confirmed) â€” the audit chain is forgeable in hardened mode.** **FIXED** â€” `verify_chain`
-  recomputes each row with *the row's own* `hash_algo`, and `_digest` demands the key only when that
-  column says `hmac-sha256`. Downgrade every row to `sha256` and the chain re-links cleanly with
-  `JARVIS_AUDIT_KEY` set and `hardened.enforce()` returning clean â€” reproduced independently while
-  writing chapter 15 (`sqlite3` + `hashlib` only; the key is never read). The shipped regression
-  passes because it downgrades **one** row, so the break surfaces at the next row whose `prev_hash`
-  is still an HMAC. Fix: pin the algorithm per install and treat a post-legacy `sha256` row as
-  tampering when a key is configured â€” the fail-closed shape the blank-row guard (SEC-A2) already
-  uses. Extend the regression to a full-table rewrite in the same commit. Same root cause as SEC-B2.
-- [x] âœ… **AUDIT-2 (High, confirmed) â€” `POST /api/admin/forget` did not erase, it copied.** **FIXED** â€” Three
-  independent failures: twelve user-content stores sit outside the `PURGE_*` allowlists (including
-  per-agent run previews and full inbound message bodies, two of them on a denylist that also stops
-  the session path deleting them, so nothing removes them ever); the vector/KG wipe is dead code â€”
-  no `VectorStore`/`KnowledgeGraph` implementation defines `clear()` and the call is `hasattr`-guarded,
-  so under the documented qdrant/neo4j backends every embedding and triple survives permanently while
-  the purge reports `ok`; and the forced pre-forget archive lands **inside** the data root it just
-  purged, unencrypted unless a backup key is set, with no API equivalent of the CLI's `--no-backup`
-  and nothing pruning it. `docs/PRIVACY.md` promises erasure and AUD-2 is ticked done. Contradicts
-  the A7 design-partner gate directly: a partner asked to delete their data before returning the box
-  currently cannot. Fix: invert to a KEEP allowlist, make `clear()` abstract, move and encrypt the
-  archive. The purge's *engineering* is sound (verified snapshot before any delete, SQLite
-  online-backup API, Zip-Slip guard) â€” the bug is the allowlist.
-
-The systemic finding is not a bug at all: five of six lenses independently found **a gate that checks
-the shape of a claim rather than its substance** â€” a parity test matching a URL prefix, a capability
-probe registering its own lambda, a safety pack whose `ungoverned_actions` counter is the literal
-`0`, a signature verifier accepting an unkeyed hash. Verification protocol for all 18 findings, the
-six refuted ones (so nobody chases them), the never-measured surfaces, and a **38-row
-missing-code/missing-feature gap ledger**: [`docs/test-manual/15-audit-gap-verification.md`](docs/test-manual/15-audit-gap-verification.md)
-(160 cases, `ADV` prefix) + `scripts/qa_audit_probes.py`, which reproduces nine of the claims on the
-owner's machine in 30 seconds, read-only.
-  *Update 2026-08-11 (successor of split #894):* the last probe still OPEN on `main` â€” **ADV-087**,
-  "capability probe registering its own lambda" â€” is **FIXED**: `_make_action_kernel_probe` now
-  resolves `manifest.implementation` to the real actuator before the refusal rail and fails closed
-  when the declared implementation does not resolve; the green case's evidence names the certified
-  implementation (+2 tests in `test_h27_capability_verification.py`). `qa_audit_probes.py` reports all
-  nine claims CLOSED.
-
-- [ ] ğŸŸ¡ **SEC-B6 â€” gate hardening.** *In review (successor of split #894), not yet accepted truth.*
-  `test_route_auth_matrix.py` gains a *read* half: `test_no_unclassified_open_read` forces every OPEN
-  GET to be classified by the **substance of its handler** (`INTENTIONALLY_OPEN_READS`, each with a
-  reason) or carry `user_guard`; `test_read_classifications_are_honest` keeps both sets shrink-only so
-  the allowlist can't mask a later guard. The classification pass found 13 personal-content reads
-  shipping open (per-agent run history + SOUL, quality scores, review queue, missions, workflows,
-  learning, arena match, oracle conflicts, reflection status, worldview overview) â€” all flipped to
-  `user_guard`, snapshot re-seeded, generated chapter-14 sweep regenerated. Per-handler substance
-  evidence: [`docs/security/SEC-B6-open-reads-evidence.md`](docs/security/SEC-B6-open-reads-evidence.md).
-  **Mark âœ… DONE only when the successor PR passes fresh exact-head CI + independent review** (owner
-  integrator directive, #894). *Open follow-up (gap):* forget export/purge lists are maintained
-  separately â€” add a test asserting `export_manifest âŠ† (purged âˆª KEEP)`.
-
-**Parallel bug hunt, 2026-07-28 (8 finder lenses Â· 164 agents Â· 52 findings Â· 41 confirmed after
-3-lens adversarial verification Â· 11 refuted).** Every confirmed finding was re-derived from source
-and, where the defect was reproducible, reproduced before being fixed. The verification stage
-required 2 of 3 independent skeptics to fail to refute a claim, each with a different lens
-(does-it-reproduce / already-handled-elsewhere / is-the-severity-honest).
-
-The theme is the same one the 2026-07-25 audit named â€” a claim whose shape is checked but whose
-substance is not â€” and it turned out to be much wider than the gates. It runs through the *display*
-layer end to end: **twelve surfaces asserted something they had never measured.**
-
-Fixed, all with regression tests that fail when the defect is reintroduced:
-
-- [x] âœ… **Privacy: a forget kept a plaintext copy of everything it erased.** `backups` sat on
-  `KEEP_DIRS`, justified as holding the pre-forget archive â€” but AUDIT-2c had already moved that
-  archive *outside* the data root. What the entry actually retained was ordinary owner snapshots,
-  and `POST /api/admin/backup` passes no key, so those are unencrypted tarballs of the whole root.
-  Back up Monday, forget Friday, and `purge_data` returned `ok:true` while a cleartext copy sat in
-  the folder it had just cleaned.
-- [x] âœ… **Data loss: every forget destroyed `settings.db`.** The sweep unlinked SQLite `-wal`/`-shm`
-  sidecars, including those of the KEPT databases (`Path("settings.db-wal").suffix` is `.db-wal`, so
-  it matched no branch and fell through to `unlink()`). Deleting the `-wal` of a live WAL database
-  leaves it unopenable â€” reproduced as `disk I/O error`.
-- [x] âœ… **Money: the runway figure was computed from mock bank balances.** With ING configured and
-  failing, `_total_balance()` summed the hardcoded `MOCK_BALANCES` to 16000.32 and divided real
-  monthly spend by it, returning `"mock": false`.
-- [x] âœ… **Two lost-write races on the secret store.** Key/salt creation was check-then-act, reachable
-  from the two backup routes that each build a `SecretStore` in a worker thread â€” the loser's archive
-  becomes permanently undecryptable. Writing the tests surfaced a second race the finders missed: a
-  shared `.tmp` filename plus a read-modify-write over a per-instance cache, which silently dropped
-  credentials.
-- [x] âœ… **Privacy assurance from missing data.** The legacy HUD computed strict-local as
-  `!trust || trust.strict_local`, so a HUD that could not reach `/api/trust/status` displayed a
-  padlock reading "nothing leaves this machine".
-- [x] âœ… **The HUD synthesized its own telemetry.** `useLiveSys` layered sine waves and
-  `Math.random()` onto RAM/VRAM/GPU/latency every 1.4s and rendered the result as live host state,
-  seeded from a hardcoded 42/192 GB machine. Numbers that drift are more convincing than static ones.
-- [x] âœ… **`/security/status` was entirely static** â€” mode always `WARN`, every counter `0`, pattern
-  counts hand-written and wrong. Guardrails now actually count; what is still unmeasured says so.
-- [x] âœ… **`/readyz` published a configured backend NAME inside a dict called `checks`.**
-- [x] âœ… **`/api/cognition` fabricated a routing decision** (confidence 1.0, zeroed timings) when
-  nothing had been routed. Its test asserted the fabrication.
-- [x] âœ… **`/learning/stats` had never once worked** â€” `list()` over an int count, TypeError on every
-  call, swallowed into a body of zeros. Its test asserted only "ints and lists", which zeros satisfy.
-- [x] âœ… **`/ticker` read a key the observer has never emitted**, so every unhealthy probe was
-  silently dropped. Its test stubbed the same fictional key, so test and code agreed while both
-  disagreed with the class.
-- [x] âœ… **OBSERVE rendered the demo seed under a LIVE badge** â€” `/api/quality` nests under `stats`
-  and `/api/resilience` emits none of uptime/errors/redactions, so four fabricated numbers showed
-  with a green chip.
-- [x] âœ… **XSS in the public widget snippet** (`color`/`position` unescaped into `innerHTML`) and
-  **path traversal in skill import** (`replace(" ", "-")` left `..` and `/` intact).
-- [x] âœ… **The four hanging routes, root-caused.** A blocking Qdrant read inside an async handler
-  under a lock froze the whole event loop, so handlers with no I/O of their own hung too; plus a
-  heavy ML import on the loop and an unbounded memory await.
-- [x] âœ… **Shutdown released nothing** â€” autonomy worker and learning loop never cancelled, two
-  sqlite handles never closed (which is what makes a data directory undeletable on Windows).
-- [x] âœ… **Cypher property names could hijack node identity** â€” a relation property called `source`
-  rewired the relation to a different node.
-
-Still open from that run (verified real, not yet fixed): blocking DNS/HTTP on the request path in
-`browser.py`, `codeintel.py`, `house.py`, `onvif.py`, `memory_kg.py`; and the seeded ADMIN/OBSERVE
-corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): âœ… the dead `arr() || fallback` in
-the two `gap.tsx` panels â€” CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
-shapes (`{pools:{provider:â€¦}}` / bare `{service:â€¦}`), with vitest regressions.
-Fixed since: âœ… the unauthenticated full-chain re-verify in `security.py` â€” `audit/verify` plus its
-`audit/intent` and `audit/anchors` siblings (and `GET /api/workflows/traces`, WFL-132) are now
-user-guarded, route-auth snapshot re-seeded; âœ… `north_star.py` all-time-as-7-day â€” `local_pct` is
-computed via `RunHistory.locality(since=cutoff)` over the same trailing window as every other
-counter metric (all-time stays available to `/api/analytics/locality`).
-
-- [x] âœ… **Follow-up: the secret-store race fix corrupted key material on Windows.** The new
-  `_read_or_create_atomically` opened its descriptor without `O_BINARY`, so the CRT ran it in TEXT
-  mode and expanded every `0x0A` to `0x0D 0x0A`: the creator returned the 16 salt bytes it minted
-  while every later reader read 17 different ones, deriving a different key for the same store. ~6%
-  per salt (`1 - (255/256)**16`), silent, and reported only as "cannot decrypt secret (wrong key or
-  corrupted)" against data written correctly. It surfaced as three unrelated Windows failures on a
-  docs-only PR (`test_secrets`, `test_h30_presence`, `test_oauth_token_key`), which is the honest
-  version of "the Windows run was green last time" â€” it was, by luck. `vault.py` has always ORed the
-  flag in; `secrets.py` was the one `os.open` in the repo that did not. +3 tests, one of which pins
-  the flag by giving POSIX an `O_BINARY`, so a Linux-only run can still catch its removal.
-
-**The phone surface â€” open question, owner call (2026-07-29).** The scheduled e2e run fails 9
-`mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button "intercept pointer events" at
-the 393Ã—851 Pixel 5 viewport). Nothing regressed: `E2E_BROWSER_MATRIX` is set only on `schedule`
-events, and **all 26 scheduled runs since 2026-07-04 have failed â€” none has ever passed.** The matrix
-was switched on over a layout that was never made responsive. Two facts frame the decision:
-
-- [ ] ğŸŸ¡ **The web HUD is not reachable from a phone today, by design.** `serve.py:66` defaults
-  `JARVIS_HOST` to `127.0.0.1`, and `assert_safe_bind()` (`boot_guards.py:25`) **exits** on a
-  non-loopback bind unless `JARVIS_USER_TOKEN`/`JARVIS_ADMIN_TOKEN` is set (or
-  `JARVIS_ALLOW_INSECURE_BIND=1`); even then `_user_guard` (`web.py:192`) 403s every non-localhost
-  client without a `USER_TOKEN`. The guards are right â€” but **the supported LAN path is documented
-  nowhere**: a `docs/` grep for LAN/remote-access guidance returns nothing. Write it down regardless
-  of the decision below.
-- [ ] ğŸŸ¡ **`mobile/` already assumes this topology** â€” a React Native app whose client takes a
-  configured `baseUrl` (`mobile/src/api/client.ts`). If the app is the phone story, the web HUD is a
-  desktop surface and `mobile-chrome` should come **out** of the matrix rather than stay permanently
-  red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
-  (single column, chat pane full-height, rails collapsed/drawered) â€” not a pointer-events tweak.
-
----
-
-## ğŸ”Œ Live-vs-Plumbing Remediation â€” mock â†’ real (owner request 2026-07-18)
-
-> **Full audit:** [`docs/research/2026-07-18-live-vs-plumbing-capability-audit.md`](docs/research/2026-07-18-live-vs-plumbing-capability-audit.md)
-> Â· six-domain LIVE/PLUMBING/STUB code audit. The running product does far less than
-> the merged PRs imply: of ~77 capabilities, **~11 LIVE** (only ~3 user-facing â€”
-> weather, news, local analytics), **~52 PLUMBING** (real, but gated off / waiting on
-> a key/OAuth/LAN-hub/engine), **~14 STUB** (mock / placeholder / absent). Dominant
-> pattern: *"integration-ready, mock-fallback + host seam"* â€” a capability degrades
-> quietly to a mock or `deferred` instead of erroring, so scaffold reads as product.
-> **This epic tracks closing the gap** â€” turning PLUMBING into LIVE and building STUBs
-> for real. Cross-cuts ORIZONT 27â€“33 (the pillars are code-complete but actuator-gated).
-
-**Tranche 1 â€” shipped (mock â†’ real, first cut):**
-- [x] Capability audit persisted to `docs/research/2026-07-18-live-vs-plumbing-capability-audit.md`
-- [x] `agents/core/plugins/degradation.py` â€” honesty helper: mock fallbacks now self-report a `_degraded` `{reason, needs}` + `_mock` so a degraded feature is distinguishable from a real one
-- [x] **Real Tuya Cloud OpenAPI signing** (`iot_control.py`) â€” replaces the hardcoded `sign="MOCK_SIGNATURE"` (which Tuya always 401s) with the documented HMAC-SHA256 token-grant + signed-command flow; unconfigured â†’ honest degraded result (no device touched)
-- [x] **Real balance burn-rate** (`balance.py`) â€” was `MOCK_BURN_RATE` *even when configured*; now computed from a transactions CSV (`plugins.gecko_tx_csv_path`): monthly spend/income, top categories, runway from real balances
-- [x] +14 tests (`tests/test_live_remediation.py`, pinned Tuya signature vectors); existing iot test updated to the honest `not_configured` contract; test counter synced (5,115)
-
-**Config-wins â€” flip to LIVE with no new code (owner action, see `docs/OWNER_TASKS.md`):**
-- [ ] Google OAuth â†’ email + calendar
-- [ ] Spotify OAuth â†’ real playback control
-- [ ] Install engines: `faster-whisper` (STT), `edge-tts`/`kokoro` (TTS), `playwright` (browser operator), `beautifulsoup4` (DDG search), `discord.py`/`slack_sdk` (Discord/Slack channels â€” adapters exist, SDKs not in base requirements)
-- [ ] LAN Home Assistant + `JARVIS_HOUSE_BRAIN`/`JARVIS_HOME_ASSISTANT` â†’ house read + control
-- [ ] Frigate NVR + household consent â†’ the camera + ambient stack
-- [ ] Flip cognition master posture + a local LLM â†’ the reflect-and-rewrite learn loop
-- [ ] Telegram bot token â†’ `channel.reply` (the one real autonomy side-effect)
-
-**Genuinely unbuilt â€” needs real code:**
-- [x] Tuya real signer (done, Tranche 1)
-- [x] Balance burn-rate from CSV transactions (done, Tranche 1) â€” [ ] extend to ING/Libra transaction fetch (API path still pending)
-- [x] Stock quotes feed â€” keyless `StockQuotesPlugin` (Stooq CSV), the third LIVE keyless plugin next to weather/news; egress-restricted, wired into the plugin gatherer (`$AAPL`/ticker detection), honest degrade when the feed is down. `market` router can consume it next.
-- [x] Social: the live rail activates behind approval â€” the default Null client lazily
-  upgrades to `HttpSocialClient` the moment an approved task resolves a real owner
-  credential (`secret:x_api_token`), no restart needed; unconfigured stays honestly
-  deferred and now carries the `_degraded {reason, needs}` stamp; injected clients
-  are never replaced (`tests/test_social_live_client.py`)
-- [x] Autonomy executors: live rails at the writeback / call host seams â€” same
-  lazy-upgrade-behind-approval pattern as social (`Null* â†’ HttpWriteBackClient` /
-  `HttpCallClient` when the approved task resolves a real credential); deferred
-  results now stamped `_degraded {reason, needs}`. Node mesh has **no transport
-  at all** (not just an unwired client) â€” its deferred dispatch is stamped
-  `node_transport_not_built`; building a real node transport stays open below
-  under "Media / desktop / node actuators" (`tests/test_writeback_live_client.py`,
-  `tests/test_call_live_client.py`)
-- [x] Capability acquisition: the missing production glue â€”
-  `AcquisitionRuntime.synthesize_and_propose()` composes reuse-resolution's `no_reuse`
-  outcome â†’ research â†’ strict-local generation â†’ sandbox verification â†’
-  `PromotionBroker.propose()` into one callable path that creates a real `PromotionProposal`
-  (previously only test/reality-harness fixtures ever reached `propose()`). Real skill
-  code-synthesis: `agents/core/acquisition/llm_synth.py` implements the `generate`/`draft`
-  seams `StrictLocalGenerator`/`GovernedResearch` take by injection with actual
-  `LLMRouter.local_backend` calls (JSON-only, bounded retry) instead of hand-written
-  fixtures â€” every downstream guardrail (AST/stdlib allowlist, placeholder-body rejection,
-  `ground_plan()` citation gate, sandbox verification, permanent owner approval) is
-  unchanged and still gates whatever the model returns. Deliberately **not** auto-triggered
-  from chat/gap-capture â€” a caller (future admin action or scheduled worker) must invoke it
-  explicitly, same as `resolve_gap` itself already is. The separate `SkillLoader.generate_skill()`
-  `[learn:â€¦]` stub (`"implement logic in handle()"`) is a distinct, smaller subsystem and is
-  untouched here (`tests/test_h32_llm_synth.py`, `tests/test_h32_synthesis_pipeline.py`)
-- [ ] Real payment rail adapter (AP2/ACP/x402) at `payments.settle()` â€” **owner decision required (moves money)**
-- [ ] Media / desktop / node actuators (owner-wired host seams)
-- [ ] `agents/vision`, `agents/argus` â€” real implementation (currently persona markdown, zero code)
-
-**Honesty layer (cross-cutting, highest-leverage):**
-- [x] `degradation.py` helper + applied to `iot_control` + `balance`
-- [x] Apply `degraded()` to the remaining mock fallbacks â€” sms-alerts, crm-sync, and the
-  `MOCK_BALANCES` dict now carry `_degraded {reason, needs}`; whatsapp/apple-health/n8n audited
-  clean (they already fail honestly via `configured` flags instead of returning fake data)
-- [x] Surface degradation in the HUD â€” plugins expose a `degradation_info()` contract, the
-  `/plugins` listing carries `degraded`/`degraded_reason`/`degraded_needs`, and the Admin
-  plugin registry badges mock-backed plugins **MOCK** (amber, tooltip = reason + needed config).
-- [x] **Mirror the badge onto capability-registry state (tranche 4)** â€” `_plugin_records(orch=)`
-  now resolves the exact same live honesty verdict (`configured`/`honesty`/`degraded*`) into each
-  plugin's `detail`, so `/api/capabilities` (the canonical board) can no longer imply a mock
-  plugin is live either. Resolution logic (`runtime_configuration`/`degradation_info`/
-  `live_plugin_for`) extracted from `routers/plugins.py` into `plugins/honesty.py` so both
-  surfaces share one source of truth instead of re-deriving it. Backward-compatible: `orch=None`
-  (the static-derivation path used by most tests) carries no honesty keys, unchanged from before.
-- [x] **The agent-generated skill loop actually executes (tranche 5)** â€” the `main.py` template
-  in `SkillLoader.generate_skill()` registered a 3-parameter `handle(cmd, args, context)` as the
-  command function, while `Skill.execute()` dispatches `cmd_fn(args, context)` / `cmd_fn(args)`
-  (`loader.py:177-179`): **every** generated command raised `TypeError` and surfaced as
-  `[skill:X] error: â€¦`. The same template made `get_commands()` name a function it never defined,
-  so `getattr(mod, cmd)` (`loader.py:284-286`) raised `AttributeError` and logged a misleading
-  "Failed to load skill module" on every `discover()`. The template now emits a per-command
-  `$cmd(args, context=None)` with `handle()` kept as the 3-arg module fallback â€” the same shape
-  every hand-written skill uses. `tests/test_generated_skill_contract.py` (+19) executes the
-  generated command instead of only asserting the quarantine lifecycle, which is what let this
-  ship past `tests/test_cdx8_skill_quarantine.py`.
-- [x] **Generated command names are sanitized before they become code** â€” `command_name` arrives
-  as untrusted LLM output (field 3 of a `[learn:â€¦]` block, `orchestrator.py`) and was string-
-  substituted into generated Python source, so a quote + newline escaped the `register_command`
-  string literal. New `_safe_command_name()` coerces it to a bare identifier *after*
-  `quarantine.detect_injection` has seen the raw value (sanitizing first would blind the scanner).
-  Ratcheted for hostile inputs: generated `main.py` must always compile.
-- [x] **Catalog ratchet: a documented command must resolve, or be a declared seam** â€” every
-  `## Commands` entry in `skills/*/SKILL.md` must map to something callable. `skills/weather`
-  stays manifest-only *on purpose* (`INTENTIONALLY_SEAM`, live weather comes from the plugin
-  path) and is exempt through that one existing escape set â€” implementing it was tried and
-  reverted, because a live `main.py` makes `parse_command("weather X")` short-circuit the agent
-  path with a raw wttr.in string and removes the repo's only intentional-seam exemplar
-  (`tests/test_h27_capability_verification.py::test_intentional_skill_seam_cannot_be_promoted`).
-  A *new* manifest-only skill now has to be a conscious `INTENTIONALLY_SEAM` entry, not a silent
-  addition.
-- [x] **Removed the stale committed `skills/user_greeting_055711/`** â€” a pre-CDX-8 artifact with
-  no `PENDING_REVIEW` marker, so `loader.py:247` never quarantined it: it was `exec_module`'d
-  in-process in every install and warned on every boot. It was also cited as the reference
-  pattern in `.opencode/plans/skill-api-corrected.md` and `docs/internal/gemini_architecture_prompt.md`,
-  propagating the broken shape; both now point at `skills/pm/`.
-
----
-
-## ğŸ¤ Handoff â€” Fable last-day review (2026-07-07)
-
-> Full review, verdict, and rationale: **[docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md)**
-> (ground truth verified: CI green on main, 0 open PRs, 3,820-test suite green; Hermes v3 plan
-> **APPROVED with notes** â€” Â§5 of the handoff). The two lanes below are the same items, tracked
-> here so they surface in any "what's next" conversation. Tick them here AND in the handoff doc.
->
-> **2026-07-14 update:** A9 "tag 1.0.0" now sits behind the **expanded** 1.0 gate â€” the proof
-> track (A1â€“A7, unchanged) **plus** the AI-OS capability program (ORIZONT 27â€“33 below /
-> [NERVA_VISION.md](NERVA_VISION.md)). Code/harness completion does not satisfy the real-host
-> v1 bars by itself: A8 names the owner-only hardware proof explicitly. A1â€“A8 are blocking and
-> remain the critical path.
-
-**Lane A â€” owner critical path (ordered; delivered via PR #634):**
-
-| # | Item | Status |
-|---|------|--------|
-| A1 | â­B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box. **Instrument ready (#728):** `docs/TEST_MANUAL.md` â€” 15 chapters giving the step-by-step depth behind every checklist row, plus `docs/COWORK_QA_RUNBOOK.md` Â§3b (the R1â€“R9 pass from the 2026-07-24 run) and **Â§3c (S1â€“S6, the 2026-07-27 run-2 findings)**. **Run 2 executed (2026-07-27, RTX box)** â€” findings fixed, re-proof pending on the box. **Chapter 15 (`ADV`) is new and unexecuted:** adversarial-audit verification + a missing-code/missing-feature ledger; Â§8a of the runbook is its launch prompt. | â¬œ **the gate** |
-| A2 | 72h soak (0.63) + record AUD-0 / H23.23 | â¬œ |
-| A3 | Dependabot re-triage â€” 19 open alerts on main (4 high, 2026-07-07) | ğŸŸ¢ agent half done in #634 â€” local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees now 0 vulns with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface â€” the device gate is real). Owner tail: worldview 2 moderates (in-next postcss, wait for next 16.3), mobile Expo SDK upgrade on a device, dismiss stale alerts in UI |
-| A4 | GitHub settings batch (SEC-4 required checks Â· CQ-2 dismissals Â· CQ-3 paste Â· repo metadata) | â¬œ |
-| A5 | License flip MITâ†’Apache-2.0 + TRADEMARKS.md | ğŸŸ¢ prep done in #634 â€” `TRADEMARKS.md` live, CONTRIBUTING relicense grant added, canonical Apache-2.0 staged in `docs/legal/`; the flip itself is 3 owner commands (steps in OWNER_TASKS), timing per LICENSE_DECISION = just before v1.0 |
-| A6 | Demo video (60s) + publish landing (dev half âœ… #512) | â¬œ |
-| A7 | Recruit 1â€“3 design partners; north-star on a non-owner install â‰¥2 weeks | â¬œ |
-| A8 | **AI-OS v1 owner-host proof** â€” complete `docs/MANUAL_TESTING.md` Â§N on real hardware: installed Playwright Chromium + Windows UIA browser/desktop actuation; real Home Assistant state + device/room/occupant/presence graph + governed device actuation; consented Frigate event â†’ house/memory/ambient flow; presence-aware Media Director delivery on â‰¥2 non-chat output surfaces/device classes; one approved acquisitionâ†’reuse loop. Record redacted audit/task/device evidence; hermetic reality packs alone do not clear this gate. **âš ï¸ Parts of Â§N are not runnable as written (#728), being unblocked by the finish-line run:** âœ… **A8-i done 2026-08-02** â€” the H32 acquisition loop now has a product trigger, `POST /api/acquisition/{request_id}/drive` (admin; reuse-first, honest `_degraded` refusals; AIO-038 rewritten to use it, no Python shell). âœ… **A8-iii done 2026-08-02** â€” `JARVIS_MEDIA_DRIVERS=local_file` binds the shipped `LocalFileMediaDriver` (real durable state through the present/verify/restore/duration rails; kind `local`; whole-list fail-closed registry in `_get_director()`; the audible/visible half still needs owner hardware). âœ… **A8-ii done 2026-08-02** â€” `target:"presence:auto"` resolves the owner room's default device, gated on a FRESH `present` signal from the H34.2 owner-presence store (temporal) + `JARVIS_MEDIA_PRESENCE_ROOM` (spatial, default-off); idle/away/stale/unset â†’ honest `presence_unknown`; a registered device id can never shadow the sentinel. Still open: **A8-iv** â€” `ungoverned_actions == 0` is measurable only inside the hermetic reality packs. A first live-counter attempt (QA4) was written and **withdrawn 2026-08-02 for a design flaw its own full-suite run exposed** (a mediation ContextVar that never resets masks a later task's bypass within one tick, and cannot bridge enqueueâ†’execute at all, so it under-reports breaches); the correct design â€” persist the kernel decision on the task at `govern_enqueue` and read that stamp at the worker seam â€” plus what was sound and reusable is written up in [`docs/superpowers/plans/2026-08-02-qa4-ungoverned-counter-park.md`](docs/superpowers/plans/2026-08-02-qa4-ungoverned-counter-park.md). Full list with `file:line` in that chapter's **Open gaps**; media-hardware purchase can be scheduled once C3/C4 merge. | â¬œ **blocking owner/live gate** |
-| A9 | Tag 1.0.0 (only after A1 + A7 + A8 and every other open owner gate) | â¬œ |
-
-**Lane B â€” engineering tail (any AI session; one item = one PR, default-off):**
-
-| # | Item | Status |
-|---|------|--------|
-| B1 | Hermes v3 Phase 2 â€” context compression maturity | âœ… done in #634 (2026-07-07) â€” `keep_first` leading-turn protection, hermes structured summary template, iterative summary-merge (`prior`/`covered`), and an opt-in **strict-local** LLM summarizer (`memory.compression_summarizer`, uses `LLMRouter.local_backend` only, degrades to the deterministic digest). Defaults byte-identical; `tests/test_context_compression_phase2.py` (+12) |
-| B2 | 0.19 First-Run Command Center (activation for design partners; seams in H23.20) | âœ… done in #634 (2026-07-07) â€” `GET /api/onboarding/command-center` (user-guarded, one fetch: `/readyz` snapshot + version, model backend truth, H23.20 wizard state, honest `first_actions` with backend-derived `ready`/`reason`) + HUD `CommandCenterPanel` (new **Start** Console cluster; "say hello" drives a real `/chat` turn and records the `test_chat` funnel step). Red/green: `tests/test_first_run_command_center.py` (+4) + `command-center-panel.test.tsx` (+4); parity/openapi/auth snapshots reseeded; typegen schema regenerated |
-| B3 | AUD-14 tail â€” remaining raw env-read slices (template: #592â€“#622) | ğŸŸ¢ re-audited 2026-07-07 (in #634): **zero** unsafe parses remain â€” no `int()`/`float()`/`json.loads()` on raw env, no ad-hoc boolean truthiness (ratchet `test_o26_p2_env_config.py` green); ~104 plain `env_str`-equivalent string reads left = cosmetic, migrate opportunistically in files you already touch |
-| B4 | M2.4 live-eval lane | ğŸŸ¢ **ci-small-model lane shipped in #634 (2026-07-07, owner-approved)** â€” `companion_eval --live-model` runs the golden suite through any OpenAI-compatible endpoint (live generation, deterministic rubric scoring, preflight probe so infra failure â‰  score 0, results recorded to the DatasetStore) + an opt-in `live-small-model` job in `eval-nightly.yml` gated on repo var `JARVIS_EVAL_CI_SMALL_MODEL=1` (Ollama + qwen2.5:0.5b on the runner; advisory, honestly labeled). `tests/test_companion_eval_live_lane.py` (+3, in-process endpoint double). Owner: flip the repo variable to activate; the owner-box fidelity lane (`JARVIS_EVAL_LIVE`) stays separate |
-| B5 | Non-v0 inbox channels (email/WhatsApp) | ğŸŸ¢ **email half done in #634 (2026-07-07)** â€” `email` joins `SUPPORTED_INBOX_CHANNELS`: inbound IMAP messages become inbox threads whose reply metadata carries the SMTP kwargs (`to` aliased from `from_addr`, `subject`), the `CHANNEL_REPLY_CONTRACT` gains the email reply-target branch, and `EmailChannel` now passes `sender=` so the H12.19 pairing gate applies to inbound email. All against test doubles (`tests/test_email_inbox_transport.py`, +6); owner live SMTP/IMAP validation remains. **WhatsApp stays parked** (bridge hardware) |
-| B6 | Maintenance runbook ("if the owner disappears a month", REVIEW_YEAR_ONE Â§9.7) | âœ… drafted in #634 â€” [docs/MAINTENANCE_RUNBOOK.md](docs/MAINTENANCE_RUNBOOK.md), owner to verify the `[owner: verify]` marks |
-| B7 | Hermes v3 Phases 3/5/6 live wiring (file-RPC exec Â· gateway sessions Â· cron) | â¬œ on-demand only â€” primitives merged, wire behind real pull |
-
----
-
-## ğŸ“£ Alpha signals â€” FB tester call (2026-07-10)
-
-> Prima postare personalÄƒ de recrutare a explodat: **39.6k afiÈ™Äƒri, 67 comentarii, 17 salvÄƒri,
-> 0 reacÈ›ii negative** (È›inta era â€2â€“3 prieteni"). Triaj lead-uri + kit de rÄƒspuns:
-> [`marketing/alpha-testing/2026-07-10-fb-response-triage.md`](marketing/alpha-testing/2026-07-10-fb-response-triage.md);
-> FAQ onest reutilizabil: [`marketing/alpha-testing/FAQ.md`](marketing/alpha-testing/FAQ.md).
-> AlimenteazÄƒ direct **Lane A / A7** (â€Recruit 1â€“3 design partners"). Docs de marketing âœ… livrate;
-> itemii de produs de mai jos rÄƒmÃ¢n de decis. **Consumer first-run follow-up (2026-07-20):**
-> Command Center now projects three outcome-oriented starter packs from live model/folder/plugin
-> honesty (`READY NOW` / `NEEDS SETUP`) and explains qualified privacy + read-only effects without exposing
-> credentials; this is the first product slice of the consumer-grade Nerva direction.
-
-| # | Semnal din comentarii | Item | P | S |
-|---|---|---|---|---|
-| FB1 | â€Merge pe M4?" (Tudor ML) â€” `install.sh` acoperÄƒ deja macOS, dar nu e Ã®n matricea de suport | **Apple Silicon Ã®n matricea de suport alpha** â€” smoke pe M-series (LM Studio/Ollama, memorie unificatÄƒ) + un rÃ¢nd Ã®n README/FAQ. Cerere realÄƒ de la Mac-uri. | P2 | 3 |
-| FB2 | â€cheia rÄƒmÃ¢ne localÄƒ sau trece prin serverele voastre?" (Ã—2) â€” cea mai repetatÄƒ obiecÈ›ie | **Trust one-pager: API-key locality** â€” o paginÄƒ scurtÄƒ (sau secÈ›iune README/`SECURITY.md`) care aratÄƒ drumul cheii (`.env` â†’ direct la furnizor, fÄƒrÄƒ relay) + cum se verificÄƒ. Pre-Ã®ntÃ¢mpinat deja Ã®n FAQ + copy. | P2 | 2 |
-| FB3 | â€foloseÈ™te subscripÈ›ia Ã®n loc de API" (Cristi Simion) + confuzia Plusâ‰ API (recurentÄƒ) | âœ… **Done 2026-07-20** â€” Command Center now explains that ChatGPT Plus / Claude Pro subscriptions do not include API access whenever a starter outcome is held by missing model/API setup; the FAQ remains the long-form source. | P3 | 2 |
-| FB4 | â€local-only pe 8GB â€” chiar e utilizabil?" (Robert Olah) | **Benchmark onest 8GB VRAM** â€” un tabel â€ce merge decent pe 8/12/16/24GB local vs. hybrid", publicat, ca sÄƒ calibrÄƒm aÈ™teptÄƒrile testerilor. LeagÄƒ de M2.4 live-eval. | P2 | 5 |
-| FB5 | â€fÄƒ-l TUI-only, waste of memory pe 8GB" (Bogdan G. Fuerea) | **Mod headless / TUI** â€” rulare fÄƒrÄƒ UI-ul greu (deja e posibil local/cloud/hybrid; de expus explicit un profil headless). Feedback de early-adopter, nu blocker. | P3 | 5 |
-| FB6 | OpenRouter + OpenAI-compatible + local (Stefan Vintila) â€” **deja livrat** (`agents/core/llm/openrouter.py`, `/model`) | doar **discoverability**: pune-l Ã®n README/FAQ ca feature vizibil (userii nu È™tiu cÄƒ existÄƒ). | P3 | 1 |
-
-> **Surfaced Ã®n docs canonice 2026-07-11 (PR follow-up):** **FB2** cheie-API localÄƒ â†’ `SECURITY.md` Â§â€API keys & cloud calls"; **FB1** Apple Silicon + **FB6** OpenRouter/OpenAI-compatible + **FB5** profil `headless` â†’ `docs/COMPATIBILITY.md` matrice + README Hardware; **FB4** schelet benchmark VRAM onest (owner umple numerele mÄƒsurate) â†’ `docs/HARDWARE_BENCHMARKS.md`; **FB3** subscriptionâ‰ API este Ã®n FAQ + SECURITY + Command Center. **FB5** e È™i cod: profil `headless` real Ã®n `system_profiles.PROFILES` (+test). RÄƒmÃ¢ne owner/cod: FB4 numerele mÄƒsurate (hardware).
-
-**Non-produs (owner/GTM):** capacitatea de suport 1:1 e depÄƒÈ™itÄƒ de volum â†’ È›ine È›inta la **1â€“3
-instalaÈ›i** (restul pe listÄƒ de aÈ™teptare). CandidaÈ›i contributor din fir (Iulian Tu, Stefan Vintila)
-â†’ `CONTRIBUTING.md`. Detalii + kit de rÄƒspuns Ã®n doc-ul de triaj.
-
----
-
-## Version Roadmap
-
-| Version | Target | Milestone | Items |
-|---------|--------|-----------|-------|
-| **0.5-beta** | ğŸŸ¢ Live | Foundation complete. All H1â€“H4, cross-cutting, security, bugs done. | H1â€“H4, Sprint 0, Cross-cutting, Sec, Bugs |
-| **0.6-beta** | ğŸŸ¢ Live | Howard fine-tuning + voice clone + continuous ingestion | H5.1 |
-| **0.7-beta** | ğŸŸ¢ Live | Mobile PWA + i18n + UI Overhaul | H5.2, H5.3, H5.4 |
-| **0.8-beta** | ğŸŸ¢ Live | Performance & robustness + multi-agent workflows | H5.5, H5.6 |
-| **0.9-beta** | ğŸŸ¢ Live | New integrations + agent marketplace | H5.7, H5.8 |
-| **0.9.1-beta** | ğŸŸ¢ Live | Recall cu embeddings reale + perf cale fierbinte | H7.1â€“H7.5 (perf) |
-| **0.9.2-beta** | ğŸŸ¢ Live | Hardening complet, CI/CD, memorie personalÄƒ, cost analytics, onboarding | H7 (11 iteme) + H8 (7 iteme) + BUG-1 |
-
-> The `0.5-betaâ€¦0.9.2-beta` rows above are **provenance** (when each capability first landed).
-> The line below is the **forward plan** â€” there is no separate "audit gate" version; the version
-> number *is* the roadmap. **1.0 is a real destination**, not the current near-done state.
-> **Gate expanded 2026-07-11 (owner decision):** 1.0 ships only when **both** halves are done â€”
-> **(a) the proof track** (the 0.13â€“0.20 themes + â­B0 + 72h soak + design partners) **and (b) the
-> AI-OS capability program** (v0.21â€“v0.27 / ORIZONT 27â€“33, six pillars at their v1 bar â€”
-> [NERVA_VISION.md](NERVA_VISION.md) Â§10). Manual testing/audit is the *release step that tags a
-> version*, not a roadmap item; owner-only items (license, naming, GitHub settings) live in
-> [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md).
-
-### Forward roadmap â€” the version is the plan (theme-per-minor)
-
-> **Version labels vs theme IDs:** rows in this table are **release versions**, always written
-> three-part (`0.16.0`, `v0.21.0`). The Competitive-Gap section below uses bare two-part
-> **theme-IDs** (`0.21`, `0.46`) which are NOT versions â€” when citing a theme in new text, write
-> **`T-0.21`** to disambiguate. Existing text is not mass-renamed.
-
-`âš ï¸` = surfaced by the 2026-06-21 productionization research (was not previously tracked); now in **H23** below.
-
-| Version | Theme | Scope highlights |
-|---------|-------|------------------|
-| **0.10.0** | Baseline | Everything delivered to date: H1â€“H21 + ORIZONT 22 + WorldView O19 + CLN-3 batch 2; north-star instrumented; **single-user** |
-| **0.11.0** | ğŸŸ¢ **Finish the refactor (done, #296)** | CLN-3 **complete** â€” `web.py` 4,636â†’1,282 LOC, 233â†’9 inline routes across 45 per-domain routers (304-route surface byte-identical, parity-guarded). CLN-2 substantially done â€” `PluginManager`+`llm_control`+`cognition_trace` extracted; orchestrator 1,620â†’1,456 LOC (remaining inline = the BUG-5 request pipeline, not safely extractable). |
-| **0.12.0** | **Harden what shipped (here now)** | ORIZONT-22 review fixes (#294, merged); #292 argus governed-facade wiring; #279 MCP route-tools harden/remove; TASK-3 cross-channel taint-tracking |
-| **0.13.0 âš ï¸** | Agentic safety completeness | step/recursion + token/time **budgets + loop detection**; **model-version pinning & reproducibility**; **kill-switch in the HUD** + credential quarantine; eval/regression harness as a **release gate**; audit-log verify UI + secret redaction |
-| **0.14.0 âš ï¸** | Upgrade & data durability | **backup/restore** + restore drill âœ… (#302); **data export** âœ… (#303, CLI); **DB schema-migration framework** âœ… (#305, H23.7); **delete/forget** âœ… (#306 + #315, `/api/admin/forget` â€” purge completeness done **AUD-2**: erases the memory subsystem at rest, endpoint **and** CLI; backup-first snapshot encrypted once a key is set, **AUD-1** #309); retention defaults âœ… (#317, H23.10); export HTTP surface âœ… (#315, H23.9) |
-| **0.15.0 âœ…** | Operability & distribution | health/readiness endpoint âœ… (H23.11, `/healthz`+`/readyz`) + signal handlers/graceful shutdown âœ… + log rotation âœ… (H23.11); graceful **local-LLM-down** everywhere âœ… (H23.12, split-timeout + clean degraded reply); systemd/service templates âœ… (H23.15, `deploy/`); **release artifacts** âœ… (H23.13 â€” tagâ†’source bundle + SBOM + checksums + optional GPG sign, `docs/RELEASE.md`); **semver compatibility contract** âœ… + supported-versions matrix âœ… + deprecation policy âœ… + platform matrix âœ… (H23.14, `docs/COMPATIBILITY.md`) |
-| **0.16.0** | HUD depth + observability UI | TASK-2 ~37 surfaces incl. **north-star panel** + **network monitor** âœ… (watch LOCAL_ONLY make zero calls â€” egress data layer + `GET /api/admin/network/calls` + Console panel, H23.16); LIVE/SEED indicators âœ…; OpenAPI typegen/diff gate âœ…; plugin-gated mode base wiring âœ… (#505); P3.2 reconciliation guard âœ… (#507); remaining tail = owner live-data/plugin setup; channel inbox transport v0 âœ… (#551) |
-| **0.17.0** | Local ceiling + velocity | H22.4 concurrency, H22.5 model-manager LRU, H22.9 agent-native routes, constrained-decoding tail |
-| **0.18.0 ğŸ–¥ï¸** | Digital twin & fine-tune (**GPU-gated**) | H12.14 fine-tuned model, H13.3 speculative decoding, TASK-1 Howard first real run |
-| **0.19.0 âš ï¸** | Reach, quality & user docs | mobile parity tail (H18); **quality gates** (E2E, load/soak, a11y, i18n, browser+mobile matrix); **user docs âœ…** (USER_GUIDE/FAQ/UPGRADE â€” H23.18; trust docs THREAT_MODEL/PRIVACY/SECURITY/NOTICE/SBOM â€” H23.19); **onboarding wizard** + activation funnel + cold-start error guidance |
-| **0.20.0 âš ï¸** | Product-proof | design-partner program (recruit 1â€“3) â€” *in-app **feedback/NPS** + program doc âœ… H23.21*; support channel + SLA; north-star **measured on real usage**; landing page + demo |
-| **v0.21.0** ğŸ§  | **Capability plane** (AI-OS Phase 1) | ORIZONT 27 (Nerva Program A) â€” Capability Registry v1 + unified Action API (`perform()`) + verification hooks + earned autonomy; extends O24 K/V, no parallel system |
-| **v0.22.0** ğŸ–±ï¸ | **Operator** (AI-OS Phase 2a) | ORIZONT 28 (Nerva Program B) â€” real browser driver (Playwright behind GovernedBrowser) + desktop actuation + terminal-target abstraction + the APIâ†’CLIâ†’UIâ†’visual router; **unpark wave 1** |
-| **v0.23.0** ğŸ“º | **Media Director** (AI-OS Phase 2b) | ORIZONT 29 (Nerva Program C) â€” `media_player` abstraction + Chromecast + the `present()` fabric + session etiquette; **unpark wave 2** |
-| **v0.24.0** ğŸ  | **House Brain** (AI-OS Phase 3) | ORIZONT 30 (Nerva Program D) â€” Home Assistant state adapter + device/room/occupant graph + presence + governed actuation; **unpark wave 3** |
-| **v0.25.0** ğŸ“· | **Camera Intelligence** (AI-OS Phase 4) | ORIZONT 31 (Nerva Program E) â€” privacy contract first, then RTSP/ONVIF ingest + local detection + event index + NL clip retrieval |
-| **v0.26.0** ğŸŒ± | **Capability Acquisition** (AI-OS Phase 5) | ORIZONT 32 (Nerva Program F) â€” the gapâ†’searchâ†’researchâ†’generateâ†’sandboxâ†’approveâ†’registerâ†’reuse loop |
-| **v0.27.0** ğŸ‘ï¸ | **Ambient Intelligence** (AI-OS Phase 6) | ORIZONT 33 (Nerva Program G) â€” monitor framework + the ignore/remember/monitor/act-silently/ask/interrupt ladder |
-| **1.0.0** | ğŸ¯ **The governed Personal AI OS â€” owned & proven** | **proof track done** (H23 spine + â­B0 + 72h soak + 1â€“3 partners â‰¥2 weeks) **+ six pillars at their v1 bar** ([NERVA_VISION.md](NERVA_VISION.md) Â§10) **+** owner legal/brand; manual-test/audit pass â†’ tag |
-
-> **The active execution ORDER for what remains is ORIZONT 25 â€” M1â†’1.0** (2026-07-02, section below):
-> milestone tables + a model-agnostic execution protocol + the companion-quality charter, backed by the
-> [execution blueprint](docs/superpowers/specs/2026-07-02-orizont25-execution-blueprint.md). It sequences
-> the remaining slices of the versions above (0.12â€“0.20) â€” it does not renumber them. The capability
-> minors **v0.21+** may interleave with the proof-track tail â€” order can adapt, **gates cannot be
-> skipped** (MOONSHOT Â§4).
->
-> **The program that organizes 0.11â†’1.0 is ORIZONT 24 â€” "AI-OS"** (decided 2026-06-23, section below): an
-> **Action Kernel** (every agent action mediated, budgeted, revocable) + a **Verification Fabric** (each
-> capability proven against reality before it may claim "done") + the four live capability packs, all on the
-> H23 spine. Phase A of it = the AUD-\* hardening cluster.
-
----
-
-## ğŸ§­ Competitive-Gap Roadmap (product depth) â€” folded in from the uploaded plan
-
-> The owner's 2026-06-21 **Competitive Gap Plan** (themes `0.19`â€“`0.63` + gates, derived from 24 OSS
-> "Jarvis"/agent repos) is captured here so this file stays the **single source of truth**. These ~48
-> themes are **product-depth slices, NOT a release sequence** â€” the version line above (the H23 spine)
-> is the real path to 1.0; the numbers below are **theme-IDs**, and many are already DONE, so they
-> can't be a monotonic version order. Each theme maps onto an existing version/H-item. Status is grounded
-> in the code audit, re-verified against HEAD on 2026-06-25:
-> [`docs/research/2026-06-25-roadmap-vs-codebase-reaudit.md`](docs/research/2026-06-25-roadmap-vs-codebase-reaudit.md)
-> (supersedes the [2026-06-21 baseline](docs/research/2026-06-21-roadmap-vs-codebase-audit.md)).
-> **Headline: ~85% already seeded; only 6 are truly greenfield.** Status keys: âœ… done Â· ğŸŸ¢ in open PR Â·
-> ğŸŸ¡ partial Â· ğŸŒ± seed (module exists, feature mostly unbuilt) Â· â¬œ missing.
-> **Citation convention (2026-07-11):** these are **theme-IDs, not versions** â€” in new text cite
-> them as `T-0.21`, `T-0.46` etc.; release versions in the roadmap table above are always three-part.
-
-| Theme | Status | What exists / the bounded gap | Maps to |
-|-------|--------|-------------------------------|---------|
-| 0.19 First-Run Command Center | âœ… done (#634, 2026-07-07) | `GET /api/onboarding/command-center` + HUD `CommandCenterPanel` (Start cluster): install health (`/readyz` snapshot + version) + model truth + wizard state + honest first actions in one read; "say hello" drives a real `/chat` turn and records the funnel step | H23.20 |
-| 0.20 Jarvis Vault | ğŸŸ¡ partial â†’ **encrypted vault core âœ… (store + quotas + retention + forget hooks)** | **NEW `agents/core/vault.py`** â€” the missing data-mgmt flagship: a local **encrypted-at-rest blob vault** on the AUD-1 `SecretStore` cipher (Fernet-or-fallback, same `JARVIS_SECRET_KEY`/keyfile 0600 discipline). **Always ciphertext on disk** (no plaintext mode to misconfigure); index carries metadata only; reads are **integrity-verified** (tampered blob raises, never returns garbage); **quotas refuse, never evict** (a vault is not a cache â€” 1 TB ceiling, per-item 1 GB, 10k items, all injectable); **retention** via per-item `expires_at` + deterministic `sweep(now)` that reports exactly what it removed (H23.10 discipline); **forget-me hooks** `clear_memory()` (live, pre-backup) + `purge()` (at-rest) mirroring the canvas/purge pattern. `tests/test_vault.py` (+7: roundtrip/no-plaintext-on-disk, tamperâ†’raise, quota-refusal, sweep, cross-instance + wrong-key, forget hooks, honest missing). **Persistence boundary hardened âœ… (#660, 2026-07-12)** â€” the plaintext, unauthenticated catalog is replaced by a root-bound **authenticated encrypted `index.enc`** (public `SecretStore.encrypt_bytes`/`decrypt_bytes`); full catalog-schema validation (safe generated IDs, hashes, byte counts, finite timestamps); all catalog/quota mutations serialized via an in-process lock **plus portable OS file locking** (fcntl/msvcrt) with authoritative-catalog reload before mutation (no live-instance lost updates â€” proven by a real two-process max-items race test, exactly one writer wins); blob/catalog writes atomic + restrictive-permission + **symlink-safe** (lock/index/blob/temp paths rejected if symlinked) with crash-residue reconciliation; corrupt/swapped/injected/missing-blob/tampered catalogs **fail closed** (no silent empty-catalog fallback); `clear_memory()â†’purge()`/`put()` safe in-instance; purge enumerates every contained blob independently of the in-memory/index catalog. `tests/test_vault_hardening.py` (+~23) + `test_vault.py` adjusted. *(Remaining 0.20: router/HUD surface + wiring into export #303 and the forget flow â€” same governed pattern as canvas.)* | H23.10 |
-| 0.21 Offline Knowledge Packs | ğŸŸ¡ partial â†’ **pack manifest Â· verify Â· governed installer âœ…** | **NEW `agents/core/knowledge_packs.py`** over the H12.2 drop-folder indexer: a pack = folder + `pack.json` manifest with per-file SHA-256 (`build_manifest`/`write_manifest`/`load_manifest`, posix-relative, bounded, deterministic); `verify_pack` names EVERY discrepancy (`missing`/`modified`/`unexpected` â€” never a silent pass); `install_pack` verifies FIRST and **refuses tampered or manifest-less packs** (nothing partial enters memory), then indexes through the injected `LocalDocsIndexer`. No downloads â€” fetching a pack stays owner-gated; this manages packs already on disk. `tests/test_knowledge_packs.py` (+6). *(Remaining 0.21: curated pack catalog + owner-gated fetcher.)* | 0.21 |
-| 0.22 Appliance Install/Update | ğŸŸ¡ partial | `install.sh`,`start.sh`,`docker-compose.yml`, **release bundles + SBOM + checksums + optional sign** âœ… (H23.13) / uninstall, no-telemetry proof | H23.13/15 |
-| 0.23 Hardware Benchmark & Profiles | ğŸŸ¡ partial | `bench.py`,`llm/model_manager.py` (VRAM) / RTX scoring + mode profiles (GPU-gated) | 0.18 |
-| 0.24 Voice Hotkey & Dictation | ğŸŸ¡ partial â†’ **dictation cleanup core âœ…** | `voice/{wake_word,stt,pipeline}.py` transcribe raw text; nothing cleaned it. **NEW `agents/core/voice/dictation.py`** â€” a pure, offline, **bilingual RO/EN** post-processor: strips whole-token fillers (`um`/`uh`/`ÄƒÄƒ`/`deci`â€¦) + phrase hedges (`you know`/`i mean`), collapses stutter repetitions, applies the spoken-punctuation convention (`period`â†’`.`, `new line`â†’break, `virgulÄƒ`â†’`,`), and capitalizes sentences. **Conservative** (matches only whole tokens â€” drops `um`, keeps `umbrella`; punctuation commands opt-in) + **honest** (returns `removed` counts so the edit is inspectable) + bounded. `tests/test_dictation.py` (+11). **Wired into the live STT path âœ… (2026-07-18):** `voice.dictation_cleanup` (default-off) applies `clean_dictation` inside `POST /api/voice/stt` with inspectable removed-counts in the response; sentinel transcripts (`[silence]`â€¦) pass through untouched. / remaining (owner/host-gated): the hold-to-talk **hotkey** (OS-level, like 0.64) | â€” |
-| 0.25 Desktop Control Pack | ğŸŸ¡ partial â†’ **app-launch + OS-action allowlist core âœ…** | `GovernedDesktop` (H15.3) already gates *how* a step runs (read-only inline / mutating approval-held / injection abort) but not *what* may be launched or controlled. **NEW `agents/core/desktop_control.py`** is that front door: a strict, pure **allowlist** turning a high-level request into a governed desktop step, refusing anything off-list with a reason. **Not passthrough** â€” apps are named by a **canonical key** (`browser`/`terminal`/`editor`â€¦), never a binary path or shell string, so the pack can't be an arbitrary-exec vector (a path/`rm -rf`/`$(â€¦)`/`C:\â€¦` isn't a key â†’ refused; keys are also regex-guarded against separators/metachars). **Validated OS actions** (`volume_set`/`brightness_set` clamp 0â€“100, `volume_mute` wants a bool, `media_*`/`lock_screen`/`sleep_display`, `screenshot` read-only) â€” unknown action or out-of-range value refused, never coerced. **Recording consent-flagged** (always mutating + approval + explicit privacy note, never auto-started). **Plans, never actions** â€” `DesktopControl.run` forwards admitted plans to `GovernedDesktop` (approval + injection guard) and reports the allowlist-refused ones (never silently dropped). `tests/test_desktop_control.py` (+14). / remaining (owner/host-gated): the real injectable VM/desktop driver + the host keyâ†’launcher map, **Action-Kernel recheck + audit-log entry at execution time**, **model ToolRPC registration** (so an agent can call it), a user-facing control surface + HUD parity tracking, and `browser_agent.py` recording wiring | â€” |
-| 0.26 Capture Inbox | ğŸŸ¡ partial â†’ **inbox view âœ… Â· export âœ…** | `passive_capture.py`+`routers/capture.py` + **HUD `CapturePanel`** (HUD-v3: the captured stream, each item's redacted preview shown + individually deletable + clear-all â€” the privacy promise made visible) + **`PassiveCapture.export()`/`write_export()`** (the data half of "phone export"): a portable, JSON-safe snapshot `{version, exported_at, surface, count, surfaces, records}` of the capture inbox, optionally filtered by surface. Records carry **only already-redacted previews + metadata** (secrets are scrubbed at `ingest` and raw content is never stored) so the export can't leak a secret â€” it's the same data the inbox exposes via `list`, packaged for off-device transfer; `write_export(dest)` dumps it to a file. `tests/test_h12_7_capture.py` (+4: packages redacted records, surface filter, empty, write-to-file + secret-never-present). / remaining: the host-side phone transfer + transcript sync | â€” |
-| 0.27 Local VLM Eyes | âœ… done | `llm/vlm.py` + `/api/vlm/describe` | â€” |
-| 0.28 Voice Persona Studio | ğŸŸ¡ partial | `cognition/persona.py`,`voice/tts.py`,`ttsStream.ts` / consent, barge-inâ†’HUD (BUG-2b.3) | TASK-4 |
-| 0.29 Native Launcher | ğŸŸ¡ partial | `desktop/src-tauri/tauri.conf.json` (Tauri shell) / PWA, signed installers | 0.15 |
-| 0.30 Context Compression | âœ… done | `context_compressor.py` wired in `routers/tools.py` | â€” |
-| 0.31 Code Intelligence MCP | ğŸŸ¢ **done (indexing backend)** | new `agents/core/codeintel/` â€” a pure, offline **AST symbol index** over the project's own Python source: `build_index(root)` walks `*.py` (skipping vendored/cache dirs) and extracts module functions / classes / methods with kind + relative path + line + **first docstring line** (structure, **not file contents**); a syntax-error file is recorded under `errors`, never fatal. `search_symbols(index, q, kind=, limit=)` does a transparent substring match ranked exact-name-first. Lazily-built **cached** project index (772 files / 7.8k symbols / 0 errors on HEAD). Served at `GET /api/codeintel/{stats,search}` (user) + `POST /api/codeintel/reindex` (admin). **Now also an MCP route tool** (the "Code Intelligence **MCP**" part): `codeintel_search` joins the read-only `ROUTE_TOOL_ALLOWLIST` (guard pinned to `route_auth.json` by the 0.36 gate), so an agent can call `route_codeintel_search` to locate code â€” under the existing default-off `JARVIS_MCP_ROUTE_TOOLS` kill-switch. A module-level `routers/codeintel.search_payload` is shared by the HTTP route + the tool (plain signature â†’ reflectable in-process dispatch). `tests/test_codeintel.py` (+6) + `tests/test_codeintel_mcp_tool.py` (+2). | â€” |
-| 0.32 Mission Workspaces | âœ… done | `autonomy/missions.py` + `routers/missions.py` (#301) | â€” |
-| 0.33 Subagent Gateway | âœ… done | `subagents.py` + `a2a.py` + `autonomy_coordinator.py` | â€” |
-| 0.34 Workflow Runtime Upgrade | ğŸŸ¡ partial â†’ **run-persistence + pruning done** | `workflows/engine.py` (timeouts, bounded concurrency, recursion cap) + **NEW `workflows/run_store.py`**: an **opt-in, default-off** persistent store for workflow **run history** (it lived only in an in-memory `deque`, lost on restart). `WorkflowRunStore` is a **bounded** (`max_keep`, oldest pruned) atomically-written JSON array; the engine **seeds** its ring from it on init and **records** each run â€” but only when a store is attached (`JARVIS_WORKFLOW_PERSIST=1`, else `None` â†’ behavior byte-identical). Corrupt/missing files degrade to empty, never crash. `tests/test_workflow_run_store.py` (+11). **Durable pending-run queue + retry âœ…** â€” NEW `workflows/pending_queue.py`: `WorkflowPendingQueue` is the other direction (enqueue runs that survive a restart), a bounded, atomically-written JSON queue mirroring `run_store`'s safety. A failed run **retries with exponential backoff** (`next_at` pushed out, capped) until its `max_attempts` cap, then parks as `dead` (never silently dropped); `due(now)`/`complete`/`fail`/`list`/`stats`. The engine gains an **opt-in** `drain_pending(queue, resolve, now=)` that claims due items â†’ runs â†’ completes or retries (a crashing run or unknown pipeline is retried/dead, not lost); `resolve(pipeline_id)â†’Pipeline|None` keeps the engine decoupled from the registry. **Default path byte-identical** â€” nothing enqueues or drains unless a caller wires it; binding the drain into the autonomy-coordinator tick is **now done âœ…** â€” `AutonomyCoordinator._drain_workflow_pending()` runs once per tick, **opt-in** behind `JARVIS_WORKFLOW_PERSIST` (unset â†’ the tick is byte-identical, no queue even constructed), resolving pipeline ids through the live `workflow_registry.get` and draining due items via `WorkflowEngine.drain_pending` (a drain hiccup is swallowed so it can't break the tick; the queue is cached across ticks). `tests/test_autonomy_coordinator_pending_drain.py` (+4: noop-when-unset, drains+caches-when-set, noop-when-engine-absent, hiccup-swallowed; the run/retry/dead mechanics stay covered by the pending-queue tests). `tests/test_workflow_pending_queue.py` (+12: persistence, due-by-next_at, retryâ†’dead at cap, capped backoff, terminal-first pruning, corrupt-safe, drain complete/retry/dead/crash/unknown-pipeline).* | 0.17 |
-| 0.35 Prompt Registry | âœ… done | `soul_versioning.py` (commit/diff/rollback + A/B) | â€” |
-| 0.36 Agent-Native Action Manifest | âœ… **done** | `mcp/route_tools.py` + web wiring works, **now unseamed**: each allow-list spec (read `RouteToolSpec` + mutating `MutatingRouteSpec`) declares its `guard`, and a new parity gate `tests/test_route_tools_auth_parity.py` pins those declarations to `tests/_snapshots/route_auth.json` (the SEC-2 source of truth) â€” CI now fails if the manifest drifts from a route's real guard, exposes a non-existent path, surfaces an **admin** route as an agent **read** tool, or lists an **open** (unauthenticated) **write** tool. `route_auth.json` is the single source of truth the agent manifest is checked against (+3 tests). | 0.12 (#279) |
-| 0.37 Memory Ingestion Lab | ğŸŸ¡ partial â†’ **provenance ledger âœ… Â· wired into the pipeline âœ… Â· surfaced end-to-end âœ…** | `ingestion/pipeline.py` (7-phase) + `data_spaces.py` + **NEW `ingestion/provenance.py`**: an **opt-in, default-off** auditable provenance ledger for ingested memory. Today a `NormalizedMessage` carries only `source` + free-form `metadata` â€” no structured record of *where a memory came from and how it was produced*. `ProvenanceLedger` (a bounded, atomically-written, corrupt/missing-file-safe JSON array mirroring the 0.34 stores) records one entry per ingested artifact â€” `{id, run_id, source, origin, phase, content_hash, produced_at, parent_id, meta}` â€” where `content_hash` is a SHA-256 fingerprint giving **tamper-evidence** (`verify(id, content)` â†’ False if a persisted memory was altered) + dedup *without storing the content*, and `parent_id` links a derived artifact to its source so a chain (embedding â† message â† file) is walkable via `lineage(id)` (cycle-guarded). Plus `by_run`/`by_source`/`stats`. **Default ingestion path byte-identical** â€” nothing writes provenance unless a caller wires a ledger; attaching it across the 7 phases is the next wave. `tests/test_ingestion_provenance.py` (+12: fingerprint stability/str-bytes-equivalence, record shape + required fields, by_run/by_source, lineage chain/unknown-id/cycle-safe, verify tamper-detection, cross-instance persistence, corrupt-file-safe, oldest-first pruning, stats). **Now wired into `IngestionPipeline`**: `IngestionPipeline(ledger=â€¦, clock=â€¦)` stamps a per-run `run_id` (surfaced in the summary) and records one provenance entry per parsed message after each parse phase (source/origin=conversation/content-hash/senderÂ·is-me); **opt-in + best-effort** â€” a no-op with no ledger and a ledger hiccup never breaks ingestion (the per-message granularity is bounded by the ledger's oldest-first pruning). `tests/test_ingestion_pipeline_provenance.py` (+4: per-message records carry right source/origin/hash, no-ledger no-op, message-source-overrides-batch, ledger-hiccup-never-breaks). **Surfaced end-to-end âœ…** â€” `provenance.default_ledger_if_enabled()` (opt-in via **`JARVIS_PROVENANCE`**, default-off â†’ ingestion byte-identical, no conversation ids at rest) wired into `IngestionWatcher` so each watcher-triggered run records provenance when enabled; **`GET /api/ingestion/provenance`** (admin-guarded â€” a forensic/lineage view of personal-memory ingestion; `run`/`source` filters; `enabled:false` when off); and a HUD **`ProvenancePanel`** (Memory cluster) rendering recent records + by-source stats with the honest "empty until JARVIS_PROVENANCE is on" banner. Ledger gained `recent(limit)` (newest-first). 3 route snapshots reseeded (auth=admin); `tests/test_ingestion_provenance.py` (+2: `recent`, opt-in helper) + `frontend/src/test/provenance-panel.test.tsx` (+2). *(Remaining 0.37: ontology + cross-agent sharing; provenance for the derived knowledge/embedding phases.)* | â€” |
-| 0.38 Today In Jarvis | âœ… done | `memory/timeline.py` `build_unified_digest` fuses *did* (autonomy done-tasks) + *learned* (memory facts) â†’ `GET /api/dashboard/today` (#371) + cockpit *Today* HUD panel (#372); proof-gap metrics (proposal-funnel #369 Â· night-shift #370) surfaced on the north-star meter (#373) | â€” |
-| 0.39 Market Intel Pack | ğŸŸ¡ partial â†’ **offline alert engine âœ… Â· persistent watchlist âœ… Â· HUD panel âœ…** | `plugins/{balance,analytics,signal_layer}.py` + `market/analyze.py` â€” the **alerts + disclaimers** engine shipped with P3 (Track P): `POST /api/market/watchlist` evaluates band rules against *provided* quotes â†’ breach alerts each carrying a mandatory not-advice disclaimer, and `POST /api/market/brief` is the offline daily brief (alerts + portfolio snapshot + honest headline); acting on a signal is kernel-gated IRREVERSIBLE_OR_MONEY â†’ QUEUE. **Persistent watchlist âœ…** â€” **NEW `market/watchlist_store.py`**: `WatchlistStore`, a bounded, atomically-written, corrupt-safe JSON store of curated `{symbol, low, high, note}` watches (one entry per symbol, upsert, symbol upper-cased; rejects an inverted `low>high` band). The watchlist was stateless (resent each request); now the owner curates it once. **NEW `routers/market_watchlist.py`** (kept separate from `market.py`): `GET /api/market/watchlist/saved` (+ stats), `POST` (add/upsert), `DELETE â€¦/{symbol}` (user-guarded). `tests/test_watchlist_store.py` (+9); 3 route snapshots reseeded (auth=user). **HUD `WatchlistPanel` âœ…** (2026-07-02) â€” Console panel (Interop cluster) reading/writing the saved watchlist: band stats row, per-symbol remove, an add form (symbol/low/high/note); carries the new per-panel LIVE chip (TASK-2 tail). `frontend/src/test/watchlist-panel.test.tsx` (+4). *(Remaining: live quotes feed + the `balance` plugin against a real broker/bank are owner-gated wiring; per-domain signal routing.)* | â€” |
-| 0.40 OSINT Investigator Pack | ğŸŸ¡ partial â†’ **offline investigation planner âœ…** | Builds on `osint/correlate.py`. **NEW `agents/core/osint/investigate.py`** â€” `build_investigation(evidence)` turns the correlated drawer into a prioritized **investigation plan**: leads (by confidence/corroboration) + `suggest_pivots` (deterministic next-lookup suggestions per indicator kind â€” emailâ†’domain/username, domainâ†’ip/url, ipâ†’domain/asn, â€¦; deduped+bounded) + honest caveats. **Never enriches** (`live_lookups_performed: False` â€” pivots are suggestions for an owner-gated tool), and **taint stays visible** (untrusted-source leads/pivots flagged â†’ write-back approval-gated). Pure/deterministic/offline. `tests/test_osint_investigate.py` (+5). *(Remaining 0.40: owner-gated live enrichment plugins.)* | â€” |
-| 0.41 World Signal Packs | ğŸŸ¡ partial â†’ **per-domain signal routing âœ…** | `plugins/signal_layer.py` fetches the briefs; **NEW `agents/core/signal_routing.py`** is the pure routing layer on top: `classify_signal` (inspectable keyword rules per domain â€” conflict/cyber/economy/aerospace/maritime/energy/health; matched terms reported), `route_signals` (per-domain + per-agent slices via `AGENT_INTERESTS` â€” argus=all, friday=brief context, stark=economy+cyber, gecko=economy+energy, ultron=cyber; **unclassifiable signals surfaced in `unrouted`, never guessed**), `build_domain_brief` (severity-ranked, bounded, honest empty/unknown-domain states). Pure/deterministic/offline â€” routes only provided signals, no fetching. `tests/test_signal_routing.py` (+6). *(Remaining 0.41: wiring a live sidecar feed through the router into the per-agent digests.)* | â€” |
-| 0.42 Security Skills Pack | ğŸŸ¢ **done** | new `agents/core/security_skills/` (separate from the `security/` infra) â€” a pure, offline, read-only knowledge pack over **public** taxonomies: MITRE **ATT&CK** (all 14 enterprise tactics + a curated, clearly-subset set of representative techniques with real IDs), MITRE **D3FEND** (defensive tactics + an ATT&CKâ†’countermeasure mapping), and **NIST CSF 2.0** (the 6 functions). Pure functions: `tactics()`/`techniques(tactic)`/`technique(tid)` (enriched with D3FEND + CSF), `map_behavior(text)` (an **honest keyword heuristic** that returns candidates *with the matched evidence* â€” never a black-box attribution), `frameworks()`, and `build_playbook(ids)` (per-technique countermeasures + CSF coverage, reporting **gaps + unknown ids honestly**, `generated:false`). Every payload carries `curated:true` + `DISCLAIMER` + authoritative `SOURCES`; nothing is fabricated and it never acts. Served read-only at `/api/security-skills/{frameworks,tactics,techniques,technique/{tid},map,playbook}` (user-guarded, Trust surface). `tests/test_security_skills_pack.py` (+8); route/openapi/hud-v2 parity reseeded (+6 routes). | â€” |
-| 0.43 Learning Coach Pack | ğŸŸ¢ **done** | new `agents/core/coach/` (the existing `learning/scheduler.py` is agent-promotion scheduling, not tutoring â€” so this is separate) â€” a pure, offline, **stateless** study-coach pack: **SM-2 spaced repetition** (`review(card, quality)` â†’ next interval/ease/due-day, ease floored at 1.3, lapse resets reps, input never mutated), a **review-session builder** (`build_session` â†’ due cards + capped new cards, with honest deferred-counts so a backlog is visible), and a **curriculum planner** (`plan_curriculum` â†’ deterministic prerequisite topological order, **reporting cycles + unknown prereqs honestly** rather than dropping topics, split into sessions). Schedules/plans only â€” never generates lesson content, never persists. Served at `POST /api/coach/{review,session,curriculum}` (user-guarded, Knowledge surface). `tests/test_coach_pack.py` (+8); parity reseeded (+3 routes). | â€” |
-| 0.44 Safe Comms Pack | ğŸŸ¡ partial â†’ **per-channel rate limits Â· status Â· draft UI Â· channel inbox transport v0 âœ…** | `channels/{telegram,email}.py`,`whatsapp_bridge.py`,`action_approvals.py` + **NEW `channels/send_rate_limit.py`**: an **opt-in, default-off** per-channel OUTBOUND sliding-window limiter wired at `WebhookChannel.send()` (the external broadcast channels â€” WhatsApp/Signal/Matrix/Teams/Google Chat). Bounds *how much* a channel can broadcast (complement of CDX-11 "*who*" + the H23.16 egress monitor "*observe*"). Config `JARVIS_CHANNEL_SEND_RATE` (global/min) + `JARVIS_CHANNEL_SEND_RATES="whatsapp:10,teams:30"` (per-channel); 0/unset = unlimited â†’ **zero behavior change by default**, allocation-free on the default path. **Deliberately scoped off the interactive reply path** (telegram/web/voice via `ChannelManager.send`) so a user reply is never dropped. `tests/test_channel_send_rate_limit.py` (+10); existing webhook tests green. **Status surfaced âœ…** â€” the limiter gained a read-only `snapshot()` (live in-window count per channel, pure view) + module `status_snapshot()` (configured caps + usage, `enabled:false` when no cap set â†’ byte-identical default); **`GET /api/channels/send-rate-limit`** (admin-guarded, sibling of the egress monitor) reads it; and a HUD **`CommsRatePanel`** (Trust cluster) renders per-channel `used/cap` with the honest "unlimited until JARVIS_CHANNEL_SEND_RATE(S) is set" banner. 3 route snapshots reseeded (auth=admin); `tests/test_channel_send_rate_limit.py` (+4: snapshot pure-view + ageing, status disabled-default, caps+usage, unlimited-channel null-remaining) + `frontend/src/test/comms-rate-panel.test.tsx` (+2). **Draft-before-send UI âœ… (#527)** â€” `SafeCommsDraftPanel` loads the governed social action catalog from `GET /api/integrations/social`, composes X post/reply/DM drafts, and POSTs to `/api/integrations/social` with `source:"hud.safe_comms_draft"` so the existing ask-tier approval queue/preview path holds the write; it never posts directly. **Channel inbox transport v0 âœ… (#551)** â€” `ChannelInboxStore` persists bounded telegram/web inbound threads after sender-pairing allows them; `ChannelReplyBroker` gates replies through `CHANNEL_REPLY_CONTRACT`, queues `channel.reply` tasks into the existing approval funnel, and approved tasks send through `ChannelManager.send` while recording the outbound message back into the same thread. Read surface: `GET /api/channels/inbox/status`, `GET /api/channels/inbox`, `GET /api/channels/inbox/{thread_id}`; write surface: `POST /api/channels/inbox/{thread_id}/reply`. HUD Comms now renders inbox threads as live and keeps seeded preview rows disabled. **Mobile catch-up âœ… (H18.12)** â€” the native Comms tab lists those threads, reads messages, and queues governed replies with `source:"mobile"`; `mobile/PARITY.md` is now green for this surface. *(Remaining TASK-2/O26 tail: owner plugin/live-data setup; email/WhatsApp inbox transport remain deferred until their live send seams are proven.)* | â€” |
-| 0.45 High-Risk Automation Contracts | ğŸŸ¡ partial â†’ **template abstraction Â· payment + signal + plugin live gates âœ…** | `plugin_gate.py`,`signal_governance.py`,`routers/payments.py` + **NEW `automation_contracts.py`**: a **pure, fail-closed, opt-in** decision layer that generalizes the mandateâ†’gate pattern hand-rolled in `payments.py` (per-payment cap, payee allowlist, currency, expiry, cumulative cap) so a *new* high-risk automation declares its policy as a **`ContractTemplate`** of composable `Constraint`s instead of re-implementing a bespoke gate. Reusable factories â€” `field_present`/`positive`/`at_most`/`at_least`/`one_of`/`equals`/`not_expired`/`cumulative_at_most`/`predicate` â€” where a limit/allowlist may be a template-time **constant** *or* a `callable(view)` runtime value (read from an injected `context` mandate). `evaluate(payload, context=, now=)` runs constraints in declared order, **short-circuits on the first violation** with a stable `reason` code (never raises, never executes), and returns a `ContractDecision` that always carries `requires_approval` (defaults **True** â€” high-risk, routes to the existing approval queue). `ContractRegistry` keys templates by action `kind`; an unknown kind **fails closed** (deny + requires-approval). `tests/test_automation_contracts.py` (+30: every factory incl. fail-closed-on-crash, template order/short-circuit/audit-hook/now-injection/payload-wins-over-context, registry duplicate-guard + unknown-kind fail-closed, and a **payment template that reproduces every `payments.py` denial code end-to-end**). **Payment-gate live adoption âœ…** â€” `payments.py` now exposes `PAYMENT_CONTRACT`, and `PaymentBroker._deny_reason()` delegates to that contract while preserving the existing denial codes/order (`unknown_mandate`/`mandate_expired`/`invalid_amount`/`currency_mismatch`/`payee_not_allowed`/`over_per_payment_cap`/`over_total_cap` + admissible). `request_payment()` and `approve()` therefore re-check via the reusable contract before any pending/approved state transition; the kernel mediation layer still runs only after mandate-contract admissibility. `tests/test_payments_contract_live_gate.py` (+2) pins that the live request + approval paths obey a patched contract decision, and `tests/test_payments_contracts_parity.py` now guards the live contract source instead of a duplicate future template. **Signal governance live adoption âœ…** â€” `signal_governance.py` now exposes `SIGNAL_RECOMMENDATION_CONTRACT`; actionable Signal Layer recommendations are evaluated through the contract before they can enter the preview-only approval queue, and a denied contract decision increments the skipped count + emits a denial audit event instead of queueing a task. Default behavior stays the same for ordinary recommendations (`requiresApproval:true` queues as BLOCKED, advisory items skip). `tests/test_signal_governance.py` (+1) pins that a patched live contract can deny one actionable recommendation while the admitted one still queues for human approval. **Plugin permission live adoption âœ…** â€” `plugin_gate.py` now exposes `PLUGIN_CALL_CONTRACT`; `PermissionGate.check_call()` delegates plugin-known/enabled/agent/network admissibility to the contract while preserving the existing boolean results and warning reasons for unknown, disabled, non-served, and domain-blocked calls. `tests/test_plugin_contract_live_gate.py` (+1) pins that a patched live contract can deny an otherwise allowed plugin call; the focused plugin/startup/integration sweep stays green. *(Remaining 0.45: apply contract templates to richer draft-before-send contracts beyond payments, signal recommendations, and plugin calls.)* | H23.1 |
-> 2026-07-05 0.45 update: #535 (`codex-o45-social-draft-contract`) continues the contract-adoption tail by adding `SOCIAL_DRAFT_CONTRACT` to `agents/core/social.py`. `SocialBroker.request()` now evaluates the contract after existing catalog/field validation but before preview/enqueue, so valid X post/reply/DM drafts still enter the ask-tier approval queue while a denied contract decision cannot enqueue. Red/green proof: `tests/test_social_h12_21.py::test_request_obeys_live_social_draft_contract` first failed because patched contracts were ignored, then the full social suite passed (16 passed); full GitHub Actions passed before merge. This does **not** add channel inbox transport or owner plugin setup.
-
-> 2026-07-05 0.45 update: #537 (`codex-o45-writeback-contract-gate`) continues the same tail by adding `WRITEBACK_DRAFT_CONTRACT` to `agents/core/writeback.py`. `WriteBackBroker.request()` now evaluates the contract after existing target/action/field validation but before preview/enqueue, so valid Notion/GitHub/Google Calendar drafts still enter the ask-tier approval queue while a denied contract decision cannot enqueue. Red/green proof: `tests/test_writeback_h10_30.py::test_request_obeys_live_writeback_draft_contract` first failed because patched contracts were ignored, then the full write-back suite passed (19 passed); adjacent writeback/social/contracts/action-auth/funnel sweep, ruff, py_compile, and status sync are green; full GitHub Actions passed before merge. This does **not** add live host writes, new integration transports, or owner plugin setup.
-
-> 2026-07-05 0.45 update: #539 (`codex-o45-call-contract-gate`) continues the same tail by adding `CALL_REQUEST_CONTRACT` to `agents/core/autonomy/call_broker.py`. `CallBroker.request()` now evaluates the contract after existing provider/field/interrupt-budget validation but before preview/enqueue, so valid Twilio/Telnyx outbound-call requests still enter the ask-tier approval queue while a denied contract decision cannot enqueue. Red/green proof: `tests/test_call_broker_h12_22.py::test_request_obeys_live_call_request_contract` first failed because patched contracts were ignored, then the full call broker suite passed (16 passed); adjacent call/writeback/social/contracts/action-auth/budget/loop-breaker sweep, ruff, py_compile, and status sync are green; full GitHub Actions passed before merge. This does **not** add live telephony, new channel transport, or owner plugin setup.
-
-> 2026-07-05 R3-B3 merged update #584 (`codex-r3-b3-a2a-escalation-contracts`): inbound A2A tasks now declare `A2A_INBOUND_CONTRACT` and evaluate it after enable/allowlist/HMAC/JSON validation but before appending to the pending inbox; escalation fan-out now declares `ESCALATION_CONTRACT` and evaluates it after target resolution but before any adapter `send`. Contract payloads are sanitized (peer id, task shape/key names/body length; channel ids/count and message length only). Red/green proof: `tests/test_r3_b3_a2a_escalation_contracts.py` first failed because patched contracts were ignored, then the focused + adjacent A2A/escalation/contract sweep passed (55 passed); ruff and py_compile were clean; full PR CI went green before merge.
-
-| 0.46 Media Library | ğŸŸ¡ partial â†’ **catalog + searchable timeline âœ… Â· wired into `media_gen` âœ… Â· export bundles âœ…** | `media_gen.py`,`media_skill.py` + **NEW `media_catalog.py`**: an **opt-in, default-off** searchable catalog of generated media. `media_gen` *generates* image/thumbnail/video but kept no record, so there was no way to browse/search/build a timeline. `MediaCatalog` (a bounded, atomically-written, corrupt/missing-file-safe JSON array mirroring the 0.34/0.37 stores) records one item per generation â€” `{id, kind, prompt, path, backend, cloud, created_at, tags, meta}` â€” with `add`/`get`/`remove`, `all` (newest-first gallery), **`timeline`** (oldest-first, time-bounded), **`search`** (case-insensitive prompt substring Â· kind Â· tag Â· `since`/`until`, all AND-ed, newest-first), and `stats` (per-kind + cloud count). `kind` is validated against `media_gen.KINDS` so the catalog can't drift from what the generator produces. **Default generation path byte-identical** â€” nothing records unless a caller wires a catalog. `tests/test_media_catalog.py` (+12: add shape + kind validation, get/remove, all-newest-first vs timeline-oldest-first + bounds, search filters AND-ed + time-bounds, cross-instance persistence, corrupt-file-safe, oldest-first pruning, stats). **Now wired into the live generator**: `MediaGenManager(catalog=â€¦, clock=â€¦)` records each *successful local* generation (kind/prompt/path-from-result/backend/tags) and returns a `catalog_id`; **best-effort + opt-in** â€” a catalog hiccup is swallowed (generation still succeeds) and an unattached manager is byte-identical (cloud-approval + failed generations are *not* cataloged). Circular-import-safe (a local `Protocol`, since `media_catalog` imports `KINDS`). `tests/test_media_gen_h12_24.py` (+4: cataloged-when-attached, no-catalog-unchanged-output, cloud/failed-not-cataloged, catalog-failure-never-breaks-generation). **Export bundles âœ…** â€” **NEW `media_export.py`**: `build_manifest(items, now=)` describes a selection (per-item on-disk existence + size, `present`/`total_bytes`, and a `missing` list â€” a vanished source file is reported, never silently dropped) and `write_bundle(items, dest, now=)` writes a portable `.zip` (each existing file under `media/<id>__<name>`, namespaced by id so same-basename items can't collide, + an embedded `manifest.json`). **Decoupled from `MediaCatalog`** (takes a list of item dicts from `search`/`all` â†’ no import, no cycle). `tests/test_media_export.py` (+6: manifest counts/sizes, missing-reported, empty-selection, bundle-contains-files+manifest, bundle-skips-but-records-missing, same-basename-namespaced-by-id). **Surfaced end-to-end âœ…** â€” `media_catalog.default_catalog_if_enabled()` (opt-in via **`JARVIS_MEDIA_CATALOG`**, default-off â†’ generation byte-identical, no prompt history) wired into `routers/multimodal.py` so `media_generate` records when enabled; **`GET /api/media/catalog`** (user-guarded, `q`/`kind` filters, `enabled:false` when off); and a HUD **`MediaGalleryPanel`** (Build cluster) rendering items + per-kind stats with the honest "empty until JARVIS_MEDIA_CATALOG is on" banner. 3 route snapshots reseeded; `tests/test_media_catalog.py` (+1 helper) + `frontend/src/test/media-gallery-panel.test.tsx` (+2). *(0.46 complete.)* | â€” |
-| 0.47 Creative Asset Pipeline | ğŸŸ¡ partial â†’ **coordinated pipeline âœ… Â· content-addressed provenance chain âœ…** | `creative/pipeline.py:plan_pipeline` already emits the coordinated stage plan. **NEW `agents/core/creative/provenance.py`** gives it a tamper-evident lineage **chain** (mirrors the ingestion `ProvenanceLedger` 0.37): one record per stage, parent-linked (script â† image_prompts â† render â† assemble â† export), each `content_hash`=SHA-256 over the stage's inputs+generator â†’ **tamper-evidence + dedup without storing content**; `verify(record, stage)` detects tampering, `lineage(id)` walks childâ†’root (cycle-guarded). Pure/deterministic (same plan â†’ same hashes), `generated: False` throughout. `tests/test_creative_provenance.py` (+4). *(Remaining 0.47: the owner-gated render/image-gen wiring.)* | â€” |
-| 0.48 Video Production Pipelines | ğŸŸ¡ partial â†’ **offline planner âœ… (assembly Â· effects Â· localization)** | `video_prompt.py` was a single-prompt helper only. **NEW `agents/core/creative/video_pipeline.py`** â€” a pure, deterministic, offline production *planner* (mirrors the P4 creative-pack discipline): `plan_assembly` orders scenes into a timeline with a validated transition allowlist (unknown â†’ `cut`, surfaced in `unknown_transitions`, never invented) + overlap-aware total runtime; `plan_effects` keeps only allowlisted effects/params (`unknown_effects` surfaced); `plan_localization` builds one subtitle track per language and **never machine-translates behind your back** (non-base tracks flagged `needs_translation`); `build_video_plan` composes them. **Honest by construction** â€” `generated: False` on every clip/effect/track (it plans a cut, never renders one); real encode/render + the terminal publish stay owner-gated and the publish is held by the Action Kernel (`creative/pipeline.py:release_action_payload`). `tests/test_video_pipeline.py` (+10). *(Remaining 0.48: the owner-gated render/encode wiring â€” a real NLE/ffmpeg/cloud video model.)* | â€” |
-| 0.49 Timeline Adapter | ğŸŸ¡ partial | `canvas.py` + worldview `timelineMarkers.ts` / interactive approval-gated timeline | â€” |
-| 0.50 Publishing Studio | ğŸŸ¡ partial â†’ **validated finished-asset package + kernel approval gate âœ…** | **`agents/core/creative/publishing.py`** packages an already-produced artifact for YouTube/Instagram/README without uploading it. `validate_asset` requires an opaque artifact id, basename-only target extension, allowed MIME type, positive byte size, and finite/bounded video duration; `validate_metadata` enforces typed required fields, platform limits, and typed hashtag lists without trimming violations into a pass. The checklist separates automatic validation from literal owner confirmations for disclosure/consent, rights, and final preview. A deterministic `package_id` is emitted, but `release_payload` stays `None` until every gate passes; even then it is `publish_state:kernel-held` at `IRREVERSIBLE_OR_MONEY`. There is deliberately no upload/publish API. `tests/test_publishing_studio.py` (+19; Linux+Windows full CI green in #657). *(Remaining 0.50: a visual studio surface and governed platform-executor integration; publication must remain kernel-held.)* | â€” |
-| 0.51 Reference-Driven Creation | ğŸŸ¡ partial â†’ **grounding-enforcement layer âœ…** | `plugins/websearch.py` (SSRF-safe fetch) + **NEW `grounded_plan.py`**: the **honest-grounding** core of the referenceâ†’plan choreography. The model drafts steps that cite fetched sources; `ground_plan(goal, references, steps)` is a **pure validator** that makes the grounding auditable â€” a step is *grounded* only if it cites a **known** reference id; a step citing an **unknown** id has it surfaced in `unknown_cites` (never silently dropped); an uncited / only-phantom-cited step is flagged in `ungrounded_steps`. Reports per-step `grounded`/`cited_titles` + plan-level `coverage`, `unused_references`, `unknown_citations`, and `fully_grounded` (true only when every step is grounded **and** no phantom citation exists). Mirrors the "nothing is fabricated" invariant â€” it never *generates*, just refuses to let an unsupported step pass as grounded. `tests/test_grounded_plan.py` (+8: fully-grounded, ungrounded-flagged, unknown-surfaced-not-dropped, only-phantomâ†’ungrounded, coverage+unused+dedup, empty-plan vacuously-clean, no-references no-crash, reference-without-id raises). *(Remaining 0.51: the model-side draft generation + fetch choreography that feeds this â€” host/LLM seam.)* | â€” |
-| 0.52 Product Demo Factory | ğŸŒ± seed | `docs/marketing/TEASER_PACK.md` storyboard + shot-list complete / HUD-footage capture + assembly tooling | H23.22 |
-| 0.53 Design System Manifest | ğŸŸ¡ partial â†’ **inspectable token/component manifest âœ… + drift guard** | **NEW `agents/core/design_manifest.py`**: extracts the design system from the REAL `frontend/src/styles.css` â€” `extract_tokens` (base custom properties + every `data-look/accent/...` variant override block), `extract_components` (deduped class inventory), `build_manifest` (counts + honest `{error}` on a missing stylesheet â€” never an empty manifest that looks parsed). `tests/test_design_manifest.py` (+4) **pins the load-bearing tokens (`--accent`, `--font-ui`, â€¦), the amber/graphite variants, and >100 component classes against the live stylesheet â€” design drift now breaks a test** instead of silently un-syncing tools. *(Remaining 0.53: expose the manifest via a route/HUD panel + Figma token sync.)* | â€” |
-| 0.54 Skill Operating System | âœ… done | `skills/{loader,importer}.py`,`skill_drift.py`, SKILL.md manifests | â€” |
-| 0.55 Design Partner Kit | ğŸŸ¢ **mostly done** | **feedback/NPS widget** âœ… (H23.21) + **issue bundle** âœ… NEW: `agents/core/support_bundle.py` assembles a single **non-sensitive** diagnostic snapshot (version + hardened/profile posture + capability-readiness roll-ups + per-plugin egress tallies + recent audit **event counts** & chain-integrity + route count) a design partner can attach to a support request â€” triage without a screen-share or risky data dump. **Safety is allow-list, not redaction** (only the specific aggregates are ever included â€” never config/secrets/tokens/PII/message content/audit previews), and each section degrades to `{"error":"unavailable"}` rather than crashing or leaking a traceback. `GET /api/support/bundle` (admin). `tests/test_support_bundle.py` (+6, incl. a no-sensitive-keys assertion). *(Remaining 0.55: SLA definition â€” a doc/owner artifact.)* | H23.21 |
-| 0.56 Trust Center | âœ… done (#300) | `security/audit.py`,`routers/security.py` (kill_switch, audit_verify), `LOCAL_ONLY_AGENTS` + HUD panel âœ… (#300) / cloud-hop log, consent still open | H23.3/5/16 |
-| 0.57 Release Packaging | âœ… done | `release.yml` builds bundles + SBOM/NOTICE + checksums + optional GPG sign (H23.13), compat matrix (H23.14) | H23.13/14 |
-| 0.58 Pack Manager | ğŸŸ¡ partial â†’ **uninstall done Â· version-history ledger âœ… Â· wired into the marketplace âœ… Â· package rollback âœ…** | `skills/marketplace.py` (registry, now **records to the ledger**: `SkillMarketplace(history=â€¦, clock=â€¦)` logs a `publish`/`install`/`uninstall` event on each op â€” opt-in/best-effort, default `None` â†’ byte-identical; the install path now also reads the registry `version`, and uninstall captures it before a purge. A ledger hiccup never breaks the op. `tests/test_marketplace_history.py` +4: publish+install recorded, **upgrade chain â†’ rollback target**, uninstall audited, no-ledger-unchanged). **Activated in the app + read surface âœ…** â€” the orchestrator now attaches a `SkillHistory` to its `SkillMarketplace` behind **`JARVIS_SKILL_HISTORY`** (default-off â†’ `history=None` â†’ marketplace byte-identical), and `SkillMarketplace.history_view(name=)` + **`GET /api/skills/marketplace/history`** (admin-guarded) expose the events/stats (and a skill's current/rollback-target) â€” degrading to `enabled:False` when the flag is unset. Route parity + auth-matrix snapshots reseeded. `tests/test_marketplace_history.py` (+3: view-disabled, view-events+target, view-without-name). **HUD `SkillHistoryPanel` âœ…** â€” a read-only Console panel (Interop cluster) over `GET /api/skills/marketplace/history` showing publish/install/uninstall events + per-action stats; honesty contract â€” when `JARVIS_SKILL_HISTORY` is off it says "empty until â€¦" rather than implying history is kept. `frontend/src/test/skill-history-panel.test.tsx` (+2) + **NEW `skills/skill_history.py`** â€” the **version-history schema** rollback needs (the registry keeps one row per name via `INSERT OR REPLACE`, so the prior version is lost on upgrade). `SkillHistory` is a bounded, atomically-written, corrupt-safe JSON ledger of `publish`/`install`/`uninstall` events `{id, name, version, action, at, meta}` from which it derives **`current_version(name)`** and the **`rollback_target(name)`** (the distinct version present immediately before the current one â€” what a downgrade would restore; `None` if there's no prior). `uninstall` is recorded for the audit trail but doesn't establish a present version; a re-install of an older version correctly moves `current`. **Opt-in / default-off** â€” nothing records unless a caller wires it; binding it into the install flow is the next wave. `tests/test_skill_history.py` (+10: record/required-fields, history order+filter, current+rollback over an upgrade chain, single-versionâ†’no-target, unknownâ†’None, uninstall-ignored-for-version, reinstall-older-moves-current, **equal-timestamp ties resolve by record order**, persistence+corrupt-safe+stats, oldest-first pruning). *(History ordering is robust to equal `time.time()` values â€” stable ascending sort then reverse â€” so rapid publishâ†’install can't invert the rollback target.)* + **NEW `uninstall_skill(name, purge=)` / `remove_from_registry(name)`**: safely remove an installed skill from disk â€” the target must resolve **strictly inside `skills_dir`** (a name with a separator / `..` / NUL is refused, mirroring the install-time zip-slip guard), with an optional `purge` to also drop the marketplace registry row. The published package is **retained by default** so `install_skill` restores it (the recovery path, since the registry keeps one version per name). `POST /api/skills/marketplace/uninstall` (admin) removes the dir + forgets it in the live loader (matched by on-disk path). `tests/test_marketplace_uninstall.py` (+12). **Package rollback âœ…** â€” the registry kept one row per name (`INSERT OR REPLACE`), so the prior version's bytes were lost on upgrade and a rollback had nothing to restore. **NEW additive migration** `_v2_version_archive` creates `marketplace_skill_versions` (a snapshot table; `marketplace_skills` untouched). `publish_skill` now **archives the row it's about to replace** (`_archive_current`, bounded to the last `_VERSION_KEEP=20` per skill, oldest pruned); **`restore_prior_package(name)`** rolls back to the most recent archived snapshot â€” and is **reversible** (it archives the current package first, so calling again rolls forward) â€” returning `{ok, restored_version, previous_version}` (`ok:False` when the skill isn't registered or has no archived prior). The restored package replaces the registry row but is **not** installed, so `install_skill` re-deploys it **through the moderation/signature gate** on the way back. **`POST /api/skills/marketplace/{name}/rollback`** (admin; 422 when there's nothing to restore). `tests/test_marketplace_rollback.py` (+6: archive-on-publish then restore brings back the **real package bytes**, reversible toggle, no-prior/unknown-skill/blank-name guards, bounded archive) + `tests/test_db_migrations.py` (updated: v2 table + `user_version==2`); 3 route snapshots reseeded (auth=admin). *(Remaining 0.58: model/domain/content pack types are separate.)* | â€” |
-| 0.59 Proof Assets | ğŸŸ¡ partial â†’ **competitor-comparison + SEO landing drafted âœ…** | landing page âœ… (`marketing/landing/index.html`) + competitive brief âœ…. **NEW `marketing/proof/`**: `competitor-comparison.md` (buyer-facing, incl. a head-to-head vs the namesake **getjarvis.eu** that previously lived only in research â€” grounded in `docs/research/2026-06-25-getjarvis-competitive-gap.md` + the brief, honesty-discipline enforced: owner/host-gated capabilities marked as "core built, host wiring pending", no stat outside `BACKLOG.md`) + `seo-landing.md` (intent-ranked keywords, page metadata, section outline, schema-ready FAQ, honesty guardrails). Both reflect the just-shipped offline cores (0.64 `quickbar.py` / 0.65 `screen_reflex.py` / 0.25 `desktop_control.py` / 0.66 `writeback_connectors.py`) honestly. / remaining (owner-gated): the **demo video** (real HUD footage / badged demo mode, M4) + README hero image | H23.22 |
-| 0.60 Local Analytics | âœ… done (#300) | `analytics_store.py`,`observability/north_star.py`,`/api/metrics/north-star` + HUD meter âœ… (#300) / activation funnel still open | H23.20 |
-| 0.61 Database Future Check | âœ… **evaluated â€” stay on SQLite/WAL, re-check on triggers** | `settings_db.py` (WAL) + `persistence/migrations.py` (H23.7 âœ…). The written Turso/libSQL eval: [`docs/decisions/2026-07-11-db-future-check.md`](docs/decisions/2026-07-11-db-future-check.md) â€” every libSQL advantage (replication/multi-writer/edge) belongs to the post-1.0 multi-user future H23.23 deferred; migrating now would re-plumb backup/export/purge for zero user gain and strain local-first trust. **Named re-eval triggers:** per-user isolation scoped Â· live second-device sync Â· verified write-contention in the 72h soak Â· Pi-5 shared reads. Path if fired: libSQL **embedded replicas** (file-compatible), never the hosted tier. | H23.7 |
-| 0.62 System Profiles | ğŸŸ¢ **done** | new `agents/core/system_profiles.py` â€” usage-mode **posture presets** (Gaming / AI / Multimedia / Admin + **balanced** default), selected via `JARVIS_SYSTEM_PROFILE` (same env-driven-posture pattern as `JARVIS_HARDENED`/`JARVIS_PLUGIN_LEAST_PRIVILEGE`). Each profile declares posture knobs (`background_autonomy`, `heavy_features`, `max_parallel_agents`, `model_tier`) read via `active_posture()`. **First live consumer wired:** `Orchestrator.run_heartbeat` is paused under a `background_autonomy:False` profile (gaming/multimedia) to free local resources â€” and `balanced` (the default) keeps it on, so **behavior is unchanged unless the owner opts into a quieter mode**. Read-only `GET /api/system/profiles` (active + all profiles). `tests/test_system_profiles.py` (+9, incl. the heartbeat-pause consumer); parity reseeded (+1 route). **Concurrency consumer wired âœ…** â€” `AutonomyCoordinator._subagent_concurrency()` caps the `autonomy.max_subagents` setting by the active profile's `max_parallel_agents` hint (`min(setting, hint)` when the profile sets one), so a constrained profile (e.g. *gaming* â†’ 1) actually throttles background-agent throughput; the **balanced** default leaves it `None` â†’ the cap is the setting **unchanged** (byte-identical), and a bad/odd hint (bool/0/neg/float/str) or a profile-read error falls back to the setting. `tests/test_coordinator_profile_concurrency.py` (+10). **All knobs now bite + HUD âœ…** â€” the two previously-declared-but-dead knobs are wired: **`heavy_features`** (`heavy_features_enabled()`) gates the heavy media-generation entry point so *gaming* (`heavy_features:False`) pauses GPU-hungry generation with an honest `{ok:False, paused, profile}` reply; **`model_tier`** (`preferred_model_tier()`) is consumed in `load_runtime_settings` â€” a constrained tier (*gaming* `local-light` / *multimedia* `local`) forces cloud escalation **off** (`set_cloud_fallback_mode("never")`) so inference stays local, while `auto` (balanced/ai/admin) honors the `llm.cloud_fallback` setting. Both **default-safe** â€” `balanced` leaves `heavy_features:True` + `model_tier:auto` â†’ byte-identical. New HUD **`SystemProfilePanel`** (Admin cluster) over `GET /api/system/profiles` shows the active profile (marked) + each profile's knobs. `tests/test_system_profiles.py` (+4: heavy_features/model_tier helpers, media-gen paused under gaming, constrained-tier forces local-only) + `frontend/src/test/system-profile-panel.test.tsx` (+1). *(0.62 complete â€” all four posture knobs now steer real behavior.)* | 0.17 |
-| 0.63 Restore & Soak | ğŸŸ¡ partial â†’ **sandbox output cap now bounds peak host memory** | backup/restore+drill âœ… (#302) + `resilience.py`. **Sandbox hardening follow-up to #631** (found by an independent adversarial verification of the merged safety batch): the output cap was applied *after* `proc.communicate()` drained the child to EOF into host memory, so a runaway/hostile sandboxed child (agent-generated code) could balloon host RSS for the whole timeout window â€” `max_output_bytes` bounded only what was returned. `environments/output_limits.py` gains `read_capped_stream()` (streams head+tail within budget, discarding the middle so peak retained memory is ~budget regardless of stream size) + `render_capped()` (honest omission notice using the *true* total); `sandbox.py._read_output_capped()` replaces every `communicate()` read site (docker/subprocess/shell/wasm) with a mock-safe fallback. `tests/test_environment_output_limits.py` (+5) + `tests/test_sandbox_output_cap.py` (+2: a real 500 KB child bounded to <2 KB carrying the true-total notice). / remaining: 72h soak, failure injection | H23.8/12 |
-| 0.64 Floating Bar + Global Hotkey | ğŸŸ¡ partial â†’ **offline command-service core âœ…** | The bar is two parts: a tiny OS-level host overlay (Tauri `GlobalShortcutManager` + always-on-top window â€” **owner-gated**, `desktop/src-tauri`) and the **command service** that decides what a typed line means. The service now exists: **NEW `agents/core/quickbar.py`** â€” a pure, synchronous, offline command parser that resolves a bar line into a *plan* (`navigate` / `summon` / `query` / `help` / `unresolved`) and **never performs the action** (agent requests still route through the orchestrator + Action Kernel). Grounded by construction: navigation targets come from the frontend's own grammar (`app.tsx` number-key **modes** + center **tabs**), agent summon (`@friday â€¦` / `friday: â€¦`) is validated against the router's roster (`IntentRouter.ROUTING_TABLE`), and the natural-query `route_hint` reuses the shared `INTENT_RULES` (single source of truth â€” no duplicated keyword table; hint is a preview, authoritative routing stays in the orchestrator). Honest (unknown view/agent/trigger â†’ `unresolved` or hint-less `query`, never guessed) + bounded (input length-capped, `CommandBar` recall history capped & deduped). `tests/test_quickbar.py` (+15). / remaining (owner-gated): the Tauri host overlay + global shortcut registration, and wiring the plan kinds into the live HUD | 0.15 / 0.29 |
-| 0.65 One-Hotkey Screen-Capture Reflex | ğŸŸ¡ partial â†’ **captureâ†’VLMâ†’answer core wired âœ…** | The reflex (**one keypress â†’ screenshot â†’ local VLM â†’ answer, no copy-paste**) had the pieces but nothing between them. **NEW `agents/core/screen_reflex.py`** is that middle: takes captured screenshot **bytes** and drives the reflex to an answer, purely + offline-testably via an injected VLM callable. **Reuses, never reinvents** â€” builds the request with `vlm.build_vision_messages` (H13.1) and parses UI elements with `screen_grounding.parse_grounding`/`fuse_with_a11y` (H15.2). Two modes: `answer` (free-form Q&A, defaults a concise prompt when none typed) and `ground` (UI-element listing â†’ located elements, optionally fused with an a11y tree). **Non-persistent by itself** (writes no image to disk, makes no network call of its own) and **bytes-only** (a path can't become a host-file read, mirroring `encode_image_block`), **size-capped** (8 MB), and **honest** (no VLM / refused image / `[VLM error]` sentinel â†’ `{ok:False, generated:False}`; `generated:True` only when the model actually produced text â€” never a fabricated description). **âš  "strict-local" is a caller contract, not module-enforced:** the module hands the screen bytes to whatever async callable is injected, so keeping capture local is the host's responsibility â€” the injected backend MUST be the localhost VLM, never an arbitrary/cloud endpoint. `ScreenReflex.from_backend` adapts the real `VLMBackend`. `tests/test_screen_reflex.py` (+12). / remaining (owner/host-gated): the OS screen-grab + the 0.64 global hotkey that fires it, a 24 GB-GPU local VLM server, and the result-overlay wiring | 0.16 |
-| 0.66 SaaS Connector Breadth | ğŸŸ¡ partial â†’ **white-collar connector builders âœ…** | ~20 integrations skewed messaging/IoT; the white-collar suite was missing. **NEW `agents/core/writeback_connectors.py`** adds pure, offline request builders for **Linear Â· Asana Â· Trello Â· Todoist Â· ClickUp Â· Google Sheets Â· Microsoft 365 (Outlook draft)**, same discipline as H10.30 write-back: validated `CATALOG` (unknown action/missing field â†’ refused with reason), **host allowlist** (`CONNECTOR_HOSTS`, SSRF guard), **secrets only at execute-time** (drafts carry a `{{secret:<target>_token}}` handle, never a raw token â€” SecretBroker resolves behind approval), `build_connector_request` â†’ one concrete HTTP request each, `draft_task_payload` â†’ ask-tier approval-queue task, `catalog()` inspectable surface. `tests/test_writeback_connectors.py` (+15). *(Remaining 0.66: wire builders into the executor behind the approval queue + owner OAuth setup per provider.)* | â€” |
-| 0.67 Emotion Voice (Fish Audio) | âœ… done (2026-07-18, guide-gap wave) | `voice/tts.py` gains a **Fish Audio** backend in the chain (XTTSâ†’ElevenLabsâ†’**Fish**â†’edgeâ†’Kokoro; `FISH_AUDIO_API_KEY`/`VOICE_ID`/`MODEL`, `voice="fish[:ref]"`, persona-consent-gated like the other clones) + **inline `[emotion]` tags** (`[calm]`/`[amused]`â€¦ pass through to Fish S-series, `strip_emotion_tags()` for every other backend so tags are never read aloud) + the HUD **ğŸ”Š SPEAK morning brief** button (Autonomy panel â†’ `POST /tts`, local `speechSynthesis` fallback; `mobile/PARITY.md` row added, mobile â¬œ). `tests/test_tts_fish_emotion.py` (+12), `frontend/src/test/brief-speak.test.tsx` (+2). *(Remaining, owner-gated: browser wake-word â€” needs a licensed JS lib (Porcupine) or cloud hop, per `docs/VOICE.md` Â§6.)* | â€” |
-| 0.68 Revenue & Ads Connectors | âœ… done (2026-07-18, guide-gap wave) | **NEW `plugins/revenuecat.py`** (read-only RevenueCat API v2 overview â€” active subs/MRR/revenue; `REVENUECAT_API_KEY`+`PROJECT_ID`) + **NEW `plugins/meta_ads.py`** (read-only Meta Marketing API insights/campaigns; `META_ADS_ACCESS_TOKEN`+`ACCOUNT_ID`, act_ normalization; **no budget mutators by design** â€” a future write goes through an ask-tier contract). Manifested (SEC-5 domains `api.revenuecat.com`/`graph.facebook.com`), gathered on revenue/ads keywords, settings toggles, injectable clients. `tests/test_guide_gap_plugins.py`. *(Remaining: owner keys.)* | â€” |
-| 0.69 Social Scheduler (Postiz) | âœ… done (2026-07-18, guide-gap wave) | **NEW `plugins/postiz.py`** â€” self-hosted Postiz public API: queue/integration reads + **draft-first** `schedule_post` (`type="draft"` unless an explicitly governed caller passes `kind="schedule"`; Safe Comms posture). Config-driven host via `register_dynamic_domain` (SEC-5b, like n8n); manifest `data_scope=TRANSMITTED`; gathered on social-queue keywords. **Governed live scheduling âœ… (2026-07-18):** `social.postiz.schedule` joins the Safe Comms catalog â€” requests queue ask-tier approval via the same `/api/integrations/social` funnel, and only an APPROVED task executes through `PostizPlugin.schedule_post(kind="schedule")` (the plugin default stays draft-first; unconfigured fails honestly). *(Remaining: owner self-host.)* | â€” |
-| 0.90â€“1.0 gates (Freeze Â· RC Â· Partner Â· Burn-In Â· Owned) | â¬œ pending | `AUDIT.md`,`MANUAL_TESTING.md`,parity/auth gates, north-star eval / promote evalâ†’required gate; design partners; landing+demo | 1.0.0 row + H23.21/22 |
-
-> **T-0.25 supersession (H28.4, 2026-07-14):** H28 now supplies the real Windows driver seam,
-> ToolRPC/Action-Kernel execution path, governed browser driver, and the user-facing Console â†’
-> Build â†’ Operator surface. The stale T-0.25 implementation tail is closed; its only remaining
-> boundary is owner-host validation with real Windows UIA and installed Playwright Chromium.
-
-> **Remaining greenfield (â¬œ) among 0.19â€“0.63:** 0.20 Vault Â· 0.48 Video Production. *(0.55 Design Partner Kit â†’ ğŸŸ¢ mostly done â€” feedback widget + issue bundle; only the SLA doc remains.)*
-> *(0.42 Security Skills + 0.62 System Profiles â†’ ğŸŸ¢ **done**; 0.57 Release Packaging â†’ âœ… done; 0.52 Demo
-> Factory â†’ ğŸŒ± seed and 0.61 DB Future Check â†’ ğŸŸ¡ partial on the 2026-06-25 re-audit.)*
-> Everything else is âœ…/ğŸŸ¢/ğŸŸ¡/ğŸŒ± â€” **finish-the-PARTIALs beats start-greenfield** (audit guidance).
-> Top remaining finish-firsts: **0.36 Action-Manifest unify**, **H23.10 retention defaults**,
-> **export HTTP surface** (`/api/admin/export`, sibling of backup/forget). *(Done: H23.7 DB migrations #305,
-> H23.8 backup #302, H23.9 export #303 + delete/forget #306, 0.56 Trust Center + 0.60 Analytics #300.)*
->
-> **Full per-theme execution specs** for every deferred theme above now live in **Phase E** of the
-> [remaining-backlog blueprint](docs/superpowers/specs/2026-06-23-orizont24-remaining-backlog-blueprint.md)
-> â€” each with grounded `file:line` seams, build steps, acceptance criteria, a test path, and its K/V
-> dependency. Load-bearing seams were re-verified against the codebase on 2026-06-23.
->
-> **Addendum 2026-06-25 â€” getjarvis.eu gap delta:** A fresh competitive-gap pass against the shipped
-> consumer product **getjarvis.eu** (screen-aware floating-bar desktop AI, 30+ OAuth SaaS connectors,
-> freemium) is captured in [`docs/research/2026-06-25-getjarvis-competitive-gap.md`](docs/research/2026-06-25-getjarvis-competitive-gap.md).
-> Net-new buildable items folded in above as **0.64â€“0.66**. **Explicit non-goals** (conflict with the
-> local-first / single-user north star): managed-cloud freemium + billing, multi-tenant team features,
-> and uploading screenshots to a cloud VLM â€” we win these on privacy by *not* doing them.
-
----
-
-## ğŸ†• H23 â€” Productionization & 1.0 Readiness (the un-ticketed layer)
-
-> Surfaced 2026-06-21 by cross-referencing the codebase against an external 1.0 checklist
-> (Immich "stable" criteria, OpenSSF baseline, OWASP Agentic/LLM Top-10). These are the things a
-> credible 1.0 needs that the feature backlog never captured. Status tags: **EXISTS** (code there,
-> expose/gate only) Â· **PARTIAL** Â· **MISSING**. Each item is its own future PR; mapped to a version above.
-
-| ID | Item | Status | â†’ Version |
-|----|------|--------|-----------|
-| H23.1 | Per-task step/recursion + token/time **budgets + loop detection** (OWASP unbounded-consumption) | âœ… **done (folded into K3, 2026-07-03)** â€” `BudgetLedger` covers token/wall-time/recursion plus named dimensions for interrupt, mission, and payment caps; `TaskExecutor` accrues handler-reported `tokens_used`; kernel/broker binding carries the shared ledger; loop breaker + operator reset remain wired. Defaults stay inert unless the existing flags/config enable enforcement. Evidence: `tests/test_kernel_budget*.py`, `tests/test_kernel_loop_breaker_wave.py`, `tests/test_executor_budget.py`, `tests/test_subagent_depth.py`, `tests/test_k3_budget_unification.py`. | 0.13 |
-| H23.2 | **Model-version pinning & reproducibility** â€” record id/quant per run; approved-model allowlist | ğŸŸ¢ **allowlist / pinning done Â· reproducibility rail done** â€” opt-in per-agent `approved_models` in `agents.yaml` (parsed in `config.AgentConfig`), enforced at the routing front door: `hybrid_router.select_backend` now wraps the core router and **blocks** an off-list model (`ModelNotApprovedError`), strict by default with a `JARVIS_STRICT_MODELS=0` warn-escape (mirrors `JARVIS_STRICT_EGRESS`); `approved_models()`/`is_model_approved()` queries. Empty list = unrestricted, so zero behavior change today. `tests/test_model_reproducibility.py` (+6). **Reproducibility half âœ…** â€” **NEW `observability/model_info.py`**: an **opt-in, default-off** (`JARVIS_MODEL_INFO`) `ModelInfoRegistry` (callable, bounded) + a pure parser (`fingerprint_from_entry`/`parse_quant`/`ingest_listing`) that normalizes an LM Studio/Ollama `/v1/models` listing into `{id, version, quant, sha256}` (quant derived from the GGUF id when the backend omits it). The `Tracer` gained an optional `model_info=` resolver: each trace is **stamped with the model fingerprint** (best-effort; a resolver hiccup never breaks tracing), flowing through the existing `/api/traces` summary; with the flag unset the resolver is `None` and `model_info` stays `{}` â†’ **byte-identical**. Wired in `orchestrator` (`self.model_info = default_registry_if_enabled()` â†’ `Tracer(model_info=â€¦)`); the existing `GET /api/models/local` opportunistically `ingest_listing`s the live catalog when enabled (no new fetch â€” reuses the host-seam call), and **`GET /api/models/info`** (admin) is the pure read surface (`enabled:false` when off). HUD **`ModelInfoPanel`** (Observe cluster) renders id Â· quant Â· sha with the honest "empty until JARVIS_MODEL_INFO is on" banner. **No change to the `generate()` contract** (enrichment lives at the tracer layer). `tests/test_model_info.py` (+13: quant parse, OpenAI/Ollama entry shapes, explicit-fields-win, garbage-tolerant, register/get/callable-resolver, ingest wrappers+skip-id-less, sorted+stats, bounded eviction, opt-in helper, tracer-stamps/empty-without-resolver/hiccup-safe) + `frontend/src/test/model-info-panel.test.tsx` (+2); 3 route snapshots reseeded (auth=admin). *(Remaining: the live `/v1/models` fetch is the host seam â€” owner enables a backend; the rail records whatever the listing reports.)* | 0.13 |
-| H23.3 | **Kill-switch in the HUD** (one-tap) + credential quarantine on halt | ğŸŸ¢ **HUD done** â€” one-tap `KillSwitchPanel` (HALT-ALL / disengage) already lives in the Console *Trust* section; credential-quarantine-on-halt is enforced by the K4 `inject_guarded` syscall. **This session added the rest of the safety surface:** `KernelMetricsPanel` (`GET /api/metrics/kernel` â€” grant/queue/deny tallies + recent denials with reasons) + `LoopBreakerPanel` (`GET /api/security/loop-breaker` + admin reset, shown only when tripped), `frontend/src/test/kernel-safety-panels.test.tsx` (+4, fetch-mocked; tsc + vitest green). âš ï¸ Only the live-pixel render is owner-runtime-gated (CDX-9), as for every HUD panel. | 0.13 |
-| H23.4 | Promote **eval/regression harness to a pre-release gate** | ğŸŸ¡ **partial (2026-07-04)** â€” companion `--ci-gate` deterministic drift/min-score lane and scheduled workflow exist; the eval store is now cache-backed in the nightly workflow (`actions/cache/restore` + `save`, explicit `JARVIS_EVAL_STORE` / `--store-root`), so baseline compare bites after the first successful scheduled/manual run for a dataset hash. Live-model eval still needs a persistent/live runner. Tracked as M2.4 / O26-P3.3. | 0.13 |
-| H23.5 | Audit-log **verify button** in HUD + secret redaction guarantee | âœ… **DONE** â€” UI (#300, Trust-mode live audit-verify badge); *caveats resolved (verified 2026-07-02):* **AUD-9** keyed HMAC shipped (`JARVIS_AUDIT_KEY`, per-row `hash_algo` migration, `security/audit.py`) and **AUD-12 F13** scanner `matched_text` is stored `[REDACTED:<pattern>]` (`audit.py:112`) | 0.13 |
-| H23.6 | TASK-3 indirect-injection / cross-channel **taint-tracking** | âœ… **done (2026-07-05, #590)** â€” channel-ingress tail merged; verified 2026-07-11 (R2 taint #580, R3-B2..B5 contracts #582â€“#588, TASK-3 channel-ingress #590 all merged to main). Prior status marker was stale.
-<br>Original evidence: â€” `security/taint.py` (`mark`/`mark_if_untrusted`/`is_tainted` + an untrusted-source classifier for web/OSINT/RSS/inbound/channel); `kernel.authorize` now **escalates a tainted action from GRANT â†’ QUEUE** (approval), so injected content can't auto-execute (verified against the real `AutonomyPolicy`). H17.1a hardens the channel backstop: public `handle_input`/`handle_input_stream` bind origin at the turn chokepoint, internal channels (`eval`/`workflow`/rooms/etc.) stay `generated`, upstream `inbound` cannot be downgraded, and plugin-egress actions use the current origin. #590 closes the previously deferred inbound-channel chokepoint without changing handler text semantics: `Gateway.route()` attaches private `_inbound_meta` for untrusted channels, `ChannelInboxStore` persists only `tainted`/`taint_source`/`injection_flags`, and `Orchestrator.channel_handler()` consumes private metadata before outbound sends. Evidence: `tests/test_task3_channel_ingress_taint.py` (+2) red/green, focused Safe Comms inbox sweep (10 passed), adjacent pairing/cross-channel/action-origin/R2 taint/quarantine sweep (49 passed), full PR CI green including Windows. | 0.12 |
-| H23.7 | **DB schema-migration framework** (`_schema_version` + forward-only on startup) | âœ… **DONE (#305)** â€” `agents/core/persistence/migrations.py` | 0.14 |
-| H23.8 | **Backup/restore** (one-command) + a tested **restore drill** | âœ… **DONE (#302)** â€” `agents/core/backup.py` + `/api/admin/backup` (consistent SQLite snapshots, restore-drill). *Residual (audit 2026-06-23):* archives were **unencrypted** â†’ **AUD-1 âœ… (#309)** (opt-in `.tar.gz.enc` + `settings.db` secret columns now encrypted at rest) | 0.14 |
-| H23.9 | **Data export + delete/forget** endpoints (finishes promised H8.2) | âœ… **done (#315)** â€” export `agents/core/data_export.py` + now `POST /api/admin/export` (admin-guarded, secrets-free); delete/forget `data_purge.py` + `POST /api/admin/forget` now also erases memory at rest (**AUD-2**, this PR); backup-first copy encrypted with a key (**AUD-1** #309). *Done #303/#306; export HTTP surface + forget-completeness this PR.* | 0.14 |
-| H23.10 | Data-**retention defaults** (conversations, audit log, memory) + rollback story | âœ… **done (#317)** â€” `retention` settings category (off by default; TTL `0` = keep forever) + `agents/core/retention.py` daily sweep (`scheduler_service.schedule_retention`, 03:30): prunes old conversation transcripts by mtime and old audit rows via a chain-preserving `AuditLogger.prune_before` re-anchor (`verify_chain` still passes). *Rollback = the pre-existing backups; memory-decay TTL stays with the decay system.* | 0.14 |
-| H23.11 | Health/readiness endpoint; signal handlers + graceful shutdown; **log rotation** | âœ… **done** â€” liveness `GET /healthz` (dependency-free) + readiness `GET /readyz` (**503** until orchestrator+agents loaded; LLM-down does *not* gate readiness) in `routers/ops.py`; `serve.py` now builds a `uvicorn.Server` from env (`JARVIS_HOST/PORT/LOG_LEVEL/SHUTDOWN_TIMEOUT`) with a **bounded `timeout_graceful_shutdown`** so `systemctl stop`/SIGTERM drains in-flight requests then runs the lifespan teardown instead of hanging; opt-in **rotating file log** in `core/log.py` (`RotatingFileHandler`, `system.log_to_file`/`log_max_mb`/`log_backups` + `$JARVIS_LOG_FILE` overrides; default off â†’ stderr only, supervisor rotates). **Review-hardened (adversarial pass):** the probes **bypass the per-IP rate limiter** (`_PROBE_PATHS` in `web.py`) so a non-localhost LB/Docker healthcheck can't be 429'd into evicting a healthy instance; `serve.assert_safe_bind()` **fails closed on a non-loopback bind** without a token or `JARVIS_ALLOW_INSECURE_BIND=1` (AUD-4 analog, since `JARVIS_HOST` is new); 503 readiness shares the full `no-store` policy; file-log PII/in-repo-path lifecycle documented (bounded by rotation, *not* the H23.10 sweep). `tests/test_h2311_operability.py` (+18). | 0.15 |
-| H23.12 | Graceful **local-LLM-down** handling everywhere (no hang/crash) | âœ… **done** â€” root cause was the local backends (`llm/base.py` LM Studio + Ollama) bypassing the `http_client.py` split-timeout pattern with a flat `timeout=300/120s` (covers *connect* â†’ a down/unreachable server could hang minutes) and returning the **raw exception** as the reply (`[LM Studio error: {e}]` â†’ leaked into the chat bubble + poisoned conversation memory). Now: **split timeout** `local_read_timeout()` (`connect=5s`, long read) â†’ down-detection ~5s, generation budget intact; `local_backend_degraded_reply()` returns a **clean, classified** message (unreachable vs error, raw detail logged not surfaced) across `generate()`+`generate_stream()` for both backends; `is_degraded_reply()` shared predicate keeps `warm_up`'s failure-detection working past the message change. `tests/test_llm_down_graceful.py` (+12: MockTransport down/timeout â†’ fast clean reply, no raise/leak; timeout-config; warm_up regression guard). | 0.15 |
-| H23.13 | **Release engineering** â€” artifacts (tar/zip), optional PyPI + Docker publish, signed releases | âœ… **done** â€” `release.yml` now goes tagâ†’**artifacts**â†’Release: `scripts/build_release.sh` produces reproducible `jarvis-<ver>.{tar.gz,zip}` source bundles (via `git archive`, so `.env`/`agents/data`/`memory_logs`/`.venv`/`node_modules` are excluded by construction), a CycloneDX `SBOM.json` + `NOTICE` (`scripts/gen_sbom.py`, dep-free), and `SHA256SUMS`; a **tagâ†”`agents.__version__` guard** fails the release on a forgotten bump; **GPG signing** is wired but owner-gated (skips cleanly without the `GPG_PRIVATE_KEY` secret); `workflow_dispatch` dry-run exercises the build path without cutting a tag. **PyPI = N/A by design** (the project runs from source, not pip-installed); **Docker publish** documented as owner opt-in (compose already builds locally). `docs/RELEASE.md` (cut + verify), `tests/test_release_build.py` (+2: end-to-end build/checksum/leak/SBOM + requirements parsing). | 0.15 |
-| H23.14 | **Semver compatibility contract** + supported-versions matrix + deprecation policy + platform matrix | âœ… **done** â€” `docs/COMPATIBILITY.md` (SemVer + pre-1.0 caveat, public-surface definition, supported-versions matrix, deprecation policy, platform matrix incl. the real **Python 3.12+** floor / Node 20+ / Docker-optional) + `SECURITY.md` rewritten from the GitHub placeholder into a real supported-versions + disclosure policy. **Gated:** `tests/test_compatibility.py` asserts the docs' supported-version lines track the single-sourced `agents.__version__` (so CDX-5 drift can't return) + valid SemVer + the documented Python floor. | 0.15 |
-| H23.15 | systemd/service templates (Linux/Windows) | âœ… **done** â€” `deploy/systemd/jarvis-hub.service` (hardened unit: `ProtectSystem=strict`/`NoNewPrivileges`/restricted address families; `KillSignal=SIGTERM` + `TimeoutStopSec` margin over `JARVIS_SHUTDOWN_TIMEOUT` â†’ the H23.11 bounded graceful drain) + `jarvis-hub.env` + README; `deploy/windows/install-service.ps1` (NSSM, Ctrl-C graceful stop) + README; `deploy/README.md` index wiring the `/healthz`Â·`/readyz` probes. Both consume the H23.11 env knobs; guarded by `tests/test_compatibility.py`. | 0.15 |
-| H23.16 | **Network monitor** HUD panel (prove LOCAL_ONLY agents make zero outbound calls) | âœ… **DONE (verified 2026-07-02** â€” data layer + API + HUD panel all in tree; only the live-pixel render stays owner-runtime-gated, CDX-9**)** â€” **data layer + API done**: thread-safe `observability/egress_monitor.py` (in-memory ring buffer + monotonic per-plugin counters) records *every* outbound attempt â€” allowed **and** blocked â€” at the `http_client.py` choke point (all 6 verbs via one `_guard`); `GET /api/admin/network/calls?plugin=&limit=` (admin-guarded) serves per-plugin tallies + recent events + `local_only_violations` (the proof: a NONE/LAN plugin with an allowed external call surfaces as a violation â†’ `clean=False`). `tests/test_network_monitor.py` (+9, MockTransport â€” no real socket). **HUD panel done:** `NetworkMonitorPanel` in the Console (`gap.tsx`, Trust section) reads the endpoint and renders the `clean` local-only proof + per-plugin allowed/blocked/external + any violation in red; `frontend/src/test/network-monitor.test.tsx` (+2, fetch-mocked) â€” passes `tsc --noEmit` + vitest. âš ï¸ Only the live-pixel render is owner-runtime-gated (CDX-9), as for every HUD panel. | 0.16 |
-| H23.17 | **Quality gates** â€” E2E (Playwright), load/soak, a11y (WCAG), i18n completeness, browser+mobile matrix | âœ… **done (2026-07-03)** â€” i18n completeness, sandbox isolation, p95 load, live Playwright canvas/cinema smoke, axe a11y, nightly soak/browser matrix, and the chat sendâ†’SSEâ†’stop + voice push-to-talk flow specs are all wired. M2.1 added the degraded-model chat/voice flow E2E; M2.2 added scheduled/manual browser matrix + soak knobs (`E2E_BROWSER_MATRIX`, `E2E_SOAK_ITERATIONS`). | 0.19 |
-| H23.18 | **User docs** â€” USER_GUIDE, FAQ, UPGRADE (per-version migration notes) | ğŸŸ¢ **done** â€” `docs/USER_GUIDE.md` (requirements â†’ install (Win one-click / any-OS) â†’ start â†’ the cabinet â†’ configure a model â†’ daily use (chat/voice/autonomy/plugins) â†’ admin panel â†’ data controls), `docs/FAQ.md` (data-leaves-machine, telemetry, GPU, models, OS, multi-user, stop-autonomy, channels, cost, update, backup/export/delete, WorldView/Signal), `docs/UPGRADE.md` (Win `UPDATE.bat` / manual `git pull`+reinstall+restart / release-bundle; **automatic forward-only migrations** H23.7; backup-first rollback; graceful restart H23.11; per-version notes â†’ COMPATIBILITY/SemVer). Linked from README; `tests/test_user_docs.py` (+4). | 0.19 |
-| H23.19 | **Trust/security docs** â€” THREAT_MODEL, SECURITY disclosure policy + advisories, NOTICE/SBOM, **telemetry opt-in disclosure**, privacy policy | ğŸŸ¢ **done** â€” `docs/THREAT_MODEL.md` (boundaries + assets + 11 threats each mapped to the *real* seam: egress gate/monitor, action kernel, K3 budgets/loop-breaker, encrypted secrets, HMAC audit, injection/Cypher/WKT guards, sandbox isolation, fail-closed bind, supply-chain) + continuous-verification matrices + honest residual risks; `docs/PRIVACY.md` (local-first, **no telemetry / no phone-home** disclosure, first-party-analytics clarification, opt-in egress data-flow table, user controls: export/forget/retention/kill-switch). SECURITY disclosure + NOTICE/SBOM already shipped (H23.14 / H23.13). Linked from README + SECURITY.md; `tests/test_trust_docs.py` (+3) guards existence/grounding/discoverability. | 0.19 |
-| H23.20 | **Onboarding wizard** + activation-funnel instrumentation + cold-start error guidance | ğŸŸ¢ **backend done** â€” `routers/onboarding.py`: `GET /api/onboarding/wizard` (ordered steps introâ†’modelâ†’test_chatâ†’autonomy, `complete` **derived from recorded funnel events** so onboarding resumes across reloads; `model_ready` + a friendly cold-start `hint` when no backend is reachable) + `POST /api/onboarding/funnel` (records first-party local `funnel.<step>.<event>` via `analytics_store`, bounded to known steps); both `user_guard`'d. `tests/test_onboarding_wizard.py` (+4); route parity/auth/openapi + HUD-v2 IA (cockpit home) snapshots reseeded. **HUD `OnboardingPanel` âœ…** â€” Console *Observe* panel renders the ordered steps with done/pending state + progress + the cold-start `hint`, and a per-step **done** button records the funnel event (`POST /api/onboarding/funnel`) so completion persists; `frontend/src/test/onboarding-panel.test.tsx` (+2, fetch-mocked; vitest + tsc green). **Pending:** only the live-pixel render (owner-runtime-gated, CDX-9). | 0.19 |
-| H23.21 | **Design-partner program** â€” recruit 1â€“3, in-app feedback/NPS, support SLA, collect north-star from real usage | ğŸŸ¢ **feedback loop + program doc done** â€” `feedback_store.py` (first-party local SQLite: nps/comment/bug, bounded) + `routers/feedback.py`: `POST /api/feedback` (user-guarded footer widget) + `GET /api/feedback/summary` (admin â€” **NPS** %promotersâˆ’%detractors + per-kind counts + recent); `docs/DESIGN_PARTNER_PROGRAM.md` (recruit 1â€“3, 48 h SLA, what-to-measure tied to north-star/guardrails, privacy). `tests/test_feedback_widget.py` (+4); snapshots reseeded (HUD home = observe). **HUD `FeedbackPanel` âœ…** â€” Console *Observe* panel renders the NPS summary (promoters/detractors + per-kind + recent) and carries the submit form (score + comment â†’ `POST /api/feedback`); `frontend/src/test/feedback-panel.test.tsx` (+2, fetch-mocked; vitest + tsc green). **Pending:** only the live-pixel render (owner-runtime-gated, CDX-9) + actually recruiting partners (owner). | 0.20 |
-| H23.22 | Landing page + demo recorded (owner-led; dev-supportable) | ğŸŸ¡ DEV HALF DONE (#512) â€” static offline landing page + demo shot-list support delivered; owner-recorded video remains M4 | 0.20 |
-| H23.23 | **Multi-user readiness call** â€” accept single-user for 1.0 & document it, OR scope per-user isolation (north-star is "per active user"). **ğŸŸ¢ decision recorded 2026-07-11 (awaiting owner ratification):** ship 1.0 **single-user per install** and document the boundary; per-user isolation is a post-1.0 horizon (each design partner runs their own isolated install, so the "per active user" north-star is measured across installs, not multi-tenant). Rationale + the post-1.0 trigger for option B: [`docs/decisions/2026-07-11-single-user-1.0.md`](docs/decisions/2026-07-11-single-user-1.0.md). Unblocks A2 (soak the single-user install). Owner ratifies (or picks B) in OWNER_TASKS. | DECISION | 0.20 |
-| H23.24 | **72h-soak evidence collector** â€” `scripts/soak_report.py`: samples `/healthz`+`/readyz`, north-star/kernel, privacy-reduced active queue depth+oldest age, SQLite/WAL sizes, target-server RSS (`--pid` required), audit-chain, capability/breaker failures and redacted error signatures; outage-tolerant JSONL + dated Markdown evidence, partial-window truth marker, torn-line recovery. HTTP(S)-only endpoint validation. `tests/test_soak_report.py` (+14). | âœ… done â€” offline/injectable; A2 remains an owner-run 72h gate | 0.20 |
-| H23.25 | **Release-gate command** â€” `scripts/release_gate.py`: explicit code-complete inventory + full suite or fast route/OpenAPI/auth/action-auth/readiness/lifespan guards + full generated-status check + doc links + versionâ†”tag + park guard; PASS/WARN/FAIL output separates code/machine/owner/market evidence and never auto-passes owner rows. `tests/test_release_gate.py` (+13). | âœ… done â€” owner/market rows intentionally remain live gates | 1.0.0 |
-| H23.26 | **Generated project status â†’ kill doc-counter drift** â€” `scripts/status_sync.py` now derives backend pytest + frontend Vitest + mobile Jest counts, route snapshot, active YAML agents, horizon roll-ups, last verified-main commit (including PR base from the Actions event) and open Lane-A gates into tracked `project-status.json`; marker-bounded snippets drive README badges/Run/Status, JARVIS Quick Stats, GO_LIVE header and STATUS counters; `--check` gates all artifacts and fails closed on collection errors or missing markers. Python-only CI may explicitly use `--reuse-js-counts` while the separate JS jobs execute the suites. `tests/test_status_sync.py` (+11 H23.26 cases; 18 total). | âœ… done â€” one machine-readable truth, satellites generated | 0.19 |
-| H23.27 | **Design-partner feedback export** â€” `scripts/export_partner_feedback.py`: explicit local JSON+Markdown packet with allowlisted install environment, onboarding completion, aggregate autonomy/failure/latency, NPS + intentionally written feedback and sanitized north-star. It never copies prompts/responses, task titles/payloads, credentials, host/user/path/session identifiers and never uploads; north-star fetch accepts HTTP(S) only. `tests/test_export_partner_feedback.py` (+8). | âœ… done â€” privacy-safe default, operator chooses whether to share files | 0.20 |
-| H23.28 | **Park-list CI guard, actually implemented** â€” `scripts/park_guard.py` + `.github/workflows/park-guard.yml`: PR diff gate with line-based `unpark:` declarations, narrow module unlocks, phase aliases (wave-1/O28, wave-2/O29, wave-3/O30+O33), owner-only training/rust, Windows-path parity and self-protected policy files; CI executes the last merged guard policy when available. `tests/test_park_guard.py` (+10). | âœ… done â€” phased freeze is now machine-enforced | 0.13-tail |
-
----
-
-## ğŸ§  ORIZONT 24 â€” AI-OS: Action Kernel Â· Verification Fabric Â· Live Packs (direction 2026-06-23)
-
-> **Decision (owner, 2026-06-23):** primary bet = **OS kernel + Verification Fabric**; first capability
-> packs = **all four** (Proactive autonomy Â· OSINT/WorldView Â· Market Intel+Finance Â· Creative/Publishing).
-> This is the **substrate program for Phase 2** ([MOONSHOT.md Â§4](MOONSHOT.md)) â€” the bridge from
-> *feature-complete* (v0.10) to a **provable** 1.0. *(ORIZONT 23 â‰¡ the **H23** productionization layer
-> above; this horizon sits on top of it and reuses its items.)*
->
-> **Thesis:** convert fleet throughput into a *trustworthy* operating system by (a) routing **every**
-> agent action through one kernel, and (b) making *"works end-to-end against reality"* a merge gate â€”
-> then deepen breadth (the 4 packs) in parallel on that substrate. This makes the moonshot's
-> "persistent, proactive, private **cortex**" operational.
->
-> **Not net-new scope â€” it threads existing seeds into one program.** Most parts already exist, scattered;
-> ORIZONT 24 *promotes and unifies* them. Map: **K3 âŠ‡ H23.1** Â· **K4 âŠ‡ H23.3** Â· **V4 âŠ‡ H23.4** Â· the kernel
-> unifies `plugin_gate` / `signal_governance` / capability-broker / per-family approval queues Â· the packs
-> deepen competitive-gap themes **0.32/0.38/0.45** (P1), **0.40/0.41** (P2), **0.39** (P3), **0.47/0.50** (P4).
-> **Phase A = the AUD-\* hardening cluster** (see *Hardening audit (2026-06-23)* below) â€” the foundation;
-> skipping it is the OpenClaw failure mode.
->
-> **ğŸ“‹ Cross-phase execution map:** [`docs/superpowers/specs/2026-06-23-orizont24-remaining-backlog-blueprint.md`](docs/superpowers/specs/2026-06-23-orizont24-remaining-backlog-blueprint.md)
-> â€” every remaining backlog item, **Phases Aâ€“E** (hardening Â· K/V substrate Â· the 4 packs Â· H23
-> productionization Â· all deferred competitive-gap themes), grounded with `file:line` seams to reuse,
-> approach, acceptance, and test paths. The context-cheap map sessions execute against instead of
-> re-reading the ~2M-token repo; each item ships as its own PR.
->
-> **2026-07-11 note:** Phase D below ("3â€“5 design partners = the 1.0 gate") is now the **proof
-> half** of the *expanded* 1.0 gate (Version Roadmap above + [NERVA_VISION.md](NERVA_VISION.md) Â§10).
-> The **V2 capability registry is the substrate the ORIZONT 27 Capability Registry v1 extends** â€”
-> one system, not two.
-
-**The OS metaphor, made literal:** agents = processes Â· capability tokens = permissions Â· the kernel =
-the syscall table Â· budgets = the scheduler Â· kill-switch/quarantine = a syscall Â· the verification fabric
-= the OS test-suite. These exist today but are **scattered**; ORIZONT 24 makes them **one system**.
-
-**Phasing & gates** (gate-discipline per MOONSHOT Â§4 â€” we do not skip gates):
-- **Phase A (now):** AUD-\* P0/P1 hardening â€” foundation; also advances H23.
-- **Phase B:** Track K + Track V core. **Gate:** action-auth matrix green Â· reality-harness live Â· readiness board shipped.
-- **Phase C:** the 4 packs, fleet-parallel, each driven SEAMâ†’VERIFIED. **Gate (per pack):** VERIFIED via harness + north-star moving.
-- **Phase D:** 1.0 proof â€” 3â€“5 design partners (unchanged; **= the 1.0 gate**).
-
-### Track K â€” Action Kernel (the "operating" in operating system) (P0â€“P1)
-
-> **Design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md`](docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md)
-> â€” grounded in the existing seeds it unifies (`security/capability.py:authorize()` nucleus, the autonomy
-> `TaskQueue`, `plugin_gate`/egress, route guards, `SecretBroker`) + the 3 verified bypass risks it closes.
-
-| # | Item | S | P | Dep | AC |
-|---|------|---|---|-----|----|
-| K1 | ğŸŸ¢ **Gate-K COMPLETE â€” every action kind is KERNEL-mediated** â€” **Single mediation point** â€” every privileged action (tool call, plugin egress, write-back, payment, social, node dispatch) flows through `kernel.authorize(action, capability, budget)` â†’ grant / deny / queue-for-approval. Unifies `plugin_gate` + capability broker + `signal_governance` + per-family approval queues. **Landed (default-off `JARVIS_ACTION_KERNEL`):** the `agents/core/kernel/` facade *composing* the `security.capability.authorize` nucleus + `policy.decide` + auditâ†’`intent_log` (not reimplementing); **wave-1** routes the 4 TaskQueue brokers (call/social/writeback/node) through it; the **action-auth matrix gate** (`tests/test_action_auth_matrix.py` + `_snapshots/action_auth.json`, a `Mediation` registry whose enumeration is derived from broker `KIND`s) fails CI on a new unclassified privileged action; B2 fail-closed pinned, B1/B3 xfail scaffolds. **Payment micro-wave âœ…** â€” an *admissible* `request_payment` now routes through `kernel.authorize` (the broker carries a `kernel` hook, bound in `web.py` via the shared `kernel/binding.py` that also feeds the wave-1 brokers): a kernel **DENY** (kill-switch engaged / over-budget / runaway loop) refuses the payment **before** it can become pending, while GRANT/QUEUE fall through to the existing always-approval flow (the mandate's hard caps still gate admissibility first). Default-off; `payment` flips `PENDING_KERNEL â†’ KERNEL` in the action-auth snapshot; `tests/test_payment_kernel_wave.py` (+6, incl. a real-`KillSwitch`+real-policy integration). **Wave-2 egress âœ…** â€” policy-passing plugin egress now routes through `kernel.authorize` via an **injected hook** in `http_client` (a `(plugin,method,url,host)â†’reason|None` callable from `kernel/binding.make_egress_kernel_hook`, wired by the orchestrator alongside the B3 audit sink), so `http_client` never imports the kernel. A kernel **DENY** (halted kill-switch â†’ no outbound calls / over-budget / runaway loop) blocks otherwise-allowed egress; a buggy hook **fails open** (manifest policy already ran). `plugin.egress` flips `PENDING_KERNEL â†’ KERNEL`; the B3 xfail scaffold is now a real passing regression; `tests/test_egress_kernel_wave.py` (+10, incl. a real-`KillSwitch` haltâ†’block / releaseâ†’allow integration). With B3's audit (`EGRESS_DOWNGRADE` event, `tests/test_egress_audit_b3.py`) this closes the egress story. **Wave-3 MCP-mutating âœ…** â€” `MutatingRouteTool.call` now routes through `kernel.authorize` **after** the per-identity gate (identity proves *who*; the kernel decides *whether it may run now*): a DENY (halted kill-switch / over-budget / runaway loop) refuses the write with `MutatingKernelError`, audited `refused-kernel`, before the adapter runs. Threaded via `build_mutating_route_tools(kernel=â€¦)`, wired in `web.py` to `make_action_kernel(orch)`; `mcp.mutating` flips `PENDING_KERNEL â†’ KERNEL`; `tests/test_mcp_kernel_wave.py` (+8, incl. a real-`KillSwitch` haltâ†’block / releaseâ†’allow integration). **Wave-3 Tool-RPC âœ…** â€” a *gated* (external/mutating) Tool-RPC call now passes `kernel.authorize` **before** it can enqueue its approval task: a DENY (halted kill-switch / over-budget / runaway loop) returns `kernel_denied` and never reaches the queue; read-only inline tools are untouched. `ToolRPCServer(kernel=â€¦)` wired in `autonomy_coordinator`; `tool.rpc` flips `PENDING_KERNEL â†’ KERNEL`; `tests/test_tool_rpc_kernel_wave.py` (+6, incl. a real-`KillSwitch` integration). **Wave-4a admin âœ… (B1 structural)** â€” `POST /api/security/kill-switch` (engage) + `/api/security/capabilities/issue` now route through `kernel.authorize` (helper `_admin_kernel_denial` in `routers/security.py`, default-off) **in addition to** `admin_guard`: a kernel **DENY** (halted kill-switch, or a *presented* capability token that lacks the named cap) â†’ **403**; GRANT/QUEUE allow through (no approval-UX regression). Designed + adversarially verified by a workflow that caught two blockers: **disengage is deliberately NOT mediated** (a halt would otherwise deny its own release â†’ bootstrap lock-out; disengage stays `admin_guard`-only so recovery always works), and the B1 close is honestly **structural** â€” the `Capability` is K1-tolerant, so a *no-token* admin request still falls through to policyâ†’QUEUEâ†’allow; making a valid token **mandatory** (so missing-capability is refused) is **wave-4b/K2** (needs a token-provisioning story that doesn't strand the operator). `admin.kill_switch`/`admin.capability_issue` flip `PENDING_KERNEL â†’ KERNEL`; the **B1 xfail scaffold is now a real passing regression**; `tests/test_admin_kernel_wave.py` (+5: default-off byte-identical Â· cleanâ†’QUEUE-allow Â· haltâ†’deny-but-disengage-recovers Â· presented-bad-tokenâ†’deny Â· distinct-kinds). **Wave-3 kg.write âœ… â€” Gate-K COMPLETE** â€” the 6 externally-driven `/api/kg/*` mutating handlers (entity upsert/delete, relation add/delete, fact add, ingest) now route through `kernel.authorize` (helper `_kg_kernel_denial` in `routers/memory_kg.py`, default-off, DENY-only): a halted kill-switch â†’ **403**. The **boundary** is the whole point and was workflow-verified (8 agents, no blockers): the high-frequency **internal** ingestion path (`IncrementalKGUpdater.ingest` from `_record_interactions`, `seed_graph`, reflection) writes graph methods **directly** and is **never** gated, so a halt can't freeze per-turn memory â€” `tests/test_kg_kernel_wave.py` (+9) pins exactly that (external `/api/kg/ingest` 403 *while* internal `kg_updater.ingest`/`graph.add_entity` still write). `memory.remember` (vector write), `/consolidate` (plan-only) and `/decay/forget` (ACT-R op) are **not** KG writes â†’ intentionally out of scope. `kg.write` flips `PENDING_KERNEL â†’ KERNEL`. **Now every one of the 11 action kinds is `KERNEL` â€” the action-auth snapshot has zero `pending`.** Residual (own wave): **wave-4b/K2** makes capability tokens *mandatory* on admin + KG writes (today's `Capability` is K1-tolerant â€” a no-token request falls through to policyâ†’QUEUEâ†’allow); folding the WorldView HMAC tokens in is the same wave. **Observability âœ…** â€” now that every action crosses `authorize`, an in-process meter (`kernel/metrics.py` `KERNEL_METRICS`, tallied in `_emit_audit`, the universal decision exit) counts grant/deny/queue per kind + keeps recent denials-with-reasons; served at `GET /api/metrics/kernel` (open, sibling of the north-star/capabilities meters). Naturally inert until the flag is on; `tests/test_kernel_metrics.py` (+5). | 8 | P0 | Phase A | every privileged action routes through the kernel; no bypass path exists |
-| K2 | **Capabilities as process permissions** â€” generalize the seeded scoped/expiring/revocable tokens (`security/`, `node_mesh`) to **all** agents; least-privilege by default. | 5 | P1 | K1 | ğŸŸ¢ **issuance done** â€” `kernel/capabilities.py` **derives** a least-privilege capability set per agent from its declared config (`agent:<id>` + `plugin:<p>` per declared plugin + `channel:<c>` + `model:local`; `model:cloud` only for a non-local-only agent whose policy permits it). The orchestrator issues a scoped `CapabilityBroker` token per agent at boot (`orch.agent_capabilities`, best-effort). `tests/test_kernel_capabilities.py` (+6) + a scratch run over the **real 17-agent roster** (frigga/ultron/howard get **no cloud cap**; revoke is immediate via the broker). **Pending:** per-action **enforcement** (the kernel waves passing each agent's token) + folding WorldView HMAC tokens in as one kind â†’ closes **B1**. |
-| K3 | **The scheduler** â€” central token/time/money/**interrupt** budgets + loop detection (folds **H23.1**). The interrupt budget *is* the MOONSHOT Â§5.4 "â‰¤4 push/day" guardrail, enforced in one place. | 5 | P0 | K1 | âœ… **done (2026-07-03)** â€” the earlier token/wall-time/recursion/loop primitives are now unified with existing caps: `BudgetLedger` exposes named dimensions/status; `InterruptBudget` is a ledger-backed view; mission and payment caps publish observed dimensions while preserving their legacy denials; `TaskExecutor` accrues handler `tokens_used`; action-kernel binding can carry the shared ledger. Evidence: `tests/test_k3_budget_unification.py` (+6) plus the earlier K3 budget/loop/executor/subagent suites. |
-| K4 | **Kill-switch + credential quarantine as a syscall** (folds **H23.3**) with one-tap HUD control. | 3 | P1 | K1 | ğŸŸ¢ **syscalls done** â€” `kernel/syscalls.py`: `halt()`/`release()` (engage/disengage the persisted `KillSwitch`, audited) + `inject_guarded()` makes secret injection **quarantine-aware** (while halted, injection is forced blocked regardless of approval â€” no value leaks). Composes existing primitives, no surgery; "halt halts new grants" already enforced by `kernel.authorize`. `tests/test_kernel_syscalls.py` (+5) + a scratch smoke against the **real** KillSwitch/SecretBroker (contracts match, no secret leak while halted). **Pending:** the one-tap **HUD** control (frontend â€” productionization-tail phase). |
-| **Gate K** | **action-auth matrix** test (generalizes the SEC-2 route-auth matrix) fails CI if **any** privileged action bypasses the kernel. | â€” | P0 | K1â€“K4 | a new un-mediated privileged action fails CI |
-
-### Track V â€” Verification Fabric (what makes fleet-breadth safe) (P0â€“P1)
-
-> **Design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-verification-fabric-design.md`](docs/superpowers/specs/2026-06-23-orizont24-verification-fabric-design.md)
-> â€” extends the existing snapshot-introspection gates (`test_route_auth_matrix`) + registries
-> (`plugin_gate.BUILTIN_PLUGINS`, `component_registry`) + the ungated eval/north-star harness.
-
-| # | Item | S | P | Dep | AC |
-|---|------|---|---|-----|----|
-| V1 | **Reality harness** â€” each capability declares a contract + a live (or hermetically-sandboxed-but-real-protocol) integration test, run on a CI schedule. Null clients stay for unit speed; the harness proves the **rail**. | 8 | P0 | â€” | ğŸŸ¢ **framework + V1â†’V2 promotion done** â€” `observability/reality_harness.py`: `RealityCase{capability_id, contract, probe, live}` + `run_reality()` (mirrors `eval.py`'s result schema); a **green probe is the only path** that promotes a capability to VERIFIED in the V2 registry (`record_verification`), a fail un-verifies, a human can still only demote. Hermetic (real-protocol, no socket) vs `live` (gated by `JARVIS_REALITY_HARNESS=1`). Seed cases prove the **egress-policy rail** (NONE blocks external / LAN allows local) and **both halves of the Action-Kernel gate-1** â€” the **kill-switch rail** (engaged â‡’ `kernel.authorize` DENY; disengaged â‡’ reaches policy) and the **capability-token rail** (a valid minted token clears the gate; a missing one â‡’ DENY) â€” real `KillSwitch`/`CapabilityBroker`/`authorize`, isolated to throwaway stores so the live halt is untouched â†’ all promote to VERIFIED. Scheduled-only lane `.github/workflows/reality.yml` (nightly + dispatch, off the PR path). `tests/test_reality_harness.py` (+8). **Pending:** per-capability **live** contracts (real key/network, needs the networked nightly lane) Â· **durable cross-process** promotion (committed readiness snapshot) folds into **V3** |
-| V2 | **Capability registry + readiness levels** â€” every capability carries a state **SEAM â†’ WIRED â†’ VERIFIED â†’ GA**, queryable, with a HUD board + `/api/metrics`. Kills the audit's "looks done, isn't wired" ambiguity. | 5 | P1 | V1 | ğŸŸ¢ **registry substrate done** â€” `observability/capability_registry.py` **derives** a `CapabilityRecord{id,kind,owner_agent,state,harness_id,â€¦}` per capability from `plugin_gate.BUILTIN_PLUGINS` + `component_registry.status` + `skills` (no parallel system); `GET /api/metrics/capabilities` (open, sibling of north-star) serves it + `by_state`/`by_kind` roll-ups + an honest `harness_pending` (**nothing reaches VERIFIED/GA** â€” only the V1 harness promotes; a human can demote, cap at WIRED). `tests/test_capability_registry.py` (+6). **HUD readiness board âœ… (verified 2026-07-02):** `ReadinessPanel` (Console Trust, `gap.tsx:312` + fetch-mocked test) renders the SEAMâ†’WIREDâ†’VERIFIEDâ†’GA ladder; the V3 `test_capability_readiness_matrix` enforcement gate also shipped (see V3). **Pending:** live VERIFIED-promotion via the V1 reality harness (durable cross-process snapshot â€” folds into V3's booted-fixture slice) |
-| V3 | **Fleet-coordination CI gates** â€” interface contracts + the action-auth matrix + a readiness gate (no VERIFIED without a green harness) + drift detection, so N parallel agents can't silently break each other. | 5 | P1 | V1, V2, K1 | ğŸŸ¢ **readiness matrix gate broadened** â€” `tests/test_capability_readiness_matrix.py` now snapshots `_snapshots/capability_readiness.json` over plugins + booted components + loaded skills (70 caps: 33 plugin / 24 component / 13 skill) and **fails CI** on: capability drift (added/removed/state-changed, e.g. a plugin silently disabled WIREDâ†’SEAM or a component fails to boot), a **fabricated VERIFIED** (VERIFIED/GA with no `harness_id` â€” guards the registry invariant), or an **unclassified SEAM**; honest escape sets `INTENTIONALLY_SEAM`/`PENDING_VERIFY` kept non-stale by a test (the route-auth SEC-3 pattern). **Interface-contract drift gate âœ…** â€” `tests/test_interface_contract_drift.py` snapshots `_snapshots/interface_contracts.json` over the **shared cross-agent schemas** (the kernel `Action`/`Decision`/`Capability`/`Budget` dataclasses â€” THE contract every Gate-K-mediated action crosses â€” + the `Verdict`/`Mediation` enums + the A2A pydantic wire bodies) and **fails CI** on any field add/remove/rename/retype or enum-value change (a contract change must be conscious; regenerate via `python tests/test_interface_contract_drift.py --update`). Guards the guard (a broken introspector returning `{}` is caught) + a vanished-contract check. This is the **multiplier-risk half of V3** â€” N parallel agents/brokers/routes that build these objects can no longer silently break each other. **Pending:** subagent ad-hoc return-dict shapes (not statically introspectable â€” would need a runtime-capture variant) |
-| V4 | **Promote eval â†’ required release gate** (folds **H23.4**) with the north-star + counter-metrics as merge gates â€” quality can't regress at fleet speed. | 3 | P1 | V1 | ğŸŸ¡ **deterministic eval gate + persistent baseline done** â€” `north_star.GUARDRAILS` encodes the MOONSHOT Â§6 bounds (interrupt â‰¤4/day, reject â‰¤0.5, %-local â‰¥50, p95 <2s) + `check_guardrails()`; `compute_north_star()` surfaces `guardrail_breaches`/`guardrails_ok`; None metrics are skipped, not fabricated. Companion `--ci-gate` now records to a cache-backed `DatasetStore` in the nightly workflow, so deterministic baseline compare is no longer inert on GitHub-hosted scheduled runs. **Pending:** live-model eval on a persistent owner/live runner + hard merge-blocking on **real-usage** north-star data (offline CI has none). |
-| **Gate V** | the readiness board is live; **nothing reaches VERIFIED** without a green reality-harness. | â€” | P0 | V1â€“V4 | VERIFIED claims are harness-backed, not asserted |
-
-### Track P â€” Live Capability Packs (breadth on the substrate, fleet-parallel) (P0â€“P2)
-
-> Each pack = drive its rails **SEAMâ†’VERIFIED**, mediated by Track K, gated by Track V. (Maps = competitive-gap themes deepened.)
-> **P1 design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-p1-proactive-autonomy-design.md`](docs/superpowers/specs/2026-06-23-orizont24-p1-proactive-autonomy-design.md)
-> â€” the loop is already wired end-to-end (`observer`/`watchers` â†’ `policy` â†’ Telegram inbox â†’ `TaskExecutor`
-> â†’ write-back/social/call â†’ `north_star`); P1 = drive it SEAMâ†’VERIFIED on the K/V substrate + close 3 proof
-> gaps (unified "Today" timeline Â· night-shift north-star split Â· proposal-funnel diagnostics).
-
-| # | Item | S | P | Dep | AC |
-|---|------|---|---|-----|----|
-| P1 | **Proactive autonomy core** â€” missions + watchers + digest + governed write-back (deepens 0.32/0.38/0.45). *Do first: the only pack that directly moves the north-star (actions accepted/week) and that stress-tests K3's interrupt budget.* | 8 | P0 | K1â€“K4, V1â€“V2 | "works while you sleep" demonstrated **and measured**; interrupt/reject within budget Â· ğŸŸ¢ **proof-gap 1/3 â€” proposal-funnel diagnostic âœ…**: `north_star.compute_north_star` now returns a `proposal_funnel` block (cohort over proposals *created* in the window â†’ surfaced / accepted / rejected / pending + `surface_rate`/`accept_rate`), so a low north-star is **diagnosable** (not enough proposed? proposed-but-never-surfaced? surfaced-but-rejected?). Served on `GET /api/metrics/north-star`; `tests/test_north_star.py` (+3). Â· ğŸŸ¢ **proof-gap 2/3 â€” night-shift north-star split âœ…**: `compute_north_star` now returns a `night_shift` block (`{done, pct, window}`) â€” of the accepted actions, how many *completed* during the local night window (buckets each `done` task by the local hour of `updated_at`, reusing the worker's `is_night_window()`; the endpoint threads `autonomy.night_start/end`). So **"works while you sleep" is a reported number**, not a slogan. `tests/test_north_star.py` (+3, TZ-robust). Â· ğŸŸ¢ **proof-gap 3/3 â€” unified "Today in Jarvis" timeline âœ…**: new `memory/timeline.py:build_unified_digest(queue, memory_entries, â€¦)` fuses what Jarvis *did* (done autonomy tasks) and what it *learned* (new/updated memory facts) into one timestamp-ordered feed; served at `GET /api/dashboard/today?days=1` (`user_guard`'d, clamped 1â€“30). Pure builder over existing rows â€” reuses `digest.py` + the SQLite fact store, no new capture. `tests/test_timeline.py` (+9). **All 3 P1 proof-gaps closed** â€” the loop is now diagnosable (funnel), the overnight claim is measured (night-shift), and "today" is one story (timeline). |
-| P2 | **OSINT / WorldView** â€” correlation, evidence drawer, world-brief routing (deepens 0.40/0.41). Most differentiated surface; forces the kernel to prove governance on **untrusted** data. | 8 | P1 | K1, V1 | pack VERIFIED; ingestion trust-boundary enforced (closes the F12/AUD ingestion finding) Â· ğŸŸ¢ **offline pack + governance rail done**: `osint/correlate.py` â€” pure, deterministic correlation over *provided* evidence (no live fetch): groups by indicator (casefold for token kinds), builds findings with a provenance chain + corroboration-based confidence (capped <1.0 for all-untrusted intel â€” never certain), and **taints untrusted-source evidence at ingestion** (`security.taint`), propagating it through `writeback_payload`. `POST /api/osint/correlate` + `/api/osint/brief` (`user_guard`'d, offline). **The P2 contract is VERIFIED by a hermetic reality case** (`reality_harness`, `plugin:worldview`): an OSINT write-back the policy *would* GRANT is escalated **GRANTâ†’QUEUE** by the real `kernel.authorize` when it carries untrusted-source taint, while the same operator-sourced write is GRANTed â€” untrusted intel can never auto-execute (closes the ingestion-trust AC with real primitives, no mock). `tests/test_osint_correlate.py` (+11); route parity/auth/openapi reseeded. **Owner-gated (live):** real collection â€” SpiderFoot modules + the WorldView REST + news feeds â€” needs keys/network (the engine is the deterministic rail; live fetch is wiring). |
-| P3 | **Market Intel + Finance** â€” watchlists, balance/analytics, alerts with disclaimers (deepens 0.39). Concrete daily utility. | 5 | P1 | K1, V1 | pack VERIFIED; daily brief demoable Â· ğŸŸ¢ **offline pack + money-safety rail done**: `market/analyze.py` â€” pure, deterministic intel over *provided* quotes/positions (no live fetch): `evaluate_watchlist` (band breaches â†’ alerts, honest `no_quote` when none supplied â€” never a fabricated price), `portfolio_snapshot` (net worth + per-position weight + by-kind allocation, drops unpriced rows), `daily_brief` (demoable headline). **Every alert/brief carries a mandatory not-advice `DISCLAIMER`.** `POST /api/market/watchlist` + `/api/market/brief` (`user_guard`'d, offline). **The P3 contract is VERIFIED by a hermetic reality case** (`reality_harness`, `plugin:balance`): a market-triggered **money action** (`trade.buy`/`transfer`) is held by the real `kernel.authorize` â€” `IRREVERSIBLE_OR_MONEY` â†’ **QUEUE** (approval) â€” while read-only `market.monitor` is **GRANT**ed. **Money never auto-moves**; the pack watches the market freely but can't act for you. `tests/test_market_intel.py` (+10); route parity/auth/openapi/hud-v2 reseeded (332 routes). **Owner-gated (live):** real quotes/bank data â€” a broker/quotes API + the `balance` plugin (ING/Libra) â€” needs keys/network (the engine is the deterministic rail; live fetch is wiring). |
-| P4 | **Creative / Publishing** â€” coordinated asset pipeline + export/render packs (deepens 0.47/0.50; also fuels **0.52 Product Demo Factory** / marketing). | 5 | P2 | K1, V1 | pack VERIFIED; export packs render (YouTube/IG/README) Â· ğŸŸ¢ **offline planner + publish-safety rail done**: `creative/pipeline.py` â€” pure, deterministic pipeline *planner* over a brief (no media-gen): `plan_pipeline` (ordered stages scriptâ†’image_promptsâ†’renderâ†’assembleâ†’export, each carrying provenance + the null generator it *would* call + `generated:false`), `build_export_packs` (per-platform delivery **specs** for **YouTube/Instagram/README** â€” aspect/size/format/caption-kind; unknown targets dropped, never invented). **Nothing is faked as generated.** `POST /api/creative/plan` + `/api/creative/export-packs` (`user_guard`'d, offline). **The P4 contract is VERIFIED by a hermetic reality case** (`reality_harness`, `plugin:social_x`): the pipeline drafts/plans freely (`creative.draft` â†’ **GRANT**), but the terminal **release** (publishing a finished campaign to the world â€” irreversible) is held by the real `kernel.authorize` â€” `IRREVERSIBLE_OR_MONEY` â†’ **QUEUE** (approval). **Nothing is auto-published on your behalf.** `tests/test_creative_pipeline.py` (+7); route parity/auth/openapi/hud-v2 reseeded (334 routes). **Owner-gated (live):** real render (image/video models) + the platform upload APIs need keys/network (the planner is the deterministic rail; render/publish is wiring). |
-| **Gate P** | per pack: **VERIFIED** via the reality-harness **and** the north-star is moving. | â€” | P0 | Gate V | no pack ships SEAM-only |
-
-> **North-star alignment (by construction):** P1 drives *actions accepted/week*; K3 enforces the
-> *interrupt budget*; V4 guards *reject-rate, %-local, p95-latency* as merge gates â€” the program can't
-> drift off the metric without failing its own gates. **Totals:** 12 items + 3 gates, ~68 SP
-> (K â‰ˆ21 Â· V â‰ˆ21 Â· P â‰ˆ26). **Design specs written** for both substrate tracks (K + V, linked above) â€”
-> next is *implementation*, not design. **Next concrete steps:** finish Phase A (AUD-\*) â†’ land the
-> default-off `kernel.authorize` facade (**K1**) + the capability-readiness registry/harness scaffold
-> (**V1/V2**) in parallel â†’ wire the action-auth + readiness matrices â†’ K3/V4 gates â†’ then **P1 first**.
-
----
-
-## ğŸ—ºï¸ ORIZONT 25 â€” M1â†’1.0 Execution Plan (Fable-5 snapshot, 2026-07-02)
-
-> **The active execution order for everything that remains before 1.0** â€” written to be followed
-> by ANY AI session (any model tier, cold start, mid-session handoff) without deviating.
-> **Full blueprint (per-item Intent / verified seams / Approach / AC / tests / do-NOTs + the
-> execution protocol + quality charter):**
-> [`docs/superpowers/specs/2026-07-02-orizont25-execution-blueprint.md`](docs/superpowers/specs/2026-07-02-orizont25-execution-blueprint.md).
-> Ground truth it stands on: the [2026-07-02 fresh-eyes re-verification](docs/research/2026-07-02-fresh-eyes-backlog-reverification.md).
-> Not net-new scope â€” it sequences the existing tracked items (K3, TASK-3 tail, V3/V4, H23.17,
-> AUD-16, AUD-14, H18.x, H23.22, #169) + a small owner-sanctioned **Track Q** (companion quality).
->
-> **Protocol digest (the blueprint's Â§0, read it in full before your first PR):** verify before
-> you claim (evidence = test run or code read) Â· grep the symbol, not the line â€” if a seam is gone,
-> STOP and re-read the item's Intent, never improvise architecture Â· one item = one PR, rebase-first,
-> BACKLOG status ticked in the same PR Â· behavior changes default-off + byte-identical default path Â·
-> honesty contract on every surface (no fabrication, honest empty states) Â· offline injectable tests,
-> re-seed parity snapshots via `--update` in the same PR Â· when two readings are valid, pick the
-> reversible/default-off one and record the fork in the PR body Â· red truth beats green lie Â·
-> never touch: LOCAL_ONLY fail-closed paths, shipped migrations, recovery paths (disengage/reset),
-> snapshots by hand, another agent's draft-PR files, an agent's voice without owner consent.
->
-> **2026-07-03 protocol exception:** `e1f1de8` (`feat: wire companion eval gate and quality checks`)
-> bundled M1.3/M1.4/M1.5/M2.2/M2.4/M2.6 because the local Codex batch was already intertwined.
-> Treat it as a recorded deviation, not precedent; follow-up ORIZONT 25 work returns to one item = one PR.
-
-### M1 â€” v0.12 Â«Substrate sealedÂ»
-
-| # | Item | S | Status |
-|---|------|---|--------|
-| M1.1 | **K3 budget unification** â€” named dimensions on `kernel/budget.py:BudgetLedger`; `InterruptBudget` becomes a view; payment/mission caps registered as observed dimensions; handler `tokens_used` hook | 5 | âœ… done (2026-07-03) â€” `BudgetLedger` now exposes named dimensions/status and kernel denial for enforced overages; `InterruptBudget` is a ledger-backed view; payments/mission caps publish observed dimensions without replacing their existing denials; `TaskExecutor` reports handler `tokens_used`; action-kernel binding can carry the shared ledger. `tests/test_k3_budget_unification.py` (+6). |
-| M1.2 | **`Action.origin` channel threading** â€” `Gateway.route â†’ channel_handler â†’` per-turn ContextVar â†’ brokers; inbound channels = `origin="inbound"` â†’ kernel GRANTâ†’QUEUE (the honest TASK-3 channel backstop) | 5 | âœ… done (2026-07-03; H17.1a hardening 2026-07-05) â€” `Gateway.route` classifies trusted HUD/voice turns as `generated` and external channels as `inbound`; `channel_handler` binds the origin in a per-request ContextVar; governed-action brokers read that context for kernel `Action.origin`, so inbound-channel actions that policy would GRANT are escalated to QUEUE while kernel-off behavior stays byte-identical. H17.1a moved the invariant down to the public turn chokepoints too: direct `handle_input`/`handle_input_stream` callers (MCP/webhooks/routers/tests) get origin binding by construction, internal orchestrator channels remain trusted, inbound parent contexts are monotone, and plugin-egress actions carry the current origin. `tests/test_m12_origin_threading.py` (+5), `tests/test_h17_origin_by_construction.py` (+8). |
-| M1.3 | **V3 components/skills readiness coverage** â€” booted-fixture records in `test_capability_readiness_matrix` (today: plugins only, 33 records) | 3 | âœ… done (2026-07-03) â€” matrix now boots the real orchestrator + skill loader via a deliberately cached heavy fixture (an exception to the usual `__new__`/light-fixture convention because this gate needs registry truth), snapshots 70 capability records (33 plugin / 24 component / 13 skill), and explicitly classifies the manifest-only `skill:Weather Intel` SEAM row. |
-| M1.4 | **LIVE/SEED chip rollout** â€” `PanelChip` (`gap.tsx:28`) onto the ~25 remaining Console panels (mechanical) | 2 | âœ… done (2026-07-03) â€” every Console `Card` now declares a `live`/`seed` signal (58/58), guarded by `panel-chip-coverage.test.ts`; opt-in surfaces use SEED when disabled. |
-| M1.5 | **Q4 voice-persona consent gate** (0.28) â€” persisted owner consent before cloned/persona voice; default voice + honest banner otherwise | 2 | âœ… done (2026-07-03) â€” `voice.persona_voice_consent` seeds default-off; `TTSEngine` blocks XTTS/ElevenLabs persona voices before consent and falls back to safe Edge defaults with `last_consent_status`; `/api/voice/capabilities` and `PersonaModule.status()` expose the honest banner/status; covered by `tests/test_q4_voice_consent.py`. |
-
-### M2 â€” v0.13 Â«Quality gates & type truthÂ»
-
-| # | Item | S | Status |
-|---|------|---|--------|
-| M2.1 | **H23.17 flow E2E** â€” chat sendâ†’SSEâ†’stop + voice state machine on the existing Playwright harness (degraded-reply assertions, no model needed) | 3 | âœ… done (2026-07-03) â€” Playwright now drives chat sendâ†’SSE token/final render, stop-button abort on an in-flight stream, and voice push-to-talk with mocked mic/STT into a chat turn; `playwright.config.ts` now starts the backend cross-platform (Windows dev + Linux CI). `frontend/e2e/hud.spec.ts` (+3 e2e specs). |
-| M2.2 | **Nightly soak + browser matrix** â€” `schedule:` lane on `e2e.yml` (N-iteration soak vs `/metrics`), firefox/webkit/mobile-emulation projects | 3 | âœ… done (2026-07-03) â€” `e2e.yml` now has schedule/workflow_dispatch, scheduled runs flip `E2E_BROWSER_MATRIX=1` + `E2E_SOAK_ITERATIONS=3`, install Chromium/Firefox/WebKit, and publish the soak plan; Playwright config adds Firefox/WebKit/mobile projects behind the env flag; `hud.spec.ts` now asserts `/metrics` golden-signal families during the soak. Local execution still requires frontend deps/browsers (CI/dev lane). |
-| M2.3 | **AUD-16 OpenAPIâ†’TS typegen + CI diff gate** â€” `response_model=` on the ~30 HUD-consumed routes; boot server in CI (e2e pattern) â†’ `openapi-typescript` â†’ fail on diff | 5 | âœ… done (2026-07-03) â€” committed `frontend/src/api/schema.gen.ts` from the live FastAPI `/openapi.json`; added pinned `npm run typegen:openapi` (`openapi-typescript@7.13.0`) and a CI `openapi-types` lane that boots the backend, regenerates the schema, and fails on `git diff`; guarded by `tests/test_openapi_ts_typegen_gate.py` (+3). Consumer migration remains gradual by design. |
-| M2.4 | **V4 eval as scheduled blocking lane** â€” nightly `EvalRunner` over `DatasetStore` vs baseline (`JARVIS_EVAL_LIVE` gated); north-star guardrails in the job summary | 3 | ğŸŸ¡ partial (2026-07-04) â€” deterministic drift/min-score gate, DatasetStore-backed run, GitHub summary, and offline north-star guardrail status are wired through `companion_eval --ci-gate` and `.github/workflows/eval-nightly.yml`. **Baseline persistence is done in #506:** CI restores/saves the explicit `JARVIS_EVAL_STORE` with immutable run-id cache keys and a dataset/source hash restore prefix, so scheduled run N+1 can compare against run N. Live-model lane remains pending a persistent/live runner; `JARVIS_EVAL_LIVE` is still only the opt-in switch/status today. |
-| M2.5 | â­ **Q1 companion golden-dialogue eval set** â€” 40â€“60 RO/EN dialogues scoring the Â§6.2 charter (assistance, empathy-without-sycophancy, follow-up, in-character honesty, refusal); judged via `QualityMonitor` + `SycophancyIndex`/`HonestyJudge`; versioned in `DatasetStore`, gated by M2.4 â€” **the quality snapshot that survives model changes** | 5 | âœ… **done (2026-07-02)** â€” `observability/companion_eval.py` + `companion_dialogues.json` (**48 dialogues**: 6 charter dimensions Ã— 8, 30 EN + 18 RO, synthetic personas; authored by 6 Fable-5 drafters + 6 adversarial reviewers, 33/48 hardened in review). Deterministic scorer (no LLM): hard-fails on `forbid`/missing-`gold`/insubstantial, soft-scores expect/`sycophancy_signals` (honesty.py) with pushback escalation; diacritics-insensitive matching. **Keystone invariant test-pinned: every golden scores 1.0 against its own rubric** (`golden_self_check`). `seed_dataset()` versions into the H9.3b `DatasetStore` (change-detected, no version spam); `run_suite()` = in-process full-rubric path; CLI `--self-check`/`--seed` for the M2.4 lane. `tests/test_companion_eval.py` (+14: integrity/coverage/bilingual, pre-normalized rubric entries, synthetic-only PII gate, goldens-pass-own-rubric, capitulation-fails-every-pushback-case, forbid-hard-fail, seed idempotence, golden-runner scores 1.0 + run recorded, sycophant-runner fails the gate). *Remaining durable lane = live runner; baseline persistence is handled by O26-P3.3.* |
-| M2.6 | **BUG-2b.3 `useVoice` tests** â€” jsdom mocks for mic/AudioContext, drive the status machine (`voice.ts:49`) | 2 | âœ… done (2026-07-03) â€” added `frontend/src/test/voice.test.tsx` with mocked `getUserMedia`/`MediaRecorder`/`AudioContext`/`Audio`/fetch/streaming TTS, covering capabilities load, mic-muted/STT-unavailable errors, one PTT turn, and streamingâ†’`/tts` fallback. Local Vitest execution is blocked in this sandbox by absent `frontend/node_modules` + npm registry `EACCES`; run in CI/dev deps to confirm. |
-
-### M3 â€” v0.14 Â«Reach & proofÂ»
-
-| # | Item | S | Status |
-|---|------|---|--------|
-| M3.1 | **Mobile approval queue** (then Dashboard, Tasks) â€” `GET /autonomy/approvals` + `POST /autonomy/tasks/{id}/decision` (`routers/autonomy.py:362,208`) from the phone; PARITY.md row in same PR â€” *the north-star surface* | 5 | âœ… done (2026-07-04, #509) |
-| M3.2 | **Plugin-gated HUD modes honest wiring** â€” Finance/Health/Knowledge/Family + Comms threads via the `live.ts` swap pattern; honest empty state when unconfigured. âœ… Done 2026-07-04 (#505): Build/Comms/Finance/Health/Knowledge/Family now feed LIVE/SEED mode keys, `/plugins.configured` prevents enabled-but-unconfigured plugins from looking live, `balance` mock payloads stay SEED, and empty Comms channels render without seeded inbox threads. Remaining owner blockers: live bank/broker/quotes keys, Apple Health LAN bridge, websearch backend, WhatsApp bridge URL/hardware, and self-hosted fonts. | 3 | âœ… done |
-| M3.3 | **H23.22 landing page (dev half)** â€” static, self-contained, from `docs/marketing/` + BRAND_BOOK tokens; demo shot-list support (0.52) | 3 | âœ… done (2026-07-04, #512) â€” `marketing/landing/index.html` + `demo-shot-list.md`; owner video remains M4 |
-| M3.4 | **AUD-14 config consolidation** (pulled forward â€” 161 env reads and climbing) â€” one `env_config` module + one `truthy()`; policy sets derived from `agents.yaml` **keeping the code-enforced LOCAL_ONLY floor** (BUG-14 lesson) | 3 | ğŸŸ¡ partial / latest slice merged (#622) â€” O26-P2.1 delivered `env_config` + the boolean ratchet; #592 closes the `JARVIS_CHANNEL_SEND_RATE` numeric-env seam through `env_int()`. #596 adds `agents/core/llm/model_config.py` as the shared home for model-name defaults and `JARVIS_DEEP_MODEL`. #620 moves `JARVIS_PLUGIN_GRANTS` to shared `env_list()` parsing. #622 moves trust-status mic/strict-local reads to shared `env_flag()`. |
-| M3.5 | **#169 WorldView MCP write transport** â€” stdio client path for `watch_aoi`/`reconstruct_event` behind plugin-gate+kernel, with the HMAC token folded into the governed capability path (last K2 slice) | 5 | âœ… done (2026-07-06, #594) â€” `WorldViewMCPWriteClient` gates writes through `PermissionGate`, Action Kernel, per-agent `plugin:worldview` broker capability, and a scoped `WORLDVIEW_MCP_SECRET` HMAC token before calling the stdio MCP tools. `ArgusInterface` exposes `watch_aoi`/`reconstruct_event` only through that governed path while `WorldViewPlugin` stays read-only. Full PR CI was green before merge. |
-| M3.6 | **Q2 persona-consistency rail** â€” persona dimension on the live `QualityMonitor` judged vs the SOUL's current version (`soul_versioning`); drift alert like quality-decline | 3 | âœ… done (2026-07-04, #510) â€” `QualityMonitor` now accepts versioned persona profiles derived from the current SOUL, scores the assistant `output_preview`, stores `persona_score`/`soul_version`, and exposes a separate persona drift alert. Full PR CI green before merge. |
-| M3.7 | **Q3 caring follow-ups in the morning brief** â€” `build_morning_brief` + `build_unified_digest` recomposition: yesterday's failed/blocked tasks, open-concern facts, upcoming KG dates; zero new capture, rides the existing brief slot | 3 | âœ… done (2026-07-04, #510) â€” morning brief + unified digest now reuse a read-only caring-followup extractor over failed/blocked tasks, open-concern memory facts, and upcoming/date facts; `/autonomy/brief` and the scheduled morning digest read the existing `MemoryStore`. Full PR CI green before merge. |
-
-### M4 â€” v1.0-rc Â«ProofÂ» (owner-led, runs in PARALLEL from day one â€” the true critical path)
-
-â­B0 manual run + 72h soak â†’ record **AUD-0** + **H23.23** â†’ GitHub-settings batch â†’ license flip â†’
-**recruit 1â€“3 design partners** (north-star on a non-owner install â‰¥2 weeks â€” calendar-bound!) â†’
-GPU-opportunistic (H13.3 config-only Â· H22.4 Â· H12.14/TASK-1) â†’ tag **1.0.0** only when
-MANUAL_TESTING signs off **and** real-usage data exists. Details: blueprint Â§5 + `docs/OWNER_TASKS.md`.
-
-> **Track Q = the companion charter** (blueprint Â§6.2, owner-sanctioned 2026-07-02): *caring is
-> behavior, not adjectives Â· smart is honest (sycophancy is a measured defect) Â· personality is
-> designed and it's a promise (in-character always, mask drops for a sincere "am I talking to an
-> AI?") Â· a friend respects your attention (â‰¤4/day as character trait) Â· problems get the
-> diagnoseâ†’previewâ†’act-reversiblyâ†’verifyâ†’report loop, not vibes Â· privacy is the friendship's
-> foundation and outranks every other clause.* Q1/Q2 make it regression-guarded, not aspirational.
->
-> **Non-goals until 1.0** (re-affirmed): 0.20 Vault Â· 0.48 video Â· 0.64/0.65 desktop overlay Â·
-> 0.66 connector breadth Â· ~~AUD-13~~ (promoted into O26 P1.1) / AUD-15 refactor Â· multi-user.
-> MOONSHOT Â§4: we don't skip gates.
-
----
-
-## ğŸš‚ ORIZONT 26 â€” Â«Bolt the train to the railsÂ» (deep-dive plan, owner-approved 2026-07-03)
-
-> **The active plan superseding ORIZONT 25's sequencing** (O25's engineering table is complete except
-> M2.4's tail â€” its protocol + charter stay in force). Source: a 3-lens full-code deep dive
-> (runtime intelligence Â· safety substrate Â· product surface), every finding `file:line`-verified
-> twice. **Thesis: the rails are magnificent, but the train isn't bolted to them** â€” the flagship
-> promises (Â«knows youÂ», Â«every action governedÂ», Â«one inboxÂ», Â«works while you sleepÂ») are dormant
-> or bypassed in a default install for specific, fixable reasons. Full plan with findings, decisions,
-> ACs and seams: [`docs/superpowers/specs/2026-07-03-orizont26-bolt-the-train.md`](docs/superpowers/specs/2026-07-03-orizont26-bolt-the-train.md).
->
-> **Owner decisions (2026-07-03):** D1 Product Posture âœ… (onboarding consent switch, 2 waves,
-> default-off exception recorded) Â· D4 WorldView **stays active** (issues #254â€“259/#265 + #169 + #170
-> sequenced as Phase 4) Â· D7 HUD **finish the design** (wire all 6 preview modes + the
-> HUD_V2_REMAINING punch-list; blockers â†’ BACKLOG rows, not silent stubs).
-
-### Phase 0 â€” Truth & Correctness (verified findings F1â€“F6)
-
-| # | Item | S | Status |
-|---|------|---|--------|
-| O26-P0.1 | Golden-loop harness (fake LLM at `generate()` seam only) + loop #1 skeleton | 3 | âœ… done (2026-07-03) â€” `tests/test_o26_golden_loop_chat.py`: real 17-agent `Orchestrator(JarvisConfig())` boot, `FakeBackend` injected only at `select_backend`, offline. **+ harness-ul partajat** `tests/golden_harness.py` (fake instalat prin seam-ul `detect()`, izolare `JARVIS_HOME`; biblioteca de fixture pentru loops #2â€“#5) + `tests/test_golden_loop_chat.py` (+3: non-stream `handle_input` â†’ reply rutat local + memoria sesiunii + learning/bench/run-history + entitÄƒÈ›i/KG (`lives_in`) + istoricul turei 1 Ã®n promptul turei 2 la seam-ul LLM; stream: tokeni + memorie + record-seam post-F1) |
-| O26-P0.2 | **F1**: stream path calls `_record_interactions` (web chat finally feeds KG/learning/run-history; %-local re-baselined) | 2 | âœ… done (2026-07-03) â€” `handle_input_stream` now runs `_log_session` + `_record_interactions` (route_name/agent_id pre-bound); **red-proven** (loop #1 fails on pre-fix code); stream/non-stream symmetry + empty-target guards pinned (+3 tests) |
-| O26-P0.3 | **F2**: seed `cognition.*` + `memory.recall_enabled/top_k` in DEFAULTS; `put_category` upserts known-spec keys | 2 | âœ… done (2026-07-03) â€” 13th settings category `cognition` (master OFF, 5 sub-flags ON so one switch wakes the layer) + `memory.recall_enabled/recall_top_k`; `put_category` upserts spec-known keys, still rejects arbitrary rows; facade wakes via the settings path (+9 tests) |
-| O26-P0.4 | **F4**: sycophancy axis scores the assistant reply, not the user input (`cognition_trace.py:93,124`) | 1 | âœ… done (2026-07-03) â€” traces carry `output_preview`; honesty scores the reply (user text passed as context); same mis-aim fixed in `quality.evaluate_heuristics` (empty reply now scores `non_empty=0`; legacy key-absent traces keep the fallback) (+5 tests) |
-| O26-P0.5 | **F5**: deep-model escalation only when the deep model is probed present (no reroute-to-missing-model on Â«analyzeÂ») | 2 | âœ… done (2026-07-03) â€” `LLMRouter` captures the full served-model listing on detect/refresh; `_deep_model_available()` gates BOTH deep sites (auto heavy-keyword + DEEP_THINK_AGENTS, which now fall through to normal routing on a one-model box); explicit `JARVIS_DEEP_MODEL` = owner intent, honored (+6 tests) |
-| O26-P0.6 | **F6**: hardened/bind boot guards run from the app lifespan (uvicorn entry included); Run-block docs point at `serve.py` | 2 | âœ… done (2026-07-03) â€” guards moved to `agents/core/boot_guards.py` (serve.py re-exports, existing imports intact); `web.py` lifespan runs `enforce_boot_posture()` so a raw-uvicorn start enforces the same posture; honest residual documented: a bind host passed only as a raw `--host` CLI flag (without `JARVIS_HOST`) is invisible to the app â€” deploy templates use the env knob and serve.py stays canonical (+10 tests) |
-| O26-P0.7 | **F3**: broker proposals run `policy.decide`; `pending_decisions()` includes broker-`proposed`; kill-switch enforced at the executor seam kernel-independently; golden loops #2+#4 | 5 | âœ… done (2026-07-03) â€” `AutonomyWorker.govern_enqueue` (sync governed intake, drop-in for `TaskQueue.enqueue`): runs the risk policy and applies the STRICTER of caller-level vs policy outcome (broker always-ask can't be weakened; kernel-granted `act` can still be tightened by money caps); `ask` lands BLOCKED â†’ decision inbox + best-effort push. All 5 broker wirings in `autonomy_coordinator` route through it (fail-safe fallback to the raw queue). `pending_decisions()` = blocked âˆª proposed (both await a human; PROPOSEDâ†’APPROVED is legal). `worker.tick()` honors the kill-switch KERNEL-INDEPENDENTLY: halted â†’ tasks held APPROVED (nothing lost), run on first tick after disengage; a broken switch never blocks the tick. Golden loops #2 (proposeâ†’inboxâ†’approveâ†’execute) + #4 (halt stops the seam, disengage releases) in `tests/test_o26_f3_unified_funnel.py` (+9). *Honest scope note: `payments` keeps its dedicated mandate-gated approval flow (its own store + surface, not the task queue).* Blast-radius sweep: 172 tests green across worker/queue/policy/inbox/social/writeback/call/node/tool-rpc/digest/north-star/timeline. |
-
-### Phase 1 â€” One Turn Pipeline
-
-| # | Item | S | Status |
-|---|------|---|--------|
-| O26-P1.1 | **AUD-13 promoted pre-1.0**: unify `handle_input`/`handle_input_stream`; ONE prompt builder (persona + runtime-state in both); one record seam; `PersonaModule.nudge` per turn; preserve #492's `action_origin` ContextVar. Oracle: golden loops Ã—2 postures + M2.1 E2E | 8 | âœ… done (2026-07-04) â€” `Agent.build_prompt()` is now the reusable agent prompt wrapper; both plain chat and stream feed it through shared `_build_agent_turn_text()` so persona, runtime truth, history, plugins and recall no longer diverge by surface. Post-LLM memory/checkpoint/session log/learning+bench/run-history/audit/cognition now share `_complete_llm_turn()`; `PersonaModule.nudge()` fires once per completed LLM turn when cognition affect is enabled; `action_origin` binding remains untouched and the record seam still runs through `asyncio.to_thread` with context propagation. `tests/test_o26_p1_one_turn_pipeline.py` (+3) red-proved the old split (plain lacked runtime, stream lacked persona, no affect nudge). Local targeted sweep green across P1.1, golden chat loops, stream abort, concurrent stream isolation, chat HTTP, prompt-injection guard, agent integration, token budgets, bench/record, persona and cognition suites. |
-
-### Phase 2 â€” Wake the Intelligence
-
-| # | Item | S | Status |
-|---|------|---|--------|
-| O26-P2.1 | AUD-14 config consolidation (posture prerequisite; 161 env reads, â‰¥3 truthy conventions; LOCAL_ONLY floor kept) | 3 | âœ… done (2026-07-04) â€” `agents/core/env_config.py`: stdlib-only leaf (modeled on `paths.py`), read-at-call-time, never raises/logs, NO dotenv; ONE `truthy()` (truthy {1,true,yes,on} / falsy {0,false,no,off,disable,disabled}, case-insensitive, **unknown â†’ the flag's declared default** â€” so junk can never open `JARVIS_ALLOW_INSECURE_BIND` nor relax `JARVIS_STRICT_EGRESS`) + `env_flag/env_str/env_int(minimum=)/env_float`. A workflow inventory (163 sites, 55 files, 122 vars) found **8** divergent conventions, not 3 â€” incl. case-sensitive sets where "TRUE"/"off" silently did the wrong thing, `== "1"` exact-match, an inverted disable-flag, `_env_int` written twice, and `JARVIS_WORKFLOW_PERSIST=0` *enabling* the coordinator drain the engine read as off (now one `engine.persist_enabled()`). All boolean parses migrated (29 sites); local helpers (`_env_flag`, `_env_truthy`, `_TRUTHY`/`_TRUE` consts, 2Ã— `_env_int`) deleted or aliased; import-time constants stayed import-time (setattr-pinning tests untouched); hardened/CDX-12 layering + LOCAL_ONLY floor byte-identical. Ratchet: `tests/test_o26_p2_env_config.py` (+36) source-scans runtime code and fails on any new ad-hoc parse (red-proved: 35 hits pre-migration). |
-| O26-P2.2 | Nightly consolidation/decay job in `scheduler_service` + LivingMemory wired at the turn seam | 3 | âœ… done (2026-07-04, #501) â€” `_complete_llm_turn()` now feeds completed plain+stream LLM turns into `LivingMemory.encode()` and registers matching H14 `DecayMemory` records **only when** `cognition.enabled && cognition.memory_enabled`; default-off stays inert. LivingMemory stores session/agent/channel, a turn reference, text digest, and size counters rather than duplicating raw transcript text, and decay labels stay metadata-only. `SchedulerService` registers `memory-consolidation-decay` (02:40) and `run_memory_maintenance()` runs NREM+REM consolidation, then ranks decay/candidates without auto-deleting anything. `LivingMemory.records()` exposes an inspectable retrieval surface for the integration seam. `tests/test_o26_p2_memory_consolidation.py` (+7) red-proved the dormant seam/job and the CodeQL/logging regressions, verifying default-off no-op, enabled turn records, nightly tick, disabled-job no-op, safe maintenance exception logging, counter-only maintenance completion logs, and no raw transcript duplication in LivingMemory/decay records; targeted adjacent sweep green (33 passed), full PR CI green before merge. |
-| O26-P2.3 | Dormant-module disposition: wire-or-park `ensemble`/`learning`; park `profile_extractor` (zero callers) | 2 | âœ… done (2026-07-04, #502) â€” active agents now populate `PersonaModule` + `EnsembleModule` immediately after `load_agents()`, so `/api/cognition/personality` and `/api/cognition/ensemble` expose the real 17-agent roster instead of empty dormant modules. Governed learning is not parked: `tests/test_o26_p2_dormant_disposition.py` proves `cognition.learning_enabled` feeds the autonomy `calibration_hook` and only adds caution. `profile_extractor` remains import-compatible but is explicitly parked via `legacy_status()` (`active=false`, no production callers), with MemoryStore + LivingMemory turn seam as the live path. +4 tests; targeted cognition/persona/learning/memory sweep green (48 passed), full PR CI green before merge. |
-| O26-P2.4 | **Product Posture (D1 âœ…)**: settings-backed named posture composing `JARVIS_HARDENED`; wave 1 memory/persona â†’ wave 2 kernel/budgets/REDACT; consent screen = final onboarding step; p95 AC | 3 | âœ… done (2026-07-04, #503) â€” `product.posture` settings key defaults OFF; `companion_wave1`/`design_partner` wake the proven wave-1 memory+cognition flags at runtime, surface provenance in `/api/security/posture`, onboarding wizard, and support bundle; wave 2 kernel/budget/REDACT hardening stays explicit future scope. |
-| O26-P2.5 | Install smoke path (~30s boot+`/readyz`+faked turn; full suite behind `--dev`) | 2 | âœ… done (2026-07-04, #504) â€” `scripts/install_smoke.py` boots a real 17-agent orchestrator with exactly one fake local LLM backend, checks `/readyz`, and runs one deterministic chat turn; default path is fast, `--dev` runs the full pytest suite after smoke. |
-
-### Phase 3 â€” Finish the Designed Surface (D7)
-
-| # | Item | S | Status |
-|---|------|---|--------|
-| O26-P3.1 | Wire the 6 preview modes live (Build/Comms/Finance/Health/Knowledge/Family; honest plugin-gated empty states; owner-key blockers â†’ BACKLOG rows); ghost-manifest cleanup (~22 real modules); `balance` mock â†’ honest SEED. âœ… Done 2026-07-04 (#505): `MODE_LIVE_KEYS` covers all 6 preview modes; Build reads workflows/marketplace/sandbox; Comms reads rooms + registered Discord/Slack channel status; Finance reads saved watchlist/payments and refuses mock balances; Health/Knowledge/Family require configured Apple Health/websearch/WhatsApp plugins; `/plugins` reports runtime `configured`; `/status` reports channels. | 8 | âœ… done |
-| O26-P3.2 | HUD_V2_REMAINING punch-list: Â§2 Console depth (Settings editor, Prompt A/B UI, Data Spaces CRUD, Secrets form, Rooms) Â· Â§4 cockpit (task-fan, per-message TTS+mic, cognition SSE) Â· Â§5 TweaksPanel Â· Â§6 fonts | 8 | ğŸŸ¡ partial (merged #507 + #515 + #517; capability check UI in #519; current-mesh task fan in #521; preferences/tweaks UI in #523; self-hosted fonts in #525) â€” reconciles stale HUD_V2_REMAINING claims against code and adds a Vitest guard. Verified shipped: settings editor, prompt A/B/diff/rollback/preview/commit, Data Spaces list/create/delete/assign/unassign, Rooms create/send/history drawer, capability issue/check UI, current-mesh `/tasks` task fan, command-palette look/density/motion/texture tweaks, self-hosted Space Grotesk + JetBrains Mono WOFF2 assets, secret store form, LM Studio controls, heartbeat/run/status, sandbox execute, per-message TTS, mic loop, cognition SSE, strict-local/mic topbar. #551 adds Safe Comms channel inbox transport v0 for telegram/web threads + governed replies. Still open: owner live-data/plugin setup and non-v0 inbox channels (email/WhatsApp). |
-| O26-P3.3 | M2.4 completion: persist the eval-store baseline across nightly runs so baseline-compare bites | 2 | âœ… done (2026-07-04, #506) â€” `companion_eval --ci-gate --store-root` writes to an explicit store; nightly workflow restores/saves that store via pinned `actions/cache/{restore,save}` with run-id keys + dataset/source restore prefix; tests pin CLI store-root and workflow cache wiring |
-| O26-P3.4 | M3.1 mobile approval queue over the *unified* funnel (dep: P0.7) | 5 | âœ… done (2026-07-04, #509) â€” Expo mobile gains an Approvals tab over `GET /autonomy/approvals` + `POST /autonomy/tasks/{id}/decision`, with optional `X-Admin-Token` settings support and parity ledger update. |
-| O26-P3.5 | Q2 persona rail (now scoring the right text; dep P0.4) + Q3 caring follow-ups in the brief (golden loop #3) | 3 | âœ… done (2026-07-04, #510) â€” persona rail derives compact profiles from current SOUL versions at the live cognition trace seam and adds `signals.persona`/persona drift stats; caring follow-ups are recomposed from existing failed/blocked tasks + memory facts in the morning brief and unified digest. `tests/test_o26_p3_5_persona_caring.py` (+6) plus adjacent quality/digest/timeline/autonomy endpoint suites were green locally; full PR CI green before merge. |
-| O26-P3.6 | Landing page, dev half (M3.3) | 3 | âœ… done (2026-07-04, #512) |
-
-### Phase 4 â€” WorldView active workstream (D4, owner call; parallel lane)
-
-#258 startup parity â†’ #255 live MCP contract test â†’ #254 Signal-Layer cockpit in the real HUD â†’
-#256 SignalLayerPlugin for Jarvis/Argus â†’ #257 governance-safe recommendations (pairs with P0.7) â†’
-#259/#265 demo polish â†’ **#169 MCP write transport** (unblocks the last K2 slice: WorldView HMAC â†’
-kernel Capability) â†’ #170 live Neo4j validation. Stays runtime-opt-in for partners.
-
-### Phase 5 â€” Proof (owner-led, parallel from day 1 â€” the true critical path)
-
-â­B0 + record AUD-0/H23.23 â†’ GitHub settings + license flip â†’ **partner release channel** (partners
-pin tagged releases + upgrade drill) â†’ recruit 1â€“3 partners; north-star on a non-owner install â‰¥2
-weeks, **re-baselined post-P0.2** (pre-fix data excludes all web-chat activity) â†’ 72h soak â†’ tag 1.0.
-
-### Phase 6 â€” Guard rails (continuous)
-
-Park-list guard (**revised 2026-07-11** for the expanded 1.0 gate; implementation = **H23.28**):
-`image_gen`, `media_gen/media_skill`, `desktop_operator`, `browser_agent`, `screen_grounding`,
-`satellite_hub`, `node_mesh`, `e2e_sync`, `wyoming`, `training/`, `rust/` stay frozen **until the
-proof-track milestones are recorded (A1 â­B0 + A2 72h soak) and partner recruitment has started
-(A7 in progress)** â€” then they unfreeze **in phases, as the substrate of the AI-OS horizons**:
-**wave 1** with ORIZONT 28 (`browser_agent`, `desktop_operator`, `screen_grounding`) Â· **wave 2**
-with ORIZONT 29 (`image_gen`, `media_gen`, `media_skill`) Â· **wave 3** with ORIZONT 30/33
-(`wyoming`, `satellite_hub`, `node_mesh`, `e2e_sync`). `training/` and `rust/` remain frozen until
-explicitly pulled by an owner decision. A PR carrying `unpark:` remains the per-PR escape hatch;
-WorldView explicitly NOT on this list per D4 Â·
-new-test policy: golden-loop behavioral by default, wiring/parity only for new route surfaces Â·
-âœ… HUD-E2E lane now triggers on `agents/core/**` (oracle gap found reviewing #498: the lane boots
-the real backend, but the pipeline-rewiring PR never ran it because the path filter stopped at
-`agents/web.py`).
-
----
-
-## ğŸ§© ORIZONT 27 â€” Capability Registry & Unified Action API (Nerva Program A Â· AI-OS Phase 1, direction 2026-07-11)
-
-> **Mission:** agents reason over a machine-readable capability inventory instead of hardcoding
-> actions; one call path (`perform()`); every capability carries risk, contract, verification,
-> rollback and earned confidence. **Builds ON (do not rebuild):** the O24 V2 registry
-> (`observability/capability_registry.py`, SEAMâ†’WIREDâ†’VERIFIEDâ†’GA), `automation_contracts.py`,
-> the action-auth matrix (`tests/test_action_auth_matrix.py` + `_snapshots/action_auth.json`),
-> the H20.R1 model-directed loop (`agent_runtime.py`). Vision: [NERVA_VISION.md](NERVA_VISION.md) Â§6
-> Â· provenance: [2026-07-11 archive](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md).
-> â†’ Version **v0.21.0**.
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H27.1 âœ… | **Registry schema v1** â€” `CapabilityRecord` now carries `description/inputs/risk/requires/supports/verification/rollback/confidence/implementation` while preserving the O24 readiness + harness fields and the existing plugin/component/skill derivation; `action:<kind>` records join the same registry (no parallel system), and `/api/metrics/capabilities` is additively enriched. Conservative defaults never fabricate verification or autonomy: every record starts at confidence `0.0` until H27.7 earns it from outcomes. Evidence: `capability_manifests.py`, `tests/test_capability_registry.py`, `tests/test_h27_capability_manifests.py`. | 5 | P0 | O24-V2 | NERVA_VISION Â§6 |
-| H27.2 âœ… | **Capability manifests** â€” the runtime action-auth snapshot is authoritative and currently contains **12** patterns (the older estimate said 11); all 12 have explicit risk, inputs, kernel/contract refs, supports, verification, rollback, confidence and implementation metadata, with an exact-set drift test. All **33** governed built-in plugins derive complete metadata from their existing `PluginManifest`, keeping network/data policy single-sourced; every plugin defaults conservatively to `sensitive` because network/data scope alone cannot prove read-only behavior. | 5 | P0 | H27.1 | `action_auth.json` |
-| H27.3 âœ… | **Unified Action API** â€” default-off (`JARVIS_UNIFIED_ACTION_API` **and** existing `JARVIS_ACTION_KERNEL`) async `CapabilityActionAPI.perform(capability_id, params, ctx)` validates the manifest/input contract and returns stable disabled/refused/queued/completed/failed truth. New bindings are kernel-mediated exactly once; existing brokers and ToolRPC use guarded delegated adapters accepted only for action kinds already classified `KERNEL`. Review hardening binds token capability-name to the manifest action, requires a broker-bound method + live kernel hook, and refuses non-gated ToolRPC tools â€” preventing bypass and double authorization. DENY/QUEUE never execute; handler failures are redacted. H27.4 model-directed selection remains deliberately separate. Evidence: `capability_actions.py`, `tests/test_h27_capability_actions.py`. | 8 | P0 | H27.1, O24-K1 | NERVA_VISION Â§6 |
-| H27.4 âœ… | **Registry-aware planning** â€” `ToolRPCServer` now carries optional `capability_id`; the live registry derives `tool:*` records and the production echo/time tools declare identity. Behind default-false `llm.registry_planning_enabled`, `AgentToolRuntime` offers only WIRED/VERIFIED/GA tools with registry description/inputs/risk/readiness/confidence; missing/SEAM/malformed/duplicate records fail closed. No match returns an honest refusal before any provider call, and a provider cannot hallucinate a filtered tool back into execution (the filtered subset is enforced at execution too). Flag OFF preserves legacy metadata/flow. Evidence: `tests/test_h27_registry_planning.py` + full Agent Runtime v2 suite. | 5 | P1 | H27.3 | H20.R1 |
-| H27.5 âœ… | **Verification field live** â€” all **84** capability refs in the complete runtime inventory resolve one-to-one to executable V1 `RealityCase`s: 12 actions traverse the real `CapabilityActionAPI` + kernel/policy + isolated kill-switch, 2 live tools traverse real ToolRPC, 33 plugins exercise their actual manifest-driven egress boundary without sockets, 24 components prove boot-status + constructed runtime object, and 13 skills prove discovery + loaded module. The scheduled reality lane now executes the dynamic boot-registry pack. All 69 WIRED plugin/component/skill cases pass hermetically; the intentionally manifest-only `skill:Weather Intel` case fails honestly and remains SEAM. A green runner remains the only in-process VERIFIED promotion path; V3 still forbids fabricated/durable promotion. Evidence: `capability_verification.py`, `reality_harness.py`, `test_h27_capability_verification.py`, `test_reality_harness.py`. | 3 | P1 | O24-V1/V3 | â€” |
-| H27.6 âœ… | **Rollback contracts** â€” every capability record now serializes a validated `RollbackContract` (`mode/description/automatic/handler_ref/limitations`) instead of an unstructured promise. Contradictory contracts fail closed (`automatic` requires a handler; `none` cannot claim one). The shared autonomy projection resolves exact/wildcard action manifests, exposes `capability_id + rollback` in `/autonomy/tasks` and `/autonomy/approvals`, and returns `null` for unknown kinds; browser Decision Inbox and native Approvals show the story before approval. No automatic undo dispatcher or false reversibility claim was added. Evidence: `capability_manifests.py`, `routers/autonomy.py`, focused backend/browser/mobile tests. | 3 | P2 | H27.2 | â€” |
-| H27.7 âœ… | **Confidence & earned autonomy** â€” real terminal action outcomes are durably upserted in the existing `autonomy.db` (no payload/PII): `DONE` counts once, terminal retry exhaustion counts one failure, and executor-less `noop`, interim retries, unknown actions, approvals/rejections do not earn trust. Registry action confidence is the conservative 95% Wilson lower bound plus success/failure/sample provenance; an unavailable ledger degrades to confidence 0 without hiding action records. Policy reads confidence only through the worker-bound private ledger provider (caller payloads cannot spoof it). `autonomy.earned_autonomy_enabled` is seeded/live-synced **OFF by default**. When explicitly enabled, only `auto` mode with `n>=20` and confidence `>=0.80` may lower **one** rung (`ASKâ†’NOTIFY` or `NOTIFYâ†’ACT`) while retaining the original risk tier. Explicit `ASK/OFF`, per-agent asks, tainted input and all kernel/token/contract/budget/kill-switch rails remain authoritative; H27.7 never lowers `IRREVERSIBLE_OR_MONEY` (existing within-cap money behavior is unchanged, never confidence-derived). Evidence: `queue.py`, `worker.py`, `policy.py`, `capability_registry.py`, `test_h27_earned_autonomy.py`. | 5 | P1 | H27.1 | NERVA_VISION Â§7 |
-| H27.8 âœ… | **Registry read surface** â€” canonical user-guarded `GET /api/capabilities` exposes the same live registry snapshot while legacy `/api/metrics/capabilities` remains compatible. The HUD Verification Fabric now reads the canonical route and renders bounded per-record risk, supports, confidence and readiness columns; route/OpenAPI/auth snapshots and generated TS schema are pinned. Mobile registry-board parity is visible as H18.21 (approval rollback parity shipped in this wave). Evidence: `routers/analytics.py`, `ReadinessPanel`, `test_capability_registry.py`, `readiness-panel.test.tsx`. | 2 | P2 | H27.1 | V2 panel |
-
-> **Total ORIZONT 27:** ~36 SP
-
-## ğŸ–±ï¸ ORIZONT 28 â€” Computer & Browser Operator (Nerva Program B Â· AI-OS Phase 2a, direction 2026-07-11)
-
-> **Mission:** turn H15's complete-but-stubbed governance into real actuation; the action
-> hierarchy **API â†’ CLI â†’ structured UI â†’ visual** becomes an explicit router that always picks
-> the lowest-risk implementation. **Builds ON:** `browser_agent.py` (GovernedBrowser â€” egress
-> allowlist + approval queue stay byte-identical), `desktop_operator.py`, `screen_grounding.py`,
-> `llm/vlm.py`, `core/environments/` (local/docker/ssh). Hermes catch-up items S1/S3 live here.
-> â†’ Version **v0.22.0** Â· unpark wave 1.
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H28.1 âœ… | **Real Playwright driver** behind `GovernedBrowser` (host seam; the Null driver stays the test default; governance layer untouched) Â· **delivered 2026-07-12** â€” optional `PlaywrightBrowserDriver`, owner-enabled and dependency-lazy, with bounded observations, sanitized explicit-directory downloads, fresh context, explicit pre-start URL guard on every routed request/redirect/subresource, service workers blocked, deterministic close, and no ambient browser profile | 8 | P0 | H15, H27.3 | NERVA_VISION Â§4-P3 |
-| H28.2 âœ… | **Action-hierarchy router** â€” given a goal, prefer API â†’ CLI â†’ structured UI automation â†’ visual computer use; visual is the audited fallback, never the default Â· **delivered 2026-07-12** â€” `ActionHierarchyRouter` selects but never executes; readiness-gated deterministic ordering, explicit visual opt-in, bounded tamper-evident decision audit, and honest no-route/degraded states | 5 | P1 | H27.3 | NERVA_VISION Â§4-P3 |
-| H28.3 âœ… | **Terminal-target abstraction** over `core/environments` â€” named execution targets (`bonobo-windows`, `pi-house`, `isolated-sandbox`) with per-target capability policy + audit chain (Hermes has backends, not the audit â€” superiority S3) Â· **delivered 2026-07-12** â€” strict named-target registry over local/docker/SSH backends, per-agent/per-capability allow/approval/deny policy, safe default targets, and a bounded persisted SHA-256 audit chain that refuses corrupt history; policy plane only, no transport bypass | 5 | P1 | H27.2 | NERVA_VISION Â§8 |
-| H28.4 âœ… | **Desktop actuation** behind `GovernedDesktop` â€” accessibility-tree first, proven-local VLM/screen-grounding fallback, durable human-approved ToolRPC execution, and execution-time `desktop.step` Action Kernel mediation for click/type/launch. Default-off host/isolation flags, bounded proposal preflight + execution-time revalidation, live accessibility injection classification, fail-closed malformed/disabled outcomes, and `finally` cleanup are covered by the H28 host/route/operator suites. **Hermetic completion:** the canonical operator pack reaches the real `WindowsDesktopDriver`, `DesktopActionExecutor`, ToolRPC, SQLite autonomy queue, `TaskExecutor`, and kernel rails. **Owner/live gate remains honest:** real Windows UIA + installed Playwright Chromium validation is still opt-in on the owner host and is not claimed by CI. | 8 | P1 | H28.1 | H15.3 |
-| H28.5 âœ… | **Operator reality-harness pack** â€” `OPERATOR_CAPABILITY_CASES` contains **7/7 passing hermetic contracts**: GovernedBrowserâ†’Playwright, accessibility-firstâ†’proven-local fallback, durable approved ToolRPCâ†’TaskExecutorâ†’kernelâ†’click/type/launch, kill-switch DENY, live accessibility injection block, malformed/disabled fail-closed paths, and success/error cleanup. Every result carries measured action/governance/approval/execution/block/cleanup counters and proves `ungoverned_actions == 0`; production-seam spies prevent a bypassing stub from fabricating the pass. Live owner-host validation remains explicitly required. | 3 | P1 | O24-V1 | NERVA_VISION Â§8-S1 |
-| H28.6 âœ… | **Unpark wave 1** â€” `browser_agent`/`desktop_operator`/`screen_grounding` are permanently removed from `PARK_POLICY` after the H28 reality pack passed. Exact-policy tests preserve wave 2 (`image_gen`/`media_gen`/`media_skill`), wave 3 (`wyoming`/`satellite_hub`/`node_mesh`/`e2e_sync`), owner-only `training/` + `rust/`, and `park-policy` self-protection unchanged. PR declaration remains `unpark: park-policy`; `unpark: wave-1` records the graduation. | 1 | P2 | H23.28 | O26 Phase 6 |
-
-> **Total ORIZONT 28:** ~30 SP
-
-> **H28.4 HUD depth completion (2026-07-14):** Console â†’ Build â†’ Operator now provides bounded
-> browser policy/plan dry runs and preview-first governed desktop submission over the existing
-> routes. Edits invalidate the desktop preview, canonical snapshots are submitted, outcomes separate
-> proposed/queued/blocked/failed/partial/executed, and partial runs warn against whole-plan retry.
-> Native mobile hides `toolrpc.desktop_run` payloads and omits Approve while retaining Reject/Defer.
-> The owner/live UIA + Chromium gate above remains open; no host execution is claimed by this update.
-
-## ğŸ“º ORIZONT 29 â€” Multimedia Director (Nerva Program C Â· AI-OS Phase 2b, direction 2026-07-11)
-
-> **Mission:** one verb â€” `present(content, target_device, mode, urgency, duration)` â€” on every
-> screen and speaker in the house; play the right thing on the right device. **Builds ON:**
-> `plugins/spotify_plugin.py` (real playback control), `media_catalog.py`/`media_export.py`,
-> interrupt budgets. The initial audit found no Chromecast/`media_player` abstraction; the
-> governed, default-off fabric and its owner-wired host seams are now delivered.
-> â†’ Version **v0.23.0** Â· unpark wave 2 complete.
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H29.1 âœ… | **`media_player` abstraction + device registry** â€” Chromecast (pychromecast), Spotify Connect, browser-tab kiosk, local player; discovery + capability per device Â· **delivered 2026-07-12 (O29 wave 1)** â€” `agents/core/media_director.py`: `MediaDevice` (strict identity/support validation; kinds: chromecast/spotify_connect/browser_tab/local/speaker/tv) + `DeviceRegistry` (byte/item-bounded, atomic, thread-safe, corrupt-safe store; room-aware `resolve_target` that refuses ambiguity; injectable `discover()` seam â€” pychromecast/host scanners stay owner-wired host seams, `NullMediaDriver` default refuses honestly) | 5 | P0 | â€” | NERVA_VISION Â§4-P5 |
-| H29.2 âœ… | **The `present()` capability** â€” content Ã— device Ã— mode Ã— urgency Ã— duration, kernel-mediated (reversible tier), registered in the O27 registry Â· **delivered 2026-07-12** â€” `MediaDirector.present()` on the O27 facade as kernel kind **`media.present`** (ACTION_REGISTRY + manifest + action-auth snapshot): `MEDIA_PRESENT_CONTRACT` (0.45 discipline) â†’ `resolve_content` (http(s)-only URLs; local paths root-allowlisted) â†’ target capability check â†’ etiquette â†’ bounded driver seam â†’ **driver-status verification** (never asserted) â†’ session record. `restore()` has its own mediated **`media.restore`** action; both routes refuse when the unified API/kernel are off â€” no unmediated device path. | 5 | P0 | H29.1, H27.3 | NERVA_VISION Â§6 |
-| H29.3 âœ… | **Content resolvers** â€” local/NAS media, the T-0.46 media catalog, URLs via the governed browser; honest "can't resolve" states Â· **completed 2026-07-13** â€” `catalog` ids and unique bounded `query` matches resolve through the real opt-in `MediaCatalog`, then revalidate the selected path/URL at execution time. Local refs require an existing regular file under an explicit root; URL refs use `GovernedBrowser.preview()` with an explicit allowlist plus SSRF policy and never fetch during resolution. Missing/ambiguous refs fail before driver invocation with bounded candidates/provenance; malformed roots/allowlists fail closed. Task-1 verification: 82 focused tests plus Ruff/Bandit/diff-check clean. | 3 | P1 | H29.2 | â€” |
-| H29.4 âœ… | **Media session state + interrupt etiquette** â€” don't break a movie for a P3 nudge; rides the K3 interrupt budgets Â· **completed 2026-07-13** â€” thread-safe persisted `SessionBoard`, one-level bounded restore snapshots, and `may_interrupt()` etiquette remain in force. Active high-urgency interruption now consumes the request-scoped live `orch.autonomy.budget`; missing, malformed, or exhausted budgets refuse before the driver, while idle/low/normal paths consume nothing. `duration_seconds` is accepted only by an explicitly duration-capable driver and included in status verification and restore; unsupported duration refuses before actuation. | 3 | P1 | H29.2 | MOONSHOT Â§5.4 |
-| H29.5 âœ… | **Media reality-harness pack** + honest degraded modes (device offline â‰  crash) Â· **completed 2026-07-13** â€” the canonical hermetic H29 pack covers default-off/null refusal, local generation â†’ real catalog â†’ kernel/action API â†’ driver-verified presentation, durable cloud approval, explicit governed-browser summarizer policy, and kernel halt with zero driver calls. Its causal ledger measures `ungoverned_actions == 0`; host tripwires prove no ambient network/device/generation path. Task-3 gate passed 152 focused tests plus 128 release/action/kernel/parity checks (one expected live-host skip). | 2 | P2 | O24-V1 | â€” |
-| H29.6 âœ… | **Unpark wave 2** â€” `image_gen`/`media_gen`/`media_skill` graduated from `PARK_POLICY` on 2026-07-13 after the H29 reality pack. Only these three entries moved: local generation keeps an explicit local guard, cloud generation remains durable-approval gated, summarization requires an explicit governed URL seam, and all default/null constructors fail closed. Wave 3, owner-only modules, `training/`, `rust/`, and park-policy self-protection remain frozen. | 1 | P2 | H23.28 | O26 Phase 6 |
-
-> **Total ORIZONT 29:** 19/19 SP implementation complete. The browser Console and native mobile
-> Media surfaces share the unchanged guarded API, distinguish disabled/queued/refused/unverified/
-> verified outcomes, and never embed remote media. Real Chromecast/Spotify/host-driver execution
-> remains an explicit owner-host seam and is not claimed by the hermetic completion gate.
-
-## ğŸ  ORIZONT 30 â€” House Brain (Nerva Program D Â· AI-OS Phase 3, direction 2026-07-11)
-
-> **Mission:** a live model of the home â€” devices, rooms, occupants, presence, policies â€” with
-> governed actuation. Home Assistant is the device abstraction layer; Jarvis sits above it as the
-> reasoning and authority layer. **Builds ON:** `plugins/homebridge.py` (LOCAL_ONLY),
-> `plugins/iot_control.py`, `voice/wyoming.py`, the bi-temporal KG (H14). **Verified missing
-> today:** any HA REST/WebSocket state integration; the house graph. â†’ Version **v0.24.0** Â·
-> unpark wave 3 (with O33).
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H30.1 âœ… | **Home Assistant adapter, read-first** â€” REST/WebSocket state (entities, areas, sensors), LOCAL_ONLY, honest empty state without HA Â· **completed 2026-07-13** â€” strict-local/default-off adapter with SecretBroker credentials, DNS-rebinding defense, bounded REST snapshots, authenticated WebSocket events/reconnect backoff, and named degraded/offline states; no cloud fallback or mutation surface. | 5 | P0 | â€” | NERVA_VISION Â§4-P4 |
-| H30.2 âœ… | **Device/room/occupant graph** on the bi-temporal KG â€” rooms contain devices, observed_by cameras, occupied_by people; queryable Â· **completed 2026-07-13** â€” public topology projects into the existing bi-temporal KG while occupant/presence records stay encrypted, pseudonymous, consent-scoped, revocable, tombstoned, key-rotatable, and explicitly purgeable in the private house store. | 5 | P0 | H30.1, H14 | NERVA_VISION Â§4 |
-| H30.3 âœ… | **Presence & context inference** (local-only) â€” who is home, which room is occupied, privacy context per room Â· **completed 2026-07-13** â€” bounded local sensor fusion emits typed house events with confidence/freshness; stale or ambiguous evidence fails closed, private-room identity is withheld, and the path proves zero egress. | 5 | P1 | H30.2 | â€” |
-| H30.4 âœ… | **Governed actuation** â€” HA service calls through the kernel per the graduated ladder; lights/climate earn auto-within-bounds; **locks/doors/security never below strong confirmation** (hard floor) Â· **completed 2026-07-13** â€” narrow canonical light/climate/security actions flow through durable TaskQueue â†’ TaskExecutor â†’ Action Kernel â†’ allowlisted HA services â†’ fresh-state verification. Security uses exact, expiring, single-use strong confirmation; retries are idempotent, failed verification rolls back through a separately governed recovery action, and Windows SQLite handles close deterministically. | 5 | P0 | H30.1, H27.7 | NERVA_VISION Â§7 |
-| H30.5 âœ… | **`GET /api/house/state` + HUD panel** â€” the house graph visible, honest empty state Â· **completed 2026-07-13** â€” guarded domain router exposes bounded state/proposal/strong-confirmation APIs; browser House HUD and native mobile Home tab share the API and preserve disabled/degraded/private/approval/verified truth. Route, OpenAPI, auth, HUD, and mobile parity ledgers are synchronized. | 3 | P2 | H30.2 | â€” |
-| H30.6 âœ… | **Room-aware voice** â€” wyoming/satellite unpark; a satellite's room becomes the default output device for `present()` Â· **completed 2026-07-13** â€” paired satellite credentials are digest-only, expiry/peer/transport bound, and replay protected; server-owned room identity ignores client spoofing, privacy/ambiguity refuses output, and exactly one room-default device reaches the existing H29 governed media action. `wyoming` and `satellite_hub` graduated from wave 3; `node_mesh`/`e2e_sync` remain parked. | 3 | P2 | O29, H23.28 | H12.4 |
-| H30.7 âœ… | **House reality-harness pack** â€” hermetic HA simulator proves the rail; live = owner-gated Â· **completed 2026-07-13** â€” the canonical pack passes **7/7 hermetic production-rail cases** across read/reconnect/offline, graph/privacy/purge, reversible actuation, security confirmation, verification/rollback, kernel halt, and room-aware output. The causal ledger measures `ungoverned_actions == 0` and rejects unapproved HA mutations; the read-only live probe requires both generic reality-harness and explicit H30 owner opt-in, with missing configuration reported degraded rather than passed. | 3 | P1 | O24-V1 | â€” |
-| H30.8 | **Ambient light bridge (assistant state â†’ LAN strip)** â€” the last open item from the 2026-08-06 "J.A.R.V.I.S. in the room" guide (`docs/design/JARVIS_PRESENCE_GAP.md`): a default-off bridge that maps the SAME voice/assistant state the orb renders onto a LAN light controller, so the strip and the sphere can never disagree. WLED first (plain HTTP JSON on the local network, no cloud account, strict-local by construction); Hue/Govee behind their own opt-in since they reach a vendor cloud. Must go through the existing governed device path, stay silent (not guess) when the device is unreachable, and ship with the light OFF by default. | 3 | P3 | H30.4 | NERVA_VISION Â§7 |
-
-> **Total ORIZONT 30:** 29/29 SP of the original H30.1â€“H30.7 scope complete. **H30.8 (3 SP,
-> added 2026-08-06) is open and sits OUTSIDE that completion gate** â€” the ambient light bridge
-> is new scope, not a regression of the closed seven. The browser House HUD and native mobile
-> Home surface share the guarded API; the seven-case hermetic pack proves zero ungoverned actions.
-> Real Home Assistant, physical satellite, and household device execution remain explicit owner-host
-> validation seams and are not claimed by the hermetic completion gate.
-
-## ğŸ“· ORIZONT 31 â€” Camera Intelligence (Nerva Program E Â· AI-OS Phase 4, direction 2026-07-11)
-
-> **Mission:** local-only camera perception â€” structured events, never continuous footage into a
-> model; one transient snapshot is masked before an optional strict-local VLM call; natural-language
-> retrieval remains metadata-only. Frigate is the read-only detector/event backend and optional
-> ONVIF is discovery-only; Jarvis does not proxy RTSP, record video, or expose clips/private URLs.
-> **Privacy-critical: H31.1 precedes every poll, fetch, inference, store, and publication.**
-> â†’ Version **v0.25.0**.
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H31.1 âœ… | **Privacy contract FIRST** â€” versioned household consent + generation-bound leases; per-camera/global kill coverage; mandatory masks; hard snapshot/metadata TTL ceilings; identity/face/biometric/plate inference absent by construction | 2 | P0 | â€” | NERVA_VISION Â§12 |
-| H31.2 âœ… | **Read-only Frigate + discovery-only ONVIF** â€” bounded LAN-pinned metadata polling and a private transient snapshot seam; no Jarvis RTSP decoder, stream surface, recorder, NVR, or camera mutation | 5 | P0 | H31.1 | NERVA_VISION Â§4-P1 |
-| H31.3 âœ… | **Local detection pipeline** â€” allowlisted person/vehicle/animal/package events with deterministic zone + line-crossing rules; one already-masked strict-local VLM description on demand only | 8 | P1 | H31.2 | â€” |
-| H31.4 âœ… | **Encrypted event vault + health** â€” bounded redacted metadata and separately encrypted masked snapshots, exact â‰¤24h/â‰¤30d expiry, quotas/purge/scheduler, source/storage health | 5 | P1 | H31.3 | â€” |
-| H31.5 âœ… | **Privacy-safe temporal event retrieval** â€” deterministic NL/filter search over encrypted metadata; no clip persistence/proxy, raw-frame endpoint, or Frigate private URL | 5 | P2 | H31.4 | NERVA_VISION Â§4-P1 |
-| H31.6 âœ… | **Typed metadata-only feeds** â€” restart-safe bounded fan-out into H30 anonymous house sensors and the default-off H33.1 monitor engine, with per-sink isolation/backpressure | 3 | P2 | H30.2, H33.1 | â€” |
-
-> **Total ORIZONT 31:** ~28 SP
->
-> **Completion evidence (2026-07-13):** canonical H31 reality pack covers no-consent zero-call,
-> one-snapshot mask-before-VLM, encrypted storage/retrieval/exact expiry, restart dedupe into H30/H33,
-> pre-poll kill, mid-inference revocation/purge, and bounded offline degradation. Every hermetic case
-> reports zero ungoverned actions, external hosts, and raw-frame consumers. The separately named live
-> local-Frigate read is double opt-in and never treated as a fake pass when owner hardware is absent.
-
-## ğŸŒ± ORIZONT 32 â€” Capability Acquisition (Nerva Program F Â· AI-OS Phase 5, direction 2026-07-11)
-
-> **Mission:** instead of "I can't" â†’ "I don't know **yet**" â€” understand the gap â†’ search
-> existing skills â†’ research docs/APIs â†’ generate â†’ sandbox test â†’ approval â†’ registry â†’ reuse
-> forever. **Builds ON:** the full skill lifecycle (`skills/{loader,importer,usage,curator,
-> proposals,signing,marketplace}.py`, `skill_drift.py`), `self_evolution.py`, the O20 governed
-> learning loop, sandbox + quarantine, `grounded_plan.py`. Governed per MOONSHOT Â§5.7 â€” the two
-> O20 invariants hold in every item (strict-local review model; self-modifications land in
-> quarantine/approval, never direct). â†’ Version **v0.26.0**.
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H32.1 âœ… | **Gap detection â†’ capability request** â€” explicit bounded tool/capability misses create encrypted, deduplicated, restart-safe `missing` requests; normal unanswered chat cannot manufacture one | 3 | P1 | H27.1 | NERVA_VISION Â§4-P6 |
-| H32.2 âœ… | **Reuse-first search** â€” deterministic local registry â†’ installed skill â†’ reviewed marketplace resolution precedes every generation attempt, with durable provenance and an honest `reused / (reused + generated)` metric | 3 | P1 | H32.1 | NERVA_VISION Â§8-S2 |
-| H32.3 âœ… | **Doc-research step** â€” consented local-SearXNG research uses allowlisted SSRF/rebinding-safe bounded fetches, taint-preserving encrypted extracts, and a hard `ground_plan()` citation gate; phantom citations and implicit cloud/search fallback fail closed | 3 | P2 | H32.2 | T-0.51 |
-| H32.4 âœ… | **Generate + sandbox-test harness** â€” strict-local stdlib-only generation remains encrypted in quarantine and must pass generated, system-owned contract, and mutation tests in a pinned Docker/WASM profile before an immutable receipt permits proposal | 8 | P0 | H32.3 | NERVA_VISION Â§4-P6 |
-| H32.5 âœ… | **Approval â†’ signing â†’ registry** â€” permanent owner approval plus Action Kernel mediation, receipt recheck, managed manifest signing, atomic sandbox-only package storage, ToolRPC registration, low-confidence outcome projection, and crash-safe rollback are enforced | 5 | P0 | H32.4, H27.7 | MOONSHOT Â§5.7 |
-| H32.6 âœ… | **Acquisition audit trail + rollback** â€” an encrypted hash-chained bounded ledger covers the lifecycle; guarded browser/admin and read-only mobile surfaces expose honest state, reuse, export/purge, revoke, and rollback without importing acquired code in-process | 2 | P1 | H32.5 | â€” |
-| H32.7 âœ… | **Hermes-parity eval for the loop** â€” the non-promoting S2 benchmark passes the dedicated digest-pinned Docker CI lane across miss â†’ research â†’ strict-local generation â†’ isolated verification â†’ approval/signing â†’ sandbox execution â†’ reuse, plus tamper, halt, revoke, rollback, host, and network negatives | 3 | P2 | H32.5 | NERVA_VISION Â§8-S2 |
-
-> **Total ORIZONT 32:** ~27 SP
->
-> **Implementation evidence (2026-07-13):** the local H32 pack covers encrypted request/research/
-> quarantine/audit stores, deterministic reuse, strict-local generation, receipt-bound sandbox
-> verification, permanent approval, signing, marketplace metadata, ToolRPC execution, tamper refusal,
-> lifecycle controls, and browser/mobile parity. H32.7 remains intentionally non-promoting; the
-> existing Docker isolation CI lane now proves the full S2 lifecycle, no host execution, and no
-> generated-code network access against the real pinned container image.
-
-## ğŸ‘ï¸ ORIZONT 33 â€” Ambient Intelligence (Nerva Program G Â· AI-OS Phase 6, direction 2026-07-11)
-
-> **Mission:** long-running monitors over house/camera/digital feeds + the decision ladder â€”
-> **ignore Â· remember Â· monitor Â· act silently Â· ask Â· interrupt** â€” so proactivity scales without
-> noise. **Builds ON:** `core/autonomy/observer.py` (ProactiveObserver â€” the seed), watchers,
-> `autonomy/policy.py`, interrupt budgets (K3), night-shift, the P1 pack's measured funnel.
-> â†’ Version **v0.27.0** Â· unpark wave 3 (with O30).
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H33.1 âœ… | **Declarative monitor framework** â€” default-off named monitors over bounded house/camera/digital projections; durable versioned registry, finite predicate DSL, debounce/hold/hysteresis/cooldown, source health, ownership cutover, and decision journal | 5 | P0 | H30.1 | NERVA_VISION Â§4-P1 |
-| H33.2 âœ… | **The decision ladder as policy** â€” every event classified ignore/remember/monitor/act-silently/ask/interrupt; interrupts stay â‰¤4/day *by construction* (K3 budget, not convention) | 5 | P0 | H33.1, K3 | NERVA_VISION Â§7 |
-| H33.3 âœ… | **Situation memory** â€” observations land in the KG with provenance + decay, so repeated anonymous observations in a bounded place/time window are answerable without claiming re-identification | 3 | P1 | H33.1, H14 | â€” |
-| H33.4 âœ… | **Ambient reality-harness pack** + counter-metric guards (interrupt/reject rates must not degrade as monitors multiply) | 3 | P1 | O24-V1/V4 | MOONSHOT Â§6 |
-| H33.5 âœ… | **Night-shift v2** â€” overnight monitor work measured on the north-star night split (P1 proof-gap 2/3 seam) | 3 | P2 | H33.2 | P1 pack |
-| H33.6 âœ… | **"What is Jarvis watching right now"** â€” HUD transparency surface listing live monitors + their last decisions | 3 | P2 | H33.1 | â€” |
-
-> **Total ORIZONT 33:** ~22 SP
-
-## ğŸ›°ï¸ ORIZONT 34 â€” Mission Control: the swarm cockpit (Nerva Program H, direction 2026-07-24)
-
-> **Mission:** one Tony-Stark surface where the owner *sees* and *steers* the whole swarm â€”
-> the internal cabinet (17 agents), the autonomy funnel, missions/workflows/sub-agents/A2A,
-> **and the dev swarm** (Claude / Codex / opencode / Antigravity coordinating through
-> `lock.py` + draft PRs). Read feed + the *existing* governed steering endpoints only â€” no
-> new mutating surface. **Builds ON:** `routers/brain.py` (standalone-page pattern), the
-> tracer, autonomy queue + Decision Inbox, Mission Workspaces (0.32), Subagent Gateway/A2A
-> (0.33), `lock.py`/`PARALLEL_WORKFLOW.md`.
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H34.1 âœ… | **Mission Control v1** â€” standalone `/mission-control` page (brain.html pattern: self-contained dark HUD, 2s polling) + read-only `GET /api/swarm/summary` aggregating roster + tracer activity, autonomy stats/mode/interrupt budget + payload-free pending preview, missions, workflow runs, sub-agents, A2A inbox count, kill-switch, and the dev-swarm lock files (pure-read, cross-OS reader â€” never imports `lock.py`). HITL via the existing governed endpoints (`POST /autonomy/tasks/{id}/decision`, `/api/missions/{id}/*`, `/api/a2a/inbox/{id}/decide`) with the shared `hud.admin_token`; without a token the approvals card degrades to counts + payload-free preview. | 5 | P1 | brain, 0.32, 0.33 | acest PR |
-| H34.2 âœ… | **Desk presence + away notify** â€” DONE. Owner-side desk-presence signal (Windows idle/lock daemon or the 0.64 Tauri host overlay) now feeds an `owner.away` state via **NEW `agents/core/autonomy/presence.py`** (`OwnerPresence`: a pure, fail-calm tracker â€” canonical `present`/`idle`/`away`/`unknown` with OS-alias normalization (`locked`/`active`/â€¦), TTL staleness, and an `is_away()` that is **False** for unknown/stale signals so a missing or dead daemon never self-triggers â†’ **zero behavior change by default**). Reported through **NEW `POST /api/presence/owner`** (admin-guarded â€” the daemon holds the same `hud.admin_token` as Mission Control steering) + read via `GET /api/presence/owner` (user) and the swarm feed (`/api/swarm/summary.presence` + an OWNER chip on the Mission Control page). When away, decision/approval cards are **also** fanned out to the governed `EscalationRouter` (`ESCALATION_CONTRACT` â†’ WhatsApp/Signal/â€¦ allowlist) via **NEW `escalation.AwayNotifier`**, wired into the notifier in `autonomy_coordinator.wire()` (Telegram excluded from the away fan-out â€” no duplicate on the rich-card channel). Because that wrap runs *inside* the worker's single budget-gated push (`_maybe_push` â†’ attention delivery broker), away-notify costs **no extra interrupt slot** â€” still â‰¤4/day by construction (proven end-to-end against a real `AutonomyWorker` push). `tests/test_h34_2_presence.py` (+20). Host daemon = owner-side install (`docs/OWNER_TASKS.md`). | 5 | P2 | H34.1, 0.44 | viziune 2026-07-24 |
-| H34.3 | **Dev-swarm PR/CI feed** â€” open PRs + check status (oracle_bridge plugin, `GITHUB_TOKEN`) next to the lock panel, so draft-PR-as-lock coordination is visible live in the cockpit. | 3 | P2 | H34.1 | AGENT_WORKFLOW.md |
-| H34.4 âœ… | **`SwarmPanel` in Console V2** â€” React port of the page into `frontend/src` (Observe section) so the cockpit is one keystroke from chat; the standalone page stays. **Delivered 2026-08-10:** a read-only `SwarmPanel` (Console â†’ Observe, reusing `useApi`/`Card`/`Row`/`Tag`) renders kernel halt/armed status, agent activity, the autonomy funnel, workspace counts (missions/workflow runs/sub-agents), the A2A inbox when enabled, and which dev-swarm agent (`claude`/`codex`/`opencode`/`antigravity`) currently holds a `lock.py` lock â€” then links out to `/mission-control` for the full HITL controls. Zero new backend route (reuses H34.1's `GET /api/swarm/summary`); mobile stays the existing H34.1 `â–` intentional-desktop-only marker in `mobile/PARITY.md` (dev-swarm lock files only exist on the owner's dev machine). `frontend/src/test/swarm-panel.test.tsx` (+5: feed read, live-vs-idle dev-lock tagging, halted state, honest offline degrade, cockpit deep-link); full frontend Vitest green (521, +5 on top of the #878 slice), clean `tsc --noEmit`, production build clean, `panel-chip-coverage.test.ts` passes unchanged (Card declares `live=`). | 3 | P3 | H34.1 | HUD_V2_REMAINING.md |
-| H34.5 | **Revenue-program pointer** â€” the "make money" ask stays governed: market intel / social / payments remain draft-first + approval-gated (0.39/0.45/0.68) and Mission Control is where those queued opportunities surface. No autonomous spending â€” MOONSHOT Â§5 stands. | â€” | â€” | â€” | MOONSHOT Â§5 |
-| H34.6 âœ… | **Projects workspace + activity timeline** â€” DONE (via #724). The historical / per-project counterpart to H34.1's live cockpit: a unified **Projects** mode (nav rail + palette) over **Rooms** (topic threads with persistent history + `@mention` roster), **Missions** (budgeted governed workspaces) and **Sessions** (resume an old chat), plus an **activity timeline** that fuses the hash-chained audit (`/api/admin/audit`, admin) with the autonomy queue (`/tasks?view=history`, user) under an all/audit/tasks filter. Titles/decisions/status only â€” **never payload/result** (no tier leak). Pure frontend â€” **zero new backend routes** (no snapshot reseed). Closes items 1â€“3 of `docs/design/HUD_FOLLOWUPS_COWORK_SPEC.md`. | 3 | P1 | H34.1 | #724 |
-
-> **Total ORIZONT 34:** ~22 SP (H34.1â€“H34.2 + H34.6 delivered 2026-07-24; H34.4 delivered
-> 2026-08-10). H34.3 (dev-swarm PR/CI feed) remains open.
-
----
-
-## ğŸ” Security route-policy gate (audit 2026-06-17 â€” assessment done, fix pending)
-
-External GPT audit + **runtime verification** (300 routes: 89 admin / 87 user /
-**124 open, of which 43 are open *and* mutating**). Guard model is sound; the gap
-is routes with **no guard attached**. Footguns on localhost; real unauthorized
-control surfaces on LAN/Pi/proxy/tunnel. Full verified write-up + proposed
-route-policy table: **`docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`**.
-
-| # | Item | S | P | AC |
-|---|------|---|---|----|
-| SEC-1 âœ… | **Guard webhook management** â€” `GET/POST/DELETE /api/webhooks` â†’ `admin_guard`; trigger keeps token/HMAC. Done: `webhooks.py` + contract test (`POST /api/webhooks` off-localhost â†’ 403). | 2 | **P0** | âœ… unauth management â†’ 401/403; trigger still works with token |
-| SEC-2 âœ… | **Route-auth matrix test** â€” `tests/test_route_auth_matrix.py` introspects `app.routes` vs `tests/_snapshots/route_auth.json`; fails CI on guard drift / new or unclassified open mutator. `PENDING_GUARD` set tracks the SEC-3 backlog (shrinks as guards land). | 3 | P1 | âœ… a new unguarded mutator fails CI |
-| SEC-3 âœ… | **Apply policy to remaining open mutators** â€” DONE. Batch 1 (12 â†’ admin): workflows CRUD, plugin toggle, heartbeat Ã—3, traces/clear, oauth/refresh, oracle sync+resolve, audit/action. Batch 2 (23 â†’ user): workflows run/hierarchical, KG writes Ã—6, local-docs, reflection, arena Ã—2, review Ã—3, eval Ã—2, autonomy/preview, agent-templates, llm/grammar, schedule/parse, security scan/spotlight. `PENDING_GUARD` is now **empty** â€” every mutating route is guarded or in `INTENTIONALLY_OPEN` (6 self-authenticating). Final surface: **110 user / 104 admin / 86 open**. Localhost dev unaffected. | 5 | P1 | âœ… enforced by SEC-2 matrix gate |
-| SEC-4 | Env/posture follow-ups: **npm Dependabot âœ…** Â· **doc counters refreshed âœ…** Â· **`JARVIS_HOME` runtime-state relocation âœ…** (F-08). **Remaining:** promote matrix/parity tests to **required** branch-protection checks (F-10, owner GitHub setting). | 3 | P2 | â€” |
-| SEC-5 âœ… | **F-06 âœ…** WorldView bridge Bearer auth (`WORLDVIEW_API_TOKEN`). **F-07 âœ…** plugin egress boundary â€” anchored host/sub-domain matching + `PluginHTTPClient` per-request manifest enforcement, now **strict by default** (`JARVIS_STRICT_EGRESS=0` opts out). Renamed 9 `for_plugin` ids to match manifests; completed allowlists (cloud-llm +Gemini, gmail/gcal +oauth2.googleapis.com, news +RO feeds); self-consistency test pins each plugin's real hosts. | 3 | P2 | âœ… undeclared plugin egress blocked |
-| SEC-5b âœ… | **Manifest the remaining networked plugins** â€” DONE. Added RESTRICTED manifests for `balance`, `analytics`, `websearch`, `digest`, `n8n`, the social/writeback/call families (`social_x`, `writeback_{notion,github,google_calendar}`, `call_{twilio,telnyx}`) and the webhook channels (`channel_{whatsapp,google_chat,teams,signal,matrix}`). Config/env-driven hosts (n8n `N8N_BASE_URL`, websearch `SEARXNG_URL`, Signal `base_url`, Matrix `homeserver`) are handled by a new **`register_dynamic_domain`** runtime allowlist that the egress gate unions with the static `allowed_domains` â€” no FULL/unmanifested escape. A new registry-driven test (`test_dynamic_family_ids_all_have_manifests`) pins every concrete family member to a manifest so a new member fails CI instead of silently re-opening the gap (the literal-regex test couldn't see the f-string ids). In-code SSRF guards retained as defense-in-depth. **Residual:** per-call webhook URLs passed via `kwargs` to `channel_teams`/`channel_google_chat` are constrained to the Microsoft/Google host suffixes by the static allowlist, not to one specific webhook. | 3 | P2 | âœ… every networked plugin enforced by the gate |
-
-> Verified false-alarms / owner-side (not repo defects): F-04 (auditor's stale
-> Windows venv/node_modules â€” CI builds clean), most of F-05 (needs owner
-> Dependabot view). Self-authenticating opens confirmed safe: webhook trigger
-> (token/HMAC), a2a/task (peer HMAC, off by default), mcp/server/rpc (disabled by
-> default + OAuth), oauth/callback (state-validated).
-
----
-
-## ğŸ“¦ Dependency upkeep & the fastapi 0.137 hold (2026-06-19)
-
-Dependabot triage this session â€” **merged** (safe): `actions/checkout` v6â†’v7 (#222),
-worldview-mcp dev deps (#223), root `vitest` 2â†’4 + `jsdom` 25â†’29 (#224). **Held for their own
-review cycle:** React 18â†’19 frontend (#226 â€” needs v2 bundle rebuild + visual check), WorldView
-23-update group (#228), mobile group (#227 â€” owner-gated, real-device validation per `OWNER_TASKS`).
-
-**fastapi 0.137 upgrade â€” âœ… RESOLVED (2026-06-19):** fastapi 0.137 wraps `include_router` results in
-an opaque `_IncludedRouter` instead of flattening them into `app.routes`, which collapsed the
-*introspected* route surface **296â†’83** and failed the route-parity / auth-matrix guards (the app was
-never broken â€” routes served + appeared in OpenAPI). **Fixed:** `tests/_route_introspect.py`
-`iter_effective_routes` flattens the wrappers via fastapi's own `_iter_routes_with_context` (no-op on
-â‰¤0.136); both guards use it with **snapshots unchanged**, and `fastapi` is bumped to `>=0.137.2,<0.138`
-with `starlette>=0.46,<1.0`. Root cause + repro:
-[`docs/research/2026-06-19-fastapi-0.137-include-router-regression.md`](docs/research/2026-06-19-fastapi-0.137-include-router-regression.md).
-
-**2026-07-31 â€” python-deps bump, verified rather than assumed.** `fastapi 0.139.2 â†’ 0.140.13`
-(+ `uvicorn 0.51.0 â†’ 0.52.0`, `annotated-doc 0.0.4 â†’ 0.0.5` transitively) and the `ruff` floor to
-`>=0.16.0`. Dependabot's #740 edited the three `requirements*.txt` **without regenerating the
-hash-pinned locks**, so its `in-sync` gate was red and â€” worse â€” the other 17 checks were green
-against the *old* pins: CI installs `--require-hashes` from the lock, so nothing in that run ever
-exercised the new fastapi. Locks regenerated with `./scripts/lock_deps.sh`; the upgrade then verified
-locally under fastapi 0.140.13 â€” route-parity, auth-matrix, OpenAPI-parity, route-guard-contract,
-release-gate and typegen guards all green, then the full backend suite green. **ruff 0.16's breaking
-change does not reach us**: the "413 default rules, up from 59" expansion applies only without an
-explicit selection, and `pyproject.toml` pins `select = ["E","F","W","I","B","UP","SIM","C4"]`; the
-dev lock had in fact already resolved 0.16.0, so the floor raise is bookkeeping. `ruff check .` clean
-on 0.16.1.
-
----
-
-## ğŸ” CodeQL & secret-scanning alerts (2026-06-17 â€” code fixes shipped; dismissals + ~12 triage pending)
-
-GitHub scanning surfaced 25 CodeQL alerts + 1 secret-scanning alert. Of the 13 reviewed:
-
-| # | Item | S | P | AC |
-|---|------|---|---|----|
-| CQ-1 âœ… | **Fix the real findings** (merged #215, #216): calendar `create_event` kwargs (#248, was a runtime `TypeError`), heartbeat `except None` (#26), `strip_thinking` ReDoS (#1), possessive template regex (#302), `log_safe()` on two admin log lines (#311/#24), and the secret-scan fixture FP (#215). | 3 | P1 | âœ… all green in CI; merged |
-| CQ-2 | **Owner: dismiss FPs/won't-fix in the UI** â€” secret-scan #1 (test fixture), CodeQL path-injection #22/#23/#431 (agent-id regex blocks traversal), var-defined #299/#298/#247 (used defaults), docs #432. See [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) Â§GitHub settings. | 1 | P2 | owner GitHub action |
-| CQ-3 | **Triage the remaining ~12 alerts** â€” only 13 of 25 selected were captured (no MCP code-scanning-list tool); needs an owner paste to finish. | 2 | P2 | paste â†’ triage â†’ fix real ones |
-
----
-
-## ğŸ” Fresh-eyes re-verification (2026-07-02 â€” code-verified backlog truth + July plan)
-
-Five parallel verification agents re-checked every claimed-open item against HEAD (`file:line`
-evidence, not status labels). Full report + July sequencing:
-[`docs/research/2026-07-02-fresh-eyes-backlog-reverification.md`](docs/research/2026-07-02-fresh-eyes-backlog-reverification.md).
-**Verdict:** the backlog is honest (12/16 spot-checks exact); 8 rows were stale in the *pessimistic*
-direction and were refreshed in the same PR (#479). Top verified-open engineering, by leverage:
-
-| Rank | Item | Size | Where tracked | Status |
-|------|------|------|---------------|--------|
-| 1 | **K2 wave-4b** â€” capability-token *enforcement* (issued at boot, never read back; `kernel/__init__.py:61-64`) + fold WorldView HMAC â†’ truly closes B1 | L | O24 Track K | âœ… done â€” enforcement landed 2026-07-02, and #594 adds the missing runtime WorldView MCP write caller with scoped HMAC capability minting behind plugin-gate + Action Kernel |
-| 2 | **K3** â€” unify InterruptBudget / mission / payment caps into `BudgetLedger` + handler token hooks | M | O24 Track K | âœ… done (2026-07-03) â€” M1.1 closed the named-dimension + handler-token hook tail |
-| 3 | **TASK-3** â€” taint marking at ingestion choke points | M | H23.6 | ğŸŸ¢ **channel ingress tail merged in #590** â€” producers marked (2026-07-02), M1.2 threads `Action.origin` from inbound channels into brokers, and inbound channel messages are now marked at `Gateway.route()` with private taint metadata plus public inbox taint fields. Full PR CI green. |
-| 4 | **TASK-2 tail** â€” plugin-gated modes Â· OpenAPI types (AUD-16) | M | TASK-2 | ğŸŸ¡ partial (2026-07-05) â€” `WatchlistPanel` âœ…, per-panel LIVE/SEED chips âœ… (58/58 Console cards), OpenAPI typegen/diff gate âœ…; plugin-gated mode base wiring âœ… (#505); P3.2 stale-doc guard âœ… (#507); local-control tail including self-hosted fonts âœ…; Safe Comms channel inbox transport v0 shipped in #551 for telegram/web; remaining tail is owner live-data/plugin setup + non-v0 inbox channels |
-| 5 | **H23.17** â€” chat/voice E2E flows Â· nightly soak Â· browser matrix (harness exists, specs don't) | Mâ€“L | H23.17 | âœ… done (2026-07-03) â€” M2.1 + M2.2 closed chat/voice flow E2E, scheduled soak, and browser/mobile-emulation matrix |
-| 6 | V1 live contracts Â· V4 blocking eval gate | Mâ€“L | O24 Track V | ğŸŸ¡ partial â€” V3 components/skills coverage âœ…; M2.4 deterministic drift gate âœ…; persistent eval baseline âœ… (#506); remaining Track V work is live contracts + live eval runner |
-
-Owner-lane critical path unchanged: â­B0 manual run â†’ design partners; plus 2 unrecorded
-one-paragraph decisions (**AUD-0**, **H23.23**), the GitHub-settings batch (SEC-4/CQ-2/CQ-3/#242)
-and H13.3 (config-only) next time at the GPU box. **July non-goals:** 0.20 Vault Â· 0.48 video Â·
-0.64/0.65 desktop overlay Â· multi-user (Phase E / post-1.0). *(NotÄƒ:* AUD-14 se agraveazÄƒ â€” env
-reads ~121 â†’ **161** de la audit; de programat Ã®nainte sÄƒ doarÄƒ.*)*
-
-**2026-07-02 delivery on ranks 1/3/4** (this PR â€” Week-1-tail + a scoped K2/TASK-3 slice):
-- **K2 wave-4b enforcement** â€” `kernel.TOKEN_MANDATORY_KINDS = {admin.kill_switch, admin.capability_issue, kg.write}`: a capability token is now genuinely mandatory for these three kinds (`kernel/__init__.py`), not just cross-checked when presented. The real blocker the research flagged â€” nobody sends `x-capability-token`, so flipping this naively would strand admin/KG operations â€” is solved without a new operator credential: `kernel.capabilities.issue_operator_capability()` mints a short-lived, single-capability token **on demand, only at the ~9 call sites that reach the kernel** (not the ~130 broader admin/user routes), the instant `_admin_kernel_denial`/`_kg_kernel_denial` finds no *presented* token â€” the caller already passed `admin_guard`/`user_guard` to reach that point, so this doesn't add trust, it lets already-proven trust flow through the kernel's real capability nucleus instead of tolerating an empty one. `kg_delete_entity`/`kg_delete_relation` gained the `Request` param they were missing (structurally could not carry a token before). `tests/test_kernel_authorize.py` (+5), `tests/test_kernel_capabilities.py` (+3), `tests/test_kernel_bypass_regressions.py` (B1 upgraded from a structural-classification pin to a real fail-closed-without-token proof), `tests/test_admin_kernel_wave.py` (+2), `tests/test_kg_kernel_wave.py` (+3). `docs/THREAT_MODEL.md` corrected (no `PENDING_KERNEL` kinds remain). **2026-07-06 #594:** the WorldView HMAC fold is now live through `WorldViewMCPWriteClient`, which mints scoped MCP tokens only after plugin-gate + Action Kernel approval.
-- **TASK-3 taint marking** â€” `taint.mark()` now called at every producer the research identified before the inbound-channel funnel: `WebSearchPlugin.search()`, `NewsPlugin.get_headlines()`, `DigestSource.fetch()` (+ `DigestAggregator.run()` now carries the mark through to its output, where it was previously stripped by the field whitelist), and the Facebook/WhatsApp archive parsers (`ingestion/parser_{facebook,whatsapp}.py`, gated on `not is_me` â€” the owner's own messages stay untainted). `tests/test_task3_taint_ingestion.py` (new, +6), `tests/test_websearch.py`/`tests/test_news_plugin.py` (new)/`tests/test_h12_23_digest.py` (+13). **2026-07-05 #590:** the inbound-channel chokepoint (`channels/gateway.py` â†’ `orchestrator.channel_handler`) is now closed with gateway-level metadata rather than wrapping handler text: inbound channel messages get private `_inbound_meta`, Safe Comms inbox rows persist only public taint fields, and outbound replies drop the private envelope before adapter I/O. Full PR CI green including Windows.
-- **Week-1 tail** â€” `WatchlistPanel` (above), per-panel LIVE/SEED chip (`PanelChip` in `gap.tsx`; now all 58 Console cards declare a live/seed signal), chat double-submit guard (TASK-4, above), `InMemoryVectorStore` lock (BUG-12, above).
-
----
-
-## ğŸ” Codex fresh-eyes review (2026-06-24 â€” external code + doc review)
-
-Independent fresh-eyes review (GitHub-connector read; no local build). Full write-up:
-[`docs/research/2026-06-24-codex-review.md`](docs/research/2026-06-24-codex-review.md). **Verdicts
-below source-validated against `main` (`e974069`) this session.** The strategic half largely
-**validates the current direction** rather than redirecting it: the "Action Kernel" = ORIZONT 24
-**Track K**; the trust/readiness board = #300 (partial) + **H23.11/H23.16**; onboarding = **H23.20**;
-"finish partials before greenfield" = standing BACKLOG guidance. New, concrete items (`CDX-*`):
-
-| ID | Item | Status | Maps to |
-|----|------|--------|---------|
-| CDX-1 | âœ… **done** â€” **`Agent.synthesize()` ignores the routed model** â€” now unpacks `backend, routed_model, route_name` and applies `routed_model` (same as `process()`), so multi-agent fusion runs on the routed local/cloud model/policy instead of the configured default. `tests/test_cdx_bugfix_batch.py`. | âœ… | â€” |
-| CDX-2 | âœ… **done** â€” **Interaction records hard-code `"channel":"web"`** â€” `_record_interactions` now takes the real `channel` (threaded from `process()`/`handle_input()`) into the learning metadata, so the %-local/cloud ratio + per-channel analytics reflect the true origin. `tests/test_orchestrator_process_record.py`. | âœ… | [METRICS](docs/METRICS.md) |
-| CDX-3 | âœ… **done** â€” **One stale `last_n=6`** (`_call_agents_parallel`) now honors `memory.context_window` like the main per-agent path (`:850/859`). | âœ… | â€” |
-| CDX-4 | âœ… **done** â€” **App version `0.5.0-beta`** retired; `web.py` `FastAPI(version=â€¦)` (and `/status`, OpenAPI `info.version`) now read `agents.__version__` (= `0.11.0`), the single source. `tests/test_cdx_bugfix_batch.py`. | âœ… | CDX-5 |
-| CDX-5 | âœ… **done** â€” **Doc/version/test drift** â€” version single-sourced (CDX-4) + README badge/headline aligned to v0.11.0. `scripts/status_sync.py` now **auto-derives** the volatile counts (tests from `pytest --collect-only`, routes from the parity snapshot) and `--check`/`--write` keeps STATUS.md in sync â€” no more hand-bumping (it had already drifted to 327/3,011). `tests/test_status_sync.py` (+7). | âœ… | H23.18 |
-| CDX-6 | âœ… **done** â€” **Per-agent timeout** was a hard-coded `120.0` in `_call_agents_parallel`; extracted to `Orchestrator._agent_call_timeout()` reading the `agents.agent_timeout_seconds` setting (clamped â‰¥1s, non-numeric â†’ safe 120 default), so the per-agent LLM-call ceiling is visible + tunable instead of one invisible number shared across chat/deep-research/autonomy/eval. `tests/test_orchestrator_process_record.py` (+4). *(Full per-task budget-object integration into the chat pipeline stays a larger refactor â€” the BUG-5 request pipeline is not safely extractable yet.)* | âœ… | H23.1 / K3 |
-| CDX-7 | **Howard RAG provenance** â€” `agent.py` injects retrieved memory text into prompts; treat memory as untrusted: delimit as retrieved context (not instructions), add source/age/confidence, cap length, scan with the injection scanner. | ğŸŸ¢ **prompt-level defense done** â€” new `security/rag_guard.py` is the single choke point every memoryâ†’prompt site routes through: `wrap_memory()` fences retrieved memory as `<<RETRIEVED MEMORY â€¦ DATA, NOT INSTRUCTIONS>>`, caps length, runs `quarantine.detect_injection` and **redacts** flagged snippets, datamarks the kept body, and tags **source/age/confidence** honestly (`age=unknown` when unstamped â€” never fabricated; `confidence` omitted when absent). A `datamark` toggle keeps the Howard archive few-shots *readable* (their stylometry is the feature) while still scanning/redacting/fencing them. Wired at all **3 confirmed prompt-string sites**: `orchestrator._recall_block` + the Howard archive RAG in `orchestrator` (stream) and `agent.py`; `manager.remember` now stamps `created_at` so age is real for new writes. `tests/test_cdx7_rag_guard.py` (+13) + `tests/test_cdx7_no_raw_memory_splice.py` (+2, static gate so a raw splice can't silently reappear). Scoped via an **adversarial design review** (caught a NameError-broken taint hook + a test-breaking `UNTRUSTED_SOURCES` edit before they shipped). **Deferred (named follow-ups):** âœ… **agentic-RAG tool path now done** â€” `rag_tool.MemorySearchTool.search()` returns hit-dicts straight to the model (backs `/api/memory/search-tool`); each hit is now scanned with `quarantine.detect_injection` and **redacted** if flagged (text â†’ `[REDACTED: injection-flagged memory]`, tagged `injection_flagged`, score/provenance preserved), on by default with a `scan=` opt-out. `tests/test_cdx7_rag_tool_scan.py` (+6); clean hits pass through byte-identical. âœ… **action-taint â†’ kernel now done (origin dimension)** â€” the Action Kernel escalates a GRANTâ†’QUEUE not only on a tainted *payload* but also on an **untrusted declared `origin`** (`is_untrusted_source(action.origin)`): an external HTTP write (`origin="external"`, already declared at `routers/memory_kg.py`), an inbound channel, or a web/rss/osint/worldview feed can't silently auto-execute. The honest model â€” taint **can't** be propagated *through* an LLM (it launders content), so the kernel trusts the caller's **declared provenance** rather than guessing a data-flow it can't see; default `origin="generated"` (in-house) stays trusted â†’ zero behavior change. `agents/core/kernel/__init__.py` (one escalation clause) + `tests/test_cdx7_action_origin_taint.py` (+11: generated grants, external/osint/inbound/web/rss escalate, payload-taint regression, DENY-precedence, and a static guard that the kg-write site keeps declaring its origin). **Still deferred (genuinely lower-value):** the 2nd recall route `memory_kg.recall_memory` + HTTP `memory_search` (UI JSON, not a prompt). | TASK-3 / 0.37 |
-| CDX-8 | **Auto-generated skills are durable behavior** â€” `skills.auto_generate=true` + `[learn:â€¦]`; ensure human review + sandbox + audit + provenance before a generated skill is reusable. | ğŸŸ¢ **done** â€” `[learn:â€¦]` minted a skill from **untrusted LLM output**, then `generate_skill` **self-signed it and exec'd its module in-process on the spot** â€” strictly *more* trusted than a downloaded skill (an injectionâ†’code path that bypassed every marketplace/signature gate). Now **fail-closed by default**: (1) the task/steps/command are scanned with `quarantine.detect_injection` **before anything is written** â€” flagged content is refused outright (nothing hits disk); (2) a clean skill is minted **`PENDING_REVIEW`** â€” `_load_skill` registers it (visible/reviewable) but **never exec's its module** (`sandboxed=True`, `signature_reason="pending review (CDX-8 quarantine)"`), regardless of `JARVIS_REQUIRE_SIGNED_SKILLS`; provenance (agent/task/timestamp) is written into the marker; (3) only an **owner** can promote it â€” `approve_generated_skill()` (admin-gated `POST /api/skills/{name}/approve`) signs + clears the marker + activates, and `GET /api/skills/pending` lists what's awaiting review. Auto-generation stays on; only **promotion-to-executable** is owner-gated. `tests/test_cdx8_skill_quarantine.py` (+6: quarantine-not-exec, no-exec-on-rediscover, injection-blocked in task **and** in command-name, approve-activates, approve-idempotent). ruff + bandit clean; route parity/auth/openapi snapshots reseeded (2 new admin routes). | ğŸŸ¢ | 0.54 / Track K |
-| CDX-9 | ğŸŸ¢ **DONE (HUD source)** â€” **Frontend live-wiring hides shape drift** â€” âœ… **visible LIVE/SEED chip per mode** now lands: `LiveSourceChip` + pure `liveSourceState()` read the existing `useLiveModes()` live-map + demo flag and label each mode **LIVE** (real backend) / **SEED** (demo/mock) / hidden (no source), rendered once at the workzone in `app.tsx`; `frontend/src/test/live-source-chip.test.tsx` (+7). âœ… **the `api/` data layer is now fully typed** â€” `actions.ts` (real response interfaces threaded through the already-generic `apiGet<T>`), `signalLayer.ts`, and `live.ts` all off `@ts-nocheck` (the whole `frontend/src/api/` directory is `@ts-nocheck`-free), `tsc --noEmit` clean, types erase so the bundle is byte-identical. âœ… **the `data.ts` keystone is now typed** â€” the pure `V2` seed object (`data.ts`) + its barrel (`ui.ts`) + the shared `primitives.tsx` symbols + `LiveSourceChip.tsx` are all off `@ts-nocheck`; this unblocks the components (which read `V2.<KEY>`). âœ… **`network.tsx` typed** â€” also surfaced + removed a genuine **dead write** (`NetworkBrain._wrap = el`, a DOM ref stashed on the component *function* and never read; the minifier had already dropped it, so the bundle stays byte-identical) â€” exactly the "live-wiring hides shape drift" win CDX-9 is for. âœ… **`world_app.tsx` typed** â€” and it surfaced a real **contract gap**: the shared `Icon` primitive was inferred as *requiring* `sw` (stroke-width), but `sw`/`size` both have runtime fallbacks (`sw||1.6`, `size||16`) and call sites across the HUD omit them; fixed `Icon`'s signature in `primitives.tsx` to mark them optional (the honest contract â€” unblocks every `Icon` caller, not just `world_app`; erases â†’ bundle byte-identical). âœ… **`world-intelligence.tsx` + `modes_world.tsx` typed** (batched) â€” same optional-prop pattern again (local `SubH({ children, style })` renders `style={style}`, so `style` is optional; call sites omit it â†’ marked optional), and `modes_world.tsx` came clean with **zero** changes once #386's `Icon` fix landed (its earlier errors were all downstream of that). âœ… **`voice.ts` typed** â€” first file with *substantive* (non-optional-prop) errors, all fixed type-only (bundle byte-identical): `useVoice`'s `onTurn` callback param (annotated the options shape), `tok(extra?)` optional, a `window.webkitAudioContext` Safari/legacy cast, the TS-5.7 `Uint8Arrayâ†’BlobPart` lib quirk on `new Blob([frame.audio])`, and the `streamTts` `onFrame` callback's `Promise<unknown>` vs `Promise<void>|void` (cast-preserved the awaited promise so sentence-by-sentence playback ordering is unchanged). âœ… **`modes2.tsx` typed** â€” surfaced a real **dropped-style drift** (the local `SubH` accepted no `style` and rendered `<div className="sub-h">`, yet 6 secondary section headers pass `style={{marginTop:16/14}}` â€” silently discarded; the sibling `SubH` in `world-intelligence.tsx` *does* render it for the same purpose). Brought modes2's `SubH` into line â†’ **first bundle-changing slice** (applies the intended ~16px header gaps; flagged for owner eyeball in `REVIEW_QUEUE`), plus a `setAutonomyMode` `unknown`-result narrow (type-only). âœ… **`cockpit.tsx` typed** â€” clean root-cause fix: the `agentScore` routing accumulator was an untyped `{}`, so `Object.entries` made every score `unknown` and broke the sort/compare/`.win` flag (5 errors); typed it `Record<string, number>` + widened the scored-element type for the `.win` marker (type-only, bundle byte-identical). âœ… **`modes4.tsx` typed** â€” Finance/Health/Knowledge/Family agent-home modes; all 8 errors were one optional-prop fix (the local `SubH4` already *rendered* `style` correctly â€” no drift â€” but was inferred as requiring it while 8 callers omit it; one-line `style?`). Type-only. âœ… **`modes3.tsx` typed** (Chat/Comms/Admin) â€” richest mix yet, 8 errors / 4 patterns, all type-only: `SubH3` optional `style`; the **`InputBar` contract** relaxed (modes3's distraction-free ChatMode renders it without the guarded `voice/cfg/onCfg/micMuted`, which were inferred required â€” fixed at `InputBar`'s def in `cockpit.tsx`, one cross-file follow-up); the **plugin-registry `id` drift** (state seeds from `V2.ADMIN.plugins` with no `id`, but live.ts swaps in real plugins *with* `id` and the toggle keys off it â€” typed the state with optional `id?`); and `togglePlugin`'s `Promise<unknown>` response narrowed `: any` at the read boundary. âœ… **`modes.tsx` typed** (Agents/Trust/Memory) â€” 9 errors, all type-only: three API-response boundaries (`decidePayment`/`setKillSwitch`/`memorySearch`) â†’ `: any` at their `.then`/`.map` callbacks (live.ts-ingestion style), plus the **PAYMENTS-seed `.id` drift** (live.ts swaps in real payments carrying a broker `id` the lifecycle buttons key off; seed has none â†’ optional `id?` on the map element). âœ… **`app.tsx` typed** (the root composition) â€” 11 errors â†’ 5 root type-only fixes: `messages` state `useState<any[]>` (narrow-union inference), `seq` step-array annotated `Array<[number,()=>void]>` (tupleâ†’union widening), `mark()` trailing args optional (`j?,jstate?`), `cog` from `/api/cognition` `: any`, and a **dead-code find** â€” `const ia = 'rail'` is hardcoded so the `ia==='tabs'` Tabs-layout branch is unreachable; typed `'rail' as 'rail'|'tabs'` to keep behaviour identical (Tabs stays unrendered) while making the comparison valid. âœ… **`shell.tsx` typed** (topbar/nav/ticker/columns) â€” 9 errors / 2 patterns: the `MODES` nav array read a forward-looking `m.locked` "soon"-disable flag no item currently sets (annotated the element type with optional `locked?` + the other optional fields), and the `Meter` primitive required `unit` while 3 callers omit it (it has a `||'%'` fallback â†’ marked optional at `Meter`'s def in `primitives.tsx`). Type-only. âœ… **`gap.tsx` typed** (the big P4c console overlay â€” 25 errors): the shared `Card`/`Tag` primitives relaxed to optional `sub`/`onReload`/`c`, `act()`'s optional callback, the `SECTIONS` tuple array typed, `dirty`/settings state typed, and the `useApi`/`apiGet`/`apiPut` `unknown` responses narrowed `: any` at their boundaries. **ğŸŸ¢ DONE â€” the ENTIRE HUD source is now `@ts-nocheck`-free** (0 source modules remain; the only `@ts-nocheck` left is on `src/test/*` fixtures). All 22 source modules typed across #379â€“#396, `tsc --noEmit` clean, bundle byte-identical at every step except the one intentional drift-fix (#389). The sweep also surfaced + fixed real latent issues: a dropped `style` in modes2, a dead `_wrap` ref in network, the `Icon`/`SubH`/`Meter` optional-prop contracts, the plugin/payment seed-vs-live `id` drift, and the dead tabs-IA branch in app.tsx (all flagged in `REVIEW_QUEUE`). *Remaining for later:* `@ts-nocheck` on the test fixtures + OpenAPI-generated response types (needs a running server) + the move toward `strict` (AUD-15). | ğŸŸ¢ | H23.16 / AUD-16 / TASK-2 |
-| CDX-10 | **`_sys_info()` confident defaults** â€” returns a default host/GPU when probes fail; a trust/readiness screen should show "unknown", not a possibly-wrong fallback. | ğŸŸ¢ **done** â€” `_sys_info()` (served at `/status`) now **probes** every value and degrades to `unknown`/`none`/`0`, never a fabricated host/CPU/GPU/model. Real `socket.gethostname()`; real CPU model from `platform.processor()`â†’`/proc/cpuinfo`â†’thread-count (the hardcoded "Intel Core Ultra 9" brand is gone); real RAM via psutil; GPU name+VRAM via `nvidia-smi` guarded by `shutil.which` â†’ honest `none` when there's no NVIDIA GPU; the un-probed `backend`/`model` are `unknown` (the real LLM identity is surfaced by the LLM-state endpoints, not faked here). `tests/test_sys_info_honest.py` (+5, pins that the old fabrications are gone). ruff (`contextlib.suppress`) + bandit (baseline regen, 125â†’119) clean. | H23.11 |
-| CDX-11 | **Least-privilege plugins** â€” several `plugin_gate` entries serve `agents_served=["all"]` incl. external-write surfaces; for the hardened/design-partner profile, scope per-agent using existing agent identity. | ğŸŸ¢ **done (opt-in, default-off)** â€” 12 **TRANSMITTED** plugins serve `"all"` (the 11 external-write surfaces â€” `social_x`, `writeback_{notion,github,google_calendar}`, `call_{twilio,telnyx}`, `channel_{whatsapp,google_chat,teams,signal,matrix}` â€” plus the `telegram` comms bus), so by default *any* agent persona (incl. one steered by an injected prompt) can reach a third-party write. New **least-privilege** overlay on `PermissionGate.check_call`: under hardening the `"all"` wildcard is **NOT honored for TRANSMITTED plugins** â€” such a plugin admits only an **explicitly-served** agent or an **owner-declared grant** (`JARVIS_PLUGIN_GRANTS="plugin:agent,â€¦"` / `gate.add_grant`). Read/LAN/local plugins keep their wildcard; explicitly-scoped plugins (e.g. `cloud-llm`) are untouched. **Crucially invents no capability matrix** â€” the policy (which agent gets which write) is deferred to owner config, and the feature is **OFF by default** (`JARVIS_PLUGIN_LEAST_PRIVILEGE` / the broader `JARVIS_HARDENED` preset enable it), so current behavior is byte-identical until the owner opts in. Posture is surfaced read-only on `GET /plugins` (`least_privilege` + per-plugin `wildcard_restricted`/`grants`). `tests/test_cdx11_least_privilege_plugins.py` (+11). ruff + bandit clean; no route change (parity green). | ğŸŸ¢ | 0.45 / Track K |
-| CDX-12 | **Hardened profile** â€” a "Design-Partner / Hardened" preset: guardrailsâ†’REDACT/BLOCK on sensitive routes, audit-HMAC required, strict egress on, mutating MCP off by default. | ğŸŸ¢ **done (opt-in, default-off)** â€” new `agents/core/security/hardened.py`: a single `JARVIS_HARDENED=1` switch that tightens **four** toggles at once, each confirmed against the real mechanism: **(1)** guardrails default `WARNâ†’REDACT` (orchestrator's `security.guardrails_mode` default; an explicit setting still wins); **(2)** **audit-HMAC required** â€” startup **fails closed** if `JARVIS_AUDIT_KEY` is absent (new `serve.assert_hardened_posture()` beside `assert_safe_bind`, via `hardened.enforce()`); **(3)** **strict egress forced** â€” the `JARVIS_STRICT_EGRESS=0` downgrade escape-hatch is ignored (`http_client._enforce_egress`); **(4)** **mutating MCP forced off** â€” `JARVIS_MCP_MUTATING_TOOLS` can't re-open writes (`route_tools.mutating_tools_enabled`). It also rides on **CDX-11** plugin least-privilege (already reads `JARVIS_HARDENED`). Posture is surfaced read-only on the existing `GET /api/security/posture` (`hardened` block) â€” **no new routes**. **Default OFF** â†’ byte-identical behavior until the owner opts in; the required audit key + how-to-enable are documented for owner review. `tests/test_cdx12_hardened_profile.py` (+11: each toggle off-by-default, each flips under the preset, fail-closed without the key, the serve-level guard, posture shape, the strict-egress + mutating-MCP overrides, and the CDX-11 cross-wire). ruff + bandit clean; parity green. **Closes the CDX security cluster.** | ğŸŸ¢ | 0.56 / H23.20 |
-
-> **Verified NOT a bug (no action):** interrupt-budget is already wired to the setting
-> (`orchestrator.py:265` â†’ `InterruptBudget(per_day=â€¦autonomy.interrupt_budgetâ€¦)`); the
-> `worker.py:27` constant is only the default. The review's "verify this" caveat is satisfied.
->
-> **Review's own ranking** (all already tracked â€” confirms the plan): H23.11 readiness board Â·
-> H23.18/19 docs Â· H23.20 onboarding Â· H23.1 budgets Â· H23.2 model pinning Â· HUD live/seed +
-> audit-verify surfacing Â· then **one design-partner proof loop**. Quick wins to bank first:
-> **CDX-1/2/3** (a small correctness PR) and **CDX-4/5** (doc/version sync).
-
----
-
-## ğŸ§ª Hardening audit (2026-06-23 â€” fresh-eyes review, findings + phased plan)
-
-Two independent fresh-eyes passes (Opus 6-dive + Sonnet 3-agent), merged, de-duplicated
-and **source-validated this session**. The codebase is unusually disciplined (real Docker
-sandbox, SSRF defense, Fernet/PBKDF2 crypto, ~2,550 meaningful tests); the findings are a
-short list of real bugs + a few features that don't fully do what they claim. Full write-up
-(38 findings `F1`â€“`F38` + strengths-to-protect + corrections appendix):
-[`docs/research/2026-06-23-independent-audit-merged.md`](docs/research/2026-06-23-independent-audit-merged.md).
-Status keys as elsewhere (âœ… done Â· ğŸŸ¢ in PR Â· ğŸŸ¡ partial Â· â¬œ open). `Fn` = finding id in the report.
-
-**Phase 0 â€” pre-1.0 / pre-network blockers (exposed surfaces + data-at-rest)**
-
-| # | Item | S | P | AC |
-|---|------|---|---|----|
-| AUD-0 | **Scope decision (breadthâ†’depth)** â€” name the 5â€“6 product-defining features; flag-park the ~44 governed-but-`Null`-railed modules (gates Phase 2). Pairs with H23.23 single-user call. | 2 | DECISION | owner decision recorded in this file |
-| AUD-1 | âœ… **done (#309)** â€” **Secrets at rest** â€” envelope-encrypt `settings.db` credential columns (`twilio/notion/tuya/gecko/stark_ga4â€¦`) via the existing `SecretStore` (Fernet + pure-Python fallback) at the put/get boundary (`settings_db.SECRET_KEYS` â†’ `_encrypt_if_secret`/`_decrypt_if_secret`); opt-in **encrypted backup archives** (`.tar.gz.enc`, key from `$JARVIS_BACKUP_KEY`/arg, stored outside the data root) in `backup.py` (F2). *Caveats H23.8.* | 5 | **P0** | âœ… `settings.db` dump shows opaque `enc::` token values; an encrypted backup archive is opaque (no plaintext); reads decrypt transparently |
-| AUD-2 | âœ… **done (#315)** â€” **"Forget me" completeness** â€” forget now also erases the memory subsystem at rest (knowledge graph, entities, decay, embedding cache, conversation transcripts) via `data_purge.purge_data(memory=True)`, clearing the live in-memory stores first so a running orchestrator can't re-persist them; the backup-first snapshot is encrypted once a key is set (AUD-1 #309). The **CLI** (`python -m agents.core.data_purge`) now defaults to `memory=True` too (with `--no-memory`) â€” #315 brought only the endpoint to parity, leaving the offline CLI forget incomplete. *External Qdrant/Neo4j wiping is best-effort via each store's `clear()`.* (F1) | 5 | **P0** | âœ… post-forget the data root holds no memory PII (transcripts/KG/entities/embeddings); `tests/test_data_purge_memory.py` + CLI parity in `test_data_purge.py` |
-| AUD-3 | âœ… **done (#315)** â€” **HUD XSS + CSP** â€” HUD dynamic data (`index.html` weather/news/system/history) routed through a local `esc()`; a `_security_headers` middleware adds CSP + `X-Content-Type-Options`/`X-Frame-Options`/`Referrer-Policy`; Tauri `csp` set (F3). | 3 | **P0** | âœ… a crafted RSS headline renders inert; headers present; `tests/test_hud_security_headers.py` |
-| AUD-4 | âœ… **done (#315)** â€” **WorldView fail-closed** â€” default `HOST=127.0.0.1`; `assertSafeBind()` aborts boot on a non-loopback bind with an empty `WORLDVIEW_AUTH_SECRET` (F4). *Container hardening (non-root `USER`/`HEALTHCHECK`/`securityContext`/`sslmode`, F14) still open.* | 3 | **P0** | âœ… empty secret on `0.0.0.0` aborts boot; `worldview/backend-api/test/configBootGuard.test.ts` |
-| AUD-5 | âœ… **done (#315)** â€” **Session path-traversal** â€” shared `validation.is_valid_session_id` enforced in `sessions.py` (route â†’ 400) and at the `memory/persistence.py` boundary (F7). | 1 | **P0** | âœ… `session_id=../../x` â†’ 400; no file escapes the data root; `tests/test_session_traversal.py` |
-
-**Phase 1 â€” next sprint (correctness + auth lifecycle + CI gates)**
-
-| # | Item | S | P | AC |
-|---|------|---|---|----|
-| AUD-6 | âœ… **done (#319)** â€” **Token lifecycle (full-replace)** â€” the managed `TokenStore` (`security/token_store.py`) is the authoritative credential system: mints `secrets.token_urlsafe(32)`, stores only its SHA-256 (raw token returned once), optional TTL; `verify`/`has_scope` reject expired tokens; `rotate` revokes a scope's prior tokens. The static `JARVIS_*_TOKEN` env vars are now only the **bootstrap** â€” accepted (constant-time) until a `rotate` supersedes them, after which they're revoked **for good** via a persistent `env_revoked` flag (so adopting a managed token truly replaces the static one). `POST /api/admin/rotate-tokens` (admin-guarded, returns the fresh token once, audited without the value). Offline owner-recovery CLI (`python -m agents.core.security.token_store rotate admin`) â†’ no permanent lockout. *Deferred (F19 tail): httpOnly cookie over `localStorage`, read/write split.* | 3 | P1 | âœ… an expired/rotated token is rejected; the static env token dies after rotation; raw tokens never hit disk (only the SHA-256); `tests/test_token_lifecycle.py` |
-| AUD-7 | âœ… **done (#320)** â€” **SSE + async hot path** â€” the `/chat/stream` producer is extracted to a module-level `_chat_event_stream` with a `try/finally` that cancels **and awaits** the model-turn task on any exit, incl. a client disconnect mid-stream (Starlette throws `GeneratorExit`) â€” so a dropped client never leaves the LLM turn running orphaned. `ConversationMemory.add_turn` now does its append-log + full-snapshot disk writes via `asyncio.to_thread` (built under the lock), so the SSE hot path never blocks the event loop; per-turn durability is unchanged (F8, F9). | 3 | P1 | âœ… client disconnect cancels the turn; no full-snapshot write on the event loop; `tests/test_aud7_sse_hotpath.py` |
-| AUD-8 | âœ… **done (#318)** â€” **Settings integrity** â€” `settings_db.validate_category` checks each admin write against its DEFAULTS schema (type + select allow-list) â†’ the route returns **422** on a bad value before it persists; every accepted write is audited (`SETTINGS_CHANGE`, changed **key names only**, no values) (F10). | 2 | P1 | âœ… bad value â†’ 422; each settings change appears in the audit log; `tests/test_settings_integrity.py` |
-| AUD-9 | âœ… **done (#315)** â€” **Audit chain HMAC** â€” optional off-box key (`JARVIS_AUDIT_KEY`): keyed rows are HMAC-SHA256 and need the key to verify; a per-row `hash_algo` marker lets a DB spanning the transition still verify; default (no key) keeps SHA-256 (F6). *Caveats H23.5.* | 2 | P1 | âœ… a tampered/forged row fails verification; hmac rows unverifiable without the key; `tests/test_audit_hardening.py` |
-| AUD-10 | âœ… **done (#324 Â· #325 Â· F34/F35 flip)** â€” **Supply-chain / CI**. **Done:** every `uses:` across all workflows SHA-pinned (`@<40-hex>  # vX`, Dependabot-tracked, F32); pytest-socket loopback-only guard in `pytest.ini` (`--allow-hosts=127.0.0.1,::1,localhost`) so a stray *real* network call fails fast instead of hanging to the `--timeout` backstop (F37); `.pre-commit-config.yaml` (gitleaks/ruff/hygiene); **blocking gates, baseline-then-block** â€” ruff lint (`ruff-baseline.toml` freezes 1,654 pre-existing findings via per-file-ignores extended from pyproject; `ci.yml`), bandit SAST over `agents/`+`scripts/` (`.bandit-baseline.json` freezes 123; the 1 HIGH â€” MD5 file-fingerprint in `oracle_bridge.py` â€” *fixed* with `usedforsecurity=False`, not frozen), gitleaks secret-scan (`.gitleaks.toml` allowlists 10 known FPs + extends default ruleset) (F34/F35/F36); plus **advisory** semgrep SAST + pip-audit (`security.yml`, continue-on-error). **F33 done:** hash-pinned lockfiles `requirements{,-beta,-dev}.lock` generated by `scripts/lock_deps.sh` (`uv pip compile --generate-hashes --universal --python-version 3.12`); `ci.yml`/`smoke.yml`/`code-health.yml` install with `pip install --require-hashes` across the ubuntu+windows matrix (a tampered artifact aborts the install â€” proven), and a `Lockfiles` workflow guards sourceâ†”lock drift via an embedded `source-sha256` (deterministic â€” immune to unrelated upstream releases; version refreshes are thirdparty-autoupdate's job). *(The earlier "mirror frozen at numpy 2.4.6" note was a misdiagnosis: the real blocker was the sandbox's local Python 3.11 vs numpy 2.5.0's `requires-python â‰¥3.12` â€” uv resolves for a target version regardless.)* **F34/F35 blocking flip (this PR):** semgrep + pip-audit are now **blocking** (`continue-on-error` removed). semgrep â€” the 9 pre-existing findings were triaged: 2 real (`xml.etree` parsing untrusted RSS/Atom feeds in `digest.py`/`news.py`) **fixed** by switching to `defusedxml` (+ broadened the `except` to swallow its DTD/entity-attack rejections); 7 `logger-credential-leak` **false positives** suppressed at the call site with a named `# nosemgrep` (so the rule still fires on genuinely new code). pip-audit â€” now audits the **hashed lockfile** (exact resolved versions, not loose constraints); `--ignore-vuln` list intentionally empty (the lock audits clean). **â†’ AUD-10 complete.** *Extends Dependency-upkeep + SEC-4 + CQ sections.* | 5 | P1 | every `uses:` is a SHA âœ…; stray network in tests fails fast âœ…; CI fails on a new lint finding / bandit issue / secret âœ…; installs are hash-pinned (`--require-hashes`) and a tampered artifact aborts âœ…; SAST (semgrep) + dependency-CVE (pip-audit) gates now blocking âœ… |
-| AUD-11 | âœ… **done (#315)** â€” **Sandbox containment tests** â€” `tests/test_sandbox_isolation.py` runs in the real Docker backend (no-network + read-only FS) via a dedicated `sandbox-isolation` CI lane (`RUN_SANDBOX_ISOLATION=1`) so it can't be skipped away (F5). *Sub-item of H23.17.* | 3 | P1 | âœ… a containment test actually runs and proves isolation |
-| AUD-12 | ğŸŸ¢ **F11+F12 in #324; F13 done #315** â€” **Injection hardening** â€” (1) scanner `matched_text` redacted (F13, with AUD-9, #315); (2) **F11 Cypher injection:** node labels / relationship types / property keys constrained to safe Cypher identifiers at the `memory/graph.py` chokepoint + direct `/api/kg/*` writes â†’ 400; (3) **F12 WorldView WKT bounds:** untrusted OSINT coordinates are float-coerced, WGS84 bounds-checked and vertex-capped at the `wkt.py` chokepoint (`wkt_guard.coerce_coord`), the ingestion callers (`context/normalize`, `ew/gpsjam`) drop an out-of-bounds feature with a WARNING, + a defence-in-depth `geom_wkt` validator on `TelemetryEnvelope`. **â†’ AUD-12 complete on #324 merge.** | 3 | P1 | âœ… a flagged secret never lands in `audit.db`; a Cypher label/rel/key injection â†’ coerced/400; an out-of-range / NaN / oversized coordinate â†’ `WktBoundsError` and the feature is dropped (never emitted); `tests/test_kg_cypher_allowlist.py`, `worldview/.../tests/test_wkt_bounds.py` |
-
-**Phase 2 â€” post-1.0 (structure, observability, scale, DX)**
-
-| # | Item | S | P | AC |
-|---|------|---|---|----|
-| AUD-13 | **Turn-pipeline de-dup + service container** â€” one `PromptBuilder` + `_preprocess_turn`; extract context/dispatch/persist; retire `orch` back-refs + `sys.modules` indirection (A1). *Continues CLN-2.* | 8 | P2 | prompt assembly lives in one place; collaborators take narrow interfaces |
-| AUD-14 | **Config consolidation** â€” one `Config` read once at boot (collapse 121 env reads / 3 bool conventions; centralize model names); derive agent-policy sets from `agents.yaml` (A3, F29). **Progress:** O26-P2.1 unified boolean/env parsing; #592 moved channel send-rate numeric parsing to `env_int()`; #596 centralizes LLM model-name defaults/`JARVIS_DEEP_MODEL` in `llm/model_config.py`; #620 moves plugin grants to shared `env_list()`; #622 moves trust-status env flags to shared `env_flag()`. | 3 | P2 | a model swap is one edit; one truthy convention |
-| AUD-15 | **Client consolidation** â€” retire HUD v1, make v2 the Tauri target, extract a shared `@jarvis/client` (auth+SSE+fetch + timeouts); remove `@ts-nocheck`, move toward `strict` (A2, F17, F26). | 8 | P2 | one client lib across surfaces; v1 gone; fetches time out |
-| AUD-16 | âœ… **done (2026-07-03)** â€” `frontend/src/api/schema.gen.ts` is generated from the live FastAPI `/openapi.json`; `npm run typegen:openapi` pins `openapi-typescript@7.13.0`; CI boots the backend, regenerates the schema, and fails on `git diff --exit-code -- frontend/src/api/schema.gen.ts`. Consumer migration remains gradual. | 3 | P2 | a backend field change fails the TS diff check |
-| AUD-17 | âœ… **done** â€” Prometheus `GET /metrics` golden signals (RED): `jarvis_http_requests_total` (rate, by method/route-template/status), `jarvis_http_request_duration_seconds` summary (p50/p95/p99 + sum/count), `jarvis_http_errors_total` (5xx), `jarvis_http_requests_in_flight` gauge â€” recorded by a `_golden_signals` middleware in `web.py`, dependency-free exposition in `observability/http_metrics.py` (route-**template** labels â†’ bounded cardinality; reuses `north_star._percentile`). Scrape is unauth + rate-limit-bypassed like the probes. Real-path **concurrency/p95 test** drives 60 concurrent requests, asserts p95 under budget with no in-flight leak. (F16, F23) | 3 | P2 | `/metrics` exposes http/latency/error; load test asserts p95 on the real HTTP path |
-| AUD-18 | **Scale & DX polish** â€” Qdrant-by-default at scale; lazy plugin instantiation; Vite code-split; ~~configurable scanner patterns~~ **âœ…** (`SecretScanner(extra_patterns=)` + `JARVIS_SCANNER_EXTRA_PATTERNS` JSON `{name:regex}` â†’ a deployment can scrub its own secret formats; compiled IGNORECASE at HIGH, invalid regex/JSON skipped so a bad config can't break scanning; **default byte-identical**; `tests/test_scanner_extra_patterns.py` +9); ~~LLM retry/backoff via the existing `@resilient_call`~~ **âœ…** (`resilient_call` gained `timeout=None` â†’ it `await`s the call directly instead of wrapping it in a 30s `asyncio.wait_for`, so a long call's own budget governs. This fixed a real latent bug: `cloud_llm.py`'s `_call_anthropic`/`_call_gemini`/`_call_openai` set a **120s** httpx read/total timeout for slow cloud generations but were decorated `@resilient_call(timeout=30.0)` â€” the 30s outer deadline clipped legitimate 30â€“120s responses and burned 2 retries. Now `timeout=None` on those three so the 120s httpx budget governs; retry/backoff/circuit-breaker still fire on transport exceptions. Default stays `30.0` â†’ every other caller byte-identical. `tests/test_resilience.py` +2: `timeout=None` doesn't clip a long call (vs a tight-timeout control that does) and still retries on a transport exception); ~~close leaked httpx clients~~ **âœ…** (`Orchestrator.aclose()` now also drains three long-lived `httpx.AsyncClient` pools that previously leaked on shutdown/restart: the **Gemini context-cache** client (`context_cache.close()`, created only with a Gemini key), the **per-plugin `PluginHTTPClient` registry** via a new `http_client.close_all()` (iterates a snapshot since each `close()` pops from `_clients`; best-effort), and **channel transports** following the async `aclose` convention (e.g. the Telegram client). Defensive throughout â€” a failing close can't abort the rest of shutdown, and a channel without `aclose` is skipped. `tests/test_shutdown_cleanup.py` +4); CORS/loaders polish (F20â€“F25, F27, F28, F30, F31). | 5 | P2 | recall indexed by default; transient LLM 503 retries; no client leak |
-
----
-
-## Scalability: index hot/unbounded SQLite tables (shipped â€” PR #199)
-
-Behavior-preserving index pass on the four tables that are read on hot paths
-while growing without bound â€” keeps those lookups O(log n) instead of degrading
-to full scans at scale. All are `CREATE INDEX IF NOT EXISTS` in the init path,
-so existing DBs gain them on the next startup; results are identical, only faster.
-
-- `tasks(status, id)` â€” autonomy worker/inbox poll `runnable()`/`list()`/`pending_decisions()` by status.
-- `security_events(event_type, timestamp)` â€” audit `query()`; one row per turn (fastest-growing table).
-- `preferences(agent, kind, risk_tier)` â€” `approval_rate()` on the autonomy decision path.
-- `sessions(started_at)` â€” `list_sessions()` ordered scan.
-
-Guarded by `tests/test_db_indexes.py` (+5): each index must exist **and** be used
-by its hot query (asserted via `EXPLAIN QUERY PLAN`), so a future schema change
-that silently regresses to a full scan fails CI. Audit pre-work confirmed WAL is
-already set on every store and there are no blocking-I/O calls in async paths
-(repo-wide AST scan), so no further safe wins remained in those categories.
-
-## LM Studio control + model honesty (shipped â€” PR #133)
-
-Chat + admin control of the local LLM backend (`lms server start` / `load` / `unload`),
-the live model reported truthfully (runtime-state injection + SOUL fix), and the
-chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
-`JARVIS_LMSTUDIO_CONTROL` / `llm.control_enabled` (chat-only: `JARVIS_LMSTUDIO_CHAT_CONTROL`
-/ `llm.chat_control`). Docs + troubleshooting: `docs/ARCHITECTURE.md` Â§5.
-
-**Follow-ups (P2):**
-- Validate end-to-end against a real `lms` binary on the RTX 5090 box â€” current tests are mock-only.
-- âœ… Fuzzy model resolution: "load gemma" â†’ resolves to the full id via `/v1/models` before `lms load`
-  (`LMStudioController._resolve_model`). Unique match loads (reply names the resolved id); several
-  matches â†’ `ambiguous` + candidates (chat asks which / admin returns 409); list unreachable â†’ literal
-  passthrough. Admin `/api/llm/load` persists the resolved id. +13 tests.
-- âœ… Surface the kill-switch toggles + a model picker as real controls in the admin Settings UI â€”
-  `llm.control_enabled` / `llm.chat_control` toggles + live model picker (`ModelPickerRow`, kind
-  `model-select`), and a live controller-status card backed by new admin-guarded `GET /api/llm/status`
-  â†’ `{online, enabled, server_url, active_model}` (`LMStudioStatusRow` in `admin.js`). +Python +JS tests.
-- Confirm the LM Studio id for Gemma 4 12B â€” `google/gemma-4-12b` is a placeholder in static config.
-
----
-
-## Status General
-
-| Horizon | Total | âœ… Done | S total | S done | % |
-|---------|-------|---------|---------|--------|---|
-| **H1â€“H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
-| **H5 Next Wave** (P2â€“P3) | 17 | **17** | 128 | **128** | **100%** |
-| **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
-| **H7 Perf Cale Fierbinte** (P1â€“P2) | 5 | **5** | 16 | **16** | **100%** |
-| **H7 Hardening & Release Readiness** (P0â€“P2) | 11 | **11** | 51 | **51** | **100%** |
-| **H8 Memorie PersonalÄƒ** (P1â€“P3) | 7 | **7** | 48 | **48** | **100%** |
-| **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
-| **H10 Competitive Edge** (P1â€“P3) | 30 | **30** | 188 | **186** | **99%** |
-| **H11 Platform Parity** (Known Gaps, P3) | 4 | **4** | 55 | **55** | **100%** |
-| **Total H1â€“H11** | **151** | **151** | **823** | **821** | **100%** (SP) |
-| **H12 Asistent Privat & Proactiv** (P0â€“P3) | 25 | **24** | 150 | **142** | **95%** |
-| **H13â€“H17 Frontiere Noi** (post-paritate, Ã®n scope v1.0, P1â€“P3) | 20 | **19** | 146 | **141** | **97%** |
-| **Total H1â€“H17 = scope 1.0.0** | **196** | **194** | **1119** | **1104** | **99%** (SP) |
-| **H18 Mobile Native & Browser Parity** (P2â€“P3) | 16 | **15** | 51 | **51** | **100%** |
-| **H19 WorldView (4D OSINT)** â€” standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** âœ… |
-
-> `%` = procent pe **story points**. Sub-total **H1â€“H11** = 821/823 (â‰ˆ100% SP; 151/151 iteme). Grand-total **H1â€“H17** = 1104/1119 (â‰ˆ99% SP; 194/196 iteme). **Toate orizonturile de features sunt livrate = v0.10.0** (H18 mobil 17/18, cu H18.10 umbrelÄƒ continuÄƒ mereu deschisÄƒ + H19 WorldView 33/33 standalone â€” livrate). **Nu mai existÄƒ un "audit gate" ca versiune**; restul drumului pÃ¢nÄƒ la 1.0 e *productionizarea* (vezi **H23** + roadmap-ul de versiuni mai sus) **plus, din 2026-07-11, programul de capabilitÄƒÈ›i AI-OS** â€” gate-ul 1.0 s-a extins (decizie owner): **1.0 = proof track (H23/O24â€“O26 + â­B0 + soak + design partners) È˜I cei È™ase piloni la bara v1** (ORIZONT 27â€“33, ~191 SP; [NERVA_VISION.md](NERVA_VISION.md) Â§10).
-
-**Ãn afara totalului:** **Bugs & Hot Fixes** â€” **toate BUG-\* È™i HF-\* rezolvate** (BUG-1â€¦17 + HF-1â€¦7 + NTH-1; vezi re-baseline 2026-06-08 + tabelul de mai jos). âœ… **CLN-3 livrat + CLN-2 substanÈ›ial livrat (#293/#296, v0.11.0)** â€” `web.py` 4636â†’1282 LOC (45 routere, 9 rute inline), `orchestrator.py` 1620â†’1456 LOC; suprafaÈ›a de rute byte-identicÄƒ, parity-guarded. RÄƒmÃ¢n deschise: taskuri netrackuite ca buguri (**TASK-1** Howard backend, **TASK-2** HUD v2 depth, **TASK-3** taint-tracking canale, **BUG-2b** frontend E2E). *(Detalii audit cod 2026-06-04 Ã®n tabel.)*
-
-**Test count (backend pytest):** ~2,814 passed, 6 skipped (2 xfailed) â€” skip-urile sunt teste gated pe Docker/wasmtime (sandbox isolation) + heartbeat-ul opÈ›ional, absente Ã®n CI fÄƒrÄƒ backend de sandbox. *(2026-06-09: backlog software **code-complete** â€” H10 30/30, H11 4/4, H12 24/25, frontiere H13â€“H17 19/20 (vezi â€Status General" de mai sus); + WorldView O19 33/33 merged + Argus. RÄƒmÃ¢ne audit + testare manualÄƒ, vezi `docs/AUDIT.md`.)*
-**Frontend (BUG-2):** 184 teste JS / 23 fiÈ™iere Â· ~67% line coverage â€” separat de suita pytest.
-**Observability (MOONSHOT Â§6):** north-star + counter-metrics (accepted/active user, interrupt rate, reject rate, %-local, p95) sunt acum calculate Ã®ntr-un singur loc (`agents/core/observability/north_star.py`) È™i expuse la `GET /api/metrics/north-star` â€” vezi [docs/METRICS.md](docs/METRICS.md).
-
-> **Orizont 7 Hardening â€” Drumul spre 1.0.0:** 11/11 COMPLET âœ… (livrat 2026-06-02)
-
----
-
-## âœ… ORIZONT 7 â€” Drumul spre 1.0.0 (Hardening, Release Readiness & Observability) â€” 11/11 COMPLET
-
-> Backlog-ul de features e la 100% (H1â€“H6). Faza spre **1.0.0 stable** nu adaugÄƒ scope orizontal â€”
-> face produsul **de Ã®ncredere, testabil, documentat È™i mÄƒsurabil**. Bazat pe auditul multi-agent
-> 2026-06-01 (docs/release, CI/hermeticitate, calitate cod, scoping features) + `docs/gap-analysis-1.0.md`.
->
-> **Design complet:** `docs/superpowers/specs/2026-06-01-horizon7-road-to-1.0-design.md`
-> **ConstatÄƒri-cheie:** `pytest tests/` atÃ¢rnÄƒ >18 min offline (Oracle GitHub watcher la lifespan);
-> CI ruleazÄƒ doar pe push/Windows (nu pe PR-uri); ~44 `except: pass` Ã®n security/autonomy;
-> docs se contrazic (README â€181" vs â€39" teste; port 8000â†”8080; model 26bâ†”31b; â€15" vs 16 agenÈ›i;
-> fÄƒrÄƒ LICENSE/CONTRIBUTING).
-
-### Track A â€” Test Hermeticity & CI/CD (P0, blocheazÄƒ restul)
-
-| # | Item | S | P | Dep | AC |
-|---|------|---|---|-----|----|
-| H7.1 âœ… | **SuitÄƒ de teste hermeticÄƒ** â€” gate watchers/canale externe pe `JARVIS_TESTING`; `conftest` autouse (env + socket guard); `pytest-timeout` Ã®n pytest.ini; TestClient module-level â†’ fixtures function-scoped (`test_cognition_api/test_tts/test_systems_api/test_resilience_integration`) | 5 | P0 | â€” | `pytest tests/` ruleazÄƒ offline, verde, <90s, fÄƒrÄƒ hang; apel real de reÈ›ea â†’ eÈ™ec imediat |
-| H7.2 âœ… | **CI/CD pentru 1.0** â€” trigger `pull_request`; matrix `ubuntu+windows`; `ruff` + `mypy` (non-blocking) + `pytest-cov`; healthcheck robust (poll, nu sleep) | 5 | P0 | H7.1 | fiecare PR ruleazÄƒ CI pe Linux+Windows cu lint+teste+coverage |
-
-### Track B â€” Code Hardening (P1)
-
-| # | Item | S | P | Dep | AC |
-|---|------|---|---|-----|----|
-| H7.3 âœ… | **Client HTTP centralizat + retry/circuit-breaker** â€” `PluginHTTPClient` (timeouts coerente, `@resilient_call` H5.5, pooling); migreazÄƒ 14+ pluginuri | 8 | P1 | H5.5 | un singur client/policy; metrici rezilienÈ›Äƒ per plugin |
-| H7.4 âœ… | **SQLite thread-safety & igienÄƒ conexiuni** â€” `check_same_thread=False` + lock pe checkpoint/settings_db/queue/preferences; WAL consistent | 5 | P1 | â€” | acces concurent sigur; `test_load.py` fÄƒrÄƒ erori de thread/corupere |
-| H7.5 âœ… | **Validare input pe endpoint-uri** â€” limite Pydantic: message len, `limit` bounds, `task_id` numeric, sandbox code size | 3 | P1 | â€” | input invalid/oversize â†’ 422, fÄƒrÄƒ OOM/DoS |
-| H7.6 âœ… | **CurÄƒÈ›are excepÈ›ii Ã®nghiÈ›ite silenÈ›ios** â€” `except: pass`/`return None` orbe din log/channels/autonomy/security â†’ logging structurat + fallback explicit | 5 | P1 | â€” | nicio cÄƒdere silenÈ›ioasÄƒ Ã®n security/autonomy; fiecare logatÄƒ cu context |
-| H7.7 âœ… | **EliminÄƒ date mock/dummy Ã®nÈ™elÄƒtoare** â€” `/tasks` dummy tasks (web.py); flag transparent pe iot_control mock | 2 | P1 | â€” | UI nu primeÈ™te date false ne-marcate |
-
-### Track C â€” Docs & Release Hygiene (P1)
-
-| # | Item | S | P | Dep | AC |
-|---|------|---|---|-----|----|
-| H7.8 âœ… | **AdevÄƒr Ã®n documentaÈ›ie** â€” single source of truth versiune (`agents/__init__.py` + `/status`); reparat test counts, versiune, port, model, agent count, endpoint count | 3 | P1 | â€” | zero contradicÈ›ii cross-doc; CI verificÄƒ versiunea unicÄƒ |
-| H7.9 âœ… | **Onboarding & release** â€” `LICENSE`, `CONTRIBUTING.md`, quickstart Linux/Mac, `docker-compose.yml` (server+Qdrant+Neo4j+n8n), README badges+screenshot, release workflow (tagâ†’Release) | 5 | P1 | H7.2 | dev nou ruleazÄƒ Ã®n <10 min pe Linux/Mac; tag â†’ GitHub Release |
-
-### Track D â€” Observability & Product Polish (P2, cÃ¢È™tiguri rapide high-ROI)
-
-| # | Item | S | P | Dep | AC |
-|---|------|---|---|-----|----|
-| H7.10 âœ… | **Cost & Usage Analytics** â€” preÈ› per model + agregare tokens/cost per agent (local vs cloud) + burn lunar; `GET /api/analytics/cost` + tab HUD | 5 | P2 | H5.5 | dashboard aratÄƒ cost/agent + proiecÈ›ie lunarÄƒ din date reale |
-| H7.11 âœ… | **Activare Learning-Loop (auto promote/demote)** â€” job periodic care propune evoluÈ›ia agenÈ›ilor prin decision inbox (reversibil, gated). **Done 2026-06-03:** `core/learning/scheduler.py` `propose_promotions` â€” ruleazÄƒ `suggest_promotions`, enqueue propuneri gated (kind `agent_promotion`, `autonomy_level="ask"`, `origin="generated"`, risk_tier 2) Ã®n `TaskQueue`, idempotent (skip dacÄƒ existÄƒ deja propunere deschisÄƒ/agent activ); job APScheduler `_schedule_learning_loop` (cadenÈ›Äƒ `autonomy.learning_loop_interval_hours`, default 168h=sÄƒptÄƒmÃ¢nal) + trigger manual admin `POST /api/learning/propose`. +6 teste (enqueue gated, idempotent, sub-threshold, deja-activ, componente lipsÄƒ, endpoint). | 5 | P2 | H3.4, H6.5 | dupÄƒ N interacÈ›iuni â†’ propunere Ã®n inbox; aprobarea activeazÄƒ agentul |
-
-> **Total Orizont 7:** ~51 SP. **SecvenÈ›iere:** H7.1 â†’ H7.2 â†’ (Track B âˆ¥ Track C) â†’ Track D.
-> **Stretch â†’ Orizont 8 (post-1.0):** voice clone (XTTS), Howard fine-tuning, multi-user/family,
-> mobile offline voice, n8n NLUâ†’workflow, desktop Tauri, advanced guardrails DSL, eval/regression harness.
-
----
-
-## âœ… ORIZONT 6 â€” Jarvis Autonom / Proactive Cortex (P1) â€” 7/7 COMPLET
-
-> Viziune: Jarvis Ã®È™i gÄƒseÈ™te singur de lucru, lucreazÄƒ continuu, Ã®mi scrie pe telefon (Telegram)
-> doar cÃ¢nd are nevoie de o decizie, È™i susÈ›ine un review zilnic de 10â€“30 min (morning brief + evening retro).
-> Autonomia creÈ™te Ã®n timp pe mÄƒsurÄƒ ce Ã®nvaÈ›Äƒ ce aprob.
->
-> **Design:** `docs/superpowers/specs/2026-05-31-horizon6-autonomous-jarvis-design.md`
-> **Research (cu surse):** `docs/research/2026-05-31-autonomous-proactive-agents.md`
-> **PoliticÄƒ implicitÄƒ:** ECHILIBRAT â€” act autonom pe reversibil/sigur (research, drafturi, organizare);
-> aprobare pe ireversibil sau bani. **Buget Ã®ntreruperi: â‰¤4 push-uri urgente/zi**, restul Ã®n review.
-> **Principiu:** ambient agent (trigger â†’ coadÄƒ â†’ gating â†’ inbox), NU auto-prompt loop (anti-AutoGPT).
-
-| # | Item | S | Dep | AC |
-|---|------|---|-----|----|
-| H6.1 âœ… | **Autonomy Loop & Self-Tasking Queue** â€” coadÄƒ SQLite cu state-machine (`proposedâ†’approvedâ†’runningâ†’done\|failed\|blocked`), worker pe loop, retry cap 3, 2 cozi manual/generated. `core/autonomy/queue.py` + `worker.py`, endpoints `/autonomy/*` | 13 | H3.5 | âœ… task trece prin tot ciclul; eÈ™ec Ã—3 â†’ `failed`, nu reintrÄƒ |
-| H6.2 âœ… | **Decision Inbox pe Telegram** â€” card cu butoane inline Aprob/Editez/Resping/AmÃ¢n pe task-uri blocate; buget â‰¤4 push/zi; rest Ã®n batch. `core/autonomy/inbox.py` + callback Ã®n `channels/telegram.py` | 8 | H6.1, H1.2 | âœ… task money/ireversibil â†’ push cu 4 butoane â†’ â€Aprob" â†’ running |
-| H6.3 âœ… | **Risk Gate & Autonomy Dial** â€” `policy.py`: 4 tiers (read_only/reversible/external/irreversible_or_money) + scoring (reversibility, blast_radius, signal_quality, time_sensitivity); cap/ceiling bani. **Per-agent dial âœ… (HUD-v3 PR 0, #418)** â€” `AutonomyPolicy.agent_modes` + `effective_mode(agent)`; `decide()` resolves the mode **per agent** and the kernel threads `action.agent`, so an owner can set one agent to **AUTO/ASK/OFF** while the rest follow the global mode (default-safe: empty overrides â‡’ byte-identical to global). The coordinator resyncs overrides live each tick. Surfaced at `GETÂ·POST /autonomy/policy` (admin) + the interrupt budget at `GET /autonomy/interrupts`. `tests/test_autonomy_per_agent_policy.py` (+7); route/openapi/route-auth parity reseeded (+3 admin routes). | 8 | H6.1, H4.9 | âœ… reversibil â†’ act fÄƒrÄƒ Ã®ntrebare; money peste cap â†’ ask; **vision=OFF â†’ acelaÈ™i write trece Ã®n QUEUE, jarvis=AUTO Ã®l executÄƒ** |
-| H6.4 âœ… | **Daily Review Ritual** â€” morning brief 07:00 + evening retro 20:00 (cron), batch list; endpoint `/autonomy/brief`. `core/autonomy/digest.py` | 8 | H6.1, H3.5 | âœ… digest construit din coadÄƒ, trimis pe Telegram, expus Ã®n HUD |
-| H6.5 âœ… | **Preference Learning & Decision Journal** â€” scor approve/reject per (agent,kind,tier), `suggest_autonomy_raise` (doar tier 1â€“2), jurnal JSONL append-only. `core/autonomy/preferences.py` + endpoint `/autonomy/preferences/suggestions` | 13 | H6.1, H3.4 | âœ… dupÄƒ N aprobÄƒri reversibile â†’ sugereazÄƒ ridicarea autonomiei |
-| H6.6 âœ… | **Night Shift** â€” fereastrÄƒ wrap-midnight; `tick(max_tier=1)` ruleazÄƒ batch doar reversibil/read-only. `worker.is_night_window` + filtru `queue.runnable(max_tier)` | 5 | H6.1, H6.3 | âœ… noaptea ruleazÄƒ doar muncÄƒ reversibilÄƒ; extern/ireversibil aÈ™teaptÄƒ |
-| H6.7 âœ… | **Proactive OS Observer** (trigger layer) â€” `core/autonomy/observer.py`: eÈ™antioneazÄƒ resurse (CPU/RAM/disk via psutil) + liveness servicii (TCP), **debounce pe schimbare de stare**, injecteazÄƒ Ã®n coada existentÄƒ (alertÄƒâ†’READ_ONLY auto-act, vizibilÄƒ Ã®n HUD/brief; remediereâ†’tier-3 ASKâ†’decision inbox). Probe injectabile (offline-testable). Endpoints `/autonomy/observer[/run]`. | 5 | H6.1, H6.3 | âœ… serviciu cÄƒzut â†’ card â€restart?" Ã®n inbox **o singurÄƒ datÄƒ**; resursÄƒ Ã®n prag â†’ alertÄƒ Ã®n brief |
-
-> **ORIZONT 6 COMPLET âœ…** (2026-05-31/06-01) â€” H6.1â€“H6.7 livrate. Detalii de livrare: [docs/HISTORY.md](docs/HISTORY.md).
-
----
-
-> **Runtime diagnostics** (auto-generated from `problems.jsonl`) now live in the
-> git-ignored `memory_logs/diagnostics.md` â€” they are **no longer written into this
-> tracked file** (that caused recurring `git pull` conflicts; see BUG-4).
-
-## ğŸ› Bugs & Hot Fixes
-
-> Buguri cunoscute + taskuri â€orfane" (amÃ¢nate/abandonate prin alte docs/note, fÄƒrÄƒ item trackuit).
-> Audit 2026-06-02: am promovat aici follow-up-urile care altfel cÄƒdeau de pe radar.
-> Audit cod 2026-06-04 (orchestrare + memorie/autonomie + securitate): adÄƒugate BUG-5â€¦BUG-12,
-> HF-3â€¦HF-7, CLN-2/CLN-3. Caveat transversal: majoritatea au risc **scÄƒzut pe deployment
-> single-user/LAN** (designul actual) È™i devin reale sub concurenÈ›Äƒ / expunere non-LAN.
-
-> **Re-baseline 2026-06-08** (audit de cod + connectivity, verificat vs cod curent):
-> - **Deja fixate Ã®n cod** (rÃ¢ndurile de mai jos sunt istorice): **BUG-3** (un singur `/api/analytics/cost`),
->   **BUG-6** (reload atomic prin rebind), **BUG-8** (parsing cu guard), **BUG-9** (allowlist alfanumeric),
->   **BUG-10** (reset zilnic programat la miezul nopÈ›ii), **HF-6** (sandbox Docker-only by default), **HF-7**
->   (guard admin fail-closed Ã®n spatele proxy-ului).
-> - **Fixate Ã®n pasul de hardening 2026-06-08:** **BUG-7/NEW-1** (`orch.aclose()` cablat Ã®n shutdown, toate
->   backendurile LLM + mcp + queue Ã®nchise), **BUG-11** (re-gating complet pe payload-ul editat, nu doar `amount`),
->   **BUG-12** (lock pe `_PROC_CACHE` + atomicitate `_spent_today`) + **2 bug-uri noi**: `Orchestrator.process()`
->   lipsea dar era apelat (taskuri autonomy LLM + reflecÈ›ia nocturnÄƒ Ã®ntorceau gol â€” acum implementat, fail-safe)
->   È™i euristica greÈ™itÄƒ de eroare din `_record_interactions` (marcase rÄƒspunsuri reuÈ™ite ca eÈ™ec).
-> - **Fixate Ã®n pasul de completare HUD 2026-06-08:** **BUG-5** (session_id izolat per context async via
->   `contextvars.ContextVar` â€” chat-uri concurente nu mai amestecÄƒ conversaÈ›ii; test de concurenÈ›Äƒ), **HF-3**
->   (scanner Ã®ntÄƒrit: openai-key 40+, GCP/Azure SA, heuristicÄƒ entropie; `db_connection_string`/`password`
->   restrÃ¢nse). **Toate BUG-* È™i HF-* sunt acum rezolvate.**
-> - **RÄƒmÃ¢ne deschis (deliberat, NU bug-uri):** **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`
->   â€” P3, churn mare; amÃ¢nat intenÈ›ionat ca sÄƒ nu destabilizeze Ã®nainte de testarea manualÄƒ). Restul backlog-ului
->   = orizonturi de produs (H10.30, H11, H12 Track E, H13, H15, O20, O21), nu loose-ends â€” vezi
->   [`docs/2026-06-08-future-developments-report.md`](docs/2026-06-08-future-developments-report.md).
-
-### Buguri
-
-| # | Bug | Severity | Notes |
-|---|-----|----------|-------|
-| ~~BUG-14~~ âœ… | **Frigga (strict-local) putea ajunge Ã®n cloud** â€” `select_backend` la `policy=local` cÄƒdea pe Gemini (`cloud-fallback`) cÃ¢nd backend-ul local era jos, iar testul `test_select_backend_cloud_only_policy_local_fallback` consacra comportamentul. ÃncÄƒlca direct principiul non-negociabil #1 (MOONSHOT Â§5.1 / AGENTS.md: â€niciun fallback cloud"). **Fixed 2026-06-10:** `policy=local` e **fail-closed** (RuntimeError explicit, fÄƒrÄƒ fallback); test rescris `test_select_backend_strict_local_never_cloud` + `test_registry_cannot_override_local_only`. Bonus: `get_agent_policy` onoreazÄƒ acum `llm_policy` din `agents.yaml` (registrul canonic) cu podea de securitate `LOCAL_ONLY_AGENTS` â€” reparÄƒ È™i drift-ul Argus (yaml `claude`, cod `auto`). | ~~**CRITICAL** (privacy)~~ | GÄƒsit la dogfooding-ul AI_CONTEXT 2026-06-10 â€” citirea ARCHITECTURE Â§5 contra codului |
-| ~~BUG-15~~ âœ… | **Howard (strict-local) putea ajunge Ã®n cloud** â€” `_select_howard_backend` scurtcircuiteazÄƒ ÃNAINTE de gate-ul de policy, iar ultimul fallback era Gemini (`cloud-fallback`) â€” pentru digital twin-ul LOCAL_ONLY cu arhiva de conversaÈ›ii. Fratele lui BUG-14, ratat de fixul iniÈ›ial pentru cÄƒ special-case-ul stÄƒ deasupra gate-ului. **Fixed 2026-06-10:** fail-closed + test `test_howard_strict_local_never_cloud`. | ~~**CRITICAL** (privacy)~~ | Audit governance 2026-06-10 (pass 2, aceeaÈ™i metodÄƒ ca BUG-14) |
-| ~~BUG-16~~ âœ… | **`llm.cloud_fallback` era un knob mort** â€” setarea de privacy din /admin (`never|on-demand|always`) era definitÄƒ + afiÈ™atÄƒ Ã®n UI dar necititÄƒ de NIMIC; "never" nu oprea nimic. **Fixed 2026-06-10:** onorat live Ã®n `HybridRouter` (never = agenÈ›ii auto rÄƒmÃ¢n local È™i pe prompturi mari; always = preferÄƒ cloud; on-demand = comportamentul anterior), re-sincronizat â‰¤30s de settings watcher. +6 teste. | ~~HIGH (privacy)~~ | Audit governance 2026-06-10 |
-| ~~BUG-17~~ âœ… | **LanÈ›ul Merkle de audit nu era verificat niciodatÄƒ** â€” `AuditLogger.verify_chain()` exista cu zero apelanÈ›i (niciun endpoint, niciun test): "tamper-evident" fÄƒrÄƒ verificarea probelor. **Fixed 2026-06-10:** `GET /api/security/audit/verify` ({valid, first_invalid_id, entries}) + teste unitare care demonstreazÄƒ detectarea tamper-ului È™i a re-link-ului. SuprafaÈ›a HUD: Ã®n coada TASK-2. | ~~MEDIUM (trust)~~ | Audit governance 2026-06-10 |
-| ~~BUG-1~~ âœ… | `_dashboard_cache` module-level dict has no `asyncio.Lock` â€” concurrent `/dashboard` requests can race on the weather/calendar cache update, producing a double-fetch or partial write under high load. **Fixed 2026-06-02:** `_dashboard_lock = asyncio.Lock()` guards both refresh blocks with double-checked locking; weather block now also sets `cached_at` (was refetching every request). +1 regression test (`test_dashboard_concurrent_refresh_fetches_weather_once`). | ~~LOW~~ | Found during HUD test sprint 2026-06-02 |
-| BUG-2 âœ… | ~~Frontend test infrastructure missing â€” 0% coverage on React HUD (~5 000 LOC).~~ **Done 2026-06-02:** Vitest + JSDOM harness (`tests/frontend/`) that loads the real shipped global scripts (vendored React 18 UMD + static files) â€” no bundler/build step. **156 tests / 20 spec files Â· ~66% measured line coverage (target 60% met)**, gated in CI (`frontend` job runs `npm run test:coverage`, fails under 60%). Coverage of the in-JSDOM scripts is measured via istanbul pre-instrumentation + nyc (see `coverage.mjs`) with a badge (`coverage-badge.svg`). Covers all of `components.js`, `i18n.js`, `data.js`, `cognition.js`, `dossier-modal.js`, `network.js`, `enhancements.js`, `observability.js`; `admin.js` (full `AdminApp` mount + nav sweep + save flow); `systems.js`/`workflows.js`/`observability.js` panels (mount + tab sweep); and `app.js` incl. the **P1 chat flow** (sendâ†’SSE streamâ†’render) and **P2 polling** intervals. Plan alignment per `docs/plan-bug2-frontend-tests.md`: runner = Vitest (chosen over Jest), measured coverage âœ…, P1 Chat âœ…, P2 polling âœ…. **Caught a real shipped bug on first run:** `systems.js` `ResilienceTab` missing closing brace â†’ the entire Systems panel failed to parse/load in the browser (present on `main`); fixed + regression-guarded (`resilience.test.js`). **Deferred (P3 follow-up):** voice/`useTTS`, Workflow drag-drop pointer events, and browser E2E (Playwright). See `tests/frontend/README.md`. | ~~MEDIUM~~ | Identified in test coverage audit 2026-06-02; backend gap closed (121 tests added on branch `claude/hud-human-interface-testing-r8IQS`) |
-| ~~BUG-3~~ âœ… | `/api/analytics/cost` era definit de **douÄƒ ori** Ã®n `agents/web.py` (~1716 È™i ~2081), a doua umbrind-o pe prima. **Fixed (confirmat Ã®n cod 2026-06-19):** duplicatul a dispÄƒrut odatÄƒ cu extragerea de routere CLN-3 â€” o singurÄƒ definiÈ›ie acum Ã®n `agents/core/routers/analytics.py:28`; gardat de testele route-parity/OpenAPI (o rutÄƒ duplicatÄƒ ar pica CI). | ~~MEDIUM~~ | GÄƒsit la auditul de doc-truth 2026-06-02 |
-| ~~BUG-5~~ âœ… | **Race pe `self.session_id`** â€” handler-ul de canal salveazÄƒ/restaureazÄƒ `self.session_id` pe instanÈ›a *partajatÄƒ* a orchestratorului Ã®n jurul unui `await handle_input`. DouÄƒ cereri concurente pe canale diferite puteau suprascrie reciproc `session_id` Ã®nainte de blocul `finally` â†’ **un rÄƒspuns putea ajunge Ã®n conversaÈ›ia greÈ™itÄƒ**. **Fixed 2026-06-08** (confirmat Ã®n cod 2026-06-09): `session_id` e acum **async-context-local** via `contextvars.ContextVar` (`_active_session` Ã®n `agents/core/orchestrator.py`) â€” `session_id` e o proprietate care citeÈ™te din ContextVar (fallback la `_session_id_default` partajat pt. boot/checkpoint/autonomie), iar `_resolve_session()` seteazÄƒ contextul per-cerere; **nicio mutaÈ›ie pe instanÈ›a partajatÄƒ**. Test de concurenÈ›Äƒ inclus. Cel mai impactant bug gÄƒsit la audit. | ~~HIGH~~ (sub concurenÈ›Äƒ; LOW single-user) | Audit cod 2026-06-04 |
-| ~~BUG-6~~ âœ… | **Reload non-atomic `_runtime_settings`** â€” loop-ul de fundal reconstruia dict-ul fÄƒrÄƒ atomic-swap; un reader concurent putea vedea stare parÈ›ialÄƒ. **Fixed (confirmat Ã®n cod 2026-06-19):** `load_runtime_settings()` (`agents/core/orchestrator.py:509-516`) construieÈ™te un dict `flat` local **apoi** Ã®l **rebind-uieÈ™te atomic** (`self._runtime_settings = flat`) â€” un reader vede ori dict-ul vechi, ori cel nou, niciodatÄƒ parÈ›ial (nicio mutaÈ›ie in-place). | ~~LOW~~ | Audit cod 2026-06-04 |
-| ~~BUG-7~~ âœ… | **Leak `httpx.AsyncClient`** â€” backend-urile LLM creau clientul Ã®n `__init__` fÄƒrÄƒ `aclose()` â†’ connection pools rÄƒmase deschise. **Fixed (confirmat Ã®n cod 2026-06-19):** fiecare backend expune acum `aclose()` (LMStudio/Ollama `base.py:214`,`:339`; Claude/Gemini/OpenRouter/VLM), cascadat prin `LLMRouter.aclose`â†’`HybridRouter.aclose`â†’`Orchestrator.aclose` (`orchestrator.py:1608`)â†’shutdown-ul lifespan (`web.py:295`). Teste: `tests/test_hybrid_router.py:44-64`. *(Nit cosmetic rÄƒmas: `GeminiBackend` expune `close()` vs. `aclose()` la peers â€” inofensiv, `_close_backend` acceptÄƒ ambele.)* | ~~MEDIUM~~ | Audit cod 2026-06-04 |
-| ~~BUG-8~~ âœ… | **Parsing fragil Ã®n `_detect_handoff`/`_detect_skill`** â€” `]` lipsÄƒ ducea la EOF over-read / `ValueError`. **Fixed (confirmat Ã®n cod 2026-06-19):** `_detect_handoff` (`agents/core/orchestrator.py:1148-1156`) foloseÈ™te `end = resp.index("]", start) if "]" in resp[start:] else len(resp)` (guard explicit), iar `_detect_skill_learning` (`:1158-1178`) Ã®mpacheteazÄƒ `resp.index("]")` Ã®ntr-un `try/except (ValueError, IndexError): continue` â€” niciun over-read negardat, nicio excepÈ›ie nepriinsÄƒ. | ~~LOW~~ | Audit cod 2026-06-04 |
-| ~~BUG-9~~ âœ… | **Path-traversal Ã®n `promote_bench_agent`** â€” scria `SOUL.md` dintr-un `bench_id` nevalidat; un id cu `../` putea scrie Ã®n afara `agents/`. **Fixed (confirmat Ã®n cod 2026-06-19):** `promote_bench_agent` (`agents/core/orchestrator.py:1422-1425`, `# BUG-9 hardening`) respinge orice `bench_id` care nu e alfanumeric (`bench_id.replace("_","").replace("-","").isalnum()`) Ã®nainte de a-l folosi ca segment de cale â†’ niciun `../` posibil. | ~~MEDIUM~~ | Audit cod 2026-06-04 |
-| ~~BUG-10~~ âœ… | **Buget zilnic de cheltuieli neresetat** â€” `reset_daily()` exista dar nu era apelat Ã®n producÈ›ie â†’ `daily_ceiling` se umplea permanent pÃ¢nÄƒ la restart. **Fixed (confirmat Ã®n cod 2026-06-19):** `SchedulerService.schedule_daily_budget_reset()` (`agents/core/scheduler_service.py:55-71`) Ã®nregistreazÄƒ un job APScheduler `cron hour=0 minute=0` care apeleazÄƒ `policy.reset_daily`, cablat din `schedule_all()` (`:37`) la pornire. Test: `tests/test_autonomy_policy.py:82`. | ~~MEDIUM~~ | Audit cod 2026-06-04 |
-| ~~BUG-11~~ âœ… | **Task editat-dupÄƒ-block sÄƒrea peste re-gating** â€” un edit (ex. â€$100"â†’â€$300") se executa sub decizia veche de risc = escaladare de privilegii. **Fixed (confirmat Ã®n cod 2026-06-19):** `apply_decision(action="edit")` (`agents/core/autonomy/worker.py:169-219`) re-ruleazÄƒ `policy.decide()` pe payload-ul **complet** editat (`{"kind": ..., **payload}`, nu doar suma) È™i **pÄƒstreazÄƒ task-ul BLOCKED** (re-push card) dacÄƒ rezultatul e ASK, Ã®nainte de orice tranziÈ›ie la APPROVED. Teste: `tests/test_autonomy_worker.py:145-183` (`test_edit_to_irreversible_stays_blocked`, `test_edit_over_cap_reblocks`). | ~~MEDIUM~~ | Audit cod 2026-06-04 |
-| BUG-12 âœ… | **Thread-safety rezidualÄƒ â€” Ã®nchis (2026-07-02).** `AutonomyPolicy._spent_today` gardat de `_spend_lock` (2026-06-19); `Embedder._PROC_CACHE` gardat de `_PROC_CACHE_LOCK` (verificat 2026-07-02). **`InMemoryVectorStore` acum gardat È™i el** â€” `self._lock = threading.Lock()` (`memory/store.py`), `with self._lock:` pe fiecare metodÄƒ publicÄƒ (`add`/`search`/`search_by_sender`/`search_by_text_subset`/`get`/`remove`/`__len__`), mirror la pattern-ul `_PROC_CACHE_LOCK`. `tests/test_qdrant_store.py` (+2: lock present, hammer add/search/remove din 8 thread-uri concurent â€” invariantul `_id_index`â†”`records` rÄƒmÃ¢ne consistent). | âœ… | Audit cod 2026-06-04 |
-| ~~BUG-13~~ âœ… | **Skill import din `hermes` complet rupt vs. repo-ul real** â€” `agents/core/skills/importer.py` cerea `main/skills/<nume>/manifest.{json,yaml}` (layout plat), dar `NousResearch/hermes-agent` (real, MIT, ~185.7kâ˜…, activ) foloseÈ™te `skills/<categorie>/<skill>/SKILL.md` cu **YAML frontmatter** (standardul agentskills.io) â†’ `import_from_hermes()` dÄƒdea 404 pe **fiecare** skill È™i Ã®ntorcea `False`. Al doilea defect (local): `_save_skill` scria `manifest.json` dar `loader.py` descoperÄƒ **doar** `SKILL.md` â†’ chiar È™i un import reuÈ™it nu se Ã®ncÄƒrca niciodatÄƒ. **Fixed 2026-06-07** (research: [docs/research/2026-06-07-hermes-agent.md](docs/research/2026-06-07-hermes-agent.md)): importer rescris sÄƒ localizeze skill-ul Ã®n arborele git recursiv (`â€¦/<slug>/SKILL.md`, suportÄƒ nesting pe categorii + layout plat + fallback legacy `manifest.*`) È™i sÄƒ salveze **`SKILL.md` verbatim** (+ sidecar `manifest.json` doar pt. provenance/`list_imported`); `loader._parse_manifest` Ã®nvÄƒÈ›at sÄƒ parseze frontmatter YAML (`requires_toolsets`â†’`requires`, comenzi din body) cu fallback la dialectul Markdown-heading existent. +8 teste offline (httpx mock: frontmatter, nested-tree import, skill importat e loader-discoverable, list_imported, missingâ†’False) Ã®n `tests/test_hermes_import.py`. Suita skill (172 teste) verde. **Verificare live restantÄƒ:** cÄƒile de fetch sunt acoperite doar cu httpx **mock** (sandbox fÄƒrÄƒ reÈ›ea); rÄƒmÃ¢ne un smoke-test real (`DEV_MODE=1` â†’ `import_from_hermes("github-issues")` pe GitHub real) Ã®nainte de a fi confirmat Ã®n producÈ›ie. | ~~HIGH~~ (feature mort; LOW expunere â€” gated `DEV_MODE`) | GÄƒsit la research-ul Hermes 2026-06-07 |
-| ~~BUG-4~~ âœ… | AplicaÈ›ia scria Ã®n `BACKLOG.md` la fiecare autonomy tick (`sync_problems_to_backlog`, setare `error_backlog_sync_enabled` default ON) â†’ modifica fiÈ™ierul **trackuit** pe disc (pe Windows flip-uia È™i LFâ†’CRLF pe tot fiÈ™ierul) â†’ orice `git pull` ulterior **conflicta pe BACKLOG.md**. Cauza realÄƒ a conflictelor recurente. **Fixed 2026-06-02:** redirectat cÄƒtre `memory_logs/diagnostics.md` (gitignored) cu scriere idempotentÄƒ + LF pinned; scos blocul auto din BACKLOG; `.gitattributes` `eol=lf`; reparat `UPDATE.bat` (`origin master` â†’ `origin main`). | ~~HIGH~~ | Diagnosticat din simptomul â€conflict pe backlog la pornirea pe laptop" |
-
-### Hot fixes & taskuri orfane (promovate 2026-06-02)
-
-> Coloana **Dep / secvenÈ›iere** spune *cÃ¢nd* sÄƒ fie rezolvat eficient â€” multe au sens doar
-> Ã®mpreunÄƒ cu un feature viitor (ca sÄƒ nu se scrie de douÄƒ ori).
-
-| # | Item | Tip Â· P | S | Dep / secvenÈ›iere | SursÄƒ |
-|---|------|---------|---|-------------------|-------|
-| **HF-1** | **Auth pe rutele user-facing `/api/`** â€” `/chat`, `/chat/stream`, `/api/memory/*` (inclusiv POST `/api/memory/remember`) **nu aveau autentificare**; doar rutele admin erau gate-uite. **â†’ âœ… Rezolvat:** `_user_guard` (JARVIS_USER_TOKEN / `X-User-Token`, admin-token superset, localhost-default + fail-closed Ã®n spatele unui proxy ca HF-7) pe ~32 rute user-facing (chat, memorie, notes, rooms, sessions/tasks, `/sandbox/execute`, `/skills/import`); HUD ataÈ™eazÄƒ tokenul automat (`auth.js`, prompt-on-401). Tot prereq pentru **H10.E Multi-user**. | âœ… **DONE** | 5 | â€” | `agents/web.py:_user_guard` Â· `tests/test_user_guard_hf1.py` |
-| **HF-2** | **Security review pre-go-live** â€” pen-test pe endpointuri, **CORS** config, review rate-limit. **â†’ âœ… Cod livrat:** middleware **per-IP rate-limit** (`JARVIS_RATE_LIMIT`, localhost + token-valid exempt, 429 + Retry-After) ca defense-in-depth peste auth HF-1 / limita per-canal din gateway; **CORS knob** opt-in (`JARVIS_CORS_ORIGINS`, default same-origin, neschimbat). *Pen-test-ul manual rÄƒmÃ¢ne ca gate uman Ã®n* `MANUAL_TESTING Â§G`. | âœ… **DONE (cod)** | 5 | â€” | `agents/web.py` (`_rate_limit`, CORS) Â· `tests/test_rate_limit_hf2.py` |
-| **BUG-2b** | **Frontend test gaps rÄƒmase din BUG-2** (trÄƒiau doar Ã®n rÃ¢ndul BUG-2 âœ… + `tests/frontend/README.md`): **2b.1** browser E2E (Playwright: server+Chromium, fluxuri chat/tab-uri/command palette/admin); **2b.2** drag-drop canvas workflow (pointer events SVG, layout, edges); **2b.3** voce/`useTTS` (mock `getUserMedia`/`AudioContext`, toggle mic, tranziÈ›ii stare). | ğŸ§ª Task Â· P3 | ~14 (8+3+3) | **2b.1** standalone (H7.2 CI âœ…) â€” cel mai bine dupÄƒ ce fluxurile mari H10 se stabilizeazÄƒ, se cupleazÄƒ cu H9.3/H10.23; **2b.2** ride cu **H10.2** (trace overlay) / **H10.7** (AI builder); **2b.3** ride cu **H12.4** (Wyoming rescrie STT/TTS) / **H12.10** (mute) | BUG-2 deferred + `tests/frontend/README.md` |
-| **TASK-1** | **Howard: backend LLM dedicat + prima rulare realÄƒ** â€” `agents/core/llm/ollama_howard.py` (backend dedicat) + ingestion run efectiv + execuÈ›ie pipeline fine-tuning. H5.1 marcheazÄƒ infra â€âœ… 100% gata" dar *modelul* È™i fiÈ™ierul de backend rÄƒmÃ¢n TODO. | âš™ï¸ Task Â· P2 | 8 | **H5.1** (infra âœ…, necesitÄƒ export date Andrei), **H11.3** (SFT/GRPO, GPU) | `docs/internal/gemini_architecture_prompt.md` (TODO-uri) |
-| **TASK-4** | **UX pass post-manual-test (HUD + WorldView)** â€” findings Ã®n `docs/2026-06-10-ux-review-hud-worldview.md` (review static Ã—2 + screenshots reale ale HUD-ului). HUD: P1 double-submit la streaming, afordanÈ›Äƒ mic-muted, prompt admin-token one-shot; P2 toast erori kill-switch, busy-state pe butoanele de platÄƒ, etc. WorldView (mai puÈ›in È™lefuit): P1 explicaÈ›ie API-down + legendÄƒ layere + claritate LIVE/HISTORICAL. **Fixat deja:** first-run onboarding banner (HUD) + **toate P1+P2 WorldView (2026-06-12**: SystemStatus overlay, legendÄƒ layere, mod chip LIVE/HISTORICAL, badge conexiune always-on, help `?`, hint Mapbox, Export colapsat, contrast WCAG, WebGL error boundary, Inspector recovery**)**. Restul (P1 HUD de confirmat pe hardware + P3): *dupÄƒ* testarea manualÄƒ â€” multe P1 se confirmÄƒ/infirmÄƒ cel mai ieftin pe hardware real. **Brief de design complet pentru partea WorldView** (handover self-contained cÄƒtre Claude Design â€” inventar UI exact, probleme rancuite, constrÃ¢ngeri brand/tech, deliverables): [`docs/design/WORLDVIEW_UX_BRIEF.md`](docs/design/WORLDVIEW_UX_BRIEF.md) (2026-06-12). **â†’ Design-ul s-a Ã®ntors (2026-06-12):** spec implementabil [`docs/design/WORLDVIEW_UX_SPEC.md`](docs/design/WORLDVIEW_UX_SPEC.md) + handoff cu reconciliere post-#193 [`docs/design/WORLDVIEW_UX_HANDOFF.md`](docs/design/WORLDVIEW_UX_HANDOFF.md) + mock hi-fi cu 7 scenarii [`docs/design/worldview-mock/`](docs/design/worldview-mock/). **â†’ âœ… Redesign IMPLEMENTAT integral (2026-06-12, PR #194):** toÈ›i cei 11 paÈ™i din spec Â§6 â€” tokens+fonturi brand, zone system + app bar, mode system (frame+pill+timeline), Legend=Layers cu glyphs, overlay first-run, right rail + Inspector umanizat, timeline cu event markers + replay Ã®n store, tooltips/help/demo-badge, shape encodings pe hartÄƒ (icon atlas + fallback), gramatica negative-space (ghosts/DR/cones), arrival deep-link + demo lens. 140 teste frontend verzi, tsc + build verzi. **â†’ âœ… Chat double-submit guard (2026-07-02):** `runTurn` (`app.tsx`) now ignores a second submit while `thinking` is non-null (rapid double Enter/click, or voice firing mid-turn) instead of racing two `/chat/stream` requests into the same `abortRef`/message index â€” verified via typecheck + full frontend suite (no dedicated App-render test exists for this component, same as the recent stop-generating change). **RÄƒmÃ¢ne din TASK-4:** afordanÈ›a mic-muted + prompt admin-token one-shot (P1) de confirmat la testarea manualÄƒ. | ğŸ¨ Task Â· P2 | 13 | manual test gate | UX review 2026-06-10 |
-| **TASK-3** | **Injection quarantine â€” taint-track all external channels** (audit pass 3, 2026-06-10): quarantine primitives (`detect_injection`/`spotlight`/`TaintedValue`/`plan_then_execute`) exist + tested but are only invoked at REST inspection endpoints, desktop-operator, and (now) transcript ingest. Verdict: **defense-in-depth, NOT critical** â€” chat agents return text (read-only plugin gathering, no mutating tool call); the one textâ†’task path (transcript) is hard-forced to ask-tier so nothing auto-runs. Closed the visible gap (transcript injection flags on the approval card). **Open (owner architecture call):** wrap email/web-webhook input in `TaintedValue` at the channel boundary + gate irreversible tool calls through `QuarantinePolicy.check_step`, so a future autonomous-tool path is covered by construction. | ğŸ›¡ï¸ Task Â· P2 | 8 | H17.1 (quarantine) + risk gate (holds) | Audit pass 3 2026-06-10 |
-| **TASK-2** | **HUD v2 depth â€” paritate UI cu backendul** (audit 2026-06-10): backendul a luat-o iar Ã®nainte â€” ~37 endpoint-uri (recente sau write-only) **fÄƒrÄƒ control Ã®n HUD v2**. **â†’ ğŸŸ¡ Gap-ul de controale ÃNCHIS Ã®n PR #181 (2026-06-10):** cognition SSE live Ã®n cockpit, payments approve/reject/settle (Trust), pairing H12.19, injection scan H17.1, transcript ingest H12.25, escalation H12.11, reflection run, heartbeat run/start/stop, `/learning/promote`, marketplace review H12.12, eval runs+compare, AI step builder H10.7, sandbox execute, agent templates H10.29, LM Studio server/load/unload, auth-profiles H12.20 â€” noi panele Console Ã®n `frontend/src/gap.tsx` + `actA` (token admin) + 7 teste frontend (19 total). **Coada redusÄƒ (2026-07-05):** LIVE/SEED per-panel âœ… (58/58 Console cards), AUD-16 OpenAPI typegen/diff gate âœ…, plugin-gated mode base wiring âœ… in #505 (Build/Comms/Finance/Health/Knowledge/Family), P3.2 stale-doc reconciliation âœ… (#507), Data Spaces assign/unassign controls âœ… (#515), Rooms selected-history drawer âœ… (#517), capability issue/check UI âœ… (#519), current-mesh task fan âœ… (#521), preferences/tweaks UI âœ… (#523), self-hosted HUD fonts âœ…, and Safe Comms channel inbox transport v0 in #551 (telegram/web persisted threads + governed replies). **RÄƒmÃ¢ne coada:** owner live-data/plugin setup (bank/broker/quotes, Apple Health bridge, websearch backend, WhatsApp bridge) and non-v0 inbox channels â€” vezi `docs/design/HUD_V2_REMAINING.md`. | ğŸŸ¡ Ãn progres Â· P2 | 13 (â‰ˆ12 livrate) | HUD v2 cutover âœ… (2026-06-08) | Audit paritate 2026-06-10 + PR #181 |
-| **CLN-1** | **È˜terge `tests/test_spotify.py`** â€” 9 skip-uri permanente care aÈ™teaptÄƒ `agents/core/skills/spotify.py` (cale ce nu va exista; pattern opencode). Spotify livreazÄƒ prin `skills/spotify/main.py`, acoperit de `test_spotify_skill.py`. EliminÄƒ È™i zgomotul â€8 skipped". **â†’ âœ… FÄƒcut:** `tests/test_spotify.py` nu mai existÄƒ (eliminat); Spotify e acoperit de `test_spotify_skill.py`. | âœ… **DONE** | 1 | Niciuna | `tests/test_spotify.py:19`, `BACKLOG.md` (nota â€Run") |
-| **TASK-5** | **âœ… REZOLVAT â€” user-tier `GET /tasks` nu mai serveÈ™te payload/result.** `format_task` proiecteazÄƒ `payload`/`result` afarÄƒ din rÃ¢ndul brut Ã®nainte de rÄƒspuns (HUD-ul foloseÈ™te doar owner/state/label/project/title/decision â€” verificat pe ambii consumatori `frontend/src`), regression-test pe toate view-urile (`tests/test_dashboard.py::test_tasks_user_tier_never_ships_payload_or_result`). Ãn aceeaÈ™i miÈ™care, feed-ul H34.1 È™i-a Ã®nchis propriul leak (PGE-042): misiunile nu mai livreazÄƒ `plan[].result` È™i rulÄƒrile de workflow nu mai livreazÄƒ `steps[].input_preview/output_preview` (recursiv pe sub-workflows), fÄƒrÄƒ sÄƒ mute sursele (`_payload_free_mission`/`_payload_free_run` + test cu shape-uri realiste). Original: `dashboard.py` Ã®ntorcea `Task.to_dict()` complet la user-tier, deÈ™i toate citirile `/autonomy/*` sunt admin-tier. | ğŸ›¡ï¸ Task Â· P2 | 2 | â€” | Review H34.1 Â· `agents/core/routers/dashboard.py` |
-| **NTH-1** | **`/cognition/stream` (scoring live)** â€” `/api/cognition` Ã®ntoarce deja `last_cognition` real; mock-ul static `COGNITION_SCORING` din `data.js` rÄƒmÃ¢ne ca fallback ne-configurat. Varianta streaming e netrackuitÄƒ. *(parÈ›ial superseded â€” low)* **â†’ âœ… FÄƒcut:** `GET /api/cognition/stream` (SSE) emite snapshot-ul `last_cognition` la schimbare + heartbeat pe idle; generatorul de evenimente ia `get_cog`/`sleep` injectabile â†’ testabil offline. | âœ… **DONE** | 3 | H9.2 | `docs/internal/design_handoff_jarvis_hub/README.md`, `data.js` |
-| **HF-3** | **Hardening scanner Secret/PII** â€” pattern OpenAI prea laxat (`sk-â€¦{20,}`, real â‰¥40 chars â†’ false positives); `db_connection_string` (`scanner.py:82`) prea larg (orice 10+ chars dupÄƒ `://`); `password_assignment` (`:81`) prinde doar valori *Ã®ntre ghilimele* (rateazÄƒ `password=secret` neÃ®ncadrat); **lipsesc** JWT (`eyJâ€¦`), service-account JSON GCP/Azure, Bearer tokens, material PEM, heuristicÄƒ entropie. **â†’ âœ… Rezolvat (cod, deja livrat):** scanner-ul le implementeazÄƒ pe toate â€” OpenAI `{40,}` (nu `{20,}`), db-string cere `user:pass@host`, `password_assignment` prinde bare È˜I quoted, + JWT `eyJâ€¦`/GCP-SA JSON/Azure storage/Bearer/PEM + heuristicÄƒ de entropie Shannon (`looks_like_high_entropy_secret`, â‰¥3.6 bits/char). | âœ… **DONE** | 3 | Se cupleazÄƒ cu HF-2 (security review) | Audit cod 2026-06-04 Â· `agents/core/security/scanner.py:76-87` |
-| **HF-4** | **SSRF: DNS-rebinding / TOCTOU** â€” `check_ssrf` rezolva IP-ul la momentul check-ului, dar fetch-ul real era ulterior; un domeniu controlat de atacator putea Ã®ntoarce IP public la check È™i `127.0.0.1` la fetch. **â†’ âœ… Rezolvat:** `resolve_and_validate` rezolvÄƒ o singurÄƒ datÄƒ È™i **respinge dacÄƒ oricare** IP e privat (anti split-horizon rebinding); `fetch_page` **pin-uieÈ™te pe IP-ul validat** la conectare (Host + TLS SNI pÄƒstrate) È™i urmÄƒreÈ™te redirect-urile **manual**, validÃ¢nd fiecare hop Ã®nainte de conectare. | âœ… **DONE** | 3 | â€” | `agents/core/security/ssrf.py` Â· `agents/core/plugins/websearch.py` Â· `tests/test_ssrf.py` |
-| **HF-5** | **Separare cheie HMAC audit** â€” cheia de semnare stÄƒtea lÃ¢ngÄƒ log (`memory_logs/security/*.key`); acces de scriere pe dir-ul de log = citirea cheii + rescrierea lanÈ›ului + re-semnare. **â†’ âœ… Rezolvat:** `IntentLog._resolve_key` preferÄƒ acum o cheie **Ã®n afara** dir-ului de log â€” `JARVIS_AUDIT_KEY` / cheie explicitÄƒ / dir securizat (`JARVIS_KEY_DIR`, altfel `~/.config/jarvis`); cheia co-locatÄƒ legacy e onoratÄƒ cu **warning** de migrare; fallback co-locat doar dacÄƒ dir-ul securizat nu e scriibil. *(Anchoring extern via timestamp-authority rÄƒmÃ¢ne nice-to-have post-1.0.)* | âœ… **DONE** | 3 | â€” | `agents/core/security/anchor.py` Â· `tests/test_audit_key_hf5.py` |
-| **HF-6** | **Sandbox: bypass prin `DEV_MODE`** â€” cÃ¢nd `DEV_MODE=1` (frecvent Ã®n dev), `Sandbox` executÄƒ cod **direct pe host** (fÄƒrÄƒ Docker, fÄƒrÄƒ `--network none`/limite mem/pids) â€” `sandbox.py:75-87,158-163`. Risc major dacÄƒ rÄƒmÃ¢ne setat Ã®n prod. Fix: opt-in *per-apel* explicit (nu flag global), warning vizibil Ã®n HUD/`/status` cÃ¢nd subprocess fallback e activ. **â†’ âœ… Rezolvat:** host-fallback e opt-in *per-instanÈ›Äƒ* (`allow_subprocess`, niciodatÄƒ flag global â€” `orch.sandbox` Ã®l lasÄƒ OFF, deci `DEV_MODE` **nu** mai porneÈ™te host-exec); `active_backend()`/`is_isolated()`/`security_status()` expun postura, iar `/sandbox/status` + posture endpoint raporteazÄƒ `insecure_host_exec` + warning; mesaje de eroare/log corectate. | âœ… **DONE** | 3 | â€” | Audit cod 2026-06-04 Â· `agents/core/sandbox.py`, `agents/web.py` Â· `tests/test_sandbox_hf6.py` |
-| **HF-7** | **Admin auth Ã®n spatele unui reverse-proxy** â€” fallback-ul â€doar localhost" (`_admin_guard`) foloseÈ™te `request.client.host`, care devine IP-ul proxy-ului Ã®n spatele nginx/ingress â†’ admin expus tuturor dacÄƒ `JARVIS_ADMIN_TOKEN` nu e setat. AdaugÄƒ suport trusted-proxy/`X-Forwarded-For` + rate-limit pe Ã®ncercÄƒri token. **â†’ âœ… Rezolvat:** ambele guard-uri (`_admin_guard`/`_user_guard`) fail-**CLOSED** Ã®n spatele unui proxy (cer token); `JARVIS_TRUSTED_PROXY` (opt-in, default off) + `_real_client_host` folosesc primul hop `X-Forwarded-For` ca IP real pentru poarta localhost; rate-limit pe token-guess via HF-2 (Ã®ncercÄƒrile cu token greÈ™it nu sunt exempte). | âœ… **DONE** | 2 | Cu HF-1/HF-2 | Audit cod 2026-06-04 Â· `agents/web.py:_admin_guard` |
-| **CLN-2** | **Spargere god-object `Orchestrator`** (`agents/core/orchestrator.py`) â€” un singur obiect gestioneazÄƒ agenÈ›i + pluginuri + memorie + canale + autonomie + checkpoints + learning. **Ãnceput Ã®n #118 (audit A2 â€” `ComponentRegistry`)**, care a redus fiÈ™ierul 1620â†’1537 LOC. **â†’ âœ… SubstanÈ›ial DONE (#296):** extraÈ™i `ChannelManager` (proprietatea `channels`), `PluginManager` (proprietatea `plugins`), execuÈ›ia LLM-control (`llm_control.run_llm_control`) È™i builder-ul de cognition-trace (`cognition_trace.update_cognition`) â€” toÈ›i cu facade-uri delegante, suprafaÈ›a `orch.*` neschimbatÄƒ. **Orchestrator 1620â†’1456 LOC.** Restul inline e **pipeline-ul de request** (`handle_input`/`handle_input_stream` + core-ul `_active_session` ContextVar din BUG-5) â€” **nu se poate extrage Ã®n siguranÈ›Äƒ** (testele asigneazÄƒ direct ~10 atribute de stare: observer/checkpoints/tracer/run_history/memory/mcp/autonomy_queue/skills/workflow_*, deci nu pot deveni proprietÄƒÈ›i). Punct natural de oprire. **Plan:** [`docs/superpowers/specs/2026-06-13-cln2-cln3-refactor-plan.md`](docs/superpowers/specs/2026-06-13-cln2-cln3-refactor-plan.md). | âœ… SubstanÈ›ial DONE Â· P3 | 5 | #118 (A2) â†’ #296 | Audit cod 2026-06-04 |
-| **CLN-3** | **Spargere `web.py`** (~4636 LOC, 233 rute, singletons globale `orch`/`gateway`) â€” split Ã®n routere FastAPI per-domeniu (`APIRouter`). **â†’ âœ… DONE (#293 batch 2 + #296 complet):** **45 de domenii extrase** Ã®n `core/routers/` cu wrappere lazy de auth-guard (`_deps.py`, fÄƒrÄƒ ciclu de import); topologie 3-straturi `web_helpers`/`app_state`/`_deps` cu `get_orch()` late-binding. **web.py 4636â†’1282 LOC; 233â†’9 rute inline** (rÄƒmÃ¢n, by design: app-shell `/`,`/v1`,`/v2`,favicon,sw.js + `/chat`,`/chat/stream` + `/admin`). SuprafaÈ›a de **304 rute e byte-identicÄƒ**, gardatÄƒ de `tests/test_route_parity_guard.py` + `test_openapi_parity_guard.py` + `test_lifespan_smoke.py` + `test_route_auth_matrix.py`. **Plan:** [`docs/superpowers/specs/2026-06-13-cln2-cln3-refactor-plan.md`](docs/superpowers/specs/2026-06-13-cln2-cln3-refactor-plan.md). | âœ… **DONE** Â· P3 | 8 | #293 â†’ #296 | Audit cod 2026-06-04 |
-
-> **TASK-2 since-closed update (2026-07-14):** the H28 Operator depth is now complete in
-> Console â†’ Build, with real callers for browser check/preview and desktop preview/run plus native
-> desktop-approval boundaries. TASK-2 remains ğŸŸ¡: its actual tail is owner live-data/plugin setup
-> (bank/broker/quotes, Apple Health, websearch, WhatsApp) and non-v0 inbox channels.
-
-## âœ… ORIZONT 5 â€” Next Wave (P2â€“P3) â€” 17/17 COMPLET
-
-> Fiecare item are spec + plan propriu Ã®n `docs/superpowers/`. Timeline: 0.6 â†’ 0.9 â†’ 1.0.
->
-> **ORIZONT 5 COMPLET âœ…** (2026-06-01) â€” 17/17 items livraÈ›i. Detalii de livrare: [docs/HISTORY.md](docs/HISTORY.md).
-
-| # | Item | S | Dep | Target version |
-|---|------|---|-----|---------------|
-| H5.1 âœ… | **Howard: Fine-Tuning + Voice Clone + Continuous Ingestion** â€” RAG pipeline (`ingestion/pipeline.py`, `watcher.py`), Facebook/WhatsApp parsers, `Embedder` cu caching (H5.17), TTS fallback chain (edge-tts/XTTS/ElevenLabs), IngestionWatcher wired Ã®n orchestrator. *(Fine-tuning model: necesitÄƒ export date personale Andrei â€” infra 100% gata)* | 13 | â€” | 0.6 âœ… |
-| H5.2 âœ… | **Mobile HUD / PWA** (responsive, offline, push) | 8 | â€” | 0.7 âœ… |
-| H5.3 âœ… | **Multi-Language / i18n (RO/EN switch)** | 5 | â€” | 0.7 âœ… |
-| H5.4 âœ… | **UI Overhaul (teme, layout, accesibilitate)** | 8 | H5.2 | 0.7 âœ… |
-| H5.5 âœ… | **Performance & Robustness** (retry, circuit breaker, rate limit, caching, resilience metrics) | 8 | â€” | 0.8 âœ… |
-| H5.6 âœ… | **Multi-Agent Workflows** (handoff, paralel, pipeline) â€” `WorkflowEngine` + `Pipeline`/`WorkflowStep` (DAG, topological sort, parallel batches) + `WorkflowRegistry` (3 built-in: finance_report, research_and_brief, security_digest) + endpoints `/api/workflows` + `/api/workflows/run`. 16 teste offline. | 13 | H5.5 | 0.8 âœ… |
-| H5.7 âœ… | **New Integrations / Plugins (SMS, CRM, IoT, social)** | 8 | â€” | 0.9 âœ… |
-| H5.8 âœ… | **Agent Marketplace / Skill Sharing** (registry, publish) | 13 | H5.6 | 0.9 âœ… |
-| H5.9 âœ… | **Resilience Tab in Main HUD** â€” tab live Ã®n SystemsPanel cu retry metrics + circuit breaker states, endpoint public `/api/resilience` | 3 | H5.5 | 0.8 âœ… |
-| H5.10 âœ… | **Live Data Wiring** â€” Memory, Plugins, Learning, Security tabs trec de la mock static la endpoint-uri live (`/memory/stats`, `/api/plugins`, `/learning/stats`, `/security/status`, `/bench/stats`) | 5 | H5.9 | 0.8 âœ… |
-| H5.11 âœ… | **Missing Widgets** â€” Ticker feed live, OAuth status tab, Oracle tab, Tasks widget; CognitionPanel live | 5 | H5.10 | 0.8 âœ… |
-| H5.12 âœ… | **Secured Shell Task Executor** â€” `RemediationRunner` (allowlist, permission gate, no-shell `exec`, audited) wired ca handler `restart_service` Ã®n executor. 0.45 B1 branch adds shared `HOST_CONTROL_CONTRACT` coverage for `restart_service` and LM Studio host subprocess control before execution. `core/autonomy/remediation.py` | 5 | H6.7 | 0.8 âœ… |
-| H5.13 âœ… | **Proactive Event Watchers** â€” `EventWatcher` + Email/Calendar/Finance/Health probes, eÈ™antionate Ã®n bucla de autonomie (gated `system.watchers_enabled`). `core/autonomy/watchers.py` | 8 | H6.7 | 0.8 âœ… |
-| H5.14 âœ… | **Retrieval Fusion Engine** â€” `reciprocal_rank_fusion()` + `HybridRetriever` (vectorâŠ•graph RRF, weight-tunable, injectabil) + `MemoryManager.hybrid_search()`. `core/memory/fusion.py`, 9 teste offline. **Task4 âœ…:** `GET /api/memory/search` + `FusedRecallBox` Ã®n MemoryTab. | 5 | H3.1, H3.2 | 0.8 âœ… |
-| H5.15 âœ… | **Daily Reflection & Graph Consolidation** â€” `DailyReflector` (`core/autonomy/reflection.py`): gather context â†’ LLM reflection â†’ JSON entities/relations/lessons â†’ promote to Neo4j graph; idempotent per zi; hookuit Ã®n `_autonomy_loop` (fereastrÄƒ 22:00â€“07:00, gated `system.reflection_enabled`). Endpoint `/api/reflection/status` + `/api/reflection/run`. 10 teste offline. | 8 | H6.6, H3.2 | 0.8 âœ… |
-| H5.16 ğŸŸ¡ | **Sentence-level TTS & Audio Barge-in** â€” edge-tts integration + server-side play/stop exist and are tested. **Sentence-level streaming (server) landed:** pure splitter `core/voice/sentence_stream.py` (`split_sentences` + incremental `SentenceAggregator`, 18 offline tests) + `TTSEngine.speak_stream` + `POST /tts/stream` (opt-in `voice.sentence_streaming`, default off; multipart-free framed audio so synthesis/playback can start after sentence #1). Earlier shipped: **browser voice loop** (mic â†’ local STT `/api/voice/stt` â†’ chat â†’ TTS playback, hands-free; PR #162) with **opt-in barge-in** (PR #164, default off, needs on-device echo-cancellation tuning). **voice.ts wiring âœ… (verified 2026-07-02):** `speak()` tries `streamTts` first (`frontend/src/voice.ts:206-215`, frames played back-to-back) with clean fallback to whole-reply `/tts` on 409 when the server opt-in is off. **Still TODO:** synthesize *while* the chat streams (the `SentenceAggregator` building block is ready); browser wake-word. See `docs/VOICE.md`. | 8 | H1.1, H5.5 | 0.8 ğŸŸ¡ |
-| H5.17 âœ… | **Batch & Cache Embeddings Pipeline** â€” `EmbeddingCache` (content-addressed, sharded, crash-safe) + `Embedder.embed_batch` (dedup + paralel) + retry/backoff (degradare la hash) + cache stats Ã®n pipeline. `core/ingestion/embedder.py` | 5 | H5.5 | 0.8 âœ… |
-
----
-
-## ORIZONT 7 â€” PerformanÈ›Äƒ Cale Fierbinte (P1â€“P2)
-
-> SursÄƒ: profiling 2026-06-02 al cÄƒii per-turn (NU generarea LLM). Bottleneck
-> non-LLM = scrieri sincrone SQLite pe event-loop-ul async (checkpoint + audit +
-> worker autonomie). Detalii + mÄƒsurÄƒtori: `docs/research/2026-06-02-perf-hotpath.md`.
-> **CÃ¢È™tig mÄƒsurat:** commit SQLite `3317 Âµs â†’ 92 Âµs` (~36Ã—) cu WAL+`synchronous=NORMAL`.
-
-| # | Item | S | P | Dep | AC |
-|---|------|---|---|-----|----|
-| H7.1 âœ… | **SQLite WAL + `synchronous=NORMAL`** pe DB-urile scrise per-turn â€” `checkpoint.py`, `security/audit.py`, `autonomy/queue.py`. Durabil (WAL crash-safe; NORMAL sigur sub WAL). | 1 | P1 | â€” | âœ… commit-uri ~36Ã— mai ieftine; suite persistenÈ›Äƒ/autonomy/securitate verzi |
-| H7.2 âœ… | **Offload scrieri blocante de pe event-loop** â€” `checkpoints.save` / `audit.log` / `_record_interactions` / `_log_session` prin `asyncio.to_thread` Ã®n toate cele 3 call-site-uri per-turn; `checkpoint.py` cu `check_same_thread=False` + `threading.Lock`. | 3 | P1 | H7.1 | âœ… handlerele per-turn nu mai fac I/O sqlite/fiÈ™ier sincron pe loop; thread-safe sub `to_thread` |
-| H7.3 âœ… | **Debounce / frecvenÈ›Äƒ checkpoint** â€” `_maybe_checkpoint()` salveazÄƒ doar la `memory.checkpoint_every` (default 5) turns; `_flush_checkpoint()` forÈ›at pe `new_session()` + `aclose()` (shutdown). Reduce I/O È™i CPU (`json.dumps` al state-ului). | 2 | P2 | H7.2 | âœ… checkpoint scris â‰¤1Ã—/N turns; restart curat nu pierde sesiunea activÄƒ |
-| H7.4 âœ… | **Query-embedding cache + fast-fail (recall)** â€” `Embedder.from_env(cache_dir=â€¦)` default `memory_logs/embedding_cache/recall` + LRU in-process (`_PROC_CACHE`, 256) cheie `(backend,model,text)`; `max_retries=1` fast-fail. | 2 | P2 | â€” (recall) | âœ… query repetat = cache hit (fÄƒrÄƒ network/disk); embeddings down â†’ recall degradeazÄƒ instant |
-| H7.5 âœ… | **Strategie fast/heavy model** â€” `is_heavy_request()` (token threshold 2000 + keywords RO/EN) escaladeazÄƒ Ã®n `hybrid_router.select_backend()` POLICY_AUTO de la slotul rapid (VRAM) la slotul deep (DDR5); flag `JARVIS_AUTO_DEEP`. | 8 | P2 | â€” | âœ… task uÈ™or â†’ model rapid `local`; task greu â†’ `local-deep`/DEFAULT_DEEP_MODEL; nu afecteazÄƒ cloud/claude/local-only |
-
-> **ORIZONT 7 PERF COMPLET âœ…** (2026-06-02) â€” 5/5 items, +49 teste offline. Detalii: [docs/HISTORY.md](docs/HISTORY.md).
-
----
-
-## âœ… ORIZONT 8 â€” Memorie PersonalÄƒ & Personalizare (â€Jarvis te cunoaÈ™te") (P1) â€” 7/7 COMPLET
-
-> **Viziune:** Jarvis Ã®È™i construieÈ™te Ã®n timp o **memorie despre Andrei** â€” fapte, preferinÈ›e,
-> decizii, oameni, proiecte â€” extrasÄƒ din conversaÈ›ii, consolidatÄƒ periodic (ca reflection-ul H5.15),
-> versionatÄƒ È™i injectatÄƒ Ã®n context la fiecare agent, ca rÄƒspunsurile sÄƒ fie personalizate fÄƒrÄƒ
-> sÄƒ repet de fiecare datÄƒ cine sunt È™i ce vreau. Construit pe infrastructura livratÄƒ: fused recall
-> (H5.14), embeddings reale + cache (H7.4), daily reflection (H5.15).
->
-> **Principii:** local-first (ethos Frigga â€” datele personale rÄƒmÃ¢n pe LAN), **inspectabil & editabil**
-> (pot vedea/È™terge orice fapt), opt-in pentru orice plecare spre cloud. Personalizarea creÈ™te Ã®n timp,
-> dar controlul rÄƒmÃ¢ne la mine.
-
-| # | Item | S | P | Dep | AC |
-|---|------|---|---|-----|----|
-| H8.1 âœ… | **Memorie despre Andrei (User Profile Memory)** â€” store structurat persistent (facts / preferences / decisions / people / projects) construit din conversaÈ›ii (extragere LLM + consolidare idempotentÄƒ, pattern H5.15), versionat, injectat Ã®n prompt la toÈ›i agenÈ›ii. `core/memory/store.py` + `core/memory/profile_extractor.py` + `/api/memory/profile`. *(PR #37)* | 13 | P1 | H5.14, H5.15, H7.4 | dupÄƒ cÃ¢teva conversaÈ›ii, Jarvis cunoaÈ™te preferinÈ›e/fapte despre Andrei È™i le foloseÈ™te; profilul e inspectabil Ã®n HUD |
-| H8.2 âœ… | **Privacy & Forget Controls** â€” pentru memoria personalÄƒ: export JSON, forget/redact selectiv per fapt, retention policy, scope strict-local. | 5 | P1 | H8.1 | pot È™terge un fapt anume; export complet; nimic personal nu pleacÄƒ Ã®n cloud fÄƒrÄƒ opt-in explicit |
-| H8.3 âœ… | **Recall ON by default + Memory HUD** â€” activeazÄƒ `memory.recall_enabled` cu cache-ul H7.4; tab HUD cu faptele memorate (search/edit/delete), surse È™i scoruri (extinde Fused Recall). | 8 | P2 | H7.4, H8.1 | recall activ Ã®n chat din oficiu; HUD afiÈ™eazÄƒ È™i editeazÄƒ memoria personalÄƒ |
-| H8.4 âœ… | **Embeddings de calitate (model dedicat)** â€” `mxbai-embed-large` sau container TEI; benchmark calitate retrieval vs hash/nomic; degradare graÈ›ioasÄƒ pÄƒstratÄƒ. | 5 | P2 | H7.4 | retrieval mÄƒsurabil mai bun pe un set de probe; fallback intact |
-| H8.5 âœ… | **Validare live fast/heavy (H7.5) + Model Tier HUD** â€” confirmÄƒ pe System76 cu 2 sloturi LM Studio Ã®ncÄƒrcate; expune deciziile de tiering (fastâ†”deep) Ã®n `/bench` + HUD. | 5 | P2 | H7.5 | comutare fastâ†”deep vizibilÄƒ; latenÈ›e per tier mÄƒsurate |
-| H8.6 âœ… | **Proactive Personal Briefs** â€” morning/evening brief (H6.4) personalizate din profil + recall: ce conteazÄƒ pentru Andrei azi (proiecte, oameni, deadline-uri). | 5 | P3 | H8.1, H6.4 | briefurile referÄƒ proiectele/oamenii din profilul personal |
-| H8.7 âœ… | **AI-Navigable Docs upkeep** â€” `docs/ARCHITECTURE.md` ca sursÄƒ unicÄƒ de navigare pentru asistenÈ›i AI; checklist â€docs la zi" Ã®n template-ul de PR. | 2 | P3 | â€” | doc-ul reflectÄƒ codul curent; PR-urile mari ating È™i ARCHITECTURE.md |
-
-> **ORIZONT 8 COMPLET âœ…** (2026-06-02) â€” H8.1â€“H8.7 livrate (PR-uri #33, #37, #43). Cod: `core/memory/{store,profile_extractor,digest}.py`, endpoints `/api/memory/profile`, `/api/memory/recall`, `/api/analytics/model-tiers`. Detalii: [docs/HISTORY.md](docs/HISTORY.md).
-
----
-
-## âœ… ORIZONT 9 â€” Agent Ops: Visual Workflows & Observability (P2) â€” 3/3 COMPLET
-
-| # | Item | S | P | Dep | AC |
-|---|------|---|---|-----|----|
-| H9.1 âœ… | **Visual Workflow Builder** â€” tab HUD (canvas SVG, vanilla React) PESTE `WorkflowEngine` (H5.6): noduri = paÈ™i/agenÈ›i, muchii = `depends_on`; creeazÄƒ/editeazÄƒ/salveazÄƒ workflow-uri user-defined + rulare. Backend: `Pipeline.from_dict`, persistenÈ›Äƒ (CRUD) + endpoints `/api/workflows` POST/PUT/DELETE, register Ã®n registry. | 13 | P2 | H5.6 | pot compune vizual un workflow, Ã®l salvez, Ã®l rulez din HUD; DAG invalid â†’ eroare clarÄƒ |
-| H9.2 âœ… | **Observability â€” Trace Explorer** â€” store de trace-uri per-request (classifyâ†’routeâ†’modelâ†’tokensâ†’latenÈ›Äƒâ†’cost), nu doar `last_cognition`; endpoint `/api/traces[/{id}]` + tab HUD de inspecÈ›ie. Extinde `bench.py` + CognitionPanel. | 8 | P2 | â€” | fiecare request lasÄƒ un trace inspectabil; pot vedea unde se duce timpul/tokenii pe paÈ™i |
-| H9.3 âœ… | **Offline Eval Harness** â€” ruleazÄƒ seturi de prompturi prin orchestrator (LLM injectabil), scor pass/criterii, tracking de regresie; `core/observability/eval.py` + CLI/endpoint. | 8 | P2 | H9.2 | un set de probe produce scor reproductibil offline; regresii vizibile Ã®ntre rulÄƒri |
-
----
-
-## ORIZONT 10 â€” Jarvis Competitive Edge (P1â€“P3) â€” 30/30
-
-### H10 â€” Status General
-
-| Horizon | Total | âœ… Done | S total | S done | % |
-|---------|-------|---------|---------|--------|---|
-| **H10 Competitive Edge** | 30 | **30** | 188 | **186** | **99%** |
-
-> H10.Aâ€“E livrate Ã®n valul 2026-06-03; **H10.30** (Write-Back Integrations) livrat 2026-06-09 â†’ **H10 complet (30/30)**. *(H10.7 È™i H10.26 au fost livrate âœ….)*
-
-### H10.A â€” Observability & Eval (P1 â€” fundaÈ›ie)
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H10.16 âœ… | **APM Dashboard** â€” metrici org Ã®n Admin HUD: tokens totali consumaÈ›i (cu cost $ estimat), runs totale, breakdown per agent È™i per model. **Done 2026-06-03:** `cost_tracker.apm_summary()` (totals runs/tokens/$ + by_agent + by_model, reutilizeazÄƒ H7.10 get_summary) + endpoint admin-guarded `GET /api/admin/apm` (include È™i `bench.get_summary()` latency). +3 teste offline. | 5 | P1 | H9.2 | SuperAGI |
-| H10.24 âœ… | **Cost Tracking per Agent** â€” calcul $ per request (tokens Ã— preÈ› per provider/model), stocat Ã®n trace, vizibil per agent/zi Ã®n HUD. **Done 2026-06-03:** cost per-trace via `core/llm/cost_estimator.py` (reutilizat din H7.10, local = $0); `Tracer.cost_by_agent/cost_by_day/cost_summary` peste ring-buffer; endpoint `GET /api/cost` (by_agent + by_day + summary). +8 teste. *(Override `PRICE_TABLE` din config = follow-up.)* | 5 | P1 | H9.2 | LangSmith |
-| H10.19 âœ… | **Model Arena / Blind Comparison** â€” acelaÈ™i query la 2+ modele, rÄƒspunsuri anonimizate, vot, leaderboard agregat. **Done 2026-06-03:** `core/arena.py` `Arena` (JSON file-backed) â€” `create_match` anonimizeazÄƒ (labels A/B shuffled, mapping ascuns pÃ¢nÄƒ la vot), `vote` dezvÄƒluie mapping + actualizeazÄƒ ELO (K=32) + win/loss, `leaderboard` (elo/win-rate, sortat); endpoints `POST /api/arena/run` (candidates date sau ruleazÄƒ â‰¥2 agenÈ›i live), `POST /api/arena/vote`, `GET /api/arena/match/{id}`, `GET /api/arena/leaderboard`. +6 teste offline. | 8 | P1 | H7.5 | OpenWebUI |
-| H9.3b âœ… | **Dataset Regression Tracking** (ext. H9.3) â€” datasets de eval persistente cu versiuni (JSONL), track scor per dataset-version, comparare rulÄƒri Ã®n HUD; integrabil Ã®n CI. **Done 2026-06-03:** `core/observability/datasets.py` `DatasetStore` (versiuni JSONL + run-log + `compare()` regresii/Ã®mbunÄƒtÄƒÈ›iri pe caz + score-delta) peste `EvalHarness` (H9.3); endpoints `GET /api/eval/datasets`, `/{name}/runs`, `/{name}/compare`, `POST /api/eval/datasets/run`. +8 teste offline. | 5 | P1 | H9.3 | LangSmith |
-| H10.22 âœ… | **Agent Prompt Version Control** â€” SOUL.md versionat cu history, comparare 2 versiuni, A/B eval, rollback. **Done 2026-06-03:** `core/soul_versioning.py` `SoulVersionStore` (JSON file-backed) â€” `commit` versiuni numerotate imutabile (hash/message/author/parent, dedup pe conÈ›inut identic), `history`/`get`/`current`, `diff` unified Ã®ntre 2 versiuni, `rollback` non-distructiv (commit nou cu conÈ›inut vechi), A/B: `set_experiment`/`pick` (split determinist via roll)/`record_result`/`ab_summary` (mean per versiune + winner); endpoints admin-guarded `/api/admin/prompts/{agent_id}/{history,version/{n},commit,diff,rollback,ab}`. +8 teste offline. | 13 | P1 | H9.3b | LangSmith |
-| H10.23 âœ… | **Live Quality Monitor** â€” evaluatori (heuristic + LLM-as-judge) pe trace-urile live dupÄƒ fiecare request; scor per request Ã®n trace; alertÄƒ sub threshold. **Done 2026-06-03:** `core/observability/quality.py` â€” `evaluate_heuristics` (ok/non_empty/no_error/latency), `score_trace` (medie heuristicÄƒ, opÈ›ional blend 50/50 cu judge injectabil, tolerant la erori judge), `QualityMonitor` (ring rolling, `record`/`rolling_avg`/`check_alert`/`recent`/`stats`/`set_threshold`); hook Ã®n orchestrator: scor ataÈ™at la trace (`trace["quality"]`) dupÄƒ `tracer.record`; endpoints `GET /api/quality`, `/quality/scores`, admin `POST /quality/threshold`. +8 teste offline. | 13 | P2 | H9.2, H10.24 | LangSmith |
-| H10.17 âœ… | **Per-Agent Run History** â€” Ã®n HUD per agent: timeline run-uri, duratÄƒ, status (success/fail), cost, rutÄƒ. **Done 2026-06-03:** `core/run_history.py` `RunHistory` (JSON file-backed, ring `deque` capat per agent, record input/output preview+latency+ok+cost+route, `list` most-recent-first, `agents()` rollup ok-rate/avg-latency/cost, clear); hook Ã®n orchestrator `_record_interactions`; endpoints `GET /api/agents/history` (rollup) + `GET /api/agents/{id}/history?limit=`. +5 teste offline. | 8 | P2 | H9.2 | SuperAGI |
-| H10.25 âœ… | **Human Review Queue** â€” trace-uri flagate (scor mic sau manual) â†’ coadÄƒ de review cu rubric, vot thumbs up/down, adÄƒugare la dataset eval. **Done 2026-06-03:** `core/observability/review_queue.py` `ReviewQueue` (JSON-persistat) â€” `flag` (idempotent per trace_id) + `auto_flag` (hook H10.23: flag sub threshold), `review` (verdict up/down + rubric filtrat la `RUBRIC_CRITERIA` + notes), `to_eval_case`/`mark_in_dataset`, `stats`; hook Ã®n orchestrator (auto-flag dupÄƒ quality.record); endpoints `GET /api/review/queue|stats`, `POST /api/review/flag`, `/{id}/vote`, `/{id}/dataset` (scrie Ã®n `DatasetStore` H9.3b). +7 teste offline. | 5 | P3 | H9.3b | LangSmith |
-
-### H10.B â€” MCP & Integrare (P1â€“P2)
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H10.5 âœ… | **MCP Server Mode** â€” Jarvis expune agenÈ›i ca tool-uri MCP *guvernate*; orice client MCP (Claude Desktop, Cursor, alt Jarvis) poate apela agenÈ›i Jarvis ca tool-uri. **Done 2026-06-03:** `core/mcp/server.py` `JarvisMCPServer` â€” core JSON-RPC 2.0 transport-agnostic (initialize/tools/list/tools/call/ping), un tool `ask_<agent>` per agent, allowlist + LAN-only by default, ruteazÄƒ prin orchestrator (guardrails+gate); endpoints `GET /api/mcp/server` (status+tools) + `POST /api/mcp/server/rpc` (gated pe `mcp.server_enabled`, default off). +13 teste offline. *(stdio/SSE loop = transport peste acelaÈ™i core, follow-up.)* | 8 | P1 | H4.7 | Langflow |
-| H10.8 âœ… | **Inbound Webhook Triggers** â€” endpoint `/api/webhooks/{id}` (POST) activeazÄƒ un agent sau workflow pre-configurat cu payload-ul ca input; autentificat cu token. **Done 2026-06-03:** `core/webhooks.py` `WebhookStore` (JSON file-backed, token `secrets` + compare constant-time, mask la list, accounting calls/last_called) + `extract_input` payloadâ†’text; endpoints CRUD `GET/POST /api/webhooks`, `DELETE /api/webhooks/{id}` + trigger `POST /api/webhooks/{id}` (token via header `X-Webhook-Token` sau query, ruteazÄƒ la agent prin orchestrator / workflow best-effort). +8 teste offline. | 3 | P2 | H5.6 | Langflow + Dust |
-| H10.27 âœ… | **NL Scheduling** â€” text "every weekday at 7am" / "Ã®n fiecare luni la 9" â†’ cron. **Done 2026-06-03:** `core/autonomy/nl_schedule.py` `parse_schedule` â€” EN+RO, time parse (7am/6:30pm/19:00/â€la 9"), zile (weekday/weekend/zile specifice multiple), intervale (every N min/hours, hourly) â†’ cron 5-cÃ¢mpuri + descriere; eroare clarÄƒ la timp lipsÄƒ/invalid; endpoint `POST /api/schedule/parse` (422 pe neparsabil). +10 teste offline. | 3 | P2 | H3.5 | Dust |
-| H10.1 âœ… | **Embeddable Chat Widget** â€” `/api/widget/{token}` returneazÄƒ snippet JS+CSS care embed-uieÈ™te chat-ul pe orice site; theming din Admin. **Done 2026-06-03:** `core/widget.py` `WidgetStore` (token-uri per-site, theming title/color/position/greeting, issue/get/update/revoke, persistat) + `render_snippet` (IIFE self-contained: bulÄƒ flotantÄƒ + panel, posteazÄƒ la endpoint token-scoped); endpoints admin `POST/GET/DELETE /api/admin/widgets`, public `GET /api/widget/{token}` (JS) + `/config` + `POST /api/widget/{token}/message` (ruteazÄƒ prin orchestrator, channel=widget). +4 teste offline. | 3 | P2 | H1.3 | Flowise |
-| H10.30 âœ… | **Write-Back Integrations** â€” agenÈ›ii pot scrie Ã®napoi Ã®n sisteme externe (Notion, GitHub Issues, Google Calendar) ca tool-uri native; Pepper/Hephaestus primii candidaÈ›i. **Done 2026-06-09 (strat guvernat):** `core/writeback.py` `WriteBackBroker` â€” request â†’ validare pe allowlist (5 perechi target/action) + sanitizare cÃ¢mpuri (drop chei strÄƒine, cap lungimi/liste) â†’ **task guvernat ask-tier** Ã®n coadÄƒ (`kind=writeback.<target>.<action>`, `autonomy_level="ask"`, tier extern); **nimic nu se scrie extern la request**. Pe aprobare, worker-ul (executor prefix `writeback`) dispecerizeazÄƒ la `WriteBackBroker.execute` care **rezolvÄƒ credenÈ›ialele la momentul acÈ›iunii, Ã®n spatele aprobÄƒrii** (SecretBroker H15.4 â€” agentul stocheazÄƒ doar handle `{{secret:â€¦}}`, niciodatÄƒ tokenul) È™i apeleazÄƒ un **client injectabil** (`NullWriteBackClient` offline default; `HttpWriteBackClient` = rail live host-side construit prin `build_request` pur). Endpoints `GET/POST /api/integrations/writeback` (user-guarded). +18 teste offline (catalog/supports, validare target+cÃ¢mpuri, sanitizare, build_request per (target,action), execute behind-approval cu/fÄƒrÄƒ secret, e2e prin TaskQueue+worker real). *(Apelul de reÈ›ea real = poartÄƒ host.)* | 8 | P3 | H2.1, H2.7 | Dust |
-
-### H10.C â€” Memory & RAG (P1â€“P2)
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H8.1b âœ… | **Entity Memory Store** (ext. H8.1) â€” extragere de entitÄƒÈ›i (persoane, proiecte, locuri, concepte) din conversaÈ›ii Ã®ntr-un store structurat separat, searchable, afiÈ™at Ã®n HUD Memory tab. **Done 2026-06-03:** `core/memory/entity.py` `EntityStore` (JSON file-backed, upsert cu mention-count + sources + contexts + first/last-seen, search/filter pe tip, stats, delete; extracÈ›ie proper-noun offline `extract_entities` + clasificare pe hint, extractor LLM injectabil ulterior); ingest per-turÄƒ Ã®n orchestrator (`_record_interactions`); endpoint `GET /api/memory/entities?q=&type=&limit=`. +9 teste offline. | 5 | P1 | H8.1, H5.14 | CrewAI |
-| H8.3b âœ… | **Agentic RAG Tool** (ext. H8.3) â€” recall devine tool call LLM-callable (`search_memory(query)`); modelul decide cÃ¢nd/cum sÄƒ caute È™i poate retry cu query diferit. **Done 2026-06-03:** `core/memory/rag_tool.py` â€” `TOOL_SPEC` (function-calling schema), `MemorySearchTool` (wrap recall_fn, Ã®nregistreazÄƒ calls, Ã®nghite erori), `agentic_search(query, tool, planner, max_iters)` buclÄƒ agenticÄƒ (planner decide answer/refine, retry cu query nou, cap pe max_iters); endpoints `GET /api/memory/tool-spec` + `POST /api/memory/search-tool` peste recall structurat (entities+KG, offline). +8 teste offline. | 8 | P2 | H8.3, H7.4 | OpenWebUI |
-| H10.21 âœ… | **Conversation Notes** â€” note ataÈ™ate sesiunii, injectate ca context persistent; â€Rescrie cu AI". **Done 2026-06-03:** `core/notes.py` `NotesStore` (markdown per `session_id`, get/set/clear, cap 20k, persistat, `context_for` randeazÄƒ bloc `[Session notes]`); injecÈ›ie Ã®n `/chat` (prepend la mesaj pentru sesiunea activÄƒ); endpoints `GET/PUT/DELETE /api/notes` + `POST /api/notes/rewrite` (ruleazÄƒ nota prin agent, opÈ›ional `save`). +5 teste (store+persistenÈ›Äƒ, cap, context_for, endpoints+injecÈ›ie, rewrite). Editorul rich-text rÄƒmÃ¢ne pentru HUD (backend complet). | 3 | P3 | H1.3 | OpenWebUI |
-
-### H10.D â€” Workflow Engine (P2â€“P3)
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H10.12 âœ… | **Workflow Termination Conditions** â€” WorkflowStep poate defini o condiÈ›ie de stop (keyword/regex/equals/not_empty match), nu doar completare normalÄƒ. **Done 2026-06-03:** `WorkflowStep.terminate_when` (dict opÈ›ional, round-trip to/from_dict fÄƒrÄƒ poluare); `engine.evaluate_condition` (contains/not_contains/equals/regex/not_empty, fail-open pe condiÈ›ii malformate); engine opreÈ™te pipeline-ul dupÄƒ batch-ul Ã®n care un guard se declanÈ™eazÄƒ, setÃ¢nd `_terminated`/`_terminated_by`. +6 teste offline. | 3 | P2 | H5.6 | AutoGen |
-| H10.10 âœ… | **Structured Agent Outputs (Pydantic)** â€” un step poate specifica un schema; engine-ul valideazÄƒ output-ul agentului È™i expune cÃ¢mpurile tipate downstream. **Done 2026-06-03:** `workflows/structured.py` â€” `extract_json` (fenced ```json``` sau bare `{...}`), `build_model` (Pydantic v2 `create_model` din schema `{fields:{name:{type,required,default}}}`), `validate_output` â†’ `{ok,data,error}` cu coerce; `WorkflowStep.output_schema` (round-trip) + engine `_apply_structured` (flatten `{step.field}` Ã®n ctx, `_structured[step]`, marcheazÄƒ eroare la invalid). +8 teste offline. | 5 | P2 | H5.6 | CrewAI |
-| H10.15 âœ… | **Critic Agent Pattern** â€” built-in workflow node tip `critic`: primeÈ™te output-ul unui step, Ã®l evalueazÄƒ (scor + feedback), decide accept / retry(max N). **Done 2026-06-03:** `WorkflowStep.kind` ("agent"/"critic") + `critic` config (`target`, `pass_threshold`, `max_retries`), round-trip; engine `_execute_step` dispatch + `_run_critic` â€” critic-agent rÄƒspunde JSON `{score,pass,feedback}`, re-ruleazÄƒ target-ul cu `{_critic_feedback}` cÃ¢t timp picÄƒ È™i mai sunt retries; expune `{step.score}`/`{step.passed}` + `_critics[step]` (attempts). +4 teste offline (pass-first, retry-then-pass, exhaust-retries, round-trip). | 5 | P2 | H5.6, H10.12 | AutoGen |
-| H10.13 âœ… | **Dynamic Agent Router** â€” WorkflowStep `kind="router"`: un agent coordinator decide la runtime care agent urmeazÄƒ (conditional routing, nu DAG fix). **Done 2026-06-03:** `WorkflowStep.router` config (`routes` labelâ†’agent, `default`, `dispatch_template`), round-trip; engine `_run_router` â€” agentul-clasificator alege un label (JSON `{"route":â€¦}` sau text), `_match_route` mapeazÄƒ (longest-label-first, fallback default), dispatch la agentul ales; expune `{step.route}`/`{step.agent}` + `_routes[step]`. FÄƒrÄƒ match & fÄƒrÄƒ default â†’ Ã®ntoarce decizia, fÄƒrÄƒ dispatch. +6 teste offline. | 8 | P2 | H5.6 | AutoGen |
-| H10.2 âœ… | **Visual Workflow Trace Overlay** â€” la fiecare rulare de workflow, date per-pas (timing, input, output, status) pentru overlay Ã®n HUD. **Done 2026-06-03:** engine instrumenteazÄƒ fiecare pas (`_traced_execute` â†’ `ctx["_trace"]` cu step/kind/agent/input/output/elapsed_ms/ok) + ring `recent_runs` (cap 50) cu `recent(limit)` (pipeline_id/name/ts/elapsed/ok/terminated_by/steps); endpoint `GET /api/workflows/traces?limit=`; `/api/workflows/run` Ã®ntoarce deja `_trace` Ã®n rezultat. +4 teste offline. | 5 | P2 | H9.1, H9.2 | Flowise |
-| H10.28 âœ… | **Agent Config Preview** â€” Ã®n HUD Admin, Ã®nainte de save la SOUL.md/config, preview a ce se schimbÄƒ (diff + validare) fÄƒrÄƒ a afecta producÈ›ia. **Done 2026-06-03:** `core/config_preview.py` â€” `validate_prompt` (empty=hard-fail; warnings: prea scurt/mare, lipsÄƒ headings, frontmatter dezechilibrat), `preview_change` (unified diff + added/removed counts + `is_new`/`changed`); endpoint admin-guarded `POST /api/admin/prompts/{agent_id}/preview` (`current` opÈ›ional â†’ ia ultima versiune commit-uitÄƒ H10.22). +7 teste offline. *(dry-run pe input de test = follow-up.)* | 5 | P2 | H1.5 | Dust |
-| H10.4 âœ… | **Guardrails Node Ã®n Visual Builder** â€” scanere secret/PII expuse ca nod, configurabil per workflow. **Done 2026-06-03:** `core/workflows/guardrail_node.py` `apply_guardrail` (reutilizeazÄƒ `SecretScanner`/`PIIScanner` H4.9; mode warn/redact/block, selecÈ›ie scanere) â†’ warn=pass, redact=mask, block=`[error:guardrail blocked:â€¦]`; `WorkflowStep.guardrail` + dispatch `kind="guardrail"` Ã®n engine (info Ã®n `ctx["_guardrails"]`). +8 teste (moduri, selecÈ›ie scanere, serializare, 2 integrate prin engine). | 2 | P3 | H4.9, H9.1 | Flowise |
-| H10.6 âœ… | **Cyclic Workflow Support** â€” loop-back edges cu contor de iteraÈ›ii È™i condiÈ›ie de exit. **Done 2026-06-03:** `WorkflowStep.loop` + dispatch `kind="loop"` Ã®n engine (`_run_loop`) â€” re-ruleazÄƒ un body inline de paÈ™i (orice kind: agent/transform/guardrail) Ã®mpÄƒrtÄƒÈ™ind `ctx`, pÃ¢nÄƒ la `until` (reutilizeazÄƒ `evaluate_condition` H10.12) sau `max_iterations` (clamp [1,100]); expune `{step._iter}` È™i `ctx["_loops"][id]={iterations,exited_by}`. Nu atinge DAG-ul batch existent. +6 teste (exit pe condiÈ›ie, max_iterations, counter, body gol no-op, clamp, serializare). | 8 | P3 | H5.6, H10.12 | Langflow |
-| H10.7 âœ… | **AI-Assisted Workflow Builder** â€” cÃ¢mp "Descrie ce vrei sÄƒ facÄƒ acest pas" â†’ config de step generat. **Done:** `core/workflows/ai_builder.py` `generate_step(description, agents, llm)` â€” LLM-ul (injectabil) propune un config, **validat** la o formÄƒ safe (kind âˆˆ {agent/router/critic/transform/guardrail/loop/subflow}, agent âˆˆ allowlist, transform âˆˆ operatori H10.3, fÄƒrÄƒ cÃ¢mpuri strÄƒine); **fallback euristic determinist** pe keyword-uri cÃ¢nd nu-i LLM sau output-ul nu parseazÄƒ (deci merge È™i offline, nu Ã®ntoarce junk). Endpoint `POST /api/workflows/step/generate`. +15 teste offline. | 5 | P3 | H9.1 | Langflow |
-| H10.9 âœ… | **Python Flow Decorator API** â€” `@jarvis_flow`, `@step`, `@listen(step_id)`, `@router` pentru workflow-uri Ã®n cod. **Done 2026-06-03:** `core/workflows/flow_api.py` â€” decoratori (id=numele metodei, `@listen` seteazÄƒ deps, ordine de definire pÄƒstratÄƒ); fiecare metodÄƒ Ã®ntoarce un step-spec (`agent`/`prompt` + opÈ›ional transform/guardrail/router/loop/schema/critic); `build_flow(cls)` compileazÄƒ Ã®n `Pipeline` validat (DAG check, eroare pe non-flow/empty/ciclu). Complement al Visual Builder, ruleazÄƒ prin engine neschimbat. +7 teste (compilare, deps/kinds, router, erori, ciclu, e2e prin engine). | 5 | P3 | H5.6 | CrewAI |
-| H10.11 âœ… | **Hierarchical Workflow Manager** â€” manager agent coordoneazÄƒ crew-ul, valideazÄƒ rezultate, redistribuie la eÈ™ec. **Done 2026-06-03:** `core/workflows/hierarchical.py` `HierarchicalManager` â€” ruleazÄƒ fiecare crew member spre goal (context flows Ã®ntre membri), valideazÄƒ (heuristic error/empty), redistribuie pe eÈ™ec (retry cu feedback de la manager, opÈ›ional la `fallback` agent, `max_retries`), apoi manager-ul sintetizeazÄƒ output-urile Ã®ntr-un rÄƒspuns final; endpoint `POST /api/workflows/hierarchical`. +6 teste (happy path+synthesis, context flow, fallback redistribute, retry same-agent, retries epuizate, endpoint). | 8 | P3 | H5.6, H10.15 | CrewAI |
-| H10.14 âœ… | **Nested Workflow Steps** â€” un WorkflowStep conÈ›ine un sub-workflow; task decomposition recursivÄƒ. **Done 2026-06-03:** `WorkflowStep.subflow` + dispatch `kind="subflow"` Ã®n engine (`_run_subflow`) â€” compileazÄƒ sub-pipeline din config, Ã®l ruleazÄƒ recursiv cu input = prompt_template randat, expune output-urile sub-paÈ™ilor ca `{step.id}.{sub_id}` + output final (configurabil via `output`, altfel ultimul pas) ca output-ul stepului; `ctx["_subflows"][id]`; recursion cap depth 5; DAG-ul pÄƒrinte rÄƒmÃ¢ne aciclic (sub-paÈ™ii trÄƒiesc Ã®n config). +6 teste (nesting, chaining cu paÈ™i externi, subflow invalidâ†’error, gol, depth cap, serializare). | 8 | P3 | H5.6 | AutoGen |
-| H10.3 âœ… | **Workflow Transform Nodes** â€” Formatter, Validator, JSONExtractor, Summarizer. **Done 2026-06-03:** `core/workflows/transforms.py` `apply_transform` (op-uri deterministe, fÄƒrÄƒ LLM: formatter upper/lower/title/strip/json_pretty, validator non_empty/json/regex/min/max_length/containsâ†’`[error:â€¦]` la fail, json_extract dot-path+default, summarize N propoziÈ›ii/max_chars); `WorkflowStep.transform` + dispatch `kind="transform"` Ã®n engine (no-LLM). +8 teste (unit per-op + serializare + 2 integrate prin engine). | 5 | P3 | H9.1 | Flowise |
-
-### H10.E â€” UX & Multi-user (P2â€“P3)
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H10.29 âœ… | **Agent Templates Library** â€” librÄƒrie de configuraÈ›ii pre-built pentru agenÈ›i comuni; instanÈ›iabile din Admin. **Done 2026-06-03:** `core/agent_templates.py` â€” catalog 5 arhetipuri (researcher/coder/analyst/assistant/ops) cu tier/model/plugins/voice + SOUL skeleton; `list_templates`/`get_template` (case-insensitive)/`build_agent_config` (slug id, overrides per cÃ¢mp, randeazÄƒ config agents.yaml-shaped + SOUL); endpoints `GET /api/agent-templates` + `POST /api/agent-templates/instantiate` (404 pe template necunoscut). +6 teste offline. | 3 | P3 | â€” | Dust |
-| H10.18 âœ… | **Action-Level Approval** â€” tool call-uri pending approval (granularitate sub-task); Aprob/Resping per acÈ›iune. **Done 2026-06-03:** `core/autonomy/action_approvals.py` `ActionApprovalQueue` â€” `request` (preview H12.5 per acÈ›iune), `decide` (approve/reject, idempotent), `await_decision` (async pe `asyncio.Event` cu timeout â€” flux tool blocant), `list/stats`; endpoints `GET /api/actions[/pending]`, `POST /api/actions/request`, admin `POST /api/actions/{id}/decide`. +7 teste (request+preview, approve/reject+stats, filtre, await unblock/timeout/already-decided, endpoints). Tab-ul live HUD foloseÈ™te acest backend. | 5 | P3 | H6.2 | SuperAGI |
-| H10.20 âœ… | **Chat Channels / Rooms** â€” canale tematice (per proiect/context); @mention agenÈ›i; pipeline complet. **Done 2026-06-03:** `core/rooms.py` `RoomStore` (camere persistate cu nume/descriere/roster agenÈ›i/default + istoric bounded; `parse_mentions`, `route` = primul @mention din roster altfel default, `context_for` injecteazÄƒ contextul camerei); rutare prin orchestrator (channel=room, full pipeline tools/RAG/filters); endpoints `GET/POST/DELETE /api/rooms`, `GET /api/rooms/{id}[/history]`, `POST /api/rooms/{id}/message`. +6 teste (CRUD, istoric persistat+cap, parse_mentions, routing roster/default, context_for, endpoints+rutare). HUD-ul consumÄƒ acest backend. | 8 | P3 | H1.3 | OpenWebUI |
-| H10.26 âœ… | **Data Spaces / Agent Data Scope** â€” surse de date Ã®n "spaÈ›ii" cu permisiuni per agent; complement la `LOCAL_ONLY_AGENTS`. **Done:** `core/data_spaces.py` `DataSpaces` â€” spaÈ›ii (set de surse) + asignÄƒri per-agent, **default-open** (agent neasignat = nerestricÈ›ionat â†’ backward-compatible), `allowed_sources`/`can_access`/`filter_categories`; enforcement la `GET /api/memory/profile?agent=<id>` (Ã®ntoarce doar categoriile permise), admin CRUD `/api/memory/spaces[/assign|/unassign]`. *(Scoping pe recall-ul vectorial fuzionat rÄƒmÃ¢ne follow-up â€” necesitÄƒ surse pe vectori.)* +8 teste offline. | 13 | P3 | H8.1, H4.7 | Dust |
-
----
-
-## ORIZONT 11 â€” Platform Parity (Known Gaps vs OpenJarvis) (P3) â€” 4/4 âœ…
-
-> CapabilitÄƒÈ›i prezente Ã®n OpenJarvis dar absente Ã®n Jarvis Hub (vezi `STATUS.md` â†’ Known Gaps).
-> Toate P3 â€” nice-to-have, niciuna nu blocheazÄƒ 1.0.0. Mai multe au cost mare (GPU, Rust, build nativ).
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H11.1 âœ… | **Desktop App (Tauri)** â€” UI nativ desktop (Windows/macOS/Linux) care Ã®mpacheteazÄƒ HUD-ul existent; tray icon, wake-word listener local, auto-start. AlternativÄƒ la rularea Ã®n browser. **Done 2026-06-09 (sursÄƒ; build host):** `desktop/` â€” proiect Tauri v2 care Ã®mpacheteazÄƒ HUD-ul web existent (fereastrÄƒ â†’ `127.0.0.1:8080`, tray, auto-start; fÄƒrÄƒ backend nou): `src-tauri/{tauri.conf.json, Cargo.toml, build.rs, src/main.rs}` + README. âš ï¸ **SursÄƒ â€” se compileazÄƒ host-side (`cargo tauri build`), nu ruleazÄƒ Ã®n CI.** | 13 | P3 | â€” | OpenJarvis (Tauri) |
-| H11.2 âœ… | **Rust Extension / Hot-Path Crates** â€” port Ã®n Rust al cÄƒilor fierbinÈ›i (embeddings, vector search, parsing) ca extensii native (PyO3); pure-Python rÄƒmÃ¢ne fallback. OpenJarvis are 14 crates. **Done 2026-06-09 (sursÄƒ + fallback testat):** `rust/jarvis_native/` (crate PyO3: `cosine_similarity`/`top_k_similar`/`count_tokens`) + **fallback pur-Python** `core/native_fallback.py` (identic; `load_native()` preferÄƒ extensia compilatÄƒ, altfel Python â†’ comportament identic cu/fÄƒrÄƒ build). +4 teste offline pe fallback. âš ï¸ **Crate-ul Rust = build host (`maturin`), netestat Ã®n CI.** | 21 | P3 | H7 | OpenJarvis (14 crates) |
-| H11.3 âœ… | **SFT/GRPO Training Pipeline** â€” fine-tuning local pe modele (SFT + GRPO) din trace-urile colectate; necesitÄƒ GPU. Closing the loop pe Learning Loop (H7.11). **Done 2026-06-09 (sursÄƒ + data-prep testat):** `training/prepare_data.py` (traceâ†’SFT JSONL ShareGPT-style, filtru pe scor â€” **pur-Python, testabil**, +3 teste) + `training/sft_grpo.py` (pipeline SFT/GRPO HF `trl`/`transformers`, importuri guarded) + README. âš ï¸ **Antrenarea = GPU host, nu ruleazÄƒ Ã®n CI.** | 13 | P3 | H7.11 | OpenJarvis |
-| H11.4 âœ… | **WASM Sandbox (wasmtime)** â€” backend de execuÈ›ie WASM pentru sandbox, complementar Docker; izolare mai bunÄƒ È™i portabilÄƒ, fÄƒrÄƒ daemon Docker. `core/sandbox.py` (backend nou). **Done 2026-06-09 (backend + fallback graÈ›ios):** `Sandbox` cÃ¢È™tigÄƒ un backend wasmtime â€” detecÈ›ie (`_check_wasmtime`), `wasm_available()` (cere binarul + un runtime Pythonâ€‘WASM configurat via `JARVIS_WASM_PYTHON`), prioritate **Dockerâ†’WASMâ†’subprocess**, È™i **fallback graÈ›ios** (binar lipsÄƒ la execuÈ›ie â†’ revine la subprocess, fÄƒrÄƒ regresie pe cÄƒile existente). `_build_wasm_command` pur/testabil. +7 teste offline (detecÈ›ie, selecÈ›ie backend, fallback la binar lipsÄƒ, comportament existent pÄƒstrat). *(ExecuÈ›ia WASM realÄƒ = poartÄƒ host: wasmtime + `python.wasm`.)* | 8 | P3 | â€” | OpenJarvis (wasmtime) |
-
----
-
-## ORIZONT 12 â€” Categoria RealÄƒ: Asistent Personal Privat & Proactiv (P0â€“P3) â€” 23/25
-
-> Bazat pe research-ul din [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md):
-> H10 a comparat Jarvis cu 8 **framework-uri de developeri**; categoria realÄƒ a moonshot-ului (asistent
-> personal, proactiv, privat) nu fusese niciodatÄƒ analizatÄƒ. Idei derivate din competitorii **reali**
-> (OpenClaw, Khoj, Leon, Omi, Bee, Pieces, Home Assistant, Jan, Tana) â€” fiecare verificatÄƒ faÈ›Äƒ de
-> [principiile non-negociabile](MOONSHOT.md#5-non-negotiable-principles-the-guardrails).
->
-> **Wedge-ul defensiv:** OpenClaw (rivalul direct viral) a eÈ™uat exact unde Jarvis e puternic â€” secrete Ã®n
-> plaintext, fÄƒrÄƒ guvernanÈ›Äƒ acÈ›iuni, marketplace nemoderat â†’ È›inta #1 a infostealerelor. Jarvis = alternativa guvernatÄƒ.
-
-### Track A â€” Securitate ca DiferenÈ›iator (P0, anti-OpenClaw)
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H12.1 âœ… | **Securitate ca feature de prim rang** â€” cripteazÄƒ secretele at-rest (fÄƒrÄƒ `SOUL`/memory Ã®n plaintext), skills semnate + sandboxed, expune coada de aprobare reversibil/ireversibil ca "povestea anti-OpenClaw". PachetizeazÄƒ guardrails + PII scanner + sandbox existente. **Done 2026-06-02:** `core/secrets.py` `SecretStore` (Fernet + key-derivation PBKDF2/keyfile 0600, fallback HMAC-XOR pur-Python, get/set/delete + `migrate_plaintext`); `core/skills/signing.py` + loader extins (verificare `SKILL.sig`, advisory by-default, `JARVIS_REQUIRE_SIGNED_SKILLS=1` â†’ modul untrusted nu se exec in-process; skills auto-generate auto-semnate); 2 endpoints noi `GET /autonomy/approvals` (bucket reversibil/ireversibil pe risk tier) + `GET /api/security/posture` (pachetizeazÄƒ secrets+signing+sandbox+guardrails). +31 teste offline. | 8 | **P0** | H6.2, Sec | OpenClaw (eÈ™ecuri) |
-
-### Track B â€” Memorie & Onboarding (P1)
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H12.2 âœ… | **Onboarding "drop folder â†’ chat privat cu documentele"** â€” alegi un folder pre-configurat, Jarvis Ã®l indexeazÄƒ local (PDF/MD/docx) È™i poÈ›i discuta cu el offline. **Done 2026-06-03:** `core/local_docs.py` `LocalDocsIndexer` (walk recursiv, extract md/txt/rst nativ + pdf/docx best-effort cu skip graÈ›ios, chunking word-window cu overlap â†’ `memory.remember` local, fÄƒrÄƒ cloud); endpoint **select-by-key** `POST /api/local-docs/index {key}` (folderul vine din config `local_docs.folders`, **niciun path din request** â†’ fÄƒrÄƒ path-injection) + `GET /api/local-docs` (sumar + chei disponibile). +5 teste offline. | 3 | P1 | H8.3 | GPT4All LocalDocs, Khoj |
-| H12.3 âœ… | **KG interogabil & editabil (UX)** â€” graful de cunoÈ™tinÈ›e ca suprafaÈ›Äƒ de prim rang: vizualizeazÄƒ, cautÄƒ, editeazÄƒ, È™terge entitÄƒÈ›i/relaÈ›ii. **Done 2026-06-03:** `KnowledgeGraph` extins cu `list_entities`/`delete_entity` (DETACH + curÄƒÈ›Äƒ relaÈ›iile)/`delete_relation` Ã®n ambele backend-uri (InMemory + Neo4j); endpoints `GET /api/kg/entities?q=&limit=`, `GET /api/kg/entities/{name}` (+relations), `POST /api/kg/entities` (upsert), `DELETE /api/kg/entities/{name}`, `POST /api/kg/relations`, `DELETE /api/kg/relations`. ImplementeazÄƒ "inspectable & forgettable" (H8.2). +4 teste offline. | 8 | P1 | H8.2 | Tana supertags |
-| H12.4 âœ… | **Suport protocol Wyoming** â€” Jarvis vorbeÈ™te Wyoming â†’ interopereazÄƒ cu sateliÈ›i Voice PE ($59) È™i ecosistemul vocal local Home Assistant; decupleazÄƒ STT/TTS/wake. **Done 2026-06-03:** `core/voice/wyoming.py` â€” framing wire pe format de referinÈ›Äƒ (header JSON + payload length-prefixed), `encode_event`/`read_event`, `WyomingServer` ruteazÄƒ `describe`â†’`info`, `transcript`â†’handlerâ†’`synthesize`, `ping`â†’`pong`; `serve()` TCP (port 10700) + `handle_connection`; endpoint status `GET /api/voice/wyoming` (gated `voice.wyoming_enabled`). +11 teste offline. | 5 | P1 | â€” | Home Assistant, Rhasspy |
-
-### Track C â€” Proactivitate & Observabilitate (P2)
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H12.5 âœ… | **Preview / dry-run pentru autonomie** â€” aratÄƒ ce *ar* face o acÈ›iune Ã®nainte de aprobare; nicio acÈ›iune oarbÄƒ. **Done 2026-06-03:** `core/autonomy/dry_run.py` `preview_task` â€” extrage kind/title/target/effects din payload, clasificÄƒ ireversibilitatea (reutilizeazÄƒ H17.1 `QuarantinePolicy` + tokeni send/delete/transferâ€¦), `requires_approval` (ireversibil sau risc tierâ‰¤2), `would_execute=False`; integrat Ã®n `build_decision_card` (linie _Preview:_) + endpoints `POST /api/autonomy/preview` + `GET /api/autonomy/tasks/{id}/preview`. +6 teste offline. | 5 | P2 | H6.2 | Dust config preview |
-| H12.6 âœ… | **Update-uri KG incrementale (nu doar nocturne)** â€” extracÈ›ie uÈ™oarÄƒ de triple per-turÄƒ ca memoria sÄƒ aparÄƒ Ã®n aceeaÈ™i sesiune. **Done 2026-06-03:** `core/memory/incremental.py` â€” `extract_triples` (pattern-uri high-precision: posesiv â€X's Y is Z", lives_in/works_at/related_to verbe, copula is_a; sare stopwords + self-refs), `IncrementalKGUpdater.ingest` scrie entitÄƒÈ›i+relaÈ›ii Ã®n KnowledgeGraph live + fapte Ã®n bi-temporal (H14.1, contradicÈ›ieâ†’invalideazÄƒ); hook Ã®n orchestrator `_record_interactions` + endpoint `POST /api/kg/ingest`. Calea nocturnÄƒ LLM rÄƒmÃ¢ne high-recall. +8 teste offline. | 5 | P2 | H5.15, H8.1 | Mem, Tana |
-| H12.7 âœ… | **CapturÄƒ pasivÄƒ multi-suprafaÈ›Äƒ (opt-in, local)** â€” browser/clipboard/fiÈ™iere â†’ KG, doar local. âš ï¸ STRICT opt-in + inspectabil; nimic nu pleacÄƒ de pe maÈ™inÄƒ. **Done 2026-06-09:** `core/passive_capture.py` `PassiveCapture` â€” **dublu opt-in** (master `JARVIS_PASSIVE_CAPTURE` + per-suprafaÈ›Äƒ, default OFF â†’ nimic capturat), **local-only** (fÄƒrÄƒ reÈ›ea; KG + store on-disk bounded), **secrete redactate Ã®nainte de stocare** (`SecretScanner.redact` â†’ cheie copiatÄƒ Ã®n clipboard nu se persistÄƒ niciodatÄƒ), ingestie Ã®n KG-ul incremental (H12.6) pe text redactat, **inspectabil + forgettable** (`list`/`get`/`forget`/`clear`). Ãnregistrat lazy; 6 endpoints (`/api/capture/status|ingest|surfaces`, `GET /api/capture`, `DELETE /{id}`, `/clear`). +11 teste offline. *(Hook-urile OS clipboard/browser/file = seam host-side care apeleazÄƒ `ingest`.)* | 8 | P2 | H8.1 | Pieces nanomodels, Omi |
-| H12.8 âœ… | **Split sateliÈ›i-mic â†’ server-inferenÈ›Äƒ pe GPU-ul de acasÄƒ** â€” mai multe endpoint-uri ieftine de microfon partajeazÄƒ un singur GPU Jarvis. **Done 2026-06-09:** `core/satellite_hub.py` `SatelliteHub` â€” registru de sateliÈ›i (allowlist explicit) + `dispatch` care ruteazÄƒ STT/inferenÈ›a la un **backend de inferenÈ›Äƒ partajat injectabil** (`NullInference` offline default), **serializat printr-un semafor** ce modeleazÄƒ contenÈ›ia unui singur GPU (`max_concurrency=1` â†’ niciodatÄƒ concurent; testat). Accounting perâ€‘satelit + `stats`/`peak_inflight`. Endpoints `GET /api/satellites`, `POST /register`, `DELETE /{id}`, `POST /{id}/dispatch`. +8 teste offline (registru, dispatch, serializare GPU, eroare inferenÈ›Äƒ, stats). *(Backendul real Wyoming/LMâ€‘Studio = poartÄƒ host.)* | 8 | P2 | H12.4 | Willow (WIS) |
-| H12.9 âœ… | **UX management modele locale** â€” rÄƒsfoieÈ™te/descarcÄƒ/comutÄƒ modele dintr-un click Ã®n HUD. | 5 | P2 | â€” | Jan.ai |
-| H12.10 âœ… | **Indicator mute hardware / strict-local** â€” semnal vizibil, auditabil "mic off / strict-local" Ã®n HUD + voce. Semnal de Ã®ncredere ieftin. | 2 | P2 | â€” | Voice PE (mute fizic) |
-| H12.11 âœ… | **Canale de escaladare extinse** (dincolo de Telegram: WhatsApp/Signal/Slack/Discord) â€” *guvernate*. **Done 2026-06-03:** `core/autonomy/escalation.py` `EscalationRouter` â€” fan-out la adaptoarele de canal existente, *guvernat* prin allowlist (`autonomy.escalation_channels`), best-effort (nu aruncÄƒ), `targets()` rezolvÄƒ availableâˆ©requestedâˆ©allow; `render_escalation` mesaj plain channel-agnostic (cu preview H12.5); endpoints `GET /api/autonomy/escalation/targets` + admin `POST /api/autonomy/escalate` (mesaj sau task). +7 teste offline. | 3 | P2 | H1.3 | OpenClaw (multi-channel) |
-
-### Track D â€” PlatformÄƒ & Ecosistem (P3)
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H12.12 âœ… | **Marketplace de skills curat & semnat** (anti-ClawHub moderat) â€” extinde skills importer cu semnÄƒturi + review. **Done:** `marketplace.py` â€” **poartÄƒ de review** (`review_status` pending/approved/rejected; publishâ†’pending; `approve/reject/set_review_status`; install blocat dacÄƒ nu-i approved sub `JARVIS_REQUIRE_REVIEWED_SKILLS`), **semnÄƒturÄƒ** la publish (`signing.sign_skill`) + verificare la install (refuz sub `JARVIS_REQUIRE_SIGNED_SKILLS`), È™i **fix zip-slip** (path-traversal blocat Ã®nainte de extract â€” vuln realÄƒ Ã®n `extractall`). Endpoint `POST /api/skills/marketplace/review`; gate-urile opt-in (default backward-compatible), zip-slip mereu blocat. 0.45 B1 branch adds `SKILL_INSTALL_CONTRACT` for publish/install/uninstall plus `SKILL_GENERATION_CONTRACT` for LLM-authored skill creation/promotion before any package or generated code becomes executable. +14 teste offline total across original marketplace governance and B1. | 8 | P3 | Skills | OpenClaw ClawHub (sigur) |
-| H12.13 âœ… | **Sync E2E opt-in Ã®ntre device-uri** (GPU acasÄƒ â†” telefon) â€” âš ï¸ obligatoriu E2E + opt-in; nu sparge local-first. **Done 2026-06-09 (E2E real, failâ€‘closed):** `core/e2e_sync.py` `E2ESync` â€” plic E2E cu **Fernet real** (`cryptography`, AESâ€‘128â€‘CBC+HMAC autentificat â†’ tamper/cheie greÈ™itÄƒ **detectate**, nu acceptate tacit), cheie derivatÄƒ dintrâ€‘un **passphrase partajat** (PBKDF2â€‘SHA256 390k, salt fix â†’ douÄƒ deviceâ€‘uri cu acelaÈ™i passphrase derivÄƒ aceeaÈ™i cheie) sau cheie Fernet; **optâ€‘in** (`JARVIS_E2E_SYNC`) È™i **failâ€‘closed** (fÄƒrÄƒ cripto/secret â†’ dezactivat, **fÄƒrÄƒ fallback slab**). `encrypt_record`/`decrypt_record` (plaintextul nu pÄƒrÄƒseÈ™te niciodatÄƒ deviceâ€‘ul), `build_push`/`apply_pull` (manifest cu digest; sare propriul device + intrÄƒrile neverificabile). Endpoints `GET /api/sync`, `POST /api/sync/push|pull`. +12 teste offline (roundâ€‘trip, tamper, cheie greÈ™itÄƒ, crossâ€‘device, optâ€‘in, failâ€‘closed). *(Transportul deviceâ€‘laâ€‘device = poartÄƒ host.)* | 13 | P3 | â€” | Reflect / Limitless |
-| H12.14 | **Model agentic mic, fine-tuned** (task-uri router/tool) â€” overlap cu H11.3 (pipeline SFT/GRPO); $0 COGS. **ğŸ–¥ï¸ GPU host â€” runbook turnkey: `docs/GPU_RUNBOOK.md`** (pipeline + `prepare_data` citeÈ™te direct `memory_logs/learning/*.jsonl`). | 8 | P3 | H11.3 | Jan-nano |
-| H12.15 âœ… | **Backup & restore date personale** â€” `agents/data/` + `memory_logs/` (memoria H8, sesiuni, workflow-uri create, corpus ingerat) sunt **singura stare cu date reale È™i sunt git-ignored** â†’ fÄƒrÄƒ asta, pierdere totalÄƒ la orice `clean`/reinstalare (incidentul 2026-06-02). **Done 2026-06-02:** `scripts/backup-data.sh` + `scripts/backup-data.ps1` â€” arhivÄƒ timestamped (tar.gz / zip), restore cu confirmare, retenÈ›ie ultimele 14, override `BACKUP_DIR` (drive extern/cloud); `backups/` gitignored; pÄƒstreazÄƒ local-first (opt-in cloud). *(Schedule automat = opÈ›ional, neimplementat.)* | 3 | P2 | H8.2 | durabilitate local-first |
-
-### Track E â€” Paritate guvernatÄƒ cu OpenClaw (postâ€‘research 2026â€‘06â€‘05) (P2â€“P3)
-
-> FuncÈ›ionalitÄƒÈ›i adoptate din OpenClaw (`github.com/openclaw/openclaw`, ~377kâ˜…) **doar sub guvernanÈ›Äƒ** â€”
-> Ã®nchid decalajul de *reach/UX* fÄƒrÄƒ sÄƒ atingÄƒ vreun nonâ€‘negociabil. AnalizÄƒ completÄƒ:
-> [docs/research/2026-06-05-openclaw-feature-analysis.md](docs/research/2026-06-05-openclaw-feature-analysis.md).
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H12.16 âœ… | **LÄƒrgire canale** (WhatsApp nativ / Signal / iMessage / Matrix / Teams / Google Chat â€¦) pe gatewayâ€‘ul *guvernat* (rateâ€‘limit + guardrails + allowlist se aplicÄƒ). OpenClaw are ~23 canale; noi avem 6. **Done 2026-06-09:** `core/channels/webhook_channels.py` â€” familie de adaptoare HTTP/webhook (`WhatsApp`/`Signal`/`Matrix`/`Teams`/`GoogleChat`) pe **acelaÈ™i gateway guvernat**: fiecare inbound trece `sender` â†’ **poarta de pairing H12.19 + rateâ€‘limit + guardrails se aplicÄƒ** Ã®nainte de orchestrator; outbound prin **transport injectabil** (offline-testable, reÈ›eaua realÄƒ = poartÄƒ host). Perâ€‘provider doar 2 funcÈ›ii pure: `build_send` (mesajâ†’request HTTP) + `parse_inbound` (payloadâ†’`text,sender`). Factory `build_channel`/`channels_from_config`; wiring Ã®n lifespan via `JARVIS_WEBHOOK_CHANNELS` (defaultâ€‘off); endpoints `GET /api/channels/webhook` + `POST /api/channels/{id}/inbound`. **iMessage exclus deliberat** (macOS/hostâ€‘bound, fÄƒrÄƒ suprafaÈ›Äƒ HTTP curatÄƒ â†’ bridge host, nu acest strat). 6â†’11 canale. +18 teste offline (build_send/parse_inbound per provider, send via transport mock, inbound guvernat de pairing). | 5 | P2 | H1.3 | OpenClaw multiâ€‘channel |
-| H12.17 âœ… | **Node mesh guvernat** â€” telefon/desktop ca *noduri de execuÈ›ie* care ruleazÄƒ doar acÈ›iuni capabilityâ€‘scoped + aprobate; GPUâ€‘ul de acasÄƒ rÄƒmÃ¢ne creierul. UnificÄƒ Tauri (H11.1) + split sateliÈ›i (H12.8). **Done 2026-06-09 (strat de guvernanÈ›Äƒ pe H17.3):** `core/node_mesh.py` `NodeMesh` â€” `register_node` minteazÄƒ un **token capabilityâ€‘scoped** (H17.3 `CapabilityBroker` â€” tokenuri readâ€‘only, nodul **nu poate escalada**, primeÈ™te doar capabilitÄƒÈ›ile declarate); `dispatch` **autorizeazÄƒ** (killâ€‘switch + capabilitate via `authorize()`) apoi enqueue **task askâ€‘tier** (`kind=node.dispatch`) â€” nimic nu ruleazÄƒ pe nod pÃ¢nÄƒ la aprobare; `execute` **reâ€‘autorizeazÄƒ la momentul acÈ›iunii** (token expirat/revocat sau killâ€‘switch â†’ blocat) È™i predÄƒ nodului (rularea onâ€‘device = poartÄƒ host). Endpoints `GET /api/nodes`, `POST /register` (admin), `DELETE /{id}` (admin), `POST /{id}/dispatch`. +9 teste offline (token mint, dispatch Ã®n/Ã®n afara capabilitÄƒÈ›ii, killâ€‘switch, revoke, reâ€‘auth la execute, e2e). *(Clientul Tauri/telefon = poartÄƒ host.)* | 13 | P3 | H11.1, H17.3 | OpenClaw â€nodes" / Willow |
-| H12.18 âœ… | **Agent Canvas / A2UI** â€” spaÈ›iu vizual condus de agent Ã®n HUD (inspectabil + guvernat), peste network brainâ€‘ul v2. **Done 2026-06-09 (backend guvernat):** `core/canvas.py` `CanvasStore` â€” agentul posteazÄƒ DOAR elemente tipizate knownâ€‘safe (`text/markdown/list/link/metric/table/image_ref`), fiecare **sanitizat** (whitelist cÃ¢mpuri + bound lungime/count, URL doar `http(s)`/sameâ€‘origin â†’ **niciun HTML/script brut**, disciplina â€validate down to knownâ€‘safe" din AI builder); atribuit pe agent, inspectabil, `pin`/`remove`/`clear` (pinned pÄƒstrat), bounded+evict. Ãnregistrat Ã®n `ComponentRegistry`; 5 endpoints (`GET /api/canvas`, `POST /api/canvas/post` 422 pe tip necunoscut, `/{id}/pin`, `DELETE /{id}`, `/clear`). +12 teste offline. **Frontend livrat 2026-07-10 (#652):** tab **Artifacts** Ã®n cockpit (lÃ¢ngÄƒ Conversation/Cognition) â€” listÄƒ `GET /api/canvas` cu redare sigurÄƒ pe toate cele 7 tipuri (React text-nodes, fÄƒrÄƒ `dangerouslySetInnerHTML`/iframe; imagini remote doar dupÄƒ consent-click cu `referrerPolicy="no-referrer"`), pin/unpin/delete pe endpoint-urile existente, stÄƒri oneste loading/empty/error/refresh + **salvare explicitÄƒ a unui rÄƒspuns** (control per-mesaj: doar replici complete non-system, trunchiere vizibilÄƒ la 4.000, niciodatÄƒ auto-save). Bonus hardening din review-ul adversarial: `_safe_url` respinge URL-uri protocol-relative + control-chars (TAB/LF/CR), `_s()` aruncÄƒ surogate UTF-16 neÃ®mperecheate (anti-poisoning la scriere UTF-8), iar forget-me reseteazÄƒ `canvas.json` + curÄƒÈ›Äƒ store-ul live **fÄƒrÄƒ** sÄƒ goleascÄƒ fiÈ™ierul Ã®naintea backup-ului pre-forget. +8 teste backend, +21 vitest. **Follow-up 2026-07-11:** minor UX gap Ã®nchis â€” `SaveArtifactButton` reÈ›ine starea â€saved" per-mesaj Ã®ntr-un `WeakSet` module-level (identitate de obiect stabilÄƒ Ã®n `messages`), deci la schimbarea tab-ului central + revenire nu mai oferÄƒ un al doilea save care ar dubla elementul (+1 vitest, 208 total). **Wave 2 (binary artifacts: upload/stream image/audio/video/PDF) = H12.26** â€” slice separat, guvernat. | 8 | P3 | HUD v2 | OpenClaw Live Canvas |
-| H12.19 âœ… | **Pairing/aprobare expeditor inbound** â€” senderi necunoscuÈ›i pe canale trec printrâ€‘un cod/aprobare (antiâ€‘abuz); oglindÄƒ a allowlistâ€‘ului A2A. **Done 2026-06-09:** `core/channels/pairing.py` `SenderPairing` (JsonStore keyed `(channel,sender)`) â€” **optâ€‘in** (`JARVIS_CHANNEL_PAIRING`, default OFF â†’ `is_allowed` True pentru toÈ›i, comportament neschimbat); sender necunoscut â†’ `pending` (**held, niciodatÄƒ executat**, ca inboxul A2A), owner approve/reject/block/unpair; **cod selfâ€‘service** rotativ (autoâ€‘approve la cod corect, `hmac.compare_digest`); **antiâ€‘abuz** (rateâ€‘limit per `(channel,sender)` + pending bounded + evict). Gate cablat Ã®n `Gateway.route` (kwarg `sender`, backwardâ€‘compatible) + threading `sender` din Telegram; Ã®nregistrat Ã®n `ComponentRegistry`; 4 endpoints (`POST /api/channels/pairing/request` gatedâ€‘404, `GET /api/channels/pairing` + `POST /decide` + `POST /code` admin). +20 teste offline. | 3 | P2 | H1.3, H16.2 | OpenClaw DM pairing |
-| H12.20 âœ… | **RotaÈ›ie profile auth + failover model** Ã®n hybrid router (mai multe chei/conturi cu failover). **Done 2026-06-09:** `core/llm/auth_rotation.py` `AuthProfilePool` â€” chei multiple per provider (din `*_API_KEYS` comma/space, fallback la `*_API_KEY` single â†’ **backward-compatible**); eroare rotabilÄƒ (401/403/429) â†’ failover la urmÄƒtoarea cheie sÄƒnÄƒtoasÄƒ, cheia picatÄƒ intrÄƒ Ã®n **cooldown exponenÈ›ial** (cap 15 min), `report_success` reseteazÄƒ; clock injectabil (cooldown determinist Ã®n teste). Cablat Ã®n `ClaudeBackend`/`GeminiBackend` (cheia din pool + retry-and-rotate pe `generate`, report_failure pe stream) È™i construit din env Ã®n `HybridRouter.detect()`; endpoint admin `GET /api/llm/auth-profiles` (status mascat). +18 teste offline. | 3 | P3 | H2.12 | OpenClaw auth rotation |
-| H12.21 âœ… | **AcÈ›iuni guvernate pe social** (X/Twitter post/reply/DM) â€” fiecare *write* prin coada de aprobare; auth OAuth/secretâ€‘broker (nu cookieâ€‘uri brute). **Done 2026-06-09:** `core/social.py` `SocialBroker` â€” paralel cu write-back (H10.30): request â†’ validare allowlist (x: post/reply/dm) + sanitizare â†’ **task ask-tier** (`kind=social.x.<action>`, tier extern); **nimic nu se posteazÄƒ la request**. Pe aprobare, executor prefix `social` â†’ `SocialBroker.execute` rezolvÄƒ tokenul OAuth/bearer **la momentul acÈ›iunii, Ã®n spatele aprobÄƒrii** (SecretBroker â€” handle `{{secret:x_api_token}}`, niciodatÄƒ cookie-uri) È™i apeleazÄƒ client injectabil (`NullSocialClient` offline default; `HttpSocialClient` = rail live prin `build_social_request` pur â†’ X API v2 `/2/tweets`, reply, `/2/dm_conversations`). Endpoints `GET/POST /api/integrations/social`. +15 teste offline (catalog, validare, build_request post/reply/dm, execute behind-approval, e2e prin coadÄƒ+worker). *(Apelul de reÈ›ea real = poartÄƒ host.)* | 5 | P3 | H6.2 | OpenClaw TweetClaw/Bird |
-| H12.22 âœ… | **Voce outbound / callâ€‘back** â€” agentul sunÄƒ la prag + persona vocalÄƒ izolatÄƒ (Twilio/Telnyx), gated prin interruptâ€‘budget. **Done 2026-06-09:** `core/autonomy/call_broker.py` `CallBroker` â€” apel outbound gated **dublu**: coada de aprobare (`kind=call.outbound`, askâ€‘tier extern) È˜I **bugetul zilnic de Ã®ntreruperi** (un apel e o Ã®ntrerupere â†’ consumÄƒ din â‰¤4/zi). Pe aprobare rezolvÄƒ tokenul telephony **Ã®n spatele aprobÄƒrii** (SecretBroker â€” handle `{{secret:â€¦}}`) È™i sunÄƒ prin client injectabil (`NullCallClient` offline default; `HttpCallClient` = rail Twilio/Telnyx prin `build_call_request` pur â€” Twilio form+basicâ€‘auth, Telnyx JSON+bearer). Endpoint `POST /api/autonomy/call`. +15 teste offline (validare, buget epuizat, build per provider, execute behindâ€‘approval, e2e prin coadÄƒ+worker). *(Apelul telefonic real = poartÄƒ host.)* | 8 | P3 | H6.2 | OpenClaw SuperCall |
-| H12.23 âœ… | **Pack de skillâ€‘uri â€digest"** (news multiâ€‘sursÄƒ ponderat, earnings, Reddit/YouTube/arXiv/HF, ideaâ€‘reality scorer) â€” skillâ€‘uri semnate, compozabile. **Done 2026-06-09:** `core/digest.py` â€” motor compozabil: `DigestSource` (feed RSS/Atom ponderat, `{topic}` URLâ€‘encoded, **fetch injectabil** â†’ offline), `parse_feed` (RSS `<item>` + Atom `<entry>`, namespaceâ€‘stripped, safe pe XML rupt), `idea_reality_score` (substanÈ›Äƒ: release/benchmark/paper/code/versiune/% vs hype: revolutionary/breakthrough/shocking â†’ 0..1), `DigestAggregator.run` (dedup pe link/title, rank pe `weight Ã— (0.5+reality)`), `build_default_aggregator` peste 5 templateâ€‘uri (hn/reddit/arxiv/youtube/news). Endpoint `POST /api/digest/run` (userâ€‘guard, fetch via `PluginHTTPClient`). +11 teste offline. *(Live multiâ€‘sursÄƒ + Ã®mpachetare ca skillâ€‘uri semnate = followâ€‘up extern.)* | 5 | P3 | Skills | awesomeâ€‘openclawâ€‘usecases |
-| H12.24 âœ… | **Generare media** (imagini/thumbnail/video, local sau cloudâ€‘gated) pentru contentâ€‘factory. **Done 2026-06-09:** `core/media_gen.py` `MediaGenManager` â€” generare media (image/thumbnail/video) prin **backend-uri injectabile**: local inline, **cloud gated** prin coada de aprobare (apel plÄƒtit niciodatÄƒ neprompt). Endpoints `GET /api/media`, `POST /api/media/generate`. +5 teste offline. *(Backend-urile diffusion/cloud reale = host.)* | 5 | P3 | â€” | OpenClaw content skills |
-| H12.25 âœ… | **Transcriptâ€‘watcher â†’ taskuri** (notiÈ›e È™edinÈ›Äƒ â†’ Notion/Todoist prin coada de aprobare). **Done 2026-06-09:** `core/autonomy/transcript_watcher.py` â€” `extract_action_items` (highâ€‘precision: checkbox-uri, prefixe `action item:/todo:/next step:`, assignment `<Nume> will/to <verb>` cu atribuire owner; dedup + minâ€‘length, fÄƒrÄƒ false positives pe discuÈ›ie) + `TranscriptWatcher.ingest` care enqueue fiecare item ca task **askâ€‘tier guvernat** (`kind=create_task`, `autonomy_level="ask"`, payload cu `system=notion\|todoist`) â†’ **nimic nu se creeazÄƒ extern fÄƒrÄƒ aprobare**; fÄƒrÄƒ coadÄƒ = preview-only. Endpoint `POST /api/transcripts/ingest` (userâ€‘guard). +10 teste offline. *(Crearea live Ã®n Notion/Todoist la aprobare = executor downstream / poartÄƒ externÄƒ.)* | 3 | P2 | H2.7 | OpenClaw meetingâ€‘notes |
-| H12.26 â¬œ | **Binary artifact store (visual-artifact lane wave 2)** â€” let the user attach/upload a **bounded, validated** binary artifact (image/audio/video/PDF/doc) and browse/stream/delete it from the existing Artifacts workspace, over the same governance discipline as the text Canvas (default-off, attributed, inspectable, purgeable). Deliberately held out of wave 1 (H12.18/H18.20 shipped the safe **text** substrate only) because binaries are a larger surface: **every one of these contracts must land in the slice** â€” (1) **MIME validation** by magic-bytes allowlist (never extension/client type; active types like html/svg/scripts never allowed), (2) **authenticated delivery** (a `user_guard`'d blob route that resolves an opaque id server-side and never exposes the host path â€” same rule wave 1 kept for `MediaCatalog.path`), (3) **quotas** (byte + count caps, oldest-unpinned evicted, single-upload size cap pre-disk), (4) **retention** (H23.10 sweep-actionable TTL default), (5) **export** (join the H23.9/#303 data-export bundle), (6) **purge/forget** (join the forget-me flow like `canvas.json` â€” delete blobs + clear the live index before the pre-forget backup, reusing the `clear_memory(persist=False)` pattern). Should reconcile its blob-delivery + purge/export surfaces with **0.46 Media Library** (generated media) rather than growing two. **Design spec:** [`docs/superpowers/specs/2026-07-11-artifact-store-wave2.md`](docs/superpowers/specs/2026-07-11-artifact-store-wave2.md). *(Not started â€” reviewed slice; new `artifact_store.py` + per-domain router + route/OpenAPI/auth snapshot reseed.)* | 8 | P3 | H12.18 | visual-artifact lane wave 2 |
-
-> **Total ORIZONT 12:** 26 items (25 done + H12.26 open), ~158 SP. **AcÈ›iune imediatÄƒ recomandatÄƒ:** H12.1 (P0) â€” e simultan hardening real
-> È˜I wedge-ul de marketing (alternativa securizatÄƒ la OpenClaw). Restul Track B (P1) ridicÄƒ cel mai mult valoarea per efort.
-
----
-
-## ORIZONT 13â€“17 â€” Frontiere Noi (post-paritate, Ã®n scope v1.0) â€” 14/20
-
-> **Status: livrate** (toate Ã®n v0.10.0). Drumul pÃ¢nÄƒ la 1.0 e productionizarea (**H23**) + validarea cu useri reali â€”
-> **1.0 = totul livrat + design partners**, fÄƒrÄƒ grabÄƒ pe tag. Bazat pe research-ul frontierÄƒ 2025-2026:
-> [docs/research/2026-06-03-frontier-horizons.md](docs/research/2026-06-03-frontier-horizons.md) (5 agenÈ›i paraleli +
-> verificare independentÄƒ). Backlogul de features e terminat (H1â€“H9); H10â€“H12 sunt paritate competitivÄƒ.
-> **Acestea sunt direcÈ›iile de DUPÄ‚ paritate** â€” unde È›inteÈ™te un OS personal local-first/proactiv/privat.
-> Fiecare item verificat faÈ›Äƒ de [principiile non-negociabile](MOONSHOT.md#5-non-negotiable-principles-the-guardrails).
->
-> **DouÄƒ teme-flagship (apar transversal):** (1) **â€sleep-time compute"** â€” chiar sloganul moonshot (*â€lucreazÄƒ cÃ¢t dormi"*),
-> acum rezultat de cercetare (arXiv:2504.13171): generalizeazÄƒ reflecÈ›ia nocturnÄƒ din *rezumÄƒ-ziua* Ã®n *pre-raÈ›ioneazÄƒ-pentru-mÃ¢ine*
-> pe GPU-ul idle. (2) **GuvernanÈ›Äƒ mÄƒsurabilÄƒ** â€” converteÈ™te â€suntem alternativa guvernatÄƒ la OpenClaw" dintr-un *claim* Ã®ntr-un
-> *badge CI verde* (AgentDojo). OpenClaw a devenit prima È›intÄƒ infostealer (13-feb-2026) â€” anti-teza doveditÄƒ.
-
-### ORIZONT 13 â€” Plafonul de Capabilitate LocalÄƒ (modele & inferenÈ›Äƒ) â€” 3/4
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H13.1 âœ… | **Tier VLM strict-local** (Qwen3-VL-8B) â€” Ã®nÈ›elegere ecran/documente/bonuri/PDF â†’ alimenteazÄƒ pipeline-ul Howard; cea mai mare capabilitate *nouÄƒ*, fÄƒrÄƒ cloud. âš ï¸ verificÄƒ build GGUF + buget KV-cache pe 24GB. **Done 2026-06-09 (strat de integrare):** `core/llm/vlm.py` `VLMBackend` â€” adapter **OpenAI-vision-compat** (mesaje cu `image_url`), preprocesare imagini purÄƒ (`to_data_uri` base64, `_downscale` opÈ›ional Pillow pt. bugetul KV-cache, `encode_image_block` bytes/path/url/data-uri), `generate_vision` (alimenteazÄƒ pipeline-ul Howard) + `generate` text-only (contract LLMBackend); client injectabil â†’ offline-testable ca adaptorul OpenRouter. Endpoints `GET /api/vlm/status`, `POST /api/vlm/describe` (gated pe `JARVIS_VLM_URL`). +7 teste offline. *(Modelul local â€” weights + GGUF + GPU 24GB â€” = pas de deployment host: pointeazÄƒ `JARVIS_VLM_URL` la un server vision local vLLM/llama.cpp.)* | 8 | P1 | H5.1 | Qwen3-VL (Oct 2025) |
-| H13.2 âœ… | **Decodare constrÃ¢nsÄƒ (GBNF) pentru tool-calling** â€” garanteazÄƒ tool-args valide. **Done 2026-06-03:** `core/llm/grammar.py` â€” `json_schema_to_gbnf`/`tool_to_gbnf` genereazÄƒ gramaticÄƒ GBNF llama.cpp din JSON schema (object cu chei ordonate, string/integer/number/boolean/array/enum/nested object; cluster permisiv value/object/array pentru tipuri nedeclarate) + `validate_args` fallback (tipuri/required/enum, pentru backend-uri fÄƒrÄƒ gramaticÄƒ); endpoint `POST /api/llm/grammar`. *Generarea gramaticii + validarea sunt complete; enforcement-ul rÄƒmÃ¢ne hook-ul backend-ului (param `grammar=` llama.cpp/XGrammar).* +10 teste offline. | 5 | P1 | â€” | XGrammar / llama.cpp |
-| H13.3 | **Speculative decoding** (draft Qwen3-4B â†’ target 32B/gpt-oss) â€” 1.5-2.5Ã— throughput interactiv, output identic, $0. **ğŸ–¥ï¸ GPU host â€” runbook: `docs/GPU_RUNBOOK.md`** (config vLLM/llama.cpp; zero cod aplicaÈ›ie, output-identic). | 5 | P2 | â€” | vLLM / llama.cpp |
-| H13.4 âœ… | **Refresh model default â†’ MoE cu reasoning hibrid** (gpt-oss-20b / Qwen3-30B-A3B) â€” mod thinking/non-thinking poate colapsa tier-urile fast/deep Ã®ntr-un model. Apache-2.0. **Done 2026-06-09:** `core/llm/moe_routing.py` â€” `decide_thinking_mode` (euristic: hint-uri raÈ›ionament/lungime/multi-Ã®ntrebare) + `route_moe` (model MoE â†’ mod thinking/non-thinking, buget tokeni, directivÄƒ `/think`Ã·`/no_think`; colapseazÄƒ tier-urile fast/deep). Endpoint `POST /api/llm/moe/route`. +5 teste offline. *(SelecÈ›ia backendului real Ã®n HybridRouter = host.)* | 5 | P2 | â€” | gpt-oss, Qwen3 |
-
-### ORIZONT 14 â€” Memorie Vie (memorie temporalÄƒ & auto-Ã®ntreÈ›inutÄƒ) â€” 4/4 âœ…
-
-> Extinde H8 (memorie personalÄƒ, livrat). RuleazÄƒ pe Neo4j + Ollama existente; majoritatea Apache-2.0.
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H14.1 âœ… | **KG bi-temporal** (Graphiti-style: valid-time + ingested-at; contradicÈ›ie â†’ *invalideazÄƒ*, nu È™terge; recall â€as-of"). **Done 2026-06-03:** `core/memory/bitemporal.py` `BiTemporalKG` (JSON file-backed) â€” triple-uri (subject,predicate,object) cu `valid_from`/`valid_to`/`ingested_at`/`invalidated_at`; `add_fact` (predicat single-valued â†’ Ã®nchide factul contradictoriu la noul `valid_from`, pÄƒstreazÄƒ istoricul; `multi=True` pentru predicate multi-valued), `invalidate` explicit, `as_of` (valid-time recall), `known_as_of` (transaction-time), `current`, `history`; endpoints `POST /api/kg/facts`, `GET /api/kg/facts/as-of`, `GET /api/kg/facts/history`. +7 teste offline. | 8 | P1 | H3.2, H8.2 | Graphiti/Zep |
-| H14.2 âœ… | **Harness de eval pentru memorie** (LongMemEval/LoCoMo-style pe corpus propriu; 5 abilitÄƒÈ›i: extracÈ›ie, multi-sesiune, temporal, update, abÈ›inere). **Done 2026-06-03:** `core/memory/eval.py` â€” `MemoryEvalCase` + `DEFAULT_CORPUS` (corpus propriu acoperind toate cele 5 abilitÄƒÈ›i), `score_answer` (substring any-of; abÈ›inerea = rÄƒspuns corect e â€nu È™tiu", halucinaÈ›ia picÄƒ), `keyword_answer` baseline offline (overlap + recency tiebreak), `run_eval(answer_fn)` â†’ scor per-abilitate + overall (answer-fn-agnostic: pipeline real Ã®n prod, fake Ã®n teste); endpoints `GET /api/memory/eval/corpus` + `POST /api/memory/eval/run` (baseline). +10 teste offline. | 5 | P1 | H8.2 | LongMemEval |
-| H14.3 âœ… | **Agent de consolidare â€sleep-time" cu operaÈ›ii explicite** (Mem0-style ADD/UPDATE/DELETE/NOOP). **Done 2026-06-03:** `core/memory/consolidation.py` `ConsolidationEngine` â€” `decide`/`plan` per candidat vs memorii existente: ADD (nou), UPDATE (supersede same-key/near-duplicate), DELETE (negaÈ›ie/retractare detectatÄƒ + match), NOOP (duplicat); similaritate Jaccard token (prag configurabil), detector de negaÈ›ie, decider LLM injectabil (fallback euristic); `plan` batch-aware (copie de lucru), `summarize`, `apply` la un store; endpoint `POST /api/memory/consolidate` (plan reversibil, fÄƒrÄƒ mutaÈ›ie). +10 teste offline. | 8 | P2 | H5.15 | Mem0, Letta |
-| H14.4 âœ… | **Uitare cu decay + dependency-aware** (scor activare ACT-R Ã®n ranking + È™tergere pe graf de dependenÈ›e care previne â€recontaminarea"). **Done 2026-06-03:** `core/memory/decay.py` â€” `activation` base-level ACT-R `ln(Î£ (now-t)^-d)` (recency+frecvenÈ›Äƒ), `DecayMemory` (JSON file-backed) cu `add`/`access`/`score`/`ranking`/`forget_candidates(threshold)` + `forget` care È™terge itemul *È™i dependenÈ›ii tranzitivi* (anti-recontaminare); endpoints `GET /api/memory/decay/ranking`, `/candidates`, `POST /api/memory/decay/forget`. +6 teste offline. | 5 | P2 | H8.2 | ACT-R, arXiv:2602.17692 |
-
-### ORIZONT 15 â€” Computer-Use Guvernat (opereazÄƒ maÈ™ina) â€” 4/4 âœ…
-
-> Inversul *guvernat* al shell-ului neguvernat OpenClaw. Maturitate onestÄƒ: ~1-din-6 task fail â†’ asistÄƒ Ã®n spatele approval-queue, NU nesupravegheat.
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H15.1 âœ… | **Agent browser-use local** Ã®n spatele approval-queue + sandbox + egress allowlist (browser-use/Playwright-MCP + LLM local). Punct de intrare cu cel mai mic risc. **Done 2026-06-09 (strat guvernat):** `core/browser_agent.py` â€” 3 porÈ›i compozabile: **egress allowlist** (`BrowserPolicy`, suffixâ€‘match + filtrul SSRF HFâ€‘4 â†’ navigare offâ€‘listÄƒ **hardâ€‘blocked**, neaprobabilÄƒ; failâ€‘closed pe listÄƒ goalÄƒ), **approvalâ€‘queue** (paÈ™i readâ€‘only `navigate/extract/screenshot/wait` auto pe domeniu permis; paÈ™i mutanÈ›i `click/type/submit/download/execute_js` â†’ `ActionApprovalQueue` H10.18 cu `await_decision`), **driver injectabil** (`NullBrowserDriver` default; Playwright real = addâ€‘on hostâ€‘gated â†’ stratul de guvernare e 100% offlineâ€‘testabil). `GovernedBrowser.preview` (dryâ€‘run run/approve/block per pas) + `run` (trace, stopâ€‘onâ€‘block). Endpoints `POST /api/browser/check` (egress) + `/api/browser/plan/preview` (guvernanÈ›Äƒ). +12 teste offline. *(Driving real al browserului = poartÄƒ umanÄƒ/host.)* | 8 | P2 | H4.8, H6.2 | browser-use (MIT) |
-| H15.2 âœ… | **Modul de Ã®nÈ›elegere a ecranului local** (grounding UI-TARS-1.5-7B, opÈ›ional fuzionat cu accessibility tree). âš ï¸ OmniParser are componentÄƒ AGPL â€” preferÄƒ UI-TARS (Apache). **Done 2026-06-09:** `core/screen_grounding.py` â€” `parse_grounding` (JSON sau text `â€¦ at (x,y)`) + `fuse_with_a11y` (fuziune cu accessibility tree, dedup pe proximitate) + `locate` (element pe query). Construit pe adaptorul VLM H13.1. +5 teste offline. *(Modelul de grounding real = host.)* | 8 | P2 | H13.1 | UI-TARS, Agent S3 |
-| H15.3 âœ… | **Operator Ã®n desktop virtual izolat (PiP)** â€” OS curat, fÄƒrÄƒ credenÈ›iale ambientale; acÈ›iuni ireversibile gated; clasificator de injection pe screenshots. Claude computer-use = opt-in cloud. **Done 2026-06-09 (strat de guvernanÈ›Äƒ):** `core/desktop_operator.py` `GovernedDesktop` â€” analog desktop al browser-agentului H15.1: read-only inline, mutant â†’ aprobare (`approver` injectabil), **clasificator de injection** pe textul ecranului (reutilizeazÄƒ H17.1 â†’ abort la injection); driver injectabil (`NullDesktopDriver` offline; VM real = host). `preview`/`run`. Endpoint `POST /api/desktop/preview`. +6 teste offline. | 13 | P3 | H15.1 | UFOÂ², Anthropic |
-| H15.4 âœ… | **Secret broker** â€” injecteazÄƒ credenÈ›iale la momentul acÈ›iunii, Ã®n spatele aprobÄƒrii; niciodatÄƒ plaintext Ã®n contextul agentului. **Done 2026-06-03:** `core/security/secret_broker.py` `SecretBroker` (peste `SecretStore` criptat H12.1, fallback in-memory) â€” agentul vede doar handle-uri `{{secret:NAME}}` (`reference`), `inject(text, approved)` rezolvÄƒ valoarea DOAR cu aprobare (altfel placeholder, valoarea nu apare niciodatÄƒ), `redact` mascheazÄƒ valori cunoscute (defense-in-depth), `names` fÄƒrÄƒ valori; endpoints admin `POST/GET/DELETE /api/secrets/broker` + `/redact` (niciun endpoint nu Ã®ntoarce plaintext). +7 teste offline. | 5 | P2 | H12.1 | OpenClaw (anti-tezÄƒ) |
-
-### ORIZONT 16 â€” CetÄƒÈ›ean al Web-ului Agentic (interop & standarde) â€” 4/4 âœ…
-
-> Standardele s-au aÈ™ezat: **MCP** (agentâ†’tool) + **A2A** (agentâ†’agent, la Linux Foundation). PlÄƒÈ›ile agentice au sosit (AP2/ACP/x402).
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H16.1 âœ… | **MCP server mode** (spec 2025-11: OAuth2.1 RS, RFC 8707, `.well-known`) â€” **H10.5** upgradat. **Done 2026-06-03:** `core/mcp/oauth.py` `MCPResourceServer` â€” token-uri HMAC self-issued (LAN-only, fÄƒrÄƒ IdP extern) + `validate` (semnÄƒturÄƒ constant-time, expirare, **RFC 8707 audience binding** la resursÄƒ, enforcement scope); `protected_resource_metadata` (RFC 9728) + `challenge` (`WWW-Authenticate`); endpoints `GET /.well-known/oauth-protected-resource`, admin `POST /api/mcp/token`, iar `/api/mcp/server/rpc` cere bearer valid cÃ¢nd `mcp.oauth_required` (401 + challenge). +7 teste. *Enforcement-ul auth complet (validare token IdP extern) e un swap de backend de verificare.* | 8 | P1 | H4.7 | MCP 2025-11-25 |
-| H16.2 âœ… | **Endpoint A2A** cu Agent Card semnat â€” opt-in, allowlist de peers, task-uri inbound â†’ approval queue. **Done:** `core/a2a.py` `A2ARegistry` â€” **off by default** (`JARVIS_A2A_ENABLED`), Agent Card semnat HMAC (`JARVIS_A2A_KEY`, altfel advisory), **allowlist de peers** cu secret partajat (returnat o singurÄƒ datÄƒ, mascat la list), `receive_task` verificÄƒ semnÄƒtura HMAC peste raw body (fail-closed: disabled/unknown-peer/bad-sig) È™i **nu executÄƒ niciodatÄƒ** â€” task-ul aterizeazÄƒ Ã®n inbox `pending` pe care owner-ul Ã®l aprobÄƒ/respinge. Endpoints: `GET /.well-known/agent-card`, `POST /api/a2a/task` (peer-signed), admin `peers`/`inbox`/`decide`/`card`. +8 teste offline. | 8 | P3 | H16.1 | A2A (Linux Foundation) |
-| H16.3 âœ… | **PlÄƒÈ›i agentice opt-in** prin abstracÈ›ia mandate/cap/approval; plafoane *hard*; audit local non-repudiabil. **Done:** `core/payments.py` `PaymentBroker` â€” **mandate** cu plafon per-platÄƒ + plafon total + allowlist payee + monedÄƒ + expirare; fiecare platÄƒ e creatÄƒ `pending` È™i **doar aprobarea explicitÄƒ** o duce spre settle (fÄƒrÄƒ auto-approve la nicio sumÄƒ); **plafoanele sunt absolute** (peste cap/payee nepermis/monedÄƒ greÈ™itÄƒ/expirat/peste total â‡’ *denied la creare*, nu devine niciodatÄƒ pending); spend cumulativ nu poate depÄƒÈ™i plafonul total (recheck la approve + settle); fiecare create/approve/reject/settle e scris Ã®n audit semnat (H17.4 IntentLog). **Rail-agnostic: niciun rail real, nu miÈ™cÄƒ bani.** Endpoints admin `/api/payments/*`. +13 teste offline. | 8 | P3 | H6.2 | Google AP2, Stripe ACP |
-| H16.4 âœ… | **Triggere ambientale inbound** (webhooks â†’ inbox; **surse semnate**). Extinde **H10.8**. **Done 2026-06-03:** semnare HMAC pe `core/webhooks.py` â€” `create(signed=True)` provizioneazÄƒ `signing_secret` (returnat o singurÄƒ datÄƒ, mascat Ã®n list), `compute_signature` (HMAC-SHA256 `sha256=<hex>`), `verify_signature` (constant-time, peste raw body; acceptÄƒ È™i hexdigest gol); endpoint trigger: hook semnat â‡’ cere header `X-Signature-256` valid (token-ul NU bypasseazÄƒ); hook nesemnat â‡’ token ca Ã®nainte. SursÄƒ atestatÄƒ criptografic (stil GitHub/Stripe). +6 teste (provizionare, verify ok/tamper/bad/empty, mascare, round-trip endpoint). | 5 | P2 | H10.8 | LangChain ambient agents |
-
-### ORIZONT 17 â€” Ãncredere DemonstrabilÄƒ (siguranÈ›Äƒ pentru agenÈ›i always-on) â€” 4/4 âœ…
-
-> Cea mai on-mission pentru teza de Ã®ncredere + wedge-ul anti-OpenClaw. Injection = nerezolvabil la nivel de model â†’ **containment by-design + mÄƒsurare**.
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H17.1 âœ… | **Quarantine Dual-LLM / Plan-Then-Execute** pentru conÈ›inut tool/web/email â€” date â€tainted" nu ating tool ireversibil fÄƒrÄƒ aprobare; spotlighting/datamarking ca primul strat. **Done 2026-06-03:** `core/security/quarantine.py` â€” `spotlight`/`datamark` (delimitatori + marker, prim strat) + `detect_injection` (pattern-uri â€ignore previous", â€you are now", system-prompt etc.); `TaintedValue` (trusted/from_untrusted), `QuarantinePolicy.check_step` (taintedâ†’tool ireversibil â‡’ requires_approval), `plan_then_execute` (plan Ã®ngheÈ›at de PlanStep-uri tipizate, gate out-of-band `approve`, blocheazÄƒ exfiltrarea); endpoints `POST /api/security/spotlight` + `/scan-injection`. Rupe â€lethal trifecta" prin construcÈ›ie. +10 teste offline. | 13 | P1 | H4.9, H6.2 | CaMeL, arXiv:2506.08837 |
-| H17.2 âœ… | **Eval-uri AgentDojo + AgentHarm ca poartÄƒ CI** (â€governance gate") + self-assessment OWASP Agentic Top 10 + â€trust scorecard" public. **Done 2026-06-03:** `core/security/governance.py` â€” `INJECTION_SUITE` (AgentDojo-style, apÄƒrat de H17.1 `detect_injection`), `HARM_SUITE` (AgentHarm-style: refuzÄƒ harmful + controale benigne anti-over-refusal), `OWASP_AGENTIC_TOP10` (10 riscuri â†’ control acoperitor), `run_injection_evals`/`run_harm_evals`/`owasp_assessment`/`trust_scorecard`/`governance_gate(threshold)` (answer-fn-agnostic); endpoint `GET /api/security/governance`; testul `test_governance_gate_passes` E poarta CI. +10 teste offline. | 5 | P1 | H7.2 | AgentDojo, OWASP |
-| H17.3 âœ… | **Capability gating + kill-switch out-of-band** pe care agentul NU Ã®l poate escalada. **Done 2026-06-03:** `core/security/capability.py` â€” `CapabilityBroker` (tokeni scoped/expiring per-task/per-sursÄƒ; `check` read-only, acordÄƒ DOAR capabilitÄƒÈ›ile listate â‡’ fÄƒrÄƒ escaladare; revoke), `KillSwitch` (halt out-of-band persistat pe disc, scopes + global, `is_halted`; disengage = acÈ›iune operator), `authorize` (halt SAU lipsÄƒ capabilitate â‡’ blocat); endpoints admin-guarded `POST /api/security/capabilities/issue` + `/kill-switch`, read-only `/capabilities/check` + `GET /kill-switch`. Aliniat EU AI Act Art.14 + NIST. +6 teste offline. | 8 | P2 | H6.2 | EU AI Act, NIST |
-| H17.4 âœ… | **Audit ancorat extern, cu atribuire de intenÈ›ie** â€” extinde lanÈ›ul Merkle (H4.10). **Done 2026-06-03:** `core/security/anchor.py` â€” `IntentLog` (record-uri hash-Ã®nlÄƒnÈ›uite, semnate HMAC cu identitate per-instal stabilÄƒ (arg/env/key-file), `why`+`cause` = atribuire cauzalÄƒ, `verify` detecteazÄƒ tamper de hash È˜I de semnÄƒturÄƒ), `TransparencyAnchor` (log extern append-only hash-linked care ancoreazÄƒ head-ul lanÈ›ului de audit, `verify` chain); endpoints `POST /api/security/audit/action` + `GET /audit/intent` (verify) + admin `POST /audit/anchor` + `GET /audit/anchors`. +7 teste offline. | 8 | P2 | H4.10 | Apple PCC, AttriGuard |
-
-> **Total ORIZONT 13â€“17:** 20 items, ~146 SP â€” **Ã®n scope-ul 1.0.0**. **SecvenÈ›iere recomandatÄƒ Ã®n drumul spre 1.0:**
-> **H17 (Provable Trust)** + **H14 (Living Memory)** sunt cele mai on-mission (teza de Ã®ncredere + â€te cunoaÈ™te";
-> H17 continuÄƒ direct securitatea Wave 0 / H12.1); **H13** ridicÄƒ plafonul la $0; **H15/H16** Ã®nchid platforma.
-> Flagship transversal: **sleep-time compute** (H13/H14) â€” chiar sloganul moonshot.
-
----
-
-## ORIZONT 18 â€” AplicaÈ›ii Native iOS/Android & Paritate cu Browser (P2â€“P3) â€” 19/21
-
-> Client mobil nativ (Expo SDK 56 / RN 0.85) sub `mobile/`, peste **acelaÈ™i API HTTP** (`agents/web.py`)
-> ca HUD-ul browser â€” niciun backend nou. FundaÈ›ia livratÄƒ Ã®n **PR #161**. Restul = paritate progresivÄƒ
-> cu HUD-ul + infrastructura de build/release.
->
-> **Bridge browserâ†”mobil (sincronizarea backlogului):** suprafaÈ›a de paritate trÄƒieÈ™te Ã®n
-> [`mobile/PARITY.md`](mobile/PARITY.md) â€” un registru endpointâ†’browser?â†’mobil?â†’task. **Regula de sincronizare**
-> (vezi `AGENTS.md` â†’ â€Bridge browserâ†”mobil"): orice feature browser care adaugÄƒ/schimbÄƒ un endpoint user-facing
-> SAU o capabilitate HUD **trebuie** sÄƒ (1) actualizeze `mobile/PARITY.md` È™i (2) deschidÄƒ un task de paritate
-> `H18.x` aici dacÄƒ mobilul rÄƒmÃ¢ne Ã®n urmÄƒ. AÈ™a, dezvoltÄƒrile pe browser devin automat taskuri pe iOS/Android.
-
-| # | Item | S | P | Dep | SursÄƒ |
-|---|------|---|---|-----|-------|
-| H18.1 âœ… | **App nativ iOS/Android (Expo)** â€” shell cu tab-uri (Chat/Status/Settings), chat streaming token-cu-token peste `POST /chat/stream` (SSE via XHR), `GET /status` cu telemetrie host/GPU + pull-to-refresh, config hub URL + `X-User-Token` persistat (AsyncStorage) + test-connection; temÄƒ dark derivatÄƒ din HUD v2. **Done 2026-06-06 (PR #161):** `mobile/` (App.tsx, src/api/client.ts, src/screens/*, src/context/ServerContext.tsx, src/storage/settings.ts). `tsc --noEmit` curat. | 8 | P2 | â€” | paritate HUD |
-| H18.2 âœ… | **PersistÄƒ istoricul chat-ului** â€” conversaÈ›iile supravieÈ›uiesc restartului. **Done 2026-06-07:** `src/storage/chat.ts` (AsyncStorage, cap 200 mesaje, nu persistÄƒ mesajele Ã®n streaming) + load/save/clear Ã®n `ChatScreen` (buton â€New"). | 3 | P2 | H18.1 | â€” |
-| H18.3 âœ… | **Selector de agent** â€” picker modal pur-JS alimentat din `GET /api/agents`, agent persistat Ã®n prefs. **Done 2026-06-07:** `src/components/AgentPicker.tsx` + `src/storage/prefs.ts` + `fetchAgents` Ã®n client; `streamChat` trimite agentul ales. | 3 | P2 | H18.1 | paritate HUD agents |
-| H18.4 âœ… | **Render Markdown** â€” parser propriu (heading/listÄƒ/cod/quote/bold/italic/cod-inline/link) + renderer RN. **Done 2026-06-07:** `src/markdown/parse.ts` (pur, testat) + `src/markdown/Markdown.tsx`; folosit Ã®n `MessageBubble` pentru rÄƒspunsuri. | 3 | P3 | H18.1 | paritate HUD |
-| H18.5 âœ… | **Resume sesiuni + TTS** â€” listÄƒ/resume `/sessions` + redare voce `/tts`. **Done 2026-06-07:** `src/components/SessionsModal.tsx` (`fetchSessions`/`resumeSession` â†’ repopuleazÄƒ firul) + `src/audio/tts.ts` (fetch MP3 â†’ cache â†’ expo-audio, buton ğŸ”Š per mesaj, reset la `didJustFinish`). | 5 | P3 | H18.1 | paritate HUD voice |
-| H18.6 âœ… | **Timeouts + reconnect pe stream** â€” deadline pe request + retry/back-off pe GET-uri idempotente + idle-timeout pe stream. **Done 2026-06-07:** `AbortController` (15s) + retry exponenÈ›ial (status/agents/sessions) + idle-timeout 45s pe `streamChat` cu eroare clarÄƒ. | 3 | P2 | H18.1 | robusteÈ›e |
-| H18.7 âœ… | **EAS build config (`eas.json`)** â€” profile development/preview/production (+ submit). **Done 2026-06-07:** `mobile/eas.json` (`appVersionSource: remote`, APK preview, autoIncrement production). | 3 | P2 | H18.1 | Expo EAS |
-| H18.8 âœ… | **Test Jest** pentru logica purÄƒ (SSE decoder + Markdown parser). **Done 2026-06-07:** `jest.config.js` (babel izolat de Metro) + 19 teste (`sse.test.ts`, `parse.test.ts`), `npm test` verde. | 2 | P2 | H18.1 | â€” |
-| H18.9 âœ… | **Branding** â€” icon + splash Jarvis (motiv â€core" cyan pe `#030810`), generate determinist. **Done 2026-06-07:** `scripts/gen-icons.js` (pngjs) â†’ icon/splash/favicon/adaptive (foreground+background+monochrome); splash dark via plugin `expo-splash-screen` Ã®n `app.json`. | 2 | P3 | H18.1 | â€” |
-| H18.10 | **Paritate continuÄƒ (bridge)** â€” menÈ›ine `mobile/PARITY.md` la zi: pentru fiecare feature browser nou cu suprafaÈ›Äƒ user-facing, adaugÄƒ rÃ¢ndul de paritate + (dacÄƒ e cazul) task `H18.x`. Task umbrelÄƒ, mereu deschis. | â€” | P2 | H18.1 | bridge |
-| H18.11 | **Mobile approval queue** â€” phone-native Decision Inbox over the unified autonomy funnel. `ApprovalsScreen` reads `GET /autonomy/approvals`, posts approve/reject/defer to `POST /autonomy/tasks/{id}/decision`, and settings persist an optional `JARVIS_ADMIN_TOKEN` as `X-Admin-Token` for admin-gated routes. H27.6 extends each registered action card with its machine-readable rollback description and limitations before the user approves it; unknown task kinds remain honest (`rollback: null`). | 5 | âœ… done (2026-07-04, #509; rollback parity 2026-07-12) | H18.1, O26-P0.7, H27.6 | O26-P3.4 / M3.1 |
-| H18.12 âœ… | **Mobile channel inbox + governed replies** â€” native Comms tab now catches the app up to Safe Comms transport v0: lists `GET /api/channels/inbox`, reads `GET /api/channels/inbox/{thread_id}`, and queues `POST /api/channels/inbox/{thread_id}/reply` drafts into the same approval funnel with `source:"mobile"`. Browser HUD support shipped in #551; mobile parity is verified with 26 Jest tests + clean `tsc --noEmit`. | 4 | âœ… done (2026-07-05, #564) | H18.1, H18.11 | Safe Comms v0 parity |
-| H18.13 âœ… | **Mobile tasks board** â€” native Tasks tab now catches the app up to the read-only HUD task fan: `GET /tasks` renders active/waiting/done counts plus owner/project/state cards, uses the existing user-token path, and preserves the H7.7 honest empty state when the queue has no work. Verified with 28 mobile Jest tests + clean `tsc --noEmit`. | 3 | âœ… done (2026-07-05, #566) | H18.1 | mobile parity |
-| H18.14 âœ… | **Mobile status ambient dashboard + ticker** â€” native Status now catches the app up to the read-only HUD ambient surfaces: `GET /dashboard` renders weather/calendar/notification context, and `GET /ticker` renders live agent activity rows without adding a new tab or inventing demo data. Verified with 32 mobile Jest tests + clean `tsc --noEmit`, plus full PR CI green. | 2 | âœ… done (2026-07-05, #568) | H18.1 | mobile parity |
-| H18.15 âœ… | **Mobile skills browser** â€” native Skills tab catches the app up to the read-only HUD skills catalog: `GET /skills` normalizes the backend map into a sorted catalog, renders versions/agents/command counts, and deliberately excludes install/import/admin actions from the phone. Verified with 35 mobile Jest tests + clean `tsc --noEmit`. | 2 | âœ… done (2026-07-05, #570) | H18.1 | mobile parity |
-| H18.16 âœ… | **Mobile memory + notes** â€” native Memory tab catches the app up to the read-only HUD memory/notes surfaces: `GET /memory` renders recent session turns and `GET /api/notes` renders current session notes, deliberately excluding clear/save/rewrite controls from the phone. Merged in #572 with full PR CI green; verified locally with 38 mobile Jest tests + clean `tsc --noEmit`. | 3 | âœ… done (2026-07-05, #572) | H18.1 | mobile parity |
-| H18.17 âœ… | **Mobile knowledge graph** â€” native Memory tab gains a Graph view over the read-only KG surfaces: `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, `GET /api/kg/facts/as-of`, and `GET /api/kg/facts/history`. It renders entity search/list, selected-entity relations, current facts, and subject history without mobile entity/relation/fact write/delete controls. Merged in #574 with full PR CI green; verified locally with 42 mobile Jest tests + clean `tsc --noEmit`. | 3 | âœ… done (2026-07-05, #574) | H18.1, H18.16 | mobile parity |
-| H18.18 âœ… | **Mobile security posture** â€” native Status tab gains a read-only Trust card over `GET /api/security/governance`, `GET /api/security/posture`, `GET /api/security/kill-switch`, and `GET /api/security/loop-breaker`, using the existing admin-token setting for posture and deliberately excluding halt/reset/capability-write controls from the phone. Merged in #576 with full PR CI green; verified locally with 46 mobile Jest tests + clean `tsc --noEmit`. | 3 | âœ… done (2026-07-05, #576) | H18.1 | mobile parity |
-| H18.19 âœ… | **Mobile first-run command center** â€” native Status tab gains a read-only First-run card over `GET /api/onboarding/command-center`: install ready/version, model truth, wizard progress, and honest per-action ready/reason rows (run affordances stay browser-side). Red/green: `commandCenter.test.ts` first failed on missing `fetchCommandCenter`, then mobile Jest passed (49) + `tsc --noEmit` clean. | 2 | âœ… done (2026-07-07, #634) | H18.1 | mobile parity |
-| H18.20 âœ… | **Native artifact workspace parity** â€” catches the app up to the #652 browser Artifacts tab over the same unchanged `/api/canvas*` contract. Memory tab gains an **Artifacts** view: browse with safe typed rendering on all 7 canvas types (RN Text nodes are inert; remote http(s) images behind an explicit consent tap; protocol-relative/control-char URLs stay plain text), pin/unpin/delete on the existing endpoints, honest loading/empty/error states. Chat gains the **explicit save-response control** (only completed non-error assistant replies, never while streaming, never auto): posts the exact markdown contract with the ACTUAL responding agent (from the stream start event) and truncates at the 4,000-char bound on a **code-point boundary** (no lone-surrogate poisoning). Red/green: `canvasArtifacts.test.ts` first failed on missing `fetchCanvasArtifacts`, then mobile Jest passed (55) + `tsc --noEmit` clean. | 4 | âœ… done (2026-07-10) | H18.1, H18.16 | #652 handoff |
-| H18.23 âœ… | **Mobile spoken morning brief** â€” the native Status tab gains a "Morning brief" card over the admin-guarded `GET /autonomy/brief`, with a ğŸ”Š Speak/Stop control through the existing hub-TTS + expo-audio path. Honest empty/no-admin-token/TTS-unavailable states; `fetchAutonomyBrief` normalizes kind/text with a bound. Red/green: `autonomyBrief.test.ts` (+3) first failed on the missing client function, then full mobile Jest passed (96) + `tsc --noEmit` clean. | 2 | âœ… done (2026-07-19) | H18.5, H18.14 | PARITY.md |
-| H18.24 | **Native voice orb** â€” bring the browser voice orb (`frontend/src/orb.tsx`) to the native mic surface: the same stateâ†’visual contract (listening = measured mic level, every other state a labelled animation, no numeric level), rendered with the platform's canvas/Skia equivalent. No API change â€” it reads the existing STT/TTS loop. | 3 | P3 | H18.5 | PARITY.md |
-| H18.25 | **Native briefing wall** â€” the browser wall (`frontend/src/wall.tsx` + `burst.tsx`) is responsive down to phone widths, so a phone browser already gets the portrait layout and hold-to-talk; the **native** apps have neither. Port the field, the chip/edge-tab chrome and the push-to-talk control, carrying the same fail-closed mic rule (current trust evidence + exact `mic === 'on'`, stop on permission loss/unmount) and the default-hidden spoken line. | 5 | P3 | H18.5, H18.24 | PARITY.md |
-| H18.21 âœ… | **Native Media Director parity** â€” the metadata-only Media tab reads the owner-curated `/api/media/devices` registry and `/api/media/session` board, then exposes explicit user present/restore controls over the unchanged guarded API. Safe bounded normalization preserves disabled/error states and distinguishes queued, refused, unverified, and verified nested outcomes; a stale/unregistered target cannot be submitted. Device register/remove controls are isolated behind the configured admin token and no remote media is embedded. Red/green: missing client/screen contracts failed first, then mobile Jest passed (65) + `tsc --noEmit` clean. | 3 | âœ… done (2026-07-13) | O29 | PARITY.md |
-| H18.22 âœ… | **Mobile capability registry board** â€” folded into the existing Status tab (not a new top-level tab: 13 tabs already fill the bar) as a **Capabilities** card alongside Trust, over the same user-guarded `GET /api/capabilities` the browser's `ReadinessPanel` reads: SEAM/WIRED/VERIFIED/GA counts + the honest "harness pending â€” wired, not yet proven" note (never claims VERIFIED it can't back). Read-only â€” no action execution or token-management controls; approvals stay on H18.11. `fetchCapabilities`/`normalizeCapability` in `mobile/src/api/client.ts`. Red/green: `capabilities.test.ts` (+3: shape mapping, malformed-entry drop + honest defaults, sparse-payload normalization), mobile Jest passed (93) + `tsc --noEmit` clean. | 2 | âœ… done (2026-07-19) | H18.1, H27.8 | mobile parity |
-
----
-
-## ORIZONT 19 â€” WorldView (4D OSINT) â€” Standalone + Integrare JARVIS â€” 33/33 âœ…
-
-> **Produs nou, stack separat** (Next.js + Deck.gl + Fastify + Kafka/Redpanda + TimescaleDB/PostGIS + Redis),
-> self-contained sub [`worldview/`](worldview/). Centru de comandÄƒ OSINT 4D (aer/mare/spaÈ›iu/cyber) pe un glob
-> scrub-abil Ã®n timp â€” inspirat de â€God's Eye View" (Bilawal Sidhu) È™i de patternurile Palantir (Gotham/AIP/
-> Ontology). **Spinele tehnic e livrat** (toate 5 layere, motorul 4D, calea de date Kafkaâ†’Redis/TimescaleDB
-> validatÄƒ Ã®n CI vs TimescaleDB real, 58 teste unit + integrare). PR #163.
->
-> **Deep review complet + merged (2026-06-08):** review post-merge al celor 33/33 (Critical: retention vs
-> reconstrucÈ›ie; + fixuri pe ingestion/backend/frontend/integrare-JARVIS â€” commits `d162f1a`â€¦`8fc6660`, PR #167),
-> CI integral verde inclusiv jobul TimescaleDB real. DouÄƒ follow-up-uri rÄƒmase, trackuite ca GitHub issues:
-> **#169 este livrat Ã®n #594** (transportul MCP write-tool la runtime â€” `watch_aoi`/`reconstruct_event`
-> prin client stdio, plugin-gate, Action Kernel È™i token HMAC scoped). RÄƒmÃ¢ne **#170**
-> (validarea pe Neo4j real a property-search-ului din KG sync). Launchere noi
-> **INSTALL.bat / START.bat** instaleazÄƒ + pornesc automat WorldView lÃ¢ngÄƒ JARVIS (PR #171).
->
-> **Strategie & feature-pick:** [`worldview/docs/ROADMAP.md`](worldview/docs/ROADMAP.md) Â·
-> **Planul de arhitecturÄƒ & livrare (scale model, deep-dives, ADRs, exit gates):**
-> [`worldview/docs/02-platform-architecture-and-delivery-plan.md`](worldview/docs/02-platform-architecture-and-delivery-plan.md).
-> Ticketele de mai jos = cele 5 workstream-uri (WS1â€“WS5) din plan, fiecare cu **criteriu de acceptanÈ›Äƒ mÄƒsurabil (AC)**.
->
-> **Teza de integrare:** *JARVIS este â€AIP"-ul local-first al WorldView* â€” operatorul Ã®n limbaj natural + cortexul
-> proactiv. WorldView e **plugin opt-in, niciodatÄƒ cerut de core** (respectÄƒ MOONSHOT Â§5: cloud opt-in, inspectabil,
-> â‰¤4 interrupts/zi). Doar OSINT public â€” *â€datele tale nu antreneazÄƒ modelul nimÄƒnui"*. AgenÈ›ii strict-local
-> (`frigga`/`ultron`/`howard`) nu Ã®l ating.
->
-> **SecvenÈ›iere (drum critic):** WS1 deblocheazÄƒ WS2+WS5; WS2 deblocheazÄƒ WS3 (alerte de surfacing) + WS4 (insight-uri de guvernat);
-> WS3 (JARVIS) â€– WS4 (guvernanÈ›Äƒ) Ã®n paralel dupÄƒ WS2; WS5 continuu, front-loaded (tiles + replici).
-
-### WS1 â€” Calea de date live la scarÄƒ (Phase A) â€” 7/7 âœ… (H19.1.1â€“4 cod livrat: toate sursele) Â· *gate: 50k msg/s susÈ›inut, lag<60s, as-of-T p95<300ms sub load, replay 24h real*
-
-| # | Item | S | P | Dep | Track |
-|---|------|---|---|-----|-------|
-| H19.1.1 ğŸ”¨ | **SursÄƒ ADS-B realÄƒ** (OpenSky/ADSB.fi). **Livrat:** `adsb/sources.py` â€” OpenSky (OAuth2 client-credentialsâ†’bearer cu cache/refresh, fallback anonim, bbox viewport, rate-limit/429 + backoff) **È™i** ADSB.fi (gratuit, centrat pe AOI, tag militar real via `dbFlags`); `worker.py` cu poll adaptiv + backoff exponenÈ›ial; `ADSB_SOURCE=opensky\|adsbfi`. +7 teste (payload-uri real-shaped, mock HTTP). **Validat** fetchâ†’normalizeâ†’envelopeâ†’`writeBatch`â†’`/history` pe payload OpenSky real-shaped (avionul apare Ã®n /history cu alt/coords corecte). **RÄƒmÃ¢ne** (deploy-gated): hop-ul live-net (egress allowlist) + Kafka. **AC:** `osint.adsb` curge din sursÄƒ realÄƒ; un avion real apare Ã®n `/history` Ã®n <5s. | 5 | P1 | â€” | Standalone |
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éí×Í8ãTèµ©hºÚn¶X§zÍHÈ˜\š\ÈXˆ8 %˜XÚÛÙÈ][KPYÙ[‚ˆİÛ™\ˆ[™™ZH0­È[šYšXØ]ˆŒ‹LKLÌ0­ÈXÚ\1 ÎˆYÙ[²&ÚHÛ]YH
+ÈÜ[˜ÛÙBˆQˆ‹ËÌLËŒŒŒNÈ0­ÈYZ[ˆØYZ[‚‚ˆ
+Š“›Üİ\ˆ
+š\Ú[Û‹š[˜Ú\\Ë\ÙHØ]\ÊNŠŠˆÓSÓÓ”ÒÕ›YJSÓÓ”ÒÕ›Y
+H8 %™K\˜[šÈ\È˜XÚÛÙÈYØZ[œİ]ˆ
+Š‘ÛËS]™H[ˆ
+™X]\™\Ë›ØYX\X\šÙ][™ÈœšYYŠNŠŠˆÑÓ×ÓU‘WÔS‹›YJÓ×ÓU‘WÔS‹›Y
+Bˆ
+Š‘[]™\H\İÜH
+x $ÒÛÛ\]YÜš[ÊNŠŠˆÙØÜËÒTÕÔ–K›YJØÜËÒTÕÔ–K›Y
+Bˆ
+Š’\›Y\ÈZYÜ˜][ÛˆŒÈ[ˆ
+™]šY]ÙYH˜X›HŒ‹LËLÈ8 %T“Õ‘QÚ]›İ\ÊNŠŠˆÙØÜËÜ™\ÙX\˜ÚÌŒ‹LËL‹Z\›Y\ËXYÙ[[ZYÜ˜][Û‹\[‹›YJØÜËÜ™\ÙX\˜ÚÌŒ‹LËL‹Z\›Y\ËXYÙ[[ZYÜ˜][Û‹\[‹›Y
+H0­È™]šY]È™\™Xİ
+È™[XZ[š[™Ë\\ÙHÜ™\ˆ[ˆÙØÜËÚ[™Ù™‹Y˜X›KLŒ‹LËLË›YJØÜËÚ[™Ù™‹Y˜X›KLŒ‹LËLË›Y
+H0©ÍBˆ
+Š“\İY^H˜X›H[™Ù™ˆ
+Œ‹LËLÈ8 %Ü™\™YİÛ™\‹ĞRH\ÚÈ[™\Ëš\ÚÈ™YÚ\İ\ŠNŠŠˆÙØÜËÚ[™Ù™‹Y˜X›KLŒ‹LËLË›YJØÜËÚ[™Ù™‹Y˜X›KLŒ‹LËLË›Y
+Bˆ
+Š”™KYÛË[]™HİZÙZÛ\ˆŞ[˜È
+Œ‹LËLÈ8 %K\ÙX]YÙ[[™[ÛÛ™][Û˜[ÓËØ]KLˆÚXÚÛ\İ
+NŠŠˆÙØÜËÛYY][™ÜËÌŒ‹LËLË\™KYÛË[]™K\Ş[˜Ë›YJØÜËÛYY][™ÜËÌŒ‹LËLË\™KYÛË[]™K\Ş[˜Ë›Y
+Bˆ
+Š“™\˜H›ÙXİ	ˆØ\Xš[]Hš\Ú[Ûˆ
+HKŒØ]H^[™YŒ‹LËLLNÈš\Ú[ÛœÈY\™ÙYŒ‹LËLLŠNŠŠˆÓ‘T•WÕ’TÒSÓ‹›YJ‘T•WÕ’TÒSÓ‹›Y
+H8 %œ˜[™\˜Ú]Xİ\™H
+ÛÜ^Ğ]\ËÔŞ[˜\ÙKÕš\Ú[Û‹Õ[›ÛŠKÚ^[\œËØ\Xš[]H™YÚ\İKH\›Y\Èİ\\š[Üš]H˜\ÈÜš^›ÛœÈÔ’V“Ó•ø $ÌÌÈ
+H™\˜H›ÙÜ˜[\Èx $ÑÊH™[İÈ0­È›İ™[˜[˜ÙNˆÙØÜËÜ™\ÙX\˜ÚÌŒ‹LËLLKXZK[ÜË]š\Ú[Û‹X[™Z\›Y\Ë\İ˜]YŞK›YJØÜËÜ™\ÙX\˜ÚÌŒ‹LËLLKXZK[ÜË]š\Ú[Û‹X[™Z\›Y\Ë\İ˜]YŞK›Y
+B‚KKH‘T•L‘LT‘TÔÒUÔ–KSQÑT”ÕT•KO‚ˆÈÈ™\˜H‹Œ›ÙÜ˜[HÛÛ›Û8 %LÓ‘B‚ˆØ[›ÛšXØ[›ÙÜ˜[NˆÈÍÍM×JÎ‹ËÙÚ]X‹˜ÛÛKØ[™™ZMKÚ˜\š\ËZX‹Ú\ÜİY\ËÍÍMÊH0­ÈL\XÎ‚ˆÈÍÍNJÎ‹ËÙÚ]X‹˜ÛÛKØ[™™ZMKÚ˜\š\ËZX‹Ú\ÜİY\ËÍÍN
+H0­È›ØÚÙ\ˆ[‚ˆÈÍÍÎJÎ‹ËÙÚ]X‹˜ÛÛKØ[™™ZMKÚ˜\š\ËZX‹Ú\ÜİY\ËÍÍÎ
+H0­ÈXXÚ[™K\™XYX›HÛÛ\][ÛˆYÙ\‚ˆØØÜËÛ™\˜L‹ÑLĞÓÓTUSÓ‹šœÛÛ˜JØÜËÛ™\˜L‹ÑLĞÓÓTUSÓ‹šœÛÛŠK‚‚‹HXØÙ\YL]šY[˜ÙH\ÈÛÛ\]H›İYÚÍÎNˆ˜\Ù[[™KİÛ™\œÚ\\[™[˜ÚY\Ë]]Üš]Kˆš\ÚÜËÔ’V“Ó•X\[™Ë\ÜİYHYÙ\œÈ[™™\ÜÚ]ÜHYÙ\œÈÙ\™H[™\[™[H™]šY]ÙY‚‹HL\È
+Š‘Ó‘JŠˆÚ]ÛÜÙWÙL]YXˆ\ÈÛÜÙ\ÈH˜\Ù[[™KØÛÛ›ÛØ]HÛ›NÈ]Ù\È›İÛZ[Bˆ]ÛÜ^]\Ë\\ÛÙ\ËŞ[˜\ÙHÑÈÜˆ™\ÙX\˜ÚXˆ[[YHØ\Xš[]Y\È\™H[\[Y[Y‚‹HÍÎ
+ÛÜ^
+KÍÎH
+]\ÊKÍÎÈ
+Ş[˜\ÙJH[™ÍÎ
+™\ÙX\˜ÚXŠH\™H›ÈÛ™Ù\ˆ›ØÚÙYHL[™ˆX^H›ØÙYY\ÈÙ\\˜]H›İ[™YÛXÙ\ËˆÍÎˆ
+\\ÛÙ\ÊHİ[ØZ]È›ÜˆHZ[š[][H]\ÈÛXÙHÍÎK‚‹H[›ÛˆÈ™\˜K˜Xİ[Û‹ŒX™[XZ[œÈHÛÛHš]š[YÙYXXİ[Ûˆ]]Üš]KˆÛÜ^\ÈÚYİËÛ›ËXXİ[Û‹ˆ]\È\È™XY[Û›HÈÛÛœİ[Y\œË\\ÛÙ\È\ÈY[[ÜK\™XÛÜ™[Û›KŞ[˜\ÙH\È\ØÜš\[Û‹[Û›H[™ˆ™\ÙX\˜ÚXˆ\È]˜[X][Û‹[Û›H[ˆHš\œİØ]™K‚‹H\İÜšXØ[Ô’V“Ó•[]™\H™[XZ[œÈ[Xİˆœ›ØY\ˆ›ÙÜ˜[K[X[šY™\İÛÜšËÛÛ[Z]HÛÜ™HX\[™Ëˆ]™H\ÚË[]™[YYX][Û‹™X[Y\\œËšYÚÚY™\™\]Z\Ú]\È[™™[X\ÙH›ÛÙˆ™[XZ[ˆÜ[‹‚KKH‘T•L‘LT‘TÔÒUÔ–KSQÑT‘S‘KO‚‚ŠŠXØÙ\YLHÛXÙ\È[™›İ[™Y›ÙÜ˜[HÛÛ›ÛÈÚ[˜ÙHL
+Šˆ
+XXÚ[™\[™[H™]šY]ÙY[™œÜ]X\Ú[Y\™ÙYÛ˜ÙH™\Ù[ÛˆXZ[˜È›È][HH]Ù[ˆÛÛ\]\ÈH[[YH\XÈÜˆ™[X\ÙHØ]JN‚‚‹H8§!HLKŒÈÍÎÈˆÍÎLH8 %\YÚYİÈ™\˜K™XÚ\Ú[Û‹ŒX[™ÚYİÑXÚ\Ú[Û”›İ]\˜‚‹H8§!HLKŒHÈÍÎLˆ8 %›İ[™Yİ\œ™[\›İ]\ˆÛÛ\\š\ÛÛˆİ™\ˆ™\˜K˜ÛÜ^˜ÛÛ\\š\ÛÛ‹ŒX‚‹H8§!HLKŒ˜HÈÎHÈˆÎˆ8 %Y\™ÙYÛÈXZ[˜\ÈÛÛ[Z]ÍXŒÌØˆ
+Œ‹LLÊNÈHİÛ™\‹[ØØ[YX\İ\™Yš[X\K\›İ]HÛÛ˜Xİ\ÂˆÛÛ˜XİÜ™XYX]™[XZ[œÈİÛ™\—Ù]šY[˜ÙWØ›ØÚÙY[™[™ÈHš]™BˆLKŒ˜ˆİÛ™\ˆ[œ]ËÚ]™X[İ\Ú×Ûİ]ÛÛYWÜ]X[]O[›İÛYX\İ\™Yˆ\ÂˆÙ\È›İÛÛ\]HLKŒˆ]™H[™›Ü˜Ù[Y[H›ÙÜ˜[KÜˆ™[X\ÙBˆ™XY[™\ÜË‚‹H8§!HL‹ŒÈÍÎH8 %]\ÈY[]KÜ›İ™[˜[˜ÙH[™™XY[Û›HÛ˜\Úİ‚‹H8§!HLËŒÈÍÎˆÈˆÍÎMˆ8 %™\˜K™\\ÛÙKŒXØÚ[XKY™XŞXÛH[™X[X[›İ[™\K‚‹H8§!HLËŒHÈÍÎNÈˆÍÎNH8 %Û™Ú]Y[˜[\\ÛÙH™]šY]˜[ÛÛ\\š\ÛÛ‹]˜[X][Û‹[Û›K‚‹H8§!HNŒÈÍÎÈÈˆÍÎMÈ8 %Ş[˜\ÙHX[šY™\İÛÛ™›Ü›X[˜ÙK\ØÜš\[Û‹[Û›K‚‹H8§!HNŒXHÈÎÈˆÎNH8 %™XY[Û›H\›Y\È\İ™X[H\ØÛİ™\H[™ÛÛ\]Xš[]HX\ˆ[›™YÈÛİ\˜ÙHYÈŒŒ‹ŒØÈÛÛ[Z]ØÌÙX˜ˆ›È\[™[˜ŞK›İšY\ˆÛÛ˜XİˆY\\‹^Xİ][ÛˆÜˆ]]Üš]HÚ[™ÙKˆY\™ÙY\ÈM™NNMÈNŒH™[XZ[œÈ•RSS‘Ø‚‹H8§!HNŒXH^XİY™]Ú[YÜš]HÈÎÌÈˆÎÍ8 %\›Y\È[\ÜÈ[ˆHÚYÛ™Yˆ[››İ]YŒŒ‹ŒØYË[œÚYÛ™YÛÛ[Z]ØÌÙX˜^Xİ™YH[™[ÌBˆ[İÛ\İYÒÒS›Y]HYÙ\İÎÈ^XİXÛÛ[Z]™]Ú\È™\šYHT“YÙ\İˆ[™œ›ÛX]\ˆ™Y›Ü™H]]][Û‹ˆ›ÈX[šY™\İ[œ›ÛY[›İšY\ˆÛÛ˜XİˆY\\‹^Xİ][ÛˆÜˆ]]Üš]HÚ[™ÙNÈNŒH™[XZ[œÈ•RSS‘Ø‚‹H8§!HNŒXˆÈÎÍHÈˆÎÎ8 %İšXİ™\œÚ[Û™Y™\˜K™^Xİ][Û‹\›İšY\‹ŒXˆ\ØÜš\Ü‹Ü™\]Y\İÜ™\İ[ÚX[˜[YH\\Èš[™^Xİ›İšY\ˆ™]š\Ú[Ûˆ[™ˆš[™Ù\œš[ËY\Yœ™Y^™H›İ[™Y”ÓÓ‹[™˜Z[ÛÜÙYXÜ›ÜÜÈØ[™›Şˆš[\Ş\İ[K™]ÛÜšËÙXÜ™]\™Y™\™[˜ÙKYÙ][™Y™XŞXÛHÛXŞKˆ›İšY\‹[ØØ[ˆ™\İ[È™[XZ[ˆ[™\šYšYYÈ[]]Üš]HšY[È\™H[[]]X›H˜[ÙH[™^\›˜[ˆ™\šYšXØ][Ûˆ\ÈX[™]ÜKˆH›İØÛÛ\È[™\ˆ›È\›Y\È\[™[˜ŞKX[šY™\İˆ[œ›ÛY[Y\\‹™YÚ\İK›İ]K^Xİ][ÛˆÜˆÙ\›™[[YÜ˜][Ûˆ\ÈYY‚ˆNŒH™[XZ[œÈ•RSS‘ØÈNŒXÈ[™›İšY\‹\ÜXÚYšXÈNH]šY[˜ÙH™[XZ[ˆÙ\\˜]K‚‹H8§!HNŒXÈÈÎÈˆÎH8 %İ]XÈ\›Y\È[›ØØ][Ûˆ[™İ\KXÚZ[ˆ™Y›YÚˆ[›™YÈYÈŒŒ‹ŒØÛÛ[Z]ØÌÙX˜™YHŒŒMÍÍØ[™ĞÒH[™^YÙ\İˆÚLMŒMÎÌLYL™˜LÌÍMM˜™ÌX˜Y˜XÌ˜ŒMÍÍÙX™ŒŒYX˜ÙXÌØÌÍÌL˜ÎYX‚ˆHXØÙ\YØÛÜH\È™Y›YÚÙ]šY[˜ÙWÛÛ›Xˆ›È[XYÙHÜˆXÚØYÙH\Y˜XİØ\Âˆ[Y[œİ[Y[\ÜYÜˆ^Xİ]YÈHĞÒKÛÛ™K\ÚİØ[™Y]H™[XZ[œÂˆ[™^Xİ]YÈÛÛ\]Xš[]H[™›İšY\‹\ÜXÚYšXÈNH™[XZ[ˆ[›YX\İ\™YÈXÙ[œÙBˆÛÜİ\™KĞ“ÓKÜ›İ™[˜[˜ÙH[™ØœÙ\™YÕ‘\È™[XZ[ˆ]\ˆØ]\Ë‚ˆ›È\[™[˜ŞK\™\\K[X[šY™\İ[œ›ÛY[Y\\‹›İšY\‹›İ]KÜ™Y[X[ˆ[[YHÜˆ]]Üš]HÚ[™ÙH\ÈYYˆNŒH[™N™[XZ[ˆ•RSS‘ØÈÎËÈÎNˆ[™›İšY\ˆ]šY[˜ÙHÍÍÈ™[XZ[ˆÜ[‹[™™[X\ÙH™XY[™\ÜÈ™[XZ[œÈ˜[ÙK‚‹H8§!HNŒYÈÎÈˆÎÈ8 %˜Z[XÛÜÙYX[X[[Û›H\™\\H\]\ˆÛXŞNÂˆ]]×İ\]Nˆ˜[ÙXİ^\ÈšY]š\ÚX›H[™\È[šYYHØÚY[\ˆ[™\™Xİ\]\‹‚ˆ›È\›Y\È[œ›ÛY[›İšY\ˆÜˆ]]Üš]HÚ[™ÙNÈNŒH™[XZ[œÈ•RSS‘Ø‚‹H8§!HNKŒÈÍÎÈˆÎÈ8 %™\œÚ[Û™Y™\˜K˜™[˜ÚX\šËŒXÛÛ˜Xİ[™\ÚÈİZ]K‚‹H8§!HNKŒHÈÎÈÈˆÎH8 %ØÚY[Yİ\œ™[\›İ]\ˆÚYİÈÛÛ\\š\ÛÛˆ[™ˆ™\˜K˜™[˜ÚX\šËœ™\ÜŒX™YÜ™\ÜÚ[Ûˆ™\Ü]˜[X][Û—ÛÛ›Xˆ[œÈ›İYÚH^\İ[™Âˆ]˜[šYÚH[™HÛˆŞ[]XË\X›XÈš^\™\ÎÈ™\ÜË™]™\ˆ›İ]\ËˆY\™ÙY\ÈNLNLXØÂˆØÜÈ[ˆØØÜËÛ™\˜L‹Ô‘TÑPTÒÓP—ÑNWÌK›YJØÜËÛ™\˜L‹Ô‘TÑPTÒÓP—ÑNWÌK›Y
+K‚‹H8§!HM‹ŒÈÎˆÈˆÎ8 %]šY[˜ÙKX›İ[™İ]ÛÛYSØœÙ\˜][Û˜È™\˜K›\ÜÛÛ‹ŒXˆ›ÜÜØ[ÛÛ˜Xİ›ÜÜØ[ÛÛ›Xˆ™Y›Xİ[ÛˆX^H›ÜÜÙHH\ÜÛÛÈ\İ[˜][ÛœÈİÛ‚ˆ›Û[İ[Û‹ˆY\™ÙY\ÈŒLXÈØÜÈ[ˆØØÜËÛ™\˜L‹Ô‘Q“PÕSÓ—ÑM—Ì›YJØÜËÛ™\˜L‹Ô‘Q“PÕSÓ—ÑM—Ì›Y
+K‚‹H8§!HM‹Œ[YÜš]HÛÜœ™Xİ[ÛˆÈÎŒÈˆÎŒÈ8 %]™\H\ÜÛÛˆY™XŞXÛHÚ[šÈ™]˜[Y]\ÂˆØ[›ÛšXØ[ØœÙ\˜][ÛœÈ™Y›Ü™H›ÙXÚ[™È]Y]ÜˆY˜[˜ÙYİ]NÈHÛÜœ™XİH™KZ\ÚY›Ü™ÙYˆ›ÜÜØ[\È™Z™XİY]XØÙ\YØWÙ\İ[˜][Û˜ˆMˆ™[XZ[œÈ•RSS‘Ø‚‹H8§!HM‹ŒHÈÎMÈÈˆÎÌˆ8 %Ş[]XË\X›XÈ[[İ]\ÜÛÛ‹\›ÜÜØ[]˜[X][Ûˆ™]\Ù\ÈBˆXØÙ\YNKŒİÜ™KÚ\›™\ÜÈÚ][[]]X›Hš^\™HÜ]Ë\]X[Ø[™Y]KØ˜\Ù[[™HYÙ]Ëˆ^XÚ]˜[ÙKÚ[XÚ[˜]Y\™XØ[Y]šXÜÈ[™İšXİ™]Z[™YY]šY[˜ÙH™Y›YÚˆ™\ÜÈ™[XZ[‚ˆ]˜[X][Û—ÛÛ›XÈ›È\ÜÛÛˆ›Û[İ[Û‹Y[[ÜHÜš]K›İ][™Ë^Xİ][ÛˆÜˆÛÛ\][Ûˆ]]Üš]Bˆ\ÈYYˆMˆ™[XZ[œÈ•RSS‘Ø[™İÛ™\‹[]™H™[™Yš]\Èİ[[œ›İ™[‹‚‹H<'çèHLKÑM‹ÑNH]]Üš]KXÙZ[[™ÈİXØÙ\ÜÛÜœÈœ›ÛHÛÜÙYÎM8 %HLHYX\İ\™Y™\Ü
+ÎNJKM‚ˆØœÙ\˜][Û‹Ü›ÜÜØ[Ù]˜[X][Ûˆ^[ØYÈ
+ÎŒ
+K[™NH™YÜ™\ÜÚ[Ûˆ™\Ü
+ÎŒJH[™Y™Y›Ü™BˆZ\ˆ™\]Z\™YÎMˆİ\Lˆ™YXÙ\ÜÛÜˆØ\ÈXØÙ\Yˆ]™YXÙ\ÜÛÜˆ\È›İÈØ]\ÙšYYHÎLLËˆ]]È]\ˆXØÙ\[˜ÙHÙ\È›İ™]›ØXİ]™[H˜[Y]HÜÙHY\™ÙH›ØÙY\™\ËˆHÜšYÚ[˜[ˆÎNHY\™ÙH™[XZ[œÈ\İÜšXØ[H[˜[YÈ]ÈZ\ÜÚ[™ÈLHÜİ[K\›ÛÙˆ]šY[˜ÙHØ\ÈÙ\\˜][BˆXØÙ\Y[ˆÎH[™]LHÚYHØ]H\ÈÛÜÙYˆH™]Z[™YMˆ
+ÎŒ
+KNH
+ÎŒJK[™Ù\\˜]BˆNHİ[Ë]˜[Y][Ûˆ
+Î
+H]\Èİ[]ØZ]Z\ˆİÛˆœ™\ÚÜİPŒˆXØÙ\[˜ÙHXÚ\Ú[ÛœËˆBˆÎˆÛÛÜ™[˜][Û‹[Û›H\İÜHÛX[\Ø\ÈÙ\\˜][HXØÙ\Y[™Ü˜[È›È[˜İ[Û˜[ˆXØÙ\[˜ÙKˆÙ\šX[^˜][Ûˆİ[ˆ\™XÛÙ\È]˜[X][Û—ÛÛ›XØ›ÜÜØ[ÛÛ›X[™Ø[—ÊˆH˜[ÙXÈ›È]]Üš]K›İ][™Ë^Xİ][Û‚ˆÜˆ›Û[İ[ÛˆÚ[™ÙYŒˆ™[XZ[œÈT•PS™^[Û™İ\‹[™H\XÜÈİ^H•RSS‘Ø‚‹H8§!H[››İ˜][ÛˆXˆÛÛ›ÛŒHÈÎHÈœÈÎÌH[™ÎÍÈ8 %™\œÚ[Û™Y‘È[™Û›İÛYÙHØ\™[‚ˆÛÛ˜XİË˜Z[XÛÜÙYY™XŞXÛKÛ[™XYÙH˜[Y][Û‹[[]]X›H™]Z[™Y]šY[˜ÙH[™BˆØİ[Y[Y›ËY[]™\KX]]Üš]H›İ[™\KˆHÛİ™\›™YŞ[]XË\X›XÈ^[\\ÈÛÛ\]BˆXØÙ\[˜ÙH][\Èø $ÎNˆ[H™XXÚ\ÈPĞÑTQÑ“Ô—ÑTPØÛ›H›İYÚHÙ\\˜]K›ÜÜÙY[™ˆ[œØÚY[YÎÍ‹Ú[H™]H™]Z[œÈ[ˆ]šY[˜ÙKX˜XÚÙY‘R‘PÕQXÚ\Ú[Û‹ˆÙÙ]\ˆHÛÂˆÛÛ›Û[Û›HXÚØYÙ\ÈØ]\ÙH[[ˆÎHXØÙ\[˜ÙH][\Ëˆ›È[[YK›İšY\‹›İ][™Ëˆ\Ş[Y[š]š[YÙYXİ[Û‹]]ÛX]XÈ›Û[İ[Û‹›İİ\Hİ]ÛÛYHÜˆİÛ™\‹[]™HØ\Xš[]Bˆ\ÈYYÈÎÍˆ™[XZ[œÈÜ[ˆ[™Ü˜[È›È[\[Y[][Ûˆ]]Üš]K‚‹H8§!HŒˆ™\ÜÚ]ÜK[X[šY™\İÛÛ›ÛÈÎÎHÈˆÎ8 %Y™™Xİ]™HÛ›HÚ[ˆ\Èˆ\ÂˆÜ]X\Ú[Y\™ÙYY\ˆ^XİZXYÜİYØ]\Ë™\œÚ[Û™Y”ÓÓˆ™XÛÛY\ÈHÛÛHİ\œ™[ˆ\[™[˜ŞKÜİ]\ËÙØ]KØ›ØÚÙ\‹Ü[[YH]›ÜˆL8 $ÑLLÈ]ÈX\šÙİÛˆšY]È\È]\›Z[š\İXÈ[™ˆ]KXÚXÚÙY[™HÙ™›[™HÚXÚÙ\ˆ˜Z[ÈÛÜÙYÛˆÜİ[HİXİ\™K]]X›K[Û›H]šY[˜ÙKˆ[œØY™H™\ÜÚ]ÜH]ËÚ]Ú[™^İÛÜšİ™YHšY[™Ø[™Y]KRPQ[İ™[Y[ˆ\ÈÛÜÙ\ÈÛ›BˆH™\ÜÚ]ÜK[X[šY™\İÜ[ÛˆÙˆŒˆ\™[ÍÍÎ[™›ÙÜ˜[HÍÍMÈ™[XZ[ˆÜ[‹Ü\X[È]™Bˆ\ÜİYK[YÙ\ˆ™XÛÛ˜Ú[X][Û‹ËNŒXË›İšY\‹\ÜXÚYšXÈNH›ÛÙ‹šYÚÚYİÛ™\‹[]™H[™ˆ™[X\ÙHØ]\È™[XZ[ˆÙ\\˜]Kˆ›È[[YK›İ]K›İšY\‹^Xİ][Û‹Xİ[ÛˆÜˆÛÛ\][Û‚ˆ]]Üš]H\ÈYYÈ[›Ûˆ™[XZ[œÈHÛÛHš]š[YÙYXXİ[Ûˆ]]Üš]H[™™[X\ÙH™XY[™\ÜÂˆ™[XZ[œÈ˜[ÙK‚‚ŠŠ’[››İ˜][ÛˆXˆ™Xİ\œÛÜˆØİ[Y[ÊŠˆ
+Y\™ÙY]
+Š››İ
+Šˆ\XÈÛXÙ\È8 %™Z]\ˆØ]\ÙšY\ÈBˆÎHÚXÚØ›Ş[™™Z]\ˆ›Û[İ\ËYÜÈÜˆYÈ[ˆ[YÜ˜][Û‹Ù\[™[˜ŞH[ŠN‚‚‹H8§!H[YÜ˜][ÛˆØ][ÙİYH‘ÈÈÎKXY˜XÙ[ÈˆÎŒH8 %İ\™^HÙˆ^\›˜[Ü[‹\Ûİ\˜ÙBˆØ[™Y]\È™\˜HÛİ[Ú\™H[‹[‚ˆØØÜËÛ™\˜L‹ÒS•QÔUSÓ—ĞĞUSÑÕQWÔ‘Ë›YJØÜËÛ™\˜L‹ÒS•QÔUSÓ—ĞĞUSÑÕQWÔ‘Ë›Y
+K‚ˆY\™ÙY\ÈØØÌÍ™Nˆ^XÚ]HH
+œ™Xİ\œÛÜˆØ][ÙİYJˆ]Ù\È›İ[\[Y[HÎHÛÛ›ÛˆÛXÙH
+‘È[\]Kİ]\È˜[œÚ][ÛœËÛ›İÛYÙHØ\™[ˆ[šÜË[YÜš]HÚXÚÊK[™]ÂˆXØÙ\[˜ÙHØ]\ÙšY\È›ÈÎHÚXÚØ›Şˆ]™\H›İÈØ\œšY\ÈHÎKXØ[›ÛšXØ[İ]\È8 %[T’ÑQˆ^Ù\Û™H\˜X›H‘R‘PÕQ
+^\›˜[YÙ[œ˜[Y]ÛÜšÈ\È™\˜IÜÈœ˜Z[ŠH™\İ[™ÈÛˆ[‹\™\Âˆš[X\H]šY[˜ÙKˆHXØÙ\YØ][ÙİYH[™XYH\İ[™İZ\Ú\È^]ÜšYÚ\È[ˆ[‹\™\ÜÚ]ÜBˆ˜Xİ]Y]Y\ÈÙ™šXÚX[X]][œ™XY\Y˜XİÈ\Èš[X\H›ÛİË]\XZÙ\È]ÈÚ^YÜ[ÛˆØ]\ÂˆY]]™HÈHÎHZ[š[][HÛÛ˜Xİ[™™XÛÜ™ÈÎNH\ÈXØÙ\Y]M™NNXˆÎH]Ù[‚ˆ\™Y›Ü™Hİ^\ÈÜ[‹‚‹H8§!HPÔ™YÚ\İH]šY[˜ÙHÛÜœ™Xİ[ÛˆÈÎHÈˆÎˆ8 %Y\™ÙY\ÈÌ™ØMÙXˆ™\XÙ\ÈBˆØ][ÙİYIÜÈØ]YÛÜšXØ[››İ\ÚYÛ™Y›ÜˆÙ[‹ZÜİ[™ÈˆÛZ[HÚ]H™XÛÜ™Yš[X\H™XYÙ‚ˆH\İ™X[H‘PQQH›ØˆÌØÙLÌÍØ]ÛÛ[Z]XØÌ˜ÚXÚØİ[Y[ÈHØØ[ÜİÜ™TÔS]‚ˆ]Ù™›[™HÙYY[™È[™™KXZ[ÒÔˆ[XYÙ\ËˆØØ[[›˜Xš[]H\È
+Š››İ
+ŠˆYÜ[Û‚ˆ™XY[™\ÜÎÈH›İÈİ^\ÈT’ÑQˆˆÎˆÚ[™ÙYÛ›H\ÈPÔ™YÚ\İH]šY[˜ÙH]ˆ›Âˆ\[™[˜ŞKX[šY™\İ\]\‹›İšY\‹›İ][™ÈÜˆ]]Üš]HÚ[™ÙH[\™YZ]\ˆ‹‚‚•HØ][ÙİYIÜÈİÛˆ0©ÍH™XÛÛ[Y[™][Ûˆİ[™È[™\È›İY]ØÚY[YˆZÙH
+Š›Û™JŠˆY\ˆB˜Ø[™Y]H›İYÚHÛÛ\]HYÜ[Û‹YÜ˜YHš[X\K\Ûİ\˜ÙH\ÜÈ\ÈHY]]™H0©ÍØ]\È™Y›Ü™BİXÚ[™ÈHÙXÛÛ™ˆNŒYÈÎÈˆÎÈ™\ÛÛ™YH›Ë[Ü[İ]\ÙˆH]]Ë]\]H^˜\™‚™]™\HÛİ\˜ÙHXÛ\™\ÈH]\˜[›ÛÛX[ˆ]]×İ\]XÚ[H˜[ÙX™[XZ[œÈšY]š\ÚX›H[™\Â™[šYYH›İHØÚY[\ˆ[™\™Xİ\]\ˆ™Y›Ü™H]]][Û‹ˆœ›ØY™\œÚ[Û‹]ÚÙ[ˆ™\XÙ[Y[œ™[XZ[œÈH™]šY]ÙYš\ÚÈ›Üˆ^XÚ]H]]ËY[˜X›Y›Û‹]™[™Ü™Y[šY\ÈÚ][ˆ\]WÙØØ‚HÚÜ[ˆ™XÛÜ™X[Ú]X‹ÔTHšY^Xİ™]š\Ú[Û‹ØÛÛ[[YÜš]KY\\ˆÛÛ\]Xš[]Kœİ\KXÚZ[ˆ[™NHØ]\Èİ[™XÙYH\›Y\È[œ›ÛY[Üˆ›Û[İ[Û‹‚‚‘LKMˆ[™NH™[XZ[ˆ•RSS‘Ø8 %NKŒH›İ™\ÈØÚY[Y™\Ü[™ÈÛ›K›İ›İ][™Âœİ\\š[Üš]HÜˆ™\ÙX\˜ÚXˆÛÛ\][Û‹ˆ]È™\ÚYX[[Z]È\™H™XÛÜ™Y[ˆHÛXÙHØÎ‚™›İ\ˆŞ[]XÈØ\Ù\ÈX^Hİ™\™š]Ú\™Y\[›™\ˆ][˜ŞH\È[X™\˜][H[›YX\İ\™Y[™B›[Ù[K\š]˜]HÛÛœİXİ[ÛˆİX\™È\™H›İ[™\šY\Ë›İÜ\ÙÜ˜\XÈØ\Xš[]Y\Ë‚‚‘LH[™Mˆ™[XZ[ˆ•RSS‘ØˆMHšYÚÚYİ^\È›ØÚÙYˆ]™YYÈİY™šXÚY[LKÑL‹ÑLËÑM‚˜™Z]š[Üˆ
+Šœ\ÊŠˆHÈ\ÚË[]™[[›ÛˆYYX][Ûˆ]šY[˜ÙKˆÈİ]\È\ˆHÍÍMËÈÍÍÎÛÜšËXÛZ[HYÙ\ˆ\ØÛİ™\HÚ[ÈÎNJÎ‹ËÙÚ]X‹˜ÛÛKØ[™™ZMKÚ˜\š\ËZX‹Ú\ÜİY\ËÎN
+Bš\ÈÜ[ˆ[™™\Ù\™YÈH[›ÛˆÙXİ\š]H\˜Ú]XİÛˆ™\˜L‹ØË]\ÚË[YYX][Û‹Y]šY[˜ÙX‚•HÚ^İÛ™\ˆXÚ\Ú[ÛœÈ\™H™\ÛÛ™YˆˆÎLLˆ[™YH›İ[™YY˜][[Ù™ˆØ[™Y]K]]Ø\ÈY\™ÙYY\ˆ]Èš[˜[^XİZXYŒÈ™\™Xİ™[XZ[™Y
+Š“ĞÒÊŠˆ[[[Û˜[KY\™XİÛÜšÂ˜Ûİ[\\ÜÈHYÜ˜YYÛØ˜[YYX][ÛˆXY[™H\Ü]Ú\›Z]Y›İ™]˜[Y]HB˜ÛÛ\]H\œÚ\İY^Xİ][Ûˆ\Kˆ˜YÛÜœ™Xİ]™HˆÎLNÛÜÙ\ÈÜÙH]]Üš]HÙX[\È\ÂHY˜XÙ[˜]ËY^Xİ]Ü‹™Y\Ø[XXØÛİ[[™ËÜİYİX\™]]][Ûˆ[™Üİ[KXÛÜH]ËˆÈ\Âœİ[›İXØÙ\YˆÎLN™YYÈ^XİZXYÜİYÒKHœ™\Ú\İ[˜İŒÈTÔÈ[™Ù\\˜]Bš[YÜ˜][Û‹Ú[H]™HÎLˆ[YÜ˜][Ûˆ]]Üš]H™[XZ[œÈÜ[‹ˆMKÑN\™Y›Ü™Hİ^H›ØÚÙY‚‚ŒÈÈÛÛ[Z]HÛÜ™H
+ÍÌÌJHX\[™È8 %[Ú^ÍÍÎ[˜›ØÚÈ][\È›İÈ]™H[ˆ^XÚ]™\İ[˜][Û‹š[Ü‹X\Ú]][ÛˆÚ\™HXØÙ\Y]šY[˜ÙH^\İÈ
+[˜ÛY[™È’TÒÔË›Y	ÜÂœš[ÜˆQSKLØØÑPËLXİÛ™\œÚ\ÙˆHY[[ÜK]Z[ÚXÚÊK[™[ˆÛ™\İH™XÛÜ™Y™Ø\Ú\™H]Ù\Û‰İ[‚–ØØÜËÛ™\˜L‹ĞÓÓ•S•RUWĞÓÔ‘WÔ‘PÓÓÒSPUSÓ‹›YJØÜËÛ™\˜L‹ĞÓÓ•S•RUWĞÓÔ‘WÔ‘PÓÓÒSPUSÓ‹›Y
+K‚“›È\XÈØZ[™YH\YÛÛ˜XİÜˆXØÙ\[˜ÙH\İœ›ÛH\ÈØİ[Y[ÈÍÌÌHİ^\ÈÜ[‚œ\ˆ]ÈİÛˆ˜\ˆ
+˜ÛÜÙH]Û›HY\ˆ]™\H™\]Z\™[Y[\ÈH\İ[˜][Ûˆ[™˜XØÙ\[˜ÙH\İŠH›İY]™Z[™ÈY]ˆHÛX\™\İÜ[ˆØ\\È˜\š\ÉÜÈİÛˆY[]B“X[šY™\İÚXÚ\È›È\İ[˜][Ûˆ\ÜİYH8 %ÍÍŒ‹ÑM\ÈØÛÜYÈİØ\™	ÜÈ™Y™\™[˜ÙBœ™YXİ[ÛˆÛ›K›İ˜\š\ÉÜÈÛÛ[Z]HY[]K‚‚ŠŠ”ÈHİÜHÚ[È
+HHš[q İ]HHšJH0­ÈHš[Üš]]H
+8 $ÔÊJŠ‚‚ˆÈÈ[‚‚˜˜\Úœ\[œİ[\ˆ™\]Z\™[Y[ËX™]Kœ]ÛˆÙ\™KœHÈØ[›ÛšXØ[[H
+›ÛİİX\™È
+ÈÜ˜XÙY[Ú]İÛÈÌ‹TˆH˜]ÂˆÈ]šXÛÜ›ˆ[H]Ûˆ[H]šXÛÜ›ˆYÙ[ËÙX˜\›İÈ[œÈHØ[YHİX\™ÈšXHHY™\Ü[ŠBœ]ÛˆØÜš\ËÚ[œİ[ÜÛ[ÚÙKœHKZœÛÛˆÈ˜\İ[œİ[Û[ÚÙNˆ›Ûİ
+ÈÜ™XY^ˆ
+È˜ZÙHØØ[\›‚œ]Ûˆ[H]\İ\İËÈ]ˆÈKÎLÛÛXİY
+Ûİ[\ˆŞ[˜ÙYšXHØÜš\ËÜİ]\×ÜŞ[˜ËœJB˜‚ˆÚ[™İ\[ÚÚ\± ÛX\ÈHX\™X]][Ü2&Ú[Û˜[ˆ
+™XÚ][\İËİ\İÜÜİYKœXİHÚÚ\]\šHBˆ›Üİ[[Z[˜]0ë›ˆÓ‹LNÈÜİYH
+‹JH
+Š™[˜ò&Ú[Û™X^± ÊŠˆšXHÚÚ[ËÜÜİYKÛXZ[‹œXXÛÜ\š]ˆH\İËİ\İÜÜİYWÜÚÚ[œXŠB‚ŠŠ”[\™H]]Û›Ûq È
+L
+NŠŠˆÛØYH\›Ø˜]1 È
+È›İØÛÛ[ÛÛ\]
+È›Û\[HÚYİ[0ë›‚–ØØÜËÜİ\\œİÙ\œËÜ[œËÌŒ‹LLKYš[š\Ú[[™K\[‹›YJØÜËÜİ\\œİÙ\œËÜ[œËÌŒ‹LLKYš[š\Ú[[™K\[‹›Y
+B¸ %N][˜›ØÚÙ\œÈ0ë›0èšH
+šYÙÙ\ˆXÚ^šr&ÚYH0­ÈÙX[HYYXQš]™\ˆ0­È™\Ù[˜Ùx¡¤›YYXH0­ÈLHİ™X[K\Ş[\Ú\ÊNÂœİ]\İ[\ˆ][HÙH2&Ú[™H0ë›ˆX™[[0©ÌÈ[[[ZKHZXÚK‚‚ŠŠ‘\1 È[ÙYšXñ ÜšH”ËĞÔÔÎŠŠˆİ›
+ÑH0ë›ˆœ›İÜÙ\ˆ
+ØXÚH\İ
+K‚ŠŠ‘\1 È[ÙYšXñ ÜšH]ÛŠŠˆ™\Ü›š\™HÙ\™\ˆ
+İ›
+ĞË™KY^Xİ]1 ÈÛÛX[™H]šXÛÜ›ŠK‚ŠŠ”Ù\™\ˆİ\™[
+Šˆ
+Xñ ÈHÜ›š]
+NˆQ™^šH™]İ]X[›Èš[™İˆ˜‚ŠŠ”İXÚÎŠŠˆ]ÛˆËŒLˆ
+È˜\İTH
+È˜[š[H™XXİ
+Ü™X]Q[[Y[›È”Ö
+K‚‚ˆ
+Š”™XÙ[\™[š[™È
+Œ‹LËLJNŠŠˆÍMHÛÜÙ\ÈHMËŒXH[˜›İ[™[ÜšYÚ[‚ˆ\\ÜÈ›İY[ˆHœ›ÛY\ˆ]Y]ˆ[™WÚ[œ][™[™WÚ[œ]Üİ™X[Xˆ›İÈš[™\›ˆÜšYÚ[ˆHÛÛœİXİ[Û‹[\›˜[Ü˜Ú\İ˜]ÜˆÚ[›™[Èİ^Bˆ\İY[ˆ\İ™X[H[˜›İ[™ÛÛ^Ø[››İ™HİÛ™Ü˜YY[™YÚ[‹YYÜ™\ÜÂˆXİ[ÛœÈØ\œHHİ\œ™[ÜšYÚ[ˆ[œİXYÙˆ\™XÛÙ[™ÈÙ[™\˜]Y‚ˆÍMLÛÛ[YYH˜]ÚŒNˆÚÚ[X\šÙ]XÙKÙÙ[™\˜][Ûˆ[™ˆÜİXÛÛ›ÛÙX[\È›İÈ]˜[X]H]™H™]\ØX›HÛÛ˜XİÈ™Y›Ü™HXÚØYÙKˆ›Û[İ[Û‹™\İ\ÜˆHİY[ÈİXœ›ØÙ\ÜÈÛÛ›ÛˆÍMLH[İ™\ÂˆØY™HÛÛ[\Èœ›ÛH™]šY]ÈÈ˜[œÜÜŒˆ[YÜ˜[KİÙXˆ[˜›İ[™™XYÈ\œÚ\İˆÛİ™\›™Y™\Y\È[\ˆH\›İ˜[[›™[[™\›İ™Y™\Y\ÈÙ[™›İYÚˆH]™HÚ[›™[X[˜YÙ\‹ˆÍMLˆš^\ÈH]˜[[šYÚHÛÜšÙ›İÈ\œÙ\ˆBˆ[İš[™ÈØXÚH\Ú^™\ÜÚ[ÛœÈİ]Ùˆ›Ø‹[]™[[˜ˆÍMLÈÚ\™\ÈŒKŒÂˆY]Y]H[È]™H™XØ[Ü™\š[™È[™YÂˆØ\KÛY[[ÜKÙ]˜[Ü[Û[ÙO\™XØ[\ÈH™X[\]]˜[Û[ÚÙKˆÍMM\œÚ\İÂˆZ[T™Y›XİÜˆ[ˆY[\İ[˜ŞH[™[™È\İ[Y\ÜÛÛœÈÈ]š[™ÓY[[ÜBˆÚ[ˆÛÙÛš][ÛˆY[[ÜH\È[˜X›YˆÍMMH[š™XİÈ›İ[™Y]š[™ÓY[[ÜHÛÜ™Bˆ˜XİÈ[ÈHÚ\™Y›Û\]ˆÍMMˆXZÙ\È]š[™ÓY[[ÜK˜ÛÜ™Xİ\š]™Bˆ›ØÙ\ÜÈ™\İ\ËˆÍMMÈXZÙ\È]š[™ÓY[[ÜHY\ˆY]Y]H\˜X›HÛËˆÍMNˆÛÜÙ\ÈHX]Ú[™ÈUQLˆš]˜XŞHØ\ˆ^XÚ]\Ù\‹Y›Ü™Ù]›İÈÛX\œÈÜÙBˆÛÙÛš][ÛˆİÜ™\È]™H[™]™\İˆÍMNHÚ\™\ÈHY˜][[Ù™ˆ™K\›Ú™Xİ[Û‚ˆXZ[[˜[˜ÙHÛÚËˆÍMŒ\ÜÙ\ÈH^\İ[™ÈØØ[Y[[ÜH[X™Y\ˆ[Âˆ]ÛÚÈÛÈÛY\ˆ™XÛÜ™ÈØ[ˆ™H\Ü˜YY\š[™ÈXZ[[˜[˜ÙKˆÍMŒBˆ™XXİ]˜]\ÈX]ÚY]š[™ÓY[[ÜH™XØ[]Ë™Yœ™\Ú[™È›İY\ˆXİ]˜][Û‚ˆ[™HMXØ^HXØÙ\ÜÈYÙ\‹ˆÍMŒˆ™Z™XİÈ^Xİ\XØ]H]š[™ÓY[[ÜBˆ\›ˆYÙ\İÈ™Y›Ü™H^HÜ™X]H[›İ\ˆY\‹ÙXØ^H™XÛÜ™ˆÍMÎØ]\ÂˆÜ˜XÛIÜÈ^\›˜[ÛÛ[Z][İ\İÛÜ™Z[™H]™Bˆ™\Ë\Ş[˜ÈÛÛ˜Xİ\ÈHXİ[ÛˆÙ\›™[Y˜][\™Y\Ù\ÈÚ[ˆHÙ\›™[\ÂˆÙ™‹[™™[[İ™\ÈÚ[^Xİ][Ûˆœ›ÛHPÔİ[Èİ\\Ú[HØ][™Èİ]›İ[™ˆPÔÛÛØ[È›İYÚH]™HÛÛ˜XİˆŒˆ\ÈY\™ÙY[ˆÍNˆ[˜›İ[™Z[ˆ›İÈ\ÈÙ\›™[Z[™\[™[Y]]H]]Û›Û^H]Y]YKY]Y[˜›İ[™\ÚÜÂˆ\™H™K[X\šÙY™Y›Ü™HÛXŞH™KY]˜[X][Û‹[™[˜›İ[™Y[[ÜH[X™Y[™ÜÈİ^Bˆš\ÚX›HZ[Y›İYÚ™XØ[›İ™[˜[˜ÙKˆŒËPŒˆ\ÈY\™ÙY[ˆÍNˆ]™BˆÛÛ˜XİØ]\ÈÈ^\›˜[ÑÈÜš]\È[™\İXİ]™H›Ü™Ù]\™ÙH™Y›Ü™Hİ]Bˆ]]][Û‹ˆŒËPŒÈ\ÈY\™ÙY[ˆÍNˆ[˜›İ[™LH\ÚÈ[ZÙH[™]]Û›Û^Bˆ\ØØ[][Ûˆ˜[‹[İ]›İÈ]™HÛÛ˜XİY[šX[Y]™Y›Ü™H[˜›ŞÜš]\ÈÜ‚ˆÚ[›™[Ù[™ËˆŒËP\ÈY\™ÙY[ˆÍNˆ]]][™ÈPÔ›İ]HÛÛÈ›İÈ]™HBˆ™]\ØX›HÛÛ˜XİØ]HY\ˆY[]H[™™Y›Ü™HÙ\›™[YYX][ÛˆÜˆY\\‚ˆÜš]\ÎÈ[ˆÒHØ\ÈÜ™Y[ˆ™Y›Ü™HY\™ÙKˆŒËPH\ÈY\™ÙY[ˆÍNˆBˆÙ[™\šXÈÚ[›™[X[˜YÙ\ˆÙ[™›İ[™\H\ÈHÚ\K[Û›HÛÛ˜XİØ]H™Y›Ü™BˆY\\ˆKÓÎÈ[ˆÒHØ\ÈÜ™Y[ˆ™Y›Ü™HY\™ÙKˆTÒËLÈÚ[›™[Z[™Ü™\ÜÂˆZ[\ÈY\™ÙY[ˆÍNLˆHØ]]Ø^HX\šÜÈ[\İY[˜›İ[™Ú[›™[Y\ÜØYÙ\ÂˆÚ]š]˜]HZ[Y]Y]K\œÚ\İÈÛ›HX›XÈZ[šY[È[ˆHØY™BˆÛÛ[\È[˜›Ş[™İš\Èš]˜]HY]Y]H™Y›Ü™Hİ]›İ[™Y\\ˆÙ[™ÎÈ[ˆˆÒHØ\ÈÜ™Y[ˆ™Y›Ü™HY\™ÙKˆUQLMÚ[›™[Ù[™\˜]H[‹Z[\ÈY\™ÙY[‚ˆÍNLˆHÛØ˜[T•’T×ĞÒS“‘SÔÑS‘ÔUXØ\›İÈ\Ù\ÈÚ\™Y[—Ú[
+
+Xˆ\œÚ[™ÈÚ]X[›Ü›YYÛ™YØ]]™H˜[Y\È[›™Y\È[›[Z]YÈ[ˆÒHØ\ÂˆÜ™Y[ˆ™Y›Ü™HY\™ÙKˆLËKÈÌMHÛÜ›šY]ÈPÔÜš]H˜[œÜÜ\ÈY\™ÙY[‚ˆÍNMˆ\™İ\ÈØ[ˆ™XXÚØ]ÚØ[ÚX[™™XÛÛœİXİÙ]™[Û›H›İYÚˆYÚ[‹YØ]H
+ÈXİ[ÛˆÙ\›™[
+ÈØÛÜYPPÈPÔÚÙ[È[ˆÒHØ\ÈÜ™Y[‚ˆ™Y›Ü™HY\™ÙKˆUQLMH[Ù[[˜[YHÛÛ™šYÈ\ÈY\™ÙY[ˆÍNMˆBˆ[Ù[[˜[YHY˜][È[™HT•’T×ÑQTÓSÑSİ™\œšYH›İÈ]™H[ˆÛ™BˆÚ\™YÛÛ™šYÈ[Ù[KˆUQLM\ÚËXYÙ][‹Y›Ø]\ÈY\™ÙY[ˆÍNN‚ˆT•’T×ÕTÒ×ÓPVÔÑPÓÓ‘Ø›İÈ\Ù\ÈÚ\™Y[—Ù›Ø]
+‹‹‹Z[š[][OLŒ
+Xˆ[œİXYÙˆØØ[KÙ^Ù\\œÚ[™ËˆUQLM[˜[]XÜÈX^Y]™[È[‹Z[\ÂˆY\™ÙY[ˆÍŒˆX[›Ü›YYT•’T×ĞSSUPÔ×ÓPVÑU‘S•Ø›ÈÛ™Ù\ˆÜ˜\Ú\Âˆ[˜[]XÜÈ[\ÜˆUQLMÕ™X[K\Ú^™H[‹Z[\ÈY\™ÙY[ˆÍŒ‚ˆT•’T×ÔÕĞ‘PSWÔÒV‘X›İÈ\Ù\ÈÚ\™Y[—Ú[
+‹‹‹Z[š[][OLJX\œÚ[™Ë‚ˆUQLMÙÈ›İ][Ûˆ[‹Z[\ÈY\™ÙY[ˆÍŒˆT•’T×ÓÑ×ÓPVÓP˜[™ˆT•’T×ÓÑ×ĞPÒÕTØ›İÈ\ÙHÚ\™Y[—Ú[
+
+X\œÚ[™ÈÚ[HÙY\[™ÂˆÙ][™ÜËQˆ˜[˜XÚÈ[XİˆUQLMØ[XÛÛ™šYÈ[‹ZœÛÛˆ\ÈY\™ÙY[ˆÍŒ‚ˆT•’T×ĞĞSĞÓÓ‘’QØ›İÈ\Ù\ÈÚ\™Y[—ÚœÛÛ—ÛØš™Xİ
+
+X\œÚ[™ËˆUQLMˆÚ[›™[\˜]\È[‹[X\\ÈY\™ÙY[ˆÍŒˆT•’T×ĞÒS“‘SÔÑS‘ÔUTØ›İÂˆ\Ù\ÈÚ\™Y[—Ú[ÛX\
+
+X\œÚ[™ËˆUQLM[XZ[\Ü[‹Z[\ÈY\™ÙY[‚ˆÍŒLˆÓUÔÔ•[™SPTÔÔ•›İÈ\ÙHÚ\™Y[—Ú[
+
+X\œÚ[™Ë‚ˆUQLM™XİÜ‹Y[Y[œÚ[Ûˆ[‹Z[\ÈY\™ÙY[ˆÍŒLˆ‘PÕÔ—ÑSQS”ÒSÓ˜›İÂˆ\Ù\ÈÚ\™Y[—Ú[
+‹‹‹Z[š[][OLJX\œÚ[™ËˆUQLMÚÚ[Z\İÜH[‹Y›YÂˆ\ÈY\™ÙY[ˆÍŒMˆT•’T×ÔÒÒSÒTÕÔ–X›İÈ\Ù\ÈÚ\™Y[—Ù›YÊ
+Xˆ\œÚ[™ËˆUQLMÙXšÛÚËXÚ[›™[È[‹ZœÛÛˆ\ÈY\™ÙY[ˆÍŒM‚ˆT•’T×ÕÑP’ÓÒ×ĞÒS“‘SØ›İÈ\Ù\ÈÚ\™Y[—ÚœÛÛ—ÛØš™Xİ
+
+X\œÚ[™Ë‚ˆUQLMÓÔ”Ë[ÜšYÚ[œÈ[‹[\İ\ÈY\™ÙY[ˆÍŒNˆT•’T×ĞÓÔ”×ÓÔ’QÒS”Ø›İÂˆ\Ù\ÈÚ\™Y[—Û\İ
+
+X\œÚ[™ËˆUQLMYÚ[‹YÜ˜[È[‹[\İ\ÈY\™ÙY[‚ˆÍŒŒˆT•’T×ÔQÒS—ÑÔS•Ø›İÈ\Ù\ÈÚ\™Y[—Û\İ
+
+X\œÚ[™ËˆUQLMˆ\İ[‹Y›YÜÈ\ÈY\™ÙY[ˆÍŒŒˆ\İ\İ]\ÈZXËÜİšXİ[ØØ[[ˆ™XYÂˆ›İÈ\ÙHÚ\™Y[—Ù›YÊ
+X\œÚ[™Ëˆš\İX[X\Y˜Xİ[™HØ]™HH\ÈY\™ÙY[‚ˆÍLˆHÛØÚÜ]ØZ[œÈ[ˆ\Y˜XİÈXˆİ™\ˆH[˜Ú[™ÙYØ\KØØ[˜\Ê˜ˆİ\™˜XÙH
+ØY™H\Y™[™\š[™ËÛÛœÙ[YØ]Y™[[İH[XYÙ\Ë[‹İ[œ[‹Ù[]JBˆ\È[ˆ^XÚ]Ø]™K\™\ÜÛœÙHÛÛ›Û
+X\šÙİÛˆÛÛ˜Xİš\ÚX›HXÚ\‚ˆ[˜Ø][Û‹™]™\ˆ]]ÊNÈÜØY™Wİ\››İÈ™Z™XİÈ›İØÛÛ\™[]]™H[™ˆÛÛ›ÛXÚ\ˆT“ËÜÊ
+X›ÜÈÛ™HU‹LMˆİ\œ›ÙØ]\È
+İÜ™K\Ú\ÛÛš[™Èš^
+Kˆ[™›Ü™Ù][YH™\Ù]ÈØ[˜\ËšœÛÛ˜
+ÈÛX\œÈH]™HØ[˜\ÈİÜ™HÚ]İ]ˆ[\Z[™ÈHš[H™Y›Ü™HH™KY›Ü™Ù]˜XÚİ\ˆ[Øš[H\š]H\È˜XÚÙY\ÂˆNŒŒ
+Ô’V“Ó•N
+KˆÙ[‹R[\›İ™[Y[
+YZØËİÛ™\ˆ™\]Y\İŒ‹LËLN
+HYÂˆHZ\ÜÚ[™È
+œ›ØXİ]™Jˆ[ˆ™^ÈH™XXİ]™HÌˆØ\Xš[]HXÜ]Z\Ú][Û‚ˆÛÜˆYÙ[ËØÛÜ™KØ]]Û›Û^KİXÚÜØÛİ]œX\ÈHY˜][[Ù™‹ÙYZÛK™XY[Û›BˆÙXœÙX\˜ÚØØ[ˆ]Y\\Èš[™[™ÜÈ[™š[\È[H\Èš\ÚÕY\‹”‘PQÓÓ“Xˆ[™›Ü›X][Û˜[]]Û›Û^H\ÚÜÈ
+›È^Xİ]Üˆ8 %Ø[YH›ØœÙ\˜][ÛœÈ[™›Ü›KˆXÚ\Ú[ÛœÈ[\œ\ˆÜİ\™H\ÈØœÙ\™\‹œX
+KˆÑUØ\KÜÙ[‹Z[\›İ™[Y[Üİ]\ØˆYÙÜ™YØ]\È\œ›ÜˆXYÛ›ÜİXÜÈ
+ÈØœÙ\™\ˆ
+ÈXÜ]Z\Ú][Ûˆ
+È[XšY[İ]\È[ˆÛ™Bˆ™XYÈÔÕØ\KÜÙ[‹Z[\›İ™[Y[Ù[˜X›X›\ÈHØİ[Y[Y[™HÙ‚ˆ[™XYKY^\İ[™ÈY˜][[Ù™ˆÙ][™ÜÈ[ˆÛ™HØ[
+›È™]ÈØ\Xš[]K›ÂˆÚ[™ÙYÚ\YY˜][
+Kˆ™]ÈQÙ[’[\›İ™[Y[[™[
+ÛÛœÛÛH8¡¤ˆØœÙ\™JK‚ˆÛÙÛš][Û‹œ™]šY]×Ù[˜X›Y[ÛÈØZ[™Y]ÈZ\ÜÚ[™ÈÙ][™Ü×Ù˜›İÈ
+Ø\Âˆ™XYšXHÙ]ÜÙ][™ØÚ]›ÈQUSÈ[H8 %[š\ÚX›Kİ[œÙ]X›Hœ›ÛHBˆYZ[ˆTNÈ›İÈš\ÚX›KY˜][[˜Ú[™ÙY
+Kˆ
+ÌMÈ™]È˜XÚÙ[™\İË
+ÌÂˆœ›Û[™È[˜XÚÙ[™
+KLJH[™œ›Û[™
+ÍŒJHİZ]\ÈÜ™Y[‹›İ]KÓÜ[TKÂˆ›İ]KX]]Û˜\ÚİÈ[™HQ]Œˆ\š]HX\™K\ÙYYY›ÜˆHˆ™]È›İ]\Ë‚ˆXÚØYÙYX\Ü›İ[™ÛÜšÈ
+YZØËİÛ™\ˆ™\]Y\İŒ‹LËLN
+Nˆ˜\š\È›İÈZ[Âˆ\ÈHR[œİ[\ˆÛ™Y\ˆ^Xİ]X›H
+XÚØYÚ[™ËÚ˜\š\ËœÜXØ
+ÂˆØÜš\ËØZ[Ù^KœXÚ]H™X[›ÛİÛ[ÚÙH\İXÚØYÚ[™ËİÚ[™İÜËÚ[œİ[œÌXˆØÜËÔPÒĞQÒS‘Ë›Y
+K[™HXÚØYÙY[œİ[ÙY\ÈS\œÛÛ˜[İ]H[ˆÛ™BˆİÛ™\‹]š\ÚX›H
+Š\Ù\ˆ]HÛYJŠˆ
+‹ÑØİ[Y[ËÒ˜\š\Øˆ‘PQQK™[˜ˆY[[ÜKØÚÚ[ËØÛİ[ËØİ™\›^\È8 %YÙ[ËØÛÜ™KÜ]ËœN\Ù\—ÚÛYJ
+KÂˆ[œİ\™Wİ\Ù\—ÚÛYJ
+X
+Kˆ›Ü›Y\›HÕÑ\™[]]™H™XYÈ
+ÚÚ[ËÛİ[ËX\™X]ËˆYÙ[ËX[[™[˜
+H\™H[˜ÚÜ™YÛˆ\Ü›Ûİ
+
+XÈÙ[™\˜]YÛX\šÙ]XÙBˆÚÚ[ÈÜš]HÈH\Ù\ˆÛYHÚ[ˆXİ]™NÈ	T•’T×ÒÓQXÙY\ÈÚ[›š[™È›Ü‚ˆH]H›Ûİ[™HZ[ˆ]ˆÚXÚÛİ]\È]KZY[XØ[
+\Ù\ˆÛYH[™\
+K‚ˆ[^]™\šYšYY[™]ËY[™
+Z[^H›ÛİËÜ™XY^˜Ü™Y[‹ØØY™›ÛˆÜ™X]Y
+NÈHÚ[™İÜÈ^HZ[\È[ˆİÛ™\ˆ\ÚÈ
+ØÜËÓÕÓ‘T—ÕTÒÔË›Y
+K‚ˆ
+ÌM˜XÚÙ[™\İÈ
+\İËİ\İİ\Ù\—ÚÛYWÜXÚØYÚ[™ËœX
+ÈÛİ[[İ™\›^HØ\ÙJK‚ˆH
+Š“™\˜H[‹\›ÙXİ™[˜[YJŠˆ
+İÛ™\ˆXÚ\Ú[ÛˆŒ‹LËLNK\ˆ‘T•WÕ’TÒSÓˆ0©ÌŠBˆÚ\Y[ˆHØ[YHØ]™Nˆ]™\H\Ù\‹Y˜XÚ[™Èİ\™˜XÙHØ^\È™\˜H
+QÚ›ÛYKİ]\Ëˆ™\˜VË™^WX
+ÈØİ[Y[ËÓ™\˜X[™[™Ë‘PQQH\›Ë™]È™]\˜[SˆÙÛÂˆØÜËØœ˜[™Û™\˜K[X\šËœİ™ØØZÙHÛÜ™™\˜XYYT•’TË›Y8¡¤ˆ‘T•K›YÚ]ˆ[Ü›ÜÜË\™Y™\™[˜Ù\È\]Y
+KˆÙ\ˆYÙ[\œÛÛ˜\È
+˜\š\ÈHHÜ˜Ú\İ˜]Ü‚ˆYÙ[
+K˜\š\ËZX˜™\ËÙ[™Ú[™HÛÙ[˜[YH
+ÈT•’T×Ê˜[ˆ™Yš^ˆİÛ™\‹[Û›H™\İ‚ˆHÚ]Xˆ™\È™[˜[YH
+ÕÓ‘T—ÕTÒÔÊKˆXÚ\Ú[ÛˆÙÎˆØÜËÒTÕÔ–K›Y‚‚ˆ
+Š•›ÚXÙHÜ˜ˆ8 %H™XXİ]™H\XÛHÜ\™JŠˆ
+YZØËİÛ™\ˆ™\]Y\İŒ‹LL‹œ›ÛHBˆ’‹K”‹•‹’K”Ëˆ[ˆH›ÛÛHˆZ[İZYJNˆœ›Û[™ÜÜ˜ËÛÜ˜‹ŞYÈ›ÚXÙSÜ˜˜HØ[˜\ËL‘ˆ\XÛHÜ\™H
+šX›Û˜XØÚH\İšX][Ûˆ
+ÈX]Ëİ[›Ú™Xİ[Ûˆ
+È\\ÚYYš[[Y[È
+È™XXİÜ‚ˆš[™ÜÊH›İ[™ÈH]™H\ÙU›ÚXÙJ
+Xİ]HXXÚ[™H8 %Ù™ˆÈİ[™[™ËXHÈ\İ[š[™ÈÈ˜[œØÜšXš[™ÂˆÈÜXZÚ[™ÈÈ\œ›Ü‹ˆÚ[™[XH[ÙHØZ[œÈHİYÙHXÚÙ\ˆ
+ØHÜ˜‹˜HY\ÚÈY\Úİ^\ÈBˆY˜][ÛÈ^\İ[™È[[ÜÈÜ[ˆ[˜Ú[™ÙY
+H[™HÛØÚÜ]›ÚXÙH[Ù]ÈHØ[YHÜ˜ˆ[›[™H[‚ˆXÙHÙˆH›]İ]\Èİˆ
+Š’Û™\İHÛÛ˜XİŠŠˆÛ›HHTÕS’S‘Èİ]HX^H™Hš]™[ˆHBˆYX\İ\™YÚYÛ˜[
+H™X[ZXÈ“TÈœ›ÛH›ÚXÙKØ
+NÈ]™\Hİ\ˆİ]H[œÈHš^Yœ™X][™Âˆ[š[X][Û‹\ÈX™[Yİ]H[š[X][Û˜[™›È[Y\šXÈ]™[\È]™\ˆ™[™\™Y8 %[ˆ[š[X][Ûˆ\ÂˆHİ]H[™XØ]Ü‹™]™\ˆHY]šXËˆ›È™]È\[™[˜ŞH
+›È™YKšœËÕÙX‘ÓĞÑŠK›È™]È[™Ú[›Âˆ˜XÚÙ[™Ú[™ÙNÈYÜ˜Y\ÈÈH›Û‹]›İÚ[™È[\HÚ[ÛˆH[‘ÛÛ^[™Û›İ\œÂˆ™Y™\œË\™YXÙY[[İ[Û˜
+ÈHQ	ÜÈØ[K[[İ[ÛˆÙ][™Ëˆ
+ÌMœ›Û[™\İÈ
+œ›Û[™š]\İˆ8¡¤ˆ
+ŠŒŠŠŠNÈØÈK[›Ñ[Z]›ÙXİ[ÛˆQZ[\İËİ\İÚYİŒ—Ü\š]KœX[™ˆ\İËİ\İÜ›İ]WÜ\š]WÙİX\™œXÜ™Y[‹ˆ[Øš[H\š]H˜XÚÙY\ÈNŒÈHİZYIÜÈ™[XZ[š[™ÂˆØ\
+[XšY[QŞ[˜ÊH\Èš[Y\ÈÌˆİZYK]œË\™\ÈX\‚ˆØØÜËÙ\ÚYÛ‹ÒT•’T×Ô‘TÑSÑWÑĞT›YJØÜËÙ\ÚYÛ‹ÒT•’T×Ô‘TÑSÑWÑĞT›Y
+K‚‚ˆ
+ŠœšYYš[™ÈØ[8 %H™Y™\™[˜ÙH^[İ]
+Šˆ
+Ø[YHİÛ™\ˆ™\]Y\İY\ˆš]™Hœ˜[Y\ÈÙˆHXİX[ˆšY[È\œš]™Y[™X]\šX[HÚ[™ÙYHš\İX[œšYYŠNˆœ›Û[™ÜÜ˜ËØ\œİŞYÂˆ™]\˜[\œİHØ[˜\ËL‘™]\˜[š\š[™ÈšY[8 %\‹]Y\ˆ[™š]H™Y\ÈÜ›İÛˆœ›ÛHBˆ]\›Z[š\İXÈÙYYŞ[˜\ÙH›Ù\ËÛ™ÈÚ]H^ÛˆİÙY\È[™H›İÛ‹[İ]ÛÜ™H8 %[™ˆœ›Û[™ÜÜ˜ËİØ[ŞYÈœšYYš[™ÕØ[H[Ø[\ØÜ™Y[ˆ›Ø\™
+]\œÜXÙYÛÜ™X\šËˆ]™H[[›š[™ÈÛØÚË›İ\ˆİ]Ø\™ËİXœŞ\İ[Hİ]\È˜Z[ÜÚÙ[ˆ[™KÛÜ›™\ˆœ˜XÚÙ]ÊBˆÚ]HšY[[X›YY™Z[™]ˆ]\ÈHœ˜Z[˜İYÙHÙˆÚ[™[XH[ÙH
+X[ˆ˜È˜ˆY\ÚØÜ˜ŠKˆ
+Š’Û™\İNŠŠˆ™YÚ[ÛœÈ\™H™X[ØXš[™]Y\œË›ÙH[œÚ]H›ÛİÜÈH™X[YÙ[ˆÛİ[Û›HY\œÈ]\™HXİX[H^Xİ][™Èš\™K[™\œİ[™\™ŞJ
+X™\ÜÈÚ]\ˆHYÚˆÛÛY\Èœ›ÛHHYX\İ\™YZXÈ]™[]™HÛÜšËÜˆYKˆH™Y™\™[˜ÙIÜÈYÙ[˜ŞHÔ\È\™H“Õˆ™\›ÙXÙY8 %HØ[YHÛİÈØ\œH›İ˜X›H™\˜HšYİ\™\Ë[™[][™È[›YX\İ\™Y™[™\œÈ8 %ˆÚ]H™X\ÛÛˆ]XÚYˆ
+ÌMHœ›Û[™\İÈ
+š]\İŒˆ8¡¤ˆ
+ŠÍÊŠŠKˆ›È™]È\[™[˜ŞK›Âˆ[™Ú[›È˜XÚÙ[™Ú[™ÙK‚‚ˆ
+Š•Ø[\ÜÈˆ8 %œ›ÛHHÛÈİÛ™\ˆšY[ÜÊŠˆ
+Hİ[œ˜[Y\ÈÙ\™HH\X[™XYÈHšY[ÜÂˆÚİÙYH[Øš[HZ[ÛÊNˆ™YÚ[ÛˆÚ\È\™H›İÈ›Ü™\™Y]\ÈÚ]HXÚÈÛÛİ\™YYÙH˜\‚ˆ[™HˆYÙ[È0­Èš\š[™È	H0­Èˆ\ÚÜØİX‹[[™H
+Hš\š[™ÈÚ\™H\È™X[ˆ^Xİ][™ËÜ›Üİ\ŠNÈBˆØ[ØZ[œÈH
+Š’ÓÈSÊŠˆÛÛ›ÛÚ\™YÈH]™H\ÙU›ÚXÙJ
+XÛÜ
+™\ÜÈİ\Ë™[X\ÙBˆİÜË™Y\Ú[™ÈÛ™\İHÚ[ˆHZXÈ\È]]YÜˆHœ›İÜÙ\ˆØ[››İØ\\™H]Y[ÊNÈÛÛ\ÙYˆ
+ŠQÑS•ÔÈÈĞP’S‘U
+ŠˆYÙHXœÈØ\œH]™HÛİ[È[™›ÜH˜YÙH[œİXYÙˆÚİÚ[™ÈˆÚ[ˆH\ÚÈ™YY\È[˜]˜Z[X›NÈ[™[™\ˆŒHØ[ZÙ\ÈH™Y™\™[˜ÙIÜÈÜ˜Z]ˆ^[İ]8 %Ø\™ÈÚ]™HØ^HÈHYÙHXœËÚ›ÛYHÙ[™\Ë[™H[È]ÛˆXYËˆ
+ÍHœ›Û[™ˆ\İÈ
+š]\İÍÈ8¡¤ˆ
+ŠŠŠŠK‚‚ˆ
+Š•Ø[\ÜÈÈ8 %[YÜ˜][Û‹\™]šY]Èš^\ÊŠˆ
+İÛ™\ˆ™]šY]ÈÛˆÎËXYNMÍX
+NˆÛÈ]šY[˜ÙBˆ›İ[™\šY\È˜Z[YÜ[ˆ[™\™H›İÈÛÜÙYˆ
+JHÛİ\˜Ù\Ë\ÚÜØ\ÈH›ÛÙˆH\ÚÈ™YY[œİÙ\™Yˆ
+\ÊˆØYÈH™]Z[™Y\œ˜^Hœ›ÛH[ˆX\›Y\ˆÛ›ÈÛ™Ù\ˆ™XXÚ\ÈØ[İ]X\œİ[™\™ŞXÜ‚ˆ™]\˜[\œİÛÈHØ[Ø[ˆ™]™\ˆÛZ[HÓÔ’ÒS‘ÈÈš\š[™È™YÚ[ÛœÈÈ\ÚÈÚ\ÈÚ[H]ÈİÛˆ˜Z[ˆ™\ÜÈ\ÚÈ™YY0­È›È]Xˆ
+ŠH\İ\È[X™\˜][H‘URS‘QXÜ›ÜÜÈÛÈ[ˆ\Şˆ
+Yˆ
+\İ
+HÙ]\İ
+\İ
+X
+KÛÈHİ[HZXÎ‰ÛÛ‰ØÛİ[İ]]™H]È]šY[˜ÙH8 %BˆÓÈSÈÛÛ›Û[™H˜Z[	ÜÈZXËÜİšXİ[ØØ[›İÜË›İÈÙ^HÙ™ˆÛİ\˜Ù\Ë\İ[™˜Z[ˆÛÜÙYÚ]\İİ]\È[˜]˜Z[X›X˜]\ˆ[ˆÜ[š[™ÈHZXÜ›ÜÛ™HÛˆ[œ›İ™[ˆİ]KˆBˆ›ÛÛKY˜XÚ[™ÈÜÚÙ[ˆ[™HØZ[™YH\œÚ\İY™YXİ[ÛˆÛÛ›Û
+YØ[˜[œØÜš\ˆS”ĞÔ’TÑQUSÕ’TÒP“X›\ÈH[œİ[][ÛˆY˜][
+Kˆ
+ÎHÜİ[Hœ›Û[™\İË[ˆ™Y\›İ™YYØZ[œİH™KYš^ÛÙH
+š]\İˆ8¡¤ˆ
+ŠLJŠŠK‚‚ˆ
+Š•Ø[\ÜÈ8 %ÙXÛÛ™[YÜ˜][Ûˆ™]šY]ÊŠˆ
+XYYNX˜
+NˆHZXÜ›ÜÛ™H›İÈ˜Z[ÈÛÜÙYİ™\‚ˆ]ÈÚÛH
+›Y™XŞXÛJ‹›İ\İ]š\œİ™[™\ˆ8 %Ø\\™H™YYÈİ\œ™[Ûİ\˜Ù\Ë\İ]šY[˜ÙBˆ
+Š˜[™
+Šˆ[ˆ^XİZXÈOOH	ÛÛ‰Ø
+Z\ÜÚ[™Ëİ[šÛ›İÛ‹ÛX[›Ü›YY]]Üš^™\È›İ[™ÊK[™]İÜÈÛ‚ˆ\›Z\ÜÚ[ÛˆÜÜË\İ^\H[™[›[İ[ÜİYÙK\İÚ]ÚÈHÛÛ›Û\ÈÙ^X›Ø\™[Ü\˜X›Bˆ
+ÜXÙKÙ[\‹™\X]\ØY™JKˆH›ÛÛKY˜XÚ[™ÈÜÚÙ[ˆ[™H›İÈY˜][ÈÈ
+ŠšY[ŠŠˆ8 %HİÛ™\‚ˆ™XY™š\›YYY˜][ZYHİ™\ˆH™Y™\™[˜ÙIÜÈ[Ø^\Ë[Ûˆ[™KÛÈÚİÚ[™È]\È[ˆ^XÚ]ˆ\œÚ\İY\‹Z[œİ[][ÛˆÜZ[‹ˆÛÈ[™]šY[˜ÙY™\›ÜÈ\™HÛÛ™NˆVPÕUS‘ØØ]\ÈÛ‚ˆÛİ\˜Ù\Ë˜YÙ[Ø[™PÒTÒSÓ”ÈS‘S‘ØÛˆHXœÙ[˜ÙHÙˆ[H]™HXÚ\Ú[Ûˆ™YY
+\™H\È›Âˆ[™Ú[Y]8 %]™[™\œÈ8 %Ú]]™X\ÛÛˆİ]ÚYH[[ÊKˆHQ[İ[Ûˆ™Y™\™[˜ÙH\ÈÚ\™Yˆ[™]ËY[™
+\8¡¤ˆÚ[™[XH8¡¤ˆÜ˜‹ÛY\ÚØ\œİ[™HÛØÚÜ]	ÜÈ[›[™HÜ˜ŠKÛÈHØ[K[[İ[ÛˆÛZ[Bˆ[ˆØÜËÕ“ÒPÑK›Y\È›İÈYH[œİXYÙˆ\Ü\˜][Û˜[È[šÛ›İÛˆ\İ™XYÈRPÈ0­ÈS’Ó“ÕÓ˜‚ˆØÜÎˆH™\Ù[˜ÙHØÈÚ[Y[XšY[ÛÜšÈ]ŒË[œİXYÙˆÌÈHÛ™HÛZ[\È\™Bˆ˜\œ›İÙYÈHœ›İÜÙ\ˆQÚ]˜]]™H˜XÚÙY\È™]È
+Š’NŒJŠˆ
+[Øš[KÔT’UK›Y›\ÈBˆØ[œ›ÛH8§¥ˆÈ8«'
+NÈ[™HØ[\ØÜ™Y[ˆ›ÛÛH˜[Y][ÛˆHØÈ
+˜ÛZ[YY
+ˆØ\È[‚ˆØÜËÓÕÓ‘T—ÕTÒÔË›Y\È›İÈXİX[H\™H
+YÚXš[]KZXÈXÚİ\XÚË\‹\›ÛÛHš]˜XŞJK‚ˆ
+ÌLÈÜİ[Hœ›Û[™\İÈ
+š]\İLH8¡¤ˆ
+Š
+ŠŠK‚‚ˆ
+Š•Ø[\ÜÈH8 %\™™]šY]È›İ[™
+Šˆ
+XY˜ÎYNMX
+NˆH
+Š˜Ø\\™KXY\‹XØ[˜Ù[][Ûˆ˜XÙJŠˆ[‚ˆœ›Û[™ÜÜ˜Ëİ›ÚXÙKØ\ÈÛÜÙYˆÙ]\Ù\“YYXJ
+XØ[ˆÚ]ÛˆH\›Z\ÜÚ[Ûˆ›Û\›ÜˆÙXÛÛ™ÎÂˆİÜ
+
+Xİ[›[İ[™[X\ÙYHİ™X[H]Y›İ^\İY]ÛÈH]K\™\ÛÛš[™È\›Z\ÜÚ[Ûˆ[‚ˆX›\ÚYHİ™X[KÙ[Xİ]™H[™[\™YH[™ËYœ™YHÛÜ8 %Ø\\™Hİ\[™È
+˜Y\Š‚ˆ]]Üš^˜][ÛˆØ\ÈÚ]˜]Û‹ˆH[Û›İÛšXÈİ\Ù[”™Y˜›İÈ[˜[Y]\È[™[™Èİ\ÎˆHİ[Bˆ™\ÛÛ][ÛˆİÜÈ]™\H™]\›™Y˜XÚÈ[™X›\Ú\È›İ[™ËˆÙXÛÛ™ˆ\ÙU›ÚXÙJ
+X™]\›œÈHœ™\ÚˆÜ˜\\ˆXXÚ™[™\ˆ[™HØ[	ÜÈ\™[™\™[™\œÈ]™\HÛØÚÈXÚËÛÈHØ[	ÜÈ[›[İ[ˆÛX[\
+Ù^YYÛˆ]Y[]JHØ\ÈİÜ[™ÈH˜[YØ\\™HX›İ]Û˜ÙHHÙXÛÛ™8 %™[X\ÙH[™ˆÛX[\›İÈÙ^HÛˆHİX›HİÜ™Y˜™]™\ˆHÜ˜\\‹ˆ\™ˆH›Üİ\ˆ]šY[˜ÙH[HØ\ÈÛ›Bˆ[‹X\YY8 %]šY[˜ÙPYÙ[Ø›İÈØ]\È]™\H›Üİ\‹Y\š]™YÛÛœİ[Y\ˆ
+Ø[İ]Xˆ\œİ[™\™ŞX™]\˜[\œİHš\š[™ÈÛİ[[™HĞP’S‘U˜YÙJK›İ\İHÛÈÙ[Ë‚ˆ›İ\ˆH›Ûİ\ˆ™[™\™YHX[›Ü›YYZXØ˜[YH\ÈÔS‹ÒQNÈÛ›H[ˆ^XİÛ˜ØÙ™˜X\ÈÂˆÔS‹ÒQKÓUUQ[™]™\][™È[ÙH™XYÈS’Ó“ÕÓ˜ˆ
+ÌM\İË[›İ\ˆ™Y\›İ™YYØZ[œİBˆ™KYš^ÛÙH
+š]\İ8¡¤ˆ
+ŠÎ
+ŠŠK‚‚ˆ
+Š•Ø[\ÜÈˆ8 %›İ\™]šY]È›İ[™
+Šˆ
+XYLØŒÌLX
+NˆÛÈ™YÜ™\ÜÚ[ÛœÈœ›ÛHH™]š[İ\È\ÜË‚ˆ
+JHH›Üİ\ˆ]šY[˜ÙHØ]H[\YY
+Š™[[È[ÙJŠˆØY˜\š\Ñ]JYJXÙYYÈH›Üİ\ˆÚ[BˆX]š[™ÈÛİ\˜Ù\Ë˜YÙ[Ø˜[ÙHÛˆ\œÜÙH8 %]›YÈYX[œÈ
+œ™X[]™Jˆ]šY[˜ÙH[™[[È\ÈBˆÙ\\˜]KØ]\›X\šÙY›İ™[˜[˜ÙH8 %ÛÈH[[ÈØ[Üİ]ÈšY[Ûİ[È[™˜YÙK‚ˆYÙ[]šY[˜ÙX›İÈXØÙ\È[[ÈÛİ\˜Ù\Ë˜YÙ[ÈOOHYXÚ]H™YÜ™\ÜÚ[ÛˆÚ\YZÙHBˆ™X[ØY\‰ÜÈ[[Èİ]]
+›İHÛÛ™[šY[Ûİ\˜Ù\Ë˜YÙ[ÎYXHX\›Y\ˆÜÚ]]™HÛÛ›Ûˆ\ÙY
+H\ÈH›Û‹Y[[È™YØ]]™HÛÛ›Ûˆ
+ŠH[ˆ›ÚXÙKØH
+Šœİ[H\›Z\ÜÚ[Ûˆ™Z™Xİ[ÛŠŠˆœ›ÛBˆHİ\\œÙYYİ\İ[X›\ÚY\œ›Ü˜İ™\Üš][™ÈHÑ‘ˆİ]HHİÜ
+
+XY\İÙ]ÈBˆØ]Ú›İÈÛÛ\\™\ÈÙ[™\˜][ÛœÈš\œİˆ›İYÛ™\İNˆH™]šY]Ù\‰ÜÈÙXÛÛ™[\›X]š[™È
+İ[Bˆ™Z™Xİ[ÛˆÚ[HH™]Ù\ˆØ\\™H\È]™JH\ÈÛİ™\™YHHØ[YHİX\™]\È
+Š››İ™Y\›İ˜X›JŠ‚ˆ›İYÚHÛÚÉÜÈX›XÈİ]H8 %H[›š[™ÈÛÜÛX\œÈİ]\ËÙ\œ›Üˆ]™\H]\˜][Ûˆ8 %ÛÈ›Âˆ\İ\ÈÛZ[YY›Üˆ]ˆš]\İÎ8¡¤ˆ
+ŠŠŠ‹‚‚ˆ
+Š•Ø[\ÜÈÈ8 %šY™]šY]È›İ[™
+Šˆ
+XYYŒÍÌ™X˜
+Nˆ
+JHHSSÈÛÜœ\ÈØ\ÈX™[Y\È]™Bˆ]HÚ[]Ø\È™XY8 %ĞP’S‘U0­È“ÕÈ0­È]™XTÈÑTÔÒSÓˆ0­ÈYX\İ\™Y
+İ™\ˆ\Ş	ÜÈ[[ÂˆØØ[İHØ
+H[™HİXœŞ\İ[H˜Z[8 %]™[ˆİYÚHYÙHÚ›ÛYHØZYSSËˆ›İ™[˜[˜ÙH\È›İÂˆ\‹XØ\™ˆ]™\Hİ[\™XYÈ[[È0­ÈÙYYY[ˆ[[Ë[™H™YÜ™\ÜÚ[Ûˆ\Èš]™[ˆHH‘PSˆØY˜\š\Ñ]JYJXİ]][œİXYÙˆH[™XZ[›ÜÈÚ\K\ÜÙ\[™ÈXXÚØ\™	ÜÈİ[\‚ˆ
+ŠHHÛÈİ[K\™Z™Xİ[Ûˆ[\›X]š[™ÜÈH™]š[İ\È\ÜÈØ[Y[œ›İ˜X›HT‘H›İ˜X›NˆÚ]BˆYYXT™XÛÜ™\˜[ØÚÈ]™]™\ˆÛÛ\]\È[ˆ]\˜[˜ÙKH™]Ù\ˆÙ\ÜÚ[Ûˆ\šÜÈ[ˆ\İ[š[™Ø[™ˆHİ[HÜš]H\ÈZ[›Hš\ÚX›KˆÛ\‹\™Z™XİXY\‹[™]Ù\‹\İXØÙ\ÜÈ›İÈ™Y\›İ™\ÈHØ]ÚİX\™ÂˆH[›[İ[][‹\™Z™XİØ\ÙH\ÈÙ\\È[ˆ[˜\šX[Ú]]ÈÙXZÙ\ˆİ]\ÈX™[Y[ˆH\İ‚ˆš]\İˆ8¡¤ˆ
+Š
+Š‹‚‚ˆ
+Š•Ø[\ÜÈ8 %Ú^™]šY]È›İ[™
+Šˆ
+XY˜MÙ˜Y˜
+NˆH\‹XØ\™[[Èİ[\YY[ˆ\ÜÈÈØ\ÂˆHZ\œ›ÜˆÙˆHYÈ]š^YˆH
+Š˜ÛÛ›™XİY
+Šˆ[[ÈÙY\ÈÛ[™È[™™\XÙ\ÈÙYYY˜[Y\ÈÚ]ˆ™X[Û™\È\ÈXXÚÛİ\˜ÙH[œİÙ\œÈ
+Ûİ\˜Ù\Ë˜YÙ[Ø˜Ø[[™\˜šX\™X]\ÚÜØ\İˆ\™HÙ][™\[™[JKÛÈİ[\[™È]™\HØ\™[[È0­ÈÙYYYœ›ÛH[[ÈOOHYX™[X™[Yˆ]™H]H\ÈÙYYY8 %[™Û™HØ\™Ø[ˆYÚ][X][HÛ›İ]Û˜ÙKÚXÚ›ÈÚ[™ÛHØ\™X™[ˆØ[ˆ\ØÜšX™Kˆ›İ™[˜[˜ÙH\È›İÈ
+Šœ\ˆÙ[
+Šˆ
+]K\›İ˜\ÈHš\ÚX›HÙYYYYÈÛˆÙYYYˆ˜[Y\ÊK[™HØ\™İ[\\È
+™\š]™Y
+ˆœ›ÛHHÙ[È]XİX[HÚİÜÎˆ]™XØYX\İ\™Yˆ[[È0­ÈÙYYYÜˆZ^Y0­È]™H
+ÈÙYYYˆØØ[İ›İ™[˜[˜ÙH\È\ÜÙYœ›ÛH\Şˆ
+YX\İ\™YÈİšXİ[ØØ[ÈÙYYY
+H[œİXYÙˆ[™™\œ™Yœ›ÛH[[Øˆš]\İ8¡¤ˆ
+Š
+Š‹ˆÚ]ÛÛ›™XİY\X[KXÛÛ›™XİY[™Z^YXØ\™™YÜ™\ÜÚ[ÛœÈ[Û™ÜÚYHHÙ™›[™KY[[È[™ˆ›Û‹Y[[ÈÛÛ›ÛË‚‚ˆ
+Š•Ø[\ÜÈH8 %Ù]™[™]šY]È›İ[™
+Šˆ
+XYXXX˜
+NˆH
+Š™˜Z[XÛÜÙY\İ\œÙJŠ‹ˆHØ[	ÜÂˆ™^XİZXÈOOH	ÛÛ‰Øˆ[HØ\ÈY™X]Y\İ™X[HHHY\\ˆ[ˆ\KÛØY\œËØ‚ˆZXÎˆ›ZXÈ	ÛÛ‰Ø\›™YHZ\ÜÚ[™ËÙ[\KØØ˜[ÙX˜[YH[È[ˆY™š\›X]]™H\›Z\ÜÚ[Û‹[™ˆİšXİÛØØ[ˆHYœİšXİÛØØ[\›™YHÕ’S‘È™˜[ÙH˜[ÈHYHÛİ™\›˜[˜ÙHÛZ[H
+ÚXÚˆ[ÛÈ™YYÈH\š]™YL	HØØ[]HšYİ\™JKˆÛ›HH]\˜[İš[™ÜËØ›ÛÛX[ˆ›İÈÛİ[È[][™Âˆ[ÙH\È[šÛ›İÛ˜[™™Y\Ù\ÈØ\\™Kˆ[ÛÎˆØ\™İ[\
+
+X™]\›™YH]™HX™[Ú[ˆHØ\™Yˆ›İ[™ÈÈÚİËÛÈ[ˆ[X8 %Ø\™[››İ[˜ÙY]šY[˜ÙH]XÚÙY
+›İÈ›È]šY[˜ÙX
+NÈH[[ÂˆYÙHØ\[ÛˆØ\È[˜ÛÛ™][Û˜[ÛÈH[HÛÛ›™XİY[[È\ØÜšX™Y]™H]H\ÈÙYYY
+›İÂˆ\š]™Yœ›ÛHH™X[Ûİ\˜ÙHZ^
+NÈHÙ[Ú]›ÈXÛ\™Y›İ™[˜[˜ÙHY˜][YÈ]™X
+›İÂˆ[šÛ›İÛ˜
+NÈ[™[ˆ[\HÙYYYXÚ\Ú[Ûˆ\İ™[™\™Y˜]\ˆ[ˆ8 %ˆ
+ÌLÈ\İË[ˆ™Y\›İ™Y
+š]\İ8¡¤ˆ
+ŠLJŠŠK‚‚ˆ
+Š•Ø[\ÜÈL8 %ZYÚ™]šY]È›İ[™
+Šˆ
+XYÍMXL˜
+Nˆ›İ™[˜[˜ÙHX™[È]\İ˜[YHHPÕPSˆÛİ\˜ÙKˆHİšXİ[ØØ[L	H\È
+™\š]™Y
+ˆœ›ÛHHÛİ™\›˜[˜ÙH›YË›İYX\İ\™Y]HØ[›ÛYˆ]™\H›Û‹\ÙYYYØØ[]HÛİ\˜ÙH[È]™X[™TÈÑTÔÒSÓ˜[ˆİ[\Y]YX\İ\™YˆBˆ™YK]Ø^HÛİ\˜ÙH\È›İÈ™\Ù\™Y[™È[™
+YX\İ\™YÈİšXİ[ØØ[ÈÙYYY
+KH\š]™Yˆ˜[YHØ\œšY\È]ÈİÛˆš\ÚX›HYË[™Ø\™İ[\
+
+XØZ[™Y\š]™YÈZ^Y0­È]™H
+È\š]™Y‚ˆH\š]˜][Ûˆ[İ™Y[Èœ›Û[™ÜÜ˜ËÛØØ[]KØÛÈH™XXÚX›H\]\È\İX›H8 %[‚ˆ[[ÈH\ÚÚ\ÈØØ[]HØY[™È[™HØY\ˆÛX\œÈ]ÛÈ]œ˜[˜ÚØ[››İ™H™XXÚYBˆH›ÜÈš^\™H][ˆ[ÛÎˆHUS•SÓˆØ\™\ÜÙY]Y]YX
+›İH›İ™[˜[˜ÙJH\È]È[[]™BˆX™[ÛÈHØ\™Ú]]™HØ[[™\‹ÚX\™X]]šY[˜ÙHİ[\Y]Y]YXÈ]›İÈİ[\È]™X‚ˆ
+ÌLˆ\İË™Y\›İ™Y
+š]\İLH8¡¤ˆ
+ŠLLÊŠŠK‚‚ˆ
+Š•Ø[\ÜÈLH8 %š[™]šY]È›İ[™
+Šˆ
+XYLÌL˜Ù˜
+NˆTÈÑTÔÒSÓ˜İ[\YYX\İ\™YÚ[™]™\‚ˆ]ÈÙ[ÈÙ\™H]™KÛÈHØ\™ÚÜÙHÛ›H]šY[˜ÙHØ\ÈH\İ™XY
+ÓÕQS‘JH8 %ÜˆH™\ÚY[ˆ[Ù[8 %ÛZ[YYÈ]™HYX\İ\™YÛÛY][™ËˆH]™HX™[\È›İÈÛÛ™][Û˜[ÛˆHÙ[Z[™[Bˆ
+›YX\İ\™Y
+ˆØØ[]HÜ]™Z[™È[[Û™ÈH˜[Y\ÈÚİÛÈİ\Ú\ÙHHØ\™™XYÈ]™XˆÛ™HÙ‚ˆH™]š[İ\È\ÜÉÜÈ\İÈY[›™Y]ÛÛ˜YXİ[Ûˆ
+]™HÙ[
+ÈYX\İ\™YØ\™
+H[™\Âˆ™\XÙYÚ]HØY\‹\Ú\Y\İ[Û›H™YÜ™\ÜÚ[ÛˆYYˆš]\İLLÈ8¡¤ˆ
+ŠLMJŠ‹‚‚‹KKB‚ˆÈÈ<'äâÈØÜË]œËXÛÙHXØİ\˜XŞH\ÜÈ
+Œ‹LËL8 %™X]\™K\ÚY]]Y]
+B‚ˆÈÛZ[\Èœ›ÛH‘PQQK›YØØÜËÑ‘PUT‘TË›Y™\šYšYYYØZ[œİÛİ\˜ÙH
+ˆ\˜[[™\ÙX\˜Úˆ\ÜÙ\ÊNˆ
+ŠŒÍˆ]™H0­ÈLH\X[ÙY˜][[Ù™ˆ0­È˜XœšXØ]Y
+Š‹ˆÛÛ\[Y[ÈHŒ‹LËLNˆ]™K]œË\[Xš[™È]Y]™[İÈ8 %]\XÈš^\È
+˜ÛÙJˆÛ™\İH
+SĞÒÈ˜YÙ\ËYÜ˜YYİ[\ÊNÂˆ\È\ÜÈš^YH
+™ØÜÊ‹ÚXÚ˜\œ˜]YÜZ[ˆ˜Z[È\ÈÙ[™\˜[HÛ‹ˆPÒÓÑÈØ\È[™XYBˆXØİ\˜]H
+ËŒÈØ^\ÈY˜][[Ù™ŠH8 %\ˆHİ\ÙH[KHİ[HØÜÈÙ\™Hš^YÈX]Ú]‚‚‹HŞHØÜËÑ‘PUT‘TË›Y8 %Xİ[ÛˆÙ\›™[[]›İÈ˜[Y\ÈH[Ø^\Ë[Ûˆš\ÚË]Y\ˆØ]H[™X\šÜÂˆHÙ\›™[ÜZ[ˆ
+T•’T×ĞPÕSÓ—ÒÑT“‘S
+NÈÔ’V“Ó•È™[]™\™Yˆ8¡¤ˆÛÙKXÛÛ\]HÚ]Bˆ\™›Ü›J
+X˜XØYH
+ÈX\›™Y]]Û›Û^H^XÚ]HY˜][[Ù™ÈX\›™YX]]Û›Û^HÙ[[˜ÙHØ\œšY\Âˆ]È›YÎÈ›ÚXÙH™]ÛÜ™Y
+œ›İÜÙ\‹[ZXÈÛÜÚ\ÎÈÙ\™\ˆØZÙHÛÜ™HÜ[Û˜[˜]]™H\ÊNÂˆ\ØÛÜ™ÔÛXÚÈX\šÙYÑËZ[œİ[ÈYÚ[ˆ[]Y™\\Ù\ÈHSĞÒËÙYÜ˜YYÛ™\İH^Y\Âˆİ[HÛİ[È™Yœ™\ÚY
+Íx¡¤›İ]\ÎÈÌ
+ËÌŒKÍMH8¡¤ˆKÌ
+ËÌÍÌÎMˆ\İÎÈ]HŒ‹LËL
+K‚‹HŞH‘PQQK›Y8 %\Ú\È[™H™]™\H]]Û›Û[İ\ÈXİ[ÛˆÜ›ÜÜÙ\ÈÛ™HXİ[ÛˆÙ\›™[ˆ8¡¤ˆÛ™\İˆœš\ÚËYØ]Y8 )‹ÛÛ™\™Ú[™ÈÛˆÛ™HXİ[ÛˆÙ\›™[YYX][ÛˆÚ[
+ÜZ[ˆÚ[H]\™[œÊH‹‚‹HÈHİÛ™\ˆXÚ\Ú[Ûˆ
+\šÙY[ˆØÜËÓÕÓ‘T—ÕTÒÔË›Y›İÜš[ØÛÜJNˆYš[™HH›\[Û‚ˆÜš]\šXH›ÜˆT•’T×ĞPÕSÓ—ÒÑT“‘S
+ÈT•’T×ÕS’Q’QQĞPÕSÓ—ĞTX8 %Ú[ˆÙ\ÈHÙ\›™[ˆ™XÛÛYHHY˜][˜Z[[œİXYÙˆHÜZ[ˆÛ™OÂ‚‹KKB‚ˆÈÈ<'ébˆ™\˜HœÈ\›Y\ÈYÙ[8 %Û™\İØ\[˜[\Ú\È
+Œ‹LËLJB‚ˆ[[˜[\Ú\È
+È]šY[˜ÙNˆØØÜËÜ™\ÙX\˜ÚÌŒ‹LËLK[™\˜K]œËZ\›Y\ËZÛ™\İYØ\X[˜[\Ú\Ë›YJØÜËÜ™\ÙX\˜ÚÌŒ‹LËLK[™\˜K]œËZ\›Y\ËZÛ™\İYØ\X[˜[\Ú\Ë›Y
+K‚ˆ\›Y\ÈÚYH™KYÜ›İ[™Y]™H
+™\È
+È™[X\Ù\È
+ÈØÜËŒ‹LËLJNˆ
+ŠŒŒNKŒ
+Šˆ
+ËLŒ
+KŒŒŒZø¦!Kˆ™[X\Ù\È]™\HŒ¸ $ÌÈÙYZÜÎÈ]›İÈÚ\È
+Šœ™X[\ÚİÜÛÛ\]\‹]\ÙJŠˆ
+İXKYš]™\˜XXËİÚ[‹Û[^ˆLL^H
+ÈØÜ™Y[œÚİË\‹XXİ[Ûˆ\›İ˜[
+K™X[œ›İÜÙ\ˆ]]ÛX][Ûˆ
+ØØ[Ñ
+Èœ›İÜÙ\˜˜\ÙH
+Âˆœ›İÜÙ\ˆ\ÙJK
+Š’ÛYH\ÜÚ\İ[]šXÙHÛÛ›Û
+Šˆ
+WÛ\İÙ[]Y\ØØWÙÙ]Üİ]XØWÛ\İÜÙ\šXÙ\ØÂˆWØØ[ÜÙ\šXÙX
+KÛX\\›İ˜[È
+Š˜HY˜][
+Š‹š]Ø\™[‹ÌT\ÜİÛÜ™ÙXÜ™]Ûİ\˜Ù\ËÙÛØ[ˆÛÛ\][ÛˆÛÛ˜XİÈ™\šYšYYYØZ[œİ]šY[˜ÙK[™ÚÚ[ËRXˆÙXİ\š]HØØ[›š[™Ë‚ˆ
+Š•™\šYšXØ][ÛŠŠˆH[˜[\Ú\ÈØ\È]Ù[ˆ]›İYÚ[ˆLKXYÙ[Y™\œØ\šX[\ÜÈ
+ˆ™Y]\œÈ
+ÂˆHY\[š[™È\ÜÙ\ÊH8 %
+ŠŒLÈÛZ[\È]Y]YˆÛÛ™š\›YYMˆ™Y]Y[Ü‹\\X[M‚ˆİÜKXÚ[™Ú[™ÊŠ‹ˆH][\È™[İÈ\™HH
+˜ÛÜœ™XİY
+ˆÛ™\ÎÈH˜Y	ÜÈİÛˆ\œ›ÜœÈ\™H™XÛÜ™Y[‚ˆ0©ÎHÙˆHØË‚ˆ
+Š’XY[™NŠŠˆ\˜Ú]Xİ\˜[HZXYÜ\˜][Û˜[H™Z[™8 %[™™YHÙˆİ\ˆ™Ø]Yˆ™Z]š[İ\œÈ\™Bˆ
+Š˜œ›ÚÙ[ˆ˜]\ˆ[ˆØ]Y
+Šˆ
+0©ÌËŒˆÙˆHØÊKˆÛÜœ™XİYËX˜\ˆÛİ[ˆ
+ŠÙˆ˜\œÈ]™HHÒKYÜ™Y[‚ˆ\Y˜Xİ
+ÌKÔÌ‹ÔÌËÔÍJK]™H›Û™H
+ÍÔÍ‹ÔÍËÔÎ
+K[™Ùˆ]™H›È\Y˜Xİ›ÙXÙYÛˆ™X[ˆ\™Ø\™HÜˆØÛÜ™YYØZ[œİ\›Y\ÊŠˆ8 %HX\›Y\ˆÈÙˆ]™H›È\Y˜XİˆØ\ÈÜ›Û™ËˆÍÈ\Âˆ
+[œ™XXÚX›HHÛÛœİXİ[ÛŠˆ
+]™\H8 $Ôˆ™X[]HXÚÈ\È›Û[İX›Nˆ˜[ÙXÚ[HH\›™\ÜÈ\ÂˆHÛ›H]È‘T’Q’QQ
+Kˆİ›Û™Ù\İ˜Xİ›Üˆİ\ˆ[Ø]ˆ\›Y\È\ÜİYHÍÈ
+ÒKLMˆ\ÚXÚZ[™YˆXİ[ÛˆÙÊHØ\ÈÛÜÙY
+Šˆ››İ[›™YŠŠˆ8 %^H]™HXÛ[™YÈZ[H[™ÈÙHZ[[™Yˆ\ØÛÛ›™XİY[ˆ›ÙXİ[Û‹‚‚‹HÈH<'å-
+Š‘ĞTL8 %\İšX][Ûˆ\ÈHš[™[™ÈÛÛœİ˜Z[[™ÙH]™HH]KŠŠˆH™\È\Âˆ
+ŠœX›XÊŠˆ
+8¦!KMÎHÛÛ[Z]ÊH[™X\šÙ][™ËØ[K]\İ[™ËÌŒ‹LËLLY˜‹\™\ÜÛœÙK]šXYÙK›Y™XÛÜ™ÂˆHØ[\ZYÛˆ]™XXÚY
+ŠŒNˆ[š\]YHš\Ú]ÜœÈÈMH[\˜Xİ[ÛœÈÈŒMˆØ\›HXYÊŠˆ[™ÛÛ™\Yˆ
+ŠŒ
+Šˆ\ÚYÛˆ\™\œÈ
+MÈİ[8«'šYY[ˆ^\È]\ŠKˆ[X[™^\İÎÈ[YK]ËYš\œİ]˜[YH\ÈÚ]ˆ˜Z[Ëˆ\Èİ]˜[šÜÈ]™\HØ\Xš[]H][H™[İË‚‹HÈH<'å-
+Š‘ĞTLH8 %Nš\œİ]™\][™È[ÙHY\‹ŠŠˆ›İHH[\ˆ^Û›Û^Nˆİ\ÙH
+ÈØ[Y\˜\È\™Bˆ
+˜ÛÛ™šYİ\˜][ÛŠˆÛÜšÈ
+™X[ÛY[ÈÚ\Û›HHSˆ]šXÙH\ÈZ\ÜÚ[™ÊNÈ
+Š›YYXH\Èš]™\‹[Z\ÜÚ[™ÊŠ‚ˆ
+›ÈYYXQš]™\˜[\[Y[][Ûˆ^\İÈ[™›İ]\œËÛYYXWÙ\™XİÜ‹œX\È›È[š™Xİ[ÛˆÚ[8 %BˆİÛ™\ˆ]\İÜš]Hš]™\ˆÛÙJNÈ
+Š˜XÜ]Z\Ú][Ûˆ\ÈØ[\‹[Z\ÜÚ[™ÊŠˆ
+™YYÈHÛÛ˜Xİ˜XİÜH
+ÈBˆšYÙÙ\‹›İ\İHØ[\ŠKˆN	ÜÈ™\Ù[
+
+X[™H\È›İHÛÛ™šYÈ\ÚË‚‹HŞH<'å-
+Š‘ĞTL˜KØ‹ØÈ8 %™YHÙˆH›İ\ˆÛ™K[[™Hš^\ÎˆÓ‘KŠŠˆÚ\YÙÙ]\ˆ\Âˆ™Y˜][È]\™Hœ›ÚÙ[‹›İÙ™ˆ‚ˆHŞH
+ŠŠJHHX\›š[™ÈÛÜØ\È[œ™XXÚX›JŠˆ8 %ÛÙÛš][Û‹œ™]šY]×Ù[˜X›YYYÈĞU‘LWÑ“QÔØˆ
+›ÙXİÜÜİ\™KœX
+Kˆ›İØ]™KLHÜİ\™\È
+ÛÛ\[š[ÛˆÈ\ÚYÛˆ\™\ŠH[˜X›YHX\İ\ˆ›YËˆY[[ÜKX\›š[™È[™\œÛÛ˜[]H]ÛZ]Y™]šY]×Ù[˜X›Y[™İX—Ù[˜X›Y
+
+X™YYÈ›İ8 %ÛÂˆHÔ’V“Ó•Œ\‹]\›ˆ™]šY]ÈY™]™\ˆ[ˆ›Üˆ[[Û™Kˆ›İ™[˜[˜ÙH\È]]ÛX]XÈ
+ÔÓTÒÕÑ“QÔØˆ\š]™\Èœ›ÛHĞU‘LWÑ“QÔØÛÈ[™YH\İİ\™˜XÙ\ÈÚİÈÛİ\˜ÙO\›ÙXİœÜİ\™N˜[YO˜ˆØ]\ÙZ[™ÈÌ‹T‹ÑJKˆÛÜİØ\È[™XYH›İ[™YˆZ[HYÙ]Œ
+ÈØY[˜ÙHÛ›Øˆ
+ÈİšXİ[ØØ[ˆØØ[Ø˜XÚÙ[™]˜Z[ÈÛÜÙY‚ˆHŞH
+ŠŠŠHY˜][Z[œİ[Y[[ÜHÜİ\İÜHÛˆ™\İ\
+Šˆ8 %\İÜÙ\ÜÚ[ÛœÊ
+XÛØ˜™Y]™\Bˆ
+‹šœÛÛ˜[ˆH]H›Ûİ[™˜[šÙY[]Y\ËšœÛÛ˜
+™]Üš][ˆHHÑÈÛˆ[H\›ˆÚ]H›Ü\‚ˆ›İ[ŠH\ÈH™]Ù\İÙ\ÜÚ[Û‹ÛÈ™\İÜ™HXÚÙYHÙ\ÜÚ[ÛˆÚ]›È\›œËˆ‘UÂˆYÙ[ËØÛÜ™KÜÙ\ÜÚ[Û—Ùš[\ËœXÛÈÛ™H[H8 %[[\İ
+È˜[YZY
+È
+œ^[ØY\Ú\HÛÛ™š\›X][ÛŠ‚ˆ8 %[™\œÚ\İ[˜ÙX™][[Û˜[™]WÜ\™ÙX›İÈÚ\™H][œİXYÙˆØ\œZ[™ÈÛÈ\X[ˆÛÜY\Ëˆ[ÛÈÛÜÙYH™\İÜ™H[ˆØ›Ûİ›İÈ™\İ[Y\ÈHÚXÚÜÚ[\™\İÜ™YÙ\ÜÚ[Û‹ÚXÚˆÛÛ™\œØ][Û“Y[[ÜX™]™\ˆØYY
+]Û›H]]Ë[ØYÈH™]Ù\İ]ÛÛœİXİ[ÛŠK‚ˆHŞH
+ŠŠÊH›ÈXİ[ÛˆØ\È]™\ˆ]Y]Y[ˆ›ÙXİ[ÛŠŠˆ8 %]]Û›Û^UÛÜšÙ\˜Ûİ›È]Y]Ú[šË[™ˆHÛ™HXÙHHÚ[šÈ
+Ø\Êˆ\ÜÙY
+™[YYX][Û”[›™\˜8¡¤Ü˜Ú˜]Y]
+HÛİ[›İÛÜšÈ™XØ]\ÙBˆÙÊ]™[Üİ‹Xİ
+X8¢h]Y]ÙÙÙ\‹›ÙÊÙXİ\š]Q]™[
+Xˆ‘UÂˆYÙ[ËØÛÜ™KØ]]Û›Û^KØ]Y]ÜÚ[šËœX
+Xİ[Û]Y]Ú[šØ
+HY\È]Ú\HÛÈ
+Š˜[[ÙØ
+Šˆ8 %ˆ[Ø^\ÈPPË\ÚYÛ™YÚ][ˆİ][Ù‹]™YHÙ^K[™][™XYH[Ù[È[[8 %ÛÈ]]ËX\›İ™K[X[‚ˆXÚ\Ú[Û‹^Xİ][Ûˆ[™˜Z[\™H›İÈX]™HÚYÛ™Y™XÛÜ™ÈÚ]Ø]\Ø[]šX][Û‹ˆ›İØ[Ú]\ÂˆÚ\™HÜ˜Ú˜Xİ[Û—Ø]Y]ˆ™\İYY™›ÜÛÛ˜Xİ™\Ù\™YˆH˜Z[Y]Y]Üš]H™]™\ˆX›ÜÈ[‚ˆ]]Üš^™YXİ[Û‹ˆ
+
+ÎH\İÈXÜ›ÜÜÈKØ‹ØÎÈ˜XÚÙ[™Ûİ[\ˆMÌ8¡¤ˆMÎHY\ˆ™X˜\ÙHÛÈÍÌKŠB‹HŞH8§!H
+Š‘ĞTL™8 %ÑPËPŒÈ[YÜ˜[HİÛ™\ˆš[™[™ËŠŠˆ
+Š“İÛ™\‹Xš[™[™È[ˆÛ™JŠˆ8 %H\›İ˜[Ú[šÂˆ›İÈÚXÚÜÈİÛ™\ˆÚ]Y
+Š˜[™
+Šˆ\Ù\ˆY[™˜Z[ÈÛÜÙYÚ]™Z]\ˆÛÛ™šYİ\™Y[™ˆSQÔSWĞSÕÑQÕTÑT—ÒQØ\È\œÙYÛÈHÚ[›™[İX\™È\™H™XXÚX›H][
+^HÙ\™Bˆ[œ™XXÚX›H›Ë[ÜÊKˆ
+”İ[Ü[ŠˆÚ[›™[Z\š[™ÈÓˆHY˜][ÚXÚ\ÈHY˜][È[™K‚‹HŞH8§!H
+Š‘ĞTLÈ8 %™YÚ\İ\ˆH\ØØ\[™ÈXİ[ÛˆÚ[™ËŠŠˆ
+Š‘Ó‘JŠˆ8 %Ú[›™[œ™\X[™ÚÚ[š[œİ[ˆ\™H™YÚ\İ\™YÑT“‘S[ˆPÕSÓ—Ô‘QÒTÕ–X
+È\İË×ÜÛ˜\ÚİËØXİ[Û—Ø]]šœÛÛ˜[[Y\˜]Y[‚ˆÛ›İÛ—Øœ›ÚÙ\—ØXİ[Û—ÚÚ[™Ê
+X
+œ›ÛHZ\ˆİÛˆÒS‘ÛÛœİ[ËÛÈHX]š^\ØÛİ™\œÈ[JKØ\œBˆ[ÈØ\Xš[]HX[šY™\İË[™›İ]™H™X[X]š^^\˜Ú\Ù\œÈ
+Ù\›™[[Ûˆ[›ÚÙ\ÈÈÙ\›™[[Ù™‚ˆÙ\Û‰İ
+KˆHXÜ]Z\Ú][ÛˆØ]H›İÈÛÙ\È›İYÚHÚ\™YXZÙWÜÚÚ[Ú[œİ[ÚÙ\›™[ÙØ]X˜XİÜKˆÚXÚ[ÛÈÛÜÙ\È]ÈÙ\›™[[Ù™ˆØ\ˆ]\ÙYÈØ[]]Üš^™X]™[ˆÚ]T•’T×ĞPÕSÓ—ÒÑT“‘Sˆ[œÙ][›ZÙH]™\HÚX›[™Èœ›ÚÙ\‹ˆÜšYÚ[˜[ˆ›İÚ[™ÈØ[YÙ\›™[˜]]Üš^™X]Ù\™HXœÙ[ˆœ›ÛHH™YÚ\İK[™HX]š^	ÜÈœ›ÚÙ\ˆ[[Y\˜][ÛˆØ\ÈH[™[XZ[Z[™Y[\Ü\İ‚‹HÈH<'çè
+Š‘ĞTM8 %[ˆHXY]ËZXYÛ˜ÙKŠŠˆ[œİ[\›Y\ÈÛˆHØ[YH›ŞÈ
+ŠŒL
+Šˆ\ÚÜÂˆ
+œ›İÜÙ\ˆ0­È\ÚİÜ0­Èİ\ÙH0­ÈÛ™HXÜ]Z\Ú][ÛŠNÈX›\ÚHX›H[˜ÛY[™ÈHÜÜÙ\ËˆZ[H]Ú\™Bˆ\›Y\ÈØİ[Y[È
+›[Z]Êˆ8 %Ú[™İÜÈYZ[‹Z[YÜš]HÚ[™İÜÈ
+RTJKØ^[[™Ú]İ]Ø^[[™ˆ\ÜİÛÜ™[KˆŒH^Kˆ™YYÈÌKÔÌ‹‚‹HŞH8§!H
+Š‘ĞTMH8 %ÑPËPŒHÚ]]È™XÛÛ™][ÛœÈİ]YŠŠˆ
+Š‘’VQ
+Š‹[™H™XÛÛ™][ÛœÈÙ\™HšYÚˆÈ[œÚ\İÛˆÛİYÛÛ™šYİ\™YS‘
+ÛİYÙ˜[˜XÚÏX[Ø^\ØÔˆØØ[İÛˆÔˆH›Û\İ™\ˆHØØ[ˆÚ[™İÊH8 %›İHY˜][Z[œİ[XZËˆHY™\œØ\šX[]Y][™\[™[H™XXÚYHØ[YBˆÛÜœ™Xİ[ÛˆY\ˆ]Èš\œİ\ÜÈİ™\œİ]Y]ˆİ™\œİ][™ÈH™X[š[™[™È\ÈİÈ]Ù]È\ÛZ\ÜÙY‚‹HÈH<'çè
+Š‘ĞTMˆ8 %›YÜÎˆÛ›İÈÚ]›\[™ÈÛÜİËŠŠˆT•’T×ĞPÕSÓ—ÒÑT“‘S\È
+Š››İ\™H\™[š[™ÊŠ‚ˆ8 %Ú]]Û‹Hœ›ÚÙ\ˆÔS•Ù]È]]Û›Û^WÛ]™[H˜Xİ˜™[[İš[™ÈHØ]™KLH[˜ÛÛ™][Û˜[\ÚØˆ›ÛÜÈ[™HÌø $ÓÌÌ˜XØY\È™YY
+ŠÛÊŠˆ›YÜÈ
+T•’T×ÕS’Q’QQĞPÕSÓ—ĞTXÛÊKÛÈHÙ\›™[ˆ›YÈ[Û™HÙ\È›İYÚ\İ\ÙKÛYYXKÙ\ÚİÜˆÚX\\İ™X[Ú[ˆ[œİXYˆHš]™HÛİ™\›™YˆÙXšÛÚÈÚ[›™[È
+Ú]Ğ\ÔÚYÛ˜[ÓX]š^ÕX[\ËÑÛÛÙÛHÚ]
+H™YY
+Š››È^˜H\\[™[˜ŞJŠ‹Û›BˆT•’T×ÕÑP’ÓÒ×ĞÒS“‘SØ‚‹HÈH<'çèH
+Š‘ĞTMÈ8 %™\İ]HH\›Y\È™\™Xİ
+Šˆ[ˆ‘T•WÕ’TÒSÓ‹›Y0©Îˆ›Ü’\›Y\ÈØ[‰İİXÚBˆYÚˆ[™››Èİ\ÙZÛİÜHˆ
+]\È[ˆH\™XXš[\ˆ[™\‹Y˜[Z[K[Y[X™\ˆ›Ùš[Bˆ\ÛÛ][ÛŠH8 %›İ™Y]H[ˆÛ™H[šËˆY™[œÚX›Nˆ
+Šˆ’\›Y\È\ÈH\ÈHÛÛÈ™\˜H\ÈHİ\ÙBˆ[Ù[ŠŠˆ[™
+Šˆ’\›Y\ÈXÛ[™YÈZ[[ˆXİ[Û‹[]™[]Y]ÚZ[ÈÙHZ[Û™H[™]™H›İˆ\›™Y]Û‹ˆŠŠˆ[ÛÈÜ™Y]Ú]\›Y\È
+™Ù\Û‰İ
+ˆØ]NˆWØØ[ÜÙ\šXÙX\È›È\›İ˜[ˆÛÛZ[™\ˆ\ÛÛ][Ûˆ
+œ™\XÙ\ÊˆÛÛ[X[™ÚXÚÜËÛX\\›İ˜[È]]ËX\›İ™HİÈš\ÚËY[[ÜHÜš]\ÂˆY˜][È›È\›İ˜[‚‹HÈH<'çèH
+Š‘ĞTN8 %™KX˜\Ù[[™H‘T•WÕ’TÒSÓ‹›Y
+Šˆ0©ÌÉÜÈ›ÜÙH
+˜[™
+ˆ0©Í	ÜÈ\˜Ù[YÙ\È
+HŒÍIKŒŒ	KˆHŒMIH8 %›È[\ˆ\Èİ]Y\È	JK\È0©ÎN	ÜÈŒLHš]š[YÙYXİ[ÛˆÚ[™Èˆ
+HÛ˜\Úİ›İÂˆÛİ™\œÈN
+K‚‹HÈH<'çèH
+Š‘ĞTNH8 %Û™\İHX›İ[™HH\ÜÊŠˆ
+XXÚ˜XÙYÈš[N›[™H[ˆHØÊN‚ˆØ\KÚİ\ÙKÜİ]Kœ™\Ù[˜ÙX\ÈİXİ\˜[H[Ø^\È×X[ˆ]™\H›ÙXİ[ÛˆÛÛ™šYİ\˜][Ûˆ
+HÛ›BˆÜš]\ˆÙˆÜÙH™YXØ]\È\È›È›ÙØ[\ŠNÈÓ•’Qˆ\ØÛİ™\H™YYÈH[™XÛ\™YÜÙ\ØÛİ™\XˆXÚØYÙNÈHØ[Y\˜H“HYÈ™YYÈHÙ[‹ZÜİY“HÙ\™\È[š\›Û›Y[ËØ\ÈHÛXŞH[™H]ˆ™]™\ˆ^Xİ]\È[™
+Š››ÈÔÒ˜[œÜÜ^\İÈ[ˆH™\ÊŠÈH™X[]H\›™\ÜÈ\œÚ\İÈ›İ[™Âˆ
+[‹\›ØÙ\ÜÈ™YÚ\İK›È\ØYY\Y˜Xİ
+NÈ‘PQQIÜÈ›ÚXÙHİXÚÈ\İÈ[™Ú[™\È›È[œİ[]ˆÚ\Ë‚‚‹KKB‚ˆÈÈ<'æè{î#ÈÛİ™\›˜[˜ÙK\˜Z[ÈÙXİ\š]H]Y]
+Œ‹LËL8 %\™]šY]Ù\ˆY™\œØ\šX[\ÜÊB‚ˆ[š[™[™ÜÈ
+ÈÙ]™\š]Y\È
+È]šY[˜ÙNˆØØÜËÜ™\ÙX\˜ÚÌŒ‹LËLYÛİ™\›˜[˜ÙK\˜Z[Ë\ÙXİ\š]KX]Y]›YJØÜËÜ™\ÙX\˜ÚÌŒ‹LËLYÛİ™\›˜[˜ÙK\˜Z[Ë\ÙXİ\š]KX]Y]›Y
+K‚ˆÛ™H™]šY]Ù\ˆ\ˆ[˜\šX[
+Ù\›™[\\ÜÈ0­ÈZ[0­È\›İ˜[]Y]YH0­ÈİšXİ[ØØ[0­ÈÙXÜ™]Ø]Y]ˆÜ\È0­ÈÔÔ‘ˆ0­ÈÚÚ[ÚYÛš[™È0­È›İ]\ˆ]]
+KXXÚ™\]Z\™YÈ˜XÙH[™›Ü˜Ù[Y[ÛÙH[™Z[BˆÛÛ˜Ü™]H\\ÜËˆ
+Š’XY[™NˆHÛÜ™H˜Ø[‰İXİ[™Ûİ™\›™YHY˜][ˆ[˜\šX[ÓÊŠ‚ˆ
+Ù\›™[[Ù™ˆ]™\šYšYYXÜ›ÜÜÈ[Ú^Xİ[Ûˆ˜[Z[Y\ÎÈÛ\ÜÚYšY\ˆ˜Z[ÈÛÜÙY
+KˆHÛ\È\™Bˆ]KY^Üİ\™KÛ™HİšXİ[ØØ[XZË[™[YÜš]HX™[È]İ™\‹\›ÛZ\ÙKˆ™YYÈBˆŒ‹LËLMˆÙXİ\š]KXÛÜœ™Xİ™\ÜÈØ]™H
+ØÜËÜİ\\œİÙ\œËÜ[œËÌŒ‹LËLM‹\ÙXİ\š]KXÛÜœ™Xİ™\ÜË]Ø]™K›Y
+K‚‚ŠŠ‘[]™\™Y
+ˆÍÌLKY\™ÙY
+NŠŠ‚‹HŞH
+Š”ÑPËPLH8 %[™İX\™Y\œÛÛ˜[Y]H™XYËŠŠˆYY\Ù\—ÙİX\™ÈL™XY›İ]\ÈÚÜÙHÚX›[™ÂˆÜš]\ÈÙ\™H[™XYHİX\™Y
+ÑÈ[]Y\ËÙ˜XİËÛY[[ÜKŞØYÙ[ÚYXØ\KØXİ[ÛœÖËÜ[™[™×XˆØ\Kİ˜XÙ\ÖËŞÚYWXØ\KØÛÜİ
+Kˆ™K\ÙYYY\İË×ÜÛ˜\ÚİËÜ›İ]WØ]]šœÛÛ˜
+Ü[¸¡¤\Ù\ŠK‚‹HŞH
+Š”ÑPËPLˆ8 %]Y][\KZ\Ú\\ÜËŠŠˆ™\šYWØÚZ[˜›İÈ˜Z[ÈÛÜÙYÛˆH›[šÈ›İ×Ú\ÚˆY\ˆHÚZ[ˆİ\È
+™]š[İ\ÛHÛÛ[YX	Ù\İ]ÛÈH›Ü™ÙY›İÈ\ÜÙY]™[ˆ[ˆPPÂˆ[ÙJKÚ[Hİ[Û\˜][™ÈHYÚ][X]HYØXŞH™KSY\šÛH™Yš^ˆ
+ÌÈ™YÜ™\ÜÚ[Ûˆ\İË‚‚ŠŠ‘Y™\œ™Y8 %™YYÈ\ÚYÛ‹ÜÜİ\™HÛÜšÈ
+˜[šÙY
+NŠŠ‚‹HŞH8§!H
+Š”ÑPËPŒH8 %œšYÙØH˜[Z[H]H8¡¤ˆÛİYšXHŞ[\Ú\ËŠŠˆ
+Š‘’VQ
+Šˆ8 %YÙ[œŞ[\Ú^™X›İÈÛÛ\]\ÈHÛXŞH›ÛÜˆİ™\ˆÓÓ•’P•UÔ”È[™[œÈHY\™ÙHÈWÜ›İ]\‹›ØØ[Ø˜XÚÙ[™
+H˜Z[XÛÜÙYXØÙ\ÜÛÜˆØÛÛ\™\ÜÚ[Û—Üİ[[X\š^™\˜[™XYH\ÙY
+K˜[[™È˜XÚÈÈH]\›Z[š\İXÈ›Ú[ˆÚ[ˆ›ÈØØ[˜XÚÙ[™^\İËˆ\İY]HŞ[\Ú^™H›İ[™\K\ˆH]Y]ˆÜšYÚ[˜[ˆYÙ[œŞ[\Ú^™X[œÂˆ[™\ˆ˜\š\ÉÜÈÛİYY[YÚX›HÛXŞH[™[X™YÈHİšXİ[ØØ[YÙ[	ÜÈ˜]Èİ]]ÈH\™Xİ]ËQœšYÙØBˆ\›ˆšYÙÙ\œÈŞ[\Ú\Ëˆš^ˆŞ[\Ú\È[š\š]ÈHİšXİ\İÛÛšX]ÜˆÛXŞH
+[ˆØØ[Yˆ[Bˆ™\ÜÛ™\ˆ8¢"ĞĞSÓÓ“WĞQÑS•Ø
+H
+ÈH\İ]œšYÙØKXÛÛZ[š[™È™\ÜÛœÙ\È™]™\ˆÙ[XİÛİY‚ˆ™XÛÛ™][ÛˆÛİYÛÛ™šYİ\™Y
+È
+ÛİYÙ˜[˜XÚÏX[Ø^\ØÜˆ\™ÙH›Û\
+Kˆœ™XZÜÈH\™\İ›ÛZ\ÙK‚‹HŞH8§!H
+Š”ÑPËPŒˆ8 %[šÙ^YYZ\ÚX\Ë\ÚYÛ˜]\™H
+]Y]ÌÈ
+ÈÚÚ[ÚYÛš[™ÈÎJKŠŠˆ
+Š‘’VQ›İ[™\ÊŠˆ8 %™\]Z\™WÜÚYÛ™Y
+
+X˜Z[ÈÛÜÙYÚ[ˆ[™›Ü˜Ù[Y[\ÈÛˆÚ]›ÈÙ^NÈ™\šYWÜÚÚ[™]\›œÈ[YÜš]K[Û›X˜]\ˆ[ˆÚYÛ™Y›Üˆ[ˆ[šÙ^YYYÙ\İÈÚYÛš[™×ÜÜİ\™J
+Xİ\™˜XÙ\ÈY™™Xİ]™XØ[YÜš]WÛÛ›XÛˆØ\KÜÙXİ\š]KÜÜİ\™XÈ[™H]Y]XÚZ[ˆ[ˆ\ÈUQULHX›İ™KˆÜšYÚ[˜[ˆ‘TURT‘WÔÒQÓ‘QÔÒÒSØˆ[™H[\\‹Y]šY[ˆ]Y]ÛZ[HÛ›HÛÚ[ˆ[ˆÜ[Û˜[Ù^H[ˆ˜\ˆ\ÈÙ]ˆ˜Z[ÛÜÙYÂˆX™[[šÙ^YYYÙ\İÈ\È[YÜš]K[Û›NÈİ\™˜XÙHH\İ[˜İ[Ûˆ[ˆØ\KÜÙXİ\š]KÜÜİ\™X‚‹HŞH8§!H
+Š”ÑPËPŒÈ8 %[YÜ˜[H\›İ˜[İÛ™\‹Xš[™[™ËŠŠˆ
+Š‘’VQ
+Šˆ8 %SQÔSWĞSÕÑQÕTÑT—ÒQØ\È\œÙY[™\ÜÙY
+HİX\™ÈÙ\™H[œ™XXÚX›H›Ë[ÜÈ™Y›Ü™JKHXÚ\Ú[ÛˆØ[˜XÚÈÚXÚÜÈİÛ™\ˆÚ]
+Š˜[™
+Šˆ\Ù\ˆY[™˜Z[ÈÛÜÙYÚ]™Z]\‹[™HZ\š[™ÈØ]H›ÈÛ™Ù\ˆY˜][ÈÈ[İÈÛˆHİÜ™H\œ›Ü‹ˆÜšYÚ[˜[ˆØ[˜XÚÈ[™\ˆ\È›ÈİÛ™\ˆÚXÚÈÚ[‚ˆÛÛœİXİYÚ]İ][İÙYİ\Ù\—ÚYØ
+H›ÙXİ[ÛˆÚ\š[™ÊKˆ[\[Y[H‹Y˜XİÜˆØ[˜XÚÂˆÚXÚÈ
+İÛ™\ˆÚ]ÚY
+È\Ù\—ÚY˜Z[ÛÜÙYÛˆ[\H[İÛ\İ
+HHØ]™H[ˆ[™XYHÜXÚYšY\Ë‚‹HÈH<'çèH
+Š”ÑPËP8 %ÔÔ‘ˆT\[›š[™ÈÛİ™\˜YÙKŠŠˆ
+Šİ[Ü[ˆ8 %™YYÈH]™H™]ÛÜšËØœ›İÜÙ\ˆÜİÈ[[Ûœİ˜]NÈÚ\\ˆMHQ‹LM‹ŠJˆHÚXÚÙ\ˆ\ÈÛİ[™]H^]ÜšYÚ][™BˆÙ[˜[YÚ[’ÛY[Û‰İ›İ]H›İYÚ™\ÛÛ™WØ[™İ˜[Y]XÚ][›š[™È
+™Xš[™[™ÈĞÕÕJK‚‹HÈH<'çèH
+Š”ÑPËPH8 %Z[H]Y›İË›İ\İXÛ\™YÜšYÚ[‹ŠŠˆ›ØXİ]™KÜ™XØ[Ø[XšY[^[ØYÂˆ™XZ[İ]ÚYH[ˆ[˜›İ[™\›ˆ›Ü[™Ü™\ÜÈZ[
+ÛÜœİÛÛ™š\›YYØ\ÙH\È‘PQÓÓ“KX›İ[™Y
+K‚ŠŠY™\œØ\šX[]Y]Œ‹LËLH
+ˆYÙ[È0­ÈNš[™[™ÜÈ\İY0­ÈˆÛÛ™š\›YY0­ÈLÛÜœ™XİYİÛˆ0­Âˆ™Y]Y0­ÈÈ™]Èœ›ÛHHÛÛ\][™\ÜÈÜš]XÊKŠŠˆ]ÈXY[™H\ÈHÛÛ\[Y[ˆ[™\[™[YÙ[ÂZ[™È\™È[X˜\œ˜\ÜÈ\ÈÛÙX˜\ÙH[ÜİH™KY\ØÛİ™\™YÑPËPŒx )ˆX›İ™KˆÛÈ™YYİÛ™\ˆšXYÙB˜™XØ]\ÙH^H\™H
+Š››İ
+ŠˆÛˆ]\İ‚‚‹HŞH8§!H
+ŠUQULH
+YÚÛÛ™š\›YY
+H8 %H]Y]ÚZ[ˆ\È›Ü™ÙXX›H[ˆ\™[™Y[ÙKŠŠˆ
+Š‘’VQ
+Šˆ8 %™\šYWØÚZ[˜ˆ™XÛÛ\]\ÈXXÚ›İÈÚ]
+H›İÉÜÈİÛŠˆ\ÚØ[ÛØ[™ÙYÙ\İ[X[™ÈHÙ^HÛ›HÚ[ˆ]ˆÛÛ[[ˆØ^\ÈXXË\ÚLM˜ˆİÛ™Ü˜YH]™\H›İÈÈÚLM˜[™HÚZ[ˆ™K[[šÜÈÛX[›HÚ]ˆT•’T×ĞUQUÒÑVXÙ][™\™[™Y™[™›Ü˜ÙJ
+X™]\›š[™ÈÛX[ˆ8 %™\›ÙXÙY[™\[™[HÚ[BˆÜš][™ÈÚ\\ˆMH
+Ü[]LØ
+È\ÚX˜Û›NÈHÙ^H\È™]™\ˆ™XY
+KˆHÚ\Y™YÜ™\ÜÚ[Û‚ˆ\ÜÙ\È™XØ]\ÙH]İÛ™Ü˜Y\È
+Š›Û™JŠˆ›İËÛÈHœ™XZÈİ\™˜XÙ\È]H™^›İÈÚÜÙH™]—Ú\Úˆ\Èİ[[ˆPPËˆš^ˆ[ˆH[ÛÜš]H\ˆ[œİ[[™™X]HÜİ[YØXŞHÚLM˜›İÈ\Âˆ[\\š[™ÈÚ[ˆHÙ^H\ÈÛÛ™šYİ\™Y8 %H˜Z[XÛÜÙYÚ\HH›[šË\›İÈİX\™
+ÑPËPLŠH[™XYBˆ\Ù\Ëˆ^[™H™YÜ™\ÜÚ[ÛˆÈH[]X›H™]Üš]H[ˆHØ[YHÛÛ[Z]ˆØ[YH›ÛİØ]\ÙH\ÈÑPËPŒ‹‚‹HŞH8§!H
+ŠUQULˆ
+YÚÛÛ™š\›YY
+H8 %ÔÕØ\KØYZ[‹Ù›Ü™Ù]Y›İ\˜\ÙK]ÛÜYYŠŠˆ
+Š‘’VQ
+Šˆ8 %™YBˆ[™\[™[˜Z[\™\ÎˆÙ[™H\Ù\‹XÛÛ[İÜ™\ÈÚ]İ]ÚYHHT‘ÑWÊ˜[İÛ\İÈ
+[˜ÛY[™Âˆ\‹XYÙ[[ˆ™]šY]ÜÈ[™[[˜›İ[™Y\ÜØYÙH›ÙY\ËÛÈÙˆ[HÛˆH[[\İ][ÛÈİÜÂˆHÙ\ÜÚ[Ûˆ][][™È[KÛÈ›İ[™È™[[İ™\È[H]™\ŠNÈH™XİÜ‹ÒÑÈÚ\H\ÈXYÛÙH8 %ˆ›È™XİÜ”İÜ™XØÛ›İÛYÙQÜ˜\[\[Y[][ÛˆYš[™\ÈÛX\Š
+X[™HØ[\È\Ø]˜YİX\™YˆÛÈ[™\ˆHØİ[Y[YY˜[Û™[Íˆ˜XÚÙ[™È]™\H[X™Y[™È[™š\Hİ\š]™\È\›X[™[HÚ[BˆH\™ÙH™\ÜÈÚØÈ[™H›Ü˜ÙY™KY›Ü™Ù]\˜Ú]™H[™È
+Šš[œÚYJŠˆH]H›Ûİ]\İˆ\™ÙY[™[˜Ü\Y[›\ÜÈH˜XÚİ\Ù^H\ÈÙ]Ú]›ÈTH\]Z]˜[[ÙˆHÓIÜÈK[›ËX˜XÚİ\ˆ[™›İ[™È[š[™È]ˆØÜËÔ’UPÖK›Y›ÛZ\Ù\È\˜\İ\™H[™UQLˆ\ÈXÚÙYÛ™KˆÛÛ˜YXİÂˆHMÈ\ÚYÛ‹\\™\ˆØ]H\™XİNˆH\™\ˆ\ÚÙYÈ[]HZ\ˆ]H™Y›Ü™H™]\›š[™ÈH›Şˆİ\œ™[HØ[››İˆš^ˆ[™\ÈHÑQT[İÛ\İXZÙHÛX\Š
+XXœİ˜Xİ[İ™H[™[˜Ü\Bˆ\˜Ú]™KˆH\™ÙIÜÈ
+™[™Ú[™Y\š[™Êˆ\ÈÛİ[™
+™\šYšYYÛ˜\Úİ™Y›Ü™H[H[]KÔS]BˆÛ›[™KX˜XÚİ\TKš\TÛ\İX\™
+H8 %HYÈ\ÈH[İÛ\İ‚‚•HŞ\İ[ZXÈš[™[™È\È›İHYÈ][ˆš]™HÙˆÚ^[œÙ\È[™\[™[H›İ[™
+Š˜HØ]H]ÚXÚÜÂHÚ\HÙˆHÛZ[H˜]\ˆ[ˆ]ÈİXœİ[˜ÙJŠˆ8 %H\š]H\İX]Ú[™ÈHT“™Yš^HØ\Xš[]Bœ›Ø™H™YÚ\İ\š[™È]ÈİÛˆ[X™KHØY™]HXÚÈÚÜÙH[™Ûİ™\›™YØXİ[ÛœØÛİ[\ˆ\ÈH]\˜[˜HÚYÛ˜]\™H™\šYšY\ˆXØÙ\[™È[ˆ[šÙ^YY\Úˆ™\šYšXØ][Ûˆ›İØÛÛ›Üˆ[Nš[™[™ÜËBœÚ^™Y]YÛ™\È
+ÛÈ›Ø›ÙHÚ\Ù\È[JKH™]™\‹[YX\İ\™Yİ\™˜XÙ\Ë[™H
+ŠŒÎ\›İÂ›Z\ÜÚ[™ËXÛÙKÛZ\ÜÚ[™ËY™X]\™HØ\YÙ\ŠŠˆØØÜËİ\İ[X[X[ÌMKX]Y]YØ\]™\šYšXØ][Û‹›YJØÜËİ\İ[X[X[ÌMKX]Y]YØ\]™\šYšXØ][Û‹›Y
+BŠMŒØ\Ù\ËQ˜™Yš^
+H
+ÈØÜš\ËÜXWØ]Y]Ü›Ø™\ËœXÚXÚ™\›ÙXÙ\Èš[™HÙˆHÛZ[\ÈÛˆB›İÛ™\‰ÜÈXXÚ[™H[ˆÌÙXÛÛ™Ë™XY[Û›K‚ˆ
+•\]HŒ‹LLLH
+İXØÙ\ÜÛÜˆÙˆÜ]ÎM
+NŠˆH\İ›Ø™Hİ[ÔSˆÛˆXZ[˜8 %
+ŠQ‹LÊŠ‹ˆ˜Ø\Xš[]H›Ø™H™YÚ\İ\š[™È]ÈİÛˆ[X™Hˆ8 %\È
+Š‘’VQ
+ŠˆÛXZÙWØXİ[Û—ÚÙ\›™[Ü›Ø™X›İÂˆ™\ÛÛ™\ÈX[šY™\İš[\[Y[][Û˜ÈH™X[XİX]Üˆ™Y›Ü™HH™Y\Ø[˜Z[[™˜Z[ÈÛÜÙYˆÚ[ˆHXÛ\™Y[\[Y[][ÛˆÙ\È›İ™\ÛÛ™NÈHÜ™Y[ˆØ\ÙIÜÈ]šY[˜ÙH˜[Y\ÈHÙ\YšYYˆ[\[Y[][Ûˆ
+
+Ìˆ\İÈ[ˆ\İÚ×ØØ\Xš[]Wİ™\šYšXØ][Û‹œX
+KˆXWØ]Y]Ü›Ø™\ËœX™\ÜÈ[ˆš[™HÛZ[\ÈÓÔÑQ‚‚‹HÈH<'çèH
+Š”ÑPËPˆ8 %Ø]H\™[š[™ËŠŠˆ
+’[ˆ™]šY]È
+İXØÙ\ÜÛÜˆÙˆÜ]ÎM
+K›İY]XØÙ\Y]Š‚ˆ\İÜ›İ]WØ]]ÛX]š^œXØZ[œÈH
+œ™XY
+ˆ[ˆ\İÛ›×İ[˜Û\ÜÚYšYYÛÜ[—Ü™XY›Ü˜Ù\È]™\HÔS‚ˆÑUÈ™HÛ\ÜÚYšYYHH
+ŠœİXœİ[˜ÙHÙˆ]È[™\ŠŠˆ
+S•S•SÓSWÓÔS—Ô‘PQØXXÚÚ]Bˆ™X\ÛÛŠHÜˆØ\œH\Ù\—ÙİX\™È\İÜ™XYØÛ\ÜÚYšXØ][Ûœ×Ø\™WÚÛ™\İÙY\È›İÙ]ÈÚš[šË[Û›HÛÂˆH[İÛ\İØ[‰İX\ÚÈH]\ˆİX\™ˆHÛ\ÜÚYšXØ][Ûˆ\ÜÈ›İ[™LÈ\œÛÛ˜[XÛÛ[™XYÂˆÚ\[™ÈÜ[ˆ
+\‹XYÙ[[ˆ\İÜH
+ÈÓÕS]X[]HØÛÜ™\Ë™]šY]È]Y]YKZ\ÜÚ[ÛœËÛÜšÙ›İÜËˆX\›š[™Ë\™[˜HX]ÚÜ˜XÛHÛÛ™›XİË™Y›Xİ[Ûˆİ]\ËÛÜ›šY]Èİ™\šY]ÊH8 %[›\YÂˆ\Ù\—ÙİX\™Û˜\Úİ™K\ÙYYYÙ[™\˜]YÚ\\‹LMİÙY\™YÙ[™\˜]Yˆ\‹Z[™\ˆİXœİ[˜ÙBˆ]šY[˜ÙNˆØØÜËÜÙXİ\š]KÔÑPËP‹[Ü[‹\™XYËY]šY[˜ÙK›YJØÜËÜÙXİ\š]KÔÑPËP‹[Ü[‹\™XYËY]šY[˜ÙK›Y
+K‚ˆ
+Š“X\šÈ8§!HÓ‘HÛ›HÚ[ˆHİXØÙ\ÜÛÜˆˆ\ÜÙ\Èœ™\Ú^XİZXYÒH
+È[™\[™[™]šY]ÊŠˆ
+İÛ™\‚ˆ[YÜ˜]Üˆ\™Xİ]™KÎM
+Kˆ
+“Ü[ˆ›ÛİË]\
+Ø\
+NŠˆ›Ü™Ù]^ÜÜ\™ÙH\İÈ\™HXZ[Z[™YˆÙ\\˜][H8 %YH\İ\ÜÙ\[™È^ÜÛX[šY™\İ8¢¡ˆ
+\™ÙY8¢*ˆÑQT
+X‚‚ŠŠ”\˜[[YÈ[Œ‹LËL
+š[™\ˆ[œÙ\È0­ÈMYÙ[È0­ÈLˆš[™[™ÜÈ0­ÈHÛÛ™š\›YYY\‚ŒË[[œÈY™\œØ\šX[™\šYšXØ][Ûˆ0­ÈLH™Y]Y
+KŠŠˆ]™\HÛÛ™š\›YYš[™[™ÈØ\È™KY\š]™Yœ›ÛHÛİ\˜ÙB˜[™Ú\™HHY™XİØ\È™\›ÙXÚX›K™\›ÙXÙY™Y›Ü™H™Z[™Èš^YˆH™\šYšXØ][ÛˆİYÙBœ™\]Z\™YˆÙˆÈ[™\[™[ÚÙ\XÜÈÈ˜Z[È™Y]HHÛZ[KXXÚÚ]HY™™\™[[œÂŠÙ\ËZ]\™\›ÙXÙHÈ[™XYKZ[™YY[Ù]Ú\™HÈ\Ë]K\Ù]™\š]KZÛ™\İ
+K‚‚•H[YH\ÈHØ[YHÛ™HHŒ‹LËLH]Y]˜[YY8 %HÛZ[HÚÜÙHÚ\H\ÈÚXÚÙY]ÚÜÙBœİXœİ[˜ÙH\È›İ8 %[™]\›™Yİ]È™H]XÚÚY\ˆ[ˆHØ]\Ëˆ][œÈ›İYÚH
+™\Ü^J‚›^Y\ˆ[™È[™ˆ
+ŠÙ[™Hİ\™˜XÙ\È\ÜÙ\YÛÛY][™È^HY™]™\ˆYX\İ\™YŠŠ‚‚‘š^Y[Ú]™YÜ™\ÜÚ[Ûˆ\İÈ]˜Z[Ú[ˆHY™Xİ\È™Z[›ÙXÙY‚‚‹HŞH8§!H
+Š”š]˜XŞNˆH›Ü™Ù]Ù\HZ[^ÛÜHÙˆ]™\][™È]\˜\ÙYŠŠˆ˜XÚİ\ØØ]Û‚ˆÑQTÑT”Ø\İYšYY\ÈÛ[™ÈH™KY›Ü™Ù]\˜Ú]™H8 %]UQUL˜ÈY[™XYH[İ™Y]ˆ\˜Ú]™H
+›İ]ÚYJˆH]H›ÛİˆÚ]H[HXİX[H™]Z[™YØ\ÈÜ™[˜\HİÛ™\ˆÛ˜\ÚİËˆ[™ÔÕØ\KØYZ[‹Ø˜XÚİ\\ÜÙ\È›ÈÙ^KÛÈÜÙH\™H[™[˜Ü\Y\˜˜[ÈÙˆHÚÛH›Ûİ‚ˆ˜XÚÈ\[Û™^K›Ü™Ù]œšY^K[™\™ÙWÙ]X™]\›™YÚÎYXÚ[HHÛX\^ÛÜHØ][‚ˆH›Û\ˆ]Y\İÛX[™Y‚‹HŞH8§!H
+Š‘]HÜÜÎˆ]™\H›Ü™Ù]\İ›ŞYYÙ][™ÜË™˜ŠŠˆHİÙY\[›[šÙYÔS]H]Ø[Ø\ÚXˆÚYXØ\œË[˜ÛY[™ÈÜÙHÙˆHÑT]X˜\Ù\È
+]
+œÙ][™ÜË™‹]Ø[ŠKœİY™š^\È™‹]Ø[ÛÂˆ]X]ÚY›Èœ˜[˜Ú[™™[›İYÚÈ[›[šÊ
+X
+Kˆ[][™ÈH]Ø[ÙˆH]™HĞS]X˜\ÙBˆX]™\È][›Ü[˜X›H8 %™\›ÙXÙY\È\ÚÈKÓÈ\œ›Ü˜‚‹HŞH8§!H
+Š“[Û™^NˆH[Ø^HšYİ\™HØ\ÈÛÛ\]Yœ›ÛH[ØÚÈ˜[šÈ˜[[˜Ù\ËŠŠˆÚ]S‘ÈÛÛ™šYİ\™Y[™ˆ˜Z[[™Ëİİ[Ø˜[[˜ÙJ
+Xİ[[YYH\™ÛÙYSĞÒ×ĞSSÑTØÈMŒŒÌˆ[™]šYY™X[ˆ[ÛHÜ[™H]™]\›š[™È›[ØÚÈˆ˜[ÙX‚‹HŞH8§!H
+Š•ÛÈÜİ]Üš]H˜XÙ\ÈÛˆHÙXÜ™]İÜ™KŠŠˆÙ^KÜØ[Ü™X][ÛˆØ\ÈÚXÚË][‹XXİ™XXÚX›Bˆœ›ÛHHÛÈ˜XÚİ\›İ]\È]XXÚZ[HÙXÜ™]İÜ™X[ˆHÛÜšÙ\ˆ™XY8 %HÜÙ\‰ÜÈ\˜Ú]™Bˆ™XÛÛY\È\›X[™[H[™XÜ\X›KˆÜš][™ÈH\İÈİ\™˜XÙYHÙXÛÛ™˜XÙHHš[™\œÈZ\ÜÙYˆBˆÚ\™Y\š[[˜[YH\ÈH™XY[[ÙYK]Üš]Hİ™\ˆH\‹Z[œİ[˜ÙHØXÚKÚXÚÚ[[H›ÜYˆÜ™Y[X[Ë‚‹HŞH8§!H
+Š”š]˜XŞH\Üİ\˜[˜ÙHœ›ÛHZ\ÜÚ[™È]KŠŠˆHYØXŞHQÛÛ\]YİšXİ[ØØ[\Âˆ]\İ\İœİšXİÛØØ[ÛÈHQ]Ûİ[›İ™XXÚØ\Kİ\İÜİ]\Ø\Ü^YYBˆYØÚÈ™XY[™È››İ[™ÈX]™\È\ÈXXÚ[™H‹‚‹HŞH8§!H
+Š•HQŞ[\Ú^™Y]ÈİÛˆ[[Y]KŠŠˆ\ÙS]™TŞ\Ø^Y\™YÚ[™HØ]™\È[™ˆX]œ˜[™ÛJ
+XÛÈSKÕ”SKÑÔKÛ][˜ŞH]™\HKÈ[™™[™\™YH™\İ[\È]™HÜİİ]KˆÙYYYœ›ÛHH\™ÛÙY‹ÌNLˆĞˆXXÚ[™Kˆ[X™\œÈ]šY\™H[Ü™HÛÛš[˜Ú[™È[ˆİ]XÈÛ™\Ë‚‹HŞH8§!H
+Š˜ÜÙXİ\š]KÜİ]\ØØ\È[\™[Hİ]XÊŠˆ8 %[ÙH[Ø^\ÈĞT“˜]™\HÛİ[\ˆ]\›‚ˆÛİ[È[™]Üš][ˆ[™Ü›Û™ËˆİX\™˜Z[È›İÈXİX[HÛİ[ÈÚ]\Èİ[[›YX\İ\™YØ^\ÈÛË‚‹HŞH8§!H
+Š˜Ü™XY^˜X›\ÚYHÛÛ™šYİ\™Y˜XÚÙ[™SQH[œÚYHHXİØ[YÚXÚÜØŠŠ‚‹HŞH8§!H
+Š˜Ø\KØÛÙÛš][Û˜˜XœšXØ]YH›İ][™ÈXÚ\Ú[ÛŠŠˆ
+ÛÛ™šY[˜ÙHKŒ™\›ÙY[Z[™ÜÊHÚ[‚ˆ›İ[™ÈY™Y[ˆ›İ]Yˆ]È\İ\ÜÙ\YH˜XœšXØ][Û‹‚‹HŞH8§!H
+Š˜ÛX\›š[™ËÜİ]ØY™]™\ˆÛ˜ÙHÛÜšÙY
+Šˆ8 %\İ
+
+Xİ™\ˆ[ˆ[Ûİ[\Q\œ›ÜˆÛˆ]™\BˆØ[İØ[İÙY[ÈH›ÙHÙˆ™\›ÜËˆ]È\İ\ÜÙ\YÛ›Hš[È[™\İÈ‹ÚXÚ™\›ÜÈØ]\ÙK‚‹HŞH8§!H
+Š˜İXÚÙ\˜™XYHÙ^HHØœÙ\™\ˆ\È™]™\ˆ[Z]Y
+Š‹ÛÈ]™\H[šX[H›Ø™HØ\ÂˆÚ[[H›ÜYˆ]È\İİX˜™YHØ[YHšXİ[Û˜[Ù^KÛÈ\İ[™ÛÙHYÜ™YYÚ[H›İˆ\ØYÜ™YYÚ]HÛ\ÜË‚‹HŞH8§!H
+Š“Ğ”ÑT•‘H™[™\™YH[[ÈÙYY[™\ˆHU‘H˜YÙJŠˆ8 %Ø\KÜ]X[]X™\İÈ[™\ˆİ]Øˆ[™Ø\KÜ™\Ú[Y[˜ÙX[Z]È›Û™HÙˆ\[YKÙ\œ›ÜœËÜ™YXİ[ÛœËÛÈ›İ\ˆ˜XœšXØ]Y[X™\œÈÚİÙYˆÚ]HÜ™Y[ˆÚ\‚‹HŞH8§!H
+Š–ÔÈ[ˆHX›XÈÚYÙ]Ûš\]
+Šˆ
+ÛÛÜ˜ØÜÚ][Û˜[™\ØØ\Y[È[›™\’S
+H[™ˆ
+Šœ]˜]™\œØ[[ˆÚÚ[[\Ü
+Šˆ
+™\XÙJˆ‹‹HŠXY‹˜[™Ø[Xİ
+K‚‹HŞH8§!H
+Š•H›İ\ˆ[™Ú[™È›İ]\Ë›ÛİXØ]\ÙYŠŠˆH›ØÚÚ[™ÈY˜[™XY[œÚYH[ˆ\Ş[˜È[™\‚ˆ[™\ˆHØÚÈœ›Ş™HHÚÛH]™[ÛÜÛÈ[™\œÈÚ]›ÈKÓÈÙˆZ\ˆİÛˆ[™ÈÛÎÈ\ÈBˆX]HS[\ÜÛˆHÛÜ[™[ˆ[˜›İ[™YY[[ÜH]ØZ]‚‹HŞH8§!H
+Š”Ú]İÛˆ™[X\ÙY›İ[™ÊŠˆ8 %]]Û›Û^HÛÜšÙ\ˆ[™X\›š[™ÈÛÜ™]™\ˆØ[˜Ù[YÛÂˆÜ[]H[™\È™]™\ˆÛÜÙY
+ÚXÚ\ÈÚ]XZÙ\ÈH]H\™XİÜH[™[]X›HÛˆÚ[™İÜÊK‚‹HŞH8§!H
+ŠŞ\\ˆ›Ü\H˜[Y\ÈÛİ[Z˜XÚÈ›ÙHY[]JŠˆ8 %H™[][Ûˆ›Ü\HØ[YÛİ\˜ÙXˆ™]Ú\™YH™[][ÛˆÈHY™™\™[›ÙK‚‚”İ[Ü[ˆœ›ÛH][ˆ
+™\šYšYY™X[›İY]š^Y
+Nˆ›ØÚÚ[™È”ËÒÛˆH™\]Y\İ][‚˜œ›İÜÙ\‹œXÛÙZ[[œXİ\ÙKœXÛšY‹œXY[[ÜWÚÙËœXÈ[™HÙYYYQRS‹ÓĞ”ÑT•‘B˜ÛÜœÜ˜H[ˆ[Ù\ÌËŞØ[Ù\Ì‹Şˆš^YÚ[˜ÙH
+Œ‹LLJNˆ8§!HHXY\œŠ
+H˜[˜XÚØ[‚HÛÈØ\Ş[™[È8 %ÓÕQUU“Ñ’STÈ[™ĞUU›İÈ™[™\ˆZ\ˆT\ÉÈ™X[Øš™Xİ[X\œÚ\\È
+ÜÛÛÎÜ›İšY\¸ )Ÿ_XÈ˜\™HÜÙ\šXÙN¸ )ŸX
+KÚ]š]\İ™YÜ™\ÜÚ[ÛœË‚‘š^YÚ[˜ÙNˆ8§!HH[˜]][XØ]Y[XÚZ[ˆ™K]™\šYH[ˆÙXİ\š]KœX8 %]Y]İ™\šYX\È]Â˜]Y]Ú[[[™]Y]Ø[˜ÚÜœØÚX›[™ÜÈ
+[™ÑUØ\KİÛÜšÙ›İÜËİ˜XÙ\ØÑ“LLÌŠH\™H›İÂ\Ù\‹YİX\™Y›İ]KX]]Û˜\Úİ™K\ÙYYYÈ8§!H›ÜÜİ\‹œX[][YKX\ËMËY^H8 %ØØ[Üİ\Â˜ÛÛ\]YšXH[’\İÜK›ØØ[]JÚ[˜ÙOXİ]Ù™ŠXİ™\ˆHØ[YH˜Z[[™ÈÚ[™İÈ\È]™\Hİ\‚˜Ûİ[\ˆY]šXÈ
+[][YHİ^\È]˜Z[X›HÈØ\KØ[˜[]XÜËÛØØ[]X
+K‚‚‹HŞH8§!H
+Š‘›ÛİË]\ˆHÙXÜ™]\İÜ™H˜XÙHš^ÛÜœ\YÙ^HX]\šX[ÛˆÚ[™İÜËŠŠˆH™]ÂˆÜ™XYÛÜ—ØÜ™X]WØ]ÛZXØ[XÜ[™Y]È\ØÜš\ÜˆÚ]İ]×Ğ’ST–XÛÈHÔ•˜[ˆ][ˆVˆ[ÙH[™^[™Y]™\HXÈXˆHÜ™X]Üˆ™]\›™YHMˆØ[]\È]Z[YˆÚ[H]™\H]\ˆ™XY\ˆ™XYMÈY™™\™[Û™\Ë\š]š[™ÈHY™™\™[Ù^H›ÜˆHØ[YHİÜ™Kˆ‰Bˆ\ˆØ[
+HH
+MKÌMŠJŠŒM˜
+KÚ[[[™™\ÜYÛ›H\È˜Ø[››İXÜ\ÙXÜ™]
+Ü›Û™ÈÙ^HÜ‚ˆÛÜœ\Y
+HˆYØZ[œİ]HÜš][ˆÛÜœ™XİKˆ]İ\™˜XÙY\È™YH[œ™[]YÚ[™İÜÈ˜Z[\™\ÈÛˆBˆØÜË[Û›Hˆ
+\İÜÙXÜ™]Ø\İÚÌÜ™\Ù[˜ÙX\İÛØ]]İÚÙ[—ÚÙ^X
+KÚXÚ\ÈHÛ™\İˆ™\œÚ[ÛˆÙˆHÚ[™İÜÈ[ˆØ\ÈÜ™Y[ˆ\İ[YHˆ8 %]Ø\ËHXÚËˆ˜][œX\È[Ø^\ÈÔ™YBˆ›YÈ[ÈÙXÜ™]ËœXØ\ÈHÛ™HÜË›Ü[˜[ˆH™\È]Y›İˆ
+ÌÈ\İËÛ™HÙˆÚXÚ[œÂˆH›YÈHÚ]š[™ÈÔÒV[ˆ×Ğ’ST–XÛÈH[^[Û›H[ˆØ[ˆİ[Ø]Ú]È™[[İ˜[‚‚ŠŠ•HÛ™Hİ\™˜XÙH8 %Ü[ˆ]Y\İ[Û‹İÛ™\ˆØ[
+Œ‹LËLJKŠŠˆHØÚY[YL™H[ˆ˜Z[ÈB˜[Øš[KXÚ›ÛYXØ\Ù\È
+š[œ]˜\ˆ˜[œÛZ][™H\Ú]Ë][È]Ûˆš[\˜Ù\Ú[\ˆ]™[Èˆ]HÎLğåÎLH^[HšY]ÜÜ
+Kˆ›İ[™È™YÜ™\ÜÙYˆL‘WĞ”“ÕÔÑT—ÓPU’V\ÈÙ]Û›HÛˆØÚY[X™]™[Ë[™
+Š˜[ˆØÚY[Y[œÈÚ[˜ÙHŒ‹LËL]™H˜Z[Y8 %›Û™H\È]™\ˆ\ÜÙYŠŠˆHX]š^Ø\ÈİÚ]ÚYÛˆİ™\ˆH^[İ]]Ø\È™]™\ˆXYH™\ÜÛœÚ]™KˆÛÈ˜XİÈœ˜[YHHXÚ\Ú[Û‚‚‹HÈH<'çèH
+Š•HÙXˆQ\È›İ™XXÚX›Hœ›ÛHHÛ™HÙ^KH\ÚYÛ‹ŠŠˆÙ\™KœN˜Y˜][ÂˆT•’T×ÒÔÕÈLËŒŒŒX[™\ÜÙ\ÜØY™WØš[™
+
+X
+›ÛİÙİX\™ËœNŒX
+H
+Š™^]ÊŠˆÛˆBˆ›Û‹[ÛÜ˜XÚÈš[™[›\ÜÈT•’T×ÕTÑT—ÕÒÑS˜ØT•’T×ĞQRS—ÕÒÑS˜\ÈÙ]
+Ü‚ˆT•’T×ĞSÕ×ÒS”ÑPÕT‘WĞ’S‘LX
+NÈ]™[ˆ[ˆİ\Ù\—ÙİX\™
+ÙX‹œNŒNL˜
+HÜÈ]™\H›Û‹[ØØ[ÜİˆÛY[Ú]İ]HTÑT—ÕÒÑS˜ˆHİX\™È\™HšYÚ8 %]
+ŠHİ\ÜYSˆ]\ÈØİ[Y[Yˆ›İÚ\™JŠˆHØÜËØÜ™\›ÜˆS‹Ü™[[İKXXØÙ\ÜÈİZY[˜ÙH™]\›œÈ›İ[™ËˆÜš]H]İÛˆ™YØ\™\ÜÂˆÙˆHXÚ\Ú[Ûˆ™[İË‚‹HÈH<'çèH
+Š˜[Øš[KØ[™XYH\Üİ[Y\È\ÈÜÛÙŞJŠˆ8 %H™XXİ˜]]™H\ÚÜÙHÛY[ZÙ\ÈBˆÛÛ™šYİ\™Y˜\ÙU\›
+[Øš[KÜÜ˜ËØ\KØÛY[Ø
+KˆYˆH\\ÈHÛ™HİÜKHÙXˆQ\ÈBˆ\ÚİÜİ\™˜XÙH[™[Øš[KXÚ›ÛYXÚİ[ÛÛYH
+Š›İ]
+ŠˆÙˆHX]š^˜]\ˆ[ˆİ^H\›X[™[Bˆ™YˆYˆHÙXˆQ\È[ÛÈYX[ÈÛÜšÈÛˆÛ™\ËHš^\ÈH™X[İXÚÙY[^[İ]œ™XZÜÚ[ˆ
+Ú[™ÛHÛÛ[[‹Ú][™H[ZZYÚ˜Z[ÈÛÛ\ÙYÙ˜]Ù\™Y
+H8 %›İHÚ[\‹Y]™[ÈÙXZË‚‚‹KKB‚ˆÈÈ<'å#]™K]œËT[Xš[™È™[YYX][Ûˆ8 %[ØÚÈ8¡¤ˆ™X[
+İÛ™\ˆ™\]Y\İŒ‹LËLN
+B‚ˆ
+Š‘[]Y]ŠŠˆØØÜËÜ™\ÙX\˜ÚÌŒ‹LËLN[]™K]œË\[Xš[™ËXØ\Xš[]KX]Y]›YJØÜËÜ™\ÙX\˜ÚÌŒ‹LËLN[]™K]œË\[Xš[™ËXØ\Xš[]KX]Y]›Y
+Bˆ0­ÈÚ^YÛXZ[ˆU‘KÔSP’S‘ËÔÕPˆÛÙH]Y]ˆH[›š[™È›ÙXİÙ\È˜\ˆ\ÜÈ[‚ˆHY\™ÙYœÈ[\NˆÙˆÍÈØ\Xš[]Y\Ë
+ŠŸŒLHU‘JŠˆ
+Û›HŒÈ\Ù\‹Y˜XÚ[™È8 %ˆÙX]\‹™]ÜËØØ[[˜[]XÜÊK
+ŠŸLˆSP’S‘ÊŠˆ
+™X[]Ø]YÙ™ˆÈØZ][™ÈÛ‚ˆHÙ^KÓĞ]]ÓS‹ZX‹Ù[™Ú[™JK
+ŠŸŒMÕPŠŠˆ
+[ØÚÈÈXÙZÛ\ˆÈXœÙ[
+KˆÛZ[˜[ˆ]\›ˆ
+ˆš[YÜ˜][Û‹\™XYK[ØÚËY˜[˜XÚÈ
+ÈÜİÙX[HŠˆ8 %HØ\Xš[]HYÜ˜Y\Âˆ]ZY]HÈH[ØÚÈÜˆY™\œ™Y[œİXYÙˆ\œ›Üš[™ËÛÈØØY™›Û™XYÈ\È›ÙXİ‚ˆ
+Š•\È\XÈ˜XÚÜÈÛÜÚ[™ÈHØ\
+Šˆ8 %\›š[™ÈSP’S‘È[ÈU‘H[™Z[[™ÈÕPœÂˆ›Üˆ™X[ˆÜ›ÜÜËXİ]ÈÔ’V“Ó•ø $ÌÌÈ
+H[\œÈ\™HÛÙKXÛÛ\]H]XİX]Ü‹YØ]Y
+K‚‚ŠŠ•˜[˜ÚHH8 %Ú\Y
+[ØÚÈ8¡¤ˆ™X[š\œİİ]
+NŠŠ‚‹HŞHØ\Xš[]H]Y]\œÚ\İYÈØÜËÜ™\ÙX\˜ÚÌŒ‹LËLN[]™K]œË\[Xš[™ËXØ\Xš[]KX]Y]›Y‹HŞHYÙ[ËØÛÜ™KÜYÚ[œËÙYÜ˜Y][Û‹œX8 %Û™\İH[\ˆ[ØÚÈ˜[˜XÚÜÈ›İÈÙ[‹\™\ÜHÙYÜ˜YYÜ™X\ÛÛ‹™YYßX
+ÈÛ[ØÚØÛÈHYÜ˜YY™X]\™H\È\İ[™İZ\ÚX›Hœ›ÛHH™X[Û™B‹HŞH
+Š”™X[^XHÛİYÜ[THÚYÛš[™ÊŠˆ
+[İØÛÛ›ÛœX
+H8 %™\XÙ\ÈH\™ÛÙYÚYÛH“SĞÒ×ÔÒQÓUT‘H˜
+ÚXÚ^XH[Ø^\È\ÊHÚ]HØİ[Y[YPPËTÒLMˆÚÙ[‹YÜ˜[
+ÈÚYÛ™YXÛÛ[X[™›İÎÈ[˜ÛÛ™šYİ\™Y8¡¤ˆÛ™\İYÜ˜YY™\İ[
+›È]šXÙHİXÚY
+B‹HŞH
+Š”™X[˜[[˜ÙH\›‹\˜]JŠˆ
+˜[[˜ÙKœX
+H8 %Ø\ÈSĞÒ×Ğ•T“—ÔUX
+™]™[ˆÚ[ˆÛÛ™šYİ\™Y
+È›İÈÛÛ\]Yœ›ÛHH˜[œØXİ[ÛœÈÔÕˆ
+YÚ[œË™ÙXÚÛ×İØÜİ—Ü]
+Nˆ[ÛHÜ[™Ú[˜ÛÛYKÜØ]YÛÜšY\Ë[Ø^Hœ›ÛH™X[˜[[˜Ù\Â‹HŞH
+ÌM\İÈ
+\İËİ\İÛ]™WÜ™[YYX][Û‹œX[›™Y^XHÚYÛ˜]\™H™XİÜœÊNÈ^\İ[™È[İ\İ\]YÈHÛ™\İ›İØÛÛ™šYİ\™YÛÛ˜XİÈ\İÛİ[\ˆŞ[˜ÙY
+KLMJB‚ŠŠÛÛ™šYË]Ú[œÈ8 %›\ÈU‘HÚ]›È™]ÈÛÙH
+İÛ™\ˆXİ[Û‹ÙYHØÜËÓÕÓ‘T—ÕTÒÔË›Y
+NŠŠ‚‹HÈHÛÛÙÛHĞ]]8¡¤ˆ[XZ[
+ÈØ[[™\‚‹HÈHÜİYHĞ]]8¡¤ˆ™X[^X˜XÚÈÛÛ›Û‹HÈH[œİ[[™Ú[™\Îˆ˜\İ\‹]Ú\Ü\˜
+Õ
+KYÙK]ØØÛÚÛÜ›Ø
+ÊK^]ÜšYÚ
+œ›İÜÙ\ˆÜ\˜]ÜŠK™X]]Y[Ûİ\
+ÈÙX\˜Ú
+K\ØÛÜ™œXØÛXÚ×ÜÙØ
+\ØÛÜ™ÔÛXÚÈÚ[›™[È8 %Y\\œÈ^\İÑÜÈ›İ[ˆ˜\ÙH™\]Z\™[Y[ÊB‹HÈHSˆÛYH\ÜÚ\İ[
+ÈT•’T×ÒÕTÑWĞ”RS˜ØT•’T×ÒÓQWĞTÔÒTÕS•8¡¤ˆİ\ÙH™XY
+ÈÛÛ›Û‹HÈHœšYØ]H•”ˆ
+Èİ\ÙZÛÛÛœÙ[8¡¤ˆHØ[Y\˜H
+È[XšY[İXÚÂ‹HÈH›\ÛÙÛš][ÛˆX\İ\ˆÜİ\™H
+ÈHØØ[H8¡¤ˆH™Y›XİX[™\™]Üš]HX\›ˆÛÜ‹HÈH[YÜ˜[H›İÚÙ[ˆ8¡¤ˆÚ[›™[œ™\X
+HÛ™H™X[]]Û›Û^HÚYKYY™™Xİ
+B‚ŠŠ‘Ù[Z[™[H[˜Z[8 %™YYÈ™X[ÛÙNŠŠ‚‹HŞH^XH™X[ÚYÛ™\ˆ
+Û™K˜[˜ÚHJB‹HŞH˜[[˜ÙH\›‹\˜]Hœ›ÛHÔÕˆ˜[œØXİ[ÛœÈ
+Û™K˜[˜ÚHJH8 %ÈH^[™ÈS‘ËÓXœ˜H˜[œØXİ[Ûˆ™]Ú
+TH]İ[[™[™ÊB‹HŞHİØÚÈ][İ\È™YY8 %Ù^[\ÜÈİØÚÔ][İ\ÔYÚ[˜
+İÛÜHÔÕŠKH\™U‘HÙ^[\ÜÈYÚ[ˆ™^ÈÙX]\‹Û™]ÜÎÈYÜ™\ÜË\™\İšXİYÚ\™Y[ÈHYÚ[ˆØ]\™\ˆ
+	PTİXÚÙ\ˆ]Xİ[ÛŠKÛ™\İYÜ˜YHÚ[ˆH™YY\ÈİÛ‹ˆX\šÙ]›İ]\ˆØ[ˆÛÛœİ[YH]™^‚‹HŞHÛØÚX[ˆH]™H˜Z[Xİ]˜]\È™Z[™\›İ˜[8 %HY˜][[ÛY[^š[Bˆ\Ü˜Y\ÈÈÛØÚX[ÛY[H[ÛY[[ˆ\›İ™Y\ÚÈ™\ÛÛ™\ÈH™X[İÛ™\‚ˆÜ™Y[X[
+ÙXÜ™]Ø\WİÚÙ[˜
+K›È™\İ\™YYYÈ[˜ÛÛ™šYİ\™Yİ^\ÈÛ™\İBˆY™\œ™Y[™›İÈØ\œšY\ÈHÙYÜ˜YYÜ™X\ÛÛ‹™YYßXİ[\È[š™XİYÛY[Âˆ\™H™]™\ˆ™\XÙY
+\İËİ\İÜÛØÚX[Û]™WØÛY[œX
+B‹HŞH]]Û›Û^H^Xİ]ÜœÎˆ]™H˜Z[È]HÜš]X˜XÚÈÈØ[ÜİÙX[\È8 %Ø[YBˆ^K]\Ü˜YKX™Z[™X\›İ˜[]\›ˆ\ÈÛØÚX[
+[
+ˆ8¡¤ˆÜš]P˜XÚĞÛY[ÂˆØ[ÛY[Ú[ˆH\›İ™Y\ÚÈ™\ÛÛ™\ÈH™X[Ü™Y[X[
+NÈY™\œ™Yˆ™\İ[È›İÈİ[\YÙYÜ˜YYÜ™X\ÛÛ‹™YYßXˆ›ÙHY\Ú\È
+Š››È˜[œÜÜˆ][
+Šˆ
+›İ\İ[ˆ[Ú\™YÛY[
+H8 %]ÈY™\œ™Y\Ü]Ú\Èİ[\Yˆ›ÙWİ˜[œÜÜÛ›İØZ[ÈZ[[™ÈH™X[›ÙH˜[œÜÜİ^\ÈÜ[ˆ™[İÂˆ[™\ˆ“YYXHÈ\ÚİÜÈ›ÙHXİX]ÜœÈˆ
+\İËİ\İİÜš]X˜XÚ×Û]™WØÛY[œXˆ\İËİ\İØØ[Û]™WØÛY[œX
+B‹HŞHØ\Xš[]HXÜ]Z\Ú][ÛˆHZ\ÜÚ[™È›ÙXİ[ÛˆÛYH8 %ˆXÜ]Z\Ú][Û”[[YKœŞ[\Ú^™WØ[™Ü›ÜÜÙJ
+XÛÛ\ÜÙ\È™]\ÙK\™\ÛÛ][Û‰ÜÈ›×Ü™]\ÙXˆİ]ÛÛYH8¡¤ˆ™\ÙX\˜Ú8¡¤ˆİšXİ[ØØ[Ù[™\˜][Ûˆ8¡¤ˆØ[™›Ş™\šYšXØ][Ûˆ8¡¤‚ˆ›Û[İ[Ûœ›ÚÙ\‹œ›ÜÜÙJ
+X[ÈÛ™HØ[X›H]]Ü™X]\ÈH™X[›Û[İ[Û”›ÜÜØ[ˆ
+™]š[İ\ÛHÛ›H\İÜ™X[]KZ\›™\ÜÈš^\™\È]™\ˆ™XXÚY›ÜÜÙJ
+X
+Kˆ™X[ÚÚ[ˆÛÙK\Ş[\Ú\ÎˆYÙ[ËØÛÜ™KØXÜ]Z\Ú][Û‹ÛWÜŞ[œX[\[Y[ÈHÙ[™\˜]XØ˜YˆÙX[\ÈİšXİØØ[Ù[™\˜]Ü˜ØÛİ™\›™Y™\ÙX\˜ÚZÙHH[š™Xİ[ÛˆÚ]XİX[ˆT›İ]\‹›ØØ[Ø˜XÚÙ[™Ø[È
+”ÓÓ‹[Û›K›İ[™Y™]JH[œİXYÙˆ[™]Üš][‚ˆš^\™\È8 %]™\HİÛœİ™X[HİX\™˜Z[
+TÕÜİXˆ[İÛ\İXÙZÛ\‹X›ÙH™Z™Xİ[Û‹ˆÜ›İ[™Ü[Š
+XÚ]][ÛˆØ]KØ[™›Ş™\šYšXØ][Û‹\›X[™[İÛ™\ˆ\›İ˜[
+H\Âˆ[˜Ú[™ÙY[™İ[Ø]\ÈÚ]]™\ˆH[Ù[™]\›œËˆ[X™\˜][H
+Š››İ
+Šˆ]]Ë]šYÙÙ\™Yˆœ›ÛHÚ]ÙØ\XØ\\™H8 %HØ[\ˆ
+]\™HYZ[ˆXİ[ÛˆÜˆØÚY[YÛÜšÙ\ŠH]\İ[›ÚÙH]ˆ^XÚ]KØ[YH\È™\ÛÛ™WÙØ\]Ù[ˆ[™XYH\ËˆHÙ\\˜]HÚÚ[ØY\‹™Ù[™\˜]WÜÚÚ[
+
+XˆÛX\›¸ )—XİXˆ
+š[\[Y[ÙÚXÈ[ˆ[™J
+H˜
+H\ÈH\İ[˜İÛX[\ˆİXœŞ\İ[H[™\Âˆ[İXÚY\™H
+\İËİ\İÚÌ—ÛWÜŞ[œX\İËİ\İÚÌ—ÜŞ[\Ú\×Ü\[[™KœX
+B‹HÈH™X[^[Y[˜Z[Y\\ˆ
+T‹ĞPÔŞŠH]^[Y[ËœÙ]J
+X8 %
+Š›İÛ™\ˆXÚ\Ú[Ûˆ™\]Z\™Y
+[İ™\È[Û™^JJŠ‚‹HÈHYYXHÈ\ÚİÜÈ›ÙHXİX]ÜœÈ
+İÛ™\‹]Ú\™YÜİÙX[\ÊB‹HÈHYÙ[Ëİš\Ú[Û˜YÙ[ËØ\™İ\Ø8 %™X[[\[Y[][Ûˆ
+İ\œ™[H\œÛÛ˜HX\šÙİÛ‹™\›ÈÛÙJB‚ŠŠ’Û™\İH^Y\ˆ
+Ü›ÜÜËXİ][™ËYÚ\İ[]™\˜YÙJNŠŠ‚‹HŞHYÜ˜Y][Û‹œX[\ˆ
+È\YYÈ[İØÛÛ›Û
+È˜[[˜ÙX‹HŞH\HYÜ˜YY
+
+XÈH™[XZ[š[™È[ØÚÈ˜[˜XÚÜÈ8 %Û\ËX[\ËÜ›K\Ş[˜Ë[™BˆSĞÒ×ĞSSÑTØXİ›İÈØ\œHÙYÜ˜YYÜ™X\ÛÛ‹™YYßXÈÚ]Ø\Ø\KZX[Ûˆ]Y]YˆÛX[ˆ
+^H[™XYH˜Z[Û™\İHšXHÛÛ™šYİ\™Y›YÜÈ[œİXYÙˆ™]\›š[™È˜ZÙH]JB‹HŞHİ\™˜XÙHYÜ˜Y][Ûˆ[ˆHQ8 %YÚ[œÈ^ÜÙHHYÜ˜Y][Û—Ú[™›Ê
+XÛÛ˜XİBˆÜYÚ[œØ\İ[™ÈØ\œšY\ÈYÜ˜YYØYÜ˜YYÜ™X\ÛÛ˜ØYÜ˜YYÛ™YYØ[™HYZ[‚ˆYÚ[ˆ™YÚ\İH˜YÙ\È[ØÚËX˜XÚÙYYÚ[œÈ
+Š“SĞÒÊŠˆ
+[X™\‹ÛÛ\H™X\ÛÛˆ
+È™YYYÛÛ™šYÊK‚‹HŞH
+Š“Z\œ›ÜˆH˜YÙHÛÈØ\Xš[]K\™YÚ\İHİ]H
+˜[˜ÚH
+JŠˆ8 %ÜYÚ[—Ü™XÛÜ™ÊÜ˜ÚJXˆ›İÈ™\ÛÛ™\ÈH^XİØ[YH]™HÛ™\İH™\™Xİ
+ÛÛ™šYİ\™YØÛ™\İXØYÜ˜YY
+˜
+H[ÈXXÚˆYÚ[‰ÜÈ]Z[ÛÈØ\KØØ\Xš[]Y\Ø
+HØ[›ÛšXØ[›Ø\™
+HØ[ˆ›ÈÛ™Ù\ˆ[\HH[ØÚÂˆYÚ[ˆ\È]™HZ]\‹ˆ™\ÛÛ][ÛˆÙÚXÈ
+[[YWØÛÛ™šYİ\˜][Û˜ØYÜ˜Y][Û—Ú[™›ØÂˆ]™WÜYÚ[—Ù›Ü˜
+H^˜XİYœ›ÛH›İ]\œËÜYÚ[œËœX[ÈYÚ[œËÚÛ™\İKœXÛÈ›İˆİ\™˜XÙ\ÈÚ\™HÛ™HÛİ\˜ÙHÙˆ][œİXYÙˆ™KY\š]š[™È]ˆ˜XÚİØ\™XÛÛ\]X›NˆÜ˜ÚS›Û™Xˆ
+Hİ]XËY\š]˜][Ûˆ]\ÙYH[Üİ\İÊHØ\œšY\È›ÈÛ™\İHÙ^\Ë[˜Ú[™ÙYœ›ÛH™Y›Ü™K‚‹HŞH
+Š•HYÙ[YÙ[™\˜]YÚÚ[ÛÜXİX[H^Xİ]\È
+˜[˜ÚHJJŠˆ8 %HXZ[‹œX[\]Bˆ[ˆÚÚ[ØY\‹™Ù[™\˜]WÜÚÚ[
+
+X™YÚ\İ\™YHË\\˜[Y]\ˆ[™JÛY\™ÜËÛÛ^
+X\ÈBˆÛÛ[X[™[˜İ[Û‹Ú[HÚÚ[™^Xİ]J
+X\Ü]Ú\ÈÛYÙ›Š\™ÜËÛÛ^
+XÈÛYÙ›Š\™ÜÊXˆ
+ØY\‹œNŒMÍËLMÎX
+Nˆ
+Š™]™\JŠˆÙ[™\˜]YÛÛ[X[™˜Z\ÙY\Q\œ›Ü˜[™İ\™˜XÙY\ÂˆÜÚÚ[–H\œ›Üˆ8 )˜ˆHØ[YH[\]HXYHÙ]ØÛÛ[X[™Ê
+X˜[YHH[˜İ[Ûˆ]™]™\ˆYš[™YˆÛÈÙ]]Š[ÙÛY
+X
+ØY\‹œNŒL˜
+H˜Z\ÙY]šX]Q\œ›Ü˜[™ÙÙÙYHZ\ÛXY[™Âˆ‘˜Z[YÈØYÚÚ[[Ù[HˆÛˆ]™\H\ØÛİ™\Š
+XˆH[\]H›İÈ[Z]ÈH\‹XÛÛ[X[™ˆ	ÛY
+\™ÜËÛÛ^S›Û™JXÚ][™J
+XÙ\\ÈHËX\™È[Ù[H˜[˜XÚÈ8 %HØ[YHÚ\Bˆ]™\H[™]Üš][ˆÚÚ[\Ù\Ëˆ\İËİ\İÙÙ[™\˜]YÜÚÚ[ØÛÛ˜XİœX
+
+ÌNJH^Xİ]\ÈBˆÙ[™\˜]YÛÛ[X[™[œİXYÙˆÛ›H\ÜÙ\[™ÈH]X\˜[[™HY™XŞXÛKÚXÚ\ÈÚ]]\ÂˆÚ\\İ\İËİ\İØÙÜÚÚ[Ü]X\˜[[™KœX‚‹HŞH
+Š‘Ù[™\˜]YÛÛ[X[™˜[Y\È\™HØ[š]^™Y™Y›Ü™H^H™XÛÛYHÛÙJŠˆ8 %ÛÛ[X[™Û˜[YX\œš]™\Âˆ\È[\İYHİ]]
+šY[ÈÙˆHÛX\›¸ )—X›ØÚËÜ˜Ú\İ˜]Ü‹œX
+H[™Ø\Èİš[™ËBˆİXœİ]]Y[ÈÙ[™\˜]Y]ÛˆÛİ\˜ÙKÛÈH][İH
+È™]Û[™H\ØØ\YH™YÚ\İ\—ØÛÛ[X[™ˆİš[™È]\˜[ˆ™]ÈÜØY™WØÛÛ[X[™Û˜[YJ
+XÛÙ\˜Ù\È]ÈH˜\™HY[YšY\ˆ
+˜Y\Š‚ˆ]X\˜[[™K™]XİÚ[š™Xİ[Û˜\ÈÙY[ˆH˜]È˜[YH
+Ø[š]^š[™Èš\œİÛİ[›[™5ßN8ÖÚ$z{-®éÜj×realÄƒ; un avion real apare Ã®n `/history` Ã®n <5s. | 5 | P1 | â€” | Standalone |
 | H19.1.2 ğŸ”¨ | **SursÄƒ AIS realÄƒ** (AISStream WS). **Livrat:** `ais/stream.py` (subscription config-driven din `AIS_BBOX` + `handle_frame` testabil) + `worker.py` cu **reconnect + backoff exponenÈ›ial**. +6 teste. **Validat** handle_frameâ†’envelopeâ†’`writeBatch`â†’`/history` (vasul apare, sog corect). **RÄƒmÃ¢ne** (deploy): hop live-WS + Kafka. **AC:** vase reale curg; dark-vessel detector se declanÈ™eazÄƒ pe un gap AIS real. | 5 | P1 | â€” | Standalone |
 | H19.1.3 ğŸ”¨ | **SursÄƒ TLE realÄƒ** (Celestrak/Space-Track). **Livrat:** `tle/sources.py` (Celestrak GROUP + filtru NORAD; Space-Track login+`gp`), `tle/sensors.py` (registru senzori curatat optical/SAR), `worker.py` cu sursÄƒ pluggable + refresh catalog periodic. +7 teste. **Validat** fetchâ†’propagateâ†’envelopeâ†’`writeBatch`â†’`/history` (satelitul apare cu footprint + `is_sunlit`). **RÄƒmÃ¢ne** (deploy): hop live-net + Kafka. **AC:** `satellite_ephemeris` populat /minut; footprint optical/SAR corect. | 5 | P1 | â€” | Standalone |
 | H19.1.4 ğŸ”¨ | **Surse EW/context reale** (GPSJam/IODA + feed NOTAM/evenimente). **Livrat:** `ew/gpsjam.py` (parser heatmap GPSJam: hexagoane H3 pre-binned â†’ intensitate `bad/(good+bad)`, id din centroid) + `ew/worker.py` Ã®l fetch-uieÈ™te; `context/worker.py` fetch evenimente GeoJSON + NOTAM din `CONTEXT_EVENTS_URL`/`CONTEXT_NOTAM_URL`. +2 teste GPSJam (51 total). **RÄƒmÃ¢ne** (deploy): hop live-net + Kafka; IODA + FAA-NOTAM (auth) ca surse adiÈ›ionale. **AC:** celule H3 jamming + NOTAM-uri din date live. | 5 | P2 | â€” | Standalone |
