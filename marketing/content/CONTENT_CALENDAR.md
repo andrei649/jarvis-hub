@@ -35,7 +35,7 @@
 
 **T-1 · The reveal teaser**
 > Tomorrow.
-> 17 agents. One system. Your data stays home.
+> 18 agents. One system. Your data stays home.
 > Local-first. Governed. $0/month. Open.
 
 ---
@@ -73,7 +73,7 @@
 > architecture, the governance model, or the design trade-offs. Repo: [link].
 
 **r/LocalLLaMA — value-first post**
-> **Title:** I built a local-first, governed multi-agent personal assistant — 17 agents on your own GPU, every action audited
+> **Title:** I built a local-first, governed multi-agent personal assistant — 18 agents on your own GPU, every action audited
 >
 > Body: Runs on LM Studio/Ollama. 17 specialist agents (daily intel, calendar, research, finance,
 > home, family memory…) coordinated by an orchestrator, talking over web/voice/Telegram/Discord/
@@ -113,7 +113,7 @@
 1. **The two false choices** — useful-but-cloud vs. private-but-a-toy; reactive-but-safe vs. autonomous-but-reckless.
 2. **2026's cautionary tale** — the viral always-on agent that became the #1 infostealer target (plaintext secrets, ungoverned autonomy). The demand was real; the safety wasn't.
 3. **The thesis: local-first + governed is the durable answer** — privacy promise *and* cost advantage in one move.
-4. **How it works** — 17 agents, the orchestrator, the autonomy queue + risk gate, the nightly knowledge graph, the tamper-evident audit log, the strict-local agents.
+4. **How it works** — 18 agents, the orchestrator, the autonomy queue + risk gate, the nightly knowledge graph, the tamper-evident audit log, the strict-local agents.
 5. **The honesty discipline** — the BUG-14 story; why "enforced in code, proven by tests" beats a values page.
 6. **What it costs** — $0/month, hybrid by choice, your data trains no one.
 7. **Try it** — one-command self-host; what's next on the road to and beyond 1.0.
@@ -139,10 +139,10 @@
 - Tags: `#localfirst` `#selfhosted` `#privacy` `#opensource` `#AI` `#LLM` `#homelab` `#LocalLLaMA`
 - Communities: r/LocalLLaMA, r/selfhosted, r/homelab, r/opensource, HN, lobste.rs, Mastodon
   fosstodon.org, relevant Discords.
-- One-liner for bios/OG: *Local-first, governed personal AI OS. 17 agents, proactive, on your own GPU. Your data stays home.*
+- One-liner for bios/OG: *Local-first, governed personal AI OS. 18 agents, proactive, on your own GPU. Your data stays home.*
 
 ---
 
-*Numbers in this file are conservative against the verified counts (17 agents, 2,156 tests → "~2,150",
+*Numbers in this file are conservative against the verified counts (18 agents, 2,156 tests → "~2,150",
 ~250+ routes, 7 channels). Re-check `BACKLOG.md` before changing any stat; re-verify competitor claims
 (competitive brief §7) before any comparison post.*

@@ -23,16 +23,20 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 sys.path.insert(0, str(repo_root / "tests"))
 
+import yaml  # noqa: E402
 from golden_harness import make_golden_orchestrator  # noqa: E402
 
 from agents.core.cognition.frontmatter import parse_frontmatter  # noqa: E402
 from agents.core.cognition.persona import PersonaModule, trait_directives  # noqa: E402
 from agents.core.cognition.personality import DEFAULT_TRAITS, Personality  # noqa: E402
-from agents.core.orchestrator import Orchestrator  # noqa: E402
+from agents.core.orchestrator import Orchestrator, _bench_soul_stub  # noqa: E402
 
 TRAIT_NAMES = set(DEFAULT_TRAITS)
 DEFAULT_MEANS = {k: round(float(v["mu"]), 3) for k, v in DEFAULT_TRAITS.items()}
 SOULS = sorted(p for p in (repo_root / "agents").glob("*/SOUL.md"))
+REGISTRY = yaml.safe_load(
+    (repo_root / "agents" / "_system" / "agents.yaml").read_text(encoding="utf-8")
+)
 
 
 def _meta(soul_path):
@@ -225,3 +229,90 @@ def test_means_are_free_of_liveness():
     p = Personality(traits={"warmth": {"mu": 0.8, "sigma": 0.3}}, seed=3)
     assert p.means() == {"warmth": 0.8}
     assert p.means() == p.means()
+
+
+# ── the registry and the SOULs agree ──────────────────────────────────────────
+
+def test_every_active_agent_has_a_soul_and_vice_versa():
+    registered = {a for a, c in REGISTRY["agents"].items()
+                  if (c or {}).get("status", "active") == "active"}
+    on_disk = {p.parent.name for p in SOULS}
+    assert registered == on_disk, (
+        f"registry-only: {sorted(registered - on_disk)}; "
+        f"soul-only: {sorted(on_disk - registered)}"
+    )
+
+
+def test_registry_and_soul_archetypes_match():
+    """Two sources of truth for one fact drift; this makes the drift loud."""
+    drift = []
+    for agent_id, entry in REGISTRY["agents"].items():
+        meta, _ = _meta(repo_root / "agents" / agent_id / "SOUL.md")
+        if str(meta.get("archetype", "")).lower() != str((entry or {}).get("archetype", "")).lower():
+            drift.append((agent_id, entry.get("archetype"), meta.get("archetype")))
+    assert drift == [], f"registry/SOUL archetype drift: {drift}"
+
+
+def test_active_roster_stays_within_the_cardinality_cap():
+    cap = REGISTRY["jarvis"]["cardinality_cap"]
+    active = sum(1 for c in REGISTRY["agents"].values()
+                 if (c or {}).get("status", "active") == "active")
+    assert active <= cap, (
+        f"{active} active agents exceeds cardinality_cap={cap}; agents.yaml requires an "
+        "architecture review before going over"
+    )
+
+
+def test_bench_names_never_collide_with_active_agents_or_sub_brands():
+    """A reserved name is only reservable if promoting it stays unambiguous.
+
+    The sub-brands come from NERVA_VISION.md §2; `hermes` is additionally the
+    upstream project this repo benchmarks against, so it is not a free name.
+    """
+    reserved = {"cortex", "atlas", "synapse", "nerva", "digitaholic", "hermes"}
+    bench = set(REGISTRY["bench"])
+    assert not (bench & set(REGISTRY["agents"])), "a bench name shadows an active agent"
+    assert not (bench & reserved), f"bench name collides with a reserved name: {bench & reserved}"
+
+
+# ── a promoted bench agent is born with a character ───────────────────────────
+
+def test_bench_promotion_stub_ships_a_persona():
+    """Promotion writes this file; without a persona block the new agent would
+    silently inherit the shared defaults — the exact defect the roster fixes."""
+    meta, body = parse_frontmatter(_bench_soul_stub("bruce", "Bruce", "Data Science"))
+
+    assert meta["id"] == "bruce" and meta["archetype"] == "Data Science"
+    traits = meta["personality"]["traits"]
+    assert set(traits) == TRAIT_NAMES
+    assert all(float(t["sigma"]) > 0 for t in traits.values()), "a frozen persona is not alive"
+    assert Orchestrator._normalize_trait_config(traits) is not None
+    assert "## Voice & Tone" in body
+
+
+def test_bench_promotion_stub_is_not_the_shared_default():
+    meta, _ = parse_frontmatter(_bench_soul_stub("bruce", "Bruce", "Data Science"))
+    cfg = Orchestrator._normalize_trait_config(meta["personality"]["traits"])
+    assert Orchestrator._trait_mu(cfg) != DEFAULT_MEANS
+
+
+def test_bench_promotion_stub_carries_no_personal_details():
+    """Shipped SOULs are generic; personal specifics live in SOUL.local.md."""
+    body = _bench_soul_stub("bruce", "Bruce", "Data Science").lower()
+    assert "andrei" not in body
+    assert "the owner" in body
+
+
+def test_house_agent_is_code_enforced_local_only():
+    """Hestia's SOUL promises the house picture never leaves the LAN.
+
+    Room-level occupancy answers "is anyone home right now", so the promise has
+    to hold in code, not only in the registry — `get_agent_policy` consults
+    LOCAL_ONLY_AGENTS before any `llm_policy` the registry declares.
+    """
+    from agents.core.llm.hybrid_router import LOCAL_ONLY_AGENTS
+
+    assert "hestia" in LOCAL_ONLY_AGENTS
+    assert REGISTRY["agents"]["hestia"]["llm_policy"] == "local"
+    _, body = _meta(repo_root / "agents" / "hestia" / "SOUL.md")
+    assert "No cloud" in body

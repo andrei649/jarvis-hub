@@ -46,7 +46,7 @@
 
 > Quick update for everyone waiting on **Jarvis Hub** 👇
 >
-> Feature-complete at v0.11.0: 17 agents on *your* GPU, approval queue + tamper-evident audit log,
+> Feature-complete at v0.11.0: 18 agents on *your* GPU, approval queue + tamper-evident audit log,
 > knowledge-graph memory that grows nightly, 7 channels + mobile. $0/month, cloud strictly opt-in.
 >
 > Next up: real-user proof, then the computer/browser operator, house brain & cameras.

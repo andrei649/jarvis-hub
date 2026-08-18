@@ -34,7 +34,7 @@ Wave 1 is technical, reachable, and amplifies. Win them first; they carry waves 
 **Spine:** *The AI that works while you sleep — owned by the person it serves.*
 
 1. **Hook (3s):** "Your AI shouldn't live in someone else's cloud."
-2. **Proof (15s):** 17 agents, on your hardware, proactive, governed — approval queue + tamper-evident
+2. **Proof (15s):** 18 agents, on your hardware, proactive, governed — approval queue + tamper-evident
    audit log, family agent never touches the internet, $0/month.
 3. **Story (60s):** the BUG-14 catch — the family agent *could* have reached the cloud; we caught it
    pre-launch and made it impossible by construction, with a test. *That's what governed means here.*

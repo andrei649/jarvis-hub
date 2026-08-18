@@ -104,6 +104,61 @@ HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
 
 
+def _bench_soul_stub(bench_id: str, name: str, archetype: str) -> str:
+    """A promotable SOUL for a bench agent, with a persona block from the start.
+
+    A stub without front-matter loads as an agent with no character of its own:
+    it inherits the shared trait defaults, so a promoted agent sounds like an
+    average of the cast rather than like itself. The traits below are only a
+    neutral, distinguishable starting point — the promotion is a prompt to write
+    a real one, which is why the body says so where the author will see it.
+
+    Kept generic like every shipped SOUL: personal specifics belong in the
+    gitignored ``SOUL.local.md`` overlay, never in a template written by code.
+    """
+    return (
+        "---\n"
+        f"id: {bench_id}\n"
+        f"name: {name}\n"
+        f"codename: {bench_id}\n"
+        f"archetype: {archetype}\n"
+        "status: active\n"
+        "tier: foundation\n"
+        "channels:\n"
+        "  primary: web-dashboard\n"
+        "# Persona (H21.2) — PLACEHOLDER, deliberately mid-range so this agent is\n"
+        "# not mistaken for a finished character. Tune mu per trait against the\n"
+        "# Voice & Tone section below: <= 0.3 or >= 0.7 becomes a behavioral\n"
+        "# directive in the per-turn persona block, mid-band traits stay silent.\n"
+        "personality:\n"
+        "  traits:\n"
+        "    warmth:        {mu: 0.50, sigma: 0.10}\n"
+        "    assertiveness: {mu: 0.50, sigma: 0.10}\n"
+        "    humor:         {mu: 0.35, sigma: 0.10}\n"
+        "    formality:     {mu: 0.55, sigma: 0.10}\n"
+        "    curiosity:     {mu: 0.60, sigma: 0.10}\n"
+        "  affect:\n"
+        "    valence_setpoint: 0.00\n"
+        "    arousal_setpoint: 0.20\n"
+        "version: 0.1.0\n"
+        "---\n\n"
+        f"# {name}\n"
+        f"> {archetype} — auto-promoted bench agent.\n\n"
+        "## Identity\n\n"
+        f"{name} is a specialist agent promoted from the bench because demand "
+        "crossed its activation threshold. This SOUL is a generated starting "
+        "point: until an author gives it a distinct voice and tunes the persona "
+        "block above, it will read like a generic assistant rather than like a "
+        "member of the cast.\n\n"
+        "## Mission\n\n"
+        f"Serve as the dedicated {archetype} for the owner.\n\n"
+        "## Voice & Tone\n\n"
+        "**Register:** formal-conversational\n"
+        "**Language:** mirrors the owner\n"
+        "**Tone signature:** to be written — 3-5 adjectives, distinct from every other agent.\n"
+    )
+
+
 def _as_bool(value, default: bool = True) -> bool:
     """Coerce a runtime-settings value (bool / int / "true" / "off" / ...) to bool.
 
@@ -2324,19 +2379,7 @@ class Orchestrator:
         soul_path = soul_dir / "SOUL.md"
         if not soul_path.exists():
             soul_dir.mkdir(parents=True, exist_ok=True)
-            stub = (
-                f"# {name}\n"
-                f"> {archetype} — auto-promoted bench agent.\n\n"
-                f"## Identity\n"
-                f"{name} is a specialist agent promoted from the bench because "
-                f"demand crossed its activation threshold.\n\n"
-                f"## Mission\n"
-                f"Serve as the dedicated {archetype} for Andrei.\n\n"
-                f"## Voice & Tone\n"
-                f"**Register:** formal-conversational\n"
-                f"**Language:** English / Romanian as appropriate\n"
-            )
-            soul_path.write_text(stub, encoding="utf-8")
+            soul_path.write_text(_bench_soul_stub(bench_id, name, archetype), encoding="utf-8")
             logger.info(f"promote_bench_agent: wrote stub SOUL.md for {bench_id}")
 
         agent_dict = {

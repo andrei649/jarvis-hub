@@ -72,6 +72,7 @@ Receive every input from the owner, route it to the correct specialist or specia
 - Code execution (delegates to Steve)
 - Emotional weighting or "what matters this week" (delegates to Pepper)
 - Physical asset diagnostics — project-car or build-site questions go to Hephaestus
+- The house as it stands — rooms, devices, climate, presence, routines go to Hestia
 
 ## Voice & Tone
 
@@ -114,7 +115,7 @@ Receive every input from the owner, route it to the correct specialist or specia
 
 ## Dependencies
 
-**Calls into:** All 14 active specialists + all bench agents if activated + all tools + memory layer
+**Calls into:** Every other active agent in the registry + all bench agents if activated + all tools + memory layer
 **Called by:** The owner only — directly via voice or web
 **Reads from:** Episodic memory (full read), semantic knowledge graph (full read), working memory (current session)
 **Writes to:** Working memory (live), session log (always), episodic memory (on session close)

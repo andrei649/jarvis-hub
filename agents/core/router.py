@@ -121,6 +121,16 @@ INTENT_RULES: dict[str, tuple[list[str], tuple[str, ...], float]] = {
                                "securitate", "amenintare", "porturi"), W_NORMAL),
     "automation":(["oracle"], ("automation", "workflow", "n8n", "pipeline",
                                "automatizare", "flux"), W_NORMAL),
+    # House state, not house construction — "santier"/"constructie" stay with
+    # hephaestus above, and "acasa" stays with frigga (who is home, not what the
+    # building is doing). Ambiguous words are deliberately absent: RO "camera" is
+    # both a room and a camera device, and "lumina" is too often figurative.
+    "house":     (["hestia"], ("thermostat", "termostat", "hvac", "radiator",
+                               "boiler", "centrala", "heating", "incalzire",
+                               "lights", "lumini", "bec", "becuri", "priza",
+                               "prize", "smart home", "homebridge",
+                               "living room", "bedroom", "dormitor",
+                               "sufragerie"), W_NORMAL),
     "howard":    (["howard"], ("howard", "archive", "remember", "arhiva",
                                "aminteste", "digital twin", "what would i",
                                "what did i", "what have i", "what do i",
@@ -151,6 +161,7 @@ class IntentRouter:
         "oracle": ["oracle"], "ultron": ["ultron"], "gecko": ["gecko"],
         "hercules": ["hercules"], "hephaestus": ["hephaestus"],
         "frigga": ["frigga"], "howard": ["howard"], "argus": ["argus"],
+        "hestia": ["hestia"],
     }
 
     # Back-compat: flat keyword → agents view (some tooling/tests may read it).
