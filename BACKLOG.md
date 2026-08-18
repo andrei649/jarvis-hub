@@ -103,6 +103,14 @@ squash-merged once present on `main`; no item by itself completes a runtime epic
   acceptance. Serialization still
   hard-codes `evaluation_only`/`proposal_only` and `can_* = false`; no authority, routing, execution
   or promotion changed, B2 remains `PARTIAL` beyond Step 2, and the epics stay `BUILDING`.
+- 🟡 Landed-not-yet-accepted governance wave (2026-08-14…16) — SEC-B8 external-skill approval
+  hardening (#911, merged `790a725`) and the external exact-head acceptance-state core (#916,
+  merged `519dca0`) are on `main` with terminal-green exact-head CI, but **each carries a recorded
+  post-merge integration HOLD**: #911 merged with zero independent review submissions ("must not
+  be treated as governance-complete or as satisfying #905/#906"), and #916's reviewer verdict was
+  only "GO — no content blockers", not the required R3 PASS. Both await a durable post-merge
+  attestation plus an owner retain/revert decision. The B7 candidate/corrective pair #912/#918 is
+  tracked in the B7 paragraph below. No authority was added; release readiness remains false.
 - ✅ Innovation Lab control v1 / #805 / PRs #831 and #837 — versioned RFC and Knowledge Garden
   contracts, fail-closed lifecycle/lineage validation, immutable retained evidence and the
   documented no-delivery-authority boundary. The governed synthetic-public examples complete
@@ -164,10 +172,17 @@ is open and reserved to the Ultron Security Architect on `nerva2/b7-task-mediati
 The six owner decisions are resolved. PR #912 landed the bounded default-off candidate, but it
 was merged after its final exact-head R3 verdict remained **BLOCK**: intentionally-direct work
 could bypass a degraded global mediation head, and the dispatch permit did not revalidate the
-complete persisted execution tuple. Draft corrective PR #918 closes those authority seams plus
-the adjacent raw-executor, refusal-accounting, post-guard mutation and hostile-copy paths. B7 is
-still not accepted: #918 needs exact-head hosted CI, a fresh distinct R3 PASS and separate
-integration, while live #906 integration authority remains open. E5/E8 therefore stay blocked.
+complete persisted execution tuple. Corrective PR #918 closed those authority seams plus the
+adjacent raw-executor, refusal-accounting, post-guard mutation and hostile-copy paths, and its
+technical R3 gates completed on exact head `6eed5a7`: terminal-green hosted Linux/Windows CI and
+a fresh distinct R3 **PASS / approved-for-integration** attestation
+([comment 5313004564](https://github.com/andrei649/jarvis-hub/pull/918#issuecomment-5313004564)).
+It was then merged as `b5e52c6` (2026-08-17) while the integrator's owner/policy-gate **HOLD**
+still stood: #818 remains `owner_hold`, live #906 integration authority remains open, and
+#757/#778/#818 were not reconciled to #918 before merge. The recorded post-merge verdict is
+**merged but not program-accepted** — the owner must either record a bounded retain/exception
+decision and reconcile the ledgers, or authorize a corrective revert/successor. B7 therefore
+remains not accepted and E5/E8 stay blocked.
 
 B3 / Continuity Core (#731) mapping — all six #778 unblock items now have an explicit
 destination, prior-art citation where accepted evidence exists (including `RISKS.md`'s
@@ -677,7 +692,9 @@ owner's machine in 30 seconds, read-only.
   implementation (+2 tests in `test_h27_capability_verification.py`). `qa_audit_probes.py` reports all
   nine claims CLOSED.
 
-- [ ] 🟡 **SEC-B6 — gate hardening.** *In review (successor of split #894), not yet accepted truth.*
+- [ ] 🟡 **SEC-B6 — gate hardening.** *Bytes landed on `main` via #896 (`d57d87f`, 2026-08-09) with
+  green CI, but GitHub records no independent review submission for it, so per the #894 integrator
+  directive below this stays 🟡 until an evidence-backed acceptance is recorded.*
   `test_route_auth_matrix.py` gains a *read* half: `test_no_unclassified_open_read` forces every OPEN
   GET to be classified by the **substance of its handler** (`INTENTIONALLY_OPEN_READS`, each with a
   reason) or carry `user_guard`; `test_read_classifications_are_honest` keeps both sets shrink-only so
@@ -687,8 +704,9 @@ owner's machine in 30 seconds, read-only.
   `user_guard`, snapshot re-seeded, generated chapter-14 sweep regenerated. Per-handler substance
   evidence: [`docs/security/SEC-B6-open-reads-evidence.md`](docs/security/SEC-B6-open-reads-evidence.md).
   **Mark ✅ DONE only when the successor PR passes fresh exact-head CI + independent review** (owner
-  integrator directive, #894). *Open follow-up (gap):* forget export/purge lists are maintained
-  separately — add a test asserting `export_manifest ⊆ (purged ∪ KEEP)`.
+  integrator directive, #894). *Follow-up delivered:* the export/purge-drift gap is closed — #900
+  (`2f81029`, Max «copper-nectar») added `tests/test_forget_export_purge_parity.py` asserting
+  nothing an export names may sit on the forget KEEP list.
 
 **Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
 3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source
@@ -1889,8 +1907,8 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…17 + HF-1…7 + NTH-1; vezi re-baseline 2026-06-08 + tabelul de mai jos). ✅ **CLN-3 livrat + CLN-2 substanțial livrat (#293/#296, v0.11.0)** — `web.py` 4636→1282 LOC (45 routere, 9 rute inline), `orchestrator.py` 1620→1456 LOC; suprafața de rute byte-identică, parity-guarded. Rămân deschise: taskuri netrackuite ca buguri (**TASK-1** Howard backend, **TASK-2** HUD v2 depth, **TASK-3** taint-tracking canale, **BUG-2b** frontend E2E). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** ~2,814 passed, 6 skipped (2 xfailed) — skip-urile sunt teste gated pe Docker/wasmtime (sandbox isolation) + heartbeat-ul opțional, absente în CI fără backend de sandbox. *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 4/4, H12 24/25, frontiere H13–H17 19/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
-**Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
+**Test count (backend pytest):** **6,548** (generated status, commit `43cc870`; STATUS.md sync 2026-08-17 numără ~6,764 colectate pe branch) — skip-urile declarate sunt teste gated pe Docker/wasmtime (sandbox isolation) + heartbeat-ul opțional, absente în CI fără backend de sandbox. *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 4/4, H12 24/25, frontiere H13–H17 19/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus; snapshot-ul de atunci era ~2,814. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Frontend (BUG-2):** **521 vitest** + mobile **96 jest** (generated status; snapshot-ul istoric 2026-06: 184 teste JS / 23 fișiere) — separat de suita pytest.
 **Observability (MOONSHOT §6):** north-star + counter-metrics (accepted/active user, interrupt rate, reject rate, %-local, p95) sunt acum calculate într-un singur loc (`agents/core/observability/north_star.py`) și expuse la `GET /api/metrics/north-star` — vezi [docs/METRICS.md](docs/METRICS.md).
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
