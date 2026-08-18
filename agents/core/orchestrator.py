@@ -757,28 +757,45 @@ class Orchestrator:
 
     @staticmethod
     def _normalize_trait_config(raw) -> Optional[dict]:
-        """Normalize SOUL front-matter traits into Personality distributions."""
+        """Normalize SOUL front-matter traits into Personality distributions.
+
+        Authored traits are merged *over* the default set rather than replacing
+        it: a SOUL that tunes only ``warmth`` keeps the other four traits at
+        their defaults instead of silently losing them, and every agent ends up
+        on the same trait basis — which is what makes the ensemble's diversity
+        distances comparable across the roster.
+
+        An omitted ``sigma`` inherits the default trait's liveness. Defaulting
+        it to 0 would freeze a hand-authored trait, which is exactly the "no
+        variation" failure `docs/COGNITION.md` §7 tells operators to hunt down.
+        """
         if not isinstance(raw, dict):
             return None
-        out = {}
+        from .cognition.personality import DEFAULT_TRAITS
+
+        out = {name: dict(spec) for name, spec in DEFAULT_TRAITS.items()}
+        authored = False
         for name, spec in raw.items():
+            base = DEFAULT_TRAITS.get(str(name), {})
+            fallback_sigma = float(base.get("sigma", 0.10))
             try:
                 if isinstance(spec, dict):
                     mu = float(spec.get("mu", spec.get("mean", 0.5)))
-                    sigma = float(spec.get("sigma", 0.0))
-                    skew = float(spec.get("skew", 0.0))
+                    sigma = float(spec.get("sigma", fallback_sigma))
+                    skew = float(spec.get("skew", base.get("skew", 0.0)))
                 else:
                     mu = float(spec)
-                    sigma = 0.0
-                    skew = 0.0
+                    sigma = fallback_sigma
+                    skew = float(base.get("skew", 0.0))
             except (TypeError, ValueError):
                 continue
+            authored = True
             out[str(name)] = {
                 "mu": max(0.0, min(1.0, mu)),
                 "sigma": max(0.0, sigma),
                 "skew": skew,
             }
-        return out or None
+        return out if authored else None
 
     @staticmethod
     def _trait_mu(traits: Optional[dict]) -> dict:
@@ -806,7 +823,13 @@ class Orchestrator:
             raw_traits = meta.get("traits") or personality_meta.get("traits")
             traits = self._normalize_trait_config(raw_traits)
 
-            affect_meta = meta.get("affect") if isinstance(meta.get("affect"), dict) else {}
+            # Affect reads top-level first (the original H21.2 shape), then the
+            # nested one, so a SOUL can keep its whole persona in one block.
+            affect_meta = meta.get("affect")
+            if not isinstance(affect_meta, dict):
+                affect_meta = personality_meta.get("affect")
+            if not isinstance(affect_meta, dict):
+                affect_meta = {}
             try:
                 valence = float(affect_meta.get("valence_setpoint", affect_meta.get("valence", 0.0)))
                 arousal = float(affect_meta.get("arousal_setpoint", affect_meta.get("arousal", 0.0)))
@@ -822,7 +845,10 @@ class Orchestrator:
                     arousal_setpoint=arousal,
                 )
                 if not baseline:
-                    baseline = persona.traits(agent_id)
+                    # The ensemble anchors lifetime drift (±0.10) to this, so it
+                    # has to be the configured μ. A single sample would anchor
+                    # the agent's identity to one draw of the liveness noise.
+                    baseline = persona.means(agent_id)
             if ensemble is not None and baseline:
                 ensemble.register_persona(agent_id, baseline)
 
