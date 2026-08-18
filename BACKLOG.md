@@ -161,13 +161,12 @@ E1 and E6 remain `BUILDING`. E5 Night Shift stays blocked: it needs sufficient E
 behavior **plus** the B7 task-level Ultron mediation evidence. B7 status per the #757/#778
 work-claim ledger: discovery child [#818](https://github.com/andrei649/jarvis-hub/issues/818)
 is open and reserved to the Ultron Security Architect on `nerva2/b7-task-mediation-evidence`.
-The six owner decisions are resolved. PR #912 landed the bounded default-off candidate, but it
-was merged after its final exact-head R3 verdict remained **BLOCK**: intentionally-direct work
-could bypass a degraded global mediation head, and the dispatch permit did not revalidate the
-complete persisted execution tuple. Draft corrective PR #918 closes those authority seams plus
-the adjacent raw-executor, refusal-accounting, post-guard mutation and hostile-copy paths. B7 is
-still not accepted: #918 needs exact-head hosted CI, a fresh distinct R3 PASS and separate
-integration, while live #906 integration authority remains open. E5/E8 therefore stay blocked.
+The six owner decisions are resolved. PR #912 landed the bounded default-off candidate; PR #918
+(merged as commit b5e52c6) closed the corrective B7 dispatch-authority seams and the adjacent
+raw-executor, refusal-accounting, post-guard mutation and hostile-copy paths. **B7 is still not
+accepted:** live #906 integration authority remains open (owner provision of non-admin builder
+credential, distinct integrator/App, external store/keys, no-bypass ruleset). E5/E8 therefore
+stay blocked pending #906 activation.
 
 B3 / Continuity Core (#731) mapping — all six #778 unblock items now have an explicit
 destination, prior-art citation where accepted evidence exists (including `RISKS.md`'s
@@ -189,7 +188,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~5,790 collected (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~6,764 backend + 521 frontend + 96 mobile collected (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
