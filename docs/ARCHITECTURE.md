@@ -562,7 +562,7 @@ from git history into `*.local.md`).
 
 ### Add a new agent (active)
 
-1. Create `agents/<agent_id>/SOUL.md` — see any existing soul for format (Identity / Mission / Voice sections). Keep it generic; personal details go in `SOUL.local.md` (above).
+1. Create `agents/<agent_id>/SOUL.md` — start from `agents/_templates/SOUL.template.md` (Identity / Mission / Voice & Tone sections). Keep it generic; personal details go in `SOUL.local.md` (above). Fill in the `personality` front-matter block: without it the agent inherits the shared default traits and has no character of its own, and `tests/test_persona_roster.py` fails. Traits derive from the Voice & Tone prose — μ ≤ 0.3 or ≥ 0.7 becomes a behavioral directive in the per-turn persona block, mid-band traits stay silent, and every agent must sit ≥ 0.1 from every other in trait space.
 2. Add entry under `agents:` in `agents/_system/agents.yaml`:
    ```yaml
    myagent:
