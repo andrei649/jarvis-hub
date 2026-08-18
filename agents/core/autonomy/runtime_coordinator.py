@@ -39,8 +39,6 @@ from .worker import is_night_window
 
 logger = logging.getLogger("jarvis.autonomy.runtime")
 
-_STATUS_COUNTED = ("done", "failed", "approved", "blocked", "proposed", "running")
-
 
 def _night_shift_snapshot(orch) -> dict:
     """Mirror AutonomyCoordinator.loop()'s own night-window read (read-only)."""

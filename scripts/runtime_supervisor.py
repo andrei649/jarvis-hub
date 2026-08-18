@@ -24,7 +24,9 @@ from __future__ import annotations
 import contextlib
 import os
 import signal
-import subprocess
+
+# Fixed argv only (no shell, no string interpolation) — see the Popen call below.
+import subprocess  # nosec B404
 import sys
 import time
 from pathlib import Path
@@ -92,7 +94,10 @@ class Supervisor:
         try:
             while not self._stopping:
                 started_at = time.monotonic()
-                self._child = subprocess.Popen(self.command, cwd=str(REPO_ROOT))
+                # `self.command` defaults to a fixed argv list (module path, not a shell
+                # string) and is only ever overridden by a test fixture, never by
+                # untrusted/user input — no shell=True, no interpolation.
+                self._child = subprocess.Popen(self.command, cwd=str(REPO_ROOT))  # noqa: S603  # nosec B603
                 self._log("child_start", child_pid=self._child.pid)
                 returncode = self._child.wait()
                 ran_for = time.monotonic() - started_at

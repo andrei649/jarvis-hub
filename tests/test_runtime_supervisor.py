@@ -39,13 +39,13 @@ def env(tmp_path, monkeypatch):
 
 
 def _stop_after(supervisor: "rs.Supervisor", delay: float):
-    def _fire():
-        time.sleep(delay)
-        supervisor._stopping = True
-        if supervisor._child is not None and supervisor._child.poll() is None:
-            supervisor._child.terminate()
-
-    threading.Thread(target=_fire, daemon=True).start()
+    # Only flips the flag — never forces the child down. The loop checks
+    # `_stopping` right after the current child's own `wait()` returns, so a
+    # fast-exiting child (this test's `sys.exit(1)`) stops the loop cleanly on
+    # its own. Forcing a `.terminate()` here would race a child that hasn't
+    # reached `sys.exit(1)` yet under CI load, turning a clean returncode 1
+    # into a SIGTERM (-15) and making the assertion below flaky.
+    threading.Timer(delay, lambda: setattr(supervisor, "_stopping", True)).start()
 
 
 def test_restarts_a_crashing_child_and_logs_lifecycle(env):
