@@ -68,11 +68,17 @@ def test_restarts_a_crashing_child_and_logs_lifecycle(env):
 
 def test_sigterm_stops_supervisor_and_child_without_restart(env):
     # `signal.signal()` only works on the interpreter's main thread, so `run()`
-    # (which registers handlers) must execute there — a background thread sends
-    # the real SIGTERM instead of calling the handler directly, so this exercises
-    # the actual OS signal path, not just the callback.
+    # (which registers handlers) must execute there. The timer calls the
+    # registered handler directly rather than raising a real OS signal: on
+    # Windows, `os.kill(os.getpid(), SIGTERM)` does not invoke the Python
+    # handler at all — it calls TerminateProcess on the *current* process,
+    # killing the interpreter outright (verified against CPython's os.kill
+    # docs). Under pytest-xdist that silently kills the worker mid-test with
+    # no result ever reported, hanging the whole run rather than failing it.
+    # Calling the handler directly exercises the same application logic
+    # (stopping flag + child SIGTERM) without depending on OS signal delivery.
     supervisor = rs.Supervisor(command=[sys.executable, "-c", "import time; time.sleep(30)"])
-    threading.Timer(0.2, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+    threading.Timer(0.2, lambda: supervisor._handle_signal(signal.SIGTERM, None)).start()
     supervisor.run()
 
     records = read_records(env["log_path"])
@@ -82,13 +88,15 @@ def test_sigterm_stops_supervisor_and_child_without_restart(env):
 
 
 def test_pidfile_written_while_running_and_removed_after(env):
+    # See the note above `test_sigterm_stops_supervisor_and_child_without_restart`
+    # on why the handler is called directly instead of raising a real OS signal.
     supervisor = rs.Supervisor(command=[sys.executable, "-c", "import time; time.sleep(30)"])
     seen_pidfile = {}
 
     def _check_and_signal():
         seen_pidfile["exists"] = env["pidfile"].exists()
         seen_pidfile["pid"] = env["pidfile"].read_text().strip() if seen_pidfile["exists"] else None
-        os.kill(os.getpid(), signal.SIGTERM)
+        supervisor._handle_signal(signal.SIGTERM, None)
 
     threading.Timer(0.2, _check_and_signal).start()
     supervisor.run()
