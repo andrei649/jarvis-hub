@@ -8,7 +8,7 @@ This table is looked up by **exact model id**; `agents/core/cost_tracker.py` hol
 coarse *family* table that the running meter uses. Keep the two in step — a test pins
 each family row here to its newest member (`test_price_tables_do_not_drift`).
 
-Prices verified 2026-08-17 against the providers' own pricing pages:
+Prices verified 2026-08-18 against the providers' own pricing pages:
   Anthropic  https://platform.claude.com/docs/en/about-claude/pricing
   Gemini     https://ai.google.dev/gemini-api/docs/pricing
   OpenAI     https://developers.openai.com/api/docs/pricing
@@ -17,11 +17,14 @@ Two limits are deliberate. Prices are flat per model: Gemini's >200k-token tiers
 the promotional rates noted below are not modelled, so a long-context Gemini call is
 under-estimated. And retired models keep their rows — persisted run history references
 them by id, so deleting one would silently unprice past runs rather than correct them.
+
+Full row-by-row verification evidence (source URL + retrieval date per row):
+docs/research/2026-08-18-llm-pricing-verification.md
 """
 
 from .model_config import DEFAULT_CLAUDE_MODEL, RETIRED_CLAUDE_DEFAULT
 
-PRICES_VERIFIED = "2026-08-17"
+PRICES_VERIFIED = "2026-08-18"
 
 MODELS = {
     # ── Anthropic ────────────────────────────────────────────────────────────────

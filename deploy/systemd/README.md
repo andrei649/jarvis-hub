@@ -61,3 +61,24 @@ curl -fsS http://127.0.0.1:8080/readyz >/dev/null || systemctl restart jarvis-hu
 - Default bind is loopback. To expose it, set `JARVIS_HOST` **and** provide an auth
   token (or `JARVIS_ALLOW_INSECURE_BIND=1`) — otherwise the app refuses to boot
   (fail-closed, H23.11). Prefer a reverse proxy (TLS) over a raw off-loopback bind.
+
+## Headless engine only (no dashboard): `jarvis-runtime-coordinator.service`
+
+`jarvis-hub.service` already runs the Always-On autonomy engine (coordinator +
+heartbeat + night-shift) *inside* the same process as the HTTP dashboard — nothing
+further is needed if that single-process deployment is what you want.
+
+If you'd rather run the engine **without** the HTTP dashboard (a background-only
+box, or a dashboard hosted elsewhere), use
+[`jarvis-runtime-coordinator.service`](jarvis-runtime-coordinator.service) instead
+— install it the same way as above, substituting the unit name. It writes one
+structured JSON line per cycle to `logs/runtime.jsonl` (`$JARVIS_RUNTIME_LOG` to
+relocate) instead of exposing `/healthz`/`/readyz`; `tail -f` that file (or `make
+runtime-status` from the repo) is the equivalent liveness check. See
+`scripts/runtime_supervisor.py` for the non-systemd equivalent (`make runtime-up`),
+used for local dev and CI verification.
+
+**Never run both units against the same `JARVIS_HOME`** — each independently
+drives `AutonomyCoordinator.loop()` against the same `autonomy.db`, and two
+copies would tick (and could double-execute approved tasks against) the same
+queue.
