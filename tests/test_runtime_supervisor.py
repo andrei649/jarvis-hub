@@ -19,6 +19,15 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# Windows has no real signals: `os.kill()`/`Popen.send_signal()` with anything
+# other than CTRL_C_EVENT/CTRL_BREAK_EVENT calls TerminateProcess() directly —
+# an uncatchable hard kill, with no chance for a registered Python signal
+# handler to run. SIGKILL itself doesn't exist there at all. So on win32 the
+# closest analog to `kill -9` is SIGTERM (still an unconditional terminate),
+# and a supervisor can never observe its own graceful "stopped" shutdown path
+# from an externally-sent signal — see the two platform branches below.
+_HARD_KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+
 
 def _write_fake_child(tmp_path: Path, *, sleep_seconds: float) -> Path:
     script = tmp_path / "fake_coordinator.py"
@@ -75,7 +84,12 @@ def test_supervisor_respawns_a_child_that_exits_and_logs_it(tmp_path, monkeypatc
     assert kinds[0] == "spawned"
     assert "child_exited" in kinds
     assert "respawned" in kinds
-    assert kinds[-1] == "stopped"
+    if sys.platform != "win32":
+        # Only POSIX delivers SIGTERM to a registered handler across
+        # processes; on Windows send_signal(SIGTERM) is an uncatchable
+        # TerminateProcess(), so the supervisor never reaches its own
+        # graceful-shutdown log line (see _HARD_KILL comment above).
+        assert kinds[-1] == "stopped"
 
 
 def test_supervisor_recovers_a_sigkilled_child_within_seconds(tmp_path):
@@ -98,7 +112,7 @@ def test_supervisor_recovers_a_sigkilled_child_within_seconds(tmp_path):
         assert _wait_for(lambda: len(_read_events(log_path)) >= 1, timeout=10.0)
         first_pid = _read_events(log_path)[0]["pid"]
 
-        os.kill(first_pid, signal.SIGKILL)
+        os.kill(first_pid, _HARD_KILL)
 
         def _respawned_with_new_pid() -> bool:
             events = _read_events(log_path)
@@ -114,5 +128,10 @@ def test_supervisor_recovers_a_sigkilled_child_within_seconds(tmp_path):
     events = _read_events(log_path)
     exited = next(e for e in events if e["supervisor_event"] == "child_exited")
     assert exited["pid"] == first_pid
-    # SIGKILL exit code is negative signal number on POSIX.
-    assert exited["exit_code"] == -signal.SIGKILL
+    if sys.platform == "win32":
+        # os.kill(pid, N) on Windows calls TerminateProcess(handle, N), so the
+        # exit code is N itself, not negated.
+        assert exited["exit_code"] == _HARD_KILL
+    else:
+        # A POSIX child killed by a signal reports a negative signal number.
+        assert exited["exit_code"] == -_HARD_KILL
