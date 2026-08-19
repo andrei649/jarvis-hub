@@ -1,62 +1,40 @@
-"""B2 trusted-verifier bootstrap for the Nerva 2.0 program manifest.
+"""Candidate-side Step-2 reporting for the Nerva program manifest.
 
-This module is deliberately NON-ENFORCING and read-only:
+This module is deliberately NON-ENFORCING and permanently fail-closed:
 
-- it never activates or requires any check, workflow, rule, or status,
-- it never writes or mutates repository state,
-- it never calls GitHub and never grants or claims execution authority,
-- its CLI exit code is always 0 for a produced verdict (a verdict is a
-  report, not a gate); exit 0 is informational and must never be wired as
-  a CI gate.
+- candidate repository code cannot authenticate itself,
+- no candidate path, hash, signature, or trust anchor can grant source trust,
+- no checker module is imported, compiled, or executed,
+- structural validation and release readiness are always unavailable here,
+- the CLI is informational and returns zero after producing a verdict.
 
-It performs strict, deterministic, fail-closed verification of the offline
-Nerva v1 program manifest (``docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json``)
-by reusing the canonical loader and validator primitives from
-``check_nerva_program_manifest``, then reports an honest per-stream verdict
-(``DONE``/``BUILDING``/``OPEN``/``BLOCKED``/``PARTIAL``/``UNKNOWN``), the
-declared authority posture, whether release readiness is derived, and whether
-the generated Markdown is byte-identical to the committed document.
-
-Hostile input (non-object roots, unknown fields, contradictory eligibility,
-forged authority, duplicate JSON keys, non-finite numbers, missing files)
-produces a failed verdict instead of raising, so a human or later live step
-can audit why the manifest is not trustworthy.
+The module may strictly decode the raw manifest and report its declared fields so
+that a human can inspect them. Those fields are untrusted evidence labels, not an
+authorization, execution, completion, or release decision. Real source
+authentication and checker execution require a future Step-3 launcher whose code
+and trust material are independently sourced outside the candidate repository.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
-import re
+import json
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from check_nerva_program_manifest import (
-    DOCUMENT_RELATIVE,
-    MANIFEST_RELATIVE,
-    PROGRAM_STATES,
-    REGISTRY_RELATIVE,
-    ManifestError,
-    _derive_eligibility,
-    load_json_strict,
-    render_markdown,
-    validate_manifest,
-)
-
 REPO = Path(__file__).resolve().parent.parent
 ACTIVE_STATUSES = frozenset({"discovery", "building", "verifying"})
-
-_CHECKER_SHA256 = "a57c2d06fcecf75b3b693733e6d7fa2059190752365c85086c2972c0dcd3af58"
-_SELF_PIN = b'_VERIFIER_SHA256 = "<self>"'
-_SELF_PIN_RE = re.compile(rb'_VERIFIER_SHA256\s*=\s*"[0-9a-f]{64}"')
-_VERIFIER_SHA256 = "64bca18bd7245ece332dc544eaf2df4f57b7691e6d0438905e998e8fb6a9a190"
+PROGRAM_STATES = frozenset({"not_started", "discovery", "building", "verifying", "blocked", "done"})
+MANIFEST_RELATIVE = Path("docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json")
+STRUCTURAL_VALIDATION_ERROR = "structural validation unavailable in candidate-side Step 2"
+SOURCE_TRUST_ERROR = "source authentication requires an independently sourced Step-3 launcher"
 
 
 @dataclass(frozen=True)
 class StreamAssessment:
-    """Honest, independently-derived verdict for a single program stream."""
+    """Informational assessment of one untrusted manifest stream."""
 
     stream_id: str
     program_status: str
@@ -98,7 +76,7 @@ class AuthorityPosture:
 
 @dataclass(frozen=True)
 class ManifestVerdict:
-    """A total, deterministic verdict over the manifest (never raises)."""
+    """A total, deterministic, fail-closed verdict over untrusted input."""
 
     manifest_id: str
     schema_version: int
@@ -108,13 +86,13 @@ class ManifestVerdict:
     authority: AuthorityPosture | None
     release_ready: bool
     all_streams_done: bool = False
-    trusted_source: bool = True
+    trusted_source: bool = False
     source_errors: tuple[str, ...] = ()
     render_current: bool | None = None
 
 
 def verdict_label(program_status: str, derived_eligibility: str) -> str:
-    """Map a (program status, derived eligibility) pair to a human verdict label."""
+    """Map a status/eligibility pair to an informational label."""
 
     if program_status == "done":
         return "DONE" if derived_eligibility == "satisfied" else "PARTIAL"
@@ -127,8 +105,18 @@ def verdict_label(program_status: str, derived_eligibility: str) -> str:
     return "UNKNOWN"
 
 
+def _derive_eligibility(status: str, has_open_gate_or_blocker: bool) -> str:
+    if status == "done":
+        return "blocked" if has_open_gate_or_blocker else "satisfied"
+    if status == "blocked":
+        return "blocked"
+    if status in ACTIVE_STATUSES:
+        return "in_progress"
+    return "blocked" if has_open_gate_or_blocker else "eligible"
+
+
 def assess_stream(stream: Any) -> StreamAssessment:
-    """Assess one stream without throwing on hostile shapes."""
+    """Assess one raw stream without throwing on hostile shapes."""
 
     if not isinstance(stream, dict):
         return StreamAssessment(
@@ -180,7 +168,7 @@ def assess_stream(stream: Any) -> StreamAssessment:
 
 
 def read_authority(data: Any) -> AuthorityPosture | None:
-    """Report the declared authority block as found; ``None`` when absent."""
+    """Report the declared authority block; absent booleans fail closed."""
 
     raw = data.get("authority") if isinstance(data, dict) else None
     if not isinstance(raw, dict):
@@ -192,65 +180,45 @@ def read_authority(data: Any) -> AuthorityPosture | None:
         completion_authority=raw.get("completion_authority", False) is True,
         release_ready=raw.get("release_ready", False) is True,
         ultron_remains_sole_action_authority=(
-            raw.get("ultron_remains_sole_action_authority", True) is True
+            raw.get("ultron_remains_sole_action_authority", False) is True
         ),
     )
 
 
-def _normalized_source_bytes(path: Path) -> tuple[bytes, str]:
-    """Return LF-normalized source bytes plus a stable digest for a file.
+def _strict_json_data(path: Path) -> Any:
+    """Read strict JSON without duplicate keys or non-finite numbers."""
 
-    The verifier's own digest is computed over the file with its self-pin
-    literal blanked out, so embedding the accepted digest never circularly
-    changes the value that must match it.
-    """
-    raw = path.read_bytes().replace(b"\r\n", b"\n")
-    if path.resolve() == Path(__file__).resolve():
-        raw = _SELF_PIN_RE.sub(_SELF_PIN, raw)
-    return raw, hashlib.sha256(raw).hexdigest()
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
 
+    def reject_constant(value: str) -> None:
+        raise ValueError(f"non-finite JSON number: {value}")
 
-def verify_trusted_source() -> tuple[bool, tuple[str, ...]]:
-    """Verify that the accepted verifier/checker bytes match the pins.
-
-    Anti-counterfeit proof: the verifier and the canonical checker must be
-    byte-identical (LF-normalized) to the versions accepted at release time.
-    Returns ``(trusted, errors)``; a failure is reported, never enforced.
-
-    The checker's module object is reached through ``sys.modules`` so the
-    module is only ever imported with a single import style (CodeQL
-    Py/import-and-import-from), while ``__file__`` stays observable for
-    tamper tests.
-    """
-    checker_path = Path(sys.modules["check_nerva_program_manifest"].__file__)
-    errors: list[str] = []
-    for label, path, expected in (
-        ("checker", checker_path, _CHECKER_SHA256),
-        ("verifier", Path(__file__), _VERIFIER_SHA256),
-    ):
-        try:
-            _normalized, digest = _normalized_source_bytes(path)
-        except (OSError, ValueError) as exc:
-            errors.append(f"{label} unreadable: {exc}")
-            continue
-        if digest != expected:
-            errors.append(f"{label} sha256 mismatch: expected {expected}, got {digest}")
-    return (not errors, tuple(errors))
+    data = json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=reject_duplicate_keys,
+        parse_constant=reject_constant,
+    )
+    stack: list[tuple[Any, int]] = [(data, 0)]
+    while stack:
+        value, depth = stack.pop()
+        if depth > 64:
+            raise ValueError("JSON nesting exceeds the structural bound")
+        if isinstance(value, dict):
+            stack.extend((item, depth + 1) for item in value.values())
+        elif isinstance(value, list):
+            stack.extend((item, depth + 1) for item in value)
+    return data
 
 
-def verify_data(
-    data: Any,
-    *,
-    registry: Any = None,
-    root: Path = REPO,
-    verify_git: bool = False,
+def _informational_verdict(
+    data: Any, *, errors: tuple[str, ...] = (STRUCTURAL_VALIDATION_ERROR,)
 ) -> ManifestVerdict:
-    """Verify an already-parsed manifest value and return a total verdict."""
-
-    if registry is None:
-        registry = load_json_strict(root / REGISTRY_RELATIVE)
-    errors = validate_manifest(data, root=root, registry=registry, verify_git=verify_git)
-    structurally_valid = not errors
     if isinstance(data, dict):
         raw_id = data.get("manifest_id")
         raw_version = data.get("schema_version")
@@ -267,141 +235,128 @@ def verify_data(
         streams = ()
         authority = None
     all_streams_done = bool(streams) and all(item.verdict_label == "DONE" for item in streams)
-    release_ready = (
-        structurally_valid
-        and all_streams_done
-        and authority is not None
-        and authority.release_ready is True
-    )
-    trusted_source, source_errors = verify_trusted_source()
     return ManifestVerdict(
         manifest_id=manifest_id,
         schema_version=schema_version,
-        structurally_valid=structurally_valid,
-        errors=tuple(errors),
+        structurally_valid=False,
+        errors=errors,
         streams=streams,
         authority=authority,
-        release_ready=release_ready,
+        release_ready=False,
         all_streams_done=all_streams_done,
-        trusted_source=trusted_source,
-        source_errors=source_errors,
+        trusted_source=False,
+        source_errors=(SOURCE_TRUST_ERROR,),
         render_current=None,
     )
 
 
-def _discover_repo_root(manifest_path: Path) -> Path | None:
-    """Walk upward from the manifest to find the repository root.
+def verify_data(data: Any) -> ManifestVerdict:
+    """Return a total informational verdict; never authenticate candidate code."""
 
-    The root is the nearest ancestor containing a ``.git`` entry (a directory
-    in a working copy, or a ``gitdir:`` file in a linked worktree). ``None``
-    when no repository is discoverable.
-    """
-    current = manifest_path.resolve().parent
-    for candidate in (current, *current.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    return None
+    return _informational_verdict(data)
 
 
-def verify_path(
-    manifest_path: Path,
-    *,
-    registry_path: Path | None = None,
-    document_path: Path | None = None,
-    root: Path | None = None,
-    verify_git: bool = False,
-) -> ManifestVerdict:
-    """Verify a manifest from disk, failing closed on unreadable input."""
+def verify_path(manifest_path: Path) -> ManifestVerdict:
+    """Strictly load raw JSON, while keeping source and structure untrusted."""
 
-    if root is None:
-        root = _discover_repo_root(manifest_path)
-        if root is None:
-            return ManifestVerdict(
-                manifest_id="",
-                schema_version=0,
-                structurally_valid=False,
-                errors=(f"unable to discover repository root from {manifest_path}",),
-                streams=(),
-                authority=None,
-                release_ready=False,
-            )
-    if registry_path is None:
-        registry_path = root / REGISTRY_RELATIVE
     try:
-        data = load_json_strict(manifest_path)
-        registry = load_json_strict(registry_path)
-    except (OSError, ValueError, ManifestError) as exc:
-        return ManifestVerdict(
-            manifest_id="",
-            schema_version=0,
-            structurally_valid=False,
-            errors=(f"failed to load manifest or registry: {exc}",),
-            streams=(),
-            authority=None,
-            release_ready=False,
-            render_current=None,
+        data = _strict_json_data(manifest_path)
+    except (OSError, UnicodeError, ValueError, RecursionError) as exc:
+        return _informational_verdict(
+            None,
+            errors=(
+                STRUCTURAL_VALIDATION_ERROR,
+                f"failed to load manifest: {exc}",
+            ),
         )
-    verdict = verify_data(data, registry=registry, root=root, verify_git=verify_git)
-    render_current: bool | None = None
-    if verdict.structurally_valid and document_path is not None:
-        try:
-            render_current = render_markdown(data) == document_path.read_text(encoding="utf-8")
-        except (KeyError, TypeError, UnicodeError, OSError):
-            render_current = None
-    return replace(verdict, render_current=render_current)
+    return _informational_verdict(data)
+
+
+def _ascii_cli_value(value: object) -> str:
+    """Escape one untrusted value as ASCII without embedded line breaks."""
+
+    encoded = json.dumps(str(value), ensure_ascii=True)
+    return encoded[1:-1]
 
 
 def _print_verdict(verdict: ManifestVerdict) -> None:
     labels = ("DONE", "BUILDING", "OPEN", "BLOCKED", "PARTIAL", "UNKNOWN")
     counts = [sum(1 for item in verdict.streams if item.verdict_label == label) for label in labels]
-    print(f"manifest_id={verdict.manifest_id or '(unreadable)'}")
-    print(f"schema_version={verdict.schema_version}")
+    print(f"manifest_id={_ascii_cli_value(verdict.manifest_id or '(unreadable)')}")
+    print(f"schema_version={_ascii_cli_value(verdict.schema_version)}")
     print(f"structurally_valid={'yes' if verdict.structurally_valid else 'no'}")
     print(f"release_ready={'yes' if verdict.release_ready else 'no'}")
     print(f"all_streams_done={'yes' if verdict.all_streams_done else 'no'}")
     print(f"trusted_source={'yes' if verdict.trusted_source else 'no'}")
-    if verdict.source_errors:
-        for error in verdict.source_errors:
-            print(f"source-error: {error}")
+    for error in verdict.source_errors:
+        print(f"source-error: {_ascii_cli_value(error)}")
     if verdict.authority is not None:
-        posture = "non_enforcing" if verdict.authority.non_enforcing else "reports_authority"
+        posture = (
+            "declares_non_enforcing"
+            if verdict.authority.non_enforcing
+            else "declares_other_authority"
+        )
         print(f"authority={posture}")
     else:
         print("authority=missing")
     if verdict.streams:
-        summary = ", ".join(
-            f"{label}={count}" for label, count in zip(labels, counts, strict=True) if count
+        print(
+            "declared_verdicts="
+            + ",".join(f"{label}:{count}" for label, count in zip(labels, counts, strict=True))
         )
-        print(f"streams={len(verdict.streams)} ({summary})")
-    if verdict.render_current is not None:
-        print(f"render_current={'yes' if verdict.render_current else 'no'}")
-    if verdict.errors:
-        print("errors:")
-        for error in verdict.errors:
-            print(f"- {error}")
+        for item in verdict.streams:
+            print(
+                f"{_ascii_cli_value(item.stream_id)}: "
+                f"{_ascii_cli_value(item.verdict_label)} "
+                f"status={_ascii_cli_value(item.program_status)} "
+                f"eligibility={_ascii_cli_value(item.delivery_eligibility)} "
+                f"derived={_ascii_cli_value(item.derived_eligibility)} "
+                f"open_gates={_ascii_cli_value(item.open_gate_count)} "
+                f"open_blockers={_ascii_cli_value(item.open_blocker_count)} "
+                f"evidence={_ascii_cli_value(item.evidence_count)}"
+            )
+    for error in verdict.errors:
+        print(f"error: {_ascii_cli_value(error)}")
+
+
+class _NonExitingArgumentParser(argparse.ArgumentParser):
+    """Return parser failures to the verdict path without writing raw input."""
+
+    def error(self, message: str) -> None:
+        raise ValueError(message)
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = _NonExitingArgumentParser(add_help=False, exit_on_error=False)
+    parser.add_argument("-h", "--help", action="store_true")
     parser.add_argument("--manifest", type=Path, default=REPO / MANIFEST_RELATIVE)
-    parser.add_argument("--registry", type=Path, default=None)
-    parser.add_argument("--document", type=Path, default=None)
-    parser.add_argument("--root", type=Path, default=None)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(sys.argv[1:] if argv is None else argv)
-    root = args.root if args.root is not None else REPO
-    document = args.document if args.document is not None else root / DOCUMENT_RELATIVE
-    verdict = verify_path(
-        args.manifest,
-        registry_path=args.registry,
-        document_path=document,
-        root=root,
-        verify_git=False,
-    )
-    _print_verdict(verdict)
+    try:
+        args = _parse_args(sys.argv[1:] if argv is None else argv)
+    except (argparse.ArgumentError, UnicodeError, ValueError) as exc:
+        _print_verdict(
+            _informational_verdict(
+                None,
+                errors=(
+                    STRUCTURAL_VALIDATION_ERROR,
+                    f"invalid command line: {exc}",
+                ),
+            )
+        )
+        return 2
+    if args.help:
+        _print_verdict(
+            _informational_verdict(
+                None,
+                errors=(STRUCTURAL_VALIDATION_ERROR, "help requested"),
+            )
+        )
+        print("usage=nerva_trusted_verifier.py [--manifest PATH]")
+        return 0
+    _print_verdict(verify_path(args.manifest))
     return 0
 
 

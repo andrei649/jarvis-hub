@@ -211,7 +211,7 @@
         {"id": "E5-delivery-E2", "kind": "delivery_gate", "target": "E2", "issue": 760, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
         {"id": "E5-delivery-E3", "kind": "delivery_gate", "target": "E3", "issue": 761, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
         {"id": "E5-delivery-E6", "kind": "delivery_gate", "target": "E6", "issue": 764, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
-        {"id": "E5-program-B7", "kind": "program_gate", "target": "B7", "issue": 818, "artifact": "BACKLOG.md", "reason_code": "task_mediation_decisions_unresolved"}
+        {"id": "E5-program-B7", "kind": "program_gate", "target": "B7", "issue": 818, "artifact": "BACKLOG.md", "reason_code": "task_mediation_acceptance_pending"}
       ],
       "references": [
         {"kind": "issue", "value": 763},
@@ -308,7 +308,7 @@
         }
       ],
       "blockers": [
-        {"id": "E8-program-B7", "kind": "program_gate", "target": "B7", "issue": 818, "artifact": "BACKLOG.md", "reason_code": "task_mediation_decisions_unresolved"},
+        {"id": "E8-program-B7", "kind": "program_gate", "target": "B7", "issue": 818, "artifact": "BACKLOG.md", "reason_code": "task_mediation_acceptance_pending"},
         {"id": "E8-external-PROVIDER_E9", "kind": "external_dependency", "target": "PROVIDER_E9", "issue": 767, "artifact": "docs/nerva2/RESEARCH_LAB_E9_1.md", "reason_code": "provider_specific_evidence_missing"}
       ],
       "references": [

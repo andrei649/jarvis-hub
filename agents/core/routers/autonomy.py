@@ -214,7 +214,7 @@ async def autonomy_decide(task_id: int, body: AutonomyDecisionBody):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    from core.autonomy.queue import TaskQueueError
+    from agents.core.autonomy.queue import TaskQueueError
     try:
         task = await orch.autonomy.apply_decision(
             task_id, body.action.strip().lower(), decided_by="admin", payload=body.payload,
@@ -230,7 +230,7 @@ async def autonomy_brief(kind: str = "morning"):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    from core.autonomy.digest import build_morning_brief, build_evening_retro
+    from agents.core.autonomy.digest import build_morning_brief, build_evening_retro
     if kind == "evening":
         text = build_evening_retro(orch.autonomy_queue)
     else:
@@ -358,7 +358,7 @@ async def autonomy_pref_suggestions():
 
 def _approval_projection(task) -> dict:
     """Annotate a queued Task with a human-facing reversibility verdict."""
-    from core.autonomy.policy import RiskTier
+    from agents.core.autonomy.policy import RiskTier
     from agents.core.capability_manifests import manifest_for_action
 
     tier = int(task.risk_tier)

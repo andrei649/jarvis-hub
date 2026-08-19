@@ -4,6 +4,7 @@
   "action:call.outbound": "wired",
   "action:channel.reply": "wired",
   "action:desktop.step": "wired",
+  "action:host.control": "wired",
   "action:house.control": "wired",
   "action:house.recovery": "wired",
   "action:house.security_control": "wired",

@@ -24,8 +24,8 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from core.autonomy.queue import TaskQueue  # noqa: E402
-from core.autonomy.preferences import PreferenceStore  # noqa: E402
+from agents.core.autonomy.queue import TaskQueue  # noqa: E402
+from agents.core.autonomy.preferences import PreferenceStore  # noqa: E402
 from core.checkpoint import CheckpointManager  # noqa: E402
 from core.security.audit import AuditLogger  # noqa: E402
 

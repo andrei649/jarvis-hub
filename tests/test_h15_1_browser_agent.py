@@ -17,7 +17,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 from core.browser_agent import (  # noqa: E402
     BrowserPolicy, GovernedBrowser, NullBrowserDriver, classify_step,
 )
-from core.autonomy.action_approvals import ActionApprovalQueue  # noqa: E402
+from agents.core.autonomy.action_approvals import ActionApprovalQueue  # noqa: E402
 from agents.core import browser_agent as browser_api  # noqa: E402
 import agents.web as web  # noqa: E402
 

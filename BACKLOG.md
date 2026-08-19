@@ -179,13 +179,17 @@ squash-merged once present on `main`; no item by itself completes a runtime epic
   explicit false/hallucinated-recall metrics and strict retained-evidence preflight. Reports remain
   `evaluation_only`; no lesson promotion, memory write, routing, execution or completion authority
   is added. E6 remains `BUILDING`, and owner-live benefit is still unproven.
-- ✅ E1/E6/E9 authority-ceiling successors (from closed #854, `21a37f81`) — emission-time constants
-  on the E1 measured report (#859), E6 observation/proposal/evaluation payloads (#860), the E9
-  regression report (#861) and the E9 totals invariant (#864); post-merge hostile-proof evidence
-  completed for E1 (#865) and coordination truth retired to history-only (#866). All fail-closed:
-  `evaluation_only`/`proposal_only` ceilings and `can_*`/`can_grant_*` = false are hard-coded at
-  serialization. No authority, routing, execution or promotion change; #856/B2 remains first and
-  the epics stay `BUILDING`.
+- 🟡 E1/E6/E9 authority-ceiling successors from closed #854 — the E1 measured report (#859), E6
+  observation/proposal/evaluation payloads (#860), and E9 regression report (#861) landed before
+  their required #856 Step-2 predecessor was accepted. That predecessor is now satisfied by #913,
+  but its later acceptance does not retroactively validate those merge procedures. The original
+  #859 merge remains historically invalid; its missing E1 hostile-proof evidence was separately
+  accepted in #865 and that E1 side gate is closed. The retained E6 (#860), E9 (#861), and separate
+  E9 totals-validation (#864) bytes still await their own fresh post-B2 acceptance decisions. The
+  #866 coordination-only history cleanup was separately accepted and grants no functional
+  acceptance. Serialization still
+  hard-codes `evaluation_only`/`proposal_only` and `can_* = false`; no authority, routing, execution
+  or promotion changed, B2 remains `PARTIAL` beyond Step 2, and the epics stay `BUILDING`.
 - ✅ Innovation Lab control v1 / #805 / PRs #831 and #837 — versioned RFC and Knowledge Garden
   contracts, fail-closed lifecycle/lineage validation, immutable retained evidence and the
   documented no-delivery-authority boundary. The governed synthetic-public examples complete
@@ -244,8 +248,13 @@ E1 and E6 remain `BUILDING`. E5 Night Shift stays blocked: it needs sufficient E
 behavior **plus** the B7 task-level Ultron mediation evidence. B7 status per the #757/#778
 work-claim ledger: discovery child [#818](https://github.com/andrei649/jarvis-hub/issues/818)
 is open and reserved to the Ultron Security Architect on `nerva2/b7-task-mediation-evidence`.
-Discovery found six owner decisions that must be resolved before branch creation; implementation
-has not started, and acceptance evidence is still required. B7 therefore remains open.
+The six owner decisions are resolved. PR #912 landed the bounded default-off candidate, but it
+was merged after its final exact-head R3 verdict remained **BLOCK**: intentionally-direct work
+could bypass a degraded global mediation head, and the dispatch permit did not revalidate the
+complete persisted execution tuple. Draft corrective PR #918 closes those authority seams plus
+the adjacent raw-executor, refusal-accounting, post-guard mutation and hostile-copy paths. B7 is
+still not accepted: #918 needs exact-head hosted CI, a fresh distinct R3 PASS and separate
+integration, while live #906 integration authority remains open. E5/E8 therefore stay blocked.
 
 B3 / Continuity Core (#731) mapping — all six #778 unblock items now have an explicit
 destination, prior-art citation where accepted evidence exists (including `RISKS.md`'s
@@ -1327,6 +1336,7 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 | H23.26 | **Generated project status → kill doc-counter drift** — `scripts/status_sync.py` now derives backend pytest + frontend Vitest + mobile Jest counts, route snapshot, active YAML agents, horizon roll-ups, last verified-main commit (including PR base from the Actions event) and open Lane-A gates into tracked `project-status.json`; marker-bounded snippets drive README badges/Run/Status, JARVIS Quick Stats, GO_LIVE header and STATUS counters; `--check` gates all artifacts and fails closed on collection errors or missing markers. Python-only CI may explicitly use `--reuse-js-counts` while the separate JS jobs execute the suites. `tests/test_status_sync.py` (+11 H23.26 cases; 18 total). | ✅ done — one machine-readable truth, satellites generated | 0.19 |
 | H23.27 | **Design-partner feedback export** — `scripts/export_partner_feedback.py`: explicit local JSON+Markdown packet with allowlisted install environment, onboarding completion, aggregate autonomy/failure/latency, NPS + intentionally written feedback and sanitized north-star. It never copies prompts/responses, task titles/payloads, credentials, host/user/path/session identifiers and never uploads; north-star fetch accepts HTTP(S) only. `tests/test_export_partner_feedback.py` (+8). | ✅ done — privacy-safe default, operator chooses whether to share files | 0.20 |
 | H23.28 | **Park-list CI guard, actually implemented** — `scripts/park_guard.py` + `.github/workflows/park-guard.yml`: PR diff gate with line-based `unpark:` declarations, narrow module unlocks, phase aliases (wave-1/O28, wave-2/O29, wave-3/O30+O33), owner-only training/rust, Windows-path parity and self-protected policy files; CI executes the last merged guard policy when available. `tests/test_park_guard.py` (+10). | ✅ done — phased freeze is now machine-enforced | 0.13-tail |
+| H23.29 | **Runtime supervisor** — a single headless entrypoint (`scripts/coordinator.py`) boots the real Orchestrator and wires the existing coordinator/heartbeat/night-shift loops (`Orchestrator.start_channels()`) with no HTTP layer, separate from the web app process. `agents/core/observability/runtime_log.py`'s `RuntimeRunLog` appends one bounded JSON line per autonomy-coordinator cycle to `logs/runtime.jsonl` (heartbeat status, tick mode/max_tier, night-shift active-window, ok/error) and persists a cycle counter across restarts so a crash-and-recover is provable, not assumed — wired via a getattr-optional hook in `AutonomyCoordinator.loop()`, byte-identical when unset. `scripts/runtime_supervisor.py` spawns the coordinator and respawns it on any exit including `SIGKILL` (a process cannot recover itself from `kill -9`), logging `spawned`/`child_exited`/`respawned`/`stopped` events into the same run-log; `deploy/systemd/jarvis-runtime.service` + a `runtime-coordinator` docker-compose service layer OS-level `restart:`/`Restart=` on top as defense-in-depth. `make runtime-up`/`runtime-down`/`runtime-status` drive it locally. `tests/test_runtime_log.py` (+7), `tests/test_runtime_log_wiring.py` (+4), `tests/test_runtime_coordinator_boot.py` (+2), `tests/test_runtime_supervisor.py` (+2, one of which SIGKILLs a real child process and asserts respawn). Manually verified end-to-end in-sandbox: 3+ consecutive clean cycles, and a real `kill -9` on the coordinator process recovered in ~1s with the cycle counter resuming (not resetting) — see HANDOFF.md. No autonomy-policy, kill-switch, or dispatch-authority code touched. | ✅ done | 0.16 |
 
 ---
 

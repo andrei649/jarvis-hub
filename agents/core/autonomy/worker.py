@@ -15,16 +15,24 @@ stays free of orchestrator/Telegram imports and is unit-testable offline.
 
 from __future__ import annotations
 
+if __name__ != "agents.core.autonomy.worker":
+    raise ImportError("AutonomyWorker authority must be imported as agents.core.autonomy.worker")
+
 import inspect
 import logging
+import threading
+import time
+import uuid
+from contextvars import ContextVar
 from datetime import date
 from typing import Awaitable, Callable, Optional
 
 from ..action_origin import current_action_origin
 from ..ambient.policy import AttentionDeliveryBroker, AttentionLedger
 from ..security import taint
+from .mediation import DetachedHMACSigner, ReceiptExpectation, issue_receipt
 from .policy import ACT, ASK, NOTIFY, AutonomyPolicy, RiskTier
-from .queue import MAX_ATTEMPTS, Task, TaskQueue, TaskStatus
+from .queue import MAX_ATTEMPTS, Task, TaskQueue, TaskQueueError, TaskStatus
 
 logger = logging.getLogger("jarvis.autonomy.worker")
 
@@ -33,6 +41,33 @@ INTERRUPT_BUDGET_PER_DAY = 4
 # executor(task) -> dict result ; notifier(task) -> bool (pushed ok)
 Executor = Callable[[Task], Awaitable[dict]]
 Notifier = Callable[[Task], Awaitable[bool]]
+
+
+class _ExecutionPermit:
+    """Shared one-use permit that cannot be replayed by a copied ContextVar."""
+
+    def __init__(self, task: Task) -> None:
+        self._fingerprint = TaskQueue.execution_fingerprint(task)
+        self._active = True
+        self._lock = threading.Lock()
+
+    def consume(self, task: Task, *, validate: Callable[[Task, str], bool]) -> bool:
+        with self._lock:
+            if not self._active:
+                return False
+            self._active = False
+            fingerprint = TaskQueue.execution_fingerprint(task)
+            if (
+                not self._fingerprint
+                or fingerprint != self._fingerprint
+                or task.status != TaskStatus.RUNNING.value
+            ):
+                return False
+        return validate(task, self._fingerprint)
+
+    def revoke(self) -> None:
+        with self._lock:
+            self._active = False
 
 
 def is_night_window(hour: int, start: int = 23, end: int = 6) -> bool:
@@ -116,12 +151,24 @@ class InterruptBudget:
 
 
 class AutonomyWorker:
-    def __init__(self, queue: TaskQueue, policy: Optional[AutonomyPolicy] = None,
-                 executor: Optional[Executor] = None, notifier: Optional[Notifier] = None,
-                 budget: Optional[InterruptBudget] = None, audit=None, prefs=None,
-                 kill_switch=None, delivery_broker: AttentionDeliveryBroker | None = None,
-                 clock: Optional[Callable[[], float]] = None,
-                 running_ttl_seconds: float = 3600.0):
+    def __init__(
+        self,
+        queue: TaskQueue,
+        policy: Optional[AutonomyPolicy] = None,
+        executor: Optional[Executor] = None,
+        notifier: Optional[Notifier] = None,
+        budget: Optional[InterruptBudget] = None,
+        audit=None,
+        prefs=None,
+        kill_switch=None,
+        delivery_broker: AttentionDeliveryBroker | None = None,
+        clock: Optional[Callable[[], float]] = None,
+        running_ttl_seconds: float = 3600.0,
+        kernel=None,
+        mediation_signer: DetachedHMACSigner | None = None,
+        mediation_clock_ms: Optional[Callable[[], int]] = None,
+        mediation_receipt_ttl_ms: int = 86_400_000,
+    ):
         self.queue = queue
         self.policy = policy or AutonomyPolicy()
         if hasattr(self.policy, "outcome_provider"):
@@ -129,9 +176,7 @@ class AutonomyWorker:
         self.executor = executor
         self.notifier = notifier
         self.budget = budget or InterruptBudget()
-        self.delivery_broker = delivery_broker or getattr(
-            self.budget, "delivery_broker", None
-        )
+        self.delivery_broker = delivery_broker or getattr(self.budget, "delivery_broker", None)
         self.audit = audit
         self.prefs = prefs
         # O26-P0.7 (F3): the executor seam honors the global kill-switch
@@ -145,11 +190,235 @@ class AutonomyWorker:
         self.running_ttl_seconds = float(running_ttl_seconds)
         # Strong refs to fire-and-forget push tasks so they aren't GC'd mid-flight.
         self._bg_tasks: set = set()
+        self._mediation_kernel = kernel
+        self._mediation_signer = mediation_signer or DetachedHMACSigner(None)
+        self._mediation_clock_ms = mediation_clock_ms or (lambda: int(time.time() * 1000))
+        self._mediation_receipt_ttl_ms = int(mediation_receipt_ttl_ms)
+        self._execution_context = ContextVar(
+            f"autonomy_mediated_execution_{id(self)}", default=None
+        )
+
+    def bind_mediation(self, kernel, signer: DetachedHMACSigner | None) -> None:
+        """Bind the existing Action Kernel and detached owner signer to this worker."""
+
+        from ..kernel.binding import MediationKernelBridge
+
+        if kernel is not None and not isinstance(kernel, MediationKernelBridge):
+            kernel = MediationKernelBridge(kernel)
+        self._mediation_kernel = kernel
+        self._mediation_signer = signer or DetachedHMACSigner(None)
+
+    def kernel_gate(self, action, capability=None, budget=None):
+        """Broker-facing kernel hook that preserves the exact decision for enqueue."""
+
+        kernel = self._mediation_kernel
+        if not callable(kernel):
+            raise RuntimeError("action kernel is unavailable")
+        from ..kernel import Action
+
+        origin = self._effective_origin(getattr(action, "origin", "generated"))
+        payload, _tainted = self._mark_payload_for_origin(getattr(action, "payload", None), origin)
+        finalized_action = Action(
+            kind=action.kind,
+            agent=action.agent,
+            title=action.title,
+            payload=payload,
+            scope=action.scope,
+            origin=origin,
+        )
+        decision = kernel(finalized_action, capability=capability, budget=budget)
+        try:
+            from ..kernel import Verdict
+
+            if (
+                decision.verdict is Verdict.DENY
+                and self.queue.mediation_mode in {"enforce", "hold"}
+                and self.queue.classify_mediation(finalized_action.kind) is not False
+            ):
+                self.queue.record_mediation_refusal(finalized_action.kind)
+        except Exception:
+            logger.warning("could not persist kernel refusal evidence", exc_info=True)
+        return decision
+
+    def execution_allowed(self, task: Task) -> bool:
+        """Guard a TaskExecutor call with the worker's private validated-claim context."""
+
+        if self.queue.mediation_mode == "off":
+            return True
+        persisted, mediated = self.queue.execution_snapshot(
+            getattr(task, "id", 0), presented_kind=getattr(task, "kind", "")
+        )
+        persisted_fingerprint = (
+            TaskQueue.execution_fingerprint(persisted) if persisted is not None else None
+        )
+        presented_fingerprint = TaskQueue.execution_fingerprint(task)
+        if (
+            persisted is None
+            or not persisted_fingerprint
+            or persisted_fingerprint != presented_fingerprint
+        ):
+            return False
+        if not mediated:
+            return True
+        if self.queue.mediation_mode != "enforce":
+            return False
+        permit = self._execution_context.get()
+        return isinstance(permit, _ExecutionPermit) and permit.consume(
+            task, validate=self.queue.validate_mediated_execution
+        )
+
+    def _kernel_action(self, agent: str, kind: str, title: str, payload: dict, origin: str):
+        from ..kernel import Action
+
+        return Action(
+            kind=kind,
+            agent=agent,
+            title=title,
+            payload=payload,
+            scope="global",
+            origin=origin,
+        )
+
+    def _kernel_decision(self, action):
+        from ..kernel import Decision, Verdict, kernel_enabled
+
+        if not kernel_enabled() or not callable(self._mediation_kernel):
+            return None
+        try:
+            consume = getattr(self._mediation_kernel, "consume", None)
+            decision = consume(action) if callable(consume) else None
+            if decision is None:
+                decision = self._mediation_kernel(action)
+                decision = consume(action) if callable(consume) else decision
+            return self._validated_kernel_decision(decision, Decision, Verdict)
+        except Exception:
+            logger.warning("Action Kernel mediation failed closed", exc_info=True)
+            return None
+
+    @staticmethod
+    def _validated_kernel_decision(decision, decision_type=None, verdict_type=None):
+        if decision_type is None or verdict_type is None:
+            from ..kernel import Decision as decision_type
+            from ..kernel import Verdict as verdict_type
+
+        if not isinstance(decision, decision_type) or decision.verdict not in {
+            verdict_type.DENY,
+            verdict_type.QUEUE,
+            verdict_type.GRANT,
+        }:
+            return None
+        if decision.verdict is not verdict_type.DENY and (
+            isinstance(decision.tier, bool)
+            or not isinstance(decision.tier, int)
+            or not 0 <= decision.tier <= int(RiskTier.IRREVERSIBLE_OR_MONEY)
+        ):
+            return None
+        return decision
+
+    def _action_and_decision_for_enqueue(
+        self, *, agent: str, kind: str, title: str, payload: dict, origin: str
+    ):
+        from ..kernel import kernel_enabled
+        from ..kernel.binding import MediationDecisionMismatch
+
+        kernel = self._mediation_kernel
+        consume = getattr(kernel, "consume_for_enqueue", None)
+        try:
+            if not kernel_enabled():
+                if callable(consume):
+                    consume(agent=agent, kind=kind, title=title, payload=payload, origin=origin)
+                action = self._kernel_action(agent, kind, title, payload, origin)
+                return action, None
+            if callable(consume):
+                pending = consume(
+                    agent=agent,
+                    kind=kind,
+                    title=title,
+                    payload=payload,
+                    origin=origin,
+                )
+                if pending is not None:
+                    action, decision = pending
+                    return action, self._validated_kernel_decision(decision)
+        except MediationDecisionMismatch as exc:
+            self.queue.record_mediation_refusal(kind)
+            raise TaskQueueError("pending kernel decision does not match finalized task") from exc
+        action = self._kernel_action(agent, kind, title, payload, origin)
+        return action, self._kernel_decision(action)
+
+    @staticmethod
+    def _apply_kernel_floor(kernel_decision, tier: int, effective: str) -> tuple[int, str]:
+        if kernel_decision is None:
+            return tier, effective
+        from ..kernel import Verdict
+
+        tier = max(tier, int(kernel_decision.tier or 0))
+        if kernel_decision.verdict is Verdict.QUEUE:
+            effective = ASK
+        return tier, effective
+
+    def _classified_mediated_enqueue(
+        self,
+        *,
+        action,
+        decision,
+        payload: dict,
+        risk_tier: int,
+        autonomy_level: str,
+        attention_mode: str,
+    ) -> int:
+        from ..kernel import Verdict
+
+        if decision is None:
+            self.queue.record_mediation_refusal(action.kind)
+            raise TaskQueueError("classified task mediation authority is unavailable")
+        if decision.verdict is Verdict.DENY:
+            self.queue.record_mediation_refusal(action.kind)
+            raise TaskQueueError(f"kernel denied classified task: {decision.reason or 'denied'}")
+        now_ms = self._mediation_clock_ms()
+        enqueue_id = str(uuid.uuid4())
+        expectation = ReceiptExpectation(
+            enqueue_id=enqueue_id,
+            agent=action.agent,
+            kind=action.kind,
+            title=action.title,
+            origin=action.origin,
+            scope=action.scope,
+            payload=payload,
+            effective_tier=risk_tier,
+            policy_revision=self.queue.mediation_policy_revision,
+            enqueue_revision=1,
+        )
+        receipt = issue_receipt(
+            self._mediation_signer,
+            receipt_id=str(uuid.uuid4()),
+            expectation=expectation,
+            verdict=decision.verdict.value,
+            tier=int(decision.tier),
+            reason=str(decision.reason or ""),
+            issued_at_ms=now_ms,
+            expires_at_ms=now_ms + self._mediation_receipt_ttl_ms,
+        )
+        if receipt is None:
+            self.queue.record_mediation_refusal(action.kind)
+            raise TaskQueueError("classified task mediation receipt is unavailable")
+        return self.queue.enqueue_mediated(
+            action.agent,
+            action.kind,
+            action.title,
+            payload,
+            receipt=receipt,
+            scope=action.scope,
+            autonomy_level=autonomy_level,
+            origin=action.origin,
+            attention_mode=attention_mode,
+        )
 
     def _halted(self, scope: Optional[str] = None) -> bool:
         if self._kill_switch is None:
             try:
                 from ..security.capability import KillSwitch
+
                 self._kill_switch = KillSwitch()
             except Exception:
                 return False
@@ -171,8 +440,9 @@ class AutonomyWorker:
             logger.warning("stuck-running reaper failed", exc_info=True)
             return 0
         for task in reaped:
-            self._audit("autonomy.reaped", task,
-                        f"stuck in running > {int(ttl)}s — failed by the reaper")
+            self._audit(
+                "autonomy.reaped", task, f"stuck in running > {int(ttl)}s — failed by the reaper"
+            )
         return len(reaped)
 
     # O26-P0.7 (F3): the governed intake brokers use as their enqueue sink.
@@ -233,8 +503,7 @@ class AutonomyWorker:
         except (TypeError, ValueError):
             return False
         return any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD
-            or parameter.name == "tier_floor"
+            parameter.kind is inspect.Parameter.VAR_KEYWORD or parameter.name == "tier_floor"
             for parameter in parameters
         )
 
@@ -258,9 +527,7 @@ class AutonomyWorker:
             return decision, int(RiskTier.IRREVERSIBLE_OR_MONEY), True
 
         effective_tier = max(decided_tier, trusted_tier or 0)
-        must_ask = invalid_tier or (
-            trusted_tier is not None and decided_tier < trusted_tier
-        )
+        must_ask = invalid_tier or (trusted_tier is not None and decided_tier < trusted_tier)
         return decision, effective_tier, must_ask
 
     def _strictest_level(self, requested: str, decided: str) -> str:
@@ -283,9 +550,17 @@ class AutonomyWorker:
             logger.warning("capability outcome lookup failed closed", exc_info=True)
         return None
 
-    def govern_enqueue(self, agent: str, kind: str, title: str, payload: dict = None,
-                       risk_tier: int = 2, autonomy_level: str = ASK,
-                       origin: str = "generated", attention_mode: str = "interrupt") -> int:
+    def govern_enqueue(
+        self,
+        agent: str,
+        kind: str,
+        title: str,
+        payload: dict = None,
+        risk_tier: int = 2,
+        autonomy_level: str = ASK,
+        origin: str = "generated",
+        attention_mode: str = "interrupt",
+    ) -> int:
         """Sync governed intake (drop-in for ``TaskQueue.enqueue``).
 
         Runs ``policy.decide`` and applies the STRICTER of the caller's
@@ -296,32 +571,84 @@ class AutonomyWorker:
         an event loop is running, else the card waits in the inbox).
         """
         origin = self._effective_origin(origin)
-        payload, tainted = self._mark_payload_for_origin(payload, origin)
-        decision, tier, must_ask = self._policy_decision(
-            self._policy_action(agent, kind, payload, origin),
-            risk_tier,
-        )
+        proposed_payload = payload or {}
+        payload, tainted = self._mark_payload_for_origin(proposed_payload, origin)
+        classification = self.queue.classify_mediation(kind)
+        mediated = self.queue.mediation_mode in {"enforce", "hold"} and classification is not False
+        action = kernel_decision = None
+        if mediated:
+            if self.queue.mediation_mode != "enforce" or classification is not True:
+                return self.queue.enqueue(
+                    agent=agent,
+                    kind=kind,
+                    title=title,
+                    payload=proposed_payload,
+                    risk_tier=risk_tier,
+                    autonomy_level=autonomy_level,
+                    origin=origin,
+                    attention_mode=attention_mode,
+                )
+            action, kernel_decision = self._action_and_decision_for_enqueue(
+                agent=agent,
+                kind=kind,
+                title=title,
+                payload=payload,
+                origin=origin,
+            )
+        try:
+            decision, tier, must_ask = self._policy_decision(
+                self._policy_action(agent, kind, payload, origin),
+                risk_tier,
+            )
+        except Exception as exc:
+            if mediated:
+                self.queue.record_mediation_refusal(kind)
+                raise TaskQueueError("classified task policy is unavailable") from exc
+            raise
         effective = self._strictest_level(autonomy_level, decision.outcome)
         if must_ask:
             effective = ASK
         effective = self._force_ask_for_taint(effective, tainted)
-        task_id = self.queue.enqueue(
-            agent=agent, kind=kind, title=title, payload=payload,
-            risk_tier=tier, autonomy_level=effective, origin=origin,
-            attention_mode=attention_mode,
-        )
+        if mediated:
+            tier, effective = self._apply_kernel_floor(kernel_decision, tier, effective)
+        if mediated:
+            task_id = self._classified_mediated_enqueue(
+                action=action,
+                decision=kernel_decision,
+                payload=payload,
+                risk_tier=tier,
+                autonomy_level=effective,
+                attention_mode=attention_mode,
+            )
+        else:
+            task_id = self.queue.enqueue(
+                agent=agent,
+                kind=kind,
+                title=title,
+                payload=payload,
+                risk_tier=tier,
+                autonomy_level=effective,
+                origin=origin,
+                attention_mode=attention_mode,
+            )
         if effective in (ACT, NOTIFY):
             task = self.queue.transition(
-                task_id, TaskStatus.APPROVED,
-                decided_by="policy", decision=f"auto-{effective}",
+                task_id,
+                TaskStatus.APPROVED,
+                decided_by="policy",
+                decision=f"auto-{effective}",
             )
             self._audit("autonomy.auto_approve", task, decision.reason)
             return task_id
         task = self.queue.transition(
-            task_id, TaskStatus.BLOCKED, decided_by="policy", decision="needs-approval",
+            task_id,
+            TaskStatus.BLOCKED,
+            decided_by="policy",
+            decision="needs-approval",
         )
         try:
             import asyncio
+
             if attention_mode == "interrupt":
                 # Keep a reference (else the task can be GC'd mid-flight) and log
                 # any failure — otherwise the push exception vanishes silently.
@@ -329,45 +656,108 @@ class AutonomyWorker:
                 self._bg_tasks.add(t)
                 t.add_done_callback(self._bg_tasks.discard)
                 t.add_done_callback(
-                    lambda d: logger.error("decision push failed: %s", d.exception(),
-                                           exc_info=d.exception())
-                    if not d.cancelled() and d.exception() else None)
+                    lambda d: (
+                        logger.error(
+                            "decision push failed: %s", d.exception(), exc_info=d.exception()
+                        )
+                        if not d.cancelled() and d.exception()
+                        else None
+                    )
+                )
         except RuntimeError:
             logger.debug("no running loop — decision card waits in the inbox")
         return task_id
 
     # ── intake ────────────────────────────────────────────────────
-    async def submit(self, agent: str, kind: str, title: str,
-                     payload: dict = None, origin: str = "generated",
-                     attention_mode: str = "interrupt",
-                     risk_tier: int | None = None) -> Task:
+    async def submit(
+        self,
+        agent: str,
+        kind: str,
+        title: str,
+        payload: dict = None,
+        origin: str = "generated",
+        attention_mode: str = "interrupt",
+        risk_tier: int | None = None,
+    ) -> Task:
         """Propose a task, gate it through the policy, and route it."""
         origin = self._effective_origin(origin)
-        payload, tainted = self._mark_payload_for_origin(payload, origin)
-        decision, tier, must_ask = self._policy_decision(
-            self._policy_action(agent, kind, payload, origin),
-            risk_tier,
-        )
+        proposed_payload = payload or {}
+        payload, tainted = self._mark_payload_for_origin(proposed_payload, origin)
+        classification = self.queue.classify_mediation(kind)
+        mediated = self.queue.mediation_mode in {"enforce", "hold"} and classification is not False
+        action = kernel_decision = None
+        if mediated:
+            if self.queue.mediation_mode != "enforce" or classification is not True:
+                self.queue.enqueue(
+                    agent=agent,
+                    kind=kind,
+                    title=title,
+                    payload=proposed_payload,
+                    risk_tier=risk_tier if risk_tier is not None else 3,
+                    autonomy_level=ASK,
+                    origin=origin,
+                    attention_mode=attention_mode,
+                )
+                raise TaskQueueError("classified task mediation is unavailable")
+            action, kernel_decision = self._action_and_decision_for_enqueue(
+                agent=agent,
+                kind=kind,
+                title=title,
+                payload=payload,
+                origin=origin,
+            )
+        try:
+            decision, tier, must_ask = self._policy_decision(
+                self._policy_action(agent, kind, payload, origin),
+                risk_tier,
+            )
+        except Exception as exc:
+            if mediated:
+                self.queue.record_mediation_refusal(kind)
+                raise TaskQueueError("classified task policy is unavailable") from exc
+            raise
         effective = self._force_ask_for_taint(decision.outcome, tainted)
         if must_ask:
             effective = ASK
-        task_id = self.queue.enqueue(
-            agent=agent, kind=kind, title=title, payload=payload,
-            risk_tier=tier, autonomy_level=effective, origin=origin,
-            attention_mode=attention_mode,
-        )
+        if mediated:
+            tier, effective = self._apply_kernel_floor(kernel_decision, tier, effective)
+        if mediated:
+            task_id = self._classified_mediated_enqueue(
+                action=action,
+                decision=kernel_decision,
+                payload=payload,
+                risk_tier=tier,
+                autonomy_level=effective,
+                attention_mode=attention_mode,
+            )
+        else:
+            task_id = self.queue.enqueue(
+                agent=agent,
+                kind=kind,
+                title=title,
+                payload=payload,
+                risk_tier=tier,
+                autonomy_level=effective,
+                origin=origin,
+                attention_mode=attention_mode,
+            )
 
         if effective in (ACT, NOTIFY):
             task = self.queue.transition(
-                task_id, TaskStatus.APPROVED,
-                decided_by="policy", decision=f"auto-{effective}",
+                task_id,
+                TaskStatus.APPROVED,
+                decided_by="policy",
+                decision=f"auto-{effective}",
             )
             self._audit("autonomy.auto_approve", task, decision.reason)
             return task
 
         # ASK → block, then push a decision card if budget allows.
         task = self.queue.transition(
-            task_id, TaskStatus.BLOCKED, decided_by="policy", decision="needs-approval",
+            task_id,
+            TaskStatus.BLOCKED,
+            decided_by="policy",
+            decision="needs-approval",
         )
         if attention_mode == "interrupt":
             await self._maybe_push(task)
@@ -407,14 +797,13 @@ class AutonomyWorker:
         ran = done = failed = held = 0
         # Q6: reap crash-stranded RUNNING tasks first — bookkeeping, not an
         # action, so it runs even under a halt (the stuck state is honest).
-        reaped = self._reap_stuck()
+        reaped = 0 if self.queue.mediation_mode == "hold" else self._reap_stuck()
         # O26-P0.7 (F3): an engaged kill-switch stops execution at THIS seam,
         # kernel-independently — approved tasks stay approved (nothing is lost)
         # and run on the first tick after release.
         if self._halted():
             logger.warning("kill-switch engaged — autonomy tick skipped (tasks held)")
-            return {"ran": 0, "done": 0, "failed": 0, "halted": True,
-                    "held": 0, "reaped": reaped}
+            return {"ran": 0, "done": 0, "failed": 0, "halted": True, "held": 0, "reaped": reaped}
         for task in self.queue.runnable(limit=limit, max_tier=max_tier):
             # Q6: a per-agent halt (scope = the agent's name, ch07 GOV-178)
             # holds that agent's tasks at this same kernel-independent seam —
@@ -422,20 +811,78 @@ class AutonomyWorker:
             if self._halted(task.agent):
                 held += 1
                 continue
+            if self.queue.mediation_mode == "off":
+                mediated = False
+            else:
+                persisted, mediated = self.queue.execution_snapshot(
+                    task.id, presented_kind=task.kind
+                )
+                if persisted is None:
+                    held += 1
+                    continue
+                task = persisted
+            if mediated and self.queue.mediation_mode == "hold":
+                held += 1
+                continue
+            if mediated and task.mediation_scope and self._halted(task.mediation_scope):
+                held += 1
+                continue
+            if mediated:
+                claimed = self.queue.claim_mediated(task.id, execution_id=str(uuid.uuid4()))
+                if claimed is None:
+                    continue
+                task = claimed
+            else:
+                self.queue.transition(task.id, TaskStatus.RUNNING)
+                task = self.queue.get(task.id)
             ran += 1
-            self.queue.transition(task.id, TaskStatus.RUNNING)
             attempts = self.queue.increment_attempts(task.id)
+            # Bind the permit to the exact durable snapshot after the attempt
+            # counter/update timestamp mutation and before handler dispatch.
+            task = self.queue.get(task.id)
+            if self.queue.mediation_mode != "off":
+                persisted, still_mediated = self.queue.execution_snapshot(
+                    task.id, presented_kind=task.kind
+                )
+                fingerprint = TaskQueue.execution_fingerprint(task)
+                valid = (
+                    persisted is not None
+                    and still_mediated == mediated
+                    and fingerprint is not None
+                    and TaskQueue.execution_fingerprint(persisted) == fingerprint
+                    and persisted.status == TaskStatus.RUNNING.value
+                )
+                if valid and mediated:
+                    valid = self.queue.validate_mediated_execution(task, fingerprint)
+                if not valid:
+                    if mediated:
+                        self.queue.transition(
+                            task.id,
+                            TaskStatus.FAILED,
+                            result={"error": "mediation execution validation failed"},
+                        )
+                        failed += 1
+                    else:
+                        self.queue.transition(task.id, TaskStatus.APPROVED)
+                        held += 1
+                    continue
+                task = persisted
+            execution_permit = _ExecutionPermit(task) if mediated else None
+            execution_token = self._execution_context.set(execution_permit)
             try:
                 result = await self._execute(task)
+                if result.get("status") == "refused" and result.get("reason") == (
+                    "mediation_execution_context_required"
+                ):
+                    raise TaskQueueError("mediation execution context refused")
                 self.queue.transition(task.id, TaskStatus.DONE, result=result)
                 self._record_capability_outcome(task, success=True, result=result)
                 self._settle_spend(task)
                 self._audit("autonomy.done", task, "executed")
                 done += 1
             except Exception as e:
-                if attempts >= MAX_ATTEMPTS:
-                    self.queue.transition(task.id, TaskStatus.FAILED,
-                                          result={"error": str(e)})
+                if mediated or attempts >= MAX_ATTEMPTS:
+                    self.queue.transition(task.id, TaskStatus.FAILED, result={"error": str(e)})
                     self._record_capability_outcome(task, success=False)
                     self._audit("autonomy.failed", task, f"giving up after {attempts}: {e}")
                     failed += 1
@@ -443,13 +890,22 @@ class AutonomyWorker:
                     # back to approved for another attempt
                     self.queue.transition(task.id, TaskStatus.APPROVED)
                     logger.info(f"Task #{task.id} failed (attempt {attempts}), will retry: {e}")
+            finally:
+                if execution_permit is not None:
+                    execution_permit.revoke()
+                self._execution_context.reset(execution_token)
         return {"ran": ran, "done": done, "failed": failed, "held": held, "reaped": reaped}
 
     async def _execute(self, task: Task) -> dict:
         if self.executor is None:
             # No executor wired → no-op success so the loop is observable.
             return {"status": "noop", "note": "no executor configured"}
-        return await self.executor(task)
+        if self.queue.mediation_mode == "off":
+            return await self.executor(task)
+        dispatch_task = TaskQueue.detach_execution_task(task)
+        if dispatch_task is None:
+            raise TaskQueueError("could not snapshot execution task")
+        return await self.executor(dispatch_task)
 
     def _settle_spend(self, task: Task) -> None:
         amount = task.payload.get("amount") if task.payload else None
@@ -460,7 +916,11 @@ class AutonomyWorker:
                 pass
 
     def _record_capability_outcome(
-        self, task: Task, *, success: bool, result: dict | None = None,
+        self,
+        task: Task,
+        *,
+        success: bool,
+        result: dict | None = None,
     ) -> None:
         """Record one terminal REAL execution; ignore no-ops, mocks and unknown actions.
 
@@ -481,9 +941,9 @@ class AutonomyWorker:
             if result.get("status") == "noop":
                 return
             from agents.core.plugins.degradation import is_degraded
+
             if is_degraded(result):
-                logger.debug("capability outcome skipped: degraded/mock result for %s",
-                             task.kind)
+                logger.debug("capability outcome skipped: degraded/mock result for %s", task.kind)
                 return
         try:
             from agents.core.capability_manifests import manifest_for_action
@@ -496,18 +956,30 @@ class AutonomyWorker:
             logger.warning("capability outcome record failed", exc_info=True)
 
     # ── human decisions ───────────────────────────────────────────
-    async def apply_decision(self, task_id: int, action: str,
-                             decided_by: str = "user", payload: dict = None) -> Task:
+    async def apply_decision(
+        self, task_id: int, action: str, decided_by: str = "user", payload: dict = None
+    ) -> Task:
         """Resolve a blocked task from an inbox tap (accept/edit/reject/defer)."""
+        current = self.queue.get(task_id)
+        if (
+            action == "edit"
+            and payload is not None
+            and current is not None
+            and self.queue.mediation_mode in {"enforce", "hold"}
+            and self.queue.classify_mediation(current.kind) is not False
+        ):
+            raise TaskQueueError("mediated edit requires a new enqueue revision")
         if action == "accept":
-            task = self.queue.transition(task_id, TaskStatus.APPROVED,
-                                         decided_by=decided_by, decision="accept")
+            task = self.queue.transition(
+                task_id, TaskStatus.APPROVED, decided_by=decided_by, decision="accept"
+            )
         elif action == "edit":
             if payload is not None:
                 edited = self.queue.get(task_id)
                 edited_origin = self._effective_origin(edited.origin)
                 marked_payload, tainted = self._mark_payload_for_origin(
-                    payload, edited_origin,
+                    payload,
+                    edited_origin,
                 )
                 # BUG-11: an edit must not be auto-approved under the *original*
                 # (lower-risk) decision. Re-gate the FULL edited payload — not
@@ -515,10 +987,14 @@ class AutonomyWorker:
                 # (e.g. READ_ONLY → an irreversible kind), or an amount under the
                 # per-action cap but over the remaining daily ceiling, is caught.
                 action_payload = self._policy_action(
-                    edited.agent, edited.kind, marked_payload, edited_origin,
+                    edited.agent,
+                    edited.kind,
+                    marked_payload,
+                    edited_origin,
                 )
                 decision, tier, must_ask = self._policy_decision(
-                    action_payload, edited.risk_tier,
+                    action_payload,
+                    edited.risk_tier,
                 )
                 effective = self._force_ask_for_taint(decision.outcome, tainted)
                 effective = self._strictest_level(edited.autonomy_level, effective)
@@ -537,28 +1013,34 @@ class AutonomyWorker:
                     logger.warning(
                         "apply_decision: edited payload on task %s still requires "
                         "approval (%s) — kept blocked, re-pushed for re-approval",
-                        task_id, decision.reason)
+                        task_id,
+                        decision.reason,
+                    )
                     await self._maybe_push(
                         edited,
                         delivery_id=f"task-{edited.id}-edit-{edited.updated_at}",
                     )
-                    self._audit("autonomy.decision.edit", edited, f"by {decided_by} (re-gated, blocked)")
+                    self._audit(
+                        "autonomy.decision.edit", edited, f"by {decided_by} (re-gated, blocked)"
+                    )
                     if self.prefs:
                         try:
                             self.prefs.record(edited, action, decided_by=decided_by)
                         except Exception as e:
                             logger.warning(f"Preference record failed for #{task_id}: {e}")
                     return edited
-            task = self.queue.transition(task_id, TaskStatus.APPROVED,
-                                         decided_by=decided_by, decision="edit")
+            task = self.queue.transition(
+                task_id, TaskStatus.APPROVED, decided_by=decided_by, decision="edit"
+            )
         elif action == "reject":
-            task = self.queue.transition(task_id, TaskStatus.REJECTED,
-                                         decided_by=decided_by, decision="reject")
+            task = self.queue.transition(
+                task_id, TaskStatus.REJECTED, decided_by=decided_by, decision="reject"
+            )
         elif action == "defer":
-            task = self.queue.transition(task_id, TaskStatus.DEFERRED,
-                                         decided_by=decided_by, decision="defer")
+            task = self.queue.transition(
+                task_id, TaskStatus.DEFERRED, decided_by=decided_by, decision="defer"
+            )
         else:
-            from .queue import TaskQueueError
             raise TaskQueueError(f"unknown decision action: {action}")
         self._audit(f"autonomy.decision.{action}", task, f"by {decided_by}")
         if self.prefs:
@@ -573,7 +1055,11 @@ class AutonomyWorker:
         if not self.audit:
             return
         try:
-            self.audit.log(event, {"task_id": task.id, "agent": task.agent,
-                                   "kind": task.kind, "detail": detail})
+            self.audit.log(
+                event,
+                {"task_id": task.id, "agent": task.agent, "kind": task.kind, "detail": detail},
+            )
         except Exception:
-            logger.warning("Autonomy audit log failed for event '%s' task #%s", event, task.id, exc_info=True)
+            logger.warning(
+                "Autonomy audit log failed for event '%s' task #%s", event, task.id, exc_info=True
+            )

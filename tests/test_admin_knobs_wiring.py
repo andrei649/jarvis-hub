@@ -21,7 +21,7 @@ def _gv_factory(overrides):
 
 # ── memory ──────────────────────────────────────────────────────────────────
 def test_memory_manager_honors_settings(monkeypatch):
-    import core.memory.manager as mm
+    import agents.core.memory.manager as mm
     captured = {}
 
     class FakeCM:
@@ -30,7 +30,7 @@ def test_memory_manager_honors_settings(monkeypatch):
             captured["persist"] = persist
 
     monkeypatch.setattr(mm, "ConversationMemory", FakeCM)
-    monkeypatch.setattr("core.settings_db.get_value",
+    monkeypatch.setattr("agents.core.settings_db.get_value",
                         _gv_factory({"memory.max_turns": 42, "memory.persist": False}))
     mm.MemoryManager()
     assert captured == {"max_turns": 42, "persist": False}
@@ -38,10 +38,10 @@ def test_memory_manager_honors_settings(monkeypatch):
 
 # ── sandbox (security.sandbox_timeout / sandbox_memory) ───────────────────────
 def test_orchestrator_sandbox_honors_settings(monkeypatch):
-    monkeypatch.setattr("core.settings_db.get_value",
+    monkeypatch.setattr("agents.core.settings_db.get_value",
                         _gv_factory({"security.sandbox_timeout": 99, "security.sandbox_memory": 777}))
-    from core.config import JarvisConfig
-    from core.orchestrator import Orchestrator
+    from agents.core.config import JarvisConfig
+    from agents.core.orchestrator import Orchestrator
     o = Orchestrator(JarvisConfig())
     assert o.sandbox.timeout == 99
     assert o.sandbox.max_memory_mb == 777
@@ -50,12 +50,12 @@ def test_orchestrator_sandbox_honors_settings(monkeypatch):
 
 # ── autonomy (cap_per_action / daily_ceiling / interrupt_budget) ──────────────
 def test_orchestrator_autonomy_caps_honor_settings_and_attention_hard_cap(monkeypatch):
-    monkeypatch.setattr("core.settings_db.get_value",
+    monkeypatch.setattr("agents.core.settings_db.get_value",
                         _gv_factory({"autonomy.cap_per_action": 12.5,
                                      "autonomy.daily_ceiling": 99.0,
                                      "autonomy.interrupt_budget": 7}))
-    from core.config import JarvisConfig
-    from core.orchestrator import Orchestrator
+    from agents.core.config import JarvisConfig
+    from agents.core.orchestrator import Orchestrator
     o = Orchestrator(JarvisConfig())
     assert o.autonomy.policy.cap_per_action == 12.5
     assert o.autonomy.policy.daily_ceiling == 99.0
@@ -65,8 +65,8 @@ def test_orchestrator_autonomy_caps_honor_settings_and_attention_hard_cap(monkey
 # ── system.log_level ──────────────────────────────────────────────────────────
 def test_setup_logging_honors_log_level(monkeypatch):
     import logging
-    import core.log as log
-    monkeypatch.setattr("core.settings_db.get_value",
+    import agents.core.log as log
+    monkeypatch.setattr("agents.core.settings_db.get_value",
                         lambda cat, key, default=None: "WARNING" if key == "log_level" else default)
     try:
         log.setup_logging()
@@ -79,7 +79,7 @@ def test_setup_logging_honors_log_level(monkeypatch):
 def test_lifespan_wires_rate_limit_and_web_enabled(monkeypatch):
     from fastapi.testclient import TestClient
     from agents import web
-    monkeypatch.setattr("core.settings_db.get_value",
+    monkeypatch.setattr("agents.core.settings_db.get_value",
                         lambda cat, key, default=None:
                         {"channels.rate_limit": 33, "channels.web_enabled": False}.get(f"{cat}.{key}", default))
     with TestClient(web.app):
@@ -91,13 +91,13 @@ def test_lifespan_wires_rate_limit_and_web_enabled(monkeypatch):
 # ── LM Studio control kill-switches (llm.control_enabled / chat_control) ──────
 def test_lmstudio_control_toggles_surfaced_and_wired(monkeypatch):
     # surfaced: both toggles exist in the /admin defaults
-    from core import settings_db
+    from agents.core import settings_db
     keys = {(d["category"], d["key"]) for d in settings_db.DEFAULTS}
     assert ("llm", "control_enabled") in keys and ("llm", "chat_control") in keys
 
     # wired: the orchestrator's gating honors the live settings
-    from core.config import JarvisConfig
-    from core.orchestrator import Orchestrator
+    from agents.core.config import JarvisConfig
+    from agents.core.orchestrator import Orchestrator
     o = Orchestrator(JarvisConfig())
 
     monkeypatch.setattr(o, "get_setting",
@@ -114,8 +114,8 @@ def test_lmstudio_control_toggles_surfaced_and_wired(monkeypatch):
 # ── guardrails (security.guardrails_mode / scan_input / scan_output) ──────────
 @pytest.mark.asyncio
 async def test_orchestrator_guardrails_honors_settings(monkeypatch):
-    from core.llm.hybrid_router import HybridRouter
-    from core.security.types import RedactionMode
+    from agents.core.llm.hybrid_router import HybridRouter
+    from agents.core.security.types import RedactionMode
 
     async def detect_without_backend(self):
         self._backend = None
@@ -129,13 +129,13 @@ async def test_orchestrator_guardrails_honors_settings(monkeypatch):
                        "security.scan_output": True}
     monkeypatch.setattr(HybridRouter, "detect", detect_without_backend)
     monkeypatch.setenv("JARVIS_LLM_WARMUP", "0")
-    monkeypatch.setattr("core.settings_db.get_value", _gv_factory(security_values))
+    monkeypatch.setattr("agents.core.settings_db.get_value", _gv_factory(security_values))
 
     # load_agents() builds the engine from get_value(), then its final runtime
     # settings sync reads the bulk get_all() seam. Keep both views coherent so
     # this test exercises the real boot + live-resync path rather than letting
     # the on-disk default WARN overwrite the deliberately injected BLOCK value.
-    import core.orchestrator as orchestrator_module
+    import agents.core.orchestrator as orchestrator_module
     monkeypatch.setattr(orchestrator_module, "_get_settings", lambda: {
         "security": [
             {"key": "guardrails_mode", "value": "BLOCK"},
@@ -144,7 +144,7 @@ async def test_orchestrator_guardrails_honors_settings(monkeypatch):
         ],
     })
 
-    from core.config import JarvisConfig
+    from agents.core.config import JarvisConfig
     o = orchestrator_module.Orchestrator(JarvisConfig())
     await o.load_agents()  # GuardrailsEngine is built here, then live-resynced
     assert o.security is not None

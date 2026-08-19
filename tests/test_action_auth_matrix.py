@@ -128,9 +128,16 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             hc.set_egress_kernel_hook(None)
     elif kind == "mcp.mutating":
         # An MCP mutating tool routes through the kernel after the identity gate.
+        # Unlike legacy brokers, it now fails closed when the kernel flag is off;
+        # that refusal is expected and still proves the spy was not consulted.
         import asyncio
 
-        from agents.core.mcp.route_tools import MUTATING_ROUTE_ALLOWLIST, MutatingRouteTool
+        from agents.core.kernel import kernel_enabled
+        from agents.core.mcp.route_tools import (
+            MUTATING_ROUTE_ALLOWLIST,
+            MutatingKernelError,
+            MutatingRouteTool,
+        )
 
         async def _invoke(_kwargs):
             return {"ok": True}
@@ -138,11 +145,40 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         tool = MutatingRouteTool(
             spec=MUTATING_ROUTE_ALLOWLIST[0],
             invoke=_invoke,
-            auditor=None,
+            auditor=type("_Audit", (), {"log": lambda self, _event: None})(),
             identity_check=lambda _t: True,
             kernel=spy,
         )
-        asyncio.run(tool.call({"text": "x"}, token="ok"))
+        try:
+            asyncio.run(tool.call({"text": "x"}, token="ok"))
+        except MutatingKernelError:
+            if kernel_enabled():
+                raise
+    elif kind == "host.control":
+        # Local-model start/load/unload crosses the shared lifecycle authorizer
+        # immediately before controller execution. The authorizer is fail-closed
+        # when the kernel rollout flag is off, so that matrix leg never consults
+        # the spy and never reaches a host effect.
+        from types import SimpleNamespace
+
+        from agents.core.llm_control import authorize_local_model_lifecycle
+
+        orch = SimpleNamespace(
+            permission_gate=SimpleNamespace(
+                check_call=lambda plugin, agent: (
+                    plugin == "system-control" and agent == "jarvis"
+                )
+            ),
+            audit=SimpleNamespace(log=lambda _event: None),
+        )
+        authorize_local_model_lifecycle(
+            orch,
+            "lmstudio",
+            "load",
+            "qwen2.5:7b",
+            channel="web",
+            kernel=spy,
+        )
     elif kind == "tool.rpc":
         # A gated Tool-RPC call is mediated by the kernel before it can enqueue.
         import asyncio

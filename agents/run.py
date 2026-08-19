@@ -8,11 +8,12 @@ import asyncio
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.config import JarvisConfig
-from core.orchestrator import Orchestrator
-from core.log import setup_logging
+from agents.core.config import JarvisConfig
+from agents.core.log import setup_logging
+from agents.core.orchestrator import Orchestrator
 
 setup_logging()
 

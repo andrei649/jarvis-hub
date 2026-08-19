@@ -14,6 +14,9 @@ kind, plus the recent denials (with reasons) so a halt / runaway / over-budget i
 
 from __future__ import annotations
 
+if __name__ != "agents.core.kernel.metrics":
+    raise ImportError("kernel metrics must be imported as agents.core.kernel.metrics")
+
 import threading
 from collections import deque
 

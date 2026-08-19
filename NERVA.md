@@ -148,7 +148,7 @@ memory_logs/                 # Sessions, checkpoints, learning records
 - Auto-detection checks LM Studio first, then Ollama
 - Model has extended thinking (produces `reasoning_content` + `content`)
 - Backend handles both fields; `llm.max_tokens` default 2048 (deep route: `llm.deep_max_tokens` 8192). On a length-truncated turn with no answer the backend returns `""` instead of leaking the raw reasoning trace
-- **Lifecycle control:** Jarvis can `lms server start` / `lms load` / `lms unload` from the admin UI and from chat ("start LM Studio", "load gemma", "what model?") — see `docs/ARCHITECTURE.md` §5. Kill-switch: env `JARVIS_LMSTUDIO_CONTROL=0` or live setting `llm.control_enabled=false` (chat-only: `JARVIS_LMSTUDIO_CHAT_CONTROL` / `llm.chat_control`)
+- **Governed lifecycle control:** Jarvis can start/load/unload LM Studio and Ollama from chat (`lms` fixed argv for LM Studio; fixed `ollama serve` + localhost residency API for Ollama). MCP requires `ask_jarvis` plus verified owner/local-boundary identity. Every mutation additionally requires `system-control`, the host contract, `JARVIS_ACTION_KERNEL=1` with an explicit `GRANT`, and durable audit preflight; `ASK`/`OFF`, kill-switch, failed audit, or live control revocation stop effects. See `docs/ARCHITECTURE.md` §5. The legacy master kill-switch is `JARVIS_LMSTUDIO_CONTROL=0` or live `llm.control_enabled=false` (chat-only: `JARVIS_LMSTUDIO_CHAT_CONTROL` / `llm.chat_control`).
 
 **Recall embeddings (long-term memory):**
 - `MemoryManager.embed/remember/recall` turn text into vectors for fused recall (vector ⊕ graph, RRF — H5.14)
@@ -203,9 +203,9 @@ curl.exe http://127.0.0.1:8080/status
 <!-- project-status:jarvis-stats:start -->
 - 17 active agents; registry-derived
 - 405 HTTP routes; parity-snapshot-derived
-- Tests: backend **6,394** · frontend **521** · mobile **96**
-- Version: **v0.11.0** · source commit `79982ba639ce`
-- H23 roll-up: 27/28 done, 0 blocked, 1 open; release gates: A1, A2, A3, A4, A5, A6, A7, A8, A9
+- Tests: backend **6,779** · frontend **521** · mobile **96**
+- Version: **v0.11.0** · source commit `11b6918ffcde`
+- H23 roll-up: 28/29 done, 0 blocked, 1 open; release gates: A1, A2, A3, A4, A5, A6, A7, A8, A9
 <!-- project-status:jarvis-stats:end -->
 
 ---

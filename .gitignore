@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 .env
 memory_logs/
+/logs/
 skills/imported/
 *.egg-info/
 .DS_Store
@@ -16,6 +17,7 @@ _server_out*.txt
 .worktrees/
 .mcp.json
 agents/data/
+/data/
 
 # Runtime SQLite databases (created by the app/tests, e.g. H8 MemoryStore)
 agents/data/

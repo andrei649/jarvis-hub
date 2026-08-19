@@ -223,14 +223,23 @@ async def mcp_server_rpc(message: dict, request: Request):
             status_code=403,
         )
     w = _web()
+    verified_identity = None
     if bool(orch.get_setting("mcp.oauth_required", False)):
         from agents.core.mcp.oauth import MCPResourceServer
+        from agents.core.mcp.server import VerifiedMCPIdentity
         resource = _mcp_resource(request)
         result = w._get_mcp_rs().validate(
             request.headers.get("authorization", ""), resource, required_scope="mcp")
         if not result["ok"]:
             return JSONResponse(
                 {"error": f"unauthorized: {result['error']}"}, status_code=401,
+                headers={"WWW-Authenticate": MCPResourceServer.challenge(resource)})
+        verified_identity = VerifiedMCPIdentity(
+            subject=str((result.get("claims") or {}).get("sub") or "").strip()
+        )
+        if not verified_identity.subject:
+            return JSONResponse(
+                {"error": "unauthorized: OAuth subject required"}, status_code=401,
                 headers={"WWW-Authenticate": MCPResourceServer.challenge(resource)})
     else:
         # SEC (review F1/F2, #294): with OAuth off, the MCP transport must enforce the
@@ -250,7 +259,9 @@ async def mcp_server_rpc(message: dict, request: Request):
     # Thread the caller's user identity (same header user_guard reads) into the server
     # so MUTATING route tools can enforce the per-identity gate. An admin token also
     # satisfies the user gate (admin ⊇ user).
-    identity = request.headers.get("x-user-token") or request.headers.get("x-admin-token")
+    identity = verified_identity or (
+        request.headers.get("x-user-token") or request.headers.get("x-admin-token")
+    )
     response = await w._build_mcp_server().handle(message, identity=identity)
     # JSON-RPC notifications produce no response body.
     return nocache_json(response if response is not None else {"ok": True})

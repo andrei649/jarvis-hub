@@ -612,7 +612,9 @@ def test_typed_blockers_cover_unsatisfied_edges_without_snapshot_pinning() -> No
             "E5-program-B7: invalid blocker target",
         ),
         (
-            lambda data: _blocker(data, "E5", "E5-program-B7").update(reason_code="all_done"),
+            lambda data: _blocker(data, "E5", "E5-program-B7").update(
+                reason_code="task_mediation_decisions_unresolved"
+            ),
             "E5-program-B7: invalid blocker reason_code",
         ),
         (

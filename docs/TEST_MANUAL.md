@@ -116,9 +116,9 @@ Record what you **exercised**, not what you read. A short honest run beats a ful
 | 11 | Channels, voice & mobile | 166 | | | | |
 | 12 | AI-OS owner-host (A8 gate) | 72 | | | | |
 | 13 | Scenarios, chaos & soak | 204 | | | | |
-| 14 | API surface sweep | 409 | | | | |
+| 14 | API surface sweep | 410 | | | | |
 | 15 | Adversarial-audit verification & gap ledger | 160 | | | | |
-| — | **Total** | **2,853** | | | | |
+| — | **Total** | **2,854** | | | | |
 
 ### 2.2 Blocker log
 
@@ -131,11 +131,21 @@ Record what you **exercised**, not what you read. A short honest run beats a ful
 ☐ Every **BLOCKER** closed or explicitly accepted as out-of-scope (say which)
 ☐ Chapter 12 (A8 owner-host) passed **or** honestly recorded as `skipped — owner-host gate`
 ☐ Chapters 01, 02, 07, 08 fully exercised (the truth, governance and security core)
-◐ Chapter 15's §15.1 and §15.2 run, with a verdict recorded for each (they need no hardware) —
-  **hermetic half done** ([`docs/qa-runs/2026-08-11-hermetic-adv-run.md`](qa-runs/2026-08-11-hermetic-adv-run.md)):
+◐ Chapter 15's §15.1, §15.2, §15.3 signing gate, and targeted §15.8 reality-gate probes run, with a verdict recorded for each
+  no-hardware claim — **hermetic pass partial**
+  ([`§15.1/15.2 evidence`](qa-runs/2026-08-11-hermetic-adv-run.md) ·
+  [`§15.3 signing evidence`](qa-runs/2026-08-12-hermetic-adv-signing.md) ·
+  [`ADV-038 closure`](qa-runs/2026-08-12-hermetic-adv-exec-boundary.md) ·
+  [`§15.8 reality coverage`](qa-runs/2026-08-12-hermetic-adv-reality-coverage.md) ·
+  [`ADV-131 ingestion lifecycle`](qa-runs/2026-08-13-hermetic-adv-ingestion-lifecycle.md)):
   ADV-001 audit-chain forgery + ADV-015 forget file-half both **FIXED-SINCE**, each cross-confirmed
-  (probe + hand/seeded repro). Live-endpoint (ADV-009/010) and destructive backend (ADV-016–024)
-  cases remain NOT-REPRODUCIBLE without the RTX box.
+  (probe + hand/seeded repro). ADV-035/036 signing enforcement is **FIXED-SINCE** and ADV-037's
+  keyed refusal is confirmed; ADV-038's external unsigned import is **FIXED-SINCE**, with bundled
+  behavior and keyed external imports preserved. ADV-087 and ADV-098 are **FIXED-SINCE**:
+  declared actuators resolve before certification and the readiness matrix computes zero unclassified
+  proof gaps across 93 eligible records. ADV-131 is **CONFIRMED → CLOSED** hermetically: both Howard
+  private roots share one export/retention/forget inventory. Live-endpoint (ADV-009/010) and destructive backend (ADV-016–024) cases remain
+  NOT-REPRODUCIBLE without the RTX box.
 ☐ The offline suite green locally, matching `project-status.json` → `tests.*`
 ☐ Every 🔑/🖥/🌐 skip carries a written reason
 
@@ -150,7 +160,7 @@ expected results, a **degraded & honest-state matrix**, a **negative/adversarial
 coverage ledger and an open-gaps list. Case IDs are stable — cite them in findings (`CHT-014`, not
 "the Pepper thing").
 
-> **Status: complete — all 15 chapters, 2,853 cases, 12,811 lines.** Every chapter is linted
+> **Status: complete — all 15 chapters, 2,854 cases, 12,879 lines.** Every chapter is linted
 > against the repo by `scripts/check_test_manual.py` (see below). Chapter 14 is generated;
 > chapter 15 is the adversarial-audit pass and is run *in addition to* 01–14, not instead of them.
 
@@ -169,7 +179,7 @@ coverage ledger and an open-gaps list. Case IDs are stable — cite them in find
 | ✅ [11](test-manual/11-channels-voice-mobile.md) | Channels, voice & mobile | `CHN` | 166 | Every way it reaches a human — draft-first, never auto-sending | 🔑 |
 | ✅ [12](test-manual/12-aios-owner-host.md) | AI-OS owner-host proof (the A8 1.0 gate) | `AIO` | 72 | Real browser/desktop/house/camera/media actuation, safely | 🖥 |
 | ✅ [13](test-manual/13-scenarios-and-chaos.md) | End-to-end scenarios, chaos & soak | `JRN` `CHA` | 204 | The product as a lived experience — then deliberately broken | ⏱ |
-| ✅ [14](test-manual/14-api-surface-sweep.md) | API surface sweep — all 404 app routes + 4 doc routes | `API` | 409 | Nothing on the wire is unguarded or unaccounted for (generated) | 🌐 |
+| ✅ [14](test-manual/14-api-surface-sweep.md) | API surface sweep — all 404 app routes + 4 doc routes | `API` | 410 | Nothing on the wire is unguarded or unaccounted for (generated) | 🌐 |
 | ✅ [15](test-manual/15-audit-gap-verification.md) | Adversarial-audit verification & gap ledger | `ADV` | 160 | Whether the **gates that grade the rails** hold — plus what has no code at all | 🔑 ⏱ |
 
 **Keeping the chapters honest.** `python scripts/check_test_manual.py` lints every chapter against

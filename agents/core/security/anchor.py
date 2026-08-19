@@ -80,7 +80,9 @@ class IntentLog(JsonStore):
                 logger.warning(
                     "Audit signing key is co-located with the log (%s). Set "
                     "JARVIS_AUDIT_KEY, or move it under %s, so write access to the "
-                    "log dir alone can't forge the chain (HF-5).", legacy_path, secure_dir,
+                    "log dir alone can't forge the chain (HF-5).",
+                    legacy_path,
+                    secure_dir,
                 )
                 return legacy_path.read_text(encoding="utf-8").strip().encode("utf-8")
             key = secrets.token_hex(32)
@@ -108,7 +110,8 @@ class IntentLog(JsonStore):
                 logger.warning(
                     "Could not write the audit key to the secure dir (%s); stored it "
                     "next to the log (%s). Set JARVIS_AUDIT_KEY to harden (HF-5).",
-                    secure_dir, legacy_path,
+                    secure_dir,
+                    legacy_path,
                 )
                 return key.encode("utf-8")
         except Exception:
@@ -119,9 +122,18 @@ class IntentLog(JsonStore):
             self._entries.clear()
             self._save()
 
-
     def _sign(self, payload: str) -> str:
         return hmac.new(self._key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    def sign_detached(self, payload: bytes) -> str | None:
+        """Sign bounded canonical bytes for security adapters without exposing the key."""
+
+        try:
+            if not isinstance(payload, bytes) or not payload or len(payload) > 65_536:
+                return None
+            return hmac.new(self._key, payload, hashlib.sha256).hexdigest()
+        except Exception:
+            return None
 
     @staticmethod
     def _body(prev_hash: str, entry: dict) -> str:
@@ -132,17 +144,26 @@ class IntentLog(JsonStore):
         detection. v1 entries (no "v" key) keep the original 6-field body so
         already-persisted logs still verify.
         """
-        base = (f"{prev_hash}|{entry['ts']}|{entry['actor']}|{entry['action']}"
-                f"|{entry['why']}|{entry['cause']}")
+        base = (
+            f"{prev_hash}|{entry['ts']}|{entry['actor']}|{entry['action']}"
+            f"|{entry['why']}|{entry['cause']}"
+        )
         if entry.get("v", 1) >= 2:
-            meta = json.dumps(entry.get("metadata", {}), sort_keys=True,
-                              separators=(",", ":"), ensure_ascii=False)
+            meta = json.dumps(
+                entry.get("metadata", {}), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            )
             return f"{base}|{meta}"
         return base
 
-    def record(self, actor: str, action: str, why: str,
-               cause: str = "", metadata: Optional[dict] = None,
-               ts: Optional[float] = None) -> dict:
+    def record(
+        self,
+        actor: str,
+        action: str,
+        why: str,
+        cause: str = "",
+        metadata: Optional[dict] = None,
+        ts: Optional[float] = None,
+    ) -> dict:
         """Append a signed action record. `why`/`cause` = intent attribution."""
         ts = time.time() if ts is None else float(ts)
         with self._lock:
@@ -150,8 +171,13 @@ class IntentLog(JsonStore):
             seq = len(self._entries) + 1
             entry = {
                 "v": 2,
-                "seq": seq, "ts": ts, "actor": actor, "action": action,
-                "why": why, "cause": cause, "metadata": metadata or {},
+                "seq": seq,
+                "ts": ts,
+                "actor": actor,
+                "action": action,
+                "why": why,
+                "cause": cause,
+                "metadata": metadata or {},
                 "prev_hash": prev_hash,
             }
             entry_hash = _sha(self._body(prev_hash, entry))
@@ -181,7 +207,7 @@ class IntentLog(JsonStore):
 
     def list(self, limit: int = 100) -> list[dict]:
         with self._lock:
-            return [dict(e) for e in self._entries[-max(1, limit):]][::-1]
+            return [dict(e) for e in self._entries[-max(1, limit) :]][::-1]
 
 
 class TransparencyAnchor(JsonStore):
@@ -196,7 +222,6 @@ class TransparencyAnchor(JsonStore):
     def _deserialize(self, raw) -> None:
         self._anchors = raw if isinstance(raw, list) else []
 
-
     def anchor(self, root_hash: str, source: str = "audit", ts: Optional[float] = None) -> dict:
         """Anchor a chain head/root hash; returns the (hash-linked) receipt."""
         ts = time.time() if ts is None else float(ts)
@@ -204,8 +229,14 @@ class TransparencyAnchor(JsonStore):
             prev = self._anchors[-1]["anchor_hash"] if self._anchors else ""
             seq = len(self._anchors) + 1
             anchor_hash = _sha(f"{prev}|{ts}|{source}|{root_hash}")
-            receipt = {"seq": seq, "ts": ts, "source": source, "root": root_hash,
-                       "prev_anchor_hash": prev, "anchor_hash": anchor_hash}
+            receipt = {
+                "seq": seq,
+                "ts": ts,
+                "source": source,
+                "root": root_hash,
+                "prev_anchor_hash": prev,
+                "anchor_hash": anchor_hash,
+            }
             self._anchors.append(receipt)
             self._save()
             return dict(receipt)
@@ -227,7 +258,7 @@ class TransparencyAnchor(JsonStore):
 
     def list(self, limit: int = 100) -> list[dict]:
         with self._lock:
-            return [dict(a) for a in self._anchors[-max(1, limit):]][::-1]
+            return [dict(a) for a in self._anchors[-max(1, limit) :]][::-1]
 
     def clear(self) -> None:
         with self._lock:

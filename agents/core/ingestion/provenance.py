@@ -36,9 +36,8 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from agents.core.paths import data_path
+from .lifecycle import default_archive_root
 
-_DEFAULT_FILE = data_path("archive") / "provenance.json"
 _DEFAULT_MAX_KEEP = 50_000
 _MAX_LINEAGE_HOPS = 1000   # cycle/runaway guard for lineage walks
 
@@ -53,7 +52,7 @@ class ProvenanceLedger:
     """Bounded, atomically-written JSON ledger of ingestion provenance records."""
 
     def __init__(self, path: Path | str | None = None, *, max_keep: int = _DEFAULT_MAX_KEEP) -> None:
-        self._path = Path(path) if path is not None else _DEFAULT_FILE
+        self._path = Path(path) if path is not None else default_archive_root() / "provenance.json"
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._max_keep = max(1, int(max_keep))
 

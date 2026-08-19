@@ -46,6 +46,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Wave 3 (in progress) — MCP mutating tools route through kernel.authorize after
     # the per-identity gate (a DENY blocks the write: kill-switch / budget / loop).
     "mcp.mutating": Mediation.KERNEL,
+    # Owner-authorized local-model autonomy. Chat/MCP start-load-unload requests
+    # fail closed unless the kernel is enabled and explicitly GRANTs this
+    # reversible host effect; identity/contract/audit gates wrap the same call.
+    "host.control": Mediation.KERNEL,
     # Wave 3 — a gated Tool-RPC call is mediated by the kernel before it can enqueue
     # an approval task (a DENY blocks it: kill-switch / budget / loop).
     "tool.rpc": Mediation.KERNEL,

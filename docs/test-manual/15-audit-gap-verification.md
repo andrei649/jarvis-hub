@@ -496,14 +496,15 @@ owner who did harden.
 - **CROSS:** `GET /skills` (open) — what does the listing say about each one's trust state?
 - **Evidence:** the refusal list and the listing.
 
-#### ADV-038 — The real primitive: `exec_module` at load time  ⏱
+#### ADV-038 — The real primitive: `exec_module` at load time  ⏱ ✅
 - **Surface:** `agents/core/skills/loader.py`
-- **Why it matters:** the audit is unambiguous that this, not the hash, is what to fix. `_load_skill` executes module top-level code.
-- **Steps:** read `_load_skill` around the `spec.loader.exec_module(mod)` call. Then install an inert skill whose module body prints a marker, at the **shipped default** (`JARVIS_REQUIRE_SIGNED_SKILLS` unset, no signature at all).
-- **Expected:** the marker prints. Arbitrary code runs at install, with the server's privileges, with no signature and no sandbox.
-- **FAIL if:** confirmed → **BLOCKER**, and it is the item to fix first in this section. Note the process privileges you were running as; "as root" and "as an unprivileged service account" are different findings.
+- **Why it matters:** the audit is unambiguous that this, not the hash, is the execution boundary. `_load_skill` may execute module top-level code.
+- **Steps:** read `_load_skill` around the `spec.loader.exec_module(mod)` call. Then install an external inert skill whose module body writes a marker, at the **shipped default** (`JARVIS_REQUIRE_SIGNED_SKILLS` unset, no signature at all). Repeat with a repository-bundled skill and with a keyed HMAC signature.
+- **Expected:** the unsigned external marker does not appear; the skill remains visible with `sandboxed=true` and no loaded module. Repository-bundled behavior is unchanged, and a keyed external skill may load in-process. Marketplace extraction stamps external provenance and discards any package-supplied owner-approval marker. Bundled-root links/junctions remain external; approval fingerprints all relevant nested source/artifact bytes; execution uses the validated snapshot; missing/corrupt live registry state denies; and concurrent store instances/processes merge approvals under a shared lock.
+- **FAIL if:** unsigned owner/imported/marketplace code reaches `exec_module`, or if the boundary disables repository-bundled skills. Treat either result as a **BLOCKER**.
 - **CROSS:** `POST /api/skills/marketplace/install-zip` (admin) — does the HTTP path reach the same loader? Check before claiming remote reachability.
-- **Evidence:** the marker output and the code excerpt.
+- **Evidence:** [`2026-08-12 ADV-038 execution-boundary run`](../qa-runs/2026-08-12-hermetic-adv-exec-boundary.md). SEC-B8 remediation tests additionally cover discovery-root junctions, nested artifact drift, check-to-exec swaps, live registry loss/corruption, and concurrent merge behavior.
+- **Residual:** approval rows and their lock file are not pruned/revoked automatically when a skill is removed. They cannot authorize missing or changed bytes, but recreating identical bytes at the same canonical path remains approved until an explicit lifecycle/revoke follow-up is implemented.
 
 #### ADV-039 — What tier can reach the installer?  🌐
 - **Surface:** `POST /api/skills/marketplace/install-zip` (admin) · `POST /skills/import` (user) · `POST /api/skills/{name}/approve` (admin)
@@ -1001,14 +1002,14 @@ Three cost endpoints are wired and all green-looking.
 *shape* of a claim rather than its substance. These are not the same bug; they are the same reflex —
 build a gate, watch it go green, write the green into `STATUS.md`. This section tests the gates.
 
-#### ADV-087 — The action-capability probe certifies its own lambda  ⏱
-- **Surface:** `agents/core/observability/reality_harness.py` · `agents/core/capability_manifests.py` · **Auto:** ⚠️tests/test_reality_harness.py (pins the present behaviour — see ADV-092)
-- **Why it matters:** for 17 of 18 `action:*` capabilities, the only promotable case registers a throwaway handler and asserts the kill-switch refuses *that*. `manifest.implementation` is never imported.
-- **Steps:** `python scripts/qa_audit_probes.py reality`. Then read `_make_action_kernel_probe` and confirm `api.register(manifest.id, lambda ...)` with no resolution of the manifest's implementation.
-- **Expected:** `registers_own_handler: True`, `resolves_manifest_implementation: False`.
-- **FAIL if:** confirmed → the promotion criterion is provably independent of whether any actuator exists.
+#### ADV-087 — The action-capability probe certifies its declared actuator  ⏱ ✅
+- **Surface:** `agents/core/observability/reality_harness.py` · `agents/core/capability_manifests.py` · **Auto:** `tests/test_h27_capability_verification.py`
+- **Why it matters:** a refusal rail is not proof that the declared actuator exists. The promotable case must resolve `manifest.implementation` before it may certify the capability.
+- **Steps:** `python scripts/qa_audit_probes.py reality`. Then run the missing-implementation and implementation-evidence tests in `tests/test_h27_capability_verification.py`.
+- **Expected:** the probe reports implementation resolution; a nonexistent actuator fails closed; a green result names the resolved implementation in evidence metadata.
+- **FAIL if:** a missing implementation still passes or the green evidence cannot identify what it certified.
 - **CROSS:** ADV-088's import-blocking run — that is the empirical half.
-- **Evidence:** the probe output and the excerpt.
+- **Evidence:** fixed by PR #897; cross-confirmed in the [ADV-098 coverage run](../qa-runs/2026-08-12-hermetic-adv-reality-coverage.md).
 
 #### ADV-088 — Block the actuator imports; the pack still passes  ⏱
 - **Surface:** `agents/core/observability/reality_harness.py`
@@ -1100,14 +1101,14 @@ build a gate, watch it go green, write the green into `STATUS.md`. This section 
 - **CROSS:** chapter 14's generated sweep, which enumerates the same route set from the same snapshot.
 - **Evidence:** the list, the exclusions, and the count.
 
-#### ADV-098 — The capability-readiness matrix's escape set  ⏱
-- **Surface:** `agents/core/observability/capability_registry.py`
-- **Why it matters:** the matrix calls its escape set "intentionally empty, kept honest below", while (per the audit) most wired capabilities have no reality case. An empty escape set is only meaningful if something enforces coverage.
-- **Steps:** find the escape set; find whatever asserts coverage; count wired capabilities with and without a case.
-- **Expected:** your own two numbers.
-- **FAIL if:** nothing enforces coverage → the phrase is load-bearing in the docs and decorative in the assertion. **MAJOR** as a gate defect.
+#### ADV-098 — The capability-readiness matrix's escape set  ⏱ ✅
+- **Surface:** `agents/core/observability/reality_harness.py` · `tests/test_capability_readiness_matrix.py`
+- **Why it matters:** an empty escape set is meaningful only when computed against the declared proof cases. The matrix must reject missing, duplicate, mismatched, and explicitly non-promotable bindings.
+- **Steps:** run the readiness-matrix coverage test and the adversarial binding test in `tests/test_h27_capability_verification.py`; count proof-eligible records and gaps.
+- **Expected:** `PENDING_VERIFY` exactly equals the computed gap IDs, with a reason for each. On current `main`: 94 records, 93 proof-eligible, 133 cases, 0 gaps.
+- **FAIL if:** the computed gap IDs differ from `PENDING_VERIFY`, or any malformed binding is accepted as coverage.
 - **CROSS:** `GET /api/metrics/capabilities` (open).
-- **Evidence:** the counts and the endpoint.
+- **Evidence:** [2026-08-12 hermetic ADV reality-coverage run](../qa-runs/2026-08-12-hermetic-adv-reality-coverage.md).
 
 #### ADV-099 — The route-auth matrix is the counter-example — verify it  ⏱
 - **Surface:** `tests/_snapshots/route_auth.json` · `tests/test_hud_v2_parity.py`
@@ -1420,14 +1421,14 @@ refutation will re-file the claim. **A REFUTED verdict here is a PASS.**
 - **CROSS:** the AST count both ways (`Assign` only, then `Assign + AnnAssign`) — the difference *is* the lesson.
 - **Evidence:** both counts and the live attribute check.
 
-#### ADV-130 — The real residue: silent degradation to a default  ⏱
-- **Surface:** `agents/core/orchestrator.py` · `agents/web.py`
-- **Why it matters:** the honest remainder of ADV-129 — a handful of attributes are written by other modules, and a missing one degrades to a default rather than failing loudly.
-- **Steps:** for each externally-written attribute, remove the writer and see what happens.
-- **Expected:** a silent default.
-- **FAIL if:** confirmed → **MINOR**; the audit's suggestion (a Protocol) is proportionate. Note it as a gap, not a bug.
-- **CROSS:** the writers.
-- **Evidence:** the list and one demonstration.
+#### ADV-130 — External orchestrator binding residue — CLOSED  ⏱
+- **Surface:** `agents/core/orchestrator.py` · `agents/core/orchestrator_bindings.py` · external lifecycle writers
+- **Why it matters:** the honest remainder of ADV-129 was 15 attributes populated by plugin, web, autonomy, ambient, or scheduler wiring without an initial declaration. A missing writer therefore looked identical to an intentionally unavailable feature.
+- **Steps:** run `pytest -q tests/test_orchestrator_bindings.py`; inspect `EXTERNAL_BINDING_WRITERS` and `bind_external_orchestrator_attribute`; instantiate `Orchestrator` before any external wiring.
+- **Expected:** the instance structurally satisfies `ExternalOrchestratorBindings`; all 15 slots exist with explicit `None`; observed direct, qualified, imported-aliased, tuple-destructured, tuple-subscript, module-aliased, and literal-`getattr` binding API calls match the inventoried path/binding/line/column callsites exactly in both directions; dynamic binding-API `getattr` fails closed; hostile typed, aliased, nested, direct/imported `setattr`, direct/imported `object.__setattr__`, and literal `getattr(builtins, "setattr")` forms cannot bypass the lexical undeclared-write guard; statement-ordered aliases remain visible before later reassignment, `if` expressions plus `while`/`try` paths join conservatively, and function-default or loop-target aliases remain visible, while replaced scope-local receivers do not false-positive; unrelated imports, duplicate locations, or same-named lexical shadows cannot satisfy the inventory; and consumers test availability rather than `hasattr` presence.
+- **FAIL if:** a slot is absent, a declared writer no longer assigns it, or a new external write bypasses the initialized surface → reopen **MINOR**.
+- **CROSS:** the writer inventory is checked against production AST assignments, independently of the runtime structural check. This is deliberately a lexical CI contract, not a proof against arbitrary dynamic Python.
+- **Evidence:** `tests/test_orchestrator_bindings.py` (50 hermetic cases); the explicit boot defaults in `Orchestrator.__init__`; all external writers routed through `bind_external_orchestrator_attribute`; production callsite map equals `EXTERNAL_BINDING_WRITERS` exactly by path, binding, line and column.
 
 ---
 
@@ -1445,23 +1446,27 @@ what I did not open" is worth more than a thin pass over all of them.
 
 The audit flags three as most likely to hide something. Do those first.
 
-#### ADV-131 — The ingestion / archive twin (flagged: most likely)  ⏱
-- **Surface:** the WhatsApp and Facebook parsers, the stylometry module, `agents/core/data_purge.py`
-- **Why it matters:** these create the private archive the entire local-only argument exists to protect — and the critic's census found the archive directories in **none** of the purge, retention or export sets.
-- **Steps:** locate every directory the ingestion path writes to. Check each against `PURGE_*`, the retention config and `EXPORT_DBS`.
-- **Expected:** an explicit coverage table.
-- **FAIL if:** the most personal archive in the system is outside all three → **BLOCKER**, and it is the highest-value thing this chapter can find. It is §15.2's finding at a larger scale.
-- **CROSS:** run ADV-023's directory diff again with an ingested archive present.
-- **Evidence:** the table and the diff.
+#### ADV-131 — The ingestion / archive twin (flagged: most likely)  ⏱ ✅
+- **Verdict:** **CONFIRMED → CLOSED in the G35 candidate.** The raw drop and derived archive had no shared lifecycle inventory; export and retention omitted both, while forget reached the archive only implicitly through its KEEP-inverted sweep.
+- **Canonical roots:** `ingestion/` (raw Facebook/WhatsApp drop) and `archive/` (SQLite, JSONL, stylometry, knowledge, watcher/provenance state and embedding cache), both below the configured runtime data root.
+- **Coverage:** `EXPORT_PRIVATE_DIRS == RETENTION_PRIVATE_DIRS == PURGE_PRIVATE_DIRS == PRIVATE_INGESTION_ROOTS`; future nested artifacts export recursively and are forgotten by default.
+- **Retention:** `retention.ingestion_ttl_days`, default `0` (keep forever), prunes a root only when its newest artifact is stale; any symlink fails closed.
+- **Export safety:** SQLite is dumped structurally, text/JSON/JSONL remains inspectable, binary is base64, and symlinks are refused with `private_ingestion_complete=false`.
+- **Upgrade safety:** a non-empty pre-G35 repo-local `data/` stays watched but is reported as outside authority; export and forget cannot claim completion until the owner resolves it.
+- **Live retention:** the scheduled path clears both the watcher writer and the distinct shared RAG reader, including raw-text embedding keys.
+- **CROSS:** the hermetic proof seeds raw text plus SQLite/JSONL/profile/cache markers, exports every marker, prunes stale roots and verifies a full forget leaves no marker bytes.
+- **Evidence:** [`2026-08-13 hermetic ingestion-lifecycle run`](../qa-runs/2026-08-13-hermetic-adv-ingestion-lifecycle.md).
 
-#### ADV-132 — The MCP server surface (flagged: most likely)  🌐
+#### ADV-132 — The MCP server surface (flagged: most likely)  🌐 ✅
+- **Verdict:** **CONFIRMED → initial candidate HOLD → owner-authorized remediation implemented; fresh independent review required.** The initial G36 candidate closed route-tool and hidden-skill bypasses, but independent review found that the pre-routing LM Studio lifecycle fast-path was still reachable through `ask_*` without MCP-specific identity/kernel/audit mediation. The owner then explicitly authorized governed LM Studio **and Ollama** lifecycle autonomy; the same run now closes that remaining path without weakening review separation.
 - **Surface:** `POST /api/mcp/server/rpc` (open) · `GET /api/mcp/server` (open) · `agents/core/mcp/server.py`
-- **Why it matters:** the audit calls this "the one place a remote client reaches the action layer" — and the RPC entry point is **open**-tier in the auth snapshot.
-- **Steps:** enumerate every tool the RPC surface exposes. For each, determine whether it can mutate, and whether the call goes through the action kernel and the permission gate. Then call the surface with no token.
-- **Expected:** a tool inventory with a governed/ungoverned column.
-- **FAIL if:** any mutating tool is reachable unauthenticated, or bypasses the kernel → **BLOCKER**. This is the single most likely place in the product for an ungoverned action to exist.
-- **CROSS:** `GET /api/metrics/kernel` (open) before and after each mutating call — a mutation with no kernel row is the proof.
-- **Evidence:** the inventory, the status codes, the kernel deltas.
+- **Inventory:** `GET /api/mcp/server` now returns `tool_inventory` for every exposed `ask_*`, allow-listed read route, and allow-listed mutating route. Each row declares persistent state effects separately from direct route mutation plus identity, audit, retention, kernel and governance posture; names are checked against `tools/list` so no advertised tool is omitted.
+- **Agent boundary:** `ask_*` is not non-mutating: the production orchestrator durably stores the user turn before routing and normally stores the assistant turn afterward. That conversation write is transport-authenticated, governed by transcript retention, outside the Action Kernel, and has no mandatory pre-write security-audit row. Parsed direct skill commands are refused. Explicit start/load/unload is restricted to `ask_jarvis`; it additionally requires owner token/verified OAuth identity (or the enforced localhost-only no-token posture), system-control permission, host contract, enabled/bound `host.control` kernel `GRANT`, and durable audit preflight. A direct `handle_input(channel="mcp")` call cannot acquire the server-scoped authority marker.
+- **Mutation boundary:** `route_memory_remember` still requires both MCP switches, transport/per-tool identity and the reusable contract. It now additionally requires `JARVIS_ACTION_KERNEL=1`, a bound kernel, verdict `GRANT`, and successful durable `authorized` audit write before invoking the adapter. Disabled/unbound/raising kernel, `DENY`, `QUEUE`, and missing/raising audit sink all refuse without mutation.
+- **No-token proof:** default server mode returns 403; enabled mode with a configured user token returns 401 without the token; unset-token non-local access returns 403. Local-dev read/conversation posture remains available, but mutation still cannot cross the kernel requirement.
+- **CROSS:** a real bound kernel over the default policy records an `mcp.mutating` `queue` delta while the adapter call count stays zero; production-topology evidence also proves an ordinary `ask_jarvis` call changes the dedicated transcript before/after state exactly as inventoried.
+- **Lifecycle CROSS:** hostile tests bind fake controllers behind the production authorization function and prove `kernel → audit → effect` order for LM Studio and Ollama. Missing/wrong identity, non-Jarvis agent, direct MCP context, permission denial, kernel-off/unbound/raising, `DENY`, `QUEUE`, audit failure and invalid model id all leave effect count zero. Ollama start is fixed argv/no-shell; load/unload use only localhost `keep_alive=-1/0`.
+- **Evidence:** [`2026-08-13 hermetic MCP RPC governance run`](../qa-runs/2026-08-13-hermetic-mcp-rpc-governance.md).
 
 #### ADV-133 — Upgrade and migration safety (flagged: most likely)  ⏱ 🖥
 - **Surface:** `agents/core/persistence/migrations.py` · `agents/core/paths.py`
@@ -1784,7 +1789,7 @@ does not prove it. They get triaged differently.
 | G10 | Export/purge allowlist reconciliation the module docstring already promises | BUG | `agents/core/data_purge.py`, `agents/core/data_export.py` | High | ✅ | | ADV-019 |
 | G11 | A per-store report in the forget response | GAP | `agents/core/routers/backup.py` | — | ✅ | | ADV-027 |
 | G12 | `require_signed()` failing closed when enforcement is on and no key exists | BUG | `agents/core/skills/signing.py` | High → scoped | ✅ | | ADV-035 |
-| G13 | Sandboxing or deferring `exec_module` at skill load | GAP | `agents/core/skills/loader.py` | High (audit: fix first) | — | | ADV-038 |
+| G13 | Defer `exec_module` for unsigned external skills; preserve bundled behavior | GAP | `agents/core/skills/loader.py` | High (audit: fix first) | ✅ | | ADV-038 |
 | G14 | A policy floor over synthesis contributors | BUG | `agents/core/agent.py` | High · PARTIAL | ✅ | | §15.4, SEC-B1 |
 | G15 | Any test at the synthesize boundary, and any coverage of the handoff path | GAP | `tests/` | High | ✅ | | ADV-054, ADV-055 |
 | G16 | A `{agent_id: route}` map carried into the interaction record | BUG | `agents/core/orchestrator.py` | Medium · PARTIAL | ✅ | | §15.5 |
@@ -1795,10 +1800,10 @@ does not prove it. They get triaged differently.
 | G21 | Cost persistence across a restart | GAP | `agents/core/cost_tracker.py` | Medium | ✅ | | ADV-082 |
 | G22 | `None` for an unpriced model instead of `0.0` | BUG | `agents/core/llm/cost_estimator.py` | Medium | ✅ | | ADV-079 |
 | G23 | A daily spend cap checked before a cloud route | GAP | `agents/core/llm/hybrid_router.py` | Medium | ✅ | | ADV-083 |
-| G24 | The action-capability probe resolving `manifest.implementation` | BUG | `agents/core/observability/reality_harness.py` | Medium · PARTIAL | — | | ADV-087 |
+| G24 | The action-capability probe resolving `manifest.implementation` | BUG | `agents/core/observability/reality_harness.py` | Medium · PARTIAL | ✅ | | ADV-087, #897 |
 | G25 | Measured (not literal) safety counters in the ambient pack | EVIDENCE | `agents/core/observability/ambient_reality.py` | Medium | ✅ | | ADV-091 |
 | G26 | A parity gate that greps for a caller instead of classifying a prefix | EVIDENCE | `tests/test_hud_v2_parity.py` | Medium · PARTIAL | ✅ | | ADV-096 |
-| G27 | Enforced reality-case coverage for wired capabilities | EVIDENCE | `agents/core/observability/capability_registry.py` | Medium | — | | ADV-098 |
+| G27 | Enforced reality-case coverage for wired capabilities | EVIDENCE | `agents/core/observability/reality_harness.py`, `tests/test_capability_readiness_matrix.py` | Medium | ✅ | | ADV-098 |
 | G28 | `is_degraded()` consulted before recording a capability success | BUG | `agents/core/autonomy/worker.py` | Medium | ✅ | | ADV-094 |
 | G29 | Telegram allowed-user-id parsing, and owner binding on the callback | GAP | `agents/web.py`, `agents/core/channels/telegram.py` | Medium · PARTIAL | ✅ | | §15.9, SEC-B3 |
 | G30 | The pairing gate failing closed on a store error | BUG | `agents/core/channels/gateway.py` | Medium | ✅ | | ADV-108 |
@@ -1806,10 +1811,10 @@ does not prove it. They get triaged differently.
 | G32 | `JARVIS_ACTION_KERNEL` and the hardening flags in the example env | GAP | `.env.example` | Minor | ✅ | | ADV-117 |
 | G33 | `docs/THREAT_MODEL.md` "single front door" and T5 corrections | DOC | `docs/THREAT_MODEL.md` | Minor | ✅ | | ADV-112, ADV-113 |
 | G34 | `docs/PRIVACY.md` forget wording | DOC | `docs/PRIVACY.md` | High | ✅ | | ADV-111 |
-| G35 | The ingestion archive in the purge, retention and export sets | GAP | `agents/core/data_purge.py` | unmeasured | — | | ADV-131 |
-| G36 | A governed/ungoverned inventory for the MCP RPC tool surface | GAP | `agents/core/mcp/server.py` | unmeasured | — | | ADV-132 |
+| G35 | The ingestion archive in the purge, retention and export sets | GAP | `agents/core/ingestion/lifecycle.py`, `agents/core/{data_export,retention,data_purge}.py` | High · CONFIRMED → CLOSED | ✅ | | ADV-131 |
+| G36 | A governed/ungoverned inventory for the MCP RPC tool surface | GAP | `agents/core/mcp/server.py` | High · CONFIRMED → CLOSED | ✅ | | ADV-132 |
 | G37 | Any exercise of the upgrade path against a populated data root | GAP | `agents/core/persistence/migrations.py` | unmeasured | — | | ADV-133 |
-| G38 | A protocol for orchestrator attributes written by other modules | GAP | `agents/core/orchestrator.py` | Minor · REFUTED-with-residue | — | | ADV-130 |
+| G38 | A protocol for orchestrator attributes written by other modules | GAP | `agents/core/orchestrator.py`, `agents/core/orchestrator_bindings.py` | Minor · REFUTED-with-residue → CLOSED | ✅ | | ADV-130 |
 
 ---
 

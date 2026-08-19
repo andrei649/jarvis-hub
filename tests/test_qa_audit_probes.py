@@ -89,6 +89,16 @@ def test_every_probe_returns_the_documented_shape(probes):
         assert r["means"], name
 
 
+def test_closed_reality_probe_describes_the_actuator_resolution_it_observed(probes):
+    result = probes.probe_reality()
+
+    assert result["verdict"] == probes.CLOSED
+    assert "resolves the declared manifest implementation" in result["claim"]
+    lines = probes._means_lines(result["means"], result["verdict"])
+    assert lines[0].startswith("→ CLOSED:")
+    assert "declared actuator" in lines[0]
+
+
 def test_no_probe_writes_to_the_live_data_root(probes, tmp_path, monkeypatch):
     """ADV-148 by hand; here as a gate so a future probe cannot quietly gain a side effect.
 

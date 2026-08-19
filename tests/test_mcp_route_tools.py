@@ -44,6 +44,12 @@ from agents.core.mcp.route_tools import (
 from agents.core.mcp.server import JarvisMCPServer
 
 
+@pytest.fixture(autouse=True)
+def _enable_action_kernel_for_mutating_route_tests(monkeypatch):
+    """Mutation-success tests must opt into the now-mandatory kernel."""
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+
+
 # Per-identity gate fakes (H22.9 hardening). A mutating tool now fails CLOSED
 # unless an ``identity_check`` is bound, so the default helper binds a permissive
 # one (mirroring the unset-token localhost-trust dev posture). Tests that exercise
@@ -138,7 +144,8 @@ def _fake_remember_invoker():
 
 
 def _mutating_server(
-    *, read_only=True, mutating=True, auditor=None, invokers=None, identity_check=None
+    *, read_only=True, mutating=True, auditor=None, invokers=None,
+    identity_check=None, kernel=None
 ):
     """Server with read tools always + mutating tools gated on both switches.
 
@@ -153,6 +160,13 @@ def _mutating_server(
         invokers = {"memory_remember": invoke}
     if identity_check is None:
         identity_check = _allow_identity
+    if kernel is None:
+        from agents.core.kernel import Decision, Verdict
+
+        def _grant_kernel(_action):
+            return Decision(Verdict.GRANT, reason="test grant")
+
+        kernel = _grant_kernel
     if auditor is None:
         # Mutating tools fail closed without an auditor (SEC F3); production always
         # has orch.audit, so default one here for the dispatch/gate tests.
@@ -164,6 +178,7 @@ def _mutating_server(
         read_only_enabled=read_only,
         mutating_enabled=mutating,
         identity_check=identity_check,
+        kernel=kernel,
     )
     return JarvisMCPServer(
         _runner, AGENTS, route_tools=route_tools, mutating_route_tools=mut_tools
@@ -235,6 +250,32 @@ def test_status_surfaces_exposed_routes():
     assert set(st["exposed_routes"]) == {"status", "memory_search", "dashboard"}
     st_off = _server(with_routes=False).status()
     assert st_off["exposed_routes"] == []
+
+
+def test_complete_inventory_classifies_read_and_mutating_routes():
+    srv = _mutating_server()
+    inventory = {row["name"]: row for row in srv.tool_inventory()}
+    assert set(inventory) == {tool["name"] for tool in srv.list_tools()}
+    for name in ("route_status", "route_memory_search", "route_dashboard"):
+        assert inventory[name]["governance"] == "governed"
+        assert inventory[name]["persistent_state"] is False
+        assert inventory[name]["direct_route_mutation"] is False
+        assert "read_only_allowlist" in inventory[name]["controls"]
+    mutation = inventory["route_memory_remember"]
+    assert mutation["governance"] == "governed"
+    assert mutation["persistent_state"] is True
+    assert mutation["direct_route_mutation"] is True
+    assert mutation["state_effects"] == ["long_term_memory"]
+    assert mutation["controls"] == [
+        "mutating_allowlist",
+        "contract_required",
+        "identity_required",
+        "audit_preflight_required",
+        "action_kernel_required",
+        "identity_policy_bound",
+        "audit_sink_bound",
+        "kernel_bound_grant_only",
+    ]
 
 
 # ── calling route tools (in-process dispatch) ───────────────────────────────
@@ -547,9 +588,10 @@ async def test_call_mutating_tool_dispatches_and_writes_audit():
     assert json.loads(res["content"][0]["text"]) == {"ok": True, "id": "m-123"}
     # the write actually reached the invoker
     assert calls == [{"text": "buy milk"}]
-    # exactly one audit record, on the AUDIT_LOG channel, describing the write
-    assert len(auditor.events) == 1
-    ev = auditor.events[0]
+    # authorization is durably recorded BEFORE the write, then its outcome.
+    assert len(auditor.events) == 2
+    assert auditor.events[0].action_taken.endswith("(authorized)")
+    ev = auditor.events[1]
     assert ev.event_type == "audit_log"
     assert "POST /api/memory/remember via mcp (ok)" == ev.action_taken
     # the audit records the KEYS written, never the raw value
@@ -581,8 +623,9 @@ async def test_mutating_tool_audits_even_on_error():
     assert res["isError"] is True
     assert "route error" in res["content"][0]["text"]
     assert "db down" not in res["content"][0]["text"] or True  # no stack trace leaked
-    assert len(auditor.events) == 1
-    assert auditor.events[0].action_taken.endswith("(error)")
+    assert len(auditor.events) == 2
+    assert auditor.events[0].action_taken.endswith("(authorized)")
+    assert auditor.events[1].action_taken.endswith("(error)")
 
 
 # ── refusing non-allow-listed mutating routes even with both switches on ──────
@@ -670,8 +713,9 @@ async def test_mutating_tool_with_valid_token_dispatches_and_audits():
     assert res["isError"] is False
     assert json.loads(res["content"][0]["text"]) == {"ok": True, "id": "m-123"}
     assert calls == [{"text": "buy milk"}]  # the write reached the invoker
-    assert len(auditor.events) == 1
-    assert auditor.events[0].action_taken.endswith("(ok)")
+    assert len(auditor.events) == 2
+    assert auditor.events[0].action_taken.endswith("(authorized)")
+    assert auditor.events[1].action_taken.endswith("(ok)")
 
 
 @pytest.mark.asyncio

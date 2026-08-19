@@ -7,9 +7,10 @@ restore-oriented ``.tar.gz`` of the whole data root; export produces a readable,
 inspectable, portable JSON of the data the user actually owns.
 
 **Secret hygiene.** Only an allow-list of user-*content* DBs is exported
-(notes, missions, autonomy tasks, analytics). ``settings.db`` (config + secret
-references) and any non-listed store are **never** exported, so a portability
-dump can't leak tokens.
+(notes, missions, autonomy tasks, analytics), plus the two canonical private
+Howard roots (raw imports and the derived archive). ``settings.db`` (config +
+secret references) and unrelated stores are **never** exported, so a
+portability dump can't leak tokens.
 
 Read-only — it never mutates or deletes. The delete/forget ("forget me") half of
 H23.9 and the HTTP surface are deliberate follow-ups. CLI:
@@ -19,6 +20,7 @@ H23.9 and the HTTP surface are deliberate follow-ups. CLI:
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import logging
 import sqlite3
@@ -26,11 +28,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from agents.core.ingestion.lifecycle import PRIVATE_INGESTION_ROOTS, legacy_import_status
 from agents.core.paths import data_root
 
 logger = logging.getLogger("jarvis.data_export")
 
-EXPORT_VERSION = 1
+EXPORT_VERSION = 2
 
 # User-content DBs that belong to the owner and are safe to export. settings.db
 # (config + secret references) and anything else are intentionally excluded.
@@ -41,6 +44,12 @@ EXPORT_DBS: tuple[str, ...] = ("notes.db", "missions.db", "autonomy.db", "analyt
 # so a DB-only export silently omitted the user's actual notes. Mirrors
 # data_purge.PURGE_JSON so export and forget cover the same owner content.
 EXPORT_JSON: tuple[str, ...] = ("notes.json", "canvas.json")
+
+# Raw Howard imports and every derived archive artifact. These are directories,
+# not a file allowlist: a new artifact below either root is exported by default.
+EXPORT_PRIVATE_DIRS: tuple[str, ...] = PRIVATE_INGESTION_ROOTS
+
+_SQLITE_SIDECARS: tuple[str, ...] = ("-wal", "-shm", "-journal")
 
 
 def _now_iso() -> str:
@@ -63,23 +72,111 @@ def _dump_db(path: Path) -> dict:
     try:
         for table in _table_names(conn):
             # Table names come from sqlite_master (the DB's own catalog), never
-            # from user input, so this identifier is trusted.
-            rows = conn.execute(f"SELECT * FROM {table}").fetchall()
+            # from caller input. Quote them defensively because an imported DB
+            # can still contain spaces, quotes, or SQL-looking catalog names.
+            quoted = '"' + table.replace('"', '""') + '"'
+            rows = conn.execute(f"SELECT * FROM {quoted}").fetchall()
             out[table] = [dict(r) for r in rows]
     finally:
         conn.close()
     return out
 
 
+def _dump_jsonl(path: Path) -> dict:
+    """Decode JSONL while retaining malformed lines verbatim instead of omitting them."""
+    records: list[object] = []
+    raw_lines: list[dict[str, object]] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except ValueError:
+            raw_lines.append({"line": line_number, "raw": line})
+    result: dict[str, object] = {"format": "jsonl", "records": records}
+    if raw_lines:
+        result["raw_lines"] = raw_lines
+    return result
+
+
+def _dump_private_file(path: Path) -> dict:
+    """Return a JSON-safe, portable representation of one private ingestion file."""
+    if path.suffix == ".db":
+        return {"format": "sqlite", "tables": _dump_db(path)}
+    if path.suffix == ".json":
+        text = path.read_text(encoding="utf-8")
+        try:
+            return {"format": "json", "value": json.loads(text)}
+        except ValueError:
+            return {"format": "invalid_json_text", "text": text}
+    if path.suffix == ".jsonl":
+        return _dump_jsonl(path)
+
+    payload = path.read_bytes()
+    try:
+        return {"format": "text", "text": payload.decode("utf-8")}
+    except UnicodeDecodeError:
+        return {
+            "format": "base64",
+            "data": base64.b64encode(payload).decode("ascii"),
+        }
+
+
+def _dump_private_dir(path: Path) -> dict:
+    """Export one private root recursively without ever following symlinks."""
+    result: dict[str, object] = {"exists": path.exists(), "files": {}, "skipped": []}
+    files: dict[str, dict] = result["files"]  # type: ignore[assignment]
+    skipped: list[dict[str, str]] = result["skipped"]  # type: ignore[assignment]
+    if path.is_symlink():
+        result["exists"] = False
+        skipped.append({"path": ".", "reason": "symlink_refused"})
+        return result
+    if not path.exists():
+        return result
+    if not path.is_dir():
+        skipped.append({"path": ".", "reason": "not_a_directory"})
+        return result
+
+    for item in sorted(path.rglob("*"), key=lambda candidate: candidate.as_posix()):
+        relative = item.relative_to(path).as_posix()
+        if item.is_symlink():
+            skipped.append({"path": relative, "reason": "symlink_refused"})
+            continue
+        if not item.is_file():
+            continue
+        if item.name.endswith(_SQLITE_SIDECARS):
+            base_name = item.name
+            for suffix in _SQLITE_SIDECARS:
+                if base_name.endswith(suffix):
+                    base_name = base_name[: -len(suffix)]
+                    break
+            if (item.parent / base_name).is_file():
+                files[relative] = {
+                    "format": "sqlite_sidecar",
+                    "covered_by": (item.parent / base_name).relative_to(path).as_posix(),
+                }
+            else:
+                skipped.append({"path": relative, "reason": "orphan_sqlite_sidecar"})
+            continue
+        try:
+            files[relative] = _dump_private_file(item)
+        except (OSError, sqlite3.DatabaseError) as exc:
+            logger.warning("could not export private ingestion file %s: %s", item, exc)
+            skipped.append({"path": relative, "reason": "unreadable"})
+    return result
+
+
 def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None) -> dict:
     """Write a portable JSON export of the user-content DBs; return a manifest.
 
-    Only ``EXPORT_DBS`` present under the data root are included. Returns
-    ``{export, bytes, generated_at, databases:[…], row_counts:{…}}``.
+    ``EXPORT_DBS`` and ``EXPORT_JSON`` are allow-listed; the canonical Howard
+    roots are captured recursively so a newly-added archive artifact cannot be
+    silently omitted. Returns a manifest including completeness for those roots.
     """
     src = Path(source_root) if source_root else data_root()
     out = Path(out_dir) if out_dir else (src / "exports")
     out.mkdir(parents=True, exist_ok=True)
+    legacy_ingestion = legacy_import_status()
 
     databases: dict[str, dict] = {}
     row_counts: dict[str, int] = {}
@@ -101,12 +198,23 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
         except (OSError, ValueError) as e:
             logger.warning("skipping unreadable JSON store %s: %s", name, e)
 
+    private_ingestion = {
+        name: _dump_private_dir(src / name)
+        for name in EXPORT_PRIVATE_DIRS
+    }
+    private_complete = (
+        all(not item["skipped"] for item in private_ingestion.values())
+        and not legacy_ingestion["detected"]
+    )
+
     doc = {
         "version": EXPORT_VERSION,
         "generated_at": _now_iso(),
         "source_root": str(src),
         "databases": databases,
         "json_stores": json_stores,
+        "private_ingestion": private_ingestion,
+        "legacy_private_ingestion": legacy_ingestion,
     }
     # Filename is a server-generated timestamp only — no user value in the path.
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
@@ -119,6 +227,9 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
         "generated_at": doc["generated_at"],
         "databases": sorted(databases.keys()),
         "json_stores": sorted(json_stores.keys()),
+        "private_ingestion_roots": list(EXPORT_PRIVATE_DIRS),
+        "private_ingestion_complete": private_complete,
+        "legacy_private_ingestion": legacy_ingestion,
         "row_counts": row_counts,
     }
 

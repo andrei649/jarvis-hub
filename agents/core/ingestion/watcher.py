@@ -1,7 +1,8 @@
 """
 watcher.py — Continuous Ingestion Watcher for Howard's Digital Twin.
 
-Monitors the data/ facebook and whatsapp export directories recursively.
+Monitors the runtime data root's ``ingestion/`` Facebook and WhatsApp export
+directories recursively (or an explicitly injected source root).
 If any new or modified conversation files are found, it triggers the IngestionPipeline
 to automatically ingest the new chat history, update stylometry/knowledge,
 and rebuild cached embeddings.
@@ -12,8 +13,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from agents.core.paths import data_path
-
+from .lifecycle import default_archive_root, default_import_root
 from .pipeline import IngestionPipeline
 from .provenance import default_ledger_if_enabled
 
@@ -25,17 +25,21 @@ class IngestionWatcher:
 
     def __init__(
         self,
-        data_root: str = "data",
-        state_path: str = None,
+        data_root: str | Path | None = None,
+        state_path: str | Path | None = None,
         pipeline: Optional[IngestionPipeline] = None,
     ):
-        self.data_root = Path(data_root)
-        self.state_path = Path(state_path) if state_path is not None else data_path("archive", "watcher_state.json")
+        self.data_root = Path(data_root) if data_root is not None else default_import_root()
+        self.state_path = (
+            Path(state_path)
+            if state_path is not None
+            else default_archive_root() / "watcher_state.json"
+        )
         # 0.37 (opt-in): attach a provenance ledger when JARVIS_PROVENANCE is set so
         # each watcher-triggered run stamps an auditable origin record; else None →
         # ingestion byte-identical (no conversation ids written at rest).
         self.pipeline = pipeline or IngestionPipeline(
-            data_root=data_root, ledger=default_ledger_if_enabled())
+            data_root=self.data_root, ledger=default_ledger_if_enabled())
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _get_current_files(self) -> dict[str, float]:

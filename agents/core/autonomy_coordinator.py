@@ -23,6 +23,7 @@ from datetime import datetime
 from .autonomy import TaskExecutor
 from .autonomy.inbox import build_decision_card
 from .autonomy.worker import is_night_window
+from .orchestrator_bindings import bind_external_orchestrator_attribute
 from .system_profiles import active_posture
 from .workflows.pending_queue import WorkflowPendingQueue
 
@@ -50,6 +51,7 @@ class AutonomyCoordinator:
         # was a presence check, so JARVIS_WORKFLOW_PERSIST=0 ENABLED the drain
         # while the engine read the same var as off.
         from .workflows.engine import persist_enabled
+
         if not persist_enabled():
             return
         engine = getattr(self._orch, "workflow_engine", None)
@@ -80,11 +82,15 @@ class AutonomyCoordinator:
         )
         tg = self._orch.channels.get("telegram")
         if tg and owner and hasattr(tg, "send_card"):
+
             async def base(task):
                 return await tg.send_card(int(owner), build_decision_card(task))
+
             self._orch.autonomy.notifier = self._away_notifier(base, exclude={"telegram"})
             tg.on_callback = self._on_callback
-            logger.info("Autonomy decision inbox wired to Telegram (H34.2 away-notify via escalation)")
+            logger.info(
+                "Autonomy decision inbox wired to Telegram (H34.2 away-notify via escalation)"
+            )
 
     def _escalation_router(self):
         """Build a live ``EscalationRouter`` over the current channels + allowlist.
@@ -94,10 +100,13 @@ class AutonomyCoordinator:
         channel (re)starts and setting changes are always reflected.
         """
         from .autonomy.escalation import EscalationRouter
+
         channels = getattr(self._orch, "channels", {}) or {}
         allow = None
         try:
-            allow = (self._orch._runtime_settings.get("autonomy", {}) or {}).get("escalation_channels")
+            allow = (self._orch._runtime_settings.get("autonomy", {}) or {}).get(
+                "escalation_channels"
+            )
         except Exception:
             allow = None
         return EscalationRouter(channels, allow=allow)
@@ -105,6 +114,7 @@ class AutonomyCoordinator:
     def _away_notifier(self, base, *, exclude=None):
         """Wrap a base decision-card notifier with presence-aware away routing."""
         from .autonomy.escalation import AwayNotifier
+
         return AwayNotifier(
             base,
             getattr(self._orch, "owner_presence", None),
@@ -131,7 +141,8 @@ class AutonomyCoordinator:
         user_id = kwargs.get("user_id")
         if not self._callback_is_owner(chat_id, user_id):
             logger.warning(
-                "Rejected Telegram decision for task #%s: sender is not the owner", task_id,
+                "Rejected Telegram decision for task #%s: sender is not the owner",
+                task_id,
             )
             return None
         try:
@@ -160,9 +171,35 @@ class AutonomyCoordinator:
 
     def _telegram_channel(self):
         for channel in (getattr(self._orch, "channels", {}) or {}).values():
-            if getattr(channel, "name", "") == "telegram" or type(channel).__name__ == "TelegramChannel":
+            if (
+                getattr(channel, "name", "") == "telegram"
+                or type(channel).__name__ == "TelegramChannel"
+            ):
                 return channel
         return None
+
+    def _record_cycle(self, *, amode: str, max_tier: int | None, ok: bool, error: str = "") -> None:
+        """Best-effort structured run-log entry (H23-tail: coordinator/heartbeat/night-shift
+        supervisor observability). Absent ``runtime_log`` is the default, byte-identical
+        no-op; a logging failure never turns a successful tick into a reported failure."""
+        run_log = getattr(self._orch, "runtime_log", None)
+        if run_log is None:
+            return
+        try:
+            scheduler = getattr(self._orch, "heartbeat_scheduler", None)
+            heartbeat = scheduler.get_status() if scheduler is not None else {"scheduler_running": False}
+            run_log.record_cycle(
+                heartbeat=heartbeat,
+                coordinator={"mode": amode, "max_tier": max_tier},
+                night_shift={
+                    "enabled": bool(self._orch.get_setting("autonomy.night_shift", False)),
+                    "active_window": max_tier == 1,
+                },
+                ok=ok,
+                error=error,
+            )
+        except Exception:
+            logger.warning("Runtime run-log cycle recording failed", exc_info=True)
 
     async def loop(self):
         """Periodically run approved autonomy tasks (the self-tasking worker).
@@ -173,6 +210,8 @@ class AutonomyCoordinator:
         while True:
             interval = int(self._orch.get_setting("system.autonomy_tick", 60) or 60)
             await asyncio.sleep(max(15, interval))
+            amode = "unknown"
+            max_tier = None
             try:
                 # Sync the live autonomy knobs (/admin) onto the policy each tick:
                 # mode (AUTO/ASK/OFF) + the money caps + the interrupt budget.
@@ -184,17 +223,21 @@ class AutonomyCoordinator:
                     # Per-agent mode overrides (HUD v3) — resynced live like the global mode.
                     _am = self._orch.get_setting("autonomy.agent_modes", {})
                     pol.agent_modes = dict(_am) if isinstance(_am, dict) else {}
-                    pol.cap_per_action = float(self._orch.get_setting("autonomy.cap_per_action", 50.0) or 50.0)
-                    pol.daily_ceiling = float(self._orch.get_setting("autonomy.daily_ceiling", 200.0) or 200.0)
+                    pol.cap_per_action = float(
+                        self._orch.get_setting("autonomy.cap_per_action", 50.0) or 50.0
+                    )
+                    pol.daily_ceiling = float(
+                        self._orch.get_setting("autonomy.daily_ceiling", 200.0) or 200.0
+                    )
                     try:
                         self._orch.autonomy.running_ttl_seconds = float(
                             self._orch.get_setting("autonomy.running_ttl_seconds", 3600)
                         )
                     except (TypeError, ValueError):
                         self._orch.autonomy.running_ttl_seconds = 3600.0
-                    pol.earned_autonomy_enabled = self._orch.get_setting(
-                        "autonomy.earned_autonomy_enabled", False
-                    ) is True
+                    pol.earned_autonomy_enabled = (
+                        self._orch.get_setting("autonomy.earned_autonomy_enabled", False) is True
+                    )
                     bud = getattr(self._orch.autonomy, "budget", None)
                     if bud is not None:
                         from .ambient.policy import bounded_attention_allowance
@@ -212,36 +255,50 @@ class AutonomyCoordinator:
                 # Proactive passes self-generate new tasks — paused entirely in OFF mode.
                 if amode != "off":
                     # Sample the host and turn state changes into gated tasks.
-                    if self._orch.observer and self._orch.get_setting("system.observer_enabled", True):
+                    if self._orch.observer and self._orch.get_setting(
+                        "system.observer_enabled", True
+                    ):
                         await self._orch.observer.observe()
                     # Sample personal events (Antigravity watchers)
-                    if self._orch.event_watcher and self._orch.get_setting("system.watchers_enabled", True):
+                    if self._orch.event_watcher and self._orch.get_setting(
+                        "system.watchers_enabled", True
+                    ):
                         await self._orch.event_watcher.observe()
                 # Nightly reflection & graph consolidation (H5.15)
-                if self._orch.reflector and self._orch.get_setting("system.reflection_enabled", True):
+                if self._orch.reflector and self._orch.get_setting(
+                    "system.reflection_enabled", True
+                ):
                     if is_night_window(datetime.now().hour, start=22, end=7):
                         await self._orch.reflector.run(enabled=True)
                 # Nightly skill curator (H20.5) — same night window as reflection,
                 # additionally gated by the learning-loop master flag (default OFF).
                 _cur = getattr(self._orch, "curator", None)
                 _cog = getattr(self._orch, "cognition", None)
-                if (_cur is not None and _cog is not None
-                        and _cog.sub_enabled("review_enabled")
-                        and is_night_window(datetime.now().hour, start=22, end=7)):
+                if (
+                    _cur is not None
+                    and _cog is not None
+                    and _cog.sub_enabled("review_enabled")
+                    and is_night_window(datetime.now().hour, start=22, end=7)
+                ):
                     await _cur.run()
                 # Continuous Ingestion Watcher (H5.1)
-                if self._orch.ingestion_watcher and self._orch.get_setting("system.ingestion_watcher_enabled", True):
+                if self._orch.ingestion_watcher and self._orch.get_setting(
+                    "system.ingestion_watcher_enabled", True
+                ):
                     await asyncio.to_thread(self._orch.ingestion_watcher.check_and_run)
                 # Sync error/problem log to the git-ignored memory_logs/diagnostics.md
                 # (never the tracked BACKLOG.md — that caused git conflicts).
                 if self._orch.get_setting("system.error_backlog_sync_enabled", True):
                     from .autonomy.error_logger import sync_problems_to_diagnostics
+
                     sync_problems_to_diagnostics()
                 # 0.34: drain any due durable workflow runs (opt-in; no-op unless
                 # JARVIS_WORKFLOW_PERSIST is set).
                 await self._drain_workflow_pending()
+                self._record_cycle(amode=amode, max_tier=max_tier, ok=True)
             except Exception as e:
                 logger.warning(f"Autonomy tick failed: {e}")
+                self._record_cycle(amode=amode, max_tier=max_tier, ok=False, error=str(e)[:500])
 
     def _governed_enqueue(self, *args, **kwargs) -> int:
         """O26-P0.7 (F3): broker proposals go through the worker's governed
@@ -410,20 +467,18 @@ class AutonomyCoordinator:
         acquisition = AcquisitionRuntime(
             enabled=lambda: _get_setting("acquisition.enabled", False) is True,
         )
-        self._orch.acquisition = acquisition
+        bind_external_orchestrator_attribute(self._orch, "acquisition", acquisition)
 
         runtime = AgentToolRuntime(
             server,
             enabled=lambda: _get_setting("llm.tool_loop_enabled", False) is True,
-            registry_enabled=lambda: _get_setting(
-                "llm.registry_planning_enabled", False
-            ) is True,
+            registry_enabled=lambda: _get_setting("llm.registry_planning_enabled", False) is True,
             capability_snapshot=lambda: capability_registry.snapshot(self._orch),
             max_iterations=lambda: _get_setting("llm.tool_loop_max_iterations", 8),
             gap_callback=acquisition.capture_gap,
         )
-        self._orch.tool_rpc = server
-        self._orch.agent_tool_runtime = runtime
+        bind_external_orchestrator_attribute(self._orch, "tool_rpc", server)
+        bind_external_orchestrator_attribute(self._orch, "agent_tool_runtime", runtime)
 
         async def _approved_desktop_tool_rpc_execute(task):
             return await server.execute(task, execution_context=execution_token)
@@ -435,6 +490,7 @@ class AutonomyCoordinator:
 
     def build_executor(self) -> TaskExecutor:
         """Wire task kinds to real capabilities, degrading gracefully."""
+
         async def _research(task):
             query = (task.payload or {}).get("query") or task.title
             ws = self._orch.plugins.get("websearch")
@@ -449,6 +505,7 @@ class AutonomyCoordinator:
 
         # K3: optional per-task wall-time budget (JARVIS_TASK_MAX_SECONDS, unset = unbounded).
         from .env_config import env_float
+
         _task_budget_value = env_float("JARVIS_TASK_MAX_SECONDS", 0.0, minimum=0.0)
         _task_budget = _task_budget_value if _task_budget_value > 0 else None
         _budget_ledger = getattr(self._orch, "budget_ledger", None)
@@ -456,6 +513,7 @@ class AutonomyCoordinator:
             fallback=_llm,
             max_wall_seconds=_task_budget,
             budget_ledger=_budget_ledger,
+            execution_guard=getattr(self._orch.autonomy, "execution_allowed", None),
         )
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
             executor.register(kw, _research)
@@ -471,6 +529,7 @@ class AutonomyCoordinator:
 
         # Safe system recovery remediation handler (H6 / Antigravity recovery)
         from .autonomy.remediation import RemediationRunner
+
         # `orch.audit` is the guardrails AuditLogger, whose log() takes a
         # SecurityEvent — RemediationRunner calls log(event_str, dict), so every
         # remediation record silently failed into its except branch. Same sink as
@@ -499,18 +558,37 @@ class AutonomyCoordinator:
         # K3: the loop circuit breaker is bound ONLY here (the broker action path) — routes/
         # egress omit it (they legitimately repeat the same action.kind and would false-trip).
         from .kernel.binding import make_action_kernel
+
         _action_kernel = make_action_kernel(
             self._orch,
             loop_detector=getattr(self._orch, "loop_detector", None),
             budget_ledger=_budget_ledger,
         )
+        from .autonomy.mediation import DetachedHMACSigner
+
+        _intent_log = getattr(self._orch, "intent_log", None)
+        _mediation_signer = DetachedHMACSigner(getattr(_intent_log, "sign_detached", None))
+        _bind_mediation = getattr(self._orch.autonomy, "bind_mediation", None)
+        _worker_kernel_gate = getattr(self._orch.autonomy, "kernel_gate", None)
+        if callable(_bind_mediation):
+            _bind_mediation(_action_kernel, _mediation_signer)
+        _broker_kernel = (
+            _worker_kernel_gate
+            if _action_kernel is not None and callable(_worker_kernel_gate)
+            else _action_kernel
+        )
 
         from .writeback import WriteBackBroker
-        self._orch.writeback = WriteBackBroker(
-            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
-            secret_broker=getattr(self._orch, "secret_broker", None),
-            audit=getattr(self._orch, "audit", None),
-            kernel=_action_kernel,
+
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "writeback",
+            WriteBackBroker(
+                enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
+                secret_broker=getattr(self._orch, "secret_broker", None),
+                audit=getattr(self._orch, "audit", None),
+                kernel=_broker_kernel,
+            ),
         )
         executor.register("writeback", self._orch.writeback.execute)
 
@@ -518,14 +596,19 @@ class AutonomyCoordinator:
         # governance: approved `social.*` tasks resolve OAuth/bearer credentials
         # at action time (behind approval) and post via an injectable client.
         from .social import SocialBroker
-        self._orch.social = SocialBroker(
-            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
-            secret_broker=getattr(self._orch, "secret_broker", None),
-            audit=getattr(self._orch, "audit", None),
-            kernel=_action_kernel,
-            # 0.69: approved postiz.schedule tasks execute through the live
-            # PostizPlugin (resolved lazily — plugins may rebuild at runtime).
-            postiz_resolver=lambda: self._orch.plugins.get("postiz"),
+
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "social",
+            SocialBroker(
+                enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
+                secret_broker=getattr(self._orch, "secret_broker", None),
+                audit=getattr(self._orch, "audit", None),
+                kernel=_broker_kernel,
+                # 0.69: approved postiz.schedule tasks execute through the live
+                # PostizPlugin (resolved lazily — plugins may rebuild at runtime).
+                postiz_resolver=lambda: self._orch.plugins.get("postiz"),
+            ),
         )
         executor.register("social", self._orch.social.execute)
 
@@ -534,12 +617,17 @@ class AutonomyCoordinator:
         # already-registered ChannelManager and record the outbound message in
         # the same bounded inbox thread.
         from .channel_reply import ChannelReplyBroker
-        self._orch.channel_replies = ChannelReplyBroker(
-            inbox=getattr(self._orch, "channel_inbox", None),
-            enqueue=self._governed_enqueue,
-            channel_manager=getattr(self._orch, "channel_manager", None),
-            audit=getattr(self._orch, "audit", None),
-            kernel=_action_kernel,
+
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "channel_replies",
+            ChannelReplyBroker(
+                inbox=getattr(self._orch, "channel_inbox", None),
+                enqueue=self._governed_enqueue,
+                channel_manager=getattr(self._orch, "channel_manager", None),
+                audit=getattr(self._orch, "audit", None),
+                kernel=_broker_kernel,
+            ),
         )
         executor.register("channel.reply", self._orch.channel_replies.execute)
 
@@ -548,15 +636,20 @@ class AutonomyCoordinator:
         # live telephony (Twilio/Telnyx) is deferred to a host-side client.
         from .autonomy.call_broker import CallBroker
         from .env_config import env_json_object
+
         _call_cfg = env_json_object("JARVIS_CALL_CONFIG", {})
-        self._orch.call_broker = CallBroker(
-            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
-            secret_broker=getattr(self._orch, "secret_broker", None),
-            audit=getattr(self._orch, "audit", None),
-            budget=getattr(self._orch.autonomy, "budget", None),
-            config=_call_cfg,
-            kernel=_action_kernel,
-            ledger=_budget_ledger,
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "call_broker",
+            CallBroker(
+                enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
+                secret_broker=getattr(self._orch, "secret_broker", None),
+                audit=getattr(self._orch, "audit", None),
+                budget=getattr(self._orch.autonomy, "budget", None),
+                config=_call_cfg,
+                kernel=_broker_kernel,
+                ledger=_budget_ledger,
+            ),
         )
         executor.register("call", self._orch.call_broker.execute)
 
@@ -564,12 +657,17 @@ class AutonomyCoordinator:
         # scoped (H17.3 broker + kill-switch) + approval-gated; the on-device run
         # is a host seam (Tauri/phone client).
         from .node_mesh import NodeMesh
-        self._orch.node_mesh = NodeMesh(
-            capability_broker=getattr(self._orch, "capabilities", None),
-            kill_switch=getattr(self._orch, "kill_switch", None),
-            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
-            audit=getattr(self._orch, "audit", None),
-            kernel=_action_kernel,
+
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "node_mesh",
+            NodeMesh(
+                capability_broker=getattr(self._orch, "capabilities", None),
+                kill_switch=getattr(self._orch, "kill_switch", None),
+                enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
+                audit=getattr(self._orch, "audit", None),
+                kernel=_broker_kernel,
+            ),
         )
         executor.register("node", self._orch.node_mesh.execute)
 
@@ -577,7 +675,7 @@ class AutonomyCoordinator:
         # Read-only tools run inline; gated tools enqueue an ask-tier task (and
         # run via this executor only after approval). Starter allowlist is safe
         # built-ins; integrations register more (incl. gated) over time.
-        self._wire_agent_tool_runtime(action_kernel=_action_kernel)
+        self._wire_agent_tool_runtime(action_kernel=_broker_kernel)
         executor.register("toolrpc", self._orch.tool_rpc.execute)
         executor.register(
             "toolrpc.desktop_run",
@@ -607,6 +705,7 @@ class AutonomyCoordinator:
                 return lm.autonomy_adjustment(str(action.get("kind", "")))
             except Exception:
                 return 0
+
         try:
             self._orch.autonomy.policy.calibration_hook = _calibration_hook
         except Exception:
@@ -620,16 +719,20 @@ class AutonomyCoordinator:
             out = await self._orch.process(task, agent=picked, channel="subagent")
             return {"output": out, "session_id": session_id}
 
-        self._orch.subagents = SubAgentManager(
-            runner=_subagent_runner,
-            max_concurrent=self._subagent_concurrency(),
-            max_depth=int(self._orch.get_setting("autonomy.max_subagent_depth", 8) or 8),
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "subagents",
+            SubAgentManager(
+                runner=_subagent_runner,
+                max_concurrent=self._subagent_concurrency(),
+                max_depth=int(self._orch.get_setting("autonomy.max_subagent_depth", 8) or 8),
+            ),
         )
 
         # Domain routers may register late-bound host handlers (for example the
         # default-off House Brain after owner configuration is available). Keep
         # the concrete executor; the worker still receives only ``execute``.
-        self._orch.task_executor = executor
+        bind_external_orchestrator_attribute(self._orch, "task_executor", executor)
         return executor
 
     def _subagent_concurrency(self) -> int:
