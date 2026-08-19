@@ -81,9 +81,9 @@
     },
     "H23": {
       "blocked": 0,
-      "done": 27,
+      "done": 28,
       "open": 1,
-      "total": 28
+      "total": 29
     },
     "H27": {
       "blocked": 0,
@@ -214,7 +214,7 @@
   ],
   "routes": 405,
   "tests": {
-    "backend": 6764,
+    "backend": 6779,
     "frontend": 521,
     "mobile": 96
   },

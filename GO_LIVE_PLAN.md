@@ -5,7 +5,7 @@
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v0.11.0** · backend **6,764** · frontend **521** · mobile **96** · **405** routes · **18** active agents · open owner gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · commit `11b6918ffcde`.
+> Generated project status: **v0.11.0** · backend **6,779** · frontend **521** · mobile **96** · **405** routes · **17** active agents · open owner gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · commit `11b6918ffcde`.
 <!-- project-status:go-live-header:end -->
 >
 > **2026-07-11 — the 1.0 gate expanded (owner decision):** this plan's launch checklist remains the
@@ -306,7 +306,7 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 
 > *"The AI that works while you sleep."*
 
-> *"18 agents. One system. Your data stays home."*
+> *"17 agents. One system. Your data stays home."*
 
 > *"Finally: an AI assistant that learns what to stop asking you."*
 
