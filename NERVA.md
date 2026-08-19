@@ -2,7 +2,7 @@
 
 ## Overview
 
-Jarvis is a local-first multi-agent AI orchestration system. 17 active agents across 4 tiers (incl. Argus, the WorldView bridge, and Howard, the emerging digital twin), coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
+Jarvis is a local-first multi-agent AI orchestration system. 18 active agents across 4 tiers (incl. Argus, the WorldView bridge, Howard, the emerging digital twin, and Hestia, the House Brain), coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
 
 > **Related stack — WorldView (4D OSINT):** a separate, self-contained Next.js + Fastify product under [`worldview/`](worldview/) (ports 3000/4000, Docker infra) that shares **no runtime** with this Python system. The **Argus** agent (`agents/argus/`) is the read-only, governed bridge between JARVIS and WorldView; the entire integration surface is the versioned contract in [`docs/contracts/worldview-bridge.md`](docs/contracts/worldview-bridge.md) (6 read-only endpoints, contract-tested on both sides). It is installed and auto-started by `INSTALL.bat`/`START.bat`. See [`worldview/README.md`](worldview/README.md).
 
@@ -23,7 +23,7 @@ Jarvis is a local-first multi-agent AI orchestration system. 17 active agents ac
 ```
 agents/
 ├── _system/
-│   ├── agents.yaml          # Agent registry (17 active, 17 bench)
+│   ├── agents.yaml          # Agent registry (18 active, 14 bench)
 │   └── agents.yaml.latest   # Auto-generated backup
 ├── core/
 │   ├── agent.py             # Single agent runtime (SOUL.md + model call)
@@ -96,7 +96,7 @@ agents/
 │   └── SOUL.md
 ├── pepper/
 │   └── SOUL.md
-├── ... (17 agent dirs total)
+├── ... (18 agent dirs total)
 └── .venv/                   # Python virtual environment
 serve.py                     # Uvicorn launcher
 memory_logs/                 # Sessions, checkpoints, learning records
@@ -204,7 +204,7 @@ curl.exe http://127.0.0.1:8080/status
 - 18 active agents; registry-derived
 - 405 HTTP routes; parity-snapshot-derived
 - Tests: backend **6,813** · frontend **521** · mobile **96**
-- Version: **v0.11.0** · source commit `2106965fa186`
+- Version: **v0.11.0** · source commit `9814c338d91f`
 - H23 roll-up: 28/29 done, 0 blocked, 1 open; release gates: A1, A2, A3, A4, A5, A6, A7, A8, A9
 <!-- project-status:jarvis-stats:end -->
 

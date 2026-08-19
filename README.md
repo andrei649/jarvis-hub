@@ -152,10 +152,10 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v0.11.0** · backend **6,813** · frontend **521** · mobile **96** · **405** routes · **18** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · source commit `2106965fa186`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v0.11.0** · backend **6,813** · frontend **521** · mobile **96** · **405** routes · **18** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · source commit `9814c338d91f`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
-**v0.11.0 — feature-complete + refactor done, building toward the expanded 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); **1.0 = the proof track** — productionization + real design-partner users — **plus the AI-OS capability program**, [`NERVA_VISION.md`](NERVA_VISION.md)). 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v0.11.0 — feature-complete + refactor done, building toward the expanded 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); **1.0 = the proof track** — productionization + real design-partner users — **plus the AI-OS capability program**, [`NERVA_VISION.md`](NERVA_VISION.md)). 18 specialist agents (incl. **Argus** for WorldView geoint, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge

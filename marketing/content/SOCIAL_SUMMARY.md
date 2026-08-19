@@ -19,7 +19,7 @@
 > proof — real users, and the AI-OS capability program.
 >
 > What it is, in one paragraph: a personal AI operating system that runs **entirely on your own
-> hardware**. 17 specialist agents work 24/7 on your GPU (LM Studio / Ollama) — daily intel,
+> hardware**. 18 specialist agents work 24/7 on your GPU (LM Studio / Ollama) — daily intel,
 > calendar, research, finance, home, family. Proactive, but with brakes: every autonomous action
 > passes a reversible/irreversible **approval queue** and lands in a **tamper-evident audit log**;
 > approve the same kind of thing enough times and it learns to stop asking. Memory compounds
