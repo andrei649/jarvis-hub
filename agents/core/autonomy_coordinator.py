@@ -178,6 +178,29 @@ class AutonomyCoordinator:
                 return channel
         return None
 
+    def _record_cycle(self, *, amode: str, max_tier: int | None, ok: bool, error: str = "") -> None:
+        """Best-effort structured run-log entry (H23-tail: coordinator/heartbeat/night-shift
+        supervisor observability). Absent ``runtime_log`` is the default, byte-identical
+        no-op; a logging failure never turns a successful tick into a reported failure."""
+        run_log = getattr(self._orch, "runtime_log", None)
+        if run_log is None:
+            return
+        try:
+            scheduler = getattr(self._orch, "heartbeat_scheduler", None)
+            heartbeat = scheduler.get_status() if scheduler is not None else {"scheduler_running": False}
+            run_log.record_cycle(
+                heartbeat=heartbeat,
+                coordinator={"mode": amode, "max_tier": max_tier},
+                night_shift={
+                    "enabled": bool(self._orch.get_setting("autonomy.night_shift", False)),
+                    "active_window": max_tier == 1,
+                },
+                ok=ok,
+                error=error,
+            )
+        except Exception:
+            logger.warning("Runtime run-log cycle recording failed", exc_info=True)
+
     async def loop(self):
         """Periodically run approved autonomy tasks (the self-tasking worker).
 
@@ -187,6 +210,8 @@ class AutonomyCoordinator:
         while True:
             interval = int(self._orch.get_setting("system.autonomy_tick", 60) or 60)
             await asyncio.sleep(max(15, interval))
+            amode = "unknown"
+            max_tier = None
             try:
                 # Sync the live autonomy knobs (/admin) onto the policy each tick:
                 # mode (AUTO/ASK/OFF) + the money caps + the interrupt budget.
@@ -270,8 +295,10 @@ class AutonomyCoordinator:
                 # 0.34: drain any due durable workflow runs (opt-in; no-op unless
                 # JARVIS_WORKFLOW_PERSIST is set).
                 await self._drain_workflow_pending()
+                self._record_cycle(amode=amode, max_tier=max_tier, ok=True)
             except Exception as e:
                 logger.warning(f"Autonomy tick failed: {e}")
+                self._record_cycle(amode=amode, max_tier=max_tier, ok=False, error=str(e)[:500])
 
     def _governed_enqueue(self, *args, **kwargs) -> int:
         """O26-P0.7 (F3): broker proposals go through the worker's governed
