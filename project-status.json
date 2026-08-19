@@ -133,6 +133,12 @@
       "open": 2,
       "total": 6
     },
+    "H35": {
+      "blocked": 6,
+      "done": 1,
+      "open": 1,
+      "total": 8
+    },
     "H5": {
       "blocked": 0,
       "done": 16,
@@ -164,7 +170,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "11b6918ffcde41bf701c37a6e9560eefc3a365c6",
+  "latest_ci_commit": "2106965fa186f972c0722b98efa2226ac5fc559a",
   "open_release_gates": [
     {
       "id": "A1",
