@@ -21,6 +21,30 @@ services:
       - n8n
     restart: unless-stopped
 
+  # Headless runtime supervisor — coordinator + heartbeat + night shift, wired
+  # for real (see scripts/coordinator.py). Separate container from `jarvis`
+  # (the HTTP app) so a stuck/crashed coordinator never takes chat down, and
+  # vice versa. runtime_supervisor.py respawns a killed coordinator itself;
+  # `restart: unless-stopped` is the second layer if the supervisor dies too.
+  runtime-coordinator:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.12-slim
+        WORKDIR /app
+        COPY requirements-beta.txt .
+        RUN pip install --no-cache-dir -r requirements-beta.txt
+        COPY . .
+        CMD ["python", "scripts/runtime_supervisor.py"]
+    env_file:
+      - .env
+    volumes:
+      - runtime_logs:/app/logs
+    depends_on:
+      - qdrant
+      - neo4j
+    restart: unless-stopped
+
   qdrant:
     image: qdrant/qdrant:latest
     ports:
@@ -52,3 +76,4 @@ volumes:
   qdrant_data:
   neo4j_data:
   n8n_data:
+  runtime_logs:
