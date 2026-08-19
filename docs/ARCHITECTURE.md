@@ -298,6 +298,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | `agents/core/observability/review_queue.py` | Human review queue (flag → rubric → eval dataset) | `ReviewQueue` |
 | `agents/core/observability/datasets.py` | Eval dataset store + regression runs | `DatasetStore` |
 | `agents/core/observability/north_star.py` | North-star + counter-metric aggregator (MOONSHOT §6) — exposed at `GET /api/metrics/north-star?days=1-90`; see [METRICS.md](METRICS.md) | `compute_north_star` |
+| `agents/core/observability/runtime_log.py` | Per-cycle run-log for the headless runtime supervisor (H23.29) — one bounded JSON line per autonomy-coordinator tick into `logs/runtime.jsonl`, plus a cycle counter that survives a restart so crash recovery is provable. Driven by `scripts/runtime_supervisor.py` → `scripts/coordinator.py`; inert unless an orchestrator has `runtime_log` wired | `RuntimeRunLog.record_cycle`, `RuntimeCycleRecord` |
 
 ### Agent Registry
 
@@ -704,9 +705,12 @@ agents/
     mcp/                          MCP client (stdio/SSE)
     learning/                     Agent health tracking + promotions
     workflows/                    Multi-agent workflow engine
-    observability/                Request tracing + LLM eval harness
+    observability/                Request tracing + LLM eval harness + runtime run-log
   jarvis/SOUL.md                  Agent identity prompt (repeat for each agent)
 skills/                           Skill packs (SKILL.md + main.py)
+logs/                             Runtime supervisor run-log + cycle state (H23.29, gitignored)
+  runtime.jsonl                   One bounded JSON line per coordinator cycle
+  runtime_state.json              Cycle counter, survives restart
 memory_logs/                      All persistent state (SQLite, JSONL, cache)
   checkpoints/checkpoints.db
   settings.db
