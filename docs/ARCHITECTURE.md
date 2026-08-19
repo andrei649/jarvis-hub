@@ -7,7 +7,7 @@
 ## 1. TL;DR / Orientation
 
 - Local-first multi-agent AI orchestration. Python 3.12 + FastAPI + LM Studio (port 1234).
-- 17 active agents (4 tiers, incl. Argus + Howard), 17 bench agents (dormant, promotable at runtime).
+- 18 active agents (4 tiers, incl. Argus, Howard + Hestia), 14 bench agents (dormant, promotable at runtime).
 - Single entry point for web: `serve.py` → `agents/web.py` (FastAPI `app`); uvicorn binds on port 8080.
 - CLI REPL entry point: `agents/run.py` → `Orchestrator.handle_input`.
 - Everything routes through `agents/core/orchestrator.py:Orchestrator`.
@@ -370,7 +370,7 @@ never pull a strict-local agent to the cloud) → **(2)** `llm_policy` from the 
 
 | Policy | Agents |
 |--------|--------|
-| `local` | `frigga`, `ultron`, `howard` — never leave the machine; **fail closed** if local backend is down (no cloud fallback, ever) |
+| `local` | `frigga`, `ultron`, `howard`, `hestia` — never leave the machine; **fail closed** if local backend is down (no cloud fallback, ever) |
 | `claude` | `vision`, `steve`, `argus` (argus via registry) — Claude Sonnet via Anthropic API |
 | `cloud` | `athena` — Gemini flash via Gemini API |
 | `auto` | All others — local first, escalate on size/complexity |
@@ -536,7 +536,7 @@ Key env vars loaded at startup:
 
 ### Local-first rules
 
-- `frigga`, `ultron`, `howard` are `LOCAL_ONLY_AGENTS` in `hybrid_router.py` — never routed to cloud.
+- `frigga`, `ultron`, `howard`, `hestia` are `LOCAL_ONLY_AGENTS` in `hybrid_router.py` — never routed to cloud.
 - `frigga` has `cloud_fallback: false` in `agents.yaml` — hard rule.
 
 ### Skill/plugin loader patterns
@@ -562,7 +562,7 @@ from git history into `*.local.md`).
 
 ### Add a new agent (active)
 
-1. Create `agents/<agent_id>/SOUL.md` — see any existing soul for format (Identity / Mission / Voice sections). Keep it generic; personal details go in `SOUL.local.md` (above).
+1. Create `agents/<agent_id>/SOUL.md` — start from `agents/_templates/SOUL.template.md` (Identity / Mission / Voice & Tone sections). Keep it generic; personal details go in `SOUL.local.md` (above). Fill in the `personality` front-matter block: without it the agent inherits the shared default traits and has no character of its own, and `tests/test_persona_roster.py` fails. Traits derive from the Voice & Tone prose — μ ≤ 0.3 or ≥ 0.7 becomes a behavioral directive in the per-turn persona block, mid-band traits stay silent, and every agent must sit ≥ 0.1 from every other in trait space.
 2. Add entry under `agents:` in `agents/_system/agents.yaml`:
    ```yaml
    myagent:

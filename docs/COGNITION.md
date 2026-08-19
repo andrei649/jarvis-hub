@@ -149,8 +149,9 @@ flowchart TB
 handle_input / handle_input_stream
   1. resolve TurnContext (session/agent/user)        ← fixes BUG-5
   2. facade.pre_turn(ctx):
-       • sample personality STATE from {μ,σ,skew} shifted by current MOOD
-       • read affect snapshot, status, Objective·Obstacle·Tactic
+       • band each trait's μ into a behavioral DIRECTIVE (≤0.3 / ≥0.7; mid = silent)
+       • sample personality STATE from {μ,σ,skew} → telemetry + prosody, not the prompt
+       • read affect snapshot + status dial (the only layer that moves turn to turn)
        • return a deterministic prompt BLOCK  (spliced like _recall_block)   [BOTH prompt builders]
   3. _build_agent_turn_text:
        • inject bounded LivingMemory core facts when cognition.memory_enabled
@@ -205,7 +206,7 @@ DailyReflector.run  (night window 22:00-07:00, gated by system.reflection_enable
 |---|---|---|---|---|---|
 | **Facade** | PFC executive | `cognition/facade.py` | — | `cognition.enabled` | Subsystem inert → master flag off; or registry import failed (check `/api/cognition/status`) |
 | **Affect / mood** | Amygdala + serotonin | `cognition/affect/` | mood store (keyed) | `cognition.affect_enabled` | Flat tone → flag off; **stuck mood** → τ/clamp wrong, reset via `/api/personality/mood/reset` |
-| **Personality sampler** | Whole-trait dynamics | `cognition/personality/` | SOUL `meta` + state in TurnContext | `cognition.affect_enabled` | No variation → `σ`=0; drift → see drift job |
+| **Personality sampler** | Whole-trait dynamics | `cognition/personality/` | SOUL `meta` + state in TurnContext | `cognition.affect_enabled` | Agent has no character of its own → SOUL declares no `personality` block, so it fell back to `DEFAULT_TRAITS` (`tests/test_persona_roster.py` guards this); no variation → `σ`=0; drift → see drift job |
 | **Relational** | Oxytocin / ToM | `cognition/relational/` | relational store `(agent,user)` | `cognition.relational_enabled` | Over-adaptation (mirroring) → delta norm cap exceeded; reset delta |
 | **Mastery / calibration** | Cerebellum + metacognition | `cognition/mastery/` | `learning/kc.db` | `cognition.calibration_enabled` | Overconfident → too few samples (Wilson bound); recompute |
 | **Judge (anti-sycophancy)** | PFC inhibition | `cognition/judge/` | — | `cognition.anti_sycophancy_enabled` | Flattery slipping through → judge unwired at registration; Sycophancy Index rising |
@@ -229,6 +230,7 @@ DailyReflector.run  (night window 22:00-07:00, gated by system.reflection_enable
 | "Forgets" something it should know | Retrieval strength decayed without reinforcement, or demoted to cold tier and not reactivated | `decay` store activation; spaced-reinforcement job ran?; tier/access count of the trace | verify recall hit ids match LivingMemory `turn_ref`; run `reinforce` job if no recall cue exists; lower decay rate |
 | Nightly consolidation didn't happen | Scheduler job missing, cognition flags off, or job exception | APScheduler job `memory-consolidation-decay`; `/api/cognition/status`; `last_memory_maintenance` | enable cognition master + memory sub-flag; confirm the job is registered; rerun the scheduler body in tests |
 | Personality feels flat / robotic | `cognition.enabled` or `affect_enabled` off; `σ`=0 in SOUL `meta` | `/api/cognition/status`; SOUL front-matter | enable flags; set non-zero per-facet `σ` |
+| Two agents sound like each other | Their trait μ vectors sit within ε=0.1; every trait mid-band emits no directive | `/api/cognition/ensemble` → `diversity.min_distance` + violations | push the μ that carries each agent's identity past 0.3 / 0.7 — a persona whose traits are all mid-band says almost nothing in the prompt |
 | Mood "stuck" (sulking / over-warm) | Attractor not decaying; clamp/τ misconfigured | mood store valence; `τ`, clamp bounds | `/api/personality/mood/reset`; check asymmetric clamp |
 | Personality drifted / inconsistent | Drift job over-applied, or relational delta too large | `/api/personality/diff` (anchor vs current); SOUL git history; delta norm | revert SOUL version; reset relational delta; psychometric self-test should have tripped |
 | Sycophantic / agrees too easily | Anti-sycophancy judge off or unwired at registration | `cognition.anti_sycophancy_enabled`; judge passed to `QualityMonitor`?; Sycophancy Index trend | enable + wire judge; confirm it runs **deferred** (not inline) |

@@ -19,7 +19,7 @@
 > proof — real users, and the AI-OS capability program.
 >
 > What it is, in one paragraph: a personal AI operating system that runs **entirely on your own
-> hardware**. 17 specialist agents work 24/7 on your GPU (LM Studio / Ollama) — daily intel,
+> hardware**. 18 specialist agents work 24/7 on your GPU (LM Studio / Ollama) — daily intel,
 > calendar, research, finance, home, family. Proactive, but with brakes: every autonomous action
 > passes a reversible/irreversible **approval queue** and lands in a **tamper-evident audit log**;
 > approve the same kind of thing enough times and it learns to stop asking. Memory compounds
@@ -46,7 +46,7 @@
 
 > Quick update for everyone waiting on **Jarvis Hub** 👇
 >
-> Feature-complete at v0.11.0: 17 agents on *your* GPU, approval queue + tamper-evident audit log,
+> Feature-complete at v0.11.0: 18 agents on *your* GPU, approval queue + tamper-evident audit log,
 > knowledge-graph memory that grows nightly, 7 channels + mobile. $0/month, cloud strictly opt-in.
 >
 > Next up: real-user proof, then the computer/browser operator, house brain & cameras.

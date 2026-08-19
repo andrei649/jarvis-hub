@@ -28,7 +28,9 @@ def test_agent_count_matches_registry():
     assert agents.AGENT_COUNT == _active_from_registry()
 
 
-def test_agent_count_is_seventeen_today():
+def test_agent_count_is_eighteen_today():
     # Concrete tripwire: if the roster changes, update the registry AND the docs
     # (README/STATUS/JARVIS quote this) in the same PR.
-    assert agents.AGENT_COUNT == 17
+    # 18 is also `cardinality_cap` in agents.yaml — the next active agent needs
+    # the architecture review that rule asks for, not just a registry entry.
+    assert agents.AGENT_COUNT == 18
