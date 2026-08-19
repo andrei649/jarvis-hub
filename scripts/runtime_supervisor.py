@@ -21,9 +21,13 @@ Usage:
 
 Env (forwarded to the child; also read directly):
   JARVIS_RUNTIME_LOG            run-log path (default logs/runtime.jsonl)
-  JARVIS_RUNTIME_RESPAWN_DELAY  minimum seconds between respawns (default 1.0,
-                                 backs off a hot crash loop instead of
-                                 spinning at 100% CPU)
+  JARVIS_RUNTIME_RESPAWN_DELAY  starting respawn delay in seconds (default 1.0).
+                                 A child that keeps exiting immediately doubles
+                                 this delay each time, up to MAX_BACKOFF_SECONDS,
+                                 instead of respawning at a constant fast interval
+                                 forever; a child that stays up at least
+                                 BACKOFF_RESET_SECONDS resets the delay back to
+                                 this starting value on its next crash.
 """
 
 from __future__ import annotations
@@ -38,6 +42,13 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _COORDINATOR = str(_REPO_ROOT / "scripts" / "coordinator.py")
+
+MAX_BACKOFF_SECONDS = 60.0
+# A child that stayed up at least this long resets the respawn delay back to
+# JARVIS_RUNTIME_RESPAWN_DELAY on its next crash — distinguishes a genuine crash
+# loop (delay keeps growing) from an operator's one-off `kill -9` during an
+# otherwise long, healthy run.
+BACKOFF_RESET_SECONDS = 30.0
 
 
 def _log_path() -> Path:
@@ -56,7 +67,8 @@ def _append_supervisor_event(event: str, **fields) -> None:
 
 
 def main() -> int:
-    respawn_delay = float(os.environ.get("JARVIS_RUNTIME_RESPAWN_DELAY", "1.0"))
+    starting_delay = float(os.environ.get("JARVIS_RUNTIME_RESPAWN_DELAY", "1.0"))
+    backoff = starting_delay
     stopping = False
 
     def _request_stop(signum, _frame) -> None:
@@ -68,6 +80,7 @@ def main() -> int:
     # Fixed argv (this interpreter + a repo-relative script path) — no shell,
     # no untrusted input; matches the repo's other internal subprocess seams.
     child = subprocess.Popen([sys.executable, _COORDINATOR])  # noqa: S603  # nosec B603
+    started_at = time.monotonic()
     _append_supervisor_event("spawned", pid=child.pid)
     signal.signal(signal.SIGTERM, _request_stop)
     signal.signal(signal.SIGINT, _request_stop)
@@ -79,8 +92,12 @@ def main() -> int:
                 _append_supervisor_event("stopped", pid=child.pid, exit_code=exit_code)
                 return 0
             _append_supervisor_event("child_exited", pid=child.pid, exit_code=exit_code)
-            time.sleep(respawn_delay)
+            if time.monotonic() - started_at >= BACKOFF_RESET_SECONDS:
+                backoff = starting_delay
+            time.sleep(backoff)
+            backoff = min(MAX_BACKOFF_SECONDS, backoff * 2)
             child = subprocess.Popen([sys.executable, _COORDINATOR])  # noqa: S603  # nosec B603
+            started_at = time.monotonic()
             _append_supervisor_event("respawned", pid=child.pid)
     finally:
         if child.poll() is None:

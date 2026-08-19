@@ -16,6 +16,7 @@ prompts, or credentials — so this is safe to leave on by default.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from dataclasses import dataclass
@@ -81,7 +82,9 @@ class RuntimeRunLog:
     """Append-only JSONL cycle log + a small persisted cycle-counter state file.
 
     Both files are written with a temp-file-then-``replace`` so a crash mid-write
-    never corrupts the state a restarted process reloads.
+    never corrupts the state a restarted process reloads. An unparseable state
+    file is moved aside to ``<name>.corrupt-<epoch>`` rather than overwritten in
+    place, so the evidence of *why* the counter reset survives the reset.
     """
 
     def __init__(self, *, log_path: Path | str, state_path: Path | str, clock=time.time) -> None:
@@ -93,8 +96,14 @@ class RuntimeRunLog:
 
     def _load_state(self) -> None:
         try:
-            raw = json.loads(self._state_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            raw_text = self._state_path.read_text(encoding="utf-8")
+        except OSError:
+            self._cycle = 0
+            return
+        try:
+            raw = json.loads(raw_text)
+        except ValueError:
+            self._quarantine_corrupt_state()
             self._cycle = 0
             return
         cycle = raw.get("cycle") if isinstance(raw, dict) else None
@@ -102,6 +111,14 @@ class RuntimeRunLog:
             self._cycle = cycle
         else:
             self._cycle = 0
+
+    def _quarantine_corrupt_state(self) -> None:
+        """Move an unparseable state file aside instead of discarding it silently —
+        a corrupt cycle-counter file is itself a signal worth keeping for forensics.
+        Best-effort: falling back to cycle 0 must succeed even if the rename fails."""
+        quarantine = self._state_path.with_name(f"{self._state_path.name}.corrupt-{int(self._clock())}")
+        with contextlib.suppress(OSError):
+            self._state_path.replace(quarantine)
 
     def _save_state(self) -> None:
         self._state_path.parent.mkdir(parents=True, exist_ok=True)

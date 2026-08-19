@@ -86,6 +86,19 @@ def test_corrupt_state_file_falls_back_to_zero_instead_of_raising(tmp_path):
     assert record.cycle == 1
 
 
+def test_corrupt_state_file_is_quarantined_not_discarded(tmp_path):
+    log_path, state_path = _paths(tmp_path)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text("not json", encoding="utf-8")
+
+    RuntimeRunLog(log_path=log_path, state_path=state_path, clock=lambda: 42.0)
+
+    quarantined = state_path.with_name(f"{state_path.name}.corrupt-42")
+    assert quarantined.exists()
+    assert quarantined.read_text(encoding="utf-8") == "not json"
+    assert not state_path.exists()
+
+
 def test_missing_state_file_starts_at_zero(tmp_path):
     log_path, state_path = _paths(tmp_path)
 
