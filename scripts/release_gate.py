@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import sqlite3
@@ -12,6 +13,8 @@ import sqlite3
 # Local gate executes fixed pytest/Python/git argv and never invokes a shell.
 import subprocess  # nosec B404
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -44,6 +47,9 @@ RELEASE_TOOLING = [
 _LINK_RE = re.compile(r"\]\(([^)#\s]+\.md)(?:#[^)]*)?\)")
 _LANE_ROW_RE = re.compile(r"^\|\s*(A\d)\s*\|(.*)\|\s*(.*?)\s*\|\s*$")
 PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
+# H23.4: live-model eval evidence lanes (companion_eval.live_dataset_name).
+LIVE_EVAL_PREFIX = "companion_v1-live"
+LIVE_EVAL_STALE_DAYS = 30.0
 
 
 def _result(tier: str, name: str, status: str, detail: str) -> dict:
@@ -108,6 +114,90 @@ def check_status_sync(*, runner=None) -> dict:
         f"fast status check failed ({code}); fix: python scripts/status_sync.py "
         "--reuse-test-counts",
     )
+
+
+def check_companion_gate(*, runner=None) -> dict:
+    """Run the deterministic companion eval gate (H23.4) against an ephemeral store.
+
+    The ephemeral store keeps the release gate read-only for the repo: the run
+    exercises rubric/golden drift and the gate's own machinery without touching
+    (or reading) any persistent baseline.
+    """
+    runner = runner or (
+        lambda args: (
+            subprocess.run(  # noqa: S603  # nosec B603
+                [sys.executable, *args], cwd=str(REPO)
+            ).returncode
+        )
+    )
+    with tempfile.TemporaryDirectory(prefix="release-gate-eval-") as tmp:
+        code = runner(
+            [
+                "-m",
+                "agents.core.observability.companion_eval",
+                "--ci-gate",
+                "--store-root",
+                str(Path(tmp) / "eval"),
+            ]
+        )
+    if code == 0:
+        return _result("machine", "companion-eval", PASS, "golden drift gate green")
+    return _result("machine", "companion-eval", FAIL, f"companion eval gate failed ({code})")
+
+
+def _eval_store_root() -> Path:
+    """Mirror agents.core.paths.data_root() resolution without importing agents."""
+    explicit = os.environ.get("JARVIS_EVAL_STORE", "").strip()
+    if explicit:
+        return Path(explicit)
+    for env in ("JARVIS_HOME", "JARVIS_MEMORY_DIR"):
+        base = os.environ.get(env, "").strip()
+        if base:
+            return Path(base) / "eval"
+    return REPO / "memory_logs" / "eval"
+
+
+def check_live_eval_evidence(*, store_root: Path | None = None, now: float | None = None) -> dict:
+    """Owner row: has the H23.4 live fidelity lane actually run on this box?
+
+    Reads the recorded live-lane runs straight from the eval store (stdlib
+    only); a recorded run is evidence the owner exercised a real model against
+    the golden suite. Never auto-passes: no runs → FAIL with the exact command.
+    """
+    root = Path(store_root) if store_root is not None else _eval_store_root()
+    latest: dict | None = None
+    lane = ""
+    datasets_dir = root / "datasets"
+    if datasets_dir.is_dir():
+        for lane_dir in sorted(datasets_dir.iterdir()):
+            if not lane_dir.is_dir() or not lane_dir.name.startswith(LIVE_EVAL_PREFIX):
+                continue
+            runs_file = lane_dir / "runs.jsonl"
+            if not runs_file.is_file():
+                continue
+            for line in runs_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    run = json.loads(line)
+                except ValueError:
+                    continue
+                if latest is None or float(run.get("ts", 0)) > float(latest.get("ts", 0)):
+                    latest, lane = run, lane_dir.name
+    if latest is None:
+        return _result(
+            "owner",
+            "live-eval-evidence",
+            FAIL,
+            "no live-model eval recorded — run `python -m "
+            "agents.core.observability.companion_eval --live-gate` on the owner box (H23.4)",
+        )
+    age_days = (float(now if now is not None else time.time()) - float(latest.get("ts", 0))) / 86400
+    detail = f"lane {lane}: score {latest.get('score')} · {age_days:.1f}d ago"
+    if age_days > LIVE_EVAL_STALE_DAYS:
+        return _result("owner", "live-eval-evidence", WARN, detail + " (stale — re-run)")
+    return _result("owner", "live-eval-evidence", PASS, detail)
 
 
 def check_doc_links(files: list[str] | None = None) -> dict:
@@ -247,11 +337,13 @@ def run_gate(
     results = [
         check_code_complete(),
         check_suite(skip=skip_tests, runner=suite_runner),
+        check_companion_gate(),
         check_status_sync(),
         check_doc_links(),
         check_version_tag(tag_reader=tag_reader),
         check_park_guard(),
     ]
+    results.append(check_live_eval_evidence())
     results.extend(
         check_owner_and_market(
             backlog_text=backlog_text, feedback_db=feedback_db, soak_reports=soak_reports

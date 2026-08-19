@@ -25,6 +25,7 @@ CLI (for CI lanes)::
 
     python -m agents.core.observability.companion_eval --self-check   # goldens vs rubrics, exit 1 on failure
     python -m agents.core.observability.companion_eval --seed         # version the dataset into the DatasetStore
+    python -m agents.core.observability.companion_eval --live-gate    # H23.4 owner-box fidelity gate (fail-closed)
 """
 
 from __future__ import annotations
@@ -32,12 +33,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import unicodedata
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from agents.core.cognition.honesty import sycophancy_signals
-from agents.core.env_config import env_flag
+from agents.core.env_config import env_flag, env_float, env_str
 
 from .datasets import DatasetStore
 from .eval import EvalCase, EvalHarness
@@ -45,6 +47,18 @@ from .eval import EvalCase, EvalHarness
 _DATA_FILE = Path(__file__).with_name("companion_dialogues.json")
 
 DATASET_NAME = "companion_v1"
+#: Live-model runs are recorded under per-model lanes below this prefix, NEVER
+#: under :data:`DATASET_NAME` — a live run must not become the deterministic
+#: gate's baseline (and vice versa), or the drift compare silently loses meaning.
+LIVE_DATASET_PREFIX = f"{DATASET_NAME}-live"
+_LIVE_NAME_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+#: H23.4 owner-box fidelity lane configuration (all opt-in; the deterministic
+#: gate never reads these). URL default = LM Studio's OpenAI-compatible server;
+#: Ollama serves the same contract on ``http://127.0.0.1:11434/v1``.
+LIVE_URL_ENV = "JARVIS_EVAL_LIVE_URL"
+LIVE_MODEL_ENV = "JARVIS_EVAL_LIVE_MODEL"
+LIVE_MIN_SCORE_ENV = "JARVIS_EVAL_LIVE_MIN_SCORE"
+DEFAULT_LIVE_BASE_URL = "http://127.0.0.1:1234/v1"
 DIMENSIONS = (
     "assistance",
     "empathy",
@@ -185,9 +199,22 @@ def make_cases(dialogues: list[dict] | None = None) -> list[dict]:
     return cases
 
 
+def live_dataset_name(model: str) -> str:
+    """Per-model live-lane dataset name, valid for the DatasetStore contract.
+
+    Model ids arrive from operator config (``qwen2.5:0.5b``, an LM Studio GGUF
+    path, …); anything outside the store's ``[A-Za-z0-9._-]`` charset collapses
+    to ``-`` and the result is bounded to the store's 64-char name limit. The
+    prefix keeps every live lane disjoint from :data:`DATASET_NAME`.
+    """
+    safe = _LIVE_NAME_UNSAFE_RE.sub("-", (model or "").strip()).strip("._-")
+    return f"{LIVE_DATASET_PREFIX}-{safe or 'model'}"[:64]
+
+
 def seed_dataset(
     store: DatasetStore | None = None,
     dialogues: list[dict] | None = None,
+    name: str = DATASET_NAME,
 ) -> dict:
     """Version the cases into the DatasetStore — only when content changed.
 
@@ -196,34 +223,37 @@ def seed_dataset(
     """
     store = store or DatasetStore()
     cases = make_cases(dialogues)
-    latest = store.latest_version(DATASET_NAME)
+    latest = store.latest_version(name)
     if latest is not None:
-        existing = store.load(DATASET_NAME, latest)
+        existing = store.load(name, latest)
         if json.dumps(existing, sort_keys=True, ensure_ascii=False) == json.dumps(
             cases, sort_keys=True, ensure_ascii=False
         ):
             return {
-                "name": DATASET_NAME,
+                "name": name,
                 "version": latest,
                 "cases": len(cases),
                 "created": False,
             }
-    version = store.save_version(DATASET_NAME, cases)
-    return {"name": DATASET_NAME, "version": version, "cases": len(cases), "created": True}
+    version = store.save_version(name, cases)
+    return {"name": name, "version": version, "cases": len(cases), "created": True}
 
 
 async def run_suite(
     runner: Callable[[str], Awaitable[str]],
     store: DatasetStore | None = None,
     dialogues: list[dict] | None = None,
+    dataset_name: str = DATASET_NAME,
 ) -> dict:
     """Run the full-rubric suite through *runner* and record the run.
 
     This is the in-process path (production: ``orchestrator.handle_input``;
     tests/CI: a fake). Unlike the plain file lane, every case is scored by
     :func:`score_response` via an :class:`EvalCase` scorer. When a *store* is
-    given the run is recorded against the (auto-seeded) dataset version so
-    ``DatasetStore.compare`` can diff it against a baseline.
+    given the run is recorded against the (auto-seeded) *dataset_name* version
+    so ``DatasetStore.compare`` can diff it against a baseline. Live-model
+    lanes pass their own :func:`live_dataset_name` so deterministic and live
+    histories never share a baseline.
     """
     dialogues = dialogues if dialogues is not None else load_dialogues()
     cases = [
@@ -237,16 +267,16 @@ async def run_suite(
     ]
     result = await EvalHarness(runner).run(cases)
     out = {
-        "dataset": DATASET_NAME,
+        "dataset": dataset_name,
         "score": result["score"],
         "passed": result["passed"],
         "total": result["total"],
         "results": result["results"],
     }
     if store is not None:
-        seeded = seed_dataset(store, dialogues)
+        seeded = seed_dataset(store, dialogues, name=dataset_name)
         out["version"] = seeded["version"]
-        out["run_id"] = store.record_run(DATASET_NAME, seeded["version"], result)
+        out["run_id"] = store.record_run(dataset_name, seeded["version"], result)
     return out
 
 
@@ -286,13 +316,17 @@ def _summary_lines(result: dict) -> list[str]:
     return lines
 
 
-def _write_summary(path: str | Path, result: dict) -> None:
+def _append_lines(path: str | Path, lines: list[str]) -> None:
     if not path:
         return
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as fh:
-        fh.write("\n".join(_summary_lines(result)) + "\n")
+        fh.write("\n".join(lines) + "\n")
+
+
+def _write_summary(path: str | Path, result: dict) -> None:
+    _append_lines(path, _summary_lines(result))
 
 
 def run_ci_gate(
@@ -302,12 +336,16 @@ def run_ci_gate(
     dialogues: list[dict] | None = None,
     min_score: float = 1.0,
     summary_path: str | Path | None = None,
+    live_gate: Callable[..., dict] | None = None,
 ) -> dict:
     """Run the deterministic scheduled gate used by the M2.4 CI lane.
 
     Default runner = every prompt receives its curated golden reply, so this lane
-    catches dataset/rubric drift offline. A live model runner can be injected by a
-    future opt-in lane; ``JARVIS_EVAL_LIVE`` is reported but never implied.
+    catches dataset/rubric drift offline. When ``JARVIS_EVAL_LIVE=1`` the H23.4
+    owner-box fidelity lane (:func:`run_live_gate`) also runs against the same
+    store — under its own per-model dataset lane — and its verdict is ANDed
+    into ``ok``: an explicitly requested live lane that cannot run is a
+    failure, never a silent skip.
     """
     store = store or DatasetStore()
     dialogues = dialogues if dialogues is not None else load_dialogues()
@@ -366,6 +404,11 @@ def run_ci_gate(
     }
     if summary_path:
         _write_summary(summary_path, out)
+    if env_flag("JARVIS_EVAL_LIVE"):
+        gate_fn = live_gate or run_live_gate
+        live_result = gate_fn(store=store, dialogues=dialogues, summary_path=summary_path)
+        out["live"] = live_result
+        out["ok"] = bool(out["ok"] and live_result.get("ok"))
     return out
 
 
@@ -430,10 +473,15 @@ def run_live_model(*, base_url: str, model: str, store_root: str | None = None,
 
     Returns the ``run_suite`` result plus the honest lane label. An unreachable
     endpoint returns ``{"ok": False, "error": ...}`` — a reason, never a
-    traceback — so the CI job can report cleanly.
+    traceback — so the CI job can report cleanly. Runs are recorded under the
+    per-model :func:`live_dataset_name` lane so they can never become (or read)
+    the deterministic gate's baseline, and the lane carries its own advisory
+    baseline compare against its previous run.
     """
     dialogues = dialogues if dialogues is not None else load_dialogues()
     store = DatasetStore(root=store_root) if store_root else None
+    lane_name = live_dataset_name(model)
+    previous = store.runs(lane_name, 1) if store is not None else []
     try:
         runner = _openai_chat_runner(base_url, model, timeout=timeout)
         # Preflight: EvalHarness converts per-case runner errors into scored-0
@@ -441,14 +489,129 @@ def run_live_model(*, base_url: str, model: str, store_root: str | None = None,
         # "the model scored 0". One real call up front separates infra failure
         # (ok:False + reason) from honest model performance.
         asyncio.run(runner("ping"))
-        result = asyncio.run(run_suite(runner, store=store, dialogues=dialogues))
+        result = asyncio.run(
+            run_suite(runner, store=store, dialogues=dialogues, dataset_name=lane_name)
+        )
     except Exception as exc:  # noqa: BLE001 - the lane reports, it doesn't crash CI
         return {"ok": False, "lane": "ci-small-model", "model": model,
                 "error": f"{type(exc).__name__}: {exc}"}
+    comparison = None
+    if store is not None and previous and result.get("run_id"):
+        comparison = store.compare(lane_name, previous[0]["run_id"], result["run_id"])
     result.update({"ok": True, "lane": "ci-small-model", "model": model,
-                   "base_url": base_url})
+                   "base_url": base_url, "baseline_compare": comparison})
     result.pop("results", None)   # per-case detail stays in the store, not stdout
     return result
+
+
+# ── H23.4: the owner-box live fidelity gate ──────────────────────────────────
+# The final piece that makes the eval harness a *pre-release* gate: live
+# generation through the owner's real local backend (LM Studio / Ollama),
+# deterministic rubric scoring, a per-model persistent baseline, and
+# fail-closed semantics — an explicitly requested lane that cannot run fails
+# with the reason instead of skipping. ``scripts/release_gate.py`` reads this
+# lane's recorded runs as owner evidence.
+
+def _live_summary_lines(result: dict) -> list[str]:
+    lines = ["## Companion Eval — live fidelity gate (H23.4)"]
+    if result.get("infra_failure"):
+        lines.append(f"- NOT RUN — {result.get('error', 'unknown reason')}")
+        return lines
+    compare = result.get("baseline_compare")
+    lines.extend([
+        f"- Model: `{result['model']}` @ `{result['base_url']}`",
+        f"- Lane: `{result['dataset']}` v{result.get('version', 'n/a')} · run `{result.get('run_id', 'n/a')}`",
+        f"- Score: {result['score']:.4f} ({result['passed']}/{result['total']} passed) · floor {result['min_score']:.4f}",
+        (
+            f"- Baseline compare: delta {compare.get('score_delta', 0):+.4f}, "
+            f"regressions {len(compare.get('regressed', []))}"
+            if compare
+            else "- Baseline compare: first run for this model lane"
+        ),
+        f"- Verdict: {'PASS' if result.get('ok') else 'FAIL'}",
+        "- Semantics: live generation on the owner box, deterministic rubric scoring.",
+    ])
+    return lines
+
+
+def run_live_gate(
+    *,
+    base_url: str | None = None,
+    model: str | None = None,
+    store: DatasetStore | None = None,
+    dialogues: list[dict] | None = None,
+    min_score: float | None = None,
+    summary_path: str | Path | None = None,
+    timeout: float = 120.0,
+) -> dict:
+    """Run the H23.4 owner-box fidelity gate; fail closed on any infra gap.
+
+    Configuration precedence: explicit argument, then environment
+    (:data:`LIVE_URL_ENV` / :data:`LIVE_MODEL_ENV` / :data:`LIVE_MIN_SCORE_ENV`),
+    then the LM Studio default URL. The model id has no default on purpose — a
+    fidelity lane pins the model identity; guessing one would make the
+    recorded baseline meaningless. Gating: ``ok`` requires the mean rubric
+    score to meet the floor (default ``0.0`` — regression-gated until the
+    owner sets an absolute bar) AND no case regression against the same model
+    lane's previous run.
+    """
+    base_url = base_url or env_str(LIVE_URL_ENV, DEFAULT_LIVE_BASE_URL)
+    model = model or env_str(LIVE_MODEL_ENV, "")
+    if min_score is None:
+        min_score = env_float(LIVE_MIN_SCORE_ENV, 0.0, minimum=0.0)
+    if not model:
+        out = {
+            "ok": False, "gate": "live-fidelity", "infra_failure": True,
+            "error": f"no model configured — set {LIVE_MODEL_ENV} or pass --model",
+        }
+        if summary_path:
+            _append_lines(summary_path, _live_summary_lines(out))
+        return out
+    store = store or DatasetStore()
+    lane_name = live_dataset_name(model)
+    previous = store.runs(lane_name, 1)
+    try:
+        runner = _openai_chat_runner(base_url, model, timeout=timeout)
+        # Same preflight rationale as run_live_model: one real call separates
+        # infra failure (fail with reason) from honest model performance.
+        asyncio.run(runner("ping"))
+        result = asyncio.run(
+            run_suite(runner, store=store, dialogues=dialogues, dataset_name=lane_name)
+        )
+    except Exception as exc:  # noqa: BLE001 - report the reason, never a traceback
+        out = {
+            "ok": False, "gate": "live-fidelity", "model": model,
+            "base_url": base_url, "infra_failure": True,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        if summary_path:
+            _append_lines(summary_path, _live_summary_lines(out))
+        return out
+    comparison = None
+    if previous and result.get("run_id"):
+        comparison = store.compare(lane_name, previous[0]["run_id"], result["run_id"])
+    regression = bool(comparison and comparison.get("regression"))
+    score = float(result["score"])
+    out = {
+        "ok": score >= float(min_score) and not regression,
+        "gate": "live-fidelity",
+        "dataset": lane_name,
+        "model": model,
+        "base_url": base_url,
+        "version": result.get("version"),
+        "run_id": result.get("run_id"),
+        "score": round(score, 4),
+        "passed": result["passed"],
+        "total": result["total"],
+        "min_score": float(min_score),
+        "store_root": str(store.root),
+        "baseline_compare": comparison,
+        "infra_failure": False,
+        "failed_cases": [r["name"] for r in result.get("results", []) if not r.get("passed")][:20],
+    }
+    if summary_path:
+        _append_lines(summary_path, _live_summary_lines(out))
+    return out
 
 
 def _main(argv: list[str]) -> int:
@@ -483,6 +646,28 @@ def _main(argv: list[str]) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         # Advisory lane: infra failure (unreachable endpoint) is the only red.
         return 0 if result.get("ok") else 1
+    if "--live-gate" in argv:
+        min_raw = _arg_value(argv, "--min-score")
+        min_score = None
+        if min_raw is not None:
+            try:
+                min_score = float(min_raw)
+            except ValueError:
+                print(json.dumps({"ok": False, "error": "invalid --min-score"}, ensure_ascii=False))
+                return 2
+        store_root = _arg_value(argv, "--store-root", os.getenv("JARVIS_EVAL_STORE"))
+        store = DatasetStore(root=store_root) if store_root else None
+        summary_path = _arg_value(argv, "--summary", os.getenv("GITHUB_STEP_SUMMARY"))
+        result = run_live_gate(
+            base_url=_arg_value(argv, "--base-url"),
+            model=_arg_value(argv, "--model"),
+            store=store,
+            min_score=min_score,
+            summary_path=summary_path,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        # Fidelity gate: an explicitly requested lane that cannot run is red.
+        return 0 if result.get("ok") else 1
     if "--ci-gate" in argv:
         try:
             min_score = float(_arg_value(argv, "--min-score", "1.0"))
@@ -507,7 +692,9 @@ def _main(argv: list[str]) -> int:
         return 0
     print(
         "usage: companion_eval "
-        "[--self-check | --seed | --ci-gate [--min-score N] [--store-root PATH] [--summary PATH]]"
+        "[--self-check | --seed | --ci-gate [--min-score N] [--store-root PATH] [--summary PATH] | "
+        "--live-gate [--base-url URL] [--model ID] [--min-score N] [--store-root PATH] [--summary PATH] | "
+        "--live-model --base-url URL --model ID [--store-root PATH] [--limit N] [--summary PATH]]"
     )
     return 2
 

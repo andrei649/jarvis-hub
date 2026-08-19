@@ -415,3 +415,50 @@ def test_render_orders_tiers_and_exit_verdict():
 def test_lane_a_parser_reads_the_real_backlog():
     rows = gate.lane_a_status((REPO / "BACKLOG.md").read_text(encoding="utf-8"))
     assert {"A1", "A2", "A7"} <= set(rows)
+
+
+def test_companion_gate_row_runs_the_ci_gate_in_an_ephemeral_store():
+    seen = []
+    ok = gate.check_companion_gate(runner=lambda args: seen.append(list(args)) or 0)
+    assert (ok["tier"], ok["name"], ok["status"]) == ("machine", "companion-eval", "PASS")
+    (argv,) = seen
+    assert argv[:3] == ["-m", "agents.core.observability.companion_eval", "--ci-gate"]
+    assert "--store-root" in argv               # ephemeral — never the repo store
+    assert gate.check_companion_gate(runner=lambda args: 1)["status"] == "FAIL"
+
+
+def test_live_eval_evidence_owner_row_reads_recorded_lanes(tmp_path):
+    import time as _time
+
+    empty = gate.check_live_eval_evidence(store_root=tmp_path)
+    assert (empty["tier"], empty["status"]) == ("owner", "FAIL")
+    assert "--live-gate" in empty["detail"]     # actionable, never auto-passed
+
+    lane = tmp_path / "datasets" / f"{gate.LIVE_EVAL_PREFIX}-owner-model"
+    lane.mkdir(parents=True)
+    now = _time.time()
+    (lane / "runs.jsonl").write_text(
+        json.dumps({"run_id": "abc", "ts": now - 3600, "version": 1,
+                    "score": 0.8, "passed": 7, "total": 8, "cases": []}) + "\n",
+        encoding="utf-8",
+    )
+    fresh = gate.check_live_eval_evidence(store_root=tmp_path, now=now)
+    assert fresh["status"] == "PASS"
+    assert f"{gate.LIVE_EVAL_PREFIX}-owner-model" in fresh["detail"]
+
+    stale = gate.check_live_eval_evidence(
+        store_root=tmp_path, now=now + (gate.LIVE_EVAL_STALE_DAYS + 2) * 86400
+    )
+    assert stale["status"] == "WARN"
+    assert "stale" in stale["detail"]
+
+
+def test_live_eval_evidence_ignores_the_deterministic_lane(tmp_path):
+    lane = tmp_path / "datasets" / "companion_v1"
+    lane.mkdir(parents=True)
+    (lane / "runs.jsonl").write_text(
+        json.dumps({"run_id": "abc", "ts": 1.0, "score": 1.0, "cases": []}) + "\n",
+        encoding="utf-8",
+    )
+    result = gate.check_live_eval_evidence(store_root=tmp_path)
+    assert result["status"] == "FAIL"           # golden-runner runs are not live evidence
