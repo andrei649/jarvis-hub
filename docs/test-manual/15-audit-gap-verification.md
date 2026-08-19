@@ -1150,9 +1150,18 @@ build a gate, watch it go green, write the green into `STATUS.md`. This section 
 
 ## 15.9 The Telegram allowlist, narrowed
 
-**Audit verdict: PARTIAL · Medium · `agents/web.py`.** `TelegramChannel(...)` is constructed with no
-`allowed_user_ids`, so both `if self.allowed_users and ...` guards are no-ops, and the callback
-handler applies a decision with no owner binding. This is `BACKLOG.md` SEC-B3.
+**Audit verdict: PARTIAL · Medium · `agents/web.py` → CLOSED (FIXED-SINCE), reconciled
+2026-08-18 on `dd9c164`.** At the audit's commit, `TelegramChannel(...)` was constructed with no
+`allowed_user_ids`, so both `if self.allowed_users and ...` guards were no-ops, and the callback
+handler applied a decision with no owner binding. This is `BACKLOG.md` SEC-B3, and the SEC-B3 fix
+has since shipped (it predates the #866 history-squash baseline `8433b21`, so the original PR is
+no longer separable in `git log`): `_telegram_allowed_user_ids()` parses
+`TELEGRAM_ALLOWED_USER_IDS` (`agents/web.py`) and the construction passes it; the decision
+callback binds owner chat **and** allowed user id and fails closed when neither is configured
+(`agents/core/autonomy_coordinator.py::_is_owner`); the pairing gate holds an unknown sender when
+its store errors. Hermetic evidence: `tests/test_sec_b3_telegram_owner_binding.py` 10/10, plus
+`tests/test_autonomy_telegram_callback.py` and `tests/test_h12_19_pairing.py` — 33/33 green on
+`dd9c164`. The on-hardware probes below remain valid as live re-verification.
 
 **Materially narrowed by the skeptic:** the card sender has one caller and sends only to the
 configured owner chat id; the callback path is not wired without that setting; a callback query
@@ -1162,21 +1171,23 @@ handler — but that runs in a per-chat isolated session with long-term recall o
 forcing ASK. Residual exposure is the LLM budget, a prompt-injection foothold, and a shared rate
 limit. **Not memory exfiltration** — do not report it as such.
 
-#### ADV-103 — The allowlist is never populated  ⏱
+#### ADV-103 — The allowlist is never populated  ⏱ ✅
+- **Verdict:** **FIXED-SINCE** (before baseline `8433b21`; re-verified hermetically on `dd9c164`). `_telegram_allowed_user_ids()` parses `TELEGRAM_ALLOWED_USER_IDS` comma-separated, drops a non-numeric entry with a warning instead of raising or widening, and the `TelegramChannel(...)` construction passes the result — the guards are reachable.
 - **Surface:** `agents/web.py` · `agents/core/channels/telegram.py`
 - **Why it matters:** the mechanism.
-- **Steps:** read the channel construction in `agents/web.py`; check for any parsing of an allowed-user-ids environment variable anywhere.
-- **Expected:** constructed without it; no parsing exists.
-- **FAIL if:** confirmed → both guards are dead code. **MAJOR** as dead-safety-code; grade the *exploitability* separately (ADV-104).
+- **Steps:** read the channel construction in `agents/web.py`; check the parsing of `TELEGRAM_ALLOWED_USER_IDS`.
+- **Expected (current build):** parsing exists and is passed at construction; `tests/test_sec_b3_telegram_owner_binding.py` covers parse, absent-var, and typo cases.
+- **FAIL if:** the construction no longer passes `allowed_user_ids`, or parsing regressed → both guards are dead code again. **MAJOR** as dead-safety-code; grade the *exploitability* separately (ADV-104).
 - **CROSS:** grep the whole repo for the env var name the security-wave plan specified.
 - **Evidence:** the construction line and the grep.
 
-#### ADV-104 — Owner binding on the callback  🔑
-- **Surface:** `agents/core/channels/telegram.py`
+#### ADV-104 — Owner binding on the callback  🔑 ✅
+- **Verdict:** **FIXED-SINCE** (before baseline `8433b21`; re-verified hermetically on `dd9c164`). `AutonomyCoordinator._on_callback` → `_is_owner` binds the decision to the configured owner chat **and** the allowed-user-id set, and **fails closed** when neither is configured, when the chat differs, when the user is not allowlisted, or when the callback carries no identity. `tests/test_sec_b3_telegram_owner_binding.py` covers all five refusal shapes, including the stranger-in-the-owner-group case the audit named.
+- **Surface:** `agents/core/channels/telegram.py` · `agents/core/autonomy_coordinator.py`
 - **Why it matters:** an approval decision applied without checking who pressed the button is the sharpest form of this.
-- **Steps:** read the callback handler: does it use the sender's user id and chat id at all before applying the decision?
-- **Expected:** they are discarded.
-- **FAIL if:** confirmed → **MAJOR**. State the precondition honestly: exploitation requires the owner-chat setting to point at a group.
+- **Steps:** read the callback handler: does it use the sender's user id and chat id before applying the decision?
+- **Expected (current build):** both are checked; missing owner binding refuses rather than approves.
+- **FAIL if:** a decision applies without the owner check → **MAJOR**, and worse than the original because the fix passed CI and did not hold.
 - **CROSS:** §07's approval-decision cases — the same decision through the HUD is owner-bound.
 - **Evidence:** the handler excerpt.
 
@@ -1805,7 +1816,7 @@ does not prove it. They get triaged differently.
 | G26 | A parity gate that greps for a caller instead of classifying a prefix | EVIDENCE | `tests/test_hud_v2_parity.py` | Medium · PARTIAL | ✅ | | ADV-096 |
 | G27 | Enforced reality-case coverage for wired capabilities | EVIDENCE | `agents/core/observability/reality_harness.py`, `tests/test_capability_readiness_matrix.py` | Medium | ✅ | | ADV-098 |
 | G28 | `is_degraded()` consulted before recording a capability success | BUG | `agents/core/autonomy/worker.py` | Medium | ✅ | | ADV-094 |
-| G29 | Telegram allowed-user-id parsing, and owner binding on the callback | GAP | `agents/web.py`, `agents/core/channels/telegram.py` | Medium · PARTIAL | ✅ | | §15.9, SEC-B3 |
+| G29 | Telegram allowed-user-id parsing, and owner binding on the callback | GAP | `agents/web.py`, `agents/core/channels/telegram.py` | Medium · PARTIAL → CLOSED | ✅ | | §15.9, SEC-B3, `tests/test_sec_b3_telegram_owner_binding.py` |
 | G30 | The pairing gate failing closed on a store error | BUG | `agents/core/channels/gateway.py` | Medium | ✅ | | ADV-108 |
 | G31 | Anything that starts the Wyoming server | GAP | `agents/core/voice/wyoming.py` | — · new | ✅ | | ADV-115 |
 | G32 | `JARVIS_ACTION_KERNEL` and the hardening flags in the example env | GAP | `.env.example` | Minor | ✅ | | ADV-117 |
