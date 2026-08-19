@@ -21,7 +21,7 @@
 | P2 | OpenClaw alternative | rival's users post-security-crisis | governance is our design strength |
 | P2 | getjarvis alternative local | namesake searchers | same UX thesis, local-first + governed |
 | P3 | AI second brain knowledge graph | memory-focused | KG + nightly consolidation, not just vector RAG |
-| P3 | multi-agent personal assistant | power users | 17-agent cabinet |
+| P3 | multi-agent personal assistant | power users | 18-agent cabinet |
 
 Avoid bidding/optimizing for "better than GPT/Gemini" — a fight the brief says we lose. Rank on
 ownership, privacy-by-architecture, governance, and $0 cost.

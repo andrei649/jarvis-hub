@@ -86,7 +86,11 @@ POLICY_CLAUDE = "claude"
 POLICY_AUTO = "auto"
 
 # Which agents are local-only / cloud-only / claude
-LOCAL_ONLY_AGENTS = {"frigga", "ultron", "howard"}
+# hestia holds the house model — room-level occupancy and presence say when the
+# home is empty and who is in it, which is at least as sensitive as Frigga's
+# family data. The code-enforced floor keeps it off the cloud regardless of what
+# the registry says.
+LOCAL_ONLY_AGENTS = {"frigga", "ultron", "howard", "hestia"}
 CLOUD_ONLY_AGENTS = {"athena"}
 CLAUDE_AGENTS = {"vision", "steve"}
 

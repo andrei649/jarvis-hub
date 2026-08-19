@@ -13,6 +13,27 @@ channels:
   fallback: [channel]
 voice_id: [if applicable]
 wake_word: [if applicable]
+# Persona (H21.2) — REQUIRED. Without it the agent falls back to the shared
+# defaults and has no character of its own. Traits are distributions, not
+# constants: mu is the stable identity, sigma the per-turn liveness.
+#   • mu <= 0.3 or >= 0.7 becomes a behavioral directive in the per-turn persona
+#     block; mid-band traits stay deliberately silent, so tune the two or three
+#     traits that actually define this agent and leave the rest near 0.5.
+#   • sigma small (0.02-0.05) = the same voice every time; large (0.15-0.22) =
+#     a register that moves on purpose (see howard, veronica). Omit it and the
+#     trait inherits the default liveness.
+#   • Every agent must sit >= 0.1 from every other in trait space — the ensemble
+#     diversity check enforces it (tests/test_persona_roster.py).
+personality:
+  traits:
+    warmth:        {mu: 0.50, sigma: 0.10}
+    assertiveness: {mu: 0.50, sigma: 0.10}
+    humor:         {mu: 0.50, sigma: 0.10}
+    formality:     {mu: 0.50, sigma: 0.10}
+    curiosity:     {mu: 0.50, sigma: 0.10}
+  affect:
+    valence_setpoint: 0.00   # -1..1 resting mood (pessimistic ↔ upbeat)
+    arousal_setpoint: 0.20   #  0..1 resting urgency (background ↔ on-call)
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 version: 0.1.0

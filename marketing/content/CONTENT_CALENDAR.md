@@ -17,7 +17,7 @@
 
 **T-4 · Proactivity**
 > Your assistant shouldn't wait to be asked.
-> Imagine 17 specialist agents that work 24/7 on *your* hardware — find their own work, do the safe
+> Imagine 18 specialist agents that work 24/7 on *your* hardware — find their own work, do the safe
 > things silently, and ask you only when it matters.
 > Approve enough times, it learns to stop asking.
 
@@ -35,7 +35,7 @@
 
 **T-1 · The reveal teaser**
 > Tomorrow.
-> 17 agents. One system. Your data stays home.
+> 18 agents. One system. Your data stays home.
 > Local-first. Governed. $0/month. Open.
 
 ---
@@ -45,7 +45,7 @@
 **X / Mastodon — the reveal**
 > It's here: **Jarvis Hub** — a personal AI operating system you actually own.
 >
-> · 17 specialist agents, on your own GPU
+> · 18 specialist agents, on your own GPU
 > · proactive, governed (approval queue + tamper-evident audit log)
 > · living knowledge-graph memory
 > · family agent never touches the internet
@@ -60,7 +60,7 @@
 > 2026 — without the part where my private life lives on someone else's servers, and without the
 > ungoverned-autonomy security disasters.
 >
-> It's 17 specialist agents coordinated by an orchestrator, running locally via LM Studio/Ollama.
+> It's 18 specialist agents coordinated by an orchestrator, running locally via LM Studio/Ollama.
 > What makes it different from a chatbot: it's *proactive* (a self-tasking queue runs 24/7), it
 > *compounds* (nightly knowledge-graph consolidation + fused recall), and it's *governed* — every
 > action is risk-classified and gated through a reversible/irreversible approval queue, written to a
@@ -73,9 +73,9 @@
 > architecture, the governance model, or the design trade-offs. Repo: [link].
 
 **r/LocalLLaMA — value-first post**
-> **Title:** I built a local-first, governed multi-agent personal assistant — 17 agents on your own GPU, every action audited
+> **Title:** I built a local-first, governed multi-agent personal assistant — 18 agents on your own GPU, every action audited
 >
-> Body: Runs on LM Studio/Ollama. 17 specialist agents (daily intel, calendar, research, finance,
+> Body: Runs on LM Studio/Ollama. 18 specialist agents (daily intel, calendar, research, finance,
 > home, family memory…) coordinated by an orchestrator, talking over web/voice/Telegram/Discord/
 > Slack/email. The part I care most about: it *acts* for you but every autonomous action passes a
 > reversible/irreversible approval queue and lands in a tamper-evident audit log; strict-local
@@ -97,7 +97,7 @@
 ## C. The launch thread (X — 7 tweets, fire after the reveal)
 
 1. We built the always-on AI agent everyone wanted in 2026 — with the governance, audit, and privacy the viral one was missing. Here's what's different. 🧵
-2. **It's local-first.** 17 specialist agents run on your own GPU via LM Studio/Ollama. Your calendar, email, family data — processed on your machine, not a hyperscaler's. $0/month.
+2. **It's local-first.** 18 specialist agents run on your own GPU via LM Studio/Ollama. Your calendar, email, family data — processed on your machine, not a hyperscaler's. $0/month.
 3. **It's proactive.** A self-tasking queue runs 24/7. It finds its own work, does reversible things silently, and escalates the rest. One tap to approve on Telegram. Approve enough → it stops asking.
 4. **It's governed.** Every action is risk-classified and gated: read-only and reversible run free; irreversible or costly wait for you. Every action lands in a tamper-evident, hash-chained audit log you can verify with one call.
 5. **It compounds.** Each night it reads the day's conversations into a knowledge graph and fuses that into every future answer. The longer you use it, the more it knows — zero config.
@@ -113,7 +113,7 @@
 1. **The two false choices** — useful-but-cloud vs. private-but-a-toy; reactive-but-safe vs. autonomous-but-reckless.
 2. **2026's cautionary tale** — the viral always-on agent that became the #1 infostealer target (plaintext secrets, ungoverned autonomy). The demand was real; the safety wasn't.
 3. **The thesis: local-first + governed is the durable answer** — privacy promise *and* cost advantage in one move.
-4. **How it works** — 17 agents, the orchestrator, the autonomy queue + risk gate, the nightly knowledge graph, the tamper-evident audit log, the strict-local agents.
+4. **How it works** — 18 agents, the orchestrator, the autonomy queue + risk gate, the nightly knowledge graph, the tamper-evident audit log, the strict-local agents.
 5. **The honesty discipline** — the BUG-14 story; why "enforced in code, proven by tests" beats a values page.
 6. **What it costs** — $0/month, hybrid by choice, your data trains no one.
 7. **Try it** — one-command self-host; what's next on the road to and beyond 1.0.
@@ -139,10 +139,10 @@
 - Tags: `#localfirst` `#selfhosted` `#privacy` `#opensource` `#AI` `#LLM` `#homelab` `#LocalLLaMA`
 - Communities: r/LocalLLaMA, r/selfhosted, r/homelab, r/opensource, HN, lobste.rs, Mastodon
   fosstodon.org, relevant Discords.
-- One-liner for bios/OG: *Local-first, governed personal AI OS. 17 agents, proactive, on your own GPU. Your data stays home.*
+- One-liner for bios/OG: *Local-first, governed personal AI OS. 18 agents, proactive, on your own GPU. Your data stays home.*
 
 ---
 
-*Numbers in this file are conservative against the verified counts (17 agents, 2,156 tests → "~2,150",
+*Numbers in this file are conservative against the verified counts (18 agents, 2,156 tests → "~2,150",
 ~250+ routes, 7 channels). Re-check `BACKLOG.md` before changing any stat; re-verify competitor claims
 (competitive brief §7) before any comparison post.*

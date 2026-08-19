@@ -5,7 +5,7 @@
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v0.11.0** · backend **6,793** · frontend **521** · mobile **96** · **405** routes · **17** active agents · open owner gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · commit `2106965fa186`.
+> Generated project status: **v0.11.0** · backend **6,830** · frontend **521** · mobile **96** · **405** routes · **18** active agents · open owner gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · commit `379ff5d5cfe5`.
 <!-- project-status:go-live-header:end -->
 >
 > **2026-07-11 — the 1.0 gate expanded (owner decision):** this plan's launch checklist remains the
@@ -29,7 +29,7 @@
 
 ---
 
-### 17 Specialist Agents (4 Tiers)
+### 18 Specialist Agents (4 Tiers)
 
 | Tier | Agent | Role |
 |------|-------|------|
@@ -255,7 +255,7 @@ Chatbots are **reactive** — they wait for you. Workflow builders are **rigid**
 
 ### The Product
 
-**Jarvis Hub is your personal AI operating system** — 17 specialist agents that work 24/7, proactively, on your hardware.
+**Jarvis Hub is your personal AI operating system** — 18 specialist agents that work 24/7, proactively, on your hardware.
 
 It doesn't wait to be asked. It monitors your system health, watches your email and calendar, scans its own logs for bugs, and consolidates every conversation into a knowledge graph every night. Every morning at 07:00 it delivers a prioritized brief.
 
@@ -306,7 +306,7 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 
 > *"The AI that works while you sleep."*
 
-> *"17 agents. One system. Your data stays home."*
+> *"18 agents. One system. Your data stays home."*
 
 > *"Finally: an AI assistant that learns what to stop asking you."*
 
@@ -318,7 +318,7 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 
 | Metric | Value |
 |--------|-------|
-| Active agents | 17 (+ 17 bench) |
+| Active agents | 18 (+ 14 bench) |
 | Channels | 7 (web, voice, Telegram, Discord, Slack, email, sandbox) |
 | Tests passing | see [STATUS.md](STATUS.md) (auto-synced) |
 | API endpoints | see [STATUS.md](STATUS.md) (auto-synced) |
