@@ -44,11 +44,25 @@ class Personality:
     def __init__(self, traits: Optional[dict] = None, seed: Optional[int] = None) -> None:
         self.traits = traits or {k: dict(v) for k, v in DEFAULT_TRAITS.items()}
         self._seed = seed
+        # One stream per personality, advanced by each seedless sample. Rebuilding
+        # `Random(self._seed)` per call would hand back the *same* draw forever —
+        # σ would be configuration with no observable effect. Reproducibility is
+        # unchanged: equally-seeded personalities still walk the same sequence.
+        self._rng = random.Random(seed)
 
     def sample(self, seed: Optional[int] = None) -> dict:
-        rng = random.Random(seed if seed is not None else self._seed)
+        rng = random.Random(seed) if seed is not None else self._rng
         return {name: round(sample_trait(t["mu"], t["sigma"], t.get("skew", 0.0), rng), 3)
                 for name, t in self.traits.items()}
+
+    def means(self) -> dict:
+        """The μ of each trait — the *stable* identity, free of per-turn liveness.
+
+        Sampling is what makes a turn feel alive; μ is what makes the agent the
+        same agent across turns. Anything that must not flicker (the ensemble's
+        lifetime drift anchor, the prompt's behavioral directives) reads this.
+        """
+        return {name: round(float(t.get("mu", 0.5)), 3) for name, t in self.traits.items()}
 
     def realized_mean(self, n: int = 2000) -> dict:
         """Mean over n samples — should track each trait's μ within ±0.05."""
