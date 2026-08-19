@@ -153,7 +153,7 @@ BUILTIN_PLUGINS = {
         network_access=NetworkAccess.LAN,
         data_scope=DataScope.LOCAL_ONLY,
         allowed_domains=[],
-        agents_served=["jarvis", "ultron"],
+        agents_served=["jarvis", "ultron", "hestia"],
     ),
     "camera-frigate": PluginManifest(
         id="camera-frigate",
@@ -213,7 +213,7 @@ BUILTIN_PLUGINS = {
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.LOCAL_ONLY,
         allowed_domains=["openapi.tuya.com"],
-        agents_served=["jarvis", "ultron"],
+        agents_served=["jarvis", "ultron", "hestia"],
     ),
     "worldview": PluginManifest(
         id="worldview",

@@ -54,7 +54,7 @@ jobs:
         if: ${{ always() }}
         run: |
           if [ "$JARVIS_EVAL_LIVE" = "1" ]; then
-            echo "Live eval requested for this runner; companion gate reports the request and remains deterministic unless a live runner is injected." >> "$GITHUB_STEP_SUMMARY"
+            echo "Live eval requested: the companion gate also ran the H23.4 live fidelity lane against the configured endpoint (JARVIS_EVAL_LIVE_URL / JARVIS_EVAL_LIVE_MODEL) and its verdict is part of the gate result." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Live eval is off (JARVIS_EVAL_LIVE=0); deterministic companion gate only." >> "$GITHUB_STEP_SUMMARY"
           fi

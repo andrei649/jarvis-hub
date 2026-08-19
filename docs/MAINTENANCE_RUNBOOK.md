@@ -13,7 +13,7 @@ maintainer. **Goal:** keep the system *running and safe* with zero feature work.
 ## 1. What this is, in three lines
 
 A local-first multi-agent AI assistant ("Jarvis Hub"): Python 3.12 + FastAPI on port
-**8080**, talking to a local LLM via **LM Studio** (port 1234) or Ollama, with 17 agents,
+**8080**, talking to a local LLM via **LM Studio** (port 1234) or Ollama, with 18 agents,
 a web HUD at `http://127.0.0.1:8080/`, and all personal state in local files. Cloud calls
 are opt-in per agent; `frigga`/`ultron`/`howard` never leave the machine. A separate Node
 stack (WorldView, ports 3000/4000) is optional and independent.
