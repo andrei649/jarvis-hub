@@ -407,6 +407,7 @@ class SchedulerService:
                 text = build_morning_brief(
                     self._orch.autonomy_queue,
                     memory_entries=memory_entries,
+                    runtime_health=_runtime_health_or_none(),
                 )
             else:
                 text = build_evening_retro(self._orch.autonomy_queue)
@@ -434,3 +435,19 @@ class SchedulerService:
             return rows
         except Exception:
             return []
+
+
+def _runtime_health_or_none():
+    """Loop-health summary for the morning brief (H23.29), or None.
+
+    The run-log only exists when the headless runtime supervisor is in use, so
+    a missing file is the normal single-process case, not an error — and the
+    brief must ship either way, so nothing here is allowed to raise.
+    """
+    try:
+        from agents.core.observability.runtime_log import default_log_path, read_runtime_health
+
+        return read_runtime_health(default_log_path())
+    except Exception:  # pragma: no cover - observability never breaks the brief
+        logger.debug("Runtime health read failed for the morning brief", exc_info=True)
+        return None
