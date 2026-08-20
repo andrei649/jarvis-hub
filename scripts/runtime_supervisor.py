@@ -52,6 +52,10 @@ BACKOFF_RESET_SECONDS = 30.0
 
 
 def _log_path() -> Path:
+    # Deliberately inlined rather than imported from
+    # agents.core.observability.runtime_log.default_log_path(): this supervisor
+    # is a bare process babysitter that must start even when the app package
+    # cannot be imported. Keep the default in sync with DEFAULT_LOG_PATH there.
     return Path(os.environ.get("JARVIS_RUNTIME_LOG", "logs/runtime.jsonl"))
 
 

@@ -6,7 +6,9 @@ runs the autonomy worker, the observer/reflector/curator passes, and the
 night-window gate every cycle. ``RuntimeRunLog`` makes that tick *observable* —
 one bounded JSON line per cycle, append-only, so an operator or the morning
 brief can tail ``logs/runtime.jsonl`` and see the loop is alive without
-scraping application logs. A small state file persists the cycle counter
+scraping application logs. ``read_runtime_health()`` is the consumer side of
+that contract: it reads a bounded tail of the same file and reduces it to the
+handful of booleans/counters the brief renders. A small state file persists the cycle counter
 across process restarts, so a crash-and-recover is provable (the counter
 keeps climbing) rather than silently resetting to zero.
 
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -162,3 +165,112 @@ class RuntimeRunLog:
             fh.write(json.dumps(record.to_dict(), sort_keys=True, separators=(",", ":")) + "\n")
         self._save_state()
         return record
+
+
+# --- consumer side -----------------------------------------------------------
+#
+# The run-log grows one line per cycle for as long as the runtime is up, so the
+# reader never loads the whole file: it seeks to the last ``_TAIL_BYTES`` and
+# drops the (possibly partial) first line. That keeps the morning brief's cost
+# constant no matter how long the supervisor has been running.
+
+DEFAULT_LOG_PATH = "logs/runtime.jsonl"
+DEFAULT_STATE_PATH = "logs/runtime_state.json"
+
+
+def default_log_path() -> Path:
+    """The run-log path producers write and consumers read.
+
+    Single source of truth on purpose: the morning brief reads whatever file
+    the coordinator writes, so a ``JARVIS_RUNTIME_LOG`` override must move both
+    ends together or the brief silently reports a runtime that isn't there.
+    """
+    return Path(os.environ.get("JARVIS_RUNTIME_LOG", DEFAULT_LOG_PATH))
+
+
+_TAIL_BYTES = 256 * 1024
+_STALE_AFTER_S = 15 * 60
+_HEALTH_WINDOW_S = 24 * 3600
+
+
+def _read_tail_lines(path: Path, *, max_bytes: int = _TAIL_BYTES) -> list[str]:
+    """Last whole lines of *path*, bounded. Returns [] for a missing/unreadable file."""
+    try:
+        with path.open("rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            fh.seek(max(0, size - max_bytes))
+            chunk = fh.read()
+    except OSError:
+        return []
+    lines = chunk.decode("utf-8", errors="replace").splitlines()
+    if size > max_bytes and lines:
+        lines = lines[1:]  # the first line was cut mid-way by the seek
+    return lines
+
+
+def read_runtime_health(
+    log_path: Path | str,
+    *,
+    now: float | None = None,
+    stale_after_s: float = _STALE_AFTER_S,
+    window_s: float = _HEALTH_WINDOW_S,
+) -> dict:
+    """Reduce the run-log tail to the loop-health summary the morning brief renders.
+
+    Never raises and never blocks on a missing file: a runtime that was never
+    started is reported as ``{"present": False}`` rather than as a failure, so
+    the brief can simply omit the section. ``stale`` is the load-bearing field —
+    a supervisor that died without writing anything leaves a *fresh-looking* last
+    line, and only the age of that line reveals the loop is no longer ticking.
+    """
+    now = time.time() if now is None else float(now)
+    lines = _read_tail_lines(Path(log_path))
+    if not lines:
+        return {"present": False}
+
+    cycles = 0
+    failures = 0
+    respawns = 0
+    last_cycle: dict | None = None
+    cutoff = now - window_s
+
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue  # a torn line is not a reason to lose the rest of the tail
+        if not isinstance(entry, dict):
+            continue
+        event = entry.get("supervisor_event")
+        if event is not None:
+            at = entry.get("at")
+            if event == "respawned" and isinstance(at, (int, float)) and at >= cutoff:
+                respawns += 1
+            continue
+        if not isinstance(entry.get("cycle"), int):
+            continue
+        last_cycle = entry
+        started_at = entry.get("started_at")
+        if isinstance(started_at, (int, float)) and started_at >= cutoff:
+            cycles += 1
+            if entry.get("ok") is not True:
+                failures += 1
+
+    if last_cycle is None:
+        # Supervisor events only (spawned, never completed a cycle yet).
+        return {"present": True, "cycles_seen": 0, "respawns": respawns}
+
+    started_at = last_cycle.get("started_at")
+    age_s = round(now - started_at, 1) if isinstance(started_at, (int, float)) else None
+    return {
+        "present": True,
+        "cycle": last_cycle.get("cycle"),
+        "last_ok": last_cycle.get("ok") is True,
+        "last_error": str(last_cycle.get("error") or "")[:_MAX_ERROR_CHARS],
+        "age_s": age_s,
+        "stale": age_s is None or age_s > stale_after_s,
+        "cycles_seen": cycles,
+        "failures": failures,
+        "respawns": respawns,
+    }

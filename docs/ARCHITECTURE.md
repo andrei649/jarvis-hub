@@ -129,7 +129,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/autonomy/worker.py` | Queue + policy glue | `AutonomyWorker.submit`, `AutonomyWorker.tick`, `AutonomyWorker.apply_decision`, `InterruptBudget`, `is_night_window` |
 | `agents/core/autonomy/policy.py` | Risk gate | `AutonomyPolicy`, `RiskTier`, `ACT/NOTIFY/ASK` |
 | `agents/core/autonomy/inbox.py` | Decision card builder | `build_decision_card` |
-| `agents/core/autonomy/digest.py` | Morning brief / evening retro | `build_morning_brief`, `build_evening_retro` |
+| `agents/core/autonomy/digest.py` | Morning brief / evening retro. Pure/network-free builders — the caller reads any external data (memory entries, H23.29 runtime health) and passes it in | `build_morning_brief`, `build_evening_retro` |
 | `agents/core/autonomy/observer.py` | Host resource probes | `ProactiveObserver`, `default_probes` |
 | `agents/core/autonomy/watchers.py` | Personal event probes | `EventWatcher`, `EmailProbe`, `CalendarProbe`, `FinanceProbe`, `HealthProbe` |
 | `agents/core/autonomy/remediation.py` | Safe service restart | `RemediationRunner.restart` |
@@ -298,7 +298,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | `agents/core/observability/review_queue.py` | Human review queue (flag → rubric → eval dataset) | `ReviewQueue` |
 | `agents/core/observability/datasets.py` | Eval dataset store + regression runs | `DatasetStore` |
 | `agents/core/observability/north_star.py` | North-star + counter-metric aggregator (MOONSHOT §6) — exposed at `GET /api/metrics/north-star?days=1-90`; see [METRICS.md](METRICS.md) | `compute_north_star` |
-| `agents/core/observability/runtime_log.py` | Per-cycle run-log for the headless runtime supervisor (H23.29) — one bounded JSON line per autonomy-coordinator tick into `logs/runtime.jsonl`, plus a cycle counter that survives a restart so crash recovery is provable. Driven by `scripts/runtime_supervisor.py` → `scripts/coordinator.py`; inert unless an orchestrator has `runtime_log` wired | `RuntimeRunLog.record_cycle`, `RuntimeCycleRecord` |
+| `agents/core/observability/runtime_log.py` | Per-cycle run-log for the headless runtime supervisor (H23.29) — one bounded JSON line per autonomy-coordinator tick into `logs/runtime.jsonl`, plus a cycle counter that survives a restart so crash recovery is provable. Driven by `scripts/runtime_supervisor.py` → `scripts/coordinator.py`; inert unless an orchestrator has `runtime_log` wired. `read_runtime_health()` is the consumer side — a bounded tail read reduced to the loop-health summary the morning brief renders | `RuntimeRunLog.record_cycle`, `RuntimeCycleRecord`, `read_runtime_health`, `default_log_path` |
 
 ### Agent Registry
 
