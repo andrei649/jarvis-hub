@@ -8,8 +8,10 @@ admin-only ceremony bound to an already-persisted task.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import threading
 from dataclasses import dataclass
 from typing import Literal
 
@@ -194,13 +196,30 @@ def _build_runtime(orch) -> HouseRuntime:
     )
 
 
-def _get_runtime() -> HouseRuntime:
+_build_lock = threading.Lock()
+
+
+async def _get_runtime() -> HouseRuntime:
     global _runtime
     orch = get_orch()
     orch_id = id(orch) if orch is not None else 0
-    if _runtime is None or _runtime.orch_id != orch_id:
-        _runtime = _build_runtime(orch)
-    return _runtime
+    current = _runtime
+    if current is not None and current.orch_id == orch_id:
+        return current
+
+    # Runtime construction blocks (DNS-validated adapter config, encrypted
+    # store reads, sqlite DDL); build it off the loop, under a lock so
+    # concurrent first requests still construct the runtime exactly once.
+    def _build() -> HouseRuntime:
+        global _runtime
+        with _build_lock:
+            built = _runtime
+            if built is None or built.orch_id != orch_id:
+                built = _build_runtime(orch)
+                _runtime = built
+            return built
+
+    return await asyncio.to_thread(_build)
 
 
 def _apply_presence_fact(occupants: dict[str, dict], fact: object) -> None:
@@ -281,7 +300,7 @@ def _action_response(result: dict, *, security: bool = False) -> dict:
     return payload
 
 
-def _security_task(runtime: HouseRuntime, task_id: int):
+async def _security_task(runtime: HouseRuntime, task_id: int):
     if runtime.confirmation_status != "live" or runtime.queue is None:
         return None, nocache_json(
             {
@@ -292,7 +311,8 @@ def _security_task(runtime: HouseRuntime, task_id: int):
             status_code=503,
         )
     try:
-        task = runtime.queue.get(task_id)
+        # TaskQueue.get is a blocking sqlite read; keep it off the event loop.
+        task = await asyncio.to_thread(runtime.queue.get, task_id)
     except Exception:
         task = None
     if task is None:
@@ -315,7 +335,7 @@ def _security_task(runtime: HouseRuntime, task_id: int):
 
 @router.get("/api/house/state", dependencies=[Depends(user_guard)])
 async def house_state():
-    runtime = _get_runtime()
+    runtime = await _get_runtime()
     try:
         snapshot = await runtime.adapter.snapshot()
     except Exception:
@@ -376,7 +396,7 @@ async def house_state():
 @router.post("/api/house/control/light", dependencies=[Depends(user_guard)])
 async def house_control_light(body: LightControlBody):
     try:
-        result = await _get_runtime().actuator.request_light(
+        result = await (await _get_runtime()).actuator.request_light(
             body.entity_id,
             state=body.state,
             brightness_pct=body.brightness_pct,
@@ -393,7 +413,7 @@ async def house_control_light(body: LightControlBody):
 @router.post("/api/house/control/climate", dependencies=[Depends(user_guard)])
 async def house_control_climate(body: ClimateControlBody):
     try:
-        result = await _get_runtime().actuator.request_climate(
+        result = await (await _get_runtime()).actuator.request_climate(
             body.entity_id,
             action=body.action,
             value=body.value,
@@ -410,7 +430,7 @@ async def house_control_climate(body: ClimateControlBody):
 @router.post("/api/house/control/security", dependencies=[Depends(user_guard)])
 async def house_control_security(body: SecurityControlBody):
     try:
-        result = await _get_runtime().actuator.request_security(
+        result = await (await _get_runtime()).actuator.request_security(
             body.entity_id,
             action=body.action,
             agent="jarvis",
@@ -428,12 +448,13 @@ async def house_control_security(body: SecurityControlBody):
     dependencies=[Depends(admin_guard)],
 )
 async def house_security_challenge(task_id: int):
-    runtime = _get_runtime()
-    task, error = _security_task(runtime, task_id)
+    runtime = await _get_runtime()
+    task, error = await _security_task(runtime, task_id)
     if error is not None:
         return error
     try:
-        result = runtime.actuator.mint_confirmation(task)
+        # Challenge minting writes to the confirmation sqlite store.
+        result = await asyncio.to_thread(runtime.actuator.mint_confirmation, task)
     except (ConfirmationError, ValueError):
         return nocache_json(
             {"enabled": True, "status": "denied", "reason": "challenge_refused"},
@@ -447,12 +468,13 @@ async def house_security_challenge(task_id: int):
     dependencies=[Depends(admin_guard)],
 )
 async def house_security_confirm(task_id: int, body: ConfirmationBody):
-    runtime = _get_runtime()
-    task, error = _security_task(runtime, task_id)
+    runtime = await _get_runtime()
+    task, error = await _security_task(runtime, task_id)
     if error is not None:
         return error
     try:
-        result = runtime.actuator.confirm(body.challenge_token, task)
+        # Confirmation consumes a row in the confirmation sqlite store.
+        result = await asyncio.to_thread(runtime.actuator.confirm, body.challenge_token, task)
     except (ConfirmationError, ValueError):
         return nocache_json(
             {"enabled": True, "status": "denied", "reason": "confirmation_refused"},

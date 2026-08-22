@@ -158,7 +158,12 @@ def client(monkeypatch):
     web.app.dependency_overrides[user_guard] = lambda: None
     web.app.dependency_overrides[admin_guard] = lambda: None
     runtime = _Runtime(_Adapter(_snapshot()), _Graph(), None, _Actuator())
-    monkeypatch.setattr(house_routes, "_get_runtime", lambda: runtime)
+
+    # The router's runtime accessor is async; handlers await it.
+    async def _runtime_override():
+        return runtime
+
+    monkeypatch.setattr(house_routes, "_get_runtime", _runtime_override)
     try:
         yield TestClient(web.app), runtime
     finally:
