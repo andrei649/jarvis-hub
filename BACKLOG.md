@@ -879,13 +879,20 @@ was switched on over a layout that was never made responsive. Two facts frame th
 - [ ] `agents/hestia` — the House Brain agent added 2026-08-18 owns `agents/core/house/**` (graph,
   presence, actuation, home_assistant) in *persona* only. ORIZONT 30 shipped the modules and the
   router; wiring Hestia's reads/proposals onto them is the remaining slice.
-- [ ] **HUD seed roster is 3 agents behind the backend.** `frontend/src/data.ts` hardcodes 15 agents
+- [x] **HUD seed roster is 3 agents behind the backend.** `frontend/src/data.ts` hardcodes 15 agents
   (`AGENTS`, `GLYPHS`, `COLLAB`, `DOSSIER`, routing keywords) — it never gained **howard** or **argus**,
   and now not **hestia** either, while the registry is at 18. Found 2026-08-18 during the roster pass and
   deliberately *not* half-fixed: adding only Hestia would leave a roster that is stale in a less obvious
   way. Fixing it means a glyph, an `AGENTS` row, `COLLAB` edges, a `DOSSIER` entry and keyword weights
   per missing agent. The backend is the source of truth (`GET /api/status`, `agents.yaml`); the honest
   end state is deriving this panel from the API rather than re-hardcoding 18.
+  **Delivered 2026-08-22 via the derive-from-API end state:** `/api/agents` now derives `tier`/`role`
+  for registry-only agents from their SOUL.md front-matter (curated `_AGENT_META` rows keep priority),
+  so howard/hestia describe themselves server-side; the loaders' degraded path unions `/status` agent
+  ids with the seed meta instead of silently dropping unknown ids; unknown glyph ids render a neutral
+  mark instead of an empty path. The watermarked demo corpus intentionally stays at 15 — it is fiction
+  by contract, not a stale live view (`tests/test_agent_roster_meta.py`, `glyph-fallback.test.tsx`,
+  `loaders.test.ts`). Remaining (non-blocking): dossier/collab *enrichment* for new agents in demo mode.
 
 **Honesty layer (cross-cutting, highest-leverage):**
 - [x] `degradation.py` helper + applied to `iot_control` + `balance`
