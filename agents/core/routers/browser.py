@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from collections.abc import Mapping
 from typing import Annotated, Literal
 
@@ -120,7 +122,11 @@ def _project_preview(raw) -> dict[str, list[dict]]:
 async def browser_check(body: BrowserCheckBody):
     """H15.1 — would this URL pass the egress allowlist + SSRF filter?"""
     from agents.core.browser_agent import BrowserPolicy
-    ok, reason = BrowserPolicy(body.allowlist).domain_allowed(body.url)
+    # domain_allowed() resolves DNS synchronously (socket.getaddrinfo via
+    # check_ssrf); keep that off the event loop like the admin audit route.
+    ok, reason = await asyncio.to_thread(
+        BrowserPolicy(body.allowlist).domain_allowed, body.url,
+    )
     return nocache_json({"allowed": ok, "reason": _bounded_reason(reason)})
 
 
@@ -130,4 +136,6 @@ async def browser_plan_preview(body: BrowserPreviewBody):
     from agents.core.browser_agent import GovernedBrowser, BrowserPolicy
     gb = GovernedBrowser(policy=BrowserPolicy(body.allowlist))
     plan = [step.model_dump(mode="python") for step in body.plan]
-    return nocache_json(_project_preview(gb.preview(plan)))
+    # navigate steps resolve DNS inside preview(); same sync-seam rule as above.
+    raw = await asyncio.to_thread(gb.preview, plan)
+    return nocache_json(_project_preview(raw))
