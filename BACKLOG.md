@@ -768,11 +768,21 @@ Fixed, all with regression tests that fail when the defect is reintroduced:
 - [x] ✅ **Cypher property names could hijack node identity** — a relation property called `source`
   rewired the relation to a different node.
 
-Still open from that run (verified real, not yet fixed): blocking DNS/HTTP on the request path in
-`browser.py`, `codeintel.py`, `house.py`, `onvif.py`, `memory_kg.py`; and the seeded ADMIN/OBSERVE
+Still open from that run (verified real, not yet fixed): the seeded ADMIN/OBSERVE
 corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): ✅ the dead `arr() || fallback` in
 the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
+Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
+(`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
+`house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
+ONVIF discovery (`_normalize` resolved each candidate xaddr on the loop), and
+`memory_kg.py` (all graph-editor + search-tool routes ran sync neo4j httpx inline;
+default in-memory backend unaffected) — all now pay their blocking calls to worker
+threads via `asyncio.to_thread`, gated by loop-responsiveness regression tests
+(`tests/test_request_path_blocking_io.py`). Audit correction: `codeintel.py` was a false
+positive (pure local AST/FS, no network); the real ONVIF surface is `cameras/onvif.py`,
+not an `onvif.py` router; adjacent same-family `cameras/frigate.py:138` getaddrinfo noted,
+still open.
 Fixed since: ✅ the unauthenticated full-chain re-verify in `security.py` — `audit/verify` plus its
 `audit/intent` and `audit/anchors` siblings (and `GET /api/workflows/traces`, WFL-132) are now
 user-guarded, route-auth snapshot re-seeded; ✅ `north_star.py` all-time-as-7-day — `local_pct` is
