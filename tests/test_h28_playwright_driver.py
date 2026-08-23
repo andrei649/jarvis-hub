@@ -428,16 +428,12 @@ async def test_governed_policy_blocks_redirects_and_subresources_inside_playwrig
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.getenv("JARVIS_PLAYWRIGHT_LIVE") != "1",
-    reason="set JARVIS_PLAYWRIGHT_LIVE=1 after installing Playwright Chromium",
-)
-async def test_live_chromium_host_smoke():
+async def test_live_setting_does_not_claim_navigation_without_a_transport_proxy(monkeypatch):
+    monkeypatch.setenv("JARVIS_PLAYWRIGHT_LIVE", "1")
     driver = PlaywrightBrowserDriver(host_enabled=True)
     driver.set_url_guard(lambda url: str(url).startswith("data:text/html,"))
     try:
-        await driver.navigate(url="data:text/html,<main>Jarvis Playwright</main>")
-        result = await driver.extract(selector="main")
-        assert result["text"] == "Jarvis Playwright"
+        with pytest.raises(PlaywrightTransportUnavailable, match="transport unavailable"):
+            await driver.navigate(url="data:text/html,<main>Jarvis Playwright</main>")
     finally:
         await driver.close()

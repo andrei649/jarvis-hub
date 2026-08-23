@@ -451,10 +451,15 @@ class PluginHTTPClient:
             if not location or hop == 20:
                 return response
             next_url = urljoin(current_url, location)
-            if self._cross_origin(current_url, next_url):
+            cross_origin = self._cross_origin(current_url, next_url)
+            if cross_origin:
                 headers = self._without_headers(headers, {"authorization", "cookie", "proxy-authorization"})
             if current_method == "POST" and response.status_code in {301, 302, 303}:
                 current_method = "GET"
+                kwargs = {key: value for key, value in kwargs.items() if key not in {"content", "data", "json", "files"}}
+                headers = self._without_headers(headers, {"content-length", "content-type", "transfer-encoding", "expect"})
+            elif cross_origin and response.status_code in {307, 308}:
+                # Preserve the redirect method but never replay an entity cross-origin.
                 kwargs = {key: value for key, value in kwargs.items() if key not in {"content", "data", "json", "files"}}
                 headers = self._without_headers(headers, {"content-length", "content-type", "transfer-encoding", "expect"})
             current_url = next_url
@@ -553,10 +558,14 @@ class PluginHTTPClient:
                 self.circuit_breaker.record_success()
                 return
             next_url = urljoin(current_url, location)
-            if self._cross_origin(current_url, next_url):
+            cross_origin = self._cross_origin(current_url, next_url)
+            if cross_origin:
                 headers = self._without_headers(headers, {"authorization", "cookie", "proxy-authorization"})
             if current_method == "POST" and response.status_code in {301, 302, 303}:
                 current_method = "GET"
+                kwargs = {key: value for key, value in kwargs.items() if key not in {"content", "data", "json", "files"}}
+                headers = self._without_headers(headers, {"content-length", "content-type", "transfer-encoding", "expect"})
+            elif cross_origin and response.status_code in {307, 308}:
                 kwargs = {key: value for key, value in kwargs.items() if key not in {"content", "data", "json", "files"}}
                 headers = self._without_headers(headers, {"content-length", "content-type", "transfer-encoding", "expect"})
             current_url = next_url

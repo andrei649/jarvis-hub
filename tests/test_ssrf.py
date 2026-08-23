@@ -77,7 +77,7 @@ def test_check_ssrf_delegates_and_rejects_dns_failure(monkeypatch):
 def pin_resolver(monkeypatch):
     """Make resolve_and_validate deterministic per-host for fetch_page tests."""
     table = {}
-    def fake(host):
+    def fake(host, *args, **kwargs):
         return table.get(host, ([], f"URL resolves to private IP: {host}"))
     monkeypatch.setattr(ws, "resolve_and_validate", fake)
     return table
@@ -169,3 +169,67 @@ def test_empty_getaddrinfo_is_dns_failure(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: [])
     ips, err = resolve_and_validate("empty.invalid")
     assert ips == [] and "DNS resolution failed" in err
+
+
+async def test_websearch_fetch_page_uses_its_pinned_plugin_client(monkeypatch):
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            text="<html><body><p>Pinned page</p></body></html>",
+            request=request,
+        )
+    )
+    plugin = ws.WebSearchPlugin()
+    plugin._client = __import__("core.http_client", fromlist=["PluginHTTPClient"]).PluginHTTPClient(
+        "websearch",
+        resolver=lambda _host, *, mode: (["93.184.216.34"], None),
+        transport_factory=lambda _target: transport,
+    )
+    direct_creations = []
+    real_async_client = httpx.AsyncClient
+
+    def guarded_async_client(*args, **kwargs):
+        if kwargs.get("transport") is None:
+            direct_creations.append(True)
+            pytest.fail("direct websearch client")
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(
+        ws.httpx,
+        "AsyncClient",
+        guarded_async_client,
+    )
+
+    text = await plugin.fetch_page("https://docs.example.test/page")
+
+    assert "Pinned page" in text
+    assert direct_creations == []
+    await plugin.close()
+
+
+async def test_websearch_unsafe_dns_answer_creates_no_direct_or_pinned_transport(monkeypatch):
+    plugin = ws.WebSearchPlugin()
+    plugin._client = __import__("core.http_client", fromlist=["PluginHTTPClient"]).PluginHTTPClient(
+        "websearch",
+        resolver=lambda _host, *, mode: (["127.0.0.1"], None),
+        transport_factory=lambda _target: pytest.fail("unsafe DNS must not open transport"),
+    )
+    direct_creations = []
+    real_async_client = httpx.AsyncClient
+
+    def guarded_async_client(*args, **kwargs):
+        if kwargs.get("transport") is None:
+            direct_creations.append(True)
+            pytest.fail("direct websearch client")
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(
+        ws.httpx,
+        "AsyncClient",
+        guarded_async_client,
+    )
+
+    assert await plugin.fetch_page("https://docs.example.test/page") is None
+    assert direct_creations == []
+    assert plugin._client._pinned_clients == {}
+    await plugin.close()

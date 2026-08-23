@@ -116,6 +116,46 @@ async def test_redirect_rechecks_and_repins_each_hop_and_strips_sensitive_post_h
     await client.close()
 
 
+@pytest.mark.parametrize("status", [307, 308])
+async def test_cross_origin_307_308_preserve_method_but_never_replay_entity_or_credentials(status):
+    seen = []
+
+    def resolver(host, *, mode):
+        return ({"origin.example.test": ["93.184.216.34"], "next.example.test": ["93.184.216.35"]}[host], None)
+
+    def make_transport(_target):
+        def handler(request):
+            seen.append(request)
+            if len(seen) == 1:
+                return httpx.Response(status, headers={"location": "https://next.example.test/final"}, request=request)
+            return httpx.Response(200, request=request)
+
+        return RecordingTransport(handler)
+
+    client = PluginHTTPClient("redirect-307-test", resolver=resolver, transport_factory=make_transport)
+    response = await client.post(
+        "https://origin.example.test/start",
+        content=b"private",
+        headers={
+            "Authorization": "Bearer token",
+            "Cookie": "session=secret",
+            "Proxy-Authorization": "Basic secret",
+            "Content-Type": "application/octet-stream",
+            "Expect": "100-continue",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert seen[1].method == "POST"
+    assert seen[1].content == b""
+    assert all(header not in seen[1].headers for header in (
+        "authorization", "cookie", "proxy-authorization", "content-type", "transfer-encoding", "expect",
+    ))
+    assert seen[1].headers["content-length"] == "0"  # HTTP framing, not a replayed entity header
+    await client.close()
+
+
 async def test_unsafe_second_dns_answer_makes_zero_requests_even_when_strict_egress_is_downgraded(monkeypatch):
     monkeypatch.setenv("JARVIS_STRICT_EGRESS", "0")
     calls = []
