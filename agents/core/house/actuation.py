@@ -306,7 +306,7 @@ class HomeAssistantServiceDriver:
 
     async def _adapter_service_call(self, domain: str, service: str, data: dict) -> dict:
         adapter = self._adapter
-        origin, pinned_ip, host, _port = adapter._runtime_endpoint()
+        origin, pinned_ip, host, _port = await asyncio.to_thread(adapter._runtime_endpoint)
         parsed = urlparse(origin)
         ip_host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
         explicit_port = f":{parsed.port}" if parsed.port else ""

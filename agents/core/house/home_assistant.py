@@ -385,7 +385,7 @@ class HomeAssistantAdapter:
             self._health = {"status": "degraded", "reason": self._config_error}
             return self._snapshot(status="degraded", reason=self._config_error)
         try:
-            origin, pinned_ip, host, port = self._runtime_endpoint()
+            origin, pinned_ip, host, port = await asyncio.to_thread(self._runtime_endpoint)
             parsed_origin = urlparse(origin)
             ip_host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
             explicit_port = f":{parsed_origin.port}" if parsed_origin.port else ""
