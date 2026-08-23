@@ -20,6 +20,7 @@ Pure-Python (governance), offline-testable.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 from urllib.parse import urlparse
@@ -121,7 +122,13 @@ class GovernedBrowser:
         if kind == "unknown":
             return {"action": action, "status": "blocked", "reason": f"unknown action: {action}"}
         if action == "navigate":
-            ok, why = self.policy.domain_allowed(step.get("url", ""))
+            # domain_allowed -> check_ssrf -> resolve_and_validate does blocking DNS;
+            # offload it like routers/admin.py's audit read so a slow resolver can't
+            # stall the event loop. Honest limit: a browser process re-resolves in
+            # its own network stack and inherits no guarantee from our resolver —
+            # rebinding-proofness for real actuation lives in browser_playwright.py's
+            # per-request route guard.
+            ok, why = await asyncio.to_thread(self.policy.domain_allowed, step.get("url", ""))
             if not ok:
                 return {"action": action, "status": "blocked", "reason": why}
         if kind == "risky":
