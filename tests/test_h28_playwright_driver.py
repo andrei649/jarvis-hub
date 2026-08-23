@@ -9,6 +9,7 @@ from agents.core.browser_playwright import (
     PlaywrightBrowserDriver,
     PlaywrightHostDisabled,
     PlaywrightOutputTooLarge,
+    PlaywrightTransportUnavailable,
     PlaywrightUnavailable,
 )
 
@@ -237,6 +238,18 @@ async def test_host_consent_is_required_before_playwright_starts(tmp_path, monke
     assert PlaywrightBrowserDriver.from_env(playwright_factory=lambda: manager).host_enabled is True
 
 
+@pytest.mark.parametrize("url", ["https://example.com", "data:text/html,hello", "file:///C:/secret.txt"])
+async def test_navigation_refuses_without_transport_bound_proxy_before_playwright_starts(url):
+    manager = FakeManager()
+    driver = PlaywrightBrowserDriver(host_enabled=True, playwright_factory=lambda: manager)
+    driver.set_url_guard(lambda _url: pytest.fail("navigation must not invoke the URL guard"))
+
+    with pytest.raises(PlaywrightTransportUnavailable, match="transport unavailable"):
+        await driver.navigate(url=url)
+
+    assert manager.started == 0
+
+
 @pytest.mark.asyncio
 async def test_host_driver_refuses_to_start_without_a_per_request_url_guard():
     manager = FakeManager()
@@ -262,7 +275,7 @@ async def test_missing_or_broken_runtime_is_bounded_and_partial_startup_is_clean
     monkeypatch.setattr(builtins, "__import__", _without_playwright)
     driver = PlaywrightBrowserDriver(host_enabled=True)
     driver.set_url_guard(lambda _url: True)
-    with pytest.raises(PlaywrightUnavailable, match="pip install playwright"):
+    with pytest.raises(PlaywrightTransportUnavailable, match="transport unavailable"):
         await driver.navigate(url="https://example.com")
 
     manager = FakeManager(error=RuntimeError("raw host detail"))
@@ -270,7 +283,7 @@ async def test_missing_or_broken_runtime_is_bounded_and_partial_startup_is_clean
         host_enabled=True, playwright_factory=lambda: manager, download_dir=tmp_path
     )
     broken.set_url_guard(lambda _url: True)
-    with pytest.raises(PlaywrightUnavailable) as exc:
+    with pytest.raises(PlaywrightTransportUnavailable) as exc:
         await broken.navigate(url="https://example.com")
     assert "raw host detail" not in str(exc.value)
     await broken.close()
@@ -283,9 +296,9 @@ async def test_missing_or_broken_runtime_is_bounded_and_partial_startup_is_clean
         host_enabled=True, playwright_factory=lambda: partial_manager
     )
     partial.set_url_guard(lambda _url: True)
-    with pytest.raises(PlaywrightUnavailable):
+    with pytest.raises(PlaywrightTransportUnavailable):
         await partial.navigate(url="https://example.com")
-    assert partial_manager.playwright.stopped == 1
+    assert partial_manager.playwright.stopped == 0
 
 
 @pytest.mark.asyncio
@@ -293,16 +306,12 @@ async def test_lazy_fresh_context_navigation_extract_screenshot_wait_and_close(t
     driver, manager = _driver(tmp_path, max_extract_chars=5, max_screenshot_bytes=8)
     assert manager.started == 0
 
-    nav = await driver.navigate(url="https://example.com", wait_until="domcontentloaded")
     extracted = await driver.extract(selector="main")
     shot = await driver.screenshot(full_page=True)
     waited = await driver.wait(selector="#ready", timeout_ms=400)
 
-    assert nav == {
-        "url": "https://example.com", "title": "Example title", "status": 200
-    }
     assert extracted == {
-        "text": "abcde", "truncated": True, "url": "https://example.com"
+        "text": "abcde", "truncated": True, "url": "about:blank"
     }
     assert shot["mime"] == "image/png" and shot["image_base64"] == "UE5H"
     assert waited == {"waited": "selector", "selector": "#ready", "timeout_ms": 400}
@@ -382,8 +391,12 @@ async def test_governed_browser_blocks_before_real_driver_and_null_default_is_un
     allowed = await governed.run_step({
         "action": "navigate", "url": "https://example.com"
     })
-    assert allowed["status"] == "done"
-    assert manager.started == 1
+    assert allowed == {
+        "action": "navigate",
+        "status": "blocked",
+        "reason": "browser transport unavailable",
+    }
+    assert manager.started == 0
 
     default_governed = GovernedBrowser(policy=BrowserPolicy(["example.com"]))
     assert default_governed.driver.__class__.__name__ == "NullBrowserDriver"
@@ -397,17 +410,16 @@ async def test_governed_policy_blocks_redirects_and_subresources_inside_playwrig
     driver.set_url_guard(policy.domain_allowed)
     governed = GovernedBrowser(driver=driver, policy=policy)
 
-    result = await governed.run_step({
-        "action": "navigate", "url": "https://example.com/start"
-    })
+    result = await governed.run_step({"action": "navigate", "url": "https://example.com/start"})
 
-    assert result["status"] == "done"
+    assert result["status"] == "blocked"
+    await driver.extract(selector="body")
     [(pattern, handler)] = manager.playwright.context.routes
     assert pattern == "**/*"
 
     allowed = FakeRoute("https://cdn.example.com/app.js")
     await handler(allowed)
-    assert allowed.continued == 1 and allowed.aborted == []
+    assert allowed.continued == 0 and allowed.aborted == ["blockedbyclient"]
 
     blocked = FakeRoute("https://evil.com/redirected")
     await handler(blocked)

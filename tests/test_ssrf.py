@@ -37,7 +37,7 @@ def _gai(*ips):
 def test_literal_ips():
     assert resolve_and_validate("8.8.8.8") == (["8.8.8.8"], None)
     ips, err = resolve_and_validate("127.0.0.1")
-    assert ips == [] and "private IP" in err
+    assert ips == [] and "unsafe" in err
     ips, err = resolve_and_validate("169.254.169.254")
     assert ips == [] and "metadata" in err
 
@@ -51,7 +51,7 @@ def test_rejects_if_any_resolved_ip_is_private(monkeypatch):
     # Split-horizon rebinding: one public + one private record → reject the host.
     monkeypatch.setattr(socket, "getaddrinfo", _gai("93.184.216.34", "127.0.0.1"))
     ips, err = resolve_and_validate("rebind.evil")
-    assert ips == [] and "private IP" in err
+    assert ips == [] and "unsafe" in err
 
 
 def test_dns_failure_is_error(monkeypatch):
@@ -62,14 +62,13 @@ def test_dns_failure_is_error(monkeypatch):
     assert ips == [] and "DNS resolution failed" in err
 
 
-def test_check_ssrf_delegates_and_is_lenient_on_dns_failure(monkeypatch):
-    assert check_ssrf("http://10.0.0.1/x").startswith("URL resolves to private IP")
+def test_check_ssrf_delegates_and_rejects_dns_failure(monkeypatch):
+    assert "unsafe" in check_ssrf("http://10.0.0.1/x")
     assert check_ssrf("not a url") == "No hostname in URL"
     def boom(*a, **k):
         raise socket.gaierror("nope")
     monkeypatch.setattr(socket, "getaddrinfo", boom)
-    # DNS failure is not a hard block in the pre-flight filter (fetch fails anyway).
-    assert check_ssrf("http://nope.invalid/") is None
+    assert "DNS resolution failed" in check_ssrf("http://nope.invalid/")
 
 
 # ── fetch_page: pinning + manual redirect validation ──────────────
@@ -155,13 +154,13 @@ def test_resolve_blocks_ipv6_mapped_metadata_and_private():
     ips, err = resolve_and_validate("::ffff:169.254.169.254")  # embedded metadata → :80-82
     assert ips == [] and "metadata" in err
     ips, err = resolve_and_validate("::ffff:127.0.0.1")        # embedded private → :52 path
-    assert ips == [] and "private IP" in err
-    assert resolve_and_validate("::ffff:8.8.8.8") == (["::ffff:8.8.8.8"], None)  # public mapped ok
+    assert ips == [] and "unsafe" in err
+    assert resolve_and_validate("::ffff:8.8.8.8") == (["8.8.8.8"], None)  # normalized public mapped IP
 
 
 def test_check_ssrf_blocks_bracketed_ipv6_mapped_urls():
     assert "metadata" in check_ssrf("http://[::ffff:169.254.169.254]/latest/meta-data/")
-    assert "private IP" in check_ssrf("http://[::ffff:127.0.0.1]:8080/admin")
+    assert "unsafe" in check_ssrf("http://[::ffff:127.0.0.1]:8080/admin")
     assert check_ssrf("http://[::ffff:8.8.8.8]/") is None
 
 

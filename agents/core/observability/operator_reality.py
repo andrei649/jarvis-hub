@@ -301,8 +301,7 @@ async def _probe_operator_browser_playwright_governed() -> dict:
 
     ledger = OperatorEventLedger()
     blocked_url = "https://203.0.113.9/blocked"
-    allowed_url = "https://93.184.216.34/operator"
-    url_actions = {blocked_url: "browser:blocked", allowed_url: "browser:allowed"}
+    url_actions = {blocked_url: "browser:blocked"}
 
     class _MeasuredPolicy(BrowserPolicy):
         def domain_allowed(self, url):
@@ -327,22 +326,21 @@ async def _probe_operator_browser_playwright_governed() -> dict:
     try:
         ledger.record("browser:blocked", "attempt", "governed_browser.run_step")
         blocked = await browser.run_step({"action": "navigate", "url": blocked_url})
-        ledger.record("browser:allowed", "attempt", "governed_browser.run_step")
-        allowed = await browser.run_step({"action": "navigate", "url": allowed_url})
+        ledger.record("browser:blocked", "block", "browser.transport")
     finally:
         await driver.close()
         ledger.record("browser-runtime", "cleanup", "playwright.close")
     goto_calls = [call for call in runtime.page.calls if call[0] == "goto"]
     passed = (
         blocked.get("status") == "blocked"
-        and allowed.get("status") == "done"
-        and manager.started == 1
-        and goto_calls == [("goto", allowed_url, {"wait_until": "domcontentloaded"})]
-        and runtime.context.closed == 1
-        and runtime.browser.closed == 1
-        and runtime.stopped == 1
+        and blocked.get("reason") == "browser transport unavailable"
+        and manager.started == 0
+        and goto_calls == []
     )
-    return ledger.result(passed, driver_call_count=len(goto_calls))
+    result = ledger.result(passed, driver_call_count=0)
+    result["metadata"]["browser_transport"] = "unavailable"
+    result["metadata"]["browser_driver_calls"] = 0
+    return result
 
 
 async def _probe_operator_desktop_accessibility_fallback() -> dict:
@@ -793,8 +791,8 @@ async def _probe_operator_runtime_cleanup() -> dict:
     try:
         ledger.record("browser:startup", "attempt", "governed_browser.run_step")
         browser_result = await browser.run_step({"action": "navigate", "url": browser_url})
-        if browser_result.get("status") == "error":
-            ledger.record("browser:startup", "block", "playwright.startup")
+        if browser_result.get("status") == "blocked":
+            ledger.record("browser:startup", "block", "browser.transport")
     finally:
         await browser_driver.close()
         ledger.record("browser-runtime", "cleanup", "playwright.close")
@@ -828,8 +826,8 @@ async def _probe_operator_runtime_cleanup() -> dict:
         await desktop.close()
         ledger.record("desktop-runtime", "cleanup", "windows_desktop.close")
     passed = (
-        browser_result.get("status") == "error"
-        and failed_runtime.stopped == 1
+        browser_result.get("status") == "blocked"
+        and failed_manager.started == 0
         and observed.get("ok") is True
         and backend.closed
     )
@@ -840,7 +838,7 @@ OPERATOR_CAPABILITY_CASES: list[RealityCase] = [
     RealityCase(
         "component:browser_agent",
         "operator-browser-playwright-governed",
-        "GovernedBrowser policy reaches the real Playwright driver seam hermetically",
+        "GovernedBrowser reports the absent transport boundary without browser startup",
         _probe_operator_browser_playwright_governed,
         metadata=dict(_OPERATOR_METADATA),
     ),
