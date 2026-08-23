@@ -5,6 +5,8 @@ Provides a single PluginHTTPClient class that wraps httpx.AsyncClient with:
 - Consistent default timeouts (connect=5s, read=30s, total=60s)
 - Per-plugin CircuitBreaker from the resilience module
 - Integration with @resilient_call for retry + exponential backoff
+- SSRF resolve-and-pin preflight for manifested plugins (HF-4): the target host
+  is resolved once and EVERY address validated before anything is dialed
 - Async context manager support
 
 Usage:
@@ -69,6 +71,16 @@ class PluginEgressError(PermissionError):
     """A plugin HTTP request violated its manifest's network policy (F-07)."""
 
 
+class PluginSSRFError(PluginEgressError):
+    """An outbound plugin request failed SSRF resolution/pinning (HF-4).
+
+    Raised by ``PluginHTTPClient._guard`` when DNS resolution fails, or when any
+    resolved address is private/link-local/cloud-metadata — including a
+    public+private multi-record answer (split-horizon rebinding). Subclasses
+    :class:`PluginEgressError` so existing handlers keep catching it.
+    """
+
+
 def _host_is_local(host: str) -> bool:
     """True if *host* is loopback / private / link-local / mDNS (.local) — i.e. LAN."""
     if not host:
@@ -122,6 +134,30 @@ def _host_is_local_cached(host: str) -> bool:
     val = _host_is_local(host)
     _local_flag_cache[host] = (now, val)
     return val
+
+
+def _pinning_exempt_host(host: str) -> bool:
+    """True for targets whose safety is governed by the *manifest* policy rather
+    than DNS pinning: loopback, mDNS (``.local``) and RFC1918 literals — LAN
+    plugins must keep reaching e.g. ``192.168.1.100`` without a resolver round-
+    trip. Link-local is deliberately NOT exempt: ``169.254.169.254`` is the
+    classic cloud-metadata SSRF target and must hit the pinning check.
+    """
+    if not host:
+        return True
+    h = host.lower().rstrip(".")
+    if h == "localhost" or h.endswith(".local"):
+        return True
+    import ipaddress
+    try:
+        addr = ipaddress.ip_address(h)
+    except ValueError:
+        return False  # a DNS name → pinning applies
+    if addr.is_loopback:
+        return True
+    if addr.is_link_local:
+        return False
+    return bool(addr.is_private)
 
 
 def _host_of(url: str) -> str:
@@ -311,18 +347,52 @@ class PluginHTTPClient:
         if reason:
             raise PluginEgressError(f"egress blocked by kernel: {reason}")
 
+    def _ssrf_enforced(self) -> bool:
+        """True when this client carries a declared manifest — the same population
+        ``_enforce_egress`` governs. Unmanifested ad-hoc/internal clients keep the
+        legacy no-op guard so their behavior never changes underneath them.
+        """
+        try:
+            from agents.core.plugin_gate import BUILTIN_PLUGINS
+        except Exception:
+            return False
+        return self.plugin_name in BUILTIN_PLUGINS
+
+    def _enforce_ssrf(self, host: str) -> None:
+        """HF-4 anti-rebinding preflight: resolve *host* once and validate EVERY
+        address it maps to before httpx is allowed to dial.
+
+        Complements the manifest policy (which decides *where* a plugin may go):
+        this decides whether a public-looking name can be trusted at connect
+        time — a split-horizon answer (one public + one private A record), any
+        link-local/metadata hit, or a DNS failure all fail CLOSED with
+        :class:`PluginSSRFError` (a PluginEgressError subclass, so existing
+        ``except PluginEgressError`` handlers keep working). Local-shaped targets
+        are exempt (see ``_pinning_exempt_host``).
+        """
+        if not host or not self._ssrf_enforced() or _pinning_exempt_host(host):
+            return
+        from .security.ssrf import resolve_and_validate
+        _ips, err = resolve_and_validate(host)
+        if err:
+            raise PluginSSRFError(
+                f"egress blocked: SSRF pinning failed for '{host}': {err}"
+            )
+
     def _guard(self, method: str, url: str) -> None:
         """Enforce egress policy AND record the attempt for the network monitor (H23.16).
 
         Every verb funnels through here so blocked *and* allowed calls land in the
         ledger — that's what lets the HUD prove a local-only plugin made zero outbound
         calls. A blocked call is recorded before re-raising so the attempt is visible.
+        Gates, in order: manifest policy → kernel mediation → SSRF pinning preflight.
         """
         host = _host_of(url)
         local = _host_is_local_cached(host)
         try:
             self._enforce_egress(url)
             self._enforce_kernel(method, url, host)   # wave-2: kernel mediation (default-off)
+            self._enforce_ssrf(host)                  # HF-4: resolve-once + validate-all preflight
         except PluginEgressError as e:
             _record_egress(self.plugin_name, host, method, allowed=False, local=local, reason=str(e))
             raise
