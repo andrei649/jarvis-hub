@@ -87,6 +87,12 @@ class _Actuator:
         self.calls.append(("confirm", token, task.id, task.kind, dict(task.payload)))
         return {"status": "confirmed", "confirmation_id": 9, "receipt": "receipt-token"}
 
+    async def mint_confirmation_async(self, task):
+        return self.mint_confirmation(task)
+
+    async def confirm_async(self, token, task):
+        return self.confirm(token, task)
+
 
 @dataclass
 class _Runtime:
@@ -158,7 +164,11 @@ def client(monkeypatch):
     web.app.dependency_overrides[user_guard] = lambda: None
     web.app.dependency_overrides[admin_guard] = lambda: None
     runtime = _Runtime(_Adapter(_snapshot()), _Graph(), None, _Actuator())
-    monkeypatch.setattr(house_routes, "_get_runtime", lambda: runtime)
+
+    async def _get_runtime():
+        return runtime
+
+    monkeypatch.setattr(house_routes, "_get_runtime", _get_runtime)
     try:
         yield TestClient(web.app), runtime
     finally:

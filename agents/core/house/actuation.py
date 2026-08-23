@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable, Mapping
 from contextlib import closing
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse, urlunparse
 
 from agents.core.autonomy.dry_run import preview_task
@@ -20,6 +21,9 @@ from agents.core.paths import data_path
 
 from .confirmation import ConfirmationError, StrongConfirmationStore
 from .contracts import HouseEntity, HouseSnapshot
+
+if TYPE_CHECKING:
+    from agents.core.autonomy.queue import Task
 
 HOUSE_CONTROL_KIND = "house.control"
 HOUSE_SECURITY_KIND = "house.security_control"
@@ -403,7 +407,7 @@ class HouseActuator:
         autonomy_level = "ask"
         if not security and callable(self._outcomes):
             try:
-                stats = self._outcomes(_CONTROL_CAPABILITY)
+                stats = await asyncio.to_thread(self._outcomes, _CONTROL_CAPABILITY)
                 if (
                     isinstance(stats, Mapping)
                     and int(stats.get("total", 0)) >= _EARNED_SAMPLES
@@ -490,11 +494,17 @@ class HouseActuator:
             **self._task_binding(task, payload), ttl_seconds=ttl_seconds
         )
 
+    async def mint_confirmation_async(self, task: Task) -> dict:
+        return await asyncio.to_thread(self.mint_confirmation, task)
+
     def confirm(self, token: str, task) -> dict:
         if self._confirmations is None:
             raise ConfirmationError("strong confirmation is unavailable")
         payload = _canonical_task(getattr(task, "kind", ""), getattr(task, "payload", None))
         return self._confirmations.confirm(token, **self._task_binding(task, payload))
+
+    async def confirm_async(self, token: str, task: Task) -> dict:
+        return await asyncio.to_thread(self.confirm, token, task)
 
     @staticmethod
     def _entity(snapshot: HouseSnapshot, entity_id: str) -> HouseEntity | None:

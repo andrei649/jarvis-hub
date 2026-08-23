@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -106,18 +107,28 @@ class _FakeConfirmations:
     def __init__(self):
         self.thread_ids = []
 
+    def mint(self, **_binding):
+        self.thread_ids.append(threading.get_ident())
+        time.sleep(0.01)
+        return {"token": "challenge-token", "status": "challenge_minted"}
+
+    def confirm(self, token, **_binding):
+        self.thread_ids.append(threading.get_ident())
+        time.sleep(0.01)
+        return {"token": token, "status": "confirmed"}
+
     def consume(self, **_binding):
         self.thread_ids.append(threading.get_ident())
         return True
 
 
-def _actuator(tmp_path, simulator, *, enqueue=None, confirmations=None):
+def _actuator(tmp_path, simulator, *, enqueue=None, confirmations=None, outcomes=None):
     return HouseActuator(
         state_reader=simulator,
         driver=simulator,
         authorizer=_Kernel(),
         enqueue=enqueue,
-        outcome_provider=(lambda _cap: {"total": 0, "confidence": 0.0}),
+        outcome_provider=outcomes or (lambda _cap: {"total": 0, "confidence": 0.0}),
         confirmation_store=confirmations,
         ledger_path=tmp_path / "actuation.db",
         clock=lambda: simulator.now,
@@ -154,6 +165,63 @@ async def test_governed_enqueue_runs_off_the_event_loop_thread(tmp_path):
             "origin": "generated",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_outcome_stats_run_off_the_event_loop_thread(tmp_path):
+    loop_thread = threading.get_ident()
+    outcome_threads = []
+
+    def blocking_outcomes(_capability):
+        outcome_threads.append(threading.get_ident())
+        time.sleep(0.01)
+        return {"total": 20, "confidence": 0.9}
+
+    actuator = _actuator(
+        tmp_path,
+        _Simulator(),
+        enqueue=lambda *_args, **_kwargs: 42,
+        outcomes=blocking_outcomes,
+    )
+
+    result = await actuator.request_light("light.kitchen", state="on")
+
+    assert result["queued"] is True and result["task_id"] == 42
+    assert result["autonomy_level"] == "act"
+    assert outcome_threads and all(thread_id != loop_thread for thread_id in outcome_threads)
+
+
+@pytest.mark.asyncio
+async def test_confirmation_wrappers_run_store_work_off_the_event_loop_thread(tmp_path):
+    loop_thread = threading.get_ident()
+    confirmations = _FakeConfirmations()
+    actuator = _actuator(
+        tmp_path,
+        _Simulator(entity_id="lock.front_door", state="locked"),
+        confirmations=confirmations,
+    )
+    task = SimpleNamespace(
+        id=10,
+        kind=HOUSE_SECURITY_KIND,
+        payload={
+            "version": 1,
+            "control": "security",
+            "entity_id": "lock.front_door",
+            "action": "unlock",
+            "risk_tier": 3,
+            "reversible": False,
+            "signal_quality": 1.0,
+        },
+    )
+
+    challenge = await actuator.mint_confirmation_async(task)
+    confirmed = await actuator.confirm_async(challenge["token"], task)
+
+    assert challenge["status"] == "challenge_minted"
+    assert confirmed == {"token": "challenge-token", "status": "confirmed"}
+    assert confirmations.thread_ids and all(
+        thread_id != loop_thread for thread_id in confirmations.thread_ids
+    )
 
 
 @pytest.mark.asyncio
