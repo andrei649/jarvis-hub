@@ -440,3 +440,60 @@ def test_final_task_tier_mutation_invalidates_qa4_evidence_without_blocking(tmp_
     assert summary["done"] == 1
     assert observed == [task.id]
     assert KERNEL_METRICS.snapshot()["ungoverned_by_kind"] == {"draft_email": 1}
+
+
+def test_tampered_persisted_kernel_tier_invalidates_qa4_evidence_without_blocking(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    observed = []
+
+    async def execute(task):
+        observed.append(task.id)
+        return {"status": "ok"}
+
+    signer = DetachedHMACSigner(
+        lambda data: hmac.new(_KEY, data, hashlib.sha256).hexdigest()
+    )
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    worker = AutonomyWorker(
+        queue,
+        policy=_ActPolicy(),
+        executor=execute,
+        kernel=MediationKernelBridge(
+            lambda _action: Decision(Verdict.GRANT, reason="kernel tier", tier=3)
+        ),
+        mediation_signer=signer,
+        mediation_clock_ms=lambda: _NOW_MS,
+    )
+    task = asyncio.run(
+        worker.submit("jarvis", "draft_email", "Draft update", payload={"body": "hello"})
+    )
+    tampered = dict(task.kernel_intake_evidence)
+    tampered["tier"] = 0
+    queue._conn.execute(
+        "UPDATE tasks SET kernel_intake_evidence=? WHERE id=?",
+        (json.dumps(tampered), task.id),
+    )
+    queue._conn.commit()
+
+    assert not verify_intake_evidence(
+        signer,
+        tampered,
+        agent=task.agent,
+        kind=task.kind,
+        title=task.title,
+        origin=task.origin,
+        payload=task.payload,
+        tier=3,
+        task_tier=task.risk_tier,
+        now_ms=_NOW_MS,
+        task_id=task.id,
+    )
+    KERNEL_METRICS.reset()
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["done"] == 1
+    assert observed == [task.id]
+    assert KERNEL_METRICS.snapshot()["ungoverned_by_kind"] == {"draft_email": 1}
