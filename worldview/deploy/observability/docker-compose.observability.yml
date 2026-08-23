@@ -36,6 +36,15 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    # AUD-4/F14 hardening: collector is stateless here (config mounts ro, no
+    # file_storage extension) -> read-only rootfs is safe. Image already runs
+    # as its own unprivileged uid.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     # networks: [default]
 
@@ -60,6 +69,14 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    # AUD-4/F14 hardening: TSDB writes live on the prometheus-data volume and
+    # config mounts are ro -> read-only rootfs is safe (image runs as nobody).
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     # networks: [default]
 
@@ -85,6 +102,17 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    # AUD-4/F14 hardening: sqlite/sessions/logs/plugins all live under the
+    # grafana-data volume (/var/lib/grafana); provisioning mounts are ro ->
+    # read-only rootfs is safe (image already runs as the grafana user).
+    # /var/log/grafana tmpfs covers the packaged default log dir.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/log/grafana
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     # networks: [default]
 

@@ -18,8 +18,16 @@ FROM node:22-slim
 WORKDIR /app/frontend
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules /app/node_modules
-COPY --from=build /app/frontend/.next ./.next
+# .next must be node-writable (Next writes .next/cache at runtime); everything
+# else stays root-owned read-only.
+COPY --from=build --chown=node:node /app/frontend/.next ./.next
 COPY --from=build /app/frontend/package.json ./package.json
 COPY --from=build /app/frontend/next.config.mjs ./next.config.mjs
 EXPOSE 3000
+# AUD-4/F14: run as the image's built-in unprivileged `node` user; npm/npx state
+# lives under the node-owned /home/node.
+USER node
+# No HEALTHCHECK: this Next.js app exposes no health/liveness route today (grep
+# of worldview/frontend found no /health or /healthz route or handler), so any
+# probe would invent an endpoint. Add a route before wiring a probe.
 CMD ["npx", "next", "start", "-p", "3000"]
