@@ -779,3 +779,44 @@ async def test_house_requests_have_authenticated_intake_evidence_and_preserve_ex
         HOUSE_CONTROL_KIND,
         HOUSE_SECURITY_KIND,
     ]
+
+
+@pytest.mark.asyncio
+async def test_queued_house_intake_cannot_be_auto_approved_by_permissive_policy(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    simulator = _Simulator()
+    intake = _Kernel(Verdict.QUEUE)
+    execution = _Kernel()
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    worker = AutonomyWorker(
+        queue,
+        policy=type(
+            "Policy",
+            (),
+            {"decide": lambda _self, _action: SimpleNamespace(outcome="act", tier=1, reason="ok")},
+        )(),
+        kernel=MediationKernelBridge(intake),
+    )
+    actuator = HouseActuator(
+        state_reader=simulator,
+        driver=simulator,
+        authorizer=execution,
+        intake_authorizer=worker.kernel_gate,
+        enqueue=worker.govern_enqueue,
+        outcome_provider=lambda _capability: {"total": 20, "confidence": 0.9},
+        ledger_path=tmp_path / "actuation.db",
+        clock=lambda: simulator.now,
+    )
+    executor = register_house_handlers(TaskExecutor(execution_guard=worker.execution_allowed), actuator)
+    worker.executor = executor.execute
+
+    request = await actuator.request_light("light.kitchen", state="on")
+    task = queue.get(request["task_id"])
+    summary = await worker.tick()
+
+    assert request["autonomy_level"] == "act"
+    assert task.status == "blocked"
+    assert task.autonomy_level == "ask"
+    assert summary["ran"] == 0
+    assert simulator.calls == []

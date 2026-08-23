@@ -686,6 +686,11 @@ class AutonomyWorker:
         effective = self._force_ask_for_taint(effective, tainted)
         if mediated:
             tier, effective = self._apply_kernel_floor(kernel_decision, tier, effective)
+        elif kernel_decision is not None:
+            from ..kernel import Verdict
+
+            if kernel_decision.verdict is Verdict.QUEUE:
+                effective = ASK
         if mediated:
             task_id = self._classified_mediated_enqueue(
                 action=action,
@@ -797,6 +802,11 @@ class AutonomyWorker:
             effective = ASK
         if mediated:
             tier, effective = self._apply_kernel_floor(kernel_decision, tier, effective)
+        elif kernel_decision is not None:
+            from ..kernel import Verdict
+
+            if kernel_decision.verdict is Verdict.QUEUE:
+                effective = ASK
         if mediated:
             task_id = self._classified_mediated_enqueue(
                 action=action,
