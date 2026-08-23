@@ -30,7 +30,13 @@ from typing import Awaitable, Callable, Optional
 from ..action_origin import current_action_origin
 from ..ambient.policy import AttentionDeliveryBroker, AttentionLedger
 from ..security import taint
-from .mediation import DetachedHMACSigner, ReceiptExpectation, issue_receipt
+from .mediation import (
+    DetachedHMACSigner,
+    ReceiptExpectation,
+    issue_intake_evidence,
+    issue_receipt,
+    verify_intake_evidence,
+)
 from .policy import ACT, ASK, NOTIFY, AutonomyPolicy, RiskTier
 from .queue import MAX_ATTEMPTS, Task, TaskQueue, TaskQueueError, TaskStatus
 
@@ -322,7 +328,7 @@ class AutonomyWorker:
         from ..kernel.binding import MediationDecisionMismatch
 
         kernel = self._mediation_kernel
-        consume = getattr(kernel, "consume_for_enqueue", None)
+        consume = getattr(kernel, "take_intake_evidence", None)
         try:
             if not kernel_enabled():
                 if callable(consume):
@@ -344,7 +350,24 @@ class AutonomyWorker:
             self.queue.record_mediation_refusal(kind)
             raise TaskQueueError("pending kernel decision does not match finalized task") from exc
         action = self._kernel_action(agent, kind, title, payload, origin)
-        return action, self._kernel_decision(action)
+        try:
+            if not callable(kernel):
+                return action, None
+            decision = kernel(action)
+            if callable(consume):
+                pending = consume(
+                    agent=agent, kind=kind, title=title, payload=payload, origin=origin
+                )
+                if pending is not None:
+                    taken_action, taken_decision = pending
+                    return taken_action, self._validated_kernel_decision(taken_decision)
+            return action, self._validated_kernel_decision(decision)
+        except MediationDecisionMismatch as exc:
+            self.queue.record_mediation_refusal(kind)
+            raise TaskQueueError("pending kernel decision does not match finalized task") from exc
+        except Exception:
+            logger.warning("Action Kernel mediation failed closed", exc_info=True)
+            return action, None
 
     @staticmethod
     def _apply_kernel_floor(kernel_decision, tier: int, effective: str) -> tuple[int, str]:
@@ -366,6 +389,7 @@ class AutonomyWorker:
         risk_tier: int,
         autonomy_level: str,
         attention_mode: str,
+        intake_evidence=None,
     ) -> int:
         from ..kernel import Verdict
 
@@ -412,7 +436,32 @@ class AutonomyWorker:
             autonomy_level=autonomy_level,
             origin=action.origin,
             attention_mode=attention_mode,
+            kernel_intake_evidence=intake_evidence,
         )
+
+    def _intake_evidence(self, action, decision, payload: dict, tier: int):
+        if action is None or decision is None:
+            return None
+        try:
+            from ..kernel import Verdict
+
+            if decision.verdict not in {Verdict.GRANT, Verdict.QUEUE}:
+                return None
+            return issue_intake_evidence(
+                self._mediation_signer,
+                intake_id=str(uuid.uuid4()),
+                agent=action.agent,
+                kind=action.kind,
+                title=action.title,
+                origin=action.origin,
+                payload=payload,
+                verdict=decision.verdict.value,
+                tier=tier,
+                issued_at_ms=self._mediation_clock_ms(),
+            )
+        except Exception:
+            logger.warning("could not seal QA4 intake evidence", exc_info=True)
+            return None
 
     def _halted(self, scope: Optional[str] = None) -> bool:
         if self._kill_switch is None:
@@ -465,8 +514,40 @@ class AutonomyWorker:
         return explicit or "generated"
 
     def _mark_payload_for_origin(self, payload: dict | None, origin: str) -> tuple[dict, bool]:
-        marked = taint.mark_if_untrusted(payload or {}, origin)
+        # This legacy caller-controlled marker has no authority and must never
+        # enter a signed QA4 payload digest or a persisted task payload.
+        clean_payload = dict(payload or {})
+        clean_payload.pop("kernel_mediation", None)
+        marked = taint.mark_if_untrusted(clean_payload, origin)
         return marked, taint.is_tainted(marked)
+
+    @staticmethod
+    def _has_b7_receipt(task: Task) -> bool:
+        return bool(task.mediation_enqueue_id and task.mediation_receipt)
+
+    def _observe_qa4_intake(self, task: Task) -> None:
+        """Record missing QA4 evidence, while leaving task execution unchanged."""
+
+        if self._has_b7_receipt(task):
+            return
+        if verify_intake_evidence(
+            self._mediation_signer,
+            task.kernel_intake_evidence,
+            agent=task.agent,
+            kind=task.kind,
+            title=task.title,
+            origin=task.origin,
+            payload=task.payload,
+            tier=task.risk_tier,
+            now_ms=self._mediation_clock_ms(),
+        ):
+            return
+        try:
+            from ..kernel.metrics import KERNEL_METRICS
+
+            KERNEL_METRICS.record_ungoverned(task.kind)
+        except Exception:
+            logger.warning("QA4 intake observation failed", exc_info=True)
 
     def _policy_action(
         self,
@@ -576,24 +657,20 @@ class AutonomyWorker:
         classification = self.queue.classify_mediation(kind)
         mediated = self.queue.mediation_mode in {"enforce", "hold"} and classification is not False
         action = kernel_decision = None
-        if mediated:
-            if self.queue.mediation_mode != "enforce" or classification is not True:
-                return self.queue.enqueue(
-                    agent=agent,
-                    kind=kind,
-                    title=title,
-                    payload=proposed_payload,
-                    risk_tier=risk_tier,
-                    autonomy_level=autonomy_level,
-                    origin=origin,
-                    attention_mode=attention_mode,
-                )
-            action, kernel_decision = self._action_and_decision_for_enqueue(
+        if mediated and (self.queue.mediation_mode != "enforce" or classification is not True):
+            return self.queue.enqueue(
                 agent=agent,
                 kind=kind,
                 title=title,
-                payload=payload,
+                payload=proposed_payload,
+                risk_tier=risk_tier,
+                autonomy_level=autonomy_level,
                 origin=origin,
+                attention_mode=attention_mode,
+            )
+        if mediated or self._mediation_kernel is not None:
+            action, kernel_decision = self._action_and_decision_for_enqueue(
+                agent=agent, kind=kind, title=title, payload=payload, origin=origin
             )
         try:
             decision, tier, must_ask = self._policy_decision(
@@ -611,6 +688,7 @@ class AutonomyWorker:
         effective = self._force_ask_for_taint(effective, tainted)
         if mediated:
             tier, effective = self._apply_kernel_floor(kernel_decision, tier, effective)
+        intake_evidence = self._intake_evidence(action, kernel_decision, payload, tier)
         if mediated:
             task_id = self._classified_mediated_enqueue(
                 action=action,
@@ -619,6 +697,7 @@ class AutonomyWorker:
                 risk_tier=tier,
                 autonomy_level=effective,
                 attention_mode=attention_mode,
+                intake_evidence=intake_evidence,
             )
         else:
             task_id = self.queue.enqueue(
@@ -630,6 +709,7 @@ class AutonomyWorker:
                 autonomy_level=effective,
                 origin=origin,
                 attention_mode=attention_mode,
+                kernel_intake_evidence=intake_evidence,
             )
         if effective in (ACT, NOTIFY):
             task = self.queue.transition(
@@ -686,19 +766,19 @@ class AutonomyWorker:
         classification = self.queue.classify_mediation(kind)
         mediated = self.queue.mediation_mode in {"enforce", "hold"} and classification is not False
         action = kernel_decision = None
-        if mediated:
-            if self.queue.mediation_mode != "enforce" or classification is not True:
-                self.queue.enqueue(
-                    agent=agent,
-                    kind=kind,
-                    title=title,
-                    payload=proposed_payload,
-                    risk_tier=risk_tier if risk_tier is not None else 3,
-                    autonomy_level=ASK,
-                    origin=origin,
-                    attention_mode=attention_mode,
-                )
-                raise TaskQueueError("classified task mediation is unavailable")
+        if mediated and (self.queue.mediation_mode != "enforce" or classification is not True):
+            self.queue.enqueue(
+                agent=agent,
+                kind=kind,
+                title=title,
+                payload=proposed_payload,
+                risk_tier=risk_tier if risk_tier is not None else 3,
+                autonomy_level=ASK,
+                origin=origin,
+                attention_mode=attention_mode,
+            )
+            raise TaskQueueError("classified task mediation is unavailable")
+        if mediated or self._mediation_kernel is not None:
             action, kernel_decision = self._action_and_decision_for_enqueue(
                 agent=agent,
                 kind=kind,
@@ -721,6 +801,7 @@ class AutonomyWorker:
             effective = ASK
         if mediated:
             tier, effective = self._apply_kernel_floor(kernel_decision, tier, effective)
+        intake_evidence = self._intake_evidence(action, kernel_decision, payload, tier)
         if mediated:
             task_id = self._classified_mediated_enqueue(
                 action=action,
@@ -729,6 +810,7 @@ class AutonomyWorker:
                 risk_tier=tier,
                 autonomy_level=effective,
                 attention_mode=attention_mode,
+                intake_evidence=intake_evidence,
             )
         else:
             task_id = self.queue.enqueue(
@@ -740,6 +822,7 @@ class AutonomyWorker:
                 autonomy_level=effective,
                 origin=origin,
                 attention_mode=attention_mode,
+                kernel_intake_evidence=intake_evidence,
             )
 
         if effective in (ACT, NOTIFY):
@@ -867,6 +950,7 @@ class AutonomyWorker:
                         held += 1
                     continue
                 task = persisted
+            self._observe_qa4_intake(task)
             execution_permit = _ExecutionPermit(task) if mediated else None
             execution_token = self._execution_context.set(execution_permit)
             try:

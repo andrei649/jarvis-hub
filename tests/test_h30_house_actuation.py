@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import sqlite3
 from types import SimpleNamespace
@@ -10,6 +12,9 @@ from types import SimpleNamespace
 import pytest
 
 from agents.core.autonomy.executor import TaskExecutor
+from agents.core.autonomy.mediation import DetachedHMACSigner
+from agents.core.autonomy.queue import TaskQueue
+from agents.core.autonomy.worker import AutonomyWorker
 from agents.core.house.actuation import (
     HOUSE_CONTROL_KIND,
     HOUSE_RECOVERY_KIND,
@@ -22,6 +27,7 @@ from agents.core.house.actuation import (
 from agents.core.house.confirmation import ConfirmationError, StrongConfirmationStore
 from agents.core.house.contracts import HouseEntity, HouseSnapshot
 from agents.core.kernel import Decision, Verdict
+from agents.core.kernel.binding import MediationKernelBridge
 from agents.core.security.secret_broker import SecretBroker
 
 _CONFIRM_SECRET = "house-confirmation-key-material-that-is-long-enough"
@@ -650,3 +656,95 @@ def test_confirmation_store_releases_sqlite_handles_after_each_operation(tmp_pat
 
     store.path.unlink()
     assert store.path.exists() is False
+
+
+@pytest.mark.asyncio
+async def test_house_requests_have_authenticated_intake_evidence_and_preserve_execution_controls(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    class _House:
+        now = 100.0
+
+        def __init__(self):
+            self.states = {"light.kitchen": "off", "lock.front_door": "locked"}
+            self.calls = []
+
+        async def snapshot(self):
+            return HouseSnapshot(
+                enabled=True,
+                status="live",
+                observed_at=self.now,
+                entities=tuple(
+                    HouseEntity(
+                        entity_id=entity_id,
+                        domain=entity_id.split(".", 1)[0],
+                        name=entity_id,
+                        state=state,
+                        updated_at=self.now,
+                    )
+                    for entity_id, state in self.states.items()
+                ),
+            )
+
+        async def apply(self, command):
+            self.calls.append(dict(command))
+            self.states[command["entity_id"]] = {
+                "on": "on",
+                "unlock": "unlocked",
+            }[command["action"]]
+            self.now += 1.0
+            return {"ok": True}
+
+    sim = _House()
+    intake = _Kernel()
+    execution = _Kernel()
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    worker = AutonomyWorker(
+        queue,
+        policy=type(
+            "Policy",
+            (), {"decide": lambda _self, _action: SimpleNamespace(outcome="act", tier=1, reason="ok")},
+        )(),
+        kernel=MediationKernelBridge(intake),
+        mediation_signer=DetachedHMACSigner(
+            lambda data: hmac.new(b"house-qa4-signer", data, hashlib.sha256).hexdigest()
+        ),
+        mediation_clock_ms=lambda: 1_786_662_000_000,
+    )
+    actuator = HouseActuator(
+        state_reader=sim,
+        driver=sim,
+        authorizer=execution,
+        intake_authorizer=worker.kernel_gate,
+        enqueue=worker.govern_enqueue,
+        confirmation_store=_confirmation(tmp_path),
+        ledger_path=tmp_path / "actuation.db",
+        clock=lambda: sim.now,
+    )
+    executor = register_house_handlers(TaskExecutor(execution_guard=worker.execution_allowed), actuator)
+    worker.executor = executor.execute
+
+    light = await actuator.request_light("light.kitchen", state="on")
+    security = await actuator.request_security("lock.front_door", action="unlock")
+    await worker.apply_decision(light["task_id"], "accept")
+    security_task = queue.get(security["task_id"])
+    challenge = actuator.mint_confirmation(security_task)
+    actuator.confirm(challenge["token"], security_task)
+    await worker.apply_decision(security_task.id, "accept")
+
+    summary = await worker.tick()
+
+    assert light["queued"] is security["queued"] is True
+    assert queue.get(light["task_id"]).kernel_intake_evidence is not None
+    assert queue.get(security["task_id"]).kernel_intake_evidence is not None
+    assert summary["done"] == 2
+    assert [action.kind for action, _capability in intake.actions] == [
+        HOUSE_CONTROL_KIND,
+        HOUSE_SECURITY_KIND,
+    ]
+    assert [action.kind for action, _capability in execution.actions] == [
+        HOUSE_CONTROL_KIND,
+        HOUSE_SECURITY_KIND,
+    ]

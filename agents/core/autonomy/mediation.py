@@ -25,6 +25,7 @@ SCHEMA_VERSION = 1
 ZERO_HASH = "0" * 64
 MAX_CANONICAL_BYTES = 65_536
 MAX_RECEIPT_LIFETIME_MS = 86_400_000
+MAX_INTAKE_EVIDENCE_AGE_MS = 86_400_000
 
 _MAX_JSON_DEPTH = 5
 _MAX_JSON_ITEMS = 1_024
@@ -37,6 +38,7 @@ _MAX_INTEGER = (1 << 63) - 1
 _TOKEN = re.compile(r"[A-Za-z0-9_.:@/-]{1,128}")
 _HASH = re.compile(r"[0-9a-f]{64}")
 _VERDICTS = frozenset({"deny", "grant", "queue"})
+_INTAKE_VERDICTS = frozenset({"grant", "queue"})
 _OUTCOMES = frozenset(
     {"authorized_enqueue", "governed", "refused_unmediated", "ungoverned_detected"}
 )
@@ -364,6 +366,133 @@ class MediationReceipt:
         return cls(**dict(value))
 
 
+@dataclass(frozen=True, slots=True)
+class KernelIntakeEvidence:
+    """Detached proof that a final task tuple crossed the Action Kernel intake."""
+
+    version: int
+    intake_id: str
+    agent: str
+    kind: str
+    title: str
+    origin: str
+    payload_sha256: str
+    verdict: str
+    tier: int
+    issued_at_ms: int
+    signature: str
+
+    def __post_init__(self) -> None:
+        if isinstance(self.version, bool) or self.version != SCHEMA_VERSION:
+            raise ValueError("unsupported intake evidence version")
+        _uuid(self.intake_id, "intake id")
+        _token(self.agent, "agent")
+        _token(self.kind, "kind")
+        _title(self.title)
+        _token(self.origin, "origin")
+        _digest(self.payload_sha256, "payload digest")
+        if self.verdict not in _INTAKE_VERDICTS:
+            raise ValueError("intake verdict is invalid")
+        tier = _bounded_int(self.tier, "intake tier")
+        if tier > 3:
+            raise ValueError("intake tier is outside the bounded range")
+        _bounded_int(self.issued_at_ms, "intake issue time")
+        _digest(self.signature, "intake signature")
+
+    def unsigned_dict(self) -> dict[str, object]:
+        value = asdict(self)
+        value.pop("signature")
+        return value
+
+    def signing_bytes(self) -> bytes:
+        return canonical_json(self.unsigned_dict())
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> KernelIntakeEvidence:
+        if not isinstance(value, Mapping) or set(value) != set(cls.__dataclass_fields__):
+            raise ValueError("intake evidence fields are invalid")
+        return cls(**dict(value))
+
+
+def issue_intake_evidence(
+    signer: DetachedHMACSigner,
+    *,
+    intake_id: str,
+    agent: str,
+    kind: str,
+    title: str,
+    origin: str,
+    payload: object,
+    verdict: str,
+    tier: int,
+    issued_at_ms: int,
+) -> KernelIntakeEvidence | None:
+    """Seal exactly one kernel intake decision without retaining task payload bytes."""
+
+    try:
+        unsigned = {
+            "version": SCHEMA_VERSION,
+            "intake_id": intake_id,
+            "agent": agent,
+            "kind": kind,
+            "title": title,
+            "origin": origin,
+            "payload_sha256": payload_digest(payload),
+            "verdict": verdict,
+            "tier": tier,
+            "issued_at_ms": issued_at_ms,
+        }
+        candidate = KernelIntakeEvidence(**unsigned, signature=ZERO_HASH)
+        signature = signer.sign(candidate.signing_bytes())
+        if signature is None:
+            return None
+        return KernelIntakeEvidence(**unsigned, signature=signature)
+    except Exception:
+        return None
+
+
+def verify_intake_evidence(
+    signer: DetachedHMACSigner,
+    evidence: object,
+    *,
+    agent: str,
+    kind: str,
+    title: str,
+    origin: str,
+    payload: object,
+    tier: int,
+    now_ms: int,
+) -> bool:
+    """Verify signature, freshness, and all live task fields for QA4 observation."""
+
+    try:
+        value = (
+            evidence
+            if isinstance(evidence, KernelIntakeEvidence)
+            else KernelIntakeEvidence.from_dict(evidence)
+        )
+        now = _bounded_int(now_ms, "current time")
+        live_tier = _bounded_int(tier, "intake tier")
+        if live_tier > 3 or value.issued_at_ms > now:
+            return False
+        if now - value.issued_at_ms > MAX_INTAKE_EVIDENCE_AGE_MS:
+            return False
+        return (
+            signer.verify(value.signing_bytes(), value.signature)
+            and value.agent == agent
+            and value.kind == kind
+            and value.title == title
+            and value.origin == origin
+            and value.payload_sha256 == payload_digest(payload)
+            and value.tier == live_tier
+        )
+    except Exception:
+        return False
+
+
 def issue_receipt(
     signer: DetachedHMACSigner,
     *,
@@ -629,11 +758,13 @@ def verify_event_chain(
 
 __all__ = [
     "MAX_CANONICAL_BYTES",
+    "MAX_INTAKE_EVIDENCE_AGE_MS",
     "MAX_RECEIPT_LIFETIME_MS",
     "SCHEMA_VERSION",
     "ZERO_HASH",
     "DetachedHMACSigner",
     "MediationHead",
+    "KernelIntakeEvidence",
     "MediationEvent",
     "MediationReceipt",
     "MonotonicHeadAnchor",
@@ -641,9 +772,11 @@ __all__ = [
     "canonical_digest",
     "canonical_json",
     "issue_receipt",
+    "issue_intake_evidence",
     "make_event",
     "payload_digest",
     "reason_digest",
     "verify_event_chain",
+    "verify_intake_evidence",
     "verify_receipt",
 ]
