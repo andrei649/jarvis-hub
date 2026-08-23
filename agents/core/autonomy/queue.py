@@ -1021,6 +1021,7 @@ class TaskQueue:
                     origin=persisted.origin,
                     payload=persisted.payload,
                     tier=None,
+                    task_tier=persisted.risk_tier,
                     now_ms=now_ms,
                     task_id=persisted.id,
                 )

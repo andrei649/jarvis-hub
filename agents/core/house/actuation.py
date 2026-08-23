@@ -414,7 +414,9 @@ class HouseActuator:
             except (TypeError, ValueError):
                 autonomy_level = "ask"
         title = f"{payload['control']} {payload['action']} → {payload['entity_id']}"
-        if callable(self._intake_authorizer):
+        from agents.core.kernel import kernel_enabled
+
+        if kernel_enabled() and callable(self._intake_authorizer):
             try:
                 from agents.core.kernel import Action, Verdict
 

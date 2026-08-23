@@ -659,6 +659,37 @@ def test_confirmation_store_releases_sqlite_handles_after_each_operation(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_default_off_house_intake_skips_worker_kernel_gate_and_enqueues_normally(tmp_path, monkeypatch):
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    simulator = _Simulator()
+    queued = []
+
+    def kernel_gate(_action):
+        raise AssertionError("default-off house request reached worker.kernel_gate")
+
+    def enqueue(*args, **kwargs):
+        queued.append((args, kwargs))
+        return 41
+
+    actuator = HouseActuator(
+        state_reader=simulator,
+        driver=simulator,
+        authorizer=_Kernel(),
+        intake_authorizer=kernel_gate,
+        enqueue=enqueue,
+        ledger_path=tmp_path / "actuation.db",
+        clock=lambda: simulator.now,
+    )
+
+    result = await actuator.request_light("light.kitchen", state="on")
+
+    assert result["ok"] is True
+    assert result["queued"] is True
+    assert result["task_id"] == 41
+    assert len(queued) == 1
+
+
+@pytest.mark.asyncio
 async def test_house_requests_have_authenticated_intake_evidence_and_preserve_execution_controls(
     tmp_path, monkeypatch
 ):

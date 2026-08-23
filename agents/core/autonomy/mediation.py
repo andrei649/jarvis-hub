@@ -379,6 +379,7 @@ class KernelIntakeEvidence:
     payload_sha256: str
     verdict: str
     tier: int
+    task_tier: int
     issued_at_ms: int
     task_id: int
     signature: str
@@ -397,6 +398,9 @@ class KernelIntakeEvidence:
         tier = _bounded_int(self.tier, "intake tier")
         if tier > 3:
             raise ValueError("intake tier is outside the bounded range")
+        task_tier = _bounded_int(self.task_tier, "intake task tier")
+        if task_tier > 3:
+            raise ValueError("intake task tier is outside the bounded range")
         _bounded_int(self.issued_at_ms, "intake issue time")
         _bounded_int(self.task_id, "intake task id", minimum=1)
         _digest(self.signature, "intake signature")
@@ -430,6 +434,7 @@ def issue_intake_evidence(
     payload: object,
     verdict: str,
     tier: int,
+    task_tier: int,
     issued_at_ms: int,
     task_id: int,
 ) -> KernelIntakeEvidence | None:
@@ -446,6 +451,7 @@ def issue_intake_evidence(
             "payload_sha256": payload_digest(payload),
             "verdict": verdict,
             "tier": tier,
+            "task_tier": task_tier,
             "issued_at_ms": issued_at_ms,
             "task_id": task_id,
         }
@@ -469,6 +475,7 @@ def verify_intake_evidence(
     payload: object,
     tier: int | None,
     now_ms: int,
+    task_tier: int | None = None,
     task_id: int | None = None,
 ) -> bool:
     """Verify signature, freshness, and all live task fields for QA4 observation."""
@@ -481,8 +488,13 @@ def verify_intake_evidence(
         )
         now = _bounded_int(now_ms, "current time")
         live_tier = None if tier is None else _bounded_int(tier, "intake tier")
+        live_task_tier = (
+            None if task_tier is None else _bounded_int(task_tier, "intake task tier")
+        )
         live_task_id = None if task_id is None else _bounded_int(task_id, "intake task id", minimum=1)
         if (live_tier is not None and live_tier > 3) or value.issued_at_ms > now:
+            return False
+        if live_task_tier is not None and live_task_tier > 3:
             return False
         if now - value.issued_at_ms > MAX_INTAKE_EVIDENCE_AGE_MS:
             return False
@@ -494,6 +506,7 @@ def verify_intake_evidence(
             and value.origin == origin
             and value.payload_sha256 == payload_digest(payload)
             and (live_tier is None or value.tier == live_tier)
+            and (live_task_tier is None or value.task_tier == live_task_tier)
             and (live_task_id is None or value.task_id == live_task_id)
         )
     except Exception:

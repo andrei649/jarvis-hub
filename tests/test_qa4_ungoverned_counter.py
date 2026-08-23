@@ -225,6 +225,7 @@ def test_malformed_forged_and_stale_evidence_count_without_blocking_dispatch(tmp
                 payload=task.payload,
                 verdict="grant",
                 tier=task.risk_tier,
+                task_tier=task.risk_tier,
                 issued_at_ms=_NOW_MS - MAX_INTAKE_EVIDENCE_AGE_MS - 1,
                 task_id=task.id,
             )
@@ -397,3 +398,45 @@ def test_direct_queue_enqueue_strips_the_legacy_kernel_mediation_marker(tmp_path
     )
 
     assert queue.get(task_id).payload == {"body": "hello"}
+
+
+def test_final_task_tier_mutation_invalidates_qa4_evidence_without_blocking(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    observed = []
+
+    class _TierThreePolicy:
+        def decide(self, _action):
+            return type("Decision", (), {"outcome": "act", "tier": 3, "reason": "high"})()
+
+    async def execute(task):
+        observed.append(task.id)
+        return {"status": "ok"}
+
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    worker = AutonomyWorker(
+        queue,
+        policy=_TierThreePolicy(),
+        executor=execute,
+        kernel=MediationKernelBridge(
+            lambda _action: Decision(Verdict.GRANT, reason="kernel", tier=1)
+        ),
+        mediation_signer=DetachedHMACSigner(
+            lambda data: hmac.new(_KEY, data, hashlib.sha256).hexdigest()
+        ),
+        mediation_clock_ms=lambda: _NOW_MS,
+    )
+    task = asyncio.run(
+        worker.submit("jarvis", "draft_email", "Draft update", payload={"body": "hello"})
+    )
+
+    assert task.kernel_intake_evidence["tier"] == 1
+    assert task.kernel_intake_evidence["task_tier"] == 3
+    queue._conn.execute("UPDATE tasks SET risk_tier=1 WHERE id=?", (task.id,))
+    queue._conn.commit()
+    KERNEL_METRICS.reset()
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["done"] == 1
+    assert observed == [task.id]
+    assert KERNEL_METRICS.snapshot()["ungoverned_by_kind"] == {"draft_email": 1}

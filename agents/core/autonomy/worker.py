@@ -436,7 +436,9 @@ class AutonomyWorker:
             attention_mode=attention_mode,
         )
 
-    def _persist_intake_evidence(self, task_id: int, action, decision, payload: dict) -> None:
+    def _persist_intake_evidence(
+        self, task_id: int, action, decision, payload: dict, task_tier: int
+    ) -> None:
         if action is None or decision is None:
             return
         try:
@@ -454,6 +456,7 @@ class AutonomyWorker:
                 payload=payload,
                 verdict=decision.verdict.value,
                 tier=int(decision.tier),
+                task_tier=task_tier,
                 issued_at_ms=self._mediation_clock_ms(),
                 task_id=task_id,
             )
@@ -703,7 +706,7 @@ class AutonomyWorker:
                 origin=origin,
                 attention_mode=attention_mode,
             )
-            self._persist_intake_evidence(task_id, action, kernel_decision, payload)
+            self._persist_intake_evidence(task_id, action, kernel_decision, payload, tier)
         if effective in (ACT, NOTIFY):
             task = self.queue.transition(
                 task_id,
@@ -814,7 +817,7 @@ class AutonomyWorker:
                 origin=origin,
                 attention_mode=attention_mode,
             )
-            self._persist_intake_evidence(task_id, action, kernel_decision, payload)
+            self._persist_intake_evidence(task_id, action, kernel_decision, payload, tier)
 
         if effective in (ACT, NOTIFY):
             task = self.queue.transition(
