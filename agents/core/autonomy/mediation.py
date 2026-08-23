@@ -380,6 +380,7 @@ class KernelIntakeEvidence:
     verdict: str
     tier: int
     issued_at_ms: int
+    task_id: int
     signature: str
 
     def __post_init__(self) -> None:
@@ -397,6 +398,7 @@ class KernelIntakeEvidence:
         if tier > 3:
             raise ValueError("intake tier is outside the bounded range")
         _bounded_int(self.issued_at_ms, "intake issue time")
+        _bounded_int(self.task_id, "intake task id", minimum=1)
         _digest(self.signature, "intake signature")
 
     def unsigned_dict(self) -> dict[str, object]:
@@ -429,6 +431,7 @@ def issue_intake_evidence(
     verdict: str,
     tier: int,
     issued_at_ms: int,
+    task_id: int,
 ) -> KernelIntakeEvidence | None:
     """Seal exactly one kernel intake decision without retaining task payload bytes."""
 
@@ -444,6 +447,7 @@ def issue_intake_evidence(
             "verdict": verdict,
             "tier": tier,
             "issued_at_ms": issued_at_ms,
+            "task_id": task_id,
         }
         candidate = KernelIntakeEvidence(**unsigned, signature=ZERO_HASH)
         signature = signer.sign(candidate.signing_bytes())
@@ -463,8 +467,9 @@ def verify_intake_evidence(
     title: str,
     origin: str,
     payload: object,
-    tier: int,
+    tier: int | None,
     now_ms: int,
+    task_id: int | None = None,
 ) -> bool:
     """Verify signature, freshness, and all live task fields for QA4 observation."""
 
@@ -475,8 +480,9 @@ def verify_intake_evidence(
             else KernelIntakeEvidence.from_dict(evidence)
         )
         now = _bounded_int(now_ms, "current time")
-        live_tier = _bounded_int(tier, "intake tier")
-        if live_tier > 3 or value.issued_at_ms > now:
+        live_tier = None if tier is None else _bounded_int(tier, "intake tier")
+        live_task_id = None if task_id is None else _bounded_int(task_id, "intake task id", minimum=1)
+        if (live_tier is not None and live_tier > 3) or value.issued_at_ms > now:
             return False
         if now - value.issued_at_ms > MAX_INTAKE_EVIDENCE_AGE_MS:
             return False
@@ -487,7 +493,8 @@ def verify_intake_evidence(
             and value.title == title
             and value.origin == origin
             and value.payload_sha256 == payload_digest(payload)
-            and value.tier == live_tier
+            and (live_tier is None or value.tier == live_tier)
+            and (live_task_id is None or value.task_id == live_task_id)
         )
     except Exception:
         return False

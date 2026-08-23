@@ -11,6 +11,7 @@ from agents.core.autonomy.mediation import (
     MAX_INTAKE_EVIDENCE_AGE_MS,
     DetachedHMACSigner,
     issue_intake_evidence,
+    verify_intake_evidence,
 )
 from agents.core.autonomy.queue import TaskQueue
 from agents.core.autonomy.worker import AutonomyWorker
@@ -225,6 +226,7 @@ def test_malformed_forged_and_stale_evidence_count_without_blocking_dispatch(tmp
                 verdict="grant",
                 tier=task.risk_tier,
                 issued_at_ms=_NOW_MS - MAX_INTAKE_EVIDENCE_AGE_MS - 1,
+                task_id=task.id,
             )
             assert stale is not None
             evidence = json.dumps(stale.to_dict())
@@ -271,3 +273,127 @@ def test_worker_uses_the_bridge_intake_take_after_direct_authorization(tmp_path,
 
     assert task.kernel_intake_evidence is not None
     assert bridge.intake_takes == 2
+
+
+def test_intake_evidence_binds_kernel_tier_not_policy_task_tier(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    signer = DetachedHMACSigner(
+        lambda data: hmac.new(_KEY, data, hashlib.sha256).hexdigest()
+    )
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    worker = AutonomyWorker(
+        queue,
+        policy=_ActPolicy(),
+        kernel=MediationKernelBridge(
+            lambda _action: Decision(Verdict.GRANT, reason="kernel tier", tier=3)
+        ),
+        mediation_signer=signer,
+        mediation_clock_ms=lambda: _NOW_MS,
+    )
+
+    task = asyncio.run(
+        worker.submit("jarvis", "draft_email", "Draft update", payload={"body": "hello"})
+    )
+    evidence = task.kernel_intake_evidence
+
+    assert task.risk_tier == 1
+    assert evidence["tier"] == 3
+    assert not verify_intake_evidence(
+        signer,
+        evidence,
+        agent=task.agent,
+        kind=task.kind,
+        title=task.title,
+        origin=task.origin,
+        payload=task.payload,
+        tier=task.risk_tier,
+        now_ms=_NOW_MS,
+        task_id=task.id,
+    )
+
+
+def test_forged_b7_shaped_fields_do_not_exempt_qa4_observation(tmp_path):
+    observed = []
+
+    async def execute(task):
+        observed.append(task.id)
+        return {"status": "ok"}
+
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    task_id = queue.enqueue("jarvis", "draft_email", "Draft update", {"body": "hello"})
+    queue.transition(task_id, "approved")
+    queue._conn.execute(
+        """UPDATE tasks
+              SET mediation_enqueue_id=?, mediation_receipt=?
+            WHERE id=?""",
+        (
+            "f65c2e0d-d339-4e3d-8039-f2dd752d1c7e",
+            json.dumps({"receipt_id": "forged", "signature": "0" * 64}),
+            task_id,
+        ),
+    )
+    queue._conn.commit()
+    worker = AutonomyWorker(queue, executor=execute)
+    KERNEL_METRICS.reset()
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["done"] == 1
+    assert observed == [task_id]
+    assert KERNEL_METRICS.snapshot()["ungoverned_by_kind"] == {"draft_email": 1}
+
+
+def test_copied_evidence_with_a_cleared_intake_id_cannot_bless_a_second_task(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    signer = DetachedHMACSigner(
+        lambda data: hmac.new(_KEY, data, hashlib.sha256).hexdigest()
+    )
+    observed = []
+
+    async def execute(task):
+        observed.append(task.id)
+        return {"status": "ok"}
+
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    worker = AutonomyWorker(
+        queue,
+        policy=_ActPolicy(),
+        executor=execute,
+        kernel=MediationKernelBridge(
+            lambda _action: Decision(Verdict.GRANT, reason="accepted", tier=1)
+        ),
+        mediation_signer=signer,
+        mediation_clock_ms=lambda: _NOW_MS,
+    )
+    first = asyncio.run(
+        worker.submit("jarvis", "draft_email", "Draft update", payload={"body": "hello"})
+    )
+    queue.transition(first.id, "blocked")
+    second_id = queue.enqueue("jarvis", "draft_email", "Draft update", {"body": "hello"})
+    queue.transition(second_id, "approved")
+    queue._conn.execute("UPDATE tasks SET kernel_intake_id=NULL WHERE id=?", (first.id,))
+    queue._conn.execute(
+        "UPDATE tasks SET kernel_intake_evidence=? WHERE id=?",
+        (json.dumps(first.kernel_intake_evidence), second_id),
+    )
+    queue._conn.commit()
+    KERNEL_METRICS.reset()
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["done"] == 1
+    assert observed == [second_id]
+    assert KERNEL_METRICS.snapshot()["ungoverned_by_kind"] == {"draft_email": 1}
+
+
+def test_direct_queue_enqueue_strips_the_legacy_kernel_mediation_marker(tmp_path):
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+
+    task_id = queue.enqueue(
+        "jarvis",
+        "draft_email",
+        "Draft update",
+        {"body": "hello", "kernel_mediation": True},
+    )
+
+    assert queue.get(task_id).payload == {"body": "hello"}

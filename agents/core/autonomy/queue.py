@@ -45,6 +45,7 @@ from agents.core.autonomy.mediation import (
     canonical_json,
     make_event,
     verify_event_chain,
+    verify_intake_evidence,
     verify_receipt,
 )
 from agents.core.paths import data_path
@@ -924,6 +925,9 @@ class TaskQueue:
         attention_mode: str = "interrupt",
         kernel_intake_evidence: KernelIntakeEvidence | Mapping[str, object] | None = None,
     ) -> int:
+        payload = dict(payload or {})
+        # Legacy payload metadata is caller-controlled and has no authority.
+        payload.pop("kernel_mediation", None)
         attention_mode = str(attention_mode or "").strip().lower()
         if attention_mode not in {"none", "digest", "interrupt"}:
             raise ValueError("attention mode is invalid")
@@ -949,7 +953,7 @@ class TaskQueue:
                     agent,
                     kind,
                     title,
-                    json.dumps(payload or {}, ensure_ascii=False),
+                    json.dumps(payload, ensure_ascii=False),
                     int(risk_tier),
                     autonomy_level,
                     attention_mode,
@@ -962,6 +966,66 @@ class TaskQueue:
             )
             self._conn.commit()
             return cur.lastrowid
+
+    def attach_kernel_intake_evidence(
+        self, task_id: int, evidence: KernelIntakeEvidence | Mapping[str, object]
+    ) -> bool:
+        """Atomically attach evidence whose signature binds this durable task ID."""
+
+        try:
+            sealed = (
+                evidence
+                if isinstance(evidence, KernelIntakeEvidence)
+                else KernelIntakeEvidence.from_dict(evidence)
+            )
+            if sealed.task_id != task_id:
+                return False
+            intake_id, intake_json = _intake_evidence_columns(sealed)
+        except Exception:
+            return False
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                updated = self._conn.execute(
+                    """UPDATE tasks
+                          SET kernel_intake_id=?, kernel_intake_evidence=?
+                        WHERE id=? AND kernel_intake_id IS NULL
+                          AND kernel_intake_evidence IS NULL""",
+                    (intake_id, intake_json, task_id),
+                )
+                self._conn.commit()
+                return updated.rowcount == 1
+            except Exception:
+                self._conn.rollback()
+                return False
+
+    def validate_kernel_intake_evidence(
+        self, task: Task, signer: DetachedHMACSigner, *, now_ms: int
+    ) -> bool:
+        """Validate signed QA4 evidence against the current durable task row."""
+
+        with self._lock:
+            try:
+                row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task.id,)).fetchone()
+                if row is None:
+                    return False
+                persisted = _row_to_task(row)
+                if self.execution_fingerprint(persisted) != self.execution_fingerprint(task):
+                    return False
+                return verify_intake_evidence(
+                    signer,
+                    persisted.kernel_intake_evidence,
+                    agent=persisted.agent,
+                    kind=persisted.kind,
+                    title=persisted.title,
+                    origin=persisted.origin,
+                    payload=persisted.payload,
+                    tier=None,
+                    now_ms=now_ms,
+                    task_id=persisted.id,
+                )
+            except Exception:
+                return False
 
     def enqueue_mediated(
         self,

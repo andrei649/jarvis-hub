@@ -35,7 +35,6 @@ from .mediation import (
     ReceiptExpectation,
     issue_intake_evidence,
     issue_receipt,
-    verify_intake_evidence,
 )
 from .policy import ACT, ASK, NOTIFY, AutonomyPolicy, RiskTier
 from .queue import MAX_ATTEMPTS, Task, TaskQueue, TaskQueueError, TaskStatus
@@ -389,7 +388,6 @@ class AutonomyWorker:
         risk_tier: int,
         autonomy_level: str,
         attention_mode: str,
-        intake_evidence=None,
     ) -> int:
         from ..kernel import Verdict
 
@@ -436,18 +434,17 @@ class AutonomyWorker:
             autonomy_level=autonomy_level,
             origin=action.origin,
             attention_mode=attention_mode,
-            kernel_intake_evidence=intake_evidence,
         )
 
-    def _intake_evidence(self, action, decision, payload: dict, tier: int):
+    def _persist_intake_evidence(self, task_id: int, action, decision, payload: dict) -> None:
         if action is None or decision is None:
-            return None
+            return
         try:
             from ..kernel import Verdict
 
             if decision.verdict not in {Verdict.GRANT, Verdict.QUEUE}:
-                return None
-            return issue_intake_evidence(
+                return
+            evidence = issue_intake_evidence(
                 self._mediation_signer,
                 intake_id=str(uuid.uuid4()),
                 agent=action.agent,
@@ -456,12 +453,16 @@ class AutonomyWorker:
                 origin=action.origin,
                 payload=payload,
                 verdict=decision.verdict.value,
-                tier=tier,
+                tier=int(decision.tier),
                 issued_at_ms=self._mediation_clock_ms(),
+                task_id=task_id,
             )
+            if evidence is not None and self.queue.attach_kernel_intake_evidence(task_id, evidence):
+                return
         except Exception:
             logger.warning("could not seal QA4 intake evidence", exc_info=True)
-            return None
+            return
+        logger.warning("could not persist QA4 intake evidence")
 
     def _halted(self, scope: Optional[str] = None) -> bool:
         if self._kill_switch is None:
@@ -521,25 +522,19 @@ class AutonomyWorker:
         marked = taint.mark_if_untrusted(clean_payload, origin)
         return marked, taint.is_tainted(marked)
 
-    @staticmethod
-    def _has_b7_receipt(task: Task) -> bool:
-        return bool(task.mediation_enqueue_id and task.mediation_receipt)
+    def _has_valid_b7_receipt(self, task: Task) -> bool:
+        """Exempt only a receipt the B7 execution boundary reauthenticates."""
+
+        fingerprint = TaskQueue.execution_fingerprint(task)
+        return bool(fingerprint) and self.queue.validate_mediated_execution(task, fingerprint)
 
     def _observe_qa4_intake(self, task: Task) -> None:
         """Record missing QA4 evidence, while leaving task execution unchanged."""
 
-        if self._has_b7_receipt(task):
+        if self._has_valid_b7_receipt(task):
             return
-        if verify_intake_evidence(
-            self._mediation_signer,
-            task.kernel_intake_evidence,
-            agent=task.agent,
-            kind=task.kind,
-            title=task.title,
-            origin=task.origin,
-            payload=task.payload,
-            tier=task.risk_tier,
-            now_ms=self._mediation_clock_ms(),
+        if self.queue.validate_kernel_intake_evidence(
+            task, self._mediation_signer, now_ms=self._mediation_clock_ms()
         ):
             return
         try:
@@ -688,7 +683,6 @@ class AutonomyWorker:
         effective = self._force_ask_for_taint(effective, tainted)
         if mediated:
             tier, effective = self._apply_kernel_floor(kernel_decision, tier, effective)
-        intake_evidence = self._intake_evidence(action, kernel_decision, payload, tier)
         if mediated:
             task_id = self._classified_mediated_enqueue(
                 action=action,
@@ -697,7 +691,6 @@ class AutonomyWorker:
                 risk_tier=tier,
                 autonomy_level=effective,
                 attention_mode=attention_mode,
-                intake_evidence=intake_evidence,
             )
         else:
             task_id = self.queue.enqueue(
@@ -709,8 +702,8 @@ class AutonomyWorker:
                 autonomy_level=effective,
                 origin=origin,
                 attention_mode=attention_mode,
-                kernel_intake_evidence=intake_evidence,
             )
+            self._persist_intake_evidence(task_id, action, kernel_decision, payload)
         if effective in (ACT, NOTIFY):
             task = self.queue.transition(
                 task_id,
@@ -801,7 +794,6 @@ class AutonomyWorker:
             effective = ASK
         if mediated:
             tier, effective = self._apply_kernel_floor(kernel_decision, tier, effective)
-        intake_evidence = self._intake_evidence(action, kernel_decision, payload, tier)
         if mediated:
             task_id = self._classified_mediated_enqueue(
                 action=action,
@@ -810,7 +802,6 @@ class AutonomyWorker:
                 risk_tier=tier,
                 autonomy_level=effective,
                 attention_mode=attention_mode,
-                intake_evidence=intake_evidence,
             )
         else:
             task_id = self.queue.enqueue(
@@ -822,8 +813,8 @@ class AutonomyWorker:
                 autonomy_level=effective,
                 origin=origin,
                 attention_mode=attention_mode,
-                kernel_intake_evidence=intake_evidence,
             )
+            self._persist_intake_evidence(task_id, action, kernel_decision, payload)
 
         if effective in (ACT, NOTIFY):
             task = self.queue.transition(
