@@ -469,7 +469,25 @@ def test_tampered_persisted_kernel_tier_invalidates_qa4_evidence_without_blockin
     task = asyncio.run(
         worker.submit("jarvis", "draft_email", "Draft update", payload={"body": "hello"})
     )
-    tampered = dict(task.kernel_intake_evidence)
+    persisted_evidence = queue.get(task.id).kernel_intake_evidence
+
+    assert persisted_evidence is not None
+    assert persisted_evidence["tier"] == 3
+    assert verify_intake_evidence(
+        signer,
+        persisted_evidence,
+        agent=task.agent,
+        kind=task.kind,
+        title=task.title,
+        origin=task.origin,
+        payload=task.payload,
+        tier=3,
+        task_tier=task.risk_tier,
+        now_ms=_NOW_MS,
+        task_id=task.id,
+    )
+
+    tampered = dict(persisted_evidence)
     tampered["tier"] = 0
     queue._conn.execute(
         "UPDATE tasks SET kernel_intake_evidence=? WHERE id=?",
