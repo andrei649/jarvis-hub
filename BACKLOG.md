@@ -11,6 +11,51 @@
 > **Pre-go-live stakeholder sync (2026-07-07 — 5-seat agent panel, conditional GO, Gate-2 checklist):** [docs/meetings/2026-07-07-pre-go-live-sync.md](docs/meetings/2026-07-07-pre-go-live-sync.md)
 > **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
+
+<!-- P0:PUBLIC-DEMO-DIGITAHOLIC:START -->
+## 🔴 P0 — Owner decision + spec: public web demo instance for digitaholic.ro (H23.23-adjacent)
+
+> **Priority: HIGH · Status: DRAFT spec, awaiting owner review — no branch, no PR, no code changed.**
+> Full spec: [`docs/decisions/2026-08-24-public-web-demo-digitaholic.md`](docs/decisions/2026-08-24-public-web-demo-digitaholic.md)
+> Authored 2026-08-24 by a Claude (Cowork) session working on digitaholic.ro, against `main` @ `75e9281`.
+
+**Goal.** A real, functional Nerva instance embedded in a digitaholic.ro page (not the scripted
+`/nerva-ai-os/` Action Kernel demo), on a free cloud model, auto-updated from `main`, with personal
+data stripped and each visitor getting their own "save-game slot" of personalization.
+
+**The key call it already makes:** don't build per-user partitioning into the shared memory
+subsystem — that is still H23.23 **option B**, still deferred, still large. Map "save" onto the unit
+the architecture already endorses: **one disposable install per visitor session**, whose
+`$JARVIS_HOME` data root *is* the folder Andrei is picturing. Smaller, consistent with the recorded
+H23.23 decision, and it touches none of the deferred work.
+
+**Reuse as-is (config, not engineering):** CDX-12 hardened profile (`JARVIS_HARDENED=1`) · CDX-11
+plugin least-privilege (grant nothing) · in-memory graph + vector fallbacks (no Neo4j, no Qdrant) ·
+existing OpenAI-compatible cloud routing in `hybrid_router.py` + the `cloud_llm_agents` allowlist.
+
+**The one real code gap — must not ship silently:** `agents/core/memory/seed_graph.py` `SEED_FACTS`
+hardcodes Andrei/Alexandra/Max/Raiffeisen/Cosmina de Sus/BMW E93 and `MemoryManager.__init__`
+(`memory/manager.py:45`) seeds them **unconditionally** into an empty graph. A public box must not
+call `seed_graph()` as-is → gate it behind a new `NERVA_PUBLIC_PROFILE=1` flag. Everything else in v1
+is configuration. Secondary gaps: an explicit `agents.public.yaml` roster overlay (smallest roster
+that demos the loop, not all 18), and session-scoped tokens only — **no durable cross-visit save**
+(that would make Digitaholic a GDPR data controller for a stranger's personal data; a deliberate v2
+call with a retention/deletion policy, never a default).
+
+**Suggested risk tier:** R2 (new deployment surface + one env-gated code path; no auth-identity model
+change, no kernel change) — classify properly against `.github/ai-development-policy.json` before
+opening a branch, don't trust the draft's read.
+
+**Blocked on four owner calls** (see [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md)): ratify H23.23 (A)
+— or note that this spec uses the install-per-user shape it already recommends and so doesn't block
+either way · turn on CDX-12 hardened + fix `JARVIS_PLUGIN_GRANTS` for this box (`OWNER_TASKS.md:253`,
+`:274`) · pick the free LLM provider/key · pick the container host.
+
+**Rollback:** separate deployment surface; stop routing the page at it / redeploy the previous image.
+Blast radius to the real personal install is zero by construction — as long as the public box is
+never pointed at the real data root or the real plugin grants.
+<!-- P0:PUBLIC-DEMO-DIGITAHOLIC:END -->
+
 <!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
 ## Nerva 2.0 program control — E0 DONE
 
@@ -1223,6 +1268,7 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 | H23.26 | **Generated project status → kill doc-counter drift** — `scripts/status_sync.py` now derives backend pytest + frontend Vitest + mobile Jest counts, route snapshot, active YAML agents, horizon roll-ups, last verified-main commit (including PR base from the Actions event) and open Lane-A gates into tracked `project-status.json`; marker-bounded snippets drive README badges/Run/Status, JARVIS Quick Stats, GO_LIVE header and STATUS counters; `--check` gates all artifacts and fails closed on collection errors or missing markers. Python-only CI may explicitly use `--reuse-js-counts` while the separate JS jobs execute the suites. `tests/test_status_sync.py` (+11 H23.26 cases; 18 total). | ✅ done — one machine-readable truth, satellites generated | 0.19 |
 | H23.27 | **Design-partner feedback export** — `scripts/export_partner_feedback.py`: explicit local JSON+Markdown packet with allowlisted install environment, onboarding completion, aggregate autonomy/failure/latency, NPS + intentionally written feedback and sanitized north-star. It never copies prompts/responses, task titles/payloads, credentials, host/user/path/session identifiers and never uploads; north-star fetch accepts HTTP(S) only. `tests/test_export_partner_feedback.py` (+8). | ✅ done — privacy-safe default, operator chooses whether to share files | 0.20 |
 | H23.28 | **Park-list CI guard, actually implemented** — `scripts/park_guard.py` + `.github/workflows/park-guard.yml`: PR diff gate with line-based `unpark:` declarations, narrow module unlocks, phase aliases (wave-1/O28, wave-2/O29, wave-3/O30+O33), owner-only training/rust, Windows-path parity and self-protected policy files; CI executes the last merged guard policy when available. `tests/test_park_guard.py` (+10). | ✅ done — phased freeze is now machine-enforced | 0.13-tail |
+| H23.30 | **Public web demo instance for digitaholic.ro** (H23.23-adjacent) — a real Nerva instance embedded in a digitaholic.ro page on a free cloud model, auto-updated from `main`, personal data stripped, one disposable install per visitor session as the "save slot" (explicitly **not** H23.23 option B per-user partitioning). Reuses CDX-12 hardened + CDX-11 least-privilege + in-memory graph/vector fallbacks + existing cloud routing; the one core code change is a `NERVA_PUBLIC_PROFILE=1` gate on the unconditional `seed_graph()` call at `memory/manager.py:45`, which today seeds hardcoded personal `SEED_FACTS` into any empty graph. Spec: [`docs/decisions/2026-08-24-public-web-demo-digitaholic.md`](docs/decisions/2026-08-24-public-web-demo-digitaholic.md). | 🔴 **P0 — DRAFT spec, awaiting owner review** (4 owner calls open; suggested R2) | post-1.0 |
 | H23.29 | **Runtime supervisor** — a single headless entrypoint (`scripts/coordinator.py`) boots the real Orchestrator and wires the existing coordinator/heartbeat/night-shift loops (`Orchestrator.start_channels()`) with no HTTP layer, separate from the web app process. `agents/core/observability/runtime_log.py`'s `RuntimeRunLog` appends one bounded JSON line per autonomy-coordinator cycle to `logs/runtime.jsonl` (heartbeat status, tick mode/max_tier, night-shift active-window, ok/error) and persists a cycle counter across restarts so a crash-and-recover is provable, not assumed — wired via a getattr-optional hook in `AutonomyCoordinator.loop()`, byte-identical when unset. `scripts/runtime_supervisor.py` spawns the coordinator and respawns it on any exit including `SIGKILL` (a process cannot recover itself from `kill -9`), logging `spawned`/`child_exited`/`respawned`/`stopped` events into the same run-log; `deploy/systemd/jarvis-runtime.service` + a `runtime-coordinator` docker-compose service layer OS-level `restart:`/`Restart=` on top as defense-in-depth. `make runtime-up`/`runtime-down`/`runtime-status` drive it locally. `tests/test_runtime_log.py` (+8), `tests/test_runtime_log_wiring.py` (+4), `tests/test_runtime_coordinator_boot.py` (+2), `tests/test_runtime_supervisor.py` (+3, one of which SIGKILLs a real child process and asserts respawn). Manually verified end-to-end in-sandbox: 3+ consecutive clean cycles, and a real `kill -9` on the coordinator process recovered in ~1s with the cycle counter resuming (not resetting) — see HANDOFF.md. No autonomy-policy, kill-switch, or dispatch-authority code touched. **Follow-up (#935, same day):** a duplicate PR built the same feature independently and lost the comparison, but had two robustness edges worth porting forward — `RuntimeRunLog._load_state()` now quarantines an unparseable state file to `<name>.corrupt-<epoch>` instead of silently discarding it, and `runtime_supervisor.py`'s respawn delay now backs off exponentially (starting delay → 2×/crash, capped 60s, resets after a 30s+ healthy run) instead of a constant fixed delay. **Consumer wired (#940):** the run-log had no reader — `read_runtime_health()` now reduces a bounded tail of `logs/runtime.jsonl` (O(tail), not O(file): the log grows one line per cycle forever) to a loop-health summary, and `build_morning_brief()` renders it as a `🫀 Runtime` line. `stale` is the load-bearing field — a supervisor can die without ever writing a failure line, so a fresh-looking `ok: true` tail proves nothing without its age. `runtime_health=None` keeps the brief byte-identical, and `default_log_path()` makes producer and consumer agree on one path. `tests/test_runtime_health_brief.py` (+17). Verified end-to-end against a real supervisor: a live brief rendered `✅ buclă activă — ciclul #2`, and after `kill -9` on both processes the same reader flipped to `⚠️ buclă oprită`. | ✅ done | 0.16 |
 
 ---
