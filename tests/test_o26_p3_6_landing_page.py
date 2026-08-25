@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 LANDING = ROOT / "marketing" / "landing" / "index.html"
 SHOT_LIST = ROOT / "marketing" / "landing" / "demo-shot-list.md"
@@ -8,6 +10,22 @@ README = ROOT / "marketing" / "landing" / "README.md"
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _active_agents() -> int:
+    """The roster size the landing page is allowed to claim.
+
+    Derived rather than hard-coded: this test guards *verified* copy, and a
+    literal here just moves the staleness from the page into the test — the
+    roster grew to 18 with Hestia and this assertion was the thing left behind.
+    """
+    data = yaml.safe_load(
+        (ROOT / "agents" / "_system" / "agents.yaml").read_text(encoding="utf-8")
+    ) or {}
+    return sum(
+        1 for c in (data.get("agents") or {}).values()
+        if (c or {}).get("status", "active") == "active"
+    )
 
 
 def test_landing_page_is_self_contained_static_html():
@@ -38,7 +56,7 @@ def test_landing_page_uses_brand_tokens_and_verified_copy():
         "Nerva",
         "The AI that works while you sleep",
         "local-first personal AI operating system",
-        "17 specialist agents",
+        f"{_active_agents()} specialist agents",
         "governed autonomy",
         "approval queue",
         "tamper-evident audit log",

@@ -3,7 +3,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-6779-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-6849-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-0.11.0-orange)
 <!-- project-status:badges:end -->
 
@@ -97,7 +97,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **6,779** · frontend **521** · mobile **96**. Route surface: **405**.
+Generated test matrix: backend **6,849** · frontend **521** · mobile **96**. Route surface: **405**.
 <!-- project-status:run:end -->
 
 ### Windows 11 — one-click (no terminal needed)
@@ -152,10 +152,10 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v0.11.0** · backend **6,779** · frontend **521** · mobile **96** · **405** routes · **17** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · source commit `11b6918ffcde`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v0.11.0** · backend **6,849** · frontend **521** · mobile **96** · **405** routes · **18** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · source commit `75e928114024`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
-**v0.11.0 — feature-complete + refactor done, building toward the expanded 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); **1.0 = the proof track** — productionization + real design-partner users — **plus the AI-OS capability program**, [`NERVA_VISION.md`](NERVA_VISION.md)). 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v0.11.0 — feature-complete + refactor done, building toward the expanded 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); **1.0 = the proof track** — productionization + real design-partner users — **plus the AI-OS capability program**, [`NERVA_VISION.md`](NERVA_VISION.md)). 18 specialist agents (incl. **Argus** for WorldView geoint, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge

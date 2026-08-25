@@ -371,6 +371,88 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 
 ---
 
+## L. Cloud LLM routing, cost & LOCAL_ONLY proof  🔑🤖
+
+> **Prerequisites.** Real cloud keys in `.env` (never committed) — **real spending occurs**. Set the
+> kernel budget ceilings low for the run (`JARVIS_BUDGET_MAX_TOKENS`, `JARVIS_BUDGET_MAX_WALL_SECONDS`,
+> `JARVIS_BUDGET_MAX_DEPTH`) and note that `/api/metrics/kernel` stays **empty until
+> `JARVIS_ACTION_KERNEL=1`** — the kernel is default-off at runtime, so turn it on before the §L4 rows
+> or they cannot pass. Per-agent `llm_policy` / `approved_models` live in the canonical registry
+> `agents/_system/agents.yaml`.
+>
+> There is **no monetary (cents) budget dimension** — the kernel budgets tokens, wall-time and depth.
+> `/api/cost` is *estimated* spend from the trace ring, not a billing gate.
+
+### L1. Routing & backend selection
+
+- [ ] **Policy-driven routing** 🔑🤖 — With no local backend running:
+  - [ ] Give an agent `llm_policy: cloud` in `agents/_system/agents.yaml`; send a prompt; confirm it routes to a cloud backend (trace `model` field via `GET /api/traces?limit=1`).
+  - [ ] Give an agent `llm_policy: auto`; confirm it cascades LOCAL → CLOUD rather than failing.
+  - [ ] `GET /api/llm/status` (admin) reports the LM Studio controller state (`online`/`enabled`/`server_url`/`active_model`) — use it to prove *local was actually down* for the rows above.
+
+> `llm_policy` from the registry wins over the in-code fallback sets
+> (`CLOUD_ONLY_AGENTS`, `CLAUDE_AGENTS`) — see `agents/core/llm/hybrid_router.py`.
+
+### L2. **LOCAL_ONLY enforcement (MOONSHOT §5 non-negotiable)**
+
+> `hybrid_router.LOCAL_ONLY_AGENTS = {"frigga", "ultron", "howard"}` is a **code-enforced constant**:
+> no env var and no registry entry can weaken it (`agents/core/env_config.py` says so explicitly).
+> These three must refuse cloud even when local is down — failing closed is the pass condition.
+
+- [ ] **Howard (digital twin)** 🔑🤖 — With both Ollama and LM Studio down:
+  - [ ] Send a prompt → `LocalBackendUnavailableError`, **not** a cloud answer.
+  - [ ] `GET /api/admin/network/calls` (admin) shows **zero** external calls attributable to howard.
+- [ ] **Ultron (action kernel)** 🔑🤖 — With local down, trigger an autonomy action → refusal, zero external calls.
+- [ ] **Frigga (orchestrator)** 🔑🤖 — With local down, send a turn → refusal, zero external calls.
+
+### L3. Model pinning & reproducibility (H23.2)
+
+- [ ] **Approved-model allowlist** 🔑 — Set `approved_models: [<one model id>]` for an agent in the registry:
+  - [ ] Send a prompt; confirm the trace's `model` is that id.
+  - [ ] Force a route outside the allowlist → `ModelNotApprovedError` when `JARVIS_STRICT_MODELS=1` (**the default**); with `JARVIS_STRICT_MODELS=0` it degrades to a warning log instead.
+- [ ] **Model fingerprinting** 🔑 — With `JARVIS_MODEL_INFO=1`:
+  - [ ] `GET /api/traces` → entries carry a populated `model_info` (default-off leaves it `{}`).
+  - [ ] `GET /api/models/info` (admin) lists the registered fingerprints.
+
+### L4. Cost accounting & kernel budgets
+
+- [ ] **Cost estimation** 🔑🤖 — Send 3–5 prompts across different cloud backends:
+  - [ ] `GET /api/cost` returns `by_agent`, `by_day` and `summary` (`{calls, total_cost}`); confirm `total_cost` is non-zero and plausible, and that local-model calls contribute **$0**.
+  - [ ] Cross-check `summary.total_cost` against the provider's own console for the same window; the price table it estimates from is `agents/core/llm/cost_estimator.py` (see `PRICES_VERIFIED`).
+- [ ] **Token budget** 🔑🤖 — With `JARVIS_ACTION_KERNEL=1` and a low `JARVIS_BUDGET_MAX_TOKENS`:
+  - [ ] Drive usage past the ceiling → the kernel returns **DENY** with reason `budget: token budget exceeded (<used> > <limit>)`.
+  - [ ] `GET /api/metrics/kernel` → `by_verdict.deny` increments and the reason appears in `recent_denials` (newest first). *(The snapshot exposes `total` / `by_verdict` / `by_kind` / `deny_rate` / `recent_denials` — there is no flat `deny_count`.)*
+- [ ] **Wall-time budget** 🔑🤖 — Same, with a low `JARVIS_BUDGET_MAX_WALL_SECONDS` → DENY reason `budget: wall-time budget exceeded (<elapsed>s > <limit>s)`.
+
+### L5. Provider failure handling
+
+> There are no typed provider exceptions (`QuotaExceededError` / `ProviderUnavailableError` do not
+> exist). Judge these rows on **observable behavior**: no crash, no hang, an honest HUD message, and
+> a trace with `ok: false` — not on a specific exception name.
+
+- [ ] **Rate limiting (HTTP 429)** 🔑🤖 — On a low-rate-limit key, send prompts rapidly:
+  - [ ] Some calls are rejected upstream; the app logs it and keeps serving (no unhandled traceback).
+  - [ ] HUD shows a human-readable failure, never a raw provider payload.
+- [ ] **Timeout / unreachable provider** 🔑🤖 — Block the provider domain at the firewall:
+  - [ ] A prompt fails within the configured timeout rather than hanging.
+  - [ ] The trace records `ok: false`; the HUD shows "backend unreachable".
+- [ ] **Context-length exceeded** 🔑🤖 — Send a history larger than the model's window:
+  - [ ] Graceful degradation (truncate or refuse politely), logged, no crash.
+
+### L6. Egress gate
+
+- [ ] **Egress monitoring (H23.16)** 🔑 — With cloud keys enabled:
+  - [ ] A cloud-agent prompt appears in `GET /api/admin/network/calls` as an allowed external call.
+  - [ ] A Howard/Ultron/Frigga prompt adds **no** external call — the §L2 proof, from the monitor's side.
+- [ ] **`JARVIS_STRICT_EGRESS`** 🔑 — Default is **strict**; an unrecognized value can never relax it:
+  - [ ] With the default, an unapproved external call is blocked and audited.
+  - [ ] With an explicit `JARVIS_STRICT_EGRESS=0`, the same call is allowed **and** a durable downgrade audit entry is written (`action_taken="allowed (JARVIS_STRICT_EGRESS=0)"`, `agents/core/orchestrator.py`). Confirm the entry exists — a silent downgrade is a finding.
+  - [ ] Under `JARVIS_HARDENED`, confirm strict egress is forced regardless of the flag.
+
+**L result:** ☐ LOCAL_ONLY held for all three agents · ☐ budget DENY observed with its reason · ☐ no unresolved §K blocker.
+
+---
+
 ## R. Regression — findings from the previous run
 
 > Carry this section forward between runs: every fix that closed a prior finding gets re-proved on

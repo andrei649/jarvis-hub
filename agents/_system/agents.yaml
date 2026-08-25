@@ -171,9 +171,19 @@ agents:
     plugins: [whatsapp-bridge]
     llm_policy: local
 
+  hestia:
+    name: Hestia
+    archetype: House Brain
+    status: active
+    tier: foundation
+    channel: local-only
+    heartbeat: "2h"
+    plugins: [homebridge, iot-control]
+    llm_policy: local
+
   howard:
     name: Howard
-    archetype: Digital Twin
+    archetype: Digital Twin / Archive
     status: active
     tier: foundation
     channel: telegram
@@ -185,6 +195,18 @@ agents:
 bench:
   # howard promoted to active 2026-05-30 (Howard Stark Digital Twin, H5.1) —
   # the active entry lives in the `agents:` block above; no bench duplicate.
+  #
+  # Retired 2026-08-18 — a reserved name is only worth reserving if it can be
+  # promoted without causing confusion:
+  #   atlas   — "Atlas" is the reality-model/infrastructure sub-brand in
+  #             NERVA_VISION.md §2. A batch-processing agent under the same name
+  #             would collide with the brand architecture on every mention.
+  #   hermes  — "Hermes" is the upstream project this repo benchmarks itself
+  #             against (NERVA_VISION.md §9, ORIZONT 20 mining). Its mandate,
+  #             cross-channel routing, is also already Jarvis's `channel-route`,
+  #             so promoting it would violate single_responsibility.
+  #   aria    — outside the `universe` rule below (neither Marvel nor myth) and a
+  #             duplicate of `apollo`: both were the same Jerome music split.
   bruce:
     name: Bruce
     archetype: Data Science
@@ -235,18 +257,8 @@ bench:
 
   apollo:
     name: Apollo
-    archetype: Music (Jerome overflow)
-    trigger: "Jerome >20 music requests/week"
-
-  hermes:
-    name: Hermes
-    archetype: Cross-Channel Router
-    trigger: "Multi-channel conflicts >5/week"
-
-  atlas:
-    name: Atlas
-    archetype: Batch Processing
-    trigger: "Nightly heavy jobs need dedicated agent"
+    archetype: Music (Jerome split)
+    trigger: "Jerome >20 music requests/week, or music needs separating from leisure"
 
   prometheus:
     name: Prometheus
@@ -262,11 +274,6 @@ bench:
     name: Demeter
     archetype: Nutrition
     trigger: "Hercules overflow on meal tracking"
-
-  aria:
-    name: Aria
-    archetype: Music Curation
-    trigger: "Jerome split — music separate from leisure"
 
   hera:
     name: Hera

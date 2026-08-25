@@ -41,7 +41,7 @@ a restart:
 |------|--------------------|
 | **Observe** | `core/autonomy/observer.py` + watchers, `passive_capture.py`, channels, heartbeat |
 | **Understand** | memory fusion (vector ⊕ graph, RRF), bi-temporal KG (H14), ingestion pipeline |
-| **Decide** | orchestrator + 17 specialist agents, autonomy policy, `agent_runtime.py` model-directed loop (H20.R1) |
+| **Decide** | orchestrator + 18 specialist agents, autonomy policy, `agent_runtime.py` model-directed loop (H20.R1) |
 | **Act** | the **Action Kernel** (O24 — Gate-K, 21 action kinds mediated), brokers, ToolRPC, sandbox |
 | **Verify** | the **Verification Fabric** (O24 — reality harness, SEAM→WIRED→VERIFIED→GA registry) |
 | **Learn** | the governed per-turn learning loop (O20 — `learning/background_review.py`, CoreMemory, skill curator) |
@@ -279,7 +279,7 @@ outcome → promote the validated capability for reuse.*
 ```
 
 Layer → repo mapping: **Experience** = channels/HUD/voice/mobile (exists). **Cortex/Atlas** =
-memory fusion + bi-temporal KG + cognition layer + the 17 specialists + autonomy stack (exists;
+memory fusion + bi-temporal KG + cognition layer + the 18 specialists + autonomy stack (exists;
 house state = O30, delivered; WorldView/Signal Layer fold in as Atlas's external half). **Ultron** =
 O24 (exists; the boundary). **Synapse execution plane** = O20/H20 ToolRPC + environments + skills +
 subagents (exists; operators = O28, delivered — owner hardware validation pending).
