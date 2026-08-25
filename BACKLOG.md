@@ -2496,7 +2496,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ## ORIZONT 19 — WorldView (4D OSINT) — Standalone + Integrare JARVIS — 33/33 ✅
 
-> **Produs nou, stack separat** (Next.js + Deck.gl + Fastify + Kafka/Redpanda + TimescaleDB/PostGIS + Redis),
+> **Produs nou, stack separat** (Vite + CesiumJS + Fastify + Kafka/Redpanda + TimescaleDB/PostGIS + Redis),
 > self-contained sub [`worldview/`](worldview/). Centru de comandă OSINT 4D (aer/mare/spațiu/cyber) pe un glob
 > scrub-abil în timp — inspirat de „God's Eye View" (Bilawal Sidhu) și de patternurile Palantir (Gotham/AIP/
 > Ontology). **Spinele tehnic e livrat** (toate 5 layere, motorul 4D, calea de date Kafka→Redis/TimescaleDB
@@ -2509,6 +2509,24 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > prin client stdio, plugin-gate, Action Kernel și token HMAC scoped). Rămâne **#170**
 > (validarea pe Neo4j real a property-search-ului din KG sync). Launchere noi
 > **INSTALL.bat / START.bat** instalează + pornesc automat WorldView lângă JARVIS (PR #171).
+>
+>
+> **✅ Renderer înlocuit (2026-08-25, cerere owner „replace it with God's Eye View"):** frontendul
+> a fost reconstruit în forma lui *God's Eye View* — **Vite + CesiumJS, fără framework de UI** —
+> conectat la API-ul 4D propriu. Ce a dispărut: Next.js/React/Deck.gl/Mapbox **și** pachetul
+> `world-atlas` (TopoJSON-ul de 110 m desenat ca uscat plat). Ce a apărut: **basemap fără cont** —
+> Cesium livrează tile-urile Natural Earth II în pachet, deci globul arată Pământul real fără
+> token, fără cont și fără fetch de rețea (`VITE_CESIUM_ION_TOKEN` e doar *upgrade* la imagery
+> fotografic + teren 3D); marcaje la **altitudinea reală** (ADS-B și sateliți sunt `PointZ`);
+> **terminatorul zi/noapte urmărește master-clock-ul** (scrub-ul mișcă lumina pe glob);
+> **grade de senzor** thermal/night/tactical (post-process — *grade vizuale, nu date*, și HUD-ul o
+> spune) + **follow cam** (`F`). Toate diferențiatoarele WorldView sunt portate 1:1 (master clock,
+> live WS + as-of-T, trails, dark-vessel, gramatica negative-space, Inspector + provenance, export,
+> recon, tours, arrival deep-links, replay determinist, mode system, scurtături). **157 teste
+> frontend verzi (19 fișiere)**, `tsc --noEmit` + `vite build` verzi, plus o rulare headless a
+> build-ului real pe un API-fixture. Decizia + consecințele acceptate (tile-urile vectoriale nu mai
+> sunt desenabile pe Cesium → `VITE_TILE_URL` acceptă doar raster):
+> [`docs/decisions/2026-08-25-worldview-cesium-renderer.md`](docs/decisions/2026-08-25-worldview-cesium-renderer.md).
 >
 > **Strategie & feature-pick:** [`worldview/docs/ROADMAP.md`](worldview/docs/ROADMAP.md) ·
 > **Planul de arhitectură & livrare (scale model, deep-dives, ADRs, exit gates):**
