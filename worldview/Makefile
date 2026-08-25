@@ -9,7 +9,7 @@ help:
 	@echo "  make db-seed       # load the Strait of Hormuz demo scenario (historical)"
 	@echo "  make seed-live     # seed Redis live-state for LIVE mode (no workers needed)"
 	@echo "  make install       # install JS + Python deps for all workspaces"
-	@echo "  make dev-frontend  # run the Next.js dashboard"
+	@echo "  make dev-frontend  # run the Cesium dashboard (Vite)"
 	@echo "  make dev-api       # run the Fastify 4D API"
 	@echo "  make workers       # run ingestion workers (STEP 3)"
 
