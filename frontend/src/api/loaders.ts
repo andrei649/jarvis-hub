@@ -39,7 +39,7 @@ export interface JarvisData {
 
 const META: Record<string, { tier: string; role: string; name: string; model: string }> = {};
 (V2.AGENTS as any[]).forEach((a) => { META[a.id] = { tier: a.tier, role: a.role, name: a.name, model: a.model }; });
-const GLYPHS: Record<string, string> = V2.GLYPHS as any;
+const glyphFor: (id: string) => string = V2.glyphFor as any;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export async function loadJarvisData(demo = false): Promise<JarvisData> {
@@ -74,7 +74,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
         role: a.role || m.role || '',
         status: a.status || 'idle',
         model: a.model || m.model || '',
-        glyph: GLYPHS[a.id] || '',
+        glyph: glyphFor(a.id),
       };
     });
   } catch { /* fall through */ }
@@ -106,7 +106,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     agents = [...ids].map((id) => {
       const sa = statusAgents.find((x) => x.id === id);
       const m = META[id];
-      return { id, name: (m && m.name) || cap(id), tier: m ? m.tier : 'FND', role: m ? m.role : '', status: sa ? sa.status : 'idle', model: m ? m.model : '', glyph: GLYPHS[id] || '' };
+      return { id, name: (m && m.name) || cap(id), tier: m ? m.tier : 'FND', role: m ? m.role : '', status: sa ? sa.status : 'idle', model: m ? m.model : '', glyph: glyphFor(id) };
     });
   }
   if (agents.length) { out.agents = agents; out.sources.agents = true; }
