@@ -35,6 +35,7 @@ from typing import Optional
 from agents.core.autonomy.mediation import (
     ZERO_HASH,
     DetachedHMACSigner,
+    KernelIntakeEvidence,
     MediationEvent,
     MediationHead,
     MediationReceipt,
@@ -44,6 +45,7 @@ from agents.core.autonomy.mediation import (
     canonical_json,
     make_event,
     verify_event_chain,
+    verify_intake_evidence,
     verify_receipt,
 )
 from agents.core.paths import data_path
@@ -146,6 +148,8 @@ class Task:
     mediation_receipt: Optional[dict] = field(default=None, kw_only=True)
     mediation_task_sha256: Optional[str] = field(default=None, kw_only=True)
     mediation_execution_id: Optional[str] = field(default=None, kw_only=True)
+    kernel_intake_id: Optional[str] = field(default=None, kw_only=True)
+    kernel_intake_evidence: Optional[dict] = field(default=None, kw_only=True)
 
     def to_dict(self) -> dict:
         d = dict(self.__dict__)
@@ -248,6 +252,8 @@ class TaskQueue:
                 mediation_receipt TEXT,
                 mediation_task_sha256 TEXT,
                 mediation_execution_id TEXT,
+                kernel_intake_id TEXT,
+                kernel_intake_evidence TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
@@ -268,6 +274,8 @@ class TaskQueue:
             "mediation_receipt": "TEXT",
             "mediation_task_sha256": "TEXT",
             "mediation_execution_id": "TEXT",
+            "kernel_intake_id": "TEXT",
+            "kernel_intake_evidence": "TEXT",
         }
         for name, column_type in mediation_columns.items():
             if name not in columns:
@@ -281,6 +289,10 @@ class TaskQueue:
             """CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_mediation_enqueue
                ON tasks(mediation_enqueue_id)
                WHERE mediation_enqueue_id IS NOT NULL"""
+        )
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_kernel_intake "
+            "ON tasks(kernel_intake_id) WHERE kernel_intake_id IS NOT NULL"
         )
         had_events_table = (
             self._conn.execute(
@@ -911,7 +923,11 @@ class TaskQueue:
         autonomy_level: str = "ask",
         origin: str = "generated",
         attention_mode: str = "interrupt",
+        kernel_intake_evidence: KernelIntakeEvidence | Mapping[str, object] | None = None,
     ) -> int:
+        payload = dict(payload or {})
+        # Legacy payload metadata is caller-controlled and has no authority.
+        payload.pop("kernel_mediation", None)
         attention_mode = str(attention_mode or "").strip().lower()
         if attention_mode not in {"none", "digest", "interrupt"}:
             raise ValueError("attention mode is invalid")
@@ -925,27 +941,92 @@ class TaskQueue:
             self.record_mediation_refusal(kind)
             raise TaskQueueError(message)
         now = _now()
+        intake_id, intake_json = _intake_evidence_columns(kernel_intake_evidence)
         with self._lock:
             cur = self._conn.execute(
                 """INSERT INTO tasks (agent, kind, title, payload, risk_tier, status,
                        autonomy_level, attention_mode, origin, attempts, pushed,
+                       kernel_intake_id, kernel_intake_evidence,
                        created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?, 0, 0, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?, 0, 0, ?, ?, ?, ?)""",
                 (
                     agent,
                     kind,
                     title,
-                    json.dumps(payload or {}, ensure_ascii=False),
+                    json.dumps(payload, ensure_ascii=False),
                     int(risk_tier),
                     autonomy_level,
                     attention_mode,
                     origin,
+                    intake_id,
+                    intake_json,
                     now,
                     now,
                 ),
             )
             self._conn.commit()
             return cur.lastrowid
+
+    def attach_kernel_intake_evidence(
+        self, task_id: int, evidence: KernelIntakeEvidence | Mapping[str, object]
+    ) -> bool:
+        """Atomically attach evidence whose signature binds this durable task ID."""
+
+        try:
+            sealed = (
+                evidence
+                if isinstance(evidence, KernelIntakeEvidence)
+                else KernelIntakeEvidence.from_dict(evidence)
+            )
+            if sealed.task_id != task_id:
+                return False
+            intake_id, intake_json = _intake_evidence_columns(sealed)
+        except Exception:
+            return False
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                updated = self._conn.execute(
+                    """UPDATE tasks
+                          SET kernel_intake_id=?, kernel_intake_evidence=?
+                        WHERE id=? AND kernel_intake_id IS NULL
+                          AND kernel_intake_evidence IS NULL""",
+                    (intake_id, intake_json, task_id),
+                )
+                self._conn.commit()
+                return updated.rowcount == 1
+            except Exception:
+                self._conn.rollback()
+                return False
+
+    def validate_kernel_intake_evidence(
+        self, task: Task, signer: DetachedHMACSigner, *, now_ms: int
+    ) -> bool:
+        """Validate signed QA4 evidence against the current durable task row."""
+
+        with self._lock:
+            try:
+                row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task.id,)).fetchone()
+                if row is None:
+                    return False
+                persisted = _row_to_task(row)
+                if self.execution_fingerprint(persisted) != self.execution_fingerprint(task):
+                    return False
+                return verify_intake_evidence(
+                    signer,
+                    persisted.kernel_intake_evidence,
+                    agent=persisted.agent,
+                    kind=persisted.kind,
+                    title=persisted.title,
+                    origin=persisted.origin,
+                    payload=persisted.payload,
+                    tier=None,
+                    task_tier=persisted.risk_tier,
+                    now_ms=now_ms,
+                    task_id=persisted.id,
+                )
+            except Exception:
+                return False
 
     def enqueue_mediated(
         self,
@@ -959,6 +1040,7 @@ class TaskQueue:
         autonomy_level: str = "ask",
         origin: str = "generated",
         attention_mode: str = "interrupt",
+        kernel_intake_evidence: KernelIntakeEvidence | Mapping[str, object] | None = None,
     ) -> int:
         """Insert exact task bytes, receipt, and authorization event atomically."""
 
@@ -1017,6 +1099,7 @@ class TaskQueue:
                 sealed.to_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True
             )
             payload_json = json.dumps(body, ensure_ascii=False)
+            intake_id, intake_json = _intake_evidence_columns(kernel_intake_evidence)
         except TaskQueueError:
             raise
         except Exception as exc:
@@ -1042,10 +1125,11 @@ class TaskQueue:
                             autonomy_level, attention_mode, origin, attempts, pushed,
                             mediation_enqueue_id, mediation_enqueue_revision,
                             mediation_scope, mediation_policy_revision,
-                            mediation_receipt, mediation_task_sha256,
-                            created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?, 0, 0,
-                               ?, ?, ?, ?, ?, ?, ?, ?)""",
+                             mediation_receipt, mediation_task_sha256,
+                             kernel_intake_id, kernel_intake_evidence,
+                             created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?, 0, 0,
+                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         agent,
                         kind,
@@ -1061,6 +1145,8 @@ class TaskQueue:
                         self._mediation_policy_revision,
                         receipt_json,
                         task_sha256,
+                        intake_id,
+                        intake_json,
                         now,
                         now,
                     ),
@@ -1643,6 +1729,12 @@ def _row_to_task(row: sqlite3.Row) -> Task:
             receipt = json.loads(row["mediation_receipt"])
         except (TypeError, ValueError, json.JSONDecodeError):
             receipt = None
+    intake_evidence = None
+    if row["kernel_intake_evidence"]:
+        try:
+            intake_evidence = json.loads(row["kernel_intake_evidence"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            intake_evidence = None
     return Task(
         id=row["id"],
         agent=row["agent"],
@@ -1668,4 +1760,17 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         mediation_receipt=receipt,
         mediation_task_sha256=row["mediation_task_sha256"],
         mediation_execution_id=row["mediation_execution_id"],
+        kernel_intake_id=row["kernel_intake_id"],
+        kernel_intake_evidence=intake_evidence,
+    )
+
+
+def _intake_evidence_columns(
+    evidence: KernelIntakeEvidence | Mapping[str, object] | None,
+) -> tuple[str | None, str | None]:
+    if evidence is None:
+        return None, None
+    sealed = evidence if isinstance(evidence, KernelIntakeEvidence) else KernelIntakeEvidence.from_dict(evidence)
+    return sealed.intake_id, json.dumps(
+        sealed.to_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True
     )
