@@ -156,7 +156,13 @@ def _validate_repository_name(value: Any) -> str:
 
 
 def _validate_json_tree(
-    value: Any, *, depth: int, item_count: list[int], max_depth: int, max_items: int
+    value: Any,
+    *,
+    depth: int,
+    item_count: list[int],
+    max_depth: int,
+    max_items: int,
+    require_safe_text: bool = True,
 ) -> None:
     if depth > max_depth:
         _reject("JSON nesting exceeds limit")
@@ -170,7 +176,7 @@ def _validate_json_tree(
             _reject("JSON has non-finite number")
         return
     if isinstance(value, str):
-        if not _is_safe_text(value):
+        if require_safe_text and not _is_safe_text(value):
             _reject("JSON contains ambiguous text")
         return
     if isinstance(value, list):
@@ -181,6 +187,7 @@ def _validate_json_tree(
                 item_count=item_count,
                 max_depth=max_depth,
                 max_items=max_items,
+                require_safe_text=require_safe_text,
             )
         return
     if isinstance(value, dict):
@@ -193,6 +200,7 @@ def _validate_json_tree(
                 item_count=item_count,
                 max_depth=max_depth,
                 max_items=max_items,
+                require_safe_text=require_safe_text,
             )
         return
     _reject("JSON contains unsupported value")
@@ -204,6 +212,7 @@ def strict_json(
     max_bytes: int = MAX_JSON_BYTES,
     max_depth: int = MAX_JSON_DEPTH,
     max_items: int = MAX_JSON_ITEMS,
+    require_safe_text: bool = True,
 ) -> Any:
     """Load bounded UTF-8 JSON while rejecting duplicate and non-finite values."""
     if isinstance(raw, bytes):
@@ -246,6 +255,7 @@ def strict_json(
             item_count=[0],
             max_depth=max_depth,
             max_items=max_items,
+            require_safe_text=require_safe_text,
         )
     except RecursionError as exc:
         raise MovementError("JSON nesting exceeds limit") from exc
@@ -2128,6 +2138,12 @@ def main(argv: list[str] | None = None) -> int:
                 error="event file is unavailable or exceeds limit",
             ),
             max_bytes=MAX_EVENT_BYTES,
+            # The raw webhook payload legitimately carries free-form multi-line
+            # text (e.g. pull_request.body) that _is_safe_text would reject for
+            # containing newlines. _event_context() re-validates every field this
+            # module actually consumes (SHAs, refs, repo name) with the tighter,
+            # field-appropriate checks; body only needs its byte bound.
+            require_safe_text=False,
         )
         (
             repository,
