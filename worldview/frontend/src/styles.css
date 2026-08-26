@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+/* Brand-unified tokens (docs/design/WORLDVIEW_UX_SPEC.md §1.1; brand source BRAND_BOOK.md §7).
+   Tailwind v4 reads the theme from CSS, so the palette lives here rather than in a JS config. */
+@theme {
+  --color-void: #04070e;
+  --color-void-2: #070d18;
+  --color-surface: rgba(9, 16, 28, 0.82);
+  --color-surface-2: rgba(12, 21, 36, 0.92);
+  --color-line: rgba(139, 196, 240, 0.14);
+  --color-line-2: rgba(139, 196, 240, 0.07);
+  --color-signal: #2bb8f0;
+  --color-signal-light: #8fe0ff;
+  --color-signal-dim: rgba(43, 184, 240, 0.4);
+  --color-signal-faint: rgba(43, 184, 240, 0.09);
+  --color-ink: #eef1f5;
+  --color-green: #41f59b;
+  --color-amber: #ffb23f;
+  --color-red: #ff5a52;
+  --color-violet: #a78bfa;
+
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--color-void);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+}
+
+/* 4px scrollbars on the panel rails (spec §1.4) */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 0;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-signal-light);
+  border: 1px solid var(--color-line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 7px;
+  background: var(--color-void-2);
+}
+
+/* Hover tooltip (spec §4). Positioned by src/globe/picking.ts over the Cesium canvas. */
+.wv-tip {
+  position: absolute;
+  z-index: 40;
+  pointer-events: none;
+  max-width: 260px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-signal-dim);
+  border-radius: 6px;
+  padding: 8px 11px;
+  backdrop-filter: blur(10px);
+  color: var(--color-ink);
+}
+.wv-tip .tt-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-signal-light);
+}
+.wv-tip .tt-kv {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: rgba(238, 241, 245, 0.64);
+  margin-top: 4px;
+  line-height: 1.7;
+}
+
+/* Cesium's own chrome: we supply the HUD, but its credits must stay visible (attribution). */
+.wv-credits {
+  position: absolute;
+  bottom: 2px;
+  right: 12px;
+  z-index: 5;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: rgba(238, 241, 245, 0.32);
+}
+.wv-credits a {
+  color: rgba(238, 241, 245, 0.45);
+}
+.cesium-widget-credits {
+  display: inline;
+}
+.cesium-viewer-bottom {
+  display: none;
+}
+.cesium-widget canvas {
+  outline: none;
+}
+
+/* Shared pulse keyframes (live dot, reconnecting). Stillness is the default; only live status
+   indicators may loop, and reduced-motion turns every loop off (spec §5.3). */
+@keyframes wv-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+.wv-pulse {
+  animation: wv-pulse 2s infinite;
+}
+.wv-pulse-fast {
+  animation: wv-pulse 1.2s infinite;
+}
+@keyframes wv-arrive-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+}
+.wv-arrive {
+  animation: wv-arrive-in 0.5s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wv-pulse,
+  .wv-pulse-fast {
+    animation: none;
+  }
+  .wv-arrive {
+    animation: none;
+  }
+  .wv-lens {
+    display: none;
+  }
+}
+
+/* Demo lens (spec §5.2) — one restrained scanline grade, tour/demo only, never default. */
+.wv-lens {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 55;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(143, 224, 255, 0.022) 0 1px,
+    transparent 1px 3px
+  );
+  mix-blend-mode: screen;
+}
+.wv-lens::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, transparent 58%, rgba(4, 7, 14, 0.5) 100%);
+}
