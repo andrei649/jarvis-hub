@@ -138,6 +138,30 @@ describe('loadJarvisData current-evidence adapters', () => {
   });
 });
 
+describe('loadJarvisData degraded roster parity', () => {
+  it('keeps registry-only agents in the /status fallback instead of the stale 15-seed roster', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/status') return ok({
+        model_state: 'no_model',
+        agents: [
+          { id: 'jarvis', status: 'ready' },
+          { id: 'howard', status: 'idle' },
+          { id: 'hestia', status: 'idle' },
+        ],
+      });
+      return unavailable(); // /api/agents and everything else down
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const data = await loadJarvisData(false);
+
+    const ids = data.agents.map((a) => a.id);
+    expect(ids).toContain('howard');
+    expect(ids).toContain('hestia');
+    expect(ids).toContain('jarvis');
+  });
+});
+
 describe('latest refresh runner', () => {
   it('does not let an older data cycle overwrite a newer snapshot', async () => {
     const oldData = deferred<{ id: string }>();

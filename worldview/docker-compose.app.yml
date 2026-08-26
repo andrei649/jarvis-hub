@@ -30,9 +30,10 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:4000
-        NEXT_PUBLIC_WS_URL: ws://localhost:4000/live
-        NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN: ${MAPBOX_ACCESS_TOKEN:-}
+        VITE_API_URL: http://localhost:4000
+        VITE_WS_URL: ws://localhost:4000/live
+        # Optional: without it the globe uses the Natural Earth II tiles bundled with Cesium.
+        VITE_CESIUM_ION_TOKEN: ${CESIUM_ION_TOKEN:-}
     ports:
       - "3000:3000"
     depends_on:

@@ -23,13 +23,13 @@ ollama>=0.6.2
 # major (untested with this fastapi). Background:
 # docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
 fastapi>=0.141.1,<0.142
-starlette>=1.5.0,<2.0
-uvicorn>=0.52.1
+starlette>=1.6.0,<2.0
+uvicorn>=0.52.3
 psutil>=7.2.2
 
 # === Memory (optional — improves with numpy) ===
 # numpy 2.5+ dropped Python 3.11; the marker keeps the install working on 3.11 boxes
-numpy>=2.5.1; python_version >= "3.12"
+numpy>=2.5.2; python_version >= "3.12"
 numpy>=2.0,<2.5; python_version < "3.12"
 
 # === Token counting + HTML parsing (used by newer code; app still boots without them) ===

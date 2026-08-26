@@ -41,7 +41,9 @@ const ICONS = {
 
 /* dossier glyph */
 function Glyph({ id, size }) {
-  const d = (V2 && V2.GLYPHS[id]) || '';
+  // Registry agents without a hand-drawn seed glyph still get a visible neutral
+  // mark — an empty path renders nothing and makes the agent look absent.
+  const d = (V2 && V2.GLYPHS[id]) || 'M0,-6 A6,6 0 1,1 0,6 A6,6 0 1,1 0,-6 Z';
   const s = size || 16;
   return (
     <svg width={s} height={s} viewBox="-10 -10 20 20" className="gx-svg">
