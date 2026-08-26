@@ -25,6 +25,32 @@ receive it. Two things people sometimes mistake for telemetry:
 If outbound telemetry is ever added, it will be **opt-in and disclosed here** — never on
 by default.
 
+**This promise is tested, and here is exactly what the test measures** (0.22):
+`tests/test_no_telemetry_proof.py` boots the real app through its real lifespan, holds a
+real `/chat` turn, and shuts it down, while *counting* every non-loopback socket egress
+attempt — TCP connect, connected **and unconnected UDP**, and raw sends. It counts rather
+than raises, because a best-effort caller would swallow a blocked connect and hide the
+beacon. It also instruments `subprocess.Popen`, `os.system` and `os.popen` and **refuses a
+recognised network tool before it runs** (including via `sh -c`, `env`, `shell=True`,
+`cmd /c`, and PowerShell web cmdlets). Measured result: **zero** egress attempts.
+
+What it does **not** prove, stated plainly rather than implied:
+
+- it observes *this process*. A fully general guarantee needs an OS-level egress deny
+  (network namespace / firewall) — a host control, not a test;
+- the accompanying static scan is a **known-vendor ratchet** (sentry, GA, segment, …), not
+  a general guarantee: an IP literal, a novel hostname, a runtime-composed URL, or a beacon
+  inside a third-party dependency is invisible to it. It exists so a *recognisable* beacon
+  cannot be pasted in unnoticed;
+- **child processes are bounded, not proven silent**: a child uses its own sockets, which
+  the in-process hooks cannot observe. A recognised network tool is blocked pre-exec, but a
+  renamed binary, a bespoke client, or an uninstrumented spawn API (`os.posix_spawn`,
+  `os.execv`, `multiprocessing`) would not be caught. Nerva does spawn `docker info`,
+  `wasmtime --version` and `uname -p` at boot — the claim is "no recognised network tool
+  ran", not "no child ran";
+- owner-configured cloud agents and plugins are opt-in by design, disclosed above, and
+  governed by the egress monitor — they are out of scope for this gate.
+
 ## What's stored, and where
 
 All runtime data lives under the **gitignored data root** (`agents/data/`, `memory_logs/`):
