@@ -101,6 +101,13 @@ class MediationKernelBridge:
         guessed by the generic queue sink (node dispatch uses ``node:<id>``).
         """
 
+        return self.take_intake_evidence(
+            agent=agent, kind=kind, title=title, payload=payload, origin=origin
+        )
+
+    def take_intake_evidence(self, *, agent, kind, title, payload, origin):
+        """One-shot release of the exact Action Kernel decision for task evidence."""
+
         pending = self._pending.get()
         self._pending.set(None)
         released = pending.take() if isinstance(pending, _OneShotDecision) else None
