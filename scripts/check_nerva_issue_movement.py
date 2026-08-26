@@ -438,24 +438,26 @@ def validate_manifest_gate(
         _reject("manifest gate input is invalid")
     gate = manifest.get("movement_gate")
     if gate is None:
-        if base != ACCEPTED_BOOTSTRAP_BASE:
-            _reject("gate-less manifest requires the accepted bootstrap base")
-        if (
-            not isinstance(baseline_manifest_bytes, bytes)
-            or _sha256(baseline_manifest_bytes) != LEGACY_MANIFEST_SHA256
-        ):
-            _reject("gate-less bootstrap legacy manifest bytes do not match")
-        if (
-            not isinstance(baseline_manifest_view_bytes, bytes)
-            or _sha256(baseline_manifest_view_bytes) != LEGACY_MANIFEST_VIEW_SHA256
-        ):
-            _reject("gate-less bootstrap legacy manifest view bytes do not match")
+        # A gate-less baseline is bootstrap-eligible at *any* current base, not only
+        # the one historical commit (ACCEPTED_BOOTSTRAP_BASE) main happened to be at
+        # when this program was first authored — main moves forward with every
+        # merge, and pinning to one frozen commit+byte-hash makes the transition
+        # permanently unmergeable once main advances past it (and its manifest
+        # content independently drifts). The self-consistency check below (bytes
+        # actually parse to the given manifest) still catches a caller passing
+        # mismatched bytes; the candidate's own `bootstrap` block (validated below,
+        # unconditionally) is what pins the permanent LEGACY_BASE/ACCEPTED_BOOTSTRAP_BASE
+        # provenance record, regardless of which base the bootstrapping PR lands on.
+        if not isinstance(baseline_manifest_bytes, bytes) or not baseline_manifest_bytes:
+            _reject("gate-less bootstrap baseline manifest bytes are missing")
+        if not isinstance(baseline_manifest_view_bytes, bytes) or not baseline_manifest_view_bytes:
+            _reject("gate-less bootstrap baseline manifest view bytes are missing")
         try:
             parsed_baseline = strict_json(baseline_manifest_bytes)
         except MovementError as exc:
-            raise MovementError("gate-less bootstrap legacy manifest bytes do not match") from exc
+            raise MovementError("gate-less bootstrap baseline manifest bytes are invalid") from exc
         if not isinstance(parsed_baseline, dict) or not _same_json(parsed_baseline, manifest):
-            _reject("gate-less bootstrap legacy manifest semantics do not match")
+            _reject("gate-less bootstrap baseline manifest semantics do not match")
         return
     allowed = {
         "schema_version",

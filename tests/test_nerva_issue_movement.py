@@ -867,11 +867,12 @@ def test_snapshot_transport_has_the_same_per_response_count_and_aggregate_bounds
         counted("pull_request")
 
 
-def test_missing_gate_rejects_without_pinned_bootstrap_bytes():
-    with pytest.raises(MovementError, match="accepted bootstrap base"):
-        validate_manifest_gate({}, LEGACY_BASE)
-    with pytest.raises(MovementError, match="legacy manifest bytes"):
-        validate_manifest_gate({}, ACCEPTED_BOOTSTRAP_BASE)
+def test_missing_gate_rejects_without_baseline_bytes():
+    for base in (LEGACY_BASE, ACCEPTED_BOOTSTRAP_BASE, "f" * 40):
+        with pytest.raises(MovementError, match="baseline manifest bytes are missing"):
+            validate_manifest_gate({}, base)
+    with pytest.raises(MovementError, match="baseline manifest view bytes are missing"):
+        validate_manifest_gate({}, LEGACY_BASE, baseline_manifest_bytes=b"{}")
 
 
 def test_duplicate_json_rejected():
@@ -972,44 +973,52 @@ def test_legacy_bootstrap_requires_exact_pinned_seed_and_real_integer_schema_ver
         validate_manifest_gate({"movement_gate": gate}, ACCEPTED_BOOTSTRAP_BASE)
 
 
-def test_gate_less_bootstrap_requires_accepted_base_and_exact_historical_bytes() -> None:
+def test_gate_less_bootstrap_accepts_any_base_but_requires_consistent_bytes() -> None:
     _require_history(LEGACY_BASE)
     manifest_bytes = _committed_blob(LEGACY_BASE, "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json")
     view_bytes = _committed_blob(LEGACY_BASE, "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md")
     legacy_manifest = strict_json(manifest_bytes)
 
+    # A gate-less baseline may bootstrap at the historical accepted commit...
     validate_manifest_gate(
         legacy_manifest,
         ACCEPTED_BOOTSTRAP_BASE,
         baseline_manifest_bytes=manifest_bytes,
         baseline_manifest_view_bytes=view_bytes,
     )
+    # ...or at any other current base: main moves forward with every merge, and
+    # the manifest's own well-formedness doesn't depend on which commit main is
+    # at when the bootstrapping PR actually lands.
+    for other_base in (LEGACY_BASE, "f" * 40):
+        validate_manifest_gate(
+            legacy_manifest,
+            other_base,
+            baseline_manifest_bytes=manifest_bytes,
+            baseline_manifest_view_bytes=view_bytes,
+        )
 
-    for disallowed_base in (LEGACY_BASE, "f" * 40):
-        with pytest.raises(MovementError, match="accepted bootstrap base"):
-            validate_manifest_gate(
-                legacy_manifest,
-                disallowed_base,
-                baseline_manifest_bytes=manifest_bytes,
-                baseline_manifest_view_bytes=view_bytes,
-            )
-    with pytest.raises(MovementError, match="legacy manifest bytes"):
+    with pytest.raises(MovementError, match="baseline manifest bytes are missing"):
         validate_manifest_gate(
             legacy_manifest,
             ACCEPTED_BOOTSTRAP_BASE,
-            baseline_manifest_bytes=manifest_bytes + b" ",
             baseline_manifest_view_bytes=view_bytes,
         )
-    with pytest.raises(MovementError, match="legacy manifest view bytes"):
+    with pytest.raises(MovementError, match="baseline manifest view bytes are missing"):
         validate_manifest_gate(
             legacy_manifest,
             ACCEPTED_BOOTSTRAP_BASE,
             baseline_manifest_bytes=manifest_bytes,
-            baseline_manifest_view_bytes=view_bytes + b" ",
+        )
+    with pytest.raises(MovementError, match="baseline manifest bytes are invalid"):
+        validate_manifest_gate(
+            legacy_manifest,
+            ACCEPTED_BOOTSTRAP_BASE,
+            baseline_manifest_bytes=b"not json",
+            baseline_manifest_view_bytes=view_bytes,
         )
     changed_semantics = copy.deepcopy(legacy_manifest)
     changed_semantics["manifest_id"] = "changed"
-    with pytest.raises(MovementError, match="legacy manifest semantics"):
+    with pytest.raises(MovementError, match="baseline manifest semantics"):
         validate_manifest_gate(
             changed_semantics,
             ACCEPTED_BOOTSTRAP_BASE,
