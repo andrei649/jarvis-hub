@@ -949,6 +949,12 @@ was switched on over a layout that was never made responsive. Two facts frame th
   mark instead of an empty path. The watermarked demo corpus intentionally stays at 15 — it is fiction
   by contract, not a stale live view (`tests/test_agent_roster_meta.py`, `glyph-fallback.test.tsx`,
   `loaders.test.ts`). Remaining (non-blocking): dossier/collab *enrichment* for new agents in demo mode.
+  **Correction 2026-08-22:** the neutral-mark claim above held only in the `Glyph` primitive.
+  `network.tsx` (Neural-Mesh nodes) kept a raw `V2.GLYPHS[a.id] || ''` lookup, so howard/argus/hestia
+  rendered an empty `<path>` — a hex outline with no glyph, the exact "looks absent" failure the
+  primitive's fallback exists to prevent. The fallback now lives in one place (`V2.glyphFor`, used by
+  the primitive, the mesh renderer and `loaders.ts`), so it can no longer be fixed in one renderer and
+  missed in another; `glyph-fallback.test.tsx` covers both call sites and fails on the pre-fix code.
 
 **Honesty layer (cross-cutting, highest-leverage):**
 - [x] `degradation.py` helper + applied to `iot_control` + `balance`
