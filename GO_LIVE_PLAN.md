@@ -5,7 +5,7 @@
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v0.11.0** · backend **6,858** · frontend **521** · mobile **96** · **405** routes · **18** active agents · open owner gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · commit `5de4ea22f3e2`.
+> Generated project status: **v0.11.0** · backend **6,875** · frontend **521** · mobile **96** · **405** routes · **18** active agents · open owner gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · commit `082b8b9731d7`.
 <!-- project-status:go-live-header:end -->
 >
 > **2026-07-11 — the 1.0 gate expanded (owner decision):** this plan's launch checklist remains the
