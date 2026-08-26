@@ -58,6 +58,18 @@ def _committed_blob(ref: str, path: str) -> bytes:
     ).stdout
 
 
+def _require_history(ref: str) -> None:
+    """Skip on a shallow checkout that doesn't reach back to `ref` — CI's main
+    `test` job checks out at the default depth (only `nerva-movement` fetches
+    full history), so these real-history fixtures aren't always available."""
+    if subprocess.run(
+        ["git", "cat-file", "-e", ref],
+        cwd=REPO,
+        capture_output=True,
+    ).returncode != 0:
+        pytest.skip(f"commit {ref} not reachable in this checkout (shallow clone)")
+
+
 def binding_repository(tmp_path):
     git = shutil.which("git")
     if git is None:
@@ -961,6 +973,7 @@ def test_legacy_bootstrap_requires_exact_pinned_seed_and_real_integer_schema_ver
 
 
 def test_gate_less_bootstrap_requires_accepted_base_and_exact_historical_bytes() -> None:
+    _require_history(LEGACY_BASE)
     manifest_bytes = _committed_blob(LEGACY_BASE, "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json")
     view_bytes = _committed_blob(LEGACY_BASE, "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md")
     legacy_manifest = strict_json(manifest_bytes)
@@ -1676,6 +1689,7 @@ def test_repository_proof_bootstraps_real_accepted_e596_legacy_bytes(tmp_path: P
     git = shutil.which("git")
     if git is None:
         pytest.skip("Git executable unavailable")
+    _require_history(ACCEPTED_BOOTSTRAP_BASE)
     repository = tmp_path / "repo"
     subprocess.run(
         [git, "clone", "--quiet", "--shared", "--no-checkout", str(REPO), str(repository)],
