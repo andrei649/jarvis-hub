@@ -118,7 +118,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/memory/graph.py` | Knowledge graph | `KnowledgeGraph`, `InMemoryGraph`, `Neo4jGraph` |
 | `agents/core/memory/fusion.py` | RRF retrieval fusion | `HybridRetriever.retrieve`, `reciprocal_rank_fusion`, `FusedHit` |
 | `agents/core/memory/persistence.py` | JSON session persistence | `save_memory`, `load_memory`, `list_sessions` |
-| `agents/core/memory/seed_graph.py` | Bootstrap knowledge graph | `seed_graph` |
+| `agents/core/memory/seed_graph.py` | Bootstrap knowledge graph (owner's personal facts; skipped when `NERVA_PUBLIC_PROFILE` is on) | `seed_graph`, `SEED_FACTS` |
 
 ### Autonomy / Proactive
 
