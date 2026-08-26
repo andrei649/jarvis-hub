@@ -1975,7 +1975,13 @@ def _header_value(headers: Any, name: str) -> str | None:
     return value
 
 
-def _read_rest_response(response: Any, *, expected_url: str, budget: _ResponseBudget) -> Any:
+def _read_rest_response(
+    response: Any,
+    *,
+    expected_url: str,
+    budget: _ResponseBudget,
+    require_safe_text: bool = True,
+) -> Any:
     try:
         status = response.status
         final_url = response.geturl()
@@ -2015,7 +2021,7 @@ def _read_rest_response(response: Any, *, expected_url: str, budget: _ResponseBu
         _reject("GitHub REST response is truncated")
     budget.add_bytes(len(raw))
     try:
-        return strict_json(raw, max_bytes=MAX_RESPONSE_BYTES)
+        return strict_json(raw, max_bytes=MAX_RESPONSE_BYTES, require_safe_text=require_safe_text)
     except MovementError as exc:
         raise MovementError("GitHub REST response JSON is invalid") from exc
 
@@ -2063,7 +2069,18 @@ def _live_transport(
         )
         try:
             with opener.open(request, timeout=float(timeout_seconds)) as response:
-                return _read_rest_response(response, expected_url=url, budget=budget)
+                return _read_rest_response(
+                    response,
+                    expected_url=url,
+                    budget=budget,
+                    # Only the live PR snapshot carries free-form multi-line text
+                    # (pull_request.body); _fetch_current_snapshot re-validates
+                    # every field it consumes with field-appropriate rules, same
+                    # as _event_context. Receipt comments are machine-generated,
+                    # single-line MARKER-wrapped JSON by protocol, so they keep
+                    # the stricter check.
+                    require_safe_text=name != "pull_request",
+                )
         except MovementError:
             raise
         except (
@@ -2108,7 +2125,9 @@ def _snapshot_transport(snapshot_dir: Path) -> Any:
                 error="offline snapshot is invalid",
             )
             budget.add_bytes(len(raw))
-            return strict_json(raw, max_bytes=MAX_RESPONSE_BYTES)
+            return strict_json(
+                raw, max_bytes=MAX_RESPONSE_BYTES, require_safe_text=comment_id is not None
+            )
         except MovementError as exc:
             raise MovementError("offline snapshot is invalid") from exc
 
