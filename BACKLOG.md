@@ -11,6 +11,51 @@
 > **Pre-go-live stakeholder sync (2026-07-07 — 5-seat agent panel, conditional GO, Gate-2 checklist):** [docs/meetings/2026-07-07-pre-go-live-sync.md](docs/meetings/2026-07-07-pre-go-live-sync.md)
 > **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
+
+<!-- P0:PUBLIC-DEMO-DIGITAHOLIC:START -->
+## 🔴 P0 — Owner decision + spec: public web demo instance for digitaholic.ro (H23.23-adjacent)
+
+> **Priority: HIGH · Status: DRAFT spec, awaiting owner review — no branch, no PR, no code changed.**
+> Full spec: [`docs/decisions/2026-08-24-public-web-demo-digitaholic.md`](docs/decisions/2026-08-24-public-web-demo-digitaholic.md)
+> Authored 2026-08-24 by a Claude (Cowork) session working on digitaholic.ro, against `main` @ `75e9281`.
+
+**Goal.** A real, functional Nerva instance embedded in a digitaholic.ro page (not the scripted
+`/nerva-ai-os/` Action Kernel demo), on a free cloud model, auto-updated from `main`, with personal
+data stripped and each visitor getting their own "save-game slot" of personalization.
+
+**The key call it already makes:** don't build per-user partitioning into the shared memory
+subsystem — that is still H23.23 **option B**, still deferred, still large. Map "save" onto the unit
+the architecture already endorses: **one disposable install per visitor session**, whose
+`$JARVIS_HOME` data root *is* the folder Andrei is picturing. Smaller, consistent with the recorded
+H23.23 decision, and it touches none of the deferred work.
+
+**Reuse as-is (config, not engineering):** CDX-12 hardened profile (`JARVIS_HARDENED=1`) · CDX-11
+plugin least-privilege (grant nothing) · in-memory graph + vector fallbacks (no Neo4j, no Qdrant) ·
+existing OpenAI-compatible cloud routing in `hybrid_router.py` + the `cloud_llm_agents` allowlist.
+
+**The one real code gap — must not ship silently:** `agents/core/memory/seed_graph.py` `SEED_FACTS`
+hardcodes Andrei/Alexandra/Max/Raiffeisen/Cosmina de Sus/BMW E93 and `MemoryManager.__init__`
+(`memory/manager.py:45`) seeds them **unconditionally** into an empty graph. A public box must not
+call `seed_graph()` as-is → gate it behind a new `NERVA_PUBLIC_PROFILE=1` flag. Everything else in v1
+is configuration. Secondary gaps: an explicit `agents.public.yaml` roster overlay (smallest roster
+that demos the loop, not all 18), and session-scoped tokens only — **no durable cross-visit save**
+(that would make Digitaholic a GDPR data controller for a stranger's personal data; a deliberate v2
+call with a retention/deletion policy, never a default).
+
+**Suggested risk tier:** R2 (new deployment surface + one env-gated code path; no auth-identity model
+change, no kernel change) — classify properly against `.github/ai-development-policy.json` before
+opening a branch, don't trust the draft's read.
+
+**Blocked on four owner calls** (see [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md)): ratify H23.23 (A)
+— or note that this spec uses the install-per-user shape it already recommends and so doesn't block
+either way · turn on CDX-12 hardened + fix `JARVIS_PLUGIN_GRANTS` for this box (`OWNER_TASKS.md:253`,
+`:274`) · pick the free LLM provider/key · pick the container host.
+
+**Rollback:** separate deployment surface; stop routing the page at it / redeploy the previous image.
+Blast radius to the real personal install is zero by construction — as long as the public box is
+never pointed at the real data root or the real plugin grants.
+<!-- P0:PUBLIC-DEMO-DIGITAHOLIC:END -->
+
 <!-- NERVA2:E0-REPOSITORY-LEDGER:START -->
 ## Nerva 2.0 program control — E0 DONE
 
@@ -889,13 +934,20 @@ was switched on over a layout that was never made responsive. Two facts frame th
 - [ ] `agents/hestia` — the House Brain agent added 2026-08-18 owns `agents/core/house/**` (graph,
   presence, actuation, home_assistant) in *persona* only. ORIZONT 30 shipped the modules and the
   router; wiring Hestia's reads/proposals onto them is the remaining slice.
-- [ ] **HUD seed roster is 3 agents behind the backend.** `frontend/src/data.ts` hardcodes 15 agents
+- [x] **HUD seed roster is 3 agents behind the backend.** `frontend/src/data.ts` hardcodes 15 agents
   (`AGENTS`, `GLYPHS`, `COLLAB`, `DOSSIER`, routing keywords) — it never gained **howard** or **argus**,
   and now not **hestia** either, while the registry is at 18. Found 2026-08-18 during the roster pass and
   deliberately *not* half-fixed: adding only Hestia would leave a roster that is stale in a less obvious
   way. Fixing it means a glyph, an `AGENTS` row, `COLLAB` edges, a `DOSSIER` entry and keyword weights
   per missing agent. The backend is the source of truth (`GET /api/status`, `agents.yaml`); the honest
   end state is deriving this panel from the API rather than re-hardcoding 18.
+  **Delivered 2026-08-22 via the derive-from-API end state:** `/api/agents` now derives `tier`/`role`
+  for registry-only agents from their SOUL.md front-matter (curated `_AGENT_META` rows keep priority),
+  so howard/hestia describe themselves server-side; the loaders' degraded path unions `/status` agent
+  ids with the seed meta instead of silently dropping unknown ids; unknown glyph ids render a neutral
+  mark instead of an empty path. The watermarked demo corpus intentionally stays at 15 — it is fiction
+  by contract, not a stale live view (`tests/test_agent_roster_meta.py`, `glyph-fallback.test.tsx`,
+  `loaders.test.ts`). Remaining (non-blocking): dossier/collab *enrichment* for new agents in demo mode.
 
 **Honesty layer (cross-cutting, highest-leverage):**
 - [x] `degradation.py` helper + applied to `iot_control` + `balance`
@@ -1103,7 +1155,7 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 | 0.19 First-Run Command Center | ✅ done (#634, 2026-07-07) | `GET /api/onboarding/command-center` + HUD `CommandCenterPanel` (Start cluster): install health (`/readyz` snapshot + version) + model truth + wizard state + honest first actions in one read; "say hello" drives a real `/chat` turn and records the funnel step | H23.20 |
 | 0.20 Jarvis Vault | 🟡 partial → **encrypted vault core ✅ (store + quotas + retention + forget hooks)** | **NEW `agents/core/vault.py`** — the missing data-mgmt flagship: a local **encrypted-at-rest blob vault** on the AUD-1 `SecretStore` cipher (Fernet-or-fallback, same `JARVIS_SECRET_KEY`/keyfile 0600 discipline). **Always ciphertext on disk** (no plaintext mode to misconfigure); index carries metadata only; reads are **integrity-verified** (tampered blob raises, never returns garbage); **quotas refuse, never evict** (a vault is not a cache — 1 TB ceiling, per-item 1 GB, 10k items, all injectable); **retention** via per-item `expires_at` + deterministic `sweep(now)` that reports exactly what it removed (H23.10 discipline); **forget-me hooks** `clear_memory()` (live, pre-backup) + `purge()` (at-rest) mirroring the canvas/purge pattern. `tests/test_vault.py` (+7: roundtrip/no-plaintext-on-disk, tamper→raise, quota-refusal, sweep, cross-instance + wrong-key, forget hooks, honest missing). **Persistence boundary hardened ✅ (#660, 2026-07-12)** — the plaintext, unauthenticated catalog is replaced by a root-bound **authenticated encrypted `index.enc`** (public `SecretStore.encrypt_bytes`/`decrypt_bytes`); full catalog-schema validation (safe generated IDs, hashes, byte counts, finite timestamps); all catalog/quota mutations serialized via an in-process lock **plus portable OS file locking** (fcntl/msvcrt) with authoritative-catalog reload before mutation (no live-instance lost updates — proven by a real two-process max-items race test, exactly one writer wins); blob/catalog writes atomic + restrictive-permission + **symlink-safe** (lock/index/blob/temp paths rejected if symlinked) with crash-residue reconciliation; corrupt/swapped/injected/missing-blob/tampered catalogs **fail closed** (no silent empty-catalog fallback); `clear_memory()→purge()`/`put()` safe in-instance; purge enumerates every contained blob independently of the in-memory/index catalog. `tests/test_vault_hardening.py` (+~23) + `test_vault.py` adjusted. *(Remaining 0.20: router/HUD surface + wiring into export #303 and the forget flow — same governed pattern as canvas.)* | H23.10 |
 | 0.21 Offline Knowledge Packs | 🟡 partial → **pack manifest · verify · governed installer ✅** | **NEW `agents/core/knowledge_packs.py`** over the H12.2 drop-folder indexer: a pack = folder + `pack.json` manifest with per-file SHA-256 (`build_manifest`/`write_manifest`/`load_manifest`, posix-relative, bounded, deterministic); `verify_pack` names EVERY discrepancy (`missing`/`modified`/`unexpected` — never a silent pass); `install_pack` verifies FIRST and **refuses tampered or manifest-less packs** (nothing partial enters memory), then indexes through the injected `LocalDocsIndexer`. No downloads — fetching a pack stays owner-gated; this manages packs already on disk. `tests/test_knowledge_packs.py` (+6). *(Remaining 0.21: curated pack catalog + owner-gated fetcher.)* | 0.21 |
-| 0.22 Appliance Install/Update | 🟡 partial | `install.sh`,`start.sh`,`docker-compose.yml`, **release bundles + SBOM + checksums + optional sign** ✅ (H23.13) / uninstall, no-telemetry proof | H23.13/15 |
+| 0.22 Appliance Install/Update | 🟡 partial → **no-telemetry gate ✅ (scoped)** | `install.sh`,`start.sh`,`docker-compose.yml`, **release bundles + SBOM + checksums + optional sign** ✅ (H23.13). **No-telemetry gate ✅ (Max «quiet-quill», round-2)** — `PRIVACY.md`'s claim ("zero outbound telemetry, no analytics beacon/crash reporter") had **no gate**; pytest-socket is test hygiene (AUD-10), not a product proof, and every egress call site here is best-effort so a blocked connect is swallowed and stays invisible. **NEW `tests/test_no_telemetry_proof.py`** records non-loopback egress across **TCP connect, connected AND unconnected UDP (`sendto`/`sendmsg`), and raw sends**, plus **pre-exec refusal of recognised network-tool child processes** (`subprocess.Popen`/`os.system`/`os.popen`, incl. `sh -c`/`env`/`shell=True`/`cmd /c`/PowerShell cmdlets), while booting the real lifespan, holding an **authenticated** `/chat` turn (asserted past `_user_guard`, since a 403 would mean the handler was never entered), and shutting down. Measured: **zero** attempts. **Round-1 review (#939) found a false negative** in the first version (connect-only spy + boot-only exercise): unconnected UDP and request-path beacons were invisible. Both are now regressions that fail against the old approach, and the gate was red-proofed end-to-end against a UDP beacon planted on `/api/status` (caught, removed). **Scope is stated, not implied** — in-process only (a general guarantee needs OS-level egress deny), and the static half is an explicit *known-vendor ratchet*, not protection against arbitrary/dependency telemetry; **child-process egress is bounded by a denylist, not proven absent** (a renamed binary or an uninstrumented spawn API would evade it). *(Remaining 0.22: **uninstall**.)* | H23.13/15 |
 | 0.23 Hardware Benchmark & Profiles | 🟡 partial | `bench.py`,`llm/model_manager.py` (VRAM) / RTX scoring + mode profiles (GPU-gated) | 0.18 |
 | 0.24 Voice Hotkey & Dictation | 🟡 partial → **dictation cleanup core ✅** | `voice/{wake_word,stt,pipeline}.py` transcribe raw text; nothing cleaned it. **NEW `agents/core/voice/dictation.py`** — a pure, offline, **bilingual RO/EN** post-processor: strips whole-token fillers (`um`/`uh`/`ăă`/`deci`…) + phrase hedges (`you know`/`i mean`), collapses stutter repetitions, applies the spoken-punctuation convention (`period`→`.`, `new line`→break, `virgulă`→`,`), and capitalizes sentences. **Conservative** (matches only whole tokens — drops `um`, keeps `umbrella`; punctuation commands opt-in) + **honest** (returns `removed` counts so the edit is inspectable) + bounded. `tests/test_dictation.py` (+11). **Wired into the live STT path ✅ (2026-07-18):** `voice.dictation_cleanup` (default-off) applies `clean_dictation` inside `POST /api/voice/stt` with inspectable removed-counts in the response; sentinel transcripts (`[silence]`…) pass through untouched. / remaining (owner/host-gated): the hold-to-talk **hotkey** (OS-level, like 0.64) | — |
 | 0.25 Desktop Control Pack | 🟡 partial → **app-launch + OS-action allowlist core ✅** | `GovernedDesktop` (H15.3) already gates *how* a step runs (read-only inline / mutating approval-held / injection abort) but not *what* may be launched or controlled. **NEW `agents/core/desktop_control.py`** is that front door: a strict, pure **allowlist** turning a high-level request into a governed desktop step, refusing anything off-list with a reason. **Not passthrough** — apps are named by a **canonical key** (`browser`/`terminal`/`editor`…), never a binary path or shell string, so the pack can't be an arbitrary-exec vector (a path/`rm -rf`/`$(…)`/`C:\…` isn't a key → refused; keys are also regex-guarded against separators/metachars). **Validated OS actions** (`volume_set`/`brightness_set` clamp 0–100, `volume_mute` wants a bool, `media_*`/`lock_screen`/`sleep_display`, `screenshot` read-only) — unknown action or out-of-range value refused, never coerced. **Recording consent-flagged** (always mutating + approval + explicit privacy note, never auto-started). **Plans, never actions** — `DesktopControl.run` forwards admitted plans to `GovernedDesktop` (approval + injection guard) and reports the allowlist-refused ones (never silently dropped). `tests/test_desktop_control.py` (+14). / remaining (owner/host-gated): the real injectable VM/desktop driver + the host key→launcher map, **Action-Kernel recheck + audit-log entry at execution time**, **model ToolRPC registration** (so an agent can call it), a user-facing control surface + HUD parity tracking, and `browser_agent.py` recording wiring | — |
@@ -1226,6 +1278,7 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 | H23.26 | **Generated project status → kill doc-counter drift** — `scripts/status_sync.py` now derives backend pytest + frontend Vitest + mobile Jest counts, route snapshot, active YAML agents, horizon roll-ups, last verified-main commit (including PR base from the Actions event) and open Lane-A gates into tracked `project-status.json`; marker-bounded snippets drive README badges/Run/Status, JARVIS Quick Stats, GO_LIVE header and STATUS counters; `--check` gates all artifacts and fails closed on collection errors or missing markers. Python-only CI may explicitly use `--reuse-js-counts` while the separate JS jobs execute the suites. `tests/test_status_sync.py` (+11 H23.26 cases; 18 total). | ✅ done — one machine-readable truth, satellites generated | 0.19 |
 | H23.27 | **Design-partner feedback export** — `scripts/export_partner_feedback.py`: explicit local JSON+Markdown packet with allowlisted install environment, onboarding completion, aggregate autonomy/failure/latency, NPS + intentionally written feedback and sanitized north-star. It never copies prompts/responses, task titles/payloads, credentials, host/user/path/session identifiers and never uploads; north-star fetch accepts HTTP(S) only. `tests/test_export_partner_feedback.py` (+8). | ✅ done — privacy-safe default, operator chooses whether to share files | 0.20 |
 | H23.28 | **Park-list CI guard, actually implemented** — `scripts/park_guard.py` + `.github/workflows/park-guard.yml`: PR diff gate with line-based `unpark:` declarations, narrow module unlocks, phase aliases (wave-1/O28, wave-2/O29, wave-3/O30+O33), owner-only training/rust, Windows-path parity and self-protected policy files; CI executes the last merged guard policy when available. `tests/test_park_guard.py` (+10). | ✅ done — phased freeze is now machine-enforced | 0.13-tail |
+| H23.30 | **Public web demo instance for digitaholic.ro** (H23.23-adjacent) — a real Nerva instance embedded in a digitaholic.ro page on a free cloud model, auto-updated from `main`, personal data stripped, one disposable install per visitor session as the "save slot" (explicitly **not** H23.23 option B per-user partitioning). Reuses CDX-12 hardened + CDX-11 least-privilege + in-memory graph/vector fallbacks + existing cloud routing; the one core code change is a `NERVA_PUBLIC_PROFILE=1` gate on the unconditional `seed_graph()` call at `memory/manager.py:45`, which today seeds hardcoded personal `SEED_FACTS` into any empty graph. Spec: [`docs/decisions/2026-08-24-public-web-demo-digitaholic.md`](docs/decisions/2026-08-24-public-web-demo-digitaholic.md). | 🔴 **P0 — DRAFT spec, awaiting owner review** (4 owner calls open; suggested R2) | post-1.0 |
 | H23.29 | **Runtime supervisor** — a single headless entrypoint (`scripts/coordinator.py`) boots the real Orchestrator and wires the existing coordinator/heartbeat/night-shift loops (`Orchestrator.start_channels()`) with no HTTP layer, separate from the web app process. `agents/core/observability/runtime_log.py`'s `RuntimeRunLog` appends one bounded JSON line per autonomy-coordinator cycle to `logs/runtime.jsonl` (heartbeat status, tick mode/max_tier, night-shift active-window, ok/error) and persists a cycle counter across restarts so a crash-and-recover is provable, not assumed — wired via a getattr-optional hook in `AutonomyCoordinator.loop()`, byte-identical when unset. `scripts/runtime_supervisor.py` spawns the coordinator and respawns it on any exit including `SIGKILL` (a process cannot recover itself from `kill -9`), logging `spawned`/`child_exited`/`respawned`/`stopped` events into the same run-log; `deploy/systemd/jarvis-runtime.service` + a `runtime-coordinator` docker-compose service layer OS-level `restart:`/`Restart=` on top as defense-in-depth. `make runtime-up`/`runtime-down`/`runtime-status` drive it locally. `tests/test_runtime_log.py` (+8), `tests/test_runtime_log_wiring.py` (+4), `tests/test_runtime_coordinator_boot.py` (+2), `tests/test_runtime_supervisor.py` (+3, one of which SIGKILLs a real child process and asserts respawn). Manually verified end-to-end in-sandbox: 3+ consecutive clean cycles, and a real `kill -9` on the coordinator process recovered in ~1s with the cycle counter resuming (not resetting) — see HANDOFF.md. No autonomy-policy, kill-switch, or dispatch-authority code touched. **Follow-up (#935, same day):** a duplicate PR built the same feature independently and lost the comparison, but had two robustness edges worth porting forward — `RuntimeRunLog._load_state()` now quarantines an unparseable state file to `<name>.corrupt-<epoch>` instead of silently discarding it, and `runtime_supervisor.py`'s respawn delay now backs off exponentially (starting delay → 2×/crash, capped 60s, resets after a 30s+ healthy run) instead of a constant fixed delay. **Consumer wired (#940):** the run-log had no reader — `read_runtime_health()` now reduces a bounded tail of `logs/runtime.jsonl` (O(tail), not O(file): the log grows one line per cycle forever) to a loop-health summary, and `build_morning_brief()` renders it as a `🫀 Runtime` line. `stale` is the load-bearing field — a supervisor can die without ever writing a failure line, so a fresh-looking `ok: true` tail proves nothing without its age. `runtime_health=None` keeps the brief byte-identical, and `default_log_path()` makes producer and consumer agree on one path. `tests/test_runtime_health_brief.py` (+17). Verified end-to-end against a real supervisor: a live brief rendered `✅ buclă activă — ciclul #2`, and after `kill -9` on both processes the same reader flipped to `⚠️ buclă oprită`. | ✅ done | 0.16 |
 
 ---
@@ -2453,7 +2506,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ## ORIZONT 19 — WorldView (4D OSINT) — Standalone + Integrare JARVIS — 33/33 ✅
 
-> **Produs nou, stack separat** (Next.js + Deck.gl + Fastify + Kafka/Redpanda + TimescaleDB/PostGIS + Redis),
+> **Produs nou, stack separat** (Vite + CesiumJS + Fastify + Kafka/Redpanda + TimescaleDB/PostGIS + Redis),
 > self-contained sub [`worldview/`](worldview/). Centru de comandă OSINT 4D (aer/mare/spațiu/cyber) pe un glob
 > scrub-abil în timp — inspirat de „God's Eye View" (Bilawal Sidhu) și de patternurile Palantir (Gotham/AIP/
 > Ontology). **Spinele tehnic e livrat** (toate 5 layere, motorul 4D, calea de date Kafka→Redis/TimescaleDB
@@ -2466,6 +2519,24 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > prin client stdio, plugin-gate, Action Kernel și token HMAC scoped). Rămâne **#170**
 > (validarea pe Neo4j real a property-search-ului din KG sync). Launchere noi
 > **INSTALL.bat / START.bat** instalează + pornesc automat WorldView lângă JARVIS (PR #171).
+>
+>
+> **✅ Renderer înlocuit (2026-08-25, cerere owner „replace it with God's Eye View"):** frontendul
+> a fost reconstruit în forma lui *God's Eye View* — **Vite + CesiumJS, fără framework de UI** —
+> conectat la API-ul 4D propriu. Ce a dispărut: Next.js/React/Deck.gl/Mapbox **și** pachetul
+> `world-atlas` (TopoJSON-ul de 110 m desenat ca uscat plat). Ce a apărut: **basemap fără cont** —
+> Cesium livrează tile-urile Natural Earth II în pachet, deci globul arată Pământul real fără
+> token, fără cont și fără fetch de rețea (`VITE_CESIUM_ION_TOKEN` e doar *upgrade* la imagery
+> fotografic + teren 3D); marcaje la **altitudinea reală** (ADS-B și sateliți sunt `PointZ`);
+> **terminatorul zi/noapte urmărește master-clock-ul** (scrub-ul mișcă lumina pe glob);
+> **grade de senzor** thermal/night/tactical (post-process — *grade vizuale, nu date*, și HUD-ul o
+> spune) + **follow cam** (`F`). Toate diferențiatoarele WorldView sunt portate 1:1 (master clock,
+> live WS + as-of-T, trails, dark-vessel, gramatica negative-space, Inspector + provenance, export,
+> recon, tours, arrival deep-links, replay determinist, mode system, scurtături). **157 teste
+> frontend verzi (19 fișiere)**, `tsc --noEmit` + `vite build` verzi, plus o rulare headless a
+> build-ului real pe un API-fixture. Decizia + consecințele acceptate (tile-urile vectoriale nu mai
+> sunt desenabile pe Cesium → `VITE_TILE_URL` acceptă doar raster):
+> [`docs/decisions/2026-08-25-worldview-cesium-renderer.md`](docs/decisions/2026-08-25-worldview-cesium-renderer.md).
 >
 > **Strategie & feature-pick:** [`worldview/docs/ROADMAP.md`](worldview/docs/ROADMAP.md) ·
 > **Planul de arhitectură & livrare (scale model, deep-dives, ADRs, exit gates):**

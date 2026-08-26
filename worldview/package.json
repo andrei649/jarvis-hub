@@ -21,11 +21,5 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "//overrides": "deck.gl 9.3.x must resolve one consistent @deck.gl/core + @luma.gl stack, so the whole graph shares one Layer class. Keep these exact pins aligned with the frontend Deck.gl release.",
-  "overrides": {
-    "@deck.gl/core": "9.3.8",
-    "@deck.gl/extensions": "9.3.8",
-    "@deck.gl/mesh-layers": "9.3.8"
   }
 }

@@ -716,12 +716,40 @@ _AGENT_META = {
 }
 
 
+# SOUL.md front-matter tier words -> HUD tier codes, for agents with no curated
+# row above. Registry-only agents (e.g. howard, hestia) describe themselves in
+# their SOUL front-matter; the HUD roster must not silently drop them just
+# because this table was never extended.
+_TIER_FROM_SOUL = {
+    "command": "CNS",
+    "business": "BIZ",
+    "tech": "SEC",
+    "foundation": "FND",
+}
+
+
+def _soul_meta_for(agent) -> dict:
+    """Best-effort {tier, role} from an agent's parsed SOUL front-matter."""
+    meta = {}
+    try:
+        meta = (agent.soul or {}).get("meta") or {}
+    except Exception:
+        meta = {}
+    tier_word = str(meta.get("tier", "")).strip().lower()
+    role = str(meta.get("archetype", "")).strip()
+    return {"tier": _TIER_FROM_SOUL.get(tier_word, ""), "role": role}
+
+
 def _enrich_agents() -> list[dict]:
     if not orch:
         return []
     result = []
     for aid, agent in orch.agents.items():
-        meta = _AGENT_META.get(aid, {"tier": "FND", "role": ""})
+        soul_meta = _soul_meta_for(agent)
+        meta = _AGENT_META.get(aid) or {
+            "tier": soul_meta["tier"] or "FND",
+            "role": soul_meta["role"],
+        }
         overrides = _AGENT_SETTINGS.get(aid, {})
         status = overrides.get("status") or "ready" if agent.has_heartbeat else "idle"
         cfg = agent.config or {}
@@ -729,7 +757,7 @@ def _enrich_agents() -> list[dict]:
             "id": aid,
             "name": overrides.get("name") or agent.name,
             "tier": overrides.get("tier") or meta["tier"],
-            "role": overrides.get("role") or meta["role"],
+            "role": overrides.get("role") or meta["role"] or soul_meta["role"],
             "status": status,
             "enabled": overrides.get("enabled", True),
             "has_heartbeat": agent.has_heartbeat,

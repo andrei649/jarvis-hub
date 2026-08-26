@@ -2,15 +2,11 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "jsx": "preserve",
-    "allowJs": true,
-    "incremental": true,
-    "plugins": [{ "name": "next" }],
+    "types": ["vite/client", "node"],
     "paths": {
-      "@/*": ["./*"],
-      "@deck.gl-mvt-layer": ["../node_modules/@deck.gl/geo-layers/dist/mvt-layer/mvt-layer"]
+      "@/*": ["./src/*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": ["src/**/*.ts", "plugins/**/*.ts", "*.ts"],
+  "exclude": ["node_modules", "dist"]
 }
