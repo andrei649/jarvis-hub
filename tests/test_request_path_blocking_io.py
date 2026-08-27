@@ -8,6 +8,7 @@ a worker thread (asyncio.to_thread). Each test here proves one flagged path now
 runs its network work OFF the loop thread while the loop keeps ticking.
 """
 import asyncio
+import contextlib
 import json
 import socket
 import threading
@@ -148,12 +149,11 @@ async def test_house_actuation_resolves_dns_off_the_event_loop(monkeypatch):
 
     tick_task = asyncio.create_task(ticker())
     try:
-        try:
+        # credential/transport errors after DNS are fine — DNS still ran
+        with contextlib.suppress(Exception):
             await driver.apply(
                 {"control": "light", "entity_id": "light.desk", "action": "on"}
             )
-        except Exception:
-            pass  # credential/transport errors after DNS are fine — DNS still ran
     finally:
         tick_task.cancel()
 
