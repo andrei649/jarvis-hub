@@ -835,8 +835,7 @@ ONVIF discovery (`_normalize` resolved each candidate xaddr on the loop), and
 `memory_kg.py` (all graph-editor + search-tool routes ran sync neo4j httpx inline;
 default in-memory backend unaffected) — all now pay their blocking calls to worker
 threads via `asyncio.to_thread`, gated by loop-responsiveness regression tests
-(`tests/test_request_path_blocking_io.py`), with the browser seam additionally covered
-end-to-end through the router in `tests/test_h15_1_browser_agent.py` (#948). Audit correction: `codeintel.py` was a false
+(`tests/test_request_path_blocking_io.py`). Audit correction: `codeintel.py` was a false
 positive (pure local AST/FS, no network); the real ONVIF surface is `cameras/onvif.py`,
 not an `onvif.py` router; adjacent same-family `cameras/frigate.py:138` getaddrinfo noted,
 still open.
@@ -1585,6 +1584,12 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 > **Total ORIZONT 27:** ~36 SP
 
 ## 🖱️ ORIZONT 28 — Computer & Browser Operator (Nerva Program B · AI-OS Phase 2a, direction 2026-07-11)
+
+Fixed since: ✅ **browser request-path DNS offload, covered end-to-end** (#948) — the
+`/api/browser/check` + plan-preview SSRF lookups already moved to a worker thread; this adds the
+router-level loop-responsiveness regressions in `tests/test_h15_1_browser_agent.py` so the seam
+cannot silently go back on-loop.
+
 
 > **Mission:** turn H15's complete-but-stubbed governance into real actuation; the action
 > hierarchy **API → CLI → structured UI → visual** becomes an explicit router that always picks
