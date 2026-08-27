@@ -264,7 +264,9 @@ class OnvifDiscoveryService:
 
         devices: dict[str, OnvifDevice] = {}
         for value in payload:
-            device = self._normalize(value)
+            # _normalize resolves candidate xaddrs via getaddrinfo; inline it put
+            # a blocking DNS lookup on the loop per candidate. Offload it.
+            device = await asyncio.to_thread(self._normalize, value)
             if device is None:
                 continue
             previous = devices.get(device.device_id)

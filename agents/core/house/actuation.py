@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import math
@@ -305,7 +306,11 @@ class HomeAssistantServiceDriver:
 
     async def _adapter_service_call(self, domain: str, service: str, data: dict) -> dict:
         adapter = self._adapter
-        origin, pinned_ip, host, _port = adapter._runtime_endpoint()
+        # Same hazard as snapshot(): endpoint re-resolution does blocking DNS,
+        # so it pays in a worker thread before the async POST.
+        origin, pinned_ip, host, _port = await asyncio.to_thread(
+            adapter._runtime_endpoint
+        )
         parsed = urlparse(origin)
         ip_host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
         explicit_port = f":{parsed.port}" if parsed.port else ""
