@@ -83,7 +83,7 @@ support: [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md); tester-level answers:
 - **Orchestration:** Python 3.12 + asyncio + FastAPI
 - **LLM inference:** LM Studio (OpenAI-compatible, primary) → Ollama (fallback) → optional cloud (Anthropic/OpenAI) for approved agents
 - **Model:** `google/gemma-4-31b-a4b` (MoE, ~4B active params) on RTX 5090
-- **Voice:** openWakeWord + faster-whisper + edge-tts / Kokoro
+- **Voice:** browser-mic HUD loop ships; server engines are optional manual installs (openWakeWord wake word, faster-whisper STT, edge-tts / Kokoro TTS) — no install path ships them ([`docs/VOICE.md`](docs/VOICE.md))
 - **Memory:** conversation history (JSONL) + vector store (real embeddings via LM Studio/Ollama, hash fallback) + knowledge graph + fused recall (RRF, vector ⊕ graph) + SQLite checkpoints (WAL)
 - **Channels:** web (SSE), voice, telegram, discord, email, slack
 - **Security:** PII/secret scanner, SSRF protection, audit log (Merkle chain), guardrails (WARN/REDACT/BLOCK)
