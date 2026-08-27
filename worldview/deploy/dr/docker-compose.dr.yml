@@ -42,6 +42,11 @@ services:
       REPL_USER: replicator
       REPL_PASSWORD: replicator                   # TODO: match the primary's replicator role
       REPL_SLOT: dr_slot
+      # AUD-4/F14: replica<->primary traffic crosses the docker bridge
+      # (non-loopback), so libpq TLS is required, not opportunistic. Self-signed
+      # server certs satisfy sslmode=require; if a drill primary serves no TLS,
+      # override with REPL_SSLMODE=prefer for the drill and fix the primary.
+      REPL_SSLMODE: require
       PGDATA: /home/postgres/pgdata/data
     # Bootstrap-and-stream: if the data dir is empty, pg_basebackup from the
     # primary (creates standby.signal + primary_conninfo via -R), then start as a
@@ -53,6 +58,10 @@ services:
         set -euo pipefail
         DATADIR="$${PGDATA}"
         export PGPASSWORD="$${REPL_PASSWORD}"
+        # AUD-4/F14: enforce sslmode for every libpq call below (pg_isready,
+        # pg_basebackup); -R records it in primary_conninfo, so WAL streaming
+        # inherits it. Unix-socket healthchecks are unaffected.
+        export PGSSLMODE="$${REPL_SSLMODE}"
         if [ ! -s "$${DATADIR}/PG_VERSION" ]; then
           echo "[dr] empty data dir -> pg_basebackup from $${PRIMARY_HOST}:$${PRIMARY_PORT}"
           until pg_isready -h "$${PRIMARY_HOST}" -p "$${PRIMARY_PORT}" -U "$${REPL_USER}"; do
@@ -86,6 +95,13 @@ services:
       timeout: 5s
       retries: 20
       start_period: 60s
+    # AUD-4/F14 hardening: no privilege escalation, no extra capabilities.
+    # No read_only rootfs: postgres also writes WAL segments and its socket dir
+    # outside PGDATA in this image (data itself stays confined to the volume);
+    # runs as `postgres` per `user:` above.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     # networks: [default]
 
@@ -108,6 +124,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    # AUD-4/F14 hardening. The redpanda image manages its own non-root runtime
+    # user, so no explicit `user:` override. No read_only rootfs: redpanda writes
+    # its data dir and regenerates /etc/redpanda config at start.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     # networks: [default]
 
@@ -153,6 +175,13 @@ services:
           echo "[mirror] (template in deploy/dr/README.md)."
         fi
         echo "[mirror] mirror init complete"
+    # AUD-4/F14 hardening: one-shot rpk client — pure network I/O, no disk writes.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: "no"
     # networks: [default]
 

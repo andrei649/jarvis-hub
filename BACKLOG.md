@@ -1558,6 +1558,14 @@ MANUAL_TESTING signs off **and** real-usage data exists. Details: blueprint §5 
 
 ### Phase 4 — WorldView active workstream (D4, owner call; parallel lane)
 
+Fixed since: ✅ **F14 WorldView container hardening** (#954) — backend-api, frontend and
+ingestion-workers images drop to unprivileged users; the tiles compose stack runs read-only with
+`cap_drop: ALL`, `no-new-privileges` and a TLS-required DB link. The frontend hardening was re-based
+onto the Vite/nginx image after that migration (pid and temp paths relocated to `/tmp` so nothing
+root-owned is written at runtime). **Still an owner/live gate:** the Docker runtime smoke is
+unrun — CI has no Docker daemon.
+
+
 #258 startup parity → #255 live MCP contract test → #254 Signal-Layer cockpit in the real HUD →
 #256 SignalLayerPlugin for Jarvis/Argus → #257 governance-safe recommendations (pairs with P0.7) →
 #259/#265 demo polish → **#169 MCP write transport** (unblocks the last K2 slice: WorldView HMAC →

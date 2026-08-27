@@ -55,6 +55,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    # AUD-4/F14 hardening. No explicit `user:`: forcing a uid breaks ownership
+    # of existing minio-data volumes. No read_only rootfs: the mc-based
+    # healthcheck maintains client state under $HOME.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     # networks: [default]
 
@@ -73,6 +79,11 @@ services:
         mc mb --ignore-existing lake/worldview-lake
         mc anonymous set download lake/worldview-lake || true
         echo "bucket worldview-lake ready"
+    # AUD-4/F14 hardening. No read_only rootfs: `mc alias set` persists client
+    # config under $HOME.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: "no"
     # networks: [default]
 
@@ -115,6 +126,12 @@ services:
       interval: 15s
       timeout: 5s
       retries: 20
+    # AUD-4/F14 hardening. No explicit `user:` / read_only rootfs: the Confluent
+    # image owns its internal layout (plugin/log/tmp dirs); forcing either risks
+    # breaking worker startup — revisit behind a dedicated hardened Dockerfile.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     # networks: [default]
 
@@ -141,6 +158,14 @@ services:
             && echo " -> ok" || { echo " -> FAILED"; exit 1; }
         done
         echo "all connectors registered"
+    # AUD-4/F14 hardening: pure HTTP client against ro-mounted connector JSON —
+    # fully read-only safe (image already runs as its own non-root curl_user).
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: "no"
     # networks: [default]
 
