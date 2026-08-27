@@ -494,3 +494,47 @@ def test_confirmation_is_honestly_unavailable_without_queue_or_secret_store(clie
         "status": "unavailable",
         "reason": "strong_confirmation_unavailable",
     }
+
+
+def test_runtime_wires_worker_kernel_gate_as_the_house_intake_authorizer(monkeypatch):
+    captured = {}
+
+    class _EnabledAdapter:
+        config = SimpleNamespace(enabled=True, ha_enabled=True)
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class _Actuator:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    def intake_authorizer(_action):
+        return None
+
+    def enqueue(*_args, **_kwargs):
+        return 1
+
+    worker = SimpleNamespace(
+        govern_enqueue=enqueue,
+        kernel_gate=intake_authorizer,
+    )
+    orch = SimpleNamespace(
+        autonomy=worker,
+        autonomy_queue=None,
+        memory=None,
+        secret_broker=None,
+        task_executor=None,
+        get_setting=lambda key, _default=None: {
+            "house.enabled": True,
+            "house.ha_enabled": True,
+        }.get(key),
+    )
+
+    monkeypatch.setattr(house_routes, "HomeAssistantAdapter", _EnabledAdapter)
+    monkeypatch.setattr(house_routes, "HouseActuator", _Actuator)
+
+    house_routes._build_runtime(orch)
+
+    assert captured["intake_authorizer"] is intake_authorizer
+    assert captured["enqueue"] is worker.govern_enqueue

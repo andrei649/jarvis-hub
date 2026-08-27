@@ -9,7 +9,7 @@ WorldView is a streaming, time-series geospatial platform. The pieces:
 | **Redis** | live-state cache + pub/sub | memory; cluster for very high fan-out |
 | **ingestion-workers** | fetch + normalize → Kafka | one (or more) per domain; Kafka consumer-group parallelism |
 | **backend-api** (Fastify) | REST `/history` + WS `/live`; the Kafka→Redis/TimescaleDB consumers | stateless — run N replicas behind a load balancer |
-| **frontend** (Next.js) | the dashboard | static/CDN or N replicas |
+| **frontend** (Vite static build) | the dashboard | static/CDN or N replicas |
 
 ## Local / single-host (Docker Compose)
 
@@ -38,7 +38,9 @@ Per-service environment (see each service's `.env.example`):
   one replica). Without the flags the API only serves reads.
 - **Workers** (`ingestion-workers`): `KAFKA_BROKERS` + per-source credentials
   (`OPENSKY_*`, `AISSTREAM_API_KEY`, `SPACETRACK_*`). Run with `python -m worldview_ingest <domain>`.
-- **Frontend**: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`, `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN`
+- **Frontend** (build-time, inlined by Vite): `VITE_API_URL`, `VITE_WS_URL`, and the optional
+  `VITE_CESIUM_ION_TOKEN` — without it the globe uses the Natural Earth II tiles bundled with
+  Cesium, so a deployment needs no basemap account at all
   (inlined at build time).
 
 ## Database setup
