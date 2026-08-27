@@ -683,6 +683,15 @@ vision doc stops reading as a status report for capabilities that are still seed
 
 ## 🛡️ Governance-rails security audit (2026-07-24 — 8-reviewer adversarial pass)
 
+Fixed since: ✅ **SEC-B4 egress boundary** (#956) — every plugin HTTP call now dials a
+resolver-validated, pinned target (Host/SNI preserved, redirects re-validated per hop) instead of
+letting httpx re-resolve. Two defects found while integrating and fixed there: RESTRICTED plugins
+whose base URL is a self-hosted loopback/RFC1918 literal were validated in `public` mode and so
+became unreachable (local-first regression, MOONSHOT §5.1), and the twelve tests still mocking the
+retired `_client` seam were doing real DNS/TCP. **Still an owner gate:** this is R3 and the
+independent review named in the draft has not happened.
+
+
 > Full findings + severities + evidence: [`docs/research/2026-07-24-governance-rails-security-audit.md`](docs/research/2026-07-24-governance-rails-security-audit.md).
 > One reviewer per invariant (kernel bypass · taint · approval queue · strict-local · secret/audit
 > crypto · SSRF · skill signing · router auth), each required to trace enforcement code and build a
