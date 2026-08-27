@@ -828,11 +828,6 @@ Still open from that run (verified real, not yet fixed): the seeded ADMIN/OBSERV
 corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): ✅ the dead `arr() || fallback` in
 the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
-Fixed since: ✅ **F14 WorldView container hardening** (#954) — backend-api, frontend and
-ingestion-workers images drop to unprivileged users, the tiles compose stack runs read-only with
-`cap_drop: ALL` + `no-new-privileges` and TLS-required DB links. Frontend hardening was re-based
-onto the Vite/nginx image after the Next.js migration; the Docker runtime smoke is still an
-owner/live gate (no Docker daemon in CI).
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
@@ -1533,6 +1528,14 @@ MANUAL_TESTING signs off **and** real-usage data exists. Details: blueprint §5 
 | O26-P3.6 | Landing page, dev half (M3.3) | 3 | ✅ done (2026-07-04, #512) |
 
 ### Phase 4 — WorldView active workstream (D4, owner call; parallel lane)
+
+Fixed since: ✅ **F14 WorldView container hardening** (#954) — backend-api, frontend and
+ingestion-workers images drop to unprivileged users; the tiles compose stack runs read-only with
+`cap_drop: ALL`, `no-new-privileges` and a TLS-required DB link. The frontend hardening was re-based
+onto the Vite/nginx image after that migration (pid and temp paths relocated to `/tmp` so nothing
+root-owned is written at runtime). **Still an owner/live gate:** the Docker runtime smoke is
+unrun — CI has no Docker daemon.
+
 
 #258 startup parity → #255 live MCP contract test → #254 Signal-Layer cockpit in the real HUD →
 #256 SignalLayerPlugin for Jarvis/Argus → #257 governance-safe recommendations (pairs with P0.7) →
