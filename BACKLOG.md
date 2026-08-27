@@ -822,7 +822,9 @@ Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `bro
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
 ONVIF discovery (`_normalize` resolved each candidate xaddr on the loop), and
 `memory_kg.py` (all graph-editor + search-tool routes ran sync neo4j httpx inline;
-default in-memory backend unaffected) — all now pay their blocking calls to worker
+default in-memory backend unaffected — extended in #951 to the remaining store-lock
+seams on the same routes: consolidation planning, the decay ranking/candidates/forget
+trio, and the bi-temporal add_fact/as_of/history calls) — all now pay their blocking calls to worker
 threads via `asyncio.to_thread`, gated by loop-responsiveness regression tests
 (`tests/test_request_path_blocking_io.py`). Audit correction: `codeintel.py` was a false
 positive (pure local AST/FS, no network); the real ONVIF surface is `cameras/onvif.py`,
