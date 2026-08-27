@@ -550,6 +550,10 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 
 ## 📋 Docs-vs-code accuracy pass (2026-07-24 — feature-sheet audit)
 
+Fixed since: ✅ **integration-closure and SEC-B4 delivery plans recorded** (#957) — the approved
+planning/spec documents for this sprint are in `docs/superpowers/plans/`; no product code.
+
+
 > 47 claims from `README.md`/`docs/FEATURES.md` verified against source (6 parallel research
 > passes): **36 live · 11 partial/default-off · 0 fabricated**. Complements the 2026-07-18
 > live-vs-plumbing audit below — that epic fixes *code* honesty (MOCK badges, degraded stamps);
@@ -828,8 +832,6 @@ Still open from that run (verified real, not yet fixed): the seeded ADMIN/OBSERV
 corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): ✅ the dead `arr() || fallback` in
 the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
-Fixed since: ✅ **integration-closure and SEC-B4 delivery plans recorded** (#957) — the approved
-planning/spec documents for this sprint are in `docs/superpowers/plans/`, no product code.
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
