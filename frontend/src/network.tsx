@@ -197,7 +197,7 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
               onClick={()=>{ onSelect(a.id); setFocusId(focused===a.id?null:a.id); }}
               onMouseEnter={()=>{ setHover(a.id); setTip({a, x:p.x, y:p.y}); }}>
               <path className="net-hex" d={hexPath(0,0,15)}/>
-              <path className="net-glyph" d={(V2.GLYPHS[a.id]||'')} transform="scale(.9)"
+              <path className="net-glyph" d={V2.glyphFor(a.id)} transform="scale(.9)"
                 stroke={a.status==='active'||activeId===a.id?'var(--accent-light)':a.status==='busy'?'var(--amber)':'var(--ink-3)'}/>
               {(a.status==='active') && <circle r="20" fill="none" stroke="var(--accent)" strokeWidth=".7" opacity=".4" className="ambient-anim" style={{animation:motion==='calm'?'none':'pulse-green 2.6s infinite'}}/>}
               <text className="net-label" y="26" textAnchor="middle">{a.name.toUpperCase()}</text>
