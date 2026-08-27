@@ -820,7 +820,9 @@ shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regression
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
-ONVIF discovery (`_normalize` resolved each candidate xaddr on the loop), and
+ONVIF discovery (`_normalize` resolved each candidate xaddr on the loop; #950 also
+offloads the first-use `wsdiscovery` import and the house router's runtime build and
+security-task sqlite reads), and
 `memory_kg.py` (all graph-editor + search-tool routes ran sync neo4j httpx inline;
 default in-memory backend unaffected) — all now pay their blocking calls to worker
 threads via `asyncio.to_thread`, gated by loop-responsiveness regression tests
