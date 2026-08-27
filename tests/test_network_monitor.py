@@ -21,8 +21,16 @@ def _clean_monitor():
 
 
 def _mock(client: PluginHTTPClient, status: int = 200):
-    """Give *client* an httpx client backed by MockTransport (no real network)."""
-    client._client = httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(status, text="ok")))
+    """Give *client* a MockTransport-backed pinned pool (no real network).
+
+    SEC-B4 dials through per-target pinned clients, so the transport has to be
+    injected via the factory the client builds them with — replacing ``_client``
+    would leave the real (network-dialing) transport on the egress path. The
+    resolve/validate/record wiring this file exercises still runs for real.
+    """
+    client._transport_factory = lambda _target: httpx.MockTransport(
+        lambda req: httpx.Response(status, text="ok")
+    )
     return client
 
 

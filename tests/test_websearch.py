@@ -33,8 +33,8 @@ def test_plugin_with_searxng():
 async def test_search_duckduckgo_httpx_error(monkeypatch):
     async def mock_get(*a, **kw):
         raise Exception("Connection refused")
-    monkeypatch.setattr("httpx.AsyncClient.get", mock_get)
     wp = WebSearchPlugin()
+    monkeypatch.setattr(wp._client, "get", mock_get)
     results = await wp._search_duckduckgo("test", 3)
     assert results == []
 
@@ -64,15 +64,23 @@ async def test_search_uses_searxng_when_url_set(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_search_tavily_network_error():
+async def test_search_tavily_network_error(monkeypatch):
+    async def mock_post(*a, **kw):
+        raise Exception("Connection refused")
+
     wp = WebSearchPlugin(tavily_api_key="bad-key")
+    monkeypatch.setattr(wp._client, "post", mock_post)
     results = await wp._search_tavily("test", 5)
     assert results == []
 
 
 @pytest.mark.asyncio
-async def test_search_searxng_network_error():
+async def test_search_searxng_network_error(monkeypatch):
+    async def mock_get(*a, **kw):
+        raise Exception("Connection refused")
+
     wp = WebSearchPlugin(searxng_url="http://localhost:1")
+    monkeypatch.setattr(wp._client, "get", mock_get)
     results = await wp._search_searxng("test", 5)
     assert results == []
 

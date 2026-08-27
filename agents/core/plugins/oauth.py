@@ -16,6 +16,7 @@ from typing import Optional
 import httpx
 from cryptography.fernet import Fernet
 
+from agents.core.http_client import PluginHTTPClient
 from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.oauth")
@@ -204,46 +205,48 @@ def get_spotify_auth_url() -> str:
 
 async def exchange_google_code(code: str, state: str = "") -> Optional[dict]:
     code_verifier = _pending_verifiers.pop(state, "")
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "code": code,
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "redirect_uri": REDIRECT_URI,
-                "grant_type": "authorization_code",
-                "code_verifier": code_verifier,
-            },
-        )
-        if resp.is_success:
-            data = resp.json()
-            save_token("google", data)
-            return data
-        logger.error(f"Google token exchange failed: {resp.text}")
-        return None
+    resp = await PluginHTTPClient.for_plugin("google-calendar").post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": REDIRECT_URI,
+            "grant_type": "authorization_code",
+            "code_verifier": code_verifier,
+        },
+        timeout=15.0,
+        follow_redirects=False,
+    )
+    if resp.is_success:
+        data = resp.json()
+        save_token("google", data)
+        return data
+    logger.error(f"Google token exchange failed: {resp.text}")
+    return None
 
 
 async def exchange_spotify_code(code: str, state: str = "") -> Optional[dict]:
     code_verifier = _pending_verifiers.pop(state, "")
     auth = httpx.BasicAuth(SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET)
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            "https://accounts.spotify.com/api/token",
-            data={
-                "code": code,
-                "redirect_uri": REDIRECT_URI,
-                "grant_type": "authorization_code",
-                "code_verifier": code_verifier,
-            },
-            auth=auth,
-        )
-        if resp.is_success:
-            data = resp.json()
-            save_token("spotify", data)
-            return data
-        logger.error(f"Spotify token exchange failed: {resp.text}")
-        return None
+    resp = await PluginHTTPClient.for_plugin("spotify").post(
+        "https://accounts.spotify.com/api/token",
+        data={
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+            "grant_type": "authorization_code",
+            "code_verifier": code_verifier,
+        },
+        auth=auth,
+        timeout=15.0,
+        follow_redirects=False,
+    )
+    if resp.is_success:
+        data = resp.json()
+        save_token("spotify", data)
+        return data
+    logger.error(f"Spotify token exchange failed: {resp.text}")
+    return None
 
 
 async def refresh_google_token() -> Optional[str]:
@@ -251,23 +254,24 @@ async def refresh_google_token() -> Optional[str]:
     if not token_data or "refresh_token" not in token_data:
         logger.warning("No Google refresh token available")
         return None
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "refresh_token": token_data["refresh_token"],
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "grant_type": "refresh_token",
-            },
-        )
-        if resp.is_success:
-            data = resp.json()
-            merged = {**token_data, **data}
-            save_token("google", merged)
-            return data.get("access_token", "")
-        logger.error(f"Google token refresh failed: {resp.text}")
-        return None
+    resp = await PluginHTTPClient.for_plugin("google-calendar").post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "refresh_token": token_data["refresh_token"],
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "grant_type": "refresh_token",
+        },
+        timeout=15.0,
+        follow_redirects=False,
+    )
+    if resp.is_success:
+        data = resp.json()
+        merged = {**token_data, **data}
+        save_token("google", merged)
+        return data.get("access_token", "")
+    logger.error(f"Google token refresh failed: {resp.text}")
+    return None
 
 
 async def refresh_spotify_token() -> Optional[str]:
@@ -276,19 +280,20 @@ async def refresh_spotify_token() -> Optional[str]:
         logger.warning("No Spotify refresh token available")
         return None
     auth = httpx.BasicAuth(SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET)
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            "https://accounts.spotify.com/api/token",
-            data={
-                "refresh_token": token_data["refresh_token"],
-                "grant_type": "refresh_token",
-            },
-            auth=auth,
-        )
-        if resp.is_success:
-            data = resp.json()
-            merged = {**token_data, **data}
-            save_token("spotify", merged)
-            return data.get("access_token", "")
-        logger.error(f"Spotify token refresh failed: {resp.text}")
-        return None
+    resp = await PluginHTTPClient.for_plugin("spotify").post(
+        "https://accounts.spotify.com/api/token",
+        data={
+            "refresh_token": token_data["refresh_token"],
+            "grant_type": "refresh_token",
+        },
+        auth=auth,
+        timeout=15.0,
+        follow_redirects=False,
+    )
+    if resp.is_success:
+        data = resp.json()
+        merged = {**token_data, **data}
+        save_token("spotify", merged)
+        return data.get("access_token", "")
+    logger.error(f"Spotify token refresh failed: {resp.text}")
+    return None
