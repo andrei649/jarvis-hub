@@ -1771,6 +1771,12 @@ them instead of blocking). Gated by `tests/test_house_actuator_async.py` and
 
 ## 🛰️ ORIZONT 34 — Mission Control: the swarm cockpit (Nerva Program H, direction 2026-07-24)
 
+Fixed since: ✅ **seeded ADMIN and OBSERVE fallbacks removed from the HUD** (#947) — both surfaces
+now read their live APIs (including `/api/admin/agents/stats`, which consequently leaves the
+route-parity punch-list) instead of rendering seeded corpora, with vitest honesty regressions and a
+rebuilt `agents/web/v2` bundle.
+
+
 > **Mission:** one Tony-Stark surface where the owner *sees* and *steers* the whole swarm —
 > the internal cabinet (17 agents), the autonomy funnel, missions/workflows/sub-agents/A2A,
 > **and the dev swarm** (Claude / Codex / opencode / Antigravity coordinating through
