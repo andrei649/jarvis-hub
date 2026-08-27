@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+import threading
+import time
+from pathlib import Path
 
 import pytest
 
-from agents.core.cameras.onvif import (
+repo_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(repo_root))
+sys.path.insert(0, str(repo_root / "agents"))
+
+from agents.core.cameras.onvif import (  # noqa: E402
     OnvifCameraMapping,
     OnvifDiscoveryConfig,
     OnvifDiscoveryError,
@@ -190,3 +198,77 @@ async def test_malformed_and_oversized_raw_results_fail_boundedly():
     result = await _service(lambda: malformed).discover()
     assert result.status == "online"
     assert result.devices == ()
+
+
+class _Heartbeat:
+    """Ticks only while the event loop is free; a blocking seam stalls it."""
+
+    def __init__(self) -> None:
+        self.ticks = 0
+        self._task: asyncio.Task | None = None
+
+    def __enter__(self) -> _Heartbeat:
+        async def _beat() -> None:
+            while True:
+                self.ticks += 1
+                await asyncio.sleep(0.01)
+
+        self._task = asyncio.get_running_loop().create_task(_beat())
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        assert self._task is not None
+        self._task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_hostname_resolution_for_xaddrs_stays_off_the_event_loop():
+    resolver_threads: list[int] = []
+
+    def slow_resolver(host: str, port: int) -> tuple[str, ...]:
+        resolver_threads.append(threading.get_ident())
+        time.sleep(0.15)
+        return ("192.168.1.50",)
+
+    service = OnvifDiscoveryService(
+        config=OnvifDiscoveryConfig(enabled=True, timeout_seconds=2.0),
+        admin_gate=lambda: True,
+        discoverer=lambda: [
+            {"xaddrs": ["http://camera.local/onvif/device_service"], "name": "Front"}
+        ],
+        resolver=slow_resolver,
+    )
+    loop_thread = threading.get_ident()
+
+    with _Heartbeat() as heartbeat:
+        result = await service.discover()
+
+    assert result.status == "online"
+    assert len(result.devices) == 1
+    # getaddrinfo-equivalent resolution ran on a worker thread, not the loop.
+    assert resolver_threads
+    assert all(thread != loop_thread for thread in resolver_threads)
+    # The loop stayed responsive while DNS was in flight.
+    assert heartbeat.ticks >= 3
+
+
+@pytest.mark.asyncio
+async def test_default_discoverer_factory_import_runs_off_the_event_loop(monkeypatch):
+    loader_threads: list[int] = []
+
+    def slow_loader() -> None:
+        loader_threads.append(threading.get_ident())
+        time.sleep(0.15)
+        return None
+
+    service = _service(discoverer=None)
+    monkeypatch.setattr(service, "_load_default_discoverer", slow_loader)
+    loop_thread = threading.get_ident()
+
+    with _Heartbeat() as heartbeat:
+        result = await service.discover()
+
+    assert result.status == "unavailable"
+    assert result.reason == "onvif_dependency_missing"
+    assert loader_threads and loader_threads[0] != loop_thread
+    assert heartbeat.ticks >= 3
