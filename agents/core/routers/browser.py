@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-
 from collections.abc import Mapping
 from typing import Annotated, Literal
 
@@ -122,11 +121,14 @@ def _project_preview(raw) -> dict[str, list[dict]]:
 async def browser_check(body: BrowserCheckBody):
     """H15.1 — would this URL pass the egress allowlist + SSRF filter?"""
     from agents.core.browser_agent import BrowserPolicy
-    # domain_allowed() resolves DNS synchronously (socket.getaddrinfo via
-    # check_ssrf); keep that off the event loop like the admin audit route.
-    ok, reason = await asyncio.to_thread(
-        BrowserPolicy(body.allowlist).domain_allowed, body.url,
-    )
+
+    def _check() -> tuple[bool, str]:
+        return BrowserPolicy(body.allowlist).domain_allowed(body.url)
+
+    # check_ssrf resolves DNS synchronously (socket.getaddrinfo); inline it froze
+    # the event loop for a full DNS round-trip per request. Pay it in a worker
+    # thread (asyncio.to_thread), same as the other bounded request paths.
+    ok, reason = await asyncio.to_thread(_check)
     return nocache_json({"allowed": ok, "reason": _bounded_reason(reason)})
 
 
@@ -134,8 +136,13 @@ async def browser_check(body: BrowserCheckBody):
 async def browser_plan_preview(body: BrowserPreviewBody):
     """H15.1 — governance dry-run: per-step run/approve/block (no execution)."""
     from agents.core.browser_agent import GovernedBrowser, BrowserPolicy
+
     gb = GovernedBrowser(policy=BrowserPolicy(body.allowlist))
     plan = [step.model_dump(mode="python") for step in body.plan]
-    # navigate steps resolve DNS inside preview(); same sync-seam rule as above.
-    raw = await asyncio.to_thread(gb.preview, plan)
-    return nocache_json(_project_preview(raw))
+
+    def _preview():
+        return gb.preview(plan)
+
+    # Each navigate step runs the same blocking SSRF DNS lookup; with up to 200
+    # steps that is up to 200 frozen DNS round-trips on the loop. Offload whole.
+    return nocache_json(_project_preview(await asyncio.to_thread(_preview)))
