@@ -223,6 +223,23 @@ built on your Windows box:
 
 ## Parking lot (decisions, no rush)
 
+- [ ] **🔴 Public web demo instance for digitaholic.ro — four calls, all yours** (spec:
+  [`docs/decisions/2026-08-24-public-web-demo-digitaholic.md`](decisions/2026-08-24-public-web-demo-digitaholic.md),
+  DRAFT awaiting your review; backlog: BACKLOG.md → *P0 — public web demo*, H23.30). A real Nerva
+  instance in a digitaholic.ro page, free cloud model, auto-updated from `main`, one disposable
+  install per visitor as the "save slot". The four calls:
+  1. **Ratify H23.23 (A)** — or note that this spec uses the install-per-user shape H23.23 already
+     recommends, so it doesn't block on ratification either way.
+  2. **Turn on CDX-12 hardened for this box + fix its `JARVIS_PLUGIN_GRANTS`** (the two items below —
+     this is that decision, scoped to the public box: grant nothing that writes anywhere real).
+  3. **Pick the free LLM provider/key** (OpenRouter / Groq / Gemini — verify current free-tier limits
+     at implementation time, they move).
+  4. **Pick the container host** (no GPU / heavy RAM needed: cloud LLM + in-memory stores).
+
+  ⚠️ Whoever implements this must gate `seed_graph()` first — `agents/core/memory/manager.py:45`
+  today seeds hardcoded personal facts (Andrei/Alexandra/Max/Raiffeisen/Cosmina de Sus/BMW E93) into
+  any empty graph. That is the one blocking code change; the rest of v1 is configuration.
+
 - [ ] **Before any future Hermes adapter proposal:** decide whether the four productivity-skill
   subtrees carrying separate Anthropic terms are legally acceptable for the intended use, and
   require a fresh CVE, transitive-license, SBOM/provenance and platform review

@@ -161,9 +161,15 @@ those come from Redpanda's own `:9644` metrics.
 
 ### 3. Tile URL (frontend) — config only
 ```
-NEXT_PUBLIC_TILE_URL=http://localhost:3002/{table}/{z}/{x}/{y}
+VITE_TILE_URL=http://localhost:3002/{table}/{z}/{x}/{y}.png
 ```
 The map client substitutes `{table}` per layer (`adsb_positions`, `ais_positions`).
+
+**Raster templates only.** The globe draws these as a Cesium imagery overlay, and Cesium's
+imagery pipeline has no Mapbox-Vector-Tile decoder. A `.pbf`/`.mvt` template is refused by
+`src/lib/tiles.ts` and the globe keeps rendering per-point marks — correct, but it means the
+zoomed-out aggregation never kicks in. Serve raster tiles (or put a raster renderer in front of
+Martin) for the 1M-point acceptance criterion.
 
 ## Optional: Redis metrics
 Uncomment the `redis-exporter` service in `observability/docker-compose.observability.yml`

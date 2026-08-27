@@ -1,0 +1,134 @@
+// Runtime-generated mark icons (spec §1.2): the same shapes the legend's MarkGlyph renders,
+// drawn onto a canvas and handed to Cesium as billboard images. Colors are baked per kind.
+// When no canvas exists (vitest's node env, a headless failure) `markIcon()` returns null and
+// the globe falls back to a plain colored point, so the map never goes blank because of an icon.
+
+import { MARK_HEX, type MarkKind } from "./markStyle";
+
+export type IconName = Exclude<MarkKind, "jam"> | "ghost";
+
+/** Every icon the globe can draw. */
+export const ICON_NAMES: readonly IconName[] = [
+  "civil",
+  "mil",
+  "vessel",
+  "dark",
+  "sat",
+  "intel",
+  "ghost",
+];
+
+const CELL = 64; // px per icon bitmap
+
+// Glyph coordinates live in the same -8..8 space as MarkGlyph; scale into the 64px cell.
+const SCALE = 3.4;
+
+function drawIcon(ctx: CanvasRenderingContext2D, name: IconName, cx: number, cy: number) {
+  const c = name === "ghost" ? MARK_HEX.dark : MARK_HEX[name];
+  const s = SCALE;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = c;
+  ctx.strokeStyle = c;
+  switch (name) {
+    case "civil":
+    case "mil": {
+      ctx.beginPath();
+      ctx.moveTo(0, -5 * s);
+      ctx.lineTo(4 * s, 4 * s);
+      ctx.lineTo(0, 1.6 * s);
+      ctx.lineTo(-4 * s, 4 * s);
+      ctx.closePath();
+      if (name === "civil") ctx.fill();
+      else {
+        ctx.lineWidth = 1.5 * s;
+        ctx.stroke();
+      }
+      break;
+    }
+    case "vessel": {
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-3.6 * s, -3.6 * s, 7.2 * s, 7.2 * s);
+      break;
+    }
+    case "dark": {
+      ctx.lineWidth = 1.8 * s;
+      ctx.beginPath();
+      ctx.arc(0, 0, 5 * s, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, 1.6 * s, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case "sat": {
+      ctx.beginPath();
+      ctx.arc(0, 0, 3 * s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.6;
+      ctx.lineWidth = 0.8 * s;
+      ctx.beginPath();
+      ctx.arc(0, 0, 6 * s, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case "intel": {
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(-3.4 * s, -3.4 * s, 6.8 * s, 6.8 * s);
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case "ghost": {
+      // Signal-loss marker (spec §5.0): dashed ring + × at the exact last fix. Never animates.
+      ctx.lineWidth = 1.2 * s;
+      ctx.setLineDash([2 * s, 2 * s]);
+      ctx.beginPath();
+      ctx.arc(0, 0, 5 * s, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(-2.4 * s, -2.4 * s);
+      ctx.lineTo(2.4 * s, 2.4 * s);
+      ctx.moveTo(2.4 * s, -2.4 * s);
+      ctx.lineTo(-2.4 * s, 2.4 * s);
+      ctx.stroke();
+      break;
+    }
+  }
+  ctx.restore();
+}
+
+const cache = new Map<IconName, string | null>();
+
+/** One icon as a data URL, or null when no canvas is available (caller falls back to a point). */
+export function markIcon(name: IconName): string | null {
+  const hit = cache.get(name);
+  if (hit !== undefined) return hit;
+  if (typeof document === "undefined") {
+    cache.set(name, null);
+    return null;
+  }
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = CELL;
+    canvas.height = CELL;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      cache.set(name, null);
+      return null;
+    }
+    drawIcon(ctx, name, CELL / 2, CELL / 2);
+    const url = canvas.toDataURL("image/png");
+    cache.set(name, url);
+    return url;
+  } catch {
+    cache.set(name, null);
+    return null;
+  }
+}
+
+/** Test seam: drop the cache (e.g. after swapping the document). */
+export function resetMarkIconCache(): void {
+  cache.clear();
+}

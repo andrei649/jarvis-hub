@@ -31,6 +31,7 @@ class KernelMetrics:
         self._lock = threading.Lock()
         self._by_kind: dict[str, dict[str, int]] = {}
         self._totals: dict[str, int] = dict.fromkeys(_VERDICTS, 0)
+        self._ungoverned_by_kind: dict[str, int] = {}
         self._denials: deque[dict] = deque(maxlen=max_denials)
 
     def record(self, kind: str, verdict: str, reason: str = "") -> None:
@@ -48,6 +49,13 @@ class KernelMetrics:
             if v == "deny":
                 self._denials.append({"kind": kind, "reason": reason or ""})
 
+    def record_ungoverned(self, kind: str) -> None:
+        """Tally one QA4 observational breach without affecting authorization."""
+
+        kind = kind or "unknown"
+        with self._lock:
+            self._ungoverned_by_kind[kind] = self._ungoverned_by_kind.get(kind, 0) + 1
+
     def snapshot(self, recent: int = 50) -> dict:
         """Per-kind + overall tallies, deny-rate, and the newest-first recent denials."""
         with self._lock:
@@ -56,6 +64,7 @@ class KernelMetrics:
                 "total": total,
                 "by_verdict": dict(self._totals),
                 "by_kind": {k: dict(v) for k, v in sorted(self._by_kind.items())},
+                "ungoverned_by_kind": dict(sorted(self._ungoverned_by_kind.items())),
                 "deny_rate": round(self._totals["deny"] / total, 4) if total else 0.0,
                 "recent_denials": list(reversed(self._denials))[:max(0, recent)],
             }
@@ -65,6 +74,7 @@ class KernelMetrics:
         with self._lock:
             self._by_kind.clear()
             self._totals = dict.fromkeys(_VERDICTS, 0)
+            self._ungoverned_by_kind.clear()
             self._denials.clear()
 
 

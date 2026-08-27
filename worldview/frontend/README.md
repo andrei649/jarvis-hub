@@ -1,60 +1,81 @@
 # WorldView Frontend
 
-Next.js 14 (App Router) + TypeScript + TailwindCSS dashboard. Renders the time-scrubbable
-3D globe with **Deck.gl + Mapbox GL** and synchronizes every layer from a single Zustand
-**System Master Time** store.
+CesiumJS + Vite + TypeScript, **no UI framework** — the God's Eye View build shape, wired to
+WorldView's own 4D API. Renders the time-scrubbable 3D globe and synchronizes every layer from a
+single Zustand **System Master Time** store.
 
-## Status
+## The basemap needs no account
 
-STEP 5 implemented — the geospatial dashboard:
-
-- **`components/DeckGlobe.tsx`** — Deck.gl `GeoJsonLayer`s over a Mapbox dark basemap, one
-  styled layer per domain (military vs civil flights, vessels, satellites + footprints,
-  intensity-shaded H3 jamming cells, intel/dark-vessel markers). Loaded `ssr: false`.
-- **`components/TimelineScrubber.tsx`** — the master-time slider with play/pause, a LIVE
-  toggle, speed control, and a UTC clock readout.
-- **`components/LayerPanel.tsx`** — per-layer visibility toggles + the active trail selection.
-- **Entity trails** — click an aircraft/vessel/satellite to fetch and draw its trailing-hour
-  path (`useEntityTrack` → REST `/track` → a Deck.gl path layer); click empty space to clear.
-- **`lib/store/useTimelineStore.ts`** — the Zustand "System Master Time" store every layer
-  follows; **`lib/useMasterClock.ts`** advances it (wall-clock in live mode, `dt × speed`
-  in historical); **`lib/useWorldViewData.ts`** fans the master clock out to data: debounced
-  REST `/history` per visible layer (historical) or the `/live` WebSocket snapshot+deltas (live).
-
-Validated: `tsc --noEmit` clean, `next build` passes (lint + types + prerender), and the
-app serves HTTP 200 with the rendered shell.
+Cesium ships Natural Earth II raster tiles inside the package. With **no token, no account and no
+network fetch** the globe renders real continents, coastlines and bathymetry from those local
+files (`plugins/cesium.ts` mirrors them into `public/`, `src/globe/imagery.ts` loads them). Set
+`VITE_CESIUM_ION_TOKEN` to upgrade the same slot to ion world imagery (photographic) plus world
+terrain (3D relief). The HUD's basemap line always states which one you are looking at.
 
 ## Develop
 
 ```bash
-npm install            # from the worldview/ monorepo root (workspaces)
-cp .env.local.example .env.local   # set NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN + NEXT_PUBLIC_API_URL
+npm install                        # from the worldview/ monorepo root (workspaces)
+cp .env.local.example .env.local   # optional: VITE_CESIUM_ION_TOKEN, VITE_API_URL
 npm run dev --workspace frontend   # http://localhost:3000
 ```
 
-The globe needs a Mapbox token for the basemap; layer data needs the backend-api running
-(REST `/history` + WebSocket `/live`).
+Layer data needs backend-api running (REST `/history` + WebSocket `/live`); without it the globe
+still renders and the HUD explains what's missing and how to start it.
 
-## Layout
+```bash
+npm run typecheck --workspace frontend
+npm test --workspace frontend      # vitest, node env — no GPU needed
+npm run build --workspace frontend
+```
 
-Redesigned 2026-06-12 per `docs/design/WORLDVIEW_UX_SPEC.md` (brand tokens, zone system,
-mode system, shape encodings, negative-space grammar — see the spec + `WORLDVIEW_UX_HANDOFF.md`
-at the repo root `docs/design/`).
+## How it fits together
 
 ```
-app/          App Router entry (layout: fontsource imports · page: app bar + zone rails + timeline)
-components/   AppBar, ModeFrame, Panel (shared anatomy), MarkGlyph, DeckGlobe, CameraTour,
-              LayerPanel (=legend), ReconPanel, StatsHud, Inspector (+ProvenanceSection),
-              AlertsPanel, ExportPanel, TimelineScrubber (+ReplayControl), SystemStatus,
-              HelpOverlay, ArrivalBanner, DemoLens, GlobeErrorBoundary
-lib/          layers.ts, api.ts, types.ts, deckLayers.ts, markStyle.ts, markAtlas.ts,
-              negativeSpace.ts, uiMode.ts, inspectorFields.ts, timelineMarkers.ts, arrival.ts,
-              shortcuts.ts, tooltip.ts, useMasterClock.ts, useWorldViewData.ts,
-              useReconWindows.ts, store/useTimelineStore.ts
+index.html          sets window.CESIUM_BASE_URL, mounts #app
+plugins/cesium.ts   mirrors Cesium's runtime assets into public/cesium (once per version)
+src/main.ts         bootstrap: DOM shell, globe, controllers, HUD surfaces, drivers
+
+src/globe/
+  scene.ts          PURE: per-layer FeatureCollections → a plain draw spec (marks, polygons,
+                    polylines, labels, tile overlay). Cesium-free, so layer selection and mark
+                    encodings are unit-tested in node.
+  render.ts         applies a draw spec to Cesium collections, diffed by id between frames
+  viewer.ts         viewer construction; globe lighting bound to the MASTER clock, so scrubbing
+                    time moves the day/night terminator with the data
+  basemap.ts        PURE: which basemap this session draws, and the sentence the HUD prints
+  imagery.ts        that decision as Cesium imagery layers (+ the raster tile overlay)
+  camera.ts         fly-tos, the AOI tour, the follow lock, 2.5D ⇄ 3D, zoom feedback
+  zoom.ts           PURE: camera height ⇄ slippy-map zoom (the LOD contract)
+  sensors.ts        sensor grades (thermal / night / tactical) as post-process stages
+  picking.ts        hover tooltip + click selection
+
+src/app/            clock, data (REST as-of-T + live WebSocket), track, recon, tour, replay,
+                    keyboard shortcuts — the drivers, all framework-free
+src/ui/             direct-DOM HUD surfaces over a ~100-line render helper (dom.ts): app bar,
+                    layer panel (= legend), recon, stats, inspector, alerts, export, timeline
+                    (+ replay chip), system status, help, arrival banner, mode frame, overlays
+src/lib/            the domain layer, unchanged across the renderer swap: layers, api, types,
+                    markStyle, markIcons, negativeSpace, uiMode, inspectorFields, alerts,
+                    timelineMarkers, recon, provenance, export, arrival, replaySchedule,
+                    cameraTour, tiles, env, store/timelineStore
 ```
+
+## Design
+
+Per `docs/design/WORLDVIEW_UX_SPEC.md` (brand tokens, zone system, mode system, shape encodings,
+negative-space grammar). The design is unchanged by the renderer swap — the spec's references to
+the previous Deck.gl/Mapbox implementation are superseded by the modules above.
+
+## Sensor grades
+
+`V` cycles NORMAL → THERMAL → NIGHT → TACTICAL. These are **visual grades** applied to the
+rendered frame by Cesium post-process stages — a thermal-looking picture is not thermal data, and
+the HUD labels them as grades for exactly that reason.
 
 ## Note on dependency pins
 
-The root `package.json` pins `@deck.gl/core` and the `@luma.gl/*` stack to 9.0.x via
-`overrides` — deck.gl 9.0's peer ranges otherwise float luma to 9.3.x, whose renamed exports
-break the build.
+`cesium` is pinned exactly. The keyless basemap depends on files inside the package
+(`Assets/Textures/NaturalEarthII`), not on an API we call, so `src/globe/__tests__/cesiumAssets.test.ts`
+asserts that contract at test time — an upgrade that moved those files would otherwise only show
+up as a blank globe at runtime.
