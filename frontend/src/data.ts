@@ -501,3 +501,15 @@ export const V2 = { GLYPHS, FALLBACK_GLYPH, glyphFor, TIERS, AGENTS, COLLAB, DOS
     TOPICS, KG, I18N,
     AUTONOMY, BUILD, OBSERVE, INTEROP, COMMS, ADMIN,
     FINANCE, HEALTH, KNOWLEDGE, FAMILY };
+
+/* Pristine copies of the two demo corpora that live hydration mutates in place.
+ * useLiveModes strips ADMIN keys/backups/channels/system and OBSERVE
+ * traces/arena/by_agent at the start of every cycle; when the owner flips demo
+ * back on, restore these so the labelled fiction is whole again. */
+const PRISTINE_ADMIN = structuredClone(ADMIN);
+const PRISTINE_OBSERVE = structuredClone(OBSERVE);
+
+export function restoreDemoCorpora(){
+  V2.ADMIN = structuredClone(PRISTINE_ADMIN);
+  V2.OBSERVE = structuredClone(PRISTINE_OBSERVE);
+}

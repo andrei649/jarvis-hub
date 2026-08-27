@@ -1,7 +1,7 @@
 /* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
    honest placeholder and get ported from the prototype in the next phase. */
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { V2 } from './data';
+import { V2, restoreDemoCorpora } from './data';
 import { localityFigure } from './locality';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
@@ -144,9 +144,13 @@ function App() {
   useEffect(() => { try { localStorage.setItem('hud.dotgrid', dotgrid); } catch { /* ignore */ } }, [dotgrid]);
   useEffect(() => { try { localStorage.setItem('hud.voice', JSON.stringify(voiceCfg)); } catch { /* ignore */ } }, [voiceCfg]);
   // Re-seed (or clear) the demo-only cockpit corpus when DEMO toggles at runtime.
+  // Demo ON also restores the pristine ADMIN/OBSERVE fiction — the live cycles in
+  // useLiveModes strip and refill those corpora in place, and demo must keep its
+  // labelled complete picture even while the poller runs.
   useEffect(() => {
     setDecisions(demo ? V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })) : []);
     setMessages(demo ? V2.SEED_MESSAGES : []);
+    if (demo) restoreDemoCorpora();
   }, [demo]);
 
   // Rehydrate the visible transcript from server-persisted memory on load, so a
