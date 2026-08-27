@@ -817,6 +817,9 @@ Still open from that run (verified real, not yet fixed): the seeded ADMIN/OBSERV
 corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): ✅ the dead `arr() || fallback` in
 the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
+Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the
+verified/partial/aspirational split in `NERVA_VISION.md` now matches what actually ships, so the
+vision doc stops reading as a status report for capabilities that are still seeds.
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
