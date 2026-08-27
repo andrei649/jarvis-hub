@@ -9,6 +9,10 @@ one-line doc — never file contents. The index covers the project's own Python
 source, built once and cached.
 """
 
+from __future__ import annotations
+
+import asyncio
+
 from fastapi import APIRouter, Depends, Query
 
 from agents.core.routers._deps import admin_guard, user_guard
@@ -24,7 +28,10 @@ async def search_payload(q: str = "", kind: str = "", limit: int = 50) -> dict:
     route-tool dispatch can reflect its signature and call it with ordinary kwargs.
     """
     from agents.core import codeintel
-    hits = codeintel.search_symbols(codeintel.project_index(), q, kind=(kind or None), limit=limit)
+    # A cold cache walks + parses the whole repo synchronously — keep that off
+    # the event loop so other requests keep flowing while it runs.
+    idx = await asyncio.to_thread(codeintel.project_index)
+    hits = codeintel.search_symbols(idx, q, kind=(kind or None), limit=limit)
     return {"query": q, "kind": kind or None, "count": len(hits), "results": hits}
 
 
@@ -32,7 +39,8 @@ async def search_payload(q: str = "", kind: str = "", limit: int = 50) -> dict:
 async def codeintel_stats():
     """Index roll-ups: files indexed, symbol count, counts by kind."""
     from agents.core import codeintel
-    idx = codeintel.project_index()
+    # Same cold-build stall as above — offload the blocking walk.
+    idx = await asyncio.to_thread(codeintel.project_index)
     return nocache_json({k: idx[k] for k in ("files_indexed", "symbol_count", "by_kind", "errors")})
 
 
@@ -46,6 +54,8 @@ async def codeintel_search(q: str = "", kind: str = "", limit: int = Query(50, g
 async def codeintel_reindex():
     """Rebuild the cached project index (admin)."""
     from agents.core import codeintel
-    idx = codeintel.reindex()
+    # Every reindex re-walks the repo synchronously — offload it (house pattern:
+    # routers/admin.py offloads its blocking sqlite audit the same way).
+    idx = await asyncio.to_thread(codeintel.reindex)
     return nocache_json({"ok": True, "files_indexed": idx["files_indexed"],
                          "symbol_count": idx["symbol_count"]})
