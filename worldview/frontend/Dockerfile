@@ -23,13 +23,36 @@ ENV VITE_API_URL=$VITE_API_URL \
 RUN npm run build --workspace frontend
 
 FROM nginx:1.27-alpine
-COPY --from=build /app/frontend/dist /usr/share/nginx/html
+COPY --from=build --chown=nginx:nginx /app/frontend/dist /usr/share/nginx/html
 # Single-page app: every path serves index.html; hashed assets get a long cache.
-RUN printf 'server {\n\
-  listen 3000;\n\
-  root /usr/share/nginx/html;\n\
-  location /assets/ { expires 1y; add_header Cache-Control "public, immutable"; }\n\
-  location /cesium/ { expires 1y; add_header Cache-Control "public, immutable"; }\n\
-  location / { try_files $uri $uri/ /index.html; }\n\
-}\n' > /etc/nginx/conf.d/default.conf
+RUN printf 'pid /tmp/nginx.pid;\n\
+events {}\n\
+http {\n\
+  include /etc/nginx/mime.types;\n\
+  client_body_temp_path /tmp/client_body;\n\
+  proxy_temp_path /tmp/proxy;\n\
+  fastcgi_temp_path /tmp/fastcgi;\n\
+  uwsgi_temp_path /tmp/uwsgi;\n\
+  scgi_temp_path /tmp/scgi;\n\
+  access_log /dev/stdout;\n\
+  error_log /dev/stderr;\n\
+  server {\n\
+    listen 3000;\n\
+    root /usr/share/nginx/html;\n\
+    location /assets/ { expires 1y; add_header Cache-Control "public, immutable"; }\n\
+    location /cesium/ { expires 1y; add_header Cache-Control "public, immutable"; }\n\
+    location / { try_files $uri $uri/ /index.html; }\n\
+  }\n\
+}\n' > /etc/nginx/nginx.conf \
+ && rm -f /etc/nginx/conf.d/default.conf \
+ && chown -R nginx:nginx /var/cache/nginx
 EXPOSE 3000
+# AUD-4/F14: run as the image's built-in unprivileged `nginx` user. Port 3000 is
+# already non-privileged; the master pid and all temp paths are relocated to
+# /tmp so no root-owned path is written at runtime.
+USER nginx
+# Static bundle, no app-level health route to probe: the SPA answers `/` from
+# disk, so that is the liveness signal.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
+  CMD wget --spider -q http://127.0.0.1:3000/ || exit 1
+CMD ["nginx", "-g", "daemon off;"]
