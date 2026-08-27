@@ -349,6 +349,7 @@ class HouseActuator:
         state_reader,
         driver,
         authorizer=None,
+        intake_authorizer=None,
         enqueue=None,
         outcome_provider=None,
         confirmation_store: StrongConfirmationStore | None = None,
@@ -358,6 +359,7 @@ class HouseActuator:
         self._state_reader = state_reader
         self._driver = driver
         self._enqueue = enqueue
+        self._intake_authorizer = intake_authorizer
         self._outcomes = outcome_provider
         self._confirmations = confirmation_store
         self._clock = clock or time.time
@@ -412,6 +414,26 @@ class HouseActuator:
             except (TypeError, ValueError):
                 autonomy_level = "ask"
         title = f"{payload['control']} {payload['action']} → {payload['entity_id']}"
+        from agents.core.kernel import kernel_enabled
+
+        if kernel_enabled() and callable(self._intake_authorizer):
+            try:
+                from agents.core.kernel import Action, Verdict
+
+                decision = self._intake_authorizer(
+                    Action(
+                        kind=kind,
+                        agent=agent,
+                        title=title,
+                        payload=payload,
+                        scope=f"house:{payload['entity_id']}",
+                        origin="generated",
+                    )
+                )
+                if getattr(decision, "verdict", None) is Verdict.DENY:
+                    return {"ok": False, "queued": False, "reason": "kernel_denied"}
+            except Exception:
+                return {"ok": False, "queued": False, "reason": "kernel_unavailable"}
         preview = preview_task(
             {
                 "kind": kind,
