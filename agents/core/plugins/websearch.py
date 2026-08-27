@@ -117,35 +117,26 @@ class WebSearchPlugin:
         private host in the gap. Redirects are followed manually so **every** hop,
         not just the final URL, is SSRF-checked before we connect.
         """
-        from urllib.parse import urlparse, urljoin
+        from urllib.parse import urljoin
 
         current = url
-        # follow_redirects=False — we follow manually to SSRF-check each hop.
-        async with httpx.AsyncClient(
-            timeout=30.0, follow_redirects=False, transport=_transport
-        ) as client:
+        client = self._client
+        temporary_client = None
+        if _transport is not None:
+            temporary_client = PluginHTTPClient(
+                "websearch",
+                resolver=resolve_and_validate,
+                transport_factory=lambda _target: _transport,
+            )
+            client = temporary_client
+        try:
             for _hop in range(6):  # initial request + up to 5 redirects
-                parsed = urlparse(current)
-                host = parsed.hostname
-                if not host or parsed.scheme not in ("http", "https"):
-                    logger.warning("Blocked page fetch (SSRF): unsupported URL %s", current)
-                    return None
-                ips, err = resolve_and_validate(host)
-                if err:
-                    logger.warning("Blocked page fetch (SSRF): %s", err)
-                    return None
-
-                # Pin: connect to the validated IP, keep Host + TLS SNI = hostname.
-                pinned = ips[0]
-                ip_host = f"[{pinned}]" if ":" in pinned else pinned
-                port = f":{parsed.port}" if parsed.port else ""
-                ip_url = parsed._replace(netloc=f"{ip_host}{port}").geturl()
-                host_header = f"{host}:{parsed.port}" if parsed.port else host
                 try:
                     resp = await client.get(
-                        ip_url,
-                        headers={"User-Agent": "Mozilla/5.0", "Host": host_header},
-                        extensions={"sni_hostname": host},
+                        current,
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        follow_redirects=False,
+                        timeout=30.0,
                     )
                 except Exception as e:
                     logger.error("Page fetch error for %s: %s", url, e)
@@ -153,6 +144,7 @@ class WebSearchPlugin:
 
                 if resp.is_redirect:
                     location = resp.headers.get("location")
+                    await resp.aclose()
                     if not location:
                         return None
                     current = urljoin(current, location)
@@ -175,6 +167,9 @@ class WebSearchPlugin:
 
             logger.warning("Blocked page fetch (SSRF): too many redirects for %s", url)
             return None
+        finally:
+            if temporary_client is not None:
+                await temporary_client.close()
 
     async def close(self):
         await self._client.close()

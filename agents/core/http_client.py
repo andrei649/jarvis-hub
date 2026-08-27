@@ -16,10 +16,14 @@ Usage:
     resp = await client.get("https://wttr.in/London")
 """
 
+import asyncio
 import logging
 import time
+from collections.abc import Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -67,6 +71,17 @@ _clients: dict[str, "PluginHTTPClient"] = {}
 
 class PluginEgressError(PermissionError):
     """A plugin HTTP request violated its manifest's network policy (F-07)."""
+
+
+@dataclass(frozen=True, slots=True)
+class PinnedTarget:
+    """A logical URL and the one resolver-validated IP that may receive its bytes."""
+
+    logical_url: str
+    dial_url: str
+    host_header: str
+    sni_hostname: str
+    pool_key: tuple[str, str, int, str]
 
 
 def _host_is_local(host: str) -> bool:
@@ -169,6 +184,24 @@ class PluginTimeouts:
         )
 
 
+def _address_mode(host: str) -> str:
+    """Pick the SSRF address class for a host the egress policy already cleared.
+
+    Self-hosted integrations (n8n, SearXNG, Signal, Matrix) are configured with a
+    loopback / RFC1918 *literal* — or the reserved name ``localhost`` — and must
+    validate in ``lan`` mode, or local-first deployments cannot reach their own
+    services (MOONSHOT §5.1). Every other name stays in ``public`` mode on
+    purpose: letting an ordinary DNS name opt into ``lan`` merely because it
+    currently resolves somewhere private is precisely the rebinding hole the
+    SSRF guard exists to close.
+    """
+    from .security.ssrf import is_private_ip
+
+    if host in {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}:
+        return "lan"
+    return "lan" if is_private_ip(host) else "public"
+
+
 class PluginHTTPClient:
     """
     Centralized async HTTP client for plugins.
@@ -186,6 +219,9 @@ class PluginHTTPClient:
         plugin_name: str,
         timeouts: Optional[PluginTimeouts] = None,
         circuit_breaker: Optional[CircuitBreaker] = None,
+        *,
+        resolver: Callable[..., tuple[list[str], Optional[str]]] | None = None,
+        transport_factory: Callable[[PinnedTarget], httpx.AsyncBaseTransport] | None = None,
     ):
         self.plugin_name = plugin_name
         self.timeouts = timeouts or PluginTimeouts()
@@ -193,6 +229,10 @@ class PluginHTTPClient:
             f"http_client:{plugin_name}"
         )
         self._client: Optional[httpx.AsyncClient] = None
+        self._resolver = resolver
+        self._transport_factory = transport_factory
+        self._pinned_clients: dict[tuple[str, str, int, str], httpx.AsyncClient] = {}
+        self._pinned_targets: list[PinnedTarget] = []
 
     # ── Factory ────────────────────────────────────────────────────
 
@@ -220,15 +260,16 @@ class PluginHTTPClient:
     # ── Underlying httpx client ────────────────────────────────────
 
     def _get_client(self) -> httpx.AsyncClient:
-        """Return the underlying httpx.AsyncClient, creating it if needed."""
+        """Return the legacy client for lifecycle compatibility, never for egress I/O."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 timeout=self.timeouts.to_httpx_timeout(),
+                trust_env=False,
             )
         return self._client
 
     # ── Egress policy (F-07) ───────────────────────────────────────
-    def _enforce_egress(self, url: str) -> None:
+    def _manifest_mode(self, url: str) -> str:
         """Enforce the plugin manifest's network policy on an outbound URL.
 
         Looks up the plugin's manifest (by exact id). Plugins with no manifest
@@ -244,13 +285,13 @@ class PluginHTTPClient:
                 BUILTIN_PLUGINS, NetworkAccess, host_in_allowlist, dynamic_domains,
             )
         except Exception:
-            return
+            return "public"
         manifest = BUILTIN_PLUGINS.get(self.plugin_name)
         if manifest is None:
-            return  # no declared policy → unchanged behavior
+            return "public"
         na = manifest.network_access
         if na == NetworkAccess.FULL:
-            return
+            return "public"
         from urllib.parse import urlparse
         host = (urlparse(url).hostname or "").lower().rstrip(".")
         if na == NetworkAccess.NONE:
@@ -258,19 +299,17 @@ class PluginHTTPClient:
                 f"egress blocked: plugin '{self.plugin_name}' has no network access (tried {host or url})"
             )
         if na == NetworkAccess.LAN:
-            if _host_is_local(host):
-                return
-            violation = f"plugin '{self.plugin_name}' is LAN-only but '{host}' is not a local address"
+            return "lan"
         elif na == NetworkAccess.RESTRICTED:
             # SEC-5b: static allowlist ∪ hosts registered at init for config/env-
             # driven plugins (n8n, SearXNG, Signal, Matrix).
             allowed = manifest.allowed_domains + dynamic_domains(self.plugin_name)
             if host and host_in_allowlist(host, allowed):
-                return
+                return _address_mode(host)
             violation = (f"plugin '{self.plugin_name}' may not reach '{host}' "
                          f"(allowed: {allowed})")
         else:
-            return
+            return "public"
         strict = strict_egress_enabled()
         if strict:
             raise PluginEgressError(f"egress blocked: {violation}")
@@ -284,6 +323,18 @@ class PluginHTTPClient:
                     "egress downgrade audit failed (type=%s)",
                     type(exc).__name__,
                 )
+        return _address_mode(host)
+
+    def _enforce_egress(self, url: str) -> None:
+        """Legacy synchronous policy probe; request paths use ``_prepare_target``."""
+        mode = self._manifest_mode(url)
+        if mode == "lan":
+            from .security.ssrf import resolve_and_validate
+
+            host = _host_of(url)
+            _ips, error = resolve_and_validate(host, mode="lan")
+            if error:
+                raise PluginEgressError(f"egress blocked: {error}")
 
     def _enforce_kernel(self, method: str, url: str, host: str) -> None:
         """ORIZONT-24 K1 wave-2: mediate policy-passing egress through the Action Kernel.
@@ -328,6 +379,110 @@ class PluginHTTPClient:
             raise
         _record_egress(self.plugin_name, host, method, allowed=True, local=local)
 
+    async def _prepare_target(self, method: str, url: str) -> PinnedTarget:
+        """Resolve and validate off-loop, then construct the only allowed dial target."""
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if parsed.scheme not in {"http", "https"} or not host:
+            raise PluginEgressError("egress blocked: unsupported URL")
+        try:
+            mode = self._manifest_mode(url)
+            from .security.ssrf import resolve_and_validate
+
+            resolver = self._resolver or resolve_and_validate
+            ips, error = await asyncio.to_thread(resolver, host, mode=mode)
+            if error or not ips:
+                raise PluginEgressError(f"egress blocked: {error or 'empty DNS answer'}")
+            normalized_ips = []
+            for address in ips:
+                validated, literal_error = resolve_and_validate(address, mode=mode)
+                if literal_error or not validated:
+                    raise PluginEgressError(
+                        f"egress blocked: {literal_error or 'empty DNS answer'}"
+                    )
+                normalized_ips.append(validated[0])
+            literal_ip = normalized_ips[0]
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            ip_host = f"[{literal_ip}]" if ":" in literal_ip else literal_ip
+            netloc = f"{ip_host}:{port}" if parsed.port else ip_host
+            dial_url = parsed._replace(netloc=netloc).geturl()
+            host_header = host
+            if parsed.port and parsed.port not in {80, 443}:
+                host_header = f"{host}:{parsed.port}"
+            target = PinnedTarget(
+                logical_url=url,
+                dial_url=dial_url,
+                host_header=host_header,
+                sni_hostname=host,
+                pool_key=(parsed.scheme, literal_ip, port, host),
+            )
+            self._enforce_kernel(method, url, host)
+        except PluginEgressError as exc:
+            _record_egress(self.plugin_name, host, method, allowed=False, local=mode == "lan" if 'mode' in locals() else False, reason=str(exc))
+            raise
+        _record_egress(self.plugin_name, host, method, allowed=True, local=mode == "lan")
+        return target
+
+    def _pinned_client(self, target: PinnedTarget) -> httpx.AsyncClient:
+        client = self._pinned_clients.get(target.pool_key)
+        if client is None or client.is_closed:
+            transport = self._transport_factory(target) if self._transport_factory else None
+            client = httpx.AsyncClient(
+                timeout=self.timeouts.to_httpx_timeout(),
+                follow_redirects=False,
+                trust_env=False,
+                transport=transport,
+            )
+            self._pinned_clients[target.pool_key] = client
+            self._pinned_targets.append(target)
+        return client
+
+    @staticmethod
+    def _without_headers(headers: dict[str, str], names: set[str]) -> dict[str, str]:
+        return {key: value for key, value in headers.items() if key.lower() not in names}
+
+    @staticmethod
+    def _cross_origin(left: str, right: str) -> bool:
+        a, b = urlparse(left), urlparse(right)
+        return (a.scheme, a.hostname, a.port) != (b.scheme, b.hostname, b.port)
+
+    async def _request_pinned(self, method: str, url: str, **kwargs) -> httpx.Response:
+        follow_redirects = bool(kwargs.pop("follow_redirects", False))
+        headers = dict(kwargs.pop("headers", {}) or {})
+        current_method, current_url = method.upper(), url
+        for hop in range(21):
+            target = await self._prepare_target(current_method, current_url)
+            request_headers = {**headers, "Host": target.host_header}
+            extensions = {**dict(kwargs.pop("extensions", {}) or {}), "sni_hostname": target.sni_hostname}
+            response = await self._pinned_client(target).request(
+                current_method,
+                target.dial_url,
+                headers=request_headers,
+                extensions=extensions,
+                follow_redirects=False,
+                **kwargs,
+            )
+            if not follow_redirects or response.status_code not in {301, 302, 303, 307, 308}:
+                return response
+            location = response.headers.get("location")
+            await response.aclose()
+            if not location or hop == 20:
+                return response
+            next_url = urljoin(current_url, location)
+            cross_origin = self._cross_origin(current_url, next_url)
+            if cross_origin:
+                headers = self._without_headers(headers, {"authorization", "cookie", "proxy-authorization"})
+            if current_method == "POST" and response.status_code in {301, 302, 303}:
+                current_method = "GET"
+                kwargs = {key: value for key, value in kwargs.items() if key not in {"content", "data", "json", "files"}}
+                headers = self._without_headers(headers, {"content-length", "content-type", "transfer-encoding", "expect"})
+            elif cross_origin and response.status_code in {307, 308}:
+                # Preserve the redirect method but never replay an entity cross-origin.
+                kwargs = {key: value for key, value in kwargs.items() if key not in {"content", "data", "json", "files"}}
+                headers = self._without_headers(headers, {"content-length", "content-type", "transfer-encoding", "expect"})
+            current_url = next_url
+        raise PluginEgressError("egress blocked: redirect cap exceeded")
+
     # ── HTTP methods ───────────────────────────────────────────────
 
     async def _send(self, method: str, url: str, **kwargs) -> httpx.Response:
@@ -342,10 +497,9 @@ class PluginHTTPClient:
                 self.plugin_name, method,
             )
             raise RuntimeError(f"Circuit breaker open: plugin={self.plugin_name}")
-        self._guard(method, url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
-            resp = await getattr(self._get_client(), method.lower())(url, **kwargs)
+            resp = await self._request_pinned(method, url, **kwargs)
             self.circuit_breaker.record_success()
             return resp
         except Exception:
@@ -378,15 +532,62 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
-        self._guard(method, url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
-            resp = await self._get_client().request(method, url, **kwargs)
+            resp = await self._request_pinned(method, url, **kwargs)
             self.circuit_breaker.record_success()
             return resp
         except Exception:
             self.circuit_breaker.record_failure()
             raise
+
+    @asynccontextmanager
+    async def stream(self, method: str, url: str, **kwargs):
+        """Open a pinned stream; redirects are opt-in and revalidated per hop."""
+        if self.circuit_breaker.is_open():
+            raise RuntimeError(f"Circuit breaker open: plugin={self.plugin_name}")
+        follow_redirects = bool(kwargs.pop("follow_redirects", False))
+        headers = dict(kwargs.pop("headers", {}) or {})
+        current_method, current_url = method.upper(), url
+        for hop in range(21):
+            target = await self._prepare_target(current_method, current_url)
+            context = self._pinned_client(target).stream(
+                current_method,
+                target.dial_url,
+                headers={**headers, "Host": target.host_header},
+                extensions={**dict(kwargs.pop("extensions", {}) or {}), "sni_hostname": target.sni_hostname},
+                follow_redirects=False,
+                **kwargs,
+            )
+            response = await context.__aenter__()
+            if not follow_redirects or response.status_code not in {301, 302, 303, 307, 308}:
+                try:
+                    self.circuit_breaker.record_success()
+                    yield response
+                except Exception:
+                    self.circuit_breaker.record_failure()
+                    raise
+                finally:
+                    await context.__aexit__(None, None, None)
+                return
+            location = response.headers.get("location")
+            await context.__aexit__(None, None, None)
+            if not location or hop == 20:
+                self.circuit_breaker.record_success()
+                return
+            next_url = urljoin(current_url, location)
+            cross_origin = self._cross_origin(current_url, next_url)
+            if cross_origin:
+                headers = self._without_headers(headers, {"authorization", "cookie", "proxy-authorization"})
+            if current_method == "POST" and response.status_code in {301, 302, 303}:
+                current_method = "GET"
+                kwargs = {key: value for key, value in kwargs.items() if key not in {"content", "data", "json", "files"}}
+                headers = self._without_headers(headers, {"content-length", "content-type", "transfer-encoding", "expect"})
+            elif cross_origin and response.status_code in {307, 308}:
+                kwargs = {key: value for key, value in kwargs.items() if key not in {"content", "data", "json", "files"}}
+                headers = self._without_headers(headers, {"content-length", "content-type", "transfer-encoding", "expect"})
+            current_url = next_url
+        raise PluginEgressError("egress blocked: redirect cap exceeded")
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -402,6 +603,14 @@ class PluginHTTPClient:
             except RuntimeError:
                 # Event loop may already be closed during teardown — ignore.
                 pass
+        for client in list(self._pinned_clients.values()):
+            if not client.is_closed:
+                try:
+                    await client.aclose()
+                except RuntimeError:
+                    pass
+        self._pinned_clients.clear()
+        self._pinned_targets.clear()
         _clients.pop(self.plugin_name, None)
 
     async def __aenter__(self) -> "PluginHTTPClient":

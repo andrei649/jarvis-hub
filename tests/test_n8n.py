@@ -55,13 +55,28 @@ def _mock_response(status_code: int = 200, json_data: dict = None) -> MagicMock:
     return resp
 
 
+def _install(plugin: N8NPlugin, mock_httpx: MagicMock) -> MagicMock:
+    """Route the client's request seam at *mock_httpx*'s verb methods.
+
+    SEC-B4 moved plugin egress off the shared ``_client`` and onto the pinned
+    request path, so ``_request_pinned`` — not ``_client.get`` — is now the seam
+    a plugin call passes through. Dispatching it back onto the verb keeps these
+    tests asserting the *logical* URL and kwargs the plugin asked for (the
+    pinning itself is covered by tests/test_http_client_ssrf_pinning.py).
+    """
+    async def _dispatch(method: str, url: str, **kwargs):
+        return await getattr(mock_httpx, method.lower())(url, **kwargs)
+
+    plugin._client._request_pinned = _dispatch
+    return mock_httpx
+
+
 def _inject_mock_client(plugin: N8NPlugin, method: str, response: MagicMock):
-    """Inject an AsyncMock into the plugin's PluginHTTPClient._client for *method*."""
+    """Inject an AsyncMock into the plugin's request seam for *method*."""
     mock_httpx = MagicMock()
     mock_httpx.is_closed = False
     setattr(mock_httpx, method, AsyncMock(return_value=response))
-    plugin._client._client = mock_httpx
-    return mock_httpx
+    return _install(plugin, mock_httpx)
 
 
 def _inject_error_client(plugin: N8NPlugin, method: str, exc):
@@ -69,8 +84,7 @@ def _inject_error_client(plugin: N8NPlugin, method: str, exc):
     mock_httpx = MagicMock()
     mock_httpx.is_closed = False
     setattr(mock_httpx, method, AsyncMock(side_effect=exc))
-    plugin._client._client = mock_httpx
-    return mock_httpx
+    return _install(plugin, mock_httpx)
 
 
 # ---------------------------------------------------------------------------

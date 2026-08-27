@@ -24,7 +24,8 @@ import agents.web as web  # noqa: E402
 
 # ── egress allowlist ──────────────────────────────────────────────
 
-def test_allowlist_suffix_match_and_fail_closed():
+def test_allowlist_suffix_match_and_fail_closed(monkeypatch):
+    monkeypatch.setattr("core.security.ssrf.check_ssrf", lambda _url: None)
     pol = BrowserPolicy(["example.com"])
     assert pol.domain_allowed("https://example.com/x")[0] is True
     assert pol.domain_allowed("https://docs.example.com/x")[0] is True   # subdomain
@@ -81,6 +82,34 @@ async def test_offlist_navigation_hard_blocked():
     assert drv.calls == []                       # driver never touched
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/",
+        "http://example.com/",
+        "data:text/html,hello",
+        "file:///C:/owner/private.txt",
+        "javascript:alert(1)",
+    ],
+)
+async def test_navigation_without_transport_refuses_before_url_parsing_or_driver_call(url):
+    class NeverParsePolicy(BrowserPolicy):
+        def domain_allowed(self, _url):
+            pytest.fail("navigation must refuse before URL policy parsing")
+
+    driver = NullBrowserDriver()
+    browser = GovernedBrowser(driver=driver, policy=NeverParsePolicy(["example.com"]))
+
+    result = await browser.run_step({"action": "navigate", "url": url})
+
+    assert result == {
+        "action": "navigate",
+        "status": "blocked",
+        "reason": "browser transport unavailable",
+    }
+    assert driver.calls == []
+
+
 async def test_readonly_runs_without_approval():
     drv = NullBrowserDriver()
     gb = GovernedBrowser(driver=drv, policy=BrowserPolicy(["example.com"]))
@@ -88,8 +117,13 @@ async def test_readonly_runs_without_approval():
         {"action": "navigate", "url": "https://example.com"},
         {"action": "extract", "selector": "h1"},
     ])
-    assert out["ok"] is True
-    assert [c[0] for c in drv.calls] == ["navigate", "extract"]
+    assert out["ok"] is False
+    assert out["trace"] == [{
+        "action": "navigate",
+        "status": "blocked",
+        "reason": "browser transport unavailable",
+    }]
+    assert drv.calls == []
 
 
 async def test_risky_step_denied_without_queue():

@@ -29,7 +29,11 @@ def _slow_getaddrinfo(record_thread, delay=0.25):
     def fake(host, port, *args, **kwargs):
         record_thread["thread"] = threading.current_thread().name
         time.sleep(delay)
-        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("203.0.113.7", 0))]
+        # A genuinely global address: 203.0.113.0/24 (TEST-NET-3) reports
+        # is_global=False / is_private=True, so the SEC-B4 public-mode policy
+        # classifies it as unsafe and the allow-path assertions below would be
+        # measuring a block instead of a successful off-loop resolution.
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
 
     return fake
 
