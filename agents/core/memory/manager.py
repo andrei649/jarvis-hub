@@ -42,6 +42,8 @@ class MemoryManager:
         self._embedder = None
         from agents.core.env_config import env_flag
         self.embed_turns = env_flag("MEMORY_EMBED_TURNS")
+        # No-op on a public box (H23.30): seed_graph() self-gates on
+        # NERVA_PUBLIC_PROFILE so the owner's personal facts stay private.
         seed_graph(self.graph)
 
     def _init_qdrant(self) -> VectorStore:
