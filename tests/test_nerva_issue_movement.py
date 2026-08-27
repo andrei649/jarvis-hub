@@ -68,6 +68,16 @@ def _require_history(ref: str) -> None:
         capture_output=True,
     ).returncode != 0:
         pytest.skip(f"commit {ref} not reachable in this checkout (shallow clone)")
+    # Having the object locally is not enough: on a shallow clone the commit can
+    # be present but grafted, so the `git clone --shared` fixtures below still
+    # cannot check it out. Ask git directly rather than inferring from the object.
+    if subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+    ).stdout.strip() == "true":
+        pytest.skip(f"commit {ref} is not fully reachable (shallow clone)")
 
 
 def binding_repository(tmp_path):
