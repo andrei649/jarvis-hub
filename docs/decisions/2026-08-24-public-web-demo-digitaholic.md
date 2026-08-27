@@ -8,6 +8,14 @@
 > of 2026-08-24. Not an implementation — no branch, no PR, no code changed. Meant to be the
 > "record goal, non-goals, likely paths, risk, tests, rollback, and dependencies" step `AGENTS.md`
 > asks for before non-trivial implementation.
+>
+> **Implementation note (2026-08-26, appended — the spec body below is left as written):** the one
+> core code change this spec asks for is now delivered. `seed_graph()` self-gates on
+> `NERVA_PUBLIC_PROFILE` and returns 0 without touching the graph. It was placed **inside
+> `seed_graph()`** rather than at the `MemoryManager.__init__` call site named below, so no present
+> or future caller can re-open the exposure; the default (flag unset) is unchanged. Evidence:
+> `tests/test_public_profile_seed_gate.py` (+8). Nothing else in this spec is built: no roster
+> overlay, no container, no deployment, and the four owner calls are still open.
 
 ## The question
 
@@ -140,10 +148,10 @@ claim holds:
 | Claim | Verified |
 |---|---|
 | `hardened.py` exists, `JARVIS_HARDENED` opt-in, forces strict egress + audit key | ✅ `agents/core/security/hardened.py:30-87` |
-| `SEED_FACTS` hardcodes personal data, seeded unconditionally on empty graph | ✅ `seed_graph.py:10`, called at `memory/manager.py:45` — **unconditional**, no flag today |
+| `SEED_FACTS` hardcodes personal data, seeded unconditionally on empty graph | ✅ `seed_graph.py:10`, called at `memory/manager.py:45` — was **unconditional** when written; gated by `NERVA_PUBLIC_PROFILE` since 2026-08-26 |
 | `LOCAL_ONLY_AGENTS = {frigga, ultron, howard, hestia}` | ✅ `llm/hybrid_router.py:93` |
 | `cloud_llm_agents: [jarvis, athena, stark, vision, veronica]` | ✅ `agents/_system/agents.yaml:21` |
-| `NERVA_PUBLIC_PROFILE` is a *new* flag | ✅ zero occurrences in tree |
+| `NERVA_PUBLIC_PROFILE` is a *new* flag | ✅ zero occurrences in tree when this spec was written; **implemented 2026-08-26** in `seed_graph.py` |
 | CDX-12 / CDX-11 already listed as owner calls | ✅ `docs/OWNER_TASKS.md:253`, `:274` |
 
 One reference is **external to this repo**: `claude/nerva-jarvis-hub.md` (the public-repo exposure

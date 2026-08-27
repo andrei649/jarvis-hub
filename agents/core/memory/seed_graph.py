@@ -1,9 +1,21 @@
 """Seed the knowledge graph with known facts about the user.
 
 Called once on startup if the graph is empty.
+
+`SEED_FACTS` is the *owner's* private install: real people, a real employer, a
+real village. A public deployment (H23.30 — the digitaholic.ro demo box) must
+never plant it, or a stranger starts talking to a Nerva that already knows the
+owner's family. `NERVA_PUBLIC_PROFILE=1` skips the seed entirely.
+
+The gate lives here rather than at the `MemoryManager.__init__` call site so
+that no present or future caller of `seed_graph()` can re-open the exposure.
+
+Spec: docs/decisions/2026-08-24-public-web-demo-digitaholic.md
 """
 
 import logging
+
+from ..env_config import env_flag
 
 logger = logging.getLogger("jarvis.memory.seed_graph")
 
@@ -35,7 +47,14 @@ SEED_FACTS = [
 
 
 def seed_graph(graph) -> int:
-    """Populate graph with known facts. Returns count of items seeded."""
+    """Populate graph with known facts. Returns count of items seeded.
+
+    Returns 0 without touching the graph when `NERVA_PUBLIC_PROFILE` is on.
+    """
+    if env_flag("NERVA_PUBLIC_PROFILE"):
+        logger.info("Public profile — skipping the owner's personal graph seed")
+        return 0
+
     existing = graph.get_entity("Andrei")
     if existing:
         logger.info("Graph already seeded — skipping")
