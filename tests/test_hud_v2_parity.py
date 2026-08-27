@@ -422,7 +422,6 @@ MACHINE_FACING: dict[str, str] = {
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/actions/request",
-    "/api/admin/agents/stats",
     "/api/admin/rotate-tokens",
     "/api/agents/history",
     "/api/arena/match/{match_id}",

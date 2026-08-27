@@ -14,11 +14,6 @@ import { apiGet } from './client';
 import type { LocalModelRow } from './types';
 import { V2 } from '../data';
 
-// No vite/client types wired in this project, so read the build-time env via a cast.
-const SIGNAL_LAYER_URL =
-  (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_SIGNAL_LAYER_URL
-  || 'http://localhost:8787';
-
 const arr = (x: any, ...keys: string[]) => {
   if (Array.isArray(x)) return x;
   for (const k of keys) if (x && Array.isArray(x[k])) return x[k];
@@ -167,6 +162,56 @@ export function hydrateObserve(bench: any, quality: any, resil: any, seed: any) 
   return O;
 }
 
+/* Secret-name heuristic — mirrors `_SECRET_HINTS` in agents/core/routers/admin.py
+ * (key/token/secret/password/passwd/pass/client_id). /api/admin/env returns the
+ * whole environment with secrets already masked server-side by mask_secret()
+ * (agents/core/web_helpers.py:79); filtering by NAME keeps PATH out of a panel
+ * titled "API KEYS & SECRETS" and keeps never-configured seed keys out too.
+ * We only know a key is SET — never claim validity or rotation age. */
+const SECRET_NAME_HINTS = ['key', 'token', 'secret', 'password', 'passwd', 'pass', 'client_id'];
+
+export function hydrateAdminKeys(env: any) {
+  if (!env || typeof env !== 'object' || Array.isArray(env)) return [];
+  return Object.entries(env)
+    .filter(([name]) => SECRET_NAME_HINTS.some((h) => name.toLowerCase().includes(h)))
+    .slice(0, 8)
+    .map(([name, value]) => ({ name, masked: text(value as any, ''), status: 'set', rotated: '' }));
+}
+
+/* /api/admin/agents/stats → OBSERVE's "LATENCY BY AGENT" meters. latency_ms
+ * becomes seconds at one decimal; agents without a measured latency are dropped,
+ * not invented — the seed's seven per-agent latencies had no source at all. */
+export function hydrateByAgent(stats: any) {
+  if (!stats || typeof stats !== 'object' || Array.isArray(stats)) return [];
+  const out: any[] = [];
+  for (const [id, s] of Object.entries(stats)) {
+    const ms = s && typeof s === 'object' ? Number((s as any).latency_ms) : NaN;
+    if (Number.isFinite(ms) && ms > 0) out.push({ id, v: Math.round(ms / 100) / 10 });
+  }
+  return out;
+}
+
+/* Start-of-cycle corpora: the demo fiction is stripped before any request of the
+ * cycle can complete (same rule as ADMIN models), so nothing renders unless THIS
+ * cycle's backend actually said it. Demo mode re-imports these seeds fresh. */
+export function honestAdminSeed() {
+  return { ...V2.ADMIN, models: [], keys: [], backups: [], channels: [], system: null };
+}
+export function honestObserveSeed() {
+  return { ...V2.OBSERVE, by_agent: [], arena: [], traces: [] };
+}
+
+/* The OBSERVE live badge means "Jarvis observability data arrived this cycle".
+ * Signal Layer health says nothing about whether /api/quality or /api/traces
+ * ever answered, so it must not stamp the badge over a still-seeded panel. */
+export function observeEvidence(bench: any, quality: any, resil: any, arenaRows: any, traceRows: any) {
+  return !!(
+    bench || quality || resil ||
+    (Array.isArray(arenaRows) && arenaRows.length > 0) ||
+    (Array.isArray(traceRows) && traceRows.length > 0)
+  );
+}
+
 function marketplaceSkills(raw: any[]) {
   return raw.slice(0, 8).map((skill: any) => ({
     name: text(skill.name || skill.id, 'Skill'),
@@ -273,12 +318,6 @@ function kgToKnowledge(entities: any[]) {
   };
 }
 
-const signalLayerHealth = () => {
-  if (typeof fetch !== 'function') return Promise.resolve(null);
-  return fetch(`${SIGNAL_LAYER_URL}/healthz`, { cache: 'no-store' })
-    .then(r => r.ok ? r.json() : null)
-    .catch(() => null);
-};
 
 export interface LiveModes { ver: number; live: Record<string, boolean>; }
 
@@ -301,8 +340,11 @@ export function useLiveModes(): LiveModes {
       const loadId = ++loadGeneration;
       changed = false;
       // Model residency is current-cycle evidence. Clear seed/stale rows and
-      // their proof before any request from this cycle can complete.
-      set('ADMIN', { ...V2.ADMIN, models: [] });
+      // their proof before any request from this cycle can complete. Same rule
+      // for the rest of the ADMIN corpus: keys/backups/channels/system have no
+      // other honest source, so they start empty and stay empty unless this
+      // cycle's backend supplies them.
+      set('ADMIN', honestAdminSeed());
       clearMark('ADMIN_MODELS');
       if (alive) setVer((v) => v + 1);
 
@@ -318,23 +360,28 @@ export function useLiveModes(): LiveModes {
         mark('MEMORY_STATS');
       }).catch(() => {});
 
-      // OBSERVE — compose from several Jarvis endpoints plus Signal Layer health.
-      // Signal Layer is enough to make Observe useful for the Sunday replay path.
+      // OBSERVE — compose from several Jarvis endpoints. Seed traces/arena/
+      // by_agent are stripped first: an empty leaderboard or a silent
+      // /api/traces must read as "no data", not as the demo corpus. The live
+      // badge needs Jarvis evidence (observeEvidence), not neighbour health —
+      // the World Intelligence panel talks to Signal Layer on its own.
+      set('OBSERVE', honestObserveSeed());
       await Promise.all([
         apiGet('/bench/stats').catch(() => null),
         apiGet('/api/quality').catch(() => null),
         apiGet('/api/resilience').catch(() => null),
         apiGet('/api/arena/leaderboard').catch(() => null),
         apiGet('/api/traces?limit=8').catch(() => null),
-        signalLayerHealth(),
-      ]).then(([bench, quality, resil, arena, traces, signalLayer]: any[]) => {
+        apiGet('/api/admin/agents/stats', { admin: true }).catch(() => null),
+      ]).then(([bench, quality, resil, arena, traces, agentStats]: any[]) => {
         const O = hydrateObserve(bench, quality, resil, V2.OBSERVE);
         const al = arr(arena, 'leaderboard');
-        if (al && al.length) O.arena = al.map((a: any) => ({ model: a.model || a.id, wins: a.wins ?? a.elo ?? 0, latency: a.latency || '', cost: a.cost || '', pick: !!a.pick }));
+        O.arena = al ? al.map((a: any) => ({ model: a.model || a.id, wins: a.wins ?? a.elo ?? 0, latency: a.latency || '', cost: a.cost || '', pick: !!a.pick })) : [];
         const tl = arr(traces, 'traces');
-        if (tl && tl.length) O.traces = tl.slice(0, 6).map((tr: any) => ({ id: tr.id || tr.trace_id, query: tr.query || tr.intent || '', agents: tr.agents || [], total: tr.total || tr.latency_ms || 0, status: tr.status || 'ok', stages: tr.stages || [] }));
+        O.traces = tl ? tl.slice(0, 6).map((tr: any) => ({ id: tr.id || tr.trace_id, query: tr.query || tr.intent || '', agents: tr.agents || [], total: tr.total || tr.latency_ms || 0, status: tr.status || 'ok', stages: tr.stages || [] })) : [];
+        O.by_agent = hydrateByAgent(agentStats);
         set('OBSERVE', O);
-        if (bench || quality || resil || (al && al.length) || (tl && tl.length) || signalLayer?.ok) mark('OBSERVE');
+        if (observeEvidence(bench, quality, resil, al, tl)) mark('OBSERVE');
       }).catch(() => {});
 
       // INTEROP — a2a peers / mcp servers / widgets / webhooks
@@ -407,6 +454,16 @@ export function useLiveModes(): LiveModes {
         set('ADMIN', { ...V2.ADMIN, models: [] });
         clearMark('ADMIN_MODELS');
       });
+
+      // API KEYS & SECRETS — what the server actually has in its environment,
+      // already masked server-side. Absent or empty → the panel stays "not
+      // connected" rather than showing keys that were never configured.
+      await apiGet('/api/admin/env', { admin: true }).then((env: any) => {
+        if (!alive || loadId !== loadGeneration) return;
+        const keys = hydrateAdminKeys(env);
+        set('ADMIN', { ...V2.ADMIN, keys });
+        if (keys.length) mark('ADMIN');
+      }).catch(() => {});
 
       // P3.1 PREVIEW MODES — real endpoints or honest plugin-gated empty states.
       await Promise.all([
