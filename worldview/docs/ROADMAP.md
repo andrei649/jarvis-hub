@@ -73,7 +73,7 @@ cueing, governance) are exactly what we can adopt at an open-source, local-first
 | Collaboration / cases / multi-user | ⬜ | ✅ | ⬜ |
 | Access control + audit | ⬜ | ✅ | ⬜ (JARVIS has Merkle audit + SSRF to reuse) |
 | Sensor / satellite **tasking** | ⬜ | ✅ | ⬜ (out of scope — but *recon-window prediction* is our analogue) |
-| Cinematic 3D globe + camera tours / export | ✅ | ◑ | ⬜ Deck.gl + Mapbox 2.5D; no globe/tours/export |
+| Cinematic 3D globe + camera tours / export | ✅ | ✅ | ✅ CesiumJS globe + AOI tours + follow cam + sensor grades + export |
 
 **Read:** WorldView has a **stronger technical spine** than a one-dev demo (validated streaming
 data path, continuous aggregates, idempotent writers, 58 unit tests + real-infra integration tests,
@@ -147,7 +147,7 @@ Gate discipline mirrors MOONSHOT: each phase has a "done when…" and we don't s
 | A2 | Run live-writer + history-writer in a real deployment (the Docker templates) | B | validate the Kafka→Redis/TimescaleDB path under live volume |
 | A3 | AOI management beyond Hormuz (CRUD geofences, named AOIs) | B | generalize the `geofences` table; AOI picker in UI |
 | A4 | Surface provenance (`source` + `ingested_at`) in the UI + API | B | chain-of-custody groundwork |
-| A5 | Basemap / 3D polish: globe view, terrain, better styling | S | Deck.gl `_GlobeView` or Cesium evaluation |
+| A5 | Basemap / 3D polish: globe view, terrain, better styling | ✅ | Delivered on CesiumJS: keyless Natural Earth II basemap, optional ion imagery + world terrain |
 
 ### Phase B — The insight layer ("so what") · *gate: the platform explains an event, not just shows it*
 | # | Feature | Track | Notes |

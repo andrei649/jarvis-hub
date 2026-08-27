@@ -1,7 +1,7 @@
 """worldview.py — HUD bridge for the standalone WorldView 4D OSINT stack.
 
 The HUD's World tab (`frontend/src/modes_world.tsx`) links out to WorldView's own
-UI (`http://localhost:3000`, a separate Next.js app — see `worldview/README.md`:
+UI (`http://localhost:3000`, a separate Vite + CesiumJS app — see `worldview/README.md`:
 "a separate stack from the Python JARVIS platform... shares no runtime with
 `agents/`"). That link was previously a dead `<a>` with no indication of whether
 the backend behind it is actually running. This route gives the HUD a real,

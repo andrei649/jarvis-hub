@@ -37,6 +37,7 @@ from agents.core.autonomy.queue import TaskQueue, TaskQueueError, TaskStatus
 from agents.core.autonomy.worker import AutonomyWorker
 from agents.core.kernel import Action, Decision, Verdict
 from agents.core.kernel.binding import MediationKernelBridge
+from agents.core.kernel.metrics import KERNEL_METRICS
 from agents.core.security.anchor import IntentLog
 
 KEY = b"owner-held-test-key-that-is-long-enough"
@@ -2035,3 +2036,26 @@ def test_hold_worker_preserves_stamped_approved_task_without_execution(tmp_path,
     assert summary["held"] == 1
     assert summary["ran"] == 0
     assert held_queue.get(task.id).status == TaskStatus.APPROVED.value
+
+
+def test_valid_b7_receipt_execution_is_excluded_from_the_qa4_observational_counter(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+
+    async def execute(_task):
+        return {"status": "ok"}
+
+    queue, worker, _bridge = _mediated_worker(
+        tmp_path, _kernel_decision(), executor=execute
+    )
+    task = asyncio.run(
+        worker.submit("ultron", "filesystem.write", "Write bounded report", payload=_worker_payload())
+    )
+    asyncio.run(worker.apply_decision(task.id, "accept"))
+    KERNEL_METRICS.reset()
+
+    summary = asyncio.run(worker.tick())
+
+    assert summary["done"] == 1
+    assert KERNEL_METRICS.snapshot()["ungoverned_by_kind"] == {}
