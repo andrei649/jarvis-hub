@@ -207,6 +207,9 @@ async def _get_runtime() -> HouseRuntime:
     if current is not None and current.orch_id == orch_id:
         return current
 
+    # Runtime construction blocks (DNS-validated adapter config, encrypted
+    # store reads, sqlite DDL); build it off the loop, under a lock so
+    # concurrent first requests still construct the runtime exactly once.
     def _build() -> HouseRuntime:
         global _runtime
         with _build_lock:
@@ -297,7 +300,7 @@ def _action_response(result: dict, *, security: bool = False) -> dict:
     return payload
 
 
-def _security_task(runtime: HouseRuntime, task_id: int):
+async def _security_task(runtime: HouseRuntime, task_id: int):
     if runtime.confirmation_status != "live" or runtime.queue is None:
         return None, nocache_json(
             {
@@ -308,7 +311,8 @@ def _security_task(runtime: HouseRuntime, task_id: int):
             status_code=503,
         )
     try:
-        task = runtime.queue.get(task_id)
+        # TaskQueue.get is a blocking sqlite read; keep it off the event loop.
+        task = await asyncio.to_thread(runtime.queue.get, task_id)
     except Exception:
         task = None
     if task is None:
@@ -445,10 +449,11 @@ async def house_control_security(body: SecurityControlBody):
 )
 async def house_security_challenge(task_id: int):
     runtime = await _get_runtime()
-    task, error = _security_task(runtime, task_id)
+    task, error = await _security_task(runtime, task_id)
     if error is not None:
         return error
     try:
+        # Challenge minting writes to the confirmation sqlite store.
         result = await runtime.actuator.mint_confirmation_async(task)
     except (ConfirmationError, ValueError):
         return nocache_json(
@@ -464,10 +469,11 @@ async def house_security_challenge(task_id: int):
 )
 async def house_security_confirm(task_id: int, body: ConfirmationBody):
     runtime = await _get_runtime()
-    task, error = _security_task(runtime, task_id)
+    task, error = await _security_task(runtime, task_id)
     if error is not None:
         return error
     try:
+        # Confirmation consumes a row in the confirmation sqlite store.
         result = await runtime.actuator.confirm_async(body.challenge_token, task)
     except (ConfirmationError, ValueError):
         return nocache_json(
