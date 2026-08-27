@@ -830,10 +830,7 @@ the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
-`house` (`snapshot()` + actuation re-resolved the HA origin inline on every call;
-extended in #955 to the rest of the control path — governed intake's sqlite
-enqueue, the outcome-stats read, the execution ledger's lookup/begin/finish/abort
-round-trips, and strong-confirmation mint/confirm/consume),
+`house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
 ONVIF discovery (`_normalize` resolved each candidate xaddr on the loop), and
 `memory_kg.py` (all graph-editor + search-tool routes ran sync neo4j httpx inline;
 default in-memory backend unaffected) — all now pay their blocking calls to worker
@@ -1637,6 +1634,14 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 > remains an explicit owner-host seam and is not claimed by the hermetic completion gate.
 
 ## 🏠 ORIZONT 30 — House Brain (Nerva Program D · AI-OS Phase 3, direction 2026-07-11)
+
+Fixed since: ✅ **house control path off the event loop** (#955) — HA origin re-resolution already
+moved to a worker thread; this extends it to the rest of the control path: governed intake's sqlite
+enqueue, the outcome-stats read, the execution ledger's lookup/begin/finish/abort round-trips, and
+strong-confirmation mint/confirm/consume (the latter two exposed as `*_async` seams so routes await
+them instead of blocking). Gated by `tests/test_house_actuator_async.py` and
+`tests/test_house_request_path_dns.py`.
+
 
 > **Mission:** a live model of the home — devices, rooms, occupants, presence, policies — with
 > governed actuation. Home Assistant is the device abstraction layer; Jarvis sits above it as the
