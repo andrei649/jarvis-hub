@@ -817,6 +817,10 @@ Still open from that run (verified real, not yet fixed): the seeded ADMIN/OBSERV
 corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): ✅ the dead `arr() || fallback` in
 the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
+Fixed since: ✅ **seeded ADMIN and OBSERVE fallbacks removed from the HUD** (#947) — both surfaces
+now read their live APIs (incl. `/api/admin/agents/stats`, dropped from the parity punch-list)
+instead of rendering seeded corpora, with vitest honesty regressions and a rebuilt `agents/web/v2`
+bundle.
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
