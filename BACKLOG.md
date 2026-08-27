@@ -15,7 +15,9 @@
 <!-- P0:PUBLIC-DEMO-DIGITAHOLIC:START -->
 ## 🔴 P0 — Owner decision + spec: public web demo instance for digitaholic.ro (H23.23-adjacent)
 
-> **Priority: HIGH · Status: DRAFT spec, awaiting owner review — no branch, no PR, no code changed.**
+> **Priority: HIGH · Status: spec awaiting owner review; the one core code gap is CLOSED.**
+> The `NERVA_PUBLIC_PROFILE` seed gate is delivered (see below). Deployment, roster overlay and the
+> four owner calls remain open — nothing is deployed and no public box exists.
 > Full spec: [`docs/decisions/2026-08-24-public-web-demo-digitaholic.md`](docs/decisions/2026-08-24-public-web-demo-digitaholic.md)
 > Authored 2026-08-24 by a Claude (Cowork) session working on digitaholic.ro, against `main` @ `75e9281`.
 
@@ -33,11 +35,20 @@ H23.23 decision, and it touches none of the deferred work.
 plugin least-privilege (grant nothing) · in-memory graph + vector fallbacks (no Neo4j, no Qdrant) ·
 existing OpenAI-compatible cloud routing in `hybrid_router.py` + the `cloud_llm_agents` allowlist.
 
-**The one real code gap — must not ship silently:** `agents/core/memory/seed_graph.py` `SEED_FACTS`
-hardcodes Andrei/Alexandra/Max/Raiffeisen/Cosmina de Sus/BMW E93 and `MemoryManager.__init__`
-(`memory/manager.py:45`) seeds them **unconditionally** into an empty graph. A public box must not
-call `seed_graph()` as-is → gate it behind a new `NERVA_PUBLIC_PROFILE=1` flag. Everything else in v1
-is configuration. Secondary gaps: an explicit `agents.public.yaml` roster overlay (smallest roster
+**The one real code gap — ✅ CLOSED:** `agents/core/memory/seed_graph.py` `SEED_FACTS` hardcodes
+Andrei/Alexandra/Max/Raiffeisen/Cosmina de Sus/BMW E93 and `MemoryManager.__init__` seeded them
+**unconditionally** into an empty graph. `seed_graph()` now self-gates on `NERVA_PUBLIC_PROFILE`
+and returns 0 without touching the graph when it is on. The gate sits **inside `seed_graph()`**,
+not at the single `MemoryManager.__init__` call site the spec named, so no present or future caller
+can re-open the exposure. Default (flag unset) is byte-identical to before — the owner's private
+install still seeds. Evidence: `tests/test_public_profile_seed_gate.py` (+8, red-proven first).
+**Residual, pinned not fixed:** the flag reads through the shared AUD-14 `env_flag()` parse, whose
+declared rule resolves unrecognized spellings to the flag's default — so a *typo*
+(`NERVA_PUBLIC_PROFILE=pubic`) deploys a public box that seeds the owner's family. A test pins this
+so it is visible rather than silent; closing it needs a boot guard that refuses to start on a
+set-but-unparseable value, which is a separate change with its own owner call.
+
+Everything else in v1 is configuration. Secondary gaps: an explicit `agents.public.yaml` roster overlay (smallest roster
 that demos the loop, not all 18), and session-scoped tokens only — **no durable cross-visit save**
 (that would make Digitaholic a GDPR data controller for a stranger's personal data; a deliberate v2
 call with a retention/deletion policy, never a default).
@@ -539,6 +550,10 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 
 ## 📋 Docs-vs-code accuracy pass (2026-07-24 — feature-sheet audit)
 
+Fixed since: ✅ **integration-closure and SEC-B4 delivery plans recorded** (#957) — the approved
+planning/spec documents for this sprint are in `docs/superpowers/plans/`; no product code.
+
+
 > 47 claims from `README.md`/`docs/FEATURES.md` verified against source (6 parallel research
 > passes): **36 live · 11 partial/default-off · 0 fabricated**. Complements the 2026-07-18
 > live-vs-plumbing audit below — that epic fixes *code* honesty (MOCK badges, degraded stamps);
@@ -560,6 +575,11 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 ---
 
 ## 🥊 Nerva vs Hermes Agent — honest gap analysis (2026-07-25)
+
+Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the
+verified/partial/aspirational split in `NERVA_VISION.md` now matches what actually ships, so the
+vision doc stops reading as a status report for capabilities that are still seeds.
+
 
 > Full analysis + evidence: [`docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md`](docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md).
 > Hermes side re-grounded live (repo + releases + docs, 2026-07-25): **v0.19.0** (07-20), 220.1k★,
@@ -662,6 +682,15 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 ---
 
 ## 🛡️ Governance-rails security audit (2026-07-24 — 8-reviewer adversarial pass)
+
+Fixed since: ✅ **SEC-B4 egress boundary** (#956) — every plugin HTTP call now dials a
+resolver-validated, pinned target (Host/SNI preserved, redirects re-validated per hop) instead of
+letting httpx re-resolve. Two defects found while integrating and fixed there: RESTRICTED plugins
+whose base URL is a self-hosted loopback/RFC1918 literal were validated in `public` mode and so
+became unreachable (local-first regression, MOONSHOT §5.1), and the twelve tests still mocking the
+retired `_client` seam were doing real DNS/TCP. **Still an owner gate:** this is R3 and the
+independent review named in the draft has not happened.
+
 
 > Full findings + severities + evidence: [`docs/research/2026-07-24-governance-rails-security-audit.md`](docs/research/2026-07-24-governance-rails-security-audit.md).
 > One reviewer per invariant (kernel bypass · taint · approval queue · strict-local · secret/audit
@@ -827,7 +856,11 @@ security-task sqlite reads), and
 default in-memory backend unaffected) — all now pay their blocking calls to worker
 threads via `asyncio.to_thread`, gated by loop-responsiveness regression tests
 (`tests/test_request_path_blocking_io.py`). Audit correction: `codeintel.py` was a false
-positive (pure local AST/FS, no network); the real ONVIF surface is `cameras/onvif.py`,
+positive *for network I/O* (pure local AST/FS) — but ✅ **its filesystem walk was a real
+loop-blocker in the same family** (#949): a cold `project_index()`/`reindex()` parses the whole
+repo synchronously, so `/api/codeintel/{search,stats,reindex}` froze every other route for the
+build; now offloaded via `asyncio.to_thread`, gated by
+`tests/test_codeintel_router_async.py`. The real ONVIF surface is `cameras/onvif.py`,
 not an `onvif.py` router; adjacent same-family `cameras/frigate.py:138` getaddrinfo noted,
 still open.
 Fixed since: ✅ the unauthenticated full-chain re-verify in `security.py` — `audit/verify` plus its
@@ -1286,7 +1319,7 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 | H23.26 | **Generated project status → kill doc-counter drift** — `scripts/status_sync.py` now derives backend pytest + frontend Vitest + mobile Jest counts, route snapshot, active YAML agents, horizon roll-ups, last verified-main commit (including PR base from the Actions event) and open Lane-A gates into tracked `project-status.json`; marker-bounded snippets drive README badges/Run/Status, JARVIS Quick Stats, GO_LIVE header and STATUS counters; `--check` gates all artifacts and fails closed on collection errors or missing markers. Python-only CI may explicitly use `--reuse-js-counts` while the separate JS jobs execute the suites. `tests/test_status_sync.py` (+11 H23.26 cases; 18 total). | ✅ done — one machine-readable truth, satellites generated | 0.19 |
 | H23.27 | **Design-partner feedback export** — `scripts/export_partner_feedback.py`: explicit local JSON+Markdown packet with allowlisted install environment, onboarding completion, aggregate autonomy/failure/latency, NPS + intentionally written feedback and sanitized north-star. It never copies prompts/responses, task titles/payloads, credentials, host/user/path/session identifiers and never uploads; north-star fetch accepts HTTP(S) only. `tests/test_export_partner_feedback.py` (+8). | ✅ done — privacy-safe default, operator chooses whether to share files | 0.20 |
 | H23.28 | **Park-list CI guard, actually implemented** — `scripts/park_guard.py` + `.github/workflows/park-guard.yml`: PR diff gate with line-based `unpark:` declarations, narrow module unlocks, phase aliases (wave-1/O28, wave-2/O29, wave-3/O30+O33), owner-only training/rust, Windows-path parity and self-protected policy files; CI executes the last merged guard policy when available. `tests/test_park_guard.py` (+10). | ✅ done — phased freeze is now machine-enforced | 0.13-tail |
-| H23.30 | **Public web demo instance for digitaholic.ro** (H23.23-adjacent) — a real Nerva instance embedded in a digitaholic.ro page on a free cloud model, auto-updated from `main`, personal data stripped, one disposable install per visitor session as the "save slot" (explicitly **not** H23.23 option B per-user partitioning). Reuses CDX-12 hardened + CDX-11 least-privilege + in-memory graph/vector fallbacks + existing cloud routing; the one core code change is a `NERVA_PUBLIC_PROFILE=1` gate on the unconditional `seed_graph()` call at `memory/manager.py:45`, which today seeds hardcoded personal `SEED_FACTS` into any empty graph. Spec: [`docs/decisions/2026-08-24-public-web-demo-digitaholic.md`](docs/decisions/2026-08-24-public-web-demo-digitaholic.md). | 🔴 **P0 — DRAFT spec, awaiting owner review** (4 owner calls open; suggested R2) | post-1.0 |
+| H23.30 | **Public web demo instance for digitaholic.ro** (H23.23-adjacent) — a real Nerva instance embedded in a digitaholic.ro page on a free cloud model, auto-updated from `main`, personal data stripped, one disposable install per visitor session as the "save slot" (explicitly **not** H23.23 option B per-user partitioning). Reuses CDX-12 hardened + CDX-11 least-privilege + in-memory graph/vector fallbacks + existing cloud routing; the one core code change — a `NERVA_PUBLIC_PROFILE=1` gate on the unconditional `seed_graph()` that seeded hardcoded personal `SEED_FACTS` into any empty graph — is ✅ **delivered** (gate placed inside `seed_graph()` so no caller can bypass it; default unchanged; `tests/test_public_profile_seed_gate.py`, +8). Spec: [`docs/decisions/2026-08-24-public-web-demo-digitaholic.md`](docs/decisions/2026-08-24-public-web-demo-digitaholic.md). | 🔴 **P0 — code gap closed; still BLOCKED on 4 owner calls** (spec awaiting review; roster overlay + malformed-flag boot guard not built; suggested R2) | post-1.0 |
 | H23.29 | **Runtime supervisor** — a single headless entrypoint (`scripts/coordinator.py`) boots the real Orchestrator and wires the existing coordinator/heartbeat/night-shift loops (`Orchestrator.start_channels()`) with no HTTP layer, separate from the web app process. `agents/core/observability/runtime_log.py`'s `RuntimeRunLog` appends one bounded JSON line per autonomy-coordinator cycle to `logs/runtime.jsonl` (heartbeat status, tick mode/max_tier, night-shift active-window, ok/error) and persists a cycle counter across restarts so a crash-and-recover is provable, not assumed — wired via a getattr-optional hook in `AutonomyCoordinator.loop()`, byte-identical when unset. `scripts/runtime_supervisor.py` spawns the coordinator and respawns it on any exit including `SIGKILL` (a process cannot recover itself from `kill -9`), logging `spawned`/`child_exited`/`respawned`/`stopped` events into the same run-log; `deploy/systemd/jarvis-runtime.service` + a `runtime-coordinator` docker-compose service layer OS-level `restart:`/`Restart=` on top as defense-in-depth. `make runtime-up`/`runtime-down`/`runtime-status` drive it locally. `tests/test_runtime_log.py` (+8), `tests/test_runtime_log_wiring.py` (+4), `tests/test_runtime_coordinator_boot.py` (+2), `tests/test_runtime_supervisor.py` (+3, one of which SIGKILLs a real child process and asserts respawn). Manually verified end-to-end in-sandbox: 3+ consecutive clean cycles, and a real `kill -9` on the coordinator process recovered in ~1s with the cycle counter resuming (not resetting) — see HANDOFF.md. No autonomy-policy, kill-switch, or dispatch-authority code touched. **Follow-up (#935, same day):** a duplicate PR built the same feature independently and lost the comparison, but had two robustness edges worth porting forward — `RuntimeRunLog._load_state()` now quarantines an unparseable state file to `<name>.corrupt-<epoch>` instead of silently discarding it, and `runtime_supervisor.py`'s respawn delay now backs off exponentially (starting delay → 2×/crash, capped 60s, resets after a 30s+ healthy run) instead of a constant fixed delay. **Consumer wired (#940):** the run-log had no reader — `read_runtime_health()` now reduces a bounded tail of `logs/runtime.jsonl` (O(tail), not O(file): the log grows one line per cycle forever) to a loop-health summary, and `build_morning_brief()` renders it as a `🫀 Runtime` line. `stale` is the load-bearing field — a supervisor can die without ever writing a failure line, so a fresh-looking `ok: true` tail proves nothing without its age. `runtime_health=None` keeps the brief byte-identical, and `default_log_path()` makes producer and consumer agree on one path. `tests/test_runtime_health_brief.py` (+17). Verified end-to-end against a real supervisor: a live brief rendered `✅ buclă activă — ciclul #2`, and after `kill -9` on both processes the same reader flipped to `⚠️ buclă oprită`. | ✅ done | 0.16 |
 
 ---
@@ -1333,6 +1366,11 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 - **Phase D:** 1.0 proof — 3–5 design partners (unchanged; **= the 1.0 gate**).
 
 ### Track K — Action Kernel (the "operating" in operating system) (P0–P1)
+
+Fixed since: ✅ **action-posture flag reference published** (#953) — `docs/FLAGS.md` now documents
+what each autonomy/posture flag unlocks and what it costs, so operators stop reading the source to
+find out which posture a flag actually buys.
+
 
 > **Design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md`](docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md)
 > — grounded in the existing seeds it unifies (`security/capability.py:authorize()` nucleus, the autonomy
@@ -1626,6 +1664,14 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 ## 🏠 ORIZONT 30 — House Brain (Nerva Program D · AI-OS Phase 3, direction 2026-07-11)
 
+Fixed since: ✅ **house control path off the event loop** (#955) — HA origin re-resolution already
+moved to a worker thread; this extends it to the rest of the control path: governed intake's sqlite
+enqueue, the outcome-stats read, the execution ledger's lookup/begin/finish/abort round-trips, and
+strong-confirmation mint/confirm/consume (the latter two exposed as `*_async` seams so routes await
+them instead of blocking). Gated by `tests/test_house_actuator_async.py` and
+`tests/test_house_request_path_dns.py`.
+
+
 > **Mission:** a live model of the home — devices, rooms, occupants, presence, policies — with
 > governed actuation. Home Assistant is the device abstraction layer; Jarvis sits above it as the
 > reasoning and authority layer. **Builds ON:** `plugins/homebridge.py` (LOCAL_ONLY),
@@ -1726,6 +1772,12 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 > **Total ORIZONT 33:** ~22 SP
 
 ## 🛰️ ORIZONT 34 — Mission Control: the swarm cockpit (Nerva Program H, direction 2026-07-24)
+
+Fixed since: ✅ **seeded ADMIN and OBSERVE fallbacks removed from the HUD** (#947) — both surfaces
+now read their live APIs (including `/api/admin/agents/stats`, which consequently leaves the
+route-parity punch-list) instead of rendering seeded corpora, with vitest honesty regressions and a
+rebuilt `agents/web/v2` bundle.
+
 
 > **Mission:** one Tony-Stark surface where the owner *sees* and *steers* the whole swarm —
 > the internal cabinet (17 agents), the autonomy funnel, missions/workflows/sub-agents/A2A,

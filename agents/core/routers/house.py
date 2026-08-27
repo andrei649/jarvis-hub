@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 _PSEUDONYM = re.compile(r"occ-[0-9a-f]{32}")
 _STATE_LIMIT = 500
 _runtime = None
+_build_lock = threading.Lock()
 
 
 @dataclass
@@ -196,9 +197,6 @@ def _build_runtime(orch) -> HouseRuntime:
         confirmation_status=confirmation_status,
         orch_id=id(orch) if orch is not None else 0,
     )
-
-
-_build_lock = threading.Lock()
 
 
 async def _get_runtime() -> HouseRuntime:
@@ -456,7 +454,7 @@ async def house_security_challenge(task_id: int):
         return error
     try:
         # Challenge minting writes to the confirmation sqlite store.
-        result = await asyncio.to_thread(runtime.actuator.mint_confirmation, task)
+        result = await runtime.actuator.mint_confirmation_async(task)
     except (ConfirmationError, ValueError):
         return nocache_json(
             {"enabled": True, "status": "denied", "reason": "challenge_refused"},
@@ -476,7 +474,7 @@ async def house_security_confirm(task_id: int, body: ConfirmationBody):
         return error
     try:
         # Confirmation consumes a row in the confirmation sqlite store.
-        result = await asyncio.to_thread(runtime.actuator.confirm, body.challenge_token, task)
+        result = await runtime.actuator.confirm_async(body.challenge_token, task)
     except (ConfirmationError, ValueError):
         return nocache_json(
             {"enabled": True, "status": "denied", "reason": "confirmation_refused"},

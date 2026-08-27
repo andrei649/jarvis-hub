@@ -72,6 +72,15 @@ def _security_runtime(delay: float) -> tuple[SimpleNamespace, dict[str, list[int
             time.sleep(delay)
             return {"status": "confirmed", "confirmation_id": 1, "receipt": "receipt"}
 
+        # The router reaches the confirmation store through the actuator's async
+        # seam; mirror HouseActuator's own wrappers so the fake honours the same
+        # contract and the sqlite work still lands on a worker thread.
+        async def mint_confirmation_async(self, task, *args, **kwargs):
+            return await asyncio.to_thread(self.mint_confirmation, task, *args, **kwargs)
+
+        async def confirm_async(self, token, task, *args, **kwargs):
+            return await asyncio.to_thread(self.confirm, token, task, *args, **kwargs)
+
     runtime = SimpleNamespace(
         orch_id=0,
         adapter=None,

@@ -87,6 +87,12 @@ class _Actuator:
         self.calls.append(("confirm", token, task.id, task.kind, dict(task.payload)))
         return {"status": "confirmed", "confirmation_id": 9, "receipt": "receipt-token"}
 
+    async def mint_confirmation_async(self, task):
+        return self.mint_confirmation(task)
+
+    async def confirm_async(self, token, task):
+        return self.confirm(token, task)
+
 
 @dataclass
 class _Runtime:
