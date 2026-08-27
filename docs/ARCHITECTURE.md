@@ -742,6 +742,6 @@ docs/
 | `docs/ARCHITECTURE.md` | Module index, request lifecycle, recipes (this file) |
 | `docs/VOICE.md` | Voice subsystem — browser HUD loop + server pipeline, endpoints, what's real vs scaffolded |
 | `docs/COGNITION.md` | Cognition subsystem (planned ORIZONT 21) — living memory + personality **schematic & diagnostic map** (brain analogies, tiers, troubleshooting playbook) |
-| `worldview/README.md` | **WorldView (4D OSINT)** — separate Next.js + Fastify stack (ports 3000/4000), not sharing the Python runtime. Bridged into JARVIS by the **Argus** agent (`agents/argus/`, geoint router intent → read-only governed plugin). Launched by `START.bat`/`start.sh`. |
+| `worldview/README.md` | **WorldView (4D OSINT)** — separate Vite + CesiumJS + Fastify stack (ports 3000/4000), not sharing the Python runtime. Bridged into JARVIS by the **Argus** agent (`agents/argus/`, geoint router intent → read-only governed plugin). Launched by `START.bat`/`start.sh`. |
 | `docs/contracts/worldview-bridge.md` | **The hub↔WorldView integration contract** (v1) — the only coupling between the two stacks: 6 read-only GET endpoints, enforced by contract tests on both sides (`tests/test_worldview_bridge_contract.py` · `worldview/backend-api/test/bridgeContract.test.ts`) |
 | `docs/2026-06-08-future-developments-report.md` | Forward roadmap — remaining v1.0 gate, WorldView follow-ups (#169/#170), audit-debt hardening, post-1.0 horizons (O20 Hermes, O21 Cognition), recommended sequencing |

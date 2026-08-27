@@ -21,6 +21,15 @@ const GLYPHS = {
   frigga:'M0,-7 Q-7,0 0,7 Q7,0 0,-7 Z M0,-3 V3 M-3,0 H3',
 };
 
+/* The roster is live (GET /api/agents), but these glyphs are a hand-drawn seed
+   set. A registry agent with no seed glyph — howard, argus, hestia, and whatever
+   the registry grows next — must still get a visible mark: an empty <path>
+   renders nothing, so the agent looks absent rather than un-illustrated.
+   Every glyph lookup that reaches an SVG path goes through this one helper, so
+   the fallback cannot be fixed in one renderer and missed in another. */
+const FALLBACK_GLYPH = 'M0,-6 A6,6 0 1,1 0,6 A6,6 0 1,1 0,-6 Z';
+const glyphFor = (id: string): string => (id && GLYPHS[id]) || FALLBACK_GLYPH;
+
 const TIERS = [
   { id:'CNS', label:'Central Nervous System', detail:'Always-on orchestration core' },
   { id:'BIZ', label:'Business', detail:'External strategy & growth' },
@@ -487,7 +496,7 @@ const FAMILY = {
   ],
 };
 
-export const V2 = { GLYPHS, TIERS, AGENTS, COLLAB, DOSSIER, COGNITION_SCORING, SEED_MESSAGES, TICKER, WEATHER,
+export const V2 = { GLYPHS, FALLBACK_GLYPH, glyphFor, TIERS, AGENTS, COLLAB, DOSSIER, COGNITION_SCORING, SEED_MESSAGES, TICKER, WEATHER,
     CALENDAR, DECISIONS, HEARTBEAT, AUDIT_CHAIN, CAPABILITIES, PAYMENTS, MEMORY_STATS, RECALLS,
     TOPICS, KG, I18N,
     AUTONOMY, BUILD, OBSERVE, INTEROP, COMMS, ADMIN,
