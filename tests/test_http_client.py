@@ -7,6 +7,7 @@ All HTTP calls are mocked — no real network access.
 import asyncio
 import inspect
 import logging
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -32,23 +33,24 @@ def _make_response(status_code: int = 200, json_data: dict | None = None) -> htt
     return httpx.Response(status_code=status_code, content=content)
 
 
-def _make_client_with_mock(status_code: int = 200, side_effect=None) -> tuple[PluginHTTPClient, MagicMock]:
-    """Return a PluginHTTPClient whose underlying httpx.AsyncClient is mocked."""
-    mock_httpx = MagicMock(spec=httpx.AsyncClient)
-    mock_httpx.is_closed = False
-
+def _make_client_with_mock(status_code: int = 200, side_effect=None) -> tuple[PluginHTTPClient, SimpleNamespace]:
+    """Return a client backed by a recording pinned transport, never the generic pool."""
+    recorder = SimpleNamespace(requests=[])
     response = _make_response(status_code)
-    if side_effect is not None:
-        mock_httpx.get = AsyncMock(side_effect=side_effect)
-        mock_httpx.post = AsyncMock(side_effect=side_effect)
-    else:
-        mock_httpx.get = AsyncMock(return_value=response)
-        mock_httpx.post = AsyncMock(return_value=response)
 
-    plugin_name = f"_test_{id(mock_httpx)}"
-    client = PluginHTTPClient(plugin_name=plugin_name)
-    client._client = mock_httpx
-    return client, mock_httpx
+    def handler(request):
+        recorder.requests.append(request)
+        if side_effect is not None:
+            raise side_effect
+        return httpx.Response(response.status_code, content=response.content, request=request)
+
+    plugin_name = f"_test_{id(recorder)}"
+    client = PluginHTTPClient(
+        plugin_name=plugin_name,
+        resolver=lambda _host, *, mode: (["93.184.216.34"], None),
+        transport_factory=lambda _target: httpx.MockTransport(handler),
+    )
+    return client, recorder
 
 
 # ── fixtures ───────────────────────────────────────────────────────────────────
@@ -83,11 +85,10 @@ async def test_default_timeout_passed_to_get():
 
     await client.get("https://example.com/test")
 
-    call_kwargs = mock_httpx.get.call_args.kwargs
-    timeout = call_kwargs.get("timeout")
-    assert isinstance(timeout, httpx.Timeout), "timeout kwarg must be an httpx.Timeout"
-    assert timeout.connect == DEFAULT_CONNECT_TIMEOUT
-    assert timeout.read == DEFAULT_READ_TIMEOUT
+    [request] = mock_httpx.requests
+    assert request.url.host == "93.184.216.34"
+    assert request.extensions["timeout"]["connect"] == DEFAULT_CONNECT_TIMEOUT
+    assert request.extensions["timeout"]["read"] == DEFAULT_READ_TIMEOUT
 
 
 @pytest.mark.asyncio
@@ -98,8 +99,8 @@ async def test_caller_supplied_timeout_is_not_overridden():
 
     await client.get("https://example.com/test", timeout=custom)
 
-    call_kwargs = mock_httpx.get.call_args.kwargs
-    assert call_kwargs["timeout"] is custom
+    [request] = mock_httpx.requests
+    assert request.extensions["timeout"]["connect"] == 3.0
 
 
 # ── test_retry_on_transient_failure ───────────────────────────────────────────
@@ -136,10 +137,11 @@ async def test_circuit_breaker_opens_after_threshold():
     cb = CircuitBreaker(failure_threshold=3, recovery_timeout=60.0)
     client = PluginHTTPClient(plugin_name="_test_cb_opens", circuit_breaker=cb)
 
-    mock_httpx = MagicMock(spec=httpx.AsyncClient)
-    mock_httpx.is_closed = False
-    mock_httpx.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
-    client._client = mock_httpx
+    calls = []
+    client._resolver = lambda _host, *, mode: (["93.184.216.34"], None)
+    client._transport_factory = lambda _target: httpx.MockTransport(
+        lambda request: calls.append(request) or (_ for _ in ()).throw(httpx.ConnectError("refused"))
+    )
 
     for _ in range(3):
         with pytest.raises(httpx.ConnectError):
@@ -156,15 +158,14 @@ async def test_open_circuit_breaker_raises_runtime_error_without_calling_http():
     assert cb.state == "open"
 
     client = PluginHTTPClient(plugin_name="_test_cb_failfast", circuit_breaker=cb)
-    mock_httpx = MagicMock(spec=httpx.AsyncClient)
-    mock_httpx.is_closed = False
-    mock_httpx.get = AsyncMock(return_value=_make_response(200))
-    client._client = mock_httpx
+    calls = []
+    client._resolver = lambda _host, *, mode: (["93.184.216.34"], None)
+    client._transport_factory = lambda _target: httpx.MockTransport(lambda request: calls.append(request))
 
     with pytest.raises(RuntimeError, match="Circuit breaker open"):
         await client.get("https://example.com/")
 
-    mock_httpx.get.assert_not_called()
+    assert calls == []
 
 
 @pytest.mark.asyncio
@@ -328,8 +329,6 @@ async def test_post_passes_default_timeout():
 
     await client.post("https://example.com/api", json={"key": "value"})
 
-    call_kwargs = mock_httpx.post.call_args.kwargs
-    timeout = call_kwargs.get("timeout")
-    assert isinstance(timeout, httpx.Timeout)
-    assert timeout.connect == DEFAULT_CONNECT_TIMEOUT
-    assert timeout.read == DEFAULT_READ_TIMEOUT
+    [request] = mock_httpx.requests
+    assert request.extensions["timeout"]["connect"] == DEFAULT_CONNECT_TIMEOUT
+    assert request.extensions["timeout"]["read"] == DEFAULT_READ_TIMEOUT

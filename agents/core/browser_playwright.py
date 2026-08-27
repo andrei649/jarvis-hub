@@ -32,6 +32,10 @@ class PlaywrightUnavailable(PlaywrightDriverError):
     """The optional Python runtime or its browser binary is unavailable."""
 
 
+class PlaywrightTransportUnavailable(PlaywrightDriverError):
+    """No transport-bound proxy exists for safe browser navigation."""
+
+
 class PlaywrightOutputTooLarge(PlaywrightDriverError):
     """A browser observation exceeded its configured output budget."""
 
@@ -207,6 +211,17 @@ class PlaywrightBrowserDriver:
                 await getattr(resource, method_name)()
 
     async def navigate(self, *, url: str, wait_until: str = "domcontentloaded") -> dict:
+        if not self.host_enabled:
+            raise PlaywrightHostDisabled(
+                "Playwright host actuation requires explicit host_enabled=True"
+            )
+        if self._url_guard is None:
+            raise PlaywrightHostDisabled(
+                "Playwright host actuation requires a per-request URL guard"
+            )
+        # Browser request interception happens after Playwright has already selected
+        # a network transport, so it is not an egress boundary. Do not start it.
+        raise PlaywrightTransportUnavailable("browser transport unavailable")
         page = await self._ensure_started()
         response = await page.goto(url, wait_until=wait_until)
         title = await page.title()
