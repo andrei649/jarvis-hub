@@ -819,7 +819,10 @@ the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
-`house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
+`house` (`snapshot()` + actuation re-resolved the HA origin inline on every call;
+extended in #955 to the rest of the control path — governed intake's sqlite
+enqueue, the outcome-stats read, the execution ledger's lookup/begin/finish/abort
+round-trips, and strong-confirmation mint/confirm/consume),
 ONVIF discovery (`_normalize` resolved each candidate xaddr on the loop), and
 `memory_kg.py` (all graph-editor + search-tool routes ran sync neo4j httpx inline;
 default in-memory backend unaffected) — all now pay their blocking calls to worker
