@@ -32,7 +32,7 @@ class _Heartbeat:
         self.ticks = 0
         self._task: asyncio.Task | None = None
 
-    def __enter__(self) -> "_Heartbeat":
+    def __enter__(self) -> _Heartbeat:
         async def _beat() -> None:
             while True:
                 self.ticks += 1
