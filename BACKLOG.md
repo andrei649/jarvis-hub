@@ -828,10 +828,6 @@ Still open from that run (verified real, not yet fixed): the seeded ADMIN/OBSERV
 corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): ✅ the dead `arr() || fallback` in
 the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
-Fixed since: ✅ **seeded ADMIN and OBSERVE fallbacks removed from the HUD** (#947) — both surfaces
-now read their live APIs (incl. `/api/admin/agents/stats`, dropped from the parity punch-list)
-instead of rendering seeded corpora, with vitest honesty regressions and a rebuilt `agents/web/v2`
-bundle.
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
@@ -1739,6 +1735,12 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 > **Total ORIZONT 33:** ~22 SP
 
 ## 🛰️ ORIZONT 34 — Mission Control: the swarm cockpit (Nerva Program H, direction 2026-07-24)
+
+Fixed since: ✅ **seeded ADMIN and OBSERVE fallbacks removed from the HUD** (#947) — both surfaces
+now read their live APIs (including `/api/admin/agents/stats`, which consequently leaves the
+route-parity punch-list) instead of rendering seeded corpora, with vitest honesty regressions and a
+rebuilt `agents/web/v2` bundle.
+
 
 > **Mission:** one Tony-Stark surface where the owner *sees* and *steers* the whole swarm —
 > the internal cabinet (17 agents), the autonomy funnel, missions/workflows/sub-agents/A2A,
