@@ -232,9 +232,7 @@ class OnvifDiscoveryService:
         if allowed is not True:
             raise OnvifAdminRequiredError
 
-        # Loading the default discoverer imports wsdiscovery from disk; keep
-        # that first-use import off the event loop like the search itself.
-        discoverer = self._discoverer or await asyncio.to_thread(self._load_default_discoverer)
+        discoverer = self._discoverer or self._load_default_discoverer()
         if discoverer is None:
             return OnvifDiscoveryResult(
                 status="unavailable",
@@ -266,8 +264,8 @@ class OnvifDiscoveryService:
 
         devices: dict[str, OnvifDevice] = {}
         for value in payload:
-            # _normalize resolves each xaddr host with getaddrinfo (blocking
-            # DNS); run it on a worker thread so the loop never stalls.
+            # _normalize resolves candidate xaddrs via getaddrinfo; inline it put
+            # a blocking DNS lookup on the loop per candidate. Offload it.
             device = await asyncio.to_thread(self._normalize, value)
             if device is None:
                 continue
