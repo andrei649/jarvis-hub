@@ -550,6 +550,10 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 
 ## 📋 Docs-vs-code accuracy pass (2026-07-24 — feature-sheet audit)
 
+Fixed since: ✅ **integration-closure and SEC-B4 delivery plans recorded** (#957) — the approved
+planning/spec documents for this sprint are in `docs/superpowers/plans/`; no product code.
+
+
 > 47 claims from `README.md`/`docs/FEATURES.md` verified against source (6 parallel research
 > passes): **36 live · 11 partial/default-off · 0 fabricated**. Complements the 2026-07-18
 > live-vs-plumbing audit below — that epic fixes *code* honesty (MOCK badges, degraded stamps);
