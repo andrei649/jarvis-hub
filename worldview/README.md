@@ -6,7 +6,7 @@ WorldView is a high-throughput, time-series geospatial platform inspired by Bila
 "God's Eye View." It ingests the global firehose of open-source intelligence (ADS-B flights,
 AIS vessels, satellite ephemeris, GPS-jamming and internet-blackout telemetry, NOTAMs and
 geopolitical events), normalizes it through a streaming pipeline, and serves any moment in
-time — live or historical — to a Deck.gl-rendered globe.
+time — live or historical — to a CesiumJS-rendered globe.
 
 ## Why it lives here
 
@@ -17,8 +17,8 @@ repo. It is fully self-contained under `worldview/` and shares no runtime with `
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | Next.js 14 (App Router), TypeScript, TailwindCSS |
-| Geospatial render | Deck.gl + Mapbox GL JS (millions of points @ 60fps) |
+| Frontend | Vite + TypeScript + TailwindCSS, no UI framework (direct DOM) |
+| Geospatial render | CesiumJS — 3D globe, true altitudes, sun-lit terminator; **no basemap account needed** |
 | Client state | Zustand (the global "System Master Time" timeline) |
 | API | Node.js / Fastify, REST + WebSockets |
 | Stream broker | Apache Kafka (or Redpanda) |
@@ -42,7 +42,7 @@ The platform is built in five sequential, gated steps:
 2. **Project Scaffold** ✅ — monorepo skeleton (`frontend`, `backend-api`, `ingestion-workers`) + local infra (`docker-compose.yml`).
 3. **Data Ingestion Workers** ✅ — TLE/SGP4, H3 jamming grids, AIS/ADS-B normalizers, dark-vessel detector.
 4. **The 4D API** ✅ — Fastify REST `/history` + WebSocket `/live` serving live (Redis) and historical (TimescaleDB) state.
-5. **Frontend Geospatial UI** ✅ — Next.js dashboard, Deck.gl map, timeline scrubber, Zustand sync.
+5. **Frontend Geospatial UI** ✅ — Cesium globe, HUD rails, timeline scrubber, Zustand sync.
 
 All five steps are implemented end to end.
 
@@ -54,7 +54,7 @@ All five steps are implemented end to end.
 | **Ingestion** | ADS-B (OpenSky) + AIS (AISStream) normalizers; TLE→SGP4 propagation (TEME→WGS84) with optical/SAR/coverage footprints; EW→H3 aggregation; NOTAM/event parser; dark-vessel detector. |
 | **Data path** | Kafka → **live-writer** (Redis) + **history-writer** (TimescaleDB, batched, idempotent, per-row poison isolation). |
 | **API** | REST `/history/:layer` (as-of-T, bbox-clamped, 50k cap, `lod=minute` rollups) + `/history/:layer/:id/track` (trails) + WebSocket `/live` (snapshot + deltas) + `/health`/`/ready`. |
-| **UI** | Deck.gl globe over Mapbox; timeline scrubber; layer toggles; **entity trails** (click to trace); per-entity **hover tooltips**; **stats HUD** with **dark-vessel alerts**; zoom-driven **level-of-detail**. |
+| **UI** | Cesium globe (marks at true altitude; the day/night terminator follows the master clock); timeline scrubber; layer toggles; **entity trails** (click to trace) and a **follow cam**; per-entity **hover tooltips**; **stats HUD** with **dark-vessel alerts**; zoom-driven **level-of-detail**; **sensor grades** (thermal / night / tactical). |
 | **Domain depth** | Dark Vessel Detection (geofenced AIS-gap + dead-reckoning); satellite **daylight/recon windows** (`is_sunlit`); military flight tagging; H3 jamming intensity. |
 | **Quality** | Tests across all three services (Python pytest, Node `node:test`, frontend vitest); path-filtered CI (ruff + pytest + tsc + build); schemas validated against real PostGIS. |
 
@@ -67,7 +67,7 @@ All five steps are implemented end to end.
 - [`db/schema/`](db/schema/) — TimescaleDB + PostGIS DDL · [`db/seed/demo.sql`](db/seed/demo.sql) — the demo scenario.
 - [`db/README.md`](db/README.md) — how to apply the schema and seed.
 - [`docker-compose.yml`](docker-compose.yml) — local infra (Redpanda, TimescaleDB, Redis).
-- [`frontend/`](frontend/) — Next.js 14 + Deck.gl dashboard.
+- [`frontend/`](frontend/) — Vite + CesiumJS dashboard (no UI framework).
 - [`backend-api/`](backend-api/) — Fastify REST + WebSocket 4D API.
 - [`ingestion-workers/`](ingestion-workers/) — Python OSINT ingestion workers.
 - [`shared/schemas/`](shared/schemas/) — the canonical telemetry envelope JSON Schema.
