@@ -2,6 +2,13 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch, Mock
+
+# SEC-B4 moved plugin egress onto the pinned request path, so patching
+# httpx.AsyncClient.get/post no longer intercepts it (and let these unit tests
+# perform real DNS). PluginHTTPClient._request_pinned is the equivalent seam:
+# it sits below @resilient_call, so retry/circuit-breaker behaviour is still
+# exercised exactly as before.
+_REQUEST_SEAM = "agents.core.http_client.PluginHTTPClient._request_pinned"
 from agents.core.plugins.cloud_llm import CloudLLMPlugin
 from agents.core.plugins.weather import WeatherPlugin
 
@@ -33,7 +40,7 @@ async def test_cloud_llm_plugin_retries_on_5xx():
         response.json = Mock(return_value={"content": [{"text": "Success"}]})
         return response
     
-    with patch('httpx.AsyncClient.post', side_effect=mock_post):
+    with patch(_REQUEST_SEAM, side_effect=mock_post):
         result = await plugin._call_anthropic("Test prompt", "Test system", "claude-sonnet-4-20250514", 1024)
     
     assert "Success" in result
@@ -58,7 +65,7 @@ async def test_weather_plugin_retries_on_timeout():
         response.text = "Bucharest: 20°C, Sunny, 60% humidity, 15 km/h wind"
         return response
     
-    with patch('httpx.AsyncClient.get', side_effect=mock_get):
+    with patch(_REQUEST_SEAM, side_effect=mock_get):
         result = await plugin.get_weather("Bucharest")
     
     assert "20" in result or "Sunny" in result
@@ -156,7 +163,7 @@ async def test_weather_plugin_retries_on_timeout():
         response.text = "Bucharest: 20°C, Sunny, 60% humidity, 15 km/h wind"
         return response
     
-    with patch('httpx.AsyncClient.get', side_effect=mock_get):
+    with patch(_REQUEST_SEAM, side_effect=mock_get):
         result = await plugin.get_weather("Bucharest")
     
     assert "20" in result or "Sunny" in result

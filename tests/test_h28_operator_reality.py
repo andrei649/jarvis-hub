@@ -27,7 +27,7 @@ COUNTER_KEYS = {
     "cleanup_calls",
 }
 EXPECTED_HOST_EXECUTIONS = {
-    "operator-browser-playwright-governed": ["browser:allowed"],
+    "operator-browser-playwright-governed": [],
     "operator-desktop-accessibility-fallback": [
         "desktop:locate-save",
         "desktop:locate-missing",
@@ -48,7 +48,7 @@ EXPECTED_HOST_EXECUTIONS = {
 }
 EXPECTED_BLOCKED_ACTIONS = {
     "operator-browser-playwright-governed": {
-        "browser:blocked": ["attempt", "govern", "block"],
+        "browser:blocked": ["attempt", "block"],
     },
     "operator-desktop-accessibility-fallback": {},
     "operator-durable-desktop-actuation": {
@@ -65,7 +65,7 @@ EXPECTED_BLOCKED_ACTIONS = {
         "desktop:disabled": ["attempt", "govern", "block"],
     },
     "operator-runtime-cleanup": {
-        "browser:startup": ["attempt", "govern", "approve", "block"],
+        "browser:startup": ["attempt", "block"],
     },
 }
 
@@ -92,6 +92,16 @@ async def test_empty_operator_plan_is_blocked_before_runtime_construction(monkey
 
     assert result == {"ok": False, "reason": "empty_steps"}
     assert runtime_calls == []
+
+
+@pytest.mark.asyncio
+async def test_browser_operator_reality_reports_transport_unavailable_without_browser_startup():
+    from agents.core.observability import operator_reality
+
+    result = await operator_reality._probe_operator_browser_playwright_governed()
+
+    assert result["metadata"]["browser_transport"] == "unavailable"
+    assert result["metadata"]["browser_driver_calls"] == 0
 
 
 def test_operator_reality_module_imports_without_harness_import_order_dependency():
@@ -247,7 +257,6 @@ async def test_operator_cases_reach_real_production_governance_seams(monkeypatch
         reached[name] > 0
         for name in {
             "governed_browser",
-            "playwright_driver",
             "windows_desktop_driver",
             "desktop_action_executor",
             "toolrpc_handle",
