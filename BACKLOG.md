@@ -2774,6 +2774,13 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ## ORIZONT 21 — Cognition: Living Memory & Human-Like Personality (P1–P3) — 10/10 ✅
 
+Fixed since: ✅ **memory-KG request path fully off the event loop** (#951) — the graph-editor and
+search-tool routes already paid their blocking neo4j calls in a worker thread; this extends the same
+`_kg_call` seam to the rest of the router — consolidation planning, the decay
+ranking/candidates/forget trio, and the bi-temporal add_fact/as_of/history calls — each of which
+held the store lock on the loop. Gated by `tests/test_memory_kg_router_async.py`.
+
+
 > **Cea mai importantă temă.** Un creier cognitiv pentru agenți: memorie **nelimitată, append-only,
 > mereu valoroasă în timp** (uitarea = accesibilitate redusă + demotare pe tier, **niciodată ștergere**;
 > doar utilizatorul șterge explicit) + personalitate **consistentă-dar-vie** ancorată pe **onestitate**
