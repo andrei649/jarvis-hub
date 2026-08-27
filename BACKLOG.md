@@ -1360,6 +1360,11 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 
 ### Track K — Action Kernel (the "operating" in operating system) (P0–P1)
 
+Fixed since: ✅ **action-posture flag reference published** (#953) — `docs/FLAGS.md` now documents
+what each autonomy/posture flag unlocks and what it costs, so operators stop reading the source to
+find out which posture a flag actually buys.
+
+
 > **Design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md`](docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md)
 > — grounded in the existing seeds it unifies (`security/capability.py:authorize()` nucleus, the autonomy
 > `TaskQueue`, `plugin_gate`/egress, route guards, `SecretBroker`) + the 3 verified bypass risks it closes.
