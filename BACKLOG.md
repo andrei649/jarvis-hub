@@ -833,9 +833,7 @@ Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `bro
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
 ONVIF discovery (`_normalize` resolved each candidate xaddr on the loop), and
 `memory_kg.py` (all graph-editor + search-tool routes ran sync neo4j httpx inline;
-default in-memory backend unaffected — extended in #951 to the remaining store-lock
-seams on the same routes: consolidation planning, the decay ranking/candidates/forget
-trio, and the bi-temporal add_fact/as_of/history calls) — all now pay their blocking calls to worker
+default in-memory backend unaffected) — all now pay their blocking calls to worker
 threads via `asyncio.to_thread`, gated by loop-responsiveness regression tests
 (`tests/test_request_path_blocking_io.py`). Audit correction: `codeintel.py` was a false
 positive (pure local AST/FS, no network); the real ONVIF surface is `cameras/onvif.py`,
@@ -2732,6 +2730,13 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 ---
 
 ## ORIZONT 21 — Cognition: Living Memory & Human-Like Personality (P1–P3) — 10/10 ✅
+
+Fixed since: ✅ **memory-KG request path fully off the event loop** (#951) — the graph-editor and
+search-tool routes already paid their blocking neo4j calls in a worker thread; this extends the same
+`_kg_call` seam to the rest of the router — consolidation planning, the decay
+ranking/candidates/forget trio, and the bi-temporal add_fact/as_of/history calls — each of which
+held the store lock on the loop. Gated by `tests/test_memory_kg_router_async.py`.
+
 
 > **Cea mai importantă temă.** Un creier cognitiv pentru agenți: memorie **nelimitată, append-only,
 > mereu valoroasă în timp** (uitarea = accesibilitate redusă + demotare pe tier, **niciodată ștergere**;
