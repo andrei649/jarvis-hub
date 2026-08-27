@@ -1670,6 +1670,14 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 ## 🏠 ORIZONT 30 — House Brain (Nerva Program D · AI-OS Phase 3, direction 2026-07-11)
 
+Fixed since: ✅ **house control path off the event loop** (#955) — HA origin re-resolution already
+moved to a worker thread; this extends it to the rest of the control path: governed intake's sqlite
+enqueue, the outcome-stats read, the execution ledger's lookup/begin/finish/abort round-trips, and
+strong-confirmation mint/confirm/consume (the latter two exposed as `*_async` seams so routes await
+them instead of blocking). Gated by `tests/test_house_actuator_async.py` and
+`tests/test_house_request_path_dns.py`.
+
+
 > **Mission:** a live model of the home — devices, rooms, occupants, presence, policies — with
 > governed actuation. Home Assistant is the device abstraction layer; Jarvis sits above it as the
 > reasoning and authority layer. **Builds ON:** `plugins/homebridge.py` (LOCAL_ONLY),
