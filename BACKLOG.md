@@ -572,6 +572,11 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 
 ## 🥊 Nerva vs Hermes Agent — honest gap analysis (2026-07-25)
 
+Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the
+verified/partial/aspirational split in `NERVA_VISION.md` now matches what actually ships, so the
+vision doc stops reading as a status report for capabilities that are still seeds.
+
+
 > Full analysis + evidence: [`docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md`](docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md).
 > Hermes side re-grounded live (repo + releases + docs, 2026-07-25): **v0.19.0** (07-20), 220.1k★,
 > releases every ~2–3 weeks; it now ships **real desktop computer-use** (`cua-driver`, mac/win/linux,
@@ -828,9 +833,6 @@ Still open from that run (verified real, not yet fixed): the seeded ADMIN/OBSERV
 corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): ✅ the dead `arr() || fallback` in
 the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
-Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the
-verified/partial/aspirational split in `NERVA_VISION.md` now matches what actually ships, so the
-vision doc stops reading as a status report for capabilities that are still seeds.
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
