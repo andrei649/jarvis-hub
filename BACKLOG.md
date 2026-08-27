@@ -674,6 +674,15 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 
 ## 🛡️ Governance-rails security audit (2026-07-24 — 8-reviewer adversarial pass)
 
+Fixed since: ✅ **SEC-B4 egress boundary** (#956) — every plugin HTTP call now dials a
+resolver-validated, pinned target (Host/SNI preserved, redirects re-validated per hop) instead of
+letting httpx re-resolve. Two defects found while integrating and fixed there: RESTRICTED plugins
+whose base URL is a self-hosted loopback/RFC1918 literal were validated in `public` mode and so
+became unreachable (local-first regression, MOONSHOT §5.1), and the twelve tests still mocking the
+retired `_client` seam were doing real DNS/TCP. **Still an owner gate:** this is R3 and the
+independent review named in the draft has not happened.
+
+
 > Full findings + severities + evidence: [`docs/research/2026-07-24-governance-rails-security-audit.md`](docs/research/2026-07-24-governance-rails-security-audit.md).
 > One reviewer per invariant (kernel bypass · taint · approval queue · strict-local · secret/audit
 > crypto · SSRF · skill signing · router auth), each required to trace enforcement code and build a
@@ -828,13 +837,6 @@ Still open from that run (verified real, not yet fixed): the seeded ADMIN/OBSERV
 corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): ✅ the dead `arr() || fallback` in
 the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
-Fixed since: ✅ **SEC-B4 egress boundary** (#956) — every plugin HTTP call now dials a
-resolver-validated, pinned target (Host/SNI preserved, redirects re-validated per hop) instead of
-letting httpx re-resolve. Two defects found while integrating and fixed here: RESTRICTED plugins
-whose base URL is a self-hosted loopback/RFC1918 literal were being validated in `public` mode and
-so became unreachable (local-first regression, MOONSHOT §5.1), and the twelve tests still mocking
-the retired `_client` seam were doing real DNS/TCP. **Still an owner gate:** this is R3 and the
-independent review named in the draft has not happened.
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
