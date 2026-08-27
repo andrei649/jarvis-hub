@@ -141,8 +141,7 @@ async def memory_consolidate(req: Request):
     candidates = (body or {}).get("candidates") or []
     if not candidates:
         return JSONResponse({"error": "candidates required"}, status_code=400)
-
-    # plan() is O(candidates × existing) similarity over caller-supplied text —
+    # plan() is O(candidates x existing) similarity over caller-supplied text —
     # keep that CPU off the event loop.
     existing = (body or {}).get("existing") or []
 
@@ -150,7 +149,7 @@ async def memory_consolidate(req: Request):
         p = eng.plan(candidates, existing)
         return p, eng.summarize(p)
 
-    plan, summary = await asyncio.to_thread(_plan)
+    plan, summary = await _kg_call(_plan)
     return nocache_json({"plan": plan, "summary": summary})
 
 
@@ -245,9 +244,9 @@ async def memory_search_tool(req: Request):
     except (TypeError, ValueError):
         top_k = 5
     tool = MemorySearchTool(_structured_recall)
-    # search() runs _structured_recall, which hits the live graph — sync HTTP
-    # under the Neo4j backend — so it must not run on the loop.
-    return nocache_json(await asyncio.to_thread(tool.search, query, top_k))
+    # _structured_recall hits the graph (a blocking neo4j call on the neo4j
+    # backend) — run the whole sync tool call in a worker thread.
+    return nocache_json(await _kg_call(tool.search, query, top_k))
 
 
 # ── H14.4 Decay-based forgetting (ACT-R activation + dependency-aware delete) ──
@@ -260,7 +259,7 @@ async def memory_decay_ranking(limit: int = Query(100, ge=1, le=1000)):
     if d is None:
         return nocache_json({"ranking": []})
     # ranking() takes the store's threading.Lock once per item — off-loop.
-    return nocache_json({"ranking": await asyncio.to_thread(d.ranking, limit=limit)})
+    return nocache_json({"ranking": await _kg_call(d.ranking, limit=limit)})
 
 
 @router.get("/api/memory/decay/candidates", dependencies=[Depends(user_guard)])
@@ -271,7 +270,7 @@ async def memory_decay_candidates(threshold: float = 0.0):
     if d is None:
         return nocache_json({"candidates": []})
     # forget_candidates() ranks up to 10k items under the store lock — off-loop.
-    candidates = await asyncio.to_thread(d.forget_candidates, threshold)
+    candidates = await _kg_call(d.forget_candidates, threshold)
     return nocache_json({"threshold": threshold, "candidates": candidates})
 
 
@@ -290,7 +289,7 @@ async def memory_decay_forget(req: Request):
     if not item_id:
         return JSONResponse({"error": "id required"}, status_code=400)
     # forget() deletes + rewrites the decay JSON file under the store lock.
-    removed = await asyncio.to_thread(d.forget, item_id)
+    removed = await _kg_call(d.forget, item_id)
     if not removed:
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True, "removed": removed})
@@ -306,18 +305,24 @@ def _kg():
     return getattr(orch.memory, "graph", None)
 
 
+async def _kg_call(fn, *args, **kwargs):
+    """Run a graph call in a worker thread.
+
+    With KNOWLEDGE_GRAPH_BACKEND=neo4j every graph method is a blocking sync
+    httpx request (5s probe / 10s query timeouts); inline it froze the whole
+    event loop — and with it every other route — for the duration. The default
+    in-memory backend is cheap, so the offload is negligible there.
+    """
+    return await asyncio.to_thread(fn, *args, **kwargs)
+
+
 @router.get("/api/kg/entities", dependencies=[Depends(user_guard)])
 async def kg_entities(q: str = "", limit: int = Query(100, ge=1, le=500)):
     """List (or search with ?q=) knowledge-graph entities."""
     g = _kg()
     if g is None:
         return nocache_json({"entities": [], "error": "graph not available"})
-    # The graph may be Neo4jGraph: every op is a blocking HTTP transaction
-    # (httpx.Client, 5–10s timeouts) that must stay off the event loop.
-    if q:
-        entities = await asyncio.to_thread(g.search, q)
-    else:
-        entities = await asyncio.to_thread(g.list_entities, limit)
+    entities = await _kg_call(g.search, q) if q else await _kg_call(g.list_entities, limit)
     return nocache_json({"entities": entities[:limit], "total": len(entities)})
 
 
@@ -327,11 +332,10 @@ async def kg_entity(name: str):
     g = _kg()
     if g is None:
         return JSONResponse({"error": "graph not available"}, status_code=503)
-    ent = await asyncio.to_thread(g.get_entity, name)
+    ent = await _kg_call(g.get_entity, name)
     if ent is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return nocache_json({"entity": ent,
-                         "relations": await asyncio.to_thread(g.get_relations, name)})
+    return nocache_json({"entity": ent, "relations": await _kg_call(g.get_relations, name)})
 
 
 @router.post("/api/kg/entities", dependencies=[Depends(user_guard)])
@@ -359,8 +363,8 @@ async def kg_upsert_entity(req: Request):
     denied = _kg_kernel_denial(get_orch(), payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    ok = await asyncio.to_thread(g.add_entity, name, entity_type, body.get("properties") or {})
-    return nocache_json({"ok": bool(ok), "entity": await asyncio.to_thread(g.get_entity, name)})
+    ok = await _kg_call(g.add_entity, name, entity_type, body.get("properties") or {})
+    return nocache_json({"ok": bool(ok), "entity": await _kg_call(g.get_entity, name)})
 
 
 @router.delete("/api/kg/entities/{name}", dependencies=[Depends(user_guard)])
@@ -380,7 +384,7 @@ async def kg_delete_entity(name: str, req: Request = None):
     denied = _kg_kernel_denial(get_orch(), payload, token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    if not await asyncio.to_thread(g.delete_entity, name):
+    if not await _kg_call(g.delete_entity, name):
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True, "deleted": name})
 
@@ -411,8 +415,7 @@ async def kg_add_relation(req: Request):
     denied = _kg_kernel_denial(get_orch(), payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    ok = await asyncio.to_thread(
-        g.add_relation, source, relation, target, body.get("properties") or {})
+    ok = await _kg_call(g.add_relation, source, relation, target, body.get("properties") or {})
     return nocache_json({"ok": bool(ok)})
 
 
@@ -436,7 +439,7 @@ async def kg_delete_relation(source: str, relation: str, target: str, req: Reque
     denied = _kg_kernel_denial(get_orch(), payload, token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    if not await asyncio.to_thread(g.delete_relation, source, relation, target):
+    if not await _kg_call(g.delete_relation, source, relation, target):
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True})
 
@@ -467,7 +470,7 @@ async def kg_add_fact(req: Request):
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     # add_fact() holds the store lock across an atomic JSON file rewrite — off-loop.
-    fact = await asyncio.to_thread(
+    fact = await _kg_call(
         bt.add_fact,
         body["subject"], body["predicate"], body["object"],
         valid_from=body.get("valid_from"), ingested_at=body.get("ingested_at"),
@@ -484,7 +487,8 @@ async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicat
     if bt is None:
         return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
     # Store reads share the writer's threading.Lock — keep the wait off the loop.
-    return nocache_json({"at": at, "facts": await asyncio.to_thread(bt.as_of, at, subject, predicate)})
+    facts = await _kg_call(bt.as_of, at, subject, predicate)
+    return nocache_json({"at": at, "facts": facts})
 
 
 @router.get("/api/kg/facts/history", dependencies=[Depends(user_guard)])
@@ -494,8 +498,8 @@ async def kg_facts_history(subject: str, predicate: str = ""):
     bt = getattr(orch, "bitemporal", None) if orch else None
     if bt is None:
         return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
-    return nocache_json({"subject": subject,
-                         "history": await asyncio.to_thread(bt.history, subject, predicate)})
+    history = await _kg_call(bt.history, subject, predicate)
+    return nocache_json({"subject": subject, "history": history})
 
 
 @router.post("/api/kg/ingest", dependencies=[Depends(user_guard)])
@@ -519,9 +523,7 @@ async def kg_ingest(req: Request):
     denied = _kg_kernel_denial(orch, payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    # ingest() extracts triples, then writes the graph (blocking HTTP under
-    # Neo4j) and bi-temporal facts (file rewrite per fact) — off-loop.
-    count = await asyncio.to_thread(updater.ingest, text)
+    count = await _kg_call(updater.ingest, text)
     return nocache_json({"ok": True, "added": count, "triples": updater.last_added})
 
 
