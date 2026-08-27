@@ -836,7 +836,11 @@ ONVIF discovery (`_normalize` resolved each candidate xaddr on the loop), and
 default in-memory backend unaffected) — all now pay their blocking calls to worker
 threads via `asyncio.to_thread`, gated by loop-responsiveness regression tests
 (`tests/test_request_path_blocking_io.py`). Audit correction: `codeintel.py` was a false
-positive (pure local AST/FS, no network); the real ONVIF surface is `cameras/onvif.py`,
+positive *for network I/O* (pure local AST/FS) — but ✅ **its filesystem walk was a real
+loop-blocker in the same family** (#949): a cold `project_index()`/`reindex()` parses the whole
+repo synchronously, so `/api/codeintel/{search,stats,reindex}` froze every other route for the
+build; now offloaded via `asyncio.to_thread`, gated by
+`tests/test_codeintel_router_async.py`. The real ONVIF surface is `cameras/onvif.py`,
 not an `onvif.py` router; adjacent same-family `cameras/frigate.py:138` getaddrinfo noted,
 still open.
 Fixed since: ✅ the unauthenticated full-chain re-verify in `security.py` — `audit/verify` plus its
