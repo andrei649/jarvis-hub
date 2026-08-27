@@ -141,8 +141,16 @@ async def memory_consolidate(req: Request):
     candidates = (body or {}).get("candidates") or []
     if not candidates:
         return JSONResponse({"error": "candidates required"}, status_code=400)
-    plan = eng.plan(candidates, (body or {}).get("existing") or [])
-    return nocache_json({"plan": plan, "summary": eng.summarize(plan)})
+    # plan() is O(candidates x existing) similarity over caller-supplied text —
+    # keep that CPU off the event loop.
+    existing = (body or {}).get("existing") or []
+
+    def _plan():
+        p = eng.plan(candidates, existing)
+        return p, eng.summarize(p)
+
+    plan, summary = await _kg_call(_plan)
+    return nocache_json({"plan": plan, "summary": summary})
 
 
 @router.get("/api/memory/search", dependencies=[Depends(user_guard)])
@@ -250,7 +258,8 @@ async def memory_decay_ranking(limit: int = Query(100, ge=1, le=1000)):
     d = getattr(orch, "decay", None) if orch else None
     if d is None:
         return nocache_json({"ranking": []})
-    return nocache_json({"ranking": d.ranking(limit=limit)})
+    # ranking() takes the store's threading.Lock once per item — off-loop.
+    return nocache_json({"ranking": await _kg_call(d.ranking, limit=limit)})
 
 
 @router.get("/api/memory/decay/candidates", dependencies=[Depends(user_guard)])
@@ -260,7 +269,9 @@ async def memory_decay_candidates(threshold: float = 0.0):
     d = getattr(orch, "decay", None) if orch else None
     if d is None:
         return nocache_json({"candidates": []})
-    return nocache_json({"threshold": threshold, "candidates": d.forget_candidates(threshold)})
+    # forget_candidates() ranks up to 10k items under the store lock — off-loop.
+    candidates = await _kg_call(d.forget_candidates, threshold)
+    return nocache_json({"threshold": threshold, "candidates": candidates})
 
 
 @router.post("/api/memory/decay/forget", dependencies=[Depends(user_guard)])
@@ -277,7 +288,8 @@ async def memory_decay_forget(req: Request):
     item_id = (body or {}).get("id", "")
     if not item_id:
         return JSONResponse({"error": "id required"}, status_code=400)
-    removed = d.forget(item_id)
+    # forget() deletes + rewrites the decay JSON file under the store lock.
+    removed = await _kg_call(d.forget, item_id)
     if not removed:
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True, "removed": removed})
@@ -457,7 +469,9 @@ async def kg_add_fact(req: Request):
     denied = _kg_kernel_denial(orch, payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    fact = bt.add_fact(
+    # add_fact() holds the store lock across an atomic JSON file rewrite — off-loop.
+    fact = await _kg_call(
+        bt.add_fact,
         body["subject"], body["predicate"], body["object"],
         valid_from=body.get("valid_from"), ingested_at=body.get("ingested_at"),
         multi=bool(body.get("multi", False)),
@@ -472,7 +486,9 @@ async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicat
     bt = getattr(orch, "bitemporal", None) if orch else None
     if bt is None:
         return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
-    return nocache_json({"at": at, "facts": bt.as_of(at, subject, predicate)})
+    # Store reads share the writer's threading.Lock — keep the wait off the loop.
+    facts = await _kg_call(bt.as_of, at, subject, predicate)
+    return nocache_json({"at": at, "facts": facts})
 
 
 @router.get("/api/kg/facts/history", dependencies=[Depends(user_guard)])
@@ -482,7 +498,8 @@ async def kg_facts_history(subject: str, predicate: str = ""):
     bt = getattr(orch, "bitemporal", None) if orch else None
     if bt is None:
         return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
-    return nocache_json({"subject": subject, "history": bt.history(subject, predicate)})
+    history = await _kg_call(bt.history, subject, predicate)
+    return nocache_json({"subject": subject, "history": history})
 
 
 @router.post("/api/kg/ingest", dependencies=[Depends(user_guard)])
