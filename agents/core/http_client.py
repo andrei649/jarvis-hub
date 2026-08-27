@@ -184,6 +184,24 @@ class PluginTimeouts:
         )
 
 
+def _address_mode(host: str) -> str:
+    """Pick the SSRF address class for a host the egress policy already cleared.
+
+    Self-hosted integrations (n8n, SearXNG, Signal, Matrix) are configured with a
+    loopback / RFC1918 *literal* — or the reserved name ``localhost`` — and must
+    validate in ``lan`` mode, or local-first deployments cannot reach their own
+    services (MOONSHOT §5.1). Every other name stays in ``public`` mode on
+    purpose: letting an ordinary DNS name opt into ``lan`` merely because it
+    currently resolves somewhere private is precisely the rebinding hole the
+    SSRF guard exists to close.
+    """
+    from .security.ssrf import is_private_ip
+
+    if host in {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}:
+        return "lan"
+    return "lan" if is_private_ip(host) else "public"
+
+
 class PluginHTTPClient:
     """
     Centralized async HTTP client for plugins.
@@ -287,7 +305,7 @@ class PluginHTTPClient:
             # driven plugins (n8n, SearXNG, Signal, Matrix).
             allowed = manifest.allowed_domains + dynamic_domains(self.plugin_name)
             if host and host_in_allowlist(host, allowed):
-                return "public"
+                return _address_mode(host)
             violation = (f"plugin '{self.plugin_name}' may not reach '{host}' "
                          f"(allowed: {allowed})")
         else:
@@ -305,7 +323,7 @@ class PluginHTTPClient:
                     "egress downgrade audit failed (type=%s)",
                     type(exc).__name__,
                 )
-        return "public"
+        return _address_mode(host)
 
     def _enforce_egress(self, url: str) -> None:
         """Legacy synchronous policy probe; request paths use ``_prepare_target``."""
