@@ -4,9 +4,14 @@ Three composing gates: an egress allowlist (off-allowlist navigation is hard
 blocked, not approvable), an approval queue for mutating steps, and an injectable
 driver so the governance layer is fully offline-testable.
 """
+import asyncio
+import socket
 import sys
+import threading
+import time
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -392,3 +397,56 @@ def test_browser_check_and_preview_project_only_bounded_public_evidence(
     }
     assert "typed secret" not in response.text
     assert "must-not-leak" not in response.text
+
+
+# ── event-loop health (slow DNS must not stall the request loop) ──
+
+async def _run_route_over_slow_dns(route, payload, monkeypatch):
+    """Swap socket.getaddrinfo — the sync DNS seam under check_ssrf — for a
+    slow resolver that records which thread ran it.
+
+    Asserting on the executing thread (not wall-clock interleaving) is what
+    makes this deterministic: a wait_for watchdog cannot fire while the loop is
+    blocked inside sync DNS, because asyncio timers need that same loop.
+    """
+    import agents.core.security.ssrf as ssrf
+
+    loop_thread_id = threading.get_ident()  # this coroutine runs on the loop
+
+    observed = {}
+
+    def slow_getaddrinfo(*_args, **_kwargs):
+        observed["on_loop_thread"] = threading.get_ident() == loop_thread_id
+        time.sleep(0.1)  # simulated slow upstream DNS
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(ssrf.socket, "getaddrinfo", slow_getaddrinfo)
+
+    transport = httpx.ASGITransport(app=web.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        response = await ac.post(route, json=payload)
+
+    assert observed.get("on_loop_thread") is False, (
+        "blocking DNS ran on the event-loop thread"
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+async def test_check_endpoint_keeps_slow_dns_off_the_event_loop(monkeypatch):
+    body = await _run_route_over_slow_dns(
+        "/api/browser/check",
+        {"url": "https://example.com", "allowlist": ["example.com"]},
+        monkeypatch,
+    )
+    assert body == {"allowed": True, "reason": ""}
+
+
+async def test_preview_endpoint_keeps_slow_dns_off_the_event_loop(monkeypatch):
+    body = await _run_route_over_slow_dns(
+        "/api/browser/plan/preview",
+        {"allowlist": ["example.com"],
+         "plan": [{"action": "navigate", "url": "https://example.com"}]},
+        monkeypatch,
+    )
+    assert body["steps"][0]["decision"] == "run"
