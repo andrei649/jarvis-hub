@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable, Mapping
 from contextlib import closing
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse, urlunparse
 
 from agents.core.autonomy.dry_run import preview_task
@@ -20,6 +21,9 @@ from agents.core.paths import data_path
 
 from .confirmation import ConfirmationError, StrongConfirmationStore
 from .contracts import HouseEntity, HouseSnapshot
+
+if TYPE_CHECKING:
+    from agents.core.autonomy.queue import Task
 
 HOUSE_CONTROL_KIND = "house.control"
 HOUSE_SECURITY_KIND = "house.security_control"
@@ -409,7 +413,7 @@ class HouseActuator:
         autonomy_level = "ask"
         if not security and callable(self._outcomes):
             try:
-                stats = self._outcomes(_CONTROL_CAPABILITY)
+                stats = await asyncio.to_thread(self._outcomes, _CONTROL_CAPABILITY)
                 if (
                     isinstance(stats, Mapping)
                     and int(stats.get("total", 0)) >= _EARNED_SAMPLES
@@ -461,7 +465,11 @@ class HouseActuator:
         }
         if self._enqueue is None:
             return {**base, "queued": False}
-        task_id = self._enqueue(
+        # Governed intake ends in a sync sqlite write (TaskQueue.enqueue) and is
+        # awaited straight from device-facing routes — offload it so the event
+        # loop never blocks on disk I/O. Same callable, same arguments, same id.
+        task_id = await asyncio.to_thread(
+            self._enqueue,
             agent,
             kind,
             title,
@@ -512,11 +520,17 @@ class HouseActuator:
             **self._task_binding(task, payload), ttl_seconds=ttl_seconds
         )
 
+    async def mint_confirmation_async(self, task: Task) -> dict:
+        return await asyncio.to_thread(self.mint_confirmation, task)
+
     def confirm(self, token: str, task) -> dict:
         if self._confirmations is None:
             raise ConfirmationError("strong confirmation is unavailable")
         payload = _canonical_task(getattr(task, "kind", ""), getattr(task, "payload", None))
         return self._confirmations.confirm(token, **self._task_binding(task, payload))
+
+    async def confirm_async(self, token: str, task: Task) -> dict:
+        return await asyncio.to_thread(self.confirm, token, task)
 
     @staticmethod
     def _entity(snapshot: HouseSnapshot, entity_id: str) -> HouseEntity | None:
@@ -622,7 +636,9 @@ class HouseActuator:
         except (AttributeError, TypeError, ValueError):
             return {"status": "failed", "reason": "invalid_payload", "verified": False}
         digest = _payload_hash(payload)
-        ledger_state, cached = self._ledger.lookup(task_id, digest)
+        # Ledger ops are sync sqlite round-trips (lookup/begin/finish/abort);
+        # execute_task runs on the loop via the autonomy executor, so offload.
+        ledger_state, cached = await asyncio.to_thread(self._ledger.lookup, task_id, digest)
         if ledger_state == "cached":
             return cached or {"status": "failed", "reason": "cached_result_missing"}
         if ledger_state == "conflict":
@@ -639,14 +655,16 @@ class HouseActuator:
             return {"status": "failed", "reason": reason, "verified": False}
         if kind == HOUSE_SECURITY_KIND and (
             self._confirmations is None
-            or not self._confirmations.consume(**self._task_binding(task, payload))
+            or not await asyncio.to_thread(
+                self._confirmations.consume, **self._task_binding(task, payload)
+            )
         ):
             return {
                 "status": "failed",
                 "reason": "strong_confirmation_required",
                 "verified": False,
             }
-        if not self._ledger.begin(task_id, digest):
+        if not await asyncio.to_thread(self._ledger.begin, task_id, digest):
             return {"status": "failed", "reason": "execution_in_progress", "verified": False}
 
         capability = _SECURITY_CAPABILITY if kind == HOUSE_SECURITY_KIND else _CONTROL_CAPABILITY
@@ -667,7 +685,7 @@ class HouseActuator:
                 "verified": False,
                 "manual_recovery_required": False,
             }
-            self._ledger.abort(task_id)
+            await asyncio.to_thread(self._ledger.abort, task_id)
             return result
 
         try:
@@ -683,7 +701,7 @@ class HouseActuator:
                 "verified": True,
                 "manual_recovery_required": False,
             }
-            self._ledger.finish(task_id, result)
+            await asyncio.to_thread(self._ledger.finish, task_id, result)
             return result
 
         rollback = await self._rollback(task, pre, current, payload)
@@ -695,7 +713,7 @@ class HouseActuator:
             "rollback": rollback,
             "manual_recovery_required": manual,
         }
-        self._ledger.finish(task_id, result)
+        await asyncio.to_thread(self._ledger.finish, task_id, result)
         return result
 
 
