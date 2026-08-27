@@ -1622,6 +1622,12 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 ## 🖱️ ORIZONT 28 — Computer & Browser Operator (Nerva Program B · AI-OS Phase 2a, direction 2026-07-11)
 
+Fixed since: ✅ **browser request-path DNS offload, covered end-to-end** (#948) — the
+`/api/browser/check` + plan-preview SSRF lookups already moved to a worker thread; this adds the
+router-level loop-responsiveness regressions in `tests/test_h15_1_browser_agent.py` so the seam
+cannot silently go back on-loop.
+
+
 > **Mission:** turn H15's complete-but-stubbed governance into real actuation; the action
 > hierarchy **API → CLI → structured UI → visual** becomes an explicit router that always picks
 > the lowest-risk implementation. **Builds ON:** `browser_agent.py` (GovernedBrowser — egress
