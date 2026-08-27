@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WorldView — 4D OSINT</title>
+    <meta
+      name="description"
+      content="Time-scrubbable 3D globe fusing air / sea / space / cyber OSINT."
+    />
+  </head>
+  <body>
+    <!-- Cesium resolves its Workers/Assets (incl. the bundled Natural Earth II basemap) from
+         here; plugins/cesium.ts mirrors them into public/cesium. -->
+    <script>
+      window.CESIUM_BASE_URL = "/cesium";
+    </script>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
