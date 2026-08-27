@@ -817,6 +817,11 @@ Still open from that run (verified real, not yet fixed): the seeded ADMIN/OBSERV
 corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): ✅ the dead `arr() || fallback` in
 the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
+Fixed since: ✅ **F14 WorldView container hardening** (#954) — backend-api, frontend and
+ingestion-workers images drop to unprivileged users, the tiles compose stack runs read-only with
+`cap_drop: ALL` + `no-new-privileges` and TLS-required DB links. Frontend hardening was re-based
+onto the Vite/nginx image after the Next.js migration; the Docker runtime smoke is still an
+owner/live gate (no Docker daemon in CI).
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
