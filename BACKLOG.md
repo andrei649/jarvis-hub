@@ -828,8 +828,6 @@ Still open from that run (verified real, not yet fixed): the seeded ADMIN/OBSERV
 corpora in `modes3.tsx`/`modes2.tsx`. Fixed since (2026-08-01): ✅ the dead `arr() || fallback` in
 the two `gap.tsx` panels — CLOUD AUTH PROFILES and OAUTH now render their APIs' real object-map
 shapes (`{pools:{provider:…}}` / bare `{service:…}`), with vitest regressions.
-Fixed since: ✅ **action-posture flag reference published** (#953) — `docs/FLAGS.md` now documents
-what each autonomy/posture flag costs and unlocks, so operators stop reading the source to find out.
 Fixed since (2026-08-22): ✅ **blocking DNS/HTTP on the request path** — `browser.py`
 (`/api/browser/check` + plan preview: SSRF `getaddrinfo` per URL, up to 200/preview),
 `house` (`snapshot()` + actuation re-resolved the HA origin inline on every call),
@@ -1344,6 +1342,11 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 - **Phase D:** 1.0 proof — 3–5 design partners (unchanged; **= the 1.0 gate**).
 
 ### Track K — Action Kernel (the "operating" in operating system) (P0–P1)
+
+Fixed since: ✅ **action-posture flag reference published** (#953) — `docs/FLAGS.md` now documents
+what each autonomy/posture flag unlocks and what it costs, so operators stop reading the source to
+find out which posture a flag actually buys.
+
 
 > **Design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md`](docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md)
 > — grounded in the existing seeds it unifies (`security/capability.py:authorize()` nucleus, the autonomy
