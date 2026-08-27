@@ -105,22 +105,12 @@ class WebSearchResearchBackend:
             raise ResearchError("SSRF guard received invalid pinned address") from exc
 
         client = self.http_client
-        breaker = client.circuit_breaker
-        if breaker.is_open():
-            raise ResearchError("research HTTP circuit breaker is open")
-        ip_host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
-        port = f":{parsed.port}" if parsed.port else ""
-        connect_url = parsed._replace(netloc=f"{ip_host}{port}").geturl()
-        host_header = f"{host}:{parsed.port}" if parsed.port else host
         try:
-            client._guard("GET", url)
-            context = client._get_client().stream(
+            context = client.stream(
                 "GET",
-                connect_url,
-                headers={"User-Agent": "Jarvis-GovernedResearch/1", "Host": host_header},
-                extensions={"sni_hostname": host},
+                url,
+                headers={"User-Agent": "Jarvis-GovernedResearch/1"},
                 follow_redirects=False,
-                timeout=client.timeouts.to_httpx_timeout(),
             )
             response = await context.__aenter__()
             if int(getattr(response, "status_code", 0)) >= 400:
@@ -128,14 +118,12 @@ class WebSearchResearchBackend:
                     response.raise_for_status()
                 finally:
                     await context.__aexit__(None, None, None)
-            breaker.record_success()
             return _PinnedResearchResponse(
                 response=response,
                 context=context,
-                circuit_breaker=breaker,
+                circuit_breaker=client.circuit_breaker,
             )
         except Exception:
-            breaker.record_failure()
             raise
 
 
