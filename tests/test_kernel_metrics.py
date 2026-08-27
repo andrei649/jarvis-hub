@@ -45,7 +45,8 @@ def test_reset_and_unknown_verdict():
     assert m.snapshot()["total"] == 1
     m.reset()
     assert m.snapshot() == {"total": 0, "by_verdict": {"grant": 0, "deny": 0, "queue": 0},
-                            "by_kind": {}, "deny_rate": 0.0, "recent_denials": []}
+                            "by_kind": {}, "ungoverned_by_kind": {}, "deny_rate": 0.0,
+                            "recent_denials": []}
 
 
 def test_denials_ring_is_bounded():

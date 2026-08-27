@@ -14,7 +14,7 @@ websockets>=17.0.1,<18
 pillow>=12.3.0,<13
 cryptography>=50.0.0
 defusedxml>=0.7.1  # hardened parsing of untrusted RSS/Atom feeds (news + digest)
-python-dotenv>=1.2.2
+python-dotenv>=1.2.3
 ollama>=0.6.2
 # fastapi 0.137 wraps include_router results in an opaque _IncludedRouter instead of
 # flattening them into app.routes. The app is unaffected (routes serve + appear in
@@ -23,17 +23,17 @@ ollama>=0.6.2
 # major (untested with this fastapi). Background:
 # docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
 fastapi>=0.141.1,<0.142
-starlette>=1.5.0,<2.0
-uvicorn>=0.52.1
+starlette>=1.6.0,<2.0
+uvicorn>=0.52.4
 psutil>=7.2.2
 
 # === Memory (optional — improves with numpy) ===
 # numpy 2.5+ dropped Python 3.11; the marker keeps the install working on 3.11 boxes
-numpy>=2.5.1; python_version >= "3.12"
+numpy>=2.5.2; python_version >= "3.12"
 numpy>=2.0,<2.5; python_version < "3.12"
 
 # === Token counting + HTML parsing (used by newer code; app still boots without them) ===
-tiktoken>=0.13.0
+tiktoken>=0.14.0
 beautifulsoup4>=4.15.0
 
 # === Memory — Qdrant Vector DB (optional) ===
@@ -72,4 +72,4 @@ pytest-xdist>=3.8.0
 # AUD-10 (F37): fail fast on a stray real network call in a test instead of
 # hanging to the --timeout backstop. pytest.ini restricts connect() to loopback;
 # a real outbound connect raises SocketConnectBlockedError immediately.
-pytest-socket>=0.8.0
+pytest-socket>=0.8.1

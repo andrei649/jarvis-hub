@@ -168,12 +168,14 @@ def _build_runtime(orch) -> HouseRuntime:
 
     worker = getattr(orch, "autonomy", None) if orch is not None else None
     enqueue = getattr(worker, "govern_enqueue", None)
+    intake_authorizer = getattr(worker, "kernel_gate", None)
     outcomes = getattr(queue, "capability_outcome_stats", None)
     try:
         actuator = HouseActuator(
             state_reader=adapter,
             driver=HomeAssistantServiceDriver(adapter=adapter),
             authorizer=make_action_kernel(orch) if orch is not None else None,
+            intake_authorizer=intake_authorizer if callable(intake_authorizer) else None,
             enqueue=enqueue if callable(enqueue) else None,
             outcome_provider=outcomes if callable(outcomes) else None,
             confirmation_store=confirmations,
