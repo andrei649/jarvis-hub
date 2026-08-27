@@ -576,6 +576,11 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
 
 ## 🥊 Nerva vs Hermes Agent — honest gap analysis (2026-07-25)
 
+Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the
+verified/partial/aspirational split in `NERVA_VISION.md` now matches what actually ships, so the
+vision doc stops reading as a status report for capabilities that are still seeds.
+
+
 > Full analysis + evidence: [`docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md`](docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md).
 > Hermes side re-grounded live (repo + releases + docs, 2026-07-25): **v0.19.0** (07-20), 220.1k★,
 > releases every ~2–3 weeks; it now ships **real desktop computer-use** (`cua-driver`, mac/win/linux,
