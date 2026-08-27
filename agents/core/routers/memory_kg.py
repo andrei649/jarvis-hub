@@ -22,6 +22,7 @@ domain and are moved here verbatim (they now resolve the orchestrator through
 `get_orch()` instead of the web module global).
 """
 
+import asyncio
 import logging
 import time
 from typing import Optional
@@ -235,7 +236,9 @@ async def memory_search_tool(req: Request):
     except (TypeError, ValueError):
         top_k = 5
     tool = MemorySearchTool(_structured_recall)
-    return nocache_json(tool.search(query, top_k))
+    # _structured_recall hits the graph (a blocking neo4j call on the neo4j
+    # backend) — run the whole sync tool call in a worker thread.
+    return nocache_json(await _kg_call(tool.search, query, top_k))
 
 
 # ── H14.4 Decay-based forgetting (ACT-R activation + dependency-aware delete) ──
@@ -290,13 +293,24 @@ def _kg():
     return getattr(orch.memory, "graph", None)
 
 
+async def _kg_call(fn, *args, **kwargs):
+    """Run a graph call in a worker thread.
+
+    With KNOWLEDGE_GRAPH_BACKEND=neo4j every graph method is a blocking sync
+    httpx request (5s probe / 10s query timeouts); inline it froze the whole
+    event loop — and with it every other route — for the duration. The default
+    in-memory backend is cheap, so the offload is negligible there.
+    """
+    return await asyncio.to_thread(fn, *args, **kwargs)
+
+
 @router.get("/api/kg/entities", dependencies=[Depends(user_guard)])
 async def kg_entities(q: str = "", limit: int = Query(100, ge=1, le=500)):
     """List (or search with ?q=) knowledge-graph entities."""
     g = _kg()
     if g is None:
         return nocache_json({"entities": [], "error": "graph not available"})
-    entities = g.search(q) if q else g.list_entities(limit)
+    entities = await _kg_call(g.search, q) if q else await _kg_call(g.list_entities, limit)
     return nocache_json({"entities": entities[:limit], "total": len(entities)})
 
 
@@ -306,10 +320,10 @@ async def kg_entity(name: str):
     g = _kg()
     if g is None:
         return JSONResponse({"error": "graph not available"}, status_code=503)
-    ent = g.get_entity(name)
+    ent = await _kg_call(g.get_entity, name)
     if ent is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return nocache_json({"entity": ent, "relations": g.get_relations(name)})
+    return nocache_json({"entity": ent, "relations": await _kg_call(g.get_relations, name)})
 
 
 @router.post("/api/kg/entities", dependencies=[Depends(user_guard)])
@@ -337,8 +351,8 @@ async def kg_upsert_entity(req: Request):
     denied = _kg_kernel_denial(get_orch(), payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    ok = g.add_entity(name, entity_type, body.get("properties") or {})
-    return nocache_json({"ok": bool(ok), "entity": g.get_entity(name)})
+    ok = await _kg_call(g.add_entity, name, entity_type, body.get("properties") or {})
+    return nocache_json({"ok": bool(ok), "entity": await _kg_call(g.get_entity, name)})
 
 
 @router.delete("/api/kg/entities/{name}", dependencies=[Depends(user_guard)])
@@ -358,7 +372,7 @@ async def kg_delete_entity(name: str, req: Request = None):
     denied = _kg_kernel_denial(get_orch(), payload, token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    if not g.delete_entity(name):
+    if not await _kg_call(g.delete_entity, name):
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True, "deleted": name})
 
@@ -389,7 +403,7 @@ async def kg_add_relation(req: Request):
     denied = _kg_kernel_denial(get_orch(), payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    ok = g.add_relation(source, relation, target, body.get("properties") or {})
+    ok = await _kg_call(g.add_relation, source, relation, target, body.get("properties") or {})
     return nocache_json({"ok": bool(ok)})
 
 
@@ -413,7 +427,7 @@ async def kg_delete_relation(source: str, relation: str, target: str, req: Reque
     denied = _kg_kernel_denial(get_orch(), payload, token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    if not g.delete_relation(source, relation, target):
+    if not await _kg_call(g.delete_relation, source, relation, target):
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True})
 
@@ -492,7 +506,7 @@ async def kg_ingest(req: Request):
     denied = _kg_kernel_denial(orch, payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    count = updater.ingest(text)
+    count = await _kg_call(updater.ingest, text)
     return nocache_json({"ok": True, "added": count, "triples": updater.last_added})
 
 
