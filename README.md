@@ -3,7 +3,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-6968-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-6978-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-0.11.0-orange)
 <!-- project-status:badges:end -->
 
@@ -97,7 +97,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **6,968** · frontend **549** · mobile **96**. Route surface: **405**.
+Generated test matrix: backend **6,978** · frontend **549** · mobile **96**. Route surface: **405**.
 <!-- project-status:run:end -->
 
 ### Windows 11 — one-click (no terminal needed)
@@ -124,6 +124,10 @@ python -m pytest             # full offline suite — current count auto-synced 
 ```
 
 _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + tests); `./start.sh` launches the server, WorldView when available, and the Signal Layer unless disabled.
+
+_Changed your mind?_ `./uninstall.sh --confirm` (`UNINSTALL.bat` on Windows) removes the
+installer-created software footprint (`.venv/`, WorldView's `node_modules/` + env files).
+Your data is never touched unless you also pass `--purge-data`.
 
 - **HUD:** http://127.0.0.1:8080/ — the **V2 cockpit** (primary HUD; legacy HUD at `/v1`, override with `JARVIS_HUD=v1`)
 - **WorldView (4D OSINT):** http://localhost:3000 (separate stack, auto-started by START.bat/start.sh — see above)
@@ -152,7 +156,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v0.11.0** · backend **6,968** · frontend **549** · mobile **96** · **405** routes · **18** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · source commit `31ba5bcc9b4a`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v0.11.0** · backend **6,978** · frontend **549** · mobile **96** · **405** routes · **18** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · source commit `f8d2f1e1c64f`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v0.11.0 — feature-complete + refactor done, building toward the expanded 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); **1.0 = the proof track** — productionization + real design-partner users — **plus the AI-OS capability program**, [`NERVA_VISION.md`](NERVA_VISION.md)). 18 specialist agents (incl. **Argus** for WorldView geoint, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +

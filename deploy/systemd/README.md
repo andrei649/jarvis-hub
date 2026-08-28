@@ -38,6 +38,21 @@ sudo systemctl restart jarvis-hub
 sudo systemctl stop jarvis-hub       # graceful: drains, then exits
 ```
 
+## Uninstall
+
+```bash
+sudo systemctl disable --now jarvis-hub
+sudo rm /etc/systemd/system/jarvis-hub.service
+sudo rm -rf /etc/jarvis-hub
+sudo systemctl daemon-reload
+```
+
+This removes the service registration only — it does not touch `/var/lib/jarvis-hub`
+(or wherever you pointed `JARVIS_HOME`), the dedicated service user, or the install
+directory's `.venv/`. For those: `./uninstall.sh` (software footprint; add `--purge-data`
+to also erase your data) from the install directory, then remove the directory itself and
+`sudo userdel jarvis` if you created the dedicated user.
+
 ## Health checks
 
 The hub exposes machine-facing probes (H23.11) a monitor can poll:
