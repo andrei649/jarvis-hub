@@ -212,10 +212,10 @@
       "status": "⬜"
     }
   ],
-  "routes": 405,
+  "routes": 406,
   "tests": {
-    "backend": 6991,
-    "frontend": 549,
+    "backend": 6994,
+    "frontend": 551,
     "mobile": 96
   },
   "version": "0.11.0"

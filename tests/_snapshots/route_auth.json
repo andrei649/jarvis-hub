@@ -82,6 +82,7 @@
  "GET /api/cognition/stream": "user",
  "GET /api/cost": "user",
  "GET /api/dashboard/today": "user",
+ "GET /api/design-manifest": "open",
  "GET /api/eval/datasets": "open",
  "GET /api/eval/datasets/{name}/compare": "open",
  "GET /api/eval/datasets/{name}/runs": "open",

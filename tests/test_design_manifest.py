@@ -51,3 +51,40 @@ def test_real_stylesheet_component_inventory_is_substantial():
 
 def test_missing_stylesheet_is_honest():
     assert "error" in dm.build_manifest("/nope/styles.css")
+
+
+# ── T-0.53: the route/HUD surface over the manifest ─────────────────────────
+
+def test_design_manifest_endpoint_returns_the_real_manifest():
+    import asyncio
+
+    from agents.core.routers.design_manifest import design_manifest as endpoint
+    body = asyncio.run(endpoint())
+    import json
+    payload = json.loads(body.body)
+    assert "error" not in payload
+    assert payload["counts"]["components"] > 100
+    assert "--accent" in payload["tokens"]["base"]
+
+
+def test_design_manifest_route_is_registered_and_open():
+    from agents.core.routers.design_manifest import router
+
+    routes = {r.path: r for r in router.routes}
+    assert "/api/design-manifest" in routes
+    # Design tokens are not personal data and the route never mutates anything —
+    # open like the sibling meters (/api/metrics/kernel, /api/metrics/capabilities).
+    assert routes["/api/design-manifest"].dependant.dependencies == []
+
+
+def test_design_manifest_http_roundtrip():
+    from fastapi.testclient import TestClient
+
+    from agents import web
+
+    client = TestClient(web.app)
+    r = client.get("/api/design-manifest")
+    assert r.status_code == 200
+    body = r.json()
+    assert "error" not in body
+    assert body["counts"]["components"] > 100

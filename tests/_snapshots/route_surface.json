@@ -82,6 +82,7 @@
   "GET /api/cognition/stream",
   "GET /api/cost",
   "GET /api/dashboard/today",
+  "GET /api/design-manifest",
   "GET /api/eval/datasets",
   "GET /api/eval/datasets/{name}/compare",
   "GET /api/eval/datasets/{name}/runs",

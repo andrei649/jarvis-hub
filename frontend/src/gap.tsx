@@ -2701,6 +2701,37 @@ export function ModelInfoPanel() {
   );
 }
 
+/* T-0.53 — the design-system manifest (GET /api/design-manifest, open like the
+   sibling meters): tokens + component-class inventory parsed live from
+   frontend/src/styles.css, so drift is visible instead of only inspectable by
+   reading the stylesheet. Figma token sync stays a separate owner-gated
+   follow-up (needs a Figma API token) — this panel is the read side. */
+export function DesignManifestPanel() {
+  const { d, e, loading, reload } = useApi('/api/design-manifest');
+  const ok = !!(d && !d.error);
+  const counts = (ok && d.counts) || {};
+  const variants = ok ? Object.keys((d.tokens && d.tokens.variants) || {}) : [];
+  return (
+    <Card title="DESIGN MANIFEST" live={asLive(d, ok)} sub={ok ? `${counts.base_tokens || 0} tokens · ${counts.components || 0} components` : null} onReload={reload}>
+      <State e={e || (d && d.error) || null} loading={loading} n={ok ? 1 : 0} />
+      {ok && (
+        <>
+          <Row>
+            <span style={mono}>source</span>
+            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{d.source}</span>
+          </Row>
+          <Row>
+            <span style={mono}>variants</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {variants.length ? variants.map((v) => <Tag key={v}>{v}</Tag>) : <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>none</span>}
+            </span>
+          </Row>
+        </>
+      )}
+    </Card>
+  );
+}
+
 /* 0.39 — the curated market watchlist (GET/POST/DELETE /api/market/watchlist/saved,
    user-guarded). The owner curates a small {symbol, low, high, note} list once;
    routers/market.py's alert/brief evaluators run against it. Read/write, but pure
@@ -2973,7 +3004,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
-  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel, SelfImprovementPanel, SwarmPanel]],
+  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, SwarmPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, OperatorPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],

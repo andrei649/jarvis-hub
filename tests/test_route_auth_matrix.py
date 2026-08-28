@@ -82,6 +82,8 @@ INTENTIONALLY_OPEN_READS = {
     "GET /api/local-docs",
     # Catalogs shipped in code (templates, specs, synthetic fixtures).
     "GET /api/agent-templates",
+    "GET /api/design-manifest",          # HUD design tokens parsed from the shipped stylesheet
+
     "GET /api/memory/tool-spec",
     "GET /api/memory/eval/corpus",       # owned synthetic corpus, not user memory
     "GET /api/voice/capabilities",
