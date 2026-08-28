@@ -296,3 +296,21 @@ built on your Windows box:
   (comma list of `plugin_id:agent_id`). This is the deliberate **policy** decision the code does
   *not* guess for you; pick grants that match how you actually want each write surface used.
   Verify on `GET /plugins` (`least_privilege:true`, per-plugin `wildcard_restricted`/`grants`).
+
+- [ ] **BUG-2b.2 — build the drag-drop workflow canvas, or drop it from the backlog (BACKLOG.md
+  line 2206).** Recounted 2026-08-28: this row has always asked for *frontend tests* of a visual
+  drag-drop SVG canvas (pointer events, node layout, edges), scoped to "ride with" H10.2 (Visual
+  Workflow Trace Overlay) and H10.7 (AI-Assisted Workflow Builder). Both of those shipped **as
+  backend-only features** — a trace-data endpoint and an LLM step-config generator — neither built
+  a visual node-and-edge canvas. The actual HUD `WorkflowsPanel`
+  (`frontend/src/gap.tsx:1104`) is a plain list-with-run/delete-buttons panel, and the AI Step
+  Builder panel explicitly outputs JSON meant to be "paste[d] into the workflow builder" — there is
+  no drag-drop canvas anywhere in the frontend to write pointer-event tests against (verified: no
+  `WorkflowCanvas`/drag-handler component exists in `frontend/src`). So this isn't a missing-test
+  gap, it's a missing-feature gap wearing a test-coverage row. Two honest paths, and only you can
+  pick: **(a)** commission the visual canvas as new scope (a real frontend feature, sized well
+  beyond "add tests" — treat it as a fresh spec, not a BUG-2b sub-item) and then BUG-2b.2 becomes
+  real work again, or **(b)** explicitly drop BUG-2b.2 from the backlog since Jarvis has shipped
+  without a visual node-graph editor for its whole life and the JSON-paste workflow works today.
+  Either answer just needs to be *written down* in `BACKLOG.md` so the row stops silently reading
+  as "ambiguous."
