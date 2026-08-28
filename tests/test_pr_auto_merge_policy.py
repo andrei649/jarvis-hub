@@ -52,7 +52,14 @@ def _command_in_bash(command: str) -> str | None:
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=10,
+        # This runs at import, so under `pytest -n auto` every xdist worker spawns
+        # its own login shell (`-lc` sources the profile, which Git Bash on Windows
+        # does slowly). Several of those at once routinely exceed a 10s budget and
+        # fail collection for the whole file. The probe is cheap when it is not
+        # contended, so a generous ceiling costs nothing on a warm runner and only
+        # buys headroom on a cold, parallel one; it is a wait bound, not a
+        # performance assertion.
+        timeout=120,
         check=False,
     )
     if result.returncode != 0:
