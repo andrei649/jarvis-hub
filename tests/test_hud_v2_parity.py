@@ -434,9 +434,10 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
-    # T-0.41: the per-domain brief is the shape an agent's DIGEST consumes. The
-    # HUD calls /routed and /agent/{id}; wiring the morning-brief digest builder
-    # to pull briefs is the genuinely-remaining half of 0.41.
+    # T-0.41: the morning brief DOES consume per-domain briefs, but in-process
+    # (scheduler_service._signal_briefs_or_none → build_domain_brief), so this
+    # HTTP route has no *client* caller. It stays as the external read surface
+    # for the same data; the HUD uses /routed and /agent/{id}.
     "/api/signals/brief/{domain}",
     "/api/actions/request",
     "/api/admin/rotate-tokens",
