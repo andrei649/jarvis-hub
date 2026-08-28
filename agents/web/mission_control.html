@@ -437,10 +437,14 @@ function renderPrFeed(){
   const s=state.sum;
   const p=(s&&s.pr_feed)||{available:false,prs:[],checked_at:0,capped:false,error:null};
   if(!p.available){
-    const reason=p.checked_at===0?"not checked yet — enable the Oracle watcher (JARVIS_ORACLE_WATCH) with a GITHUB_TOKEN"
-      :p.error==="no_github_token"?"no GITHUB_TOKEN configured — PR feed disabled"
-      :p.error==="oracle_bridge_unavailable"?"Oracle bridge not initialized"
-      :"feed unavailable ("+esc(p.error||"unknown")+")";
+    // Specific errors first: oracle_bridge_unavailable arrives with checked_at
+    // still 0, so a checked_at test before it would shadow the accurate message
+    // with "not checked yet" advice about a token the operator may already have.
+    const reason=p.error==="no_github_token"?"no GITHUB_TOKEN configured — PR feed disabled"
+      :p.error==="oracle_bridge_unavailable"?"Oracle bridge not initialized — enable the Oracle watcher (JARVIS_ORACLE_WATCH)"
+      :p.error?"feed unavailable ("+esc(p.error)+")"
+      :p.checked_at===0?"not checked yet — enable the Oracle watcher (JARVIS_ORACLE_WATCH) with a GITHUB_TOKEN"
+      :"feed unavailable (unknown)";
     $("prCount").textContent="—";
     el.innerHTML='<div class="psub" style="padding:6px 16px;color:#5d7268;">'+esc(reason)+'</div>';
     return;

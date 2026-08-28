@@ -137,3 +137,21 @@ def test_export_vault_never_mutates_it(tmp_path):
 
     after = sorted(p.name for p in (root / "vault").glob("*"))
     assert before == after
+
+
+def test_export_file_is_owner_only_from_birth(tmp_path):
+    """Regression: the export embeds decrypted vault plaintext, so it must be
+    created 0o600 — a umask-default world-readable file would quietly undo the
+    at-rest protection the vault's own chmod-private discipline provides."""
+    import os as _os
+    import stat as _stat
+    if _os.name == "nt":
+        pytest.skip("POSIX permission-bits assertion")
+    root = tmp_path / "data"
+    root.mkdir()
+    Vault(root / "vault").put(b"secret material", name="s", now=1.0)
+
+    result = dx.export_data(source_root=str(root), out_dir=str(tmp_path / "exports"))
+
+    mode = _stat.S_IMODE(Path(result["export"]).stat().st_mode)
+    assert mode == 0o600, f"export must be owner-only, got {oct(mode)}"

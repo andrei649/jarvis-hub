@@ -23,6 +23,7 @@ import argparse
 import base64
 import json
 import logging
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -254,8 +255,13 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
     # Filename is a server-generated timestamp only — no user value in the path.
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
     export_path = out / f"jarvis-export-{ts}.json"
-    export_path.write_text(json.dumps(doc, indent=2, ensure_ascii=False, default=str),
-                           encoding="utf-8")
+    # Owner-only from birth (0o600, no chmod-after-write window): the export
+    # embeds decrypted vault plaintext and private message content, so a
+    # umask-default world-readable file would silently downgrade the at-rest
+    # protection the vault's own chmod-private discipline provides.
+    fd = os.open(export_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(doc, indent=2, ensure_ascii=False, default=str))
     return {
         "export": str(export_path),
         "bytes": export_path.stat().st_size,

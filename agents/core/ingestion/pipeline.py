@@ -132,26 +132,30 @@ class IngestionPipeline:
         """
         if self._ledger is None:
             return 0
-        recorded = 0
+        texts: list[str] = []
+        specs: list[dict] = []
         for m in messages:
-            try:
-                text = getattr(m, "text", "") or ""
-                rec = self._ledger.record(
-                    source=getattr(m, "source", "") or source,
-                    origin=str(getattr(m, "conversation_id", "") or ""),
-                    phase=phase,
-                    content=text,
-                    run_id=run_id,
-                    now=now,
-                    meta={"sender": getattr(m, "sender", ""),
-                          "is_me": bool(getattr(m, "is_me", False))},
-                )
-                if phase == "parse" and isinstance(rec, dict) and rec.get("id"):
+            text = getattr(m, "text", "") or ""
+            texts.append(text)
+            specs.append({
+                "source": getattr(m, "source", "") or source,
+                "origin": str(getattr(m, "conversation_id", "") or ""),
+                "phase": phase, "content": text, "run_id": run_id, "now": now,
+                "meta": {"sender": getattr(m, "sender", ""),
+                         "is_me": bool(getattr(m, "is_me", False))},
+            })
+        try:
+            # One read/write cycle for the whole phase (record_many): recording
+            # per message re-rewrote the entire JSON ledger N times per run.
+            records = self._ledger.record_many(specs)
+        except Exception:
+            logger.debug("provenance record failed", exc_info=True)
+            return 0
+        if phase == "parse":
+            for text, rec in zip(texts, records):
+                if isinstance(rec, dict) and rec.get("id"):
                     self._parse_record_ids.setdefault(content_fingerprint(text), rec["id"])
-                recorded += 1
-            except Exception:
-                logger.debug("provenance record failed", exc_info=True)
-        return recorded
+        return len(records)
 
     def _record_derived_provenance(self, artifacts, *, source: str, phase: str,
                                    run_id: str, now: float,
@@ -169,23 +173,26 @@ class IngestionPipeline:
         """
         if self._ledger is None:
             return 0
-        recorded = 0
+        specs: list[dict] = []
         for content, meta in artifacts:
             text = str(content or "").strip()
             if not text:
                 continue
-            try:
-                self._ledger.record(
-                    source=source, origin=str((meta or {}).get("origin", "")),
-                    phase=phase, content=text, run_id=run_id, now=now,
-                    parent_id=parent_id or self._parse_record_ids.get(
-                        content_fingerprint(text)),
-                    meta=dict(meta or {}),
-                )
-                recorded += 1
-            except Exception:
-                logger.debug("derived provenance record failed", exc_info=True)
-        return recorded
+            specs.append({
+                "source": source, "origin": str((meta or {}).get("origin", "")),
+                "phase": phase, "content": text, "run_id": run_id, "now": now,
+                "parent_id": parent_id or self._parse_record_ids.get(
+                    content_fingerprint(text)),
+                "meta": dict(meta or {}),
+            })
+        if not specs:
+            return 0
+        try:
+            # Batched for the same O(N²) reason as _record_provenance above.
+            return len(self._ledger.record_many(specs))
+        except Exception:
+            logger.debug("derived provenance record failed", exc_info=True)
+            return 0
 
     def run(self, fb_dir: Optional[str] = None, wa_dir: Optional[str] = None) -> dict:
         logger.info("=" * 50)
@@ -237,8 +244,14 @@ class IngestionPipeline:
         # the run that produced it, not just appear in memory unattributed.
         self._record_derived_provenance(
             [(name, {"kind": "entity"}) for name in self.knowledge.entities]
-            + [(str(getattr(d, "text", "") or getattr(d, "pattern", "") or ""),
-                {"kind": "decision"}) for d in self.knowledge.decisions]
+            # A DecisionPattern's content is its trigger_text (the sentence the
+            # decision was extracted from); topic/outcome ride in meta so the
+            # record stays interpretable without re-reading the source message.
+            + [(str(getattr(d, "trigger_text", "") or ""),
+                {"kind": "decision",
+                 "topic": str(getattr(d, "topic", "") or ""),
+                 "outcome": str(getattr(d, "outcome", "") or "")})
+               for d in self.knowledge.decisions]
             + [(name, {"kind": "relationship"}) for name in self.knowledge.relationships],
             source="ingestion", phase="knowledge", run_id=run_id, now=now,
         )

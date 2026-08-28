@@ -87,6 +87,18 @@ def test_service_worker_never_caches_api_responses():
     assert "/api/" not in code
 
 
+def test_only_a_shell_navigation_may_refresh_the_cached_shell():
+    """Regression: the navigate branch once wrote EVERY successful navigation
+    under the SHELL key, so visiting /docs or /admin replaced the cached HUD
+    shell and the offline fallback then served that page's HTML. The SHELL put
+    must be gated on the navigation actually targeting the shell's own path."""
+    code = _code_only(SW_SRC.read_text(encoding="utf-8"))
+    assert "res.ok && refreshesShell" in code, \
+        "the SHELL put must be conditioned on a shell-path navigation"
+    assert re.search(r"refreshesShell\s*=\s*url\.pathname\s*===\s*SHELL", code), \
+        "refreshesShell must compare url.pathname against the SHELL path"
+
+
 def _code_only(src: str) -> str:
     """Strip block and line comments — these assertions are about the worker's
     CODE, and the file's own prose explains the very anti-patterns being banned."""

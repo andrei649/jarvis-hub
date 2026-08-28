@@ -8,6 +8,7 @@ content never appears in a listing (only on an explicit per-item GET).
 
 import asyncio
 import base64
+import shutil
 import sys
 from pathlib import Path
 
@@ -17,20 +18,54 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from core.routers import vault as vault_router  # noqa: E402
-from core.vault import Vault  # noqa: E402
+# Import the SAME module object agents/web.py mounts. The tests/ path hack makes
+# `core.routers.vault` a second, distinct module — patching that one would leave
+# the mounted app untouched (the trap test_signals_router.py documents).
+from agents.core.routers import vault as vault_router  # noqa: E402
+from agents.core.vault import Vault  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def _isolated_vault(tmp_path, monkeypatch):
-    """Every test gets its own on-disk vault instead of the real default root."""
-    v = Vault(tmp_path / "v", key="router-test-passphrase")
-    monkeypatch.setattr(vault_router, "_VAULT_SINGLETON", v)
-    yield v
+    """Every test opens its own on-disk vault root instead of the real default.
+
+    The router opens the vault fresh per operation (`_open_vault`), so the seam
+    to patch is the opener, not an instance: state persists across calls via
+    the shared tmp root, exactly like the real per-request behavior.
+    """
+    root = tmp_path / "v"
+    monkeypatch.setattr(
+        vault_router, "_open_vault",
+        lambda: Vault(root, key="router-test-passphrase"),
+    )
+    yield root
 
 
-def test_get_vault_returns_the_patched_singleton(_isolated_vault):
-    assert vault_router._get_vault() is _isolated_vault
+def test_vault_is_opened_fresh_per_operation(_isolated_vault):
+    assert vault_router._open_vault() is not vault_router._open_vault()
+
+
+def test_new_items_survive_a_forget_purge_of_the_vault_root(_isolated_vault, monkeypatch):
+    """Regression for the stale-cipher hazard: a cached Vault instance keeps its
+    cipher after `forget` sweeps the vault root (vault.keys included), so items
+    stored afterwards would be encrypted under a key no longer on disk —
+    unreadable after restart. Opening fresh per operation re-persists the key.
+    """
+    put = vault_router.VaultPutBody(
+        name="pre", data_base64=base64.b64encode(b"before purge").decode("ascii"))
+    asyncio.run(vault_router.vault_put(put))
+
+    shutil.rmtree(_isolated_vault)  # what data_purge's KEEP-inverted sweep does
+
+    put2 = vault_router.VaultPutBody(
+        name="post", data_base64=base64.b64encode(b"after purge").decode("ascii"))
+    import json
+    vid = json.loads(asyncio.run(vault_router.vault_put(put2)).body)["entry"]["id"]
+
+    # A brand-new Vault on the same root — the "after restart" reader — must be
+    # able to decrypt the post-purge item.
+    reborn = Vault(_isolated_vault, key="router-test-passphrase")
+    assert reborn.get(vid) == b"after purge"
 
 
 def test_list_endpoint_returns_items_and_stats():
@@ -116,8 +151,10 @@ def test_http_roundtrip_through_the_real_app(monkeypatch, tmp_path):
 
     from agents import web
 
-    v = Vault(tmp_path / "http-v", key="http-test-passphrase")
-    monkeypatch.setattr(vault_router, "_VAULT_SINGLETON", v)
+    monkeypatch.setattr(
+        vault_router, "_open_vault",
+        lambda: Vault(tmp_path / "http-v", key="http-test-passphrase"),
+    )
     client = TestClient(web.app)
 
     r = client.post("/api/vault", json={

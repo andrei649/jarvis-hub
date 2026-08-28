@@ -140,6 +140,67 @@ def test_run_records_knowledge_and_embed_phases(tmp_path, monkeypatch):
     assert "embed" in phases, "embeddings must carry provenance"
 
 
+def test_decisions_are_recorded_with_their_trigger_text(tmp_path, monkeypatch):
+    """Regression: the run() wiring must record REAL DecisionPattern objects.
+
+    An earlier revision read `d.text`/`d.pattern` — attributes DecisionPattern
+    has never had — so every decision mapped to "" and was skipped by the
+    blank-content guard: zero decision records, silently. The faked-extractor
+    test above never caught it because it only populated entities and
+    relationships, so this test goes through a real DecisionPattern.
+    """
+    from agents.core.ingestion.knowledge import DecisionPattern
+    from agents.core.ingestion.provenance import content_fingerprint
+
+    ledger = _ledger(tmp_path)
+    p = _pipeline(tmp_path, ledger)
+    monkeypatch.setattr(p.fb_parser, "parse_directory",
+                        lambda d: iter([_msg("I decided to move to Berlin", is_me=True)]))
+    monkeypatch.setattr(p.wa_parser, "parse_directory", lambda d: iter([]))
+    monkeypatch.setattr(p.embedder, "embed_many", lambda m: None)
+
+    def _fake_extract(_messages):
+        p.knowledge.decisions.append(DecisionPattern(
+            trigger_text="I decided to move to Berlin", context="",
+            timestamp=0.0, outcome="moved", topic="relocation",
+        ))
+    monkeypatch.setattr(p.knowledge, "extract", _fake_extract)
+    monkeypatch.setattr(p.knowledge, "save", lambda: None)
+
+    p.run()
+
+    decisions = [r for r in ledger.recent(limit=1000)
+                 if r["phase"] == "knowledge" and r["meta"].get("kind") == "decision"]
+    assert decisions, "a DecisionPattern must produce a knowledge/decision record"
+    assert decisions[0]["content_hash"] == content_fingerprint("I decided to move to Berlin")
+    assert decisions[0]["meta"]["topic"] == "relocation"
+    assert decisions[0]["meta"]["outcome"] == "moved"
+
+
+def test_record_many_is_one_write_cycle_and_matches_record(tmp_path, monkeypatch):
+    """The batch path must behave like N record() calls but write the file once."""
+    from agents.core.ingestion import provenance as prov_mod
+
+    ledger = _ledger(tmp_path)
+    writes = []
+    original = prov_mod.ProvenanceLedger._write_atomic
+
+    def _counting_write(self, items):
+        writes.append(len(items))
+        return original(self, items)
+    monkeypatch.setattr(prov_mod.ProvenanceLedger, "_write_atomic", _counting_write)
+
+    stored = ledger.record_many([
+        {"source": "s", "origin": "c1", "phase": "parse", "content": f"m{i}",
+         "run_id": "r1", "now": float(i)}
+        for i in range(5)
+    ])
+    assert len(stored) == 5
+    assert writes == [5], "a 5-record batch must rewrite the ledger exactly once"
+    assert [r["content_hash"] for r in ledger.by_run("r1")] \
+        == [r["content_hash"] for r in stored]
+
+
 def test_embed_records_link_back_to_their_source_message(tmp_path, monkeypatch):
     ledger = _ledger(tmp_path)
     p = _pipeline(tmp_path, ledger)

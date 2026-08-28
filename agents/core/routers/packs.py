@@ -28,6 +28,7 @@ second way to write into memory.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -120,8 +121,13 @@ async def packs_list():
             "available": False, "types": PACK_TYPES,
             "packs": [], "unmanifested": [], "counts": {},
         })
-    knowledge, unmanifested = _knowledge_packs(orch)
-    skills = _skill_packs(orch)
+
+    def _inventory():
+        # Manifest reads (one per configured folder) and the marketplace listing
+        # are disk I/O — off the event loop, like the vault router's operations.
+        return _knowledge_packs(orch), _skill_packs(orch)
+
+    (knowledge, unmanifested), skills = await asyncio.to_thread(_inventory)
     packs = skills + knowledge
     return nocache_json({
         "available": True,
@@ -148,14 +154,21 @@ async def packs_verify(key: str = PathParam(..., min_length=1, max_length=128)):
              "available": sorted(_configured_folders(orch))},
             status_code=404,
         )
-    manifest = load_manifest(folder)
+    def _verify():
+        # verify_pack SHA-256-hashes every file in the pack folder — for a pack
+        # of documents that is unbounded disk+CPU work, so it must never run on
+        # the event loop (the request-path discipline the runtime fixes in
+        # #945/#950/#951/#955 enforce everywhere else).
+        m = load_manifest(folder)
+        return m, (verify_pack(folder, m) if m else None)
+
+    manifest, check = await asyncio.to_thread(_verify)
     if not manifest:
         return nocache_json({
             "ok": False, "reason": "no_manifest", "key": key,
             "hint": "a folder without pack.json is a drop-folder, not a pack — "
                     "index it via /api/local-docs/index instead",
         })
-    check = verify_pack(folder, manifest)
     return nocache_json({
         "ok": bool(check.get("ok")),
         "key": key,

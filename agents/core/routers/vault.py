@@ -26,7 +26,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
-import threading
 import time
 
 from fastapi import APIRouter, Depends
@@ -44,16 +43,27 @@ router = APIRouter(tags=["vault"])
 # surface. 25 MiB covers documents/notes/small attachments comfortably.
 _MAX_HTTP_ITEM_BYTES = 25 * 1024 * 1024
 
-_VAULT_LOCK = threading.Lock()
-_VAULT_SINGLETON: Vault | None = None
 
+def _open_vault() -> Vault:
+    """Open the vault fresh for THIS operation — always called off the loop.
 
-def _get_vault() -> Vault:
-    global _VAULT_SINGLETON
-    with _VAULT_LOCK:
-        if _VAULT_SINGLETON is None:
-            _VAULT_SINGLETON = Vault()
-        return _VAULT_SINGLETON
+    Deliberately not a process-lifetime singleton, for two reasons:
+
+    * Construction blocks (mkdir/chmod, the cross-process file lock's
+      sleep-retry loop, SecretStore key load/creation, index decrypt) — it must
+      run inside the same ``asyncio.to_thread`` as the operation itself, never
+      on the event loop at first request.
+    * A cached instance holds its cipher forever. After a runtime ``forget``
+      purge sweeps the vault root (including ``vault.keys``), a cached cipher
+      would encrypt new items under a key that no longer exists on disk —
+      unreadable after the next restart, i.e. silent data loss. A fresh
+      ``Vault()`` re-persists its key material instead.
+
+    Cross-process file locking makes concurrent per-request instances the
+    vault's designed usage; the per-call cost is one key read + index decrypt
+    on an owner-facing, occasional-use surface.
+    """
+    return Vault()
 
 
 class VaultPutBody(BaseModel):
@@ -63,15 +73,15 @@ class VaultPutBody(BaseModel):
     expires_at: float | None = None
 
 
-def _list_and_stats(vault: Vault) -> tuple[list[dict], dict]:
+def _list_and_stats() -> tuple[list[dict], dict]:
+    vault = _open_vault()
     return vault.list(), vault.stats()
 
 
 @router.get("/api/vault", dependencies=[Depends(user_guard)])
 async def vault_list():
-    vault = _get_vault()
     try:
-        items, stats = await asyncio.to_thread(_list_and_stats, vault)
+        items, stats = await asyncio.to_thread(_list_and_stats)
     except VaultError as exc:
         return error_json(exc, 500, "vault is unavailable", extra={"items": [], "stats": None})
     return nocache_json({"items": items, "stats": stats})
@@ -88,12 +98,13 @@ async def vault_put(body: VaultPutBody):
             ValueError("item too large"), 413,
             f"item exceeds the {_MAX_HTTP_ITEM_BYTES // (1024 * 1024)} MiB HTTP upload cap",
         )
-    vault = _get_vault()
-    try:
-        entry = await asyncio.to_thread(
-            vault.put, data, name=body.name, kind=body.kind,
+    def _put() -> dict:
+        return _open_vault().put(
+            data, name=body.name, kind=body.kind,
             now=time.time(), expires_at=body.expires_at,
         )
+    try:
+        entry = await asyncio.to_thread(_put)
     except VaultError as exc:
         return error_json(exc, 400, "vault refused the item")
     return nocache_json({"ok": True, "entry": entry})
@@ -101,16 +112,16 @@ async def vault_put(body: VaultPutBody):
 
 @router.get("/api/vault/{vault_id}", dependencies=[Depends(user_guard)])
 async def vault_get(vault_id: str):
-    vault = _get_vault()
     try:
-        entry, data = await asyncio.to_thread(_read_entry_and_data, vault, vault_id)
+        entry, data = await asyncio.to_thread(_read_entry_and_data, vault_id)
     except VaultError as exc:
         return error_json(exc, 404, "no such vault item")
     return nocache_json({**entry, "data_base64": base64.b64encode(data).decode("ascii")})
 
 
-def _read_entry_and_data(vault: Vault, vault_id: str) -> tuple[dict, bytes]:
+def _read_entry_and_data(vault_id: str) -> tuple[dict, bytes]:
     """Metadata + plaintext for one item, read as one unit off the event loop."""
+    vault = _open_vault()
     items = vault.list()
     entry = next((e for e in items if e["id"] == vault_id), None)
     if entry is None:
@@ -120,9 +131,10 @@ def _read_entry_and_data(vault: Vault, vault_id: str) -> tuple[dict, bytes]:
 
 @router.delete("/api/vault/{vault_id}", dependencies=[Depends(user_guard)])
 async def vault_delete(vault_id: str):
-    vault = _get_vault()
+    def _remove() -> bool:
+        return _open_vault().remove(vault_id)
     try:
-        removed = await asyncio.to_thread(vault.remove, vault_id)
+        removed = await asyncio.to_thread(_remove)
     except VaultError as exc:
         return error_json(exc, 400, "vault refused the delete")
     return nocache_json({"ok": True, "removed": removed})

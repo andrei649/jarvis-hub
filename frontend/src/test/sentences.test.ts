@@ -6,7 +6,7 @@
    chunk boundaries must reproduce the whole text exactly — never duplicated,
    never dropped. */
 import { describe, it, expect } from 'vitest';
-import { splitSentences, SentenceAggregator } from '../sentences';
+import { splitSentences, SentenceAggregator, unspokenRemainder } from '../sentences';
 
 describe('splitSentences — matches the Python splitter contract', () => {
   it('splits on sentence-final punctuation', () => {
@@ -100,4 +100,42 @@ describe('SentenceAggregator — live token-stream segmentation', () => {
       });
     }
   }
+});
+
+describe('unspokenRemainder — the partial-failure TTS fallback', () => {
+  const reply = 'First sentence. Second sentence. Third sentence.';
+
+  it('returns the whole reply when nothing played', () => {
+    expect(unspokenRemainder(reply, [])).toBe(reply);
+  });
+
+  it('returns only what comes after the sentences that played', () => {
+    expect(unspokenRemainder(reply, ['First sentence.']))
+      .toBe('Second sentence. Third sentence.');
+    expect(unspokenRemainder(reply, ['First sentence.', 'Second sentence.']))
+      .toBe('Third sentence.');
+  });
+
+  it('returns empty when everything played', () => {
+    expect(unspokenRemainder(reply,
+      ['First sentence.', 'Second sentence.', 'Third sentence.'])).toBe('');
+  });
+
+  it('never re-speaks on drift: an unlocatable sentence yields empty', () => {
+    // Double audio is the failure mode this function exists to prevent, so the
+    // conservative answer to "I cannot line the transcript up" is silence.
+    expect(unspokenRemainder(reply, ['Not in the reply at all.'])).toBe('');
+  });
+
+  it('round-trips with the aggregator over arbitrary chunking', () => {
+    const agg = new SentenceAggregator();
+    const spoken: string[] = [];
+    for (const chunk of ['First sen', 'tence. Second sent', 'ence. Thi']) {
+      spoken.push(...agg.push(chunk));
+    }
+    // Stream "failed" here — flush never speaks. The remainder must be exactly
+    // the un-played tail, so fallback + played audio reads the reply once.
+    expect(unspokenRemainder('First sentence. Second sentence. Third.', spoken))
+      .toBe('Third.');
+  });
 });

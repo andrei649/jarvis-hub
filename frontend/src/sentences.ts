@@ -141,3 +141,28 @@ export class SentenceAggregator {
 
   get emittedCount(): number { return this.emitted; }
 }
+
+/**
+ * The part of `reply` that was NOT covered by `spoken` (sentences that already
+ * played, in order). Used by the streaming-TTS fallback: when synthesis fails
+ * mid-stream after some sentences played, only the remainder may be re-spoken —
+ * replaying the whole reply would read the opening twice.
+ *
+ * Sentences are trimmed in-order slices of the reply, so each is located with
+ * a forward scan. If one cannot be found (a drift that should not happen), the
+ * conservative answer is '' — the reply is on screen, and double audio is the
+ * one failure mode this function exists to prevent.
+ */
+export function unspokenRemainder(reply: string, spoken: string[]): string {
+  const text = reply || '';
+  if (!spoken.length) return text.trim();
+  let cursor = 0;
+  for (const sentence of spoken) {
+    const probe = sentence.trim();
+    if (!probe) continue;
+    const found = text.indexOf(probe, cursor);
+    if (found < 0) return '';
+    cursor = found + probe.length;
+  }
+  return text.slice(cursor).trim();
+}

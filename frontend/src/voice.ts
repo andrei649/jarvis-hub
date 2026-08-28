@@ -17,7 +17,7 @@
    itself off. With it off, tap the mic to cut a reply short. */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getToken } from './api/client';
-import { SentenceAggregator } from './sentences';
+import { SentenceAggregator, unspokenRemainder } from './sentences';
 import { streamTts } from './api/ttsStream';
 
 const SILENCE_MS = 1100;     // trailing silence (after speech) that ends an utterance
@@ -268,6 +268,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
       spoke: false,
       failed: false,
       cancelled: false,
+      spokenSentences: [],   // sentences that PLAYED, so a fallback can skip them
     };
     speakStreamRef.current = session;
     cancelSpeakRef.current = () => {
@@ -295,7 +296,10 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
           if (session.cancelled) return;
           await playAudioBlob(blob, () => session.cancelled);
         }
-        if (!session.cancelled) session.spoke = true;
+        if (!session.cancelled) {
+          session.spoke = true;
+          session.spokenSentences.push(sentence);
+        }
       } catch { session.failed = true; }
     });
   };
@@ -309,18 +313,20 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     }
   }, []);
 
-  /** Close the session. Resolves true if the reply was fully spoken this way. */
+  /** Close the session; report how much of the reply actually played. */
   const endSpeakStream = useCallback(async () => {
     const session = speakStreamRef.current;
     speakStreamRef.current = null;
-    if (!session) return false;
+    if (!session) return { complete: false, cancelled: false, spokenSentences: [] };
     if (!session.cancelled && !session.failed) {
       for (const sentence of session.agg.flush()) enqueueSentence(session, sentence);
     }
     await session.chain;
-    // Only claim the turn is spoken when nothing failed — a partial read is
-    // worse than falling back to the whole-reply path.
-    return session.spoke && !session.failed && !session.cancelled;
+    return {
+      complete: session.spoke && !session.failed && !session.cancelled,
+      cancelled: session.cancelled,
+      spokenSentences: session.spokenSentences,
+    };
   }, []);
 
   async function loop() {
@@ -335,11 +341,15 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
         beginSpeakStream();
         if (ttsRef.current !== 'off') setStat('speaking');
         try { reply = (onTurnRef.current && (await onTurnRef.current(text))) || ''; } catch { /* */ }
-        const spokenLive = await endSpeakStream();
+        const live = await endSpeakStream();
         if (!activeRef.current) break;
-        // Fall back to the whole-reply path when nothing was streamed (TTS off,
-        // no deltas forwarded, or a mid-stream synthesis failure) — never both.
-        if (reply && ttsRef.current !== 'off' && !spokenLive) { setStat('speaking'); await speak(reply); }
+        // Fall back only for the part that never played: replaying the whole
+        // reply after sentence #1 already streamed would read the opening
+        // twice, and a barge-in (cancelled) asked for silence, not a restart.
+        if (reply && ttsRef.current !== 'off' && !live.complete && !live.cancelled) {
+          const remainder = unspokenRemainder(reply, live.spokenSentences);
+          if (remainder) { setStat('speaking'); await speak(remainder); }
+        }
       }                                          // (silence → just listen again in hands-free)
       if (modeRef.current === 'ptt') break;      // push-to-talk: exactly one turn per activation
     }

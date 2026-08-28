@@ -70,9 +70,14 @@ self.addEventListener('fetch', (event) => {
   if (req.mode === 'navigate') {
     // Network-first so a running server always wins; the cached shell is only
     // the offline fallback (the HUD then shows its own honest offline states).
+    // Only a navigation to the shell's own path may refresh the cached shell:
+    // writing every successful navigation under the SHELL key would let a visit
+    // to /docs or /admin overwrite it, so the offline fallback would serve that
+    // page's HTML instead of the HUD.
+    const refreshesShell = url.pathname === SHELL || url.pathname === '/v2' || url.pathname === '/v2/';
     event.respondWith(
       fetch(req).then((res) => {
-        if (res && res.ok) {
+        if (res && res.ok && refreshesShell) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(SHELL, copy)).catch(() => {});
         }
