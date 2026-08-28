@@ -130,6 +130,8 @@
   "GET /api/onboarding/wizard",
   "GET /api/oracle/conflicts",
   "GET /api/oracle/status",
+  "GET /api/packs",
+  "GET /api/packs/{key}/verify",
   "GET /api/payments",
   "GET /api/payments/mandates",
   "GET /api/presence/owner",

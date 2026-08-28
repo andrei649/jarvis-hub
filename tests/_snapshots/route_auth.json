@@ -130,6 +130,8 @@
  "GET /api/onboarding/wizard": "user",
  "GET /api/oracle/conflicts": "user",
  "GET /api/oracle/status": "open",
+ "GET /api/packs": "user",
+ "GET /api/packs/{key}/verify": "user",
  "GET /api/payments": "admin",
  "GET /api/payments/mandates": "admin",
  "GET /api/presence/owner": "user",

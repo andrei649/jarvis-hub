@@ -54,6 +54,7 @@ RULES = [
     # T-0.53 design manifest (Console → Observe).
     ("/api/vault", "memory"),
     ("/api/signals/", "interop"),
+    ("/api/packs", "interop"),          # T-0.58 typed Pack Manager inventory
     ("/api/design-manifest", "observe"),
     ("/api/widget/", "interop"),  # embeddable widget runtime (managed under Interop)
     # cockpit / conversation

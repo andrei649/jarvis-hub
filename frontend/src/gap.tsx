@@ -2804,6 +2804,67 @@ export function DesignManifestPanel() {
   );
 }
 
+/* T-0.58 — the typed Pack Manager inventory (GET /api/packs, user-guarded).
+   Unifies skill packs (marketplace) and knowledge packs (manifested drop
+   folders) under one view, and shows unsupported types honestly rather than
+   hiding them — `model` reads as unsupported with its reason, not as absent. */
+export function PacksPanel() {
+  const { d, e, loading, reload } = useApi('/api/packs');
+  const packs = arr(d, 'packs');
+  const types = arr(d, 'types');
+  const counts = (d && d.counts) || {};
+  const unmanifested = arr(d, 'unmanifested');
+  const [check, setCheck] = useState(null);
+  const verify = (key) => {
+    setCheck({ key, loading: true });
+    apiGet('/api/packs/' + encodeURIComponent(key) + '/verify')
+      .then((r: any) => setCheck({ key, loading: false, ok: !!(r && r.ok), reason: r && r.reason, v: (r && r.verify) || {} }))
+      .catch(() => setCheck({ key, loading: false, ok: false, reason: 'request failed' }));
+  };
+  return (
+    <Card title="PACKS" live={asLive(d, d && d.available)} sub={d ? `${counts.total || 0} packs` : null} onReload={reload}>
+      <State e={e} loading={loading} n={packs.length} />
+      <Row>
+        <span style={mono}>types</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {types.map((t) => (
+            <Tag key={t.type} c={t.supported ? 'var(--accent-light)' : undefined}>
+              {t.type}{t.supported ? '' : ' · n/a'}
+            </Tag>
+          ))}
+        </span>
+      </Row>
+      {types.filter((t) => !t.supported && t.reason).map((t) => (
+        <div key={t.type} style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>{t.type}: {t.reason}</div>
+      ))}
+      {packs.slice(0, 12).map((p, i) => (
+        <Row key={i}>
+          <Tag>{p.pack_type}</Tag>
+          <span style={{ color: 'var(--accent-light)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+          {p.version && <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>v{p.version}</span>}
+          {p.pack_type === 'knowledge' && <button className="tool-btn" onClick={() => verify(p.key)}>verify</button>}
+        </Row>
+      ))}
+      {check && (
+        <div style={{ fontSize: 10, marginTop: 6, color: check.loading ? 'var(--ink-3)' : check.ok ? 'var(--green)' : 'var(--amber)' }}>
+          {check.loading ? `verifying ${check.key}…`
+            : check.ok ? `${check.key}: intact (${check.v.checked} file(s) checked)`
+            : `${check.key}: ${check.reason || 'discrepancies'} — ${[
+                (check.v?.missing || []).length + ' missing',
+                (check.v?.modified || []).length + ' modified',
+                (check.v?.unexpected || []).length + ' unexpected',
+              ].join(' · ')}`}
+        </div>
+      )}
+      {unmanifested.length > 0 && (
+        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          {unmanifested.length} configured folder(s) without a manifest — drop-folders, not packs
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /* T-0.41 — the live World Signal feed routed per domain/agent
    (GET /api/signals/routed, user-guarded). The routing layer classifies the
    sidecar's signals into domains and slices them per subscribing agent; an
@@ -3153,7 +3214,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Home', [AmbientWatchPanel, HousePanel, CameraPanel]],
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, VaultPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
-  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, SignalRoutingPanel, WatchlistPanel]],
+  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, SwarmPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, OperatorPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],

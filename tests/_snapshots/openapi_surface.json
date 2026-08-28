@@ -130,6 +130,8 @@
   "GET /api/onboarding/wizard": "onboarding_wizard_api_onboarding_wizard_get",
   "GET /api/oracle/conflicts": "oracle_conflicts_api_oracle_conflicts_get",
   "GET /api/oracle/status": "oracle_status_api_oracle_status_get",
+  "GET /api/packs": "packs_list_api_packs_get",
+  "GET /api/packs/{key}/verify": "packs_verify_api_packs__key__verify_get",
   "GET /api/payments": "list_payments_api_payments_get",
   "GET /api/payments/mandates": "list_payment_mandates_api_payments_mandates_get",
   "GET /api/presence/owner": "get_owner_presence_api_presence_owner_get",
