@@ -127,6 +127,11 @@ input.tok::placeholder{color:#46564e;}
         <div id="devlocks"></div>
       </div>
 
+      <div class="panel">
+        <div class="ptitle">&#9650; PR / CI <span class="psub" id="prCount">—</span></div>
+        <div id="prfeed"></div>
+      </div>
+
     </div>
 
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px;font-family:var(--mono);font-size:10px;letter-spacing:0.14em;color:#46564e;">
@@ -168,7 +173,7 @@ async function poll(){
     state.sum=await r.json();
     state.fails=0;
   }catch(e){state.fails++;}
-  renderHeader();renderFeedList();renderMissions();renderDev();
+  renderHeader();renderFeedList();renderMissions();renderDev();renderPrFeed();
   if(state.adminOk===false)renderApprovals();  // degraded card from summary
 }
 async function pollAdmin(){
@@ -422,6 +427,45 @@ function renderDev(){
   el.innerHTML=html;
 }
 const fmtAge=s=>s<90?(s+"s"):(s<5400?Math.round(s/60)+"m":Math.round(s/3600)+"h");
+
+/* ── H34.3: dev-swarm PR/CI feed ─────────────────────────────────────────── */
+function checkColor(state){
+  return state==="success"?"var(--ax2)":state==="failure"?"var(--red)":state==="pending"?"var(--amber)":"#46564e";
+}
+function renderPrFeed(){
+  const el=$("prfeed");
+  const s=state.sum;
+  const p=(s&&s.pr_feed)||{available:false,prs:[],checked_at:0,capped:false,error:null};
+  if(!p.available){
+    const reason=p.checked_at===0?"not checked yet — enable the Oracle watcher (JARVIS_ORACLE_WATCH) with a GITHUB_TOKEN"
+      :p.error==="no_github_token"?"no GITHUB_TOKEN configured — PR feed disabled"
+      :p.error==="oracle_bridge_unavailable"?"Oracle bridge not initialized"
+      :"feed unavailable ("+esc(p.error||"unknown")+")";
+    $("prCount").textContent="—";
+    el.innerHTML='<div class="psub" style="padding:6px 16px;color:#5d7268;">'+esc(reason)+'</div>';
+    return;
+  }
+  const prs=p.prs||[];
+  $("prCount").textContent=prs.length+(p.capped?"+":"")+" OPEN";
+  if(!prs.length){
+    el.innerHTML='<div class="empty">no open PRs</div>';
+    return;
+  }
+  el.innerHTML=prs.map(pr=>{
+    const c=pr.checks||{total:0,passed:0,failed:0,pending:0,state:"none"};
+    const col=checkColor(c.state);
+    const summary=c.total?(c.passed+" ok"+(c.failed?" · "+c.failed+" fail":"")+(c.pending?" · "+c.pending+" pending":"")):"no checks";
+    const link=pr.url?('<a href="'+esc(pr.url)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">#'+esc(pr.number)+'</a>'):("#"+esc(pr.number));
+    return '<div class="row" title="'+esc(pr.branch||"")+'">'
+      +'<span class="led" style="background:'+col+';'+(c.state==="success"||c.state==="failure"?"box-shadow:0 0 8px "+col+";":"")+'"></span>'
+      +'<span style="color:#bfe6d2;min-width:34px;">'+link+'</span>'
+      +(pr.draft?'<span class="tag warn">DRAFT</span>':'')
+      +'<span class="mut" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(pr.title||"")+'</span>'
+      +'<span class="mut">'+esc(pr.author||"")+'</span>'
+      +'<span class="mut" style="min-width:110px;text-align:right;">'+esc(summary)+'</span>'
+      +'</div>';
+  }).join("");
+}
 
 /* ── swarm map (canvas) ────────────────────────────────────────────────── */
 const canvas=$("swarm"),ctx=canvas.getContext("2d");

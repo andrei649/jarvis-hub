@@ -122,6 +122,23 @@ def read_dev_locks(now: float | None = None) -> dict:
     }
 
 
+_PR_FEED_DEFAULT = {
+    "available": False, "prs": [], "checked_at": 0.0, "capped": False, "error": None,
+}
+
+
+def _pr_feed_block(orch) -> dict:
+    """H34.3 — the dev-swarm PR/CI feed, read straight from the Oracle bridge's
+    already-cached snapshot (never a live GitHub call on the request path)."""
+    bridge = getattr(orch, "oracle_bridge", None) if orch is not None else None
+    if bridge is None:
+        return dict(_PR_FEED_DEFAULT, error="oracle_bridge_unavailable")
+    return _safe(
+        lambda: dict(_PR_FEED_DEFAULT, **(bridge.status().get("pr_feed") or {})),
+        dict(_PR_FEED_DEFAULT, error="read_failed"),
+    )
+
+
 def _safe(fn, default):
     """Run ``fn``, fall back to ``default`` — a partially initialized
     orchestrator (boot, tests, degraded subsystems) must never 500 the feed."""
@@ -308,6 +325,7 @@ def build_swarm_summary(orch) -> dict:
         "subagents": subagents,
         "a2a": a2a,
         "dev_locks": read_dev_locks(now),
+        "pr_feed": _pr_feed_block(orch),
     }
 
 

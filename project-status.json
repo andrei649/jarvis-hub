@@ -129,8 +129,8 @@
     },
     "H34": {
       "blocked": 0,
-      "done": 4,
-      "open": 2,
+      "done": 5,
+      "open": 1,
       "total": 6
     },
     "H5": {
@@ -214,7 +214,7 @@
   ],
   "routes": 405,
   "tests": {
-    "backend": 6980,
+    "backend": 6991,
     "frontend": 549,
     "mobile": 96
   },
