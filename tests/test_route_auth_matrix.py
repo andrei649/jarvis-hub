@@ -83,6 +83,14 @@ INTENTIONALLY_OPEN_READS = {
     # Catalogs shipped in code (templates, specs, synthetic fixtures).
     "GET /api/agent-templates",
     "GET /api/design-manifest",          # HUD design tokens parsed from the shipped stylesheet
+    # T-0.29 PWA: the browser fetches both WITHOUT app auth headers (an install
+    # prompt and a service-worker registration are unauthenticated by spec), and
+    # neither carries user data — the manifest is static branding, the worker is
+    # static code that itself refuses to cache any /api/ response.
+    "GET /manifest.webmanifest",
+    "GET /v2/manifest.webmanifest",
+    "GET /sw-v2.js",
+    "GET /v2/sw-v2.js",
 
     "GET /api/memory/tool-spec",
     "GET /api/memory/eval/corpus",       # owned synthetic corpus, not user memory

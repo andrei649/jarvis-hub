@@ -315,6 +315,19 @@ built on your Windows box:
   Either answer just needs to be *written down* in `BACKLOG.md` so the row stops silently reading
   as "ambiguous."
 
+- [ ] **T-0.29 signed installers — needs your code-signing certificates (nothing an agent can do).**
+  The PWA half of 0.29 shipped 2026-08-28 (the v2 HUD is now installable with an offline shell).
+  The other half — *signed* desktop installers — is blocked on credentials only you can obtain:
+  `desktop/src-tauri/tauri.conf.json` has a bare `bundle` block with no `signingIdentity`,
+  `certificateThumbprint`, or notarization config, and no signing secrets exist in CI. To unblock:
+  **(a)** an Apple **Developer ID Application** certificate + an app-specific password for
+  notarization (macOS), and **(b)** a **Windows OV or EV code-signing certificate** (EV avoids
+  SmartScreen warm-up; OV is cheaper but users see warnings until reputation builds). Both are paid,
+  identity-verified purchases in your name — an unsigned installer is not a bug to fix in code, it
+  is a missing legal identity. Once you have them, store them as repo secrets and an agent can wire
+  the Tauri signing config + a release workflow in one bounded slice. Until then, the honest
+  position is: we ship an unsigned bundle and say so.
+
 - [ ] **E731-CONTINUITY-IDENTITY — does Jarvis's own continuity identity get its own tracked issue?**
   (BACKLOG.md, "B3/Continuity Core mapping" section). `docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md`
   found that #762/E4 only covers **Howard's** preference-prediction scope — nothing currently tracks

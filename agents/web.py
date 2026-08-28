@@ -815,6 +815,37 @@ async def favicon():
 async def service_worker():
     return FileResponse(str(HERE / "static" / "sw.js"), media_type="application/javascript")
 
+
+# T-0.29 — PWA surface for the HUD **v2** (the shipped default). The legacy
+# /sw.js above is v1's worker and stays untouched. Both files are emitted by the
+# Vite build (frontend/public/ → agents/web/v2/) and are served from the ROOT
+# path on purpose: a worker under /v2/ could only control /v2/, but the default
+# HUD is mounted at "/". 404 honestly when the bundle hasn't been built rather
+# than serving a stub that would register a non-existent worker.
+
+@app.get("/manifest.webmanifest")
+@app.get("/v2/manifest.webmanifest")
+async def v2_manifest():
+    path = HERE / "v2" / "manifest.webmanifest"
+    if not path.is_file():
+        return JSONResponse({"error": "v2 bundle not built"}, status_code=404)
+    return FileResponse(str(path), media_type="application/manifest+json")
+
+
+@app.get("/sw-v2.js")
+@app.get("/v2/sw-v2.js")
+async def v2_service_worker():
+    path = HERE / "v2" / "sw-v2.js"
+    if not path.is_file():
+        return JSONResponse({"error": "v2 bundle not built"}, status_code=404)
+    return FileResponse(
+        str(path),
+        media_type="application/javascript",
+        # Explicit root scope: the file is already at the root path, but the
+        # header keeps the registration valid if it is ever moved under /v2/.
+        headers={"Service-Worker-Allowed": "/"},
+    )
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     # The V2 cockpit is the PRIMARY HUD (default). Set JARVIS_HUD=v1 for the legacy
