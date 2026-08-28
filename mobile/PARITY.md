@@ -65,6 +65,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Voice orb (particle sphere bound to the voice state machine) | — (client-side, reads the existing `POST /api/voice/stt` + `POST /tts` loop) | ✅ | ⬜ | H18.24 |
 | Briefing wall (neural field + stat board + hold-to-talk) | — (client-side, composed from `/api/agents`, `/tasks`, `/api/trust/status`, `/api/analytics/locality`) | ✅ (responsive: portrait layout under 820px) | ⬜ | H18.25 |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
+| Global emergency stop (pause new autonomous work; hermes v2026.8.27 port) | user `GET /api/ops/estop`; admin `POST /api/ops/estop/engage`, `POST /api/ops/estop/resume` | ✅ (API; HUD control pending, see HUD_V2_REMAINING) | ⬜ | — |
 
 > **H34.1 ➖ (intentional):** Mission Control is a desktop-operator cockpit (large canvas map,
 > dev-swarm lock files that only exist on the owner's dev machine). Its steering primitives

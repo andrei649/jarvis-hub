@@ -107,6 +107,10 @@ with plugin-configured checks instead of seeded success. Still open:
   chat stream is already surfaced via the existing provenance chip/modal.
 - ~~`GET /api/analytics/locality`~~ ✅ **DONE 2026‑06‑10** — computes %‑local from the run‑history route field; HUD Trust meter prefers it, falls back to strict‑local proof, never fabricates a split (`local_pct` null until real routed runs exist).
 - Howard ingestion API — only if we ever surface the digital twin (currently `NOT_IN_HUD`).
+- Emergency-stop control (2026‑08‑28, hermes v2026.8.27 port): an Admin surface toggle for
+  `GET /api/ops/estop` + `POST /api/ops/estop/{engage,resume}` — a big red "pause new autonomous
+  work" switch with the engaged reason/timestamp. Backend is live; routes sit on the parity punch
+  list until this control ships.
 
 ## 8. Cutover (P6 follow‑through)
 - Once verified, flip the default: `JARVIS_HUD=v2` (or hardcode) so `/` serves v2; keep `/v1` as the

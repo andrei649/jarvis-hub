@@ -122,6 +122,12 @@ class ContextCompressor:
         kept_tokens = (sum(self._turn_tokens(t) for t in first)
                        + sum(self._turn_tokens(t) for t in recent)
                        + self.estimate_tokens(summary))
+        if kept_tokens >= total:
+            # Salvage (hermes-agent salvage_grown_transcript, v2026.8.27): a
+            # "compression" that grew the transcript — e.g. a rambling summary
+            # over few/short evicted turns — must never replace the original.
+            return {"compressed": False, "kept": list(turns), "kept_first": [],
+                    "summary": "", "evicted": 0, "tokens": total, "covered": 0}
         return {"compressed": True, "kept": recent, "kept_first": first,
                 "summary": summary, "evicted": len(older), "tokens": kept_tokens,
                 "covered": len(older)}
