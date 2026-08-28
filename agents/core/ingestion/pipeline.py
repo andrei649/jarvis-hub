@@ -28,7 +28,7 @@ from .lifecycle import default_archive_root, default_import_root
 from .normalizer import NormalizedMessage
 from .parser_facebook import FacebookParser
 from .parser_whatsapp import WhatsAppParser
-from .provenance import ProvenanceLedger
+from .provenance import ProvenanceLedger, content_fingerprint
 from .stylometry import StylometryAnalyzer
 
 logger = logging.getLogger("jarvis.ingestion.pipeline")
@@ -114,30 +114,77 @@ class IngestionPipeline:
         # gets an auditable origin record (opt-in; None → behaviour unchanged).
         self._ledger = ledger
         self._clock = clock or time.time
+        # message content-fingerprint → its parse-phase provenance record id, so a
+        # derived artifact can name the message it came from (see _record_derived_provenance).
+        self._parse_record_ids: dict[str, str] = {}
 
     def _record_provenance(self, messages, *, source: str, phase: str,
                            run_id: str, now: float) -> int:
         """Best-effort: record one provenance entry per message into the attached
         ledger. A no-op when no ledger is wired; a ledger hiccup never breaks
-        ingestion. Returns how many records were written."""
+        ingestion. Returns how many records were written.
+
+        Also remembers each message's record id in ``self._parse_record_ids``
+        (keyed by the message's content fingerprint) so a *derived* artifact —
+        an embedding, an extracted entity — can name the message it came from
+        via ``parent_id``. That link is what makes the ledger auditable rather
+        than decorative: `lineage()` can then walk embedding → message → file.
+        """
         if self._ledger is None:
             return 0
         recorded = 0
         for m in messages:
             try:
-                self._ledger.record(
+                text = getattr(m, "text", "") or ""
+                rec = self._ledger.record(
                     source=getattr(m, "source", "") or source,
                     origin=str(getattr(m, "conversation_id", "") or ""),
                     phase=phase,
-                    content=getattr(m, "text", "") or "",
+                    content=text,
                     run_id=run_id,
                     now=now,
                     meta={"sender": getattr(m, "sender", ""),
                           "is_me": bool(getattr(m, "is_me", False))},
                 )
+                if phase == "parse" and isinstance(rec, dict) and rec.get("id"):
+                    self._parse_record_ids.setdefault(content_fingerprint(text), rec["id"])
                 recorded += 1
             except Exception:
                 logger.debug("provenance record failed", exc_info=True)
+        return recorded
+
+    def _record_derived_provenance(self, artifacts, *, source: str, phase: str,
+                                   run_id: str, now: float,
+                                   parent_id: str | None = None) -> int:
+        """Record provenance for artifacts *derived* from messages (0.37).
+
+        ``artifacts`` is an iterable of ``(content, meta)`` pairs — an extracted
+        entity name, an embedded message's text, etc. Same best-effort contract
+        as ``_record_provenance``: a no-op without a ledger, and a ledger hiccup
+        is swallowed so ingestion never fails over an audit write.
+
+        Blank content is skipped rather than stored as an empty record: a
+        fingerprint of "" would collide across every empty artifact and prove
+        nothing, which is worse than having no record.
+        """
+        if self._ledger is None:
+            return 0
+        recorded = 0
+        for content, meta in artifacts:
+            text = str(content or "").strip()
+            if not text:
+                continue
+            try:
+                self._ledger.record(
+                    source=source, origin=str((meta or {}).get("origin", "")),
+                    phase=phase, content=text, run_id=run_id, now=now,
+                    parent_id=parent_id or self._parse_record_ids.get(
+                        content_fingerprint(text)),
+                    meta=dict(meta or {}),
+                )
+                recorded += 1
+            except Exception:
+                logger.debug("derived provenance record failed", exc_info=True)
         return recorded
 
     def run(self, fb_dir: Optional[str] = None, wa_dir: Optional[str] = None) -> dict:
@@ -185,6 +232,16 @@ class IngestionPipeline:
         # Phase 5: Knowledge extraction
         self.knowledge.extract(self.messages)
         self.knowledge.save()
+        # 0.37: derived knowledge carries provenance too — an extracted entity or
+        # decision is a claim about the owner's life, so it must be traceable to
+        # the run that produced it, not just appear in memory unattributed.
+        self._record_derived_provenance(
+            [(name, {"kind": "entity"}) for name in self.knowledge.entities]
+            + [(str(getattr(d, "text", "") or getattr(d, "pattern", "") or ""),
+                {"kind": "decision"}) for d in self.knowledge.decisions]
+            + [(name, {"kind": "relationship"}) for name in self.knowledge.relationships],
+            source="ingestion", phase="knowledge", run_id=run_id, now=now,
+        )
         phases.append({
             "phase": "knowledge",
             "entities": len(self.knowledge.entities),
@@ -195,6 +252,14 @@ class IngestionPipeline:
         # Phase 6: Generate embeddings
         logger.info("Phase 6: Generating embeddings...")
         self.embedder.embed_many(self.messages)
+        # Each embedding links back to its source message via parent_id (resolved
+        # from the parse-phase fingerprint map), so `lineage()` can walk
+        # embedding → message → file — the chain provenance.py documents.
+        self._record_derived_provenance(
+            [((m.text or ""), {"kind": "embedding", "origin": m.conversation_id or ""})
+             for m in self.messages],
+            source="ingestion", phase="embed", run_id=run_id, now=now,
+        )
         phases.append({
             "phase": "embeddings",
             "total": len(self.messages),
