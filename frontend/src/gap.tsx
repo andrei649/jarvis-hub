@@ -2816,6 +2816,17 @@ export function SignalRoutingPanel() {
   const byDomain = (available && d.by_domain) || {};
   const byAgent = (available && d.by_agent) || {};
   const signals = arr(d, 'signals');
+  // Clicking an agent chip pulls that agent's OWN slice from the dedicated
+  // endpoint (the same one an agent's digest consumes), rather than filtering
+  // client-side — so the per-agent route has a real caller and the slice shown
+  // is exactly what the agent would receive.
+  const [slice, setSlice] = useState(null);
+  const showAgent = (ag) => {
+    setSlice({ agent: ag, loading: true, signals: [] });
+    apiGet('/api/signals/agent/' + encodeURIComponent(ag))
+      .then((r: any) => setSlice({ agent: ag, loading: false, signals: arr(r, 'signals'), domains: (r && r.domains) || [] }))
+      .catch(() => setSlice({ agent: ag, loading: false, signals: [], error: true }));
+  };
   return (
     <Card title="WORLD SIGNALS" live={asLive(d, available)} sub={available ? `${counts.routed || 0}/${counts.signals || 0} routed` : (d ? 'no sidecar' : null)} onReload={reload}>
       <State e={e} loading={loading} n={available ? signals.length : 0} />
@@ -2836,7 +2847,20 @@ export function SignalRoutingPanel() {
         <Row>
           <span style={mono}>agents</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {Object.entries(byAgent).map(([ag, idx]) => <Tag key={ag} c="var(--accent-light)">{ag} {(idx as any[]).length}</Tag>)}
+            {Object.entries(byAgent).map(([ag, idx]) => (
+              <button key={ag} className="tool-btn" style={{ fontSize: 9.5, padding: '1px 5px' }} onClick={() => showAgent(ag)}>
+                {ag} {(idx as any[]).length}
+              </button>
+            ))}
+          </span>
+        </Row>
+      )}
+      {slice && (
+        <Row>
+          <span style={mono}>{slice.agent}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>
+            {slice.loading ? 'loading…' : slice.error ? 'slice unavailable'
+              : `${slice.signals.length} signal(s) · ${(slice.domains || []).join(', ') || 'no domains'}`}
           </span>
         </Row>
       )}
