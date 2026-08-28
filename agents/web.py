@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from agents.core.env_config import env_flag, env_int, env_json_object, env_list
+from agents.core.cors_policy import normalize_cors_origins
 from agents.core.paths import data_path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -462,7 +463,20 @@ app = FastAPI(title="Jarvis", version=_APP_VERSION, lifespan=lifespan)
 # cross-origin reads, which is what we want. Set
 # JARVIS_CORS_ORIGINS=https://a.example,https://b.example to allow specific
 # origins (e.g. a site hosting an embedded widget). Empty = unchanged behaviour.
-_cors_origins = env_list("JARVIS_CORS_ORIGINS")
+# AUD-18/F30: the list is VALIDATED before it reaches the middleware. A browser
+# matches Origin exactly, so a malformed entry ("example.com", a trailing slash)
+# silently never matches — the operator reads the config as enabled while it does
+# nothing. Rejected entries are logged with the reason instead of being dropped
+# in silence, and CORS is only installed when something usable survives.
+_cors_configured = env_list("JARVIS_CORS_ORIGINS")
+_cors_origins, _cors_rejected = normalize_cors_origins(_cors_configured, allow_credentials=True)
+for _bad in _cors_rejected:
+    logger.warning("Ignoring JARVIS_CORS_ORIGINS entry %s — %s", _bad["value"], _bad["reason"])
+if _cors_configured and not _cors_origins:
+    logger.warning(
+        "JARVIS_CORS_ORIGINS was set but no entry was usable — CORS is NOT enabled. "
+        "Origins must look like https://host[:port] with no path or trailing slash."
+    )
 if _cors_origins:
     from fastapi.middleware.cors import CORSMiddleware
     app.add_middleware(
@@ -816,6 +830,37 @@ async def favicon():
 async def service_worker():
     return FileResponse(str(HERE / "static" / "sw.js"), media_type="application/javascript")
 
+
+# T-0.29 — PWA surface for the HUD **v2** (the shipped default). The legacy
+# /sw.js above is v1's worker and stays untouched. Both files are emitted by the
+# Vite build (frontend/public/ → agents/web/v2/) and are served from the ROOT
+# path on purpose: a worker under /v2/ could only control /v2/, but the default
+# HUD is mounted at "/". 404 honestly when the bundle hasn't been built rather
+# than serving a stub that would register a non-existent worker.
+
+@app.get("/manifest.webmanifest")
+@app.get("/v2/manifest.webmanifest")
+async def v2_manifest():
+    path = HERE / "v2" / "manifest.webmanifest"
+    if not path.is_file():
+        return JSONResponse({"error": "v2 bundle not built"}, status_code=404)
+    return FileResponse(str(path), media_type="application/manifest+json")
+
+
+@app.get("/sw-v2.js")
+@app.get("/v2/sw-v2.js")
+async def v2_service_worker():
+    path = HERE / "v2" / "sw-v2.js"
+    if not path.is_file():
+        return JSONResponse({"error": "v2 bundle not built"}, status_code=404)
+    return FileResponse(
+        str(path),
+        media_type="application/javascript",
+        # Explicit root scope: the file is already at the root path, but the
+        # header keeps the registration valid if it is ever moved under /v2/.
+        headers={"Service-Worker-Allowed": "/"},
+    )
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     # The V2 cockpit is the PRIMARY HUD (default). Set JARVIS_HUD=v1 for the legacy
@@ -1079,6 +1124,10 @@ from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
 from agents.core.routers.capture import router as _capture_router  # noqa: E402
 from agents.core.routers.data_spaces import router as _data_spaces_router  # noqa: E402
+from agents.core.routers.design_manifest import router as _design_manifest_router  # noqa: E402
+from agents.core.routers.vault import router as _vault_router  # noqa: E402
+from agents.core.routers.signals import router as _signals_router  # noqa: E402
+from agents.core.routers.packs import router as _packs_router  # noqa: E402
 from agents.core.routers.integrations import router as _integrations_router  # noqa: E402
 from agents.core.routers.memory_hud import router as _memory_hud_router  # noqa: E402
 from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
@@ -1151,6 +1200,10 @@ app.include_router(_security_hud_router)
 app.include_router(_skills_router)
 app.include_router(_status_router)
 app.include_router(_data_spaces_router)
+app.include_router(_design_manifest_router)
+app.include_router(_vault_router)
+app.include_router(_signals_router)
+app.include_router(_packs_router)
 app.include_router(_secrets_router)
 app.include_router(_mesh_router)
 app.include_router(_autonomy_router)

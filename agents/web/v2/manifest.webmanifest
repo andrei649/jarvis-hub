@@ -1,0 +1,17 @@
+{
+  "name": "Nerva · HUD",
+  "short_name": "Nerva",
+  "description": "Local-first personal AI operating system — the HUD control surface.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#04070e",
+  "theme_color": "#04070e",
+  "orientation": "any",
+  "categories": ["utilities", "productivity"],
+  "icons": [
+    { "src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/static/favicon.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "maskable" },
+    { "src": "/static/favicon.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

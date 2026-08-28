@@ -15,12 +15,12 @@ No top-level import of Orchestrator — no import cycle.
 """
 
 import logging
-import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 from .argus import ArgusInterface
+from .env_config import env_str
 from .orchestrator_bindings import bind_external_orchestrator_attribute
 from .plugins.analytics import AnalyticsPlugin
 from .plugins.apple_health import AppleHealthPlugin
@@ -80,45 +80,45 @@ class PluginManager:
         if home is not None and (home / ".env").exists():
             load_dotenv(home / ".env")
         self.plugins["cloud-llm"] = CloudLLMPlugin(
-            anthropic_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-            openai_key=os.environ.get("OPENAI_API_KEY", ""),
-            gemini_key=os.environ.get("GEMINI_API_KEY", ""),
+            anthropic_key=env_str("ANTHROPIC_API_KEY"),
+            openai_key=env_str("OPENAI_API_KEY"),
+            gemini_key=env_str("GEMINI_API_KEY"),
         )
         self.plugins["telegram"] = TelegramBotPlugin(
-            token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
+            token=env_str("TELEGRAM_BOT_TOKEN"),
         )
         _oauth_init()
-        _gmail_token = os.environ.get("GMAIL_ACCESS_TOKEN", "") or (_load_token("google") or {}).get("access_token", "")
+        _gmail_token = env_str("GMAIL_ACCESS_TOKEN") or (_load_token("google") or {}).get("access_token", "")
         self.plugins["gmail"] = GmailPlugin(
             access_token=_gmail_token,
         )
         self.plugins["whatsapp"] = WhatsAppBridgePlugin(
-            bridge_url=os.environ.get("WHATSAPP_BRIDGE_URL", "http://192.168.1.100:3000"),
-            configured=bool(os.environ.get("WHATSAPP_BRIDGE_URL", "")),
+            bridge_url=env_str("WHATSAPP_BRIDGE_URL", "http://192.168.1.100:3000"),
+            configured=bool(env_str("WHATSAPP_BRIDGE_URL")),
         )
-        _spotify_token = os.environ.get("SPOTIFY_ACCESS_TOKEN", "") or (_load_token("spotify") or {}).get("access_token", "")
-        _spotify_refresh = os.environ.get("SPOTIFY_REFRESH_TOKEN", "") or (_load_token("spotify") or {}).get("refresh_token", "")
+        _spotify_token = env_str("SPOTIFY_ACCESS_TOKEN") or (_load_token("spotify") or {}).get("access_token", "")
+        _spotify_refresh = env_str("SPOTIFY_REFRESH_TOKEN") or (_load_token("spotify") or {}).get("refresh_token", "")
         self.plugins["spotify"] = SpotifyPlugin(
-            client_id=os.environ.get("SPOTIFY_CLIENT_ID", ""),
-            client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET", ""),
+            client_id=env_str("SPOTIFY_CLIENT_ID"),
+            client_secret=env_str("SPOTIFY_CLIENT_SECRET"),
             access_token=_spotify_token,
             refresh_token=_spotify_refresh,
         )
-        _cal_token = os.environ.get("GOOGLE_CALENDAR_TOKEN", "") or (_load_token("google") or {}).get("access_token", "")
+        _cal_token = env_str("GOOGLE_CALENDAR_TOKEN") or (_load_token("google") or {}).get("access_token", "")
         self.plugins["google-calendar"] = GoogleCalendarPlugin(
             access_token=_cal_token,
         )
         self.plugins["apple-health"] = AppleHealthPlugin(
-            bridge_url=os.environ.get("APPLE_HEALTH_BRIDGE_URL", "http://192.168.1.100:8081"),
-            configured=bool(os.environ.get("APPLE_HEALTH_BRIDGE_URL", "")),
+            bridge_url=env_str("APPLE_HEALTH_BRIDGE_URL", "http://192.168.1.100:8081"),
+            configured=bool(env_str("APPLE_HEALTH_BRIDGE_URL")),
         )
         self.plugins["homebridge"] = HomebridgePlugin(
-            bridge_url=os.environ.get("HOMEBRIDGE_URL", "http://192.168.1.100:8581"),
-            api_token=os.environ.get("HOMEBRIDGE_TOKEN", ""),
+            bridge_url=env_str("HOMEBRIDGE_URL", "http://192.168.1.100:8581"),
+            api_token=env_str("HOMEBRIDGE_TOKEN"),
         )
         self.plugins["websearch"] = WebSearchPlugin(
-            tavily_api_key=os.environ.get("TAVILY_API_KEY", ""),
-            searxng_url=os.environ.get("SEARXNG_URL", ""),
+            tavily_api_key=env_str("TAVILY_API_KEY"),
+            searxng_url=env_str("SEARXNG_URL"),
         )
 
         self.plugins["balance"] = BalanceReaderPlugin(
@@ -137,14 +137,14 @@ class PluginManager:
         )
 
         self.plugins["oracle-bridge"] = OracleBridgePlugin(
-            github_token=os.environ.get("GITHUB_TOKEN", ""),
+            github_token=env_str("GITHUB_TOKEN"),
         )
         bind_external_orchestrator_attribute(
             orch, "oracle_bridge", self.plugins["oracle-bridge"]
         )
         self.plugins["n8n"] = N8NPlugin(
-            base_url=os.environ.get("N8N_BASE_URL", ""),
-            api_key=os.environ.get("N8N_API_KEY", ""),
+            base_url=env_str("N8N_BASE_URL"),
+            api_key=env_str("N8N_API_KEY"),
         )
         self.plugins["sms-alerts"] = SMSAlertsPlugin(
             account_sid=orch.get_setting("plugins.twilio_account_sid", ""),
@@ -162,26 +162,26 @@ class PluginManager:
         )
         # WorldView 4D OSINT (local-first; override host with WORLDVIEW_API_URL).
         self.plugins["worldview"] = WorldViewPlugin(
-            api_url=os.environ.get("WORLDVIEW_API_URL", ""),
+            api_url=env_str("WORLDVIEW_API_URL"),
         )
         # Signal Layer — provider-neutral world intelligence (local-first; :8787).
         # Read-only + fail-safe: a down service returns {"status":"unavailable"}.
         self.plugins["signal-layer"] = SignalLayerPlugin(
-            api_url=os.environ.get("SIGNAL_LAYER_API_URL", ""),
-            api_token=os.environ.get("SIGNAL_LAYER_API_TOKEN", ""),
+            api_url=env_str("SIGNAL_LAYER_API_URL"),
+            api_token=env_str("SIGNAL_LAYER_API_TOKEN"),
         )
         # Guide-gap wave: business/marketing connectors (read-only / draft-first).
         self.plugins["revenuecat"] = RevenueCatPlugin(
-            api_key=os.environ.get("REVENUECAT_API_KEY", ""),
-            project_id=os.environ.get("REVENUECAT_PROJECT_ID", ""),
+            api_key=env_str("REVENUECAT_API_KEY"),
+            project_id=env_str("REVENUECAT_PROJECT_ID"),
         )
         self.plugins["meta-ads"] = MetaAdsPlugin(
-            access_token=os.environ.get("META_ADS_ACCESS_TOKEN", ""),
-            account_id=os.environ.get("META_ADS_ACCOUNT_ID", ""),
+            access_token=env_str("META_ADS_ACCESS_TOKEN"),
+            account_id=env_str("META_ADS_ACCOUNT_ID"),
         )
         self.plugins["postiz"] = PostizPlugin(
-            base_url=os.environ.get("POSTIZ_URL", ""),
-            api_key=os.environ.get("POSTIZ_API_KEY", ""),
+            base_url=env_str("POSTIZ_URL"),
+            api_key=env_str("POSTIZ_API_KEY"),
         )
         # Argus — one governed facade over WorldView + Signal Layer for world-intel
         # queries. Built after both backends are registered; every call is gated.

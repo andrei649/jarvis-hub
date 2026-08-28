@@ -4,10 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#04070e" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>NERVA · HUD</title>
 </head>
 <body>
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
+  <script>
+    /* T-0.29 — register the v2 service worker (installable HUD + offline shell).
+       Served from the ROOT path so its scope covers both "/" (the default HUD)
+       and "/v2/*"; a worker served from /v2/ could only ever control /v2/.
+       Registration failure is non-fatal by design: the HUD is fully functional
+       without a service worker, so a refusal must never block boot. */
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw-v2.js', { scope: '/' }).catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>

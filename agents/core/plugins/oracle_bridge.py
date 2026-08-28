@@ -37,6 +37,11 @@ FILE_HASH_FILE = CONFLICT_DIR / "file_hashes.json"
 
 GITHUB_API = "https://api.github.com/repos/andrei649/jarvis-hub"
 
+# H34.3 — dev-swarm PR/CI feed: bounded so a 30s watcher tick never turns into
+# an unbounded fan-out of GitHub API calls.
+PR_FEED_CAP = 10
+PR_FEED_INTERVAL_S = 120
+
 
 def _sha_safe(view, now) -> bool:
     sha = str(view.get("sha") or "")
@@ -109,6 +114,10 @@ class OracleBridgePlugin:
         self._watcher_task: Optional[asyncio.Task] = None
         self._running = False
         self._client = PluginHTTPClient.for_plugin("oracle-bridge")
+        self.pr_feed: dict = {
+            "available": False, "prs": [], "checked_at": 0.0, "capped": False, "error": None,
+        }
+        self._pr_feed_checked_at: float = 0.0
         self._load_state()
 
     # ── Public API ────────────────────────────────────────────────
@@ -122,6 +131,7 @@ class OracleBridgePlugin:
             "total_conflicts": len(self.conflicts),
             "watcher_running": self._running,
             "last_checked": self.last_checked_sha[:8] if self.last_checked_sha else "",
+            "pr_feed": dict(self.pr_feed),
         }
 
     def start_watcher(self):
@@ -138,7 +148,9 @@ class OracleBridgePlugin:
             self._watcher_task = None
 
     async def sync_now(self) -> dict:
-        return await self._check_github()
+        result = await self._check_github()
+        await self._refresh_pr_feed(force=True)
+        return result
 
     async def check_conflicts(self) -> list[dict]:
         await asyncio.to_thread(self._scan_file_hashes)
@@ -153,6 +165,10 @@ class OracleBridgePlugin:
                 await self._check_github()
             except Exception as e:
                 logger.warning(f"Oracle watcher error: {e}")
+            try:
+                await self._refresh_pr_feed()
+            except Exception as e:
+                logger.warning(f"Oracle PR feed refresh error: {e}")
             await asyncio.sleep(30)
 
     async def _check_github(self) -> dict:
@@ -194,6 +210,109 @@ class OracleBridgePlugin:
 
     def _is_owner_commit(self, author_login: str, verified: bool) -> bool:
         return bool(verified and str(author_login or "").lower() in self.owner_logins)
+
+    # ── Dev-swarm PR/CI feed (H34.3) ────────────────────────────────
+
+    async def _refresh_pr_feed(self, *, force: bool = False) -> dict:
+        """Bounded, read-only open-PR + check-run summary, next to the lock panel.
+
+        Gated on an explicit ``github_token``: an unauthenticated GitHub API call
+        is capped at 60/hr, far below what listing PRs plus one check-run call
+        per PR needs every refresh, so without a token this reports an honest
+        disabled state instead of silently rate-limiting itself. Refreshed at
+        most once per ``PR_FEED_INTERVAL_S`` unless ``force`` is set (the
+        30s watcher tick and the admin-triggered sync both call this; the
+        cadence only throttles the watcher's own calls).
+        """
+        if not self.github_token:
+            self.pr_feed = {
+                "available": False, "prs": [], "checked_at": time.time(),
+                "capped": False, "error": "no_github_token",
+            }
+            return self.pr_feed
+
+        now = time.time()
+        if not force and (now - self._pr_feed_checked_at) < PR_FEED_INTERVAL_S:
+            return self.pr_feed
+        self._pr_feed_checked_at = now
+
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": f"token {self.github_token}",
+        }
+        try:
+            resp = await self._client.get(
+                f"{GITHUB_API}/pulls",
+                headers=headers,
+                params={
+                    "state": "open", "sort": "updated", "direction": "desc",
+                    "per_page": PR_FEED_CAP,
+                },
+            )
+            if resp.status_code != 200:
+                self.pr_feed = {
+                    "available": False, "prs": [], "checked_at": now,
+                    "capped": False, "error": f"github_api_{resp.status_code}",
+                }
+                return self.pr_feed
+            pulls = resp.json() or []
+            capped = 'rel="next"' in (resp.headers.get("Link") or "")
+        except Exception as e:
+            self.pr_feed = {
+                "available": False, "prs": [], "checked_at": now,
+                "capped": False, "error": str(e),
+            }
+            return self.pr_feed
+
+        prs = []
+        for pr in pulls[:PR_FEED_CAP]:
+            head = pr.get("head") or {}
+            checks = await self._pr_check_summary(str(head.get("sha") or ""), headers)
+            prs.append({
+                "number": pr.get("number"),
+                "title": str(pr.get("title") or "")[:120],
+                "author": (pr.get("user") or {}).get("login") or "unknown",
+                "url": pr.get("html_url") or "",
+                "draft": bool(pr.get("draft")),
+                "branch": head.get("ref") or "",
+                "updated_at": pr.get("updated_at") or "",
+                "checks": checks,
+            })
+
+        self.pr_feed = {
+            "available": True, "prs": prs, "checked_at": now,
+            "capped": capped, "error": None,
+        }
+        return self.pr_feed
+
+    async def _pr_check_summary(self, sha: str, headers: dict) -> dict:
+        """One PR's check-run tally. Never raises — a broken/rate-limited call
+        degrades to an honest empty summary rather than dropping the whole feed."""
+        empty = {"total": 0, "passed": 0, "failed": 0, "pending": 0, "state": "none"}
+        if not sha:
+            return empty
+        try:
+            resp = await self._client.get(f"{GITHUB_API}/commits/{sha}/check-runs", headers=headers)
+            if resp.status_code != 200:
+                return empty
+            data = resp.json() or {}
+        except Exception:
+            return empty
+
+        runs = data.get("check_runs") or []
+        passed = failed = pending = 0
+        for run in runs:
+            if not isinstance(run, dict):
+                continue
+            if run.get("status") != "completed":
+                pending += 1
+            elif run.get("conclusion") in ("failure", "timed_out", "action_required", "cancelled"):
+                failed += 1
+            else:  # success / neutral / skipped / stale — not a breach
+                passed += 1
+        total = len(runs)
+        state = "failure" if failed else ("pending" if pending else ("success" if total else "none"))
+        return {"total": total, "passed": passed, "failed": failed, "pending": pending, "state": state}
 
     async def _process_claude_commit(
         self,
