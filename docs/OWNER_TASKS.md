@@ -314,3 +314,15 @@ built on your Windows box:
   without a visual node-graph editor for its whole life and the JSON-paste workflow works today.
   Either answer just needs to be *written down* in `BACKLOG.md` so the row stops silently reading
   as "ambiguous."
+
+- [ ] **E731-CONTINUITY-IDENTITY — does Jarvis's own continuity identity get its own tracked issue?**
+  (BACKLOG.md, "B3/Continuity Core mapping" section). `docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md`
+  found that #762/E4 only covers **Howard's** preference-prediction scope — nothing currently tracks
+  Jarvis's own Identity Manifest (a versioned/signed identity-history contract with migration and
+  rollback, the way #731 originally asked for it). The reconciliation doc explicitly declined to
+  create that destination unilaterally, calling it "an owner-scoping decision... not a documentation
+  call this pass should make." Recounted 2026-08-28: still true, no later commit filled the gap. Your
+  call: open a new issue scoped to Jarvis's own continuity identity, fold it into #762's scope
+  (broadening what that issue owns), or explicitly decide this isn't worth tracking separately from
+  the existing SOUL/persona system. Whichever you pick, a one-line note back in `BACKLOG.md` closes
+  the row.
