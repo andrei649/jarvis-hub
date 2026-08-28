@@ -1,7 +1,20 @@
 """Tests for the Jarvis Signal Layer plugin bridge."""
 
+import pytest
+
 from agents.core.plugin_gate import DataScope, NetworkAccess, PermissionGate
 from agents.core.plugins.signal_layer import SignalLayerPlugin
+from agents.core.resilience import get_circuit_breaker
+
+
+@pytest.fixture(autouse=True)
+def _closed_breaker():
+    """The 'plugin:signal-layer' breaker is a process-wide singleton, so a
+    failure-path test in ANY file that lands earlier in the same xdist worker
+    can leave it open — these tests then die with 'Circuit breaker open'
+    depending on worker packing, not on anything they did. Start closed."""
+    get_circuit_breaker("plugin:signal-layer").reset()
+    yield
 
 
 class _FakeResp:

@@ -46,6 +46,16 @@ RULES = [
     ("/api/mcp/server", "NOT_IN_HUD"),
     ("/api/memory/tool-spec", "NOT_IN_HUD"),
     ("/api/memory/search-tool", "NOT_IN_HUD"),
+    # T-0.29 PWA: fetched by the BROWSER (install prompt / SW registration), never
+    # rendered as a panel — a HUD surface for them would be meaningless.
+    ("/manifest.webmanifest", "NOT_IN_HUD"),
+    ("/sw-v2.js", "NOT_IN_HUD"),
+    # T-0.20 vault (Console → Memory), T-0.41 signals (Console → Interop),
+    # T-0.53 design manifest (Console → Observe).
+    ("/api/vault", "memory"),
+    ("/api/signals/", "interop"),
+    ("/api/packs", "interop"),          # T-0.58 typed Pack Manager inventory
+    ("/api/design-manifest", "observe"),
     ("/api/widget/", "interop"),  # embeddable widget runtime (managed under Interop)
     # cockpit / conversation
     ("/chat", "cockpit"),
@@ -391,6 +401,10 @@ MACHINE_FACING: dict[str, str] = {
     "/api/a2a/card": "agent-to-agent discovery",
     "/api/a2a/task": "agent-to-agent task submission",
     "/api/mcp/server/rpc": "MCP transport \u2014 remote MCP clients, not our UI",
+    "/manifest.webmanifest": "PWA install prompt, fetched by the browser",
+    "/v2/manifest.webmanifest": "PWA install prompt, fetched by the browser",
+    "/sw-v2.js": "service-worker registration, fetched by the browser",
+    "/v2/sw-v2.js": "service-worker registration, fetched by the browser",
     "/api/oauth/auth-url": "OAuth dance, driven by the provider/browser",
     "/api/oauth/callback": "OAuth redirect target",
     "/api/nodes": "node mesh peer registry",
@@ -421,8 +435,12 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # T-0.41: the morning brief DOES consume per-domain briefs, but in-process
+    # (scheduler_service._signal_briefs_or_none → build_domain_brief), so this
+    # HTTP route has no *client* caller. It stays as the external read surface
+    # for the same data; the HUD uses /routed and /agent/{id}.
+    "/api/signals/brief/{domain}",
     "/api/actions/request",
-    "/api/admin/agents/stats",
     "/api/admin/rotate-tokens",
     "/api/agents/history",
     "/api/arena/match/{match_id}",

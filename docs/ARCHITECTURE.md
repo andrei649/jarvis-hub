@@ -7,7 +7,7 @@
 ## 1. TL;DR / Orientation
 
 - Local-first multi-agent AI orchestration. Python 3.12 + FastAPI + LM Studio (port 1234).
-- 17 active agents (4 tiers, incl. Argus + Howard), 17 bench agents (dormant, promotable at runtime).
+- 18 active agents (4 tiers, incl. Argus, Howard + Hestia), 14 bench agents (dormant, promotable at runtime).
 - Single entry point for web: `serve.py` → `agents/web.py` (FastAPI `app`); uvicorn binds on port 8080.
 - CLI REPL entry point: `agents/run.py` → `Orchestrator.handle_input`.
 - Everything routes through `agents/core/orchestrator.py:Orchestrator`.
@@ -118,7 +118,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/memory/graph.py` | Knowledge graph | `KnowledgeGraph`, `InMemoryGraph`, `Neo4jGraph` |
 | `agents/core/memory/fusion.py` | RRF retrieval fusion | `HybridRetriever.retrieve`, `reciprocal_rank_fusion`, `FusedHit` |
 | `agents/core/memory/persistence.py` | JSON session persistence | `save_memory`, `load_memory`, `list_sessions` |
-| `agents/core/memory/seed_graph.py` | Bootstrap knowledge graph | `seed_graph` |
+| `agents/core/memory/seed_graph.py` | Bootstrap knowledge graph (owner's personal facts; skipped when `NERVA_PUBLIC_PROFILE` is on) | `seed_graph`, `SEED_FACTS` |
 
 ### Autonomy / Proactive
 
@@ -129,7 +129,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/autonomy/worker.py` | Queue + policy glue | `AutonomyWorker.submit`, `AutonomyWorker.tick`, `AutonomyWorker.apply_decision`, `InterruptBudget`, `is_night_window` |
 | `agents/core/autonomy/policy.py` | Risk gate | `AutonomyPolicy`, `RiskTier`, `ACT/NOTIFY/ASK` |
 | `agents/core/autonomy/inbox.py` | Decision card builder | `build_decision_card` |
-| `agents/core/autonomy/digest.py` | Morning brief / evening retro | `build_morning_brief`, `build_evening_retro` |
+| `agents/core/autonomy/digest.py` | Morning brief / evening retro. Pure/network-free builders — the caller reads any external data (memory entries, H23.29 runtime health) and passes it in | `build_morning_brief`, `build_evening_retro` |
 | `agents/core/autonomy/observer.py` | Host resource probes | `ProactiveObserver`, `default_probes` |
 | `agents/core/autonomy/watchers.py` | Personal event probes | `EventWatcher`, `EmailProbe`, `CalendarProbe`, `FinanceProbe`, `HealthProbe` |
 | `agents/core/autonomy/remediation.py` | Safe service restart | `RemediationRunner.restart` |
@@ -298,6 +298,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | `agents/core/observability/review_queue.py` | Human review queue (flag → rubric → eval dataset) | `ReviewQueue` |
 | `agents/core/observability/datasets.py` | Eval dataset store + regression runs | `DatasetStore` |
 | `agents/core/observability/north_star.py` | North-star + counter-metric aggregator (MOONSHOT §6) — exposed at `GET /api/metrics/north-star?days=1-90`; see [METRICS.md](METRICS.md) | `compute_north_star` |
+| `agents/core/observability/runtime_log.py` | Per-cycle run-log for the headless runtime supervisor (H23.29) — one bounded JSON line per autonomy-coordinator tick into `logs/runtime.jsonl`, plus a cycle counter that survives a restart so crash recovery is provable. Driven by `scripts/runtime_supervisor.py` → `scripts/coordinator.py`; inert unless an orchestrator has `runtime_log` wired. `read_runtime_health()` is the consumer side — a bounded tail read reduced to the loop-health summary the morning brief renders | `RuntimeRunLog.record_cycle`, `RuntimeCycleRecord`, `read_runtime_health`, `default_log_path` |
 
 ### Agent Registry
 
@@ -370,7 +371,7 @@ never pull a strict-local agent to the cloud) → **(2)** `llm_policy` from the 
 
 | Policy | Agents |
 |--------|--------|
-| `local` | `frigga`, `ultron`, `howard` — never leave the machine; **fail closed** if local backend is down (no cloud fallback, ever) |
+| `local` | `frigga`, `ultron`, `howard`, `hestia` — never leave the machine; **fail closed** if local backend is down (no cloud fallback, ever) |
 | `claude` | `vision`, `steve`, `argus` (argus via registry) — Claude Sonnet via Anthropic API |
 | `cloud` | `athena` — Gemini flash via Gemini API |
 | `auto` | All others — local first, escalate on size/complexity |
@@ -536,7 +537,7 @@ Key env vars loaded at startup:
 
 ### Local-first rules
 
-- `frigga`, `ultron`, `howard` are `LOCAL_ONLY_AGENTS` in `hybrid_router.py` — never routed to cloud.
+- `frigga`, `ultron`, `howard`, `hestia` are `LOCAL_ONLY_AGENTS` in `hybrid_router.py` — never routed to cloud.
 - `frigga` has `cloud_fallback: false` in `agents.yaml` — hard rule.
 
 ### Skill/plugin loader patterns
@@ -562,7 +563,7 @@ from git history into `*.local.md`).
 
 ### Add a new agent (active)
 
-1. Create `agents/<agent_id>/SOUL.md` — see any existing soul for format (Identity / Mission / Voice sections). Keep it generic; personal details go in `SOUL.local.md` (above).
+1. Create `agents/<agent_id>/SOUL.md` — start from `agents/_templates/SOUL.template.md` (Identity / Mission / Voice & Tone sections). Keep it generic; personal details go in `SOUL.local.md` (above). Fill in the `personality` front-matter block: without it the agent inherits the shared default traits and has no character of its own, and `tests/test_persona_roster.py` fails. Traits derive from the Voice & Tone prose — μ ≤ 0.3 or ≥ 0.7 becomes a behavioral directive in the per-turn persona block, mid-band traits stay silent, and every agent must sit ≥ 0.1 from every other in trait space.
 2. Add entry under `agents:` in `agents/_system/agents.yaml`:
    ```yaml
    myagent:
@@ -704,9 +705,12 @@ agents/
     mcp/                          MCP client (stdio/SSE)
     learning/                     Agent health tracking + promotions
     workflows/                    Multi-agent workflow engine
-    observability/                Request tracing + LLM eval harness
+    observability/                Request tracing + LLM eval harness + runtime run-log
   jarvis/SOUL.md                  Agent identity prompt (repeat for each agent)
 skills/                           Skill packs (SKILL.md + main.py)
+logs/                             Runtime supervisor run-log + cycle state (H23.29, gitignored)
+  runtime.jsonl                   One bounded JSON line per coordinator cycle
+  runtime_state.json              Cycle counter, survives restart
 memory_logs/                      All persistent state (SQLite, JSONL, cache)
   checkpoints/checkpoints.db
   settings.db
@@ -738,6 +742,6 @@ docs/
 | `docs/ARCHITECTURE.md` | Module index, request lifecycle, recipes (this file) |
 | `docs/VOICE.md` | Voice subsystem — browser HUD loop + server pipeline, endpoints, what's real vs scaffolded |
 | `docs/COGNITION.md` | Cognition subsystem (planned ORIZONT 21) — living memory + personality **schematic & diagnostic map** (brain analogies, tiers, troubleshooting playbook) |
-| `worldview/README.md` | **WorldView (4D OSINT)** — separate Next.js + Fastify stack (ports 3000/4000), not sharing the Python runtime. Bridged into JARVIS by the **Argus** agent (`agents/argus/`, geoint router intent → read-only governed plugin). Launched by `START.bat`/`start.sh`. |
+| `worldview/README.md` | **WorldView (4D OSINT)** — separate Vite + CesiumJS + Fastify stack (ports 3000/4000), not sharing the Python runtime. Bridged into JARVIS by the **Argus** agent (`agents/argus/`, geoint router intent → read-only governed plugin). Launched by `START.bat`/`start.sh`. |
 | `docs/contracts/worldview-bridge.md` | **The hub↔WorldView integration contract** (v1) — the only coupling between the two stacks: 6 read-only GET endpoints, enforced by contract tests on both sides (`tests/test_worldview_bridge_contract.py` · `worldview/backend-api/test/bridgeContract.test.ts`) |
 | `docs/2026-06-08-future-developments-report.md` | Forward roadmap — remaining v1.0 gate, WorldView follow-ups (#169/#170), audit-debt hardening, post-1.0 horizons (O20 Hermes, O21 Cognition), recommended sequencing |

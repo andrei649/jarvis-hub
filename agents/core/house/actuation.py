@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import math
@@ -11,6 +12,7 @@ import time
 from collections.abc import Callable, Mapping
 from contextlib import closing
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse, urlunparse
 
 from agents.core.autonomy.dry_run import preview_task
@@ -19,6 +21,9 @@ from agents.core.paths import data_path
 
 from .confirmation import ConfirmationError, StrongConfirmationStore
 from .contracts import HouseEntity, HouseSnapshot
+
+if TYPE_CHECKING:
+    from agents.core.autonomy.queue import Task
 
 HOUSE_CONTROL_KIND = "house.control"
 HOUSE_SECURITY_KIND = "house.security_control"
@@ -305,7 +310,11 @@ class HomeAssistantServiceDriver:
 
     async def _adapter_service_call(self, domain: str, service: str, data: dict) -> dict:
         adapter = self._adapter
-        origin, pinned_ip, host, _port = adapter._runtime_endpoint()
+        # Same hazard as snapshot(): endpoint re-resolution does blocking DNS,
+        # so it pays in a worker thread before the async POST.
+        origin, pinned_ip, host, _port = await asyncio.to_thread(
+            adapter._runtime_endpoint
+        )
         parsed = urlparse(origin)
         ip_host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
         explicit_port = f":{parsed.port}" if parsed.port else ""
@@ -349,6 +358,7 @@ class HouseActuator:
         state_reader,
         driver,
         authorizer=None,
+        intake_authorizer=None,
         enqueue=None,
         outcome_provider=None,
         confirmation_store: StrongConfirmationStore | None = None,
@@ -358,6 +368,7 @@ class HouseActuator:
         self._state_reader = state_reader
         self._driver = driver
         self._enqueue = enqueue
+        self._intake_authorizer = intake_authorizer
         self._outcomes = outcome_provider
         self._confirmations = confirmation_store
         self._clock = clock or time.time
@@ -402,7 +413,7 @@ class HouseActuator:
         autonomy_level = "ask"
         if not security and callable(self._outcomes):
             try:
-                stats = self._outcomes(_CONTROL_CAPABILITY)
+                stats = await asyncio.to_thread(self._outcomes, _CONTROL_CAPABILITY)
                 if (
                     isinstance(stats, Mapping)
                     and int(stats.get("total", 0)) >= _EARNED_SAMPLES
@@ -412,6 +423,26 @@ class HouseActuator:
             except (TypeError, ValueError):
                 autonomy_level = "ask"
         title = f"{payload['control']} {payload['action']} → {payload['entity_id']}"
+        from agents.core.kernel import kernel_enabled
+
+        if kernel_enabled() and callable(self._intake_authorizer):
+            try:
+                from agents.core.kernel import Action, Verdict
+
+                decision = self._intake_authorizer(
+                    Action(
+                        kind=kind,
+                        agent=agent,
+                        title=title,
+                        payload=payload,
+                        scope=f"house:{payload['entity_id']}",
+                        origin="generated",
+                    )
+                )
+                if getattr(decision, "verdict", None) is Verdict.DENY:
+                    return {"ok": False, "queued": False, "reason": "kernel_denied"}
+            except Exception:
+                return {"ok": False, "queued": False, "reason": "kernel_unavailable"}
         preview = preview_task(
             {
                 "kind": kind,
@@ -434,7 +465,11 @@ class HouseActuator:
         }
         if self._enqueue is None:
             return {**base, "queued": False}
-        task_id = self._enqueue(
+        # Governed intake ends in a sync sqlite write (TaskQueue.enqueue) and is
+        # awaited straight from device-facing routes — offload it so the event
+        # loop never blocks on disk I/O. Same callable, same arguments, same id.
+        task_id = await asyncio.to_thread(
+            self._enqueue,
             agent,
             kind,
             title,
@@ -485,11 +520,17 @@ class HouseActuator:
             **self._task_binding(task, payload), ttl_seconds=ttl_seconds
         )
 
+    async def mint_confirmation_async(self, task: Task) -> dict:
+        return await asyncio.to_thread(self.mint_confirmation, task)
+
     def confirm(self, token: str, task) -> dict:
         if self._confirmations is None:
             raise ConfirmationError("strong confirmation is unavailable")
         payload = _canonical_task(getattr(task, "kind", ""), getattr(task, "payload", None))
         return self._confirmations.confirm(token, **self._task_binding(task, payload))
+
+    async def confirm_async(self, token: str, task: Task) -> dict:
+        return await asyncio.to_thread(self.confirm, token, task)
 
     @staticmethod
     def _entity(snapshot: HouseSnapshot, entity_id: str) -> HouseEntity | None:
@@ -595,7 +636,9 @@ class HouseActuator:
         except (AttributeError, TypeError, ValueError):
             return {"status": "failed", "reason": "invalid_payload", "verified": False}
         digest = _payload_hash(payload)
-        ledger_state, cached = self._ledger.lookup(task_id, digest)
+        # Ledger ops are sync sqlite round-trips (lookup/begin/finish/abort);
+        # execute_task runs on the loop via the autonomy executor, so offload.
+        ledger_state, cached = await asyncio.to_thread(self._ledger.lookup, task_id, digest)
         if ledger_state == "cached":
             return cached or {"status": "failed", "reason": "cached_result_missing"}
         if ledger_state == "conflict":
@@ -612,14 +655,16 @@ class HouseActuator:
             return {"status": "failed", "reason": reason, "verified": False}
         if kind == HOUSE_SECURITY_KIND and (
             self._confirmations is None
-            or not self._confirmations.consume(**self._task_binding(task, payload))
+            or not await asyncio.to_thread(
+                self._confirmations.consume, **self._task_binding(task, payload)
+            )
         ):
             return {
                 "status": "failed",
                 "reason": "strong_confirmation_required",
                 "verified": False,
             }
-        if not self._ledger.begin(task_id, digest):
+        if not await asyncio.to_thread(self._ledger.begin, task_id, digest):
             return {"status": "failed", "reason": "execution_in_progress", "verified": False}
 
         capability = _SECURITY_CAPABILITY if kind == HOUSE_SECURITY_KIND else _CONTROL_CAPABILITY
@@ -640,7 +685,7 @@ class HouseActuator:
                 "verified": False,
                 "manual_recovery_required": False,
             }
-            self._ledger.abort(task_id)
+            await asyncio.to_thread(self._ledger.abort, task_id)
             return result
 
         try:
@@ -656,7 +701,7 @@ class HouseActuator:
                 "verified": True,
                 "manual_recovery_required": False,
             }
-            self._ledger.finish(task_id, result)
+            await asyncio.to_thread(self._ledger.finish, task_id, result)
             return result
 
         rollback = await self._rollback(task, pre, current, payload)
@@ -668,7 +713,7 @@ class HouseActuator:
             "rollback": rollback,
             "manual_recovery_required": manual,
         }
-        self._ledger.finish(task_id, result)
+        await asyncio.to_thread(self._ledger.finish, task_id, result)
         return result
 
 

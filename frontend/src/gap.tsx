@@ -292,6 +292,78 @@ function NotesPanel() {
   </Card>;
 }
 
+/* T-0.20 — the encrypted personal blob vault (GET/POST/DELETE /api/vault[/{id}],
+   user-guarded). Text is stored via the textarea; binary via the file picker.
+   Content is fetched only on an explicit "get" (never in the listing) and
+   downloaded client-side as a Blob — the list/put responses never carry
+   plaintext, mirroring the router's own no-leak contract. */
+export function VaultPanel() {
+  const { d, e, loading, reload } = useApi('/api/vault');
+  const items = arr(d, 'items');
+  const stats = (d && d.stats) || {};
+  const [name, setName] = useState('');
+  const [text, setText] = useState('');
+  const [file, setFile] = useState(null);
+  const [note, setNote] = useState('');
+
+  const putB64 = (dataB64, itemName, kind) => act('/api/vault', { name: itemName, kind, data_base64: dataB64 }, () => { setNote('stored'); reload(); });
+  const storeText = () => {
+    if (!text.trim()) return;
+    putB64(btoa(unescape(encodeURIComponent(text))), name || 'note', 'note');
+    setText(''); setName('');
+  };
+  const storeFile = () => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      putB64(result.slice(result.indexOf(',') + 1), file.name, 'file');
+      setFile(null);
+    };
+    reader.readAsDataURL(file);
+  };
+  const download = (id, itemName) => {
+    apiGet('/api/vault/' + encodeURIComponent(id)).then((r: any) => {
+      if (!r || !r.data_base64) { setNote('fetch failed'); return; }
+      const bin = atob(r.data_base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes]));
+      const a = document.createElement('a');
+      a.href = url; a.download = itemName || id;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }).catch(() => setNote('fetch failed'));
+  };
+  const del = (id) => apiDelete('/api/vault/' + encodeURIComponent(id)).then(reload).catch(() => {});
+
+  return (
+    <Card title="VAULT" live={asLive(d)} sub={d ? `${stats.items || 0} items · ${Math.round((stats.bytes || 0) / 1024)} KB` : null} onReload={reload}>
+      <State e={e} loading={loading} n={items.length} />
+      {items.slice(0, 10).map((it) => (
+        <Row key={it.id}>
+          <span style={{ color: 'var(--accent-light)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name || it.id}</span>
+          <Tag>{it.kind}</Tag>
+          <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{it.bytes}B</span>
+          <button className="tool-btn" onClick={() => download(it.id, it.name)}>get</button>
+          <button className="tool-btn" onClick={() => del(it.id)}>del</button>
+        </Row>
+      ))}
+      <textarea value={text} onChange={(ev) => setText(ev.target.value)} placeholder="text to encrypt and store…" style={{ ...taS, marginTop: 6, minHeight: 50 }} />
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="name" style={{ ...inpS, flex: 1 }} />
+        <button className="tool-btn" disabled={!text.trim()} onClick={storeText}>store text</button>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+        <input type="file" onChange={(ev) => setFile(ev.target.files && ev.target.files[0])} style={{ fontSize: 10, flex: 1 }} />
+        <button className="tool-btn" disabled={!file} onClick={storeFile}>store file</button>
+      </div>
+      {note && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>{note}</div>}
+      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>encrypted at rest · included in your own data export, erased on forget</div>
+    </Card>
+  );
+}
+
 function ReflectionPanel() {
   const { d, e, loading, reload } = useApi('/api/reflection/status');
   const [out, setOut] = useState(null);
@@ -2701,6 +2773,234 @@ export function ModelInfoPanel() {
   );
 }
 
+/* T-0.53 — the design-system manifest (GET /api/design-manifest, open like the
+   sibling meters): tokens + component-class inventory parsed live from
+   frontend/src/styles.css, so drift is visible instead of only inspectable by
+   reading the stylesheet. Figma token sync stays a separate owner-gated
+   follow-up (needs a Figma API token) — this panel is the read side. */
+export function DesignManifestPanel() {
+  const { d, e, loading, reload } = useApi('/api/design-manifest');
+  const ok = !!(d && !d.error);
+  const counts = (ok && d.counts) || {};
+  const variants = ok ? Object.keys((d.tokens && d.tokens.variants) || {}) : [];
+  return (
+    <Card title="DESIGN MANIFEST" live={asLive(d, ok)} sub={ok ? `${counts.base_tokens || 0} tokens · ${counts.components || 0} components` : null} onReload={reload}>
+      <State e={e || (d && d.error) || null} loading={loading} n={ok ? 1 : 0} />
+      {ok && (
+        <>
+          <Row>
+            <span style={mono}>source</span>
+            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{d.source}</span>
+          </Row>
+          <Row>
+            <span style={mono}>variants</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {variants.length ? variants.map((v) => <Tag key={v}>{v}</Tag>) : <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>none</span>}
+            </span>
+          </Row>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/* T-0.50 — publish readiness for a finished asset (POST /api/creative/publish/*,
+   user-guarded). This surface NEVER publishes: it shows the automatic checks and
+   the manual confirmations an owner must tick, and the release payload stays
+   withheld until all of them pass. The terminal upload is owner-gated
+   (per-platform OAuth) and stays approval-held — the panel says so. */
+export function PublishReadinessPanel() {
+  const [platform, setPlatform] = useState('youtube');
+  const [meta, setMeta] = useState('{\n  "title": "",\n  "description": "",\n  "thumbnail": ""\n}');
+  const [confirm, setConfirm] = useState({ disclosure: false, rights: false, preview: false });
+  const [out, setOut] = useState(null);
+  const run = (path) => {
+    let parsed = null;
+    try { parsed = JSON.parse(meta); } catch { setOut({ error: 'metadata is not valid JSON' }); return; }
+    act(path, { platform, meta: parsed, confirmations: confirm }, setOut);
+  };
+  const toggle = (k) => setConfirm((c) => ({ ...c, [k]: !c[k] }));
+  const checks = arr(out, 'checklist');
+  return (
+    <Card title="PUBLISH READINESS" live={'live'}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+        {['youtube', 'instagram', 'readme'].map((p) => (
+          <button key={p} className="tool-btn" style={{ opacity: platform === p ? 1 : 0.5 }} onClick={() => setPlatform(p)}>{p}</button>
+        ))}
+      </div>
+      <textarea value={meta} onChange={(ev) => setMeta(ev.target.value)} placeholder="metadata JSON" style={{ ...taS, minHeight: 70 }} />
+      <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+        {['disclosure', 'rights', 'preview'].map((k) => (
+          <label key={k} style={{ ...mono, fontSize: 10.5, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input type="checkbox" checked={confirm[k]} onChange={() => toggle(k)} />{k}
+          </label>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        <button className="tool-btn" onClick={() => run('/api/creative/publish/checklist')}>check</button>
+        <button className="tool-btn" onClick={() => run('/api/creative/publish/package')}>package</button>
+      </div>
+      {out && out.error && <div style={{ fontSize: 10.5, color: 'var(--amber)', marginTop: 6 }}>{out.error}</div>}
+      {checks.map((c, i) => (
+        <Row key={i}>
+          <span style={mono}>{c.id}</span>
+          <span style={{ marginLeft: 'auto', color: c.ok ? 'var(--green)' : 'var(--amber)' }}>{c.ok ? 'ok' : 'pending'}</span>
+        </Row>
+      ))}
+      {out && arr(out, 'violations').length > 0 && (
+        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>{arr(out, 'violations').join(' · ')}</div>
+      )}
+      {out && out.ready_for_approval != null && (
+        <div style={{ fontSize: 10.5, marginTop: 6, color: out.ready_for_approval ? 'var(--green)' : 'var(--ink-3)' }}>
+          {out.ready_for_approval
+            ? 'ready to REQUEST approval — still not published'
+            : 'not ready · release payload withheld'}
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>never uploads · publishing stays approval-held (owner-gated OAuth)</div>
+    </Card>
+  );
+}
+
+/* T-0.58 — the typed Pack Manager inventory (GET /api/packs, user-guarded).
+   Unifies skill packs (marketplace) and knowledge packs (manifested drop
+   folders) under one view, and shows unsupported types honestly rather than
+   hiding them — `model` reads as unsupported with its reason, not as absent. */
+export function PacksPanel() {
+  const { d, e, loading, reload } = useApi('/api/packs');
+  const packs = arr(d, 'packs');
+  const types = arr(d, 'types');
+  const counts = (d && d.counts) || {};
+  const unmanifested = arr(d, 'unmanifested');
+  const [check, setCheck] = useState(null);
+  const verify = (key) => {
+    setCheck({ key, loading: true });
+    apiGet('/api/packs/' + encodeURIComponent(key) + '/verify')
+      .then((r: any) => setCheck({ key, loading: false, ok: !!(r && r.ok), reason: r && r.reason, v: (r && r.verify) || {} }))
+      .catch(() => setCheck({ key, loading: false, ok: false, reason: 'request failed' }));
+  };
+  return (
+    <Card title="PACKS" live={asLive(d, d && d.available)} sub={d ? `${counts.total || 0} packs` : null} onReload={reload}>
+      <State e={e} loading={loading} n={packs.length} />
+      <Row>
+        <span style={mono}>types</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {types.map((t) => (
+            <Tag key={t.type} c={t.supported ? 'var(--accent-light)' : undefined}>
+              {t.type}{t.supported ? '' : ' · n/a'}
+            </Tag>
+          ))}
+        </span>
+      </Row>
+      {types.filter((t) => !t.supported && t.reason).map((t) => (
+        <div key={t.type} style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>{t.type}: {t.reason}</div>
+      ))}
+      {packs.slice(0, 12).map((p, i) => (
+        <Row key={i}>
+          <Tag>{p.pack_type}</Tag>
+          <span style={{ color: 'var(--accent-light)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+          {p.version && <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>v{p.version}</span>}
+          {p.pack_type === 'knowledge' && <button className="tool-btn" onClick={() => verify(p.key)}>verify</button>}
+        </Row>
+      ))}
+      {check && (
+        <div style={{ fontSize: 10, marginTop: 6, color: check.loading ? 'var(--ink-3)' : check.ok ? 'var(--green)' : 'var(--amber)' }}>
+          {check.loading ? `verifying ${check.key}…`
+            : check.ok ? `${check.key}: intact (${check.v.checked} file(s) checked)`
+            : `${check.key}: ${check.reason || 'discrepancies'} — ${[
+                (check.v?.missing || []).length + ' missing',
+                (check.v?.modified || []).length + ' modified',
+                (check.v?.unexpected || []).length + ' unexpected',
+              ].join(' · ')}`}
+        </div>
+      )}
+      {unmanifested.length > 0 && (
+        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          {unmanifested.length} configured folder(s) without a manifest — drop-folders, not packs
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* T-0.41 — the live World Signal feed routed per domain/agent
+   (GET /api/signals/routed, user-guarded). The routing layer classifies the
+   sidecar's signals into domains and slices them per subscribing agent; an
+   unclassifiable signal stays visible in `unrouted` rather than being
+   force-labeled. Honest when no sidecar is configured — says so, shows nothing. */
+export function SignalRoutingPanel() {
+  const { d, e, loading, reload } = useApi('/api/signals/routed');
+  const available = !!(d && d.available);
+  const counts = (d && d.counts) || {};
+  const byDomain = (available && d.by_domain) || {};
+  const byAgent = (available && d.by_agent) || {};
+  const signals = arr(d, 'signals');
+  // Clicking an agent chip pulls that agent's OWN slice from the dedicated
+  // endpoint (the same one an agent's digest consumes), rather than filtering
+  // client-side — so the per-agent route has a real caller and the slice shown
+  // is exactly what the agent would receive.
+  const [slice, setSlice] = useState(null);
+  const showAgent = (ag) => {
+    setSlice({ agent: ag, loading: true, signals: [] });
+    apiGet('/api/signals/agent/' + encodeURIComponent(ag))
+      .then((r: any) => setSlice({ agent: ag, loading: false, signals: arr(r, 'signals'), domains: (r && r.domains) || [] }))
+      .catch(() => setSlice({ agent: ag, loading: false, signals: [], error: true }));
+  };
+  return (
+    <Card title="WORLD SIGNALS" live={asLive(d, available)} sub={available ? `${counts.routed || 0}/${counts.signals || 0} routed` : (d ? 'no sidecar' : null)} onReload={reload}>
+      <State e={e} loading={loading} n={available ? signals.length : 0} />
+      {d && !available && (
+        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          signal layer unavailable{d.reason ? ` · ${d.reason}` : ''} — configure the sidecar to populate this feed
+        </div>
+      )}
+      {available && Object.keys(byDomain).length > 0 && (
+        <Row>
+          <span style={mono}>domains</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {Object.entries(byDomain).map(([dom, idx]) => <Tag key={dom}>{dom} {(idx as any[]).length}</Tag>)}
+          </span>
+        </Row>
+      )}
+      {available && Object.keys(byAgent).length > 0 && (
+        <Row>
+          <span style={mono}>agents</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {Object.entries(byAgent).map(([ag, idx]) => (
+              <button key={ag} className="tool-btn" style={{ fontSize: 9.5, padding: '1px 5px' }} onClick={() => showAgent(ag)}>
+                {ag} {(idx as any[]).length}
+              </button>
+            ))}
+          </span>
+        </Row>
+      )}
+      {slice && (
+        <Row>
+          <span style={mono}>{slice.agent}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>
+            {slice.loading ? 'loading…' : slice.error ? 'slice unavailable'
+              : `${slice.signals.length} signal(s) · ${(slice.domains || []).join(', ') || 'no domains'}`}
+          </span>
+        </Row>
+      )}
+      {available && (d.unrouted || []).length > 0 && (
+        <Row>
+          <span style={mono}>unrouted</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--amber)' }}>
+            {d.unrouted.length} unclassified — shown, never guessed
+          </span>
+        </Row>
+      )}
+      {available && signals.slice(0, 6).map((s, i) => (
+        <Row key={i}>
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title || '—'}</span>
+          {s.severity != null && <Tag>sev {s.severity}</Tag>}
+        </Row>
+      ))}
+    </Card>
+  );
+}
+
 /* 0.39 — the curated market watchlist (GET/POST/DELETE /api/market/watchlist/saved,
    user-guarded). The owner curates a small {symbol, low, high, note} list once;
    routers/market.py's alert/brief evaluators run against it. Read/write, but pure
@@ -2970,11 +3270,11 @@ export function FirstRunGate({ onClose }) {
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Start', [CommandCenterPanel]],
   ['Home', [AmbientWatchPanel, HousePanel, CameraPanel]],
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
+  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, VaultPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
-  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
-  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel, SelfImprovementPanel, SwarmPanel]],
-  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, OperatorPanel]],
+  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
+  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, SwarmPanel]],
+  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],
 ];

@@ -7,6 +7,16 @@ import { RoomsPanel } from './gap';
 
 function SubH3({ children, style }: { children?: any; style?: any }){ return <div className="sub-h" style={style}>{children}</div>; }
 
+/* Honest empty state for ADMIN sections whose backend source did not answer
+ * this cycle (keys/backups/channels/host have no seed fallback any more). */
+function NotConnected({ what }: { what?: string }){
+  return (
+    <div style={{ fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'.08em', color:'var(--ink-3)', padding:'3px 0' }}>
+      not connected{what ? ` · ${what}` : ''}
+    </div>
+  );
+}
+
 /* ============ CHAT · distraction-free ============ */
 function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, lang, t }: any){
   return (
@@ -170,7 +180,7 @@ function AdminMode({ t }){
   return (
     <div className="panel scroll" style={{flex:1}}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Ic3 d={IK3.admin} size={14}/><span className="ttl">{t.admin} · Settings</span><span className="st">{A.system.host} · up {A.system.uptime}</span></div>
+      <div className="panel-head"><Ic3 d={IK3.admin} size={14}/><span className="ttl">{t.admin} · Settings</span><span className="st">{A.system ? `${A.system.host} · up ${A.system.uptime}` : 'not connected'}</span></div>
       <div className="panel-body">
         <div className="admin-grid">
           <div>
@@ -182,16 +192,16 @@ function AdminMode({ t }){
               </div>
             ))}
             <SubH3 style={{marginTop:16}}>API KEYS &amp; SECRETS</SubH3>
-            {A.keys.map((k,i)=>(
+            {A.keys.length ? A.keys.map((k,i)=>(
               <div className="key-row" key={i}>
                 <div><div className="key-name">{k.name}</div><div className="key-mask">{k.masked}</div></div>
                 <div className="key-right"><span className={'key-status '+(k.status==='valid'?'ok':'warn')}>{k.status}</span><span className="key-rot">{k.rotated}</span></div>
               </div>
-            ))}
+            )) : <NotConnected what="no keys in env"/>}
             <SubH3 style={{marginTop:16}}>BACKUPS</SubH3>
-            {A.backups.map((b,i)=>(
+            {A.backups.length ? A.backups.map((b,i)=>(
               <div className="cap-row" key={i}><div><div className="cn" style={{fontFamily:'var(--font-ui)'}}>{b.ts}</div><div className="cd">{b.size} · {b.target}</div></div><span className="cap-tag allow">✓ {b.status}</span></div>
-            ))}
+            )) : <NotConnected what="no backup feed"/>}
           </div>
           <div>
             <SubH3>PLUGIN REGISTRY · {plugins.filter(p=>p.on).length}/{plugins.length} enabled{plugins.some(p=>p.honesty) ? ' · '+plugins.filter(p=>p.honesty && p.honesty.status==='live').length+' live' : ''}</SubH3>
@@ -205,15 +215,17 @@ function AdminMode({ t }){
               </div>
             ))}
             <SubH3 style={{marginTop:16}}>CHANNELS</SubH3>
-            {A.channels.map((c,i)=>(
+            {A.channels.length ? A.channels.map((c,i)=>(
               <div className="cap-row" key={i}><div className="cn" style={{fontFamily:'var(--font-ui)'}}>{c.name}</div><span className="cap-tag allow">{c.status}</span></div>
-            ))}
+            )) : <NotConnected what="no channel feed"/>}
             <SubH3 style={{marginTop:16}}>HOST</SubH3>
-            <div className="host-grid">
-              {[['CPU',A.system.cpu],['RAM',A.system.ram],['GPU',A.system.gpu],['UPTIME',A.system.uptime]].map(([k,v])=>(
-                <div className="host-cell" key={k}><div className="hk">{k}</div><div className="hv">{v}</div></div>
-              ))}
-            </div>
+            {A.system ? (
+              <div className="host-grid">
+                {[['CPU',A.system.cpu],['RAM',A.system.ram],['GPU',A.system.gpu],['UPTIME',A.system.uptime]].map(([k,v])=>(
+                  <div className="host-cell" key={k}><div className="hk">{k}</div><div className="hv">{v}</div></div>
+                ))}
+              </div>
+            ) : <NotConnected what="host telemetry"/>}
           </div>
         </div>
       </div>

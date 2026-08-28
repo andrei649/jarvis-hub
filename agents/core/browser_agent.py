@@ -121,9 +121,13 @@ class GovernedBrowser:
         if kind == "unknown":
             return {"action": action, "status": "blocked", "reason": f"unknown action: {action}"}
         if action == "navigate":
-            ok, why = self.policy.domain_allowed(step.get("url", ""))
-            if not ok:
-                return {"action": action, "status": "blocked", "reason": why}
+            # No transport-bound proxy exists yet. Refuse before policy URL parsing
+            # or any driver startup so every scheme has the same fail-closed edge.
+            return {
+                "action": action,
+                "status": "blocked",
+                "reason": "browser transport unavailable",
+            }
         if kind == "risky":
             if self.approvals is None:
                 return {"action": action, "status": "denied", "reason": "approval required, no queue"}

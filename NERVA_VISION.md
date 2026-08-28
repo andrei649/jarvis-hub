@@ -41,9 +41,9 @@ a restart:
 |------|--------------------|
 | **Observe** | `core/autonomy/observer.py` + watchers, `passive_capture.py`, channels, heartbeat |
 | **Understand** | memory fusion (vector ⊕ graph, RRF), bi-temporal KG (H14), ingestion pipeline |
-| **Decide** | orchestrator + 17 specialist agents, autonomy policy, `agent_runtime.py` model-directed loop (H20.R1) |
+| **Decide** | orchestrator + 18 specialist agents, autonomy policy, `agent_runtime.py` model-directed loop (H20.R1) |
 | **Act** | the **Action Kernel** (O24 — Gate-K, 21 action kinds mediated), brokers, ToolRPC, sandbox |
-| **Verify** | the **Verification Fabric** (O24 — reality harness, SEAM→WIRED→VERIFIED→GA registry) |
+| **Verify** | the **Verification Fabric** (O24 — reality harness, SEAM→WIRED→VERIFIED→GA registry; in-process — resets each boot, a durable committed snapshot is V3, pending) |
 | **Learn** | the governed per-turn learning loop (O20 — `learning/background_review.py`, CoreMemory, skill curator) |
 
 A chatbot implements *receive text → generate text*. Nerva treats language as only one interface
@@ -84,8 +84,10 @@ Atlas
 ├── House model — properties, floors, rooms, zones, occupants and policies
 ├── Device graph — PCs, servers, Pi nodes, NAS, routers, TVs, speakers and sensors
 ├── Vehicle model — location, status, maintenance and telemetry
-└── Execution topology — local, Docker, SSH, edge and optional cloud targets
+└── Execution topology — local, Docker, SSH*, edge and optional cloud targets
 ```
+
+\* SSH is profile/policy inventory only today — no transport exists in-repo (see §3).
 
 Atlas provides the shared state against which Cortex reasons. **Vision observes. Atlas locates and
 contextualizes. Cortex decides. Synapse supplies the capability. Ultron authorizes. Nerva executes
@@ -114,11 +116,18 @@ and verifies.**
 - **House (Atlas)**: the O30 House Brain (#675) delivers the read-first Home Assistant
   REST/WebSocket state adapter (`house/home_assistant.py`), the device/room/occupant graph
   (`house/graph.py` + the encrypted `house/private_store.py` for occupant/presence) and governed
-  actuation; Homebridge + Tuya + Wyoming voice satellite also exist. WorldView + Signal Layer are
-  substantial but not yet unified with house/device/execution state.
+  actuation; presence inference exists (`house/presence.py`) but its predicates have no
+  production writer — the only callers are the H30 reality probe (`observability/house_reality.py`)
+  and tests, so `/api/house/state.presence` serves `[]`. Homebridge + Tuya + Wyoming voice
+  satellite also exist. WorldView + Signal Layer are substantial but not yet unified with
+  house/device/execution state.
 - **Cameras (Vision)**: H31 (#676) delivers read-only, LAN-pinned Frigate metadata +
   discovery-only ONVIF behind versioned consent and mandatory privacy masks
   (`agents/core/cameras/`); direct RTSP ingest is not shipped (no decoder/stream surface).
+  Both camera seams are owner-side: ONVIF discovery needs the manually installed `wsdiscovery`
+  package (declared in no requirements file, so stock installs answer `discovery_unavailable` —
+  `cameras/onvif.py`), and the VLM description leg needs an owner-hosted OpenAI-vision-compatible
+  server via `JARVIS_VLM_URL` (`cameras/runtime.py`, default-off).
 - **Proof**: single-user; ⭐B0 manual run, 72h soak and design partners still pending (the proof
   track — unchanged, see §10).
 
@@ -136,10 +145,12 @@ converted **locally** into structured events; expensive model inspection happens
 event, query or policy requires it.*
 
 - **Exists:** voice pipeline (`core/voice/` — wake word, STT), VLM eyes (`llm/vlm.py`,
-  `/api/vlm/describe`), screen grounding (`screen_grounding.py`), opt-in passive capture,
+  `/api/vlm/describe` — client only; needs an owner-hosted OpenAI-vision server via
+  `JARVIS_VLM_URL`), screen grounding (`screen_grounding.py`), opt-in passive capture,
   7-phase ingestion pipeline, host observer (`autonomy/observer.py`), channel inbounds;
   read-only camera perception (H31 — Frigate metadata + discovery-only ONVIF) and house
-  sensor state/presence (H30 — HA adapter + presence inference).
+  sensor state/presence (H30 — HA adapter + presence inference; the inference engine has no
+  production ingestion path, so `/api/house/state.presence` serves `[]` — see §3).
 - **Missing:** direct RTSP/camera stream intelligence (H31 is read-only metadata + discovery,
   with no Jarvis decoder/stream surface); vehicle telemetry; desktop observation as a routine
   perception source; ambient correlation depth beyond the delivered H33 monitors.
@@ -177,7 +188,8 @@ post-action verification and rollback where possible.*
   kill-switch, audit chain; write-back + connector builders (12 cataloged SaaS actions in
   `writeback.py` + `writeback_connectors.py`); ToolRPC
   (`tool_rpc.py`) + the model-directed tool loop (`agent_runtime.py`, default-off); execution
-  environments local/docker (SSH is policy-plane inventory only — no transport exists);
+  environments local/docker (the execution-target layer is a policy plane that never executes —
+  no transport exists, SSH included);
   sandbox with output caps; the unified Action API (O27 — `perform(capability, params)` + the
   Capability Registry); the action-hierarchy router + Playwright/Windows desktop drivers as
   owner-gated host seams (O28).
@@ -197,13 +209,15 @@ policies.*
 
 - **Exists:** the O30 House Brain (`agents/core/house/` — read-first Home Assistant REST/WebSocket
   state adapter `home_assistant.py`, device/room/occupant topology `graph.py`, encrypted private
-  occupant/presence store, presence inference, governed actuation through the Action Kernel);
+  occupant/presence store, presence inference (built, not yet wired to a production ingestion
+  path — `/api/house/state.presence` serves `[]`), governed actuation through the Action Kernel);
   `plugins/homebridge.py` (HomeKit accessories, LOCAL_ONLY), `plugins/iot_control.py`
   (Tuya, partly mock), `voice/wyoming.py` (HA Voice PE satellites); the bi-temporal KG as the
   house graph's home; WorldView/Signal Layer as Atlas's external-world half.
 - **Missing:** household policies (privacy zones, per-person authority); the last open O30 item —
-  the ambient light bridge (H30.8); live owner-hardware HA integration (the H30 reality pack is
-  hermetic; the live read probe is double opt-in).
+  the ambient light bridge (H30.8); a production ingestion path for the presence-inference engine
+  (until one exists, `/api/house/state.presence` serves `[]`); live owner-hardware HA integration
+  (the H30 reality pack is hermetic; the live read probe is double opt-in).
 - **Closed by:** ORIZONT 30 (delivered — H30.1–H30.7; H30.8 ambient light bridge still open).
   Home Assistant/Homebridge provide device abstraction, but **Nerva
   owns reasoning, memory, policy, natural interaction and cross-domain coordination**.
@@ -279,7 +293,7 @@ outcome → promote the validated capability for reuse.*
 ```
 
 Layer → repo mapping: **Experience** = channels/HUD/voice/mobile (exists). **Cortex/Atlas** =
-memory fusion + bi-temporal KG + cognition layer + the 17 specialists + autonomy stack (exists;
+memory fusion + bi-temporal KG + cognition layer + the 18 specialists + autonomy stack (exists;
 house state = O30, delivered; WorldView/Signal Layer fold in as Atlas's external half). **Ultron** =
 O24 (exists; the boundary). **Synapse execution plane** = O20/H20 ToolRPC + environments + skills +
 subagents (exists; operators = O28, delivered — owner hardware validation pending).
@@ -323,7 +337,7 @@ parallel system:
 
 | Registry field | Existing substrate it extends |
 |---|---|
-| verification state | V2 `observability/capability_registry.py` — `CapabilityRecord` + SEAM→WIRED→VERIFIED→GA (only the V1 reality harness promotes to VERIFIED) |
+| verification state | V2 `observability/capability_registry.py` — `CapabilityRecord` + SEAM→WIRED→VERIFIED→GA (only the V1 reality harness promotes to VERIFIED; the record set is in-process and resets each boot) |
 | requires / policy | `automation_contracts.py` `ContractTemplate`s (payment/social/writeback/call/A2A precedents) |
 | risk + mediation | the action-auth matrix (`tests/test_action_auth_matrix.py` + `_snapshots/action_auth.json`) — the ground truth that an action kind is kernel-mediated |
 | confidence | `skills/usage.py`-style outcome telemetry, generalized per capability (H27.7) |
@@ -511,10 +525,11 @@ The product is not complete because it can answer anything. It is complete when 
 <!-- GAP-8 re-baseline evidence (2026-08-09):
 What changed (all in this doc; no other file touched) and the evidence for each:
 
-1. §1 table + §3 Gate-K bullet: action-kind count 18 → 20. Evidence: the 20 KERNEL entries in
-   `agents/core/kernel/registry.py` ACTION_REGISTRY (lines 32–96) == the 20 keys of
+1. §1 table + §3 Gate-K bullet: action-kind count 18 → 20 → 21. Evidence: the 21 KERNEL entries in
+   `agents/core/kernel/registry.py` ACTION_REGISTRY (lines 32–100) == the 21 keys of
    `tests/_snapshots/action_auth.json` (zero `pending`); the count was 18 before #746
-   (f2cfe7f4) registered `channel.reply` + `skill.install`. The "11"/"12" figures are
+   (f2cfe7f4) registered `channel.reply` + `skill.install`, then #908 (b7df10dd) registered
+   `host.control` (the 21st). The "11"/"12" figures are
    historical (pre-#746); the §6 registry-field table already points at the snapshot as truth.
 2. §3 H15 bullet: "actuation is stubbed … no real Playwright/VM driver in-repo" → real drivers
    now exist as owner-gated host seams. Evidence: `agents/core/browser_playwright.py:39`
@@ -563,4 +578,29 @@ What changed (all in this doc; no other file touched) and the evidence for each:
 14. §5 layer-mapping parentheticals: "house state is new, O30 / operators land in O28 / O29·O30·O31
     (mostly new)" → delivered markers, same evidence as items 2–5 (O28 #673, O29 #669/#674,
     O30 #675, O31 #676); owner-gated hardware validation explicitly left pending.
+15. GAP-8 re-verification (2026-08-23 wave): §4 percentages re-checked unchanged and correct
+    (P1 ~35%, P2 ~70–80%, P3 ~45%, P4 ~20%, P5 ~15%, P6 ~10%; no pillar 0%); the
+    privileged-action-kind figure stands at 21 — re-counted in this worktree: 21
+    `Mediation.KERNEL` entries (`agents/core/kernel/registry.py:34–99`) == 21 snapshot keys,
+    all `kernel` (BACKLOG's "snapshot now covers 18" was itself stale). Item 1 above updated
+    to match (20 → 21, registry lines 32–100).
+16. GAP-9 honesty hedges (2026-08-23 wave; each verified in this worktree before editing):
+    presence predicates have no production writer — the store writers
+    `house/private_store.py:435/:445` are reached only via `PresenceInference.infer`
+    (`house/presence.py`), whose only non-test caller is the H30 probe
+    (`observability/house_reality.py:514`), so `/api/house/state.presence` serves `[]`
+    (`routers/house.py:333/:355/:370`); ONVIF discovery imports the undeclared `wsdiscovery`
+    package lazily (`cameras/onvif.py:331`; zero declarations in requirements*.txt /
+    pyproject.toml); the camera VLM leg is a default-off client for an owner-hosted
+    OpenAI-vision server (`cameras/runtime.py:364–376`, `llm/vlm.py:10–12/:28`); the
+    execution-target layer never executes (`environments/targets.py:3–4/:343` — no importer of
+    `default_targets`/`TargetRegistry` outside the package; no paramiko/asyncssh anywhere);
+    reality-harness promotion is in-process and boot-ephemeral
+    (`observability/capability_registry.py:55/:68`, `reality_harness.py:19–23`;
+    `.github/workflows/reality.yml` uploads no artifact); README's voice engines ship in no
+    install path (`requirements.txt:33–35` commented out, `requirements-beta.txt:46–54` hint
+    comments only; all three install scripts install only `-r requirements-beta.txt`). §8's
+    Hermes restatement was verified already-applied at base — no edit needed there; the
+    Hermes-side facts are corroborated by
+    `docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md` (not by Hermes source).
 --> 

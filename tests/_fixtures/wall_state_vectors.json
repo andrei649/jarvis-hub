@@ -1,0 +1,10105 @@
+{
+ "note": "Shared wallState contract vectors \u2014 asserted by BOTH frontend vitest and mobile jest so the two implementations cannot silently diverge (H18.25).",
+ "cases": [
+  {
+   "input": {
+    "voice": null,
+    "agents": [],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": null,
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {},
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "off"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "listening",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "transcribing"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "thinking",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "speaking"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "speaking",
+    "tone": "live"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "working",
+    "tone": "work"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "standing by",
+    "tone": "idle"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "error"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "offline",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "idle",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "idle"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "busy"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": "ACTIVE"
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "status": "Running"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "done"
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": true
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  },
+  {
+   "input": {
+    "voice": {
+     "status": "listening",
+     "error": "boom"
+    },
+    "agents": [
+     {
+      "status": null
+     }
+    ],
+    "tasks": [
+     {
+      "state": "  "
+     }
+    ],
+    "serverUp": false
+   },
+   "expected": {
+    "word": "voice error",
+    "tone": "bad"
+   }
+  }
+ ]
+}

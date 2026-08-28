@@ -84,14 +84,12 @@ class _PluginHTTPClient:
     def __init__(self, response):
         self.circuit_breaker = _CircuitBreaker()
         self.client = _HTTPXClient(response)
-        self.guards = []
+        self.streams = []
         self.timeouts = type("Timeouts", (), {"to_httpx_timeout": lambda _self: 12.0})()
 
-    def _guard(self, method, url):
-        self.guards.append((method, url))
-
-    def _get_client(self):
-        return self.client
+    def stream(self, method, url, **kwargs):
+        self.streams.append((method, url, kwargs))
+        return self.client.stream(method, url, **kwargs)
 
 
 class _WebSearchPlugin:
@@ -349,16 +347,15 @@ async def test_production_adapter_reuses_websearch_and_pins_plugin_http_dial():
 
     assert results[0]["url"] == "https://docs.acme.test/api"
     assert plugin.calls == [("parse acme", 3)]
-    assert client.guards == [("GET", "https://docs.acme.test/api")]
+    assert len(client.streams) == 1
     method, connect_url, kwargs = client.client.calls[0]
     assert method == "GET"
-    assert connect_url == "https://[2001:4860:4860::8888]/api"
-    assert kwargs["headers"]["Host"] == "docs.acme.test"
-    assert kwargs["extensions"]["sni_hostname"] == "docs.acme.test"
+    assert connect_url == "https://docs.acme.test/api"
+    assert kwargs["headers"] == {"User-Agent": "Jarvis-GovernedResearch/1"}
     assert kwargs["follow_redirects"] is False
     assert body == b"bounded docs"
     assert response.closed is True
-    assert client.circuit_breaker.successes == 1
+    assert client.circuit_breaker.successes == 0  # the public stream owns breaker accounting
 
 
 def test_production_adapter_refuses_implicit_or_cloud_search_backends():

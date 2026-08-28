@@ -87,6 +87,12 @@ class _Actuator:
         self.calls.append(("confirm", token, task.id, task.kind, dict(task.payload)))
         return {"status": "confirmed", "confirmation_id": 9, "receipt": "receipt-token"}
 
+    async def mint_confirmation_async(self, task):
+        return self.mint_confirmation(task)
+
+    async def confirm_async(self, token, task):
+        return self.confirm(token, task)
+
 
 @dataclass
 class _Runtime:
@@ -158,7 +164,12 @@ def client(monkeypatch):
     web.app.dependency_overrides[user_guard] = lambda: None
     web.app.dependency_overrides[admin_guard] = lambda: None
     runtime = _Runtime(_Adapter(_snapshot()), _Graph(), None, _Actuator())
-    monkeypatch.setattr(house_routes, "_get_runtime", lambda: runtime)
+
+    # The router's runtime accessor is async; handlers await it.
+    async def _runtime_override():
+        return runtime
+
+    monkeypatch.setattr(house_routes, "_get_runtime", _runtime_override)
     try:
         yield TestClient(web.app), runtime
     finally:
@@ -489,3 +500,47 @@ def test_confirmation_is_honestly_unavailable_without_queue_or_secret_store(clie
         "status": "unavailable",
         "reason": "strong_confirmation_unavailable",
     }
+
+
+def test_runtime_wires_worker_kernel_gate_as_the_house_intake_authorizer(monkeypatch):
+    captured = {}
+
+    class _EnabledAdapter:
+        config = SimpleNamespace(enabled=True, ha_enabled=True)
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class _Actuator:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    def intake_authorizer(_action):
+        return None
+
+    def enqueue(*_args, **_kwargs):
+        return 1
+
+    worker = SimpleNamespace(
+        govern_enqueue=enqueue,
+        kernel_gate=intake_authorizer,
+    )
+    orch = SimpleNamespace(
+        autonomy=worker,
+        autonomy_queue=None,
+        memory=None,
+        secret_broker=None,
+        task_executor=None,
+        get_setting=lambda key, _default=None: {
+            "house.enabled": True,
+            "house.ha_enabled": True,
+        }.get(key),
+    )
+
+    monkeypatch.setattr(house_routes, "HomeAssistantAdapter", _EnabledAdapter)
+    monkeypatch.setattr(house_routes, "HouseActuator", _Actuator)
+
+    house_routes._build_runtime(orch)
+
+    assert captured["intake_authorizer"] is intake_authorizer
+    assert captured["enqueue"] is worker.govern_enqueue

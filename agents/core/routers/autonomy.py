@@ -242,7 +242,28 @@ async def autonomy_brief(kind: str = "morning"):
                 memory_entries.extend(entries)
         except Exception:
             memory_entries = []
-        text = build_morning_brief(orch.autonomy_queue, memory_entries=memory_entries)
+        runtime_health = None
+        try:
+            from agents.core.observability.runtime_log import (
+                default_log_path,
+                read_runtime_health,
+            )
+            runtime_health = read_runtime_health(default_log_path())
+        except Exception:
+            runtime_health = None
+        try:
+            # T-0.41: same sidecar read the scheduled brief performs, so a
+            # manually-triggered brief isn't a different, poorer document.
+            from agents.core.scheduler_service import _signal_briefs_or_none
+            signal_briefs = await _signal_briefs_or_none(orch)
+        except Exception:
+            signal_briefs = None
+        text = build_morning_brief(
+            orch.autonomy_queue,
+            memory_entries=memory_entries,
+            runtime_health=runtime_health,
+            signal_briefs=signal_briefs,
+        )
     return nocache_json({"kind": kind, "text": text})
 
 

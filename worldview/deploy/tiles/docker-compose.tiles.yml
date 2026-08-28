@@ -11,7 +11,7 @@
 #   tiles:     http://localhost:3002/adsb_positions/{z}/{x}/{y}
 #              http://localhost:3002/ais_positions/{z}/{x}/{y}
 #
-# Frontend wiring:  NEXT_PUBLIC_TILE_URL=http://localhost:3002/{table}/{z}/{x}/{y}
+# Frontend wiring:  VITE_TILE_URL=http://localhost:3002/{table}/{z}/{x}/{y}
 # (the {table} placeholder is filled per layer by the map client).
 
 services:
@@ -21,7 +21,13 @@ services:
     command: ["--config", "/config/martin-config.yaml"]
     environment:
       # Martin also reads DATABASE_URL; kept in sync with the config file.
-      DATABASE_URL: "postgresql://worldview:worldview@timescaledb:5432/worldview"
+      # AUD-4/F14: the DB link crosses the docker bridge (non-loopback) -> TLS
+      # required, not opportunistic. NOTE: deploy/tiles/martin-config.yaml
+      # connection_string takes precedence when both are set — it must gain
+      # ?sslmode=require too for this to be effective end-to-end (out of this
+      # change's file scope). Escape hatch: sslmode=prefer if the primary
+      # serves no TLS.
+      DATABASE_URL: "postgresql://worldview:worldview@timescaledb:5432/worldview?sslmode=require"
       RUST_LOG: info
     volumes:
       - ./deploy/tiles/martin-config.yaml:/config/martin-config.yaml:ro
@@ -35,6 +41,16 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    # AUD-4/F14 hardening: martin reads only its ro-mounted config and caches
+    # tiles in memory (cache_size_mb) -> read-only rootfs is safe, and it needs
+    # no writes anywhere, so run it as nobody (65534).
+    user: "65534:65534"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 # Standalone (attach to already-running infra) mode — uncomment, then run with

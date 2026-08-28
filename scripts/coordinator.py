@@ -80,9 +80,9 @@ async def _build_orchestrator():
 async def run() -> None:
     import os
 
-    from agents.core.observability.runtime_log import RuntimeRunLog
+    from agents.core.observability.runtime_log import RuntimeRunLog, default_log_path
 
-    log_path = Path(os.environ.get("JARVIS_RUNTIME_LOG", "logs/runtime.jsonl"))
+    log_path = default_log_path()
     state_path = Path(os.environ.get("JARVIS_RUNTIME_STATE", "logs/runtime_state.json"))
     cycle_seconds = _env_float("JARVIS_RUNTIME_CYCLE_SECONDS", 20.0, minimum=15.0)
 

@@ -37,3 +37,36 @@ jobs:
         env:
           JARVIS_TESTING: "1"
           JARVIS_REALITY_HARNESS: "1"
+
+  # WV-170 (GitHub issue #170) — Neo4jGraph.search()'s property-scanning Cypher
+  # (H19.3.5) had only ever been exercised against httpx mocks or an
+  # unreachable port; this validates it against a real Neo4j, same
+  # never-blocks-a-PR boundary as the `reality` job above.
+  neo4j-live:
+    runs-on: ubuntu-latest
+    services:
+      neo4j:
+        image: neo4j:5
+        env:
+          NEO4J_AUTH: none
+        ports:
+          - 7474:7474
+          - 7687:7687
+        options: >-
+          --health-cmd "wget -q -O- http://localhost:7474 || exit 1"
+          --health-interval 10s --health-timeout 5s --health-retries 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-beta.lock
+      - run: pip install --require-hashes -r requirements-beta.lock
+      - run: pip install --require-hashes -r requirements-dev.lock
+      - name: Neo4j live property-search (WV-170)
+        run: python -m pytest tests/test_neo4j_live_property_search.py -v --timeout=60 --tb=short
+        env:
+          JARVIS_TESTING: "1"
+          JARVIS_NEO4J_LIVE: "1"
+          NEO4J_URL: "http://localhost:7474"

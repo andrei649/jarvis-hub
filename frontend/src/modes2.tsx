@@ -232,6 +232,12 @@ function NorthStarMeter(){
 function _obs(v: any, suffix = ''){ return (v === null || v === undefined) ? '—' : `${v}${suffix}`; }
 function _pct(v: any){ return (v === null || v === undefined) ? '—' : `${Math.round(v * 100)}%`; }
 
+// List-shaped sections (traces/arena/by_agent) start each live cycle empty; a
+// silent endpoint renders this, never the demo corpus rows.
+function ObsEmpty({ what }: { what?: string }){
+  return <div style={{ fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'.08em', color:'var(--ink-3)', padding:'3px 0' }}>not connected{what ? ` · ${what}` : ''}</div>;
+}
+
 function ObserveMode({ t }){
   const O = V2.OBSERVE;
   const maxLat = O.by_agent.length ? Math.max(...O.by_agent.map(a=>a.v)) : 0;
@@ -248,7 +254,7 @@ function ObserveMode({ t }){
       <div className="obs-grid">
         <div>
           <SubH>RECENT TRACES</SubH>
-          {O.traces.map((tr,i)=>(
+          {O.traces.length ? O.traces.map((tr,i)=>(
             <div className="trace-row" key={i}>
               <div className="tr-top"><span className="tr-id">{tr.id}</span><span className="tr-q">{tr.query}</span><span className={'tr-status '+tr.status}>{tr.status}</span><span className="tr-tot">{tr.total}ms</span></div>
               <div className="tr-bar">
@@ -256,23 +262,23 @@ function ObserveMode({ t }){
               </div>
               <div className="tr-agents">{tr.agents.map(a=><span key={a} className="topic-pill"><Gl id={a} size={10}/>{a}</span>)}</div>
             </div>
-          ))}
+          )) : <ObsEmpty what="no traces yet"/>}
           <SubH style={{marginTop:16}}>MODEL ARENA</SubH>
-          {O.arena.map((m,i)=>(
+          {O.arena.length ? O.arena.map((m,i)=>(
             <div className={'arena-row'+(m.pick?' pick':'')} key={i}>
               <span className="arn">{m.model}{m.pick&&<span className="arpick">DEFAULT</span>}</span>
               <span className="arw">{m.wins}% wins</span><span className="arl">{m.latency}</span><span className="arc">{m.cost}</span>
             </div>
-          ))}
+          )) : <ObsEmpty what="no arena runs"/>}
         </div>
         <div>
           <SubH>LATENCY BY AGENT</SubH>
-          {O.by_agent.map((a,i)=>(
+          {O.by_agent.length ? O.by_agent.map((a,i)=>(
             <div className="meter" key={i}>
               <div className="ml"><span style={{display:'flex',gap:6,alignItems:'center'}}><Gl id={a.id} size={11}/>{a.id}</span><span>{a.v}s</span></div>
               <div className="mt"><div className="mf" style={{width:(a.v/maxLat*100)+'%'}}></div></div>
             </div>
-          ))}
+          )) : <ObsEmpty what="no agent stats"/>}
           <SubH style={{marginTop:16}}>RESILIENCE</SubH>
           <div className="cap-row"><div className="cn">Network guard</div><span className="cap-tag allow">{_obs(O.resilience.ssrf_blocked)}</span></div>
           <div className="cap-row"><div className="cn">Errors · 24h</div><span className="cap-tag allow">{_obs(O.resilience.errors_24h)}</span></div>

@@ -277,3 +277,62 @@ def test_trust_status_env_reads_use_shared_env_flag():
     assert "_env_truthy = truthy" not in src
     assert 'env_flag("JARVIS_MIC_MUTED")' in src
     assert 'env_flag("JARVIS_STRICT_LOCAL")' in src
+
+
+# ── layer 3: the COUNT ratchet (AUD-14) ──────────────────────────────────────
+#
+# The boolean guard above is context-free and permanent. Plain *string* env
+# reads are a different problem: each one is individually harmless
+# (`os.environ.get(X, "")` is exactly `env_str(X)`), so AUD-14 scoped them as
+# "cosmetic — migrate opportunistically, don't sweep". The trouble with a
+# never-swept backlog item is that it silently runs backwards: a 2026-08-28
+# recount found the count had grown from the ~104 recorded in the handoff to
+# **145**, because nothing stopped new raw reads landing.
+#
+# This is that stop. It does not demand a sweep — it caps the count at what the
+# tree currently carries. Migrating lowers the cap; adding a raw read fails
+# here until the author either uses an env_config helper or consciously raises
+# the number, which is exactly the "conscious decision" the snapshot gates in
+# this repo exist to force.
+
+_RAW_ENV_READ = re.compile(r"os\.getenv\(|os\.environ\.get\(|os\.environ\[")
+
+# Lower this when you migrate reads. Raising it should be a deliberate,
+# explained choice in the PR — not a reflex to get CI green.
+MAX_RAW_ENV_READS = 117
+
+
+def _raw_env_read_sites():
+    sites = []
+    for path in _runtime_py_files():
+        rel = path.relative_to(repo_root).as_posix()
+        if rel in _EXEMPT:
+            continue
+        for n, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if _RAW_ENV_READ.search(line):
+                sites.append(f"{rel}:{n}")
+    return sites
+
+
+def test_raw_env_reads_do_not_grow():
+    """AUD-14 ratchet: the raw-env-read count may fall, never rise."""
+    sites = _raw_env_read_sites()
+    assert len(sites) <= MAX_RAW_ENV_READS, (
+        f"raw env reads rose to {len(sites)} (cap {MAX_RAW_ENV_READS}). Use an "
+        "env_config helper (env_str/env_flag/env_int/env_float/env_list/"
+        "env_json_object/env_int_map) instead of os.environ/os.getenv, or raise "
+        "MAX_RAW_ENV_READS deliberately and say why.\nNewest sites:\n  "
+        + "\n  ".join(sites[-10:])
+    )
+
+
+def test_the_ratchet_cap_is_not_left_slack():
+    """A cap far above reality would silently permit regrowth, so keep it tight.
+
+    If this fails after a migration, lower MAX_RAW_ENV_READS to the new count —
+    that is the ratchet doing its job, not a nuisance."""
+    actual = len(_raw_env_read_sites())
+    assert MAX_RAW_ENV_READS - actual <= 5, (
+        f"MAX_RAW_ENV_READS is {MAX_RAW_ENV_READS} but only {actual} reads exist — "
+        "lower the cap so it keeps ratcheting."
+    )

@@ -92,6 +92,43 @@ def test_supervisor_respawns_a_child_that_exits_and_logs_it(tmp_path, monkeypatc
         assert kinds[-1] == "stopped"
 
 
+def test_supervisor_backs_off_growing_delay_on_repeated_crashes(tmp_path):
+    """A hot crash loop must not respawn at a constant fast interval forever: the
+    delay between respawns must grow while the child keeps exiting immediately,
+    so a persistently broken coordinator doesn't spin at 100% CPU / flood the
+    run-log. BACKOFF_RESET_SECONDS is far longer than this whole test, so the
+    fast-exiting fake child here never qualifies for a reset mid-run.
+    """
+    fake_child = _write_fake_child(tmp_path, sleep_seconds=0.02)
+    log_path = _run_log(tmp_path)
+    env = dict(os.environ)
+    env["JARVIS_RUNTIME_LOG"] = str(log_path)
+    env["JARVIS_RUNTIME_RESPAWN_DELAY"] = "0.15"
+
+    supervisor_src = (_REPO_ROOT / "scripts" / "runtime_supervisor.py").read_text(encoding="utf-8")
+    patched = supervisor_src.replace(
+        '_COORDINATOR = str(_REPO_ROOT / "scripts" / "coordinator.py")',
+        f"_COORDINATOR = {str(fake_child)!r}",
+    )
+    supervisor_script = tmp_path / "runtime_supervisor.py"
+    supervisor_script.write_text(patched, encoding="utf-8")
+
+    proc = subprocess.Popen([sys.executable, str(supervisor_script)], env=env)
+    try:
+        assert _wait_for(lambda: len(_read_events(log_path)) >= 9, timeout=20.0)
+    finally:
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=10)
+
+    respawn_times = [e["at"] for e in _read_events(log_path) if e["supervisor_event"] == "respawned"]
+    assert len(respawn_times) >= 4
+    first_gap = respawn_times[1] - respawn_times[0]
+    later_gap = respawn_times[-1] - respawn_times[-2]
+    assert later_gap > first_gap * 1.5, (
+        f"respawn delay did not grow: first_gap={first_gap!r} later_gap={later_gap!r}"
+    )
+
+
 def test_supervisor_recovers_a_sigkilled_child_within_seconds(tmp_path):
     fake_child = _write_fake_child(tmp_path, sleep_seconds=30.0)
     log_path = _run_log(tmp_path)

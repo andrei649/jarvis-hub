@@ -1,7 +1,7 @@
 /* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
    honest placeholder and get ported from the prototype in the next phase. */
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { V2 } from './data';
+import { V2, restoreDemoCorpora } from './data';
 import { localityFigure } from './locality';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
@@ -144,9 +144,13 @@ function App() {
   useEffect(() => { try { localStorage.setItem('hud.dotgrid', dotgrid); } catch { /* ignore */ } }, [dotgrid]);
   useEffect(() => { try { localStorage.setItem('hud.voice', JSON.stringify(voiceCfg)); } catch { /* ignore */ } }, [voiceCfg]);
   // Re-seed (or clear) the demo-only cockpit corpus when DEMO toggles at runtime.
+  // Demo ON also restores the pristine ADMIN/OBSERVE fiction — the live cycles in
+  // useLiveModes strip and refill those corpora in place, and demo must keep its
+  // labelled complete picture even while the poller runs.
   useEffect(() => {
     setDecisions(demo ? V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })) : []);
     setMessages(demo ? V2.SEED_MESSAGES : []);
+    if (demo) restoreDemoCorpora();
   }, [demo]);
 
   // Rehydrate the visible transcript from server-persisted memory on load, so a
@@ -244,6 +248,9 @@ function App() {
   // /api/cognition snapshot for the trace + provenance. Falls back to runMock offline.
   // P2 — real streaming turn. Resolves with the FINAL reply text so the voice loop can
   // speak it. On /chat/stream failure: honest system notice (or the DEMO staged mock).
+  // H5.16: runTurn is defined before useVoice (which takes runTurn as onTurn), so
+  // the token->TTS forward goes through a ref, assigned right after the hook runs.
+  const voiceRef = useRef(null);
   const runTurn = useCallback((text) => new Promise((resolve) => {
     // TASK-4 P1 — double-submit guard: `thinking` is non-null for the whole
     // duration of an in-flight /chat/stream turn (cleared on end/abort/error).
@@ -267,6 +274,10 @@ function App() {
         setMessages((m) => { idx = m.length; return [...m, { role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: '' }]; });
       } else if (evt.type === 'token') {
         streamed += evt.text || '';
+        // H5.16: forward the delta to the voice loop's streaming-speak session so
+        // sentence #1 is synthesized while the model is still writing sentence #2.
+        // No-op unless a voice turn opened a session (typed turns stay silent).
+        try { voiceRef.current && voiceRef.current.pushSpeakDelta(evt.text || ''); } catch { /* never break the stream over TTS */ }
         setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: streamed }; return c; });
       } else if (evt.type === 'end') {
         const finalText = evt.text || streamed;
@@ -304,6 +315,7 @@ function App() {
   const submit = useCallback((text) => { runTurn(text); }, [runTurn]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
   const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: runTurn });
+  voiceRef.current = voice;
 
   // Leaving DEMO is a provenance boundary, not just a URL toggle. Clear every
   // demo-owned surface in the same event before the banner disappears; the
