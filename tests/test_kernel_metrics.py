@@ -44,9 +44,32 @@ def test_reset_and_unknown_verdict():
     m.record("x", "weird")               # unknown verdict is ignored
     assert m.snapshot()["total"] == 1
     m.reset()
-    assert m.snapshot() == {"total": 0, "by_verdict": {"grant": 0, "deny": 0, "queue": 0},
-                            "by_kind": {}, "ungoverned_by_kind": {}, "deny_rate": 0.0,
-                            "recent_denials": []}
+    snap = m.snapshot()
+    enabled = snap.pop("enabled")
+    assert isinstance(enabled, bool)
+    assert snap == {"total": 0, "by_verdict": {"grant": 0, "deny": 0, "queue": 0},
+                     "by_kind": {}, "ungoverned_by_kind": {}, "ungoverned_actions": 0,
+                     "deny_rate": 0.0, "recent_denials": []}
+
+
+# ── A8-iv: the live ungoverned-actions meter must be interpretable ──────────────
+def test_snapshot_reports_enabled_so_a_zero_is_interpretable(monkeypatch):
+    """`ungoverned_actions == 0` proves nothing if the kernel was never mediating
+    anything to begin with (docs/superpowers/plans/2026-08-02-qa4-ungoverned-counter-park.md)."""
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    assert KernelMetrics().snapshot()["enabled"] is False
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    assert KernelMetrics().snapshot()["enabled"] is True
+
+
+def test_ungoverned_actions_is_the_live_total_across_kinds():
+    m = KernelMetrics()
+    m.record_ungoverned("draft_email")
+    m.record_ungoverned("draft_email")
+    m.record_ungoverned("channel.reply")
+    snap = m.snapshot()
+    assert snap["ungoverned_by_kind"] == {"channel.reply": 1, "draft_email": 2}
+    assert snap["ungoverned_actions"] == 3
 
 
 def test_denials_ring_is_bounded():
