@@ -1,0 +1,1365 @@
+{
+ "note": "Shared orbVisual contract vectors \u2014 asserted by BOTH frontend vitest and mobile jest so the two implementations cannot silently diverge (H18.24).",
+ "cases": [
+  {
+   "input": {
+    "status": "off",
+    "level": 0,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "off",
+    "level": 0,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "off",
+    "level": 0.025,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "off",
+    "level": 0.025,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "off",
+    "level": 0.125,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "off",
+    "level": 0.125,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "off",
+    "level": 0.25,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "off",
+    "level": 0.25,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "off",
+    "level": 0.5,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "off",
+    "level": 0.5,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "idle",
+    "level": 0,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "idle",
+    "color": "#7fd6ff",
+    "label": "standing by",
+    "energy": 0.14,
+    "energySource": "state",
+    "spin": 0.35,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "idle",
+    "level": 0,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "idle",
+    "color": "#7fd6ff",
+    "label": "standing by",
+    "energy": 0.14,
+    "energySource": "state",
+    "spin": 0.0875,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "idle",
+    "level": 0.025,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "idle",
+    "color": "#7fd6ff",
+    "label": "standing by",
+    "energy": 0.14,
+    "energySource": "state",
+    "spin": 0.35,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "idle",
+    "level": 0.025,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "idle",
+    "color": "#7fd6ff",
+    "label": "standing by",
+    "energy": 0.14,
+    "energySource": "state",
+    "spin": 0.0875,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "idle",
+    "level": 0.125,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "idle",
+    "color": "#7fd6ff",
+    "label": "standing by",
+    "energy": 0.14,
+    "energySource": "state",
+    "spin": 0.35,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "idle",
+    "level": 0.125,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "idle",
+    "color": "#7fd6ff",
+    "label": "standing by",
+    "energy": 0.14,
+    "energySource": "state",
+    "spin": 0.0875,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "idle",
+    "level": 0.25,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "idle",
+    "color": "#7fd6ff",
+    "label": "standing by",
+    "energy": 0.14,
+    "energySource": "state",
+    "spin": 0.35,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "idle",
+    "level": 0.25,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "idle",
+    "color": "#7fd6ff",
+    "label": "standing by",
+    "energy": 0.14,
+    "energySource": "state",
+    "spin": 0.0875,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "idle",
+    "level": 0.5,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "idle",
+    "color": "#7fd6ff",
+    "label": "standing by",
+    "energy": 0.14,
+    "energySource": "state",
+    "spin": 0.35,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "idle",
+    "level": 0.5,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "idle",
+    "color": "#7fd6ff",
+    "label": "standing by",
+    "energy": 0.14,
+    "energySource": "state",
+    "spin": 0.0875,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "listening",
+    "level": 0,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "listening",
+    "color": "#41f59b",
+    "label": "listening",
+    "energy": 0.16,
+    "energySource": "mic",
+    "spin": 0.85,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "listening",
+    "level": 0,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "listening",
+    "color": "#41f59b",
+    "label": "listening",
+    "energy": 0.16,
+    "energySource": "mic",
+    "spin": 0.2125,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "listening",
+    "level": 0.025,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "listening",
+    "color": "#41f59b",
+    "label": "listening",
+    "energy": 0.23199999999999998,
+    "energySource": "mic",
+    "spin": 0.85,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "listening",
+    "level": 0.025,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "listening",
+    "color": "#41f59b",
+    "label": "listening",
+    "energy": 0.23199999999999998,
+    "energySource": "mic",
+    "spin": 0.2125,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "listening",
+    "level": 0.125,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "listening",
+    "color": "#41f59b",
+    "label": "listening",
+    "energy": 0.52,
+    "energySource": "mic",
+    "spin": 0.85,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "listening",
+    "level": 0.125,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "listening",
+    "color": "#41f59b",
+    "label": "listening",
+    "energy": 0.52,
+    "energySource": "mic",
+    "spin": 0.2125,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "listening",
+    "level": 0.25,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "listening",
+    "color": "#41f59b",
+    "label": "listening",
+    "energy": 0.88,
+    "energySource": "mic",
+    "spin": 0.85,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "listening",
+    "level": 0.25,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "listening",
+    "color": "#41f59b",
+    "label": "listening",
+    "energy": 0.88,
+    "energySource": "mic",
+    "spin": 0.2125,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "listening",
+    "level": 0.5,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "listening",
+    "color": "#41f59b",
+    "label": "listening",
+    "energy": 0.88,
+    "energySource": "mic",
+    "spin": 0.85,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "listening",
+    "level": 0.5,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "listening",
+    "color": "#41f59b",
+    "label": "listening",
+    "energy": 0.88,
+    "energySource": "mic",
+    "spin": 0.2125,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "transcribing",
+    "level": 0,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "transcribing",
+    "color": "#ffc24d",
+    "label": "transcribing",
+    "energy": 0.34,
+    "energySource": "state",
+    "spin": 1.25,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "transcribing",
+    "level": 0,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "transcribing",
+    "color": "#ffc24d",
+    "label": "transcribing",
+    "energy": 0.34,
+    "energySource": "state",
+    "spin": 0.3125,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "transcribing",
+    "level": 0.025,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "transcribing",
+    "color": "#ffc24d",
+    "label": "transcribing",
+    "energy": 0.34,
+    "energySource": "state",
+    "spin": 1.25,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "transcribing",
+    "level": 0.025,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "transcribing",
+    "color": "#ffc24d",
+    "label": "transcribing",
+    "energy": 0.34,
+    "energySource": "state",
+    "spin": 0.3125,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "transcribing",
+    "level": 0.125,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "transcribing",
+    "color": "#ffc24d",
+    "label": "transcribing",
+    "energy": 0.34,
+    "energySource": "state",
+    "spin": 1.25,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "transcribing",
+    "level": 0.125,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "transcribing",
+    "color": "#ffc24d",
+    "label": "transcribing",
+    "energy": 0.34,
+    "energySource": "state",
+    "spin": 0.3125,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "transcribing",
+    "level": 0.25,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "transcribing",
+    "color": "#ffc24d",
+    "label": "transcribing",
+    "energy": 0.34,
+    "energySource": "state",
+    "spin": 1.25,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "transcribing",
+    "level": 0.25,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "transcribing",
+    "color": "#ffc24d",
+    "label": "transcribing",
+    "energy": 0.34,
+    "energySource": "state",
+    "spin": 0.3125,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "transcribing",
+    "level": 0.5,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "transcribing",
+    "color": "#ffc24d",
+    "label": "transcribing",
+    "energy": 0.34,
+    "energySource": "state",
+    "spin": 1.25,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "transcribing",
+    "level": 0.5,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "transcribing",
+    "color": "#ffc24d",
+    "label": "transcribing",
+    "energy": 0.34,
+    "energySource": "state",
+    "spin": 0.3125,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "speaking",
+    "level": 0,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "speaking",
+    "color": "#8fe0ff",
+    "label": "speaking",
+    "energy": 0.4,
+    "energySource": "state",
+    "spin": 1.05,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "speaking",
+    "level": 0,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "speaking",
+    "color": "#8fe0ff",
+    "label": "speaking",
+    "energy": 0.4,
+    "energySource": "state",
+    "spin": 0.2625,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "speaking",
+    "level": 0.025,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "speaking",
+    "color": "#8fe0ff",
+    "label": "speaking",
+    "energy": 0.4,
+    "energySource": "state",
+    "spin": 1.05,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "speaking",
+    "level": 0.025,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "speaking",
+    "color": "#8fe0ff",
+    "label": "speaking",
+    "energy": 0.4,
+    "energySource": "state",
+    "spin": 0.2625,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "speaking",
+    "level": 0.125,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "speaking",
+    "color": "#8fe0ff",
+    "label": "speaking",
+    "energy": 0.4,
+    "energySource": "state",
+    "spin": 1.05,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "speaking",
+    "level": 0.125,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "speaking",
+    "color": "#8fe0ff",
+    "label": "speaking",
+    "energy": 0.4,
+    "energySource": "state",
+    "spin": 0.2625,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "speaking",
+    "level": 0.25,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "speaking",
+    "color": "#8fe0ff",
+    "label": "speaking",
+    "energy": 0.4,
+    "energySource": "state",
+    "spin": 1.05,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "speaking",
+    "level": 0.25,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "speaking",
+    "color": "#8fe0ff",
+    "label": "speaking",
+    "energy": 0.4,
+    "energySource": "state",
+    "spin": 0.2625,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "speaking",
+    "level": 0.5,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "speaking",
+    "color": "#8fe0ff",
+    "label": "speaking",
+    "energy": 0.4,
+    "energySource": "state",
+    "spin": 1.05,
+    "linked": true,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "speaking",
+    "level": 0.5,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "speaking",
+    "color": "#8fe0ff",
+    "label": "speaking",
+    "energy": 0.4,
+    "energySource": "state",
+    "spin": 0.2625,
+    "linked": true,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "error",
+    "level": 0,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "error",
+    "color": "#ff5a52",
+    "label": "voice error",
+    "energy": 0.05,
+    "energySource": "state",
+    "spin": 0.14,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "error",
+    "level": 0,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "error",
+    "color": "#ff5a52",
+    "label": "voice error",
+    "energy": 0.05,
+    "energySource": "state",
+    "spin": 0.035,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "error",
+    "level": 0.025,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "error",
+    "color": "#ff5a52",
+    "label": "voice error",
+    "energy": 0.05,
+    "energySource": "state",
+    "spin": 0.14,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "error",
+    "level": 0.025,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "error",
+    "color": "#ff5a52",
+    "label": "voice error",
+    "energy": 0.05,
+    "energySource": "state",
+    "spin": 0.035,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "error",
+    "level": 0.125,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "error",
+    "color": "#ff5a52",
+    "label": "voice error",
+    "energy": 0.05,
+    "energySource": "state",
+    "spin": 0.14,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "error",
+    "level": 0.125,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "error",
+    "color": "#ff5a52",
+    "label": "voice error",
+    "energy": 0.05,
+    "energySource": "state",
+    "spin": 0.035,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "error",
+    "level": 0.25,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "error",
+    "color": "#ff5a52",
+    "label": "voice error",
+    "energy": 0.05,
+    "energySource": "state",
+    "spin": 0.14,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "error",
+    "level": 0.25,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "error",
+    "color": "#ff5a52",
+    "label": "voice error",
+    "energy": 0.05,
+    "energySource": "state",
+    "spin": 0.035,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "error",
+    "level": 0.5,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "error",
+    "color": "#ff5a52",
+    "label": "voice error",
+    "energy": 0.05,
+    "energySource": "state",
+    "spin": 0.14,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "error",
+    "level": 0.5,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "error",
+    "color": "#ff5a52",
+    "label": "voice error",
+    "energy": 0.05,
+    "energySource": "state",
+    "spin": 0.035,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "bogus",
+    "level": 0,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "bogus",
+    "level": 0,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "bogus",
+    "level": 0.025,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "bogus",
+    "level": 0.025,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "bogus",
+    "level": 0.125,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "bogus",
+    "level": 0.125,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "bogus",
+    "level": 0.25,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "bogus",
+    "level": 0.25,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": "bogus",
+    "level": 0.5,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": "bogus",
+    "level": 0.5,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": null,
+    "level": 0,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": null,
+    "level": 0,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": null,
+    "level": 0.025,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": null,
+    "level": 0.025,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": null,
+    "level": 0.125,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": null,
+    "level": 0.125,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": null,
+    "level": 0.25,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": null,
+    "level": 0.25,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  },
+  {
+   "input": {
+    "status": null,
+    "level": 0.5,
+    "motion": "lively"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.1,
+    "linked": false,
+    "calm": false
+   }
+  },
+  {
+   "input": {
+    "status": null,
+    "level": 0.5,
+    "motion": "calm"
+   },
+   "expected": {
+    "status": "off",
+    "color": "#5fa8d8",
+    "label": "voice off",
+    "energy": 0.06,
+    "energySource": "state",
+    "spin": 0.025,
+    "linked": false,
+    "calm": true
+   }
+  }
+ ]
+}
