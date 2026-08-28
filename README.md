@@ -97,7 +97,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **7,089** · frontend **627** · mobile **103**. Route surface: **421**.
+Generated test matrix: backend **7,089** · frontend **627** · mobile **103**. Route surface: **424**.
 <!-- project-status:run:end -->
 
 ### Windows 11 — one-click (no terminal needed)
@@ -156,7 +156,7 @@ Your data is never touched unless you also pass `--purge-data`.
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v0.11.0** · backend **7,089** · frontend **627** · mobile **103** · **421** routes · **18** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · source commit `a5916fd6b96d`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v0.11.0** · backend **7,089** · frontend **627** · mobile **103** · **424** routes · **18** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · source commit `cf1136f4ddb3`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v0.11.0 — feature-complete + refactor done, building toward the expanded 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); **1.0 = the proof track** — productionization + real design-partner users — **plus the AI-OS capability program**, [`NERVA_VISION.md`](NERVA_VISION.md)). 18 specialist agents (incl. **Argus** for WorldView geoint, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +

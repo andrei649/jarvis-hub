@@ -57,6 +57,7 @@ RULES = [
     ("/api/packs", "interop"),          # T-0.58 typed Pack Manager inventory
     ("/api/design-manifest", "observe"),
     ("/api/widget/", "interop"),  # embeddable widget runtime (managed under Interop)
+    ("/api/ops/estop", "admin"),  # global emergency stop (hermes v2026.8.27 port) — owner control
     # cockpit / conversation
     ("/chat", "cockpit"),
     ("/api/status", "cockpit"),
@@ -477,6 +478,9 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/memory/eval/run",
     "/api/memory/remember",
     "/api/metrics/capabilities",
+    "/api/ops/estop",
+    "/api/ops/estop/engage",
+    "/api/ops/estop/resume",
     "/api/osint/brief",
     "/api/osint/correlate",
     "/api/payments/mandates",
