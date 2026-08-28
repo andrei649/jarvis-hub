@@ -2804,6 +2804,64 @@ export function DesignManifestPanel() {
   );
 }
 
+/* T-0.50 — publish readiness for a finished asset (POST /api/creative/publish/*,
+   user-guarded). This surface NEVER publishes: it shows the automatic checks and
+   the manual confirmations an owner must tick, and the release payload stays
+   withheld until all of them pass. The terminal upload is owner-gated
+   (per-platform OAuth) and stays approval-held — the panel says so. */
+export function PublishReadinessPanel() {
+  const [platform, setPlatform] = useState('youtube');
+  const [meta, setMeta] = useState('{\n  "title": "",\n  "description": "",\n  "thumbnail": ""\n}');
+  const [confirm, setConfirm] = useState({ disclosure: false, rights: false, preview: false });
+  const [out, setOut] = useState(null);
+  const run = (path) => {
+    let parsed = null;
+    try { parsed = JSON.parse(meta); } catch { setOut({ error: 'metadata is not valid JSON' }); return; }
+    act(path, { platform, meta: parsed, confirmations: confirm }, setOut);
+  };
+  const toggle = (k) => setConfirm((c) => ({ ...c, [k]: !c[k] }));
+  const checks = arr(out, 'checklist');
+  return (
+    <Card title="PUBLISH READINESS" live={'live'}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+        {['youtube', 'instagram', 'readme'].map((p) => (
+          <button key={p} className="tool-btn" style={{ opacity: platform === p ? 1 : 0.5 }} onClick={() => setPlatform(p)}>{p}</button>
+        ))}
+      </div>
+      <textarea value={meta} onChange={(ev) => setMeta(ev.target.value)} placeholder="metadata JSON" style={{ ...taS, minHeight: 70 }} />
+      <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+        {['disclosure', 'rights', 'preview'].map((k) => (
+          <label key={k} style={{ ...mono, fontSize: 10.5, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input type="checkbox" checked={confirm[k]} onChange={() => toggle(k)} />{k}
+          </label>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        <button className="tool-btn" onClick={() => run('/api/creative/publish/checklist')}>check</button>
+        <button className="tool-btn" onClick={() => run('/api/creative/publish/package')}>package</button>
+      </div>
+      {out && out.error && <div style={{ fontSize: 10.5, color: 'var(--amber)', marginTop: 6 }}>{out.error}</div>}
+      {checks.map((c, i) => (
+        <Row key={i}>
+          <span style={mono}>{c.id}</span>
+          <span style={{ marginLeft: 'auto', color: c.ok ? 'var(--green)' : 'var(--amber)' }}>{c.ok ? 'ok' : 'pending'}</span>
+        </Row>
+      ))}
+      {out && arr(out, 'violations').length > 0 && (
+        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>{arr(out, 'violations').join(' · ')}</div>
+      )}
+      {out && out.ready_for_approval != null && (
+        <div style={{ fontSize: 10.5, marginTop: 6, color: out.ready_for_approval ? 'var(--green)' : 'var(--ink-3)' }}>
+          {out.ready_for_approval
+            ? 'ready to REQUEST approval — still not published'
+            : 'not ready · release payload withheld'}
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>never uploads · publishing stays approval-held (owner-gated OAuth)</div>
+    </Card>
+  );
+}
+
 /* T-0.58 — the typed Pack Manager inventory (GET /api/packs, user-guarded).
    Unifies skill packs (marketplace) and knowledge packs (manifested drop
    folders) under one view, and shows unsupported types honestly rather than
@@ -3216,7 +3274,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, SwarmPanel]],
-  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, OperatorPanel]],
+  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],
 ];

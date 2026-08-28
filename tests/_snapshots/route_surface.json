@@ -285,6 +285,8 @@
   "POST /api/context/compress",
   "POST /api/creative/export-packs",
   "POST /api/creative/plan",
+  "POST /api/creative/publish/checklist",
+  "POST /api/creative/publish/package",
   "POST /api/desktop/preview",
   "POST /api/desktop/run",
   "POST /api/digest/run",

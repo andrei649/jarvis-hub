@@ -285,6 +285,8 @@
   "POST /api/context/compress": "context_compress_api_context_compress_post",
   "POST /api/creative/export-packs": "creative_export_packs_api_creative_export_packs_post",
   "POST /api/creative/plan": "creative_plan_api_creative_plan_post",
+  "POST /api/creative/publish/checklist": "creative_publish_checklist_api_creative_publish_checklist_post",
+  "POST /api/creative/publish/package": "creative_publish_package_api_creative_publish_package_post",
   "POST /api/desktop/preview": "desktop_preview_api_desktop_preview_post",
   "POST /api/desktop/run": "desktop_run_api_desktop_run_post",
   "POST /api/digest/run": "digest_run_api_digest_run_post",

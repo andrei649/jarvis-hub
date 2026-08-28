@@ -289,6 +289,8 @@
  "POST /api/context/compress": "user",
  "POST /api/creative/export-packs": "user",
  "POST /api/creative/plan": "user",
+ "POST /api/creative/publish/checklist": "user",
+ "POST /api/creative/publish/package": "user",
  "POST /api/desktop/preview": "user",
  "POST /api/desktop/run": "user",
  "POST /api/digest/run": "user",
