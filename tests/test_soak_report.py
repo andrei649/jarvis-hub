@@ -245,8 +245,91 @@ def test_sqlite_sizes_walks_data_dir(tmp_path):
     assert set(sizes["files"]) == {"a.db", "a.db-wal", str(Path("sub") / "b.sqlite")}
 
 
-def test_cli_requires_target_server_pid_for_honest_process_memory():
+def test_cli_pid_is_optional_and_gating_is_opt_in():
     parser = soak.build_parser()
-    with pytest.raises(SystemExit):
-        parser.parse_args([])
+    bare = parser.parse_args([])
+    # No --pid: the collector must not silently measure its own process. It records no
+    # RSS series at all, and evaluate() downgrades the leak check to INCONCLUSIVE.
+    assert bare.pid is None
+    assert bare.fail_on_verdict is False
     assert parser.parse_args(["--pid", "123"]).pid == 123
+    assert parser.parse_args(["--fail-on-verdict"]).fail_on_verdict is True
+
+
+def _clean_summary(**overrides):
+    """A summary that clears every A2 threshold; override one key to break one check."""
+    samples = [
+        _sample(uptime=i * 60, rss=100_000_000, db_total=1_000, wal=1_000, at=f"t{i}")
+        for i in range(20)
+    ]
+    summary = soak.summarize(samples)
+    summary.update(overrides)
+    return summary
+
+
+def test_evaluate_passes_a_clean_window():
+    verdict = soak.evaluate(_clean_summary())
+    assert verdict["verdict"] == soak.PASS
+    assert verdict["failed"] == []
+    assert verdict["inconclusive"] == []
+    # every check carries its own evidence line for the report
+    assert all(check["detail"] for check in verdict["checks"])
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_check"),
+    [
+        ({"availability": {"health_ok": 1, "ready_ok": 20}}, "availability_health"),
+        ({"availability": {"health_ok": 20, "ready_ok": 1}}, "availability_ready"),
+        ({"availability": {"health_ok": 20, "ready_ok": 20, "restarts_detected": 1}}, "restarts"),
+        ({"audit": {"failures": ["t3"], "last": {}}}, "audit_chain"),
+        ({"guardrails": {"samples_with_breaches": 1, "breach_counts": {"x": 1}}}, "guardrails"),
+        ({"circuit_breakers_non_closed": {"ollama": 2}}, "circuit_breakers"),
+        ({"memory": {"first_rss": 100, "growth_bytes": 90}}, "memory_growth"),
+        ({"database": {"wal_peak_bytes": 999 * 1024 * 1024}}, "wal_size"),
+    ],
+)
+def test_evaluate_fails_each_threshold_independently(overrides, expected_check):
+    verdict = soak.evaluate(_clean_summary(**overrides))
+    assert verdict["verdict"] == soak.FAIL
+    assert verdict["failed"] == [expected_check]
+
+
+def test_evaluate_never_passes_without_evidence():
+    # A missing RSS series is not a pass — it is an ungraded check.
+    verdict = soak.evaluate(_clean_summary(memory={}))
+    assert verdict["verdict"] == soak.INCONCLUSIVE
+    assert verdict["inconclusive"] == ["memory_growth"]
+    assert verdict["failed"] == []
+    # An empty summary is inconclusive on availability, not a silent pass.
+    assert soak.evaluate({"samples": 0}, complete=False)["verdict"] == soak.FAIL
+
+
+def test_evaluate_partial_window_is_inconclusive_not_pass():
+    verdict = soak.evaluate(_clean_summary(), complete=False)
+    assert verdict["verdict"] == soak.INCONCLUSIVE
+    assert "window_complete" in verdict["inconclusive"]
+
+
+def test_evaluate_reports_failure_before_missing_evidence():
+    verdict = soak.evaluate(_clean_summary(memory={}, circuit_breakers_non_closed={"x": 1}))
+    assert verdict["verdict"] == soak.FAIL
+
+
+def test_report_renders_the_verdict_block():
+    summary = _clean_summary()
+    report = soak.render_report(
+        summary,
+        generated_at="2026-08-28T00:00:00+00:00",
+        meta={"interval": 300, "duration": 259200, "base_url": "http://127.0.0.1:8080"},
+        verdict=soak.evaluate(summary),
+    )
+    assert "## Verdict — **PASS**" in report
+    assert "`audit_chain`" in report
+    assert "no owner sign-off step" in report
+
+
+def test_verdict_exit_codes_distinguish_fail_from_inconclusive():
+    assert soak._VERDICT_EXIT[soak.PASS] == 0
+    assert soak._VERDICT_EXIT[soak.FAIL] == 1
+    assert soak._VERDICT_EXIT[soak.INCONCLUSIVE] == 3

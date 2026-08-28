@@ -1,6 +1,27 @@
 # Changelog
 
 ## [Unreleased]
+
+## [1.0.0] — 2026-08-28
+
+The 1.0 line: every feature horizon (H1–H23 + WorldView O19) delivered, the productionization
+spine done, and the owner gates closed. Release-gate changes in this cut:
+
+- **A2 — the 72h soak grades itself.** `scripts/soak_report.py` gained `evaluate()`: the A2 bar is
+  now written down as thresholds (availability ≥99%, zero restarts, zero audit-verify failures
+  (AUD-0), zero guardrail breaches, no open circuit breaker, RSS growth ≤15%, WAL ≤64 MiB) instead
+  of applied by eye. `--fail-on-verdict` turns the verdict into an exit code — PASS 0, FAIL 1, and
+  **INCONCLUSIVE 3** for a window where some check had no evidence, so an ungraded soak can never
+  read as a pass. The verdict is rendered into the report and written alongside it as
+  `<day>-soak-verdict.json`.
+- `--pid` is now optional: without it the collector records **no** RSS series rather than
+  measuring its own process, and the leak check reports INCONCLUSIVE.
+- **`.github/workflows/soak.yml`** runs the window unattended — boots the server, samples, grades,
+  publishes the report to the run summary, uploads the evidence. A weekly canary on a hosted
+  runner; the full `72h` via `workflow_dispatch` with a self-hosted `runner` label.
+- Owner gates A4 (GitHub settings) and A7 (design partners) closed; A8's owner-host proof ran on
+  real hardware with good feedback. A6 (60s demo cut) stays open as GTM work, never a tag blocker.
+- `agents.__version__` `0.11.0` → `1.0.0`.
 ### Q10 — the public widget door is governed like the external input it is (2026-08-02)
 - **ch11 CHN-061**: `widget` no longer sits in `INTERNAL_TURN_CHANNELS`. The embed endpoint is
   tier `open` — an anonymous visitor on a third-party site — so its turns now classify
