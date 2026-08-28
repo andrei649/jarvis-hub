@@ -210,6 +210,11 @@ class AutonomyCoordinator:
         while True:
             interval = int(self._orch.get_setting("system.autonomy_tick", 60) or 60)
             await asyncio.sleep(max(15, interval))
+            # Global emergency stop: skip the whole self-tasking tick while the
+            # ESTOP sentinel exists (pause-new-work; in-flight work is not killed).
+            from agents.core import estop
+            if estop.check_paused("autonomy", logger):
+                continue
             amode = "unknown"
             max_tier = None
             try:

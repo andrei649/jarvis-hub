@@ -2879,6 +2879,29 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H20.R1 ✅ | **Agent Runtime v2 Wave 1 — LM Studio, default-OFF** — provider-neutral `ToolSpec`/`ToolCall`/`ToolTurn` protocol with source-compatible fallback; OpenAI-compatible LM Studio tool transport; Guardrails mediation; bounded model→ToolRPC→model loop over allow-listed `echo`/`time`, preserving trusted selected-agent identity plus contract, Action Kernel, approval and audit checks; JSON-only bounded results, iteration/fan-out limits and per-call/whole-loop deadlines; one shared `Agent.generate_response()` seam for normal and streamed turns; live `llm.tool_loop_enabled=false` and `llm.tool_loop_max_iterations=8` settings; regression and fake-LM-Studio reality-harness coverage. **Still open:** governed file/process tools; GovernedBrowser (Playwright) control and build launch/inspection specifically as a model-loop tool; multimedia/binary artifact tools; browser SSE rendering for tool lifecycle events; cloud-provider tool-call transports; model-directed MCP discovery/execution and subagent delegation. **Recounted 2026-08-28 against current code:** ORIZONT 28 did **not** close the browser-control gap this list names, but it did add a third registered `ToolRPCServer` tool since this row was written — `desktop_run` (`autonomy_coordinator.py`), a *gated* tool that lets the model-directed loop propose bounded click/type/launch desktop steps, durably approved and executed through the existing H28.4 `execute_desktop_steps`/`WindowsDesktopDriver` rail. That is OS-level desktop actuation, not the GovernedBrowser/Playwright driver this row's "browser control" item names — the two are separate H28 subsystems (H28.1 vs H28.4) and only the desktop one is reachable from the model loop today. Everything else in the "still open" list is confirmed still genuinely open (no `browser_run`/file/process/media tool is registered anywhere in `agents/core`, per a repo-wide `register_tool(` grep — the only production callers are `desktop_run`/`echo`/`time` plus H32's runtime capability-acquisition registrations). **This is the execution spine, not a Hermes-parity claim.** | 13 | P0 | H20.1, O26-P1.1 | Hermes tool loop + owner audit 2026-07-10 |
 
 
+### H20 upstream sync — hermes-agent v2026.8.27 (2026-08-28)
+
+> Refresh al liniei de import + porturi nete din delta v2026.8.3 → v2026.8.27 (6 release-uri rollup,
+> ~2.100 PR-uri upstream). Inventarul complet al deltei + deciziile ported/deferred/skipped:
+> [docs/research/2026-08-28-hermes-v2026.8.27-delta-port.md](docs/research/2026-08-28-hermes-v2026.8.27-delta-port.md).
+> Adaptare MIT cu atribuire (`LICENSES/hermes-agent-MIT.txt`); principiul „adoptăm sub guvernare" neschimbat.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H20.S1 ✅ | **Skill-pin bump v2026.8.3 → v2026.8.27** — `skills/hermes_pin_v1.json` regenerat pe release-ul nou (commit `5fc308a`, tree `222ec43`): **71 → 82 skill-uri** pinuite cu sha256 per fișier (nete noi: `merge-reconciler`, `email-inbox-triage`, `github-issue-to-pr`, `session-librarian`, `meeting-action-items`, `document-to-action-items`, `weekly-review-planning`, `competitor-news-monitor` ș.a.). Aceeași disciplină de supply-chain (allowlist exact, digest-verificat, fail-before-network). Evidence: `tests/test_hermes_import.py` (46 teste, constants resync). | 2 | P2 | BUG-13 | hermes v2026.8.27 release |
+| H20.S2 ✅ | **ESTOP — emergency stop global, resumabil** — `core/estop.py` (port `agent/estop.py`): sentinel `data/ESTOP`, pauzează DOAR munca autonomă nouă (heartbeat dispatch + tick-ul `AutonomyCoordinator.loop`), fail-safe (sentinel corupt/necitibil = tot pauzat), log once-per-engagement. **Rescoped vs upstream:** chat-ul owner-ului NU se pauzează (canalul de resume). Endpoints: user `GET /api/ops/estop`, admin `POST /api/ops/estop/{engage,resume}`. +8 teste (`test_estop.py`); HUD switch pe punch-list (`HUD_V2_REMAINING` §7). | 3 | P1 | — | hermes `agent/estop.py` |
+| H20.S3 ✅ | **Repetition guard pe output trunchiat** — `core/llm/repetition_guard.py` (port fidel `agent/repetition_guard.py`): detecție conservatoare de fragmente dominate de repetiție (fereastră 60+ chars, dominanță ≥50%) cablată în `base.py` `_finalize_stream`/`_finalize_lmstudio_message` — un model local în buclă degenerată la `finish=length` nu mai inundă canalul (incidentul upstream: 60k chars → 31 mesaje), răspunsul degradează curat la gol. +10 teste (`test_repetition_guard.py`). | 2 | P1 | — | hermes `agent/repetition_guard.py` |
+| H20.S4 ✅ | **Salvage la compresie crescută** — esența `salvage_grown_transcript` în `ContextCompressor.compress`: o „compresie" al cărei output ≥ inputul (summarizer logoreic pe puține ture scurte) nu mai înlocuiește originalul — se întorc turele netăiate. +2 teste (`test_context_compressor_salvage.py`). | 1 | P2 | H20.3 | hermes `agent/context_compressor.py` |
+
+> **Deferred (documentat, ne-portat acum):** empty-response guard (Nerva n-are buclă de retry pe
+> empty — fără seam); driftul upstream din `background_review` (+749 linii = plumbing de anulare a
+> fork-ului cu tool-uri — anti-teza redesign-ului nostru single-call); native/provider compaction +
+> prompt-cache boundary; `cron/monitor+incidents+notepad` (se suprapun `heartbeat.py`/`argus`);
+> loops/heartbeat CLI (există `/loop`-echivalente în autonomy). **Skip (anti-teză, neschimbat):**
+> desktop app Electron, gateway browser-control broker, ecosistemul de plugin packs, ACP/OpenAI
+> bridge, lățimea de provideri hosted. Detalii + căi de re-deschidere în research doc.
+
+
 ---
 
 ## ORIZONT 21 — Cognition: Living Memory & Human-Like Personality (P1–P3) — 10/10 ✅

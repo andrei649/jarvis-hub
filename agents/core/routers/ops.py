@@ -23,7 +23,7 @@ from fastapi.responses import PlainTextResponse
 
 from agents.core.app_state import get_orch
 from agents.core.observability.http_metrics import HTTP_METRICS, PROM_CONTENT_TYPE
-from agents.core.routers._deps import user_guard
+from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["ops"])
@@ -191,3 +191,35 @@ async def get_cognition():
             "state": "no-request-routed-yet" if orch is not None else "starting",
         })
     return nocache_json({**cog, "live": True, "state": "last-request"})
+
+
+# ── Global emergency stop (ESTOP) — pause NEW autonomous work, resumable ──
+
+@router.get("/api/ops/estop", dependencies=[Depends(user_guard)])
+async def estop_state():
+    """Current emergency-stop state (engaged flag + reason/engaged_at)."""
+    from agents.core import estop
+    state = estop.get_state()
+    return nocache_json({"engaged": state is not None, "state": state})
+
+
+@router.post("/api/ops/estop/engage", dependencies=[Depends(admin_guard)])
+async def estop_engage(body: dict | None = None):
+    """Engage the emergency stop: heartbeats and autonomy ticks pause on the
+    very next check. Owner chat keeps working; in-flight work is not killed."""
+    from agents.core import estop
+    reason = None
+    if isinstance(body, dict):
+        raw = body.get("reason")
+        if isinstance(raw, str) and raw.strip():
+            reason = raw.strip()[:500]
+    estop.engage(reason)
+    return nocache_json({"engaged": True, "state": estop.get_state()})
+
+
+@router.post("/api/ops/estop/resume", dependencies=[Depends(admin_guard)])
+async def estop_resume():
+    """Lift the emergency stop; autonomous dispatch resumes on the next tick."""
+    from agents.core import estop
+    lifted = estop.disengage()
+    return nocache_json({"engaged": estop.is_engaged(), "lifted": lifted})

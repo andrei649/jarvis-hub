@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 import httpx
 
+from .repetition_guard import is_repetition_dominated
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
 
 logger = logging.getLogger("jarvis.llm.base")
@@ -332,6 +333,16 @@ class LLMBackend(ABC):
         """
         answer = strip_thinking(emitted)
         if answer:
+            if finish == "length" and is_repetition_dominated(answer):
+                # Degenerate repetition loop spent the whole output budget
+                # echoing one fragment — delivering it floods the channel.
+                logger.warning(
+                    "Stream truncated at max_tokens with repetition-dominated "
+                    "output (model=%s); dropping the fragment instead of "
+                    "delivering the flood",
+                    model,
+                )
+                return ""
             return answer
         if finish == "length":
             # FP: "max_tokens" is a context-size note; only the model name is logged, no secret.
@@ -378,6 +389,14 @@ def _finalize_lmstudio_message(
     """Prefer visible content, then a cleanly finished reasoning-only answer."""
     answer = strip_thinking(message.get("content", "") or "")
     if answer:
+        if finish_reason == "length" and is_repetition_dominated(answer):
+            logger.warning(
+                "LM Studio truncated at max_tokens with repetition-dominated "
+                "output (model=%s); dropping the fragment instead of "
+                "delivering the flood",
+                model,
+            )
+            return ""
         return answer
     if finish_reason == "length":
         # FP: "max_tokens" is a context-size note; only the model name is logged, no secret.

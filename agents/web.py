@@ -525,6 +525,7 @@ _NO_STORE_PATHS = {
     "/api/cognition", "/api/oauth/status", "/api/oracle/status", "/api/oracle/conflicts",
     "/api/trust/status", "/api/media/session", "/api/media/devices",
     "/api/self-improvement/status", "/api/swarm/summary", "/api/presence/owner",
+    "/api/ops/estop",
 }
 
 
