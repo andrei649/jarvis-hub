@@ -44,7 +44,9 @@ _OPEN_QUEUE_STATES = {"proposed", "approved", "running", "blocked", "deferred"}
 
 Fetch = Callable[[str], tuple[int | None, Any]]
 
-PASS = "PASS"
+# B105 matches the substring "pass" in the identifier; these are soak verdict
+# labels printed in the report, not credentials.
+PASS = "PASS"  # nosec B105
 FAIL = "FAIL"
 INCONCLUSIVE = "INCONCLUSIVE"
 
