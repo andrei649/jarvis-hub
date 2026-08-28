@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from agents.core.env_config import env_flag, env_int, env_json_object, env_list
+from agents.core.cors_policy import normalize_cors_origins
 from agents.core.paths import data_path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -462,7 +463,20 @@ app = FastAPI(title="Jarvis", version=_APP_VERSION, lifespan=lifespan)
 # cross-origin reads, which is what we want. Set
 # JARVIS_CORS_ORIGINS=https://a.example,https://b.example to allow specific
 # origins (e.g. a site hosting an embedded widget). Empty = unchanged behaviour.
-_cors_origins = env_list("JARVIS_CORS_ORIGINS")
+# AUD-18/F30: the list is VALIDATED before it reaches the middleware. A browser
+# matches Origin exactly, so a malformed entry ("example.com", a trailing slash)
+# silently never matches — the operator reads the config as enabled while it does
+# nothing. Rejected entries are logged with the reason instead of being dropped
+# in silence, and CORS is only installed when something usable survives.
+_cors_configured = env_list("JARVIS_CORS_ORIGINS")
+_cors_origins, _cors_rejected = normalize_cors_origins(_cors_configured, allow_credentials=True)
+for _bad in _cors_rejected:
+    logger.warning("Ignoring JARVIS_CORS_ORIGINS entry %s — %s", _bad["value"], _bad["reason"])
+if _cors_configured and not _cors_origins:
+    logger.warning(
+        "JARVIS_CORS_ORIGINS was set but no entry was usable — CORS is NOT enabled. "
+        "Origins must look like https://host[:port] with no path or trailing slash."
+    )
 if _cors_origins:
     from fastapi.middleware.cors import CORSMiddleware
     app.add_middleware(
