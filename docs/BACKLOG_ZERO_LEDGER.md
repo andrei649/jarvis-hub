@@ -35,7 +35,7 @@
 |----|---------|--------|------|---------------|------------------------|
 | A1 | Handoff Fable — Lane A, line 1059 | OWNER-DECISION | XL | Real RTX hardware; chapter-15 ADV manual pass; is **the** 1.0 gate | OWNER-PACKET |
 | A8 | Handoff Fable — Lane A, line 1066 | OWNER-DECISION (hardware) | XL | Real HA install, Frigate hardware, media-output devices | OWNER-PACKET |
-| A8-iv | Handoff Fable — Lane A, line 1066 sub-item | AI-EXEC | M | Redesign per `docs/superpowers/plans/2026-08-02-qa4-ungoverned-counter-park.md`: persist kernel decision at `govern_enqueue`, read at worker seam | SHIPPED |
+| A8-iv | Handoff Fable — Lane A, line 1066 sub-item | AI-EXEC | M | Redesign per `docs/superpowers/plans/2026-08-02-qa4-ungoverned-counter-park.md`: persist kernel decision at `govern_enqueue`, read at worker seam | **CLOSED** — persisted-stamp redesign shipped in #946 (2026-08-26, pre-dates this ledger's generation but was missed by the initial sweep); the two still-missing snapshot fields (`enabled`, scalar `ungoverned_actions`) shipped this run (2026-08-28, `agents/core/kernel/metrics.py`) — see `BACKLOG.md` line 1066 and `docs/MAX_RUNS.md` |
 | H23.23 | H23 table, line 1316 | OWNER-DECISION | S | Blocks A2; decision already drafted at `docs/decisions/2026-07-11-single-user-1.0.md`, needs owner ratification only | OWNER-PACKET |
 | AUD-0 | Hardening audit, line 1965 | OWNER-DECISION | S | Same underlying ask as A2/H23.23 ("record AUD-0"); not separately actionable | OWNER-PACKET |
 | A2 | Handoff Fable — Lane A, line 1060 | OWNER-CONFIG (hardware/time) | L | H23.23 ratification; `scripts/soak_report.py` tooling already ✅ done | OWNER-PACKET |
@@ -74,7 +74,7 @@
 
 | id | section | bucket | size | dependencies | terminal-state target |
 |----|---------|--------|------|---------------|------------------------|
-| T-0.22 | Competitive-Gap, line 1199 | AI-EXEC | M | **Explicit next-pointer from `docs/MAX_RUNS.md` row 013** ("Finish 0.22's last item: uninstall"). No-telemetry gate + install/update all done; needs a provable **uninstall** path, mirroring the forget/export erasure invariant | SHIPPED |
+| T-0.22 | Competitive-Gap, line 1199 | AI-EXEC | M | **Explicit next-pointer from `docs/MAX_RUNS.md` row 013** ("Finish 0.22's last item: uninstall"). No-telemetry gate + install/update all done; needs a provable **uninstall** path, mirroring the forget/export erasure invariant | **CLOSED** — shipped in #971 (run 014, 2026-08-28) |
 | SEC-B6 | Governance-rails audit, line 770 | R3-REVIEW-GATED | S | Code landed via #896 with green CI, but zero independent review was ever submitted; needs a fresh exact-head R3 review only, no new code | SHIPPED (after review) |
 | K2-ENFORCEMENT | ORIZONT 24 Track K, line 1382 | R3-REVIEW-GATED | M | Per-action enforcement of already-issued capability tokens + fold WorldView HMAC tokens in as one kind; closes B1; touches kernel authority surface | SHIPPED (after R3 review) |
 | SEC-B4 | Governance-rails audit, line 723 | R3-REVIEW-GATED | M | SSRF IP-pinning for the Playwright path + central `PluginHTTPClient`; needs a live network/browser host to demonstrate (chapter 15 ADV-142) | SHIPPED (after R3 review) |
@@ -192,3 +192,14 @@ clusters are:
 
 Closing one member of a cluster should prompt closing the others in the same PR/decision, or the
 recount pass will keep re-surfacing them as separate open rows.
+
+## Recount log
+
+- **2026-08-28 (run 015):** re-verified the rows referenced by `docs/MAX_RUNS.md` row 014's
+  next-pointer against current `main` before picking new work. Two rows closed: **T-0.22**
+  (shipped in #971, already landed on `main` before this recount) and **A8-iv** (the persisted-
+  stamp redesign had already shipped in #946 — pre-dating this ledger's own generation timestamp,
+  so the initial Phase 0 sweep missed it by trusting `BACKLOG.md`'s stale prose over the code; this
+  run closed the remaining "sound and reusable" snapshot-field gap and corrected `BACKLOG.md`).
+  Lesson for future recounts: grep the code/tests for a row's own keywords (e.g. `govern_enqueue`,
+  `uninstall.py`) before trusting a BACKLOG.md status marker — prose can lag a merged PR.

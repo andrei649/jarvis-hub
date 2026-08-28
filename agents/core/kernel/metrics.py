@@ -20,6 +20,8 @@ if __name__ != "agents.core.kernel.metrics":
 import threading
 from collections import deque
 
+from .flags import kernel_enabled
+
 _VERDICTS = ("grant", "deny", "queue")
 _MAX_DENIALS = 200
 
@@ -57,14 +59,24 @@ class KernelMetrics:
             self._ungoverned_by_kind[kind] = self._ungoverned_by_kind.get(kind, 0) + 1
 
     def snapshot(self, recent: int = 50) -> dict:
-        """Per-kind + overall tallies, deny-rate, and the newest-first recent denials."""
+        """Per-kind + overall tallies, deny-rate, and the newest-first recent denials.
+
+        ``enabled`` + ``ungoverned_actions`` (A8-iv,
+        docs/superpowers/plans/2026-08-02-qa4-ungoverned-counter-park.md): a live
+        ``ungoverned_actions == 0`` proves nothing on its own — with the kernel off every
+        tally sits at zero regardless. ``enabled`` lets a reader tell "nothing ran" apart
+        from "the kernel was never mediating anything", and ``ungoverned_actions`` is the
+        single scalar the owner-host proof checks, not a dict a tester has to sum by hand.
+        """
         with self._lock:
             total = sum(self._totals.values())
             return {
+                "enabled": kernel_enabled(),
                 "total": total,
                 "by_verdict": dict(self._totals),
                 "by_kind": {k: dict(v) for k, v in sorted(self._by_kind.items())},
                 "ungoverned_by_kind": dict(sorted(self._ungoverned_by_kind.items())),
+                "ungoverned_actions": sum(self._ungoverned_by_kind.values()),
                 "deny_rate": round(self._totals["deny"] / total, 4) if total else 0.0,
                 "recent_denials": list(reversed(self._denials))[:max(0, recent)],
             }
