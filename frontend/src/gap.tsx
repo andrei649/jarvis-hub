@@ -292,6 +292,78 @@ function NotesPanel() {
   </Card>;
 }
 
+/* T-0.20 — the encrypted personal blob vault (GET/POST/DELETE /api/vault[/{id}],
+   user-guarded). Text is stored via the textarea; binary via the file picker.
+   Content is fetched only on an explicit "get" (never in the listing) and
+   downloaded client-side as a Blob — the list/put responses never carry
+   plaintext, mirroring the router's own no-leak contract. */
+export function VaultPanel() {
+  const { d, e, loading, reload } = useApi('/api/vault');
+  const items = arr(d, 'items');
+  const stats = (d && d.stats) || {};
+  const [name, setName] = useState('');
+  const [text, setText] = useState('');
+  const [file, setFile] = useState(null);
+  const [note, setNote] = useState('');
+
+  const putB64 = (dataB64, itemName, kind) => act('/api/vault', { name: itemName, kind, data_base64: dataB64 }, () => { setNote('stored'); reload(); });
+  const storeText = () => {
+    if (!text.trim()) return;
+    putB64(btoa(unescape(encodeURIComponent(text))), name || 'note', 'note');
+    setText(''); setName('');
+  };
+  const storeFile = () => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      putB64(result.slice(result.indexOf(',') + 1), file.name, 'file');
+      setFile(null);
+    };
+    reader.readAsDataURL(file);
+  };
+  const download = (id, itemName) => {
+    apiGet('/api/vault/' + encodeURIComponent(id)).then((r: any) => {
+      if (!r || !r.data_base64) { setNote('fetch failed'); return; }
+      const bin = atob(r.data_base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes]));
+      const a = document.createElement('a');
+      a.href = url; a.download = itemName || id;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }).catch(() => setNote('fetch failed'));
+  };
+  const del = (id) => apiDelete('/api/vault/' + encodeURIComponent(id)).then(reload).catch(() => {});
+
+  return (
+    <Card title="VAULT" live={asLive(d)} sub={d ? `${stats.items || 0} items · ${Math.round((stats.bytes || 0) / 1024)} KB` : null} onReload={reload}>
+      <State e={e} loading={loading} n={items.length} />
+      {items.slice(0, 10).map((it) => (
+        <Row key={it.id}>
+          <span style={{ color: 'var(--accent-light)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name || it.id}</span>
+          <Tag>{it.kind}</Tag>
+          <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{it.bytes}B</span>
+          <button className="tool-btn" onClick={() => download(it.id, it.name)}>get</button>
+          <button className="tool-btn" onClick={() => del(it.id)}>del</button>
+        </Row>
+      ))}
+      <textarea value={text} onChange={(ev) => setText(ev.target.value)} placeholder="text to encrypt and store…" style={{ ...taS, marginTop: 6, minHeight: 50 }} />
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="name" style={{ ...inpS, flex: 1 }} />
+        <button className="tool-btn" disabled={!text.trim()} onClick={storeText}>store text</button>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+        <input type="file" onChange={(ev) => setFile(ev.target.files && ev.target.files[0])} style={{ fontSize: 10, flex: 1 }} />
+        <button className="tool-btn" disabled={!file} onClick={storeFile}>store file</button>
+      </div>
+      {note && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>{note}</div>}
+      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>encrypted at rest · included in your own data export, erased on forget</div>
+    </Card>
+  );
+}
+
 function ReflectionPanel() {
   const { d, e, loading, reload } = useApi('/api/reflection/status');
   const [out, setOut] = useState(null);
@@ -3001,7 +3073,7 @@ export function FirstRunGate({ onClose }) {
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Start', [CommandCenterPanel]],
   ['Home', [AmbientWatchPanel, HousePanel, CameraPanel]],
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
+  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, VaultPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, SwarmPanel]],

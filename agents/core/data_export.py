@@ -166,6 +166,38 @@ def _dump_private_dir(path: Path) -> dict:
     return result
 
 
+def _dump_vault(src: Path) -> dict:
+    """Decrypt and embed every vault item (T-0.20).
+
+    The vault's on-disk `.blob` files are ciphertext by design — a raw copy of
+    the directory into a "readable, portable" export would just be unreadable
+    noise. This opens the SAME root the live app would (same key file) and
+    embeds each item's plaintext as base64 alongside its metadata. Read-only:
+    ``Vault.get``/``Vault.list`` never mutate the index or blobs.
+    """
+    vault_dir = src / "vault"
+    if not vault_dir.is_dir():
+        return {"available": False, "items": [], "skipped": []}
+    try:
+        from agents.core.vault import Vault, VaultError
+        vault = Vault(root=vault_dir)
+        entries = vault.list()
+    except Exception as exc:
+        logger.warning("could not open/list vault for export: %s", exc)
+        return {"available": False, "items": [], "skipped": [{"reason": "vault_unavailable"}]}
+    items: list[dict] = []
+    skipped: list[dict] = []
+    for entry in entries:
+        try:
+            data = vault.get(entry["id"])
+        except VaultError as exc:
+            logger.warning("could not decrypt vault item %s for export: %s", entry["id"], exc)
+            skipped.append({"id": entry["id"], "reason": "decrypt_failed"})
+            continue
+        items.append({**entry, "data_base64": base64.b64encode(data).decode("ascii")})
+    return {"available": True, "items": items, "skipped": skipped}
+
+
 def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None) -> dict:
     """Write a portable JSON export of the user-content DBs; return a manifest.
 
@@ -207,6 +239,8 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
         and not legacy_ingestion["detected"]
     )
 
+    vault_export = _dump_vault(src)
+
     doc = {
         "version": EXPORT_VERSION,
         "generated_at": _now_iso(),
@@ -215,6 +249,7 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
         "json_stores": json_stores,
         "private_ingestion": private_ingestion,
         "legacy_private_ingestion": legacy_ingestion,
+        "vault": vault_export,
     }
     # Filename is a server-generated timestamp only — no user value in the path.
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
@@ -231,6 +266,7 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
         "private_ingestion_complete": private_complete,
         "legacy_private_ingestion": legacy_ingestion,
         "row_counts": row_counts,
+        "vault_items": len(vault_export["items"]),
     }
 
 

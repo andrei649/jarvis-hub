@@ -1079,6 +1079,7 @@ from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
 from agents.core.routers.capture import router as _capture_router  # noqa: E402
 from agents.core.routers.data_spaces import router as _data_spaces_router  # noqa: E402
 from agents.core.routers.design_manifest import router as _design_manifest_router  # noqa: E402
+from agents.core.routers.vault import router as _vault_router  # noqa: E402
 from agents.core.routers.integrations import router as _integrations_router  # noqa: E402
 from agents.core.routers.memory_hud import router as _memory_hud_router  # noqa: E402
 from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
@@ -1152,6 +1153,7 @@ app.include_router(_skills_router)
 app.include_router(_status_router)
 app.include_router(_data_spaces_router)
 app.include_router(_design_manifest_router)
+app.include_router(_vault_router)
 app.include_router(_secrets_router)
 app.include_router(_mesh_router)
 app.include_router(_autonomy_router)
