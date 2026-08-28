@@ -2804,6 +2804,60 @@ export function DesignManifestPanel() {
   );
 }
 
+/* T-0.41 — the live World Signal feed routed per domain/agent
+   (GET /api/signals/routed, user-guarded). The routing layer classifies the
+   sidecar's signals into domains and slices them per subscribing agent; an
+   unclassifiable signal stays visible in `unrouted` rather than being
+   force-labeled. Honest when no sidecar is configured — says so, shows nothing. */
+export function SignalRoutingPanel() {
+  const { d, e, loading, reload } = useApi('/api/signals/routed');
+  const available = !!(d && d.available);
+  const counts = (d && d.counts) || {};
+  const byDomain = (available && d.by_domain) || {};
+  const byAgent = (available && d.by_agent) || {};
+  const signals = arr(d, 'signals');
+  return (
+    <Card title="WORLD SIGNALS" live={asLive(d, available)} sub={available ? `${counts.routed || 0}/${counts.signals || 0} routed` : (d ? 'no sidecar' : null)} onReload={reload}>
+      <State e={e} loading={loading} n={available ? signals.length : 0} />
+      {d && !available && (
+        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          signal layer unavailable{d.reason ? ` · ${d.reason}` : ''} — configure the sidecar to populate this feed
+        </div>
+      )}
+      {available && Object.keys(byDomain).length > 0 && (
+        <Row>
+          <span style={mono}>domains</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {Object.entries(byDomain).map(([dom, idx]) => <Tag key={dom}>{dom} {(idx as any[]).length}</Tag>)}
+          </span>
+        </Row>
+      )}
+      {available && Object.keys(byAgent).length > 0 && (
+        <Row>
+          <span style={mono}>agents</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {Object.entries(byAgent).map(([ag, idx]) => <Tag key={ag} c="var(--accent-light)">{ag} {(idx as any[]).length}</Tag>)}
+          </span>
+        </Row>
+      )}
+      {available && (d.unrouted || []).length > 0 && (
+        <Row>
+          <span style={mono}>unrouted</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--amber)' }}>
+            {d.unrouted.length} unclassified — shown, never guessed
+          </span>
+        </Row>
+      )}
+      {available && signals.slice(0, 6).map((s, i) => (
+        <Row key={i}>
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title || '—'}</span>
+          {s.severity != null && <Tag>sev {s.severity}</Tag>}
+        </Row>
+      ))}
+    </Card>
+  );
+}
+
 /* 0.39 — the curated market watchlist (GET/POST/DELETE /api/market/watchlist/saved,
    user-guarded). The owner curates a small {symbol, low, high, note} list once;
    routers/market.py's alert/brief evaluators run against it. Read/write, but pure
@@ -3075,7 +3129,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Home', [AmbientWatchPanel, HousePanel, CameraPanel]],
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, VaultPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
-  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
+  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, SignalRoutingPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, SwarmPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, OperatorPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
