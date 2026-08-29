@@ -62,6 +62,12 @@ jobs:
           # Subscription-backed OAuth token (generated with `claude setup-token`),
           # not a pay-as-you-go API key — the owner's Claude plan covers reviews.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Without an explicit github_token the action tries an OIDC exchange
+          # for a Claude GitHub App token, which needs `id-token: write` and the
+          # app installed — neither is granted here. The workflow token already
+          # carries exactly this job's permissions (contents: read,
+          # pull-requests: write), so hand it over directly.
+          github_token: ${{ github.token }}
           prompt: |
             Review this pull request with one focus: ${{ matrix.reviewer.focus }}
 
