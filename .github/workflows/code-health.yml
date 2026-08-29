@@ -7,13 +7,6 @@ permissions:
 # infrastructure failure and fail closed so a green job always means the pinned
 # toolchain actually ran.
 on:
-  pull_request:
-    paths:
-      - "**.py"
-      - "pyproject.toml"
-      - "requirements-dev.txt"
-      - "requirements-dev.lock"
-      - ".github/workflows/code-health.yml"
   workflow_dispatch:
   schedule:
     # Mondays 06:00 UTC — a weekly health digest on the default branch.

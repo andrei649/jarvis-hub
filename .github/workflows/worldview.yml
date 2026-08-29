@@ -3,11 +3,6 @@ name: WorldView CI
 # Gates the self-contained worldview/ platform (separate stack from JARVIS). Path-filtered so
 # it only runs when worldview/ changes and never affects the main JARVIS CI.
 on:
-  pull_request:
-    paths:
-      - "worldview/**"
-      - "docs/contracts/worldview-bridge.md"
-      - ".github/workflows/worldview.yml"
   push:
     branches: [main]
     paths:

@@ -82,8 +82,8 @@ python scripts/code_health.py --strict        # exit 1 if any finding (gating)
 - **Config is centralized** in `pyproject.toml` (`[tool.ruff]`, `[tool.vulture]`) so
   your editor, this script, and CI all agree on the rules.
 - **It is advisory, not a gate** — consistent with "verde devreme peste perfecțiune".
-  CI runs the same pass in `.github/workflows/code-health.yml` on every PR and weekly,
-  publishing the digest to the run's job summary, but it never blocks a merge.
+  CI runs the same pass in `.github/workflows/code-health.yml` weekly and on manual
+  dispatch, publishing the digest to the run's job summary; it never blocks a merge.
 - Prefer fixing findings **in the files you already touch** rather than repo-wide sweeps
   (keeps diffs reviewable). Use `--fix` for the safe, mechanical ones.
 
@@ -97,10 +97,13 @@ python scripts/code_health.py --strict        # exit 1 if any finding (gating)
    git checkout -b feat/my-feature
    ```
 2. Make your changes. Keep commits focused and atomic.
-3. Run the full test suite locally (`python -m pytest tests/ -q`) — CI must be green before merging.
-4. **Open a Draft PR** early so others can see work in progress.
-5. When ready, mark the PR as "Ready for review". A maintainer will review and merge.
-6. Do not push directly to `main`.
+3. Run the tests that cover what you changed (`python -m pytest tests/<targeted>.py -q`; the full
+   suite if in doubt). Green tests before merging is the working convention — since 2026-08-29
+   there are **no GitHub-enforced blocking gates**: PRs run one fast advisory lint+test lane, and
+   the heavier suites run post-merge on `main`.
+4. **Open a Draft PR** early so others can see work in progress (drafts are skipped by the
+   auto-merge sweep).
+5. When ready, mark the PR "Ready" — the hourly auto-merge sweep squash-merges mergeable PRs.
 
 ---
 

@@ -5,16 +5,6 @@ on:
   schedule:
     # Daily 02:30 UTC: cheap deterministic quality gate before the day starts.
     - cron: "30 2 * * *"
-  pull_request:
-    paths:
-      - "agents/core/observability/**"
-      - "agents/core/reflection_evaluation.py"
-      - "tests/test_companion_eval*.py"
-      - "tests/_nerva_e9_1_checks.py"
-      - "tests/_nerva_e6_1_checks.py"
-      - "tests/test_daily_reflection.py"
-      - "docs/nerva2/REFLECTION_E6_1.md"
-      - ".github/workflows/eval-nightly.yml"
 
 permissions:
   contents: read

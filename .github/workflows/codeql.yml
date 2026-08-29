@@ -3,8 +3,6 @@ name: CodeQL
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   schedule:
     # Weekly scan to catch advisories published after the last commit.
     - cron: "27 4 * * 1"

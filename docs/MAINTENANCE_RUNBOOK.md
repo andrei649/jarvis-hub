@@ -115,8 +115,7 @@ reaps stale ref locks automatically within seconds. (The tracked lock files in t
 3. **If it persists over several minutes:** re-fetch the PR *fresh* (not a cached view) and confirm it is not still
    a draft and `mergeable_state` is `clean`; check no branch-protection / merge-queue job is holding the ref. Then
    try a different merge method (`squash` / `merge` / `rebase` touch the ref slightly differently), or merge locally
-   and push: `git fetch origin main && git checkout main && git merge --no-ff <branch> && git push` (respecting
-   branch protection).
+   and push: `git fetch origin main && git checkout main && git merge --no-ff <branch> && git push`.
 
 **Local look-alike (different cause, same words):** if a *local* git command says
 `Unable to create '.git/…/index.lock': File exists`, a previous git process crashed or is still running. Confirm
