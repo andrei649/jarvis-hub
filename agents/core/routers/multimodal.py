@@ -14,7 +14,6 @@ rebinds are still observed. Guards resolve lazily via `_deps` — no static impo
 edge back into `agents.web`.
 """
 
-import os
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
@@ -36,24 +35,57 @@ class VLMDescribeBody(BaseModel):
 
 @router.get("/api/vlm/status", dependencies=[Depends(user_guard)])
 async def vlm_status():
-    """H13.1 — whether a local VLM endpoint is configured (host deployment)."""
-    return nocache_json({"configured": bool(os.environ.get("JARVIS_VLM_URL", "")),
-                         "default_model": os.environ.get("JARVIS_VLM_MODEL", "qwen2-vl")})
+    """H13.1 / GAP-9 — resolved VLM deployment truth, never a guess.
+
+    ``configured`` is config truth only; ``reachable`` is deliberately null
+    because this route does no network probe — claiming reachability without
+    measuring it is exactly the overclaim this surface used to make.
+    """
+    from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
+
+    try:
+        config = resolve_vlm_config()
+    except VLMNotConfigured as exc:
+        return nocache_json(
+            {
+                "configured": False,
+                "backend": "off",
+                "reason": exc.reason,
+                "default_model": None,
+                "reachable": None,
+            }
+        )
+    return nocache_json(
+        {
+            "configured": True,
+            "backend": config.backend,
+            "base_url": config.base_url,
+            "default_model": config.model,
+            "local": config.is_local,
+            "reachable": None,
+        }
+    )
 
 
 @router.post("/api/vlm/describe", dependencies=[Depends(user_guard)])
 async def vlm_describe(body: VLMDescribeBody):
-    """H13.1 — send image(s) + a prompt to the local VLM (screen/doc/receipt).
+    """H13.1 — send image(s) + a prompt to the configured VLM.
 
-    Requires JARVIS_VLM_URL to point at a local OpenAI-vision server (the model
-    + GGUF + GPU are the host deployment seam)."""
-    url = os.environ.get("JARVIS_VLM_URL", "")
-    if not url:
-        return JSONResponse({"error": "VLM not configured — set JARVIS_VLM_URL"}, status_code=503)
-    from agents.core.llm.vlm import VLMBackend
-    vlm = VLMBackend(base_url=url, api_key=os.environ.get("JARVIS_VLM_KEY", ""))
+    LM Studio (`JARVIS_VLM_BACKEND=lmstudio` + `JARVIS_VLM_MODEL`), vLLM and
+    llama.cpp (`JARVIS_VLM_BACKEND=custom` + `JARVIS_VLM_URL`) all serve the
+    same OpenAI-vision contract; the model + weights + GPU stay the host
+    deployment seam."""
+    from agents.core.llm.vlm import VLMBackend, VLMNotConfigured, resolve_vlm_config
+
     try:
-        model = body.model or os.environ.get("JARVIS_VLM_MODEL", "qwen2-vl")
+        config = resolve_vlm_config()
+    except VLMNotConfigured as exc:
+        return JSONResponse(
+            {"error": "VLM not configured", "reason": exc.reason}, status_code=503
+        )
+    vlm = VLMBackend(base_url=config.base_url, api_key=config.api_key)
+    try:
+        model = body.model or config.model
         # encode_image_block accepts only data:/http(s) image sources, never file
         # paths — request-supplied images can't read host files.
         out = await vlm.generate_vision(model, body.prompt, images=body.images)
