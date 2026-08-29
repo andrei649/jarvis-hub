@@ -7,6 +7,7 @@ import {
   getKillSwitch, setKillSwitch, installSkill, togglePlugin,
   getAgentSoul, getAgentHistory, memorySearch, kgEntities, playTts,
   decidePayment, reviewSkill, promoteBench,
+  getEstopStatus, engageEstop, resumeEstop,
 } from '../api/actions';
 
 function mockFetch(json: any = { ok: true }, opts: any = {}) {
@@ -128,6 +129,31 @@ describe('bench promotion', () => {
     expect(path).toBe('/learning/promote');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({ bench_agent: 'bruce' });
+  });
+});
+
+describe('estop wiring (Admin, hermes port)', () => {
+  it('GET reads /api/ops/estop', async () => {
+    const fn = mockFetch({ engaged: false, state: null });
+    await getEstopStatus();
+    const [path, init] = lastCall(fn);
+    expect(path).toBe('/api/ops/estop');
+    expect(init.method).toBe('GET');
+  });
+  it('POST engages with {reason} to /api/ops/estop/engage', async () => {
+    const fn = mockFetch({ engaged: true, state: { reason: 'drill', engaged_at: 't' } });
+    await engageEstop('drill');
+    const [path, init] = lastCall(fn);
+    expect(path).toBe('/api/ops/estop/engage');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ reason: 'drill' });
+  });
+  it('POST resumes via /api/ops/estop/resume', async () => {
+    const fn = mockFetch({ engaged: false, lifted: true });
+    await resumeEstop();
+    const [path, init] = lastCall(fn);
+    expect(path).toBe('/api/ops/estop/resume');
+    expect(init.method).toBe('POST');
   });
 });
 

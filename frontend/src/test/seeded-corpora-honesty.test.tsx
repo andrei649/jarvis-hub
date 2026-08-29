@@ -143,6 +143,9 @@ vi.mock('../api/actions', () => ({
   setAutonomyMode: vi.fn(),
   queueChannelReply: vi.fn(),
   togglePlugin: vi.fn(() => Promise.resolve({})),
+  getEstopStatus: vi.fn(() => Promise.resolve({ engaged: false, state: null })),
+  engageEstop: vi.fn(),
+  resumeEstop: vi.fn(),
 }));
 vi.mock('../world-intelligence', () => ({ WorldIntelligencePanel: () => null }));
 vi.mock('../gap', () => ({ RoomsPanel: () => null }));

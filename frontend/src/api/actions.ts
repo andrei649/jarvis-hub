@@ -147,6 +147,25 @@ export async function promoteBench(benchAgent: string): Promise<unknown> {
   return apiPost('/learning/promote', { bench_agent: benchAgent }, { admin: true });
 }
 
+export interface EstopState { engaged: boolean; state: { reason: string | null; engaged_at: string | null } | null }
+export interface EstopResumeResult { engaged: boolean; lifted: boolean }
+
+/* ── Admin · global emergency stop (modes3.tsx, hermes v2026.8.27 port) ──
+   GET  /api/ops/estop                → { engaged, state:{reason,engaged_at}|null }
+   POST /api/ops/estop/engage {reason?}  (admin) — pauses NEW autonomous work only
+   POST /api/ops/estop/resume            (admin) — lifts the pause
+   Distinct from the Trust kill-switch (/api/security/kill-switch): estop pauses
+   heartbeat/autonomy dispatch; it does not halt agents or owner chat. */
+export async function getEstopStatus(): Promise<EstopState> {
+  return apiGet<EstopState>('/api/ops/estop');
+}
+export async function engageEstop(reason?: string): Promise<EstopState> {
+  return apiPost<EstopState>('/api/ops/estop/engage', reason ? { reason } : {}, { admin: true });
+}
+export async function resumeEstop(): Promise<EstopResumeResult> {
+  return apiPost<EstopResumeResult>('/api/ops/estop/resume', undefined, { admin: true });
+}
+
 /* ── Voice · per-message TTS replay (cockpit.tsx) ────────────────
    POST /tts {text,lang} → audio blob; play it. */
 export async function playTts(text: string, lang = 'en'): Promise<void> {

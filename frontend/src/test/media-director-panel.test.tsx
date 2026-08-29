@@ -192,7 +192,7 @@ describe('MediaDirectorPanel (H29)', () => {
         enabled: true,
         status: 'completed',
         reason: 'kernel_granted',
-        output: { ok: true, verified: true, device_id: 'tv-1', state: 'playing' },
+        output: { ok: true, verified: true, device: 'tv-1', verification: 'driver-status-match' },
       },
     });
     render(<MediaDirectorPanel />);
@@ -201,7 +201,7 @@ describe('MediaDirectorPanel (H29)', () => {
     fireEvent.change(screen.getByLabelText('target device'), { target: { value: 'tv-1' } });
     fireEvent.click(screen.getByRole('button', { name: /^present$/i }));
 
-    await waitFor(() => expect(screen.getByText(/verified success · tv-1 · playing/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/verified success · tv-1 · driver-status-match/i)).toBeTruthy());
   });
 
   it('does not promote an unverified nested success to completed playback', async () => {
@@ -214,7 +214,7 @@ describe('MediaDirectorPanel (H29)', () => {
       '/api/media/present': {
         enabled: true,
         status: 'completed',
-        output: { ok: true, verified: false, device_id: 'tv-1', state: 'playing' },
+        output: { ok: true, verified: false, device: 'tv-1', verification: 'unverified-driver-status' },
       },
     });
     render(<MediaDirectorPanel />);
@@ -237,17 +237,19 @@ describe('MediaDirectorPanel (H29)', () => {
         enabled: true,
         sessions: [{ device_id: 'tv-1', content: { type: 'catalog', value: 'asset-7' }, mode: 'play', privacy: 'household', state: 'playing' }],
       },
+      // MediaDirector.restore() really returns {ok, restored} with no `verified`,
+      // so the honest render is the unverified branch — success is never claimed.
       '/api/media/restore/tv-1': {
         enabled: true,
         status: 'completed',
-        output: { ok: true, verified: true, device_id: 'tv-1', state: 'playing' },
+        output: { ok: true, restored: 'previous_session' },
       },
     });
     render(<MediaDirectorPanel />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'restore tv-1' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'restore tv-1' }));
 
-    await waitFor(() => expect(screen.getByText(/verified success · tv-1 · playing/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/unverified · success not claimed/i)).toBeTruthy());
     const restoreCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/media/restore/tv-1'));
     expect(restoreCall[1].method).toBe('POST');
   });

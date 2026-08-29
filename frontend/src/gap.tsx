@@ -94,7 +94,7 @@ function MediaOutcome({ value }) {
   }
   if (value.status === 'completed' && value.output?.ok === true && value.output?.verified === true) {
     return <div role="status" style={{ ...mono, color: 'var(--green)', marginTop: 8 }}>
-      verified success · {value.output.device_id || 'device'} · {value.output.state || 'verified'}
+      verified success · {value.output.device || 'device'} · {value.output.verification || 'verified'}
     </div>;
   }
   if (value.status === 'completed' && value.output?.ok === true) {
@@ -1265,6 +1265,11 @@ function SessionsPanel() {
 /* ── Admin ─────────────────────────────────────────────── */
 export function LMStudioPanel() {
   const { d, e, loading, reload } = useApi('/api/models/local', true, true);
+  /* VLM leg of the local-model surface: user-guarded GET /api/vlm/status. The
+     backend deliberately reports reachable:null (no probe) — render "not probed",
+     never up/down. */
+  const vlm = useApi('/api/vlm/status');
+  const vlmD = vlm.d;
   const models = arr(d, 'models');
   const [note, setNote] = useState('');
   const say = (r) => { setNote(typeof r === 'object' ? (r.detail || r.status || (r.ok ? 'ok' : JSON.stringify(r).slice(0, 60))) : String(r)); reload(); };
@@ -1314,6 +1319,11 @@ export function LMStudioPanel() {
       </Row>;
     })}
     {note && <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>{note}</div>}
+    {vlmD && <div role="status" style={{ ...mono, fontSize: 10, color: vlmD.configured ? 'var(--ink-2)' : 'var(--ink-3)', marginTop: 6 }}>
+      VLM · {vlmD.configured
+        ? `${vlmD.backend} · ${vlmD.default_model || 'no default model'} · ${vlmD.local ? 'local' : 'remote'} · reachable not probed`
+        : `off · ${vlmD.reason || 'not configured'}`}
+    </div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>configured routing is independent from provider-reported residency · lifecycle actions follow backend capabilities</div>
   </Card>;
 }
@@ -2249,7 +2259,24 @@ export function HousePanel() {
             </span>
           </Row>
         ))}
-        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>PRESENCE · PSEUDONYMOUS</div>
+        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>PRESENCE · PSEUDONYMOUS</span>
+          <Tag c={data.presence_status === 'live' ? 'var(--green)' : data.presence_status === 'degraded' ? 'var(--amber)' : undefined}>
+            {data.presence_status || 'unknown'}
+          </Tag>
+        </div>
+        {data.presence_status === 'off' && (
+          <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>presence writer is off · owner opt-in via house.presence_enabled / JARVIS_HOUSE_PRESENCE</div>
+        )}
+        {data.presence_status === 'unavailable' && (
+          <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>presence writer idle · live house state unavailable</div>
+        )}
+        {data.presence_status === 'degraded' && (
+          <div role="alert" style={{ fontSize: 10, color: 'var(--amber)' }}>presence write failed · list may be stale</div>
+        )}
+        {data.presence_status === 'live' && presence.length === 0 && (
+          <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>no occupants detected</div>
+        )}
         {presence.map((item) => (
           <Row key={item.occupant_id}>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>…{String(item.occupant_id || '').slice(-8)}</span>
@@ -2500,6 +2527,23 @@ export function CameraPanel() {
         {hasAdmin && <section aria-label="admin ONVIF discovery" style={{ marginTop: 10 }}>
           <button className="tool-btn" type="button" onClick={discover} aria-label="Discover ONVIF cameras">discover ONVIF cameras</button>
           {discoveryError && <div role="alert" style={{ ...mono, color: 'var(--danger)', marginTop: 5 }}>{discoveryError}</div>}
+          {/* Refusals arrive as HTTP-200 bodies (dependency missing, disabled, timeout) — they
+              land here through setDiscovery, never through discoveryError, so an empty device
+              list must say why instead of leaving the button looking dead. */}
+          {discovery && arr(discovery, 'devices').length === 0 && (
+            discovery.status === 'unavailable' || discovery.status === 'disabled' || discovery.enabled === false ? (
+              <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--danger)', marginTop: 5 }}>
+                {discovery.status || 'unavailable'} · {discovery.reason || 'discovery refused'}
+                {discovery.detail && <div style={{ color: 'var(--ink-2)', marginTop: 2 }}>{discovery.detail}</div>}
+              </div>
+            ) : discovery.status === 'degraded' ? (
+              <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 5 }}>
+                degraded · {discovery.reason || 'discovery_failed'}
+              </div>
+            ) : (
+              <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 5 }}>no ONVIF devices found</div>
+            )
+          )}
           {arr(discovery, 'devices').slice(0, 64).map((device) => (
             <Row key={device.device_id}>
               <span style={{ ...mono, color: 'var(--ink-2)' }}>{device.name}</span>

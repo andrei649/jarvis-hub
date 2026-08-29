@@ -1,7 +1,7 @@
 import React, { useState as uS3, useEffect as uE3 } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic3, ICONS as IK3, Glyph as Gl3, statusClass as sc3 } from './ui';
-import { queueChannelReply, togglePlugin } from './api/actions';
+import { queueChannelReply, togglePlugin, getEstopStatus, engageEstop, resumeEstop } from './api/actions';
 import { RoomsPanel } from './gap';
 /* HUD v2 · MODES III — Chat (focus), Comms, Admin */
 
@@ -160,6 +160,65 @@ function HonestyBadge({ h }: { h?: Honesty }){
   );
 }
 
+/* Global emergency stop (ESTOP) — Admin control over GET/POST /api/ops/estop.
+   NOT the Trust kill-switch: this pauses NEW autonomous work (heartbeats +
+   autonomy ticks); owner chat keeps working and in-flight work is not killed.
+   Engage is a two-step confirm (no window.confirm anywhere in the HUD); resume
+   is single-click. State re-syncs from every server response — never optimistic,
+   a pause control must not lie about whether it is holding. */
+function EstopCard(){
+  const [st,setSt]=uS3<{engaged:boolean; state:{reason:string|null; engaged_at:string|null}|null}|null>(null);
+  const [err,setErr]=uS3(false);
+  const [busy,setBusy]=uS3(false);
+  const [confirming,setConfirming]=uS3(false);
+  const [reason,setReason]=uS3('');
+  uE3(()=>{ let alive=true;
+    getEstopStatus().then(r=>{ if(alive&&r) setSt(r); }).catch(()=>{ if(alive) setErr(true); });
+    return ()=>{ alive=false; };
+  },[]);
+  const engaged = !!st?.engaged;
+  const doEngage = () => {
+    if (busy) return;
+    setBusy(true);
+    engageEstop(reason.trim()||undefined)
+      .then(r=>{ setSt(r); setConfirming(false); setReason(''); })
+      .catch(()=>setErr(true))
+      .finally(()=>setBusy(false));
+  };
+  const doResume = () => {
+    if (busy) return;
+    setBusy(true);
+    resumeEstop()
+      .then(r=>setSt({engaged:r.engaged, state:null}))
+      .catch(()=>setErr(true))
+      .finally(()=>setBusy(false));
+  };
+  return (
+    <div style={{border:'1px solid '+(engaged?'var(--red)':'var(--panel-line)'),borderRadius:4,padding:10,marginTop:8,background:'var(--surface-2)'}}>
+      {err ? <NotConnected what="estop state unavailable"/> : st==null ? <NotConnected what="checking estop…"/> : engaged ? (<>
+        <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.1em',color:'var(--red)'}}>PAUSED · new autonomous work held</div>
+        <div className="mdl-meta" style={{margin:'6px 0'}}>
+          {st.state?.reason ? `reason: ${st.state.reason}` : 'no reason recorded'}
+          {st.state?.engaged_at ? ` · since ${st.state.engaged_at}` : ''}
+        </div>
+        <button className="cr-btn primary" disabled={busy} onClick={doResume} title="lift the pause — autonomous dispatch resumes on the next tick">{busy?'resuming…':'Resume autonomy'}</button>
+      </>) : confirming ? (<>
+        <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.1em',color:'var(--amber)'}}>CONFIRM PAUSE — owner chat keeps working; in-flight work is not killed</div>
+        <input value={reason} onChange={e=>setReason(e.target.value)} placeholder="reason (optional)"
+          style={{width:'100%',margin:'6px 0',background:'var(--surface)',color:'var(--ink)',border:'1px solid var(--panel-line)',borderRadius:4,padding:6,fontFamily:'var(--font-ui)',fontSize:11}}/>
+        <div style={{display:'flex',gap:8}}>
+          <button className="cr-btn primary" disabled={busy} onClick={doEngage}>{busy?'engaging…':'Confirm pause'}</button>
+          <button className="cr-btn" disabled={busy} onClick={()=>setConfirming(false)}>Cancel</button>
+        </div>
+      </>) : (<>
+        <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.1em',color:'var(--green)'}}>RELEASED · autonomy running</div>
+        <div className="mdl-meta" style={{margin:'6px 0'}}>pauses NEW heartbeats + autonomy ticks (resumable)</div>
+        <button className="cr-btn" disabled={busy} onClick={()=>setConfirming(true)} title="two-step: confirm on the next click">Pause new autonomous work…</button>
+      </>)}
+    </div>
+  );
+}
+
 function AdminMode({ t }){
   const A = V2.ADMIN;
   const [plugins,setPlugins]=uS3<Array<{ name: string; scope: string; net: string; on: boolean; id?: string; honesty?: Honesty; degraded?: boolean; degradedReason?: string; degradedNeeds?: string[] }>>(A.plugins);
@@ -202,6 +261,8 @@ function AdminMode({ t }){
             {A.backups.length ? A.backups.map((b,i)=>(
               <div className="cap-row" key={i}><div><div className="cn" style={{fontFamily:'var(--font-ui)'}}>{b.ts}</div><div className="cd">{b.size} · {b.target}</div></div><span className="cap-tag allow">✓ {b.status}</span></div>
             )) : <NotConnected what="no backup feed"/>}
+            <SubH3 style={{marginTop:16}}>AUTONOMY PAUSE (ESTOP)</SubH3>
+            <EstopCard/>
           </div>
           <div>
             <SubH3>PLUGIN REGISTRY · {plugins.filter(p=>p.on).length}/{plugins.length} enabled{plugins.some(p=>p.honesty) ? ' · '+plugins.filter(p=>p.honesty && p.honesty.status==='live').length+' live' : ''}</SubH3>
