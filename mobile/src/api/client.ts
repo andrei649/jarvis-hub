@@ -1526,6 +1526,10 @@ export type HouseStateResponse = {
   rooms: HouseRoom[];
   devices: HouseDevice[];
   presence: HousePresence[];
+  // Presence-writer state, distinct from the array: empty presence + 'live'
+  // means "nobody detected", not "the feature was never built" (GAP-9a).
+  // Absent on hubs that predate the writer — do not default it.
+  presence_status?: 'off' | 'unavailable' | 'live' | 'degraded';
   privacy_status: string;
 };
 
@@ -1587,6 +1591,11 @@ export async function fetchHouseState(config: ServerConfig): Promise<HouseStateR
   const status = rawStatus === 'disabled' || rawStatus === 'degraded' || rawStatus === 'live'
     ? rawStatus
     : 'degraded';
+  const rawPresenceStatus = houseText(raw.presence_status, 16);
+  const presenceStatus = rawPresenceStatus === 'off' || rawPresenceStatus === 'unavailable'
+    || rawPresenceStatus === 'live' || rawPresenceStatus === 'degraded'
+    ? rawPresenceStatus
+    : undefined;
   const observedAt = securityNumber(raw.observed_at);
   const rawFreshness = raw.freshness_seconds;
   return {
@@ -1607,6 +1616,7 @@ export async function fetchHouseState(config: ServerConfig): Promise<HouseStateR
     presence: Array.isArray(raw.presence)
       ? raw.presence.map(normalizeHousePresence).filter((item): item is HousePresence => item !== null).slice(0, 500)
       : [],
+    ...(presenceStatus ? { presence_status: presenceStatus } : {}),
     privacy_status: houseText(raw.privacy_status, 32) || 'unavailable',
   };
 }
@@ -2102,6 +2112,27 @@ export async function fetchAcquisitionEvents(
     { retries: 2 },
   );
   return normalizeAcquisitionEvents(raw);
+}
+
+// ── Global emergency stop (read parity; hermes v2026.8.27 port) ──
+
+export type EstopResponse = {
+  engaged: boolean;
+  reason: string;
+  engaged_at: string;
+};
+
+// Read-only on mobile: engage/resume are admin-guarded and stay on the owner HUD.
+export async function fetchEstop(config: ServerConfig): Promise<EstopResponse> {
+  const raw = await request<Record<string, unknown>>(config, 'GET', '/api/ops/estop', undefined, {
+    retries: 2,
+  });
+  const state = securityRecord((raw || {}).state);
+  return {
+    engaged: securityBool((raw || {}).engaged),
+    reason: securityString(state.reason),
+    engaged_at: securityString(state.engaged_at),
+  };
 }
 
 // ── Agents ────────────────────────────────────────────────────────

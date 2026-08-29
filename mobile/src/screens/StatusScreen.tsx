@@ -8,6 +8,7 @@ import {
   type AutonomyBriefResponse,
   fetchAutonomyBrief,
   fetchDashboard,
+  fetchEstop,
   fetchSecurityGovernance,
   fetchSecurityKillSwitch,
   fetchSecurityLoopBreaker,
@@ -17,6 +18,7 @@ import {
   type CapabilitiesResponse,
   type CommandCenterResponse,
   type DashboardResponse,
+  type EstopResponse,
   type SecurityGovernanceResponse,
   type SecurityKillSwitchResponse,
   type SecurityLoopBreakerResponse,
@@ -78,6 +80,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
   const [posture, setPosture] = useState<SecurityPostureResponse | null>(null);
   const [killSwitch, setKillSwitch] = useState<SecurityKillSwitchResponse | null>(null);
   const [loopBreaker, setLoopBreaker] = useState<SecurityLoopBreakerResponse | null>(null);
+  const [estop, setEstop] = useState<EstopResponse | null>(null);
   const [commandCenter, setCommandCenter] = useState<CommandCenterResponse | null>(null);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse | null>(null);
   const [brief, setBrief] = useState<AutonomyBriefResponse | null>(null);
@@ -99,13 +102,14 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setStatus(statusOut);
       setDashboard(dashboardOut);
       setTicker(tickerOut);
-      const [governanceOut, postureOut, killOut, loopOut, ccOut, capsOut] = await Promise.all([
+      const [governanceOut, postureOut, killOut, loopOut, ccOut, capsOut, estopOut] = await Promise.all([
         fetchSecurityGovernance(config).catch(() => null),
         fetchSecurityPosture(config).catch(() => null),
         fetchSecurityKillSwitch(config).catch(() => null),
         fetchSecurityLoopBreaker(config).catch(() => null),
         fetchCommandCenter(config).catch(() => null),
         fetchCapabilities(config).catch(() => null),
+        fetchEstop(config).catch(() => null),
       ]);
       const briefOut = await fetchAutonomyBrief(config).catch(() => null);
       setBrief(briefOut);
@@ -115,6 +119,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setLoopBreaker(loopOut);
       setCommandCenter(ccOut);
       setCapabilities(capsOut);
+      setEstop(estopOut);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Failed to load status');
       setStatus(null);
@@ -126,6 +131,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setLoopBreaker(null);
       setCommandCenter(null);
       setCapabilities(null);
+      setEstop(null);
       setBrief(null);
     } finally {
       setLoading(false);
@@ -240,6 +246,30 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
           </>
         ) : (
           <Text style={styles.emptyText}>No trust data</Text>
+        )}
+      </Card>
+
+      <Card title="Emergency stop">
+        {estop ? (
+          <>
+            <View style={styles.stateRow}>
+              <View style={[styles.dot, { backgroundColor: estop.engaged ? theme.danger : theme.ok }]} />
+              <Text style={[styles.stateText, { color: estop.engaged ? theme.danger : theme.ok }]}>
+                {estop.engaged ? 'ENGAGED' : 'CLEAR'}
+              </Text>
+            </View>
+            {estop.engaged ? (
+              <>
+                <Row label="Reason" value={estop.reason} />
+                <Row label="Since" value={estop.engaged_at} />
+                <Text style={styles.emptyText}>New autonomous work is paused. Engage/resume stays on the owner HUD.</Text>
+              </>
+            ) : (
+              <Text style={styles.emptyText}>Autonomous dispatch is running normally.</Text>
+            )}
+          </>
+        ) : (
+          <Text style={styles.emptyText}>No emergency-stop data</Text>
         )}
       </Card>
 

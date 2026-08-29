@@ -453,8 +453,9 @@ Each needs a real token/account and a live round-trip (send → receive → repl
   generate → sandbox → human approval → registry promotion → reuse loop on an isolated target;
   unsigned/unapproved output must remain quarantined and non-runnable.
 - [ ] **Ambient decision ladder on live signals (H33)** — combine real house/camera/service state,
-  verify the chosen ignore/log/notify/ask/act rung and interruption budget, then trigger kill-switch
-  and confirm monitoring halts without a side effect escaping the governed path.
+  verify the chosen ignore/remember/monitor/act_silently/ask/interrupt rung and interruption
+  budget, then trigger kill-switch and confirm monitoring halts without a side effect escaping the
+  governed path.
 
 **A8 result:** ☐ all seven pass with redacted evidence · ☐ no unresolved §K blocker.
 

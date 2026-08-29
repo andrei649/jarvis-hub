@@ -37,6 +37,7 @@ describe('mobile House Brain API', () => {
         { occupant_id: sharedId, status: 'present', room_id: 'kitchen', privacy: 'household', confidence: 0.8, fresh: true },
         { occupant_id: 'Alice Example', status: 'present', room_id: 'office' },
       ],
+      presence_status: 'live',
       privacy_status: 'live',
     }));
 
@@ -44,6 +45,7 @@ describe('mobile House Brain API', () => {
 
     expect(result.enabled).toBe(true);
     expect(result.status).toBe('live');
+    expect(result.presence_status).toBe('live');
     expect(result.reason).toHaveLength(256);
     expect(result.rooms).toHaveLength(500);
     expect(result.rooms[0]).toEqual({ room_id: 'kitchen', name: 'Kitchen' });
@@ -75,5 +77,16 @@ describe('mobile House Brain API', () => {
       expect.objectContaining({ method: 'GET', headers: expect.objectContaining({ 'X-User-Token': 'user-token' }) }),
     );
     expect(mockFetch.mock.calls[0][1]?.headers).not.toHaveProperty('X-Admin-Token');
+  });
+
+  it('keeps presence_status honest: valid values pass, unknown values stay absent', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ enabled: true, status: 'live', presence_status: 'off' }));
+    mockFetch.mockResolvedValueOnce(jsonResponse({ enabled: true, status: 'live', presence_status: 'bogus' }));
+
+    const withStatus = await fetchHouseState(config);
+    expect(withStatus.presence_status).toBe('off');
+
+    const withBogus = await fetchHouseState(config);
+    expect(withBogus).not.toHaveProperty('presence_status');
   });
 });

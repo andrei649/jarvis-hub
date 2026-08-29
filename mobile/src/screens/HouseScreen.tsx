@@ -86,6 +86,7 @@ export function HouseScreen({
   const [refreshing, setRefreshing] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState('disabled');
+  const [presenceStatus, setPresenceStatus] = useState<string>('');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -101,12 +102,14 @@ export function HouseScreen({
       setRooms(result.rooms);
       setDevices(result.devices);
       setPresence(result.presence);
+      setPresenceStatus(result.presence_status ?? '');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load House Brain');
       setEnabled(false);
       setRooms([]);
       setDevices([]);
       setPresence([]);
+      setPresenceStatus('');
     } finally {
       setLoaded(true);
       setRefreshing(false);
@@ -154,8 +157,25 @@ export function HouseScreen({
           {!devices.length ? <Text style={styles.emptyInline}>No devices reported.</Text> : null}
 
           <Text style={styles.sectionTitle}>Presence</Text>
+          {presenceStatus ? (
+            <Text style={[styles.meta, presenceStatus !== 'live' && styles.securityNote]}>
+              {presenceStatus === 'live'
+                ? 'Presence writer: live'
+                : presenceStatus === 'off'
+                  ? 'Presence writer is off — owner opt-in required on the hub.'
+                  : presenceStatus === 'unavailable'
+                    ? 'Presence writer unavailable — live home state is not flowing.'
+                    : 'Presence writer degraded — last write failed on the hub.'}
+            </Text>
+          ) : null}
           {presence.map((item) => <PresenceCard key={item.occupant_id} presence={item} />)}
-          {!presence.length ? <Text style={styles.emptyInline}>No consented presence state available.</Text> : null}
+          {!presence.length ? (
+            <Text style={styles.emptyInline}>
+              {presenceStatus === 'live'
+                ? 'No occupants detected.'
+                : 'No consented presence state available.'}
+            </Text>
+          ) : null}
 
           <View style={styles.approvalCard}>
             <Text style={styles.approvalTitle}>Governed actions</Text>
