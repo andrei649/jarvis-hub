@@ -163,8 +163,8 @@ the big refactor is done. **1.0 is a real destination**, gated on two tracks tha
 | ✅ ORIZONT 27 | **Capability Registry + unified Action API** — code-complete; `perform()` facade + earned autonomy stay opt-in until hardened |
 | ORIZONT 28 | **Computer & browser operator** — governed Playwright + desktop actuation |
 | ORIZONT 29 | **Media director** — `present()` fabric, Chromecast, session etiquette |
-| ORIZONT 30 | **House brain** — Home Assistant graph, presence, governed actuation |
-| ORIZONT 31 | **Camera intelligence** — privacy contract *first*, then local detection + NL clip retrieval |
+| ORIZONT 30 | **House brain** — Home Assistant graph, presence (default-off writer; identity + room-motion corroboration required), governed actuation |
+| ORIZONT 31 | **Camera intelligence** — privacy contract *first*, then local detection + NL clip retrieval (ONVIF discovery needs the manually installed `wsdiscovery`; VLM descriptions need a self-hosted vision server, LM Studio supported) |
 | ORIZONT 32 | **Capability acquisition** — gap→search→generate→sandbox→approve→register loop |
 | ORIZONT 33 | **Ambient intelligence** — the ignore/remember/monitor/act/ask/interrupt ladder |
 
