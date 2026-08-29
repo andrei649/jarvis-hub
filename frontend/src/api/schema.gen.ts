@@ -6333,7 +6333,11 @@ export interface paths {
         };
         /**
          * Vlm Status
-         * @description H13.1 — whether a local VLM endpoint is configured (host deployment).
+         * @description H13.1 / GAP-9 — resolved VLM deployment truth, never a guess.
+         *
+         *     ``configured`` is config truth only; ``reachable`` is deliberately null
+         *     because this route does no network probe — claiming reachability without
+         *     measuring it is exactly the overclaim this surface used to make.
          */
         get: operations["vlm_status_api_vlm_status_get"];
         put?: never;
@@ -6355,10 +6359,12 @@ export interface paths {
         put?: never;
         /**
          * Vlm Describe
-         * @description H13.1 — send image(s) + a prompt to the local VLM (screen/doc/receipt).
+         * @description H13.1 — send image(s) + a prompt to the configured VLM.
          *
-         *     Requires JARVIS_VLM_URL to point at a local OpenAI-vision server (the model
-         *     + GGUF + GPU are the host deployment seam).
+         *     LM Studio (`JARVIS_VLM_BACKEND=lmstudio` + `JARVIS_VLM_MODEL`), vLLM and
+         *     llama.cpp (`JARVIS_VLM_BACKEND=custom` + `JARVIS_VLM_URL`) all serve the
+         *     same OpenAI-vision contract; the model + weights + GPU stay the host
+         *     deployment seam.
          */
         post: operations["vlm_describe_api_vlm_describe_post"];
         delete?: never;
