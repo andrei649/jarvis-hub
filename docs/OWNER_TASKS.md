@@ -79,12 +79,18 @@
 - [ ] **Paste the remaining ~12 CodeQL alerts** to the agent — only 13 of the 25 selected came
   through and there's no MCP tool to list code-scanning alerts, so the rest need a manual paste to
   finish triage (6 real ones fixed in #216; the 7 above are FPs/won't-fix).
-- [ ] **(optional) Wire "Max" on the GitHub side** — the codename already auto-triggers the
-  finishing protocol ([`MAX.md`](../MAX.md)) in any Claude Code session via
-  `.claude/skills/max/`. To also make a bare **"Max"** issue/PR comment start a run with no
-  session open, install the Claude GitHub App on the repo (or add a `claude.yml` workflow with
-  an `ANTHROPIC_API_KEY` secret) — app install + secret are owner-only. Until then, the trigger
-  path is: open any Claude session on the repo and say "Max".
+- [ ] **(optional) Wire a bare "Max" on the GitHub side** — *half done.* The workflow half landed in
+  #976: [`.github/workflows/claude.yml`](../.github/workflows/claude.yml) runs Claude Code on any
+  **`@claude`** comment in an issue, PR, or review, authenticated by the `CLAUDE_CODE_OAUTH_TOKEN`
+  repo secret (subscription auth — no `ANTHROPIC_API_KEY`, no GitHub App install needed). That run
+  checks the repo out, so it reads `CLAUDE.md` and `.claude/skills/max/`: **`@claude Max`** is the
+  intended no-session trigger path. A *bare* `Max` comment still does nothing — the action's
+  `trigger_phrase` defaults to `@claude` and accepts a single phrase, so bare-`Max` would need a
+  second workflow with `trigger_phrase: Max` (or `label_trigger`). Owner's call whether the extra
+  surface is worth saving five characters.
+  > Unverified until first use: comment triggers are read from the default branch, so #976's CI
+  > could not exercise the workflow. The first real `@claude` comment is also the first test of
+  > whether `CLAUDE_CODE_OAUTH_TOKEN` is set correctly.
 
 ## 🟡 GPU-host work (the last 2 backlog items + Howard)
 
