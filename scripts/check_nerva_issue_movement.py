@@ -687,7 +687,11 @@ def _git_output(
                     oversized.set()
                     return
                 chunks.append(chunk)
-        except BaseException as exc:  # The caller receives only a fixed rejection.
+        # Runs in a daemon reader thread: record any real failure so the caller can
+        # turn it into a fixed rejection. Deliberately not BaseException (CodeQL
+        # py/catch-base-exception) — KeyboardInterrupt is not delivered to a
+        # non-main thread, and SystemExit here should end the thread, not be logged.
+        except Exception as exc:
             reader_error.append(exc)
 
     process: Any | None = None
@@ -851,7 +855,9 @@ def compute_name_status_diff(
                     oversized.set()
                     return
                 raw_parts.append(chunk)
-        except BaseException as exc:  # The caller reports a fixed safe failure.
+        # Same daemon-reader contract as above: Exception, not BaseException, so
+        # control-flow exceptions propagate instead of being recorded as read errors.
+        except Exception as exc:
             reader_error.append(exc)
 
     try:
