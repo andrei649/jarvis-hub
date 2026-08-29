@@ -17,6 +17,7 @@
    itself off. With it off, tap the mic to cut a reply short. */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getToken } from './api/client';
+import { SentenceAggregator, unspokenRemainder } from './sentences';
 import { streamTts } from './api/ttsStream';
 
 const SILENCE_MS = 1100;     // trailing silence (after speech) that ends an utterance
@@ -242,6 +243,92 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
 
   const cancelSpeak = useCallback(() => { if (cancelSpeakRef.current) cancelSpeakRef.current(); }, []);
 
+  /* H5.16 — speak WHILE the reply streams.
+   *
+   * `speak()` above (and the /tts/stream chunking behind it) only starts once the
+   * whole turn has resolved: sentence #1 waits for the last token of the last
+   * sentence. This session feeds live token deltas through the browser-side
+   * SentenceAggregator and synthesizes each sentence the moment it closes, so
+   * audio begins while the model is still generating.
+   *
+   * Bounded and fail-safe: playback is strictly sequential (a chained promise, so
+   * sentences can never overlap or reorder), barge-in/cancel tears the whole
+   * session down, and if ANY sentence fails to synthesize the session marks
+   * itself not-spoken so `loop()` falls back to the existing whole-reply path
+   * rather than dropping part of the answer silently.
+   */
+  const speakStreamRef = useRef(null);
+
+  const beginSpeakStream = useCallback(() => {
+    if (ttsRef.current === 'off') { speakStreamRef.current = null; return; }
+    if (cancelSpeakRef.current) cancelSpeakRef.current();
+    const session = {
+      agg: new SentenceAggregator(),
+      chain: Promise.resolve(),
+      spoke: false,
+      failed: false,
+      cancelled: false,
+      spokenSentences: [],   // sentences that PLAYED, so a fallback can skip them
+    };
+    speakStreamRef.current = session;
+    cancelSpeakRef.current = () => {
+      session.cancelled = true;
+      try { if (audioRef.current) audioRef.current.pause(); } catch { /* */ }
+      try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch { /* */ }
+    };
+  }, []);
+
+  const enqueueSentence = (session, sentence) => {
+    session.chain = session.chain.then(async () => {
+      if (session.cancelled || session.failed || !sentence.trim()) return;
+      try {
+        if (ttsRef.current === 'browser') {
+          await browserSpeak(sentence, langRef.current, () => session.cancelled);
+        } else {
+          const res = await fetch('/tts', {
+            method: 'POST',
+            headers: tok({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ text: sentence, lang: langRef.current }),
+          });
+          if (session.cancelled) return;
+          if (!res.ok) { session.failed = true; return; }
+          const blob = await res.blob();
+          if (session.cancelled) return;
+          await playAudioBlob(blob, () => session.cancelled);
+        }
+        if (!session.cancelled) {
+          session.spoke = true;
+          session.spokenSentences.push(sentence);
+        }
+      } catch { session.failed = true; }
+    });
+  };
+
+  /** Feed one streamed token delta; speaks any sentence that just closed. */
+  const pushSpeakDelta = useCallback((delta) => {
+    const session = speakStreamRef.current;
+    if (!session || session.cancelled || session.failed) return;
+    for (const sentence of session.agg.push(String(delta || ''))) {
+      enqueueSentence(session, sentence);
+    }
+  }, []);
+
+  /** Close the session; report how much of the reply actually played. */
+  const endSpeakStream = useCallback(async () => {
+    const session = speakStreamRef.current;
+    speakStreamRef.current = null;
+    if (!session) return { complete: false, cancelled: false, spokenSentences: [] };
+    if (!session.cancelled && !session.failed) {
+      for (const sentence of session.agg.flush()) enqueueSentence(session, sentence);
+    }
+    await session.chain;
+    return {
+      complete: session.spoke && !session.failed && !session.cancelled,
+      cancelled: session.cancelled,
+      spokenSentences: session.spokenSentences,
+    };
+  }, []);
+
   async function loop() {
     while (activeRef.current) {
       const text = await listenOnce();
@@ -249,9 +336,20 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
       if (text) {
         setTranscript(text);
         let reply = '';
+        // H5.16: open a streaming-speak session BEFORE the turn so token deltas
+        // can be spoken as they arrive (app.tsx forwards them via pushSpeakDelta).
+        beginSpeakStream();
+        if (ttsRef.current !== 'off') setStat('speaking');
         try { reply = (onTurnRef.current && (await onTurnRef.current(text))) || ''; } catch { /* */ }
+        const live = await endSpeakStream();
         if (!activeRef.current) break;
-        if (reply && ttsRef.current !== 'off') { setStat('speaking'); await speak(reply); }
+        // Fall back only for the part that never played: replaying the whole
+        // reply after sentence #1 already streamed would read the opening
+        // twice, and a barge-in (cancelled) asked for silence, not a restart.
+        if (reply && ttsRef.current !== 'off' && !live.complete && !live.cancelled) {
+          const remainder = unspokenRemainder(reply, live.spokenSentences);
+          if (remainder) { setStat('speaking'); await speak(remainder); }
+        }
       }                                          // (silence → just listen again in hands-free)
       if (modeRef.current === 'ptt') break;      // push-to-talk: exactly one turn per activation
     }
@@ -293,5 +391,5 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
 
   useEffect(() => () => { startGenRef.current++; activeRef.current = false; if (cancelSpeakRef.current) cancelSpeakRef.current(); releaseStream(); }, []);
 
-  return { supported, caps, status, error, transcript, level, active, start, stop, toggle, speak, cancelSpeak };
+  return { supported, caps, status, error, transcript, level, active, start, stop, toggle, speak, cancelSpeak, pushSpeakDelta };
 }

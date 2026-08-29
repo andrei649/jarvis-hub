@@ -90,29 +90,53 @@ class ProvenanceLedger:
     ) -> dict:
         """Append a provenance record for one ingested artifact. ``now`` is the
         caller's clock (kept injectable for tests). Returns the stored record."""
-        if not str(source).strip():
-            raise ValueError("source is required")
-        if not str(run_id).strip():
-            raise ValueError("run_id is required")
-        item = {
-            "id": "pv-" + uuid.uuid4().hex[:12],
-            "run_id": str(run_id),
-            "source": str(source),
-            "origin": str(origin),
-            "phase": str(phase),
-            "content_hash": content_fingerprint(content),
-            "produced_at": float(now),
-            "parent_id": str(parent_id) if parent_id else None,
-            "meta": dict(meta) if isinstance(meta, dict) else {},
-        }
+        return self.record_many([{
+            "source": source, "origin": origin, "phase": phase, "content": content,
+            "run_id": run_id, "now": now, "parent_id": parent_id, "meta": meta,
+        }])[0]
+
+    def record_many(self, specs: list[dict]) -> list[dict]:
+        """Append provenance records for many artifacts in ONE read/write cycle.
+
+        Each spec is a dict of :meth:`record` keyword arguments. ``record``
+        re-reads and atomically rewrites the whole JSON ledger per call — fine
+        for one artifact, but O(N²) disk I/O when an ingestion phase records one
+        entry per message. The pipeline batches a whole phase through here.
+
+        All-or-nothing: specs are validated before anything is written, so a bad
+        spec can't leave the batch half-recorded.
+        """
+        built: list[dict] = []
+        for spec in specs:
+            source = str(spec.get("source", ""))
+            run_id = str(spec.get("run_id", ""))
+            if not source.strip():
+                raise ValueError("source is required")
+            if not run_id.strip():
+                raise ValueError("run_id is required")
+            parent_id = spec.get("parent_id")
+            meta = spec.get("meta")
+            built.append({
+                "id": "pv-" + uuid.uuid4().hex[:12],
+                "run_id": run_id,
+                "source": source,
+                "origin": str(spec.get("origin", "")),
+                "phase": str(spec.get("phase", "")),
+                "content_hash": content_fingerprint(spec.get("content", "")),
+                "produced_at": float(spec.get("now", 0.0)),
+                "parent_id": str(parent_id) if parent_id else None,
+                "meta": dict(meta) if isinstance(meta, dict) else {},
+            })
+        if not built:
+            return []
         items = self._read()
-        items.append(item)
+        items.extend(built)
         # bound the ledger: it's an append-only audit log, so evict the oldest first.
         if len(items) > self._max_keep:
             items.sort(key=lambda r: float(r.get("produced_at", 0)))
             items = items[-self._max_keep:]
         self._write_atomic(items)
-        return dict(item)
+        return [dict(item) for item in built]
 
     def get(self, record_id: str) -> dict | None:
         for r in self._read():

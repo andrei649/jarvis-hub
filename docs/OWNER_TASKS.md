@@ -296,3 +296,46 @@ built on your Windows box:
   (comma list of `plugin_id:agent_id`). This is the deliberate **policy** decision the code does
   *not* guess for you; pick grants that match how you actually want each write surface used.
   Verify on `GET /plugins` (`least_privilege:true`, per-plugin `wildcard_restricted`/`grants`).
+
+- [ ] **BUG-2b.2 — build the drag-drop workflow canvas, or drop it from the backlog (BACKLOG.md
+  line 2206).** Recounted 2026-08-28: this row has always asked for *frontend tests* of a visual
+  drag-drop SVG canvas (pointer events, node layout, edges), scoped to "ride with" H10.2 (Visual
+  Workflow Trace Overlay) and H10.7 (AI-Assisted Workflow Builder). Both of those shipped **as
+  backend-only features** — a trace-data endpoint and an LLM step-config generator — neither built
+  a visual node-and-edge canvas. The actual HUD `WorkflowsPanel`
+  (`frontend/src/gap.tsx:1104`) is a plain list-with-run/delete-buttons panel, and the AI Step
+  Builder panel explicitly outputs JSON meant to be "paste[d] into the workflow builder" — there is
+  no drag-drop canvas anywhere in the frontend to write pointer-event tests against (verified: no
+  `WorkflowCanvas`/drag-handler component exists in `frontend/src`). So this isn't a missing-test
+  gap, it's a missing-feature gap wearing a test-coverage row. Two honest paths, and only you can
+  pick: **(a)** commission the visual canvas as new scope (a real frontend feature, sized well
+  beyond "add tests" — treat it as a fresh spec, not a BUG-2b sub-item) and then BUG-2b.2 becomes
+  real work again, or **(b)** explicitly drop BUG-2b.2 from the backlog since Jarvis has shipped
+  without a visual node-graph editor for its whole life and the JSON-paste workflow works today.
+  Either answer just needs to be *written down* in `BACKLOG.md` so the row stops silently reading
+  as "ambiguous."
+
+- [ ] **T-0.29 signed installers — needs your code-signing certificates (nothing an agent can do).**
+  The PWA half of 0.29 shipped 2026-08-28 (the v2 HUD is now installable with an offline shell).
+  The other half — *signed* desktop installers — is blocked on credentials only you can obtain:
+  `desktop/src-tauri/tauri.conf.json` has a bare `bundle` block with no `signingIdentity`,
+  `certificateThumbprint`, or notarization config, and no signing secrets exist in CI. To unblock:
+  **(a)** an Apple **Developer ID Application** certificate + an app-specific password for
+  notarization (macOS), and **(b)** a **Windows OV or EV code-signing certificate** (EV avoids
+  SmartScreen warm-up; OV is cheaper but users see warnings until reputation builds). Both are paid,
+  identity-verified purchases in your name — an unsigned installer is not a bug to fix in code, it
+  is a missing legal identity. Once you have them, store them as repo secrets and an agent can wire
+  the Tauri signing config + a release workflow in one bounded slice. Until then, the honest
+  position is: we ship an unsigned bundle and say so.
+
+- [ ] **E731-CONTINUITY-IDENTITY — does Jarvis's own continuity identity get its own tracked issue?**
+  (BACKLOG.md, "B3/Continuity Core mapping" section). `docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md`
+  found that #762/E4 only covers **Howard's** preference-prediction scope — nothing currently tracks
+  Jarvis's own Identity Manifest (a versioned/signed identity-history contract with migration and
+  rollback, the way #731 originally asked for it). The reconciliation doc explicitly declined to
+  create that destination unilaterally, calling it "an owner-scoping decision... not a documentation
+  call this pass should make." Recounted 2026-08-28: still true, no later commit filled the gap. Your
+  call: open a new issue scoped to Jarvis's own continuity identity, fold it into #762's scope
+  (broadening what that issue owns), or explicitly decide this isn't worth tracking separately from
+  the existing SOUL/persona system. Whichever you pick, a one-line note back in `BACKLOG.md` closes
+  the row.

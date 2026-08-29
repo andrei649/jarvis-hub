@@ -231,6 +231,9 @@ class HeartbeatScheduler:
 
     async def _run_heartbeat(self, agent_id: str, orchestrator):
         """Execute a single agent's heartbeat."""
+        from agents.core import estop
+        if estop.check_paused(f"heartbeat:{agent_id}", logger):
+            return
         try:
             result = await orchestrator.run_heartbeat(agent_id)
             if result:

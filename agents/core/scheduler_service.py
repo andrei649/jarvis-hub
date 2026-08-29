@@ -408,6 +408,7 @@ class SchedulerService:
                     self._orch.autonomy_queue,
                     memory_entries=memory_entries,
                     runtime_health=_runtime_health_or_none(),
+                    signal_briefs=await _signal_briefs_or_none(self._orch),
                 )
             else:
                 text = build_evening_retro(self._orch.autonomy_queue)
@@ -435,6 +436,41 @@ class SchedulerService:
             return rows
         except Exception:
             return []
+
+
+# T-0.41: which domains the morning brief reports on. Argus subscribes to all of
+# them (signal_routing.AGENT_INTERESTS), so this is the owner-facing superset
+# rather than a second, drifting list.
+_BRIEF_SIGNAL_DOMAINS = ("conflict", "cyber", "economy", "energy")
+
+
+async def _signal_briefs_or_none(orch):
+    """Per-domain world-signal briefs for the morning brief (T-0.41), or None.
+
+    Reads the Signal Layer sidecar ONCE and routes that single fetch into each
+    domain, rather than calling `build_domain_brief` per domain (which would
+    re-fetch). Returns None whenever there is no sidecar, it is unreachable, or
+    it yields nothing — the digest renders no section at all in that case, which
+    is the honest outcome: silence, not an empty "all quiet" heading.
+    """
+    try:
+        plugin = (getattr(orch, "plugins", None) or {}).get("signal-layer")
+        if plugin is None:
+            return None
+        body = await plugin.signals(limit=50)
+        if not isinstance(body, dict) or body.get("status") != "ok":
+            return None
+        signals = list(body.get("signals") or [])
+        if not signals:
+            return None
+
+        from agents.core.signal_routing import build_domain_brief
+
+        briefs = [build_domain_brief(signals, d, top=3) for d in _BRIEF_SIGNAL_DOMAINS]
+        return [b for b in briefs if b.get("count")] or None
+    except Exception:  # pragma: no cover - the sidecar never breaks the brief
+        logger.debug("Signal briefs read failed for the morning brief", exc_info=True)
+        return None
 
 
 def _runtime_health_or_none():

@@ -129,8 +129,8 @@
     },
     "H34": {
       "blocked": 0,
-      "done": 4,
-      "open": 2,
+      "done": 5,
+      "open": 1,
       "total": 6
     },
     "H5": {
@@ -164,7 +164,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "113632fd6818a68046d5b3f5b06810e27460292a",
+  "latest_ci_commit": "8dd29aa77250e5e7fa8aa14c2a11fcd4ff08a8de",
   "open_release_gates": [
     {
       "id": "A1",
@@ -172,19 +172,9 @@
       "status": "⬜ **the gate**"
     },
     {
-      "id": "A2",
-      "name": "72h soak (0.63) + record AUD-0 / H23.23",
-      "status": "⬜"
-    },
-    {
       "id": "A3",
       "name": "Dependabot re-triage — 19 open alerts on main (4 high, 2026-07-07)",
       "status": "🟢 agent half done in #634 — local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees now 0 vulns with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface — the device gate is real). Owner tail: worldview 2 moderates (in-next postcss, wait for next 16.3), mobile Expo SDK upgrade on a device, dismiss stale alerts in UI"
-    },
-    {
-      "id": "A4",
-      "name": "GitHub settings batch (SEC-4 required checks · CQ-2 dismissals · CQ-3 paste · repo metadata)",
-      "status": "⬜"
     },
     {
       "id": "A5",
@@ -194,29 +184,19 @@
     {
       "id": "A6",
       "name": "Demo video (60s) + publish landing (dev half ✅ #512)",
-      "status": "⬜"
-    },
-    {
-      "id": "A7",
-      "name": "Recruit 1–3 design partners; north-star on a non-owner install ≥2 weeks",
-      "status": "⬜"
-    },
-    {
-      "id": "A8",
-      "name": "**AI-OS v1 owner-host proof** — complete `docs/MANUAL_TESTING.md` §N on real hardware: installed Playwright Chromium + Windows UIA browser/desktop actuation; real Home Assistant state + device/room/occupant/presence graph + governed device actuation; consented Frigate event → house/memory/ambient flow; presence-aware Media Director delivery on ≥2 non-chat output surfaces/device classes; one approved acquisition→reuse loop. Record redacted audit/task/device evidence; hermetic reality packs alone do not clear this gate. **⚠️ Parts of §N are not runnable as written (#728), being unblocked by the finish-line run:** ✅ **A8-i done 2026-08-02** — the H32 acquisition loop now has a product trigger, `POST /api/acquisition/{request_id}/drive` (admin; reuse-first, honest `_degraded` refusals; AIO-038 rewritten to use it, no Python shell). ✅ **A8-iii done 2026-08-02** — `JARVIS_MEDIA_DRIVERS=local_file` binds the shipped `LocalFileMediaDriver` (real durable state through the present/verify/restore/duration rails; kind `local`; whole-list fail-closed registry in `_get_director()`; the audible/visible half still needs owner hardware). ✅ **A8-ii done 2026-08-02** — `target:\"presence:auto\"` resolves the owner room's default device, gated on a FRESH `present` signal from the H34.2 owner-presence store (temporal) + `JARVIS_MEDIA_PRESENCE_ROOM` (spatial, default-off); idle/away/stale/unset → honest `presence_unknown`; a registered device id can never shadow the sentinel. Still open: **A8-iv** — `ungoverned_actions == 0` is measurable only inside the hermetic reality packs. A first live-counter attempt (QA4) was written and **withdrawn 2026-08-02 for a design flaw its own full-suite run exposed** (a mediation ContextVar that never resets masks a later task's bypass within one tick, and cannot bridge enqueue→execute at all, so it under-reports breaches); the correct design — persist the kernel decision on the task at `govern_enqueue` and read that stamp at the worker seam — plus what was sound and reusable is written up in [`docs/superpowers/plans/2026-08-02-qa4-ungoverned-counter-park.md`](docs/superpowers/plans/2026-08-02-qa4-ungoverned-counter-park.md). Full list with `file:line` in that chapter's **Open gaps**; media-hardware purchase can be scheduled once C3/C4 merge.",
-      "status": "⬜ **blocking owner/live gate**"
+      "status": "🟡 **partial (owner, 2026-08-28)** — landing half moving; the 60s demo cut is the remaining piece. Not a 1.0 blocker (GTM, not proof)"
     },
     {
       "id": "A9",
-      "name": "Tag 1.0.0 (only after A1 + A7 + A8 and every other open owner gate)",
-      "status": "⬜"
+      "name": "Tag 1.0.0",
+      "status": "🟢 **release prep landed 2026-08-28 — two owner commands left.** `agents.__version__` bumped `0.11.0`→`1.0.0` and the CHANGELOG `[Unreleased]` block cut to a `[1.0.0]` section, so `release.yml`'s tag/version check passes. **Owner, in order: (1) A5 — flip MIT→Apache-2.0 (3 commands in [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md)); a tag pushed before the flip ships 1.0.0 under MIT. (2) `git tag v1.0.0 && git push origin v1.0.0` *on `main`, after this PR merges* — the tag publishes a public GitHub Release with artifacts, SBOM and checksums, so it must not be cut from a feature branch.**"
     }
   ],
-  "routes": 405,
+  "routes": 424,
   "tests": {
-    "backend": 6858,
-    "frontend": 536,
-    "mobile": 96
+    "backend": 7089,
+    "frontend": 627,
+    "mobile": 103
   },
-  "version": "0.11.0"
+  "version": "1.0.0"
 }

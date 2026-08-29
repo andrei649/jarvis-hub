@@ -129,13 +129,23 @@ def test_horizon_rollups_and_open_release_gates_are_structured():
     ]
 
 
-def test_ai_os_owner_host_proof_is_a_blocking_release_gate():
+def test_owner_gates_a2_and_a8_are_closed_not_blocking():
+    # Owner directive 2026-08-28: the proof-track gates are removed. A8's owner-host
+    # proof ran on real hardware, and A2 no longer needs a human at all — the soak
+    # grades itself. Both must read as closed in Lane A, or STATUS.md and
+    # project-status.json will keep reporting a gate nobody is waiting on.
     backlog = (REPO / "BACKLOG.md").read_text(encoding="utf-8")
     gates = {gate["id"]: gate for gate in status_sync.open_release_gates(backlog)}
-    assert "AI-OS v1 owner-host proof" in gates["A8"]["name"]
-    assert "blocking owner/live gate" in gates["A8"]["status"]
-    assert "A8" in gates["A9"]["name"]
+    assert "A8" not in gates
+    assert "A2" not in gates
 
+    # The A2 automation is the thing that replaced the gate — it has to exist.
+    assert (REPO / ".github" / "workflows" / "soak.yml").exists()
+    soak = (REPO / "scripts" / "soak_report.py").read_text(encoding="utf-8")
+    assert "def evaluate(" in soak and "--fail-on-verdict" in soak
+
+    # The §N seams stay guarded even though the gate is gone: the chapter is still the
+    # written record of what the owner-host proof covered.
     owner_tasks = (REPO / "docs" / "OWNER_TASKS.md").read_text(encoding="utf-8")
     manual = (REPO / "docs" / "MANUAL_TESTING.md").read_text(encoding="utf-8")
     assert "A8 — AI-OS v1 owner-host proof" in owner_tasks

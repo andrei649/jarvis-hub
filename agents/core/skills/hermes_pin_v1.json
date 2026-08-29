@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "repository": "NousResearch/hermes-agent",
-  "release_tag": "v2026.8.3",
-  "commit": "3c27eb6234bf91b8ceee9e9071591b31e9b148cb",
-  "tree": "b217767ccb994605dad522e693fa1b4cdbc2f352",
+  "release_tag": "v2026.8.27",
+  "commit": "5fc308a70719a83cccdbba4c0e39c23f5a8239d5",
+  "tree": "222ec43b5237deb643277bc2f64fa4b873dd7f28",
   "skills": [
     {
       "slug": "apple-notes",
@@ -28,7 +28,7 @@
     {
       "slug": "claude-code",
       "path": "skills/autonomous-ai-agents/claude-code/SKILL.md",
-      "content_sha256": "f04207897a5353add84a3b5839513e541d5c7eeb4dbcc7c8732dbf6240efc274"
+      "content_sha256": "3fd7c81f2c6c19f8ce77303f76d1407cf88f8f43add0f811cb6d467eef5eaca6"
     },
     {
       "slug": "codex",
@@ -38,12 +38,17 @@
     {
       "slug": "computer-use",
       "path": "skills/autonomous-ai-agents/computer-use/SKILL.md",
-      "content_sha256": "9ac7c6de890c332f1be5228460c80215318221fce2c99f7e4434868cd25fe6f0"
+      "content_sha256": "8145c56cc18728c56f5030fd19b436d9c1f4a7e3599db3c6b177e8b2e9e21797"
     },
     {
       "slug": "hermes-agent",
       "path": "skills/autonomous-ai-agents/hermes-agent/SKILL.md",
-      "content_sha256": "02724b6acd39770189e024bdf38990ea87382d1e125fb323188fd551a8d0db44"
+      "content_sha256": "a111466ce81ccdad8bccc7f670c7946df9d9f8b639399f28bd2958f5bce92c56"
+    },
+    {
+      "slug": "merge-reconciler",
+      "path": "skills/autonomous-ai-agents/merge-reconciler/SKILL.md",
+      "content_sha256": "24ffd1be973b0e884876fe0db9f49783fffe6a2337a4e74a83cdd895cb6fce23"
     },
     {
       "slug": "opencode",
@@ -58,12 +63,12 @@
     {
       "slug": "ascii-art",
       "path": "skills/creative/ascii-art/SKILL.md",
-      "content_sha256": "b69fdd300045a3e68b4886c5c5c714f904c9277ac40b2da371bf9e156fd9fa88"
+      "content_sha256": "f3b77e9d50f06944211bed92779f669ba0fe3e261e2da262cf1a31b719132d84"
     },
     {
       "slug": "ascii-video",
       "path": "skills/creative/ascii-video/SKILL.md",
-      "content_sha256": "1d4f84e0eacc0d8adfaee62e0f2ab947dd79302ebbf55d5cd07d94a92c92cb95"
+      "content_sha256": "3bd3f39985a52954e2693866608bd8105f4dc0efbca5b6baa3045c2b641bda26"
     },
     {
       "slug": "baoyu-infographic",
@@ -78,7 +83,7 @@
     {
       "slug": "comfyui",
       "path": "skills/creative/comfyui/SKILL.md",
-      "content_sha256": "f8fb7c879411f3942cf7c5cdae011a84af13e26279216782d7c27778d0e76f1f"
+      "content_sha256": "1013a06bf6accc0cbcb43a7dbb6e31130ed7e692b4db454877ccb38fbe66815e"
     },
     {
       "slug": "design-md",
@@ -98,12 +103,12 @@
     {
       "slug": "manim-video",
       "path": "skills/creative/manim-video/SKILL.md",
-      "content_sha256": "3459a6af999f0c9bfd61eb867836c8de90b33253493eb1b6aa4118d82fd320f4"
+      "content_sha256": "467376469fc2043e2674a843509f8eea52660791e76fb2e142074ecd4abc7e69"
     },
     {
       "slug": "p5js",
       "path": "skills/creative/p5js/SKILL.md",
-      "content_sha256": "6a9722e2633ecdb3736e304f56c646258c5e777fd2c15a59c0d2b3ffa91b665a"
+      "content_sha256": "3b39b75303e082af69b3f4e2deab7a55b27d60293eff6a561fb627188194a33e"
     },
     {
       "slug": "popular-web-designs",
@@ -113,7 +118,7 @@
     {
       "slug": "pretext",
       "path": "skills/creative/pretext/SKILL.md",
-      "content_sha256": "7aaa3691739fe96dab4947ad5c59419af162bcca5cdea30dec2edf39ba2ecf05"
+      "content_sha256": "c09691f63543573f876bf46e9c62ecb21374167991abdfc50ddac38c6443358c"
     },
     {
       "slug": "sketch",
@@ -123,12 +128,22 @@
     {
       "slug": "songwriting-and-ai-music",
       "path": "skills/creative/songwriting-and-ai-music/SKILL.md",
-      "content_sha256": "496b6c13d2b029711f310842f3af49f2060952f6f6aa4d5201d18a309ac92946"
+      "content_sha256": "5dbf92dc336e9b17be45c35c92a5bb307e4655e39a86617f07b7654678f92583"
     },
     {
       "slug": "touchdesigner-mcp",
       "path": "skills/creative/touchdesigner-mcp/SKILL.md",
       "content_sha256": "925c387c16a3a0752e4670d48ab9bde94f930cd3dd27fe08cefda2e05c0765e9"
+    },
+    {
+      "slug": "sdlc-review",
+      "path": "skills/devops/sdlc-review/SKILL.md",
+      "content_sha256": "ce90e8a3e145cce69c62880dc85921700110879f9290952d6cec28218503155f"
+    },
+    {
+      "slug": "email-inbox-triage",
+      "path": "skills/email/email-inbox-triage/SKILL.md",
+      "content_sha256": "cd57ccc9d563b5186012b41d6bbf52e96c2837c5b8e79d524e8e5e6a44af6021"
     },
     {
       "slug": "himalaya",
@@ -143,27 +158,32 @@
     {
       "slug": "github-auth",
       "path": "skills/github/github-auth/SKILL.md",
-      "content_sha256": "cceb00bfa8908c45976316321fb27d99f5a5ffb26cebf8cd6efe69c6ede9c544"
+      "content_sha256": "83d908a495c34477a88e7a11bdba80179483e71d070278d23323586cc0883ff0"
     },
     {
       "slug": "github-code-review",
       "path": "skills/github/github-code-review/SKILL.md",
-      "content_sha256": "af1f8aea62ed1f7e0107f00bfeccb2ac68ce6646ee2326ae27a33765f5ace203"
+      "content_sha256": "957c4d454ca71d7d62f05ef04aaf0e346e623e7f8be2eb718498a07e6d17139f"
+    },
+    {
+      "slug": "github-issue-to-pr",
+      "path": "skills/github/github-issue-to-pr/SKILL.md",
+      "content_sha256": "d422963778ee3fadb182322aa65b742f47a73b456b00fd0935e8ab66caf118e0"
     },
     {
       "slug": "github-issues",
       "path": "skills/github/github-issues/SKILL.md",
-      "content_sha256": "3b0316d2598d391288b8b3ddffcd1429cb97153476bce99680cb78ea3d1b2c3c"
+      "content_sha256": "3e278a457786a741b439155e9d846257a4c6a0fc70324e2ab968800438e7bf8a"
     },
     {
       "slug": "github-pr-workflow",
       "path": "skills/github/github-pr-workflow/SKILL.md",
-      "content_sha256": "f3a35d81e880ea73acde23ce080e1c047b745527eb713a93d40c3c379fb3954d"
+      "content_sha256": "d752ffa2993cb64edee12b5be89030e007aaebffc5bdd0032466ef7a57dd1c8c"
     },
     {
       "slug": "github-repo-management",
       "path": "skills/github/github-repo-management/SKILL.md",
-      "content_sha256": "27362c86fd1dfcd58e7b65a19f96e438026149de6eaf7a39dc28320353835144"
+      "content_sha256": "7b528746118c94d2d468f5d805ed3266b16bc97054dde80f57411cbea9ef1d7b"
     },
     {
       "slug": "gif-search",
@@ -178,7 +198,7 @@
     {
       "slug": "youtube-content",
       "path": "skills/media/youtube-content/SKILL.md",
-      "content_sha256": "03cba418b10c64a316124fd9c0cde640bfe87da86f30df8136b8498003eafed8"
+      "content_sha256": "52349e30ac74a3c2693c43588e9392a53236526b4b7d92769a64045a9782308e"
     },
     {
       "slug": "evaluating-llms-harness",
@@ -208,27 +228,42 @@
     {
       "slug": "obsidian",
       "path": "skills/note-taking/obsidian/SKILL.md",
-      "content_sha256": "b3f669a8a14611c48f512f751eb0873f958b8bee3d944760fb8aaf269a2c4f55"
+      "content_sha256": "7aea4e8f89f94ab2876d79898d10a5d4cdab31390c53f72ad6934b071179f826"
     },
     {
       "slug": "airtable",
       "path": "skills/productivity/airtable/SKILL.md",
-      "content_sha256": "016198b563b8f8c4441b002bce8ad0e0865f2f39f1da22476beb7a7daed482aa"
+      "content_sha256": "28253f1e20c4d250725eb7f475c886952a4c6a1ef43ef6900c2dc0e75ebb40e6"
+    },
+    {
+      "slug": "box",
+      "path": "skills/productivity/box/SKILL.md",
+      "content_sha256": "e9672412333de4feff348e6dc387d9022d32005247360347a10a7131fb87eb13"
+    },
+    {
+      "slug": "document-to-action-items",
+      "path": "skills/productivity/document-to-action-items/SKILL.md",
+      "content_sha256": "f114af652272b56c8736172eab8ee870bd8c1004965b698d4ae5c705d8b6e554"
     },
     {
       "slug": "docx",
       "path": "skills/productivity/docx/SKILL.md",
-      "content_sha256": "cf17a6245da720b7cc3c61b77cc144225a32547568c4665fb77f0b0da96ff40a"
+      "content_sha256": "9678b14d5e7841d588b969f6a4696cd46bcc46c3e4ac1479edc7656a051aa5ff"
     },
     {
       "slug": "google-workspace",
       "path": "skills/productivity/google-workspace/SKILL.md",
-      "content_sha256": "014a4818ee1b363d11fafa2353bcea4fd4f8e0c0802322708023d3cd2e3f43b6"
+      "content_sha256": "5bdca0d898744fbf4d66df611116b5c776b1297b964fbcfd86b3004c20e46fd7"
     },
     {
       "slug": "maps",
       "path": "skills/productivity/maps/SKILL.md",
-      "content_sha256": "8c961ecf662838e3ff287570d343db8b1587ca7a6d565ec53eeab13f89407b29"
+      "content_sha256": "775ef9f79be9cd147bc81e0c4a4ef952230a04736a6082f44dbac78554ef89ab"
+    },
+    {
+      "slug": "meeting-action-items",
+      "path": "skills/productivity/meeting-action-items/SKILL.md",
+      "content_sha256": "1902f782551da96ee1f9b34d6f13af627f06150a498d874b0cc2a75d06d35aa8"
     },
     {
       "slug": "nano-pdf",
@@ -243,32 +278,52 @@
     {
       "slug": "ocr-and-documents",
       "path": "skills/productivity/ocr-and-documents/SKILL.md",
-      "content_sha256": "609674061a034fa4f15d81276fb57d3110418a2b1f8cd55d6b852b0c1ecda8ac"
+      "content_sha256": "856c1bce359ca7da0cc83f06e7b6b59f9445c16084d0510fc1541101af57f263"
     },
     {
       "slug": "pdf",
       "path": "skills/productivity/pdf/SKILL.md",
-      "content_sha256": "7f5e2db4342a69cc8193803f855fce8739c6b8f4d051a3d2691f827f595ce23e"
+      "content_sha256": "14e1be6e302bc1a9d66cdf3220d636a5acaa500b78c365f5a453f55dc3217934"
     },
     {
       "slug": "powerpoint",
       "path": "skills/productivity/powerpoint/SKILL.md",
-      "content_sha256": "a81d5c61b844b21b07393cd4bef7db0de6d4d484cecd40b00621087bc442263e"
+      "content_sha256": "b71d29d9809c4464d7f8d10afabf4f22f6a26c647cf7aacb6f9faf196ebe82f2"
+    },
+    {
+      "slug": "product-price-monitor",
+      "path": "skills/productivity/product-price-monitor/SKILL.md",
+      "content_sha256": "b87bf2102fed13d2c7c64759fa153f24f5e43a0afcf6f8ec5e13def92a6642ef"
+    },
+    {
+      "slug": "session-librarian",
+      "path": "skills/productivity/session-librarian/SKILL.md",
+      "content_sha256": "9da2d0ba82b771ae83560965ffaa910db01e76bba8c1d914133a0d8c6957f2ba"
     },
     {
       "slug": "teams-meeting-pipeline",
       "path": "skills/productivity/teams-meeting-pipeline/SKILL.md",
-      "content_sha256": "787ecd8615a335e4b8c1d5834d01ce0c697e55f18e6bea6e39eaafb2d7fcfc5f"
+      "content_sha256": "2ffe32a3a55fb81a98da10fe0d87cfc10d9d3ef68ec38ff4df6922fb51d88325"
+    },
+    {
+      "slug": "weekly-review-planning",
+      "path": "skills/productivity/weekly-review-planning/SKILL.md",
+      "content_sha256": "a689257facb937cfca9bc5507dd9e729f287f0cd3f6abbf73448eb25f73fbaab"
     },
     {
       "slug": "xlsx",
       "path": "skills/productivity/xlsx/SKILL.md",
-      "content_sha256": "5fb6612978efcf12596edbaa4e23a080d8aba97fcae058c2510c28d65fe1d12b"
+      "content_sha256": "b302d7ac997843a757ab3c11513ea012889ebdae32f842edb44faa9a4485f19b"
     },
     {
       "slug": "arxiv",
       "path": "skills/research/arxiv/SKILL.md",
-      "content_sha256": "2a6073a1ad08823dbdf26be64440b54155298db38fdee52c7b0a5d1cd0cfb05d"
+      "content_sha256": "9a04b8535ab5fb9485fa230b7d9e0fe3688b49be0ab85095f3a916f832a3782c"
+    },
+    {
+      "slug": "blocked-page-recovery",
+      "path": "skills/research/blocked-page-recovery/SKILL.md",
+      "content_sha256": "1a7a44534277c3ce367cb9a9dde07b1aa0925d3e5e8cb4e887307568b7a46052"
     },
     {
       "slug": "blogwatcher",
@@ -276,24 +331,24 @@
       "content_sha256": "b85be5a9b86b90287266dd142a0ae9740be926298fbcb772f56b8a4d6451bb12"
     },
     {
+      "slug": "competitor-news-monitor",
+      "path": "skills/research/competitor-news-monitor/SKILL.md",
+      "content_sha256": "bcc92cdcb4811ec2a8b6b13527b952552fccfc2a749837dfee24a8b561415cef"
+    },
+    {
       "slug": "grounded-citations",
       "path": "skills/research/grounded-citations/SKILL.md",
-      "content_sha256": "e244361021acc9d41efc230df739130c5545bb86dba5af37aa0d1a878c6c59ea"
+      "content_sha256": "825b4a7967dea260bb7093758aa906f8cd49ec84007e0decf983ab948e19e0b4"
     },
     {
       "slug": "llm-wiki",
       "path": "skills/research/llm-wiki/SKILL.md",
-      "content_sha256": "a37ae04745b04b8e9bbd8de37cdcbc2b2187ccafb68418e436a46ebb1e491ee5"
-    },
-    {
-      "slug": "polymarket",
-      "path": "skills/research/polymarket/SKILL.md",
-      "content_sha256": "becfa71e730b482c3f087c4de4071fd25f0feb475aec1293aee0b845c10fa190"
+      "content_sha256": "0229e37c1783fcac5b77cfb3242703666cf4aa472d2ae85b6bd5279756b515b6"
     },
     {
       "slug": "research-paper-writing",
       "path": "skills/research/research-paper-writing/SKILL.md",
-      "content_sha256": "b78cfe4323fa36b378c0a08ec4f1e131a1dabedab887b651748b011b73237b07"
+      "content_sha256": "52aec0edc55dbe73b6d7612cd2bdaffb5bf396643ce70e73ffc1b504fb96ba35"
     },
     {
       "slug": "openhue",
@@ -308,12 +363,12 @@
     {
       "slug": "dogfood",
       "path": "skills/software-development/dogfood/SKILL.md",
-      "content_sha256": "36b1a710c61727c2be3c43ba20d68605cfed199afc90e27bde9746f4b80b91dd"
+      "content_sha256": "1b2793734493dbc624a1d1f1c0667cb510e191fa79b1c740d866706550190560"
     },
     {
       "slug": "hermes-agent-skill-authoring",
       "path": "skills/software-development/hermes-agent-skill-authoring/SKILL.md",
-      "content_sha256": "a86bc27ef9b047a1cb51cd9cf6dda86ed2354b38c24a23bc0377882b4fb57a6a"
+      "content_sha256": "08ba6a1a6eb1a468f6b44ebfc6fb8fcc5d2a2bf98c1e87ddfe8903273ac838d6"
     },
     {
       "slug": "inspecting-hermes-desktop-dom",
@@ -323,7 +378,7 @@
     {
       "slug": "node-inspect-debugger",
       "path": "skills/software-development/node-inspect-debugger/SKILL.md",
-      "content_sha256": "3f10dc0ffd47dd0564dd622b274fb1c281b918ca735b20e0e7100657683974bc"
+      "content_sha256": "bc89942b76387834272b6bf3bbf99caad72400c41338ab0420a740b7abe77d02"
     },
     {
       "slug": "plan",
@@ -333,7 +388,7 @@
     {
       "slug": "python-debugpy",
       "path": "skills/software-development/python-debugpy/SKILL.md",
-      "content_sha256": "d64377eed7b8aa99008ecd43fc858d8fe73d08bb2a88a15bf82bfbe1d18ccf36"
+      "content_sha256": "24258d93eb080e7bbf89a81ba3e614b09d5d09637cdceaafac487f4df07f3f53"
     },
     {
       "slug": "requesting-code-review",
@@ -348,7 +403,7 @@
     {
       "slug": "spike",
       "path": "skills/software-development/spike/SKILL.md",
-      "content_sha256": "891bc0a6fbb7aa6cb4164e48e2d20aae56aad7bbd83d20d093ba89a8ed2b48ab"
+      "content_sha256": "1f80760c022f8ad2dcdcb7349b046f761a276d6afa228f4e02eded7b0e1320da"
     },
     {
       "slug": "systematic-debugging",

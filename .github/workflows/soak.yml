@@ -1,0 +1,106 @@
+name: Soak
+
+# The unattended stability soak (H23.24 / release gate A2), run by a machine.
+#
+# The collector always graded itself against fixed thresholds — what used to be manual
+# was starting the server, babysitting the window, then reading the report and deciding.
+# `scripts/soak_report.py --fail-on-verdict` decides instead: PASS exits 0, FAIL exits 1,
+# and a window with an ungraded check exits 3 (INCONCLUSIVE never passes quietly).
+#
+# Two lanes, same script:
+#   * schedule — a short canary on a GitHub-hosted runner, so drift shows up weekly.
+#     Hosted runners are capped at 6h of wall clock, so this lane cannot be the 72h window.
+#   * workflow_dispatch — the real thing. Point `runner` at a self-hosted label on the
+#     owner's box and ask for `72h`; nobody has to sit with it.
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Soak window (e.g. 72h). Hosted runners cannot exceed ~5h."
+        type: string
+        default: "3h"
+      interval:
+        description: "Seconds/duration between samples"
+        type: string
+        default: "5m"
+      runner:
+        description: "Runner label — use a self-hosted label for the full 72h window"
+        type: string
+        default: "ubuntu-latest"
+  schedule:
+    # Sundays 01:00 UTC — the weekly canary, not the release window.
+    - cron: "0 1 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soak-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  soak:
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    # +90 min over the window itself: cold start, install, and the final render.
+    timeout-minutes: 5490
+    env:
+      SOAK_DURATION: ${{ inputs.duration || '90m' }}
+      SOAK_INTERVAL: ${{ inputs.interval || '2m' }}
+      JARVIS_ADMIN_TOKEN: ${{ secrets.JARVIS_ADMIN_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-beta.lock
+
+      - name: Install dependencies
+        # AUD-10 (F33): hash-pinned install, same as smoke.yml.
+        run: pip install --require-hashes -r requirements-beta.lock
+
+      - name: Start server
+        run: |
+          mkdir -p soak-out
+          python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080 > soak-out/server.log 2>&1 &
+          echo "SOAK_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 60); do
+            sleep 2
+            if curl -sf -o /dev/null http://127.0.0.1:8080/healthz; then
+              echo "server ready"
+              exit 0
+            fi
+          done
+          echo "::error::server did not become healthy within 120s"
+          tail -50 soak-out/server.log
+          exit 1
+
+      - name: Run soak
+        # --fail-on-verdict is what removes the human from the loop: the step's exit
+        # status *is* the gate. The report and verdict JSON are uploaded either way.
+        run: |
+          python scripts/soak_report.py \
+            --base-url http://127.0.0.1:8080 \
+            --duration "$SOAK_DURATION" \
+            --interval "$SOAK_INTERVAL" \
+            --pid "$SOAK_PID" \
+            --log soak-out/server.log \
+            --output-dir soak-out \
+            --fail-on-verdict
+
+      - name: Stop server
+        if: always()
+        run: kill "$SOAK_PID" 2>/dev/null || true
+
+      - name: Publish verdict to the run summary
+        if: always()
+        run: cat soak-out/*-soak-report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload soak evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: soak-evidence-${{ github.run_id }}
+          path: soak-out/
+          retention-days: 30

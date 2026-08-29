@@ -23,6 +23,7 @@ from agents.core.routers import swarm
 TOP_KEYS = (
     "generated_at", "initialized", "halted", "agents", "activity",
     "autonomy", "presence", "missions", "workflows", "subagents", "a2a", "dev_locks",
+    "pr_feed",
 )
 
 
@@ -74,6 +75,42 @@ def test_empty_orch_returns_full_shape(monkeypatch):
     assert s["subagents"] == {"spawns": 0, "stats": {}}
     assert s["a2a"] == {"enabled": False, "pending": 0}
     assert set(s["dev_locks"]) == {"known", "agents", "components", "available"}
+    assert s["pr_feed"] == {
+        "available": False, "prs": [], "checked_at": 0.0, "capped": False,
+        "error": "oracle_bridge_unavailable",
+    }
+
+
+def test_pr_feed_reads_the_oracle_bridge_cached_snapshot():
+    """H34.3 — the feed must be read straight from the plugin's own cache, never
+    trigger a live GitHub call on the request path."""
+    calls = []
+
+    def status():
+        calls.append(1)
+        return {"pr_feed": {
+            "available": True,
+            "prs": [{"number": 5, "title": "t", "author": "a", "url": "", "draft": False,
+                      "branch": "b", "updated_at": "", "checks": {"total": 1, "passed": 1,
+                      "failed": 0, "pending": 0, "state": "success"}}],
+            "checked_at": 123.0, "capped": False, "error": None,
+        }}
+
+    orch = _fake_orch(oracle_bridge=SimpleNamespace(status=status))
+    s = swarm.build_swarm_summary(orch)
+    assert s["pr_feed"]["available"] is True
+    assert s["pr_feed"]["prs"][0]["number"] == 5
+    assert calls == [1]  # exactly one cheap in-memory read, no network call made here
+
+
+def test_pr_feed_degrades_when_oracle_bridge_status_raises():
+    def boom():
+        raise RuntimeError("db locked")
+
+    orch = _fake_orch(oracle_bridge=SimpleNamespace(status=boom))
+    s = swarm.build_swarm_summary(orch)
+    assert s["pr_feed"]["available"] is False
+    assert s["pr_feed"]["error"] == "read_failed"
 
 
 def test_roster_seeded_and_activity_attributed():

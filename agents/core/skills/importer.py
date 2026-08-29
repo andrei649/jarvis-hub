@@ -43,9 +43,9 @@ _SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 HERMES_REPO = "NousResearch/hermes-agent"
-HERMES_PIN_RELEASE_TAG = "v2026.8.3"
-HERMES_PIN_COMMIT = "3c27eb6234bf91b8ceee9e9071591b31e9b148cb"
-HERMES_PIN_TREE = "b217767ccb994605dad522e693fa1b4cdbc2f352"
+HERMES_PIN_RELEASE_TAG = "v2026.8.27"
+HERMES_PIN_COMMIT = "5fc308a70719a83cccdbba4c0e39c23f5a8239d5"
+HERMES_PIN_TREE = "222ec43b5237deb643277bc2f64fa4b873dd7f28"
 HERMES_PIN_PATH = Path(__file__).with_name("hermes_pin_v1.json")
 OPENCLAW_REPO = "openclaw/skills"
 OPENCLAW_SKILLS_PATH = "main/skills"

@@ -91,11 +91,11 @@ def test_loader_still_parses_heading_style(tmp_path):
 # ── importer: mocked httpx GitHub ─────────────────────────────────
 
 PIN_REPOSITORY = "NousResearch/hermes-agent"
-PIN_RELEASE_TAG = "v2026.8.3"
-PIN_COMMIT = "3c27eb6234bf91b8ceee9e9071591b31e9b148cb"
-PIN_TREE = "b217767ccb994605dad522e693fa1b4cdbc2f352"
+PIN_RELEASE_TAG = "v2026.8.27"
+PIN_COMMIT = "5fc308a70719a83cccdbba4c0e39c23f5a8239d5"
+PIN_TREE = "222ec43b5237deb643277bc2f64fa4b873dd7f28"
 PIN_PATH = "skills/github/github-issues/SKILL.md"
-PIN_FILE_SHA256 = "ae44e31a537fba2269550c321a025c2c726e8a84402d32bbb9f1b0854a35e33d"
+PIN_FILE_SHA256 = "0acc2b07b31afc24ab04eac56596e6dde6427eaf5b1370009f5ec138f0c3f7fb"
 HERMES_SKILL_BYTES = HERMES_SKILL_MD.encode("utf-8")
 
 PDF_SKILL_MD = """---
@@ -221,7 +221,7 @@ def test_repository_hermes_pin_is_exact_release_inventory():
     assert pin.release_tag == PIN_RELEASE_TAG
     assert pin.commit == PIN_COMMIT
     assert pin.tree == PIN_TREE
-    assert len(pin.skills) == 71
+    assert len(pin.skills) == 82
     assert hashlib.sha256(importer_mod.HERMES_PIN_PATH.read_bytes()).hexdigest() == PIN_FILE_SHA256
 
 

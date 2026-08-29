@@ -4,6 +4,7 @@ Seeds a throwaway data root with content DBs + a secrets DB, then asserts the
 export dumps only allow-listed user content as readable JSON, excludes
 settings.db, and never mutates anything.
 """
+import base64
 import json
 import sqlite3
 from pathlib import Path
@@ -11,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from agents.core import data_export as dx
+from agents.core.vault import Vault
 
 
 def _make_db(path: Path, table: str, rows: list[tuple], cols=("id", "v")) -> None:
@@ -70,3 +72,86 @@ def test_export_manifest_shape(data_root):
     assert res["bytes"] > 0
     doc = json.loads(Path(res["export"]).read_text())
     assert doc["version"] == dx.EXPORT_VERSION
+
+
+# ── T-0.20: the vault holds ciphertext at rest — export must decrypt it, or a
+# "portable JSON export of what you own" silently omits (or worse, dumps
+# unreadable ciphertext for) whatever the owner explicitly vaulted. ───────────
+
+def test_export_decrypts_and_embeds_vault_items(tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    # No explicit key: matches how the router/live app open the vault
+    # (Vault() with no passphrase persists its own generated key file), so a
+    # second Vault(root=...) instance opened over the same root — exactly
+    # what _dump_vault does — can actually decrypt it.
+    v = Vault(root / "vault")
+    entry = v.put(b"a vaulted secret", name="secret.txt", kind="document", now=1.0)
+
+    res = dx.export_data(source_root=str(root))
+    doc = json.loads(Path(res["export"]).read_text())
+
+    assert doc["vault"]["available"] is True
+    items = doc["vault"]["items"]
+    assert len(items) == 1
+    assert items[0]["name"] == "secret.txt"
+    assert items[0]["id"] == entry["id"]
+    assert base64.b64decode(items[0]["data_base64"]) == b"a vaulted secret"
+    assert res["vault_items"] == 1
+    # the raw ciphertext bytes must never leak into the export either
+    for blob_path in (root / "vault").glob("*.blob"):
+        assert blob_path.read_bytes() not in Path(res["export"]).read_bytes()
+
+
+def test_export_vault_absent_is_honest_not_an_error(tmp_path):
+    root = tmp_path / "empty"
+    root.mkdir()
+    res = dx.export_data(source_root=str(root))
+    doc = json.loads(Path(res["export"]).read_text())
+    assert doc["vault"] == {"available": False, "items": [], "skipped": []}
+    assert res["vault_items"] == 0
+
+
+def test_vault_is_not_exempt_from_forget():
+    """The forget/export erasure invariant (test_forget_export_purge_parity.py)
+    only checks EXPORT_DBS/EXPORT_JSON against KEEP_FILES/KEEP_DIRS — the vault
+    is neither (it's a directory, exported via _dump_vault, not an allow-listed
+    name). Pin the same guarantee for it explicitly: a forget must not retain
+    what an export can now reveal."""
+    from agents.core.data_purge import KEEP_DIRS
+    assert "vault" not in KEEP_DIRS
+
+
+def test_export_vault_never_mutates_it(tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    # No explicit key: matches how the router/live app open the vault
+    # (Vault() with no passphrase persists its own generated key file), so a
+    # second Vault(root=...) instance opened over the same root — exactly
+    # what _dump_vault does — can actually decrypt it.
+    v = Vault(root / "vault")
+    v.put(b"content", name="a", now=1.0)
+    before = sorted(p.name for p in (root / "vault").glob("*"))
+
+    dx.export_data(source_root=str(root))
+
+    after = sorted(p.name for p in (root / "vault").glob("*"))
+    assert before == after
+
+
+def test_export_file_is_owner_only_from_birth(tmp_path):
+    """Regression: the export embeds decrypted vault plaintext, so it must be
+    created 0o600 — a umask-default world-readable file would quietly undo the
+    at-rest protection the vault's own chmod-private discipline provides."""
+    import os as _os
+    import stat as _stat
+    if _os.name == "nt":
+        pytest.skip("POSIX permission-bits assertion")
+    root = tmp_path / "data"
+    root.mkdir()
+    Vault(root / "vault").put(b"secret material", name="s", now=1.0)
+
+    result = dx.export_data(source_root=str(root), out_dir=str(tmp_path / "exports"))
+
+    mode = _stat.S_IMODE(Path(result["export"]).stat().st_mode)
+    assert mode == 0o600, f"export must be owner-only, got {oct(mode)}"
