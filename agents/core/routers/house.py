@@ -30,6 +30,8 @@ from ..house import (
     HomeAssistantServiceDriver,
     HouseActuator,
     HouseGraph,
+    HousePresenceIngestor,
+    PresenceInference,
     PrivateHouseStore,
     PrivateStoreError,
     StrongConfirmationStore,
@@ -55,6 +57,8 @@ class HouseRuntime:
     private_status: str
     confirmation_status: str
     orch_id: int = 0
+    # GAP-9: the production presence writer (None = feature off/store down).
+    presence_ingestor: HousePresenceIngestor | None = None
 
 
 class _StrictBody(BaseModel):
@@ -122,8 +126,20 @@ def _settings(orch) -> dict:
         "house.ha_url",
         "house.ha_token_ref",
         "house.ha_allowed_hosts",
+        "house.presence_enabled",
     )
     return {key: getter(key, None) for key in keys}
+
+
+def _presence_enabled(settings: dict) -> bool:
+    """Default-off presence writer flag (env wins over settings, house-style)."""
+    import os
+
+    from agents.core.env_config import env_flag
+
+    if "JARVIS_HOUSE_PRESENCE" in os.environ:
+        return env_flag("JARVIS_HOUSE_PRESENCE")
+    return settings.get("house.presence_enabled") is True
 
 
 def _build_runtime(orch) -> HouseRuntime:
@@ -155,6 +171,16 @@ def _build_runtime(orch) -> HouseRuntime:
     except (PrivateStoreError, OSError):
         private_store = None
         private_status = "unavailable"
+
+    # GAP-9: the production presence writer. Shares the SAME store instance as
+    # _presence_view (a second store on the same path would be invisible to
+    # the router's cached one). Default-off; None keeps prior behavior.
+    presence_ingestor = None
+    if private_store is not None and _presence_enabled(_settings(orch)):
+        try:
+            presence_ingestor = HousePresenceIngestor(PresenceInference(private_store))
+        except ValueError:
+            logger.warning("House presence writer unavailable", exc_info=True)
 
     try:
         confirmations = StrongConfirmationStore(
@@ -196,6 +222,7 @@ def _build_runtime(orch) -> HouseRuntime:
         private_status=private_status,
         confirmation_status=confirmation_status,
         orch_id=id(orch) if orch is not None else 0,
+        presence_ingestor=presence_ingestor,
     )
 
 
@@ -351,11 +378,34 @@ async def house_state():
                 "rooms": [],
                 "devices": [],
                 "presence": [],
+                "presence_status": (
+                    "unavailable"
+                    if getattr(runtime, "presence_ingestor", None) is not None
+                    else "off"
+                ),
                 "privacy_status": runtime.private_status,
             }
         )
     status = snapshot.status
     reason = snapshot.reason
+
+    # GAP-9: run the production presence writer before the presence view is
+    # read, so the view reflects this very snapshot. Store writes are
+    # blocking (encrypted file store) — keep them off the loop. The writer's
+    # own status is reported separately from the array so an empty list
+    # means "no occupants detected", never "the feature was never built".
+    ingestor = getattr(runtime, "presence_ingestor", None)
+    if ingestor is None:
+        presence_status = "off"
+    elif snapshot.status != "live":
+        presence_status = "unavailable"
+    else:
+        try:
+            await asyncio.to_thread(ingestor.ingest, snapshot)
+            presence_status = "live"
+        except Exception:
+            logger.warning("House presence ingest failed", exc_info=True)
+            presence_status = "degraded"
     state = {
         "status": status,
         "observed_at": snapshot.observed_at,
@@ -388,6 +438,7 @@ async def house_state():
             "rooms": list(state.get("rooms") or [])[:_STATE_LIMIT],
             "devices": list(state.get("devices") or [])[:_STATE_LIMIT],
             "presence": presence,
+            "presence_status": presence_status,
             "privacy_status": privacy_status,
         }
     )

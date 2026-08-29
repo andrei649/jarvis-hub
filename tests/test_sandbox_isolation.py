@@ -85,3 +85,29 @@ async def test_workspace_mount_is_read_only():
     )
     assert "WROTE" not in result.stdout
     assert "READONLY" in result.stdout
+
+
+@pytest.mark.asyncio
+async def test_terminal_target_runs_inside_the_real_container(tmp_path):
+    """GAP-9: a terminal.exec on the isolated-sandbox target truly executes in
+    Docker — the policy plane's decision is audit-chained and the command runs
+    with the sandbox's containment (the suite above proves --network none and
+    read-only for this same engine)."""
+    from agents.core.environments import (
+        GovernedTargetRunner,
+        TargetAuditChain,
+        TargetRegistry,
+        default_targets,
+    )
+
+    registry = TargetRegistry(
+        default_targets(), audit=TargetAuditChain(path=tmp_path / "audit.jsonl")
+    )
+    runner = GovernedTargetRunner(registry, Sandbox())
+    result = await runner.run(
+        target="isolated-sandbox", agent="jarvis", command="echo governed"
+    )
+    assert result["ok"] is True, result
+    assert result["backend"] == "docker"
+    assert "governed" in result["stdout"]
+    assert registry.audit.entries[-1]["outcome"] == "allow"

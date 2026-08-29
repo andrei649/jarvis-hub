@@ -288,6 +288,7 @@ def test_house_state_degrades_honestly_when_the_adapter_raises(client):
         "rooms": [],
         "devices": [],
         "presence": [],
+        "presence_status": "off",
         "privacy_status": runtime.private_status,
     }
 

@@ -1,4 +1,12 @@
-"""Optional LAN-only ONVIF discovery for owner-curated Frigate onboarding."""
+"""Optional LAN-only ONVIF discovery for owner-curated Frigate onboarding.
+
+WS-Discovery needs the optional ``wsdiscovery`` package, which — like the
+Playwright and pywinauto hosts — is deliberately NOT in the hash-pinned locks:
+it binds multicast UDP on the LAN and only ever runs default-off behind the
+admin gate. Install it manually on the owner host (``pip install wsdiscovery``);
+without it discovery degrades honestly to ``status="unavailable"`` with the
+remedy named in ``detail``.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +14,7 @@ import asyncio
 import hashlib
 import inspect
 import ipaddress
+import logging
 import math
 import re
 import socket
@@ -20,6 +29,16 @@ _MAX_RAW_RESULTS = 128
 
 Resolver = Callable[[str, int], Sequence[str]]
 Discoverer = Callable[[], object | Awaitable[object]]
+
+_LOGGER = logging.getLogger(__name__)
+
+# The exact remedy for the missing optional dependency, surfaced to the admin
+# instead of a bare reason code (GAP-9: the silence was the defect, not the
+# absence — see docs/research/2026-08-09-gap9-honesty-debt.md).
+DEPENDENCY_MISSING_DETAIL = (
+    "ONVIF discovery needs the optional 'wsdiscovery' package on this host; "
+    "run 'pip install wsdiscovery' and retry"
+)
 
 
 class OnvifDiscoveryError(RuntimeError):
@@ -150,13 +169,19 @@ class OnvifDiscoveryResult:
     status: str
     devices: tuple[OnvifDevice, ...]
     reason: str | None = None
+    # Human-actionable remedy for refusals whose fix is on the owner, e.g. the
+    # missing optional dependency. None for statuses that need no action.
+    detail: str | None = None
 
     def to_public(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "status": self.status,
             "reason": self.reason,
             "devices": [device.to_public() for device in self.devices],
         }
+        if self.detail is not None:
+            payload["detail"] = self.detail
+        return payload
 
 
 def _default_resolver(host: str, port: int) -> tuple[str, ...]:
@@ -221,6 +246,7 @@ class OnvifDiscoveryService:
         self._discoverer = discoverer
         self._resolver = resolver or _default_resolver
         self._mapping = {mapping.device_key: mapping for mapping in config.mappings}
+        self._dependency_warning_emitted = False
 
     async def discover(self) -> OnvifDiscoveryResult:
         if not self._config.enabled:
@@ -236,10 +262,14 @@ class OnvifDiscoveryService:
         # that first-use import off the event loop like the search itself.
         discoverer = self._discoverer or await asyncio.to_thread(self._load_default_discoverer)
         if discoverer is None:
+            if not self._dependency_warning_emitted:
+                self._dependency_warning_emitted = True
+                _LOGGER.warning("%s", DEPENDENCY_MISSING_DETAIL)
             return OnvifDiscoveryResult(
                 status="unavailable",
                 devices=(),
                 reason="onvif_dependency_missing",
+                detail=DEPENDENCY_MISSING_DETAIL,
             )
         try:
             payload = await asyncio.wait_for(

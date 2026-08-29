@@ -89,6 +89,14 @@ llama-server -m qwen3-32b.gguf -md qwen3-4b-draft.gguf \
   --draft-max 16 --draft-min 4 --port 8001
 ```
 
+### Option C — LM Studio
+Load a `vlm`-type model in LM Studio (Models tab) — its server on
+`http://localhost:1234/v1` speaks the same OpenAI-vision contract:
+```bash
+export JARVIS_VLM_BACKEND=lmstudio
+export JARVIS_VLM_MODEL=qwen2.5-vl-7b   # the exact loaded model id — never guessed
+```
+
 ### Point the router / VLM backend at it
 Both servers expose an **OpenAI-compatible** API, which the existing backends
 already speak:

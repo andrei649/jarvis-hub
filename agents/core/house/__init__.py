@@ -14,6 +14,7 @@ from .confirmation import ConfirmationError, StrongConfirmationStore
 from .contracts import HouseArea, HouseEntity, HouseEvent, HouseSnapshot
 from .graph import HouseGraph
 from .home_assistant import HAConfig, HAConfigError, HomeAssistantAdapter, load_ha_config
+from .ingest import HousePresenceIngestor
 from .presence import (
     LocalPresenceExplainer,
     PresenceDecision,
@@ -43,6 +44,7 @@ __all__ = [
     "LocalPresenceExplainer",
     "PresenceDecision",
     "PresenceEvidence",
+    "HousePresenceIngestor",
     "PresenceInference",
     "PresenceOutcome",
     "PrivateHouseStore",

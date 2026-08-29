@@ -116,18 +116,23 @@ and verifies.**
 - **House (Atlas)**: the O30 House Brain (#675) delivers the read-first Home Assistant
   REST/WebSocket state adapter (`house/home_assistant.py`), the device/room/occupant graph
   (`house/graph.py` + the encrypted `house/private_store.py` for occupant/presence) and governed
-  actuation; presence inference exists (`house/presence.py`) but its predicates have no
-  production writer — the only callers are the H30 reality probe (`observability/house_reality.py`)
-  and tests, so `/api/house/state.presence` serves `[]`. Homebridge + Tuya + Wyoming voice
+  actuation; presence inference now has a default-off production writer (`house/ingest.py`,
+  `house.presence_enabled`) feeding HA person/device_tracker + room motion into it on each
+  state read — room presence is claimed only when identity and same-room motion corroborate,
+  and the route's `presence_status` field reports off/live/degraded separately from the
+  array. Homebridge + Tuya + Wyoming voice
   satellite also exist. WorldView + Signal Layer are substantial but not yet unified with
   house/device/execution state.
 - **Cameras (Vision)**: H31 (#676) delivers read-only, LAN-pinned Frigate metadata +
   discovery-only ONVIF behind versioned consent and mandatory privacy masks
   (`agents/core/cameras/`); direct RTSP ingest is not shipped (no decoder/stream surface).
-  Both camera seams are owner-side: ONVIF discovery needs the manually installed `wsdiscovery`
-  package (declared in no requirements file, so stock installs answer `discovery_unavailable` —
-  `cameras/onvif.py`), and the VLM description leg needs an owner-hosted OpenAI-vision-compatible
-  server via `JARVIS_VLM_URL` (`cameras/runtime.py`, default-off).
+  Both camera seams are owner-side by design and now say so at runtime: ONVIF discovery
+  needs the manually installed `wsdiscovery` package (deliberately unlocked, like the
+  Playwright/pywinauto hosts; a stock install answers `onvif_dependency_missing` with the
+  install remedy in `detail` — `cameras/onvif.py`), and the VLM description leg needs a
+  self-hosted OpenAI-vision server — LM Studio is first-class via `JARVIS_VLM_BACKEND=lmstudio`
+  (`llm/vlm.py::resolve_vlm_config`; the consent-scoped `camera.vlm_*` loopback path is
+  unchanged, default-off).
 - **Proof**: single-user; ⭐B0 manual run, 72h soak and design partners still pending (the proof
   track — unchanged, see §10).
 
@@ -149,8 +154,8 @@ event, query or policy requires it.*
   `JARVIS_VLM_URL`), screen grounding (`screen_grounding.py`), opt-in passive capture,
   7-phase ingestion pipeline, host observer (`autonomy/observer.py`), channel inbounds;
   read-only camera perception (H31 — Frigate metadata + discovery-only ONVIF) and house
-  sensor state/presence (H30 — HA adapter + presence inference; the inference engine has no
-  production ingestion path, so `/api/house/state.presence` serves `[]` — see §3).
+  sensor state/presence (H30 — HA adapter + presence inference, fed by the default-off
+  `house/ingest.py` production writer since GAP-9 — see §3).
 - **Missing:** direct RTSP/camera stream intelligence (H31 is read-only metadata + discovery,
   with no Jarvis decoder/stream surface); vehicle telemetry; desktop observation as a routine
   perception source; ambient correlation depth beyond the delivered H33 monitors.
@@ -209,15 +214,15 @@ policies.*
 
 - **Exists:** the O30 House Brain (`agents/core/house/` — read-first Home Assistant REST/WebSocket
   state adapter `home_assistant.py`, device/room/occupant topology `graph.py`, encrypted private
-  occupant/presence store, presence inference (built, not yet wired to a production ingestion
-  path — `/api/house/state.presence` serves `[]`), governed actuation through the Action Kernel);
+  occupant/presence store, presence inference with its default-off production writer
+  (`house/ingest.py`, GAP-9), governed actuation through the Action Kernel);
   `plugins/homebridge.py` (HomeKit accessories, LOCAL_ONLY), `plugins/iot_control.py`
   (Tuya, partly mock), `voice/wyoming.py` (HA Voice PE satellites); the bi-temporal KG as the
   house graph's home; WorldView/Signal Layer as Atlas's external-world half.
 - **Missing:** household policies (privacy zones, per-person authority); the last open O30 item —
-  the ambient light bridge (H30.8); a production ingestion path for the presence-inference engine
-  (until one exists, `/api/house/state.presence` serves `[]`); live owner-hardware HA integration
-  (the H30 reality pack is hermetic; the live read probe is double opt-in).
+  the ambient light bridge (H30.8); live owner-hardware HA integration
+  (the H30 reality pack is hermetic; the live read probe is double opt-in — the GAP-9
+  presence writer ships hermetically tested but unproven on the owner's real HA box).
 - **Closed by:** ORIZONT 30 (delivered — H30.1–H30.7; H30.8 ambient light bridge still open).
   Home Assistant/Homebridge provide device abstraction, but **Nerva
   owns reasoning, memory, policy, natural interaction and cross-domain coordination**.
@@ -603,4 +608,16 @@ What changed (all in this doc; no other file touched) and the evidence for each:
     Hermes restatement was verified already-applied at base — no edit needed there; the
     Hermes-side facts are corroborated by
     `docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md` (not by Hermes source).
+17. GAP-9 functional closure (2026-08-29 wave): all five item-16 gaps were built rather than
+    re-hedged — presence gained the default-off production writer `house/ingest.py`
+    (HA snapshot -> PresenceInference, `house.presence_enabled`, `presence_status` route
+    field); ONVIF's missing dependency now names its remedy at runtime
+    (`onvif_dependency_missing` + detail, Playwright-style deliberately-unlocked);
+    the VLM leg gained first-class local backend selection
+    (`llm/vlm.py::resolve_vlm_config`, LM Studio on 1234/v1, honest refusal reasons);
+    the execution-target layer gained its transport (`environments/execution.py`,
+    docker-only, audit-before-spawn, behind the gated `terminal_run` tool +
+    `JARVIS_TERMINAL_TARGETS`); and reality runs persist as evidence
+    (`observability/reality_evidence.py` + reality.yml artifact upload,
+    promotion still in-process-only per V3). Prose above updated in the same wave.
 --> 

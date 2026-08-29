@@ -321,3 +321,32 @@ unverifiable:
   `PARALLEL_WORKFLOW.md` were modified. Only this document was created.
 - Line numbers were captured on `origin/main` @ `69c7ab2c`; if `main` moves, re-verify the
   cited lines before acting on them.
+
+
+---
+
+## Resolution — 2026-08-29 (GAP-9 functional wave)
+
+All five confirmed claims were closed by building the functional half rather than
+re-hedging the docs (BACKLOG's 2026-08-28 recount asked for exactly this):
+
+1. **Presence** — `agents/core/house/ingest.py` is the production writer
+   (HA snapshot -> `PresenceInference`, default-off `house.presence_enabled` /
+   `JARVIS_HOUSE_PRESENCE`); `/api/house/state` gained `presence_status`.
+2. **ONVIF** — the missing `wsdiscovery` dependency now names its remedy at
+   runtime (`onvif_dependency_missing` + `detail`); deliberately unlocked,
+   same policy as the Playwright/pywinauto hosts.
+3. **VLM** — `llm/vlm.py::resolve_vlm_config` makes a self-hosted server
+   first-class (`JARVIS_VLM_BACKEND=lmstudio` on 1234/v1, or `custom`), with
+   stable refusal reasons; `/api/vlm/status` reports config truth only.
+4. **Environments** — `environments/execution.py::GovernedTargetRunner`
+   executes through the target policy plane (docker-only, audit-before-spawn),
+   reached via the gated `terminal_run` ToolRPC tool behind
+   `JARVIS_TERMINAL_TARGETS`; local/ssh refuse with explicit
+   not-implemented reasons.
+5. **Reality harness** — `observability/reality_evidence.py` persists each run
+   as `nerva.reality.run.v1` evidence (+ reality.yml artifact upload,
+   14-day retention); promotion stays in-process-only per V3.
+
+Doc corrections from the proposal above were applied in the same wave
+(`docs/design/HUD_V2_REMAINING.md`, `docs/FEATURES.md`, `NERVA_VISION.md`).

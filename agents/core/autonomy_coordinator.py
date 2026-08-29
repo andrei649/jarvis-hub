@@ -27,6 +27,11 @@ from .orchestrator_bindings import bind_external_orchestrator_attribute
 from .system_profiles import active_posture
 from .workflows.pending_queue import WorkflowPendingQueue
 
+# Gated ToolRPC tools whose approved tasks may reach trusted execution. Every
+# entry actuates only through its own governed rail (desktop kernel steps,
+# target policy plane) after durable ask-tier approval.
+_TRUSTED_TOOL_RPC_KINDS = frozenset({"toolrpc.desktop_run", "toolrpc.terminal_run"})
+
 logger = logging.getLogger("jarvis.orchestrator")
 
 
@@ -342,7 +347,7 @@ class AutonomyCoordinator:
                 return False
             return (
                 persisted.status == "running"
-                and persisted.kind == "toolrpc.desktop_run"
+                and persisted.kind in _TRUSTED_TOOL_RPC_KINDS
                 and persisted.autonomy_level == "ask"
                 and persisted.decision in {"accept", "edit"}
                 and bool(persisted.decided_by)
@@ -445,6 +450,45 @@ class AutonomyCoordinator:
             trusted_execution=True,
         )
 
+        async def _rpc_terminal_run(args):
+            """Run a command on a named target AFTER durable approval (GAP-9).
+
+            Policy layers, outermost first: JARVIS_TERMINAL_TARGETS default-off
+            flag → this gated tool's kernel/approval rail → the target policy
+            plane (audit-chained authorize) → the docker-only transport.
+            """
+            from .env_config import env_flag
+            from .environments import GovernedTargetRunner
+
+            if not env_flag("JARVIS_TERMINAL_TARGETS"):
+                return {"ok": False, "reason": "terminal_targets_disabled"}
+            runner = GovernedTargetRunner(
+                self._target_registry(), getattr(self._orch, "sandbox", None)
+            )
+            return await runner.run(
+                target=args["target"],
+                agent="jarvis",
+                command=args["command"],
+            )
+
+        server.register_tool(
+            "terminal_run",
+            _rpc_terminal_run,
+            gated=True,
+            description="Run one bounded shell command on a named governed target.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "maxLength": 64},
+                    "command": {"type": "string", "maxLength": 4000},
+                },
+                "required": ["target", "command"],
+                "additionalProperties": False,
+            },
+            capability_id="tool:terminal_run",
+            trusted_execution=True,
+        )
+
         server.register_tool(
             "echo",
             _rpc_echo,
@@ -489,9 +533,33 @@ class AutonomyCoordinator:
             return await server.execute(task, execution_context=execution_token)
 
         self._approved_desktop_tool_rpc_execute = _approved_desktop_tool_rpc_execute
+        self._targets = None
         for agent in getattr(self._orch, "agents", {}).values():
             agent.tool_runtime = runtime
         return runtime
+
+    def _target_registry(self):
+        """Build the named-target registry once, with a durable audit chain.
+
+        First production consumer of the H28.3 policy plane (GAP-9). The
+        chain file re-verifies on load and refuses tampered history; if the
+        durable file is corrupt we fail closed to in-memory auditing rather
+        than executing without a verified chain.
+        """
+        if self._targets is None:
+            from .environments import TargetAuditChain, TargetRegistry, default_targets
+            from .paths import data_path
+
+            try:
+                audit = TargetAuditChain(path=data_path("environments", "target-audit.jsonl"))
+            except Exception:
+                logger.warning(
+                    "Durable target-audit chain unavailable; using in-memory chain",
+                    exc_info=True,
+                )
+                audit = TargetAuditChain()
+            self._targets = TargetRegistry(default_targets(), audit=audit)
+        return self._targets
 
     def build_executor(self) -> TaskExecutor:
         """Wire task kinds to real capabilities, degrading gracefully."""
@@ -684,6 +752,10 @@ class AutonomyCoordinator:
         executor.register("toolrpc", self._orch.tool_rpc.execute)
         executor.register(
             "toolrpc.desktop_run",
+            self._approved_desktop_tool_rpc_execute,
+        )
+        executor.register(
+            "toolrpc.terminal_run",
             self._approved_desktop_tool_rpc_execute,
         )
         acquisition = getattr(self._orch, "acquisition", None)
