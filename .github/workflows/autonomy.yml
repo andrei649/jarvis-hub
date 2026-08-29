@@ -1,0 +1,67 @@
+name: autonomy
+
+# Classifies every PR and decides whether it may merge itself.
+#
+#   tier 0                      -> auto-merge on green
+#   tier 1, tighten / neutral   -> auto-merge on green
+#   tier 1, loosen              -> hold for @andrei649
+#
+# The hold is not advisory: `boundary` is a required status check in branch
+# protection, so a loosening PR cannot merge even with every other check green.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autonomy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  boundary:
+    name: boundary
+    runs-on: ubuntu-latest
+    outputs:
+      auto_merge: ${{ steps.classify.outputs.auto_merge }}
+      tier: ${{ steps.classify.outputs.tier }}
+      direction: ${{ steps.classify.outputs.direction }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify change
+        id: classify
+        run: |
+          set +e
+          python3 scripts/classify_change_tier.py \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}" \
+            --format json > verdict.json
+          code=$?
+          set -e
+          cat verdict.json
+          python3 scripts/report_boundary_verdict.py verdict.json \
+            --github-output "$GITHUB_OUTPUT" \
+            --step-summary "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+  auto-merge:
+    name: auto-merge
+    needs: [boundary]
+    if: needs.boundary.outputs.auto_merge == 'true' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Enable auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge --auto --squash \
+            --repo "${{ github.repository }}" \
+            "${{ github.event.pull_request.number }}"

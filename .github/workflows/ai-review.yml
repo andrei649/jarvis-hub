@@ -1,0 +1,73 @@
+name: ai-review
+
+# Independent agent review on every PR. This is the check that replaces
+# "Andrei reads the diff" for tier-0 work, and it is required for merge.
+#
+# What it is NOT: an approval path for boundary changes. GitHub enforces that
+# on its own — CODEOWNERS names @andrei649, and a bot review never satisfies a
+# CODEOWNERS requirement. A reviewer here can block a merge; none of them can
+# authorize one that widens the system's permissions.
+#
+# Reviewers run independently and do not see each other's findings, so two
+# models agreeing is weak evidence rather than an echo.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: review (${{ matrix.reviewer.name }})
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        reviewer:
+          - name: correctness
+            focus: >-
+              Correctness and regressions. Does this do what its title and
+              description claim? Edge cases, error paths, concurrency, data
+              loss. Ignore style.
+          - name: boundary
+            focus: >-
+              Does this change what the system is ALLOWED to do, in any way the
+              tier classifier might have missed? New network egress, new
+              filesystem reach, new credential use, a check that stops being
+              load-bearing, a test that stops asserting. Report anything that
+              widens reach even if it is not in a boundary path.
+          - name: tests
+            focus: >-
+              Test quality. Are new behaviours actually asserted, or only
+              exercised? Did any existing assertion get weakened, deleted, or
+              made vacuous? Flag every removed assertion by name.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Subscription-backed OAuth token (generated with `claude setup-token`),
+          # not a pay-as-you-go API key — the owner's Claude plan covers reviews.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review this pull request with one focus: ${{ matrix.reviewer.focus }}
+
+            Report only findings you can point at a specific line for. State the
+            concrete failure each one causes. If you find nothing, say so plainly
+            rather than inventing something to report.
+
+            You are one of several independent reviewers. Do not approve this PR;
+            report findings only.

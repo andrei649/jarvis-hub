@@ -1,0 +1,53 @@
+name: Claude
+
+# On-demand assistant. Nothing here runs on ordinary pushes or PRs: the job only
+# starts when a human writes "@claude" in an issue, a pull request comment, or a
+# review. Authorization is enforced inside the action itself — it resolves the
+# commenter's permission on this repository and refuses anyone without write
+# access, and `allowed_bots` stays at its empty default so no App can trigger it.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened, assigned]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One Claude run per thread; a second "@claude" while the first is still
+  # working queues rather than racing it on the same branch.
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    # Cheap pre-filter so unrelated comment traffic never spins up a runner.
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # push commits to the branch Claude opens
+      pull-requests: write # open PRs, post and reply to review comments
+      issues: write # post the tracking comment
+      actions: read # read CI logs for the run it is asked about
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10 # v1.0.210
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Branch names match this repo's existing claude/* convention.
+          branch_prefix: claude/
+          additional_permissions: |
+            actions: read
