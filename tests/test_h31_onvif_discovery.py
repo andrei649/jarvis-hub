@@ -71,13 +71,34 @@ async def test_discovery_is_default_off_and_requires_server_owned_admin_gate():
 
 
 @pytest.mark.asyncio
-async def test_dependency_is_loaded_lazily_and_missing_dependency_is_honest(monkeypatch):
+async def test_dependency_is_loaded_lazily_and_missing_dependency_is_honest(monkeypatch, caplog):
     service = _service(discoverer=None)
     monkeypatch.setattr(service, "_load_default_discoverer", lambda: None)
-    result = await service.discover()
+    with caplog.at_level("WARNING", logger="agents.core.cameras.onvif"):
+        result = await service.discover()
     assert result.status == "unavailable"
     assert result.reason == "onvif_dependency_missing"
     assert result.devices == ()
+    # The refusal names the remedy (GAP-9: silence was the defect) and the
+    # public payload carries it for the HUD.
+    assert "pip install wsdiscovery" in (result.detail or "")
+    assert result.to_public()["detail"] == result.detail
+    assert any("pip install wsdiscovery" in record.message for record in caplog.records)
+    # The warning is once-per-service, not once-per-request.
+    with caplog.at_level("WARNING", logger="agents.core.cameras.onvif"):
+        caplog.clear()
+        await service.discover()
+    assert not caplog.records
+
+
+@pytest.mark.asyncio
+async def test_online_and_degraded_results_do_not_carry_a_detail_field():
+    async def empty():
+        return []
+
+    ok = await _service(discoverer=empty).discover()
+    assert ok.status == "online"
+    assert "detail" not in ok.to_public()
 
 
 @pytest.mark.asyncio
