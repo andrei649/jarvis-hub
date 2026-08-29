@@ -701,21 +701,278 @@ vision doc stops reading as a status report for capabilities that are still seed
   covers 18). **✅ Done (#855, same commit as GAP-7)** — §3/§4 now carry these exact numbers; the
   action-kind count has since kept pace with registry growth (now 21), which is continued accuracy,
   not drift back into the gap.
-- [ ] 🟡 **GAP-9 — honesty debt found by the pass** (each traced to file:line in the doc):
-  `/api/house/state.presence` is structurally always `[]` in every production configuration (the only
-  writer of those predicates has no prod caller); ONVIF discovery needs the undeclared `wsdiscovery`
-  package; the camera VLM leg needs a self-hosted VLM server; `environments/` is a policy plane that
-  never executes and **no SSH transport exists in the repo**; the reality harness persists nothing
-  (in-process registry, no uploaded artifact); README's voice stack lists engines no install path
-  ships. **🟡 Recounted 2026-08-28 — doc half only half-closed, functional half untouched.**
-  `README.md` (voice-stack overclaim) and `NERVA_VISION.md` (#952) now disclose these limitations
-  inline, but the same overclaims still stand uncorrected in `docs/FEATURES.md` and
-  `docs/design/HUD_V2_REMAINING.md`. None of the five underlying functional gaps were built: presence
-  still has no production writer (`agents/core/house/presence.py`'s only caller is the hermetic
-  reality-harness probe), `wsdiscovery` is still undeclared in any requirements file, the VLM leg is
-  still a bare OpenAI-vision client with no shipped self-hosted server, `environments/targets.py`
-  still self-describes as policy-only with `TargetRegistry` imported nowhere outside its own package,
-  and the reality harness still doesn't persist artifacts.
+- [x] ✅ **GAP-9 — honesty debt found by the pass.** **CLOSED 2026-08-29 (#980 functional half, #982
+  surface half).** All five functional gaps are built: `agents/core/house/ingest.py` gives presence a
+  production writer wired into `GET /api/house/state` (with an honest `presence_status`);
+  `agents/core/cameras/onvif.py` declares the `wsdiscovery` dependency contract and returns an
+  actionable install remedy instead of an empty list; `resolve_vlm_config()` adds a local/LM-Studio
+  VLM backend with typed refusal reasons; `agents/core/environments/execution.py`
+  (`GovernedTargetRunner` + the gated `terminal_run` tool) makes the policy plane execute, audit
+  before spawn, over the docker backend; and `agents/core/observability/reality_evidence.py`
+  persists a bounded run ledger + CI artifact. The doc half is finished too — `docs/FEATURES.md` and
+  `docs/design/HUD_V2_REMAINING.md` carry the honest wording (#982), joining `README.md` and
+  `NERVA_VISION.md`. **Deliberate residuals, each recorded elsewhere and none of them a GAP-9 claim:**
+  the SSH and governed-local transports return explicit `*_transport_not_implemented` refusals (B7,
+  `DRA-08`), the VLM *server* is owner hardware, and reality-harness promotion stays in-process by
+  the V3 constraint (evidence is a transcript, never an authority).
+
+---
+
+## 🔍 Discovery-run completeness audit (2026-08-29 — 88 agents, 4 lanes, adversarially confirmed)
+
+An 88-agent audit of the 144-agent discovery sweep (run `wf_dcf964a6`) checked four things: candidates
+the sweep killed, sources it swept, the plan's coverage of surviving items, and clusters proposing
+already-done work. 67 claims were raised; **53 survived adversarial confirmation** (each verifier
+defaulted to rejecting the claim). Every one of the 144 agents finished — the defect is in *coverage*,
+not in agent completion: the sweep mined ~3 items out of a 71-route punch list it was pointed at.
+Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
+
+**Wrongly killed — judged shipped, functionality actually missing (4).**
+
+- [ ] 🔴 **DRA-01 — WV-170 Neo4j live property-scan: the CI lane the kill relied on is RED on main and has
+  never validated the Cypher once; two of the issue's three scope legs are untouched.** The verdict killed
+  issue #170 on the claim that the live contract test is "wired into CI against a real server" and "covers
+  all three parts of the ask". *(evidence: `agents/core/memory/graph.py:175-188,
+  tests/test_neo4j_live_property_search.py:37-44, .github/workflows/reality.yml:70-97`)*
+- [ ] 🟡 **DRA-02 — SEC-B5 killed as fully shipped, but the recall→action taint leg named in the same BACKLOG
+  row is still unimplemented.** The verdict at index 7 concludes 'No development work remains. Only
+  bookkeeping: tick the SEC-B5 checkbox at BACKLOG.md:763-764 with a FIXED in #941 recount. *(evidence:
+  `agents/core/orchestrator.py:1799-1801, agents/core/orchestrator.py,
+  agents/core/security/rag_guard.py:59`)*
+- [ ] 🟡 **DRA-03 — ADMIN PLUGIN REGISTRY still renders the 8-row demo corpus in live mode — no honest empty
+  state, and the honesty test enshrines the gap.** The kill of "Fix the seeded ADMIN/OBSERVE demo corpora"
+  claims the ADMIN corpus was made honest, but it covered only models/keys/backups/channels/system.
+  *(evidence: `frontend/src/api/live.ts:198, frontend/src/api/live.ts:432-442,
+  frontend/src/modes3.tsx:268`)*
+- [ ] 🟡 **DRA-04 — OBSERVE still shows the seeded 4.2s p50 under a green LIVE badge when /bench/stats 503s —
+  scalar panels are never cleared at cycle start.** The verdict states OBSERVE renders "not connected"/"—"
+  and "never the demo corpus" for silent endpoints. That holds only for the list-shaped fields. *(evidence:
+  `frontend/src/api/live.ts:202-205, live.ts:130-146, live.ts:370`)*
+
+**Verified open but in no cluster — would be forgotten by executing the plan (6).**
+
+- [ ] 🔴 **DRA-05 — Item 23 (0.40 OSINT live-enrichment plugin) has no cluster at all — only its owner keys
+  appear, in the owner lane.** items_only.json[23] scopes an AI-doable build: "a governed OSINT enrichment
+  tool/plugin that consumes a pivot suggestion and performs the actual lookup", explicitly ai_doable=true
+  for the injectable-client scaffold (weather. *(evidence: `plan_only.json,
+  agents/core/osint/investigate.py:40, investigate.py`)*
+- [ ] 🟡 **DRA-06 — Item 12's 0.65 half is only half-covered — the plan builds the ScreenReflex route but
+  never the HUD overlay that renders its result.** items_only.json[12] scope (b) is two-part: 'a route/path
+  that drives ScreenReflex (ScreenReflex. *(evidence: `plan_only.json, agents/core/screen_reflex.py:69,
+  tests/test_screen_reflex.py`)*
+- [ ] 🟡 **DRA-07 — Item 19's malformed-NERVA_PUBLIC_PROFILE boot guard: the plan routes the owner decision
+  but schedules no one to write the guard.** items_only.json[19] piece (a) is explicitly 'ai-doable
+  code+tests': a fail-closed startup check in agents/core/boot_guards.py enforce_boot_posture (called from
+  agents/web. *(evidence: `plan_only.json, agents/core/memory/seed_graph.py:8, manager.py:46`)*
+- [ ] 🟡 **DRA-08 — B7 Hermes v3 Phases 3/5/6 (sandbox file-RPC exec, gateway session keys, cron job store)
+  has no build home in any cluster.** Item at index 43 ('B7 — Hermes v3 Phases 3/5/6 live wiring') is an
+  L-size, three-part build: (1) Phase 3 — give ToolRPCSandboxRuntime a real production pull behind the
+  governed execute_code path; (2) Phase 5 — consume SessionSource/build_session_key/DeliveryRouter from the
+  live channel pat… *(evidence: `BACKLOG.md:1126, agents/core/tool_rpc_runtime.py:104,
+  tests/test_tool_rpc_runtime.py:10`)*
+- [ ] 🟡 **DRA-09 — The now-factually-false SEC-B4 BACKLOG row (and the stale SEC-B5 row) is fixed by no
+  cluster in the plan.** Five of the fourteen KILL verdicts (a748e9a8, ab340061, ab8855b9, a5bd5ffa,
+  a93ab8b9) all end with the same prescription: the only AI-doable residue of SEC-B4/SEC-B5 is refreshing
+  the stale rows at BACKLOG. *(evidence: `BACKLOG.md:761-762, BACKLOG.md:723-728,
+  agents/core/http_client.py:382-437`)*
+- [ ] 🟡 **DRA-10 — 0.40 OSINT enrichment tool (injectable-client scaffold) appears in no cluster — only its
+  owner keys survive in owner_lane.** items_only.json carries '0. *(evidence:
+  `agents/core/osint/investigate.py:40-43, __init__.py, correlate.py`)*
+
+**Planned work already done — kept for the record, do not rebuild (4).**
+
+- [ ] 🔴 **DRA-11 — Plan cluster 4 ("Emergency-stop control surface", ranked 4th) is entirely already
+  merged.** Both items of cluster 4 are shipped at HEAD. Items 94 and 99 of my slice were wrongly judged
+  open. The HUD half exists as EstopCard in modes3. *(evidence: `frontend/src/modes3.tsx:163-198,
+  modes3.tsx:265, frontend/src/api/actions.ts:154-166`)*
+- [ ] 🔴 **DRA-12 — Cluster 4 (Emergency-stop control surface) is delivered — both items merged in #982; only
+  one stale PARITY.md phrase remains.** Both items shipped. (1) The HUD Admin card exists:
+  frontend/src/modes3. *(evidence: `frontend/src/modes3.tsx:163, frontend/src/api/actions.ts:154-166,
+  frontend/src/test/estop-card.test.tsx`)*
+- [ ] 🟡 **DRA-13 — Plan cluster 2 ("Non-gated honesty doc fixes", ranked 2nd) is entirely already merged.**
+  All four doc fixes in cluster 2 are already applied at HEAD by #982. Items 80, 114, 115 and 117 of my
+  slice are this cluster's contents and were wrongly judged open. *(evidence: `docs/FEATURES.md:67-70,
+  docs/MANUAL_TESTING.md:455-456, docs/test-manual/12-aios-owner-host.md:690`)*
+- [ ] 🟡 **DRA-14 — H23.30 malformed-NERVA_PUBLIC_PROFILE boot guard mis-parked owner-side; the guard code
+  lands in no cluster.** Cluster 17's H23. *(evidence: `agents/core/boot_guards.py:69,
+  tests/test_public_profile_seed_gate.py:69-85, BACKLOG.md:45-49`)*
+
+**Missed by the sweep entirely (39).**
+
+- [ ] 🔴 **DRA-15 — UNCALLED_BACKLOG punch list: 71 shipped user-facing routes have no client caller; the run
+  surfaced ~3.** tests/test_hud_v2_parity.py holds an explicit, CI-enforced in-code punch list of
+  user-facing routes that exist in route_auth.json but are called by no client (HUD or mobile). *(evidence:
+  `tests/test_hud_v2_parity.py:436-437, items_only.json`)*
+- [ ] 🔴 **DRA-16 — Issue #242 (CI/F-10): CodeQL is a permanently non-blocking gate behind a factually false
+  "private personal repo" rationale — the repo is public.** Open issue #242 explicitly flags this
+  (".github/workflows/codeql. *(evidence: `.github/workflows/codeql.yml:36-40, codeql.yml, release.yml`)*
+- [ ] 🔴 **DRA-17 — CDX-8 quarantined generated-skill review/approve has no client surface at all.** The
+  owner-approval gate for LLM-authored skill code is backend-only. `agents/core/skills/loader. *(evidence:
+  `agents/core/routers/skills.py:310, agents/core/skills/loader.py:543, tests/test_hud_v2_parity.py:500`)*
+- [ ] 🔴 **DRA-18 — mobile/PARITY.md is materially incomplete — ~40 user-guarded HUD surfaces have no row
+  (H18.10 umbrella).** The run's mobile findings (WorldView bridge ⬜, chat rooms ⬜, estop 🟡) were read
+  straight off mobile/PARITY.md, but the ledger itself is stale: it is missing rows for most of what the HUD
+  actually calls. *(evidence: `mobile/PARITY.md:10-20, PARITY.md, tests/_snapshots/route_auth.json`)*
+- [ ] 🔴 **DRA-19 — SignalGovernanceBridge has zero production constructors — the Signal Layer →
+  approval-inbox bridge never runs.** agents/core/signal_governance.py ships a complete, contract-gated
+  bridge (`SignalGovernanceBridge. *(evidence: `agents/core/signal_governance.py:33,
+  agents/core/routers/signals.py:1-20, docs/worldview/continuation-handoff.md:415`)*
+- [ ] 🟡 **DRA-20 — Real payment rail adapter at payments.settle() — unchecked BACKLOG row absent from all
+  120 items, 26 clusters and the owner lane.** BACKLOG.md:1002 carries a live, unchecked dev row: `- [ ]
+  Real payment rail adapter (AP2/ACP/x402) at payments.settle() — **owner decision required (moves
+  money)**`. *(evidence: `BACKLOG.md:1002, agents/core/payments.py:5-7, agents/core/payments.py:293-296`)*
+- [ ] 🟡 **DRA-21 — The shipped keyless StockQuotesPlugin is never consumed by the market router — BACKLOG
+  names it as the explicit next step.** BACKLOG.md:973 records the stock-quotes feed as shipped and then
+  names the un-done follow-on in the same sentence: '`market` router can consume it next. *(evidence:
+  `BACKLOG.md:973, agents/core/routers/market.py:8-12, market.py:40`)*
+- [ ] 🟡 **DRA-22 — H28.2 ActionHierarchyRouter is dead code — a ✅-marked capability with zero production
+  callers and zero registered implementations.**
+  docs/research/2026-07-18-live-vs-plumbing-capability-audit.md:56 lists the 'Operator "pillar" router' as
+  PLUMBING and specifically as **dead code**: "selects but never executes; never imported; zero
+  implementations (operator_router. *(evidence: `agents/core/operator_router.py:69,
+  tests/test_h28_action_hierarchy_router.py:5-7, BACKLOG.md:1745`)*
+- [ ] 🟡 **DRA-23 — The egress ledger that the HUD and support bundle present as local-first proof is blind
+  to every LLM backend — model traffic never reaches it.**
+  docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis. *(evidence: `agents/core/http_client.py:151,
+  agents/core/observability/egress_monitor.py:161, agents/core/routers/admin.py:281-291`)*
+- [ ] 🟡 **DRA-24 — Cached-input token cost is unmodelled and hardcoded to zero, while Gemini context caching
+  is live in production.** docs/research/2026-08-18-llm-pricing-verification.md:88-91 explicitly defers
+  this: 'Cached-input pricing isn't tracked in the repo's schema — MODELS[model] only has input/output keys.
+  *(evidence: `agents/core/llm/cost_estimator.py:135-138, agents/core/orchestrator.py:2441-2443,
+  agents/core/routers/admin.py:548-556`)*
+- [ ] 🟡 **DRA-25 — MCP SSE transport is unimplemented but advertised end-to-end (admin UI select, API
+  schema, governance contract, module docstring).** agents/core/mcp/client.py:119-120 handles
+  transport=='sse' by logging 'MCP SSE transport not yet implemented' at INFO and returning False. Nothing
+  else in the module supports it: _send() (:195-198) bails unless self. *(evidence:
+  `agents/core/mcp/client.py:3, agents/core/routers/mcp.py:73`)*
+- [ ] 🟡 **DRA-26 — GitHub-backed path-prefix lease service — fully specced, machine-asserted
+  'not_implemented', and absent from BACKLOG.md entirely.** The repo's own AI-workflow policy declares a
+  coordination primitive that does not exist and is nowhere on the backlog.
+  scripts/check_ai_workflow_policy. *(evidence: `scripts/check_ai_workflow_policy.py:219-224,
+  tests/test_ai_workflow_policy.py:77-79, PARALLEL_WORKFLOW.md:45-70`)*
+- [ ] 🟡 **DRA-27 — Memory write/hygiene controls are still built-but-unreachable (consolidate, decay
+  candidates, memory-eval, remember-a-fact, KG ingest/relations).** The design punch lists name this cluster
+  explicitly as a MUST-wire gap — SINGLE_PAGE_HUD_BRIEF.md §7.4/§7.5 ('KG editor + bitemporal facts + ingest
+  + decay-forget + remember-a-fact . *(evidence: `agents/core/routers/memory_kg.py:129,
+  frontend/src/gap.tsx:190, schema.gen.ts`)*
+- [ ] 🟡 **DRA-28 — HUD has no workflow create/edit surface — the shipped AI Step Builder generates JSON with
+  nowhere to paste it.** HUD_V2_REMAINING.md §3 Build says in as many words that 'deeper create/edit
+  affordances remain in the Console panels' — the design-punchlists finder took the Build row for
+  Memory/Dossier/wake-word but not this one, and no item in items_only. *(evidence:
+  `agents/core/routers/workflows.py:114, frontend/src/gap.tsx:1177-1181, gap.tsx:1199-1206`)*
+- [ ] 🟡 **DRA-29 — Multimodal is output-only in the HUD: /api/vlm/describe and /api/media/generate have zero
+  frontend callers.** SINGLE_PAGE_HUD_BRIEF. *(evidence: `agents/core/routers/multimodal.py:70,
+  schema.gen.ts, frontend/src/cockpit.tsx`)*
+- [ ] 🟡 **DRA-30 — Issue #242 (CI/F-10): the SEC-4 required-checks posture contradicts itself across four
+  in-repo files after the owner applied the settings on 2026-08-28.** Issue #242's second half asks to
+  "Update OWNER_TASKS.md, BACKLOG.md, and workflow comments so they agree", to document required-check names
+  in-repo, and to add a maintainer runbook section for the "required status checks are expected" merge
+  deadlock. *(evidence: `BACKLOG.md:1109, BACKLOG.md:1935, docs/SECURITY_ROUTE_AUDIT_2026-06-17.md:55`)*
+- [ ] 🟡 **DRA-31 — BACKLOG.md's own "still open, verified real, not yet fixed" residual — the seeded
+  ADMIN/OBSERVE corpora — is in none of the 120 items.** The governance-rails section itself carries an
+  explicit open residual from the 2026-07-28 parallel bug hunt: "Still open from that run (verified real,
+  not yet fixed): the seeded ADMIN/OBSERVE corpora in modes3. *(evidence: `BACKLOG.md:883-884,
+  modes3.tsx/modes2.tsx, frontend/src/api/live.ts:197-199`)*
+- [ ] 🟡 **DRA-32 — WFL-062 — unbounded max_retries on the user-tier POST /api/workflows/hierarchical is
+  still uncapped.** Named by the governance-rails audit's own gap ledger (chapter 15 ADV-136 points at §10's
+  open-gaps list) and confirmed open in code today: `POST /api/workflows/hierarchical` is user-tier
+  (`dependencies=[Depends(user_guard)]`), parses max_retries with `int(. *(evidence:
+  `agents/core/routers/workflows.py:200, agents/core/workflows/hierarchical.py:35,
+  docs/test-manual/10-workflows-eval.md:369-375`)*
+- [ ] 🟡 **DRA-33 — WFL-063 — workflow loop nesting has no depth cap (subflows do, loops don't).** Second leg
+  of the same ADV-136 open-gaps list, also confirmed open. `WorkflowEngine. *(evidence:
+  `agents/core/workflows/engine.py:27, docs/test-manual/10-workflows-eval.md:377-381`)*
+- [ ] 🟡 **DRA-34 — WFL-112 — ReDoS: user-supplied regex in workflow termination conditions runs unbounded on
+  the event loop.** Third leg of the same open-gaps list, confirmed open. `evaluate_condition` executes a
+  caller-supplied pattern with `re.search(str(value), text)` and catches only `re. *(evidence:
+  `agents/core/workflows/engine.py:449, docs/test-manual/10-workflows-eval.md:606,
+  tests/test_h10_12_workflow_termination.py:21`)*
+- [ ] 🟡 **DRA-35 — The HUD parity gate's _has_caller matches only the stem before the first path param, so
+  sub-routes under an already-called prefix can never be flagged.** tests/test_hud_v2_parity.py:540-547
+  defines `_has_caller` as: take the path up to the first `{`, and if that stem is longer than 5 chars, ask
+  whether the stem appears anywhere in the concatenated client blob. *(evidence:
+  `tests/test_hud_v2_parity.py:540-547, tests/_snapshots/route_auth.json`)*
+- [ ] 🟡 **DRA-36 — UNCALLED_BACKLOG (~70 declared-open UI halves) was mined for only two items.**
+  tests/test_hud_v2_parity.py:436-514 declares UNCALLED_BACKLOG as 'Today's uncalled user-facing routes. A
+  punch-list, not an allowance' — i.e. an in-repo register of shipped backends whose UI half is missing.
+  *(evidence: `tests/test_hud_v2_parity.py:436-514, agents/core/routers/mesh.py:203, security.py:278`)*
+- [ ] 🟡 **DRA-37 — 0.58 marketplace package rollback has no HUD control — the version-history panel is
+  read-only.** POST /api/skills/marketplace/{name}/rollback (agents/core/routers/skills.py:159) restores a
+  marketplace skill's prior package (archiving the current one, 422 when nothing to restore) — it shipped as
+  part of the 0. *(evidence: `agents/core/routers/skills.py:159-173, frontend/src/gap.tsx:1902-1930`)*
+- [ ] 🟡 **DRA-38 — H32/A8-i acquisition drive trigger is curl-only — the AcquisitionPanel exposes every
+  other admin lifecycle control but not drive.** POST /api/acquisition/{request_id}/drive
+  (agents/core/routers/acquisition.py:230) was added explicitly as 'the production trigger for the governed
+  acquisition loop' because synthesize_and_propose 'had no caller outside tests . *(evidence:
+  `agents/core/routers/acquisition.py:144-150, frontend/src/gap.tsx:2579-2600,
+  agents/core/routers/acquisition.py:41-67`)*
+- [ ] 🟡 **DRA-39 — flow_api.build_flow silently drops `subflow` — Python-authored subflow steps compile to a
+  no-op (WFL-057).** agents/core/workflows/flow_api.py:88-100 builds each WorkflowStep forwarding
+  kind/terminate_when/output_schema/critic/router/transform/guardrail/loop — but NOT `subflow`. *(evidence:
+  `agents/core/workflows/flow_api.py:88-100, agents/core/workflows/engine.py:232-246,
+  docs/test-manual/10-workflows-eval.md:334`)*
+- [ ] 🟡 **DRA-40 — native_fallback.load_native() has no caller — the H11.2 Rust hot-path is unreachable even
+  when built.** BACKLOG.md:2492 marks H11.2 ✅ with the claim that `load_native()` 'preferă extensia
+  compilată, altfel Python → comportament identic cu/fără build'. *(evidence:
+  `agents/core/native_fallback.py:20, native_fallback.py, agents/core/memory/store.py:137-144`)*
+- [ ] 🟡 **DRA-41 — self_evolution.py (H20.4 ✅) has no production caller — no trajectory is ever captured and
+  no proposal reaches the decision inbox.** BACKLOG.md:2831 marks H20.4 ✅ 'Self-evolution (DSPy/GEPA) …
+  gated prin decision inbox (reversibil)'. agents/core/self_evolution. *(evidence:
+  `agents/core/self_evolution.py:18, BACKLOG.md:2831`)*
+- [ ] 🟡 **DRA-42 — operator_router.py is dead code — the risk-ordered operator implementation selector is
+  never wired, and a prior audit already flagged it.** agents/core/operator_router.py (259 lines) implements
+  the Nerva computer-operator's risk-ordered implementation selection ('deliberately selects but never
+  executes. *(evidence: `agents/core/operator_router.py:1-5,
+  docs/research/2026-07-18-live-vs-plumbing-capability-audit.md:56,
+  agents/core/routers/multimodal.py:110-183`)*
+- [ ] 🟡 **DRA-43 — desktop_control.py is entirely uncalled — T-0.25's OS-action and recording vocabulary is
+  unreachable while BACKLOG declares the tail closed.** agents/core/desktop_control.py:143 `DesktopControl`
+  plus `plan_launch`/`plan_os_action`/`plan_recording`/`allowlist` have zero production importers. The live
+  desktop path — routers/multimodal. *(evidence: `agents/core/desktop_control.py:36-63,
+  agents/core/desktop_operator.py:36-44, agents/core/routers/multimodal.py:142-183`)*
+- [ ] ⬜ **DRA-44 — 0.23 Hardware Benchmark & Profiles is still 🟡 partial with zero delivered content — no
+  hardware scoring, and the detected GPU never reaches the VRAM budget.** BACKLOG.md:1259 is the one 🟡 row
+  in the whole Competitive-Gap capability table (1237-1359) that carries no '→ … ✅' delivery clause and no
+  'Remaining (owner-gated)' explanation: '| 0. *(evidence: `BACKLOG.md:1259, agents/core/bench.py:1-9,
+  agents/core/system_profiles.py:62-92`)*
+- [ ] ⬜ **DRA-45 — GAP-4 (run the Hermes head-to-head once) is an unchecked box no finder, cluster, or
+  owner-lane entry covers.** docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md §6. *(evidence:
+  `BACKLOG.md:675-678, items_only.json, plan_only.json`)*
+- [ ] ⬜ **DRA-46 — NERVA_VISION.md still claims the execution-target layer 'never executes — no transport
+  exists', contradicting its own #980 changelog entry.** The 2026-08-09 honesty-debt research doc's claim 4
+  ('environments/ is a policy plane that never executes; no SSH transport exists') was closed on the
+  functional side by #980's GovernedTargetRunner, and docs/research/2026-08-09-gap9-honesty-debt.
+  *(evidence: `NERVA_VISION.md:196-197, NERVA_VISION.md:618-621, agents/core/environments/execution.py`)*
+- [ ] ⬜ **DRA-47 — SSRF blocked-request counter and per-scanner finding counts are declared unmeasured;
+  /api/resilience never emits uptime or redactions.** GET /security/status hardcodes the SSRF block as
+  unmeasurable: blocked_requests: None, available: False, note: 'the SSRF guard is active but does not yet
+  count blocked requests' (agents/core/routers/security_hud. *(evidence:
+  `agents/core/routers/security_hud.py:75-80, frontend/src/api/live.ts:120-126,
+  frontend/src/modes2.tsx:283-286`)*
+- [ ] ⬜ **DRA-48 — agents/_system/install.sh is a dead 'Installer not yet active — core Python modules are
+  still WIP' stub shipping in a 1.0.0 repo.** agents/_system/install.sh is a 49-line echo-only script from
+  the pre-rename 'Cabinet v0.1.0' era. It prints '⚠️ Installer not yet active — core Python modules are
+  still WIP. *(evidence: `agents/_system/install.sh:1-11, agents/_system/WEEK-1.md:1-30, install.sh:1`)*
+- [ ] ⬜ **DRA-49 — tests/test_kernel_authorize.py docstring still points at a deferred K3 and a 'scaffolded
+  xfail' that no longer exists.** The only occurrence of the string 'xfail' anywhere under tests/ is a stale
+  reference. tests/test_kernel_authorize. *(evidence: `tests/test_kernel_authorize.py:4-6,
+  tests/test_kernel_bypass_regressions.py, BACKLOG.md:1487`)*
+- [ ] ⬜ **DRA-50 — docs/AUDIT.md A5/Q2 — the `require_component` dependency was deferred and never built;
+  the boilerplate it targets has nearly tripled.** docs/AUDIT.md is one of this lane's named sources, and
+  its §7 explicitly parks A5/Q2 as "Deferred to post-manual-testing": the `require_component` FastAPI
+  dependency meant to dedupe the ~88 `getattr(orch, "X", None)` → 503 guards. *(evidence: `docs/AUDIT.md:43,
+  agents/web.py`)*
+- [ ] ⬜ **DRA-51 — docs/AUDIT.md Q6 — two named JSON stores still write non-atomically (no tmp+replace).**
+  Q6 in docs/AUDIT.md names three files that bypass the atomic tmp+replace pattern the JsonStore base uses;
+  A3/Q1 shipped the base and migrated the 13 stores, but Q6's own three were never routed through it and the
+  finding is unchecked. *(evidence: `docs/AUDIT.md:76, ingestion/watcher.py, memory/conversation.py`)*
+- [ ] ⬜ **DRA-52 — Review-queue → eval-dataset promotion is unwired in both clients, while the v1 HUD
+  advertises it.** POST /api/review/{item_id}/dataset (agents/core/routers/review.py:71-73, user-guarded,
+  'Promote a reviewed item into an eval dataset (H9.3b)') has no caller anywhere. *(evidence:
+  `agents/core/routers/review.py:71-90, frontend/src/gap.tsx:1069-1077`)*
+- [ ] ⬜ **DRA-53 — notes_store.py — a 504-line block-tree document store with no adopter and no route.**
+  agents/core/notes_store. *(evidence: `agents/core/notes_store.py:112-116,
+  agents/core/routers/notes.py:3-10, agents/core/notes.py:1-8`)*
 
 ---
 
@@ -758,10 +1015,28 @@ independent review named in the draft has not happened.
 - [x] ✅ **SEC-B3 — Telegram approval owner-binding.** **FIXED** — `TELEGRAM_ALLOWED_USER_IDS` is parsed and passed (the guards were unreachable no-ops before), the decision callback checks owner chat **and** user id and fails closed with neither, and the pairing gate no longer defaults to allow on a store error. Original: Callback handler has no owner check when
   constructed without `allowed_user_ids` (the production wiring). Implement the 2-factor callback
   check (owner `chat_id` + `user_id`, fail closed on empty allowlist) the wave plan already specifies.
-- [ ] 🟡 **SEC-B4 — SSRF IP-pinning coverage.** *(still open — needs a live network/browser host to demonstrate; chapter 15 ADV-142.)* The checker is sound but the Playwright path and the
-  central `PluginHTTPClient` don't route through `resolve_and_validate` with pinning (rebinding TOCTOU).
-- [ ] 🟡 **SEC-B5 — taint by dataflow, not just declared origin.** Proactive/recall/ambient payloads
-  rebuilt outside an inbound turn drop ingress taint (worst confirmed case is READ_ONLY-bounded).
+- [ ] 🟡 **SEC-B4 — SSRF IP-pinning coverage.** **🟡 Recounted 2026-08-29 (`DRA-09`) — the row below was
+  factually false in the *safe* direction.** #956 (`357cc60`) closed the vulnerability: `PluginHTTPClient`
+  builds a `PinnedTarget`, and the Playwright path now **fails closed** rather than egressing unpinned, so
+  the rebinding TOCTOU no longer exists. What remains is not a hole but a *capability*: build the
+  transport-bound IP-pinning egress boundary so governed browser navigation can run at all
+  (`browser_run` depends on it). Original wording, kept for the record: the checker is sound but the
+  Playwright path and the central `PluginHTTPClient` don't route through `resolve_and_validate` with
+  pinning (rebinding TOCTOU).
+- [ ] 🟡 **SEC-B5 — taint by dataflow, not just declared origin.** **🟡 Partial, recounted 2026-08-29
+  (`DRA-02`) — do NOT tick this row.** #941 (`8179b38`) closed three of four legs: proactive
+  (`tech_scout` submits `origin="websearch"`), ambient (`AmbientProposalSink` taint-marks derived
+  payloads) and the *storage* side of recall (`WorldViewKGSync` taint-marks stored KG properties —
+  which is exactly what `tests/test_sec_b5_dataflow_taint.py` scopes). **The recall→action leg is still
+  unbuilt:** `agents/core/security/rag_guard.py:59` computes `WrappedMemory.tainted`,
+  `agents/core/orchestrator.py:1799-1801` returns only `.block` and discards it, and no consumer of that
+  field exists anywhere in the tree — so an action born in a tainted-recall turn reaches
+  `kernel.authorize` with a clean declared origin and can GRANT instead of escalating to QUEUE/ASK.
+  `agents/core/memory/rag_tool.py` (dict-shaped `search_memory`) propagates nothing either. Remaining:
+  a turn-scoped taint marker fed from `WrappedMemory.tainted` (the `action_origin` ContextVar is the
+  natural vehicle), the same for the dict-shaped path, and a regression pinning that a tainted-recall
+  turn cannot auto-execute. Original wording: proactive/recall/ambient payloads rebuilt outside an
+  inbound turn drop ingress taint (worst confirmed case is READ_ONLY-bounded).
 **Adversarial audit, 2026-07-25 (26 agents · 18 findings tested · 2 confirmed · 10 corrected down ·
 6 refuted · 3 new from the completeness critic).** Its headline is a compliment: independent agents
 trying hard to embarrass this codebase mostly re-discovered SEC-B1…B6 above. Two need owner triage
