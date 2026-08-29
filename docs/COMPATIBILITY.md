@@ -36,16 +36,17 @@ are **not** part of the contract and may change at any time.
 
 ## Supported versions
 
-During the `0.x` beta, only the **latest minor** receives fixes (security and
-otherwise). Older minors are not back-patched — upgrade to the latest `0.MINOR.x`.
+From 1.0.0 the support window is **rolling**: the current `MAJOR.MINOR` line plus the
+**one prior minor**, which keeps receiving security fixes for **90 days** after its
+successor ships. Anything older is not back-patched — upgrade to the current line.
 
 | Version line | Status |
 |--------------|--------|
-| `0.11.x` (current) | ✅ Supported |
-| `< 0.11` | ❌ Not supported — upgrade |
+| `1.0.x` (current) | ✅ Supported |
+| `0.x` (pre-1.0 beta) | ❌ Not supported — upgrade to `1.0.x` |
 
-At 1.0.0 this expands to a rolling window (the current MAJOR.MINOR plus the prior
-minor for a defined window); that policy is finalized as part of the 1.0 release.
+1.0.0 is the first release under this policy, so there is no prior minor in the window
+yet. The `0.x` beta lines are end-of-life at 1.0.0 and are not back-patched.
 
 ## Deprecation policy
 

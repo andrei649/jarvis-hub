@@ -44,6 +44,26 @@ _OPEN_QUEUE_STATES = {"proposed", "approved", "running", "blocked", "deferred"}
 
 Fetch = Callable[[str], tuple[int | None, Any]]
 
+# B105 matches the substring "pass" in the identifier; these are soak verdict
+# labels printed in the report, not credentials.
+PASS = "PASS"  # nosec B105
+FAIL = "FAIL"
+INCONCLUSIVE = "INCONCLUSIVE"
+
+# The A2 bar, written down. These are the numbers the owner used to apply by eye when
+# reading the rendered report; encoding them here is what turns the soak from a gate
+# somebody has to sign into a check that reports its own verdict.
+DEFAULT_THRESHOLDS: dict[str, float] = {
+    "min_samples": 12,
+    "min_availability": 0.99,  # share of samples where /healthz and /readyz were OK
+    "max_restarts": 0,  # "unattended" means the process never came back up
+    "max_audit_failures": 0,  # AUD-0: the audit chain verifies at every single sample
+    "max_breach_samples": 0,  # any north-star guardrail breach sinks the window
+    "max_breaker_samples": 0,  # no circuit breaker may sit open
+    "max_rss_growth_ratio": 0.15,  # RSS may not grow more than 15% across the window
+    "max_wal_bytes": 64 * 1024 * 1024,
+}
+
 
 def parse_duration(value: str) -> float:
     """Parse seconds or a compact s/m/h/d duration."""
@@ -323,6 +343,128 @@ def summarize(samples: list[dict]) -> dict:
     }
 
 
+def evaluate(
+    summary: dict,
+    *,
+    thresholds: dict[str, float] | None = None,
+    complete: bool = True,
+) -> dict:
+    """Grade a soak summary against the A2 bar.
+
+    Returns ``PASS`` only when every check has evidence and every check clears.
+    A check with no evidence (no RSS series because ``--pid`` was not supplied, say)
+    is ``None`` and downgrades the window to ``INCONCLUSIVE`` — never to a quiet pass.
+    """
+    limits = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
+    samples = int(summary.get("samples", 0) or 0)
+    availability = summary.get("availability", {})
+    memory = summary.get("memory", {})
+    database = summary.get("database", {})
+    guardrails = summary.get("guardrails", {})
+    audit_failures = summary.get("audit", {}).get("failures", []) or []
+    breakers = summary.get("circuit_breakers_non_closed", {}) or {}
+
+    checks: list[dict[str, Any]] = []
+
+    def add(check_id: str, ok: bool | None, detail: str) -> None:
+        checks.append({"id": check_id, "ok": ok, "detail": detail})
+
+    add(
+        "samples",
+        samples >= limits["min_samples"],
+        f"{samples} samples (need ≥ {int(limits['min_samples'])})",
+    )
+    add(
+        "window_complete",
+        True if complete else None,
+        "collector reached the requested duration"
+        if complete
+        else "window ended early — not enough evidence to grade",
+    )
+
+    if samples:
+        for name, key in (("availability_health", "health_ok"), ("availability_ready", "ready_ok")):
+            ok_count = int(availability.get(key, 0) or 0)
+            ratio = ok_count / samples
+            add(
+                name,
+                ratio >= limits["min_availability"],
+                f"{ok_count}/{samples} OK ({ratio:.3%}, need ≥ {limits['min_availability']:.1%})",
+            )
+    else:
+        add("availability_health", None, "no samples")
+        add("availability_ready", None, "no samples")
+
+    restarts = int(availability.get("restarts_detected", 0) or 0)
+    add(
+        "restarts",
+        restarts <= limits["max_restarts"],
+        f"{restarts} restart(s) detected (allowed {int(limits['max_restarts'])})",
+    )
+    add(
+        "audit_chain",
+        len(audit_failures) <= limits["max_audit_failures"],
+        f"{len(audit_failures)} sample(s) failed audit verification (AUD-0 allows "
+        f"{int(limits['max_audit_failures'])})",
+    )
+    breach_samples = int(guardrails.get("samples_with_breaches", 0) or 0)
+    add(
+        "guardrails",
+        breach_samples <= limits["max_breach_samples"],
+        f"{breach_samples} sample(s) reported a guardrail breach "
+        f"(allowed {int(limits['max_breach_samples'])})",
+    )
+    open_breakers = sum(int(value) for value in breakers.values() if isinstance(value, int))
+    add(
+        "circuit_breakers",
+        open_breakers <= limits["max_breaker_samples"],
+        f"{open_breakers} non-closed breaker sample(s) across {sorted(breakers)}"
+        if breakers
+        else "no breaker left its closed state",
+    )
+
+    first_rss, growth = memory.get("first_rss"), memory.get("growth_bytes")
+    if (
+        not isinstance(first_rss, (int, float))
+        or not first_rss
+        or not isinstance(growth, (int, float))
+    ):
+        add("memory_growth", None, "no RSS series (run with --pid to measure the server process)")
+    else:
+        ratio = growth / first_rss
+        add(
+            "memory_growth",
+            ratio <= limits["max_rss_growth_ratio"],
+            f"RSS grew {ratio:+.2%} ({int(growth):,} B, limit "
+            f"{limits['max_rss_growth_ratio']:.0%})",
+        )
+
+    wal_peak = database.get("wal_peak_bytes")
+    if not isinstance(wal_peak, (int, float)):
+        add("wal_size", None, "no WAL series (check --data-dir)")
+    else:
+        add(
+            "wal_size",
+            wal_peak <= limits["max_wal_bytes"],
+            f"WAL peaked at {int(wal_peak):,} B (limit {int(limits['max_wal_bytes']):,} B)",
+        )
+
+    failed = [check["id"] for check in checks if check["ok"] is False]
+    unknown = [check["id"] for check in checks if check["ok"] is None]
+    verdict = FAIL if failed else (INCONCLUSIVE if unknown else PASS)
+    return {
+        "verdict": verdict,
+        "checks": checks,
+        "failed": failed,
+        "inconclusive": unknown,
+        "thresholds": limits,
+    }
+
+
+_VERDICT_EXIT = {PASS: 0, FAIL: 1, INCONCLUSIVE: 3}
+_VERDICT_MARK = {True: "✅", False: "❌", None: "❔"}
+
+
 def _fmt_bytes(value: Any) -> str:
     if not isinstance(value, (int, float)):
         return "unavailable"
@@ -335,6 +477,7 @@ def render_report(
     generated_at: str,
     meta: dict,
     partial: bool = False,
+    verdict: dict | None = None,
 ) -> str:
     """Render the human-readable evidence companion to the raw JSONL samples."""
     availability = summary.get("availability", {})
@@ -347,11 +490,25 @@ def render_report(
         "",
         "> **Partial window.** The requested soak did not reach its full duration."
         if partial
-        else "> Complete collector window (owner must still review and sign off A2).",
+        else "> Complete collector window.",
         "",
         f"Generated: `{generated_at}` · samples: **{summary.get('samples', 0)}** · "
         f"interval: **{meta.get('interval')}s** · source: `{meta.get('base_url')}`",
         "",
+    ]
+    if verdict is not None:
+        lines += [
+            f"## Verdict — **{verdict.get('verdict', INCONCLUSIVE)}**",
+            "",
+            "Graded automatically against the A2 thresholds; no owner sign-off step.",
+            "",
+            *[
+                f"- {_VERDICT_MARK[check['ok']]} `{check['id']}` — {check['detail']}"
+                for check in verdict.get("checks", [])
+            ],
+            "",
+        ]
+    lines += [
         "## Availability & restarts",
         "",
         f"- Health samples OK: **{availability.get('health_ok', 0)}/{summary.get('samples', 0)}**",
@@ -426,11 +583,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--interval", default="5m")
     parser.add_argument("--admin-token", default=os.environ.get("JARVIS_ADMIN_TOKEN", ""))
     parser.add_argument(
-        "--pid", type=int, required=True, help="Jarvis server PID used for process-RSS evidence"
+        "--pid",
+        type=int,
+        help="Jarvis server PID used for process-RSS evidence. Omitted: the leak check "
+        "reports INCONCLUSIVE rather than measuring the collector's own process.",
     )
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--log", type=Path)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--fail-on-verdict",
+        action="store_true",
+        help=f"Exit {_VERDICT_EXIT[FAIL]} on {FAIL} and {_VERDICT_EXIT[INCONCLUSIVE]} on "
+        f"{INCONCLUSIVE}, so an unattended runner can gate on the soak.",
+    )
     return parser
 
 
@@ -446,6 +612,7 @@ def main(argv: list[str]) -> int:
     day = datetime.now(UTC).date().isoformat()
     sample_path = args.output_dir / f"{day}-soak-samples.jsonl"
     report_path = args.output_dir / f"{day}-soak-report.md"
+    verdict_path = args.output_dir / f"{day}-soak-verdict.json"
     fetch = http_fetcher(args.base_url, admin_token=args.admin_token)
     started = time.monotonic()
     interrupted = False
@@ -453,7 +620,11 @@ def main(argv: list[str]) -> int:
         while True:
             sample = collect_sample(
                 fetch,
-                mem_reader=lambda: process_memory(args.pid),
+                mem_reader=(
+                    (lambda: process_memory(args.pid))
+                    if args.pid
+                    else (lambda: {"rss_bytes": None, "source": "not_configured"})
+                ),
                 db_reader=lambda: sqlite_sizes(args.data_dir),
                 log_reader=lambda: read_log_errors(args.log),
             )
@@ -469,16 +640,36 @@ def main(argv: list[str]) -> int:
         interrupted = True
 
     samples = load_samples(sample_path)
+    summary = summarize(samples)
+    partial = interrupted or (time.monotonic() - started < duration)
+    generated_at = datetime.now(UTC).isoformat(timespec="seconds")
+    verdict = evaluate(summary, complete=not partial)
     report = render_report(
-        summarize(samples),
-        generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        summary,
+        generated_at=generated_at,
         meta={"interval": interval, "duration": duration, "base_url": args.base_url},
-        partial=interrupted or (time.monotonic() - started < duration),
+        partial=partial,
+        verdict=verdict,
     )
     report_path.write_text(report, encoding="utf-8", newline="\n")
+    verdict_path.write_text(
+        json.dumps(
+            {"generated_at": generated_at, "samples": summary.get("samples", 0), **verdict},
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     print(f"samples: {sample_path}")
     print(f"report:  {report_path}")
-    return 130 if interrupted else 0
+    print(f"verdict: {verdict_path} -> {verdict['verdict']}")
+    for check in verdict["checks"]:
+        print(f"  {_VERDICT_MARK[check['ok']]} {check['id']}: {check['detail']}")
+    if interrupted:
+        return 130
+    return _VERDICT_EXIT[verdict["verdict"]] if args.fail_on_verdict else 0
 
 
 if __name__ == "__main__":

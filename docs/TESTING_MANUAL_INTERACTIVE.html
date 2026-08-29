@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nerva 1.0 Interactive Testing Manual</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        h1 { color: #1a1a1a; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
+        
+        .chapter {
+            margin-bottom: 40px;
+            border-left: 4px solid #0066cc;
+            padding-left: 20px;
+        }
+        .chapter h2 { color: #0066cc; font-size: 20px; margin-bottom: 15px; }
+        .chapter p { color: #555; margin-bottom: 15px; line-height: 1.6; }
+        
+        .test-item {
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 12px;
+            display: grid;
+            gap: 10px;
+        }
+        .test-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .test-item label {
+            display: grid;
+            grid-template-columns: 24px 1fr;
+            gap: 10px;
+            cursor: pointer;
+            align-items: start;
+        }
+        .test-item label span { padding-top: 2px; }
+        .test-item input:checked ~ .test-result {
+            background: #e8f5e9;
+            border-color: #4caf50;
+        }
+        .test-item textarea {
+            width: 100%;
+            padding: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 60px;
+        }
+        .test-result {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 10px;
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #333;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+        }
+        .status-bar .progress {
+            flex: 1;
+            margin: 0 20px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #555;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #4caf50;
+            transition: width 0.3s;
+        }
+        
+        .export-btn, .reset-btn {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .reset-btn { background: #666; }
+        .export-btn:hover { background: #0052a3; }
+        .reset-btn:hover { background: #555; }
+        
+        .nav-chapters {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .nav-chapters button {
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .nav-chapters button.active { background: #0066cc; color: white; border-color: #0066cc; }
+        .nav-chapters button:hover { background: #e0e0e0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Nerva 1.0 Interactive Testing Manual</h1>
+        <p class="subtitle">Run tests in your browser. Claude can drive this with natural language.</p>
+        
+        <div class="nav-chapters">
+            <button class="active" onclick="scrollToChapter('setup')">Setup</button>
+            <button onclick="scrollToChapter('core')">Core Chat</button>
+            <button onclick="scrollToChapter('autonomy')">Autonomy</button>
+            <button onclick="scrollToChapter('security')">Security</button>
+            <button onclick="scrollToChapter('memory')">Memory</button>
+            <button onclick="scrollToChapter('governance')">Governance</button>
+        </div>
+        
+        <!-- SETUP -->
+        <div id="setup" class="chapter">
+            <h2>Setup & Onboarding</h2>
+            <p>Verify the app boots and reaches a stable state with at least one model backend.</p>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Server boots</strong> — Run <code>python serve.py</code> and confirm no errors in console</span>
+                </label>
+                <textarea placeholder="Observed output, any errors..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>/readyz probe passes</strong> — Open browser console, fetch <code>http://localhost:8080/readyz</code></span>
+                </label>
+                <textarea placeholder="Status code, response body..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Model backend detected</strong> — HUD shows at least one available LLM (local or cloud)</span>
+                </label>
+                <textarea placeholder="Model shown, any warnings..."></textarea>
+            </div>
+        </div>
+        
+        <!-- CORE CHAT -->
+        <div id="core" class="chapter">
+            <h2>Core Chat & Agent Routing</h2>
+            <p>Test basic conversation flows and agent routing.</p>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Send a chat turn</strong> — Type "What is your name?" and confirm a response within 10s</span>
+                </label>
+                <textarea placeholder="Agent response, any latency issues..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Route to specific agent</strong> — Send "@ultron what time is it?" and confirm Ultron responds</span>
+                </label>
+                <textarea placeholder="Response agent, routing confirmation..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Conversation history persists</strong> — Send 3 turns, refresh page, confirm history is still there</span>
+                </label>
+                <textarea placeholder="History visible after refresh? Any issues..."></textarea>
+            </div>
+        </div>
+        
+        <!-- AUTONOMY -->
+        <div id="autonomy" class="chapter">
+            <h2>Autonomy & Approvals (⭐B0)</h2>
+            <p>Governed autonomy: trigger an autonomy action, confirm it enters the approval queue, not auto-execute.</p>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Trigger autonomy action</strong> — Say "Remind me in 5 seconds" → action should enter QUEUE (approval pending)</span>
+                </label>
+                <textarea placeholder="Action queued? Approval panel shows it? Timestamp..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Approve and execute</strong> — Click "Approve" in the HUD panel → action executes, reminder fires</span>
+                </label>
+                <textarea placeholder="Reminder fired? Execution logged? Any delays..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Deny action</strong> — Trigger another action, click "Deny" → action is rejected, logged</span>
+                </label>
+                <textarea placeholder="Denial logged? User notified? Audit trail..."></textarea>
+            </div>
+        </div>
+        
+        <!-- SECURITY -->
+        <div id="security" class="chapter">
+            <h2>Security & Secrets</h2>
+            <p>Verify hardened security boundaries and secret handling.</p>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Fake API key blocked</strong> — Send a prompt containing "sk-1234567890abcdef" and confirm it's redacted in audit log</span>
+                </label>
+                <textarea placeholder="Redacted in log? [REDACTED] shown? Any leaks..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Egress gate blocks unapproved domains</strong> — Set <code>JARVIS_STRICT_EGRESS=1</code>, trigger a call to unknown host → blocked</span>
+                </label>
+                <textarea placeholder="Call blocked? Error message clean? Audit logged..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Kill-switch disables execution</strong> — Click "HALT-ALL" in HUD Trust panel → next autonomy action is DENIED</span>
+                </label>
+                <textarea placeholder="Execution halted? HUD shows HALTED state? Can re-enable..."></textarea>
+            </div>
+        </div>
+        
+        <!-- MEMORY -->
+        <div id="memory" class="chapter">
+            <h2>Memory & RAG</h2>
+            <p>Test memory ingestion and retrieval.</p>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Ingest memory note</strong> — Open Memory panel, create a note "My favorite color is blue" → saved</span>
+                </label>
+                <textarea placeholder="Note saved? ID assigned? Timestamp..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Recall memory in chat</strong> — Send "What's my favorite color?" → agent recalls note, answers correctly</span>
+                </label>
+                <textarea placeholder="Memory recalled? Correct answer? Grounding visible..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Forget user data</strong> — Admin panel → "Forget me" → all memory purged, chat history cleared</span>
+                </label>
+                <textarea placeholder="Data purged? Audit log shows purge? No leaks..."></textarea>
+            </div>
+        </div>
+        
+        <!-- GOVERNANCE -->
+        <div id="governance" class="chapter">
+            <h2>Governance & Observability</h2>
+            <p>Verify audit trails, metrics, and governance controls.</p>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Audit log recorded</strong> — Admin panel → Audit tab → confirm latest turn is logged with agent, timestamp, tokens</span>
+                </label>
+                <textarea placeholder="Latest entry visible? All fields populated? No gaps..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>North-star metrics updated</strong> — HUD Observe → "North Star" panel → shows accepted/active/rejected counts (non-zero)</span>
+                </label>
+                <textarea placeholder="Metrics visible? Non-zero? Match activity..."></textarea>
+            </div>
+            
+            <div class="test-item">
+                <label>
+                    <input type="checkbox" onchange="updateProgress()">
+                    <span><strong>Network monitor shows LOCAL_ONLY proof</strong> — Admin → Network tab → Howard/Ultron/Frigga show zero external calls</span>
+                </label>
+                <textarea placeholder="LOCAL_ONLY agents have zero egress? Others have allowed calls..."></textarea>
+            </div>
+        </div>
+    </div>
+    
+    <div class="status-bar">
+        <span>Progress:</span>
+        <div class="progress">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+            </div>
+        </div>
+        <span id="progressText">0/21</span>
+        <button class="export-btn" onclick="exportResults()">Export Results</button>
+        <button class="reset-btn" onclick="resetTests()">Reset</button>
+    </div>
+    
+    <script>
+        function updateProgress() {
+            const total = document.querySelectorAll('input[type="checkbox"]').length;
+            const checked = document.querySelectorAll('input[type="checkbox"]:checked').length;
+            const percent = Math.round((checked / total) * 100);
+            document.getElementById('progressFill').style.width = percent + '%';
+            document.getElementById('progressText').textContent = `${checked}/${total}`;
+            localStorage.setItem('testProgress', JSON.stringify(getTestResults()));
+        }
+        
+        function scrollToChapter(id) {
+            const elem = document.getElementById(id);
+            if (elem) {
+                elem.scrollIntoView({ behavior: 'smooth' });
+                document.querySelectorAll('.nav-chapters button').forEach(b => b.classList.remove('active'));
+                event.target.classList.add('active');
+            }
+        }
+        
+        function getTestResults() {
+            const results = [];
+            document.querySelectorAll('.test-item').forEach(item => {
+                const checkbox = item.querySelector('input[type="checkbox"]');
+                const label = item.querySelector('label span strong')?.textContent || 'Unknown';
+                const textarea = item.querySelector('textarea')?.value || '';
+                results.push({
+                    test: label,
+                    passed: checkbox.checked,
+                    notes: textarea
+                });
+            });
+            return results;
+        }
+        
+        function exportResults() {
+            const results = getTestResults();
+            const timestamp = new Date().toISOString();
+            const data = {
+                timestamp,
+                summary: `${results.filter(r => r.passed).length}/${results.length} passed`,
+                results
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `nerva-testing-${timestamp.split('T')[0]}.json`;
+            a.click();
+        }
+        
+        function resetTests() {
+            if (confirm('Reset all test results?')) {
+                document.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = false);
+                document.querySelectorAll('textarea').forEach(t => t.value = '');
+                localStorage.removeItem('testProgress');
+                updateProgress();
+            }
+        }
+        
+        // Load saved progress
+        window.addEventListener('load', () => {
+            updateProgress();
+        });
+    </script>
+</body>
+</html>

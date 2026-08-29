@@ -324,6 +324,95 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 
 ---
 
+## L. Cloud LLM routing & cost accounting  🔑🤖
+
+> **Prerequisites:** Set `JARVIS_TASK_BUDGET_PAYMENT_CENTS` to a low-cost dry-run ceiling
+> (e.g. $0.50 = 50 cents). No prompt injections; cost accounting and provider errors are the focus.
+> **WARNING:** Real spending occurs; always set budgets + keep API keys in `.env` (never commit).
+
+### L1. Routing & backend selection
+
+- [ ] **Hybrid router backend selection** 🔑🤖 — With no local backend running:
+  - [ ] Create an agent with `llm_policy: cloud` in `agents.yaml`; send a prompt; confirm it routes to Claude/Gemini/OpenRouter (check logs for `route=claude`/`gemini`/`openrouter`).
+  - [ ] Create an agent with `llm_policy: auto`; confirm it cascades: tries LOCAL → on-demand falls back to CLOUD.
+  - [ ] Verify `GET /api/llm/routing` (admin) returns the policy + which backends are available.
+
+### L2. **LOCAL_ONLY enforcement (H23 MOONSHOT §5.1 non-negotiable)**
+
+> These three agents **must refuse to use any cloud backend**, even if local is down. The network
+> monitor proves it; audit logs record any attempted escape.
+
+- [ ] **Howard (digital twin)** 🔑🤖 — With both Ollama + LM Studio down:
+  - [ ] Send a prompt → `LocalBackendUnavailableError` (log: "No local backend available for howard").
+  - [ ] Confirm `GET /api/admin/network/calls?plugin=howard&clean=true` shows **zero external calls** (network monitor proves local-only).
+  - [ ] Confirm the audit log records the refusal (`AuditLogger` entry with reason).
+
+- [ ] **Ultron (action kernel)** 🔑🤖 — With local down:
+  - [ ] Trigger an autonomy action (e.g. "remind me in 5 seconds") → LOCAL_ONLY enforcement blocks cloud escape.
+  - [ ] `GET /api/admin/network/calls?plugin=ultron&clean=true` → zero external calls.
+  - [ ] Audit log confirms refusal.
+
+- [ ] **Frigga (orchestrator)** 🔑🤖 — With local down:
+  - [ ] Send a turn → LOCAL_ONLY blocks cloud fallback.
+  - [ ] `GET /api/admin/network/calls?plugin=frigga&clean=true` → zero external calls.
+
+### L3. Model pinning & reproducibility (H23.2)
+
+- [ ] **Approved-model allowlist** 🔑 — Set `approved_models: [claude-opus-5]` for an agent in `agents.yaml`:
+  - [ ] Send a prompt; confirm it routes to claude-opus-5 only (logs: `model='claude-opus-5'`).
+  - [ ] Manually edit the allowlist to exclude it (or remove the agent's entry); send a prompt → `ModelNotApprovedError` (if `JARVIS_STRICT_MODELS=1` [default]) or warning log (if `JARVIS_STRICT_MODELS=0`).
+  - [ ] Confirm `GET /api/llm/routing?agent=<id>` includes `approved_models` in the response.
+
+- [ ] **Model fingerprinting (reproducibility)** 🔑 — Set `JARVIS_MODEL_INFO=1`:
+  - [ ] Send a prompt; `GET /api/traces` → each trace carries `model_info` (model id, quant, sha256).
+  - [ ] Confirm `GET /api/models/info` (admin) shows the registered fingerprints.
+  - [ ] `HUD → Observe → Model Info Panel` renders id + quant + sha256 (admin-only).
+
+### L4. Cost tracking & budgets (H23.1)
+
+- [ ] **Cost estimation** 🔑🤖 — Send 3–5 prompts with different cloud backends:
+  - [ ] `GET /api/cost/summary` (admin) returns `cost_estimate` (USD) for each prompt.
+  - [ ] Confirm the cost is non-zero and plausible (Claude: ~$0.01–0.05 per prompt depending on size).
+  - [ ] Cross-check against actual API bills (if available) — totals should match ±5%.
+
+- [ ] **Payment budgets** 🔑🤖 — Set `JARVIS_TASK_BUDGET_PAYMENT_CENTS=50` ($0.50 cap):
+  - [ ] Send prompts totaling ~$0.45 → all succeed.
+  - [ ] Next prompt that would exceed the budget → kernel **DENY** with `BudgetExceededError` (audit log records reason).
+  - [ ] Confirm `GET /api/metrics/kernel` (admin) shows `deny_count` incremented.
+
+- [ ] **Token budgets** 🔑🤖 — Set `JARVIS_TASK_BUDGET_TOKENS=5000`:
+  - [ ] Send a long prompt (>5000 tokens input) → kernel **DENY** with `BudgetExceededError`.
+  - [ ] Send a short prompt → succeeds, `GET /api/traces?limit=1` shows `tokens_used` under budget.
+
+### L5. Provider error handling
+
+- [ ] **Rate limiting (429 Quota Exceeded)** 🔑🤖 — On a fresh API key tier with low rate limits:
+  - [ ] Spam 10 prompts rapidly → some get 429 `QuotaExceededError` (not a crash, logged).
+  - [ ] Confirm HUD shows "quota exceeded" friendly message (not raw API error).
+  - [ ] `GET /api/llm/provider-status` (admin) reflects the 429 state.
+
+- [ ] **Timeout & network errors** 🔑🤖 — Simulate network failure (e.g. block API domain in firewall):
+  - [ ] Send a prompt → `ProviderUnavailableError` (not a hang; ~5s timeout).
+  - [ ] HUD shows "backend unreachable" (never raw exception).
+  - [ ] `GET /api/metrics/kernel` shows `deny_count` (kernel queued the task as QUEUE/APPROVE, user can retry).
+
+- [ ] **Context-length exceeded** 🔑🤖 — Send a prompt with huge history (>model max):
+  - [ ] Error logged; graceful degradation (truncate history or reject politely).
+  - [ ] HUD shows "context too long" (not a crash).
+
+### L6. Egress gate & LOCAL_ONLY proof
+
+- [ ] **Egress monitoring (H23.16)** 🔑 — With cloud keys enabled:
+  - [ ] Send a prompt with a cloud agent → `GET /api/admin/network/calls` records the call (allowed external call to `api.anthropic.com` / `generativelanguage.googleapis.com` / etc.).
+  - [ ] Send a prompt with **Howard/Ultron/Frigga** → `local_only_violations = 0` (proof: no escape).
+  - [ ] Confirm `clean=true` status reflects "LOCAL_ONLY agents made zero external calls".
+
+- [ ] **JARVIS_STRICT_EGRESS** 🔑 — Set `JARVIS_STRICT_EGRESS=1` (default, strict):
+  - [ ] Create a plugin that tries an unapproved external call → kernel **BLOCK** + audit log + HUD shows "egress denied".
+  - [ ] Set `JARVIS_STRICT_EGRESS=0` (warning mode) → same call → audit log "egress policy violation (allowed)" + continues.
+
+---
+
 ## I. Mobile / PWA  👁
 
 - [ ] **Responsive HUD** 👁 — Open on a phone; layout adapts.

@@ -12,13 +12,13 @@ local-first data-handling and (no-)telemetry stance.
 
 ## Supported Versions
 
-This is a pre-1.0 (`0.x`) project; only the **latest minor release line** receives
-security fixes. Older lines are not back-patched — upgrade to the latest `0.MINOR.x`.
+From 1.0.0 the window is the current `MAJOR.MINOR` line plus the one prior minor, for
+90 days after its successor ships. Older lines are not back-patched — upgrade.
 
 | Version line | Security fixes |
 | ------------ | -------------- |
-| `0.11.x` (current) | :white_check_mark: |
-| `< 0.11`           | :x: (upgrade)      |
+| `1.0.x` (current)  | :white_check_mark: |
+| `0.x` (pre-1.0)    | :x: (upgrade)      |
 
 The full versioning, deprecation, and platform contract is in
 [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md). The current version is
@@ -40,7 +40,7 @@ steps or a proof-of-concept, and the impact you observed.
 
 - Acknowledgement of your report within about **7 days**.
 - An initial assessment (accepted / needs-info / declined, with reasoning) after triage.
-- For accepted issues: a fix on the supported `0.11.x` line and a published advisory
+- For accepted issues: a fix on the supported `1.0.x` line and a published advisory
   crediting you (unless you prefer to remain anonymous).
 
 There is no paid bug-bounty program. Coordinated disclosure is appreciated — please
