@@ -1,7 +1,8 @@
 """Named execution-target policy and tamper-evident authorization audit.
 
 This module is a policy plane only. It never launches a subprocess, container, or SSH
-connection and deliberately accepts no command or payload content.
+connection and deliberately accepts no command or payload content. The transport
+that consumes its decisions lives beside it in ``execution.py`` (GAP-9).
 """
 
 from __future__ import annotations

@@ -99,3 +99,93 @@ async def test_error_is_caught():
 
     out = await VLMBackend(client=_Boom()).generate_vision("m", "p", images=[b"x"])
     assert out.startswith("[VLM error")
+
+
+# --- GAP-9: config resolver (LM Studio as first-class local backend) ---
+
+from agents.core.llm.vlm import (  # noqa: E402
+    LMSTUDIO_VLM_BASE,
+    VLMNotConfigured,
+    resolve_vlm_config,
+)
+
+
+def test_resolver_refuses_when_nothing_is_configured():
+    with pytest.raises(VLMNotConfigured) as exc:
+        resolve_vlm_config(env={})
+    assert exc.value.reason == "vlm_disabled"
+
+
+def test_resolver_off_wins_over_a_set_url():
+    with pytest.raises(VLMNotConfigured) as exc:
+        resolve_vlm_config(env={"JARVIS_VLM_BACKEND": "off",
+                                "JARVIS_VLM_URL": "http://localhost:8000/v1"})
+    assert exc.value.reason == "vlm_disabled"
+
+
+def test_resolver_legacy_url_only_keeps_working_as_custom():
+    config = resolve_vlm_config(env={"JARVIS_VLM_URL": "http://localhost:8000/v1"})
+    assert config.backend == "custom"
+    assert config.base_url == "http://localhost:8000/v1"
+    assert config.model == "qwen2-vl"  # the historical default, unchanged
+    assert config.is_local is True
+
+
+def test_resolver_lmstudio_defaults_to_port_1234_but_never_guesses_a_model():
+    with pytest.raises(VLMNotConfigured) as exc:
+        resolve_vlm_config(env={"JARVIS_VLM_BACKEND": "lmstudio"})
+    assert exc.value.reason == "vlm_model_unset"
+    config = resolve_vlm_config(env={"JARVIS_VLM_BACKEND": "lmstudio",
+                                     "JARVIS_VLM_MODEL": "qwen2.5-vl-7b"})
+    assert config.base_url == LMSTUDIO_VLM_BASE
+    assert config.model == "qwen2.5-vl-7b"
+    assert config.is_local is True
+
+
+def test_resolver_custom_requires_url_and_labels_remote_as_not_local():
+    with pytest.raises(VLMNotConfigured) as exc:
+        resolve_vlm_config(env={"JARVIS_VLM_BACKEND": "custom"})
+    assert exc.value.reason == "vlm_url_unset"
+    config = resolve_vlm_config(env={"JARVIS_VLM_BACKEND": "custom",
+                                     "JARVIS_VLM_URL": "http://gpu-box.lan:8000/v1"})
+    assert config.is_local is False
+
+
+def test_resolver_unknown_backend_is_a_refusal_not_a_guess():
+    with pytest.raises(VLMNotConfigured) as exc:
+        resolve_vlm_config(env={"JARVIS_VLM_BACKEND": "openai"})
+    assert exc.value.reason == "vlm_backend_unknown"
+
+
+def test_backend_carries_a_local_provenance_label():
+    assert VLMBackend(base_url="http://localhost:1234/v1", client=_Client({})).is_local is True
+    assert VLMBackend(base_url="http://gpu-box.lan:8000/v1", client=_Client({})).is_local is False
+
+
+@pytest.mark.asyncio
+async def test_vlm_routes_resolve_config_and_refuse_honestly(monkeypatch):
+    from agents.core.routers import multimodal
+
+    for name in ("JARVIS_VLM_BACKEND", "JARVIS_VLM_URL", "JARVIS_VLM_MODEL", "JARVIS_VLM_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    status = (await multimodal.vlm_status()).body
+    import json as _json
+    payload = _json.loads(status)
+    assert payload == {"configured": False, "backend": "off", "reason": "vlm_disabled",
+                       "default_model": None, "reachable": None}
+    describe = await multimodal.vlm_describe(
+        multimodal.VLMDescribeBody(prompt="what is this?", images=[])
+    )
+    assert describe.status_code == 503
+    assert _json.loads(describe.body)["reason"] == "vlm_disabled"
+
+    monkeypatch.setenv("JARVIS_VLM_BACKEND", "lmstudio")
+    monkeypatch.setenv("JARVIS_VLM_MODEL", "qwen2.5-vl-7b")
+    payload = _json.loads((await multimodal.vlm_status()).body)
+    assert payload["configured"] is True
+    assert payload["backend"] == "lmstudio"
+    assert payload["base_url"] == "http://localhost:1234/v1"
+    assert payload["default_model"] == "qwen2.5-vl-7b"
+    assert payload["local"] is True
+    # reachable stays null: the route does no network probe, and says so.
+    assert payload["reachable"] is None

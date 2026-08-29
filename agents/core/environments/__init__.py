@@ -1,8 +1,10 @@
-"""Pure execution-environment contracts for governed sandbox/tool RPC work.
+"""Execution-environment contracts and the governed target transport.
 
-This package intentionally does not execute code. It describes supported
-environment backends and provides shared helpers that later transports can use
-without importing the runtime-heavy sandbox or Tool-RPC modules.
+The contract modules (profiles, targets, file RPC, output limits) execute
+nothing themselves. The one exception, added by GAP-9, is ``execution`` —
+``GovernedTargetRunner`` routes a command through the target policy plane and
+the existing Sandbox engine (docker only; local/ssh refuse honestly). Import
+it lazily where needed: it is the only module here that touches a runtime.
 """
 
 from __future__ import annotations
@@ -226,6 +228,7 @@ def prepare_python_child_env(
     return child_env
 
 
+from .execution import GovernedTargetRunner  # noqa: E402
 from .targets import (  # noqa: E402  (profiles above must exist before target validation)
     ALLOW,
     APPROVAL_REQUIRED,
@@ -243,6 +246,7 @@ __all__ = [
     "APPROVAL_REQUIRED",
     "DENY",
     "CwdExtraction",
+    "GovernedTargetRunner",
     "EnvironmentProfile",
     "TargetAuditChain",
     "TargetAuditCorrupt",

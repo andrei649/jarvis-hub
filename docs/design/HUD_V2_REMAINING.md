@@ -188,7 +188,9 @@ to the Home surface.
 **H31.5 Camera Intelligence (2026-07-13):** the default-off `/api/cameras/*` surface is live in
 the Home cluster. `CameraPanel` shows only bounded time/type/camera/zone/confidence metadata and
 optional strict-local description provenance, with deterministic temporal search. It creates no
-image/video/embed or private media request. Admin-authenticated ONVIF discovery is onboarding-only;
+image/video/embed or private media request. Admin-authenticated ONVIF discovery is onboarding-only and
+needs the manually installed `wsdiscovery` package (deliberately unlocked; a stock install's
+discover route answers `onvif_dependency_missing` with the install remedy in `detail`);
 native parity covers status, recent events, and private-body search without an admin shortcut.
 
 **H32.6 Capability Acquisition (2026-07-13):** the default-off `/api/acquisition/*` surface is

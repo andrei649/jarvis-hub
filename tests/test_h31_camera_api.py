@@ -9,7 +9,12 @@ import httpx
 import pytest
 
 from agents.core.cameras.models import CameraEvent
-from agents.core.cameras.onvif import OnvifDiscoveryDisabledError, OnvifDiscoveryError
+from agents.core.cameras.onvif import (
+    DEPENDENCY_MISSING_DETAIL,
+    OnvifDiscoveryDisabledError,
+    OnvifDiscoveryError,
+    OnvifDiscoveryResult,
+)
 from agents.core.cameras.retrieval import CameraEventRetrieval
 from agents.core.cameras.runtime import CameraRuntime, build_camera_runtime
 from agents.core.routers import cameras as camera_router
@@ -82,6 +87,16 @@ class _DisabledDiscovery:
 class _LeakyDiscovery:
     async def discover(self):
         raise OnvifDiscoveryError("secret at C:\\private\\camera.ini")
+
+
+class _DependencyMissingDiscovery:
+    async def discover(self):
+        return OnvifDiscoveryResult(
+            status="unavailable",
+            devices=(),
+            reason="onvif_dependency_missing",
+            detail=DEPENDENCY_MISSING_DETAIL,
+        )
 
 
 def _runtime(*, enabled: bool = True, discovery=None) -> CameraRuntime:
