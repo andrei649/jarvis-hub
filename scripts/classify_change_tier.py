@@ -23,7 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
+import subprocess  # nosec B404
 import sys
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
@@ -90,7 +90,7 @@ class Verdict:
 
 
 def _git(root: str, *args: str) -> str:
-    proc = subprocess.run(
+    proc = subprocess.run(  # nosec B603
         ("git", "-C", root, *args),
         capture_output=True,
         text=True,
@@ -220,9 +220,10 @@ def classify(root: str, base: str, head: str) -> Verdict:
             _inspect_manifest(v, before, after)
         if path in GATE_TEST_PATHS:
             _inspect_tests(v, path, before, after)
-        if path == ".github/CODEOWNERS":
-            if len(after.splitlines()) < len(before.splitlines()):
-                v.loosen(f"{path}: removes owner-review coverage")
+        if path == ".github/CODEOWNERS" and len(after.splitlines()) < len(
+            before.splitlines()
+        ):
+            v.loosen(f"{path}: removes owner-review coverage")
 
     if v.tier == 1 and not v.reasons:
         v.reasons.append("boundary files touched, no loosening signal detected")
