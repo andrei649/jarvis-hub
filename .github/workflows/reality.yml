@@ -37,6 +37,31 @@ jobs:
         env:
           JARVIS_TESTING: "1"
           JARVIS_REALITY_HARNESS: "1"
+      # GAP-9: persist the run as evidence. Retention is deliberately separate
+      # from promotion (the eval-nightly pattern): the ledger records the
+      # transcript with promotion_scope=in_process_only; nothing reads it back,
+      # so V3's no-durable-promotion constraint is untouched. always() keeps a
+      # red run as evidence too.
+      - name: Record reality evidence
+        if: ${{ always() }}
+        run: >-
+          python -m agents.core.observability.reality_evidence
+          --store-root reality-evidence
+          --json-out reality-evidence/latest-run.json
+          --lane scheduled
+          --revision "$GITHUB_SHA"
+          --runner-id "github-actions"
+        env:
+          JARVIS_TESTING: "1"
+          JARVIS_REALITY_HARNESS: "1"
+      - name: Upload reality evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: reality-evidence
+          path: reality-evidence/
+          if-no-files-found: warn
+          retention-days: 14
 
   # WV-170 (GitHub issue #170) — Neo4jGraph.search()'s property-scanning Cypher
   # (H19.3.5) had only ever been exercised against httpx mocks or an
