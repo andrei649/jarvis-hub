@@ -1,0 +1,14 @@
+# Owner review is required ONLY where a change can widen what the autonomous
+# system is allowed to do. Everything else is reviewed by agents and merges
+# on green. See docs/adr/0001-autonomous-development-boundary.md.
+#
+# Branch protection is the enforcement point, not this file. A PR that edits
+# this file is itself a boundary change (scripts/classify_change_tier.py).
+
+/.github/                                    @andrei649
+/scripts/check_nerva_issue_movement.py       @andrei649
+/scripts/check_nerva_program_manifest.py     @andrei649
+/scripts/classify_change_tier.py             @andrei649
+/docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json  @andrei649
+/tests/test_nerva_issue_movement.py          @andrei649
+/tests/test_classify_change_tier.py          @andrei649
