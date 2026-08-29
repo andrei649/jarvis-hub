@@ -185,6 +185,23 @@ squash-merged once present on `main`; no item by itself completes a runtime epic
   release gates remain separate. No runtime, route, provider, execution, action or completion
   authority is added; Ultron remains the sole privileged-action authority and release readiness
   remains false.
+- ✅ Autonomous-development boundary / PR #975 (2026-08-29) — mechanical tier classifier
+  (`scripts/classify_change_tier.py` + `.github/workflows/autonomy.yml` + ADR
+  [`docs/adr/0001-autonomous-development-boundary.md`](docs/adr/0001-autonomous-development-boundary.md))
+  replaces the owner-receipt ceremony for routine work: tier 0 (no boundary path touched) and
+  tier 1 tighten/neutral changes auto-merge on green with agent review (`ai-review.yml`), while
+  any structural loosening (new write permissions, removed job dependencies, added
+  `continue-on-error`, deleted hard-fail guards or assertion tests, new secret references,
+  `enforcement_state` downgrades) exits 2 and holds for the owner. Validated against the five
+  historical gate-weakening attempts (all classify as loosen); the PR classified itself as loosen
+  and waited for owner approval. `.github/CODEOWNERS` added;
+  `tests/test_classify_change_tier.py` (+12). No movement-gate, manifest or authority change —
+  the #943 receipt ceremony still governs Nerva movement PRs.
+- ✅ ai-review token fix / PR #978 (2026-08-29) — `ai-review.yml` passes
+  `github_token: ${{ github.token }}` so the review action stops falling back to the unavailable
+  OIDC/GitHub-App exchange; with the subscription OAuth secret in place this makes the #975
+  agent-review lane operational. Classified tier-1-neutral and auto-merged by the #975 policy
+  itself. Workflow-only; no authority change.
 
 **Innovation Lab precursor documents** (merged, but **not** epic slices — neither satisfies a
 #805 checkbox and neither promotes, adopts or adds an integration/dependency pin):
@@ -262,7 +279,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~6,849 backend collected (+521 frontend vitest, +96 mobile jest;
+python -m pytest tests/ -v          # ~7,089 backend collected (+627 frontend vitest, +103 mobile jest;
 #   counters generated into project-status.json via scripts/status_sync.py)
 ```
 
