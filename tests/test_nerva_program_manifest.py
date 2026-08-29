@@ -67,6 +67,63 @@ def _registry() -> dict:
     return load_json_strict(REGISTRY)
 
 
+def _movement_gate() -> dict:
+    return {
+        "schema_version": 1,
+        "enforcement_state": "required",
+        "bootstrap": {
+            "source_sha": "843918848c11bbd3f0099f9504d0e0eaaa56b9d6",
+            "accepted_base_sha": "e596920ec60f19d2e7f0937819c892746a1c42b2",
+            "legacy_manifest_sha256": (
+                "ab63a42837fb69af901326ffae5052d01c787a913960e2fb6f3bebeaac10ec7f"
+            ),
+            "legacy_manifest_view_sha256": (
+                "e4480f7c37de768ef59d64a542a2ec6c241b89d44ce89fa329a72ff987c1cfdc"
+            ),
+            "registry_seed_sha256": (
+                "9ab8aadf4c986e6380e8421225e99de5afc585163366ebb53199eecdf58980fb"
+            ),
+        },
+        "branch_prefix": "nerva2/",
+        "attestation_start_marker": "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->",
+        "registry": [
+            ".github/workflows/ci.yml",
+            ".github/workflows/nerva-roadmap.yml",
+            ".github/workflows/pr-auto-merge.yml",
+            "BACKLOG.md",
+            "GO_LIVE_PLAN.md",
+            "NERVA.md",
+            "README.md",
+            "STATUS.md",
+            "docs/nerva2/NERVA_ISSUE_MOVEMENT_V1.md",
+            "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json",
+            "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md",
+            "docs/superpowers/plans/2026-08-07-b2-live-issue-ledger.md",
+            "docs/superpowers/specs/2026-08-07-b2-live-issue-ledger-design.md",
+            "project-status.json",
+            "scripts/check_nerva_issue_movement.py",
+            "scripts/check_nerva_program_manifest.py",
+            "tests/test_nerva_issue_movement.py",
+            "tests/test_nerva_program_manifest.py",
+            "tests/test_pr_auto_merge_policy.py",
+        ],
+        "program_control_issues": [846],
+        "receipt_control": {
+            "mode": "point_in_time",
+            "live_pr_reread_required": True,
+            "fresh_exact_head_rerun_required": True,
+            "fresh_owner_receipts_required": True,
+            "continuous_currentness": False,
+        },
+        "manual_integration": {
+            "issue": 847,
+            "workflow_path": ".github/workflows/pr-auto-merge.yml",
+            "policy_test_path": "tests/test_pr_auto_merge_policy.py",
+        },
+        "rollback": None,
+    }
+
+
 def _errors(
     data: object,
     *,
@@ -103,6 +160,13 @@ def _copy_fixture_root(tmp_path: Path) -> Path:
     (root / "docs").mkdir(parents=True)
     shutil.copytree(REPO / "docs" / "nerva2", root / "docs" / "nerva2")
     shutil.copy2(REPO / "BACKLOG.md", root / "BACKLOG.md")
+    for relative in (
+        Path(".github/workflows/pr-auto-merge.yml"),
+        Path("tests/test_pr_auto_merge_policy.py"),
+    ):
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO / relative, target)
     return root
 
 
@@ -133,6 +197,178 @@ def test_canonical_manifest_is_gate_complete_and_generated_view_is_exact() -> No
     assert not actual.startswith(b"\xef\xbb\xbf")
     assert b"\r\n" not in actual
     assert actual.endswith(b"\n") and not actual.endswith(b"\n\n")
+
+
+def test_canonical_movement_gate_is_closed_world_point_in_time_and_operationally_pinned() -> None:
+    data = _manifest()
+    gate = data["movement_gate"]
+
+    assert set(gate) == {
+        "schema_version",
+        "enforcement_state",
+        "bootstrap",
+        "branch_prefix",
+        "attestation_start_marker",
+        "registry",
+        "program_control_issues",
+        "receipt_control",
+        "manual_integration",
+        "rollback",
+    }
+    assert gate["schema_version"] == 1
+    assert gate["enforcement_state"] == "required"
+    assert gate["bootstrap"] == _movement_gate()["bootstrap"]
+    assert gate["branch_prefix"] == "nerva2/"
+    assert gate["attestation_start_marker"] == "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->"
+    assert gate["program_control_issues"] == [846]
+    assert gate["receipt_control"] == {
+        "mode": "point_in_time",
+        "live_pr_reread_required": True,
+        "fresh_exact_head_rerun_required": True,
+        "fresh_owner_receipts_required": True,
+        "continuous_currentness": False,
+    }
+    assert gate["manual_integration"] == {
+        "issue": 847,
+        "workflow_path": ".github/workflows/pr-auto-merge.yml",
+        "policy_test_path": "tests/test_pr_auto_merge_policy.py",
+    }
+    assert gate["rollback"] is None
+    assert data["evidence_snapshot"]["control_issue"] == 839
+    assert data["evidence_snapshot"]["live_issue_state_verified_by_checker"] is False
+    assert data["authority"]["can_authorize"] is False
+    assert data["authority"]["can_execute"] is False
+    assert data["authority"]["completion_authority"] is False
+    assert data["authority"]["release_ready"] is False
+    assert _stream(data, "E1")["program_status"] == "building"
+    assert _stream(data, "E8")["program_status"] == "building"
+
+
+def test_bootstrap_provenance_pins_historical_source_accepted_base_and_legacy_bytes() -> None:
+    gate = _manifest()["movement_gate"]
+
+    assert "bootstrap_base" not in gate
+    assert gate["bootstrap"] == {
+        "source_sha": "843918848c11bbd3f0099f9504d0e0eaaa56b9d6",
+        "accepted_base_sha": "e596920ec60f19d2e7f0937819c892746a1c42b2",
+        "legacy_manifest_sha256": (
+            "ab63a42837fb69af901326ffae5052d01c787a913960e2fb6f3bebeaac10ec7f"
+        ),
+        "legacy_manifest_view_sha256": (
+            "e4480f7c37de768ef59d64a542a2ec6c241b89d44ce89fa329a72ff987c1cfdc"
+        ),
+        "registry_seed_sha256": (
+            "9ab8aadf4c986e6380e8421225e99de5afc585163366ebb53199eecdf58980fb"
+        ),
+    }
+
+
+def test_movement_registry_contains_every_b2_candidate_and_manual_guard_path() -> None:
+    registry = _manifest()["movement_gate"]["registry"]
+    expected = {
+        ".github/workflows/ci.yml",
+        ".github/workflows/nerva-roadmap.yml",
+        ".github/workflows/pr-auto-merge.yml",
+        "BACKLOG.md",
+        "GO_LIVE_PLAN.md",
+        "NERVA.md",
+        "README.md",
+        "STATUS.md",
+        "docs/nerva2/NERVA_ISSUE_MOVEMENT_V1.md",
+        "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json",
+        "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md",
+        "docs/superpowers/plans/2026-08-07-b2-live-issue-ledger.md",
+        "docs/superpowers/specs/2026-08-07-b2-live-issue-ledger-design.md",
+        "project-status.json",
+        "scripts/check_nerva_issue_movement.py",
+        "scripts/check_nerva_program_manifest.py",
+        "tests/test_nerva_issue_movement.py",
+        "tests/test_nerva_program_manifest.py",
+        "tests/test_pr_auto_merge_policy.py",
+    }
+
+    assert registry == sorted(registry)
+    assert set(registry) == expected
+    static_paths = manifest_static_paths(_manifest())
+    assert ".github/workflows/pr-auto-merge.yml" in static_paths
+    assert "tests/test_pr_auto_merge_policy.py" in static_paths
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda gate: gate.pop("schema_version"), "movement_gate: missing fields"),
+        (
+            lambda gate: gate.update(schema_version=True),
+            "movement_gate.schema_version must be integer 1",
+        ),
+        (
+            lambda gate: gate.update(branch_prefix="nerva/"),
+            "movement_gate.branch_prefix must be 'nerva2/'",
+        ),
+        (
+            lambda gate: gate.update(attestation_start_marker="NERVA2"),
+            "movement_gate.attestation_start_marker must match the canonical marker",
+        ),
+        (
+            lambda gate: gate["receipt_control"].update(continuous_currentness=True),
+            "movement_gate.receipt_control.continuous_currentness must remain false",
+        ),
+        (
+            lambda gate: gate["manual_integration"].update(issue=848),
+            "movement_gate.manual_integration.issue must be #847",
+        ),
+        (
+            lambda gate: gate["manual_integration"].update(workflow_path="ci.yml"),
+            "movement_gate.manual_integration.workflow_path must pin the conductor workflow",
+        ),
+        (
+            lambda gate: gate["registry"].remove("tests/test_pr_auto_merge_policy.py"),
+            "movement_gate.registry must include required static path",
+        ),
+        (
+            lambda gate: gate["registry"].append("docs/*.md"),
+            "movement_gate.registry entry contains wildcard",
+        ),
+    ],
+)
+def test_movement_gate_contract_fails_closed(mutate, message: str) -> None:
+    data = _manifest()
+    data["movement_gate"] = _movement_gate()
+    mutate(data["movement_gate"])
+
+    assert any(message in error for error in _errors(data))
+
+
+def test_generated_manifest_view_states_point_in_time_gate_without_authority_claims() -> None:
+    rendered = render_markdown(_manifest())
+
+    assert "## Point-in-time issue movement gate" in rendered
+    assert "`required`" in rendered
+    assert "[#846]" in rendered
+    assert "[#847]" in rendered
+    assert "continuous currentness: `false`" in rendered
+    assert "Live issue state verified by this checker: `false`" in rendered
+    assert "Release readiness remains `false`" in rendered
+
+
+def test_manual_guard_static_inputs_are_required_only_while_gate_is_required() -> None:
+    data = _manifest()
+    gate = data["movement_gate"]
+    gate["enforcement_state"] = "safety_disabled"
+    gate["program_control_issues"].append(900)
+    gate["rollback"] = {
+        "issue": 900,
+        "rollback_of_issue": 846,
+        "reason": "Disable before the separately reviewed bounded cleanup.",
+        "fresh_owner_receipts_required": True,
+        "exact_head_checks_required": True,
+    }
+
+    assert _errors(data) == []
+    static_paths = manifest_static_paths(data)
+    assert ".github/workflows/pr-auto-merge.yml" not in static_paths
+    assert "tests/test_pr_auto_merge_policy.py" not in static_paths
 
 
 def test_partial_epic_gates_allow_e3_and_e6_to_be_in_progress() -> None:

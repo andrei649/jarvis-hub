@@ -130,6 +130,7 @@ ROOT_FIELDS = {
     "runtime_feedback_edges",
     "known_source_drifts",
     "invariants",
+    "movement_gate",
 }
 SNAPSHOT_FIELDS = {
     "repository",
@@ -203,6 +204,55 @@ EXPECTED_ELIGIBILITY_DERIVATION = {
     "done_clear_result": "satisfied",
     "done_open_cause_allowed": False,
 }
+
+LEGACY_MOVEMENT_BASE = "843918848c11bbd3f0099f9504d0e0eaaa56b9d6"
+ACCEPTED_MOVEMENT_BOOTSTRAP_BASE = "e596920ec60f19d2e7f0937819c892746a1c42b2"
+LEGACY_MOVEMENT_MANIFEST_SHA256 = "ab63a42837fb69af901326ffae5052d01c787a913960e2fb6f3bebeaac10ec7f"
+LEGACY_MOVEMENT_VIEW_SHA256 = "e4480f7c37de768ef59d64a542a2ec6c241b89d44ce89fa329a72ff987c1cfdc"
+MOVEMENT_REGISTRY_SEED_SHA256 = "9ab8aadf4c986e6380e8421225e99de5afc585163366ebb53199eecdf58980fb"
+MOVEMENT_BRANCH_PREFIX = "nerva2/"
+MOVEMENT_ATTESTATION_START = "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->"
+MANUAL_INTEGRATION_WORKFLOW = ".github/workflows/pr-auto-merge.yml"
+MANUAL_INTEGRATION_POLICY_TEST = "tests/test_pr_auto_merge_policy.py"
+MOVEMENT_GATE_FIELDS = {
+    "schema_version",
+    "enforcement_state",
+    "bootstrap",
+    "branch_prefix",
+    "attestation_start_marker",
+    "registry",
+    "program_control_issues",
+    "receipt_control",
+    "manual_integration",
+    "rollback",
+}
+BOOTSTRAP_FIELDS = {
+    "source_sha",
+    "accepted_base_sha",
+    "legacy_manifest_sha256",
+    "legacy_manifest_view_sha256",
+    "registry_seed_sha256",
+}
+RECEIPT_CONTROL_FIELDS = {
+    "mode",
+    "live_pr_reread_required",
+    "fresh_exact_head_rerun_required",
+    "fresh_owner_receipts_required",
+    "continuous_currentness",
+}
+MANUAL_INTEGRATION_FIELDS = {"issue", "workflow_path", "policy_test_path"}
+ROLLBACK_FIELDS = {
+    "issue",
+    "rollback_of_issue",
+    "reason",
+    "fresh_owner_receipts_required",
+    "exact_head_checks_required",
+}
+REQUIRED_MOVEMENT_STATIC_PATHS = {
+    MANUAL_INTEGRATION_WORKFLOW,
+    MANUAL_INTEGRATION_POLICY_TEST,
+}
+MAX_ROLLBACK_REASON_BYTES = 512
 
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -828,6 +878,164 @@ def _validate_authority(data: Any, errors: list[str]) -> None:
     for field, required in expected.items():
         if data.get(field) is not required:
             errors.append(f"authority.{field} must remain {str(required).lower()}")
+
+
+def _validate_movement_registry(data: Any, errors: list[str]) -> list[str]:
+    if not isinstance(data, list):
+        errors.append("movement_gate.registry must be a list")
+        return []
+    if not all(isinstance(entry, str) for entry in data):
+        errors.append("movement_gate.registry entries must be text")
+        return []
+    for entry in data:
+        if any(character in entry for character in "*?[]{}"):
+            errors.append("movement_gate.registry entry contains wildcard")
+            continue
+        candidate = entry[:-1] if entry.endswith("/") else entry
+        if not candidate or PORTABLE_REPO_PATH.fullmatch(candidate) is None:
+            errors.append("movement_gate.registry entry must be a portable repository path")
+            continue
+        pure = PurePosixPath(candidate)
+        if pure.is_absolute() or any(part in {"", ".", ".."} for part in pure.parts):
+            errors.append("movement_gate.registry entry must be a portable repository path")
+        if entry.endswith("/") and len(pure.parts) < 2:
+            errors.append("movement_gate.registry prefix is too broad")
+    if data != sorted(data) or len(data) != len(set(data)):
+        errors.append("movement_gate.registry must be sorted and unique")
+    if len({entry.casefold() for entry in data}) != len(data):
+        errors.append("movement_gate.registry has case-colliding entries")
+    return data
+
+
+def _validate_movement_gate(
+    data: Any,
+    *,
+    root: Path,
+    tracked_paths: frozenset[bytes] | None,
+    errors: list[str],
+) -> None:
+    errors.extend(_field_errors(data, MOVEMENT_GATE_FIELDS, "movement_gate"))
+    if not isinstance(data, dict):
+        return
+    if type(data.get("schema_version")) is not int or data.get("schema_version") != 1:
+        errors.append("movement_gate.schema_version must be integer 1")
+    state = data.get("enforcement_state")
+    if state not in {"required", "safety_disabled"}:
+        errors.append("movement_gate.enforcement_state must be required or safety_disabled")
+    bootstrap = data.get("bootstrap")
+    errors.extend(_field_errors(bootstrap, BOOTSTRAP_FIELDS, "movement_gate.bootstrap"))
+    if isinstance(bootstrap, dict):
+        expected_bootstrap = {
+            "source_sha": LEGACY_MOVEMENT_BASE,
+            "accepted_base_sha": ACCEPTED_MOVEMENT_BOOTSTRAP_BASE,
+            "legacy_manifest_sha256": LEGACY_MOVEMENT_MANIFEST_SHA256,
+            "legacy_manifest_view_sha256": LEGACY_MOVEMENT_VIEW_SHA256,
+            "registry_seed_sha256": MOVEMENT_REGISTRY_SEED_SHA256,
+        }
+        for field, expected in expected_bootstrap.items():
+            if bootstrap.get(field) != expected:
+                errors.append(
+                    f"movement_gate.bootstrap.{field} must match pinned bootstrap provenance"
+                )
+    if data.get("branch_prefix") != MOVEMENT_BRANCH_PREFIX:
+        errors.append("movement_gate.branch_prefix must be 'nerva2/'")
+    if data.get("attestation_start_marker") != MOVEMENT_ATTESTATION_START:
+        errors.append("movement_gate.attestation_start_marker must match the canonical marker")
+
+    registry = _validate_movement_registry(data.get("registry"), errors)
+    if state == "required":
+        for required_path in sorted(REQUIRED_MOVEMENT_STATIC_PATHS):
+            if required_path not in registry:
+                errors.append(
+                    f"movement_gate.registry must include required static path {required_path}"
+                )
+            else:
+                path_error = validate_repo_path(root, required_path, tracked_paths=tracked_paths)
+                if path_error:
+                    errors.append(f"movement_gate static input {required_path}: {path_error}")
+
+    issues = data.get("program_control_issues")
+    if (
+        not isinstance(issues, list)
+        or not issues
+        or issues[0] != 846
+        or any(type(issue) is not int or issue <= 0 for issue in issues)
+        or len(issues) != len(set(issues))
+    ):
+        errors.append("movement_gate.program_control_issues must start with sole bootstrap #846")
+
+    receipt_control = data.get("receipt_control")
+    errors.extend(
+        _field_errors(
+            receipt_control,
+            RECEIPT_CONTROL_FIELDS,
+            "movement_gate.receipt_control",
+        )
+    )
+    if isinstance(receipt_control, dict):
+        expected_receipt = {
+            "mode": "point_in_time",
+            "live_pr_reread_required": True,
+            "fresh_exact_head_rerun_required": True,
+            "fresh_owner_receipts_required": True,
+            "continuous_currentness": False,
+        }
+        for field, expected in expected_receipt.items():
+            actual = receipt_control.get(field)
+            matches = actual is expected if isinstance(expected, bool) else actual == expected
+            if not matches:
+                errors.append(
+                    f"movement_gate.receipt_control.{field} must remain {str(expected).lower()}"
+                )
+
+    manual = data.get("manual_integration")
+    errors.extend(
+        _field_errors(
+            manual,
+            MANUAL_INTEGRATION_FIELDS,
+            "movement_gate.manual_integration",
+        )
+    )
+    if isinstance(manual, dict):
+        if type(manual.get("issue")) is not int or manual.get("issue") != 847:
+            errors.append("movement_gate.manual_integration.issue must be #847")
+        if manual.get("workflow_path") != MANUAL_INTEGRATION_WORKFLOW:
+            errors.append(
+                "movement_gate.manual_integration.workflow_path must pin the conductor workflow"
+            )
+        if manual.get("policy_test_path") != MANUAL_INTEGRATION_POLICY_TEST:
+            errors.append(
+                "movement_gate.manual_integration.policy_test_path must pin the conductor test"
+            )
+
+    rollback = data.get("rollback")
+    if state == "required":
+        if rollback is not None:
+            errors.append("movement_gate.rollback must be null while enforcement is required")
+    elif state == "safety_disabled":
+        errors.extend(_field_errors(rollback, ROLLBACK_FIELDS, "movement_gate.rollback"))
+        if isinstance(rollback, dict):
+            rollback_issue = rollback.get("issue")
+            if type(rollback_issue) is not int or rollback_issue <= 0:
+                errors.append("movement_gate.rollback.issue must be a positive issue number")
+            elif not isinstance(issues, list) or rollback_issue not in issues[1:]:
+                errors.append(
+                    "movement_gate.rollback.issue must be appended after bootstrap control #846"
+                )
+            if rollback.get("rollback_of_issue") != 846:
+                errors.append("movement_gate.rollback.rollback_of_issue must be #846")
+            reason = rollback.get("reason")
+            if (
+                not isinstance(reason, str)
+                or not reason
+                or len(reason.encode("utf-8", errors="ignore")) > MAX_ROLLBACK_REASON_BYTES
+                or unicodedata.normalize("NFC", reason) != reason
+                or any(not character.isprintable() for character in reason)
+            ):
+                errors.append("movement_gate.rollback.reason must be bounded printable NFC text")
+            for field in ("fresh_owner_receipts_required", "exact_head_checks_required"):
+                if rollback.get(field) is not True:
+                    errors.append(f"movement_gate.rollback.{field} must remain true")
 
 
 def _validate_reference(
@@ -1494,6 +1702,12 @@ def validate_manifest(
         errors=errors,
     )
     _validate_authority(data.get("authority"), errors)
+    _validate_movement_gate(
+        data.get("movement_gate"),
+        root=root,
+        tracked_paths=tracked_paths,
+        errors=errors,
+    )
     registry_runtime_reference = _registry_runtime_reference(registry, errors)
 
     raw_streams = data.get("streams")
@@ -1579,6 +1793,11 @@ def render_markdown(data: dict[str, Any]) -> str:
     """Render only fixed prose from validated structured fields."""
 
     snapshot = data["evidence_snapshot"]
+    gate = data["movement_gate"]
+    bootstrap = gate["bootstrap"]
+    receipt = gate["receipt_control"]
+    manual = gate["manual_integration"]
+    control_issues = ", ".join(_issue_link(issue) for issue in gate["program_control_issues"])
     lines = [
         "# Nerva program manifest v1",
         "",
@@ -1595,6 +1814,26 @@ def render_markdown(data: dict[str, Any]) -> str:
         f"- Blocker plan: {_issue_link(snapshot['blocker_plan_issue'])}",
         f"- Manifest control: {_issue_link(snapshot['control_issue'])}",
         "- Live issue state verified by this checker: `false`",
+        "",
+        "## Point-in-time issue movement gate",
+        "",
+        f"- Schema version: `{gate['schema_version']}`",
+        f"- Enforcement state: `{gate['enforcement_state']}`",
+        f"- Historical bootstrap source: `{bootstrap['source_sha']}`",
+        f"- Accepted implementation base: `{bootstrap['accepted_base_sha']}`",
+        (
+            "- Gate-less bootstrap proof pins unchanged legacy manifest/view bytes: "
+            f"`{bootstrap['legacy_manifest_sha256']}` / "
+            f"`{bootstrap['legacy_manifest_view_sha256']}`."
+        ),
+        f"- Program-control issues: {control_issues}",
+        f"- Receipt proof mode: `{receipt['mode']}`; continuous currentness: `false`",
+        "- The live pull request must be reread and the unchanged exact head rerun before integration.",
+        (
+            f"- Manual-integration guard: {_issue_link(manual['issue'])} pins "
+            f"`{manual['workflow_path']}` and `{manual['policy_test_path']}`."
+        ),
+        "- This gate has no GitHub-write, runtime, completion, or release authority.",
         "",
         "## Program status and derived delivery eligibility",
         "",
@@ -1781,6 +2020,9 @@ def manifest_static_paths(data: dict[str, Any]) -> set[str]:
     """Return every repository file whose bytes can affect validation or rendering."""
 
     paths = set(CONTROL_RELATIVE_PATHS)
+    movement_gate = data.get("movement_gate")
+    if isinstance(movement_gate, dict) and movement_gate.get("enforcement_state") == "required":
+        paths.update(REQUIRED_MOVEMENT_STATIC_PATHS)
     for stream in data["streams"]:
         for evidence in stream["completion_evidence"]:
             paths.add(evidence["repo_path"])

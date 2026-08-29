@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review, converted_to_draft]
   push:
     branches: [main]
 
@@ -14,7 +15,39 @@ permissions:
   contents: read
 
 jobs:
+  nerva-movement:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Validate live Nerva movement
+        timeout-minutes: 5
+        run: >-
+          python scripts/check_nerva_issue_movement.py --live
+          --event "$GITHUB_EVENT_PATH"
+          --base "$NERVA_BASE_SHA"
+          --head "$NERVA_HEAD_SHA"
+          --root "$GITHUB_WORKSPACE"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NERVA_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          NERVA_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
   test:
+    needs: [nerva-movement]
+    if: always()
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -24,6 +57,9 @@ jobs:
         # is a required check on PRs, not just post-merge.
         os: ["ubuntu-latest", "windows-latest"]
     steps:
+      - name: Require successful Nerva movement on pull requests
+        if: github.event_name == 'pull_request' && needs.nerva-movement.result != 'success'
+        run: exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:

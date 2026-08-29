@@ -48,6 +48,8 @@ on:
       - "tests/test_nerva_e0_completion.py"
       - "tests/test_nerva_e8_1c_preflight.py"
       - "tests/test_nerva_program_manifest.py"
+      - "tests/test_pr_auto_merge_policy.py"
+      - ".github/workflows/pr-auto-merge.yml"
       - ".github/workflows/nerva-roadmap.yml"
   push:
     branches: [main]
@@ -97,6 +99,8 @@ on:
       - "tests/test_nerva_e0_completion.py"
       - "tests/test_nerva_e8_1c_preflight.py"
       - "tests/test_nerva_program_manifest.py"
+      - "tests/test_pr_auto_merge_policy.py"
+      - ".github/workflows/pr-auto-merge.yml"
       - ".github/workflows/nerva-roadmap.yml"
   workflow_dispatch:
     inputs:
@@ -137,10 +141,12 @@ jobs:
           scripts/check_nerva_e8_1c_preflight.py
           scripts/check_nerva_innovation_lab.py
           scripts/check_nerva_program_manifest.py
+          scripts/check_nerva_issue_movement.py
           scripts/reconcile_nerva_repository_ledgers.py
           tests/_nerva_innovation_lab_checks.py
           tests/test_nerva_e8_1c_preflight.py
           tests/test_nerva_program_manifest.py
+          tests/test_nerva_issue_movement.py
 
       - name: Validate Nerva roadmap reconciliation
         run: python scripts/check_nerva_roadmap.py
