@@ -30,6 +30,7 @@ function state(overrides = {}) {
       { occupant_id: `occ-${'b'.repeat(32)}`, status: 'present', privacy: 'private', confidence: 0.8, fresh: true },
     ],
     privacy_status: 'live',
+    presence_status: 'live',
     ...overrides,
   };
 }
@@ -46,6 +47,27 @@ describe('HousePanel (H30.5)', () => {
     expect(screen.getByText(/aaaaaaaa/)).toBeTruthy();
     expect(screen.getByText(/private/)).toBeTruthy();
     expect(screen.queryByText(/Alice|Bob|bedroom/i)).toBeNull();
+  });
+
+  it('distinguishes "no occupants detected" from a presence feature that never ran', async () => {
+    global.fetch = vi.fn(() => response(state({ presence: [], presence_status: 'live' })));
+    render(<HousePanel />);
+    await waitFor(() => expect(screen.getByText(/no occupants detected/i)).toBeTruthy());
+    expect(screen.getByText('live')).toBeTruthy();
+  });
+
+  it('says the presence writer is off when the owner has not opted in', async () => {
+    global.fetch = vi.fn(() => response(state({ presence: [], presence_status: 'off' })));
+    render(<HousePanel />);
+    await waitFor(() => expect(screen.getByText(/presence writer is off/i)).toBeTruthy());
+  });
+
+  it('flags a degraded presence write as a stale-list alert', async () => {
+    global.fetch = vi.fn(() => response(state({ presence_status: 'degraded' })));
+    render(<HousePanel />);
+    await waitFor(() => expect(screen.getByText(/presence write failed/i)).toBeTruthy());
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts.some((el) => /presence write failed/i.test(el.textContent || ''))).toBe(true);
   });
 
   it('shows an honest default-off state and no control forms', async () => {

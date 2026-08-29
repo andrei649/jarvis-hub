@@ -98,4 +98,47 @@ describe('CameraPanel (H31.5)', () => {
     const call = vi.mocked(global.fetch).mock.calls.find(([url]) => String(url).includes('/api/cameras/onvif/discover'));
     expect(call[1].headers['X-Admin-Token']).toBe('owner-token');
   });
+
+  function mockDiscovery(payload) {
+    localStorage.setItem('hud.admin_token', 'owner-token');
+    global.fetch = vi.fn((url) => {
+      if (String(url).includes('/api/cameras/status')) return response(status);
+      if (String(url).includes('/api/cameras/events')) {
+        return response({ enabled: true, status: 'ok', reason: null, interpretation: {}, events: [] });
+      }
+      if (String(url).includes('/api/cameras/onvif/discover')) return response(payload);
+      return response({});
+    });
+  }
+
+  it('surfaces a 200-body dependency refusal instead of a dead button', async () => {
+    mockDiscovery({
+      enabled: true,
+      status: 'unavailable',
+      reason: 'onvif_dependency_missing',
+      detail: "ONVIF discovery needs the optional 'wsdiscovery' package on this host; run 'pip install wsdiscovery' and retry",
+      devices: [],
+    });
+    render(<CameraPanel />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /discover ONVIF cameras/i })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /discover ONVIF cameras/i }));
+    await waitFor(() => expect(screen.getByText(/onvif_dependency_missing/)).toBeTruthy());
+    expect(screen.getByText(/pip install wsdiscovery/)).toBeTruthy();
+  });
+
+  it('renders a degraded discovery outcome with its reason', async () => {
+    mockDiscovery({ enabled: true, status: 'degraded', reason: 'discovery_timeout', devices: [] });
+    render(<CameraPanel />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /discover ONVIF cameras/i })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /discover ONVIF cameras/i }));
+    await waitFor(() => expect(screen.getByText(/degraded · discovery_timeout/)).toBeTruthy());
+  });
+
+  it('says so when a healthy discovery simply finds nothing', async () => {
+    mockDiscovery({ enabled: true, status: 'online', reason: null, devices: [] });
+    render(<CameraPanel />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /discover ONVIF cameras/i })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /discover ONVIF cameras/i }));
+    await waitFor(() => expect(screen.getByText(/no ONVIF devices found/i)).toBeTruthy());
+  });
 });

@@ -64,10 +64,11 @@ machine.
 
 ### Channels & surfaces
 
-- **HUD V2 cockpit** (web, SSE) · **voice** — browser-mic loop (faster-whisper STT →
-  edge-tts/Kokoro TTS) ships today; the server-side wake-word pipeline is optional and needs
-  extra native deps · **Telegram · email** built in; **Discord · Slack** work once their SDKs
-  are installed (`pip install discord.py slack_sdk`).
+- **HUD V2 cockpit** (web, SSE) · **voice** — the browser-mic HUD loop ships today; server-side
+  STT/TTS engines (faster-whisper, edge-tts/Kokoro) are manual extras that degrade to 503 until
+  installed, and the wake-word pipeline additionally needs extra native deps · **Telegram ·
+  email** built in; **Discord · Slack** work once their SDKs are installed
+  (`pip install discord.py slack_sdk`).
 - **Mobile companion app** — approvals, tasks, comms inbox, memory + knowledge graph, security
   posture (read-only where it should be).
 - CLI REPL and admin panel; **400 HTTP routes** with OpenAPI→TypeScript typegen.

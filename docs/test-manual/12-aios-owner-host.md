@@ -687,7 +687,7 @@ worst-case failure this manual exists to catch.
 | 12.3 Home Assistant (H30) | 7 (AIO-017…023) | 🖥👁🔑⏱ | 6 ✅ / 1 ⚠️ | AIO-023 needs an **interior** lock or SKIP |
 | 12.4 Cameras (H31/H33) | 6 (AIO-024…029) | 🖥🔑👁 | 5 ✅ / 1 ⚠️ | strictest evidence-redaction rules |
 | 12.5 Media Director (H29) | 7 (AIO-030…036) | 🖥👁🔑 | 6 ✅ / 1 ⚠️ | needs two **real drivers**, not two devices |
-| 12.6 Acquisition (H32) | 4 (AIO-037…040) | 🖥🤖🔑⏱ | 4 ✅ | the loop itself has **no HTTP/HUD trigger** |
+| 12.6 Acquisition (H32) | 4 (AIO-037…040) | 🖥🤖🔑⏱ | 4 ✅ | HTTP drive route since A8-i; still **no HUD trigger** |
 | 12.7 Ambient ladder (H33) | 4 (AIO-041…044) | 🖥⏱ | 4 ✅ | depends on 12.3 and/or 12.4 being live |
 | 12.8 SKIP protocol & hardware list | 0 | — | ❌ | documentation, not a test |
 | 12.Y Negative & adversarial | 28 (AIO-045…072) | mixed | 16 ✅ / 9 ⚠️ / 3 ❌ | AIO-069/070 are the fabrication cross-checks |
@@ -699,12 +699,14 @@ worst-case failure this manual exists to catch.
 
 Observations only — **no code was changed**. Each is a pointer for the owner, not a fix.
 
-1. **No HTTP or HUD trigger for the H32 acquisition loop.** `capture_gap` / `resolve_gap` /
-   `synthesize_and_propose` (`agents/core/acquisition/runtime.py:41,59,168`) are in-process only;
-   the router exposes status/events/export/purge/revoke/rollback and nothing else. §N's
-   "gap → research → generate → sandbox → approval → promotion → reuse" therefore cannot be driven
-   by a tester from the product. AIO-038 is scripted for exactly this reason. (§10 records the same
-   finding independently.)
+1. ~~**No HTTP or HUD trigger for the H32 acquisition loop.**~~ **CLOSED (A8-i, 2026-08-02)** —
+   `POST /api/acquisition/{request_id}/drive` (`agents/core/routers/acquisition.py:230`, admin)
+   now drives reuse-check → research → generate → sandbox → propose, and `capture_gap` is
+   production-wired as the agent tool-loop's `gap_callback`
+   (`agents/core/autonomy_coordinator.py:527`). Still true: there is **no HUD button** — the route
+   is curl + admin-token only — and gap capture fires only from the tool-loop callback (by design).
+   AIO-038 uses the route directly (see §12.6 "Honest limit"). (§10 finding 15 records the same
+   closure.)
 2. **The camera → *house* projection has no read surface.** `HouseCameraFeedConsumer`
    (`agents/core/house/camera_feed.py:13`) maintains a bounded anonymous sensor projection, but no
    route reads it — `GET /api/house/state` builds its own runtime from the HA adapter and never

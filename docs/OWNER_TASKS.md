@@ -249,9 +249,11 @@ built on your Windows box:
      at implementation time, they move).
   4. **Pick the container host** (no GPU / heavy RAM needed: cloud LLM + in-memory stores).
 
-  ⚠️ Whoever implements this must gate `seed_graph()` first — `agents/core/memory/manager.py:45`
-  today seeds hardcoded personal facts (Andrei/Alexandra/Max/Raiffeisen/Cosmina de Sus/BMW E93) into
-  any empty graph. That is the one blocking code change; the rest of v1 is configuration.
+  ✅ The `seed_graph()` blocker shipped — the personal graph seed self-gates on
+  `NERVA_PUBLIC_PROFILE` (H23.30, #967; `agents/core/memory/seed_graph.py`,
+  `tests/test_public_profile_seed_gate.py`). Set `NERVA_PUBLIC_PROFILE=1` on the public box and no
+  personal fact is seeded; no code change remains — all of v1 is configuration plus the four
+  decisions above.
 
 - [ ] **Before any future Hermes adapter proposal:** decide whether the four productivity-skill
   subtrees carrying separate Anthropic terms are legally acceptable for the intended use, and
