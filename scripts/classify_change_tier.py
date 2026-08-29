@@ -160,11 +160,14 @@ def _inspect_workflow(v: Verdict, path: str, before: str, after: str) -> None:
     if lost_guards > 0:
         v.loosen(f"{path}: removes {lost_guards} hard-fail guard step(s)")
 
-    new_secrets = SECRETS_REF.findall(after)
-    old_secrets = SECRETS_REF.findall(before)
-    added_secrets = set(new_secrets) - set(old_secrets)
-    if added_secrets:
-        v.loosen(f"{path}: references new secret(s): {', '.join(sorted(added_secrets))}")
+    # These hold secret NAMES referenced by the workflow text (the identifier
+    # after `secrets.`, e.g. "ANTHROPIC_API_KEY"), never secret values — the
+    # verdict must be able to print them so the owner sees what a change asks for.
+    refs_after = SECRETS_REF.findall(after)
+    refs_before = SECRETS_REF.findall(before)
+    added_refs = set(refs_after) - set(refs_before)
+    if added_refs:
+        v.loosen(f"{path}: references new secret(s): {', '.join(sorted(added_refs))}")
 
 
 def _inspect_manifest(v: Verdict, before: str, after: str) -> None:
