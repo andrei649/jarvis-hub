@@ -99,5 +99,6 @@ These cannot be committed — branch protection lives outside the repo by design
    - Do not allow bypass for anyone, including admins.
 2. `Settings → Actions → General`: allow GitHub Actions to create and approve
    pull requests **off**.
-3. Add `ANTHROPIC_API_KEY` to repository secrets.
+3. Add `CLAUDE_CODE_OAUTH_TOKEN` to repository secrets (generated with
+   `claude setup-token`; subscription-backed, no separate API billing).
 4. Create the agent machine account and grant it write; keep it out of CODEOWNERS.
