@@ -1809,6 +1809,21 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
             "capability_id": "tool:echo",
         },
         {
+            "name": "terminal_run",
+            "gated": True,
+            "description": "Run one bounded shell command on a named governed target.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "maxLength": 64},
+                    "command": {"type": "string", "maxLength": 4000},
+                },
+                "required": ["target", "command"],
+                "additionalProperties": False,
+            },
+            "capability_id": "tool:terminal_run",
+        },
+        {
             "name": "time",
             "gated": False,
             "description": "Return the current Unix timestamp.",

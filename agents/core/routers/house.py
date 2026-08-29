@@ -135,8 +135,10 @@ def _presence_enabled(settings: dict) -> bool:
     """Default-off presence writer flag (env wins over settings, house-style)."""
     import os
 
+    from agents.core.env_config import env_flag
+
     if "JARVIS_HOUSE_PRESENCE" in os.environ:
-        return os.environ["JARVIS_HOUSE_PRESENCE"].strip().lower() in {"1", "true", "yes", "on"}
+        return env_flag("JARVIS_HOUSE_PRESENCE")
     return settings.get("house.presence_enabled") is True
 
 

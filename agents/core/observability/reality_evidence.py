@@ -123,7 +123,7 @@ class RealityEvidenceLedger:
         line = json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
         existing: list[str] = []
         if self._path.exists():
-            existing = [ln for ln in self._path.read_text("utf-8").splitlines() if ln]
+            existing = [ln for ln in self._path.read_text(encoding="utf-8").splitlines() if ln]
         existing.append(line.rstrip("\n"))
         if len(existing) > _RING_LIMIT:
             existing = existing[-_RING_LIMIT:]
@@ -135,7 +135,7 @@ class RealityEvidenceLedger:
         if not self._path.exists():
             return []
         rows = []
-        for line in self._path.read_text("utf-8").splitlines():
+        for line in self._path.read_text(encoding="utf-8").splitlines():
             if not line:
                 continue
             try:
