@@ -13,6 +13,8 @@ skills/imported/
 _server_err*.txt
 _server_out*.txt
 *.zip
+# Exception: the dormant gate-restore archive is checked in on purpose (docs/restore/).
+!docs/restore/*.zip
 .claude/worktrees/
 .worktrees/
 .mcp.json
