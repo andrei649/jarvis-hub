@@ -729,28 +729,32 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
 
 **Wrongly killed — judged shipped, functionality actually missing (4).**
 
-- [ ] 🔴 **DRA-01 — WV-170 Neo4j live property-scan: the CI lane the kill relied on is RED on main and has
+- [x] ✅ **DRA-01 — WV-170 Neo4j live property-scan: the CI lane the kill relied on is RED on main and has
   never validated the Cypher once; two of the issue's three scope legs are untouched.** The verdict killed
   issue #170 on the claim that the live contract test is "wired into CI against a real server" and "covers
   all three parts of the ask". *(evidence: `agents/core/memory/graph.py:175-188,
   tests/test_neo4j_live_property_search.py:37-44, .github/workflows/reality.yml:70-97`)*
-- [ ] 🟡 **DRA-02 — SEC-B5 killed as fully shipped, but the recall→action taint leg named in the same BACKLOG
+  **Shipped 0eed2ec, 80e33ab** — probe now POSTs `RETURN 1` and requires a 200 with no `errors`; map-valued properties JSON-coerced so nodes stop being dropped; six offline probe regressions moved onto the PR path.
+- [x] ✅ **DRA-02 — SEC-B5 killed as fully shipped, but the recall→action taint leg named in the same BACKLOG
   row is still unimplemented.** The verdict at index 7 concludes 'No development work remains. Only
   bookkeeping: tick the SEC-B5 checkbox at BACKLOG.md:763-764 with a FIXED in #941 recount. *(evidence:
   `agents/core/orchestrator.py:1799-1801, agents/core/orchestrator.py,
   agents/core/security/rag_guard.py:59`)*
-- [ ] 🟡 **DRA-03 — ADMIN PLUGIN REGISTRY still renders the 8-row demo corpus in live mode — no honest empty
+  **Shipped 6e24ad8** — `security/recall_taint.py` raises the turn's action origin so a tainted-recall turn's actions escalate GRANT->QUEUE; both the block-shaped and dict-shaped recall paths wired.
+- [x] ✅ **DRA-03 — ADMIN PLUGIN REGISTRY still renders the 8-row demo corpus in live mode — no honest empty
   state, and the honesty test enshrines the gap.** The kill of "Fix the seeded ADMIN/OBSERVE demo corpora"
   claims the ADMIN corpus was made honest, but it covered only models/keys/backups/channels/system.
   *(evidence: `frontend/src/api/live.ts:198, frontend/src/api/live.ts:432-442,
   frontend/src/modes3.tsx:268`)*
-- [ ] 🟡 **DRA-04 — OBSERVE still shows the seeded 4.2s p50 under a green LIVE badge when /bench/stats 503s —
+  **Shipped 16557a5** — `plugins` now stripped in `honestAdminSeed`; count header cannot fabricate; empty registry renders `not connected`.
+- [x] ✅ **DRA-04 — OBSERVE still shows the seeded 4.2s p50 under a green LIVE badge when /bench/stats 503s —
   scalar panels are never cleared at cycle start.** The verdict states OBSERVE renders "not connected"/"—"
   and "never the demo corpus" for silent endpoints. That holds only for the list-shaped fields. *(evidence:
   `frontend/src/api/live.ts:202-205, live.ts:130-146, live.ts:370`)*
 
 **Verified open but in no cluster — would be forgotten by executing the plan (6).**
 
+  **Shipped 16557a5** — scalar seed nulled and the three truthiness guards dropped, so an unanswered endpoint renders `—` instead of the seeded 4.2s.
 - [ ] 🔴 **DRA-05 — Item 23 (0.40 OSINT live-enrichment plugin) has no cluster at all — only its owner keys
   appear, in the owner lane.** items_only.json[23] scopes an AI-doable build: "a governed OSINT enrichment
   tool/plugin that consumes a pivot suggestion and performs the actual lookup", explicitly ai_doable=true
@@ -809,10 +813,11 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
 - [ ] 🔴 **DRA-17 — CDX-8 quarantined generated-skill review/approve has no client surface at all.** The
   owner-approval gate for LLM-authored skill code is backend-only. `agents/core/skills/loader. *(evidence:
   `agents/core/routers/skills.py:310, agents/core/skills/loader.py:543, tests/test_hud_v2_parity.py:500`)*
-- [ ] 🔴 **DRA-18 — mobile/PARITY.md is materially incomplete — ~40 user-guarded HUD surfaces have no row
+- [x] ✅ **DRA-18 — mobile/PARITY.md is materially incomplete — ~40 user-guarded HUD surfaces have no row
   (H18.10 umbrella).** The run's mobile findings (WorldView bridge ⬜, chat rooms ⬜, estop 🟡) were read
   straight off mobile/PARITY.md, but the ledger itself is stale: it is missing rows for most of what the HUD
   actually calls. *(evidence: `mobile/PARITY.md:10-20, PARITY.md, tests/_snapshots/route_auth.json`)*
+  **Shipped 16557a5** — 43 rows added; the audit's ~40 was corrected to 38 genuinely absent (four were word collisions).
 - [ ] 🔴 **DRA-19 — SignalGovernanceBridge has zero production constructors — the Signal Layer →
   approval-inbox bridge never runs.** agents/core/signal_governance.py ships a complete, contract-gated
   bridge (`SignalGovernanceBridge. *(evidence: `agents/core/signal_governance.py:33,
@@ -873,25 +878,29 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   explicit open residual from the 2026-07-28 parallel bug hunt: "Still open from that run (verified real,
   not yet fixed): the seeded ADMIN/OBSERVE corpora in modes3. *(evidence: `BACKLOG.md:883-884,
   modes3.tsx/modes2.tsx, frontend/src/api/live.ts:197-199`)*
-- [ ] 🟡 **DRA-32 — WFL-062 — unbounded max_retries on the user-tier POST /api/workflows/hierarchical is
+- [x] ✅ **DRA-32 — WFL-062 — unbounded max_retries on the user-tier POST /api/workflows/hierarchical is
   still uncapped.** Named by the governance-rails audit's own gap ledger (chapter 15 ADV-136 points at §10's
   open-gaps list) and confirmed open in code today: `POST /api/workflows/hierarchical` is user-tier
   (`dependencies=[Depends(user_guard)]`), parses max_retries with `int(. *(evidence:
   `agents/core/routers/workflows.py:200, agents/core/workflows/hierarchical.py:35,
   docs/test-manual/10-workflows-eval.md:369-375`)*
-- [ ] 🟡 **DRA-33 — WFL-063 — workflow loop nesting has no depth cap (subflows do, loops don't).** Second leg
+  **Shipped 3594fa4** — router 400 outside 0..`MAX_RETRIES_CAP`, library clamp behind it, `OverflowError` on `1e400` caught.
+- [x] ✅ **DRA-33 — WFL-063 — workflow loop nesting has no depth cap (subflows do, loops don't).** Second leg
   of the same ADV-136 open-gaps list, also confirmed open. `WorkflowEngine. *(evidence:
   `agents/core/workflows/engine.py:27, docs/test-manual/10-workflows-eval.md:377-381`)*
-- [ ] 🟡 **DRA-34 — WFL-112 — ReDoS: user-supplied regex in workflow termination conditions runs unbounded on
+  **Shipped 3594fa4** — `_MAX_LOOP_DEPTH` mirroring the subflow guard, tracked in ctx with a `finally` restore so nested same-id loops cannot clobber the outer counter.
+- [x] ✅ **DRA-34 — WFL-112 — ReDoS: user-supplied regex in workflow termination conditions runs unbounded on
   the event loop.** Third leg of the same open-gaps list, confirmed open. `evaluate_condition` executes a
   caller-supplied pattern with `re.search(str(value), text)` and catches only `re. *(evidence:
   `agents/core/workflows/engine.py:449, docs/test-manual/10-workflows-eval.md:606,
   tests/test_h10_12_workflow_termination.py:21`)*
-- [ ] 🟡 **DRA-35 — The HUD parity gate's _has_caller matches only the stem before the first path param, so
+  **Shipped 3594fa4, d87c01b** — pattern bounded and refused structurally when it quantifies a repeating/alternating group; deliberately not a timeout (the GIL is held for the whole match). WFL-113, the identical sink in `transforms.py`, closed too.
+- [x] ✅ **DRA-35 — The HUD parity gate's _has_caller matches only the stem before the first path param, so
   sub-routes under an already-called prefix can never be flagged.** tests/test_hud_v2_parity.py:540-547
   defines `_has_caller` as: take the path up to the first `{`, and if that stem is longer than 5 chars, ask
   whether the stem appears anywhere in the concatenated client blob. *(evidence:
   `tests/test_hud_v2_parity.py:540-547, tests/_snapshots/route_auth.json`)*
+  **Shipped c9463ca** — matcher now requires the stem AND every static segment after a path param; the ~70 vacuous passes split into an honest punch list and a re-derived `COMPUTED_URL_CALLERS` that a test keeps real.
 - [ ] 🟡 **DRA-36 — UNCALLED_BACKLOG (~70 declared-open UI halves) was mined for only two items.**
   tests/test_hud_v2_parity.py:436-514 declares UNCALLED_BACKLOG as 'Today's uncalled user-facing routes. A
   punch-list, not an allowance' — i.e. an in-repo register of shipped backends whose UI half is missing.
@@ -973,6 +982,71 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
 - [ ] ⬜ **DRA-53 — notes_store.py — a 504-line block-tree document store with no adopter and no route.**
   agents/core/notes_store. *(evidence: `agents/core/notes_store.py:112-116,
   agents/core/routers/notes.py:3-10, agents/core/notes.py:1-8`)*
+
+
+**Completeness-critic additions, now verified (9).** These 9 came from the discovery run's
+completeness critic, which ran *after* the adversarial verify phase — so unlike the other 120
+they carried no verdict and were single-source claims (audit gap **B1**). All 9 have now been
+checked against the code: **all 9 are genuinely still open**, each at high confidence.
+
+- [ ] 🟡 **DRA-54 — Skill approval lifecycle: revoke/prune approval rows + lock file when a skill is
+  removed.** agents/core/skills/approval.py exposes only approve() (:111), approved_snapshot() (:128),
+  tracks_path() (:150), is_approved() (:164) — no revoke/prune/remove anywhere. *Remaining: Full item
+  remains. Needs: a revoke(path)/prune API on SkillApprovalStore, a call site on the removal paths
+  (marketplace.py:504 remove_acquired_package and :642 remove_from_registry, plus any loader-side delete),
+  lock-file cleanup, and a regression test proving a removed skill's approval row cannot r…*
+- [ ] 🟡 **DRA-55 — Fix stale TASK-5 'still open' expectations in test-manual chapters 07 and 13.** Both
+  stale instructions are still present today: docs/test-manual/07-autonomy-governance.md:104 — 'Record this
+  as **TASK-5 still open**, severity **MAJOR**' — and docs/test-manual/13-scenarios-and-chaos.md:187
+  (JRN-064) — 'Current known behaviour: each task di. *Remaining: Two rows to rewrite, plus three stale
+  citations found while verifying: (a) 07:104 'Expected' must become the current pass state and 07:100's
+  Auto must become ✅ tests/test_dashboard.py; (b) 07:101 cites 'format_task at :150-157' — it is now
+  dashboard.py:153-165; (c) 13:187 cites 'dashboard.py:136-194…*
+- [ ] 🟡 **DRA-56 — Add cached-input pricing to cost_estimator MODELS (rates already verified and
+  tabulated).** agents/core/llm/cost_estimator.py MODELS is still input/output only — importing it and
+  taking the union of every row's keys yields exactly ['input','output'] across all 62 rows; zero rows carry
+  a 'cached' key. *Remaining: Unchanged: add an optional 'cached' key per vendor-priced MODELS row, bill
+  cached_tokens at that rate (falling back to today's $0 behaviour when the key is absent so unknown rows do
+  not change), and extend the drift guard at tests/test_cost_tracker.py:141 test_price_tables_do_not_drift.
+  Note the cou…*
+- [ ] 🟡 **DRA-57 — Fix marketing/README.md reference to a hook video that does not exist in the repo.**
+  marketing/README.md:21 still lists '`jarvis-alpha-hook-vertical.mp4` + `INVITE_MESSAGE.md`' as the
+  contents of marketing/alpha-testing/. *Remaining: Unchanged and trivially small: one table cell at
+  marketing/README.md:21 — either drop the mp4 or annotate it as an owner-recorded asset not stored in the
+  repo. Recording an actual video stays owner-side.*
+- [ ] 🟡 **DRA-58 — Nerva E8.1c — Hermes executing adapter and its follow-on evidence packages (issue
+  #804).** Issue #804 is state=open with body status 'BUILDING · E8.1A/B/C/D + EXACT-FETCH ACCEPTED ·
+  EXECUTING ADAPTER BLOCKED'; four acceptance boxes remain unchecked (Hermes executes one synthetic bounded
+  task; cancellation/timeout/partial-failure/rollback tested; nat. *Remaining: Still open, and one input has
+  gone stale since the critic wrote this: the preflight's immutable upstream snapshot pins Hermes v2026.8.3,
+  but agents/core/skills/hermes_pin_v1.json now records release_tag 'v2026.8.27' (commit 5fc308a…), landed
+  by 8dd29aa 'feat(hermes-sync): port hermes-agent v2026.8.2…*
+- [ ] 🟡 **DRA-59 — Nerva B7 — task-persisted Ultron mediation evidence (issue #818): resolve the six
+  architecture decisions, then build.** Issue #818 is state=open. But the critic's framing ('DISCOVERY · NO
+  BRANCH · implementation must not start until six decisions are resolved') is materially stale — that text
+  is the issue body, overtaken by its own comment stream. *Remaining: Not 'resolve six decisions then
+  build'. Code is landed and default-off. What remains: (1) a Nerva Program Owner retain/exception-vs-revert
+  decision on the #918 corrective merge (explicitly the 'exclusive next package', branch none); (2) the two
+  authority invariants left unresolved by the final-round…*
+- [ ] 🟡 **DRA-60 — Independent-integrator acceptance enforcement in repository controls (issues #906 and
+  #846 steps 3-4).** #906 is state=open, assigned to andrei649; #846 is state=open (last updated
+  2026-08-29). *Remaining: Partially done — the AI-buildable half has already landed and the critic missed
+  it. PR #916 merged as 519dca0 'feat(governance): add external exact-head acceptance state core', adding
+  services/integration_authority/state.py (703 lines), tests/test_integration_authority_state.py (1242
+  lines) and docs…*
+- [ ] 🟡 **DRA-61 — Auto-reconcile resolved third-party drift alerts (issue #836) — pending owner
+  scheduling.** Issue #836 is state=open with body status 'PROPOSED · UNSCHEDULED · NO IMPLEMENTATION
+  AUTHORITY'; its last comment 5200552701 (2026-08-06) reaffirms that PR #837 retained only the decision and
+  that 'no workflow, issue-closing permission, runtime path or schedu. *Remaining: Unchanged and fully
+  unstarted: an idempotent, auditable closer that only touches repository-created alerts carrying the exact
+  auto-managed marker, only after the canonical drift check reports no drift, never a manual or malformed
+  issue, with one-revert rollback. Still owner-gated on scheduling via t…*
+- [ ] 🟡 **DRA-62 — FB4 — fill the measured VRAM-tier benchmark numbers in docs/HARDWARE_BENCHMARKS.md.**
+  docs/HARDWARE_BENCHMARKS.md:7-9 still self-declares 'Status: skeleton — awaiting measured runs on real
+  hardware (owner-gated). *Remaining: Unchanged and genuinely owner-only: the reproducible measurement
+  protocol is already written at docs/HARDWARE_BENCHMARKS.md:12-17 (fixed prompt, LM Studio/Ollama, record
+  model+quant, context length, first-token latency, steady tokens/sec, deep-slot state;
+  scripts/install_smoke.py for a boot+turn bas…*
 
 ---
 

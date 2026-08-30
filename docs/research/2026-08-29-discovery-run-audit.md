@@ -50,14 +50,16 @@ it pulled roughly 3 items from the parity gate's own list of 71 uncalled routes.
 
 Each item below is work the audit could not close, with the swarm shape that would close it.
 
-### B1 — The 9 completeness-critic additions were never verified *(unconfirmed)*
+### B1 — The 9 completeness-critic additions ✅ CLOSED 2026-08-30
 
 The discovery script ends after the critic, so its 9 extra items skipped the adversarial verify
 phase entirely: each of the 120 `open_items` carries a `verdict` field, none of the 9 do. They are
 single-source claims at materially lower confidence than everything else in the plan.
 
-**Swarm:** 9 verify agents (one per item, `still_open` schema, default-to-closed), + 1 dedup pass
-against the 120 + the 53 `DRA-*` rows. Small.
+**Closed by a verification pass on 2026-08-30**: all 9 were checked against the code with a
+default-to-closed instruction, and **all 9 are genuinely still open** at high confidence. They are
+now recorded as `DRA-54`…`DRA-62` in `BACKLOG.md` with their remaining scope, so they carry the
+same evidentiary weight as the other 120 rather than sitting as unverified single-source claims.
 
 ### B2 — Convergence was never demonstrated *(unfinished)*
 
@@ -136,17 +138,39 @@ completeness critic — but only *after* B1/B2/B5 land, or it re-ranks a stale s
    shows a seeded 4.2s p50 under a green LIVE badge when `/bench/stats` 503s (`DRA-04`), and the
    WV-170 Neo4j lane trusted by a kill is red on main and has never validated its Cypher (`DRA-01`).
 
+## What shipped from this audit (2026-08-30)
+
+Nine of the 53 confirmed findings were built and validated in the same PR that records them, so the
+ledger below is not a wish list — `DRA-01`…`DRA-04`, `DRA-18`, `DRA-32`…`DRA-35` are ticked, plus
+WFL-113 (the identical regex sink in `transforms.py`, found by the WFL-112 lane and closed with it)
+and the frigate event-loop block.
+
+Two findings from the build itself are worth recording, because both are the same class of defect
+this audit exists to catch:
+
+- **The parity gate's own hole was structural, and so was the WV-170 one.** The Neo4j probe bug
+  survived because the *entire* test file sat behind a schedule-only gate, so nothing on the
+  pull-request path ever tested the probe. Moving the skip onto the fixture put six offline
+  regressions on the PR path. A check that only runs where nobody looks is not a check.
+- **SEC-B5 leaked across tests before it was caught.** Making `WrappedMemory.tainted` finally do
+  something meant a tainted-recall mark could cross a test-file boundary in a shared pytest worker;
+  CI's `-n auto --dist loadfile` ordering caught it where a serial run did not. The autouse fixture
+  in `tests/conftest.py` scopes the binding per test. Worth remembering: for a change to a
+  process-wide ContextVar, the serial suite is not the check that matters.
+
 ## Ledger
 
 All 53 confirmed findings are recorded as `DRA-01`…`DRA-53` in `BACKLOG.md`, grouped by class and
-ordered by severity (9 high · 34 medium · 10 low).
+ordered by severity (9 high · 34 medium · 10 low), followed by the 9 critic additions that B1
+verified (`DRA-54`…`DRA-62`) — 62 rows in total.
 
-| Class | Count | BACKLOG range |
-|---|---:|---|
-| Wrongly killed — functionality actually missing | 4 | `DRA-01`…`DRA-04` |
-| Verified open but in no cluster | 6 | `DRA-05`…`DRA-10` |
-| Planned work already done (record only) | 4 | `DRA-11`…`DRA-14` |
-| Missed by the sweep entirely | 39 | `DRA-15`…`DRA-53` |
+| Class | Count | BACKLOG range | Shipped in this PR |
+|---|---:|---|---|
+| Wrongly killed — functionality actually missing | 4 | `DRA-01`…`DRA-04` | 4 of 4 |
+| Verified open but in no cluster | 6 | `DRA-05`…`DRA-10` | — |
+| Planned work already done (record only) | 4 | `DRA-11`…`DRA-14` | n/a |
+| Missed by the sweep entirely | 39 | `DRA-15`…`DRA-53` | 5 (`DRA-18`, `DRA-32`…`DRA-35`) |
+| Critic additions, verified open by B1 | 9 | `DRA-54`…`DRA-62` | — |
 
 > Two of the four "already done" entries are not defects of the discovery run: clusters 2 and 4 were
 > shipped by PR #982 hours after the run produced the plan, and the audit was told about #982.
