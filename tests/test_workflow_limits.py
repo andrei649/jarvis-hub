@@ -212,3 +212,27 @@ async def test_loop_until_redos_does_not_hang():
     ctx = await asyncio.wait_for(WorkflowEngine(_CountingOrch()).run(p, "go"), timeout=10)
     assert ctx["_loops"]["lp"]["exited_by"] == "max_iterations"
     assert ctx["_elapsed"] < 2.0
+
+
+def test_wfl_113_validator_regex_refuses_catastrophic_pattern():
+    """The `regex` validator check is the same user-supplied-pattern vector as
+    the engine's termination condition (WFL-112) — a transform config is user
+    data too, and _validator is called synchronously from the async step loop."""
+    from agents.core.workflows.transforms import apply_transform
+
+    # Would backtrack exponentially if it reached re.search unguarded.
+    out = apply_transform(
+        {"op": "validator", "check": "regex", "value": "(a+)+$"},
+        "a" * 40 + "!",
+    )
+    # Refused, not hung: the guard fails open ("did not match") and says so.
+    assert out.startswith("[error:validation failed:")
+
+
+def test_wfl_113_validator_regex_still_matches_ordinary_pattern():
+    from agents.core.workflows.transforms import apply_transform
+
+    out = apply_transform(
+        {"op": "validator", "check": "regex", "value": r"score=\d+"}, "score=42"
+    )
+    assert out == "score=42"
