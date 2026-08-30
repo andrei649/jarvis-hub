@@ -212,11 +212,19 @@ async def workflow_hierarchical(req: Request):
     crew = (body or {}).get("crew") or []
     if not goal or not crew:
         return JSONResponse({"error": "goal and crew required"}, status_code=400)
+    from agents.core.workflows.hierarchical import MAX_RETRIES_CAP, HierarchicalManager
     try:
+        # OverflowError: `1e400` parses as JSON `inf`, which int() refuses.
         max_retries = int((body or {}).get("max_retries", 1))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return JSONResponse({"error": "max_retries must be an integer"}, status_code=400)
-    from agents.core.workflows.hierarchical import HierarchicalManager
+    # WFL-062 — bound the retry budget: an unbounded value is one agent call per
+    # crew member per retry, i.e. a user-tier way to occupy a worker indefinitely.
+    if not 0 <= max_retries <= MAX_RETRIES_CAP:
+        return JSONResponse(
+            {"error": f"max_retries must be between 0 and {MAX_RETRIES_CAP}"},
+            status_code=400,
+        )
     mgr = HierarchicalManager(
         orch,
         manager_agent=(body or {}).get("manager", "jarvis"),
