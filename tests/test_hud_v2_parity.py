@@ -419,6 +419,8 @@ MACHINE_FACING: dict[str, str] = {
     "/api/capture/surfaces": "passive-capture agent",
     "/api/channels/webhook": "inbound channel webhook",
     "/api/channels/pairing/request": "inbound pairing request from a sender",
+    "/api/channels/{channel_id}/inbound": "inbound webhook delivered by the provider/bridge",
+    "/api/widget/{token}/message": "embed snippet, running on a third-party page",
     "/api/toolrpc/call": "ToolRPC transport",
     "/api/toolrpc/tools": "ToolRPC transport",
     "/api/memory/tool-spec": "tool schema, consumed by models not humans",
@@ -441,6 +443,8 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # HTTP route has no *client* caller. It stays as the external read surface
     # for the same data; the HUD uses /routed and /agent/{id}.
     "/api/signals/brief/{domain}",
+    # HUD drives acquisition through revoke/rollback only; the drive step has no control.
+    "/api/acquisition/{request_id}/drive",
     "/api/actions/request",
     "/api/admin/rotate-tokens",
     "/api/agents/history",
@@ -478,6 +482,8 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/memory/eval/run",
     "/api/memory/remember",
     "/api/metrics/capabilities",
+    # MissionsPanel surfaces mission-level transitions only; there is no per-step UI.
+    "/api/missions/{mission_id}/steps/{idx}/finish",
     "/api/osint/brief",
     "/api/osint/correlate",
     "/api/payments/mandates",
@@ -486,6 +492,10 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/quality/scores",
     "/api/review/flag",
     "/api/review/stats",
+    # the review queue wires 👍/👎 (/vote); "promote to dataset" has no button.
+    "/api/review/{item_id}/dataset",
+    # SatellitesPanel pairs and unpairs only; nothing dispatches work to a satellite.
+    "/api/satellites/{satellite_id}/dispatch",
     "/api/secrets/broker/redact",
     "/api/security-skills/frameworks",
     "/api/security-skills/map",
@@ -497,12 +507,19 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/skills/marketplace/install-zip",
     "/api/skills/marketplace/publish",
     "/api/skills/marketplace/uninstall",
+    # the marketplace panel has install/review/history, but no rollback control.
+    "/api/skills/marketplace/{name}/rollback",
     "/api/skills/pending",
+    # skills are approved via marketplace/review; this per-skill route has no caller.
+    "/api/skills/{name}/approve",
     "/api/subagents",
     "/api/subagents/spawn",
     "/api/support/bundle",
     "/api/vlm/describe",
     "/api/voice/wyoming",
+    # render_snippet inlines colour/title/greeting (agents/core/widget.py), so nothing
+    # fetches the config read surface.
+    "/api/widget/{token}/config",
     "/api/workflows/hierarchical",
     "/api/workflows/traces",
     "/api/worldview/status",
@@ -513,9 +530,41 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/skills/imported"
 ])
 
+# Routes whose client call is BUILT rather than written: the last segment comes from a
+# variable (`'/api/missions/' + id + '/' + action`), so no literal template exists for the
+# matcher above to find. Each entry names the client file that builds it, and
+# test_computed_url_callers_stay_real RE-DERIVES the claim — the named file must contain
+# the route's stem and every static segment — so this cannot become a parking lot. Write
+# the URL literally and the entry must be deleted, exactly like the punch list. These are
+# NOT unfinished work: putting them on the punch list would record a false statement and
+# send a future reader to build controls that already exist.
+COMPUTED_URL_CALLERS: dict[str, str] = {
+    # AcquisitionPanel: apiPost(`/api/acquisition/${…}/${action}`), action from the buttons
+    "/api/acquisition/{name}/revoke": "frontend/src/gap.tsx",
+    "/api/acquisition/{name}/rollback": "frontend/src/gap.tsx",
+    # MCP panel: afetch(`/api/admin/mcp/${…}/${action}`), action = connected ? … : …
+    "/api/admin/mcp/{name}/connect": "agents/web/static/admin.js",
+    "/api/admin/mcp/{name}/disconnect": "agents/web/static/admin.js",
+    # PromptsPanel: `const base = '/api/admin/prompts/' + agent`, then base + suffix
+    "/api/admin/prompts/{agent_id}/ab": "frontend/src/gap.tsx",
+    "/api/admin/prompts/{agent_id}/commit": "frontend/src/gap.tsx",
+    "/api/admin/prompts/{agent_id}/diff": "frontend/src/gap.tsx",
+    "/api/admin/prompts/{agent_id}/preview": "frontend/src/gap.tsx",
+    "/api/admin/prompts/{agent_id}/rollback": "frontend/src/gap.tsx",
+    "/api/admin/prompts/{agent_id}/version/{version}": "frontend/src/gap.tsx",
+    # MissionsPanel: act('/api/missions/' + m.id + '/' + a), a from actionsFor(status)
+    "/api/missions/{mission_id}/cancel": "frontend/src/gap.tsx",
+    "/api/missions/{mission_id}/complete": "frontend/src/gap.tsx",
+    "/api/missions/{mission_id}/resume": "frontend/src/gap.tsx",
+    "/api/missions/{mission_id}/start": "frontend/src/gap.tsx",
+    # decidePayment: '/api/payments/' + id + '/' + action ('approve'|'reject'|'settle')
+    "/api/payments/{payment_id}/reject": "frontend/src/api/actions.ts",
+}
 
-def _client_blob() -> str:
-    parts = []
+
+def _client_files() -> dict[str, str]:
+    """Client sources by repo-relative path — the corpus every coverage check reads."""
+    files: dict[str, str] = {}
     for pattern in _CLIENT_GLOBS:
         for path in REPO.glob(pattern):
             text = str(path)
@@ -524,10 +573,15 @@ def _client_blob() -> str:
             if path.name.endswith(_GENERATED_CLIENT_FILES):
                 continue
             try:
-                parts.append(path.read_text(encoding="utf-8", errors="ignore"))
+                files[path.relative_to(REPO).as_posix()] = path.read_text(
+                    encoding="utf-8", errors="ignore")
             except OSError:
                 continue
-    return "\n".join(parts)
+    return files
+
+
+def _client_blob() -> str:
+    return "\n".join(_client_files().values())
 
 
 def _snapshot_routes() -> list[str]:
@@ -538,14 +592,37 @@ def _snapshot_routes() -> list[str]:
     return sorted({key.split(" ", 1)[1] for key in snap})
 
 
+_PATH_PARAM = re.compile(r"\{[^}]*\}")
+# A URL expression is written on one line. The longest interpolation any client actually
+# uses is 38 chars (`/autonomy/tasks/${encodeURIComponent(String(taskId))}/decision`), so
+# 60 is headroom rather than a tuning knob: every bound from 40 to 200 gives the identical
+# verdict on all 394 routes.
+_INTERPOLATION = r"[^\n]{0,60}?"
+
+
+def _route_parts(path: str) -> tuple[str, list[str]]:
+    """(stem before the first path parameter, the static chunks that follow it)."""
+    chunks = _PATH_PARAM.split(path)
+    return chunks[0].rstrip("/"), [c for c in chunks[1:] if c]
+
+
 def _has_caller(path: str, blob: str) -> bool:
     """Does any client source mention this route?
 
-    Matches the stem before the first path parameter: clients build those URLs by
-    interpolation (`/api/nodes/${id}`), so the literal template never appears.
+    Clients build these URLs by interpolation (`/api/nodes/${id}/dispatch`), so the literal
+    template never appears. Matching only the stem before the first parameter meant that
+    once ANY route under a prefix was called, every parameterized route beneath it passed
+    for free — 70 of them, seven with no caller anywhere. So the match must reach the
+    route's LAST static segment: the stem, then each remaining chunk in order, on one line.
     """
-    stem = re.split(r"\{", path)[0].rstrip("/")
-    return (stem in blob) if len(stem) > 5 else (path in blob)
+    stem, tail = _route_parts(path)
+    if len(stem) <= 5:
+        return path in blob
+    if not tail:
+        return stem in blob
+    pattern = re.escape(stem) + _INTERPOLATION + _INTERPOLATION.join(
+        re.escape(chunk) for chunk in tail)
+    return re.search(pattern, blob) is not None
 
 
 def test_every_user_facing_route_has_a_caller_or_is_on_the_punch_list():
@@ -554,12 +631,14 @@ def test_every_user_facing_route_has_a_caller_or_is_on_the_punch_list():
     assert len(blob) > 100_000, "client sources did not load; this gate would pass vacuously"
     uncalled = [p for p in _snapshot_routes() if not _has_caller(p, blob)]
     unexplained = [p for p in uncalled
-                   if p not in MACHINE_FACING and p not in UNCALLED_BACKLOG]
+                   if p not in MACHINE_FACING and p not in UNCALLED_BACKLOG
+                   and p not in COMPUTED_URL_CALLERS]
     assert not unexplained, (
         "these routes have no caller in any client and are not declared:\n  "
         + "\n  ".join(unexplained)
         + "\n\nWire one up, or add it to MACHINE_FACING with a reason (something other "
-          "than our UI calls it), or to UNCALLED_BACKLOG if it is genuinely unfinished."
+          "than our UI calls it), or to UNCALLED_BACKLOG if it is genuinely unfinished, "
+          "or to COMPUTED_URL_CALLERS naming the client file that builds the URL."
     )
 
 
@@ -577,6 +656,44 @@ def test_the_uncalled_backlog_only_shrinks():
         "these are on UNCALLED_BACKLOG but are now called or no longer exist — delete "
         "them from the list:\n  " + "\n  ".join(stale)
     )
+
+
+def test_computed_url_callers_stay_real():
+    """Same ratchet as the punch list. An entry must still be a route, its named client
+    must still exist and still mention the stem AND every static segment, and the URL must
+    still be built rather than written — the moment it is written literally the matcher
+    sees it and the entry has to go.
+    """
+    blob = _client_blob()
+    files = _client_files()
+    routes = set(_snapshot_routes())
+    problems = []
+    for path, client in sorted(COMPUTED_URL_CALLERS.items()):
+        source = files.get(client)
+        stem, tail = _route_parts(path)
+        words = [w for chunk in tail for w in chunk.split("/") if w]
+        if path not in routes:
+            problems.append(f"{path}: no longer a route")
+        elif source is None:
+            problems.append(f"{path}: {client} is not in the client corpus")
+        elif stem not in source:
+            problems.append(f"{path}: {client} never mentions {stem}")
+        elif any(not re.search(rf"\b{re.escape(w)}\b", source) for w in words):
+            problems.append(f"{path}: {client} never mentions its static segments")
+        elif _has_caller(path, blob):
+            problems.append(f"{path}: now written literally — delete the entry")
+    assert not problems, "COMPUTED_URL_CALLERS has rotted:\n  " + "\n  ".join(problems)
+
+
+def test_a_sub_route_cannot_ride_in_on_a_called_prefix():
+    """The hole this gate had: matching only the stem before the first path parameter meant
+    that once ANY route under a prefix was called, every parameterized route beneath it
+    passed for free — 70 of them, seven with no caller anywhere.
+    """
+    blob = _client_blob()
+    assert _has_caller("/api/review/queue", blob)           # the prefix really is wired
+    assert not _has_caller("/api/review/{item_id}/a-suffix-nobody-calls", blob)
+    assert _has_caller("/api/review/{item_id}/vote", blob)  # a real sub-route still counts
 
 
 def test_the_classification_gate_cannot_stand_in_for_coverage():
