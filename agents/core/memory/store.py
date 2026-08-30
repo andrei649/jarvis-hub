@@ -25,6 +25,24 @@ except ImportError:
     HAS_NUMPY = False
     logger.warning("numpy not available — vector store disabled")
 
+# H11.2 (DRA-40): the compiled Rust hot-path crate, when it is actually built.
+# `load_native()` existed but nothing called it, so `rust/jarvis_native` was
+# unreachable even after `maturin build` — the ✅ row promised "preferă extensia
+# compilată, altfel Python". Resolved once and cached: a missing extension is a
+# failed import, and Python does not memoize those, so retrying per search would
+# put an exception on the hot path. Tests substitute this module attribute.
+_NATIVE_BACKEND = None
+
+
+def _native():
+    """Return the H11.2 hot-path module (Rust extension when built, else the fallback)."""
+    global _NATIVE_BACKEND
+    if _NATIVE_BACKEND is None:
+        from agents.core.native_fallback import load_native
+
+        _NATIVE_BACKEND = load_native()
+    return _NATIVE_BACKEND
+
 
 class VectorRecord:
     __slots__ = ("id", "vector", "metadata", "timestamp")
@@ -103,9 +121,51 @@ class InMemoryVectorStore(VectorStore):
         with self._lock:
             if not self.records:
                 return []
-            if HAS_NUMPY:
-                return self._search_numpy(query, k)
-            return self._search_naive(query, k)
+            return self._rank(query, k)
+
+    def _rank(self, query: list[float], k: int) -> list[dict]:
+        """The single ranking dispatch shared by every search entry point.
+
+        Order is the H11.2 contract: the compiled crate when it is present, then
+        numpy, then the naive loop. Keeping one dispatch is deliberate — the
+        previous two call sites were why wiring the native path anywhere would
+        still have left `search_by_text_subset` on the old route.
+        """
+        if getattr(_native(), "BACKEND", "python") == "rust":
+            return self._search_native(query, k)
+        if HAS_NUMPY:
+            return self._search_numpy(query, k)
+        return self._search_naive(query, k)
+
+    def _search_native(self, query: list[float], k: int) -> list[dict]:
+        """Rank through the Rust crate, matching ``_search_numpy``'s contract.
+
+        Both guards below exist to match ``_search_numpy``, the route this
+        replaces on a normal install, rather than the naive loop:
+
+        * a zero-norm query returns ``[]`` (numpy's ``q_norm == 0``), not the
+          naive path's "score everything 0.0";
+        * a wrong-length query raises, because ``np.dot`` does. The crate's
+          ``top_k_similar`` instead ranks over ``min(len(a), len(b))``, so
+          without this a dimension bug would stop being a loud ValueError and
+          start returning quietly truncated — and wrong — retrieval results.
+
+        Scores are f64 here and float32 there, so they agree to well within
+        retrieval tolerance, not bit-for-bit.
+        """
+        if len(query) != self.dimension:
+            raise ValueError(f"Expected dim={self.dimension}, got {len(query)}")
+        if not any(query):
+            return []
+        ranked = _native().top_k_similar(list(query), [r.vector for r in self.records], k)
+        return [
+            {
+                "id": self.records[i].id,
+                "score": float(score),
+                "metadata": self.records[i].metadata,
+            }
+            for i, score in ranked
+        ]
 
     def _search_numpy(self, query: list[float], k: int) -> list[dict]:
         q = np.array(query, dtype=np.float32)
@@ -161,7 +221,7 @@ class InMemoryVectorStore(VectorStore):
         with self._lock:
             if not self.records:
                 return []
-            results = self._search_numpy(query, k * 3) if HAS_NUMPY else self._search_naive(query, k * 3)
+            results = self._rank(query, k * 3)
             if sender:
                 results = [r for r in results if r.get("metadata", {}).get("sender") == sender]
             return results[:k]

@@ -925,10 +925,21 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   kind/terminate_when/output_schema/critic/router/transform/guardrail/loop — but NOT `subflow`. *(evidence:
   `agents/core/workflows/flow_api.py:88-100, agents/core/workflows/engine.py:232-246,
   docs/test-manual/10-workflows-eval.md:334`)*
-- [ ] 🟡 **DRA-40 — native_fallback.load_native() has no caller — the H11.2 Rust hot-path is unreachable even
+- [x] ✅ **DRA-40 — native_fallback.load_native() has no caller — the H11.2 Rust hot-path is unreachable even
   when built.** BACKLOG.md:2492 marks H11.2 ✅ with the claim that `load_native()` 'preferă extensia
   compilată, altfel Python → comportament identic cu/fără build'. *(evidence:
   `agents/core/native_fallback.py:20, native_fallback.py, agents/core/memory/store.py:137-144`)*
+  **Shipped 5110449** — `InMemoryVectorStore.search` and `search_by_text_subset` dispatched
+  numpy-or-naive at two separate sites; both now share one `_rank()` that prefers the crate when it
+  reports `BACKEND == "rust"`, so a `maturin build` is finally reachable. Unbuilt (CI, sandbox, every
+  install today) resolves to the Python fallback and takes the numpy branch exactly as before.
+  `_search_native` mirrors `_search_numpy`, not the naive loop — zero-norm query returns `[]`, and a
+  wrong-length query raises rather than being silently truncated by `top_k_similar`'s
+  `min(len(a), len(b))`. Module resolved once and cached (a failed import is not memoized by Python).
+  `tests/test_native_fallback_h11_2.py` (+6), red-proofed by removing the native branch.
+  **Residual (recorded, not closed):** the crate itself is still host-built and unexercised by CI —
+  the H11.2 row's own `⚠️ netestat în CI` caveat is unchanged, and the tests prove the *wiring* with a
+  stand-in module, not the compiled Rust.
 - [ ] 🟡 **DRA-41 — self_evolution.py (H20.4 ✅) has no production caller — no trajectory is ever captured and
   no proposal reaches the decision inbox.** BACKLOG.md:2831 marks H20.4 ✅ 'Self-evolution (DSPy/GEPA) …
   gated prin decision inbox (reversibil)'. agents/core/self_evolution. *(evidence:
