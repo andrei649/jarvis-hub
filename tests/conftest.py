@@ -130,3 +130,25 @@ def _disable_user_guard():
         web.app.dependency_overrides.pop(web._user_guard, None)
         if _ru is not None:
             web.app.dependency_overrides.pop(_ru, None)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_action_origin():
+    """Keep one test's action-origin binding out of the next one.
+
+    Production scopes the per-turn origin with the turn's own reset token (SEC-B5:
+    a recall of untrusted memory raises it mid-turn, deliberately without a token so
+    the turn's own reset scrubs it). A test that trips that escalation has no turn,
+    and a pytest worker runs many files in a single context — so snapshot and restore
+    around every test rather than letting the mark cross a file boundary."""
+    from agents.core.action_origin import (
+        bind_action_origin,
+        current_action_origin,
+        reset_action_origin,
+    )
+
+    token = bind_action_origin(current_action_origin())
+    try:
+        yield
+    finally:
+        reset_action_origin(token)

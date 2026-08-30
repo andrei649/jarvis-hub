@@ -89,6 +89,16 @@ jobs:
           cache-dependency-path: requirements-beta.lock
       - run: pip install --require-hashes -r requirements-beta.lock
       - run: pip install --require-hashes -r requirements-dev.lock
+      # The lane's first real run failed with "no Neo4j reachable" while the service
+      # container logged "Started." — print the transactional endpoint's actual answer
+      # so the next such failure is diagnosable from the log alone. Deliberately left
+      # fatal: curl without --fail exits 0 on any HTTP status and only fails on a
+      # connection error, which is exactly the condition that should stop the job.
+      - name: Probe the Neo4j HTTP API
+        run: |
+          curl -sS -i -X POST http://localhost:7474/db/neo4j/tx/commit \
+            -H 'Content-Type: application/json' \
+            -d '{"statements":[{"statement":"RETURN 1"}]}' | head -30
       - name: Neo4j live property-search (WV-170)
         run: python -m pytest tests/test_neo4j_live_property_search.py -v --timeout=60 --tb=short
         env:
