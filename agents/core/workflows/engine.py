@@ -29,6 +29,19 @@ _MAX_DEPTH = 5  # H10.14 — max nested sub-workflow recursion depth
 # fan out into dozens of simultaneous LLM calls (one per agent) and starve the
 # interactive path. Each step already has a per-step timeout (_TIMEOUT).
 _MAX_PARALLEL_STEPS = 8
+# WFL-063 — max nested loop depth. Mirrors the subflow guard above in shape, with
+# a lower number on purpose: a subflow level adds one pipeline, while each loop
+# level MULTIPLIES the work below it by up to _MAX_ITERATIONS.
+_MAX_LOOP_DEPTH = 3
+_MAX_ITERATIONS = 100  # per-level iteration clamp (H10.6)
+# WFL-112 — bounds for a caller-supplied `regex` condition. The pattern is refused
+# structurally (see _has_nested_quantifier) rather than run under a timeout:
+# CPython's `re` holds the GIL for the whole match, so neither asyncio.to_thread
+# nor a worker thread can interrupt a catastrophic backtrack — offloading would
+# only move the stall off this coroutine while still wedging a shared executor
+# slot. A pattern that cannot start cannot hang the loop.
+_MAX_CONDITION_PATTERN = 512
+_MAX_CONDITION_TEXT = 8192
 
 
 def persist_enabled() -> bool:
@@ -263,26 +276,44 @@ class WorkflowEngine:
         A loop-back edge with an iteration counter: the body (``loop.steps``) runs
         in listed order, sharing ``ctx``; after each pass the ``until`` condition is
         checked against the last body step's output. Useful for retry loops and
-        iterative refinement. ``max_iterations`` is clamped to [1, 100].
+        iterative refinement. ``max_iterations`` is clamped to [1, 100], and
+        nesting to ``_MAX_LOOP_DEPTH`` levels (WFL-063) — the per-level clamp
+        bounds breadth only, so without a depth guard N levels cost 100**N runs.
         """
         cfg = step.loop or {}
-        max_iter = max(1, min(100, int(cfg.get("max_iterations", 3) or 3)))
+        # Loops nest inside one `run()`, so they need their own counter: `_depth`
+        # tracks subflow recursion across runs and is not incremented here.
+        depth = int(ctx.get("_loop_depth", 0))
+        if depth >= _MAX_LOOP_DEPTH:
+            return f"[error:loop: max nesting depth {_MAX_LOOP_DEPTH} exceeded]"
+        max_iter = max(1, min(_MAX_ITERATIONS, int(cfg.get("max_iterations", 3) or 3)))
         until = cfg.get("until")
         body = [b if isinstance(b, WorkflowStep) else WorkflowStep.from_dict(b)
                 for b in (cfg.get("steps") or [])]
         if not body:
             return ctx.get(step.id, "")
 
+        iter_key = f"{step.id}._iter"
+        outer_iter = ctx.get(iter_key)
         iterations, exited_by, last = 0, "max_iterations", ctx.get(step.id, "")
-        for i in range(max_iter):
-            iterations += 1
-            ctx[f"{step.id}._iter"] = str(i + 1)
-            for b in body:
-                ctx[b.id] = await self._execute_step(b, ctx, step_map)
-            last = ctx.get(body[-1].id, "")
-            if until and evaluate_condition(until, last):
-                exited_by = "condition"
-                break
+        ctx["_loop_depth"] = depth + 1
+        try:
+            for i in range(max_iter):
+                iterations += 1
+                ctx[iter_key] = str(i + 1)
+                for b in body:
+                    ctx[b.id] = await self._execute_step(b, ctx, step_map)
+                last = ctx.get(body[-1].id, "")
+                if until and evaluate_condition(until, last):
+                    exited_by = "condition"
+                    break
+        finally:
+            ctx["_loop_depth"] = depth
+            # A nested loop sharing an outer loop's step id would otherwise
+            # clobber its counter. Only restore when nested: at depth 0 the
+            # final value stays visible, as templates downstream expect.
+            if depth > 0 and outer_iter is not None:
+                ctx[iter_key] = outer_iter
         ctx.setdefault("_loops", {})[step.id] = {"iterations": iterations, "exited_by": exited_by}
         return last
 
@@ -426,12 +457,98 @@ def _match_route(decision: str, routes: dict) -> str:
     return ""
 
 
+def _has_nested_quantifier(pattern: str) -> bool:
+    """True if *pattern* quantifies a group whose body itself repeats or alternates.
+
+    That shape — ``(a+)+``, ``(a|aa)+``, ``(([a-z])+.)+`` — is what turns a match
+    into exponential backtracking. Scanned character by character rather than with
+    a regex, because a regex that parses regexes is its own ReDoS. Conservative by
+    design: a false positive costs one refused guard, a false negative costs the
+    worker.
+    """
+    stack: list[bool] = []  # one flag per open group: "body repeats or alternates"
+    i, n = 0, len(pattern)
+    while i < n:
+        ch = pattern[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == "[":  # character class — quantifier chars are literal inside
+            i += 1
+            if i < n and pattern[i] == "^":
+                i += 1
+            if i < n and pattern[i] == "]":
+                i += 1
+            while i < n and pattern[i] != "]":
+                i += 2 if pattern[i] == "\\" else 1
+            i += 1
+            continue
+        if ch == "(":
+            stack.append(False)
+            i += 1
+            if i < n and pattern[i] == "?":  # (?:…) (?=…) (?<…) (?P<…>…) (?i)
+                i += 1
+                if i < n and pattern[i] == "P":
+                    i += 1
+                if i < n and pattern[i] == "<":
+                    i += 1
+                    if i < n and pattern[i] in "=!":
+                        i += 1
+                    else:
+                        while i < n and pattern[i] != ">":
+                            i += 1
+                        i += 1
+                elif i < n and pattern[i] in ":=!":
+                    i += 1
+                elif i < n and pattern[i] == "#":
+                    while i < n and pattern[i] != ")":
+                        i += 1
+                else:
+                    while i < n and pattern[i] in "aiLmsux-":
+                        i += 1
+                    if i < n and pattern[i] == ":":
+                        i += 1
+            continue
+        if ch == ")":
+            flagged = stack.pop() if stack else False
+            quantified = i + 1 < n and pattern[i + 1] in "*+{"
+            if flagged and quantified:
+                return True
+            if stack and (flagged or quantified):
+                stack[-1] = True  # the enclosing body repeats too
+            i += 1
+            continue
+        if ch in "*+?{|" and stack:
+            stack[-1] = True
+        i += 1
+    return False
+
+
+def _safe_regex_search(pattern: str, text: str) -> bool:
+    """WFL-112 — run a caller-supplied condition pattern only if it is safe to run.
+
+    Refuses (fail-open, matching the evaluator's contract for a malformed
+    condition) an over-long or exponentially-backtracking pattern, and truncates
+    the subject text. Refusal, not a timeout, is the mechanism: see the note on
+    ``_MAX_CONDITION_PATTERN`` for why a match cannot be interrupted once started.
+    """
+    if len(pattern) > _MAX_CONDITION_PATTERN:
+        logger.warning("Workflow condition regex refused: pattern over %d chars",
+                       _MAX_CONDITION_PATTERN)
+        return False
+    if _has_nested_quantifier(pattern):
+        logger.warning("Workflow condition regex refused: nested quantifier (ReDoS risk)")
+        return False
+    return re.search(pattern, text[:_MAX_CONDITION_TEXT]) is not None
+
+
 def evaluate_condition(cond: dict, text: str) -> bool:
     """H10.12 — evaluate a termination guard against a step's output text.
 
     Supported ``type`` values: ``contains`` / ``not_contains`` (case-insensitive),
     ``equals`` (exact, trimmed), ``regex`` (search), ``not_empty``. Unknown or
-    malformed conditions evaluate to False (fail-open: don't terminate).
+    malformed conditions evaluate to False (fail-open: don't terminate) — as does
+    a ``regex`` refused by the WFL-112 bounds.
     """
     if not isinstance(cond, dict):
         return False
@@ -446,7 +563,7 @@ def evaluate_condition(cond: dict, text: str) -> bool:
         if ctype == "equals":
             return text.strip() == str(value).strip()
         if ctype == "regex":
-            return re.search(str(value), text) is not None
+            return _safe_regex_search(str(value), text)
         if ctype == "not_empty":
             return bool(text.strip())
     except re.error:

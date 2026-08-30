@@ -56,8 +56,14 @@ def _validator(text: str, cfg: dict) -> str:
     elif check == "json":
         ok = extract_json(text) is not None; reason = "not valid JSON"
     elif check == "regex":
+        # WFL-113 — same caller-supplied-pattern vector WFL-112 closed in the
+        # engine: a validator regex is user data too. Imported lazily, mirroring
+        # engine's own `from .transforms import apply_transform`, so the sibling
+        # modules stay import-order independent.
+        from .engine import _safe_regex_search
+
         try:
-            ok = re.search(str(value), text) is not None
+            ok = _safe_regex_search(str(value), text)
         except re.error:
             ok = False
         reason = f"does not match /{value}/"

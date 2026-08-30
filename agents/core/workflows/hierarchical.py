@@ -17,6 +17,12 @@ import re
 
 logger = logging.getLogger("jarvis.workflows.hierarchical")
 
+# WFL-062 — upper bound on the retry budget. Mirrors the repo's existing
+# `_bounded_int(self.max_retries, "retry budget", minimum=0, maximum=10)`
+# (execution_provider_contract.py). The router refuses an out-of-range value
+# with a 400; this clamp is the belt behind it for direct library callers.
+MAX_RETRIES_CAP = 10
+
 
 def _render(template: str, ctx: dict) -> str:
     # Possessive `[^}]++` keeps the match linear (no O(n²) backtracking on input
@@ -32,7 +38,7 @@ class HierarchicalManager:
     def __init__(self, orchestrator, manager_agent: str = "jarvis", max_retries: int = 1) -> None:
         self._orch = orchestrator
         self.manager_agent = manager_agent
-        self.max_retries = max(0, int(max_retries))
+        self.max_retries = max(0, min(MAX_RETRIES_CAP, int(max_retries)))
 
     async def _run(self, agent: str, prompt: str) -> str:
         try:

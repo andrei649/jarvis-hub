@@ -265,8 +265,8 @@ function AdminMode({ t }){
             <EstopCard/>
           </div>
           <div>
-            <SubH3>PLUGIN REGISTRY · {plugins.filter(p=>p.on).length}/{plugins.length} enabled{plugins.some(p=>p.honesty) ? ' · '+plugins.filter(p=>p.honesty && p.honesty.status==='live').length+' live' : ''}</SubH3>
-            {plugins.map((p,i)=>(
+            <SubH3>PLUGIN REGISTRY{plugins.length ? ` · ${plugins.filter(p=>p.on).length}/${plugins.length} enabled` : ''}{plugins.some(p=>p.honesty) ? ' · '+plugins.filter(p=>p.honesty && p.honesty.status==='live').length+' live' : ''}</SubH3>
+            {plugins.length ? plugins.map((p,i)=>(
               <div className="plg-row" key={i}>
                 <div><div className="plg-name">{p.name}
                   {p.degraded && <span className="plg-net" style={{color:'var(--amber)',borderColor:'var(--amber)',marginLeft:6}} title={(p.degradedReason||'returns mock data')+((p.degradedNeeds&&p.degradedNeeds.length)?' — needs: '+p.degradedNeeds.join(', '):'')}>MOCK</span>}
@@ -274,7 +274,7 @@ function AdminMode({ t }){
                 </div><div className="plg-scope">{p.scope}<span className={'plg-net '+p.net}>{p.net}</span></div></div>
                 <button className={'twk-mini '+(p.on?'on':'')} onClick={()=>onToggle(i)} title={p.id?(p.on?'disable plugin':'enable plugin'):'demo plugin — preview only'}><i></i></button>
               </div>
-            ))}
+            )) : <NotConnected what="no plugin registry"/>}
             <SubH3 style={{marginTop:16}}>CHANNELS</SubH3>
             {A.channels.length ? A.channels.map((c,i)=>(
               <div className="cap-row" key={i}><div className="cn" style={{fontFamily:'var(--font-ui)'}}>{c.name}</div><span className="cap-tag allow">{c.status}</span></div>

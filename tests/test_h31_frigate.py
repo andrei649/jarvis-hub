@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import threading
 from collections.abc import AsyncIterator
 
 import httpx
@@ -224,6 +225,28 @@ async def test_origin_is_exact_lan_only_and_connection_is_pinned_even_when_stric
     with pytest.raises(CameraSourceError, match="lan_origin_required"):
         await _source(handler, resolver=mixed_resolver).list_events(None, 10)
     assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_origin_resolution_runs_off_the_event_loop_thread():
+    """The default resolver is socket.getaddrinfo; resolving inline blocked
+    every coroutine for the length of the lookup, once per request attempt."""
+    loop_thread = threading.get_ident()
+    observed: dict[str, bool] = {}
+
+    def recording_resolver(*_args) -> tuple[str, ...]:
+        observed["on_loop_thread"] = threading.get_ident() == loop_thread
+        return ("192.168.1.40",)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
+    page = await _source(handler, resolver=recording_resolver).list_events(None, 10)
+
+    assert page.events == ()
+    assert observed.get("on_loop_thread") is False, (
+        "Frigate origin resolution ran on the event-loop thread"
+    )
 
 
 @pytest.mark.asyncio

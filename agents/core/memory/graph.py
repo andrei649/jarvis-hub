@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -160,6 +161,24 @@ class InMemoryGraph(KnowledgeGraph):
         return len(self.relations) < before
 
 
+def _neo4j_property_value(value: object) -> object:
+    """Coerce *value* into something Neo4j can actually store as a property.
+
+    WV-170: Neo4j accepts only primitives and arrays of them, so a map-valued
+    property makes the whole statement fail and drops the ENTIRE node — and the real
+    writer path sends one (``worldview_sync._details`` nests the ontology properties
+    under ``details``), so on Neo4j those geo-events were never created while
+    ``InMemoryGraph`` stored them happily. JSON is the coercion because ``search()``
+    scans ``toString(n[k])``: a keyword nested in the map stays findable that way.
+    Arrays are serialised too even though Neo4j stores them, because ``toString``
+    raises on a list — one such property would fail the property scan for every node.
+    Sorted keys keep a re-sync idempotent.
+    """
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    return json.dumps(value, ensure_ascii=False, default=str, sort_keys=True)
+
+
 class Neo4jGraph(KnowledgeGraph):
     """Neo4j via REST API (no driver needed)."""
 
@@ -175,16 +194,34 @@ class Neo4jGraph(KnowledgeGraph):
     def _check_connection(self) -> bool:
         if self._connected is not None:
             return self._connected
+        # WV-170: probe by COMMITTING a trivial statement on the very endpoint every
+        # other method here uses. Neo4j 5 serves `/db/<db>/tx` and `/tx/commit` on
+        # POST only, so the previous `GET /db/neo4j/tx` was answered 405 by a
+        # perfectly healthy server, the backend was declared unreachable, and the
+        # live lane never ran a single query. `RETURN 1` also keeps this fail-closed
+        # where a bare liveness ping would not: wrong credentials (401), a missing
+        # database and a listener that isn't Neo4j all fail it, because only a 200
+        # whose body carries no `errors` counts as connected.
         try:
             with httpx.Client(timeout=httpx.Timeout(5.0)) as client:
-                resp = client.get(
-                    f"{self.url}/db/neo4j/tx",
+                resp = client.post(
+                    self._tx_url,
+                    json={"statements": [{"statement": "RETURN 1"}]},
                     auth=self._auth,
                 )
-                self._connected = resp.status_code == 200
-        except httpx.TransportError:
+                self._connected = (
+                    resp.status_code == 200 and not (resp.json().get("errors") or [])
+                )
+                if not self._connected:
+                    logger.warning(
+                        "Neo4j at %s rejected the probe (HTTP %s) — falling back to "
+                        "in-memory graph", self._tx_url, resp.status_code)
+        except Exception as exc:
+            # Wider than the old httpx.TransportError on purpose: a 200 that isn't
+            # JSON (i.e. not Neo4j at all) surfaces as a decode error and must fail
+            # closed too, not propagate out of a connectivity check.
             self._connected = False
-            logger.warning("Neo4j unreachable — falling back to in-memory graph")
+            logger.warning("Neo4j unreachable (%s) — falling back to in-memory graph", exc)
         return self._connected
 
     def _call_neo4j(self, statements: list[dict]) -> list[dict]:
@@ -198,7 +235,13 @@ class Neo4jGraph(KnowledgeGraph):
                     auth=self._auth,
                 )
                 resp.raise_for_status()
-                return resp.json().get("results", [])
+                body = resp.json()
+                # A rejected statement comes back as HTTP 200 with a populated
+                # `errors` array, so without this the caller only sees "no results".
+                errors = body.get("errors") or []
+                if errors:
+                    logger.warning("Neo4j rejected the statement(s): %s", errors)
+                return body.get("results", [])
         except Exception as e:
             logger.warning(f"Neo4j query failed: {e}")
             return []
@@ -230,7 +273,11 @@ class Neo4jGraph(KnowledgeGraph):
         # than the caller asked for. Property keys come from LLM extraction and from
         # ingested content, so "nobody would send that" is not an argument.
         # `key -> "p_" + key` is injective, so no two properties can collide either.
-        props = {k: v for k, v in (properties or {}).items() if is_safe_property_key(k)}
+        props = {
+            k: _neo4j_property_value(v)
+            for k, v in (properties or {}).items()
+            if is_safe_property_key(k)
+        }
         if "name" in props:
             logger.warning(
                 "add_entity(%r): dropping a 'name' property — the entity's own name "
@@ -248,7 +295,11 @@ class Neo4jGraph(KnowledgeGraph):
         # like WORKS_AT or DAUGHTER is kept; only a non-identifier collapses to
         # RELATED_TO). Drop property keys that aren't bare identifiers.
         rel = coerce_kg_rel_type(relation)
-        props = {k: v for k, v in (properties or {}).items() if is_safe_property_key(k)}
+        props = {
+            k: _neo4j_property_value(v)
+            for k, v in (properties or {}).items()
+            if is_safe_property_key(k)
+        }
         # Same namespacing as add_entity, and the same reason. `{"source": source,
         # "target": target, **props}` let a relation property named `source` or
         # `target` override the NODE IDENTITY: the MERGE patterns bind

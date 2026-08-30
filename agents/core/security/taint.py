@@ -11,9 +11,15 @@ from __future__ import annotations
 
 TAINT_KEY = "tainted"
 
+# SEC-B5: the turn-scoped origin a tainted *recall* raises (see ``security/recall_taint.py``).
+# Derived provenance rather than an ingested source, so it is listed below explicitly
+# instead of matching by luck on another entry's substring.
+TAINTED_RECALL_ORIGIN = "recall:untrusted"
+
 # Source labels whose content is untrusted by default (substring match, case-insensitive).
 UNTRUSTED_SOURCES = frozenset({
     "web", "websearch", "rss", "news", "osint", "worldview", "inbound", "external", "channel",
+    TAINTED_RECALL_ORIGIN,
 })
 
 

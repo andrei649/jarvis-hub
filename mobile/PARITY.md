@@ -39,16 +39,16 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Tasks board | `GET /tasks` | ✅ | ✅ | H18.13 |
 | Ticker | `GET /ticker` | ✅ | ✅ | H18.14 |
 | Skills browser | `GET /skills` | ✅ | ✅ | H18.15 |
-| Memory / notes | `GET /memory`, `GET /api/notes` | ✅ | ✅ | H18.16 |
-| Knowledge graph | `GET /api/kg/*` | ✅ | ✅ | H18.17 |
+| Memory / notes | read legs only: `GET /memory`, `GET /api/notes` | ✅ | ✅ | H18.16 |
+| Knowledge graph | read legs only: `GET /api/kg/entities`, `GET /api/kg/facts/{as-of,history}` | ✅ | ✅ | H18.17 |
 | Action approval queue + rollback story | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 / H27.6 |
 | Capability registry board | `GET /api/capabilities` | ✅ | ✅ | H18.22 / H27.8 |
 | WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
 | Spoken morning brief (🔊 SPEAK) | `GET /autonomy/brief` + `POST /tts` (native: hub TTS via expo-audio) | ✅ | ✅ | H18.23 |
 | Chat rooms (multi-agent) | `GET/POST /api/rooms*` | ✅ | ⬜ | — |
-| Arena / review / quality | `GET /api/arena/*`, `/api/review/*` | ✅ | ➖ | — |
-| Security posture | `GET /api/security/*` | ✅ | ✅ | H18.18 |
+| Arena / review / quality | `GET /api/arena/*`, `/api/review/*`, `GET /api/quality` (open), admin `POST /api/quality/threshold` | ✅ | ➖ | — |
+| Security posture | read legs only: `GET /api/security/{governance,kill-switch,loop-breaker}` (open), `GET /api/security/posture` (admin) | ✅ | ✅ | H18.18 |
 | Health/readiness probes | `GET /healthz`, `GET /readyz` | ✅ | ➖ | — |
 | First-run command center (0.19) | `GET /api/onboarding/command-center` | ✅ | ✅ | H18.19 |
 | Artifacts workspace (Canvas) | `GET /api/canvas`, `POST /api/canvas/post`, `POST /api/canvas/{id}/pin`, `DELETE /api/canvas/{id}` | ✅ | ✅ | H18.20 |
@@ -65,7 +65,45 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Voice orb (particle sphere bound to the voice state machine) | — (client-side, reads the existing `POST /api/voice/stt` + `POST /tts` loop) | ✅ | 🟡 contract ported | H18.24 — the **state→visual contract** (`orbVisual`) is ported to `mobile/src/voice/orbVisual.ts` and proven identical to the browser's against 80 shared vectors (`tests/_fixtures/orb_visual_vectors.json`, asserted by both suites). The **particle renderer** is not ported: RN has no canvas, so it needs a graphics dependency (react-native-svg / Skia) plus on-device validation. Native also cannot yet reach `listening`/`transcribing` — there is no mobile mic-capture pipeline, only TTS playback (H18.5). |
 | Briefing wall (neural field + stat board + hold-to-talk) | — (client-side, composed from `/api/agents`, `/tasks`, `/api/trust/status`, `/api/analytics/locality`) | ✅ (responsive: portrait layout under 820px) | 🟡 contract ported | H18.25 — the **state contract** (`wallState`: the word + tone the wall announces) is ported to `mobile/src/voice/wallState.ts` and proven identical to the browser's against **500 shared vectors** (`tests/_fixtures/wall_state_vectors.json`, asserted by both suites). The **neural-field canvas + stat board chrome** is not ported (RN has no canvas → graphics dependency + device validation), and **hold-to-talk cannot exist yet**: there is no mobile mic-capture pipeline at all, only TTS playback (H18.5). |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
-| Global emergency stop (pause new autonomous work; hermes v2026.8.27 port) | user `GET /api/ops/estop`; admin `POST /api/ops/estop/engage`, `POST /api/ops/estop/resume` | ✅ (API; HUD control pending, see HUD_V2_REMAINING) | 🟡 read-only card on Status (engaged/reason/engaged_at); engage/resume intentionally owner-HUD-only | — |
+| Global emergency stop (pause new autonomous work; hermes v2026.8.27 port) | user `GET /api/ops/estop`; admin `POST /api/ops/estop/engage`, `POST /api/ops/estop/resume` | ✅ | 🟡 read-only card on Status (engaged/reason/engaged_at); engage/resume intentionally owner-HUD-only | — |
+| Ambient Capture (opt-in surfaces, each record deletable) | `GET /api/capture`, `GET /api/capture/status`, `POST /api/capture/clear`, `DELETE /api/capture/{rec_id}` | ✅ | ⬜ | |
+| Encrypted personal vault | `GET/POST /api/vault`, `GET/DELETE /api/vault/{vault_id}` | ✅ | ⬜ | |
+| Memory search + data-space admin | `GET /api/memory/search`; admin `GET/POST /api/memory/spaces`, `POST /api/memory/spaces/{assign,unassign}`, `DELETE /api/memory/spaces/{name}` | ✅ | ⬜ | |
+| Write legs on surfaces mobile already reads (notes, KG, memory decay) | `PUT /api/notes`, `POST /api/notes/rewrite`, `DELETE /api/kg/entities/{name}`, `POST /api/memory/decay/forget` | ✅ | ⬜ | |
+| Local docs index | `GET /api/local-docs` (open), `POST /api/local-docs/index` | ✅ | ⬜ | |
+| Nightly reflection (status + manual run) | `GET /api/reflection/status`, `POST /api/reflection/run` | ✅ | ⬜ | |
+| Security skills browser (ATT&CK tactics → curated techniques, read-only) | `GET /api/security-skills/tactics`, `GET /api/security-skills/techniques` | ✅ | ⬜ | |
+| Prompt-injection scan | `POST /api/security/scan-injection` | ✅ | ⬜ | |
+| Audit-chain verification (tamper-evidence read) | `GET /api/security/audit/intent`, `GET /api/security/audit/verify` | ✅ | ⬜ | |
+| Channel pairing ceremony | admin `GET /api/channels/pairing`, `POST /api/channels/pairing/code`, `POST /api/channels/pairing/decide` | ✅ | ⬜ | |
+| Governed social drafts (draft-before-send) | `GET/POST /api/integrations/social` | ✅ | ⬜ | |
+| Mic satellites (pair a device as a mic) | `GET /api/satellites`, `POST /api/satellites/register`, `DELETE /api/satellites/{satellite_id}` | ✅ | ⬜ | |
+| Oracle sync (conflicts read off the status payload) | `GET /api/oracle/status` (open); admin `POST /api/oracle/sync`, `POST /api/oracle/conflicts/resolve` | ✅ | ⬜ | |
+| Packs inventory + verification | `GET /api/packs`, `GET /api/packs/{key}/verify` | ✅ | ⬜ | |
+| World signals routing feed | `GET /api/signals/routed`, `GET /api/signals/agent/{agent_id}` | ✅ | ⬜ | |
+| Market watchlist (owner-saved rows; no quotes, no trading) | `GET/POST /api/market/watchlist/saved`, `DELETE /api/market/watchlist/saved/{symbol}` | ✅ | ⬜ | |
+| Onboarding wizard + funnel steps | `GET /api/onboarding/wizard`, `POST /api/onboarding/funnel` | ✅ | ⬜ | |
+| Feedback · NPS (submit + admin summary) | `POST /api/feedback`; admin `GET /api/feedback/summary` | ✅ | ⬜ | |
+| Kernel + north-star metric boards | `GET /api/metrics/kernel`, `GET /api/metrics/north-star` (both open) | ✅ | ⬜ | |
+| Reasoning traces list | `GET /api/traces` | ✅ | ⬜ | |
+| Cognition read + live scoring stream | `GET /api/cognition`, `GET /api/cognition/stream` (SSE) | ✅ | ⬜ | |
+| Workflows (list / run / step-generate) | `GET /api/workflows`, `POST /api/workflows/run`, `POST /api/workflows/step/generate`; admin `DELETE /api/workflows/{pipeline_id}` | ✅ | ⬜ | |
+| Sandboxed code execution | `GET /sandbox/status` (open), `POST /sandbox/execute` | ✅ | ⬜ | |
+| Agent templates (instantiate a config) | `GET /api/agent-templates` (open), `POST /api/agent-templates/instantiate` | ✅ | ⬜ | |
+| Publish readiness (creative checklist + package) | `POST /api/creative/publish/checklist`, `POST /api/creative/publish/package` | ✅ | ⬜ | |
+| Missions board (long-horizon governed workspaces) | `GET /api/missions`, `POST /api/missions/{mission_id}/{start,pause,resume,complete,cancel}` | ✅ | ⬜ | |
+| Today board (daily digest) | `GET /api/dashboard/today` | ✅ | ⬜ | |
+| Natural-language schedule parser | `POST /api/schedule/parse` | ✅ | ⬜ | |
+| Bench-agent learning + promotion | `GET /learning`; admin `POST /learning/promote`, `POST /api/learning/propose` | ✅ | ⬜ | |
+| Heartbeats (per-agent run/start/stop) | `GET /heartbeat/status` (open); admin `POST /heartbeat/{agent_id}/{run,start,stop}` | ✅ | ⬜ | |
+| Transcript → tasks ingest | `POST /api/transcripts/ingest` | ✅ | ⬜ | |
+| Escalation (ask-tier fan-out) | `GET /api/autonomy/escalation/targets` (open); admin `POST /api/autonomy/escalate` | ✅ | ⬜ | |
+| Agent dossier (soul + run history) | `GET /api/agents/{agent_id}/soul`, `GET /api/agents/{agent_id}/history` | ✅ | ⬜ | |
+| Local models + cloud auth profiles + VLM status | user `GET /api/vlm/status`; admin `POST /api/llm/{load,unload}`, `GET /api/llm/auth-profiles`, `GET /api/models/info`, `GET /api/models/local`, `POST /api/models/local/switch` | ✅ | ⬜ | |
+| System profile (read-only; selected via `JARVIS_SYSTEM_PROFILE`) | `GET /api/system/profiles` | ✅ | ⬜ | |
+| Sentence-streamed TTS | `POST /tts/stream` | ✅ | ⬜ | |
+| Eval datasets (run / compare / history) | `GET /api/eval/datasets`, `GET /api/eval/datasets/{name}/{runs,compare}` (open), `POST /api/eval/datasets/run` | ✅ | ➖ | — |
+| Bench stats | `GET /bench/stats` (open) | ✅ | ➖ | — |
 
 > **H34.1 ➖ (intentional):** Mission Control is a desktop-operator cockpit (large canvas map,
 > dev-swarm lock files that only exist on the owner's dev machine). Its steering primitives
@@ -76,6 +114,17 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 > desktop host daemon (Windows idle/lock or the Tauri overlay), not a phone control; the phone is
 > the away-notify *target* (it receives the escalated cards over WhatsApp/Telegram), so no native
 > presence UI is needed. The state is already visible in the Mission Control feed.
+
+> **Eval datasets / bench stats ➖ (intentional):** these inherit the decision this file already
+> records — the foot of the matrix marks eval/benchmark dashboards as intentionally desktop-only,
+> and the `Arena / review / quality` row is already ➖ on exactly that basis. They are developer
+> regression tooling read while changing the hub, not owner surfaces.
+
+> **On the ⬜ rows added above:** every one of them is *not ported* — no native screen, no client
+> call, no partial. Several would be defensible ➖ candidates (sandboxed execution and the local-model
+> lifecycle are hub-host capabilities; heartbeats, channel pairing and escalation are admin
+> ceremonies), but no such decision exists in the repo today, so recording one here would be the
+> aspiration-as-fact this ledger exists to prevent. They stay ⬜ until the owner triages them.
 
 > **H18.20 ✅ (delivered):** native artifact workspace parity — the Memory tab gains an
 > Artifacts view (browse Canvas artifacts with safe typed rendering, remote images behind an
