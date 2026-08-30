@@ -12,6 +12,7 @@ or all of them — everything needed is in
 |---|---|
 | De-gating commit on `main` | `824ff18` (squash of #981, merged 2026-08-30 09:09 UTC) |
 | Last state with all gates present | `824ff18^` = `5e6e184` |
+| Patches apply to | `7eb8772` — if `main` has drifted, use `git apply -3` (see below) |
 | Scope | 58 files — **30 deleted**, 28 modified · **25,629 lines removed** |
 | Archive contents | 12 per-gate patches, 1 full-restore patch, pristine copies of all 30 deleted files, JSON manifest |
 
@@ -27,22 +28,30 @@ cd /tmp/restore/nerva-gates-restore-2026-08-30
 cat 00-README.md          # full instructions, group table, caveats
 ```
 
-**Restore one gate** (the usual case — each patch is independent, order does not matter):
+`git apply` resolves the patch path relative to your **current directory**, and the archive
+unzips outside the repo tree — so keep `$ARCHIVE` around and pass full paths:
 
 ```bash
+ARCHIVE=/tmp/restore/nerva-gates-restore-2026-08-30
 cd /path/to/jarvis-hub && git checkout -b restore/security-scans
-git apply /tmp/restore/nerva-gates-restore-2026-08-30/groups/A-security-scans.patch
+```
+
+**Restore one gate** (the usual case — patches never conflict with each other, so order
+does not matter):
+
+```bash
+git apply "$ARCHIVE/groups/A-security-scans.patch"
 ```
 
 **Restore everything:**
 
 ```bash
-git apply /tmp/restore/nerva-gates-restore-2026-08-30/restore-ALL.patch
+git apply "$ARCHIVE/restore-ALL.patch"
 ```
 
-If `main` has drifted enough to conflict, use `git apply -3` for a 3-way merge, or copy
-files straight out of `deleted-files/` — those 30 were deleted outright, so there is
-nothing to merge.
+If `main` has drifted enough to conflict, use `git apply -3` for a 3-way merge (every diff
+carries its blob index lines, so `-3` always has what it needs), or copy files straight out
+of `deleted-files/` — those 30 were deleted outright, so there is nothing to merge.
 
 ---
 
@@ -68,10 +77,22 @@ lane plus five other jobs off post-merge and back onto the PR critical path.
 
 ### Dependencies between groups
 
-- **G needs A** — the pre-commit gitleaks hook reads `.gitleaks.toml`, which is in group A.
-- **J's `nerva-movement` job needs D** — that job runs `scripts/check_nerva_issue_movement.py`;
-  without group D the job exists but fails on a missing script. Restore D alongside J, or
-  drop the `nerva-movement` job from `ci.yml` after applying J.
+Patches never conflict with each other — no two groups touch the same file — but two groups
+are **functionally** coupled:
+
+- **D and J need each other; restore them together.** J's `nerva-movement` job runs
+  `scripts/check_nerva_issue_movement.py`, which lives in D — without D the job exists but
+  fails on a missing script. In the other direction, three tests in D's
+  `tests/test_nerva_issue_movement.py` read the real `.github/workflows/ci.yml` and assert
+  the `nerva-movement` job, `test.needs == ["nerva-movement"]` and the two-OS matrix, so
+  restoring D alone leaves three failing tests. To take only one: restore J and delete its
+  `nerva-movement` job, or restore D and delete those three tests.
+- **G degrades without A (soft, not fatal).** The pre-commit gitleaks hook runs with no
+  `--config`, so it auto-discovers `.gitleaks.toml` from group A. Without A the hook still
+  runs but falls back to gitleaks' default ruleset, losing the `tests/`, `docs/` and
+  `stark_ga4_property_id` allowlist — expect false positives on fixtures.
+
+No other cross-group coupling exists: C, F and H are self-contained.
 
 ---
 
