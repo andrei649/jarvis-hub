@@ -63,10 +63,12 @@
 
 ## 🟠 GitHub settings (5 minutes, Settings → …)
 
-- [ ] **De-gate merges (decided 2026-08-29 — remove the branch-protection gates)** — the PR-blocking
-  CI gates were deleted from the repo, but the *required status checks* live in Settings →
-  Branches / Rules for `main` and only you can edit them. Until you do, **no PR can merge** (the
-  deleted checks sit at "Expected" forever — including the de-gating PR itself). Do:
+- [x] **De-gate merges (decided 2026-08-29 — remove the branch-protection gates)** — ✅ the repo
+  half shipped in #981 (merged 2026-08-30 09:09 UTC); that merge going through indicates the
+  required checks no longer block. *If you merged it via admin bypass rather than clearing the
+  settings, the sub-items below still apply to every future PR.* **Reversible:**
+  [`docs/restore/`](restore/README.md) keeps every removed gate as an independent patch —
+  restore one gate or all of them, with the exact check names to re-add here. Original task:
   - [ ] Remove **all required status checks** — the names to drop: `test (windows-latest)`,
         `nerva-movement`, `boundary`, `review (correctness)` / `review (boundary)` /
         `review (tests)`, `Secret scan (gitleaks)`, `SAST (semgrep)`, `SAST (bandit — blocking gate)`,
