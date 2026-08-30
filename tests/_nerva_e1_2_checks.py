@@ -2758,32 +2758,6 @@ def _markdown_table_row(section: str, label: str) -> tuple[str, ...]:
     return matches[0]
 
 
-def _workflow_event_paths(workflow: str, event: str) -> tuple[str, ...]:
-    """Parse one event's indented paths list rather than globally counting text."""
-
-    lines = workflow.splitlines()
-    start = next(
-        index for index, line in enumerate(lines) if line == f"  {event}:"
-    )
-    paths_start: int | None = None
-    for index in range(start + 1, len(lines)):
-        line = lines[index]
-        if line.startswith("  ") and not line.startswith("    "):
-            break
-        if line == "    paths:":
-            paths_start = index
-            break
-    assert paths_start is not None
-    paths: list[str] = []
-    for line in lines[paths_start + 1 :]:
-        if line.startswith("  ") and not line.startswith("      "):
-            break
-        match = re.fullmatch(r'      - "([^"]+)"', line)
-        if match is not None:
-            paths.append(match.group(1))
-    return tuple(paths)
-
-
 def _check_operator_contract_ledgers() -> None:
     """Keep E1.2a operator claims aligned with the checked-in contract."""
 
@@ -2986,13 +2960,6 @@ def _check_operator_contract_ledgers() -> None:
     }
     assert manifest["authority"]["completion_authority"] is False
     assert manifest["authority"]["release_ready"] is False
-
-    workflow = (repository / ".github/workflows/nerva-roadmap.yml").read_text(
-        encoding="utf-8"
-    )
-    for event in ("pull_request", "push"):
-        paths = _workflow_event_paths(workflow, event)
-        assert paths.count("docs/nerva2/CORTEX_E1_2.md") == 1
 
 
 class _LateInjectingNormalRouter(IntentRouter):

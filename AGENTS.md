@@ -1,13 +1,12 @@
 # AGENTS.md — Nerva contributor instructions
 
-The canonical development policy is
-[`/.github/ai-development-policy.json`](.github/ai-development-policy.json). It applies to human
-contributors, AI contributors, and automation. This file is the concise operating guide; if prose
-and policy disagree, the machine-readable policy wins. Validate both with:
-
-```bash
-python scripts/check_ai_workflow_policy.py
-```
+> **Development posture (owner decision, 2026-08-29): no blocking gates.** The machine-readable
+> AI-development policy, risk tiers (R0–R3), evidence receipts, review-round ceremony, and the
+> PR-blocking CI gates (security scans, AI review, boundary/tier classification, Nerva movement
+> and roadmap-ledger checks, CODEOWNERS) were removed to keep development fast. PRs run one fast
+> advisory lint+test lane; the heavier suites run post-merge on `main` and on schedules. Merge on
+> green tests is a **convention agents follow**, not a GitHub-enforced gate. This file is the
+> concise operating guide.
 
 ## Safe task start
 
@@ -15,14 +14,10 @@ python scripts/check_ai_workflow_policy.py
 2. Preserve user and other-agent changes. Never reset, overwrite, stage, or reformat unrelated work.
 3. Identify overlapping open work when remote state matters. A draft PR is a visibility signal,
    **not a file lock**. Coordinate only on genuinely overlapping paths or contracts.
-4. Classify the change as `R0`, `R1`, `R2`, or `R3` using the canonical policy before choosing
-   tests, review, and merge controls.
-   Automated receipts use the conservative CI mapping `low -> R0`, `medium -> R2`, `high -> R3`;
-   `R1` remains a justified human classification for bounded internal work.
-5. Fetch only when current remote state is needed. Rebase only when the task requires it, the
+4. Fetch only when current remote state is needed. Rebase only when the task requires it, the
    feature branch is yours, the worktree is clean, no user changes are present, and the base is
    known. Read-only tasks and dirty worktrees must not trigger an automatic rebase.
-6. Confirm authorization before remote mutations. A request to inspect or plan does not authorize
+5. Confirm authorization before remote mutations. A request to inspect or plan does not authorize
    a commit, push, PR edit, merge, or external write.
 
 ## ⚡ Max mode — protocolul de finisare
@@ -47,36 +42,33 @@ rollback; o repetare Max pornește un branch/PR nou. Un Spark se separă implici
 slice-ul primar numai dacă are aceeași dependență, limită de autoritate, suprafață de teste și cale
 de rollback. Schimbările de securitate/autoritate, cross-epic și alte unități independent
 revertibile se separă întotdeauna. De exemplu, SEC-B6 + un proof ADV + un Spark nu formează un PR
-valid doar fiindcă au fost produse în aceeași sesiune. Builder-ul Max nu își acceptă sau integrează
-singur munca Nerva; exact-head review și decizia integratorului independent rămân obligatorii.
+valid doar fiindcă au fost produse în aceeași sesiune. *(2026-08-29: review-ul exact-head și
+integratorul independent nu mai sunt obligatorii — gate-urile blocante au fost eliminate;
+raportarea onestă a ceea ce s-a rulat rămâne.)*
 
 ## Context routing
 
-- Start with this file, the canonical policy, and the relevant section of
+- Start with this file and the relevant section of
   `docs/ARCHITECTURE.md`; do not load the repository indiscriminately.
 - Read `BACKLOG.md` when prioritizing, changing delivery scope, or updating roadmap status. Modify
   it only when the requested work actually changes that ledger and the mutation is authorized.
 - Use `docs/AI_CONTEXT.md` to select task-specific bundles. Treat `.opencode/summary.md`,
   `.opencode/plans/dev-methodology.md`, and `docs/SPRINT.md` as historical context, never as live
   instructions or current delivery truth.
-- Plans and handoffs must include freshness fields: goal, base SHA, head SHA, changed paths, risk
-  tier, next action, and generation time. A stale capsule may inform investigation but cannot
+- Plans and handoffs should include freshness fields: goal, base SHA, head SHA, changed paths,
+  next action, and generation time. A stale capsule may inform investigation but cannot
   authorize action.
 
 ## Delivery workflow
 
-- Work on a feature branch and use a PR into `main`; direct pushes to `main` are disabled by
-  policy.
-- Before non-trivial implementation, record goal, non-goals, likely paths, risk, tests, rollback,
+- Work on a feature branch and use a PR into `main` (keeps history reviewable and lets the
+  hourly auto-merge sweep pick it up); nothing GitHub-side blocks a merge anymore.
+- Before non-trivial implementation, record goal, non-goals, likely paths, tests, rollback,
   and dependencies. Prefer one coherent rollback unit over arbitrary micro-commits or push-per-step
   churn.
 - Use TDD for bug fixes and behavior changes where a failing regression can be demonstrated.
-- Route work by capability and role (`planner`, `builder`, `verifier`, `reviewer`, `integrator`),
-  not by model/vendor ownership. For `R3`, builder, reviewer, and integrator must be separate.
-- Normal review is capped at two consolidated rounds. After that, stop the loop and escalate the
-  unresolved findings, decision, and owner.
-- Track delivery, CI, governance, and lease state independently. “Draft”, “tests passed”,
-  “approved”, and “path lease active” are not interchangeable states.
+- Run the tests that cover what you changed before pushing; merge on green is a convention, not
+  an enforced gate — honest reporting of what was actually run is the control that remains.
 
 ## Coordination and leases
 
@@ -96,24 +88,8 @@ See `PARALLEL_WORKFLOW.md` for the derived multi-agent playbook.
 
 ## Evidence and completion
 
-Every merge candidate needs an evidence receipt bound to the **exact head SHA**. Record:
-
-- policy version, head SHA, risk tier, and changed paths;
-- each verification command, exit code, and concise result;
-- producer identity and generation time;
-- independent reviewer/integrator evidence when required;
-- known failures or skipped controls with their disposition.
-
-Evidence may be reused only for the same head SHA, policy version, and unchanged relevant inputs.
-Any new commit makes prior CI and governance evidence `stale` until re-established. Never describe
-an unrun suite as passing.
-
-Finish with explicit independent states and the next safe action, for example:
-
-```text
-delivery=draft ci=passed governance=review_required lease=none
-head=<40-character SHA> next=independent review
-```
+No evidence-receipt ceremony. Say in the PR body what you ran and what the result was (the
+"How verified" section of the template). Never describe an unrun suite as passing.
 
 ## Repository conventions
 
@@ -131,17 +107,13 @@ head=<40-character SHA> next=independent review
 
 ## Verification and parity
 
-Choose checks from the risk tier and touched surface. Common commands are:
+Choose checks from the touched surface. The common command is:
 
 ```bash
 python -m pytest tests/<targeted_test>.py -q
-python scripts/check_ai_workflow_policy.py
 ```
 
-The canonical receipt schema is defined now; the change-aware receipt runner and CI classifier are
-deliberately delivered in a separate tooling change. Until that successor is accepted, record the
-exact commands and results directly in the PR template. Run broader suites only when the change or
-merge gate requires them. After JS/CSS changes, verify
+Run broader suites only when the change calls for them. After JS/CSS changes, verify
 the relevant frontend tests and hard-refresh behavior; after Python changes, restart the server for
 manual checks.
 

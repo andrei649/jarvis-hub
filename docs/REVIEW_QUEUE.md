@@ -7,9 +7,10 @@
 
 ## How each item is verified
 
-- **Automated, every PR (gates the merge):** `pytest` (full suite), `ruff`, the
-  route/action/capability **auth-matrices**, OpenAPI/route parity, SAST (bandit/semgrep) +
-  secret-scan (gitleaks), hash-pinned deps.
+- **Automated, every PR (advisory since 2026-08-29 — no blocking gates):** `pytest` (full
+  suite, includes the route/action/capability **auth-matrices** and OpenAPI/route parity),
+  `ruff`, hash-pinned deps. The SAST/secret-scan CI gates were removed by owner decision;
+  heavier suites run post-merge on `main`.
 - **Scratch simulation (where possible):** I also boot the app and hit real endpoints — and
   load HUD pages headless in a real browser (Chromium/Playwright) — in a throwaway scratch
   dir (never committed) to catch obvious runtime bugs. Noted per item.

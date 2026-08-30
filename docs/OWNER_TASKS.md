@@ -63,11 +63,29 @@
 
 ## 🟠 GitHub settings (5 minutes, Settings → …)
 
+- [ ] **De-gate merges (decided 2026-08-29 — remove the branch-protection gates)** — the PR-blocking
+  CI gates were deleted from the repo, but the *required status checks* live in Settings →
+  Branches / Rules for `main` and only you can edit them. Until you do, **no PR can merge** (the
+  deleted checks sit at "Expected" forever — including the de-gating PR itself). Do:
+  - [ ] Remove **all required status checks** — the names to drop: `test (windows-latest)`,
+        `nerva-movement`, `boundary`, `review (correctness)` / `review (boundary)` /
+        `review (tests)`, `Secret scan (gitleaks)`, `SAST (semgrep)`, `SAST (bandit — blocking gate)`,
+        `Dependency audit (pip-audit)`, `in-sync`, `parked-modules`, `validate`, `Analyze (python)` /
+        `CodeQL`, `sandbox-isolation`, `signal-layer-smoke (…)`, `frontend`, `hud-v2-build`,
+        `openapi-types`, `e2e`, `server-boot`, `analyze`, `drift`. Keeping `test (ubuntu-latest)`
+        required is optional — it's the one fast (~3 min) lane left on PRs.
+  - [ ] Turn off **Require review from Code Owners** and any required-approvals count
+        (CODEOWNERS was deleted).
+  - [ ] Delete the **CodeQL merge-protection ruleset** if one exists (code-scanning merge rule).
+  - [ ] Keep **Allow auto-merge** on — `pr-auto-merge.yml` still sweeps hourly and squash-merges
+        any non-draft PR GitHub reports as clean.
 - [ ] **Repo description + topics + social preview** — paste-ready strings in
   [`docs/BRAND_BOOK.md`](BRAND_BOOK.md) §9 (current description is just "Personal AI").
 - [ ] **Enable code scanning** (Settings → Code security) or make the `Analyze (python)` CodeQL
   check non-required — it intermittently fails with "Code scanning is not enabled"
-  ([`HUD_V2_REMAINING.md`](design/HUD_V2_REMAINING.md) §9).
+  ([`HUD_V2_REMAINING.md`](design/HUD_V2_REMAINING.md) §9). *(Overtaken 2026-08-29: CodeQL no
+  longer runs on PRs — weekly + push-to-main only; just drop it from required checks per the
+  de-gate task above.)*
 - [ ] **Dismiss resolved scanning alerts** (Security → Secret/Code scanning) — the code-side fixes
   merged 2026-06-17 (#215, #216); these remaining ones are false positives / won't-fix:
   - Secret scanning **#1** (OpenAI key) → "Used in tests" — it's a synthetic guardrail fixture (#215).

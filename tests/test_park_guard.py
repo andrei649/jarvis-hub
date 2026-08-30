@@ -164,9 +164,3 @@ def test_real_policy_covers_remaining_backlog_phase_six_names():
         "rust",
     }
     assert expected == set(guard.PARK_POLICY) - {"park-policy"}
-
-
-def test_workflow_runs_base_policy_when_guard_already_exists():
-    workflow = (REPO / ".github" / "workflows" / "park-guard.yml").read_text(encoding="utf-8")
-    assert 'git show "$BASE_SHA:scripts/park_guard.py"' in workflow
-    assert 'python "$RUNNER_TEMP/park_guard.py"' in workflow

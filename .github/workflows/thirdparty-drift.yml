@@ -4,13 +4,6 @@ name: Third-Party Drift
 # the gap Dependabot can't see (it covers pip/npm/github-actions; see
 # .github/dependabot.yml). Manifest: .github/third-party-manifest.json.
 on:
-  pull_request:
-    paths:
-      - ".github/third-party-manifest.json"
-      - "scripts/check_thirdparty_drift.py"
-      - ".claude/plugins/superpowers/.claude-plugin/plugin.json"
-      - "docs/dev/codebase-memory-mcp.md"
-      - ".github/workflows/thirdparty-drift.yml"
   workflow_dispatch:
   schedule:
     # Mondays 06:00 UTC — weekly drift sweep on the default branch.

@@ -41,7 +41,6 @@ RELEASE_TOOLING = [
     "scripts/status_sync.py",
     "scripts/export_partner_feedback.py",
     "scripts/park_guard.py",
-    ".github/workflows/park-guard.yml",
     "project-status.json",
 ]
 _LINK_RE = re.compile(r"\]\(([^)#\s]+\.md)(?:#[^)]*)?\)")
@@ -248,12 +247,11 @@ def check_version_tag(*, tag_reader=None) -> dict:
 
 
 def check_park_guard() -> dict:
-    expected = (
-        REPO / "scripts" / "park_guard.py",
-        REPO / ".github" / "workflows" / "park-guard.yml",
-    )
+    # The CI enforcement workflow was removed 2026-08-29 (owner de-gated PR
+    # merges); the guard script remains available for manual/release checks.
+    expected = (REPO / "scripts" / "park_guard.py",)
     if all(path.exists() for path in expected):
-        return _result("machine", "park-guard", PASS, "guard script + CI workflow present")
+        return _result("machine", "park-guard", PASS, "guard script present (manual)")
     missing = [str(path.relative_to(REPO)) for path in expected if not path.exists()]
     return _result("machine", "park-guard", FAIL, f"missing: {', '.join(missing)} (H23.28)")
 

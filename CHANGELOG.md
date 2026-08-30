@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- **De-gated development (owner decision).** Removed every PR-blocking CI gate and scan:
+  `security.yml` (gitleaks/semgrep/pip-audit/bandit), `ai-review.yml` (three AI reviewers per PR),
+  `autonomy.yml` (tier/boundary classifier), `lockfile.yml`, `park-guard.yml`, `nerva-roadmap.yml`
+  (roadmap-ledger validation), the Nerva movement gate in `ci.yml`, CODEOWNERS, the machine-readable
+  AI-development policy + evidence-receipt PR template, and the pre-commit hooks. PRs now run one
+  fast advisory lane (`ruff` + `pytest` on ubuntu, ~3 min); the Windows matrix, sandbox-isolation,
+  HUD/frontend suites and OpenAPI typegen drift check moved post-merge (push to `main`), and
+  CodeQL/e2e/smoke/code-health/eval/third-party-drift dropped their `pull_request` triggers.
+  The matching branch-protection cleanup is an owner task (`docs/OWNER_TASKS.md` → "De-gate merges").
+
 ## [1.0.0] — 2026-08-28
 
 The 1.0 line: every feature horizon (H1–H23 + WorldView O19) delivered, the productionization

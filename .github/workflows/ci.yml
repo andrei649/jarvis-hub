@@ -1,8 +1,14 @@
 name: CI
 
+# Development-speed posture (2026-08-29, owner decision): pull requests run ONE
+# fast advisory lane — ruff + the pytest suite on ubuntu (~3 min). Everything
+# heavier (Windows matrix, sandbox containment, Signal Layer smoke, HUD suites,
+# OpenAPI typegen drift) runs post-merge on push to main, so it still catches
+# regressions without ever blocking a merge.
+
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited, ready_for_review, converted_to_draft]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -15,84 +21,40 @@ permissions:
   contents: read
 
 jobs:
-  nerva-movement:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      issues: read
-      pull-requests: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: "3.12"
-      - name: Validate live Nerva movement
-        timeout-minutes: 5
-        run: >-
-          python scripts/check_nerva_issue_movement.py --live
-          --event "$GITHUB_EVENT_PATH"
-          --base "$NERVA_BASE_SHA"
-          --head "$NERVA_HEAD_SHA"
-          --root "$GITHUB_WORKSPACE"
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          NERVA_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          NERVA_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-
   test:
-    needs: [nerva-movement]
-    if: always()
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # Full matrix (ubuntu + windows) on every PR and push — Windows is a
-        # first-class target (Jarvis runs on Windows), so `test (windows-latest)`
-        # is a required check on PRs, not just post-merge.
-        os: ["ubuntu-latest", "windows-latest"]
+        # PRs: ubuntu only (fast feedback). Post-merge pushes to main add the
+        # Windows lane — Jarvis runs on Windows, so the coverage stays, it just
+        # no longer sits on the PR critical path (~20 min per run).
+        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
     steps:
-      - name: Require successful Nerva movement on pull requests
-        if: github.event_name == 'pull_request' && needs.nerva-movement.result != 'success'
-        run: exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-beta.lock
-      # AUD-10 (F33): install from the hash-pinned lock. --require-hashes makes pip
-      # abort if any artifact's sha256 doesn't match the lock — a tampered index,
-      # typosquat, or compromised transitive release can't land. beta.lock and
-      # dev.lock share no packages, so the two installs can't version-skew.
-      # Regenerate with ./scripts/lock_deps.sh; lockfile.yml guards against drift.
+      # Install from the hash-pinned locks (regenerate with ./scripts/lock_deps.sh).
       - run: pip install --require-hashes -r requirements-beta.lock
       - run: pip install --require-hashes -r requirements-dev.lock
-      - name: Lint (ruff — blocking gate)
-        # AUD-10 (F34/F35): blocking lint gate. Pre-existing findings are frozen
-        # in ruff-baseline.toml (per-file-ignores, extended from pyproject) so this
-        # passes today and fails only on NEW findings. Burn the baseline down with
-        # `python scripts/code_health.py --fix`, then trim cleared entries. The full
-        # advisory digest (format/dead-code/complexity) still lives in code-health.yml.
+      - name: Lint (ruff)
         run: ruff check .
       - name: Test
-        # -n auto: parallelize across runner cores (Windows full-suite goes from
-        # ~15min to a few). --dist loadfile keeps each test file on one worker, and
-        # conftest gives each worker an isolated JARVIS_HOME so file stores don't race.
+        # -n auto: parallelize across runner cores. --dist loadfile keeps each
+        # test file on one worker, and conftest gives each worker an isolated
+        # JARVIS_HOME so file stores don't race.
         run: python -m pytest tests/ -n auto --dist loadfile --timeout=90 -q --tb=short
         env:
           JARVIS_TESTING: "1"
 
   sandbox-isolation:
-    # AUD-11: prove the Docker sandbox actually CONTAINS code — no network and a
-    # read-only filesystem. The gating tests skip the moment Docker is present, so
-    # containment was never exercised; this dedicated, Docker-enabled lane runs the
-    # real test (RUN_SANDBOX_ISOLATION=1) so it can't silently be skipped away.
+    # Post-merge only. Proves the Docker sandbox actually CONTAINS code — no
+    # network and a read-only filesystem (RUN_SANDBOX_ISOLATION=1 exercises the
+    # real containment test instead of letting it skip).
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -101,11 +63,6 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-beta.lock
-      # AUD-10 (F33): install from the hash-pinned lock. --require-hashes makes pip
-      # abort if any artifact's sha256 doesn't match the lock — a tampered index,
-      # typosquat, or compromised transitive release can't land. beta.lock and
-      # dev.lock share no packages, so the two installs can't version-skew.
-      # Regenerate with ./scripts/lock_deps.sh; lockfile.yml guards against drift.
       - run: pip install --require-hashes -r requirements-beta.lock
       - run: pip install --require-hashes -r requirements-dev.lock
       - name: Pre-pull sandbox image
@@ -126,8 +83,10 @@ jobs:
           JARVIS_TESTING: "1"
 
   signal-layer-smoke:
-    # Proves the provider-neutral Signal Layer can run its deterministic replay
-    # path without WorldMonitor, Docker, API keys, or network access.
+    # Post-merge only. Proves the provider-neutral Signal Layer can run its
+    # deterministic replay path without WorldMonitor, Docker, API keys, or
+    # network access.
+    if: github.event_name == 'push'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -143,8 +102,9 @@ jobs:
         working-directory: services/signal-layer
 
   frontend:
-    # HUD (React-via-globals) unit tests. Runs the real shipped static
-    # artifacts inside JSDOM — see tests/frontend/README.md.
+    # Post-merge only. HUD (React-via-globals) unit tests — runs the real
+    # shipped static artifacts inside JSDOM; see tests/frontend/README.md.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -158,8 +118,10 @@ jobs:
       - run: npm run test:coverage
 
   hud-v2-build:
-    # Build the v2 HUD (Vite + React + TS) and verify the committed bundle is
-    # current — so agents/web/v2 (served at /v2) can't silently go stale.
+    # Post-merge only. Build the v2 HUD (Vite + React + TS) and verify the
+    # committed bundle is current — so agents/web/v2 (served at /v2) can't
+    # silently go stale.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -185,9 +147,10 @@ jobs:
             || { echo "::error::agents/web/v2 is stale — run 'cd frontend && npm run build' and commit."; exit 1; }
 
   openapi-types:
-    # M2.3 / AUD-16: generated TypeScript must match the live FastAPI OpenAPI
-    # schema. This is intentionally a separate lane because it boots the backend
-    # plus the frontend toolchain, and reports a readable git diff on drift.
+    # Post-merge only. Generated TypeScript must match the live FastAPI OpenAPI
+    # schema; boots the backend plus the frontend toolchain and reports a
+    # readable git diff on drift.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

@@ -14,19 +14,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-  pull_request:
-    paths:
-      - "frontend/**"
-      - "agents/web/v2/**"
-      - "serve.py"
-      - "agents/web.py"
-      # The webServer boots the REAL backend (serve.py + orchestrator), so a
-      # core-pipeline regression that breaks boot or /metrics is this lane's to
-      # catch — found as an oracle gap reviewing #498, which rewired the chat
-      # turn pipeline without ever triggering it.
-      - "agents/core/**"
-      - "frontend/playwright.config.ts"
-      - ".github/workflows/e2e.yml"
 
 permissions:
   contents: read

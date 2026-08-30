@@ -1,7 +1,9 @@
 # ADR 0001 — Autonomous development boundary
 
-**Status:** proposed · **Date:** 2026-08-29 · **Supersedes:** the owner-receipt
-ceremony in `docs/nerva2/NERVA_ISSUE_MOVEMENT_V1.md`
+**Status:** superseded (2026-08-29, same day — the owner removed *all* PR-blocking gates,
+including the tier/`boundary` check this ADR proposed; see `docs/OWNER_TASKS.md` → "De-gate
+merges" for the remaining GitHub-settings step) · **Date:** 2026-08-29 · **Supersedes:** the
+owner-receipt ceremony in `docs/nerva2/NERVA_ISSUE_MOVEMENT_V1.md`
 
 ## Context
 
