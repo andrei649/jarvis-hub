@@ -123,6 +123,7 @@ RULES = [
     ("/api/codeintel/", "build"),  # 0.31 Code Intelligence — AST symbol index over the source
     ("/api/vlm", "build"),  # vision-language model adapter (H13.1)
     ("/api/desktop", "build"),  # governed desktop operator (H15.3)
+    ("/api/operator", "build"),  # H28.2 action-hierarchy selection (DRA-22/DRA-42)
     ("/api/media", "build"),  # governed generation + live Media Director panel (H12.24/H29)
     ("/api/house", "home"),  # H30 House Brain state + governed proposals/owner ceremony
     ("/api/cameras", "home"),  # H31 local camera metadata + privacy-safe temporal search
@@ -445,6 +446,11 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/signals/brief/{domain}",
     # HUD drives acquisition through revoke/rollback only; the drive step has no control.
     "/api/acquisition/{request_id}/drive",
+    # DRA-22/DRA-42 wired the H28.2 router's two backend halves: this read-only route
+    # and the `operator_plan` ToolRPC tool (which is what actually consumes the router
+    # today — the agent, not our UI). The HUD control is the deliberately-open half, so
+    # this belongs on the punch list rather than in MACHINE_FACING.
+    "/api/operator/plan",
     "/api/actions/request",
     "/api/admin/rotate-tokens",
     "/api/agents/history",

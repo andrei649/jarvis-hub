@@ -343,6 +343,7 @@
   "POST /api/oauth/callback",
   "POST /api/oauth/refresh",
   "POST /api/onboarding/funnel",
+  "POST /api/operator/plan",
   "POST /api/ops/estop/engage",
   "POST /api/ops/estop/resume",
   "POST /api/oracle/conflicts/resolve",

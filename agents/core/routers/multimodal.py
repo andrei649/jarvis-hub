@@ -139,6 +139,38 @@ async def execute_desktop_steps(orch, steps, *, approver=None, authorizer=None):
         await runtime.close()
 
 
+class OperatorPlanBody(BaseModel):
+    goal: str = Field(..., max_length=4000)
+    params: dict = Field(default_factory=dict, json_schema_extra={"maxProperties": 32})
+    allow_visual_fallback: bool = False
+
+
+@router.post("/api/operator/plan", dependencies=[Depends(user_guard)])
+async def operator_plan(body: OperatorPlanBody):
+    """H28.2 / DRA-22 / DRA-42 — pick API → CLI → structured UI for a goal.
+
+    Selection only: the router returns an implementation id and never executes it,
+    so the Action Kernel and approval boundaries of the chosen surface stay the
+    only way anything runs. Read-only, but user-guarded because the `considered`
+    list discloses which operator surfaces this install has enabled.
+    """
+    from agents.core.operator_router import plan_payload
+
+    orch = get_orch()
+    if not orch:
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    try:
+        payload = plan_payload(
+            body.goal,
+            orch=orch,
+            params=body.params,
+            allow_visual_fallback=body.allow_visual_fallback,
+        )
+    except ValueError as exc:
+        return nocache_json({"ok": False, "reason": str(exc)}, status_code=400)
+    return nocache_json(payload)
+
+
 @router.post("/api/desktop/preview", dependencies=[Depends(user_guard)])
 async def desktop_preview(body: DesktopStepsBody):
     """H15.3 — dry-run a desktop step plan (which steps need approval)."""

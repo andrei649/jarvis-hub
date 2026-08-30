@@ -343,6 +343,7 @@
   "POST /api/oauth/callback": "oauth_callback_api_oauth_callback_post",
   "POST /api/oauth/refresh": "oauth_refresh_api_oauth_refresh_post",
   "POST /api/onboarding/funnel": "onboarding_funnel_api_onboarding_funnel_post",
+  "POST /api/operator/plan": "operator_plan_api_operator_plan_post",
   "POST /api/ops/estop/engage": "estop_engage_api_ops_estop_engage_post",
   "POST /api/ops/estop/resume": "estop_resume_api_ops_estop_resume_post",
   "POST /api/oracle/conflicts/resolve": "oracle_resolve_conflicts_api_oracle_conflicts_resolve_post",

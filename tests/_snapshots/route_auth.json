@@ -347,6 +347,7 @@
   "POST /api/oauth/callback": "open",
   "POST /api/oauth/refresh": "admin",
   "POST /api/onboarding/funnel": "user",
+  "POST /api/operator/plan": "user",
   "POST /api/ops/estop/engage": "admin",
   "POST /api/ops/estop/resume": "admin",
   "POST /api/oracle/conflicts/resolve": "admin",
