@@ -740,7 +740,12 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   bookkeeping: tick the SEC-B5 checkbox at BACKLOG.md:763-764 with a FIXED in #941 recount. *(evidence:
   `agents/core/orchestrator.py:1799-1801, agents/core/orchestrator.py,
   agents/core/security/rag_guard.py:59`)*
-  **Shipped 6e24ad8** — `security/recall_taint.py` raises the turn's action origin so a tainted-recall turn's actions escalate GRANT->QUEUE; both the block-shaped and dict-shaped recall paths wired.
+  **Shipped 6e24ad8** — `security/recall_taint.py` raises the turn's action origin so a tainted-recall
+  turn's actions escalate GRANT->QUEUE; both the block-shaped and dict-shaped recall paths wired.
+  **Residual (recorded, not closed):** only the chat/tool path is turn-scoped by design. The HTTP
+  recall route (`routers/memory_kg.py` -> `MemorySearchTool`) has no turn; the mark is bounded there
+  by asyncio's per-task context copy, which is real isolation but incidental rather than arranged.
+  Binding and resetting explicitly around that search is the remaining hardening.
 - [x] ✅ **DRA-03 — ADMIN PLUGIN REGISTRY still renders the 8-row demo corpus in live mode — no honest empty
   state, and the honesty test enshrines the gap.** The kill of "Fix the seeded ADMIN/OBSERVE demo corpora"
   claims the ADMIN corpus was made honest, but it covered only models/keys/backups/channels/system.

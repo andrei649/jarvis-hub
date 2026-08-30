@@ -14,9 +14,28 @@ fact that **this turn read untrusted memory**. The vehicle is the existing per-t
 QUEUE. So a recall-tainted turn's actions land in the approval inbox instead of
 auto-executing — fail safe, never a DENY, never a weakened gate.
 
-Turn-scoped by construction: the mark is set *without* keeping a reset token, so the
-turn's own ``reset_action_origin`` (bound in ``Orchestrator.handle_input``) restores
-the pre-turn value. The mark can never outlive the turn that raised it.
+Scoping — stated precisely, because two different mechanisms are doing the work and
+only one of them is a turn:
+
+* **Chat/tool turns** (``Orchestrator.handle_input``, orchestrator.py:1167 and :1324)
+  bind a turn origin and reset it in a ``finally``. The mark is set *without* keeping
+  its own reset token, so that reset restores the pre-turn value. Here the mark is
+  genuinely turn-scoped.
+* **The HTTP recall route** (``routers/memory_kg.py`` builds a ``MemorySearchTool``)
+  has no turn at all. What bounds the mark there is asyncio's per-task context copy:
+  the handler runs in its own Task, so a ``ContextVar`` set inside it never propagates
+  back to the parent context and dies with the request.
+
+The second is real isolation but it is incidental, not designed — it holds because of
+how Tasks copy context, not because anything in this module arranges it. A synchronous
+caller reaching the marking path outside a Task would leak the mark for the life of its
+context. No production caller does that today (the only two are listed above), and the
+autouse fixture in ``tests/conftest.py`` restores the binding around every test so a
+pytest worker running many files in one context cannot carry a mark across a file.
+
+Residual, recorded rather than papered over: making the second path scope the mark
+explicitly — binding and resetting around the search instead of relying on Task
+isolation — is the remaining hardening. It is not done here.
 """
 
 from __future__ import annotations
