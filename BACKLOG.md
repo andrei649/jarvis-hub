@@ -835,12 +835,25 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   names it as the explicit next step.** BACKLOG.md:973 records the stock-quotes feed as shipped and then
   names the un-done follow-on in the same sentence: '`market` router can consume it next. *(evidence:
   `BACKLOG.md:973, agents/core/routers/market.py:8-12, market.py:40`)*
-- [ ] 🟡 **DRA-22 — H28.2 ActionHierarchyRouter is dead code — a ✅-marked capability with zero production
+- [x] ✅ **DRA-22 — H28.2 ActionHierarchyRouter is dead code — a ✅-marked capability with zero production
   callers and zero registered implementations.**
   docs/research/2026-07-18-live-vs-plumbing-capability-audit.md:56 lists the 'Operator "pillar" router' as
   PLUMBING and specifically as **dead code**: "selects but never executes; never imported; zero
   implementations (operator_router. *(evidence: `agents/core/operator_router.py:69,
   tests/test_h28_action_hierarchy_router.py:5-7, BACKLOG.md:1745`)*
+  **Shipped c4ea556** — **same defect as DRA-42 under a second ID** (that row points at `:1-5`, the
+  docstring of this same file, and cites the same audit line); one PR closed both. `build_operator_router()`
+  binds the router to the live capability registry and registers the surfaces this repo really ships, each
+  against a capability id that exists — `action:tool.rpc` (API), `tool:terminal_run` (CLI),
+  `tool:desktop_run` (structured UI) — with availability bound to each surface's real runtime gate, so a
+  default install honestly reports terminal/desktop unavailable. Two callers per the owner's call: the
+  user-guarded `POST /api/operator/plan` and the ungated `operator_plan` ToolRPC tool (it selects, never
+  executes). **Residual (recorded, not closed):** `OperatorRoute.VISUAL` is deliberately unregistered —
+  no governed visual capability exists (`NullBrowserDriver`, same audit line 55), and registering one
+  against an invented id would report `capability_missing` forever, which is the defect rather than a fix.
+  `allow_visual_fallback` stays meaningful for when a real driver lands. The HTTP route is on the
+  DRA-15/DRA-36 `UNCALLED_BACKLOG` punch list: the agent reaches the router through the tool, so the route
+  has no client caller and the HUD control is the open half.
 - [ ] 🟡 **DRA-23 — The egress ledger that the HUD and support bundle present as local-first proof is blind
   to every LLM backend — model traffic never reaches it.**
   docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis. *(evidence: `agents/core/http_client.py:151,
@@ -944,12 +957,18 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   no proposal reaches the decision inbox.** BACKLOG.md:2831 marks H20.4 ✅ 'Self-evolution (DSPy/GEPA) …
   gated prin decision inbox (reversibil)'. agents/core/self_evolution. *(evidence:
   `agents/core/self_evolution.py:18, BACKLOG.md:2831`)*
-- [ ] 🟡 **DRA-42 — operator_router.py is dead code — the risk-ordered operator implementation selector is
+- [x] ✅ **DRA-42 — operator_router.py is dead code — the risk-ordered operator implementation selector is
   never wired, and a prior audit already flagged it.** agents/core/operator_router.py (259 lines) implements
   the Nerva computer-operator's risk-ordered implementation selection ('deliberately selects but never
   executes. *(evidence: `agents/core/operator_router.py:1-5,
   docs/research/2026-07-18-live-vs-plumbing-capability-audit.md:56,
   agents/core/routers/multimodal.py:110-183`)*
+  **Shipped c4ea556 — duplicate of DRA-22**, not a second piece of work. The two rows were raised by
+  different lanes against the same module (DRA-22 cites `:69`, the `ActionHierarchyRouter` class; this one
+  cites `:1-5`, that class's own file docstring) and quote the same audit line, whose remedy — "wire into
+  app + register actuators" — is a single action. Closed by the one PR; the delivery detail and the
+  deliberate visual-route residual are written up in the DRA-22 row above. **Recorded so the audit's own
+  count stays honest: 53 findings contained 52 distinct defects.**
 - [ ] 🟡 **DRA-43 — desktop_control.py is entirely uncalled — T-0.25's OS-action and recording vocabulary is
   unreachable while BACKLOG declares the tail closed.** agents/core/desktop_control.py:143 `DesktopControl`
   plus `plan_launch`/`plan_os_action`/`plan_recording`/`allowlist` have zero production importers. The live
