@@ -156,7 +156,7 @@ Your data is never touched unless you also pass `--purge-data`.
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **6,925** · frontend **627** · mobile **103** · **425** routes · **18** active agents · open release gates: **A1, A3, A5, A6, A9** · source commit `bcde6b9a8827`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **6,925** · frontend **627** · mobile **103** · **425** routes · **18** active agents · open release gates: **A1, A3, A5, A6, A9** · source commit `eccc115f29f3`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for WorldView geoint, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
