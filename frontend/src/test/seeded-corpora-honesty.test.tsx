@@ -17,6 +17,12 @@
  *   ADMIN.backups      — "02:30 today · verified" — no endpoint exists at all
  *   ADMIN.channels     — five "active" channels — no endpoint exists
  *   ADMIN.system       — "jarvis-prime · RTX 4090 · up 18d" — never fetched
+ *   ADMIN.plugins      — eight fabricated rows (Gmail API … Cloud LLM Fallback)
+ *                        rendered as the real registry, under a fabricated
+ *                        "8/8 enabled" header with no empty state
+ *   OBSERVE quality/bench/resilience — the scalar panels were left at the seed,
+ *                        so a 503 from /bench/stats kept the 4.2s p50 while
+ *                        /api/quality (200) stamped the LIVE badge
  *
  * Rule under test: every number comes from the backend or renders as an
  * honest empty state. Demo mode keeps its labelled fiction corpus untouched.
@@ -28,6 +34,7 @@ import { V2 } from '../data';
 import {
   hydrateAdminKeys,
   hydrateByAgent,
+  hydrateObserve,
   honestAdminSeed,
   honestObserveSeed,
   observeEvidence,
@@ -98,24 +105,39 @@ describe('hydrateByAgent reads /api/admin/agents/stats, not the seed', () => {
 });
 
 describe('honest seeds strip the fiction but keep the shape', () => {
-  it('admin: models/keys/backups/channels empty, system null', () => {
+  it('admin: models/plugins/keys/backups/channels empty, system null', () => {
     const A = honestAdminSeed();
     expect(A.models).toEqual([]);
     expect(A.keys).toEqual([]);
     expect(A.backups).toEqual([]);
     expect(A.channels).toEqual([]);
     expect(A.system).toBeNull();
-    // plugins keep their place in the shape; the registry hydrates separately
-    expect(Array.isArray(A.plugins)).toBe(true);
+    // GET /plugins answers {"plugins": [], "total": 0} with no orchestrator, so
+    // the registry never overwrites the seed — it has to start empty.
+    expect(A.plugins).toEqual([]);
   });
 
-  it('observe: traces/arena/by_agent empty, scalar panels left to hydrateObserve', () => {
+  it('observe: traces/arena/by_agent empty, scalar panels null', () => {
     const O = honestObserveSeed();
     expect(O.traces).toEqual([]);
     expect(O.arena).toEqual([]);
     expect(O.by_agent).toEqual([]);
-    expect(O.quality).toBeDefined();
-    expect(O.resilience).toBeDefined();
+    // toEqual on the whole object also pins that the objects stay objects —
+    // ObserveMode reads O.quality.success_rate / O.bench.p50 unguarded.
+    expect(O.bench).toEqual({ p50: null, p95: null, p99: null });
+    expect(O.quality).toEqual({ success_rate: null, interactions: null, escalations: null });
+    expect(O.resilience).toEqual({ uptime: null, ssrf_blocked: null, errors_24h: null, redactions: null });
+  });
+});
+
+describe('a silent observe endpoint nulls its own block, even over the demo seed', () => {
+  it('a 503 on /bench/stats nulls the block instead of keeping the seed 4.2', () => {
+    // The reachable case: no orchestrator → /bench/stats 503s (null here) while
+    // /api/quality answers 200, which is enough to stamp the panel LIVE.
+    const O = hydrateObserve(null, { stats: {}, alert: { alerting: false } }, null, V2.OBSERVE);
+    expect(O.bench).toEqual({ p50: null, p95: null, p99: null });
+    expect(O.bench.p50).not.toBe(4.2);
+    expect(O.resilience.uptime).toBeNull();
   });
 });
 
@@ -154,7 +176,9 @@ import { ObserveMode } from '../modes2';
 import { AdminMode } from '../modes3';
 
 const SEED_FICTION_OBSERVE = ['tr-8f3a', 'gemma-4-26b', 'athena'];
-const SEED_FICTION_ADMIN = ['sk-ant', 'jarvis-prime', '02:30 today', 'WhatsApp (bridge)'];
+const SEED_FICTION_ADMIN = ['sk-ant', 'jarvis-prime', '02:30 today', 'WhatsApp (bridge)',
+  'Gmail API', 'Google Calendar', 'Telegram Bot', 'Spotify', 'WhatsApp Bridge',
+  'Apple Health', 'Homebridge', 'Cloud LLM Fallback'];
 
 describe('ObserveMode over the honest corpus shows no seed fiction', () => {
   let saved;
@@ -170,6 +194,13 @@ describe('ObserveMode over the honest corpus shows no seed fiction', () => {
       expect(screen.queryByText(new RegExp(fiction))).toBeNull();
     }
     expect(screen.getAllByText(/not connected/i).length).toBeGreaterThanOrEqual(3);
+    // The literal outputs of _pct(0.91) / _obs(847) / _obs(4.2,'s') / _obs('99.97%') —
+    // exact strings, not regexes, because `.` would match any character.
+    expect(screen.queryByText('4.2s')).toBeNull();
+    expect(screen.queryByText('91%')).toBeNull();
+    expect(screen.queryByText('847')).toBeNull();
+    expect(screen.queryByText('99.97%')).toBeNull();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(4);
     await act(async () => { await Promise.resolve(); }); // let getNorthStar settle
   });
 });
@@ -188,6 +219,13 @@ describe('AdminMode over the honest corpus shows no seed fiction', () => {
       expect(screen.queryByText(new RegExp(fiction))).toBeNull();
     }
     expect(screen.getAllByText(/not connected/i).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('renders an honest empty plugin registry, not a fabricated 8/8 count', () => {
+    render(<AdminMode t={{ admin: 'Admin' }} />);
+    expect(screen.getByText('PLUGIN REGISTRY')).toBeTruthy();   // exact: no count suffix
+    expect(screen.queryByText(/\d+\/\d+ enabled/)).toBeNull();
+    expect(screen.getByText(/not connected · no plugin registry/i)).toBeTruthy();
   });
 
   it('hydrated keys render the server mask, never the seed mask', () => {

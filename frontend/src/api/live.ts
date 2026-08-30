@@ -129,36 +129,34 @@ function workflowToCanvas(workflow: any) {
  */
 export function hydrateObserve(bench: any, quality: any, resil: any, seed: any) {
   const O: any = { ...seed };
-  if (bench) {
-    O.bench = {
-      p50: bench.latency?.p50 ?? bench.p50 ?? null,
-      p95: bench.latency?.p95 ?? bench.p95 ?? null,
-      p99: bench.latency?.p99 ?? bench.p99 ?? null,
-    };
-  }
-  if (quality) {
-    // The real nesting. `avg_score` is the rolling quality average and `n` the
-    // sample count; escalations are not tracked by this endpoint at all.
-    const qs = quality.stats ?? quality;
-    O.quality = {
-      success_rate: qs.avg_score ?? qs.success_rate ?? qs.rolling_avg ?? null,
-      interactions: qs.n ?? qs.interactions ?? qs.count ?? null,
-      escalations: qs.escalations ?? null,
-    };
-  }
-  if (resil) {
-    // Derive what the payload really carries: per-agent success/failure counts
-    // under `metrics`. Uptime and redactions are not emitted by any endpoint, so
-    // they stay null rather than borrowing the seed's 99.97%.
-    const m = resil.metrics && typeof resil.metrics === 'object' ? Object.values(resil.metrics) as any[] : [];
-    const failures = m.reduce((n: number, st: any) => n + (Number(st?.failure) || 0), 0);
-    O.resilience = {
-      uptime: resil.uptime ?? null,
-      ssrf_blocked: resil.ssrf_blocked ?? null,
-      errors_24h: resil.errors_24h ?? (m.length ? failures : null),
-      redactions: resil.redactions ?? null,
-    };
-  }
+  // No `if (payload)` guard on any of the three blocks: a failed fetch arrives
+  // here as null (`.catch(() => null)`), and skipping the block would leave that
+  // panel at whatever the seed carried while a sibling endpoint that DID answer
+  // stamps the LIVE badge. A null payload nulls its own block instead.
+  O.bench = {
+    p50: bench?.latency?.p50 ?? bench?.p50 ?? null,
+    p95: bench?.latency?.p95 ?? bench?.p95 ?? null,
+    p99: bench?.latency?.p99 ?? bench?.p99 ?? null,
+  };
+  // The real nesting. `avg_score` is the rolling quality average and `n` the
+  // sample count; escalations are not tracked by this endpoint at all.
+  const qs = quality?.stats ?? quality;
+  O.quality = {
+    success_rate: qs?.avg_score ?? qs?.success_rate ?? qs?.rolling_avg ?? null,
+    interactions: qs?.n ?? qs?.interactions ?? qs?.count ?? null,
+    escalations: qs?.escalations ?? null,
+  };
+  // Derive what the payload really carries: per-agent success/failure counts
+  // under `metrics`. Uptime and redactions are not emitted by any endpoint, so
+  // they stay null rather than borrowing the seed's 99.97%.
+  const m = resil?.metrics && typeof resil.metrics === 'object' ? Object.values(resil.metrics) as any[] : [];
+  const failures = m.reduce((n: number, st: any) => n + (Number(st?.failure) || 0), 0);
+  O.resilience = {
+    uptime: resil?.uptime ?? null,
+    ssrf_blocked: resil?.ssrf_blocked ?? null,
+    errors_24h: resil?.errors_24h ?? (m.length ? failures : null),
+    redactions: resil?.redactions ?? null,
+  };
   return O;
 }
 
@@ -195,10 +193,19 @@ export function hydrateByAgent(stats: any) {
  * cycle can complete (same rule as ADMIN models), so nothing renders unless THIS
  * cycle's backend actually said it. Demo mode re-imports these seeds fresh. */
 export function honestAdminSeed() {
-  return { ...V2.ADMIN, models: [], keys: [], backups: [], channels: [], system: null };
+  return { ...V2.ADMIN, models: [], plugins: [], keys: [], backups: [], channels: [], system: null };
 }
 export function honestObserveSeed() {
-  return { ...V2.OBSERVE, by_agent: [], arena: [], traces: [] };
+  // /bench/stats 503s without an orchestrator while /api/quality still answers
+  // 200, so the panel is badged live: the scalars must start null too, or the
+  // seed's 4.2s p50 renders as fact. Objects stay — ObserveMode reads the fields.
+  return {
+    ...V2.OBSERVE,
+    by_agent: [], arena: [], traces: [],
+    quality: { success_rate: null, interactions: null, escalations: null },
+    bench: { p50: null, p95: null, p99: null },
+    resilience: { uptime: null, ssrf_blocked: null, errors_24h: null, redactions: null },
+  };
 }
 
 /* The OBSERVE live badge means "Jarvis observability data arrived this cycle".
@@ -341,9 +348,9 @@ export function useLiveModes(): LiveModes {
       changed = false;
       // Model residency is current-cycle evidence. Clear seed/stale rows and
       // their proof before any request from this cycle can complete. Same rule
-      // for the rest of the ADMIN corpus: keys/backups/channels/system have no
-      // other honest source, so they start empty and stay empty unless this
-      // cycle's backend supplies them.
+      // for the rest of the ADMIN corpus: plugins/keys/backups/channels/system
+      // have no other honest source, so they start empty and stay empty unless
+      // this cycle's backend supplies them.
       set('ADMIN', honestAdminSeed());
       clearMark('ADMIN_MODELS');
       if (alive) setVer((v) => v + 1);

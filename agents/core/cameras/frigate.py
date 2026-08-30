@@ -224,14 +224,17 @@ class _FrigateHTTP:
         if halted:
             raise CameraSourceError("source_halted")
 
-    def _resolve_pinned(self) -> tuple[str, str, str, int]:
+    async def _resolve_pinned(self) -> tuple[str, str, str, int]:
         parsed = urlsplit(self.config.origin)
         host = parsed.hostname or ""
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         if host in _BLOCKED_HOSTS:
             raise CameraSourceError("lan_origin_required")
         try:
-            addresses = tuple(dict.fromkeys(str(value) for value in self._resolver(host, port)))
+            # The default resolver is socket.getaddrinfo; inline it put a blocking
+            # DNS lookup on the loop for every request attempt. Offload it.
+            resolved = await asyncio.to_thread(self._resolver, host, port)
+            addresses = tuple(dict.fromkeys(str(value) for value in resolved))
         except Exception as exc:
             raise CameraSourceError("source_offline") from exc
         if not addresses or any(not _is_allowed_lan_ip(value) for value in addresses):
@@ -271,7 +274,7 @@ class _FrigateHTTP:
         for attempt in range(self._max_attempts):
             self._preflight()
             try:
-                scheme, host, pinned, port = self._resolve_pinned()
+                scheme, host, pinned, port = await self._resolve_pinned()
             except CameraSourceError as exc:
                 if str(exc) == "source_offline" and attempt + 1 < self._max_attempts:
                     await self._pause(0.1 * (2**attempt))
