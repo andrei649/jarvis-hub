@@ -257,3 +257,128 @@ class ActionHierarchyRouter:
             self.audit_log.append(event)
             if len(self.audit_log) > self._audit_limit:
                 del self.audit_log[:-self._audit_limit]
+
+
+# ── production wiring (DRA-22 / DRA-42) ───────────────────────────────────────
+#
+# H28.2 shipped the selector above and BACKLOG marked it ✅, but nothing ever
+# constructed it and nothing was ever registered, so the API → CLI → UI → visual
+# hierarchy was unreachable. Everything below is that missing half: the real
+# capability ids, the real runtime gates, and one factory both the HTTP route and
+# the ToolRPC tool build from, so the two surfaces can never disagree.
+#
+# Every `capability_id` here MUST exist in the live capability registry —
+# `tests/test_h28_action_hierarchy_router.py` asserts exactly that. Registering a
+# plausible-looking id that nothing publishes would make the router report
+# `capability_missing` forever: dead code wearing a wired router's clothes, which
+# is the defect this closes, not a fix for it.
+
+
+def _params_allow(route: OperatorRoute, params: dict) -> bool:
+    """Honour an explicit caller route constraint; otherwise every route matches.
+
+    The goal string is deliberately NOT pattern-matched. H28.2's claim is
+    readiness-gated *ordering*, and inventing goal→surface NLP here would be a
+    capability the row never promised and nothing measures.
+    """
+    allowed = params.get("routes")
+    if allowed is None:
+        return True
+    if isinstance(allowed, str):
+        allowed = [allowed]
+    if not isinstance(allowed, (list, tuple, set, frozenset)):
+        return False
+    return route.value in {str(item).strip().lower() for item in allowed}
+
+
+def _tool_rpc_available(orch) -> bool:
+    server = getattr(orch, "tool_rpc", None)
+    return callable(getattr(server, "handle", None))
+
+
+def _terminal_available() -> bool:
+    from agents.core.env_config import env_flag
+
+    return env_flag("JARVIS_TERMINAL_TARGETS")
+
+
+def _desktop_available() -> bool:
+    # Mirrors routers.multimodal.desktop_host_enabled(). Duplicated rather than
+    # imported to keep core/ from importing routers/; a test pins the two equal
+    # so the copy cannot drift.
+    from agents.core.env_config import env_flag
+
+    return env_flag("JARVIS_DESKTOP_HOST") and env_flag("JARVIS_DESKTOP_ISOLATED")
+
+
+def default_implementations(orch=None) -> list[OperatorImplementation]:
+    """The governed operator surfaces this repository actually ships.
+
+    ``availability`` is bound to each surface's REAL runtime gate, so a default
+    install (every flag off) honestly reports the terminal and desktop routes as
+    unavailable instead of advertising an operator it cannot run.
+
+    ``OperatorRoute.VISUAL`` is deliberately absent: no governed visual surface is
+    registered in the capability registry — the browser driver is still
+    `NullBrowserDriver` (docs/research/2026-07-18-live-vs-plumbing-capability-audit.md:55).
+    Registering a visual entry against an invented id would be fiction; leaving it
+    out keeps `allow_visual_fallback` meaningful for when a real driver lands.
+    """
+    return [
+        OperatorImplementation(
+            id="tool_rpc",
+            route=OperatorRoute.API,
+            capability_id="action:tool.rpc",
+            matcher=lambda _goal, params: _params_allow(OperatorRoute.API, params),
+            availability=lambda: _tool_rpc_available(orch),
+            priority=10,
+        ),
+        OperatorImplementation(
+            id="terminal_run",
+            route=OperatorRoute.CLI,
+            capability_id="tool:terminal_run",
+            matcher=lambda _goal, params: _params_allow(OperatorRoute.CLI, params),
+            availability=_terminal_available,
+            priority=10,
+        ),
+        OperatorImplementation(
+            id="desktop_run",
+            route=OperatorRoute.STRUCTURED_UI,
+            capability_id="tool:desktop_run",
+            matcher=lambda _goal, params: _params_allow(OperatorRoute.STRUCTURED_UI, params),
+            availability=_desktop_available,
+            priority=10,
+        ),
+    ]
+
+
+def build_operator_router(orch=None, *, audit_sink=None) -> ActionHierarchyRouter:
+    """Construct the router bound to the live capability registry."""
+    from agents.core.observability.capability_registry import build_records
+
+    instance = ActionHierarchyRouter(lambda: build_records(orch), audit_sink=audit_sink)
+    for implementation in default_implementations(orch):
+        instance.register(implementation)
+    return instance
+
+
+def plan_payload(
+    goal: str,
+    *,
+    orch=None,
+    params: dict | None = None,
+    allow_visual_fallback: bool = False,
+) -> dict:
+    """Shared JSON-safe decision used by both the HTTP route and the ToolRPC tool."""
+    decision = build_operator_router(orch).plan(
+        goal, params=params, allow_visual_fallback=allow_visual_fallback
+    )
+    return {
+        "ok": decision.selected_id is not None,
+        "selected_id": decision.selected_id,
+        "route": decision.route.value if decision.route else None,
+        "capability_id": decision.capability_id,
+        "risk": decision.risk,
+        "reason": decision.reason,
+        "considered": decision.considered,
+    }

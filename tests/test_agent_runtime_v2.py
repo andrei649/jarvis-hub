@@ -1809,6 +1809,26 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
             "capability_id": "tool:echo",
         },
         {
+            "name": "operator_plan",
+            "gated": False,
+            "description": "Select the governed operator surface for a goal; never executes it.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "maxLength": 4000},
+                    "params": {
+                        "type": "object",
+                        "maxProperties": 32,
+                        "additionalProperties": True,
+                    },
+                    "allow_visual_fallback": {"type": "boolean"},
+                },
+                "required": ["goal"],
+                "additionalProperties": False,
+            },
+            "capability_id": "tool:operator_plan",
+        },
+        {
             "name": "terminal_run",
             "gated": True,
             "description": "Run one bounded shell command on a named governed target.",

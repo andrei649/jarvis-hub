@@ -192,3 +192,199 @@ def test_external_audit_failure_does_not_erase_internal_trace():
 
     assert decision.selected_id == "api"
     assert router.audit_log[-1]["external_audit"] == "failed"
+
+
+# ── DRA-22 / DRA-42: the selector must actually be wired ───────────────────────
+#
+# H28.2 was ✅ with the selector built but never constructed and nothing
+# registered. These pin the production half: real capability ids, real runtime
+# gates, and one factory behind both surfaces.
+
+from agents.core.operator_router import (  # noqa: E402
+    build_operator_router,
+    default_implementations,
+    plan_payload,
+)
+
+
+class _FakeToolRPC:
+    """Mirrors the ToolRPC surface the capability registry actually reads.
+
+    `_tool_records` derives `tool:*` capabilities from `server.tools()`, so a
+    double that only implements `handle` would leave the CLI/UI legs reporting
+    `capability_missing` — the registry, not the runtime gate, would be doing the
+    rejecting, and the availability wiring would go untested.
+    """
+
+    def __init__(self, tools=("desktop_run", "terminal_run")):
+        self._tools = tuple(tools)
+
+    def tools(self):
+        return [
+            {"name": name, "capability_id": f"tool:{name}", "gated": True}
+            for name in self._tools
+        ]
+
+    async def handle(self, _payload, actor="jarvis"):
+        return {"ok": True}
+
+
+def test_every_registered_capability_id_exists_in_the_live_registry():
+    """A plausible-but-unpublished id would report capability_missing forever."""
+    from agents.core.observability.capability_registry import build_records
+
+    known = {record.id for record in build_records(None)}
+    declared = {impl.capability_id for impl in default_implementations(None)}
+    # tool:* ids come from ToolRPC registration, which needs a live orchestrator.
+    action_ids = {cap for cap in declared if cap.startswith("action:")}
+
+    assert action_ids, "expected at least one action-backed operator surface"
+    missing = action_ids - known
+    assert not missing, f"registered against capability ids nothing publishes: {missing}"
+
+
+def test_tool_backed_ids_match_the_real_toolrpc_registrations():
+    """The tool:* legs must name tools autonomy_coordinator actually registers."""
+    source = (
+        __import__("pathlib").Path(__file__).resolve().parent.parent
+        / "agents" / "core" / "autonomy_coordinator.py"
+    ).read_text(encoding="utf-8")
+    declared = {impl.capability_id for impl in default_implementations(None)}
+    for capability_id in {cap for cap in declared if cap.startswith("tool:")}:
+        assert f'capability_id="{capability_id}"' in source, (
+            f"{capability_id} is not registered by autonomy_coordinator"
+        )
+
+
+def test_no_visual_implementation_is_faked():
+    """No governed visual surface exists yet; claiming one would be fiction."""
+    routes = {impl.route for impl in default_implementations(None)}
+    assert OperatorRoute.VISUAL not in routes
+    assert OperatorRoute.API in routes
+
+
+def test_default_install_reports_gated_surfaces_unavailable(monkeypatch):
+    monkeypatch.delenv("JARVIS_TERMINAL_TARGETS", raising=False)
+    monkeypatch.delenv("JARVIS_DESKTOP_HOST", raising=False)
+    monkeypatch.delenv("JARVIS_DESKTOP_ISOLATED", raising=False)
+
+    payload = plan_payload("open the dashboard", orch=SimpleNamespace(tool_rpc=_FakeToolRPC()))
+
+    assert payload["selected_id"] == "tool_rpc"
+    assert payload["route"] == "api"
+    assert payload["capability_id"] == "action:tool.rpc"
+    reasons = {item["id"]: item["reason"] for item in payload["considered"]}
+    assert reasons["terminal_run"] == "unavailable"
+    assert reasons["desktop_run"] == "unavailable"
+
+
+def test_without_tool_rpc_the_answer_is_an_honest_no_route(monkeypatch):
+    monkeypatch.delenv("JARVIS_TERMINAL_TARGETS", raising=False)
+    monkeypatch.delenv("JARVIS_DESKTOP_HOST", raising=False)
+    monkeypatch.delenv("JARVIS_DESKTOP_ISOLATED", raising=False)
+
+    payload = plan_payload("open the dashboard", orch=SimpleNamespace())
+
+    assert payload["ok"] is False
+    assert payload["selected_id"] is None
+    assert payload["reason"] == "no_eligible_implementation"
+
+
+def test_terminal_becomes_eligible_only_behind_its_real_flag(monkeypatch):
+    monkeypatch.setenv("JARVIS_TERMINAL_TARGETS", "1")
+    impls = {impl.id: impl for impl in default_implementations(None)}
+    assert impls["terminal_run"].availability() is True
+
+    monkeypatch.setenv("JARVIS_TERMINAL_TARGETS", "0")
+    assert impls["terminal_run"].availability() is False
+
+
+def test_desktop_availability_tracks_desktop_host_enabled(monkeypatch):
+    """Guards the deliberate core/-side copy of the routers/ flag pair."""
+    from agents.core.routers.multimodal import desktop_host_enabled
+
+    impls = {impl.id: impl for impl in default_implementations(None)}
+    for host, isolated in (("0", "0"), ("1", "0"), ("0", "1"), ("1", "1")):
+        monkeypatch.setenv("JARVIS_DESKTOP_HOST", host)
+        monkeypatch.setenv("JARVIS_DESKTOP_ISOLATED", isolated)
+        assert impls["desktop_run"].availability() == desktop_host_enabled()
+
+
+def test_explicit_route_constraint_is_honoured(monkeypatch):
+    monkeypatch.delenv("JARVIS_TERMINAL_TARGETS", raising=False)
+    orch = SimpleNamespace(tool_rpc=_FakeToolRPC())
+
+    payload = plan_payload("run a command", orch=orch, params={"routes": ["cli"]})
+
+    reasons = {item["id"]: item["reason"] for item in payload["considered"]}
+    assert reasons["tool_rpc"] == "goal_not_matched"
+    assert payload["selected_id"] is None
+
+
+def test_factory_registers_against_the_live_registry():
+    instance = build_operator_router(SimpleNamespace(tool_rpc=_FakeToolRPC()))
+    decision = instance.plan("anything")
+    assert decision.selected_id == "tool_rpc"
+    assert instance.audit_log[-1]["selected_id"] == "tool_rpc"
+
+
+def test_operator_plan_tool_is_registered_on_the_real_toolrpc_surface():
+    """The agent-facing half of the wiring (the route is the client-facing half)."""
+    source = (
+        __import__("pathlib").Path(__file__).resolve().parent.parent
+        / "agents" / "core" / "autonomy_coordinator.py"
+    ).read_text(encoding="utf-8")
+    assert '"operator_plan"' in source
+    assert 'capability_id="tool:operator_plan"' in source
+    assert "from .operator_router import plan_payload" in source
+
+
+def test_operator_plan_route_returns_a_decision(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from agents import web
+    from agents.core.routers import multimodal
+
+    monkeypatch.delenv("JARVIS_TERMINAL_TARGETS", raising=False)
+    monkeypatch.setattr(
+        multimodal, "get_orch", lambda: SimpleNamespace(tool_rpc=_FakeToolRPC())
+    )
+
+    response = TestClient(web.app).post(
+        "/api/operator/plan", json={"goal": "open the dashboard"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["selected_id"] == "tool_rpc"
+    assert body["route"] == "api"
+    assert body["capability_id"] == "action:tool.rpc"
+
+
+def test_operator_plan_route_is_503_without_an_orchestrator(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from agents import web
+    from agents.core.routers import multimodal
+
+    monkeypatch.setattr(multimodal, "get_orch", lambda: None)
+
+    response = TestClient(web.app).post("/api/operator/plan", json={"goal": "anything"})
+
+    assert response.status_code == 503
+
+
+def test_operator_plan_route_rejects_an_empty_goal(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from agents import web
+    from agents.core.routers import multimodal
+
+    monkeypatch.setattr(
+        multimodal, "get_orch", lambda: SimpleNamespace(tool_rpc=_FakeToolRPC())
+    )
+
+    response = TestClient(web.app).post("/api/operator/plan", json={"goal": "   "})
+
+    assert response.status_code == 400
+    assert response.json()["ok"] is False

@@ -489,6 +489,45 @@ class AutonomyCoordinator:
             trusted_execution=True,
         )
 
+        async def _rpc_operator_plan(args):
+            """H28.2 / DRA-22 / DRA-42 — choose API → CLI → structured UI for a goal.
+
+            Ungated because it selects and never executes: the returned id still
+            has to be run through its own governed surface, which keeps the kernel
+            and approval boundaries intact.
+            """
+            from .operator_router import plan_payload
+
+            try:
+                return plan_payload(
+                    args["goal"],
+                    orch=self._orch,
+                    params=args.get("params") or {},
+                    allow_visual_fallback=bool(args.get("allow_visual_fallback")),
+                )
+            except ValueError as exc:
+                return {"ok": False, "reason": str(exc)}
+
+        server.register_tool(
+            "operator_plan",
+            _rpc_operator_plan,
+            description="Select the governed operator surface for a goal; never executes it.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "maxLength": 4000},
+                    "params": {
+                        "type": "object",
+                        "maxProperties": 32,
+                        "additionalProperties": True,
+                    },
+                    "allow_visual_fallback": {"type": "boolean"},
+                },
+                "required": ["goal"],
+                "additionalProperties": False,
+            },
+            capability_id="tool:operator_plan",
+        )
         server.register_tool(
             "echo",
             _rpc_echo,
