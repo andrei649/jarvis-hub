@@ -12,8 +12,9 @@ from __future__ import annotations
 
 from typing import Callable
 
-from ..security import quarantine
-from ..security.rag_guard import REDACTION
+from ..security import quarantine, taint
+from ..security.rag_guard import REDACTION, provenance_from_hit
+from ..security.recall_taint import mark_turn_recall_tainted
 
 # Function-calling schema exposed to the model (Anthropic/OpenAI-style).
 TOOL_SPEC = {
@@ -66,6 +67,25 @@ def _sanitize_hit(hit: dict) -> dict:
     return out
 
 
+def _hit_tainted(hit) -> bool:
+    """SEC-B5: does this hit carry recall taint — an upstream taint mark, an untrusted
+    source label, or the injection flag ``_sanitize_hit`` just set?
+
+    This path renders no fenced block, so it cannot read ``WrappedMemory.tainted``; this
+    is the same verdict computed on one un-fenced hit. The flat hits this tool receives
+    key their provenance as ``source``, while the fused-hit shape ``provenance_from_hit``
+    adapts uses ``sources`` — so both are consulted rather than one guessed.
+    """
+    if not isinstance(hit, dict):
+        return False
+    if hit.get("injection_flagged") or taint.is_tainted(hit):
+        return True
+    md = hit.get("metadata") or hit.get("properties") or {}
+    if taint.is_tainted(md):
+        return True
+    return taint.is_untrusted_source(hit.get("source") or provenance_from_hit(hit).source)
+
+
 class MemorySearchTool:
     """Wraps a recall function as the callable `search_memory` tool."""
 
@@ -93,6 +113,10 @@ class MemorySearchTool:
         hits = hits[:top_k]
         if self._scan:
             hits = [_sanitize_hit(h) for h in hits]
+        if any(_hit_tainted(h) for h in hits):
+            # SEC-B5: the model is about to read untrusted recalled memory — same
+            # turn-scoped escalation the prompt-string recall path raises.
+            mark_turn_recall_tainted()
         self.calls.append({"query": query, "count": len(hits)})
         return {"query": query, "hits": hits, "count": len(hits)}
 

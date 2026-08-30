@@ -1796,8 +1796,16 @@ class Orchestrator:
         # CDX-7: retrieved memory is an indirect-injection surface — fence it as scanned,
         # capped, provenance-tagged DATA (never a raw splice) via the rag_guard choke point.
         from .security.rag_guard import provenance_from_hit, wrap_memory
+        from .security.recall_taint import mark_turn_recall_tainted
         wrapped = wrap_memory([provenance_from_hit(h) for h in (hits or [])],
                               label="long-term memory (recall)")
+        if wrapped.tainted:
+            # SEC-B5: the prompt now carries untrusted recalled memory, so anything this
+            # turn emits is derived from it — raise the turn's action origin so the kernel
+            # queues it for approval instead of granting. Scoped to this turn by
+            # handle_input's own origin reset; propagation *through* the model stays out
+            # of reach (see security/recall_taint.py).
+            mark_turn_recall_tainted()
         return wrapped.block
 
     def _living_memory_rerank_hits(self, hits: list) -> list:
