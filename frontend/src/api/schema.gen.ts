@@ -6373,6 +6373,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/operator/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Operator Plan
+         * @description H28.2 / DRA-22 / DRA-42 — pick API → CLI → structured UI for a goal.
+         *
+         *     Selection only: the router returns an implementation id and never executes it,
+         *     so the Action Kernel and approval boundaries of the chosen surface stay the
+         *     only way anything runs. Read-only, but user-guarded because the `considered`
+         *     list discloses which operator surfaces this install has enabled.
+         */
+        post: operations["operator_plan_api_operator_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/desktop/preview": {
         parameters: {
             query?: never;
@@ -8480,6 +8505,20 @@ export interface components {
              * @default
              */
             state: string;
+        };
+        /** OperatorPlanBody */
+        OperatorPlanBody: {
+            /** Goal */
+            goal: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Allow Visual Fallback
+             * @default false
+             */
+            allow_visual_fallback: boolean;
         };
         /** PairingCodeBody */
         PairingCodeBody: {
@@ -18158,6 +18197,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["VLMDescribeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operator_plan_api_operator_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorPlanBody"];
             };
         };
         responses: {
