@@ -446,6 +446,12 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/signals/brief/{domain}",
     # HUD drives acquisition through revoke/rollback only; the drive step has no control.
     "/api/acquisition/{request_id}/drive",
+    # DRA-43 made T-0.25's desktop vocabulary reachable (these two routes + the
+    # `desktop_plan` ToolRPC tool). The T-0.25 row lists "a user-facing control
+    # surface + HUD parity tracking" as its own remaining work, so the HUD half is
+    # still open by that row's own account — punch list, not MACHINE_FACING.
+    "/api/desktop/allowlist",
+    "/api/desktop/plan",
     # DRA-22/DRA-42 wired the H28.2 router's two backend halves: this read-only route
     # and the `operator_plan` ToolRPC tool (which is what actually consumes the router
     # today — the agent, not our UI). The HUD control is the deliberately-open half, so

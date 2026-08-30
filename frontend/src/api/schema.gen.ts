@@ -6373,6 +6373,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/desktop/allowlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Desktop Allowlist
+         * @description T-0.25 / DRA-43 — what the desktop pack will and won't plan.
+         *
+         *     Pure and inspectable: the allowlist is a constant, so this needs no
+         *     orchestrator and does no desktop I/O. User-guarded because it advertises
+         *     which apps and OS controls this install is willing to drive.
+         */
+        get: operations["desktop_allowlist_api_desktop_allowlist_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Desktop Plan
+         * @description T-0.25 / DRA-43 — turn a high-level request into a governed desktop step.
+         *
+         *     Plans, never actions — the pack's own contract. An off-allowlist request
+         *     comes back `{"ok": false, "reason": ...}` with 200: a refusal is a real
+         *     answer from this surface, not a transport error.
+         *
+         *     A returned step is **not** directly postable to `/api/desktop/run`; see
+         *     `desktop_control.plan` for why, and the pinned gap in
+         *     `tests/test_desktop_control.py`.
+         */
+        post: operations["desktop_plan_api_desktop_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operator/plan": {
         parameters: {
             query?: never;
@@ -8204,6 +8256,28 @@ export interface components {
             name: string;
             /** Sources */
             sources?: string[];
+        };
+        /** DesktopPlanBody */
+        DesktopPlanBody: {
+            /** Kind */
+            kind: string;
+            /**
+             * App
+             * @default
+             */
+            app: string;
+            /**
+             * Action
+             * @default
+             */
+            action: string;
+            /**
+             * Op
+             * @default
+             */
+            op: string;
+            /** Value */
+            value?: unknown;
         };
         /** DesktopStepsBody */
         DesktopStepsBody: {
@@ -18197,6 +18271,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["VLMDescribeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    desktop_allowlist_api_desktop_allowlist_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    desktop_plan_api_desktop_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopPlanBody"];
             };
         };
         responses: {

@@ -489,6 +489,42 @@ class AutonomyCoordinator:
             trusted_execution=True,
         )
 
+        async def _rpc_desktop_plan(args):
+            """T-0.25 / DRA-43 — the row's own "model ToolRPC registration".
+
+            Ungated for the same reason as operator_plan: it plans and never
+            executes. Running a returned step still means desktop_run, which is
+            gated and approval-railed.
+            """
+            from .desktop_control import plan
+
+            return plan(
+                args.get("kind"),
+                app=args.get("app"),
+                action=args.get("action"),
+                op=args.get("op"),
+                value=args.get("value"),
+            )
+
+        server.register_tool(
+            "desktop_plan",
+            _rpc_desktop_plan,
+            description="Plan an allowlisted desktop launch/OS action/recording; never executes it.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "maxLength": 16},
+                    "app": {"type": "string", "maxLength": 64},
+                    "action": {"type": "string", "maxLength": 32},
+                    "op": {"type": "string", "maxLength": 16},
+                    "value": {},
+                },
+                "required": ["kind"],
+                "additionalProperties": False,
+            },
+            capability_id="tool:desktop_plan",
+        )
+
         async def _rpc_operator_plan(args):
             """H28.2 / DRA-22 / DRA-42 — choose API → CLI → structured UI for a goal.
 
