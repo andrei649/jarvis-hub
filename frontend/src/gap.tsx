@@ -72,7 +72,9 @@ const State = ({ e, loading, n }) => (loading ? <div style={{ color: 'var(--ink-
 const Row = ({ children }) => <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>{children}</div>;
 const Tag = ({ c, children }: { c?: any; children?: any }) => <span style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: c || 'var(--ink-3)' }}>{children}</span>;
 const Btn = ({ onClick, children }) => <button className="tool-btn" onClick={onClick} style={{ marginLeft: 'auto' }}>{children}</button>;
-const act = (p, body, then?) => apiPost(p, body).then(then || (() => {})).catch(() => {});
+const act = (p, body, then?, onErr?) => apiPost(p, body)
+  .then(then || (() => {}))
+  .catch((err) => { if (onErr) onErr(err); });
 // `onErr` is OPTIONAL but matters: without it a failed admin action is invisible. Engaging
 // the kill-switch is kernel-mediated and answers 403 "kernel denied" without a capability
 // token, so the 2026-07-27 QA run pressed HALT ALL, got no error, no state change and no
@@ -780,6 +782,47 @@ export function SelfImprovementPanel() {
   );
 }
 
+/* DRA-17 — CDX-8: the owner-approval gate for LLM-authored skill code was backend-only.
+   `GET /api/skills/pending` + `POST /api/skills/{name}/approve` (both admin) shipped with no
+   client caller at all, so the tail of the self-improvement loop terminated in a directory
+   nobody could see. A quarantined skill IS registered — visible and reviewable — but
+   `loader.py` never exec's its module in-process while `PENDING_REVIEW` exists, so nothing
+   here is running code; approving is what promotes it.
+
+   Approve-only, deliberately. There is no reject endpoint and this does not invent one:
+   quarantine is already the fail-closed state, so leaving a skill unapproved IS the reject.
+   Sits beside SELF-IMPROVEMENT rather than the marketplace panels — the marketplace has its
+   own `review_status` path for third-party skills, and merging the two surfaces would imply
+   they share a mechanism they do not. */
+export function PendingSkillsPanel() {
+  const { d, e, loading, reload } = useApi('/api/skills/pending', true, true);  // admin-guarded
+  const pending = arr(d, 'pending');
+  return (
+    <Card title="GENERATED SKILLS — PENDING REVIEW" live={asLive(d)} sub={pending.length} onReload={reload}>
+      <State e={e} loading={loading} n={pending.length} />
+      {pending.slice(0, 10).map((s, i) => (
+        <Row key={i}>
+          <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name}</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(s.description || '').slice(0, 40)}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c="var(--amber)">quarantined</Tag>
+            {arr(s, 'agents').length > 0 && <Tag c="var(--ink-3)">{arr(s, 'agents').length} agent(s)</Tag>}
+            <button
+              className="tool-btn"
+              title="approve — sign and activate this generated skill"
+              onClick={() => actA(`/api/skills/${encodeURIComponent(s.name)}/approve`, {}, reload)}
+            >✓</button>
+          </span>
+        </Row>
+      ))}
+      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+        LLM-authored code, never exec&apos;d in-process until approved — ✓ signs and activates it (CDX-8).
+        No reject action: leaving a skill here is the safe outcome.
+      </div>
+    </Card>
+  );
+}
+
 /* H34.4 — SwarmPanel: a compact read-only Console/Observe view over the H34.1
    swarm feed (`GET /api/swarm/summary`, open/user-tier), so the cabinet, the
    autonomy funnel and the *dev* swarm (Claude/Codex/opencode/Antigravity via
@@ -1153,16 +1196,40 @@ function EvalPanel() {
     </div>}
   </Card>;
 }
-function ReviewPanel() {
+export function ReviewPanel() {
   const { d, e, loading, reload } = useApi('/api/review/queue?status=pending');
   const q = arr(d, 'queue', 'items');
+  /* DRA-52 — `POST /api/review/{item_id}/dataset` (H9.3b) shipped with no caller anywhere, so
+     a reviewed turn could be voted on but never promoted into an eval dataset. */
+  const [note, setNote] = useState(null);   // {id, ok, text} — last promotion outcome
+  /* The refusal has to be shown, not swallowed. This route really does refuse: WFL-088 rejects
+     an item with no prompt rather than minting a case that replays empty and scores a fabricated
+     1.0. `apiPost` throws on a 4xx (failMutation is `: never`), so without the onErr arg `act`'s
+     own `.catch(() => {})` eats it and the button reads as success — precisely the swallowed
+     mutation this file warns about at the `act`/`actA` definitions. */
+  const promote = (id) => act(
+    `/api/review/${id}/dataset`, {},
+    (r) => { setNote({ id, ok: true, text: `→ ${r?.dataset || 'dataset'} v${r?.version ?? '?'}` }); reload(); },
+    (err) => setNote({ id, ok: false, text: `refused · ${err?.status || 'error'}` }),
+  );
   return <Card title="REVIEW QUEUE" live={asLive(d)} sub={q.length} onReload={reload}>
     <State e={e} loading={loading} n={q.length} />
-    {q.slice(0, 10).map((it, i) => <Row key={i}><span style={{ fontSize: 11 }}>{(it.text_preview || it.preview || it.text || '').slice(0, 38)}</span>
-      <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-        <button className="tool-btn" onClick={() => act(`/api/review/${it.id || it.trace_id}/vote`, { verdict: 'up' }, reload)}>👍</button>
-        <button className="tool-btn" onClick={() => act(`/api/review/${it.id || it.trace_id}/vote`, { verdict: 'down' }, reload)}>👎</button>
-      </span></Row>)}
+    {q.slice(0, 10).map((it, i) => {
+      const id = it.id || it.trace_id;
+      return <Row key={i}><span style={{ fontSize: 11 }}>{(it.text_preview || it.preview || it.text || '').slice(0, 38)}</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          {note && note.id === id && <span style={{ fontSize: 10, color: note.ok ? 'var(--green)' : 'var(--red)' }}>{note.text}</span>}
+          {it.in_dataset
+            ? <Tag c="var(--green)">in dataset</Tag>
+            : <button className="tool-btn" title="promote to eval dataset" onClick={() => promote(id)}>⇪</button>}
+          <button className="tool-btn" onClick={() => act(`/api/review/${id}/vote`, { verdict: 'up' }, reload)}>👍</button>
+          <button className="tool-btn" onClick={() => act(`/api/review/${id}/vote`, { verdict: 'down' }, reload)}>👎</button>
+        </span></Row>;
+    })}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+      ⇪ promotes a reviewed turn into the `review_flagged` eval dataset (H9.3b). An item with no
+      prompt is refused rather than replayed empty (WFL-088); a refusal shows on its own row.
+    </div>
   </Card>;
 }
 function APMPanel() {
@@ -3405,7 +3472,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, VaultPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
-  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, SwarmPanel, SystemMapPanel]],
+  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, SwarmPanel, SystemMapPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],

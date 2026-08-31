@@ -815,9 +815,29 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
 - [ ] 🔴 **DRA-16 — Issue #242 (CI/F-10): CodeQL is a permanently non-blocking gate behind a factually false
   "private personal repo" rationale — the repo is public.** Open issue #242 explicitly flags this
   (".github/workflows/codeql. *(evidence: `.github/workflows/codeql.yml:36-40, codeql.yml, release.yml`)*
-- [ ] 🔴 **DRA-17 — CDX-8 quarantined generated-skill review/approve has no client surface at all.** The
+- [x] ✅ **DRA-17 — CDX-8 quarantined generated-skill review/approve has no client surface at all.** The
   owner-approval gate for LLM-authored skill code is backend-only. `agents/core/skills/loader. *(evidence:
   `agents/core/routers/skills.py:310, agents/core/skills/loader.py:543, tests/test_hud_v2_parity.py:500`)*
+  **Shipped f0a843d** — `PendingSkillsPanel` in the Console (Observe), calling `GET /api/skills/pending`
+  and `POST /api/skills/{name}/approve` (both admin). Both routes leave `UNCALLED_BACKLOG`, so the punch
+  list shrinks by two. Placed beside SELF-IMPROVEMENT rather than the marketplace panels: the marketplace
+  has its own `review_status` path for third-party skills, and one surface for both would imply a shared
+  mechanism that does not exist. **Approve-only, deliberately** — there is no reject endpoint and none was
+  invented: `loader.py:543` keeps a `PENDING_REVIEW` skill registered but never exec's its module
+  in-process, so quarantine is already fail-closed and leaving a skill unapproved *is* the reject. The
+  panel says so rather than leaving the absence to be guessed at.
+  **A gap DRA-17 does not name — found by red-proofing it:** reverting the panel left the parity gate
+  GREEN, because the panel's own test file names the routes and `_CLIENT_GLOBS` matched
+  `frontend/src/**/*.tsx` including `src/test/`. A test could therefore satisfy "this route has a client
+  caller" with no shipping UI behind it — the same shape-not-substance trap the file already guards
+  against for `schema.gen.ts`. Fixed in the same PR because DRA-17's own closure is unfalsifiable
+  without it. Excluding test files revealed **two** routes that were being covered this way and were
+  genuinely undeclared: `/api/missions/{mission_id}/pause` and `/api/payments/{payment_id}/settle`. Both
+  have real computed-URL callers (`gap.tsx`, `api/actions.ts`) whose sibling actions were already listed,
+  so both were added to `COMPUTED_URL_CALLERS` beside them — not to the punch list.
+  **Counter correction (not caused by this slice):** a truthful recount moved frontend 627→649 and mobile
+  103→107. Three of the frontend tests are this PR's; the other +19 and the +4 are pre-existing drift that
+  had accumulated because the JS counts were being reused rather than counted.
 - [x] ✅ **DRA-18 — mobile/PARITY.md is materially incomplete — ~40 user-guarded HUD surfaces have no row
   (H18.10 umbrella).** The run's mobile findings (WorldView bridge ⬜, chat rooms ⬜, estop 🟡) were read
   straight off mobile/PARITY.md, but the ledger itself is stale: it is missing rows for most of what the HUD
@@ -1043,10 +1063,26 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   Q6 in docs/AUDIT.md names three files that bypass the atomic tmp+replace pattern the JsonStore base uses;
   A3/Q1 shipped the base and migrated the 13 stores, but Q6's own three were never routed through it and the
   finding is unchecked. *(evidence: `docs/AUDIT.md:76, ingestion/watcher.py, memory/conversation.py`)*
-- [ ] ⬜ **DRA-52 — Review-queue → eval-dataset promotion is unwired in both clients, while the v1 HUD
+- [x] ✅ **DRA-52 — Review-queue → eval-dataset promotion is unwired in both clients, while the v1 HUD
   advertises it.** POST /api/review/{item_id}/dataset (agents/core/routers/review.py:71-73, user-guarded,
   'Promote a reviewed item into an eval dataset (H9.3b)') has no caller anywhere. *(evidence:
   `agents/core/routers/review.py:71-90, frontend/src/gap.tsx:1069-1077`)*
+  **Shipped 5dfee3c** — a ⇪ control on the Console REVIEW QUEUE rows, so a reviewed turn can reach the
+  `review_flagged` eval dataset. The route leaves `UNCALLED_BACKLOG`. An item already promoted shows an
+  `in dataset` tag instead of a button (the queue item carries `in_dataset` after
+  `mark_in_dataset`), so the control reflects state rather than re-firing blindly.
+  **The refusal is the part that needed care.** This route genuinely refuses: WFL-088 rejects an item
+  with no prompt rather than minting a case that replays empty and scores a fabricated 1.0. But
+  `apiPost` **throws** on a 4xx (`failMutation` is typed `: never`) and `act`'s own `.catch(() => {})`
+  eats it — so a naive button would read as success on a refusal, which is exactly the swallowed-mutation
+  class the `act`/`actA` comment block was written about. `act` gained the optional `onErr` argument
+  `actA` already had (additive; every existing caller unaffected) and the row now shows the refusal.
+  **Residual (recorded, not closed):** the refusal shows as `refused · 400`, not the server's own
+  reason. `apiPost` throws *before* reading the body, so no call site anywhere can display why a
+  mutation was refused. Fixing it properly is ~4 lines in `frontend/src/api/client.ts` — read
+  `await res.json().catch(() => null)` in the `!res.ok` branch and attach it to the thrown error — which
+  would give every mutation in the HUD its real reason. Deliberately not done here: it changes shared
+  client infrastructure for all mutations, which is wider than this row.
 - [ ] ⬜ **DRA-53 — notes_store.py — a 504-line block-tree document store with no adopter and no route.**
   agents/core/notes_store. *(evidence: `agents/core/notes_store.py:112-116,
   agents/core/routers/notes.py:3-10, agents/core/notes.py:1-8`)*

@@ -147,16 +147,16 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 `UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`). Work it as a series of small
 vertical slices, each deleting entries from the punch list; prioritize by user value:
 
-1. DRA-17 — CDX-8 generated-skill **review/approve UI** (the whole self-improvement loop is
-   invisible without it).
-2. DRA-27 — memory write/hygiene controls (consolidate, decay); DRA-52 — review-queue →
-   eval-dataset promotion.
+1. ~~DRA-17 — CDX-8 generated-skill **review/approve UI**~~ **done (this PR)** (the whole
+   self-improvement loop is invisible without it).
+2. DRA-27 — memory write/hygiene controls (consolidate, decay); ~~DRA-52 — review-queue →
+   eval-dataset promotion~~ **done (this PR)**.
 3. DRA-28 — workflow create/edit surface for the shipped AI Step Builder; DRA-39 — fix
    `flow_api.build_flow` silently dropping `subflow` (a real compile bug, not just UI).
 4. DRA-29 — multimodal *input* (VLM describe / media generate callers); DRA-37 — marketplace
    rollback control; DRA-38 — acquisition drive trigger beyond curl.
-5. DRA-19 — construct `SignalGovernanceBridge` in production; DRA-21 — feed `StockQuotesPlugin`
-   into the market router; DRA-41 — give `self_evolution.py` its production caller.
+5. ~~DRA-19 — construct `SignalGovernanceBridge` in production~~ **done (#992)**; DRA-21 — feed
+   `StockQuotesPlugin` into the market router; DRA-41 — give `self_evolution.py` its production caller.
 6. DRA-53 — `notes_store.py` (504 lines, no adopter): adopt it behind a route or delete it.
 7. DRA-06 — the ScreenReflex HUD overlay half.
 
