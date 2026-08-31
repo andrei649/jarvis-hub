@@ -818,7 +818,7 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
 - [x] ✅ **DRA-17 — CDX-8 quarantined generated-skill review/approve has no client surface at all.** The
   owner-approval gate for LLM-authored skill code is backend-only. `agents/core/skills/loader. *(evidence:
   `agents/core/routers/skills.py:310, agents/core/skills/loader.py:543, tests/test_hud_v2_parity.py:500`)*
-  **Shipped <SHA>** — `PendingSkillsPanel` in the Console (Observe), calling `GET /api/skills/pending`
+  **Shipped f0a843d** — `PendingSkillsPanel` in the Console (Observe), calling `GET /api/skills/pending`
   and `POST /api/skills/{name}/approve` (both admin). Both routes leave `UNCALLED_BACKLOG`, so the punch
   list shrinks by two. Placed beside SELF-IMPROVEMENT rather than the marketplace panels: the marketplace
   has its own `review_status` path for third-party skills, and one surface for both would imply a shared
