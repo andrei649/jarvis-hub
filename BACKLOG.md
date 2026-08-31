@@ -815,9 +815,29 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
 - [ ] 🔴 **DRA-16 — Issue #242 (CI/F-10): CodeQL is a permanently non-blocking gate behind a factually false
   "private personal repo" rationale — the repo is public.** Open issue #242 explicitly flags this
   (".github/workflows/codeql. *(evidence: `.github/workflows/codeql.yml:36-40, codeql.yml, release.yml`)*
-- [ ] 🔴 **DRA-17 — CDX-8 quarantined generated-skill review/approve has no client surface at all.** The
+- [x] ✅ **DRA-17 — CDX-8 quarantined generated-skill review/approve has no client surface at all.** The
   owner-approval gate for LLM-authored skill code is backend-only. `agents/core/skills/loader. *(evidence:
   `agents/core/routers/skills.py:310, agents/core/skills/loader.py:543, tests/test_hud_v2_parity.py:500`)*
+  **Shipped f0a843d** — `PendingSkillsPanel` in the Console (Observe), calling `GET /api/skills/pending`
+  and `POST /api/skills/{name}/approve` (both admin). Both routes leave `UNCALLED_BACKLOG`, so the punch
+  list shrinks by two. Placed beside SELF-IMPROVEMENT rather than the marketplace panels: the marketplace
+  has its own `review_status` path for third-party skills, and one surface for both would imply a shared
+  mechanism that does not exist. **Approve-only, deliberately** — there is no reject endpoint and none was
+  invented: `loader.py:543` keeps a `PENDING_REVIEW` skill registered but never exec's its module
+  in-process, so quarantine is already fail-closed and leaving a skill unapproved *is* the reject. The
+  panel says so rather than leaving the absence to be guessed at.
+  **A gap DRA-17 does not name — found by red-proofing it:** reverting the panel left the parity gate
+  GREEN, because the panel's own test file names the routes and `_CLIENT_GLOBS` matched
+  `frontend/src/**/*.tsx` including `src/test/`. A test could therefore satisfy "this route has a client
+  caller" with no shipping UI behind it — the same shape-not-substance trap the file already guards
+  against for `schema.gen.ts`. Fixed in the same PR because DRA-17's own closure is unfalsifiable
+  without it. Excluding test files revealed **two** routes that were being covered this way and were
+  genuinely undeclared: `/api/missions/{mission_id}/pause` and `/api/payments/{payment_id}/settle`. Both
+  have real computed-URL callers (`gap.tsx`, `api/actions.ts`) whose sibling actions were already listed,
+  so both were added to `COMPUTED_URL_CALLERS` beside them — not to the punch list.
+  **Counter correction (not caused by this slice):** a truthful recount moved frontend 627→649 and mobile
+  103→107. Three of the frontend tests are this PR's; the other +19 and the +4 are pre-existing drift that
+  had accumulated because the JS counts were being reused rather than counted.
 - [x] ✅ **DRA-18 — mobile/PARITY.md is materially incomplete — ~40 user-guarded HUD surfaces have no row
   (H18.10 umbrella).** The run's mobile findings (WorldView bridge ⬜, chat rooms ⬜, estop 🟡) were read
   straight off mobile/PARITY.md, but the ledger itself is stale: it is missing rows for most of what the HUD

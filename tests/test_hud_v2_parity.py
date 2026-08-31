@@ -385,6 +385,20 @@ def test_operator_routes_have_a_governed_build_caller():
 # this, which is a fair measure of how easy the shape-not-substance mistake is to make.
 _GENERATED_CLIENT_FILES = ("schema.gen.ts",)
 
+# Same shape-not-substance trap, one step along: a *test* for a panel names every route the
+# panel calls, so a test file alone can satisfy "this route has a client caller" — a route
+# would read as wired with no shipping UI behind it. Found the honest way, by red-proofing
+# DRA-17: reverting the panel left the gate green because the panel's own test still
+# mentioned the routes. Excluding tests changes NOTHING today (measured: zero routes are
+# currently satisfied only by a test file), so this is a hole closed before it was used,
+# not a cleanup of one that already was.
+_TEST_FILE_SUFFIXES = (".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")
+
+
+def _is_test_client_file(path) -> bool:
+    posix = path.as_posix()
+    return posix.endswith(_TEST_FILE_SUFFIXES) or "/test/" in posix or "/tests/" in posix
+
 _CLIENT_GLOBS = (
     "frontend/src/**/*.ts", "frontend/src/**/*.tsx",
     "mobile/**/*.ts", "mobile/**/*.tsx",
@@ -530,9 +544,7 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/skills/marketplace/uninstall",
     # the marketplace panel has install/review/history, but no rollback control.
     "/api/skills/marketplace/{name}/rollback",
-    "/api/skills/pending",
     # skills are approved via marketplace/review; this per-skill route has no caller.
-    "/api/skills/{name}/approve",
     "/api/subagents",
     "/api/subagents/spawn",
     "/api/support/bundle",
@@ -576,10 +588,15 @@ COMPUTED_URL_CALLERS: dict[str, str] = {
     # MissionsPanel: act('/api/missions/' + m.id + '/' + a), a from actionsFor(status)
     "/api/missions/{mission_id}/cancel": "frontend/src/gap.tsx",
     "/api/missions/{mission_id}/complete": "frontend/src/gap.tsx",
+    # `pause` and `settle` below belong to groups already declared here; both were missing
+    # and were being covered by their own panel tests instead. Excluding test files from the
+    # client corpus (above) is what made that visible.
+    "/api/missions/{mission_id}/pause": "frontend/src/gap.tsx",
     "/api/missions/{mission_id}/resume": "frontend/src/gap.tsx",
     "/api/missions/{mission_id}/start": "frontend/src/gap.tsx",
     # decidePayment: '/api/payments/' + id + '/' + action ('approve'|'reject'|'settle')
     "/api/payments/{payment_id}/reject": "frontend/src/api/actions.ts",
+    "/api/payments/{payment_id}/settle": "frontend/src/api/actions.ts",
 }
 
 
@@ -592,6 +609,8 @@ def _client_files() -> dict[str, str]:
             if "node_modules" in text or "/dist/" in text:
                 continue
             if path.name.endswith(_GENERATED_CLIENT_FILES):
+                continue
+            if _is_test_client_file(path):
                 continue
             try:
                 files[path.relative_to(REPO).as_posix()] = path.read_text(
