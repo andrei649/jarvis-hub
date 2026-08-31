@@ -194,7 +194,16 @@ export function KgPanel() {
   const [forgetId, setForgetId] = useState('');
   const [msg, setMsg] = useState(null);
   const del = (name) => apiDelete('/api/kg/entities/' + encodeURIComponent(name)).then(reload).catch(() => {});
-  const forget = () => { if (!forgetId.trim()) return; act('/api/memory/decay/forget', { id: forgetId.trim() }, (r) => { setMsg(r && r.error ? 'not found' : 'forgotten · ' + forgetId.trim()); setForgetId(''); reload(); }); };
+  /* The old `r.error ? 'not found'` branch here was DEAD: apiPost throws on the route's 404
+     and act's `.catch(() => {})` ate it, so a bad id silently cleared the box and looked like
+     a successful forget. onErr (added with DRA-52) is what makes the refusal reachable. */
+  const forget = () => {
+    if (!forgetId.trim()) return;
+    const id = forgetId.trim();
+    act('/api/memory/decay/forget', { id },
+      () => { setMsg('forgotten · ' + id); setForgetId(''); reload(); },
+      (err) => setMsg(err?.status === 404 ? 'not found · ' + id : `forget refused · ${err?.status || 'error'}`));
+  };
   /* PNL-059: the route answers 200 with {entities: [], error} when the store is
      down — reading only `entities` rendered a dead graph as a clean empty one
      under a green LIVE chip. */
@@ -218,6 +227,48 @@ export function KgPanel() {
         <button className="tool-btn" onClick={forget}>forget</button>
       </div>
       {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+    </Card>
+  );
+}
+/* DRA-27 (hygiene cut) — `GET /api/memory/decay/candidates` had no client caller, which left
+   the forget loop half-built: KgPanel could already forget an item BY ID, but nothing told the
+   operator which ids had decayed far enough to be worth forgetting. This lists them at an
+   adjustable threshold and forgets from the row.
+
+   Forgetting is transitive by design (`decay.forget` removes an item AND its dependents, the
+   anti-recontamination rule), so the row says so rather than presenting it as a single delete. */
+export function MemoryHygienePanel() {
+  const [threshold, setThreshold] = useState(0.3);
+  const { d, e, loading, reload } = useApi(`/api/memory/decay/candidates?threshold=${threshold}`);
+  const cands = arr(d, 'candidates');
+  const [msg, setMsg] = useState(null);
+  const forget = (id) => act('/api/memory/decay/forget', { id },
+    (r) => { setMsg(`forgot ${id} · ${arr(r, 'removed').length || 1} item(s)`); reload(); },
+    (err) => setMsg(err?.status === 404 ? `not found · ${id}` : `forget refused · ${err?.status || 'error'}`));
+  return (
+    <Card title="MEMORY HYGIENE" live={asLive(d)} sub={d ? `${cands.length} below ${threshold}` : null} onReload={reload}>
+      <State e={e} loading={loading} n={cands.length} />
+      {cands.slice(0, 12).map((c, i) => (
+        <Row key={c.id ?? i}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{c.label || c.id}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c="var(--amber)">{c.activation}</Tag>
+            <button className="tool-btn" title="forget this item and its dependents" onClick={() => forget(c.id)}>✕</button>
+          </span>
+        </Row>
+      ))}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
+        <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>threshold</span>
+        <input
+          type="number" step="0.1" min="0" value={threshold}
+          onChange={(ev) => setThreshold(Number(ev.target.value) || 0)}
+          style={{ ...inpS, width: 70 }}
+        />
+      </div>
+      {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+        ACT-R activation below the threshold — ✕ forgets the item AND its dependents.
+      </div>
     </Card>
   );
 }
@@ -3469,7 +3520,7 @@ export function FirstRunGate({ onClose }) {
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Start', [CommandCenterPanel]],
   ['Home', [AmbientWatchPanel, HousePanel, CameraPanel]],
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, VaultPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
+  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, VaultPanel, KgPanel, MemoryHygienePanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, SwarmPanel, SystemMapPanel]],
