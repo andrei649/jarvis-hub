@@ -1067,7 +1067,7 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   advertises it.** POST /api/review/{item_id}/dataset (agents/core/routers/review.py:71-73, user-guarded,
   'Promote a reviewed item into an eval dataset (H9.3b)') has no caller anywhere. *(evidence:
   `agents/core/routers/review.py:71-90, frontend/src/gap.tsx:1069-1077`)*
-  **Shipped <SHA>** — a ⇪ control on the Console REVIEW QUEUE rows, so a reviewed turn can reach the
+  **Shipped 5dfee3c** — a ⇪ control on the Console REVIEW QUEUE rows, so a reviewed turn can reach the
   `review_flagged` eval dataset. The route leaves `UNCALLED_BACKLOG`. An item already promoted shows an
   `in dataset` tag instead of a button (the queue item carries `in_dataset` after
   `mark_in_dataset`), so the control reflects state rather than re-firing blindly.
