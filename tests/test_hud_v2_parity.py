@@ -528,7 +528,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/review/flag",
     "/api/review/stats",
     # the review queue wires 👍/👎 (/vote); "promote to dataset" has no button.
-    "/api/review/{item_id}/dataset",
     # SatellitesPanel pairs and unpairs only; nothing dispatches work to a satellite.
     "/api/satellites/{satellite_id}/dispatch",
     "/api/secrets/broker/redact",
