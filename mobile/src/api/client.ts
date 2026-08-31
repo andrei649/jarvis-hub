@@ -422,6 +422,58 @@ export async function fetchSecurityLoopBreaker(config: ServerConfig): Promise<Se
   return normalizeSecurityLoopBreaker(res || {});
 }
 
+// ── Live System Map (H34.7 / M6) — read-only subsystem health ─────
+
+export type SystemMapStatus = 'ok' | 'degraded' | 'attention' | 'off' | 'unknown';
+
+export type SystemMapNode = {
+  id: string;
+  label: string;
+  status: SystemMapStatus;
+};
+
+export type SystemMapResponse = {
+  topology_version: string;
+  initialized: boolean;
+  nodes: SystemMapNode[];
+};
+
+const SYSTEM_MAP_STATUSES: readonly SystemMapStatus[] = ['ok', 'degraded', 'attention', 'off', 'unknown'];
+
+function normalizeSystemMap(raw: Record<string, unknown>): SystemMapResponse {
+  const topology = (raw.topology || {}) as Record<string, unknown>;
+  const topoNodes = Array.isArray(topology.nodes) ? topology.nodes : [];
+  const statuses = (raw.nodes || {}) as Record<string, unknown>;
+  const nodes: SystemMapNode[] = [];
+  for (const entry of topoNodes) {
+    if (!entry || typeof entry !== 'object') continue;
+    const node = entry as Record<string, unknown>;
+    const id = typeof node.id === 'string' ? node.id : '';
+    if (!id) continue;
+    const info = (statuses[id] || {}) as Record<string, unknown>;
+    const status = SYSTEM_MAP_STATUSES.includes(info.status as SystemMapStatus)
+      ? (info.status as SystemMapStatus)
+      : 'unknown'; // unknown never renders green — an unmeasured node says so
+    nodes.push({
+      id,
+      label: typeof node.label === 'string' && node.label ? node.label : id,
+      status,
+    });
+  }
+  return {
+    topology_version: typeof raw.topology_version === 'string' ? raw.topology_version : '',
+    initialized: raw.initialized === true,
+    nodes,
+  };
+}
+
+export async function fetchSystemMap(config: ServerConfig): Promise<SystemMapResponse> {
+  const res = await request<Record<string, unknown>>(config, 'GET', '/api/system-map', undefined, {
+    retries: 2,
+  });
+  return normalizeSystemMap(res || {});
+}
+
 // ── First-run command center (0.19 / H18.19) ─────────────────────
 
 export interface CommandCenterWizardStep {

@@ -896,6 +896,94 @@ export function SwarmPanel() {
   );
 }
 
+/* H34.7 — SystemMapPanel: the Live System Map in the Console (Observe). Renders
+   the checked-in topology (served inside /api/system-map) as an inline SVG and
+   lights each subsystem with its live reduced status — ok / degraded / attention /
+   off / unknown, where unknown never renders green. Edges carry real counters and
+   stay static when a counter is absent; nothing here synthesizes motion. Read-only;
+   the wall-screen version is the standalone /map page this panel links out to. */
+const MAP_STATUS_COLOR = {
+  ok: 'var(--green)', degraded: 'var(--amber)', attention: 'var(--red)',
+  off: 'var(--ink-3)', unknown: 'var(--ink-3)',
+};
+function mapCenter(n) { return [n.pos[0] + n.size[0] / 2, n.pos[1] + n.size[1] / 2]; }
+function mapEdgePath(a, b) {
+  const [ax, ay] = mapCenter(a); const [bx, by] = mapCenter(b);
+  if (Math.abs(ay - by) < 6) return `M ${a.pos[0] + a.size[0]} ${ay} L ${b.pos[0]} ${by}`;
+  if (Math.abs(ax - bx) < 6) {
+    const down = ay < by;
+    return `M ${ax} ${down ? a.pos[1] + a.size[1] : a.pos[1]} L ${bx} ${down ? b.pos[1] : b.pos[1] + b.size[1]}`;
+  }
+  const yExit = ay < by ? a.pos[1] + a.size[1] : a.pos[1];
+  const xEnter = bx > ax ? b.pos[0] : b.pos[0] + b.size[0];
+  return `M ${ax} ${yExit} L ${ax} ${by} L ${xEnter} ${by}`;
+}
+export function SystemMapPanel() {
+  const { d, e, loading, reload } = useApi('/api/system-map');  // user
+  const topo = (d && d.topology) || null;
+  const nodes = (d && d.nodes) || {};
+  const edges = (d && d.edges) || {};
+  const topoNodes = topo ? topo.nodes : [];
+  const byId = {};
+  topoNodes.forEach((n) => { byId[n.id] = n; });
+  const attention = topoNodes.filter((n) => (nodes[n.id] || {}).status === 'attention').length;
+  const okCount = topoNodes.filter((n) => (nodes[n.id] || {}).status === 'ok').length;
+  return (
+    <Card
+      title="SYSTEM MAP"
+      live={asLive(d, d && d.initialized)}
+      sub={d ? `${okCount}/${topoNodes.length} ok${attention ? ` · ${attention} attention` : ''}` : null}
+      onReload={reload}
+    >
+      <State e={e} loading={loading} n={topo ? 1 : 0} />
+      {topo && (
+        <>
+          <svg viewBox={topo.view_box.join(' ')} style={{ width: '100%', height: 'auto', display: 'block' }}>
+            {topo.edges.map((ed) => {
+              const act = edges[ed.id];
+              const hot = act && act.count > 0;
+              const [ax, ay] = mapCenter(byId[ed.from]); const [bx, by] = mapCenter(byId[ed.to]);
+              return (
+                <g key={ed.id}>
+                  <path d={mapEdgePath(byId[ed.from], byId[ed.to])} fill="none"
+                    stroke={hot ? 'var(--accent-light)' : 'var(--line)'} strokeWidth={1.6} />
+                  {act && (
+                    <text x={(ax + bx) / 2} y={(ay === by ? ay : (ay + by) / 2) - 7}
+                      textAnchor="middle" fill={hot ? 'var(--accent-light)' : 'var(--ink-3)'}
+                      style={{ font: '11px var(--font-mono)' }}>{act.count}</text>
+                  )}
+                </g>
+              );
+            })}
+            {topoNodes.map((n) => {
+              const info = nodes[n.id] || { status: 'unknown', stats: {} };
+              const stroke = MAP_STATUS_COLOR[info.status] || 'var(--ink-3)';
+              return (
+                <g key={n.id} style={{ cursor: n.href ? 'pointer' : 'default' }}
+                  opacity={info.status === 'off' ? 0.55 : 1}
+                  onClick={() => { if (n.href) window.open(n.href, '_blank', 'noopener'); }}>
+                  <title>{`${n.label} — ${info.status}\n${Object.entries(info.stats || {}).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n')}`}</title>
+                  <rect x={n.pos[0]} y={n.pos[1]} width={n.size[0]} height={n.size[1]} rx={6}
+                    fill="var(--panel, rgba(255,255,255,0.03))" stroke={stroke} strokeWidth={1.6}
+                    strokeDasharray={info.status === 'unknown' ? '4 3' : undefined} />
+                  <text x={n.pos[0] + n.size[0] / 2} y={n.pos[1] + 27} textAnchor="middle"
+                    fill="var(--ink-1, var(--ink-2))" style={{ font: '600 13px var(--font-mono)' }}>{n.label}</text>
+                  <text x={n.pos[0] + n.size[0] / 2} y={n.pos[1] + 45} textAnchor="middle"
+                    fill={stroke} style={{ font: '11px var(--font-mono)' }}>{info.status}</text>
+                </g>
+              );
+            })}
+          </svg>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+            <span style={{ ...mono, color: 'var(--ink-3)', fontSize: 10 }}>topology {topo.version} · unknown never renders green</span>
+            <a className="tool-btn" href="/map" target="_blank" rel="noopener noreferrer">open wall map →</a>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 /* HUD-v3 C8 (arena + quality-threshold; evals/review already shipped). Two Observe
    panels: the model arena leaderboard (read-only) + the answer-quality gate (read +
    admin set-threshold). Honesty: real ELO/scores; empty-state when no matches yet. */
@@ -3384,7 +3472,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, VaultPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
-  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, SwarmPanel]],
+  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, SwarmPanel, SystemMapPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],
