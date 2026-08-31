@@ -514,7 +514,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/market/brief",
     "/api/media/generate",
     "/api/memory/consolidate",
-    "/api/memory/decay/candidates",
     "/api/memory/eval/corpus",
     "/api/memory/eval/run",
     "/api/memory/remember",

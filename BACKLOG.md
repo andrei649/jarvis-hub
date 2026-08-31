@@ -913,6 +913,24 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   explicitly as a MUST-wire gap — SINGLE_PAGE_HUD_BRIEF.md §7.4/§7.5 ('KG editor + bitemporal facts + ingest
   + decay-forget + remember-a-fact . *(evidence: `agents/core/routers/memory_kg.py:129,
   frontend/src/gap.tsx:190, schema.gen.ts`)*
+  **Partially shipped <SHA> — the decay leg. Row stays OPEN.** `MEMORY HYGIENE` panel wires
+  `GET /api/memory/decay/candidates`, which was the *missing half of a loop that already existed*:
+  `KgPanel` could already forget an item by id, but nothing told the operator which ids had decayed
+  far enough to be worth forgetting. Threshold is adjustable and refetches server-side; the row
+  states that a forget is transitive (`decay.forget` removes dependents too, the anti-recontamination
+  rule) and reports how many items actually went.
+  **Drive-by bug fix in the same panel family:** `KgPanel`'s forget-by-id had a **dead** error branch —
+  `r.error ? 'not found'` inside the `then`, which never runs because `apiPost` throws on the route's
+  404 and `act`'s `.catch(() => {})` ate it. A bad id silently cleared the input and read as a
+  successful forget. Fixed with the `onErr` argument added in DRA-52.
+  **Legs still open (why, not just what):**
+  · `POST /api/memory/consolidate` — **blocked on a design decision, not effort.** It takes
+    `{candidates, existing}` and no route returns memories in its `{id, key, text}` shape:
+    `/api/memory/search` buries text in an untyped `payload`. Wiring it with `existing: []` would make
+    every candidate an ADD ("novel") and ship a planner that is degenerate by construction, so it was
+    deliberately not wired. Decide where `existing` comes from first.
+  · `/api/memory/remember`, `/api/memory/eval/corpus`, `/api/memory/eval/run`, `/api/kg/ingest`,
+    `/api/kg/relations` — untouched, still on the `UNCALLED_BACKLOG` punch list.
 - [ ] 🟡 **DRA-28 — HUD has no workflow create/edit surface — the shipped AI Step Builder generates JSON with
   nowhere to paste it.** HUD_V2_REMAINING.md §3 Build says in as many words that 'deeper create/edit
   affordances remain in the Console panels' — the design-punchlists finder took the Build row for
