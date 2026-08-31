@@ -389,9 +389,11 @@ _GENERATED_CLIENT_FILES = ("schema.gen.ts",)
 # panel calls, so a test file alone can satisfy "this route has a client caller" — a route
 # would read as wired with no shipping UI behind it. Found the honest way, by red-proofing
 # DRA-17: reverting the panel left the gate green because the panel's own test still
-# mentioned the routes. Excluding tests changes NOTHING today (measured: zero routes are
-# currently satisfied only by a test file), so this is a hole closed before it was used,
-# not a cleanup of one that already was.
+# mentioned the routes. Excluding tests was NOT a no-op: two routes
+# (/api/missions/{mission_id}/pause, /api/payments/{payment_id}/settle) were being satisfied
+# only by their panel tests, and the exclusion is what made that visible. Both have real
+# computed-URL callers, so both are declared in COMPUTED_URL_CALLERS below rather than added
+# to the punch list — the hole was already in use, not merely reachable.
 _TEST_FILE_SUFFIXES = (".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")
 
 
