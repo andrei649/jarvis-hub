@@ -9,12 +9,19 @@ owns the `orch` global; the suite rebinds it). `security_status` used to be full
 static — every counter a literal zero and the mode always "WARN" — which the
 Console rendered as measured security activity; it now reports the guardrail
 engine's real counters, or `available: false` for what is genuinely not measured.
+Per-scanner finding counts and the SSRF refusal count are measured too (DRA-47);
+both are process-lifetime numbers that reset with the process.
 """
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from agents.core.app_state import get_orch
+
+# Import the `agents.core.*` flavour explicitly: `core.security.ssrf` is a
+# distinct module object (some tests monkeypatch that alias), and every
+# production caller resolves to this one — reading the other would always be 0.
+from agents.core.security.ssrf import blocked_requests
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["security"])
@@ -44,8 +51,10 @@ async def security_status():
     measured security activity, so a hub running in BLOCK mode that had redacted
     forty PII spans reported a clean, untriggered system with the wrong mode.
 
-    The engine now counts what it does; anything still unmeasured is reported as
-    null with `available: false`, never as a zero that reads like a measurement.
+    The engine now counts what it does — including per-scanner findings and the
+    SSRF guard's refusals (both process-lifetime). Anything still unmeasured is
+    reported as null with `available: false`, never as a zero that reads like a
+    measurement.
     """
     orch = get_orch()
     engine = getattr(orch, "security", None) if orch else None
@@ -71,20 +80,20 @@ async def security_status():
             "redact_count": counters.get("redacted", 0),
             "block_count": counters.get("blocked", 0),
         }
-        # Pattern counts from the compiled ruleset. Per-scanner finding counts are
-        # not tracked separately (the engine merges results before it sees which
-        # scanner produced what), so that is reported as unknown rather than 0.
+        # Pattern counts from the compiled ruleset; findings attributed to the
+        # scanner that produced them (DRA-47 — the engine does see which scanner
+        # produced what, the merged list just forgot).
         scanners = {
-            sid: {"patterns": s["patterns"], "findings": None, "available": False}
+            sid: {"patterns": s["patterns"], "findings": s["findings"], "available": True}
             for sid, s in stats["scanners"].items()
         }
 
-    # SSRF: the guard is real, its counters are not wired up. Say so.
+    # SSRF: the guard is real and now counts its refusals (process lifetime).
     ssrf = {
         "enabled": True,
         "max_redirects": 5,
-        "blocked_requests": None,
-        "available": False,
-        "note": "the SSRF guard is active but does not yet count blocked requests",
+        "blocked_requests": blocked_requests(),
+        "available": True,
+        "note": "process-lifetime count of refusals from resolve_and_validate/check_ssrf",
     }
     return nocache_json({"guardrails": guardrails, "scanners": scanners, "ssrf": ssrf})

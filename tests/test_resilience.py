@@ -279,3 +279,47 @@ def test_resilience_public_endpoint():
     assert isinstance(data["metrics"], dict)
     assert "circuit_breakers" in data
     assert isinstance(data["circuit_breakers"], dict)
+
+
+def test_resilience_reports_real_uptime_not_a_seeded_availability():
+    """DRA-47 — the Observe HUD read `resil.uptime` and got nothing, so it fell
+    back to a seed. This is a duration since process start, explicitly NOT a
+    made-up availability percentage."""
+    import re
+    from fastapi.testclient import TestClient
+    from agents import web
+
+    data = TestClient(web.app).get("/api/resilience").json()
+    assert re.fullmatch(r"\d{2,}:\d{2}:\d{2}", data["uptime"]), data.get("uptime")
+    assert isinstance(data["uptime_seconds"], (int, float))
+    assert data["uptime_seconds"] >= 0
+
+
+def test_resilience_reports_the_ssrf_block_counter():
+    from fastapi.testclient import TestClient
+    from agents import web
+    from agents.core.security.ssrf import check_ssrf
+
+    client = TestClient(web.app)
+    before = client.get("/api/resilience").json()["ssrf_blocked"]
+    assert isinstance(before, int)
+    check_ssrf("http://127.0.0.1/")
+    after = client.get("/api/resilience").json()["ssrf_blocked"]
+    assert after == before + 1
+
+
+def test_resilience_reports_redactions_as_null_when_no_engine_is_attached(monkeypatch):
+    """Null, never 0: "no guardrails engine" and "nothing was redacted" are
+    different facts, and the HUD renders null as "—"."""
+    from types import SimpleNamespace
+    from fastapi.testclient import TestClient
+    from agents import web
+    from agents.core.security.guardrails import GuardrailsEngine
+
+    monkeypatch.setattr(web, "orch", SimpleNamespace(security=None))
+    assert TestClient(web.app).get("/api/resilience").json()["redactions"] is None
+
+    eng = GuardrailsEngine()
+    eng._counters["redacted"] = 3
+    monkeypatch.setattr(web, "orch", SimpleNamespace(security=eng))
+    assert TestClient(web.app).get("/api/resilience").json()["redactions"] == 3

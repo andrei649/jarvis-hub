@@ -479,8 +479,26 @@ class SkillLoader:
         for skill in self.skills.values():
             skill.usage_hook = _hook
 
+    def revoke_approval(self, path) -> bool:
+        """Drop the owner approval bound to ``path`` (DRA-54).
+
+        A seam so callers holding the orchestrator (e.g. the marketplace
+        uninstall route) never reach into the approval store directly.
+        """
+        try:
+            return self._approval_store.revoke(Path(path))
+        except Exception:
+            logger.warning("Skill approval revoke failed for %s", path, exc_info=True)
+            return False
+
     def discover(self):
         SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+        # DRA-54 — self-heal approvals whose skill directory was removed out of
+        # band. Never fatal: a store failure must not break skill discovery.
+        try:
+            self._approval_store.prune_missing()
+        except Exception:
+            logger.warning("Skill approval prune failed", exc_info=True)
         roots = [SKILLS_DIR]
         # The owner's personal skills (Documents/Jarvis/skills) load AFTER the
         # bundled tree so a same-named user skill wins the registry slot.

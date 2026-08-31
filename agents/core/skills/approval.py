@@ -33,6 +33,10 @@ def _registry_lock(path: Path) -> threading.RLock:
 @contextmanager
 def _process_registry_lock(path: Path):
     """Serialize registry readers/writers across Windows and POSIX processes."""
+    # Registry-scoped, never per-skill: the name derives from the REGISTRY path
+    # (`skill_approvals.json.lock`). Do NOT unlink it as part of revoking a skill
+    # — POSIX flock lives on the inode, so removing it while another process
+    # holds it lets the next process lock a fresh inode and write concurrently.
     lock_path = path.with_name(f"{path.name}.lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as handle:
@@ -124,6 +128,65 @@ class SkillApprovalStore(JsonStore):
             self._records[self._key(canonical)] = record
             self._save()
         return record
+
+    def revoke(self, path: Path) -> bool:
+        """Drop the approval row for ``path``. Returns whether a row was removed.
+
+        DRA-54 — ``approve()`` had no inverse, so an uninstalled skill left its
+        row behind and a byte-identical re-creation at the same path inherited
+        the old owner decision (``source_snapshot`` excludes the signature and
+        marker sidecars, so the fingerprint matches again). Fails closed on a
+        corrupt registry exactly like ``approve()``: a bad file is never
+        rewritten as an empty-but-valid one (that would be a silent mass-revoke
+        and would destroy the owner's record).
+        """
+        canonical = self._canonical_path(path)
+        with self._registry_lock, _process_registry_lock(self.path):
+            if not self._reload_locked():
+                raise SkillApprovalStoreError(
+                    "cannot revoke against a corrupt or unknown skill approval registry"
+                )
+            removed = self._records.pop(self._key(canonical), None)
+            if removed is None:
+                return False
+            self._save()
+        return True
+
+    def prune_missing(self) -> list[str]:
+        """Drop rows whose approved path is gone (or unreadable). Returns them.
+
+        Covers deletions that never reach :meth:`revoke` — a skill directory
+        removed by hand, or by any future deleter. Only rows whose
+        ``canonical_path`` no longer exists on disk are dropped: a still-present
+        path with drifted bytes MUST keep its row so ``tracks_path`` keeps
+        classifying it as external (see that method's docstring).
+        """
+        dropped: list[str] = []
+        with self._registry_lock, _process_registry_lock(self.path):
+            if not self._reload_locked():
+                raise SkillApprovalStoreError(
+                    "cannot prune a corrupt or unknown skill approval registry"
+                )
+            kept: dict[str, Any] = {}
+            for key, record in self._records.items():
+                canonical = record.get("canonical_path") if isinstance(record, dict) else None
+                if not isinstance(canonical, str) or key != self._key(canonical):
+                    # Malformed / mis-keyed row: it can never authorize anything,
+                    # so it is dead weight rather than a decision worth keeping.
+                    dropped.append(canonical if isinstance(canonical, str) else key)
+                    continue
+                try:
+                    exists = Path(canonical).exists()
+                except OSError:
+                    exists = False
+                if exists:
+                    kept[key] = record
+                else:
+                    dropped.append(canonical)
+            if dropped:
+                self._records = kept
+                self._save()
+        return dropped
 
     def approved_snapshot(
         self,

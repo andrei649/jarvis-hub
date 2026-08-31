@@ -187,6 +187,24 @@ def summarize(results: list[dict]) -> tuple[bool, bool]:
     return mismatch, drift
 
 
+def drift_resolved(results: list[dict]) -> bool:
+    """True only when this run positively proves every tracked source is current.
+
+    Deliberately NOT the negation of ``summarize()``'s drift flag: a crashed
+    run, an empty manifest or a GitHub API outage all yield zero ``DRIFT`` rows,
+    and treating that as "resolved" would auto-close a live alert on a network
+    blip. A row is evidence only when its drift check actually ran and returned
+    ``ok`` (``run_checks`` writes ``"error: ..."`` on a fetch failure and leaves
+    untracked rows as ``"skipped"``).
+    """
+    tracked = [row for row in results if row.get("drift") != "skipped"]
+    if not tracked:
+        return False
+    if any(row.get("consistency") == "MISMATCH" for row in results):
+        return False
+    return all(row.get("drift") == "ok" for row in tracked)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--manifest", default=str(_DEFAULT_MANIFEST))

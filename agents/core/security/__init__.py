@@ -1,5 +1,11 @@
 from .scanner import PIIScanner, SecretScanner, is_valid_cnp, is_valid_iban
-from .ssrf import check_ssrf, is_private_ip, resolve_and_validate
+from .ssrf import (
+    blocked_requests,
+    check_ssrf,
+    is_private_ip,
+    reset_blocked_requests,
+    resolve_and_validate,
+)
 from .audit import AuditLogger
 from .guardrails import (
     GuardedCacheMaterial,
@@ -25,8 +31,10 @@ __all__ = [
     "SecurityEventType",
     "ThreatLevel",
     "bind_guardrails",
+    "blocked_requests",
     "check_ssrf",
     "is_private_ip",
+    "reset_blocked_requests",
     "resolve_and_validate",
     "is_valid_cnp",
     "is_valid_iban",

@@ -138,6 +138,28 @@ tiers; and pending-decision substitution without reauthorization. Adjacent queue
 action-auth/lifespan suites, Ruff, security gates, status synchronization and
 exact-head hosted Windows/Linux CI remain required.
 
+## Operating the mode
+
+The mode is selected by the `JARVIS_TASK_MEDIATION` environment variable:
+`off` (the default when the variable is unset, empty or unrecognised), `hold` or
+`enforce`. An unrecognised value logs a warning and falls back to `off` rather
+than failing the boot — `TaskQueue` itself raises on an unknown mode.
+
+The trusted latest-head CAS store behind `MonotonicHeadAnchor` is
+`agents/core/autonomy/mediation_head_store.py::FileMediationHeadStore`, writing
+`<data root>/security/task_mediation_head.json` (with a sibling `.lock`). It is
+deliberately a separate file rather than a row in `autonomy.db`: a head kept
+inside the queue database rolls back with it, which is exactly the authority
+restoration this design forbids. Each swap is guarded by an exclusive OS file
+lock, re-reads the current head under that lock, refuses any non-monotonic
+replacement, and lands via fsync + `os.replace` + directory fsync so the head is
+durable before the queue's SQLite commit.
+
+Honest limit: this defends against whole-file and signed-prefix rollback of the
+queue database — the threat this design names — but not against an attacker who
+can rewrite the entire runtime data directory. A genuinely external transparency
+service remains future work, and the anchor's callback seam is where it plugs in.
+
 ## Rollback
 
 Set the mode to `hold`, not `off`. This stops new classified enqueue and execution

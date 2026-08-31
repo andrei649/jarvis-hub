@@ -24,6 +24,7 @@ and every compare-and-swap failure returns ``False`` rather than raising.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -71,7 +72,7 @@ def _unlock(handle) -> None:
 class FileMediationHeadStore:
     """A single-file, lock-guarded, monotonic latest-head CAS store."""
 
-    def __init__(self, path: "str | Path | None" = None) -> None:
+    def __init__(self, path: str | Path | None = None) -> None:
         # Resolved now, not at import: data_path() honors the current
         # JARVIS_HOME, and binding it at import time leaks the live store into
         # temp-home runs (the memory_logs lesson in memory/persistence.py).
@@ -107,7 +108,7 @@ class FileMediationHeadStore:
     # ── compare-and-swap ──────────────────────────────────────────────────
 
     def compare_and_swap(
-        self, expected: "MediationHead | None", replacement: MediationHead
+        self, expected: MediationHead | None, replacement: MediationHead
     ) -> bool:
         """Advance the head only from ``expected``, and only forwards."""
         if not isinstance(replacement, MediationHead):
@@ -161,13 +162,11 @@ class FileMediationHeadStore:
                 os.close(dir_fd)
         finally:
             if tmp is not None:
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(tmp)
-                except OSError:
-                    pass
 
 
-def make_task_mediation_anchor(path: "str | Path | None" = None) -> MonotonicHeadAnchor:
+def make_task_mediation_anchor(path: str | Path | None = None) -> MonotonicHeadAnchor:
     """The production anchor: a `FileMediationHeadStore` held by closure."""
     store = FileMediationHeadStore(path)
     return MonotonicHeadAnchor(store.read, store.compare_and_swap)

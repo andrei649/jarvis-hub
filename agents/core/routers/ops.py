@@ -24,6 +24,10 @@ from fastapi.responses import PlainTextResponse
 from agents.core.app_state import get_orch
 from agents.core.observability.http_metrics import HTTP_METRICS, PROM_CONTENT_TYPE
 from agents.core.routers._deps import admin_guard, user_guard
+
+# `agents.core.*` flavour on purpose — `core.security.ssrf` is a distinct module
+# object and every production refusal lands in this one.
+from agents.core.security.ssrf import blocked_requests
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["ops"])
@@ -151,7 +155,17 @@ async def metrics():
 
 @router.get("/api/resilience")
 async def resilience_public():
-    """Public resilience metrics and circuit breaker states (no admin auth)."""
+    """Public resilience metrics and circuit breaker states (no admin auth).
+
+    DRA-47 — also carries the three top-level numbers the Observe HUD reads
+    (`uptime`, `ssrf_blocked`, `redactions`) and used to substitute a seed for.
+    `uptime` is a DURATION since process start (HH:MM:SS), deliberately not an
+    availability percentage; the two counters are process-lifetime and reset with
+    the process. `redactions` is null — never 0 — when no guardrails engine is
+    attached, so the HUD renders "—" instead of "nothing was redacted". There is
+    deliberately no `errors_24h`: ResilienceMetrics has no time window, so a key
+    named that would be a mislabelled number.
+    """
     from core.resilience import _circuit_breakers, get_metrics
     metrics = get_metrics().get_stats()
     breakers = {
@@ -162,7 +176,24 @@ async def resilience_public():
         }
         for key, cb in _circuit_breakers.items()
     }
-    return nocache_json({"metrics": metrics, "circuit_breakers": breakers})
+    uptime_seconds = max(0.0, time.monotonic() - _PROCESS_START)
+    whole = int(uptime_seconds)
+    orch = get_orch()
+    engine = getattr(orch, "security", None) if orch else None
+    redactions = None
+    if engine is not None and hasattr(engine, "stats"):
+        try:
+            redactions = engine.stats()["counters"].get("redacted")
+        except Exception:
+            redactions = None
+    return nocache_json({
+        "metrics": metrics,
+        "circuit_breakers": breakers,
+        "uptime_seconds": round(uptime_seconds, 1),
+        "uptime": f"{whole // 3600:02d}:{(whole % 3600) // 60:02d}:{whole % 60:02d}",
+        "ssrf_blocked": blocked_requests(),
+        "redactions": redactions,
+    })
 
 
 @router.get("/api/cognition", dependencies=[Depends(user_guard)])
