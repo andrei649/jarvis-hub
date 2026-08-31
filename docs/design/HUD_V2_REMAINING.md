@@ -42,8 +42,12 @@
 PR #505 adds base LIVE/SEED gates for Build / Comms / Finance / Health / Knowledge / Family,
 with plugin-configured checks instead of seeded success. Still open:
 - **Build**: base live wiring reads workflow DAG + skills marketplace + sandbox from
-  `/api/workflows`, `/api/skills/marketplace`, and `/sandbox/status`; deeper create/edit affordances
-  remain in the Console panels.
+  `/api/workflows`, `/api/skills/marketplace`, and `/sandbox/status`. Create/edit is closed
+  (DRA-28): the Console's `WORKFLOW BUILDER` panel replaces the read-only step generator —
+  generate a step, append it to a draft, and save through `POST /api/workflows` /
+  `PUT /api/workflows/{id}` (admin), with the 422/401 refusal rendered inline. The steps
+  textarea stays the editor of record for the advanced `router`/`critic`/`loop`/`subflow`
+  configs; a graphical DAG canvas is still open.
 - **Memory**: `RECALLS` / `TOPICS` / `KG` live (recall search, decay ranking, bitemporal KG as‑of).
 - **Trust**: real `%‑local` meter (needs a locality/cost summary endpoint, §6).
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).

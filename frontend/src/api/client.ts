@@ -145,6 +145,14 @@ export async function apiPut<T = unknown>(path: string, body?: unknown, opts?: {
   if (!res.ok) failMutation('PUT', path, res.status);
   return res.json() as Promise<T>;
 }
+/* PATCH is the repo's first partial-update verb (DRA-53, `/api/notes/blocks/{id}`):
+   a block edit sends only the fields that changed, and a PUT would imply the caller
+   is replacing the whole block. Same failure accounting as the other mutators. */
+export async function apiPatch<T = unknown>(path: string, body?: unknown, opts?: { admin?: boolean }): Promise<T> {
+  const res = await request('PATCH', path, body, opts);
+  if (!res.ok) failMutation('PATCH', path, res.status);
+  return res.json() as Promise<T>;
+}
 export async function apiDelete<T = unknown>(path: string, opts?: { admin?: boolean }): Promise<T> {
   const res = await request('DELETE', path, undefined, opts);
   if (!res.ok) failMutation('DELETE', path, res.status);

@@ -634,7 +634,6 @@ def _sys_info() -> dict:
     """
     import contextlib
     import platform
-    import shutil
     import socket
 
     base = {
@@ -674,26 +673,19 @@ def _sys_info() -> dict:
         base["ram_total"] = round(vm.total / 1e9, 1)
     # GPU — the real card name + VRAM via nvidia-smi; an honest "none" when there is no
     # NVIDIA GPU (binary absent / non-zero exit), never a fabricated card. A present-but-
-    # erroring probe leaves the honest "unknown" default.
-    if shutil.which("nvidia-smi") is None:
-        base["gpu"] = "none"
-    else:
-        with contextlib.suppress(Exception):
-            import subprocess
-            r = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name,memory.used,memory.total,utilization.gpu",
-                 "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if r.returncode == 0 and r.stdout.strip():
-                parts = [p.strip() for p in r.stdout.strip().splitlines()[0].split(",")]
-                if len(parts) == 4:
-                    base["gpu"] = parts[0] or "unknown"
-                    base["vram_used"] = int(float(parts[1])) // 1024
-                    base["vram_total"] = int(float(parts[2])) // 1024
-                    base["gpu_load"] = int(float(parts[3]))
-            else:
-                base["gpu"] = "none"
+    # erroring probe leaves the honest "unknown" default. The probe itself now lives in
+    # core/hardware.py (DRA-44) so there is ONE nvidia-smi call site; `force=True` keeps
+    # this screen's used/load numbers live (and keeps the shutil.which monkeypatch in
+    # tests/test_sys_info_honest.py order-independent). hardware.py reports MB; this
+    # readiness screen has always reported GB.
+    with contextlib.suppress(Exception):
+        from agents.core import hardware
+        gpu = hardware.detect_gpu(force=True)
+        base["gpu"] = gpu.get("name") or "unknown"
+        if gpu.get("measured"):
+            base["vram_used"] = int(gpu["vram_used_mb"]) // 1024
+            base["vram_total"] = int(gpu["vram_total_mb"]) // 1024
+            base["gpu_load"] = int(gpu["load_pct"])
     return base
 
 

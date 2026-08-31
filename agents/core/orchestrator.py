@@ -1000,6 +1000,15 @@ class Orchestrator:
         from .learning.scheduler import propose_promotions
         return propose_promotions(self.learning, self.autonomy_queue, list(self.agents.keys()))
 
+    async def _run_prompt_evolution(self) -> list[dict]:
+        """Propose prompt optimizations into the decision inbox (gated, DRA-41).
+
+        The H20.4 self-evolution twin of `_run_learning_loop`: nothing self-
+        applies — approval routes the owner to the prompt-VC commit surface.
+        """
+        from .learning.evolution import propose_prompt_optimizations
+        return await propose_prompt_optimizations(self.learning, self.agents, self.autonomy_queue)
+
     async def _run_worldview_kg_sync(self):
         """Run one WorldView ontology -> knowledge-graph sync pass (best-effort)."""
         plugin = self.plugins.get("worldview")

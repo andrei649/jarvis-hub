@@ -1,8 +1,9 @@
 """Learning-loop endpoints — extracted from web.py (CLN-3).
 
 Covers the learning surface: propose agent promotions into the decision inbox
-(`/api/learning/propose`), the learning overview (`/learning`), manual bench-agent
-promotion (`/learning/promote`), and live learning stats for SystemsPanel
+(`/api/learning/propose`), propose prompt optimizations (`/api/learning/evolve`),
+the learning overview (`/learning`), manual bench-agent promotion
+(`/learning/promote`), and live learning stats for SystemsPanel
 (`/learning/stats`).
 
 The orchestrator (which owns `learning`, `agents`, `_run_learning_loop`, and
@@ -34,6 +35,22 @@ async def learning_propose():
     if not orch or not hasattr(orch, "_run_learning_loop"):
         return JSONResponse({"error": "not available"}, status_code=503)
     proposals = await orch._run_learning_loop()
+    return nocache_json({"ok": True, "proposed": proposals, "count": len(proposals)})
+
+
+@router.post("/api/learning/evolve", dependencies=[Depends(admin_guard)])
+async def learning_evolve():
+    """DRA-41 — propose prompt optimizations into the decision inbox now.
+
+    The self-evolution twin of `/api/learning/propose`. Also runs unattended on
+    the weekly learning-loop cadence; this route is the "run it now" surface.
+    Proposals are gated: approving one does not hot-swap a live prompt, it points
+    the owner at the existing prompt-VC commit route.
+    """
+    orch = get_orch()
+    if not orch or not hasattr(orch, "_run_prompt_evolution"):
+        return JSONResponse({"error": "not available"}, status_code=503)
+    proposals = await orch._run_prompt_evolution()
     return nocache_json({"ok": True, "proposed": proposals, "count": len(proposals)})
 
 

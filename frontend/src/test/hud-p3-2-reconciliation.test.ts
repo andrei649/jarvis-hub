@@ -42,6 +42,9 @@ describe('O26-P3.2 HUD remaining-work reconciliation', () => {
     expect(gap).toContain("apiPost('/api/memory/spaces/assign'");
     expect(gap).toContain("apiPost('/api/memory/spaces/unassign'");
     expect(gap).toContain("apiPost('/sandbox/execute'");
+    // DRA-28 — the v2 Console can create AND edit a workflow, not just read one.
+    expect(gap).toContain("apiPost('/api/workflows'");
+    expect(gap).toContain("apiPut('/api/workflows/'");
     expect(gap).toContain("act('/heartbeat/' + encodeURIComponent(id) + '/' + op");
     expect(gap).toContain("runAction('load', '/api/llm/load'");
     expect(gap).toContain("runAction('unload', '/api/llm/unload'");
