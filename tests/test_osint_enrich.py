@@ -15,6 +15,7 @@
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 repo_root = Path(__file__).resolve().parent.parent
@@ -270,7 +271,7 @@ async def test_plugin_never_lets_an_indicator_become_the_request_host(monkeypatc
         await plugin.lookup(from_kind="ip", from_value=value, to_kind="domain")
         await plugin.lookup(from_kind="ip", from_value=value, to_kind="asn")
     hosts = {urlparse(url).hostname for url, _ in http.requests}
-    assert hosts <= {"dns.google", "rdap.org"}
+    assert hosts == {"dns.google"}
 
 
 @pytest.mark.asyncio
@@ -309,11 +310,13 @@ async def test_disabled_plugin_drives_the_scaffold_to_provider_not_configured(mo
 
 
 # ── 6. the static egress guard ───────────────────────────────────────────────
-def test_manifest_pins_the_two_fixed_resolver_hosts():
+def test_manifest_pins_only_the_host_the_plugin_actually_dials():
     from agents.core.plugin_gate import BUILTIN_PLUGINS, DataScope, NetworkAccess
 
     manifest = BUILTIN_PLUGINS["osint_enrich"]
-    assert manifest.allowed_domains == ["dns.google", "rdap.org"]
+    # rdap.org was allowlisted for an ip->asn resolver that could never work; an egress
+    # host no resolver dials is permission surface with nothing behind it.
+    assert manifest.allowed_domains == ["dns.google"]
     assert manifest.network_access is NetworkAccess.RESTRICTED
     # indicator values genuinely leave the machine — the manifest must say so
     assert manifest.data_scope is DataScope.TRANSMITTED
@@ -328,3 +331,97 @@ def test_the_egress_boundary_blocks_a_host_the_manifest_does_not_name(monkeypatc
     client._enforce_egress("https://dns.google/resolve?name=acme.example")
     with pytest.raises(PluginEgressError):
         client._enforce_egress("https://acme.example/resolve")
+
+
+# ── 7. resolver isolation, and the ip→asn claim the code could never keep ─────
+class _Resp302:
+    """What ``rdap.org`` really answers: a 302 to the registry that holds the record.
+
+    ``PluginHTTPClient`` pins DNS and runs ``follow_redirects=False``, and httpx's
+    ``raise_for_status`` rejects every non-2xx — 3xx included. So a redirecting host is
+    not a slow resolver, it is a resolver that raises on the first byte, every time.
+    """
+
+    status_code = 302
+
+    def raise_for_status(self):
+        request = httpx.Request("GET", "https://dns.google/resolve")
+        httpx.Response(
+            302, headers={"location": "https://elsewhere.example/"}, request=request
+        ).raise_for_status()
+
+    def json(self):  # pragma: no cover - raise_for_status fires first
+        return {}
+
+
+class _PartlyDeadHTTP:
+    """One resolver that always redirects, next to one that answers."""
+
+    def __init__(self):
+        self.requests = []
+
+    async def get(self, url, params=None, **kwargs):
+        params = dict(params or {})
+        self.requests.append((url, params))
+        if params.get("type") == "PTR":
+            return _Resp302()
+        return _Resp({"Status": 0, "Answer": [{"type": 1, "data": "203.0.113.7"}]})
+
+    async def close(self):
+        pass
+
+
+async def _no_sleep(*_args, **_kwargs):
+    return None
+
+
+def _clear_osint_breakers():
+    from agents.core.resilience import _circuit_breakers
+
+    for key in [k for k in _circuit_breakers if k.startswith("plugin:osint_enrich")]:
+        _circuit_breakers.pop(key)
+
+
+@pytest.mark.asyncio
+async def test_a_redirecting_resolver_cannot_open_the_breaker_of_a_working_one(monkeypatch):
+    """A dead pivot burns its own retry budget — never the live resolvers' availability."""
+    from agents.core.plugins.osint_enrich import OsintEnrichPlugin
+
+    monkeypatch.setenv("JARVIS_OSINT_ENRICH", "1")
+    monkeypatch.setattr("agents.core.resilience.asyncio.sleep", _no_sleep)
+    _clear_osint_breakers()
+    http = _PartlyDeadHTTP()
+    plugin = OsintEnrichPlugin(http_client=http)
+    try:
+        with pytest.raises(httpx.HTTPStatusError):
+            await plugin.lookup(from_kind="ip", from_value="8.8.8.8", to_kind="domain")
+        # three attempts, three failures — enough to trip a threshold-3 breaker
+        assert len([p for _, p in http.requests if p.get("type") == "PTR"]) == 3
+        from agents.core.resilience import _circuit_breakers
+        assert _circuit_breakers["plugin:osint_enrich:dns_ptr"].state == "open"
+        assert "plugin:osint_enrich:dns_a" not in _circuit_breakers
+
+        records = await plugin.lookup(from_kind="domain", from_value="acme.example",
+                                      to_kind="ip")
+        assert [(r["kind"], r["value"]) for r in records] == [("ip", "203.0.113.7")]
+    finally:
+        _clear_osint_breakers()
+
+
+@pytest.mark.asyncio
+async def test_ip_to_asn_is_not_advertised_because_no_keyless_resolver_reaches_it(monkeypatch):
+    """An absent capability beats one advertised in a docstring the code cannot honour."""
+    from agents.core.plugins import osint_enrich as oe
+
+    assert ("ip", "asn") not in oe.RESOLVERS
+    assert set(oe.RESOLVERS) == {("domain", "ip"), ("ip", "domain")}
+    # the dead RDAP resolver and its URL are gone, not merely unreferenced
+    assert not hasattr(oe, "RDAP_IP_URL")
+    assert not hasattr(oe.OsintEnrichPlugin, "_resolve_origin_asn")
+
+    monkeypatch.setenv("JARVIS_OSINT_ENRICH", "1")
+    http = _RecordingHTTP()
+    plugin = oe.OsintEnrichPlugin(http_client=http)
+    assert plugin.supports("ip", "asn") is False
+    assert await plugin.lookup(from_kind="ip", from_value="8.8.8.8", to_kind="asn") == []
+    assert http.requests == []

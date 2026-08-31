@@ -1702,7 +1702,10 @@ export function A2AInboxPanel() {
    answers 422), which is why the caller passes an `onErr`: apiPost throws on 4xx, so without
    it the button would silently read as a success. */
 export function MarketplacePanel() {
-  const { d, e, loading, reload } = useApi('/api/skills/marketplace');
+  // GET /api/skills/marketplace is admin_guard'ed like the mutations below it: without
+  // the admin flag the list 401s on a token-configured install and the rollback control
+  // has nothing to hang off.
+  const { d, e, loading, reload } = useApi('/api/skills/marketplace', true, true);
   const skills = arr(d, 'skills');
   const [note, setNote] = useState(null);
   return <Card title="SKILLS MARKETPLACE" live={asLive(d)} sub={skills.length} onReload={reload}>
@@ -3684,10 +3687,14 @@ export function AcquisitionPanel() {
   try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
   const status = useApi('/api/acquisition/status');
   const audit = useApi('/api/acquisition/events?limit=100');
-  // Admin-only, and only fetched for an admin: the drive control below needs a
-  // real request_id, and nothing else in the product ever hands one out — the
-  // ledger exposes only hashes, the status snapshot only per-state counts.
-  const requests = useApi('/api/acquisition/requests', hasAdmin, true);
+  // The drive control below needs a real request_id, and this list is the ONLY place
+  // the product ever hands one out — the ledger exposes hashes, the status snapshot
+  // per-state counts. So it is read unconditionally (with the admin header when a token
+  // is stored): admin routes are localhost-exempt, and gating the read on a locally
+  // stored token hid the whole control on the default posture where it works. On a
+  // token-configured install without the token the read simply degrades to a visible
+  // "offline · GET … -> 401", like every sibling admin panel.
+  const requests = useApi('/api/acquisition/requests', true, true);
   const data = status.d || {};
   const loaded = !!status.d;
   const enabled = loaded && !!data.enabled;
@@ -3745,9 +3752,16 @@ export function AcquisitionPanel() {
         reload();
         requests.reload();
       })
-      .catch((error) => setOutcome(`refused · ${error?.status === 409
-        ? '409 · preconditions not met (acquisition enabled + local LLM + SEARXNG_URL + pinned sandbox image)'
-        : (error?.message || 'drive_failed')}`));
+      // The route answers with its OWN reason (reuse_available, acquisition_disabled,
+      // promotion_unavailable, local_llm_required, searxng_backend_required,
+      // synthesis_failed, …). Print that verbatim — naming one fixed precondition list
+      // for every refusal told the operator a cause the server never gave.
+      .catch((error) => {
+        const body = error?.body || {};
+        const reason = body.reason || error?.message || 'drive_failed';
+        const needs = arr(body._degraded?.needs);
+        setOutcome(`refused · ${error?.status ? `${error.status} · ` : ''}${reason}${needs.length ? ` · needs ${needs.join(', ')}` : ''}`);
+      });
   };
 
   return (
@@ -3797,7 +3811,7 @@ export function AcquisitionPanel() {
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}><Tag>{item.status || 'recorded'}</Tag><Tag>{item.actor || 'system'}</Tag></span>
           </Row>
         ))}
-        {hasAdmin && <section aria-label="admin acquisition lifecycle" style={{ marginTop: 10 }}>
+        <section aria-label="admin acquisition lifecycle" style={{ marginTop: 10 }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
             <button className="tool-btn" type="button" onClick={exportLedger} aria-label="Export acquisition ledger">export ledger</button>
           </div>
@@ -3818,7 +3832,9 @@ export function AcquisitionPanel() {
               style={{ ...taS, minHeight: 50 }}
             />
           </div>
-          {gaps.length === 0
+          {requests.e
+            ? <div role="alert" style={{ ...mono, color: 'var(--red)', fontSize: 10 }}>offline · {requests.e}</div>
+            : gaps.length === 0
             ? <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10 }}>no open capability gaps</div>
             : gaps.map((item) => (
               <Row key={item.request_id}>
@@ -3851,7 +3867,7 @@ export function AcquisitionPanel() {
               aria-label="Purge acquisition detail"
             >purge detail</button>
           </div>
-        </section>}
+        </section>
         {outcome && <div role="status" style={{ ...mono, color: outcome.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 7 }}>{outcome}</div>}
       </>}
     </Card>

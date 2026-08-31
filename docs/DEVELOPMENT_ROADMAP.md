@@ -2,8 +2,10 @@
 
 > For any developer (human or AI) joining jarvis-hub/Nerva: **Part I** is how to work here,
 > **Part II** is what to build and in what order. Grounded against `main` @ `a2d9556`
-> (2026-08-31, post-#990). Canonical sources outrank this file: `AGENTS.md`
-> (workflow law), `BACKLOG.md` (priority truth),
+> (2026-08-31, post-#990), with Part II re-swept entry-by-entry against the backlog-zero branch
+> head — every DRA id below was checked against the code, not against the ledger
+> (`tests/test_doc_reference_integrity.py` keeps the two in step).
+> Canonical sources outrank this file: `AGENTS.md` (workflow law), `BACKLOG.md` (priority truth),
 > `MOONSHOT.md` §5 (non-negotiables), `docs/ARCHITECTURE.md` (where code lives),
 > `AI_SYSTEM_PROMPT.md` (condensed orientation). When this file disagrees with them, they win —
 > fix this file in the same PR.
@@ -119,9 +121,11 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 - DRA-09: refresh the factually-false SEC-B4 row and the stale SEC-B5 row.
 - DRA-11/12/13: mark the already-merged plan clusters (e-stop surface, honesty doc fixes) as
   do-not-rebuild in the plan artifacts; fix the one stale `PARITY.md` phrase.
-- DRA-49: fix the misleading kernel-test docstring; DRA-46: correct `NERVA_VISION.md`'s
-  now-false "never executes" claim; GAP-7/8: restate the Hermes verdict + re-baseline pillar
-  percentages in `NERVA_VISION.md`.
+- ~~DRA-49: fix the misleading kernel-test docstring~~ **done** — `tests/test_kernel_authorize.py`
+  now points at the shipped K3 loop-breaker/budget and K4 syscall waves and their own test files
+  instead of a deferred K3; DRA-46: correct `NERVA_VISION.md`'s now-false "never executes" claim;
+  GAP-7/8: restate the Hermes verdict + re-baseline pillar percentages in `NERVA_VISION.md`
+  (both still open — `NERVA_VISION.md` is untouched).
 - DRA-48: ✅ done — the dead `agents/_system/` installer stub (and its `WEEK-1.md` sibling) are
   deleted; the repo's live installer is the root `install.sh` (guard: `tests/test_dead_installer_stub.py`).
 
@@ -130,61 +134,107 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 - **SEC-B5 residual** (DRA-02): bind/reset the recall-taint mark explicitly around the HTTP
   recall route (`routers/memory_kg.py` → `MemorySearchTool`) instead of relying on incidental
   asyncio context isolation.
-- **CI posture honesty** (DRA-16 ✅, DRA-30, issue #242): the CodeQL half is closed —
+- **CI posture honesty** (DRA-16 ✅, ~~DRA-30~~ ✅, issue #242): both halves are closed. CodeQL —
   the "private repo" rationale and `continue-on-error` are gone from
   `.github/workflows/codeql.yml`, and the posture is now stated the same way everywhere:
   advisory, push-to-main + weekly, not a required check, red on analysis/upload failure
-  (`tests/test_codeql_posture.py` pins it). Still open: the required-checks posture
-  contradicts itself across the remaining surfaces, and the re-gate criteria still need to go
-  in front of the owner as a packet.
-- **Egress truth** (DRA-23): close the egress-ledger blind spot the HUD and support bundle
-  present as local-first proof; DRA-47: make the SSRF blocked-request and per-scanner counters
-  measured or labeled unmeasured.
+  (`tests/test_codeql_posture.py` pins it). DRA-30 — the required-checks story no longer
+  contradicts itself across the doc surfaces (the fifth, `docs/test-manual/08-security-privacy.md`,
+  stopped filing it under "could not verify"), and the re-gate packet is on the owner lane:
+  `docs/OWNER_TASKS.md` names every check to drop and `docs/restore/README.md` keeps each removed
+  gate as an independently restorable patch (`tests/test_degate_posture_docs.py` pins it).
+  **Owner-side residual only:** the GitHub settings themselves are unobservable from the repo.
+- ~~**Egress truth** (DRA-23)~~ ✅ — every LLM backend now dials through
+  `agents/core/llm/egress.py::llm_async_client`, so the ledger the HUD and support bundle present
+  as local-first proof records model traffic that leaves the box instead of missing it; the
+  localhost control-plane pollers stay out on purpose (`tests/test_llm_egress_ledger.py`);
+  ~~DRA-47~~ ✅ — the SSRF refusal count and the per-scanner finding counts are measured
+  (`security/ssrf.py::blocked_requests`, `routers/security_hud.py`), reported as
+  process-lifetime numbers rather than as a zero that reads like a measurement
+  (`tests/test_security_status_is_measured.py`).
 - **Audit-doc debt**: ~~DRA-50 (`require_component` deferred-never-built)~~ — shipped as a
   behaviour-exact sweep of 45 guards plus a structural test that stops the boilerplate regrowing;
-  DRA-51 (two JSON stores still writing non-atomically), plus the open `cameras/frigate.py`
-  request-path `getaddrinfo`.
+  ~~DRA-51~~ ✅ — **three** (not two) non-store writers rewrote their file in place; the per-turn
+  memory snapshot, the ingestion watcher state and the Oracle bridge session file now all go
+  through `persistence.atomic_write_json` (tmp+replace, tmp removed on failure), pinned by
+  `tests/test_atomic_json_writes.py`. The `cameras/frigate.py` request-path `getaddrinfo` was
+  already fixed before this branch — `_resolve_pinned` runs the resolver through
+  `asyncio.to_thread` (`frigate.py:236`), so it is off the event loop; that clause was stale.
 - **SEC-B6 / #911 / #916 / B7-#918 acceptances**: drive the recorded post-merge HOLDs to an
   evidence-backed accept-or-revert — reviewer/owner lane, prepared by you.
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
-~70 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
-`UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`). Work it as a series of small
-vertical slices, each deleting entries from the punch list; prioritize by user value:
+61 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
+`UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`; it held 79 before this wave, and
+`tests/test_doc_reference_integrity.py` keeps this number honest). DRA-15 and DRA-36 both stay
+open — the list is shorter, not empty. Work it as a series of small vertical slices, each
+deleting entries from the punch list; prioritize by user value:
 
 1. ~~DRA-17 — CDX-8 generated-skill **review/approve UI**~~ **done (this PR)** (the whole
    self-improvement loop is invisible without it).
 2. DRA-27 — memory write/hygiene controls: ~~decay~~ **done**; consolidate still open and
    blocked on where its `existing` memory list comes from (see the BACKLOG row).
    ~~DRA-52 — review-queue → eval-dataset promotion~~ **done (#997)**.
-3. DRA-28 — workflow create/edit surface for the shipped AI Step Builder; DRA-39 — fix
-   `flow_api.build_flow` silently dropping `subflow` (a real compile bug, not just UI).
-4. DRA-29 — multimodal *input* (VLM describe / media generate callers); DRA-37 — marketplace
-   rollback control; DRA-38 — acquisition drive trigger beyond curl.
-5. ~~DRA-19 — construct `SignalGovernanceBridge` in production~~ **done (#992)**; DRA-21 — feed
-   `StockQuotesPlugin` into the market router; DRA-41 — give `self_evolution.py` its production caller.
-6. DRA-53 — `notes_store.py` (504 lines, no adopter): adopt it behind a route or delete it.
-7. DRA-06 — the ScreenReflex HUD overlay half.
+3. ~~DRA-28 — workflow create/edit surface for the shipped AI Step Builder~~ **done** —
+   `WorkflowBuilderPanel` (`frontend/src/gap.tsx`) creates and edits flows;
+   ~~DRA-39 — `flow_api.build_flow` silently dropping `subflow`~~ **done** — the compiler passes
+   `subflow` through and now raises at compile time when a `kind="subflow"` step has no config,
+   instead of silently returning the previous ctx value at run time.
+4. DRA-29 — multimodal *input*, **half done**: ~~the VLM describe caller~~ **done**
+   (`VlmDescribePanel` posts to `/api/vlm/describe`), but `POST /api/media/generate` **still has
+   no caller** — nothing under `frontend/src` (outside the generated schema) references it, so
+   this row stays open; ~~DRA-37 — marketplace rollback control~~ **done** (the ⟲ control on the
+   SKILLS MARKETPLACE list, which is where the rollback data actually lives);
+   ~~DRA-38 — acquisition drive trigger beyond curl~~ **done** —
+   `POST /api/acquisition/{request}/drive` is driven from the AcquisitionPanel.
+5. ~~DRA-19 — construct `SignalGovernanceBridge` in production~~ **done (#992)**;
+   ~~DRA-21 — feed `StockQuotesPlugin` into the market router~~ **done** — `live: true` fills the
+   symbols the caller did not price from the keyless `stock-quotes` feed, caller quotes win, and
+   an unpriceable symbol stays `no_quote` behind a provenance block;
+   ~~DRA-41 — give `self_evolution.py` its production caller~~ **done** —
+   `POST /api/learning/evolve` plus the weekly learning-loop cadence, proposals gated
+   (approving one does not hot-swap a live prompt).
+6. ~~DRA-53 — `notes_store.py` (504 lines, no adopter): adopt it behind a route or delete it~~
+   **done (adopted)** — it backs the `/api/notes/docs/*` block-document routes
+   (`agents/core/routers/notes.py`, `tests/test_notes_docs_routes.py`).
+7. ~~DRA-06 — the ScreenReflex HUD overlay half~~ **done** — `POST /api/screen/reflex` is the
+   capture-to-answer core's first product caller and `ScreenReflexPanel` feeds it real bytes
+   (file, paste, `getDisplayMedia`). Deliberately **not** shipped and said so in the panel: the
+   OS-level screen grab and the 0.64 global hotkey are host-gated.
 
 ### Phase 4 — Capability completion (weeks 6–12, overlaps Phase 3)
 
 Real code, still AI-doable without owner hardware:
 
-- DRA-07/14 — the fail-closed malformed-`NERVA_PUBLIC_PROFILE` **boot guard**
-  (`boot_guards.py:enforce_boot_posture`) + the `agents.public.yaml` roster overlay (the two
-  AI-doable halves of the P0 public demo).
-- DRA-05/10 — the governed **OSINT enrichment plugin** scaffold (injectable client, consumes
-  `suggest_pivots` output, taint-visible, write-back approval-gated).
-- DRA-08 — Hermes v3 Phases 3/5/6 live wiring: sandbox file-RPC `execute_code` pull, gateway
-  session keys (`SessionSource`/`DeliveryRouter`), cron job store.
+- ~~DRA-07/14 — the fail-closed malformed-`NERVA_PUBLIC_PROFILE` **boot guard**
+  (`boot_guards.py:enforce_boot_posture`)~~ **done** — `assert_parseable_posture_flags` refuses to
+  start on an unrecognized spelling of a parse-critical flag, from both documented entry points
+  (`tests/test_public_profile_boot_guard.py`). **The second half is still open:** the
+  `agents.public.yaml` roster overlay — no such file exists in the tree, so the public demo still
+  has no explicit agent allowlist.
+- ~~DRA-05/10 — the governed **OSINT enrichment plugin** scaffold (injectable client, consumes
+  `suggest_pivots` output, taint-visible, write-back approval-gated)~~ **done** —
+  `agents/core/plugins/osint_enrich.py` implements the `PivotLookupClient` seam with keyless
+  resolvers only, off unless `JARVIS_OSINT_ENRICH` is set, and never lets an indicator become the
+  request host (`tests/test_osint_enrich.py`). DRA-10 was folded into DRA-05 as a duplicate.
+- DRA-08 — Hermes v3 live wiring, **one of three phases done**: ~~Phase 3 — sandbox file-RPC
+  `execute_code` pull~~ **done** (`POST /sandbox/execute` with `tools: true` runs the script
+  through `ToolRPCSandboxRuntime`, allowlist + approval still apply, and there is no silent
+  ungoverned fallback — `tests/test_sandbox_tool_rpc_pipeline.py`). **Phases 5 and 6 stay open:**
+  gateway session keys (`SessionSource`/`DeliveryRouter`) and the cron job store.
 - GAP-1 residue — the `MediaDriver` injection point + implementation seam for
   `routers/media_director.py`; the acquisition **caller** (scheduled worker or admin action
   invoking `synthesize_and_propose`); the node-mesh transport (`node_transport_not_built`).
 - Agent depth — `agents/vision` + `agents/argus` real implementation (persona-only today);
   wire Hestia's reads/proposals onto `agents/core/house/**`; H30.8 tail.
-- DRA-24 — model cached-input token cost (Gemini context caching is live but costed at zero);
-  DRA-25 — implement or un-advertise the MCP SSE transport.
+- ~~DRA-24 — model cached-input token cost (Gemini context caching is live but costed at zero)~~
+  **done** — every price row carries a third `cached` rate and the estimator bills cached input at
+  it, so the saving is no longer over-reported (`tests/test_cost_estimator.py`);
+  ~~DRA-25 — implement or un-advertise the MCP SSE transport~~ **done (un-advertised)** — `stdio`
+  is the only transport the contract and the admin route accept (400 before anything is
+  persisted), and `/connect` reports the real handshake result instead of a hardcoded
+  `connected: true` (`tests/test_mcp_transport_honesty.py`).
 
 ### Phase 5 — Proof track → tag 1.0.0 (calendar-gated, runs alongside 3–4)
 
@@ -194,9 +244,11 @@ machine rows are green; what remains is evidence, not code:
 - **A2 72h soak** — now automated (`.github/workflows/soak.yml` + `scripts/soak_report.py`);
   needs the owner box to actually run it; collect and file the evidence.
 - **GAP-4 / DRA-45** — the Hermes head-to-head on the owner's machine: 10 tasks, publish the
-  table including losses (~1 day, feeds S1/S2). The protocol is written and frozen —
-  [`docs/HERMES_HEAD_TO_HEAD.md`](HERMES_HEAD_TO_HEAD.md), status **NOT RUN**; the run itself is
-  owner-gated behind the Hermes licence/CVE review.
+  table including losses (~1 day, feeds S1/S2). ~~DRA-45's tracking gap (no finder, cluster or
+  owner-lane entry owned this)~~ **closed** — the protocol is written and frozen,
+  [`docs/HERMES_HEAD_TO_HEAD.md`](HERMES_HEAD_TO_HEAD.md) (pinned by
+  `tests/test_hermes_head_to_head_protocol.py`), and it now has a row in `docs/OWNER_TASKS.md`.
+  Status **NOT RUN**: the measurement itself is owner-gated behind the Hermes licence/CVE review.
 - **Live-eval owner run** — `companion_eval --live-gate` against the real local model (the
   release-gate owner row stays FAIL until run).
 - **A7 design partners** — recruit 1–3, ≥2 weeks usage, north-star measured on real usage;
@@ -226,10 +278,18 @@ sole privileged-action authority):
 - **H23.30 public web demo** on digitaholic.ro — once the four owner calls land (host, LLM
   provider, hardened profile, H23.23 ratification); the code halves ship in Phase 4.
 - **H23.23 option B** — per-user isolation, if design-partner demand triggers it.
-- **0.18 GPU minor** — Howard fine-tune (H12.14), speculative decoding (H13.3); DRA-44 hardware
-  benchmark & profiles (still content-free).
-- **DRA-26** — the GitHub-backed path-prefix lease service (specced, machine-asserted, unbuilt);
-  until then the only honest lease state stays `none`.
+- **0.18 GPU minor** — Howard fine-tune (H12.14), speculative decoding (H13.3);
+  ~~DRA-44 hardware benchmark & profiles (still content-free)~~ **done** — detection now feeds the
+  VRAM budget (no more static 24GB assumption) and `GET /api/system/hardware` publishes a
+  spec-based score in which an unprobed component scores zero rather than being credited
+  (`agents/core/hardware.py`, `tests/test_hardware_profile.py`). The **throughput** table in
+  `docs/HARDWARE_BENCHMARKS.md` is still `— to measure —`: that is DRA-62's measurement half and
+  needs owner hardware; its docs half (no page may promise measured tokens/sec the table does not
+  have) shipped and is pinned by `tests/test_hardware_benchmarks_claims.py`.
+- **DRA-26** — the GitHub-backed path-prefix lease service is **still unbuilt** (nothing in
+  `agents/` implements it), so the only honest lease state stays `none`. What did close is the
+  finding's honesty half: `PARALLEL_WORKFLOW.md` §3 now names this backlog row and this phase
+  instead of leaving "planned" as a dead end (`tests/test_doc_reference_integrity.py`).
 - ORIZONT 34 Mission Control tail; distribution (signed installers, appliance path), the
   remaining Hermes-migration phases, and whatever the next fresh-eyes audit surfaces — schedule
   one such adversarial audit per quarter; they have out-performed every other bug source in this
@@ -239,8 +299,9 @@ sole privileged-action authority):
 
 - **Daily:** pick per the §Sequencing rules; one slice → one PR; update BACKLOG in the same PR.
 - **Weekly:** re-read the DRA ledger + `docs/BACKLOG_DAILY_BRIEF.md`; re-verify any row you're
-  about to build against HEAD (this ledger moves daily — four DRA items shipped in the last two
-  days alone); refresh owner packets.
+  about to build **against the code at HEAD**, never against your memory of the ledger — this one
+  moves in waves, and the backlog-zero run closed dozens of DRA rows at once; refresh owner
+  packets.
 - **Per merge:** BACKLOG sync, counters via `status_sync.py`, close the loop on your own PRs
   (CI, review threads) before starting the next slice.
 - **Quarterly:** adversarial audit + docs-vs-code accuracy pass; re-rank everything against

@@ -7,17 +7,25 @@ calls, so nothing about installing this plugin puts an indicator on the wire.
 
 Two rules shape the resolver table:
 
-* **The indicator is never the host.** Every request goes to a *fixed* host named in the
-  manifest (``dns.google`` / ``rdap.org``) with the indicator carried as a query parameter
-  or as an already-parsed IP in the path. An indicator is attacker-influenceable data; if
-  it could become the request host, this plugin would be an SSRF pivot with a manifest
-  stamped on it. (``PluginHTTPClient`` also pins DNS and validates every hop — this rule is
-  the layer above that, not a substitute for it.)
-* **No key, no claim.** Only ``domain→ip``, ``ip→domain`` and ``ip→asn`` have a keyless
-  resolver. Every other pair reports ``supports() is False``, which the scaffold records as
+* **The indicator is never the host.** Every request goes to the *fixed* host named in the
+  manifest (``dns.google``) with the indicator carried as a query parameter. An indicator is
+  attacker-influenceable data; if it could become the request host, this plugin would be an
+  SSRF pivot with a manifest stamped on it. (``PluginHTTPClient`` also pins DNS and validates
+  every hop — this rule is the layer above that, not a substitute for it.)
+* **No key, no claim.** Only ``domain→ip`` and ``ip→domain`` have a keyless resolver. Every
+  other pair reports ``supports() is False``, which the scaffold records as
   ``provider_not_configured`` — the honest boundary where the owner's paid providers
   (Shodan, HIBP, SpiderFoot modules, the WorldView REST) would later plug in as extra
   branches rather than a redesign.
+
+``ip→asn`` used to be listed here against ``rdap.org``. It never worked and was removed
+rather than left advertised: ``rdap.org`` is a *bootstrap redirector* (``302`` to
+``rdap.arin.net`` and friends), ``PluginHTTPClient`` deliberately runs with
+``follow_redirects=False``, and httpx's ``raise_for_status`` rejects 3xx — so the call
+raised on the first byte, every time, and the "registry publishes no origin AS" branch was
+unreachable. Making it work would mean allowlisting five registry hosts and following
+redirects for a field only ARIN populates. ``ip→asn`` now reports
+``provider_not_configured``, which is what the code could actually deliver all along.
 """
 
 from __future__ import annotations
@@ -36,10 +44,13 @@ logger = logging.getLogger("jarvis.plugins.osint_enrich")
 ENABLE_FLAG = "JARVIS_OSINT_ENRICH"
 
 DNS_RESOLVE_URL = "https://dns.google/resolve"
-RDAP_IP_URL = "https://rdap.org/ip/"
 
 #: Pivot pairs a keyless resolver can actually answer.
-RESOLVERS = frozenset({("domain", "ip"), ("ip", "domain"), ("ip", "asn")})
+RESOLVERS = frozenset({("domain", "ip"), ("ip", "domain")})
+
+#: Resolver names. Each one owns its *own* circuit breaker (see ``_resolver_call``).
+_RESOLVER_A = "dns_a"
+_RESOLVER_PTR = "dns_ptr"
 
 _DNS_TYPE_A = 1
 _DNS_TYPE_PTR = 12
@@ -62,6 +73,46 @@ def _clean_ip(value: str):
         return ipaddress.ip_address(str(value or "").strip())
     except ValueError:
         return None
+
+
+async def _fetch_json(client, url: str, params: dict | None) -> dict:
+    """One HTTP hop, decoded. Wrapped per resolver by :func:`_resolver_call`."""
+    kwargs = {"params": params} if params else {}
+    resp = await client.get(url, **kwargs)
+    resp.raise_for_status()
+    try:
+        payload = resp.json()
+    except Exception:
+        logger.warning("osint_enrich: non-JSON response from %s", url)
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+_RESOLVER_CALLS: dict[str, object] = {}
+
+
+def _resolver_call(resolver: str):
+    """Retry + breaker policy for **one** resolver, built once and cached.
+
+    The breaker key is per resolver on purpose. A single shared key meant one broken pivot
+    burned the whole threshold (``resilient_call`` records a failure per *attempt*, so one
+    lookup is three) and then fail-fast-ed the resolvers that were still healthy for the
+    entire recovery window. A dead pivot may cost its own availability and nothing else.
+    """
+    call = _RESOLVER_CALLS.get(resolver)
+    if call is None:
+        call = resilient_call(
+            max_retries=2,
+            timeout=10.0,
+            backoff_base=0.5,
+            backoff_max=2.0,
+            circuit_breaker_key=f"plugin:osint_enrich:{resolver}",
+            circuit_breaker_threshold=3,
+            metrics_agent_id="osint_enrich",
+            metrics_backend=f"osint-keyless-{resolver}",
+        )(_fetch_json)
+        _RESOLVER_CALLS[resolver] = call
+    return call
 
 
 class OsintEnrichPlugin:
@@ -98,8 +149,6 @@ class OsintEnrichPlugin:
             return await self._resolve_a(from_value)
         if pair == ("ip", "domain"):
             return await self._resolve_ptr(from_value)
-        if pair == ("ip", "asn"):
-            return await self._resolve_origin_asn(from_value)
         return []
 
     # ── resolvers ───────────────────────────────────────────────────────────
@@ -107,7 +156,7 @@ class OsintEnrichPlugin:
         host = _clean_hostname(value)
         if not host:
             return []
-        data = await self._get_json(DNS_RESOLVE_URL, {"name": host, "type": "A"})
+        data = await self._get_json(_RESOLVER_A, DNS_RESOLVE_URL, {"name": host, "type": "A"})
         out = []
         for answer in (data or {}).get("Answer") or []:
             if not isinstance(answer, dict) or answer.get("type") != _DNS_TYPE_A:
@@ -123,7 +172,7 @@ class OsintEnrichPlugin:
         address = _clean_ip(value)
         if address is None:
             return []
-        data = await self._get_json(DNS_RESOLVE_URL,
+        data = await self._get_json(_RESOLVER_PTR, DNS_RESOLVE_URL,
                                     {"name": address.reverse_pointer, "type": "PTR"})
         out = []
         for answer in (data or {}).get("Answer") or []:
@@ -136,50 +185,9 @@ class OsintEnrichPlugin:
                         "detail": f"reverse DNS for {address}", "url": ""})
         return out
 
-    async def _resolve_origin_asn(self, value: str) -> list[dict]:
-        """Origin AS numbers RDAP actually publishes for this address — never a guess.
-
-        Only some registries populate the origin-AS extension; when it is absent we return
-        nothing rather than inferring an ASN from the network handle, which is a different
-        fact wearing the same shape.
-        """
-        address = _clean_ip(value)
-        if address is None:
-            return []
-        # ``address`` is a parsed IP re-stringified, so nothing from the indicator can
-        # escape into the URL path.
-        url = f"{RDAP_IP_URL}{address}"
-        data = await self._get_json(url, None)
-        out = []
-        for number in (data or {}).get("arin_originas0_originautnums") or []:
-            text = str(number).strip()
-            if not text.isdigit():
-                continue
-            out.append({"kind": "asn", "value": f"AS{int(text)}",
-                        "detail": f"RDAP origin AS for {address}", "url": url})
-        return out
-
     # ── transport ───────────────────────────────────────────────────────────
-    @resilient_call(
-        max_retries=2,
-        timeout=10.0,
-        backoff_base=0.5,
-        backoff_max=2.0,
-        circuit_breaker_key="plugin:osint_enrich",
-        circuit_breaker_threshold=3,
-        metrics_agent_id="osint_enrich",
-        metrics_backend="osint-keyless-resolvers",
-    )
-    async def _get_json(self, url: str, params: dict | None) -> dict:
-        kwargs = {"params": params} if params else {}
-        resp = await self.client.get(url, **kwargs)
-        resp.raise_for_status()
-        try:
-            payload = resp.json()
-        except Exception:
-            logger.warning("osint_enrich: non-JSON response from %s", url)
-            return {}
-        return payload if isinstance(payload, dict) else {}
+    async def _get_json(self, resolver: str, url: str, params: dict | None) -> dict:
+        return await _resolver_call(resolver)(self.client, url, params)
 
     async def close(self):
         close = getattr(self.client, "close", None)

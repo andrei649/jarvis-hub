@@ -61,6 +61,19 @@ describe('MarketplacePanel — package rollback', () => {
     await waitFor(() => expect(screen.getByText(/refused/)).toBeTruthy());
   });
 
+  /* BLOCKER-hud — GET /api/skills/marketplace is admin_guard'ed. The panel read it
+     without the admin flag, so on a token-configured install the list 401'd, no rows
+     rendered, and DRA-37's rollback control was unreachable. */
+  it('sends the admin token on the guarded list read, not just on the mutations', async () => {
+    try { localStorage.setItem('hud.admin_token', 'adm'); } catch { /* ignore */ }
+    const fn = mockApi(() => Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) }));
+    render(<MarketplacePanel />);
+    await waitFor(() => expect(screen.getByText('weather')).toBeTruthy());
+    const list = fn.mock.calls.find((c) => String(c[0]).includes('/api/skills/marketplace') && ((c[1] && c[1].method) || 'GET') === 'GET');
+    expect(list).toBeTruthy();
+    expect(list[1].headers['X-Admin-Token']).toBe('adm');
+  });
+
   it('says the restored package is a registry revert, not a redeploy', async () => {
     mockApi(() => Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) }));
     render(<MarketplacePanel />);

@@ -275,14 +275,16 @@ BUILTIN_PLUGINS = {
         id="osint_enrich",
         name="OSINT Pivot Enrichment",
         version="0.1.0",
-        description="Follow OSINT pivot suggestions with keyless resolvers (DNS-over-HTTPS, RDAP)",
+        description="Follow OSINT pivot suggestions with keyless resolvers (DNS-over-HTTPS)",
         network_access=NetworkAccess.RESTRICTED,
         # Indicator values (a domain, an IP) genuinely leave the machine to be resolved —
         # say TRANSMITTED rather than dress a third-party lookup up as local processing.
         data_scope=DataScope.TRANSMITTED,
-        # Fixed resolver hosts. The indicator rides as a query parameter / parsed-IP path
-        # segment, so it can never become the request host.
-        allowed_domains=["dns.google", "rdap.org"],
+        # The one fixed resolver host. The indicator rides as a query parameter, so it can
+        # never become the request host. (``rdap.org`` was listed here for an ip->asn
+        # resolver that could not work behind ``follow_redirects=False``; the resolver is
+        # gone, so the egress grant goes with it.)
+        allowed_domains=["dns.google"],
         agents_served=["vision", "argus", "athena"],
     ),
     "n8n": PluginManifest(

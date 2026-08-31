@@ -31,6 +31,7 @@ from agents.core.autonomy.mediation import (  # noqa: E402
     issue_receipt,
 )
 from agents.core.autonomy.mediation_head_store import (  # noqa: E402
+    MEDIATION_MODES,
     FileMediationHeadStore,
     make_task_mediation_anchor,
     resolve_task_mediation_mode,
@@ -119,13 +120,71 @@ def test_known_modes_are_honored(monkeypatch, mode):
     assert resolve_task_mediation_mode() == mode.strip().lower()
 
 
-def test_unknown_mode_falls_back_to_off_without_raising(monkeypatch, tmp_path):
+TYPOS = ("enfroce", "enforcee", "hodl", "on", "1", "yes", "disabled", "0ff")
+
+
+@pytest.mark.parametrize("typo", TYPOS)
+def test_a_set_but_unrecognised_mode_refuses_to_boot(monkeypatch, typo):
+    """A typo must never resolve to `off` — that is the UNPROTECTED position.
+
+    `off` disables every B7 tamper-evidence protection, so falling back to it on
+    `JARVIS_TASK_MEDIATION=enfroce` fails open. Same convention as
+    `boot_guards.assert_parseable_posture_flags`: refuse to start.
+    """
+    monkeypatch.setenv("JARVIS_TASK_MEDIATION", typo)
+    with pytest.raises(SystemExit) as excinfo:
+        resolve_task_mediation_mode()
+    message = str(excinfo.value)
+    assert "JARVIS_TASK_MEDIATION" in message
+    assert "off" in message and "hold" in message and "enforce" in message
+    # Same "name the variable, never the value" contract the bool guard keeps.
+    assert typo not in message.replace(".", " ").replace("|", " ").split()
+    assert repr(typo) not in message
+
+
+def test_the_refusal_escapes_a_broad_exception_handler(monkeypatch):
+    """Boot paths wrap subsystem construction in `except Exception`; SystemExit
+    (a BaseException) is what makes the refusal un-swallowable."""
     monkeypatch.setenv("JARVIS_TASK_MEDIATION", "enfroce")
-    resolved = resolve_task_mediation_mode()
-    assert resolved == "off"
-    # TaskQueue raises ValueError on an unknown mode, so a config typo must not
-    # reach it.
-    TaskQueue(str(tmp_path / "typo.db"), mediation_mode=resolved).initialize().close()
+    with pytest.raises(SystemExit):
+        try:
+            resolve_task_mediation_mode()
+        except Exception:  # noqa: BLE001 - the point of the assertion
+            pytest.fail("the refusal must not be swallowed as an ordinary Exception")
+
+
+@pytest.mark.parametrize("typo", TYPOS)
+def test_the_boot_guard_refuses_a_mistyped_mediation_mode(monkeypatch, typo):
+    """The refusal lands at boot, beside the other parse-critical posture flags."""
+    from agents.core import boot_guards
+
+    monkeypatch.delenv("NERVA_PUBLIC_PROFILE", raising=False)
+    monkeypatch.setenv("JARVIS_TASK_MEDIATION", typo)
+    with pytest.raises(SystemExit) as excinfo:
+        boot_guards.assert_parseable_posture_flags()
+    assert "JARVIS_TASK_MEDIATION" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("mode", ["", "  ", "off", "hold", " ENFORCE "])
+def test_the_boot_guard_accepts_every_known_spelling(monkeypatch, mode):
+    from agents.core import boot_guards
+
+    monkeypatch.delenv("NERVA_PUBLIC_PROFILE", raising=False)
+    monkeypatch.setenv("JARVIS_TASK_MEDIATION", mode)
+    boot_guards.assert_parseable_posture_flags()  # must not raise
+    monkeypatch.delenv("JARVIS_TASK_MEDIATION", raising=False)
+    boot_guards.assert_parseable_posture_flags()
+
+
+def test_every_resolved_mode_is_one_taskqueue_accepts(monkeypatch, tmp_path):
+    """Whatever the resolver returns still has to be a mode TaskQueue accepts."""
+    for mode in ("", "off", "hold", "enforce"):
+        monkeypatch.setenv("JARVIS_TASK_MEDIATION", mode)
+        resolved = resolve_task_mediation_mode()
+        assert resolved in MEDIATION_MODES
+        TaskQueue(
+            str(tmp_path / f"mode-{resolved}.db"), mediation_mode=resolved
+        ).initialize().close()
 
 
 # ── the store itself ─────────────────────────────────────────────────────────

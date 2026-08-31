@@ -172,12 +172,38 @@ def make_task_mediation_anchor(path: str | Path | None = None) -> MonotonicHeadA
     return MonotonicHeadAnchor(store.read, store.compare_and_swap)
 
 
+MALFORMED_MODE_MESSAGE = (
+    f"Refusing to start: unparseable value for {_ENV_VAR}.\n"
+    "Use one of off|hold|enforce. An unrecognized spelling has nowhere safe to fall "
+    "back to: 'off' is this flag's UNPROTECTED position, so a typo would silently "
+    "disable every B7 task-mediation tamper-evidence protection. Refusing to start "
+    "instead (same convention as boot_guards.assert_parseable_posture_flags)."
+)
+
+
+def task_mediation_mode_is_malformed() -> bool:
+    """True when ``JARVIS_TASK_MEDIATION`` is SET to a value no mode recognizes.
+
+    The enum counterpart of ``env_config.env_flag_is_malformed``: unset, empty and
+    whitespace-only are the documented "use the declared default" state, not a
+    mistake. Callers get the variable name, never the value.
+    """
+    raw = os.environ.get(_ENV_VAR)
+    return raw is not None and raw.strip() != "" and raw.strip().lower() not in MEDIATION_MODES
+
+
 def resolve_task_mediation_mode() -> str:
     """``JARVIS_TASK_MEDIATION`` as a mode TaskQueue accepts — default ``off``.
 
-    TaskQueue raises ValueError on an unknown mode, so a typo in the environment
-    would otherwise crash boot. Same default-off gate convention as
-    ``JARVIS_SIGNAL_GOVERNANCE`` / ``JARVIS_ACTION_KERNEL``.
+    Unset (or empty/whitespace) keeps the shipped-dark default ``off``. A value
+    that is set but spells no known mode raises ``SystemExit`` rather than
+    resolving: unlike an AUD-14 boolean, whose default is the safe position, this
+    flag's default *is* the unprotected one, so the ``env_config`` "junk → declared
+    default" rule would fail open. ``boot_guards.assert_parseable_posture_flags``
+    raises the same refusal earlier, before anything is constructed; this is the
+    backstop for every other entry into the orchestrator. ``SystemExit`` (a
+    BaseException) is deliberate — a boot path's ``except Exception`` must not
+    swallow the refusal and leave the queue unmediated.
     """
     raw = os.environ.get(_ENV_VAR, "")
     mode = str(raw).strip().lower()
@@ -185,7 +211,5 @@ def resolve_task_mediation_mode() -> str:
         return "off"
     if mode in MEDIATION_MODES:
         return mode
-    logger.warning(
-        "%s=%r is not one of off|hold|enforce; task mediation stays off", _ENV_VAR, raw
-    )
-    return "off"
+    logger.error("%s is not one of off|hold|enforce; refusing to start", _ENV_VAR)
+    raise SystemExit(MALFORMED_MODE_MESSAGE)

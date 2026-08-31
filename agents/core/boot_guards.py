@@ -10,8 +10,9 @@ chain and never knew. They now live here and run from the app lifespan too,
 so every entry point enforces the same posture. ``serve.py`` re-exports them.
 
 A third guard (H23.30 / DRA-07 / DRA-14) refuses to start when a *parse-critical*
-posture flag is set to a value no spelling recognizes. It runs first, before
-anything constructs a memory graph.
+posture flag is set to a value no spelling recognizes — the boolean flags below and
+the ``JARVIS_TASK_MEDIATION`` mode enum. It runs first, before anything constructs a
+memory graph or a task queue.
 
 Residual (documented, not silently ignored): a bind host passed only as a raw
 uvicorn CLI flag (``--host 0.0.0.0`` without ``JARVIS_HOST``) is invisible to
@@ -95,15 +96,24 @@ def assert_parseable_posture_flags() -> None:
     from agents.core.env_config import env_flag_is_malformed
 
     bad = [name for name in _PARSE_CRITICAL_BOOL_FLAGS if env_flag_is_malformed(name)]
-    if not bad:
-        return
-    raise SystemExit(
-        "Refusing to start: unparseable value for " + ", ".join(bad) + ".\n"
-        "Use one of 1/true/yes/on or 0/false/no/off. An unrecognized spelling silently "
-        "falls back to the flag's default — for NERVA_PUBLIC_PROFILE that is the private "
-        "install, which seeds the owner's personal knowledge graph — so this fails closed "
-        "instead."
+    if bad:
+        raise SystemExit(
+            "Refusing to start: unparseable value for " + ", ".join(bad) + ".\n"
+            "Use one of 1/true/yes/on or 0/false/no/off. An unrecognized spelling silently "
+            "falls back to the flag's default — for NERVA_PUBLIC_PROFILE that is the private "
+            "install, which seeds the owner's personal knowledge graph — so this fails closed "
+            "instead."
+        )
+    # Same rule, non-boolean flag: JARVIS_TASK_MEDIATION selects the B7 tamper-evidence
+    # posture (off|hold|enforce) and its default, `off`, is the UNPROTECTED position — so
+    # `JARVIS_TASK_MEDIATION=enfroce` must stop the boot, not quietly disable mediation.
+    from agents.core.autonomy.mediation_head_store import (
+        MALFORMED_MODE_MESSAGE,
+        task_mediation_mode_is_malformed,
     )
+
+    if task_mediation_mode_is_malformed():
+        raise SystemExit(MALFORMED_MODE_MESSAGE)
 
 
 def enforce_boot_posture() -> None:

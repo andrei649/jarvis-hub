@@ -32,7 +32,7 @@ TYPOS = ("pubic", "publlic", "y", "TRUE!", "enabled")
 def _clean_env(monkeypatch):
     for var in ("JARVIS_USER_TOKEN", "JARVIS_ADMIN_TOKEN", "JARVIS_ALLOW_INSECURE_BIND",
                 "JARVIS_HARDENED", "JARVIS_AUDIT_KEY", "JARVIS_HOST",
-                "NERVA_PUBLIC_PROFILE"):
+                "NERVA_PUBLIC_PROFILE", "JARVIS_TASK_MEDIATION"):
         monkeypatch.delenv(var, raising=False)
 
 

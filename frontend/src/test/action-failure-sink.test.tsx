@@ -52,6 +52,30 @@ describe('failed-mutation sink — a swallowed action still leaves a trace', () 
     expect(actionFailures().length).toBe(0);
   });
 
+  /* BLOCKER-hud (b) — apiPost threw before anyone could read the body, so NO call site
+     could show the server's own refusal reason and one caller invented a plausible-looking
+     cause instead. The parsed body now rides along on the thrown error; `message` and
+     `status` are unchanged, so every existing caller behaves exactly as before. */
+  it('attaches the parsed refusal body to the thrown error', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false, status: 409, json: async () => ({ status: 'refused', reason: 'reuse_available' }),
+    });
+    const err = await apiPost('/api/acquisition/x/drive', {}).catch((e) => e);
+    expect(err.status).toBe(409);
+    expect(err.message).toBe('POST /api/acquisition/x/drive -> 409');
+    expect(err.body).toEqual({ status: 'refused', reason: 'reuse_available' });
+  });
+
+  it('still throws with no body attached when the error body is not JSON', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false, status: 502, json: async () => { throw new SyntaxError('Unexpected token <'); },
+    });
+    const err = await apiPost('/api/x', {}).catch((e) => e);
+    expect(err.status).toBe(502);
+    expect(err.body).toBeUndefined();
+    expect(actionFailures()[0]).toMatchObject({ method: 'POST', path: '/api/x', status: 502 });
+  });
+
   it('records nothing on success', async () => {
     mockStatus(200);
     await apiPost('/api/x', {});

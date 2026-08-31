@@ -87,11 +87,20 @@ function reportActionFailure(method: string, path: string, status: number, messa
   _failureSubs.forEach((fn) => { try { fn(actionFailures()); } catch { /* a bad subscriber must not eat the report */ } });
 }
 
-/** Record a mutation failure, then rethrow so existing callers behave unchanged. */
-function failMutation(method: string, path: string, status: number): never {
-  const message = `${method} ${path} -> ${status}`;
-  reportActionFailure(method, path, status, message);
-  throw Object.assign(new Error(message), { status });
+/** Record a mutation failure, then rethrow so existing callers behave unchanged.
+
+   The refusal BODY rides along on the thrown error (`err.body`) because the routes
+   answer with a machine-readable `reason` and, until now, no call site could reach it:
+   the throw happened before anyone read the response. A caller left guessing writes a
+   plausible-looking cause of its own — exactly the fabrication this HUD exists to
+   remove. `message` and `status` are untouched, so existing callers are unaffected;
+   a non-JSON or empty error body simply leaves `body` undefined. */
+async function failMutation(method: string, path: string, res: Response): Promise<never> {
+  const message = `${method} ${path} -> ${res.status}`;
+  reportActionFailure(method, path, res.status, message);
+  let body: unknown;
+  try { body = await res.json(); } catch { /* non-JSON, empty, or already-consumed body */ }
+  throw Object.assign(new Error(message), { status: res.status, body });
 }
 
 export async function apiGet<T = unknown>(path: string, opts?: { admin?: boolean }): Promise<T> {
@@ -102,7 +111,7 @@ export async function apiGet<T = unknown>(path: string, opts?: { admin?: boolean
 
 export async function apiPost<T = unknown>(path: string, body?: unknown, opts?: { admin?: boolean }): Promise<T> {
   const res = await request('POST', path, body, opts);
-  if (!res.ok) failMutation('POST', path, res.status);
+  if (!res.ok) await failMutation('POST', path, res);
   return res.json() as Promise<T>;
 }
 
@@ -142,7 +151,7 @@ export async function postStream(
 
 export async function apiPut<T = unknown>(path: string, body?: unknown, opts?: { admin?: boolean }): Promise<T> {
   const res = await request('PUT', path, body, opts);
-  if (!res.ok) failMutation('PUT', path, res.status);
+  if (!res.ok) await failMutation('PUT', path, res);
   return res.json() as Promise<T>;
 }
 /* PATCH is the repo's first partial-update verb (DRA-53, `/api/notes/blocks/{id}`):
@@ -150,11 +159,11 @@ export async function apiPut<T = unknown>(path: string, body?: unknown, opts?: {
    is replacing the whole block. Same failure accounting as the other mutators. */
 export async function apiPatch<T = unknown>(path: string, body?: unknown, opts?: { admin?: boolean }): Promise<T> {
   const res = await request('PATCH', path, body, opts);
-  if (!res.ok) failMutation('PATCH', path, res.status);
+  if (!res.ok) await failMutation('PATCH', path, res);
   return res.json() as Promise<T>;
 }
 export async function apiDelete<T = unknown>(path: string, opts?: { admin?: boolean }): Promise<T> {
   const res = await request('DELETE', path, undefined, opts);
-  if (!res.ok) failMutation('DELETE', path, res.status);
+  if (!res.ok) await failMutation('DELETE', path, res);
   return res.json() as Promise<T>;
 }

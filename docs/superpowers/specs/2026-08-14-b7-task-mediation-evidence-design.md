@@ -141,9 +141,13 @@ exact-head hosted Windows/Linux CI remain required.
 ## Operating the mode
 
 The mode is selected by the `JARVIS_TASK_MEDIATION` environment variable:
-`off` (the default when the variable is unset, empty or unrecognised), `hold` or
-`enforce`. An unrecognised value logs a warning and falls back to `off` rather
-than failing the boot — `TaskQueue` itself raises on an unknown mode.
+`off` (the default when the variable is unset, empty or whitespace-only), `hold`
+or `enforce`. A value that is *set* but spells no known mode refuses the boot
+(`SystemExit`), from `boot_guards.assert_parseable_posture_flags` at start-up and
+from `resolve_task_mediation_mode` as the backstop: `off` is this flag's
+unprotected position, so falling back to it on `JARVIS_TASK_MEDIATION=enfroce`
+would silently disable every protection here. Same convention as the other
+parse-critical posture flags (H23.30 / DRA-07 / DRA-14).
 
 The trusted latest-head CAS store behind `MonotonicHeadAnchor` is
 `agents/core/autonomy/mediation_head_store.py::FileMediationHeadStore`, writing

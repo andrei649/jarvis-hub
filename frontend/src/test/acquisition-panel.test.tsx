@@ -120,7 +120,47 @@ describe('AcquisitionPanel · open capability gaps (DRA-38)', () => {
     expect(vi.mocked(global.fetch).mock.calls.filter(([url]) => String(url).includes('/drive'))).toHaveLength(0);
   });
 
-  it('renders a 409 precondition refusal instead of reading as success', async () => {
+  /* BLOCKER-hud (b) — the route emits at least six DISTINCT 409 reasons
+     (reuse_available, acquisition_disabled, promotion_unavailable, local_llm_required,
+     searxng_backend_required, synthesis_failed). The panel used to print one fixed
+     precondition list for every one of them, i.e. it told the operator a cause the
+     server never gave. The server's own `reason` is now carried on the thrown error
+     and rendered verbatim; nothing is invented. */
+  it('renders the server reason for a 409, never an invented cause', async () => {
+    localStorage.setItem('hud.admin_token', 'owner-token');
+    const base = global.fetch;
+    global.fetch = vi.fn((url, options) => (String(url).includes('/drive')
+      ? Promise.resolve({ ok: false, status: 409, json: async () => ({ status: 'refused', reason: 'reuse_available', outcome: 'install_candidate' }) })
+      : base(url, options)));
+    render(<AcquisitionPanel />);
+    await waitFor(() => expect(screen.getByText(/open capability gaps/i)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`Drive ${REQUEST_ID}`, 'i') }));
+    await waitFor(() => expect(screen.getByText(/refused · 409 · reuse_available/i)).toBeTruthy());
+    expect(document.body.textContent).not.toMatch(/preconditions not met/i);
+    expect(document.body.textContent).not.toMatch(/SEARXNG_URL/);
+    expect(screen.queryByText(/proposed/i)).toBeNull();
+  });
+
+  it('adds the server-supplied `needs` list, and nothing beyond it', async () => {
+    localStorage.setItem('hud.admin_token', 'owner-token');
+    const base = global.fetch;
+    global.fetch = vi.fn((url, options) => (String(url).includes('/drive')
+      ? Promise.resolve({
+        ok: false,
+        status: 409,
+        json: async () => ({ status: 'refused', _mock: true, mock: true, _degraded: { reason: 'local_llm_required', needs: ['a running LM Studio or Ollama local backend'] }, reason: 'local_llm_required' }),
+      })
+      : base(url, options)));
+    render(<AcquisitionPanel />);
+    await waitFor(() => expect(screen.getByText(/open capability gaps/i)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`Drive ${REQUEST_ID}`, 'i') }));
+    await waitFor(() => expect(screen.getByText(/refused · 409 · local_llm_required · needs a running LM Studio or Ollama local backend/i)).toBeTruthy());
+    expect(document.body.textContent).not.toMatch(/SEARXNG_URL/);
+  });
+
+  it('stays neutral when a refusal carries no reason at all', async () => {
     localStorage.setItem('hud.admin_token', 'owner-token');
     const base = global.fetch;
     global.fetch = vi.fn((url, options) => (String(url).includes('/drive')
@@ -130,8 +170,8 @@ describe('AcquisitionPanel · open capability gaps (DRA-38)', () => {
     await waitFor(() => expect(screen.getByText(/open capability gaps/i)).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: new RegExp(`Drive ${REQUEST_ID}`, 'i') }));
-    await waitFor(() => expect(screen.getByText(/refused · 409 · preconditions not met/i)).toBeTruthy());
-    expect(screen.queryByText(/proposed/i)).toBeNull();
+    await waitFor(() => expect(screen.getByText(/refused · 409 · POST \/api\/acquisition\/.* -> 409/i)).toBeTruthy());
+    expect(document.body.textContent).not.toMatch(/preconditions not met/i);
   });
 
   it('shows the empty state rather than a bare drive button', async () => {
@@ -145,11 +185,28 @@ describe('AcquisitionPanel · open capability gaps (DRA-38)', () => {
     expect(screen.queryByRole('button', { name: /^Drive /i })).toBeNull();
   });
 
-  it('hides the gap list and never fetches it without an admin token', async () => {
+  /* BLOCKER-hud (a) — the gap list is the ONLY place a request_id is ever shown
+     (the ledger exposes hashes, the status snapshot per-state counts), so gating it on a
+     locally-stored admin token hid DRA-38's whole deliverable on the repo's default
+     no-token localhost posture, where admin routes are exempt anyway. It is fetched and
+     rendered unconditionally now, exactly like the sibling admin panels. */
+  it('fetches and renders the gap list on the default no-token posture', async () => {
     render(<AcquisitionPanel />);
-    await waitFor(() => expect(screen.getByText('acme_parser')).toBeTruthy());
-    expect(screen.queryByText(/open capability gaps/i)).toBeNull();
-    expect(screen.queryByRole('button', { name: new RegExp(`Drive ${REQUEST_ID}`, 'i') })).toBeNull();
-    expect(vi.mocked(global.fetch).mock.calls.filter(([url]) => String(url).includes('/api/acquisition/requests'))).toHaveLength(0);
+    await waitFor(() => expect(screen.getByText(/open capability gaps/i)).toBeTruthy());
+    expect(screen.getByText(REQUEST_ID.slice(0, 8))).toBeTruthy();
+    expect(screen.getByRole('button', { name: new RegExp(`Drive ${REQUEST_ID}`, 'i') })).toBeTruthy();
+    expect(vi.mocked(global.fetch).mock.calls.filter(([url]) => String(url).includes('/api/acquisition/requests'))).toHaveLength(1);
+  });
+
+  it('degrades honestly when the gap read is refused, instead of vanishing', async () => {
+    window.prompt = vi.fn(() => '');
+    const base = global.fetch;
+    global.fetch = vi.fn((url, options) => (String(url).includes('/api/acquisition/requests')
+      ? Promise.resolve({ ok: false, status: 401, json: async () => ({ detail: 'admin token required' }) })
+      : base(url, options)));
+    render(<AcquisitionPanel />);
+    await waitFor(() => expect(screen.getByText(/open capability gaps/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/offline · GET \/api\/acquisition\/requests -> 401/i)).toBeTruthy());
+    expect(screen.queryByText(/no open capability gaps/i)).toBeNull();
   });
 });
