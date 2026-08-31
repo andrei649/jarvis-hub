@@ -96,7 +96,11 @@ async def admin_mcp_add(req: MCPServerConfig):
         return JSONResponse({"error": f"MCP server '{req.name}' already exists"}, status_code=409)
     srv = MCPServer(
         name=req.name,
-        transport=req.transport,
+        # Persist the NORMALISED value, not req.transport. The gate above lower-cases
+        # and strips only for its own comparison, so "  STDIO  " passed it and then
+        # stored a spelling connect() does not dispatch on — re-creating the
+        # permanently-dead admin row this row exists to remove, one case further in.
+        transport=transport,
         command=req.command,
         url=req.url,
     )

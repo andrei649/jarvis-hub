@@ -6,8 +6,11 @@ answered every connect probe with `connected: true`. These tests pin the honest
 behaviour: sse is rejected at the door, the connect probe reports what actually
 happened, and the tool-call contract admits stdio only.
 """
+import asyncio
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
 repo_root = Path(__file__).resolve().parent.parent
@@ -135,3 +138,47 @@ def test_live_docs_do_not_advertise_an_mcp_sse_transport():
                 continue
             assert "stdio/SSE" not in line, f"{rel}:{i} {line.strip()}"
             assert "stdio or SSE" not in line, f"{rel}:{i} {line.strip()}"
+
+
+def test_an_accepted_transport_is_persisted_normalised_not_raw():
+    """DRA-25, found by the adversarial review of the first fix.
+
+    The gate normalises for its own check (`transport = (req.transport or "stdio")
+    .strip().lower()`) but the MCPServer was constructed from the RAW value. So
+    `{"transport": "STDIO"}` passed the gate and then registered a server whose
+    stored transport is not the string `connect()` dispatches on — re-creating the
+    permanently-dead admin row this row exists to remove, just one case further in.
+    """
+    import agents.core.routers.mcp as mcp_router
+
+    captured = {}
+
+    class _Servers(dict):
+        pass
+
+    class _MCP:
+        servers = _Servers()
+
+    class _Orch:
+        mcp = _MCP()
+
+    body = SimpleNamespace(name="probe", transport="  STDIO  ", command="echo hi", url=None)
+
+    async def _run():
+        return await mcp_router.admin_mcp_add(body)  # type: ignore[arg-type]
+
+    class _Web:
+        @staticmethod
+        def _save_mcp_config():
+            captured["saved"] = True
+
+    with mock.patch.object(mcp_router, "get_orch", lambda: _Orch()), \
+         mock.patch.object(mcp_router, "_web", lambda: _Web()):
+        asyncio.run(_run())
+
+    stored = _Orch.mcp.servers.get("probe")
+    assert stored is not None, "an accepted stdio config must register"
+    assert stored.transport == "stdio", (
+        f"persisted transport must be the normalised value the connector dispatches on, "
+        f"got {stored.transport!r} — a raw spelling registers a permanently dead server"
+    )
