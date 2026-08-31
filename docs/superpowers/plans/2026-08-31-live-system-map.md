@@ -1,6 +1,7 @@
 # H34.7 — Live System Map: the architecture diagram as a realtime monitoring surface
 
-> **Status:** PLAN (approved wording pending owner merge) · Author: Claude session 2026-08-31 ·
+> **Status:** EXECUTED M0–M5 in the same PR (owner request 2026-08-31); M6 mobile card remains
+> open, recorded in `mobile/PARITY.md`. · Author: Claude session 2026-08-31 ·
 > Base: `main` @ `42b2ad1` · BACKLOG anchor: ORIZONT 34 / H34.7.
 > Provenance: an Archify (`tt-a1i/archify`, MIT) system map of Nerva was authored and validated
 > on 2026-08-31 (9/9 artifact checks, showcase composition pass, containment/readability green at

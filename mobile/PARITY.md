@@ -59,6 +59,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Ambient Watch (H33.6, default-off, redacted) | user `GET /api/ambient/monitors`; admin-only monitor create/update/delete | ✅ | ✅ | H33.6 |
 | Self-Improvement dashboard (admin-only diagnostic aggregation) | admin-only `GET /api/self-improvement/status`, `POST /api/self-improvement/enable` | ✅ | ➖ | — |
 | Mission Control (H34.1 — swarm cockpit page + read feed) | `GET /mission-control`, `GET /api/swarm/summary` | ✅ | ➖ | — |
+| Live System Map (H34.7 — topology + health page + read feed) | `GET /map`, `GET /api/system-map` | ✅ | ⬜ | — |
 | Owner desk presence (H34.2 — away-notify) | user `GET /api/presence/owner`; admin `POST /api/presence/owner` | ✅ | ➖ | — |
 | Governed browser policy / plan preview | `POST /api/browser/check`, `POST /api/browser/plan/preview` | ✅ | ➖ | — |
 | Windows server-host desktop Operator | `POST /api/desktop/preview`, `POST /api/desktop/run` | ✅ | ➖ | — |

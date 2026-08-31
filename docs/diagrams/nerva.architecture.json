@@ -1,0 +1,298 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Nerva — Live System Map",
+    "output": "nerva.architecture.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "hud",
+      "type": "frontend",
+      "label": "Web HUD",
+      "sublabel": "React cockpit · /v2",
+      "pos": [
+        40,
+        300
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "channels",
+      "type": "external",
+      "label": "Channels",
+      "sublabel": "Telegram · Email · Webhooks",
+      "pos": [
+        40,
+        470
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "web",
+      "type": "backend",
+      "label": "FastAPI Shell",
+      "sublabel": "web.py · routers :8080",
+      "pos": [
+        280,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "orch",
+      "type": "backend",
+      "label": "Orchestrator",
+      "sublabel": "classify · route · synthesize",
+      "pos": [
+        530,
+        300
+      ],
+      "size": [
+        160,
+        68
+      ]
+    },
+    {
+      "id": "agents",
+      "type": "backend",
+      "label": "Agent Cabinet",
+      "sublabel": "SOUL.md roster",
+      "pos": [
+        790,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "llm",
+      "type": "backend",
+      "label": "Hybrid LLM Router",
+      "sublabel": "policy floor · tiers",
+      "pos": [
+        1050,
+        300
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "local",
+      "type": "backend",
+      "label": "Local LLM",
+      "sublabel": "LM Studio / Ollama",
+      "pos": [
+        1050,
+        120
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "cloud",
+      "type": "cloud",
+      "label": "Cloud LLM",
+      "sublabel": "Claude · Gemini (opt-in)",
+      "pos": [
+        1050,
+        480
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "memory",
+      "type": "database",
+      "label": "Memory",
+      "sublabel": "vector + graph · RRF",
+      "pos": [
+        530,
+        120
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "plugins",
+      "type": "external",
+      "label": "Plugins",
+      "sublabel": "permission-gated",
+      "pos": [
+        790,
+        120
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "autonomy",
+      "type": "backend",
+      "label": "Autonomy Cortex",
+      "sublabel": "queue · policy · inbox",
+      "pos": [
+        400,
+        480
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "kernel",
+      "type": "security",
+      "label": "Action Kernel",
+      "sublabel": "contracts · audit chain",
+      "pos": [
+        680,
+        480
+      ],
+      "size": [
+        170,
+        68
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Owner's machine — local-first",
+      "wraps": [
+        "agents",
+        "autonomy",
+        "channels",
+        "hud",
+        "kernel",
+        "llm",
+        "local",
+        "memory",
+        "orch",
+        "plugins",
+        "web"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "hud-to-web",
+      "from": "hud",
+      "to": "web",
+      "label": "chat / SSE",
+      "variant": "emphasis"
+    },
+    {
+      "id": "web-to-orch",
+      "from": "web",
+      "to": "orch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "channels-to-orch",
+      "from": "channels",
+      "to": "orch",
+      "label": "taint-marked ingress",
+      "fromSide": "right",
+      "toSide": "bottom"
+    },
+    {
+      "id": "orch-to-agents",
+      "from": "orch",
+      "to": "agents",
+      "label": "parallel calls",
+      "variant": "emphasis"
+    },
+    {
+      "id": "agents-to-llm",
+      "from": "agents",
+      "to": "llm",
+      "label": "select_backend",
+      "variant": "emphasis"
+    },
+    {
+      "id": "llm-to-local",
+      "from": "llm",
+      "to": "local",
+      "label": "strict-local floor",
+      "variant": "emphasis"
+    },
+    {
+      "id": "llm-to-cloud",
+      "from": "llm",
+      "to": "cloud",
+      "label": "opt-in escalation",
+      "variant": "dashed",
+      "labelDy": 24
+    },
+    {
+      "id": "orch-to-memory",
+      "from": "orch",
+      "to": "memory",
+      "label": "add_turn · recall",
+      "labelDx": -55
+    },
+    {
+      "id": "orch-to-plugins",
+      "from": "orch",
+      "to": "plugins",
+      "label": "intent gather",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "orch-to-kernel",
+      "from": "orch",
+      "to": "kernel",
+      "label": "mutating actions",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "autonomy-to-kernel",
+      "from": "autonomy",
+      "to": "kernel",
+      "label": "ACT / NOTIFY / ASK",
+      "variant": "security"
+    },
+    {
+      "id": "autonomy-to-channels",
+      "from": "autonomy",
+      "to": "channels",
+      "label": "decision cards",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Live map",
+      "items": [
+        "Generated from agents/core/system_map/topology.json v2026-08-31",
+        "The product renders the same topology live at /map and in the HUD"
+      ]
+    }
+  ]
+}

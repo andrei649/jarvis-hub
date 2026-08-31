@@ -148,6 +148,8 @@ RULES = [
     ("/api/brain", "observe"),  # neural-mesh brain (live agents+models)
     ("/mission-control", "observe"),  # H34.1 Mission Control standalone page (swarm cockpit)
     ("/api/swarm", "observe"),  # H34.1 aggregated swarm feed driving Mission Control
+    ("/map", "observe"),  # H34.7 Live System Map standalone page (topology + health)
+    ("/api/system-map", "observe"),  # H34.7 subsystem-health feed driving the map
     ("/api/health/components", "observe"),
     # interop (a2a / mcp client mgmt / webhooks / external write-back + social)
     ("/api/a2a/", "interop"),
@@ -433,6 +435,7 @@ MACHINE_FACING: dict[str, str] = {
     "/redoc": "FastAPI docs UI",
     "/v2/{path:path}": "SPA catch-all \u2014 serves the client, is not called by it",
     "/mission-control": "server-rendered page, navigated to rather than fetched",
+    "/map": "server-rendered page, navigated to rather than fetched",
     "/api/status": "alias probe"
 }
 

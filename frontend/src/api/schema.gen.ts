@@ -4329,6 +4329,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Map Page
+         * @description The standalone Live System Map page (wall-screen / second monitor).
+         */
+        get: operations["system_map_page_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system-map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Map Feed
+         * @description Live subsystem-health snapshot driving the map — read-only.
+         */
+        get: operations["system_map_feed_api_system_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/presence/owner": {
         parameters: {
             query?: never;
@@ -15448,6 +15488,46 @@ export interface operations {
         };
     };
     swarm_summary_api_swarm_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    system_map_page_map_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    system_map_feed_api_system_map_get: {
         parameters: {
             query?: never;
             header?: never;

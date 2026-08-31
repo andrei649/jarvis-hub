@@ -3,7 +3,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-6940-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-6957-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-1.0.0-orange)
 <!-- project-status:badges:end -->
 
@@ -97,7 +97,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **6,940** · frontend **627** · mobile **103**. Route surface: **429**.
+Generated test matrix: backend **6,957** · frontend **651** · mobile **107**. Route surface: **431**.
 <!-- project-status:run:end -->
 
 ### Windows 11 — one-click (no terminal needed)
@@ -156,7 +156,7 @@ Your data is never touched unless you also pass `--purge-data`.
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **6,940** · frontend **627** · mobile **103** · **429** routes · **18** active agents · open release gates: **A1, A3, A5, A6, A9** · source commit `42b2ad1dd57c`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **6,957** · frontend **651** · mobile **107** · **431** routes · **18** active agents · open release gates: **A1, A3, A5, A6, A9** · source commit `42b2ad1dd57c`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for WorldView geoint, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
