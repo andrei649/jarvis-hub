@@ -913,7 +913,7 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   explicitly as a MUST-wire gap — SINGLE_PAGE_HUD_BRIEF.md §7.4/§7.5 ('KG editor + bitemporal facts + ingest
   + decay-forget + remember-a-fact . *(evidence: `agents/core/routers/memory_kg.py:129,
   frontend/src/gap.tsx:190, schema.gen.ts`)*
-  **Partially shipped <SHA> — the decay leg. Row stays OPEN.** `MEMORY HYGIENE` panel wires
+  **Partially shipped 0939220 — the decay leg. Row stays OPEN.** `MEMORY HYGIENE` panel wires
   `GET /api/memory/decay/candidates`, which was the *missing half of a loop that already existed*:
   `KgPanel` could already forget an item by id, but nothing told the operator which ids had decayed
   far enough to be worth forgetting. Threshold is adjustable and refetches server-side; the row
