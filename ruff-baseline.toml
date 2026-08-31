@@ -259,7 +259,6 @@
 "skills/family_store/main.py" = ["UP017"]
 "skills/security_monitor/main.py" = ["E741", "UP045"]
 "skills/system_monitor/main.py" = ["B007", "UP045"]
-"test_lms.py" = ["E401", "I001"]
 "tests/test_a2a_hf16_2.py" = ["I001"]
 "tests/test_action_approvals_persist.py" = ["I001"]
 "tests/test_adjacents_h21_abcd.py" = ["E401", "I001"]

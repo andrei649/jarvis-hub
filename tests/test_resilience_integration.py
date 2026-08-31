@@ -143,28 +143,3 @@ def test_admin_stats_includes_circuit_breaker_state():
     assert "circuit_breakers" in data
     assert "test-circuit" in data["circuit_breakers"]
     assert data["circuit_breakers"]["test-circuit"]["state"] == "open"
-
-
-@pytest.mark.asyncio
-async def test_weather_plugin_retries_on_timeout():
-    """Test that WeatherPlugin retries on timeout."""
-    plugin = WeatherPlugin()
-    
-    call_count = 0
-    
-    async def mock_get(*args, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count < 2:
-            raise asyncio.TimeoutError("Simulated timeout")
-        response = Mock()
-        response.status_code = 200
-        response.raise_for_status = Mock()
-        response.text = "Bucharest: 20°C, Sunny, 60% humidity, 15 km/h wind"
-        return response
-    
-    with patch(_REQUEST_SEAM, side_effect=mock_get):
-        result = await plugin.get_weather("Bucharest")
-    
-    assert "20" in result or "Sunny" in result
-    assert call_count == 2

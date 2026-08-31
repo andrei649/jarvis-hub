@@ -14,7 +14,7 @@ Covers:
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -340,10 +340,12 @@ def test_autonomy_brief_no_orch_returns_503(monkeypatch):
 def test_autonomy_brief_morning(monkeypatch):
     monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", _mock_autonomy_orch())
-    with patch("agents.web.build_morning_brief", return_value="Good morning!", create=True), \
-         patch("agents.web.build_evening_retro", return_value="Good evening!", create=True):
-        client = TestClient(web.app)
-        resp = client.get("/autonomy/brief?kind=morning", headers=_HDR)
+    # No patching here on purpose: `agents.web` has no build_morning_brief /
+    # build_evening_retro, so the old `create=True` mocks fabricated attributes
+    # nothing ever read. Letting the real digest builder run is what makes this
+    # the only end-to-end exercise of routers/autonomy.py's brief path.
+    client = TestClient(web.app)
+    resp = client.get("/autonomy/brief?kind=morning", headers=_HDR)
     assert resp.status_code == 200
     assert resp.json()["kind"] == "morning"
     assert isinstance(resp.json()["text"], str)

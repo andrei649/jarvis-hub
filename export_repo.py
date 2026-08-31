@@ -29,6 +29,8 @@ IGNORE_FILES = {
     "export_repo.py",
     "repo_export.txt",      # own output — including it makes each run snowball
     "package-lock.json",    # lockfiles: ~1.1MB of resolver noise across 4 workspaces
+    "schema.gen.ts",        # generated OpenAPI types (~545KB): the committed copy is a
+                            # CI drift gate, never something an LLM needs to read
 }
 
 # Profiles (see docs/AI_CONTEXT.md for measured sizes):
