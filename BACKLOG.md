@@ -1063,10 +1063,26 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   Q6 in docs/AUDIT.md names three files that bypass the atomic tmp+replace pattern the JsonStore base uses;
   A3/Q1 shipped the base and migrated the 13 stores, but Q6's own three were never routed through it and the
   finding is unchecked. *(evidence: `docs/AUDIT.md:76, ingestion/watcher.py, memory/conversation.py`)*
-- [ ] ⬜ **DRA-52 — Review-queue → eval-dataset promotion is unwired in both clients, while the v1 HUD
+- [x] ✅ **DRA-52 — Review-queue → eval-dataset promotion is unwired in both clients, while the v1 HUD
   advertises it.** POST /api/review/{item_id}/dataset (agents/core/routers/review.py:71-73, user-guarded,
   'Promote a reviewed item into an eval dataset (H9.3b)') has no caller anywhere. *(evidence:
   `agents/core/routers/review.py:71-90, frontend/src/gap.tsx:1069-1077`)*
+  **Shipped 5dfee3c** — a ⇪ control on the Console REVIEW QUEUE rows, so a reviewed turn can reach the
+  `review_flagged` eval dataset. The route leaves `UNCALLED_BACKLOG`. An item already promoted shows an
+  `in dataset` tag instead of a button (the queue item carries `in_dataset` after
+  `mark_in_dataset`), so the control reflects state rather than re-firing blindly.
+  **The refusal is the part that needed care.** This route genuinely refuses: WFL-088 rejects an item
+  with no prompt rather than minting a case that replays empty and scores a fabricated 1.0. But
+  `apiPost` **throws** on a 4xx (`failMutation` is typed `: never`) and `act`'s own `.catch(() => {})`
+  eats it — so a naive button would read as success on a refusal, which is exactly the swallowed-mutation
+  class the `act`/`actA` comment block was written about. `act` gained the optional `onErr` argument
+  `actA` already had (additive; every existing caller unaffected) and the row now shows the refusal.
+  **Residual (recorded, not closed):** the refusal shows as `refused · 400`, not the server's own
+  reason. `apiPost` throws *before* reading the body, so no call site anywhere can display why a
+  mutation was refused. Fixing it properly is ~4 lines in `frontend/src/api/client.ts` — read
+  `await res.json().catch(() => null)` in the `!res.ok` branch and attach it to the thrown error — which
+  would give every mutation in the HUD its real reason. Deliberately not done here: it changes shared
+  client infrastructure for all mutations, which is wider than this row.
 - [ ] ⬜ **DRA-53 — notes_store.py — a 504-line block-tree document store with no adopter and no route.**
   agents/core/notes_store. *(evidence: `agents/core/notes_store.py:112-116,
   agents/core/routers/notes.py:3-10, agents/core/notes.py:1-8`)*

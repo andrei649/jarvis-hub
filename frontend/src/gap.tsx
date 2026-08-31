@@ -72,7 +72,9 @@ const State = ({ e, loading, n }) => (loading ? <div style={{ color: 'var(--ink-
 const Row = ({ children }) => <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>{children}</div>;
 const Tag = ({ c, children }: { c?: any; children?: any }) => <span style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: c || 'var(--ink-3)' }}>{children}</span>;
 const Btn = ({ onClick, children }) => <button className="tool-btn" onClick={onClick} style={{ marginLeft: 'auto' }}>{children}</button>;
-const act = (p, body, then?) => apiPost(p, body).then(then || (() => {})).catch(() => {});
+const act = (p, body, then?, onErr?) => apiPost(p, body)
+  .then(then || (() => {}))
+  .catch((err) => { if (onErr) onErr(err); });
 // `onErr` is OPTIONAL but matters: without it a failed admin action is invisible. Engaging
 // the kill-switch is kernel-mediated and answers 403 "kernel denied" without a capability
 // token, so the 2026-07-27 QA run pressed HALT ALL, got no error, no state change and no
@@ -1106,16 +1108,40 @@ function EvalPanel() {
     </div>}
   </Card>;
 }
-function ReviewPanel() {
+export function ReviewPanel() {
   const { d, e, loading, reload } = useApi('/api/review/queue?status=pending');
   const q = arr(d, 'queue', 'items');
+  /* DRA-52 — `POST /api/review/{item_id}/dataset` (H9.3b) shipped with no caller anywhere, so
+     a reviewed turn could be voted on but never promoted into an eval dataset. */
+  const [note, setNote] = useState(null);   // {id, ok, text} — last promotion outcome
+  /* The refusal has to be shown, not swallowed. This route really does refuse: WFL-088 rejects
+     an item with no prompt rather than minting a case that replays empty and scores a fabricated
+     1.0. `apiPost` throws on a 4xx (failMutation is `: never`), so without the onErr arg `act`'s
+     own `.catch(() => {})` eats it and the button reads as success — precisely the swallowed
+     mutation this file warns about at the `act`/`actA` definitions. */
+  const promote = (id) => act(
+    `/api/review/${id}/dataset`, {},
+    (r) => { setNote({ id, ok: true, text: `→ ${r?.dataset || 'dataset'} v${r?.version ?? '?'}` }); reload(); },
+    (err) => setNote({ id, ok: false, text: `refused · ${err?.status || 'error'}` }),
+  );
   return <Card title="REVIEW QUEUE" live={asLive(d)} sub={q.length} onReload={reload}>
     <State e={e} loading={loading} n={q.length} />
-    {q.slice(0, 10).map((it, i) => <Row key={i}><span style={{ fontSize: 11 }}>{(it.text_preview || it.preview || it.text || '').slice(0, 38)}</span>
-      <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-        <button className="tool-btn" onClick={() => act(`/api/review/${it.id || it.trace_id}/vote`, { verdict: 'up' }, reload)}>👍</button>
-        <button className="tool-btn" onClick={() => act(`/api/review/${it.id || it.trace_id}/vote`, { verdict: 'down' }, reload)}>👎</button>
-      </span></Row>)}
+    {q.slice(0, 10).map((it, i) => {
+      const id = it.id || it.trace_id;
+      return <Row key={i}><span style={{ fontSize: 11 }}>{(it.text_preview || it.preview || it.text || '').slice(0, 38)}</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          {note && note.id === id && <span style={{ fontSize: 10, color: note.ok ? 'var(--green)' : 'var(--red)' }}>{note.text}</span>}
+          {it.in_dataset
+            ? <Tag c="var(--green)">in dataset</Tag>
+            : <button className="tool-btn" title="promote to eval dataset" onClick={() => promote(id)}>⇪</button>}
+          <button className="tool-btn" onClick={() => act(`/api/review/${id}/vote`, { verdict: 'up' }, reload)}>👍</button>
+          <button className="tool-btn" onClick={() => act(`/api/review/${id}/vote`, { verdict: 'down' }, reload)}>👎</button>
+        </span></Row>;
+    })}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+      ⇪ promotes a reviewed turn into the `review_flagged` eval dataset (H9.3b). An item with no
+      prompt is refused rather than replayed empty (WFL-088); a refusal shows on its own row.
+    </div>
   </Card>;
 }
 function APMPanel() {

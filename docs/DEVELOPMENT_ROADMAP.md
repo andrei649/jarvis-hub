@@ -149,8 +149,8 @@ vertical slices, each deleting entries from the punch list; prioritize by user v
 
 1. ~~DRA-17 — CDX-8 generated-skill **review/approve UI**~~ **done (this PR)** (the whole
    self-improvement loop is invisible without it).
-2. DRA-27 — memory write/hygiene controls (consolidate, decay); DRA-52 — review-queue →
-   eval-dataset promotion.
+2. DRA-27 — memory write/hygiene controls (consolidate, decay); ~~DRA-52 — review-queue →
+   eval-dataset promotion~~ **done (this PR)**.
 3. DRA-28 — workflow create/edit surface for the shipped AI Step Builder; DRA-39 — fix
    `flow_api.build_flow` silently dropping `subflow` (a real compile bug, not just UI).
 4. DRA-29 — multimodal *input* (VLM describe / media generate callers); DRA-37 — marketplace
