@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NERVA — Live System Map</title>
+<style>
+  :root{
+    --bg:#07090d; --panel:#0d1117; --line:#1c2530; --ink:#dbe4ee; --ink2:#8b98a9; --ink3:#55606e;
+    --green:#34d399; --amber:#fbbf24; --red:#f87171; --gray:#4b5563; --accent:#22d3ee;
+    --frontend:#22d3ee; --backend:#34d399; --database:#a78bfa; --cloud:#fbbf24;
+    --security:#fb7185; --external:#94a3b8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:12px/1.45 "JetBrains Mono","SFMono-Regular",Consolas,monospace}
+  header{display:flex;align-items:baseline;gap:14px;padding:14px 20px;border-bottom:1px solid var(--line)}
+  header h1{font-size:15px;margin:0;letter-spacing:.06em}
+  header .sub{color:var(--ink2);font-size:11px}
+  header .right{margin-left:auto;display:flex;gap:10px;align-items:center;font-size:11px;color:var(--ink2)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--gray)}
+  .dot.ok{background:var(--green)} .dot.err{background:var(--red)}
+  main{display:grid;grid-template-columns:1fr 300px;gap:0;height:calc(100vh - 49px)}
+  #stage{overflow:auto;padding:12px}
+  svg{width:100%;height:auto;min-width:900px}
+  aside{border-left:1px solid var(--line);overflow:auto;padding:12px 14px}
+  aside h2{font-size:11px;color:var(--ink2);letter-spacing:.1em;margin:8px 0 6px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-bottom:8px}
+  .card b{font-size:11px}
+  .kv{display:flex;justify-content:space-between;gap:8px;color:var(--ink2);font-size:11px;margin-top:2px}
+  .kv span:last-child{color:var(--ink)}
+  .st{font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--ink2)}
+  .st.ok{color:var(--green);border-color:var(--green)}
+  .st.degraded{color:var(--amber);border-color:var(--amber)}
+  .st.attention{color:var(--red);border-color:var(--red)}
+  .st.off{color:var(--ink3)} .st.unknown{color:var(--ink3);border-style:dashed}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;color:var(--ink2);font-size:10px;padding:4px 0 10px}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  /* SVG */
+  .node rect{fill:var(--panel);stroke-width:1.4;rx:6}
+  .node text{fill:var(--ink);font:600 12px "JetBrains Mono",monospace}
+  .node .sub{fill:var(--ink2);font:9.5px "JetBrains Mono",monospace;font-weight:400}
+  .node.attention rect{stroke:var(--red)!important;filter:drop-shadow(0 0 6px rgba(248,113,113,.45));animation:pulse 1.6s infinite}
+  .node.degraded rect{stroke:var(--amber)!important}
+  .node.off rect{stroke:var(--gray)!important;opacity:.55}
+  .node.off text{opacity:.55}
+  .node.unknown rect{stroke:var(--gray)!important;stroke-dasharray:4 3}
+  .node{cursor:pointer}
+  .edge{stroke:var(--line);stroke-width:1.4;fill:none;marker-end:url(#arr)}
+  .edge.hot{stroke:var(--accent)}
+  .elabel{fill:var(--ink3);font:9px "JetBrains Mono",monospace}
+  .elabel.hot{fill:var(--accent)}
+  @keyframes pulse{50%{filter:drop-shadow(0 0 12px rgba(248,113,113,.8))}}
+</style>
+</head>
+<body>
+<header>
+  <h1>NERVA · LIVE SYSTEM MAP</h1>
+  <span class="sub">the architecture, lit by what it is doing — H34.7</span>
+  <span class="right"><span class="dot" id="conn"></span><span id="meta">connecting…</span></span>
+</header>
+<main>
+  <div id="stage"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <aside>
+    <div class="legend">
+      <span><i style="background:var(--green)"></i>ok</span>
+      <span><i style="background:var(--amber)"></i>degraded</span>
+      <span><i style="background:var(--red)"></i>attention</span>
+      <span><i style="background:var(--gray)"></i>off</span>
+      <span><i style="background:transparent;border:1px dashed var(--gray)"></i>unknown</span>
+    </div>
+    <h2>SUBSYSTEMS</h2>
+    <div id="cards"></div>
+  </aside>
+</main>
+<script>
+"use strict";
+const TYPE_COLOR = {frontend:"var(--frontend)",backend:"var(--backend)",database:"var(--database)",
+                    cloud:"var(--cloud)",security:"var(--security)",external:"var(--external)"};
+const NS = "http://www.w3.org/2000/svg";
+let topo = null;
+
+function el(tag, attrs, parent){
+  const n = document.createElementNS(NS, tag);
+  for (const [k,v] of Object.entries(attrs||{})) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function center(node){ return [node.pos[0]+node.size[0]/2, node.pos[1]+node.size[1]/2]; }
+function orthPath(a, b){
+  const [ax,ay]=center(a), [bx,by]=center(b);
+  const aR=a.pos[0]+a.size[0], bL=b.pos[0];
+  if (Math.abs(ay-by) < 6) return `M ${aR} ${ay} L ${bL-6} ${by}`;                 // same rail
+  if (Math.abs(ax-bx) < 6){                                                        // same column
+    const [y0,y1] = ay<by ? [a.pos[1]+a.size[1], b.pos[1]-6] : [a.pos[1], b.pos[1]+b.size[1]+6];
+    return `M ${ax} ${y0} L ${bx} ${y1}`;
+  }
+  // L-shape: leave vertically toward the target rail, then run horizontally.
+  const yExit = ay<by ? a.pos[1]+a.size[1] : a.pos[1];
+  const xEnter = bx>ax ? b.pos[0]-6 : b.pos[0]+b.size[0]+6;
+  return `M ${ax} ${yExit} L ${ax} ${by} L ${xEnter} ${by}`;
+}
+function drawTopology(){
+  const svg = document.getElementById("svg");
+  svg.innerHTML = "";
+  svg.setAttribute("viewBox", topo.view_box.join(" "));
+  const defs = el("defs", {}, svg);
+  const m = el("marker", {id:"arr",viewBox:"0 0 8 8",refX:"7",refY:"4",markerWidth:"6",markerHeight:"6",orient:"auto"}, defs);
+  el("path", {d:"M0,0 L8,4 L0,8 z", fill:"#3a4756"}, m);
+  const byId = Object.fromEntries(topo.nodes.map(n=>[n.id,n]));
+  for (const e of topo.edges){
+    const p = el("path", {class:"edge", id:"edge-"+e.id, d:orthPath(byId[e.from], byId[e.to])}, svg);
+    if (e.label){
+      const [ax,ay]=center(byId[e.from]), [bx,by]=center(byId[e.to]);
+      el("text", {class:"elabel", id:"elabel-"+e.id, x:(ax+bx)/2, y:(ay===by?ay-8:(ay+by)/2-6),
+                  "text-anchor":"middle"}, svg).textContent = e.label;
+    }
+    void p;
+  }
+  for (const n of topo.nodes){
+    const g = el("g", {class:"node", id:"node-"+n.id}, svg);
+    el("rect", {x:n.pos[0], y:n.pos[1], width:n.size[0], height:n.size[1], rx:6,
+                stroke:TYPE_COLOR[n.type]||"var(--external)"}, g);
+    el("text", {x:n.pos[0]+n.size[0]/2, y:n.pos[1]+26, "text-anchor":"middle"}, g).textContent = n.label;
+    el("text", {class:"sub", x:n.pos[0]+n.size[0]/2, y:n.pos[1]+42, "text-anchor":"middle"}, g).textContent = n.sublabel||"";
+    const badge = el("text", {class:"sub", id:"badge-"+n.id, x:n.pos[0]+n.size[0]/2, y:n.pos[1]+56,
+                              "text-anchor":"middle"}, g);
+    badge.textContent = "…";
+    if (n.href) g.addEventListener("click", ()=>{ window.open(n.href, "_blank", "noopener"); });
+  }
+}
+function headline(stats){
+  const keys = Object.keys(stats||{});
+  if (!keys.length) return "—";
+  const k = keys[0];
+  const v = stats[k];
+  return `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`;
+}
+function paint(feed){
+  const cards = [];
+  for (const n of topo.nodes){
+    const info = (feed.nodes||{})[n.id] || {status:"unknown", stats:{}};
+    const g = document.getElementById("node-"+n.id);
+    if (g) g.setAttribute("class", "node "+info.status);
+    const badge = document.getElementById("badge-"+n.id);
+    if (badge) badge.textContent = info.status === "ok" ? headline(info.stats) : info.status;
+    const rows = Object.entries(info.stats||{}).map(([k,v]) =>
+      `<div class="kv"><span>${k}</span><span>${typeof v==="object"?JSON.stringify(v):v}</span></div>`).join("");
+    cards.push(`<div class="card"><b>${n.label}</b> <span class="st ${info.status}">${info.status}</span>${rows}
+      ${info.evidence?`<div class="kv"><span>evidence</span><span>${info.evidence}</span></div>`:""}</div>`);
+  }
+  document.getElementById("cards").innerHTML = cards.join("");
+  for (const e of topo.edges){
+    const act = (feed.edges||{})[e.id];
+    const path = document.getElementById("edge-"+e.id);
+    const label = document.getElementById("elabel-"+e.id);
+    const hot = act && act.count > 0;
+    if (path) path.setAttribute("class", "edge"+(hot?" hot":""));
+    if (label){
+      label.setAttribute("class", "elabel"+(hot?" hot":""));
+      label.textContent = e.label + (act ? ` · ${act.count}` : "");
+    }
+  }
+}
+async function tick(){
+  const conn = document.getElementById("conn"), meta = document.getElementById("meta");
+  try{
+    const r = await fetch("/api/system-map", {cache:"no-store"});
+    if (!r.ok) throw new Error("HTTP "+r.status);
+    const feed = await r.json();
+    if (!topo){ topo = feed.topology; drawTopology(); }
+    paint(feed);
+    conn.className = "dot ok";
+    meta.textContent = `topology ${feed.topology_version} · ${feed.initialized?"orchestrator up":"orchestrator not initialized"} · ${new Date(feed.generated_at*1000).toLocaleTimeString()}`;
+  }catch(err){
+    conn.className = "dot err";
+    meta.textContent = "feed unreachable — nothing shown is live";
+    if (topo) paint({nodes:{}, edges:{}});   // honest: all unknown, edges static
+  }
+}
+tick();
+setInterval(tick, 3000);
+</script>
+</body>
+</html>

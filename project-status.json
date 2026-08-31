@@ -129,9 +129,9 @@
     },
     "H34": {
       "blocked": 0,
-      "done": 5,
+      "done": 6,
       "open": 1,
-      "total": 6
+      "total": 7
     },
     "H5": {
       "blocked": 0,
@@ -192,11 +192,11 @@
       "status": "🟢 **release prep landed 2026-08-28 — two owner commands left.** `agents.__version__` bumped `0.11.0`→`1.0.0` and the CHANGELOG `[Unreleased]` block cut to a `[1.0.0]` section, so `release.yml`'s tag/version check passes. **Owner, in order: (1) A5 — flip MIT→Apache-2.0 (3 commands in [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md)); a tag pushed before the flip ships 1.0.0 under MIT. (2) `git tag v1.0.0 && git push origin v1.0.0` *on `main`, after this PR merges* — the tag publishes a public GitHub Release with artifacts, SBOM and checksums, so it must not be cut from a feature branch.**"
     }
   ],
-  "routes": 429,
+  "routes": 431,
   "tests": {
-    "backend": 6940,
+    "backend": 6957,
     "frontend": 657,
-    "mobile": 107
+    "mobile": 110
   },
   "version": "1.0.0"
 }

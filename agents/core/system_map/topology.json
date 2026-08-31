@@ -1,0 +1,33 @@
+{
+  "version": "2026-08-31",
+  "title": "Nerva — Live System Map",
+  "view_box": [0, 40, 1290, 560],
+  "nodes": [
+    { "id": "hud", "label": "Web HUD", "sublabel": "React cockpit · /v2", "type": "frontend", "pos": [40, 300], "size": [150, 64], "health_source": "spa_bundle", "href": "/v2/" },
+    { "id": "channels", "label": "Channels", "sublabel": "Telegram · Email · Webhooks", "type": "external", "pos": [40, 470], "size": [150, 64], "health_source": "channel_manager", "href": "/mission-control" },
+    { "id": "web", "label": "FastAPI Shell", "sublabel": "web.py · routers :8080", "type": "backend", "pos": [280, 300], "size": [160, 64], "health_source": "app_shell", "href": null },
+    { "id": "orch", "label": "Orchestrator", "sublabel": "classify · route · synthesize", "type": "backend", "pos": [530, 300], "size": [160, 68], "health_source": "orchestrator", "href": "/brain" },
+    { "id": "agents", "label": "Agent Cabinet", "sublabel": "SOUL.md roster", "type": "backend", "pos": [790, 300], "size": [160, 64], "health_source": "agent_roster", "href": "/brain" },
+    { "id": "llm", "label": "Hybrid LLM Router", "sublabel": "policy floor · tiers", "type": "backend", "pos": [1050, 300], "size": [170, 64], "health_source": "llm_router", "href": "/admin" },
+    { "id": "local", "label": "Local LLM", "sublabel": "LM Studio / Ollama", "type": "backend", "pos": [1050, 120], "size": [170, 64], "health_source": "local_llm", "href": "/admin" },
+    { "id": "cloud", "label": "Cloud LLM", "sublabel": "Claude · Gemini (opt-in)", "type": "cloud", "pos": [1050, 480], "size": [170, 64], "health_source": "cloud_llm", "href": "/admin" },
+    { "id": "memory", "label": "Memory", "sublabel": "vector + graph · RRF", "type": "database", "pos": [530, 120], "size": [160, 64], "health_source": "memory_manager", "href": null },
+    { "id": "plugins", "label": "Plugins", "sublabel": "permission-gated", "type": "external", "pos": [790, 120], "size": [170, 64], "health_source": "plugin_honesty", "href": "/admin" },
+    { "id": "autonomy", "label": "Autonomy Cortex", "sublabel": "queue · policy · inbox", "type": "backend", "pos": [400, 480], "size": [160, 64], "health_source": "autonomy_queue", "href": "/mission-control" },
+    { "id": "kernel", "label": "Action Kernel", "sublabel": "contracts · audit chain", "type": "security", "pos": [680, 480], "size": [170, 68], "health_source": "action_kernel", "href": "/mission-control" }
+  ],
+  "edges": [
+    { "id": "hud-to-web", "from": "hud", "to": "web", "label": "chat / SSE", "activity_source": "turns_60s" },
+    { "id": "web-to-orch", "from": "web", "to": "orch", "label": "", "activity_source": "turns_60s" },
+    { "id": "channels-to-orch", "from": "channels", "to": "orch", "label": "taint-marked ingress", "activity_source": "inbound_turns_60s" },
+    { "id": "orch-to-agents", "from": "orch", "to": "agents", "label": "parallel calls", "activity_source": "turns_60s" },
+    { "id": "agents-to-llm", "from": "agents", "to": "llm", "label": "select_backend", "activity_source": "turns_60s" },
+    { "id": "llm-to-local", "from": "llm", "to": "local", "label": "strict-local floor", "activity_source": "local_turns_60s" },
+    { "id": "llm-to-cloud", "from": "llm", "to": "cloud", "label": "opt-in escalation", "activity_source": "cloud_turns_60s" },
+    { "id": "orch-to-memory", "from": "orch", "to": "memory", "label": "add_turn · recall", "activity_source": "turns_60s" },
+    { "id": "orch-to-plugins", "from": "orch", "to": "plugins", "label": "intent gather" },
+    { "id": "orch-to-kernel", "from": "orch", "to": "kernel", "label": "mutating actions", "activity_source": "kernel_decisions" },
+    { "id": "autonomy-to-kernel", "from": "autonomy", "to": "kernel", "label": "ACT / NOTIFY / ASK", "activity_source": "kernel_decisions" },
+    { "id": "autonomy-to-channels", "from": "autonomy", "to": "channels", "label": "decision cards", "activity_source": "interrupts_today" }
+  ]
+}

@@ -14,6 +14,7 @@ import {
   fetchSecurityLoopBreaker,
   fetchSecurityPosture,
   fetchStatus,
+  fetchSystemMap,
   fetchTicker,
   type CapabilitiesResponse,
   type CommandCenterResponse,
@@ -24,6 +25,8 @@ import {
   type SecurityLoopBreakerResponse,
   type SecurityPostureResponse,
   type StatusResponse,
+  type SystemMapNode,
+  type SystemMapResponse,
   type TickerResponse,
 } from '../api/client';
 import { speak, stopSpeaking } from '../audio/tts';
@@ -83,6 +86,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
   const [estop, setEstop] = useState<EstopResponse | null>(null);
   const [commandCenter, setCommandCenter] = useState<CommandCenterResponse | null>(null);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse | null>(null);
+  const [systemMap, setSystemMap] = useState<SystemMapResponse | null>(null);
   const [brief, setBrief] = useState<AutonomyBriefResponse | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
@@ -102,7 +106,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setStatus(statusOut);
       setDashboard(dashboardOut);
       setTicker(tickerOut);
-      const [governanceOut, postureOut, killOut, loopOut, ccOut, capsOut, estopOut] = await Promise.all([
+      const [governanceOut, postureOut, killOut, loopOut, ccOut, capsOut, estopOut, mapOut] = await Promise.all([
         fetchSecurityGovernance(config).catch(() => null),
         fetchSecurityPosture(config).catch(() => null),
         fetchSecurityKillSwitch(config).catch(() => null),
@@ -110,6 +114,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
         fetchCommandCenter(config).catch(() => null),
         fetchCapabilities(config).catch(() => null),
         fetchEstop(config).catch(() => null),
+        fetchSystemMap(config).catch(() => null),
       ]);
       const briefOut = await fetchAutonomyBrief(config).catch(() => null);
       setBrief(briefOut);
@@ -120,6 +125,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setCommandCenter(ccOut);
       setCapabilities(capsOut);
       setEstop(estopOut);
+      setSystemMap(mapOut);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Failed to load status');
       setStatus(null);
@@ -132,6 +138,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setCommandCenter(null);
       setCapabilities(null);
       setEstop(null);
+      setSystemMap(null);
       setBrief(null);
     } finally {
       setLoading(false);
@@ -246,6 +253,35 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
           </>
         ) : (
           <Text style={styles.emptyText}>No trust data</Text>
+        )}
+      </Card>
+
+      <Card title="System map">
+        {systemMap && systemMap.nodes.length > 0 ? (
+          <>
+            <View style={styles.stateRow}>
+              <View
+                style={[
+                  styles.dot,
+                  {
+                    backgroundColor: systemMap.nodes.some((n) => n.status === 'attention')
+                      ? theme.danger
+                      : systemMap.nodes.some((n) => n.status === 'degraded')
+                        ? theme.warn
+                        : theme.ok,
+                  },
+                ]}
+              />
+              <Text style={styles.stateText}>
+                {`${systemMap.nodes.filter((n) => n.status === 'ok').length}/${systemMap.nodes.length} OK · topology ${systemMap.topology_version || '—'}`}
+              </Text>
+            </View>
+            {systemMap.nodes.map((n: SystemMapNode) => (
+              <Row key={n.id} label={n.label} value={n.status} />
+            ))}
+          </>
+        ) : (
+          <Text style={styles.emptyText}>No system map data</Text>
         )}
       </Card>
 
