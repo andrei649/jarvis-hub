@@ -213,17 +213,27 @@ def test_the_sweep_actually_reached_the_routers():
 
 @pytest.fixture()
 def client(monkeypatch):
+    """A client that deliberately does NOT run the app lifespan.
+
+    `with TestClient(web.app)` would, and the lifespan BUILDS a real
+    orchestrator into the `web.orch` global. That is unrecoverable from inside
+    this fixture: every test below then calls `monkeypatch.setattr(web, "orch",
+    <stub>)`, so monkeypatch records the *lifespan's live orchestrator* as the
+    value to restore — and monkeypatch's undo runs after this fixture's
+    teardown, putting it back no matter what the fixture restores. A live orch
+    then leaks into every later test in the same xdist worker, which poisoned
+    tests/test_memory_api.py: its no-orch client is built at module scope and
+    relies on `web.orch` being None (`get_orch` late-binds, reading the global
+    per request), so three 503 assertions came back 200/400 in CI while passing
+    in isolation.
+
+    None of the pins here need startup — each one supplies its own `web.orch` —
+    and a lifespan-less client is what the rest of the suite uses.
+    """
     import agents.web as web
 
     monkeypatch.setattr(web, "ADMIN_TOKEN", "dra50-secret")
-    with TestClient(web.app) as c:
-        real_orch = web.orch
-        try:
-            yield c
-        finally:
-            # Restore before the lifespan shutdown runs: `monkeypatch` unwinds
-            # after this fixture, and TestClient.__exit__ calls orch.stop_channels().
-            web.orch = real_orch
+    return TestClient(web.app)
 
 
 ADMIN = {"X-Admin-Token": "dra50-secret"}
