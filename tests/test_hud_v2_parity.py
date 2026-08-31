@@ -122,6 +122,7 @@ RULES = [
     ("/api/toolrpc", "build"),  # governed Tool-RPC for sandboxed pipelines (H20.1)
     ("/api/codeintel/", "build"),  # 0.31 Code Intelligence — AST symbol index over the source
     ("/api/vlm", "build"),  # vision-language model adapter (H13.1)
+    ("/api/screen/", "build"),  # T-0.25 ScreenReflex — Build/OperatorPanel neighbour, loopback-VLM only
     ("/api/desktop", "build"),  # governed desktop operator (H15.3)
     ("/api/operator", "build"),  # H28.2 action-hierarchy selection (DRA-22/DRA-42)
     ("/api/media", "build"),  # governed generation + live Media Director panel (H12.24/H29)
@@ -473,7 +474,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # for the same data; the HUD uses /routed and /agent/{id}.
     "/api/signals/brief/{domain}",
     # HUD drives acquisition through revoke/rollback only; the drive step has no control.
-    "/api/acquisition/{request_id}/drive",
     # DRA-43 made T-0.25's desktop vocabulary reachable (these two routes + the
     # `desktop_plan` ToolRPC tool). The T-0.25 row lists "a user-facing control
     # surface + HUD parity tracking" as its own remaining work, so the HUD half is
@@ -499,27 +499,16 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/codeintel/reindex",
     "/api/codeintel/search",
     "/api/codeintel/stats",
-    "/api/cognition/ensemble",
-    "/api/cognition/honesty",
-    "/api/cognition/learning",
-    "/api/cognition/memory",
-    "/api/cognition/personality",
-    "/api/cognition/status",
     "/api/context/compress",
     "/api/creative/export-packs",
     "/api/creative/plan",
     "/api/digest/run",
     "/api/integrations/writeback",
-    "/api/kg/ingest",
-    "/api/kg/relations",
     "/api/llm/moe/route",
     "/api/llm/openrouter",
     "/api/market/brief",
     "/api/media/generate",
     "/api/memory/consolidate",
-    "/api/memory/eval/corpus",
-    "/api/memory/eval/run",
-    "/api/memory/remember",
     "/api/metrics/capabilities",
     # MissionsPanel surfaces mission-level transitions only; there is no per-step UI.
     "/api/missions/{mission_id}/steps/{idx}/finish",
@@ -539,19 +528,13 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/security-skills/map",
     "/api/security-skills/playbook",
     "/api/security/audit/action",
-    "/api/security/audit/anchor",
-    "/api/security/audit/anchors",
     "/api/security/spotlight",
     "/api/skills/marketplace/install-zip",
     "/api/skills/marketplace/publish",
     "/api/skills/marketplace/uninstall",
     # the marketplace panel has install/review/history, but no rollback control.
-    "/api/skills/marketplace/{name}/rollback",
     # skills are approved via marketplace/review; this per-skill route has no caller.
-    "/api/subagents",
-    "/api/subagents/spawn",
     "/api/support/bundle",
-    "/api/vlm/describe",
     "/api/voice/wyoming",
     # render_snippet inlines colour/title/greeting (agents/core/widget.py), so nothing
     # fetches the config read surface.

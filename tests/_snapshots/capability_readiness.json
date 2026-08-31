@@ -66,6 +66,7 @@
   "plugin:n8n": "wired",
   "plugin:news": "wired",
   "plugin:oracle-bridge": "wired",
+  "plugin:osint_enrich": "wired",
   "plugin:postiz": "wired",
   "plugin:revenuecat": "wired",
   "plugin:signal-layer": "wired",
