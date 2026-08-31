@@ -44,6 +44,7 @@ _NEEDS: dict[str, list[str]] = {
     "meta-ads": ["META_ADS_ACCESS_TOKEN"],
     "postiz": ["POSTIZ_API_KEY"],
     "revenuecat": ["REVENUECAT_API_KEY"],
+    "osint_enrich": ["JARVIS_OSINT_ENRICH=1 (default-off OSINT enrichment egress flag)"],
 }
 
 

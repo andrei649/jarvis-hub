@@ -43,7 +43,7 @@
 | T-0.63 | Competitive-Gap, line 1248 | OWNER-CONFIG | M | Duplicate of A2 (72h soak) + failure injection | OWNER-PACKET |
 | A3 | Handoff Fable — Lane A, line 1061 | OWNER-CONFIG | S | Owner tail only: dismiss stale Dependabot alerts in GitHub UI, wait on next.js for worldview moderates, Expo SDK bump on device | OWNER-PACKET |
 | A4 | Handoff Fable — Lane A, line 1062 | OWNER-CONFIG | S | GitHub org settings batch | OWNER-PACKET |
-| SEC-4 | Security route-policy gate, line 1831 | OWNER-CONFIG | S | Same task as A4 (promote matrix/parity to required branch-protection checks) | OWNER-PACKET |
+| SEC-4 | Security route-policy gate, line 1831 | OWNER-CONFIG | S | **CLOSED by reversal** — the 2026-08-29 de-gate decision removed the gates instead of promoting matrix/parity to required checks (#981); only the GitHub-settings cleanup in `docs/OWNER_TASKS.md` → "De-gate merges" remains | OWNER-PACKET |
 | CQ-2 | CodeQL alerts, line 1881 | OWNER-CONFIG | S | Same GitHub-settings batch as A4 | OWNER-PACKET |
 | CQ-3 | CodeQL alerts, line 1882 | OWNER-CONFIG | S | Needs an owner paste of the ~12 untriaged alerts (no MCP code-scanning-list tool available) | OWNER-PACKET |
 | A5 | Handoff Fable — Lane A, line 1063 | OWNER-DECISION | S | Prep (TRADEMARKS.md, Apache-2.0 staged) already done; flip = 3 owner commands at the LICENSE_DECISION-specified time | OWNER-PACKET |
@@ -192,7 +192,9 @@ with the duplicate relationship called out in its `dependencies` column. The kno
 clusters are:
 
 - **72h soak / AUD-0 / H23.23 / H23.4 / T-0.63** — all the same owner-run soak-and-live-gate work.
-- **A4 / SEC-4 / CQ-2 / CQ-3** — all the same GitHub-settings-and-triage owner batch.
+- **A4 / SEC-4 / CQ-2 / CQ-3** — all the same GitHub-settings-and-triage owner batch. SEC-4's own ask
+  (promote matrix/parity to *required* checks) is **closed by reversal**: the 2026-08-29 de-gate removed
+  the gates instead (#981), leaving only the settings cleanup in the shared batch.
 - **A6 / H23.22 / T-0.59** — all the same "record the demo video" owner task.
 - **T-0.25 / A8** — desktop-operator owner-host validation, now largely superseded by H28.4.
 - **TASK-2** — its remaining tail is itself a duplicate of the `LVP-*` owner-config cluster and is

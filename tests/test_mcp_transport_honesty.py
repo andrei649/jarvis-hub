@@ -1,0 +1,113 @@
+"""The MCP client surface must not advertise a transport it cannot speak (DRA-25).
+
+`MCPServer.connect()` only implements stdio; the `sse` branch logs and returns
+False. The admin API accepted `transport="sse"` anyway, persisted it, and then
+answered every connect probe with `connected: true`. These tests pin the honest
+behaviour: sse is rejected at the door, the connect probe reports what actually
+happened, and the tool-call contract admits stdio only.
+"""
+import sys
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+
+repo_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(repo_root))
+sys.path.insert(0, str(repo_root / "agents"))
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+import agents.web as web  # noqa: E402
+
+_TOKEN = "mcp-honesty-token"
+_HDR = {"X-Admin-Token": _TOKEN}
+
+
+def _mock_orch(servers: dict | None = None) -> MagicMock:
+    m = MagicMock()
+    m.mcp.servers = servers if servers is not None else {}
+    m.mcp.to_config = MagicMock(return_value=[])
+    return m
+
+
+def test_add_rejects_unsupported_transport(monkeypatch):
+    orch = _mock_orch()
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
+    monkeypatch.setattr(web, "orch", orch)
+    saved: list[int] = []
+    monkeypatch.setattr(web, "_save_mcp_config", lambda: saved.append(1))
+    client = TestClient(web.app)
+    resp = client.post(
+        "/api/admin/mcp",
+        json={"name": "remote", "transport": "sse", "url": "http://127.0.0.1:9/sse"},
+        headers=_HDR,
+    )
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error"] == "unsupported_transport"
+    assert body["transport"] == "sse"
+    assert "stdio" in body["supported"]
+    # Nothing registered, nothing persisted.
+    assert "remote" not in orch.mcp.servers
+    assert saved == []
+
+
+def test_add_still_accepts_stdio(monkeypatch):
+    orch = _mock_orch()
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
+    monkeypatch.setattr(web, "orch", orch)
+    monkeypatch.setattr(web, "_save_mcp_config", lambda: None)
+    client = TestClient(web.app)
+    resp = client.post(
+        "/api/admin/mcp",
+        json={"name": "fs", "transport": "stdio", "command": "run-fs"},
+        headers=_HDR,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    assert "fs" in orch.mcp.servers
+
+
+def test_connect_reports_failure_instead_of_claiming_success(monkeypatch):
+    srv = MagicMock()
+    srv.name = "fs"
+    srv.transport = "stdio"
+    srv.tools = []
+    srv.connect = AsyncMock(return_value=False)
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
+    monkeypatch.setattr(web, "orch", _mock_orch({"fs": srv}))
+    client = TestClient(web.app)
+    resp = client.post("/api/admin/mcp/fs/connect", headers=_HDR)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["connected"] is False
+    assert body["ok"] is False
+    assert body["error"] == "connect_failed"
+
+
+def test_tool_call_contract_denies_non_stdio_transport():
+    from agents.core.mcp.client import MCPServer
+
+    srv = MCPServer(name="legacy", transport="sse", url="http://127.0.0.1:9/sse")
+    blocked = srv._tool_call_blocked("do_thing", {})
+    assert blocked is not None
+    assert blocked["error"]
+    assert blocked["server"] == "legacy"
+
+    ok = MCPServer(name="fs", transport="stdio", command="run-fs")
+    assert ok._tool_call_blocked("do_thing", {}) is None
+
+
+def test_sources_do_not_advertise_sse():
+    admin_js = (repo_root / "agents/web/static/admin.js").read_text(encoding="utf-8")
+    transport_rows = [ln for ln in admin_js.splitlines() if "mcp.transport" in ln]
+    assert transport_rows, "mcp.transport SelectRow disappeared — update this guard"
+    for line in transport_rows:
+        assert "'sse'" not in line, line
+
+    client_py = (repo_root / "agents/core/mcp/client.py").read_text(encoding="utf-8")
+    header = client_py.split('"""')[1]
+    # The module docstring used to read "Connects to MCP servers via stdio or SSE
+    # transport." Any mention of a remote transport must now be a disclaimer.
+    assert "via stdio or SSE" not in header, header
+    if "SSE" in header.upper():
+        assert "NOT implemented" in header, header

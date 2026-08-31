@@ -27,10 +27,10 @@ from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlsplit
 
-import httpx
 
 from ..env_config import env_str
 from .base import LLMBackend, strip_thinking
+from .egress import llm_async_client
 
 logger = logging.getLogger("jarvis.llm.vlm")
 
@@ -214,7 +214,7 @@ class VLMBackend(LLMBackend):
         # Provenance label consumed by proven-local gates (e.g. the H28
         # desktop fallback); a remote base is honestly not local.
         self.is_local = _is_loopback_base(base_url)
-        self.client = client or httpx.AsyncClient(base_url=base_url, timeout=180.0)
+        self.client = client or llm_async_client("vlm", base_url=base_url, timeout=180.0)
 
     @classmethod
     def from_env(cls, *, client=None, max_image_dim: int = 1024) -> "VLMBackend":

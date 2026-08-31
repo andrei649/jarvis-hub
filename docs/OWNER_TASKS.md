@@ -81,13 +81,17 @@
   - [ ] Delete the **CodeQL merge-protection ruleset** if one exists (code-scanning merge rule).
   - [ ] Keep **Allow auto-merge** on — `pr-auto-merge.yml` still sweeps hourly and squash-merges
         any non-draft PR GitHub reports as clean.
+  > If a PR is stuck at "Expected — Waiting for status to be reported", that is this task not yet
+  > done: see [`MAINTENANCE_RUNBOOK.md`](MAINTENANCE_RUNBOOK.md) §10.
 - [ ] **Repo description + topics + social preview** — paste-ready strings in
   [`docs/BRAND_BOOK.md`](BRAND_BOOK.md) §9 (current description is just "Personal AI").
-- [ ] **Enable code scanning** (Settings → Code security) or make the `Analyze (python)` CodeQL
-  check non-required — it intermittently fails with "Code scanning is not enabled"
-  ([`HUD_V2_REMAINING.md`](design/HUD_V2_REMAINING.md) §9). *(Overtaken 2026-08-29: CodeQL no
-  longer runs on PRs — weekly + push-to-main only; just drop it from required checks per the
-  de-gate task above.)*
+- ✅ **Code scanning** — resolved 2026-08-31, nothing left here. The repo is public, code scanning is
+  enabled and SARIF upload succeeds (run 33384718270: *"Analysis upload status is complete."*), so the
+  old code-scanning-unavailable failure is gone and the workflow no longer swallows analysis
+  errors. Settled posture: **CodeQL = advisory, push-to-main + weekly, not required, fails
+  loudly on analysis/upload errors.** The one remaining owner action is already tracked above —
+  drop `Analyze (python)` / `CodeQL` from required status checks and delete the code-scanning
+  merge-protection ruleset.
 - [ ] **Dismiss resolved scanning alerts** (Security → Secret/Code scanning) — the code-side fixes
   merged 2026-06-17 (#215, #216); these remaining ones are false positives / won't-fix:
   - Secret scanning **#1** (OpenAI key) → "Used in tests" — it's a synthetic guardrail fixture (#215).
@@ -120,6 +124,10 @@
   then the dedicated backend + ingestion run.
 - [ ] **LM Studio end-to-end** — validate `lms server start/load/unload` against the real binary
   on the 5090 box (current coverage is mock-only), incl. the new HUD Admin → LM STUDIO panel.
+- [ ] **GAP-4 / DRA-45 — the Hermes head-to-head (~1 day)** — protocol, tasks and pass/fail bars are
+  written and frozen: [`docs/HERMES_HEAD_TO_HEAD.md`](HERMES_HEAD_TO_HEAD.md) (status: **NOT RUN**).
+  Blocked on the Hermes licence/CVE/SBOM review in the Parking lot below — that decision must clear
+  before Hermes is pulled or installed. Feeds S1/S2; publish the table **including the losses**.
 - [ ] **Live-mic validation** — HUD voice loop + barge-in tuning need a real microphone
   (PR #162/#164 caveat), incl. Wyoming satellite if you set one up.
 - [ ] **Wall-screen room validation (briefing wall)** — the `brain` cinema stage was built from
@@ -256,6 +264,26 @@ built on your Windows box:
 
 ## Parking lot (decisions, no rush)
 
+- [ ] **Pick the payment rail — or ratify that there is none** (moves real money, so only you can
+  decide). Mirrors the dev row in `BACKLOG.md` → *Genuinely unbuilt — needs real code* →
+  `- [ ] Real payment rail adapter (AP2/ACP/x402) at payments.settle()`.
+  **What is already built, and is deliberately rail-agnostic:** `PaymentBroker`
+  (`agents/core/payments.py`) enforces mandate + per-payment cap + total cap + payee allowlist +
+  currency + expiry; every payment is created `pending` with **no auto-approve at any amount**; the
+  caps are re-checked at approve *and* again at settle; create/approve/reject/settle are all
+  hash-chain-audited. `settle()` (`agents/core/payments.py`) increments the mandate's spend, marks
+  the payment settled and audits the reason *"settled (no real rail)"* — no money moves. Admin
+  surface: `/api/payments/*` in `agents/core/routers/payments.py`.
+  **What only you can supply, in order:**
+  1. **Choose the rail** — Google AP2 vs Stripe ACP vs x402 (the three the backlog row names).
+  2. **Open the merchant/account and provide credentials** for it.
+  3. **Accept the liability** of an agent initiating real transfers, and name the mandate ceiling
+     that is acceptable in production.
+  **Until (1)–(3) are answered:** no rail adapter, no `PaymentRail` protocol and no `NullRail`
+  default gets written. A selector with zero real implementations is dead plumbing that makes the
+  system look wired for money it cannot move; `settle()`'s docstring already documents the seam
+  more honestly than a no-op object would.
+
 - [ ] **🔴 Public web demo instance for digitaholic.ro — four calls, all yours** (spec:
   [`docs/decisions/2026-08-24-public-web-demo-digitaholic.md`](decisions/2026-08-24-public-web-demo-digitaholic.md),
   DRAFT awaiting your review; backlog: BACKLOG.md → *P0 — public web demo*, H23.30). A real Nerva
@@ -272,15 +300,22 @@ built on your Windows box:
   ✅ The `seed_graph()` blocker shipped — the personal graph seed self-gates on
   `NERVA_PUBLIC_PROFILE` (H23.30, #967; `agents/core/memory/seed_graph.py`,
   `tests/test_public_profile_seed_gate.py`). Set `NERVA_PUBLIC_PROFILE=1` on the public box and no
-  personal fact is seeded; no code change remains — all of v1 is configuration plus the four
-  decisions above.
+  personal fact is seeded.
+
+  ✅ Its residual shipped too (DRA-07 / DRA-14): a *mistyped* flag used to resolve to the private
+  default and seed the owner's family on a public box. `boot_guards.assert_parseable_posture_flags`
+  now refuses to start when `NERVA_PUBLIC_PROFILE` is set to a spelling nothing recognizes, from
+  both documented entry points (`agents/core/boot_guards.py`, `serve.py`,
+  `tests/test_public_profile_boot_guard.py`). The parse convention itself (AUD-14) is unchanged.
+  With that in, no code change remains — all of v1 is configuration plus the four decisions above.
 
 - [ ] **Before any future Hermes adapter proposal:** decide whether the four productivity-skill
   subtrees carrying separate Anthropic terms are legally acceptable for the intended use, and
   require a fresh CVE, transitive-license, SBOM/provenance and platform review
   against the exact proposed artifact. E8.1c is static preflight evidence only; this is
   not a current release blocker and grants no permission to pull, install or execute
-  Hermes.
+  Hermes. **This decision also gates GAP-4 / DRA-45** — the head-to-head protocol
+  ([`HERMES_HEAD_TO_HEAD.md`](HERMES_HEAD_TO_HEAD.md)) cannot be run until it clears.
 
 - [ ] **When does the Action Kernel become the default rail?** Today the always-on risk-tier
   policy is the load-bearing gate; the unifying kernel (`JARVIS_ACTION_KERNEL`) and the unified

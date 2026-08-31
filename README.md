@@ -65,7 +65,7 @@ A personal AI mesh that handles the cross-section of *your* life: the day job an
 | 24 GB+ (3090/4090/5090) | `gemma-4-31b-a4b` (MoE) + a deep slot | the full reference experience |
 | CPU-only | `qwen2.5:3b` | it works; expect slow replies |
 
-No GPU rule is enforced — the model picker (`/api/onboarding/command-center`, HUD → Start) tells you honestly whether a model is reachable. Measured tokens/sec per tier live in [`docs/HARDWARE_BENCHMARKS.md`](docs/HARDWARE_BENCHMARKS.md). The reference rig below is what the project is developed on, **not a requirement**:
+No GPU rule is enforced — the model picker (`/api/onboarding/command-center`, HUD → Start) tells you honestly whether a model is reachable. The measurement protocol and the per-tier table live in [`docs/HARDWARE_BENCHMARKS.md`](docs/HARDWARE_BENCHMARKS.md) — the numbers themselves are not measured yet (owner hardware), and that page stays blank rather than guessing. The reference rig below is what the project is developed on, **not a requirement**:
 
 - **Bonobo WS** (Pop!_OS) — Intel Core Ultra 9, 192GB DDR5, RTX 5090 24GB, 4× NVMe + 18TB HDD
 - **Pi 5** — always-on services (Qdrant, Neo4j, n8n, Homebridge)

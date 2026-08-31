@@ -31,11 +31,14 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
-        # Code scanning (SARIF upload) needs GitHub Advanced Security, which is
-        # org-only — unavailable on this private personal repo, so the upload
-        # always errors. Keep the scan running but don't fail CI on it. Re-enable
-        # as a gate by removing continue-on-error if the repo goes public/org.
-        continue-on-error: true
+        # The repo is public, so code scanning + SARIF upload are available and
+        # verified working (the analyze step logs "Analysis upload status is
+        # complete."). This job is advisory *by design*: per the 2026-08-29
+        # de-gate decision it is NOT a required status check and does NOT run on
+        # pull_request — push-to-main + weekly only. Re-adding a PR trigger or a
+        # required check is restore patch K (docs/restore/README.md), an owner
+        # decision. It is deliberately no longer `continue-on-error`: a broken
+        # analysis or a failed upload must go red on main, not be swallowed.
         uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28  # v4
         with:
           category: "/language:python"

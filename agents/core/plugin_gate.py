@@ -271,6 +271,20 @@ BUILTIN_PLUGINS = {
         allowed_domains=["api.tavily.com", "html.duckduckgo.com"],
         agents_served=["all"],
     ),
+    "osint_enrich": PluginManifest(
+        id="osint_enrich",
+        name="OSINT Pivot Enrichment",
+        version="0.1.0",
+        description="Follow OSINT pivot suggestions with keyless resolvers (DNS-over-HTTPS, RDAP)",
+        network_access=NetworkAccess.RESTRICTED,
+        # Indicator values (a domain, an IP) genuinely leave the machine to be resolved —
+        # say TRANSMITTED rather than dress a third-party lookup up as local processing.
+        data_scope=DataScope.TRANSMITTED,
+        # Fixed resolver hosts. The indicator rides as a query parameter / parsed-IP path
+        # segment, so it can never become the request host.
+        allowed_domains=["dns.google", "rdap.org"],
+        agents_served=["vision", "argus", "athena"],
+    ),
     "n8n": PluginManifest(
         id="n8n",
         name="n8n Workflow Designer",

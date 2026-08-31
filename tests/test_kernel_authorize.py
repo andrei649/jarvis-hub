@@ -1,10 +1,24 @@
 """Unit tests for the ORIZONT-24 Action Kernel facade (K1).
 
 Proves the composition: kill-switch + capability nucleus → policy → audit, mapping
-to grant | deny | queue. Covers acceptance criteria 1-3 (the K3 loop-breaker is
-criterion 4, deferred; quarantine is the K4 half of criterion 3, scaffolded
-xfail in test_kernel_bypass_regressions.py).
+to grant | deny | queue. Covers acceptance criteria 1-3 for the K1 composition.
+
+The later waves ship and are pinned by their own files:
+
+* K3 loop-breaker / budget scheduler — ``agents/core/kernel/budget.py:LoopDetector``,
+  threaded through :func:`agents.core.kernel.authorize` via the opt-in
+  ``loop_detector`` / ``budget_ledger`` arguments; see
+  ``tests/test_kernel_loop_breaker_wave.py``, ``tests/test_kernel_budget.py`` and
+  ``tests/test_kernel_budget_binding.py``.
+* K4 kill-switch + credential-quarantine syscalls —
+  ``agents/core/kernel/syscalls.py`` (``halt`` / ``release`` / ``inject_guarded``);
+  see ``tests/test_kernel_syscalls.py``.
+
+The B1/B2/B3 bypass contracts live in ``tests/test_kernel_bypass_regressions.py``;
+all three are closed there with real assertions.
 """
+
+from pathlib import Path
 
 from agents.core.autonomy.policy import AutonomyPolicy
 from agents.core.kernel import TOKEN_MANDATORY_KINDS, Action, Budget, Capability, Verdict, authorize
@@ -116,8 +130,10 @@ def test_scoped_kill_switch_only_halts_its_scope(tmp_path):
 
 
 def test_budget_is_inert_in_k1(tmp_path):
-    """K1: the Budget object is threaded but does not change the verdict (K3 gives
-    it teeth). A tier-1 action grants regardless of the budget passed."""
+    """K1: the Budget object is threaded but does not change the verdict — the K3
+    scheduler is inert unless a ``budget_ledger``/``loop_detector`` is supplied
+    (K3 shipped; see tests/test_kernel_budget_binding.py). A tier-1 action grants
+    regardless of the budget passed."""
     d = authorize(
         Action(kind="organize", payload={"risk_tier": 1}),
         budget=Budget(amount=999_999.0),
@@ -189,3 +205,41 @@ def test_mandatory_kind_with_no_broker_at_all_stays_k1_tolerant(tmp_path):
         policy=AutonomyPolicy(), audit=FakeAudit(),
     )
     assert d.verdict is Verdict.GRANT
+
+
+# ── docstring honesty guard ───────────────────────────────────────────────────
+
+
+def test_module_docstring_does_not_claim_unshipped_waves():
+    """The module docstring must not describe K3/K4 as deferred or point at an
+    xfail scaffold that does not exist: both waves shipped and are pinned by
+    real, passing files."""
+    doc = __doc__ or ""
+    assert doc, "module docstring disappeared"
+    assert "xfail" not in doc
+    assert "deferred" not in doc.lower()
+
+    from agents.core.kernel.budget import LoopDetector  # K3
+    from agents.core.kernel.syscalls import halt, inject_guarded  # K4
+
+    assert LoopDetector is not None and halt is not None and inject_guarded is not None
+    for referenced in (
+        "tests/test_kernel_loop_breaker_wave.py",
+        "tests/test_kernel_syscalls.py",
+        "tests/test_kernel_bypass_regressions.py",
+    ):
+        assert referenced in doc
+        assert (Path(__file__).parent.parent / referenced).is_file()
+
+
+def test_no_kernel_test_is_quarantined_as_xfail():
+    """No kernel test file quarantines a contract behind xfail/skip, and none of
+    their module docstrings points at such a scaffold."""
+    tests_dir = Path(__file__).parent
+    for path in sorted(tests_dir.glob("test_kernel_*.py")):
+        src = path.read_text(encoding="utf-8")
+        decorators = [ln.strip() for ln in src.splitlines() if ln.strip().startswith("@")]
+        quarantined = [d for d in decorators if "xfail" in d or ".skip" in d]
+        assert not quarantined, f"{path.name}: {quarantined}"
+        header = src.split('"""')[1] if src.startswith('"""') else ""
+        assert "xfail" not in header, path.name

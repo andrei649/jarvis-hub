@@ -564,6 +564,55 @@ class AutonomyCoordinator:
             },
             capability_id="tool:operator_plan",
         )
+
+        async def _rpc_osint_enrich(args):
+            """DRA-05 — follow the pivots investigate.py only ever suggested.
+
+            Gated (not trusted_execution): this is the one OSINT surface that
+            performs outbound lookups driven by attacker-influenceable indicators,
+            so it rides the kernel/approval rail like desktop_run. The live client
+            is the default-off ``osint_enrich`` plugin; with it absent or dark the
+            call still returns an honest plan whose network pivots are refused by
+            name rather than fabricated.
+            """
+            from .osint.enrich import investigate_and_enrich
+
+            plugins = getattr(self._orch, "plugins", None)
+            return await investigate_and_enrich(
+                args["evidence"],
+                client=(plugins.get("osint_enrich") if plugins else None),
+                top=args.get("top", 8),
+                max_lookups=args.get("max_lookups", 8),
+            )
+
+        server.register_tool(
+            "osint_enrich",
+            _rpc_osint_enrich,
+            gated=True,
+            description=(
+                "Follow OSINT pivot suggestions with bounded live lookups; "
+                "untrusted results stay tainted."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "evidence": {
+                        "type": "array",
+                        "maxItems": 2000,
+                        "items": {
+                            "type": "object",
+                            "maxProperties": 8,
+                            "additionalProperties": True,
+                        },
+                    },
+                    "top": {"type": "integer"},
+                    "max_lookups": {"type": "integer"},
+                },
+                "required": ["evidence"],
+                "additionalProperties": False,
+            },
+            capability_id="tool:osint_enrich",
+        )
         server.register_tool(
             "echo",
             _rpc_echo,

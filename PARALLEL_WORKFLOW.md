@@ -1,8 +1,11 @@
 # Parallel Development Playbook
 
-> **Derived guidance.** The canonical source is
-> [`.github/ai-development-policy.json`](.github/ai-development-policy.json). Run
-> `python scripts/check_ai_workflow_policy.py` after changing either file.
+> **Derived guidance.** The canonical source is [`AGENTS.md`](AGENTS.md). The machine-readable
+> policy (`.github/ai-development-policy.json`) and its checker
+> (`scripts/check_ai_workflow_policy.py`) were **removed by the owner de-gate decision** (#981,
+> commit `824ff18`) and are archived in
+> [`docs/restore/dev-gates-restore-2026-08-30.zip`](docs/restore/) (restore PRs #985/#986) — there
+> is no checker to run, and nothing here is machine-enforced.
 
 This playbook replaces the former vendor-specific OpenCode/Claude ownership table and local-only
 lock protocol. Work is assigned by capability, risk, and current path intent—not by model brand.
@@ -47,7 +50,9 @@ nothing about lease, CI, or governance state.
 GitHub-backed path-prefix leases are the intended future coordination system, but they are not
 implemented or enforced. Until a real service exists, report `lease=none`, inspect open work, and
 coordinate overlaps explicitly. Do not claim `requested`, `active`, `contested`, `expired`, or
-`released` as remotely verified state.
+`released` as remotely verified state. Tracked as **DRA-26** in [`BACKLOG.md`](BACKLOG.md) and
+scheduled post-1.0 ([`docs/DEVELOPMENT_ROADMAP.md`](docs/DEVELOPMENT_ROADMAP.md), Phase 7);
+nothing in `agents/` implements it.
 
 The planned lease record will contain:
 

@@ -1,14 +1,19 @@
 # Nerva AI Development Workflow
 
-> **Derived human-readable guide.** The executable source of truth is
-> [`.github/ai-development-policy.json`](../.github/ai-development-policy.json). When this guide
-> disagrees with that file, the policy wins. Validate it with
-> `python scripts/check_ai_workflow_policy.py`.
+> **Derived human-readable guide.** The canonical source is [`AGENTS.md`](../AGENTS.md); when this
+> guide disagrees with it, `AGENTS.md` wins. There is no longer a machine-readable policy or a
+> checker behind this document: `.github/ai-development-policy.json` and
+> `scripts/check_ai_workflow_policy.py` were removed by the owner de-gate decision (#981, commit
+> `824ff18`) and archived in [`docs/restore/`](restore/).
 
 This workflow keeps AI-assisted development fast without converting speed into rework. It applies
 to feature work, fixes, refactors, security changes, CI/governance work, and multi-agent sessions.
 
 ## Risk first
+
+> **Advisory since #981.** The R0–R3 tiers below are a convention agents follow, not a gate GitHub
+> enforces — see [`AGENTS.md`](../AGENTS.md) → "Development posture". Nothing fails a PR if a tier
+> is mis-assigned; the value is in choosing the right amount of test and review for the change.
 
 Classify the smallest coherent change before implementation:
 

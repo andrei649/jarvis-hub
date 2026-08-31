@@ -132,7 +132,7 @@ const CATEGORY_DESC = {
   charts:    'Date analitice, latențe, rate de succes ale agenților și circuit breakere active.',
   config:    'Toate setările sistemului grupate logic într-o singură listă simplă, cu denumiri intuitive.',
   agents:    'Activarea, dezactivarea și selectarea modelelor LLM utilizate de fiecare agent din rețea.',
-  mcp:       'Configurarea clienților externi Model Context Protocol (stdio / sse) cu descoperire de unelte.',
+  mcp:       'Configurarea clienților externi Model Context Protocol (stdio) cu descoperire de unelte.',
   oracle:    'Statusul curent de sincronizare, conflicte de cod detectate și integrarea cu asistentul de push.',
   system:    'Variabile de mediu live, depanare rapidă și reinițializarea bazei de date.',
   recall:    'Fapte și preferințe stocate despre utilizator, grupate pe categorii, cu căutare rapidă.',
@@ -946,7 +946,7 @@ function MCPPage({ onToast }) {
       ? h('form',{onSubmit:addServer, style:{background:'var(--bg-glass)',borderRadius:8,border:'1px solid var(--border-glass)',padding:12}},
           h('div',{style:{fontSize:12,fontWeight:600,marginBottom:8}}, _t('mcp.add_title')),
           h(InputRow,{label:_t('mcp.name'), value:form.name, onChange:v=>setForm({...form,name:v})}),
-          h(SelectRow,{label:_t('mcp.transport'), value:form.transport, onChange:v=>setForm({...form,transport:v}), opts:['stdio','sse']}),
+          h(SelectRow,{label:_t('mcp.transport'), value:form.transport, onChange:v=>setForm({...form,transport:v}), opts:['stdio']}),
           form.transport === 'stdio'
             ? h(InputRow,{label:_t('mcp.command'), value:form.command, onChange:v=>setForm({...form,command:v})})
             : h(InputRow,{label:_t('mcp.url'), value:form.url, onChange:v=>setForm({...form,url:v})}),

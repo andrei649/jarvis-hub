@@ -81,7 +81,7 @@ pre-upgrade backup (H23.8) is your rollback.
 | **Usage profile** | `balanced` (default) · `gaming` · `ai` · `multimedia` · `admin` · **`headless`** | `JARVIS_SYSTEM_PROFILE=…`. `headless` = lean server/TUI/low-VRAM (8GB) posture: heavy media features off, autonomy on, local-light models. |
 | **Node.js** | 20+ | Only for the optional WorldView (4D OSINT) sub-app. The hub runs without it. |
 | **Docker** | optional | Required only for the containerized code **sandbox** and the WorldView infra. |
-| **GPU** | optional | CPU/quantized models work; GPU-gated features (fine-tune, speculative decoding) are a separate track (0.18). Measured per-tier throughput: [`HARDWARE_BENCHMARKS.md`](HARDWARE_BENCHMARKS.md). |
+| **GPU** | optional | CPU/quantized models work; GPU-gated features (fine-tune, speculative decoding) are a separate track (0.18). Per-tier throughput: the measurement protocol and the (still unfilled) table are in [`HARDWARE_BENCHMARKS.md`](HARDWARE_BENCHMARKS.md) — no numbers measured yet. |
 
 ## See also
 

@@ -76,9 +76,13 @@ class TestPublicProfileGate:
 
         This is the repo-wide AUD-14 convention (one parse home, no local
         boolean dialects) and this test does not change it — it makes the
-        residual visible instead of silent. Closing it needs a boot guard that
-        refuses to start when the flag is set-but-unparseable, which is a
-        separate change with its own owner call.
+        parse-level behaviour visible instead of silent.
+
+        The typo can no longer reach a *running* box: `boot_guards.
+        assert_parseable_posture_flags` (DRA-07/DRA-14, see
+        tests/test_public_profile_boot_guard.py) refuses to start when the flag
+        is set-but-unparseable, from both documented entry points. `seed_graph`
+        itself is deliberately unchanged, which is exactly what this test pins.
         """
         monkeypatch.setenv("NERVA_PUBLIC_PROFILE", "pubic")
         graph = InMemoryGraph()

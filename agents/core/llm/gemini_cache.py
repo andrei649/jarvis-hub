@@ -14,11 +14,11 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, fields
 
-import httpx
 
 from ..settings_db import ensure_initialized, get_conn
 
 from .auth_rotation import AuthLease, AuthProfilePool, is_rotatable_status
+from .egress import llm_async_client
 from .gemini_context import GeminiRequestBinding
 from .provider_errors import log_provider_failure, provider_http_status
 
@@ -56,7 +56,9 @@ class ContextCache:
         self._auth_pool_provider = auth_pool_provider
         self._cache_map = self._load_map()
         self._session_locks: dict[str, asyncio.Lock] = {}
-        self._client = httpx.AsyncClient(timeout=30.0)
+        # Same API host and same credential as generation — folded under the gemini
+        # row rather than invented as a separate provider (DRA-23).
+        self._client = llm_async_client("gemini", timeout=30.0)
 
     async def acquire_binding(
         self,

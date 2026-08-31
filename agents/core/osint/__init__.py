@@ -10,5 +10,14 @@ from .correlate import (
     correlate,
     writeback_payload,
 )
+from .enrich import enrich_pivots, investigate_and_enrich
 
-__all__ = ["Evidence", "Finding", "correlate", "build_brief", "writeback_payload"]
+__all__ = [
+    "Evidence",
+    "Finding",
+    "correlate",
+    "build_brief",
+    "writeback_payload",
+    "enrich_pivots",
+    "investigate_and_enrich",
+]

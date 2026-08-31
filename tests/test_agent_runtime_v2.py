@@ -1849,6 +1849,33 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
             "capability_id": "tool:operator_plan",
         },
         {
+            "name": "osint_enrich",
+            "gated": True,
+            "description": (
+                "Follow OSINT pivot suggestions with bounded live lookups; "
+                "untrusted results stay tainted."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "evidence": {
+                        "type": "array",
+                        "maxItems": 2000,
+                        "items": {
+                            "type": "object",
+                            "maxProperties": 8,
+                            "additionalProperties": True,
+                        },
+                    },
+                    "top": {"type": "integer"},
+                    "max_lookups": {"type": "integer"},
+                },
+                "required": ["evidence"],
+                "additionalProperties": False,
+            },
+            "capability_id": "tool:osint_enrich",
+        },
+        {
             "name": "terminal_run",
             "gated": True,
             "description": "Run one bounded shell command on a named governed target.",
@@ -1898,6 +1925,18 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
         "task_id": 41,
     }
     assert len(orch.autonomy_queue.calls) == 1
+    # DRA-05: enrichment performs attacker-influenceable outbound lookups, so it rides the
+    # same approval rail as desktop_run rather than executing on the model's say-so.
+    enrichment = await orch.tool_rpc.handle(
+        {"tool": "osint_enrich", "args": {"evidence": []}}, actor="jarvis"
+    )
+    assert enrichment == {
+        "ok": False,
+        "reason": "approval_required",
+        "tool": "osint_enrich",
+        "task_id": 41,
+    }
+    assert len(orch.autonomy_queue.calls) == 2
     queued_args, queued_kwargs = orch.autonomy_queue.calls[0]
     assert queued_args[:2] == ("jarvis", "toolrpc.desktop_run")
     assert queued_kwargs["payload"] == {

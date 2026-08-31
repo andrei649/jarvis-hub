@@ -75,6 +75,34 @@ def truthy(value: object, default: bool = False) -> bool:
     return default
 
 
+def is_recognized_bool(value: object) -> bool:
+    """True when *value* spells a boolean this module actually recognizes.
+
+    The companion to :func:`truthy`, which deliberately never tells its caller
+    whether it *understood* the input or fell back to the default. Both answers
+    are correct at a call site; a boot guard needs the second one so a typo in a
+    posture flag can be refused instead of silently resolving (see
+    ``boot_guards.assert_parseable_posture_flags``). Purely a question about the
+    spelling — it does not parse, and it does not change what ``truthy`` returns.
+    """
+    if value is None:
+        return False
+    text = str(value).strip().lower()
+    return text in TRUTHY_SPELLINGS or text in FALSY_SPELLINGS
+
+
+def env_flag_is_malformed(name: str) -> bool:
+    """True when env var *name* is SET to a value no spelling recognizes.
+
+    Unset, empty, and whitespace-only are the documented "use the declared
+    default" state, not a mistake — only a deliberate but unparseable value
+    counts. Callers get the variable name, never the value (this module never
+    logs or returns values).
+    """
+    raw = os.environ.get(name)
+    return raw is not None and raw.strip() != "" and not is_recognized_bool(raw)
+
+
 def env_flag(name: str, default: bool = False) -> bool:
     """Boolean env flag with an explicit default direction.
 

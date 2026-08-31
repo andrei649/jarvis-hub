@@ -13,6 +13,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from agents.core.persistence import atomic_write_json
+
 from .lifecycle import default_archive_root, default_import_root
 from .pipeline import IngestionPipeline
 from .provenance import default_ledger_if_enabled
@@ -75,7 +77,7 @@ class IngestionWatcher:
     def _save_state(self, state: dict[str, float]) -> None:
         """Save the current file states to disk."""
         try:
-            self.state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+            atomic_write_json(self.state_path, state)
         except Exception as e:
             logger.warning(f"Failed to write watcher state: {e}")
 

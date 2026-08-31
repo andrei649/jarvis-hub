@@ -109,3 +109,55 @@ async def test_compiled_flow_runs():
     assert ctx["gather"] == "researcher:done"
     assert ctx["shout"] == "WRITER:DONE"               # transform applied
     assert ctx["_ok"] is True
+
+
+# ── subflow steps (DRA-39) ───────────────────────────────────────────────────
+
+class _SubflowOrch:
+    async def handle_input(self, text, channel="workflow", agent_override=None):
+        return f"{agent_override}({text})"
+
+
+@jarvis_flow(name="Nested Flow", description="a python-authored subflow")
+class _NestedFlow:
+    @step(kind="subflow")
+    def compose(self):
+        return {
+            "prompt": "{_input}",
+            "subflow": {
+                "steps": [
+                    {"id": "outline", "agent_id": "planner", "prompt_template": "plan: {_input}"},
+                    {"id": "draft", "agent_id": "writer", "prompt_template": "write: {outline}",
+                     "depends_on": ["outline"]},
+                ],
+                "output": "draft",
+            },
+        }
+
+
+def test_subflow_config_is_forwarded_by_build_flow():
+    p = build_flow(_NestedFlow)
+    compose = next(s for s in p.steps if s.id == "compose")
+    assert compose.kind == "subflow"
+    assert compose.subflow is not None
+    assert compose.to_dict()["subflow"]["output"] == "draft"
+
+
+@pytest.mark.asyncio
+async def test_compiled_subflow_actually_runs():
+    p = build_flow(_NestedFlow)
+    ctx = await WorkflowEngine(_SubflowOrch()).run(p, "a topic")
+    assert ctx["compose"] == "writer(write: planner(plan: a topic))"
+    assert ctx["compose.outline"] == "planner(plan: a topic)"
+    assert ctx["_subflows"]["compose"]["ok"] is True
+
+
+def test_subflow_kind_without_config_fails_loudly():
+    @jarvis_flow(name="Broken Nested")
+    class _Broken:
+        @step(kind="subflow")
+        def compose(self):
+            return {"prompt": "{_input}"}
+
+    with pytest.raises(ValueError, match="subflow"):
+        build_flow(_Broken)

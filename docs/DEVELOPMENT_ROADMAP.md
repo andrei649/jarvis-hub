@@ -2,8 +2,8 @@
 
 > For any developer (human or AI) joining jarvis-hub/Nerva: **Part I** is how to work here,
 > **Part II** is what to build and in what order. Grounded against `main` @ `a2d9556`
-> (2026-08-31, post-#990). Canonical sources outrank this file: `AGENTS.md` +
-> `.github/ai-development-policy.json` (workflow law), `BACKLOG.md` (priority truth),
+> (2026-08-31, post-#990). Canonical sources outrank this file: `AGENTS.md`
+> (workflow law), `BACKLOG.md` (priority truth),
 > `MOONSHOT.md` §5 (non-negotiables), `docs/ARCHITECTURE.md` (where code lives),
 > `AI_SYSTEM_PROMPT.md` (condensed orientation). When this file disagrees with them, they win —
 > fix this file in the same PR.
@@ -45,8 +45,8 @@ python serve.py                           # FastAPI on http://127.0.0.1:8080
 
 1. **Safe start** — `git status`, current branch, overlapping open PRs (a draft PR is a
    visibility signal, not a lock; coordinate only on genuinely overlapping paths).
-2. **Classify risk** `R0`–`R3` per `.github/ai-development-policy.json`. It determines tests,
-   review, and merge controls. R3 (authority/security) requires separate
+2. **Classify risk** `R0`–`R3` per the risk table in `docs/AGENT_WORKFLOW.md` (advisory since
+   #981 — a convention, not a GitHub-enforced gate). It guides tests, review, and merge care. R3 (authority/security) requires separate
    builder/reviewer/integrator — never rule on your own R3 work.
 3. **One reversible slice = one branch = one PR.** Record goal / non-goals / paths / risk /
    tests / rollback in the PR body (the template enforces the exact-head evidence receipt).
@@ -68,9 +68,10 @@ python serve.py                           # FastAPI on http://127.0.0.1:8080
    python tests/test_route_parity_guard.py --update   # only if app.routes changed
    python scripts/status_sync.py                 # only if counters changed
    ```
-   (`scripts/check_ai_workflow_policy.py` was removed with the gates in #981; the
-   machine-readable policy in `.github/ai-development-policy.json` still applies — you now
-   verify conformance by reading it, not by running a checker.)
+   (`scripts/check_ai_workflow_policy.py` **and** the machine-readable policy it validated,
+   `.github/ai-development-policy.json`, were both removed with the gates in #981 and are archived
+   in `docs/restore/dev-gates-restore-2026-08-30.zip`. There is nothing left to read or run: risk
+   tiering is now a convention documented in `docs/AGENT_WORKFLOW.md`.)
 7. **Sync coupled surfaces in the same PR:** route/OpenAPI/auth snapshots, OpenAPI→TS typegen,
    `mobile/PARITY.md` or `docs/design/HUD_V2_REMAINING.md` for user-facing changes, and the
    **BACKLOG rule**: tick delivered items + refresh counters in the same PR that merges them.
@@ -121,18 +122,21 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 - DRA-49: fix the misleading kernel-test docstring; DRA-46: correct `NERVA_VISION.md`'s
   now-false "never executes" claim; GAP-7/8: restate the Hermes verdict + re-baseline pillar
   percentages in `NERVA_VISION.md`.
-- DRA-48: delete or implement the dead `agents/_system/install.sh` stub.
+- DRA-48: ✅ done — the dead `agents/_system/` installer stub (and its `WEEK-1.md` sibling) are
+  deleted; the repo's live installer is the root `install.sh` (guard: `tests/test_dead_installer_stub.py`).
 
 ### Phase 2 — Security & integrity tail (weeks 1–3) — before new surface area
 
 - **SEC-B5 residual** (DRA-02): bind/reset the recall-taint mark explicitly around the HTTP
   recall route (`routers/memory_kg.py` → `MemorySearchTool`) instead of relying on incidental
   asyncio context isolation.
-- **CI posture honesty** (DRA-16, DRA-30, issue #242): the repo is public but CodeQL is
-  permanently non-blocking under a "private repo" rationale, and the required-checks posture
-  contradicts itself across four surfaces. With #981's de-gate decision recorded, make the
-  *documented* posture match the *actual* one — and put the re-gate criteria in front of the
-  owner as a packet.
+- **CI posture honesty** (DRA-16 ✅, DRA-30, issue #242): the CodeQL half is closed —
+  the "private repo" rationale and `continue-on-error` are gone from
+  `.github/workflows/codeql.yml`, and the posture is now stated the same way everywhere:
+  advisory, push-to-main + weekly, not a required check, red on analysis/upload failure
+  (`tests/test_codeql_posture.py` pins it). Still open: the required-checks posture
+  contradicts itself across the remaining surfaces, and the re-gate criteria still need to go
+  in front of the owner as a packet.
 - **Egress truth** (DRA-23): close the egress-ledger blind spot the HUD and support bundle
   present as local-first proof; DRA-47: make the SSRF blocked-request and per-scanner counters
   measured or labeled unmeasured.
@@ -188,7 +192,9 @@ machine rows are green; what remains is evidence, not code:
 - **A2 72h soak** — now automated (`.github/workflows/soak.yml` + `scripts/soak_report.py`);
   needs the owner box to actually run it; collect and file the evidence.
 - **GAP-4 / DRA-45** — the Hermes head-to-head on the owner's machine: 10 tasks, publish the
-  table including losses (~1 day, feeds S1/S2).
+  table including losses (~1 day, feeds S1/S2). The protocol is written and frozen —
+  [`docs/HERMES_HEAD_TO_HEAD.md`](HERMES_HEAD_TO_HEAD.md), status **NOT RUN**; the run itself is
+  owner-gated behind the Hermes licence/CVE review.
 - **Live-eval owner run** — `companion_eval --live-gate` against the real local model (the
   release-gate owner row stays FAIL until run).
 - **A7 design partners** — recruit 1–3, ≥2 weeks usage, north-star measured on real usage;

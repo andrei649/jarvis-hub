@@ -37,6 +37,7 @@ from .plugins.news import NewsPlugin
 from .plugins.oauth import init_from_env as _oauth_init
 from .plugins.oauth import load_token as _load_token
 from .plugins.oracle_bridge import OracleBridgePlugin
+from .plugins.osint_enrich import OsintEnrichPlugin
 from .plugins.postiz import PostizPlugin
 from .plugins.revenuecat import RevenueCatPlugin
 from .plugins.signal_layer import SignalLayerPlugin
@@ -120,6 +121,9 @@ class PluginManager:
             tavily_api_key=env_str("TAVILY_API_KEY"),
             searxng_url=env_str("SEARXNG_URL"),
         )
+        # DRA-05: OSINT pivot enrichment. Constructed always, dark always — it makes no
+        # outbound call until the owner sets JARVIS_OSINT_ENRICH.
+        self.plugins["osint_enrich"] = OsintEnrichPlugin()
 
         self.plugins["balance"] = BalanceReaderPlugin(
             ing_client_id=orch.get_setting("plugins.gecko_ing_client_id", ""),

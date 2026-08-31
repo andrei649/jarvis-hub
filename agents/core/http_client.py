@@ -139,6 +139,16 @@ def _host_is_local_cached(host: str) -> bool:
     return val
 
 
+def host_is_local(host: str) -> bool:
+    """Public name for the ledger's local/LAN classifier (DRA-23).
+
+    `agents/core/llm/egress.py` annotates model-backend traffic with the same TTL-cached,
+    non-blocking answer the plugin choke point uses, rather than duplicating
+    `getaddrinfo` in a second place where the two could disagree.
+    """
+    return _host_is_local_cached(host)
+
+
 def _host_of(url: str) -> str:
     """Best-effort hostname from a URL, lower-cased and trailing-dot-stripped."""
     from urllib.parse import urlparse
