@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, Path, Query
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import user_guard
+from agents.core.signal_governance import GOVERNANCE_FLAG, TASK_KIND
 from agents.core.signal_routing import AGENT_INTERESTS, build_domain_brief, route_signals
 from agents.core.web_helpers import nocache_json
 
@@ -116,3 +117,72 @@ async def signals_domain_brief(
         })
     brief = build_domain_brief(signals, domain, top=top)
     return nocache_json({**brief, "available": True, "reason": None, "freshness": freshness})
+
+
+def _bridge():
+    """The orchestrator's SignalGovernanceBridge, or None if it isn't constructed."""
+    orch = get_orch()
+    return getattr(orch, "signal_governance", None) if orch else None
+
+
+@router.get("/api/signals/governance", dependencies=[Depends(user_guard)])
+async def signals_governance_status():
+    """Whether the Signal Layer -> approval-inbox bridge is live, and what it has queued.
+
+    Reads real state, never writes: the bridge's own ``enabled`` flag plus the
+    number of ``signal_recommendation`` items already sitting in the decision
+    inbox. Off is the default and is reported as a fact, not an error -- the flag
+    is the owner's to flip. Submitting is the POST below, never this.
+    """
+    bridge = _bridge()
+    if bridge is None:
+        return nocache_json({
+            "available": False, "reason": "signal_governance_unavailable",
+            "enabled": False, "flag": GOVERNANCE_FLAG, "kind": TASK_KIND, "pending": 0,
+        })
+    try:
+        pending = sum(1 for t in bridge.queue.pending_decisions() if t.kind == TASK_KIND)
+    except Exception:
+        logger.warning("signal governance pending read failed", exc_info=True)
+        pending = 0
+    return nocache_json({
+        "available": True, "reason": None,
+        "enabled": bool(bridge.enabled), "flag": GOVERNANCE_FLAG,
+        "kind": TASK_KIND, "pending": pending,
+        "note": "Preview only. Every queued item lands BLOCKED, awaiting a human decision.",
+    })
+
+
+@router.post("/api/signals/governance/submit", dependencies=[Depends(user_guard)])
+async def signals_governance_submit():
+    """Route the live world brief's actionable recommendations into the approval inbox.
+
+    Honest at every step: no bridge -> ``available: false``; no sidecar -> the
+    plugin's own reason verbatim; bridge off -> ``status: "disabled"`` with
+    nothing queued. All of those are ``200`` -- from this surface a refusal is a
+    real answer, not a transport error. Nothing is ever approved or executed here.
+    """
+    empty = {"status": "unavailable", "queued": 0, "task_ids": [], "skipped": 0}
+    bridge = _bridge()
+    if bridge is None:
+        return nocache_json({
+            "available": False, "reason": "signal_governance_unavailable", **empty,
+        })
+
+    orch = get_orch()
+    plugin = (getattr(orch, "plugins", None) or {}).get("signal-layer") if orch else None
+    if plugin is None:
+        return nocache_json({
+            "available": False, "reason": "signal_layer_plugin_unavailable", **empty,
+        })
+    try:
+        body = await plugin.world_brief()
+    except Exception:
+        logger.warning("signal-layer world_brief fetch failed", exc_info=True)
+        return nocache_json({"available": False, "reason": "fetch_failed", **empty})
+    if not isinstance(body, dict) or body.get("status") != "ok":
+        reason = str((body or {}).get("status") or "unavailable")
+        return nocache_json({"available": False, "reason": reason, **empty})
+
+    out = bridge.submit_from_brief(body.get("brief"))
+    return nocache_json({"available": True, "reason": None, **out})

@@ -140,6 +140,10 @@ def test_routes_registered_and_user_guarded():
         "/api/signals/routed",
         "/api/signals/agent/{agent_id}",
         "/api/signals/brief/{domain}",
+        # DRA-19: the governance bridge's control surface. Behaviour is covered in
+        # tests/test_signal_governance.py; the user-guard loop below covers it here.
+        "/api/signals/governance",
+        "/api/signals/governance/submit",
     }
     for route in signals_router.router.routes:
         names = {getattr(d.call, "__name__", "") for d in route.dependant.dependencies}

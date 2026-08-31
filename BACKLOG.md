@@ -823,10 +823,25 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   straight off mobile/PARITY.md, but the ledger itself is stale: it is missing rows for most of what the HUD
   actually calls. *(evidence: `mobile/PARITY.md:10-20, PARITY.md, tests/_snapshots/route_auth.json`)*
   **Shipped 16557a5** — 43 rows added; the audit's ~40 was corrected to 38 genuinely absent (four were word collisions).
-- [ ] 🔴 **DRA-19 — SignalGovernanceBridge has zero production constructors — the Signal Layer →
+- [x] ✅ **DRA-19 — SignalGovernanceBridge has zero production constructors — the Signal Layer →
   approval-inbox bridge never runs.** agents/core/signal_governance.py ships a complete, contract-gated
   bridge (`SignalGovernanceBridge. *(evidence: `agents/core/signal_governance.py:33,
   agents/core/routers/signals.py:1-20, docs/worldview/continuation-handoff.md:415`)*
+  **Shipped c1d89b0** — the bridge's first production constructor, in `Orchestrator.__init__` beside the
+  queue it writes to: `SignalGovernanceBridge.from_env(self.autonomy_queue, audit=self.action_audit.log)`.
+  `from_env` reads `JARVIS_SIGNAL_GOVERNANCE`, so this is **inert until the owner flips the flag** — a
+  disabled bridge queues nothing, and even enabled it is preview-only (every item lands BLOCKED). Plus the
+  two routes that drive it: `GET /api/signals/governance` (enabled/flag/pending, read-only) and
+  `POST /api/signals/governance/submit` (world brief → approval inbox). The audit sink was already
+  constructed one line above and the bridge simply never used it, so queued previews now land in the
+  signed IntentLog like every other governed action.
+  **Split of who does what:** the missing *constructor* was the code half and is now done; the remaining
+  half is the owner's and is unchanged — `docs/worldview/continuation-handoff.md:412` lists "Review &
+  enable governance #280 (owner)" as the standing action, and that is the flag flip, not code.
+  **Residual (recorded, not closed):** no HUD control. Both routes went to `UNCALLED_BACKLOG` in the
+  parity gate rather than `MACHINE_FACING` — nothing outside our own UI calls them either — because a HUD
+  switch for a feature the owner has not yet enabled would be premature. Wiring a client forces their
+  removal from that list, which is the gate's shrink-only contract doing its job.
 - [ ] 🟡 **DRA-20 — Real payment rail adapter at payments.settle() — unchecked BACKLOG row absent from all
   120 items, 26 clusters and the owner lane.** BACKLOG.md:1002 carries a live, unchecked dev row: `- [ ]
   Real payment rail adapter (AP2/ACP/x402) at payments.settle() — **owner decision required (moves
