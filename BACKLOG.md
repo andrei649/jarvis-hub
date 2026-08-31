@@ -827,7 +827,7 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   approval-inbox bridge never runs.** agents/core/signal_governance.py ships a complete, contract-gated
   bridge (`SignalGovernanceBridge. *(evidence: `agents/core/signal_governance.py:33,
   agents/core/routers/signals.py:1-20, docs/worldview/continuation-handoff.md:415`)*
-  **Shipped <SHA>** — the bridge's first production constructor, in `Orchestrator.__init__` beside the
+  **Shipped c1d89b0** — the bridge's first production constructor, in `Orchestrator.__init__` beside the
   queue it writes to: `SignalGovernanceBridge.from_env(self.autonomy_queue, audit=self.action_audit.log)`.
   `from_env` reads `JARVIS_SIGNAL_GOVERNANCE`, so this is **inert until the owner flips the flag** — a
   disabled bridge queues nothing, and even enabled it is preview-only (every item lands BLOCKED). Plus the
