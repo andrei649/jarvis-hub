@@ -2816,6 +2816,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/signals/governance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Signals Governance Status
+         * @description Whether the Signal Layer -> approval-inbox bridge is live, and what it has queued.
+         *
+         *     Reads real state, never writes: the bridge's own ``enabled`` flag plus the
+         *     number of ``signal_recommendation`` items already sitting in the decision
+         *     inbox. Off is the default and is reported as a fact, not an error -- the flag
+         *     is the owner's to flip. Submitting is the POST below, never this.
+         */
+        get: operations["signals_governance_status_api_signals_governance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/signals/governance/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signals Governance Submit
+         * @description Route the live world brief's actionable recommendations into the approval inbox.
+         *
+         *     Honest at every step: no bridge -> ``available: false``; no sidecar -> the
+         *     plugin's own reason verbatim; bridge off -> ``status: "disabled"`` with
+         *     nothing queued. All of those are ``200`` -- from this surface a refusal is a
+         *     real answer, not a transport error. Nothing is ever approved or executed here.
+         */
+        post: operations["signals_governance_submit_api_signals_governance_submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/packs": {
         parameters: {
             query?: never;
@@ -13294,6 +13344,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    signals_governance_status_api_signals_governance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    signals_governance_submit_api_signals_governance_submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

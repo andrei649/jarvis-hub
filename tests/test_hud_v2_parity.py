@@ -439,6 +439,15 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # DRA-19 gave the Signal Layer -> approval-inbox bridge its first production
+    # constructor plus these two routes to drive it. The bridge is default-off
+    # (JARVIS_SIGNAL_GOVERNANCE), and the handoff doc's own remaining item is the
+    # owner reviewing and enabling it (docs/worldview/continuation-handoff.md:412)
+    # -- a HUD control for a switch the owner has not thrown yet would be premature,
+    # so the client half is genuinely open. Punch list, not MACHINE_FACING: nothing
+    # outside our UI calls these either.
+    "/api/signals/governance",
+    "/api/signals/governance/submit",
     # T-0.41: the morning brief DOES consume per-domain briefs, but in-process
     # (scheduler_service._signal_briefs_or_none → build_domain_brief), so this
     # HTTP route has no *client* caller. It stays as the external read surface

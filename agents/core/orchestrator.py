@@ -56,6 +56,7 @@ from .autonomy.audit_sink import ActionAuditSink
 from .autonomy.reflection import DailyReflector, ReflectionRunStore
 from .autonomy.log_scanner import LogBugScanner
 from .autonomy.tech_scout import TechScout, TechScoutStore, DEFAULT_QUERIES as _TECH_SCOUT_DEFAULT_QUERIES
+from .signal_governance import SignalGovernanceBridge
 from .workflows import WorkflowEngine, WorkflowRegistry
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
@@ -440,6 +441,15 @@ class Orchestrator:
         # Action-level audit sink, shared by every governed-action recorder (the
         # autonomy worker below, the remediation runner in autonomy_coordinator).
         self.action_audit = ActionAuditSink(getattr(self, "intent_log", None))
+        # Signal Layer → approval inbox (DRA-19). The bridge shipped complete but
+        # with no production constructor, so the Signal Layer's actionable
+        # recommendations never reached the decision inbox. Constructing it here
+        # changes nothing until the owner flips JARVIS_SIGNAL_GOVERNANCE: `from_env`
+        # reads that flag and a disabled bridge queues nothing. Even enabled it is
+        # preview-only — every item lands BLOCKED, awaiting a human.
+        self.signal_governance = SignalGovernanceBridge.from_env(
+            self.autonomy_queue, audit=self.action_audit.log
+        )
         self.autonomy = AutonomyWorker(
             self.autonomy_queue,
             policy=AutonomyPolicy(
