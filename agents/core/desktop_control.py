@@ -140,6 +140,32 @@ def allowlist() -> dict:
     }
 
 
+def plan(kind: str, **kwargs) -> dict:
+    """Dispatch one high-level request to the right planner (DRA-43).
+
+    One dispatcher so the HTTP surface and the ToolRPC tool cannot disagree
+    about what is allowlisted.
+
+    Execution note: an admitted plan runs through ``DesktopControl.run`` →
+    ``GovernedDesktop.run``, which is the composition this pack documents and
+    ships. It is NOT interchangeable with POSTing the step to
+    ``/api/desktop/run``: that route validates through
+    ``desktop_operator.validate_desktop_run_args``, whose per-action rules allow
+    no argument beyond the ones they name, so the ``target: "desktop"`` every
+    step here carries is refused as ``unexpected_action_args`` — and the
+    volume/brightness/media/lock/sleep and ``record`` actions have no rule at
+    all. ``tests/test_desktop_control.py`` pins that gap so it stays visible.
+    """
+    key = str(kind or "").strip().lower()
+    if key == "launch":
+        return plan_launch(kwargs.get("app"))
+    if key == "os_action":
+        return plan_os_action(kwargs.get("action"), kwargs.get("value"))
+    if key == "recording":
+        return plan_recording(kwargs.get("op"))
+    return _refuse(f"unknown plan kind: {key!r} (expected launch/os_action/recording)")
+
+
 class DesktopControl:
     """Allowlist planner composed with the H15.3 governed executor.
 

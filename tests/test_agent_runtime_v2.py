@@ -1767,6 +1767,26 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     assert orch.tool_rpc._kernel is action_kernel
     assert orch.tool_rpc.tools() == [
         {
+            "name": "desktop_plan",
+            "gated": False,
+            "description": (
+                "Plan an allowlisted desktop launch/OS action/recording; never executes it."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "maxLength": 16},
+                    "app": {"type": "string", "maxLength": 64},
+                    "action": {"type": "string", "maxLength": 32},
+                    "op": {"type": "string", "maxLength": 16},
+                    "value": {},
+                },
+                "required": ["kind"],
+                "additionalProperties": False,
+            },
+            "capability_id": "tool:desktop_plan",
+        },
+        {
             "name": "desktop_run",
             "gated": True,
             "description": "Propose bounded governed desktop steps for approval.",

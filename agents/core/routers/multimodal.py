@@ -139,6 +139,46 @@ async def execute_desktop_steps(orch, steps, *, approver=None, authorizer=None):
         await runtime.close()
 
 
+class DesktopPlanBody(BaseModel):
+    kind: str = Field(..., max_length=16)
+    app: str = Field("", max_length=64)
+    action: str = Field("", max_length=32)
+    op: str = Field("", max_length=16)
+    value: SkipValidation[object] = None
+
+
+@router.get("/api/desktop/allowlist", dependencies=[Depends(user_guard)])
+async def desktop_allowlist():
+    """T-0.25 / DRA-43 — what the desktop pack will and won't plan.
+
+    Pure and inspectable: the allowlist is a constant, so this needs no
+    orchestrator and does no desktop I/O. User-guarded because it advertises
+    which apps and OS controls this install is willing to drive.
+    """
+    from agents.core.desktop_control import allowlist
+
+    return nocache_json(allowlist())
+
+
+@router.post("/api/desktop/plan", dependencies=[Depends(user_guard)])
+async def desktop_plan(body: DesktopPlanBody):
+    """T-0.25 / DRA-43 — turn a high-level request into a governed desktop step.
+
+    Plans, never actions — the pack's own contract. An off-allowlist request
+    comes back `{"ok": false, "reason": ...}` with 200: a refusal is a real
+    answer from this surface, not a transport error.
+
+    A returned step is **not** directly postable to `/api/desktop/run`; see
+    `desktop_control.plan` for why, and the pinned gap in
+    `tests/test_desktop_control.py`.
+    """
+    from agents.core.desktop_control import plan
+
+    return nocache_json(
+        plan(body.kind, app=body.app, action=body.action, op=body.op, value=body.value)
+    )
+
+
 class OperatorPlanBody(BaseModel):
     goal: str = Field(..., max_length=4000)
     params: dict = Field(default_factory=dict, json_schema_extra={"maxProperties": 32})

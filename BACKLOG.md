@@ -969,11 +969,29 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   app + register actuators" — is a single action. Closed by the one PR; the delivery detail and the
   deliberate visual-route residual are written up in the DRA-22 row above. **Recorded so the audit's own
   count stays honest: 53 findings contained 52 distinct defects.**
-- [ ] 🟡 **DRA-43 — desktop_control.py is entirely uncalled — T-0.25's OS-action and recording vocabulary is
+- [x] ✅ **DRA-43 — desktop_control.py is entirely uncalled — T-0.25's OS-action and recording vocabulary is
   unreachable while BACKLOG declares the tail closed.** agents/core/desktop_control.py:143 `DesktopControl`
   plus `plan_launch`/`plan_os_action`/`plan_recording`/`allowlist` have zero production importers. The live
   desktop path — routers/multimodal. *(evidence: `agents/core/desktop_control.py:36-63,
   agents/core/desktop_operator.py:36-44, agents/core/routers/multimodal.py:142-183`)*
+  **Shipped d16ccea** — `GET /api/desktop/allowlist`, `POST /api/desktop/plan` and the ungated
+  `desktop_plan` ToolRPC tool, all three behind one `desktop_control.plan()` dispatcher so the HTTP surface
+  and the tool cannot disagree about what is allowlisted. Both surfaces were built, not one, because the
+  T-0.25 row names both as its own remaining work.
+  **Finding-framing correction:** the zero-importers claim is true and verified, but "while BACKLOG declares
+  the tail closed" is not — the T-0.25 row (line 1645) is 🟡 **partial** and already lists "model ToolRPC
+  registration (so an agent can call it)" and "a user-facing control surface + HUD parity tracking" as
+  remaining. The row was honest; only the vocabulary was unreachable.
+  **Residual (recorded, not closed) — a gap DRA-43 does not name:** a planned step is **not** postable to
+  `/api/desktop/run`. That route validates through `desktop_operator.validate_desktop_run_args`, whose
+  per-action rules admit no argument beyond the ones they name, so the `target: "desktop"` every step
+  carries is refused as `unexpected_action_args` — even `launch`, which the executor supports; the
+  volume/brightness/media/lock/sleep actions and `record` have no rule at all (`unsupported_action`). The
+  pack's documented in-process path (`DesktopControl.run` → `GovernedDesktop.run`) is unaffected.
+  `tests/test_desktop_control.py` pins all four refusal reasons, so reconciling the two validators will
+  fail that test and prompt closing this residual. The HUD control half also stays open (both routes are on
+  the DRA-15/DRA-36 `UNCALLED_BACKLOG` punch list), as does the real driver + host key→launcher map, which
+  is owner/host-gated.
 - [ ] ⬜ **DRA-44 — 0.23 Hardware Benchmark & Profiles is still 🟡 partial with zero delivered content — no
   hardware scoring, and the detected GPU never reaches the VRAM budget.** BACKLOG.md:1259 is the one 🟡 row
   in the whole Competitive-Gap capability table (1237-1359) that carries no '→ … ✅' delivery clause and no
