@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard
+from agents.core.routers._component import require_component
 
 from agents.core.web_helpers import nocache_json, logger
 from agents.core.app_state import get_orch
@@ -29,10 +30,9 @@ async def notes_get():
 
 @router.put("/api/notes", dependencies=[Depends(user_guard)])
 async def notes_set(body: _NoteBody):
-    orch = get_orch()
-    notes = getattr(orch, "notes", None) if orch else None
-    if notes is None:
-        return JSONResponse({"error": "notes not available"}, status_code=503)
+    orch, notes, err = require_component("notes", "notes not available")
+    if err is not None:
+        return err
     sid = getattr(orch, "session_id", "web")
     return nocache_json({"ok": True, "session": sid, **notes.set(sid, body.content)})
 
@@ -49,10 +49,9 @@ async def notes_clear():
 @router.post("/api/notes/rewrite", dependencies=[Depends(user_guard)])
 async def notes_rewrite(req: Request):
     """H10.21 — 'Rewrite with AI': run the note through an agent; optionally save."""
-    orch = get_orch()
-    notes = getattr(orch, "notes", None) if orch else None
-    if notes is None or not orch:
-        return JSONResponse({"error": "notes not available"}, status_code=503)
+    orch, notes, err = require_component("notes", "notes not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:

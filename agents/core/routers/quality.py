@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
 
 from agents.core.routers._deps import admin_guard, user_guard
+from agents.core.routers._component import require_component
 
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
@@ -35,10 +36,9 @@ async def quality_scores(limit: int = Query(50, ge=1, le=500)):
 @router.post("/api/quality/threshold", dependencies=[Depends(admin_guard)])
 async def quality_set_threshold(req: Request):
     """Set the alert threshold (admin)."""
-    orch = get_orch()
-    q = getattr(orch, "quality", None) if orch else None
-    if q is None:
-        return JSONResponse({"error": "quality monitor not available"}, status_code=503)
+    _, q, err = require_component("quality", "quality monitor not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:

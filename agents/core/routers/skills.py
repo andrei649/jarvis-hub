@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard, admin_guard
+from agents.core.routers._component import component_unavailable
 
 from agents.core.web_helpers import error_json, logger
 from agents.core import app_state
@@ -96,7 +97,7 @@ async def sandbox_execute(body: SandboxExecuteBody):
             # No governed server → refuse. Falling back to execute_python would
             # run the very same code ungoverned, which is what this wiring exists
             # to prevent.
-            return JSONResponse({"error": "tool-rpc unavailable"}, status_code=503)
+            return component_unavailable("tool-rpc unavailable")
         from agents.core.tool_rpc_runtime import ToolRPCSandboxRuntime
         get_setting = getattr(orch, "get_setting", None)
         try:

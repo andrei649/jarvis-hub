@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
 
 from agents.core.routers._deps import user_guard, admin_guard
+from agents.core.routers._component import require_component
 
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
@@ -33,10 +34,9 @@ async def actions_pending():
 @router.post("/api/actions/request", dependencies=[Depends(user_guard)])
 async def actions_request(req: Request):
     """Register a pending tool-call approval (sub-task granularity)."""
-    orch = get_orch()
-    q = getattr(orch, "action_approvals", None) if orch else None
-    if q is None:
-        return JSONResponse({"error": "action approvals not available"}, status_code=503)
+    _, q, err = require_component("action_approvals", "action approvals not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -51,10 +51,9 @@ async def actions_request(req: Request):
 @router.post("/api/actions/{action_id}/decide", dependencies=[Depends(admin_guard)])
 async def actions_decide(action_id: str, req: Request):
     """Approve or reject a single pending action (admin)."""
-    orch = get_orch()
-    q = getattr(orch, "action_approvals", None) if orch else None
-    if q is None:
-        return JSONResponse({"error": "action approvals not available"}, status_code=503)
+    _, q, err = require_component("action_approvals", "action approvals not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:

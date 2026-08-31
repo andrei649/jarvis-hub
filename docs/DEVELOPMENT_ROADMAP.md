@@ -140,8 +140,10 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 - **Egress truth** (DRA-23): close the egress-ledger blind spot the HUD and support bundle
   present as local-first proof; DRA-47: make the SSRF blocked-request and per-scanner counters
   measured or labeled unmeasured.
-- **Audit-doc debt**: DRA-50 (`require_component` deferred-never-built), DRA-51 (two JSON stores
-  still writing non-atomically), plus the open `cameras/frigate.py` request-path `getaddrinfo`.
+- **Audit-doc debt**: ~~DRA-50 (`require_component` deferred-never-built)~~ — shipped as a
+  behaviour-exact sweep of 45 guards plus a structural test that stops the boilerplate regrowing;
+  DRA-51 (two JSON stores still writing non-atomically), plus the open `cameras/frigate.py`
+  request-path `getaddrinfo`.
 - **SEC-B6 / #911 / #916 / B7-#918 acceptances**: drive the recorded post-merge HOLDs to an
   evidence-backed accept-or-revert — reviewer/owner lane, prepared by you.
 

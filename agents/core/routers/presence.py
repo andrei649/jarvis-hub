@@ -16,10 +16,9 @@ Orchestrator-only shared state (``orch.owner_presence``), resolved lazily via
 """
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from agents.core.app_state import get_orch
+from agents.core.routers._component import require_component
 from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import error_json, nocache_json
 
@@ -35,20 +34,18 @@ class PresenceBody(BaseModel):
 @router.get("/api/presence/owner", dependencies=[Depends(user_guard)])
 async def get_owner_presence():
     """Current owner desk-presence snapshot (present / idle / away / unknown)."""
-    orch = get_orch()
-    presence = getattr(orch, "owner_presence", None) if orch else None
-    if presence is None:
-        return JSONResponse({"error": "presence not available"}, status_code=503)
+    _, presence, err = require_component("owner_presence", "presence not available")
+    if err is not None:
+        return err
     return nocache_json(presence.snapshot().to_dict())
 
 
 @router.post("/api/presence/owner", dependencies=[Depends(admin_guard)])
 async def set_owner_presence(body: PresenceBody):
     """Report an owner desk-presence signal from the host daemon (admin)."""
-    orch = get_orch()
-    presence = getattr(orch, "owner_presence", None) if orch else None
-    if presence is None:
-        return JSONResponse({"error": "presence not available"}, status_code=503)
+    _, presence, err = require_component("owner_presence", "presence not available")
+    if err is not None:
+        return err
     try:
         snap = presence.update(
             body.state, source=body.source, idle_seconds=body.idle_seconds,

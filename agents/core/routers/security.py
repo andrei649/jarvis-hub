@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
 
 from agents.core.routers._deps import admin_guard, user_guard
+from agents.core.routers._component import component_unavailable, require_component
 
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
@@ -99,10 +100,9 @@ async def security_governance():
 @router.post("/api/security/capabilities/issue", dependencies=[Depends(admin_guard)])
 async def capabilities_issue(req: Request):
     """Mint a scoped, expiring capability token (out-of-band; admin only)."""
-    orch = get_orch()
-    broker = getattr(orch, "capabilities", None) if orch else None
-    if broker is None:
-        return JSONResponse({"error": "capability broker not available"}, status_code=503)
+    orch, broker, err = require_component("capabilities", "capability broker not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -135,7 +135,10 @@ async def capabilities_check(token: str, capability: str):
     broker = getattr(orch, "capabilities", None) if orch else None
     kill = getattr(orch, "kill_switch", None) if orch else None
     if broker is None or kill is None:
-        return JSONResponse({"error": "capability broker not available"}, status_code=503)
+        # Two components, one message: `require_component` guards one at a time,
+        # and splitting this would rename the second refusal. The body still
+        # comes from the shared factory so the shape stays in one place.
+        return component_unavailable("capability broker not available")
     from agents.core.security.capability import authorize
     return nocache_json(authorize(broker, kill, token, capability))
 
@@ -143,20 +146,18 @@ async def capabilities_check(token: str, capability: str):
 @router.get("/api/security/kill-switch")
 async def kill_switch_status():
     """Out-of-band kill-switch status."""
-    orch = get_orch()
-    kill = getattr(orch, "kill_switch", None) if orch else None
-    if kill is None:
-        return JSONResponse({"error": "kill-switch not available"}, status_code=503)
+    _, kill, err = require_component("kill_switch", "kill-switch not available")
+    if err is not None:
+        return err
     return nocache_json(kill.status())
 
 
 @router.post("/api/security/kill-switch", dependencies=[Depends(admin_guard)])
 async def kill_switch_set(req: Request):
     """Engage/disengage the kill-switch (operator action; agent can't reach this)."""
-    orch = get_orch()
-    kill = getattr(orch, "kill_switch", None) if orch else None
-    if kill is None:
-        return JSONResponse({"error": "kill-switch not available"}, status_code=503)
+    orch, kill, err = require_component("kill_switch", "kill-switch not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -182,10 +183,9 @@ async def kill_switch_set(req: Request):
 @router.get("/api/security/loop-breaker")
 async def loop_breaker_status():
     """Kernel loop circuit-breaker status (read-only): tripped + threshold/window."""
-    orch = get_orch()
-    det = getattr(orch, "loop_detector", None) if orch else None
-    if det is None:
-        return JSONResponse({"error": "loop breaker not available"}, status_code=503)
+    _, det, err = require_component("loop_detector", "loop breaker not available")
+    if err is not None:
+        return err
     return nocache_json(det.status())
 
 
@@ -196,10 +196,9 @@ async def loop_breaker_reset():
     Like the kill-switch *disengage*, this is a recovery action — admin-guard-only and
     deliberately NOT kernel-mediated, so a tripped breaker (or an engaged halt) can never
     block its own reset."""
-    orch = get_orch()
-    det = getattr(orch, "loop_detector", None) if orch else None
-    if det is None:
-        return JSONResponse({"error": "loop breaker not available"}, status_code=503)
+    _, det, err = require_component("loop_detector", "loop breaker not available")
+    if err is not None:
+        return err
     was = det.tripped
     det.reset()
     return nocache_json({"ok": True, "was_tripped": was, "tripped": det.tripped})
@@ -210,10 +209,9 @@ async def loop_breaker_reset():
 @router.post("/api/security/audit/action", dependencies=[Depends(admin_guard)])
 async def audit_record_action(req: Request):
     """Record a signed action with causal intent attribution (why it happened)."""
-    orch = get_orch()
-    log = getattr(orch, "intent_log", None) if orch else None
-    if log is None:
-        return JSONResponse({"error": "intent log not available"}, status_code=503)
+    _, log, err = require_component("intent_log", "intent log not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -229,20 +227,18 @@ async def audit_record_action(req: Request):
 @router.get("/api/security/audit/intent", dependencies=[Depends(user_guard)])
 async def audit_intent(limit: int = Query(100, ge=1, le=1000)):
     """List signed intent records + chain/signature verification."""
-    orch = get_orch()
-    log = getattr(orch, "intent_log", None) if orch else None
-    if log is None:
-        return JSONResponse({"error": "intent log not available"}, status_code=503)
+    _, log, err = require_component("intent_log", "intent log not available")
+    if err is not None:
+        return err
     return nocache_json({"verify": log.verify(), "entries": log.list(limit)})
 
 
 @router.post("/api/security/audit/anchor", dependencies=[Depends(admin_guard)])
 async def audit_anchor():
     """Anchor the audit / intent chain head into the external transparency log."""
-    orch = get_orch()
-    anchor = getattr(orch, "transparency", None) if orch else None
-    if anchor is None:
-        return JSONResponse({"error": "transparency anchor not available"}, status_code=503)
+    orch, anchor, err = require_component("transparency", "transparency anchor not available")
+    if err is not None:
+        return err
     root = ""
     if getattr(orch, "audit", None) is not None:
         try:
@@ -268,20 +264,18 @@ async def audit_verify():
     situation you are in, in plain English — including the case where a key was
     configured on a chain that predates it, which is a false verdict with a very
     different remedy from an actual rewrite (adversarial audit 2026-07-25, AUDIT-1)."""
-    orch = get_orch()
-    audit = getattr(orch, "audit", None) if orch else None
-    if audit is None:
-        return JSONResponse({"error": "audit log not available"}, status_code=503)
+    _, audit, err = require_component("audit", "audit log not available")
+    if err is not None:
+        return err
     return nocache_json(await asyncio.to_thread(audit.chain_status))
 
 
 @router.get("/api/security/audit/anchors", dependencies=[Depends(user_guard)])
 async def audit_anchors(limit: int = Query(100, ge=1, le=1000)):
     """List external anchor receipts + verify the anchor chain."""
-    orch = get_orch()
-    anchor = getattr(orch, "transparency", None) if orch else None
-    if anchor is None:
-        return JSONResponse({"error": "transparency anchor not available"}, status_code=503)
+    _, anchor, err = require_component("transparency", "transparency anchor not available")
+    if err is not None:
+        return err
     return nocache_json({"verify": anchor.verify(), "anchors": anchor.list(limit)})
 
 

@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard, admin_guard
+from agents.core.routers._component import require_component
 
 from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
@@ -92,10 +93,9 @@ async def escalation_send(req: Request):
 @router.get("/api/autonomy/tasks/{task_id}/preview", dependencies=[Depends(admin_guard)])
 async def autonomy_task_preview(task_id: int):
     """H12.5 — dry-run preview of a queued task by id."""
-    orch = get_orch()
-    q = getattr(orch, "autonomy_queue", None) if orch else None
-    if q is None:
-        return JSONResponse({"error": "autonomy queue not available"}, status_code=503)
+    _, q, err = require_component("autonomy_queue", "autonomy queue not available")
+    if err is not None:
+        return err
     task = q.get(task_id) if hasattr(q, "get") else None
     if task is None:
         return JSONResponse({"error": "not found"}, status_code=404)
