@@ -130,8 +130,8 @@
     "H34": {
       "blocked": 0,
       "done": 5,
-      "open": 1,
-      "total": 6
+      "open": 2,
+      "total": 7
     },
     "H5": {
       "blocked": 0,
@@ -164,7 +164,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "a2d9556c55d13de7b73b43e18e1da303294a1fb6",
+  "latest_ci_commit": "42b2ad1dd57cc6b4af8ab15ba8da3ad80d641278",
   "open_release_gates": [
     {
       "id": "A1",
