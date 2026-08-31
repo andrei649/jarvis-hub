@@ -438,7 +438,7 @@ Chain: `memory_logs/security/audit.db`, table `security_events`, per-row `row_ha
 | ID | Check | Do | Expect | Fail | Auto |
 |----|-------|----|--------|------|------|
 | SEC-126 | Posture tells the truth about signing | `GET /api/security/posture` on a clean checkout | `skills.require_signed:false`, `total` = discovered skills, `trusted:0`, `untrusted` = total, `untrusted_names` listing them (e.g. `Calendar`), and each `detail[]` row carrying `signature_reason:"unsigned"` — the repo ships **no** `SKILL.sig` files | MAJOR if it claims trusted skills that have no signature | ✅`tests/test_skill_signing.py` |
-| SEC-127 | `encrypted_at_rest` is hardcoded | in the same payload, compare `secrets.encrypted_at_rest` with `secrets.backend` | `encrypted_at_rest` is a literal `True` (`agents/core/routers/security.py:317`); if `backend` is `unavailable`, the green "encrypted" claim in the POSTURE card is unfounded → record as **MAJOR** F3 | MAJOR | ❌ |
+| SEC-127 | `encrypted_at_rest` is derived, not hardcoded | in the same payload, compare `secrets.encrypted_at_rest` with `secrets.backend`; then make the store unopenable and re-read | `backend` `fernet`/`hmac-fallback` → `encrypted_at_rest: true` plus a `strength` (and a `note` for the fallback); anything else → **`null`**, explicitly *unknown*, with a note — never `true`, and never a `false` that reads like a measurement. It used to be a literal `True` for every backend | **MAJOR** F3 if the green "encrypted" badge is backed by a constant again | ✅`tests/test_security_approvals_api.py` |
 | SEC-128 | Signing a skill flips it to trusted | `python -c "import sys;sys.path.insert(0,'agents');from pathlib import Path;from core.skills import signing;print(signing.sign_skill(Path('skills/weather')))"`, restart, re-read posture | that skill leaves `untrusted_names`; `SKILL.sig` contains `sha256:<hex>` | MAJOR | ✅`tests/test_skill_signing.py` |
 | SEC-129 | Tampering a signed skill breaks the signature | append a comment line to `skills/weather/SKILL.md` (the signature covers `SKILL.md` + `main.py`, `agents/core/skills/signing.py:32`), restart, re-read posture | back to untrusted with `signature_reason:"signature-mismatch"`; undo the edit and re-sign afterwards | **BLOCKER** | ✅`tests/test_skill_signing.py` |
 | SEC-130 | Keyed signing | set `JARVIS_SKILL_SIGNING_KEY`, re-sign, then restart **without** the key | `SKILL.sig` line starts `hmac-sha256:`; without the key the skill is untrusted (`algo-mismatch`/mismatch), not silently trusted | MAJOR | ✅`tests/test_skill_signing.py` |
@@ -502,27 +502,29 @@ Chain: `memory_logs/security/audit.db`, table `security_events`, per-row `row_ha
 | SEC-167 | Revocation is immediate | `DELETE /api/admin/widgets/{token}`, retry the message POST | 404 | MAJOR | ❌ |
 | SEC-168 | A leaked widget token is a full chat channel — and is rate-limited | from `$B` with no user token, POST 130 widget messages | replies work (that is the design) **but** the unauthenticated throttle applies → 429 after 120. Record the blast radius of a leaked widget token in the run notes | MAJOR if unthrottled | ⚠️`tests/test_rate_limit_hf2.py` |
 
-#### SEC-169 — Tier-leak hunt: `GET /api/autonomy/tasks/{task_id}/preview` is **open** and returns action payload
-- **Surface:** `GET /api/autonomy/tasks/{task_id}/preview` · **Tier:** **open** (`tests/_snapshots/route_auth.json`) · **Auto:** ❌
-- **Why it matters:** every other autonomy read is admin-tier. This one is not, and `preview_task` returns `effects` built from the payload keys `target, url, to, recipient, amount, command, path, file, channel, query, body` (`agents/core/autonomy/dry_run.py:22`) — i.e. the recipient and body of a queued email, the amount of a queued payment, the shell command of a queued exec.
+#### SEC-169 — Tier-leak regression: `GET /api/autonomy/tasks/{task_id}/preview` must stay **admin**
+- **Surface:** `GET /api/autonomy/tasks/{task_id}/preview` · **Tier:** **admin** (`tests/_snapshots/route_auth.json`) · **Auto:** ✅`tests/test_route_auth_matrix.py`
+- **History:** this route shipped tier `open` and was written up here as a live leak. It has since been guarded — `Depends(admin_guard)` at `agents/core/routers/autonomy.py:92` — so the case below is a *regression* check, not a hunt.
+- **Why it still matters:** `preview_task` returns `effects` built from the payload keys `target, url, to, recipient, amount, command, path, file, channel, query, body` (`agents/core/autonomy/dry_run.py:22`) — the recipient and body of a queued email, the amount of a queued payment, the shell command of a queued exec. It is the highest-value body in the autonomy surface and the one most likely to be re-opened by accident.
 - **Prereq:** at least one queued task (§07 creates them). `JARVIS_USER_TOKEN` **and** `JARVIS_ADMIN_TOKEN` set, so tokens actually mean something.
-- **Steps:** 1) with the admin token, `GET /autonomy/tasks` to learn a real task id. 2) from `$B` with **no token at all**: `curl -sS $B/api/autonomy/tasks/<id>/preview`. 3) enumerate ids 1..30 the same way.
-- **Expected (per code):** **200** with the full preview including `effects` and `target`. Compare against `GET /autonomy/tasks` from the same tokenless caller → **401**.
-- **FAIL if:** the tokenless preview returns any payload-derived field (`to`, `body`, `amount`, `command`) → **MAJOR** tier leak; **BLOCKER** if a real draft body or payment amount is visible. If it returns 401/403, the route was guarded since this manual was written — verify against the snapshot and update.
-- **Evidence to capture:** the tokenless 200 body with personal content redacted by hand, the 401 from the sibling route, both route rows from `route_auth.json`.
+- **Steps:** 1) with the admin token, `GET /autonomy/tasks` to learn a real task id. 2) from `$B` with **no token at all**: `curl -sS -o /dev/null -w '%{http_code}\n' $B/api/autonomy/tasks/<id>/preview`. 3) repeat with the **user** token. 4) repeat with the **admin** token. 5) enumerate ids 1..30 tokenless to confirm nothing answers.
+- **Expected (per code):** steps 2 and 3 → **401/403** with no body; step 4 → 200 with the preview. Same shape as the sibling `GET /autonomy/tasks`.
+- **FAIL if:** any tokenless or user-tier call returns a payload-derived field (`to`, `body`, `amount`, `command`) → **BLOCKER**; the leak is back and `tests/test_route_auth_matrix.py` should have caught the guard drift. A 200 with an *empty* body at the wrong tier is still **MAJOR** — the route existing at that tier is the defect.
+- **Evidence to capture:** the three status codes, the admin 200 with personal content redacted by hand, and the route's row in `route_auth.json`.
 
-#### SEC-170 — Tier-leak hunt: `GET /api/agents/{agent_id}/soul` is **open** and prefers `SOUL.local.md`
-- **Surface:** `GET /api/agents/{agent_id}/soul` · **Tier:** **open** · **Auto:** ❌
-- **Why it matters:** `SOUL.local.md` is the gitignored *personal* overlay — the file the whole repo is careful never to commit (`.gitignore:34`, `AGENTS.md:47`). The route reads it in preference to the template (`agents/core/routers/agents_api.py:70-73`).
-- **Steps:** 1) create a harmless marker overlay: `A=agents/frigga; printf '# QA\nQA-SOUL-SENTINEL\n' > $A/SOUL.local.md` (on Windows use the equivalent in that agent's directory; the real overlay, if you have one, must be moved aside first and restored after). 2) restart. 3) from `$B` with **no token**: `curl -sS $B/api/agents/frigga/soul`. 4) also try `../`, `FRIGGA`, `frigga%2F..`, and a non-existent id. 5) delete the marker file afterwards.
-- **Expected (per code):** step 3 returns `{"agent_id":"frigga","soul":"# QA\nQA-SOUL-SENTINEL\n"}` — unauthenticated. Step 4: all traversal attempts → **404** `Agent not found` (the id is regex-anchored and matched against a real directory listing, `agents_api.py:56-66`).
-- **FAIL if:** the personal overlay is served to an unauthenticated LAN caller → **MAJOR** privacy leak (**BLOCKER** if the real overlay contains family data). If any traversal form escapes the agents dir → **BLOCKER**.
+#### SEC-170 — `GET /api/agents/{agent_id}/soul` is **user**-tier and still prefers `SOUL.local.md`
+- **Surface:** `GET /api/agents/{agent_id}/soul` · **Tier:** **user** (`tests/_snapshots/route_auth.json`) · **Auto:** ✅`tests/test_route_auth_matrix.py` (tier), ❌ (the overlay-preference behaviour)
+- **History:** this route shipped tier `open` and was written up here as an unauthenticated leak. It now carries `Depends(user_guard)` (`agents/core/routers/agents_api.py:52`), so the tokenless leg below is a regression check. What it serves at *user* tier is unchanged and is still the finding.
+- **Why it still matters:** `SOUL.local.md` is the gitignored *personal* overlay — the file the whole repo is careful never to commit (`.gitignore:34`, `AGENTS.md:47`). The route reads it in preference to the template (`agents/core/routers/agents_api.py:69-72`). On the LAN day (§13 JRN-4) the family member holds exactly this tier, so the overlay is readable by everyone who can chat.
+- **Steps:** 1) create a harmless marker overlay: `A=agents/frigga; printf '# QA\nQA-SOUL-SENTINEL\n' > $A/SOUL.local.md` (on Windows use the equivalent in that agent's directory; the real overlay, if you have one, must be moved aside first and restored after). 2) restart. 3) from `$B` with **no token**: `curl -sS -o /dev/null -w '%{http_code}\n' $B/api/agents/frigga/soul`. 4) repeat with the **user** token. 5) also try `../`, `FRIGGA`, `frigga%2F..`, and a non-existent id. 6) delete the marker file afterwards.
+- **Expected (per code):** step 3 → **401/403**. Step 4 → `{"agent_id":"frigga","soul":"# QA\nQA-SOUL-SENTINEL\n"}` — the personal overlay, at user tier. Step 5: all traversal attempts → **404** `Agent not found` (the id is regex-anchored and matched against a real directory listing, `agents_api.py:56-66`).
+- **FAIL if:** the overlay is served *tokenless* → **MAJOR** privacy leak, the old open tier is back (**BLOCKER** if the real overlay contains family data). If any traversal form escapes the agents dir → **BLOCKER**. Record the user-tier read itself as a **MINOR** finding with a judgement: is a household overlay something every user-token holder should read?
 - **Also note (separate finding):** the route resolves only the repo-local overlay, while `Agent._load_soul` prefers `user_souls_dir()/<id>/SOUL.local.md` first (`agents/core/agent.py:68-75`). On a packaged install the endpoint therefore advertises a document the agent is **not** running — an F3 "live SOUL.md" that isn't live. Record as MINOR.
 - **Evidence to capture:** the tokenless response (sentinel only, never a real overlay), the four 404s.
 
 | ID | Check | Do | Expect | Fail | Auto |
 |----|-------|----|--------|------|------|
-| SEC-171 | Known leak TASK-5 still stands | from `$B` with a **user** token, `GET /tasks` | full `payload`/`result` per task, though every `/autonomy/*` read is admin (`agents/core/routers/dashboard.py`, BACKLOG TASK-5). Confirm it still leaks and note whether drafts are visible | MAJOR | ❌ |
+| SEC-171 | TASK-5 stays closed | from `$B` with a **user** token, `GET /tasks` (also `?view=running`, `?view=history`) | **no** `payload` and **no** `result` on any task — `format_task` projects both out (`agents/core/routers/dashboard.py`, `format_task`) while the admin read `GET /autonomy/tasks` still carries them. Diff the two bodies | **MAJOR** if either key returns at user tier; **BLOCKER** if a payload also carries a resolved secret value | ✅`tests/test_dashboard.py` |
 | SEC-172 | Sweep the remaining open reads | tokenless from `$B`: `GET /api/security/audit/intent`, `GET /api/review/queue`, `GET /api/missions`, `GET /api/local-docs`, `GET /api/workflows`, `GET /api/workflows/traces`, `GET /api/oauth/status`, `GET /memory/stats`, `GET /api/analytics/cost`, `GET /api/agents/history` | for each, read the body and ask: does it contain personal content, a draft, a payload, a path on my disk, or a connected-account identity? Each hit is a new **MAJOR**; log the route + the field | MAJOR each | ⚠️`tests/test_route_auth_matrix.py` |
 | SEC-173 | Capability-check oracle | tokenless `GET /api/security/capabilities/check?token=guess&capability=admin:kill_switch` | `{"allowed":false,"reason":"no valid capability token for this action"}` — a uniform negative that does not distinguish "unknown token" from "token lacks capability" (`agents/core/security/capability.py:135`) | MINOR; MAJOR if the reason discloses which | ✅`tests/test_kernel_authorize.py` |
 | SEC-174 | Capability tokens cannot self-escalate | issue `{"capabilities":["fs.read"]}` (admin), then check it for `memory.write` | `allowed:false`; no endpoint grows a token's grants | **BLOCKER** | ✅`tests/test_kernel_authorize.py` |
@@ -619,7 +621,7 @@ Every cell is what the surface **must** show. "Green with stale data" is never a
 | 08.11 Posture & supply chain | 13 (SEC-126…138) | network for drift/SBOM | 10 of 13 | SEC-127 is a hardcoded-claim finding |
 | 08.12 A2A | 11 (SEC-139…149) | — | 10 of 11 | fully offline-testable |
 | 08.13 MCP | 12 (SEC-150…161) | 🌐 | 11 of 12 | two kill-switches, both default-off |
-| 08.14 Pairing, widgets, tier leak | 15 (SEC-162…176) | 🌐 | 6 of 15 | SEC-169/170 are new leak candidates |
+| 08.14 Pairing, widgets, tier leak | 15 (SEC-162…176) | 🌐 | 6 of 15 | SEC-169/170/171 are *regression* cases now — all three leaks were closed |
 | 08.15 Privacy | 12 (SEC-177…188) | 🖥 for cameras, scratch root for forget | 9 of 12 | SEC-186 must use `JARVIS_HOME` |
 | 08.Y Adversarial | 25 (SEC-189…213) | 🤖, 🌐 | 4 of 25 | the least automated, highest-yield group |
 | **Total** | **213 cases (SEC-001…SEC-213)** | 🌐 + 🤖 mandatory for a full pass | **~135 have some offline coverage** | ~78 exist only here |
@@ -631,29 +633,40 @@ Every cell is what the surface **must** show. "Green with stale data" is never a
 Observations from reading the source. **No code was changed.** Line numbers were accurate at
 `docs/test-manual/` authoring time and may drift — re-anchor by symbol name, not line.
 
-1. **`GET /api/autonomy/tasks/{task_id}/preview` is open-tier and returns action payload fields**
-   (`agents/core/routers/autonomy.py:90` + `agents/core/autonomy/dry_run.py:22`, `_EFFECT_KEYS`
-   includes `to`, `recipient`, `amount`, `command`, `path`, `body`). Every sibling autonomy read is
-   admin. On a LAN deployment an unauthenticated caller can enumerate task ids and read draft
-   recipients/bodies and payment amounts. A second instance of the TASK-5 class — see SEC-169.
-2. **`GET /api/agents/{agent_id}/soul` is open-tier and prefers the gitignored `SOUL.local.md`**
-   (`agents/core/routers/agents_api.py:52-83`). The one file the repo is careful never to commit is
-   served without a token — see SEC-170.
+1. ~~**`GET /api/autonomy/tasks/{task_id}/preview` is open-tier and returns action payload fields**
+   (`_EFFECT_KEYS` includes `to`, `recipient`, `amount`, `command`, `path`, `body`) while every
+   sibling autonomy read is admin — a second instance of the TASK-5 class.~~ **FIXED** — the route
+   carries `Depends(admin_guard)` (`agents/core/routers/autonomy.py:92`) and is pinned `admin` in
+   `tests/_snapshots/route_auth.json`. The TASK-5 original is closed too: user-tier `GET /tasks`
+   projects `payload`/`result` out (`routers/dashboard.py`, `format_task`), pinned by
+   `tests/test_dashboard.py::test_tasks_user_tier_never_ships_payload_or_result`. SEC-169/171 are
+   now regression cases.
+2. ~~**`GET /api/agents/{agent_id}/soul` is open-tier**~~ **PARTLY FIXED** — the route is now
+   `user`-tier (`Depends(user_guard)`, `agents/core/routers/agents_api.py:52`), so it is no longer
+   readable without a token. It still **prefers the gitignored `SOUL.local.md`**, so every
+   user-token holder — the family member of §13 JRN-4 included — reads the personal overlay. That
+   half stands; see SEC-170.
 3. **The same soul route ignores the packaged user-home overlay** that `Agent._load_soul` prefers
    (`agents/core/agent.py:68-75` vs `agents_api.py:70`). On a packaged install the endpoint advertises a
    document the agent is not running — an F3 "live SOUL.md" that isn't live.
-4. **`security.guardrails_mode` is read once at boot** (`agents/core/orchestrator.py:498`) but reported
-   live by `GET /api/security/posture` (`agents/core/routers/security.py:326`) via the 30 s settings
-   watcher, which never rebuilds `self.security` (`orchestrator.py:760`). The posture surface and the
-   Console POSTURE card can therefore assert `BLOCK`/`REDACT` while the engine still runs `WARN`. SEC-065.
-5. **`GET /security/status` is a hardcoded stub** (`agents/core/routers/security_hud.py:36-53`): it
-   always returns `mode: "WARN"`, `secret patterns: 10`, `pii patterns: 6`, and zero counters — while the
-   real scanners carry **17** and **9** patterns (`agents/core/security/scanner.py:167`, `:279`) and the
-   real mode may be anything. It is not consumed by the v2 HUD today, but any client that trusts it gets
-   fabricated security numbers. No test pins it to reality.
-6. **`secrets.encrypted_at_rest` is a literal `True`** in the posture payload
-   (`agents/core/routers/security.py:317`) even when `backend` resolves to `"unavailable"`. The Console
-   card renders a green "encrypted" badge from that constant (`frontend/src/gap.tsx:585`). SEC-127.
+4. ~~**`security.guardrails_mode` is read once at boot** but reported live by
+   `GET /api/security/posture`, so the posture surface and the Console POSTURE card could assert
+   `BLOCK`/`REDACT` while the engine still ran `WARN`.~~ **FIXED 2026-08-02** — the settings watcher
+   re-pushes the knob onto the live engine (`GuardrailsEngine.apply_settings` via
+   `load_runtime_settings`), so posture, panel and engine agree within one watcher interval and
+   without a restart; a garbage value keeps the current mode instead of silently resetting to WARN.
+   SEC-065 already carries the fixed expectation — this entry was the last surface still calling it
+   open.
+5. ~~**`GET /security/status` is a hardcoded stub**: it always returns `mode: "WARN"`, `secret
+   patterns: 10`, `pii patterns: 6` and zero counters, while the real scanners carry 17 and 9.~~
+   **FIXED** — the handler now reads the live engine and reports what it actually counted
+   (`agents/core/routers/security_hud.py`, `security_status`); anything still unmeasured comes back
+   `null` with `available: false` rather than a zero that reads like a measurement.
+6. ~~**`secrets.encrypted_at_rest` is a literal `True`** in the posture payload even when `backend`
+   resolves to `"unavailable"`.~~ **FIXED** — the flag is now derived from the resolved cipher
+   (`agents/core/routers/security.py`, `secrets_posture`): `True` only for `fernet`/`hmac-fallback`
+   (with a `strength` and, for the fallback, a `note`), and `None` — explicitly *unknown*, not
+   `False` — when the store could not be opened. SEC-127 asserts that three-way outcome.
 7. **Guardrail findings never enter the audit chain.** `SecurityEventType.SECRET_DETECTED`,
    `PII_DETECTED` and `SSRF_BLOCKED` exist (`agents/core/security/types.py:23-25`) but a repo-wide grep
    finds no production emitter — `GuardrailsEngine._handle_findings` only writes to the Python logger
@@ -692,9 +705,23 @@ Observations from reading the source. **No code was changed.** Line numbers were
     proof of zero egress (SEC-114); whether the LAN-IP-from-the-same-box trick (SEC-004) reports a
     non-loopback peer on **Windows** specifically — the logic depends on the OS source-address choice, so
     the 401 in SEC-004 step 5 is the self-validating gate before trusting §08.2;
-    ONVIF/Frigate camera behaviour (SEC-181…183); and whether the four CI security jobs are configured as
-    **required** branch-protection checks (an owner-side GitHub setting, F-10 in
-    `docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`).
-16. **No automated test pins the four guard *response strings*** ("user routes disabled from network…",
+    and ONVIF/Frigate camera behaviour (SEC-181…183).
+    *(Dropped from this list 2026-08-31: the required-branch-protection status of the CI security
+    jobs. It is answerable from the tree, and the answer is that there is no gate left to
+    configure — see #16 below.)*
+16. **The four CI security jobs are gone, not gated.** gitleaks / semgrep / pip-audit / bandit
+    lived in `.github/workflows/security.yml`, which the 2026-08-29 de-gate (**#981**, `824ff18`)
+    **deleted** rather than promoting its jobs to required checks — the owner chose removal over
+    promotion (F-10 "superseded (de-gate)" in `docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`). What
+    still runs on a PR is the single advisory `test (ubuntu-latest)` lane in `ci.yml` — which is
+    where `tests/test_route_auth_matrix.py` and the HUD-parity test execute — plus the
+    post-merge push-to-main lanes. Nothing blocks a merge. Consequences for a tester: the scans
+    behind SEC-137 are **manual-only**, and a green PR is not evidence that anything was scanned.
+    Re-gating is a reversible owner action and needs **both** halves — the workflow patch in
+    [`docs/restore/`](../restore/README.md) (group `A-security-scans`) **and** the check name
+    re-added in branch protection (`docs/OWNER_TASKS.md` → "De-gate merges"). Restoring only the
+    branch-protection half produces the permanent "Expected — Waiting for status to be reported"
+    merge deadlock documented in `docs/MAINTENANCE_RUNBOOK.md` §10.
+17. **No automated test pins the four guard *response strings*** ("user routes disabled from network…",
     "admin disabled from network…", "user token required", "admin token required"). They are the contract
     this section's evidence quotes; a wording change would silently invalidate a tester's pass criteria.

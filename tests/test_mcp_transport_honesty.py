@@ -111,3 +111,27 @@ def test_sources_do_not_advertise_sse():
     assert "via stdio or SSE" not in header, header
     if "SSE" in header.upper():
         assert "NOT implemented" in header, header
+
+
+def test_live_docs_do_not_advertise_an_mcp_sse_transport():
+    """DRA-25 remainder — the client-side surfaces beyond the module itself.
+
+    `POST /api/admin/mcp` now refuses every non-stdio transport with 400
+    `unsupported_transport`, so a reader who is told the MCP client speaks "stdio/SSE"
+    is told something the product will actively reject. These are the live prose
+    surfaces that carried the claim; `docs/2026-06-08-future-developments-report.md`
+    is deliberately not listed — it calls the transport *unbuilt*, which is true.
+    """
+    surfaces = (
+        "GO_LIVE_PLAN.md",
+        "AI_SYSTEM_PROMPT.md",
+        "docs/ARCHITECTURE.md",
+        "docs/HISTORY.md",
+    )
+    for rel in surfaces:
+        text = (repo_root / rel).read_text(encoding="utf-8")
+        for i, line in enumerate(text.splitlines(), 1):
+            if "MCP" not in line and "mcp/" not in line:
+                continue
+            assert "stdio/SSE" not in line, f"{rel}:{i} {line.strip()}"
+            assert "stdio or SSE" not in line, f"{rel}:{i} {line.strip()}"

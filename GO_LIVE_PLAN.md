@@ -97,7 +97,7 @@
 - **Romanian PII detection** — CNP (checksum-validated), IBAN (ISO 7064 mod-97), phone (`07…` / `+407…`)
 - **SecuredShell Executor** — allowlist + no-shell (`create_subprocess_exec`) + bounded timeout + audit (`RemediationRunner`)
 - **Circuit breaker + retry** — per-plugin, `@resilient_call` decorator, tri-state (closed/open/half-open), resilience metrics in HUD
-- **MCP Client** — stdio/SSE, admin-wired, pluggable external tools
+- **MCP Client** — stdio only (remote HTTP+SSE / Streamable HTTP are refused with 400 `unsupported_transport`), admin-wired, pluggable external tools
 - **OAuth 2.0 + PKCE** — Google Calendar, Gmail, Spotify; token refresh + state + Fernet
 
 ---

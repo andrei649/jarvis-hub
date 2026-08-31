@@ -30,7 +30,7 @@ capability-acquisition pipeline.
 | Voice | Browser loop (mic→`/api/voice/stt` Whisper→`/tts` clone chain) + server pipeline (openWakeWord, faster-whisper, XTTS→ElevenLabs→Fish→edge-tts→Kokoro) |
 | Channels | Web SSE, Voice, Telegram, Discord, Slack, Email (SMTP/IMAP), webhook bridges (WhatsApp/Signal/Matrix/Teams/Google Chat) |
 | Integrations | ~25 plugins (Gmail, Google Calendar, Spotify, Tavily/SearXNG, n8n, Homebridge, Tuya, Twilio, Notion, RevenueCat, Meta Ads, Postiz, …) behind a per-agent permission gate |
-| Protocols | MCP client (stdio/SSE) **and** MCP server (governed route tools); A2A inbound (HMAC + contract) |
+| Protocols | MCP client (**stdio only** — remote transports refused at the admin API) **and** MCP server (governed route tools); A2A inbound (HMAC + contract) |
 | Sibling stack | **WorldView** (4D OSINT) under `worldview/`: Vite/Next + CesiumJS + Fastify (ports 3000/4000, Docker); shares *no* runtime — bridged only via the versioned read-only contract `docs/contracts/worldview-bridge.md` through the **Argus** agent |
 | Tooling | pytest (`asyncio_mode=auto`, offline, socket-blocked), Ruff, Bandit, vulture; `scripts/code_health.py`; `scripts/status_sync.py` (generated counters) |
 

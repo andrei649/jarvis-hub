@@ -64,3 +64,16 @@ def test_deleted_security_workflow_stays_deleted_unless_restored_deliberately() 
     above need revisiting — this asserts the premise the other assertions rest on."""
     assert not (WORKFLOWS / "security.yml").exists()
     assert "A-security-scans" in _read("docs/restore/README.md")
+
+
+def test_security_chapter_states_the_de_gate_posture_instead_of_deferring_it() -> None:
+    """DRA-30 remainder — chapter 08 was the fifth surface and still filed the required-check
+    question under "could not verify on this checkout". It is verifiable: the gates were
+    removed by #981, not promoted, so the chapter must say so rather than leave a tester
+    hunting an owner-side setting that no longer has a workflow behind it."""
+    text = _read("docs/test-manual/08-security-privacy.md")
+    assert "whether the four CI security jobs are configured as" not in text
+    assert "#981" in text
+    assert "de-gate" in text.lower()
+    assert "docs/restore/" in text
+    assert "test (ubuntu-latest)" in text
