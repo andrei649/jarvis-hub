@@ -329,7 +329,16 @@ async def marketplace_uninstall(body: UninstallSkillBody):
         # Resolve the on-disk dir up front so we can drop it from the live loader
         # by path (the loader keys by manifest title, which may differ from the dir).
         removed_dir = (orch.marketplace.skills_dir / body.name).resolve()
+        # The registry row is filed under the SKILL.md title, not the folder name, and
+        # that title is only readable while the directory still exists — so resolve it
+        # (and whether a row is actually there) BEFORE the uninstall.
+        registry_key = orch.marketplace.registry_key(body.name)
+        was_registered = bool(body.purge) and orch.marketplace.is_registered(registry_key)
         removed = orch.marketplace.uninstall_skill(body.name, purge=body.purge)
+        # OBSERVE the outcome. This used to return `body.purge` — the caller's own
+        # request flag echoed back — so the HUD reported "registry row purged" even when
+        # the delete matched nothing and the published package survived, blob and all.
+        purged = was_registered and not orch.marketplace.is_registered(registry_key)
     except PermissionError:
         logger.warning("Skill uninstall blocked by supply-chain contract")
         return JSONResponse({"error": f"skill '{body.name}' blocked by supply-chain contract"},
@@ -353,7 +362,7 @@ async def marketplace_uninstall(body: UninstallSkillBody):
         # re-created (byte-identical) tree at the same path cannot inherit it.
         with contextlib.suppress(Exception):
             orch.skills.revoke_approval(removed_dir)
-    return {"ok": True, "uninstalled": body.name, "removed": removed, "purged": body.purge}
+    return {"ok": True, "uninstalled": body.name, "removed": removed, "purged": purged}
 
 
 _PENDING_REASON = "pending review (CDX-8 quarantine)"

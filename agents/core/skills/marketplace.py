@@ -624,20 +624,75 @@ class SkillMarketplace:
             raise ValueError(f"refusing to remove outside the skills directory: {skill_name!r}")
         self._enforce_skill_contract("uninstall", name, purge=bool(purge), installed=target.exists())
 
+        # Resolve the registry key BEFORE anything is deleted: it comes from the
+        # SKILL.md heading inside the directory we are about to remove, and the row is
+        # filed under that title rather than the folder name (see `registry_key`).
+        key = self.registry_key(name)
+
         # capture the version before a purge drops the registry row
-        version = self._registry_version(name) if self._history is not None else None
+        version = self._registry_version(key) if self._history is not None else None
 
         removed = False
         if target.exists() and target.is_dir():
             import shutil
             shutil.rmtree(target)
             removed = True
+        purged = False
         if purge:
-            self.remove_from_registry(name)
+            purged = self.remove_from_registry(key)
         if removed and version:
             self._record_history(name, version, "uninstall")
-        logger.info("Uninstalled a marketplace skill (removed=%s, purged=%s)", removed, purge)
+        # log what HAPPENED, not what was asked for: `purge` is the request flag and
+        # says nothing about whether a row existed to delete.
+        logger.info("Uninstalled a marketplace skill (removed=%s, purge_requested=%s, purged=%s)",
+                    removed, purge, purged)
         return removed
+
+    def registry_key(self, skill_name: str) -> str:
+        """Map an ON-DISK FOLDER name to the key its registry row is filed under.
+
+        These are not the same string, and assuming they were is a real defect this
+        method exists to close. ``publish_skill`` files the row under
+        ``manifest.get("name", skill_name)`` — the SKILL.md ``# `` heading — so
+        ``skills/weather`` is registered as ``Weather Intel``. Every skill bundled in
+        this repo differs that way (a capital or a space), so a lookup by folder name
+        matched nothing while reporting success.
+
+        Falls back to the folder name when the manifest is missing or unreadable, which
+        is also what ``publish_skill``'s own ``.get(..., skill_name)`` default does.
+        """
+        name = (skill_name or "").strip()
+        if not name:
+            return name
+        skill_file = self.skills_dir / name / "SKILL.md"
+        try:
+            if skill_file.exists():
+                title = SkillLoader()._parse_manifest(skill_file).get("name")
+                if isinstance(title, str) and title.strip():
+                    return title.strip()
+        except Exception:
+            logger.debug("could not read the manifest title for %r; using the folder name", name)
+        return name
+
+    def is_registered(self, registry_key: str) -> bool:
+        """True when a marketplace_skills row exists under *registry_key*.
+
+        Takes the REGISTRY KEY (a manifest title), not a folder name — pass the result
+        of `registry_key()`. Callers use this to observe whether an unpublish actually
+        happened instead of reporting the request flag back to the operator.
+        """
+        return self._registry_version(registry_key) is not None
+
+    def purge_registry_row(self, skill_name: str) -> bool:
+        """Unpublish *skill_name* (an on-disk folder) and report what actually happened.
+
+        Resolves the manifest title first, so this deletes the row ``publish_skill``
+        really wrote. MUST be called while the skill directory still exists — the title
+        lives in its SKILL.md, so after an uninstall there is nothing left to resolve.
+        Returns True only when a row was deleted; False is an honest "there was nothing
+        published under that name".
+        """
+        return self.remove_from_registry(self.registry_key(skill_name))
 
     def remove_from_registry(self, skill_name: str) -> bool:
         """Delete a skill's marketplace registry row (full unpublish). Returns True

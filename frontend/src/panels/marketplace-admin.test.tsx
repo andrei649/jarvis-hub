@@ -11,10 +11,11 @@
      · uninstall's 200 {"ok":true,"removed":false} means NOTHING WAS DELETED — it must not
        read as a success.
      · the destructive control must ARM first: the row button posts nothing.
-     · `purged` in the uninstall response is the REQUEST FLAG ECHOED (skills.py:356 returns
-       body.purge), and the registry DELETE underneath matches the MANIFEST TITLE while the
-       panel sends the FOLDER — so the panel may never print "registry row purged", and the
-       purge control may not be labelled as an unpublish it cannot perform. */
+     · `purged` in the uninstall response is a REAL OBSERVATION (the route checks the
+       registry row before and after). It used to be the request flag echoed, over a
+       DELETE keyed on the folder while the registry is keyed on the manifest title —
+       so a purge reported success while the published package survived. Fixed; these
+       tests pin the corrected contract and that the old wording cannot return. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
@@ -198,18 +199,23 @@ describe('MarketplaceAdminPanel — the installed tree and its three lifecycle w
     expect(container.textContent).toContain('the registry row and its package blob are untouched');
   });
 
-  /* ── REGRESSION · the `purged` echo and the folder-vs-title purge key ───────────────
-     agents/core/routers/skills.py:356 answers `"purged": body.purge` — the request flag,
-     not an outcome — and agents/core/skills/marketplace.py:635-636 discards
-     remove_from_registry()'s boolean while DELETEing `WHERE name = ?` on a registry keyed
-     by the MANIFEST TITLE. Reproduced against the real class: publish('weather') registers
-     'Weather Intel'; uninstall_skill('weather', purge=True) returns removed=True and
-     list_skills() still shows ['Weather Intel']. */
+  /* ── REGRESSION · the purge really unpublishes, and `purged` is an OBSERVATION ──────
+     This block used to pin the OPPOSITE, and was right to at the time: the route answered
+     `"purged": body.purge` (the request flag echoed) while uninstall_skill DELETEd
+     `WHERE name = ?` using the ON-DISK FOLDER against a registry keyed by the MANIFEST
+     TITLE, discarding the row count. Reproduced then against the real class:
+     publish('weather') registered 'Weather Intel'; uninstall_skill('weather', purge=True)
+     returned removed=True while list_skills() still showed ['Weather Intel'] — the
+     operator was told a published package was gone at the moment it survived.
 
-  it('never reports the purged ECHO as a purged registry row (folder ≠ manifest title)', async () => {
+     The backend is fixed (registry key resolved from the manifest before the rmtree, the
+     boolean kept, the route observing the row before and after), so these now pin the
+     corrected contract: purged:true means a row really went, purged:false means none did,
+     and neither is inferred from the checkbox. */
+
+  it('reports an unpublish only when the response says a row actually went', async () => {
     mockRoutes((u, method) => {
       if (u === '/api/skills/marketplace/uninstall' && method === 'POST') {
-        // exactly what the route sends back: purged is body.purge, handed straight back
         return { status: 200, body: { ok: true, uninstalled: 'weather', removed: true, purged: true } };
       }
       return null;
@@ -224,18 +230,16 @@ describe('MarketplaceAdminPanel — the installed tree and its three lifecycle w
 
     await waitFor(() => expect(screen.getByText(/removed skills\/weather/)).toBeTruthy());
     const txt = container.textContent || '';
-    // the lie: the registry row survives under the title 'Weather Intel'
-    expect(txt).not.toContain('registry row purged');
-    // what is actually knowable
-    expect(txt).toContain('purge was requested');
-    expect(txt).toContain('does not say whether a registry row was deleted');
-    expect(txt).toContain('so that row was not deleted');
+    expect(txt).toContain('registry row unpublished');
+    // the old lie must not come back in any form
+    expect(txt).not.toContain('does not say whether a registry row was deleted');
   });
 
-  it('says a purge was IN RANGE only when the folder sent equals the manifest title', async () => {
+  it('renders purged:false as an amber "no registry row was deleted", never as success', async () => {
     mockRoutes((u, method) => {
       if (u === '/api/skills/marketplace/uninstall' && method === 'POST') {
-        return { status: 200, body: { ok: true, uninstalled: 'Weather Intel', removed: true, purged: true } };
+        // purge requested, but nothing was published under this skill
+        return { status: 200, body: { ok: true, uninstalled: 'weather', removed: true, purged: false } };
       }
       return null;
     });
@@ -243,37 +247,33 @@ describe('MarketplaceAdminPanel — the installed tree and its three lifecycle w
     await waitFor(() => expect(screen.getByText('Weather Intel')).toBeTruthy());
 
     fireEvent.click(screen.getAllByText('uninstall…')[0]);
-    // folder == manifest title: the DELETE's string and the registry key coincide
-    fireEvent.change(screen.getByLabelText('skills/ folder'), { target: { value: 'Weather Intel' } });
+    fireEvent.change(screen.getByLabelText('skills/ folder'), { target: { value: 'weather' } });
     fireEvent.click(screen.getByLabelText('purge registry row matching the folder string'));
     fireEvent.click(screen.getByText('confirm remove'));
 
-    await waitFor(() => expect(screen.getByText(/removed skills\/Weather Intel/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/removed skills\/weather/)).toBeTruthy());
     const txt = container.textContent || '';
-    expect(txt).toContain('was in range of the delete');
-    expect(txt).not.toContain('so that row was not deleted');
-    // still never asserted as done — the row count never reaches the wire
-    expect(txt).not.toContain('registry row purged');
-    expect(txt).toContain('does not say whether a registry row was deleted');
+    expect(txt).toContain('no registry row was deleted');
+    expect(txt).not.toContain('registry row unpublished');
   });
 
-  it('labels the purge box as the literal string-match it is, not as an unpublish', async () => {
+  it('labels the purge box as the unpublish it now actually performs', async () => {
     mockRoutes(() => null);
     const { container } = render(<MarketplaceAdminPanel />);
     await waitFor(() => expect(screen.getByText('Weather Intel')).toBeTruthy());
 
-    fireEvent.click(screen.getAllByText('uninstall…')[0]);   // prefills folder 'weather_intel'
+    fireEvent.click(screen.getAllByText('uninstall…')[0]);
     const txt = container.textContent || '';
-    expect(txt).not.toContain('deletes the published package too');
-    expect(txt).toContain('also delete the registry row whose name equals the folder string');
-    // prefilled folder 'weather_intel' ≠ title 'Weather Intel' → the box is a no-op here
-    expect(txt).toContain('deletes no row published from this skill');
+    expect(txt).toContain('also unpublish');
+    // the folder-vs-title caveat was true of the old backend and is now false
+    expect(txt).not.toContain('deletes no row published from this skill');
+    expect(txt).toContain('resolves that title from the tree');
   });
 
-  it('does not print the purged echo beside "nothing was deleted from disk"', async () => {
+  it('does not claim an unpublish when nothing was deleted from disk either', async () => {
     mockRoutes((u, method) => {
       if (u === '/api/skills/marketplace/uninstall' && method === 'POST') {
-        return { status: 200, body: { ok: true, uninstalled: 'weather_intel', removed: false, purged: true } };
+        return { status: 200, body: { ok: true, uninstalled: 'weather_intel', removed: false, purged: false } };
       }
       return null;
     });
@@ -286,8 +286,8 @@ describe('MarketplaceAdminPanel — the installed tree and its three lifecycle w
 
     await waitFor(() => expect(screen.getByText(/nothing was deleted from disk/)).toBeTruthy());
     const txt = container.textContent || '';
-    expect(txt).not.toContain('purged: true');
-    expect(txt).toContain('purge was requested');
+    expect(txt).toContain('no registry row was deleted');
+    expect(txt).not.toContain('registry row unpublished');
   });
 
   it('renders a 503 from GET /skills as offline, never as an empty installed tree', async () => {
