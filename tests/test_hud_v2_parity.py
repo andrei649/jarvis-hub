@@ -500,7 +500,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # (scheduler_service._signal_briefs_or_none → build_domain_brief), so this
     # HTTP route has no *client* caller. It stays as the external read surface
     # for the same data; the HUD uses /routed and /agent/{id}.
-    "/api/signals/brief/{domain}",
     # DRA-43 made T-0.25's desktop vocabulary reachable (these two routes + the
     # `desktop_plan` ToolRPC tool). The T-0.25 row lists "a user-facing control
     # surface + HUD parity tracking" as its own remaining work, so the HUD half is
@@ -517,20 +516,15 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/canvas/clear",
     "/api/channels/inbox/status",
     "/api/context/compress",
-    "/api/creative/export-packs",
-    "/api/creative/plan",
     "/api/digest/run",
     "/api/integrations/writeback",
     "/api/llm/moe/route",
     "/api/llm/openrouter",
-    "/api/market/brief",
     "/api/media/generate",
     "/api/memory/consolidate",
     "/api/metrics/capabilities",
     # MissionsPanel surfaces mission-level transitions only; there is no per-step UI.
     "/api/missions/{mission_id}/steps/{idx}/finish",
-    "/api/osint/brief",
-    "/api/osint/correlate",
     "/api/payments/mandates",
     "/api/payments/request",
     "/api/presence/owner",
