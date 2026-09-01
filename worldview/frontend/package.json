@@ -19,7 +19,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
     "@types/geojson": "7946.0.16",
-    "@types/node": "26.2.0",
+    "@types/node": "26.4.0",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vite": "^8.1.3",
