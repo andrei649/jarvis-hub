@@ -86,9 +86,12 @@
       `detail` STRING and pydantic's 422 `detail` ARRAY. A sqlite failure surfaces as a
       non-JSON 500, where `err.body` is undefined and only `err.message` is true.
 
-  14. /api/security/audit/action IS DELIBERATELY ABSENT from this panel. A HUD form that
-      lets a human hand-type provenance into a tamper-evident intent log is worse than no
-      control at all (BACKLOG.md:1383-1386).
+  14. The signed audit-action WRITE route is deliberately absent from this panel. Its path is
+      spelled out only on its entry in tests/test_hud_v2_parity.py, never here: the parity
+      matcher counts any literal occurrence in a client file as a caller, so naming it would
+      fake a caller and let an unwired route leave the punch list. A HUD form that lets a
+      human hand-type provenance into a tamper-evident intent log is worse than no control
+      at all (BACKLOG.md:1383-1386).
 
    apiPost THROWS on 4xx/5xx and carries the parsed body on `err.body`, so every send
    below passes onErr and clears its success block first — otherwise the refusal branch
@@ -444,8 +447,9 @@ export function TrustOpsPanel() {
         POST {ROTATE_PATH} = admin tier (X-Admin-Token).
       </div>
       <div style={NOTE}>
-        /api/security/audit/action is deliberately not offered here: a form that lets a human
-        hand-type provenance into a tamper-evident intent log is worse than no control at all.
+        The signed audit-action write is deliberately not offered here: a form that lets a
+        human hand-type provenance into a tamper-evident intent log is worse than no control
+        at all.
       </div>
     </Card>
   );

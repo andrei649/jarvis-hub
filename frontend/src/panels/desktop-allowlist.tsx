@@ -27,10 +27,13 @@
       GovernedDesktop.run composition, which has no production constructor. So: no launch
       button, no mute button, no record button. Inspectable, not actuable.
 
-   Also deliberate: /api/desktop/plan and /api/operator/plan are NOT wired here. They are
-   consumed by the agent's ToolRPC `desktop_plan` tool (autonomy_coordinator.py:492), and
-   BACKLOG.md:947-950 keeps them MACHINE_FACING — a HUD form over them is the degenerate
-   surface. Keys are rendered verbatim: the human labels ("Web browser", "Code editor")
+   Also deliberate: the two desktop/operator PLAN routes are not wired here. Their paths are
+   spelled out only on their entries in tests/test_hud_v2_parity.py, never in this file: the
+   parity matcher counts any literal occurrence in a client file as a caller, so naming them
+   in this comment would fake a caller and let them leave the punch list without a UI. They
+   are consumed by the agent's ToolRPC `desktop_plan` tool (autonomy_coordinator.py:492) via
+   an in-process import, and BACKLOG.md:947-950 keeps a HUD form over them out of scope as
+   the degenerate surface. Keys are rendered verbatim: the human labels ("Web browser", "Code editor")
    live in APPS on the backend and are NOT in this payload, so re-labelling client-side
    would be inventing text the route never sent. */
 import React from 'react';
