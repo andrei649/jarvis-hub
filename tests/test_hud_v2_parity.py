@@ -502,7 +502,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # `desktop_plan` ToolRPC tool). The T-0.25 row lists "a user-facing control
     # surface + HUD parity tracking" as its own remaining work, so the HUD half is
     # still open by that row's own account — punch list, not MACHINE_FACING.
-    "/api/desktop/allowlist",
     # DRA-22/DRA-42 wired the H28.2 router's two backend halves: this read-only route
     # and the `operator_plan` ToolRPC tool (which is what actually consumes the router
     # today — the agent, not our UI). The HUD control is the deliberately-open half, so
@@ -510,7 +509,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/admin/rotate-tokens",
     "/api/agents/history",
     "/api/arena/match/{match_id}",
-    "/api/autonomy/call",
     "/api/canvas/clear",
     "/api/channels/inbox/status",
     "/api/context/compress",
@@ -536,9 +534,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/workflows/hierarchical",
     "/api/workflows/traces",
     "/api/worldview/status",
-    "/autonomy/observer/run",
-    "/autonomy/preferences/suggestions",
-    "/autonomy/status",
 ])
 
 # Routes whose client call is BUILT rather than written: the last segment comes from a
