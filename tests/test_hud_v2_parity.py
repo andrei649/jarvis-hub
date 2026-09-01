@@ -524,8 +524,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/metrics/capabilities",
     # MissionsPanel surfaces mission-level transitions only; there is no per-step UI.
     "/api/missions/{mission_id}/steps/{idx}/finish",
-    "/api/support/bundle",
-    "/api/voice/wyoming",
     # render_snippet inlines colour/title/greeting (agents/core/widget.py), so nothing
     # fetches the config read surface.
     "/api/worldview/status",
