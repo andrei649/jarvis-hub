@@ -125,6 +125,12 @@ export function PresenceInboxPanel() {
   const presence503 = String(pres.e || '').endsWith('-> 503');
 
   const channels: any[] = Array.isArray(st.channels) ? st.channels : [];
+  // The supported VOCABULARY and the channels actually holding messages are different
+  // questions; the store used to answer both with the same constant. `active` ABSENT (not
+  // merely empty) means an older backend that could not tell them apart.
+  const active: any[] | null = Array.isArray(st.active_channels) ? st.active_channels : null;
+  const byChannel: Record<string, any> = (st.by_channel && typeof st.by_channel === 'object')
+    ? st.by_channel : {};
 
   const presSub = p ? String(p.state) : pres.e ? 'presence read failed' : null;
   const inboxSub = ib ? (bound ? `${st.threads} threads` : 'inbox unbound') : inbox.e ? 'inbox read failed' : null;
@@ -308,26 +314,41 @@ export function PresenceInboxPanel() {
           </Row>
 
           <Row>
-            <span style={mono}>channels</span>
+            <span style={mono}>accepts</span>
             <Right>
               {channels.length === 0
                 ? <Tag c="var(--amber)">{EM} no channels key</Tag>
                 : <>
                     {channels.map((c) => <Tag key={String(c)} c="var(--ink-3)">{String(c)}</Tag>)}
-                    <Tag c="var(--ink-3)">{unbound ? '(placeholder)' : '(constant list)'}</Tag>
+                    <Tag c="var(--ink-3)">(constant list)</Tag>
                   </>}
             </Right>
           </Row>
+
+          <Row>
+            <span style={mono}>holds traffic</span>
+            <Right>
+              {active == null
+                ? <Tag c="var(--amber)">{EM} not in payload</Tag>
+                : active.length === 0
+                  ? <Tag c="var(--ink-3)">none{unbound ? ' (no store)' : ''}</Tag>
+                  : <>{active.map((c) => (
+                      <Tag key={String(c)} c="var(--accent-light)">
+                        {String(c)}{byChannel[String(c)] != null ? ` ${String(byChannel[String(c)])}` : ''}
+                      </Tag>
+                    ))}</>}
+            </Right>
+          </Row>
           <Note>
-            Not a measurement, and not a per-channel count: both branches emit the same constant.
-            ChannelInboxStore.stats() returns sorted(SUPPORTED_INBOX_CHANNELS) whatever it holds
-            (channel_inbox.py:136), and the unbound branch types that same list into its hardcoded dict
-            (integrations.py:131) &mdash; so this row reads identically for a store holding 41 messages, an empty
-            store, and no store at all. It is the allowlist of channels the store would ACCEPT (anything outside
-            it is dropped on record, channel_inbox.py:55), never evidence that one of them delivered. The handler
-            also notes that only telegram/web are live reply transports in this wave (integrations.py:124) while
-            SUPPORTED_INBOX_CHANNELS additionally contains email &mdash; so a channel listed here is not
-            automatically replyable.
+            These are two different questions and used to have one answer. <b>accepts</b> is the
+            allowlist the store would take (anything outside it is dropped on record,
+            channel_inbox.py) &mdash; a compile-time constant, identical on every install, and never
+            evidence that a channel delivered. <b>holds traffic</b> is the measurement: the channels
+            actually present in the store with their message counts, and a supported-but-silent
+            channel is simply absent rather than shown as a zero. If <i>holds traffic</i> reads
+            &ldquo;not in payload&rdquo;, the backend predates that split and genuinely cannot tell
+            you. Only telegram/web are live reply transports in this wave while the accept list also
+            contains email, so a channel here is not automatically replyable.
           </Note>
         </>
       )}

@@ -126,9 +126,14 @@ async def channels_inbox_status():
     inbox = _channel_inbox()
     if inbox is None:
         from agents.core.channel_inbox import SUPPORTED_INBOX_CHANNELS
+        # Same keys as the live shape, so a client never has to special-case this branch.
+        # active_channels/by_channel are empty because nothing is stored — which is the
+        # truth here, unlike `channels`, which is the constant vocabulary either way.
         return nocache_json({"enabled": False, "stats": {
             "enabled": False,
             "channels": sorted(SUPPORTED_INBOX_CHANNELS),
+            "active_channels": [],
+            "by_channel": {},
             "threads": 0,
             "messages": 0,
         }})
