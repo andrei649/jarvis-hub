@@ -37,6 +37,13 @@ def _bare_orchestrator():
         async def new_session(self, session_id=None):
             return "tg_isolated"
 
+        async def resume_session(self, session_id):
+            # The real MemoryManager has this; the double did not, which is the only
+            # reason it needed touching. False = "nothing on disk to resume", so the
+            # handler still takes the new_session path this test has always pinned —
+            # the assertions below are unchanged.
+            return False
+
     orch.memory = FakeMem()
     return orch, captured
 

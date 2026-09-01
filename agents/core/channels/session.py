@@ -1,8 +1,11 @@
 """Channel session identity and delivery decisions.
 
-This is the first Hermes-style gateway session layer for Jarvis: pure helpers
-that derive filesystem-safe session keys from channel metadata and decide where
-a response should be delivered. It does not change live gateway routing yet.
+This is the Hermes-style gateway session layer for Jarvis: pure helpers that
+derive filesystem-safe session keys from channel metadata and decide where a
+response should be delivered. DRA-08 phase 5 wired them into the live inbound
+path — ``Orchestrator.channel_handler`` builds one :class:`SessionSource` per
+turn, keys its memory session off :func:`build_session_key`, and asks
+:class:`DeliveryRouter` whether to reply before touching the transport.
 """
 
 from __future__ import annotations
