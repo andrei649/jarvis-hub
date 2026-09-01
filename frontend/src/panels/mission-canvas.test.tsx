@@ -190,7 +190,35 @@ describe('MissionCanvasPanel · refusals reach the screen as refusals', () => {
     await waitFor(() => expect(exactSpan('failed')).toBe(true));
   });
 
-  it('renders the generic 409 verbatim and names none of its three collapsed causes', async () => {
+  it('names the actual cause when the 409 carries a code, and hedges nothing', async () => {
+    // The router now answers one fixed sentence per CAUSE, keyed on a literal `code`.
+    // An out-of-range index is not a mission-state problem, so nothing here may tell
+    // the operator to start or resume the mission.
+    mockRoutes({
+      '/api/missions': { status: 200, body: { missions: [MISSION()] } },
+      '/api/canvas': CANVAS,
+      '/api/missions/7/steps/2/finish': {
+        status: 409,
+        body: { error: "no such step index in this mission's plan", code: 'step_out_of_range' },
+      },
+    });
+    render(<MissionCanvasPanel />);
+    await openSteps();
+    fireEvent.click(screen.getByLabelText('done step 2 of mission 7'));
+
+    await waitFor(() => expect(
+      exactSpan("step #2 refused: no such step index in this mission's plan"),
+    ).toBe(true));
+    expect(screen.getByText('409')).toBeTruthy();
+    // the cause is on screen, so there is nothing left to hedge about
+    expect(hasText(/is not knowable here/)).toBe(false);
+    expect(hasText(/carries no `code`/)).toBe(false);
+    // and it must not repeat the advice the collapsed message used to give
+    expect(hasText(/start or resume it first/)).toBe(false);
+    expect(hasText(/budget \d+\/\d+ used/)).toBe(false);
+  });
+
+  it('still hedges for a 409 from an older backend that carries no code', async () => {
     mockRoutes({
       '/api/missions': { status: 200, body: { missions: [MISSION()] } },
       '/api/canvas': CANVAS,
@@ -206,10 +234,12 @@ describe('MissionCanvasPanel · refusals reach the screen as refusals', () => {
     await waitFor(() => expect(
       exactSpan('step #2 refused: operation not allowed in current mission state'),
     ).toBe(true));
-    expect(hasText(/does not disclose which/)).toBe(true);
-    // it must not assert a cause the router deliberately discarded
-    expect(hasText(/step index is out of range/)).toBe(false);
-    expect(hasText(/invalid step status:/)).toBe(false);
+    // no `code` in the body: the panel says so rather than guessing a cause
+    expect(hasText(/carries no `code`/)).toBe(true);
+    expect(hasText(/is not knowable here/)).toBe(true);
+    // it must not assert a cause it was never told
+    expect(hasText(/no such step index/)).toBe(false);
+    expect(hasText(/step status must be one of/)).toBe(false);
     expect(hasText(/budget \d+\/\d+ used/)).toBe(false);
   });
 

@@ -77,11 +77,28 @@ _TRANSITIONS: dict[MissionStatus, set[MissionStatus]] = {
 
 
 class MissionError(Exception):
-    """Illegal mission state transition or unknown mission/step."""
+    """Illegal mission state transition or unknown mission/step.
+
+    Carries a machine-readable `code`, a LITERAL chosen at the raise site. The message
+    interpolates ids and statuses and so can never reach an HTTP body (a user-traced
+    value must not flow to the response sink), which is exactly why every refusal used
+    to collapse into one fixed 409 string: the router had nothing else to key on. The
+    code gives it something — distinguishable causes with no request data in them.
+    """
+
+    #: fallback for a raise site that predates the code, or a subclass that sets none
+    code = "mission_error"
+
+    def __init__(self, message: str = "", *, code: str | None = None):
+        super().__init__(message)
+        if code:
+            self.code = code
 
 
 class BudgetExceeded(MissionError):
     """A step would push the mission past its step budget."""
+
+    code = "budget_exceeded"
 
 
 @dataclass
@@ -187,7 +204,7 @@ class MissionStore:
                max_steps: int = DEFAULT_MAX_STEPS, max_seconds: int = DEFAULT_MAX_SECONDS) -> Mission:
         title = (title or "").strip()
         if not title:
-            raise MissionError("mission title required")
+            raise MissionError("mission title required", code="title_required")
         steps = [
             {"idx": i, "title": str(s), "status": StepStatus.PENDING.value,
              "result": None, "started_at": None, "ended_at": None}
@@ -211,12 +228,12 @@ class MissionStore:
                     extra_sets: Optional[dict] = None) -> Mission:
         m = self.get(mission_id)
         if m is None:
-            raise MissionError(f"mission {mission_id} not found")
+            raise MissionError(f"mission {mission_id} not found", code="mission_not_found")
         cur = MissionStatus(m.status)
         new_status = MissionStatus(new_status)
         if new_status not in _TRANSITIONS.get(cur, set()):
             raise MissionError(
-                f"illegal transition {cur.value} → {new_status.value} (mission {mission_id})")
+                f"illegal transition {cur.value} → {new_status.value} (mission {mission_id})", code="illegal_transition")
         sets = ["status=?", "updated_at=?"]
         params: list = [new_status.value, _now()]
         for col, val in (extra_sets or {}).items():
@@ -260,15 +277,15 @@ class MissionStore:
         """
         m = self.get(mission_id)
         if m is None:
-            raise MissionError(f"mission {mission_id} not found")
+            raise MissionError(f"mission {mission_id} not found", code="mission_not_found")
         if MissionStatus(m.status) != MissionStatus.ACTIVE:
-            raise MissionError(f"mission {mission_id} not active (is {m.status})")
+            raise MissionError(f"mission {mission_id} not active (is {m.status})", code="mission_not_active")
         if idx < 0 or idx >= len(m.plan):
-            raise MissionError(f"step {idx} out of range for mission {mission_id}")
+            raise MissionError(f"step {idx} out of range for mission {mission_id}", code="step_out_of_range")
         try:
             step_status = StepStatus(status)
         except ValueError:
-            raise MissionError(f"invalid step status: {status}")
+            raise MissionError(f"invalid step status: {status}", code="invalid_step_status")
 
         plan = m.plan
         plan[idx] = {**plan[idx], "status": step_status.value, "result": result,
@@ -297,7 +314,7 @@ class MissionStore:
         directory — there is no way for ``name`` to escape the workspace.
         """
         if self.get(mission_id) is None:
-            raise MissionError(f"mission {mission_id} not found")
+            raise MissionError(f"mission {mission_id} not found", code="mission_not_found")
         safe = re.sub(r"[^A-Za-z0-9._-]", "_", name or "").strip("._") or "artifact"
         mission_dir = (self._artifact_root / str(mission_id))
         mission_dir.mkdir(parents=True, exist_ok=True)

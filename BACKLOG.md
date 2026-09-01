@@ -1005,6 +1005,42 @@ absorbed them, not as independently shipped work.
      list, so the payload carries no information about which channels actually hold messages.
   6. `agents/core/routers/missions.py:104-113` — `_transition` collapses three distinct `MissionError`
      causes into one 409 string.
+  **ALL SIX FIXED 2026-09-01 (PR #1007).** Each was reproduced against the real class first, given a
+  red test, then fixed, then red-proved by reverting the fix and watching the same test fail. Backend
+  suite 7,219 → **7,243** (+24), frontend Vitest 923 → **927**. Where a panel from PR #1000 had
+  *documented* the broken behaviour in its header or an on-screen note, that prose was re-pointed at the
+  corrected contract rather than deleted — a panel that keeps describing a fixed defect is the same
+  class of lie as one that hides it.
+  1. **marketplace purge** — `registry_key()` resolves the manifest's `# ` title (falling back to the
+     folder name) and is called BEFORE `rmtree`, which is what made the old lookup unresolvable; the
+     route now reads `is_registered()` on both sides of the call, so `"purged"` is an *observation*
+     instead of the request flag echoed back. `tests/test_marketplace_uninstall.py` (+5).
+  2. **codeintel index** — `_symbols_in_source` walks every statement body (`body`/`orelse`/`finalbody`/
+     `handlers`) carrying scope and class-ness down the recursion, so nested defs, closures and
+     classes-in-classes get dotted qualnames; `_in_virtualenv()` skips any directory holding a
+     `pyvenv.cfg` rather than matching a hardcoded `.venv` name, so `.venv312` and any other venv are
+     excluded by marker. `tests/test_codeintel.py` (+3).
+  3. **signal governance** — `submit_recommendations` collects per-recommendation failures, logs them at
+     WARNING with `exc_info`, and returns `"failed"` / `"failures"` with `"status": "partial"`; the
+     disabled early-return carries the same keys so a caller never has to branch on shape.
+     `tests/test_signal_governance.py` (+4).
+  4. **cognition auto-file** — the previously-empty else branch now warns once (module-level latch,
+     `reset_autofile_warning()` for tests) that the safety net is not running, naming the score and the
+     threshold. `tests/test_dra15_autofile_safety_net.py` (+5, new).
+  5. **channel inbox stats** — `stats()` adds `"active_channels"` (sorted, from real traffic) and
+     `"by_channel"` counts, keeping `"channels"` as the accept vocabulary it always was.
+     `tests/test_dra15_inbox_channel_truth.py` (+3, new).
+  6. **mission refusals** — the finding undercounted: `finish_step` collapsed **four** causes, not
+     three, and for two of them the fixed string was not vague but *wrong* — an out-of-range index and
+     an invalid step status are not mission-state problems, yet the body blamed mission state and the
+     HUD duly told the operator to "start or resume the mission", advice that cannot be followed.
+     `MissionError` now carries a literal `code` (`mission_not_found`, `mission_not_active`,
+     `illegal_transition`, `step_out_of_range`, `invalid_step_status`, `title_required`) and the router
+     maps it through `_REFUSAL_MESSAGES` to one fixed sentence per cause. The exception TEXT still never
+     reaches the body — it interpolates ids and statuses — so the code is the only way to tell the causes
+     apart without leaking request data. The panel names the cause when the 409 carries a code and
+     hedges only when it does not (an older backend).
+     `tests/test_dra15_mission_refusal_causes.py` (+4, new).
   **Remaining:** the rest of the register.
   **Update 2026-09-01 — one of the two "do not wire" clusters is REVERSED, deliberately and with
   reasons.** `/api/desktop/plan` + `/api/operator/plan` stand: they are agent-driven, and they have now

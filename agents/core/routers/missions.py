@@ -84,6 +84,20 @@ async def mission_get(mission_id: int):
     return nocache_json(payload)
 
 
+# Fixed, request-data-free sentences for each MissionError cause. Keyed on the literal
+# `code` the raise site sets (agents/core/autonomy/missions.py), never on the exception
+# text, which interpolates mission ids and step indices.
+_REFUSAL_MESSAGES = {
+    "mission_not_found": "mission not found",
+    "mission_not_active": "mission is not active — start or resume it first",
+    "illegal_transition": "operation not allowed in current mission state",
+    "step_out_of_range": "no such step index in this mission's plan",
+    "invalid_step_status": "step status must be one of: done, failed, skipped",
+    "title_required": "mission title required",
+    "mission_error": "operation not allowed in current mission state",
+}
+
+
 def _transition(mission_id: int, op: str, **kwargs):
     """Shared body for the state-machine endpoints: 404 unknown, 409 illegal/budget."""
     store = _store()
@@ -105,8 +119,19 @@ def _transition(mission_id: int, op: str, **kwargs):
             status_code=409)
     except MissionError as e:
         logger.debug("mission op=%s rejected: %s", op, log_safe(str(e)))
+        # One fixed sentence per CAUSE, keyed on the exception's literal `code`. The
+        # exception TEXT still never reaches the body — it interpolates ids and statuses —
+        # so this is the only way to tell these apart without leaking request data.
+        #
+        # It used to be a single string for all of them, and for two of the finish_step
+        # causes that string was not vague but wrong: an out-of-range index and an invalid
+        # status are not mission-state problems, yet the body blamed mission state and the
+        # HUD duly told the operator to start or resume the mission — advice that cannot be
+        # followed and does not address what actually went wrong.
+        code = getattr(e, "code", "mission_error")
         return JSONResponse(
-            {"error": "operation not allowed in current mission state"},
+            {"error": _REFUSAL_MESSAGES.get(code, _REFUSAL_MESSAGES["mission_error"]),
+             "code": code},
             status_code=409)
     return nocache_json({"ok": True, "mission": _mission_payload(store, m)})
 
