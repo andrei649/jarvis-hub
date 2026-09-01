@@ -397,6 +397,19 @@ _GENERATED_CLIENT_FILES = ("schema.gen.ts",)
 # only by their panel tests, and the exclusion is what made that visible. Both have real
 # computed-URL callers, so both are declared in COMPUTED_URL_CALLERS below rather than added
 # to the punch list — the hole was already in use, not merely reachable.
+# KNOWN HOLE, and it has already bitten once. `_has_caller` matches the route text
+# anywhere in a client file, so a path written in a COMMENT counts as a caller. During the
+# 2026-09-01 sprint a panel documented, in its header, why it REFUSED to wire
+# /api/context/compress — and that documentation alone was enough to make the entry look
+# called, so delisting it passed this gate while no UI existed. The entry was restored and
+# the comment reworded to avoid the literal.
+#
+# Until the matcher strips comments, the rule for anyone writing a panel is: NEVER spell a
+# route path in prose inside a client file unless the panel actually calls it. Put the
+# reasoning on the entry here instead, where it cannot be mistaken for a call. That is why
+# several entries below carry long justifications that would more naturally live next to
+# the code that refused them.
+
 _TEST_FILE_SUFFIXES = (".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")
 
 
@@ -506,10 +519,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # and the `operator_plan` ToolRPC tool (which is what actually consumes the router
     # today — the agent, not our UI). The HUD control is the deliberately-open half, so
     # this belongs on the punch list rather than in MACHINE_FACING.
-    "/api/agents/history",
-    "/api/arena/match/{match_id}",
-    "/api/canvas/clear",
-    "/api/context/compress",
     # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). Its docstring calls it a
     # "/model hot-swap", but models_llm.py:69-77 swaps nothing: it parses the command
     # string and returns `base` (a hardcoded module constant) plus `configured` (an
@@ -518,12 +527,22 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # branch — so that key has no consumer. Every byte a panel could render is the
     # operator's own input echoed back, a constant, or a flag for a backend that never
     # runs. A control here would report a hot-swap that cannot happen.
+    # STAYS UNWIRED ON PURPOSE (verified 2026-09-01, mission-canvas lane). Its entire
+    # request is `turns: list[dict]` — a transcript produced by a running session, never
+    # typed by a person, so a textarea asking the owner to paste JSON turns is a fake
+    # surface. No honest read can source it either: /sessions returns checkpoint metadata
+    # with no turns, /api/agents/history returns run rollups, and the only route yielding
+    # real turns (POST /sessions/resume) REASSIGNS orch.session_id — a destructive side
+    # effect disguised as a read. The route also persists nothing: it builds a throwaway
+    # ContextCompressor and returns. Production compression is in-process
+    # (orchestrator.get_context, orchestrator.py:2241) behind memory.context_compression,
+    # which no route exposes — so a button here could not enable, tune or influence it.
+    "/api/context/compress",
     "/api/llm/openrouter",
     "/api/media/generate",
     "/api/memory/consolidate",
     "/api/metrics/capabilities",
     # MissionsPanel surfaces mission-level transitions only; there is no per-step UI.
-    "/api/missions/{mission_id}/steps/{idx}/finish",
     # render_snippet inlines colour/title/greeting (agents/core/widget.py), so nothing
     # fetches the config read surface.
     "/api/worldview/status",
