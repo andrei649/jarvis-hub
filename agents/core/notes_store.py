@@ -47,6 +47,7 @@ Caveats (honest)
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import threading
@@ -194,6 +195,41 @@ class NotesStore:
         with self._lock:
             row = self._conn.execute("SELECT * FROM docs WHERE id=?", (doc_id,)).fetchone()
         return dict(row) if row else None
+
+    def list_docs(self, limit: int = 50) -> list[dict]:
+        """Document summaries, most recently updated first.
+
+        A *summary* on purpose — id/title/timestamps, never the block tree: the
+        listing is what a client uses to find a doc again, and rendering every
+        tree to draw a list would read the whole store per request.
+        """
+        limit = max(1, int(limit))
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, title, created_at, updated_at FROM docs "
+                "ORDER BY updated_at DESC, id ASC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_doc(self, doc_id: str) -> int:
+        """Delete a document and every block in it. Returns blocks deleted.
+
+        The blocks are deleted explicitly rather than left to ``ON DELETE
+        CASCADE`` — same reasoning as :meth:`delete_block`: the cascade depends
+        on the SQLite build honouring ``PRAGMA foreign_keys``, and a doc whose
+        rows outlive it would be invisible garbage.
+        """
+        with self._lock:
+            if self._conn.execute("SELECT 1 FROM docs WHERE id=?", (doc_id,)).fetchone() is None:
+                raise NotesStoreError(f"doc {doc_id!r} not found")
+            n = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM blocks WHERE doc_id=?", (doc_id,)
+            ).fetchone()["n"]
+            self._conn.execute("DELETE FROM blocks WHERE doc_id=?", (doc_id,))
+            self._conn.execute("DELETE FROM docs WHERE id=?", (doc_id,))
+            self._conn.commit()
+        return int(n)
 
     # ── blocks ────────────────────────────────────────────────────
     def add_block(
@@ -502,3 +538,36 @@ class NotesStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
+
+
+# ── process singleton (DRA-53: adoption behind /api/notes/docs) ───────
+# House pattern from agents/core/feedback_store.py: a lazily-opened, cached
+# instance so the router does not reopen SQLite per request. The path is
+# resolved at CALL time (not from the import-time DEFAULT_DB constant) so a
+# test process' JARVIS_HOME — assigned in tests/conftest.py before any Jarvis
+# import — is honoured.
+_docs_store: Optional[NotesStore] = None
+_docs_lock = threading.Lock()
+
+
+def get_note_docs_store() -> NotesStore:
+    """The shared block-tree store for the notes-docs routes."""
+    global _docs_store
+    with _docs_lock:
+        if _docs_store is None:
+            path = data_path("notes.db")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _docs_store = NotesStore(str(path)).initialize()
+        return _docs_store
+
+
+def reset_note_docs_store(store: Optional[NotesStore] = None) -> Optional[NotesStore]:
+    """Close and drop the cached store (tests). Optionally install *store*."""
+    global _docs_store
+    with _docs_lock:
+        if _docs_store is not None and _docs_store is not store:
+            # A store whose file already vanished must not break teardown.
+            with contextlib.suppress(Exception):
+                _docs_store.close()
+        _docs_store = store
+        return _docs_store

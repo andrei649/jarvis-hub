@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard, admin_guard
+from agents.core.routers._component import component_unavailable
 
 from agents.core.web_helpers import error_json, logger
 from agents.core import app_state
@@ -46,18 +47,29 @@ async def sandbox_status():
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    # DRA-08 — disclose whether the governed Tool-RPC pipeline mode is usable and
+    # exactly which tools a script may reach. Honest and additive: `available`
+    # false + an empty list means `tools: true` will be refused, not downgraded.
+    server = getattr(orch, "tool_rpc", None)
     return {
         "available": orch.sandbox._has_docker,
         "docker_image": orch.sandbox.docker_image,
         "timeout": orch.sandbox.timeout,
         # HF-6 — expose isolation posture so an active host-exec fallback is visible.
         **orch.sandbox.security_status(),
+        "tool_rpc": {
+            "available": server is not None,
+            "tools": server.tools() if server is not None else [],
+        },
     }
 
 
 class SandboxExecuteBody(BaseModel):
     code: str = Field("", max_length=32768)
     language: str = "python"
+    # DRA-08 — opt in to the governed Tool-RPC pipeline (Python only). Default
+    # False keeps the existing plain-sandbox path byte-identical for every caller.
+    tools: bool = False
 
 
 @router.post("/sandbox/execute", dependencies=[Depends(user_guard)])
@@ -69,6 +81,42 @@ async def sandbox_execute(body: SandboxExecuteBody):
         return JSONResponse({"error": "sandbox disabled — set DEV_MODE=1 to enable"}, status_code=403)
     code = body.code
     language = body.language
+    if body.tools:
+        # DRA-08 phase 3 — run the script through ToolRPCSandboxRuntime so
+        # `jarvis_tool_call(...)` inside it is serviced on the host by
+        # ToolRPCServer.handle(): allowlist, risk gating (gated tools return
+        # `approval_required` and enqueue an ask-tier task), Action-Kernel
+        # mediation and secret scrubbing all still apply.
+        if language != "python":
+            # The file-RPC shim is a Python shim; never silently downgrade a
+            # tools=true request into an ungoverned shell run.
+            return JSONResponse(
+                {"error": "tool_rpc_pipeline_python_only"}, status_code=422)
+        server = getattr(orch, "tool_rpc", None)
+        if server is None:
+            # No governed server → refuse. Falling back to execute_python would
+            # run the very same code ungoverned, which is what this wiring exists
+            # to prevent.
+            return component_unavailable("tool-rpc unavailable")
+        from agents.core.tool_rpc_runtime import ToolRPCSandboxRuntime
+        get_setting = getattr(orch, "get_setting", None)
+        try:
+            max_tool_calls = int(
+                get_setting("security.sandbox_max_tool_calls", 50) if get_setting else 50)
+        except (TypeError, ValueError):
+            max_tool_calls = 50
+        run = await ToolRPCSandboxRuntime(
+            server, orch.sandbox, max_tool_calls=max_tool_calls,
+        ).run_python(code)
+        return {
+            "stdout": run.result.stdout,
+            "stderr": run.result.stderr,
+            "exit_code": run.result.exit_code,
+            "duration": run.result.duration,
+            "success": run.result.success,
+            "tool_calls": run.tool_calls,
+            "timed_out": run.timed_out,
+        }
     if language == "python":
         result = await orch.sandbox.execute_python(code)
     else:
@@ -301,6 +349,10 @@ async def marketplace_uninstall(body: UninstallSkillBody):
                     if Path(getattr(s, "path", "")).resolve() == removed_dir]:
             with contextlib.suppress(Exception):
                 del orch.skills.skills[key]
+        # DRA-54 — drop the owner approval bound to that path immediately, so a
+        # re-created (byte-identical) tree at the same path cannot inherit it.
+        with contextlib.suppress(Exception):
+            orch.skills.revoke_approval(removed_dir)
     return {"ok": True, "uninstalled": body.name, "removed": removed, "purged": body.purge}
 
 

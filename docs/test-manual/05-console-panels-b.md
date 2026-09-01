@@ -104,7 +104,7 @@ FEEDBACK · NPS · SELF-IMPROVEMENT`. Every panel head carries a LIVE/SEED chip 
 
 ## 05.2 Build section (7 data panels)
 
-Console → **BUILD**: `WORKFLOWS · AI STEP BUILDER · SANDBOX · AGENT TEMPLATES · CAPABILITY ACQUISITION ·
+Console → **BUILD**: `WORKFLOWS · WORKFLOW BUILDER · SANDBOX · AGENT TEMPLATES · CAPABILITY ACQUISITION ·
 MEDIA DIRECTOR · MEDIA GALLERY · OPERATOR`. `OperatorPanel` is big enough to get its own group (05.3).
 
 | ID | Check | Do | Expect | Fail | Auto |
@@ -113,9 +113,10 @@ MEDIA DIRECTOR · MEDIA GALLERY · OPERATOR`. `OperatorPanel` is big enough to g
 | PNB-021 | WORKFLOWS run 🤖 | Click **run** on a pipeline | Line reads `running <id>…` then `ran <id> · ok`; `POST /api/workflows/run {pipeline_id,input:""}` (user) | MAJOR | ✅tests/test_workflows.py |
 | PNB-022 | WORKFLOWS "ok" is not proof of step success | Run a pipeline whose agent step must fail (stop the model backend first), then `curl -s "localhost:8080/api/workflows/traces?limit=5"` | Either the panel says `run failed`, **or** it says `ok` while the trace shows a failed step — the second case is a finding: the panel reads `result._ok` defaulted to `True` (`workflows.py:97`) | MAJOR | ✅tests/test_h10_2_workflow_trace.py |
 | PNB-023 | WORKFLOWS delete is admin-gated | Click **✕** on a *user-defined* pipeline | `DELETE /api/workflows/{pipeline_id}` (**admin**); the row disappears after the auto-↻. Deleting a built-in returns 404 and the row must remain | MAJOR | ✅tests/test_workflows.py |
-| PNB-024 | AI STEP BUILDER with a model 🤖 | Type `redact secrets from the draft before sending`, **generate step** | `generating…` then a JSON block containing a `guardrail`-shaped step; `POST /api/workflows/step/generate` (user) | MAJOR | ✅tests/test_workflow_builder.py |
-| PNB-025 | AI STEP BUILDER keyword fallback (no model) | Stop the model backend, repeat PNB-024 | Still returns a usable deterministic step (the documented keyword fallback), or a visible error — never a blank panel and never a fabricated "step generated" with no body | MAJOR | ✅tests/test_workflow_builder.py |
-| PNB-026 | AI STEP BUILDER empty guard | Clear the textarea, click **generate step** | Nothing is POSTed (`gap.tsx:1008` `if (!desc.trim()) return`) | COSMETIC | ❌ |
+| PNB-024 | WORKFLOW BUILDER · generate with a model 🤖 | Type `redact secrets from the draft before sending`, **generate step** | `generating…` then a JSON block containing a `guardrail`-shaped step; `POST /api/workflows/step/generate` (user) | MAJOR | ✅tests/test_workflow_builder.py |
+| PNB-025 | WORKFLOW BUILDER keyword fallback (no model) | Stop the model backend, repeat PNB-024 | Still returns a usable deterministic step (the documented keyword fallback), or a visible error — never a blank panel and never a fabricated "step generated" with no body | MAJOR | ✅tests/test_workflow_builder.py |
+| PNB-026 | WORKFLOW BUILDER empty guard | Clear the description textarea, click **generate step** | Nothing is POSTed (`if (!desc.trim()) return`) | COSMETIC | ✅frontend/src/test/workflow-builder-panel.test.tsx |
+| PNB-026b | WORKFLOW BUILDER round-trip (DRA-28) | **generate step** → **add step to draft** → set an id → **save workflow** | The draft steps textarea gains a real `WorkflowStep` (`id`/`agent_id`/`prompt_template`/`depends_on`); save POSTs `/api/workflows` (admin) and the new pipeline appears in `WORKFLOWS`; picking an existing pipeline from the selector loads it and saves with `PUT /api/workflows/{id}`; invalid steps JSON shows `steps must be a JSON array` and makes no request | MAJOR | ✅frontend/src/test/workflow-builder-panel.test.tsx |
 | PNB-027 | SANDBOX status + isolation banner | `curl -s localhost:8080/sandbox/status` | Sub names the backend (`docker`/`subprocess`); **if** `insecure_host_exec` is true a red `⚠ host-exec fallback active — code runs WITHOUT isolation` must be visible above the editor (`gap.tsx:1030`) | BLOCKER | ✅tests/test_sandbox_gating.py · ✅frontend/src/test/gap-panels.test.tsx |
 | PNB-028 | SANDBOX execute (DEV_MODE on) | `python`, `print("SBX-4471")`, **execute** | `running…` then a JSON block containing `SBX-4471`; `POST /sandbox/execute` (user) | MAJOR | ✅tests/test_sandbox_isolation.py |
 | PNB-029 | SANDBOX honest 403 (DEV_MODE off) | Restart without `DEV_MODE=1`, **execute** | Amber line `sandbox disabled — set DEV_MODE=1 on the server` (`gap.tsx:1026`). Never a fabricated stdout | BLOCKER | ✅tests/test_sandbox_gating.py |

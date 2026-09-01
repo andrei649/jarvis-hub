@@ -1,5 +1,11 @@
 # Nerva E8.1 — Hermes upstream refresh (2026-08-08)
 
+> **Point-in-time snapshot — superseded 2026-08-28.** Every observation below is true *as of
+> 2026-08-08* and is kept verbatim as a dated record. Upstream has since released `v2026.8.27`
+> (commit `5fc308a70719a83cccdbba4c0e39c23f5a8239d5`); see
+> [the v2026.8.27 delta port](../research/2026-08-28-hermes-v2026.8.27-delta-port.md). The
+> execution-provider pin deliberately remains `v2026.8.3` / `3c27eb6`.
+
 Status: `discovery / preflight evidence only` · dated 2026-08-08 · **read-only
 refresh**. This document re-grounds the authoritative Hermes Agent upstream as of
 today and checks the accepted E8.1a / E8.1c pin for drift. It is a refresh of, and

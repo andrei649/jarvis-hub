@@ -9,6 +9,11 @@ precondition check (CDX-12) — a "hardened" box started with an unkeyed audit
 chain and never knew. They now live here and run from the app lifespan too,
 so every entry point enforces the same posture. ``serve.py`` re-exports them.
 
+A third guard (H23.30 / DRA-07 / DRA-14) refuses to start when a *parse-critical*
+posture flag is set to a value no spelling recognizes — the boolean flags below and
+the ``JARVIS_TASK_MEDIATION`` mode enum. It runs first, before anything constructs a
+memory graph or a task queue.
+
 Residual (documented, not silently ignored): a bind host passed only as a raw
 uvicorn CLI flag (``--host 0.0.0.0`` without ``JARVIS_HOST``) is invisible to
 the app; the lifespan check covers the env-driven deployments (systemd/Docker
@@ -20,6 +25,15 @@ from __future__ import annotations
 import os
 
 _LOOPBACK_HOSTS = {"", "127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
+
+# Flags whose *unrecognized* spelling resolves to the UNSAFE direction. The AUD-14 rule
+# (``env_config.truthy``) sends junk to the flag's declared default, which is right
+# everywhere the default is the safe position. NERVA_PUBLIC_PROFILE is the inverse: it is a
+# default-off opt-in whose "on" position is the safe one, so ``NERVA_PUBLIC_PROFILE=pubic``
+# reads as *private* and a public demo box seeds the owner's family into a stranger's graph
+# (H23.30; tests/test_public_profile_seed_gate.py). A typo there must stop the boot rather
+# than resolve to the default.
+_PARSE_CRITICAL_BOOL_FLAGS = ("NERVA_PUBLIC_PROFILE",)
 
 
 def assert_safe_bind(host: str) -> None:
@@ -66,11 +80,50 @@ def assert_hardened_posture() -> None:
         )
 
 
+def assert_parseable_posture_flags() -> None:
+    """Fail-closed on a set-but-unparseable posture flag (H23.30 residual).
+
+    This does **not** change the AUD-14 parse: ``env_config`` stays the one parse home and
+    still never raises, so ``env_flag("NERVA_PUBLIC_PROFILE")`` keeps returning the declared
+    default for a typo. What changes is that the box no longer *starts* with that typo, so
+    the operator fixes the spelling instead of shipping the wrong posture silently. Unset,
+    empty and whitespace-only mean "unset", exactly as ``env_flag`` treats them.
+
+    The message names the variable and the accepted spellings, never the offending value —
+    ``env_config``'s module contract is that nothing here logs values, and a future entry in
+    ``_PARSE_CRITICAL_BOOL_FLAGS`` may well be sensitive.
+    """
+    from agents.core.env_config import env_flag_is_malformed
+
+    bad = [name for name in _PARSE_CRITICAL_BOOL_FLAGS if env_flag_is_malformed(name)]
+    if bad:
+        raise SystemExit(
+            "Refusing to start: unparseable value for " + ", ".join(bad) + ".\n"
+            "Use one of 1/true/yes/on or 0/false/no/off. An unrecognized spelling silently "
+            "falls back to the flag's default — for NERVA_PUBLIC_PROFILE that is the private "
+            "install, which seeds the owner's personal knowledge graph — so this fails closed "
+            "instead."
+        )
+    # Same rule, non-boolean flag: JARVIS_TASK_MEDIATION selects the B7 tamper-evidence
+    # posture (off|hold|enforce) and its default, `off`, is the UNPROTECTED position — so
+    # `JARVIS_TASK_MEDIATION=enfroce` must stop the boot, not quietly disable mediation.
+    from agents.core.autonomy.mediation_head_store import (
+        MALFORMED_MODE_MESSAGE,
+        task_mediation_mode_is_malformed,
+    )
+
+    if task_mediation_mode_is_malformed():
+        raise SystemExit(MALFORMED_MODE_MESSAGE)
+
+
 def enforce_boot_posture() -> None:
     """Run every boot guard from the app itself (called by the web lifespan).
 
     The bind host is read from ``JARVIS_HOST`` (the knob the deploy templates
     and ``serve.py`` use); see the module docstring for the raw-CLI residual.
     """
+    # First: a mistyped posture flag must be refused before anything constructs a
+    # MemoryManager or touches the graph.
+    assert_parseable_posture_flags()
     assert_safe_bind(os.environ.get("JARVIS_HOST", "127.0.0.1"))
     assert_hardened_posture()

@@ -10,6 +10,7 @@ import httpx
 
 from .auth_rotation import is_rotatable_status
 from .base import LLMBackend, _emit, cloud_cap
+from .egress import llm_async_client
 from .model_config import DEFAULT_CLAUDE_MODEL
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
@@ -24,7 +25,7 @@ class ClaudeBackend(LLMBackend):
         # from the pool and a rotatable error (401/403/429) fails over to the next
         # healthy key. None → single-key behavior, unchanged.
         self.auth_pool = auth_pool
-        self.client = httpx.AsyncClient(timeout=120.0)
+        self.client = llm_async_client("anthropic", timeout=120.0)
 
     def _active_key(self) -> str:
         if self.auth_pool is not None:

@@ -193,8 +193,9 @@ post-action verification and rollback where possible.*
   kill-switch, audit chain; write-back + connector builders (12 cataloged SaaS actions in
   `writeback.py` + `writeback_connectors.py`); ToolRPC
   (`tool_rpc.py`) + the model-directed tool loop (`agent_runtime.py`, default-off); execution
-  environments local/docker (the execution-target layer is a policy plane that never executes —
-  no transport exists, SSH included);
+  environments local/docker (the execution-target layer executes **docker** through
+  `GovernedTargetRunner`, which authorizes against the policy plane first — #980; `local` and
+  `ssh` still refuse honestly, and no SSH transport exists);
   sandbox with output caps; the unified Action API (O27 — `perform(capability, params)` + the
   Capability Registry); the action-hierarchy router + Playwright/Windows desktop drivers as
   owner-gated host seams (O28).
@@ -598,8 +599,11 @@ What changed (all in this doc; no other file touched) and the evidence for each:
     package lazily (`cameras/onvif.py:331`; zero declarations in requirements*.txt /
     pyproject.toml); the camera VLM leg is a default-off client for an owner-hosted
     OpenAI-vision server (`cameras/runtime.py:364–376`, `llm/vlm.py:10–12/:28`); the
-    execution-target layer never executes (`environments/targets.py:3–4/:343` — no importer of
-    `default_targets`/`TargetRegistry` outside the package; no paramiko/asyncssh anywhere);
+    execution-target layer executes docker only, via `GovernedTargetRunner`
+    (`environments/execution.py:32–33`, constructed in production at
+    `autonomy_coordinator.py:461–465`) — #980 closed the "never executes" half of this claim;
+    `local`/`ssh` return explicit not-implemented refusals and there is still no
+    paramiko/asyncssh anywhere, so the no-SSH-transport half stands;
     reality-harness promotion is in-process and boot-ephemeral
     (`observability/capability_registry.py:55/:68`, `reality_harness.py:19–23`;
     `.github/workflows/reality.yml` uploads no artifact); README's voice engines ship in no

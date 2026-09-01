@@ -5,7 +5,7 @@
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v1.0.0** · backend **6,957** · frontend **662** · mobile **110** · **431** routes · **18** active agents · open owner gates: **A1, A3, A5, A6, A9** · commit `750eedd9456d`.
+> Generated project status: **v1.0.0** · backend **7,211** · frontend **734** · mobile **110** · **442** routes · **18** active agents · open owner gates: **A1, A3, A5, A6, A9** · commit `5a40a129068f`.
 <!-- project-status:go-live-header:end -->
 >
 > **2026-07-11 — the 1.0 gate expanded (owner decision):** this plan's launch checklist remains the
@@ -97,7 +97,7 @@
 - **Romanian PII detection** — CNP (checksum-validated), IBAN (ISO 7064 mod-97), phone (`07…` / `+407…`)
 - **SecuredShell Executor** — allowlist + no-shell (`create_subprocess_exec`) + bounded timeout + audit (`RemediationRunner`)
 - **Circuit breaker + retry** — per-plugin, `@resilient_call` decorator, tri-state (closed/open/half-open), resilience metrics in HUD
-- **MCP Client** — stdio/SSE, admin-wired, pluggable external tools
+- **MCP Client** — stdio only (remote HTTP+SSE / Streamable HTTP are refused with 400 `unsupported_transport`), admin-wired, pluggable external tools
 - **OAuth 2.0 + PKCE** — Google Calendar, Gmail, Spotify; token refresh + state + Fernet
 
 ---

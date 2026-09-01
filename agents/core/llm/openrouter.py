@@ -12,9 +12,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-import httpx
-
 from .base import LLMBackend, cloud_cap, strip_thinking
+from .egress import llm_async_client
 
 logger = logging.getLogger("jarvis.llm.openrouter")
 
@@ -27,7 +26,7 @@ class OpenRouterBackend(LLMBackend):
     def __init__(self, api_key: str = "", base_url: str = OPENROUTER_BASE, client=None) -> None:
         self.api_key = api_key
         self.base_url = base_url
-        self.client = client or httpx.AsyncClient(base_url=base_url, timeout=120.0)
+        self.client = client or llm_async_client("openrouter", base_url=base_url, timeout=120.0)
 
     async def aclose(self):
         try:

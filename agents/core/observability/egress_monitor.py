@@ -1,4 +1,4 @@
-"""egress_monitor.py — H23.16 network monitor: record every plugin outbound attempt.
+"""egress_monitor.py — H23.16 network monitor: record every outbound attempt.
 
 The plugin egress choke point (`core/http_client.py`) calls :func:`record` for every
 HTTP request — *allowed and blocked alike* — so we have a single, truthful ledger of
@@ -6,6 +6,12 @@ what actually left (or tried to leave) the machine, per plugin and per host. The
 network panel reads :func:`snapshot` to **prove** that LOCAL_ONLY / no-network plugins
 make zero outbound calls (and to surface any blocked attempt), which is the whole point
 of the local-first kernel mediation story.
+
+DRA-23: the ledger covers **model-backend egress** too. `core/llm/egress.py` records
+every LLM request under an ``llm:<provider>`` row, so a turn served by a cloud model
+shows up here instead of leaving invisibly; ``model_egress_total`` is that traffic's
+share of ``external_egress_total``. Those rows have no plugin manifest, so
+:meth:`_local_only_violations` skips them — a cloud call is honest egress, not a breach.
 
 Design mirrors ``http_metrics.py``: a single in-process, thread-safe instance, no
 external dependency. State is **in-memory** — monotonic per-plugin counters plus a
@@ -95,7 +101,8 @@ class EgressMonitor:
         """Return per-plugin summary + recent events, optionally filtered to one plugin.
 
         ``recent`` is newest-first and capped at *limit*. ``external_egress_total`` is the
-        count of allowed calls that left the machine; ``local_only_violations`` lists the
+        count of allowed calls that left the machine, of which ``model_egress_total`` is
+        the ``llm:``-prefixed (model-backend) share; ``local_only_violations`` lists the
         plugins that *did* make an external call despite a local-only manifest (should
         always be empty — the gate blocks them — which is exactly what we want to show).
         """
@@ -116,11 +123,17 @@ class EgressMonitor:
                 if plugin is None or name == plugin
             }
         external_total = sum(p["external"] for p in plugins.values())
+        # DRA-23: the model-backend share of the external total, so a surface can say
+        # "local-first" about plugin traffic without implying it about the models.
+        model_total = sum(
+            p["external"] for name, p in plugins.items() if name.startswith("llm:")
+        )
         violations = self._local_only_violations(plugins)
         return {
             "plugins": plugins,
             "recent": recent,
             "external_egress_total": external_total,
+            "model_egress_total": model_total,
             "local_only_violations": violations,
             "clean": not violations,
             "events_kept": len(recent),

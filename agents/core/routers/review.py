@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Request, Query, Depends
 from agents.core.routers._deps import user_guard
+from agents.core.routers._component import require_component
 from fastapi.responses import JSONResponse
 
 from agents.core.web_helpers import nocache_json, error_json, logger
@@ -33,10 +34,9 @@ async def review_queue_stats():
 @router.post("/api/review/flag", dependencies=[Depends(user_guard)])
 async def review_queue_flag(req: Request):
     """Manually flag a trace for review. Body: {trace, reason?}."""
-    orch = get_orch()
-    q = getattr(orch, "review_queue", None) if orch else None
-    if q is None:
-        return JSONResponse({"error": "review queue not available"}, status_code=503)
+    _, q, err = require_component("review_queue", "review queue not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -50,10 +50,9 @@ async def review_queue_flag(req: Request):
 @router.post("/api/review/{item_id}/vote", dependencies=[Depends(user_guard)])
 async def review_queue_vote(item_id: str, req: Request):
     """Record a thumbs up/down + rubric for a queued item."""
-    orch = get_orch()
-    q = getattr(orch, "review_queue", None) if orch else None
-    if q is None:
-        return JSONResponse({"error": "review queue not available"}, status_code=503)
+    _, q, err = require_component("review_queue", "review queue not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -71,10 +70,9 @@ async def review_queue_vote(item_id: str, req: Request):
 @router.post("/api/review/{item_id}/dataset", dependencies=[Depends(user_guard)])
 async def review_queue_to_dataset(item_id: str, req: Request):
     """Promote a reviewed item into an eval dataset (H9.3b)."""
-    orch = get_orch()
-    q = getattr(orch, "review_queue", None) if orch else None
-    if q is None:
-        return JSONResponse({"error": "review queue not available"}, status_code=503)
+    _, q, err = require_component("review_queue", "review queue not available")
+    if err is not None:
+        return err
     item = q.get(item_id)
     if item is None:
         return JSONResponse({"error": "not found"}, status_code=404)

@@ -1,6 +1,9 @@
 """
 client.py — Model Context Protocol (MCP) client.
-Connects to MCP servers via stdio or SSE transport.
+Connects to MCP servers over the stdio transport. Remote transports (the
+deprecated HTTP+SSE one, and its Streamable HTTP successor) are NOT implemented
+— see BACKLOG DRA-25. The admin API rejects any non-stdio config, and the
+tool-call contract below denies one that was persisted before that check existed.
 """
 
 import asyncio
@@ -49,7 +52,7 @@ def _mcp_tool_call_contract_template() -> ContractTemplate:
         description="Outbound MCP client tool-call gate.",
         constraints=(
             field_present("server", "tool", "transport"),
-            one_of("transport", {"stdio", "sse"}),
+            one_of("transport", {"stdio"}),
             predicate("tool_call_names_safe", _tool_call_names_safe, reason="invalid_name"),
             predicate("args_keys_safe", _args_keys_safe, reason="bad_args_keys"),
         ),
@@ -116,8 +119,14 @@ class MCPServer:
             # No tools registered → the handshake failed; report failure so the
             # caller stops treating a dead server as available.
             return bool(self.tools)
-        elif self.transport == "sse" and self.url:
-            logger.info(f"MCP SSE transport not yet implemented: {self.url}")
+        elif self.transport != "stdio":
+            # The single seam where a remote transport would be implemented. Until
+            # then, say so loudly rather than returning a quiet False that reads
+            # like a connection failure.
+            logger.warning(
+                "MCP transport %r is not implemented; server %s stays disconnected",
+                self.transport, self.name,
+            )
         return False
 
     def _command_argv(self) -> list[str] | None:

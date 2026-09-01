@@ -16,6 +16,7 @@ import httpx
 
 from .auth_rotation import AuthLease, is_rotatable_status
 from .base import LLMBackend, _emit, cloud_cap
+from .egress import llm_async_client
 from .gemini_context import CachedContentRejected, GeminiRequestBinding
 from .provider_errors import GEMINI_DEGRADED_REPLY, log_provider_failure
 
@@ -30,7 +31,7 @@ class GeminiBackend(LLMBackend):
         self.api_key = api_key
         self.model = model
         self.auth_pool = auth_pool
-        self.client = httpx.AsyncClient(timeout=120.0)
+        self.client = llm_async_client("gemini", timeout=120.0)
         self._request_binding: ContextVar[GeminiRequestBinding | None] = ContextVar(
             f"gemini_request_binding_{id(self)}",
             default=None,

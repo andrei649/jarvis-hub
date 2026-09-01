@@ -7,12 +7,23 @@ This document contains no provider contract, adapter, dependency, manifest
 enrolment or capability claim.
 It does not assert that any Hermes interface has been tested against Nerva.
 
-> **Refresh notice (2026-08-08):** the upstream grounding in this accepted
-> discovery was re-verified on 2026-08-08 against primary sources, read-only.
-> The pinned release `v2026.8.3` / commit `3c27eb6` is still the latest release
-> and remains the pin; nothing in the refresh changes this discovery or its
-> classification. See
+> **Refresh notice (2026-08-08), superseded on upstream drift:** the upstream grounding in this
+> accepted discovery was re-verified on 2026-08-08 against primary sources, read-only. *As of that
+> date* the pinned release `v2026.8.3` / commit `3c27eb6` was the latest release. See
 > [`EXECUTION_PROVIDER_E8_1_REFRESH_2026-08-08.md`](EXECUTION_PROVIDER_E8_1_REFRESH_2026-08-08.md).
+>
+> **Pin drift (2026-08-28):** upstream has since published `v2026.8.27` (commit
+> `5fc308a70719a83cccdbba4c0e39c23f5a8239d5`), recorded in
+> `agents/core/skills/hermes_pin_v1.json` and analysed in
+> [the v2026.8.27 delta port](../research/2026-08-28-hermes-v2026.8.27-delta-port.md).
+> The E8.1a / E8.1c **execution-provider pin deliberately stays at `v2026.8.3` / `3c27eb6`**: the
+> preflight snapshot is an immutable observation of a specific revision, and moving it would
+> invalidate the evidence rather than update it. The skills pin is a *separate*, non-dependency
+> exact-fetch inventory — see
+> [`EXECUTION_PROVIDER_E8_1C_PREFLIGHT.md`](EXECUTION_PROVIDER_E8_1C_PREFLIGHT.md) "Remaining
+> blockers": *"The existing agents/core/skills/hermes_pin_v1.json is a prior non-executable
+> exact-fetch evidence inventory and is intentionally not classified as dependency or updater
+> enrolment."* Nothing here changes this discovery or its classification.
 
 ## Scope and method
 

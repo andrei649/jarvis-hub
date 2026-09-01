@@ -290,7 +290,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | `agents/core/sandbox.py` | Docker + subprocess code execution | `Sandbox.execute_python`, `execute_shell` |
 | `agents/core/plugin_gate.py` | Per-agent plugin permission | `PermissionGate.check_call` |
 | `agents/core/learning/loop.py` | Agent health + promotion loop | `LearningLoop.record`, `rank_candidates`, `suggest_promotions`, `is_unhealthy` |
-| `agents/core/mcp/client.py` | MCP client (stdio/SSE) | `MCPManager`, `MCPServer.connect`, `MCPTool` |
+| `agents/core/mcp/client.py` | MCP client (**stdio only**; remote transports unimplemented and refused) | `MCPManager`, `MCPServer.connect`, `MCPTool` |
 | `agents/core/mcp/server.py`, `route_tools.py` | MCP server RPC: explicit state-effect inventory (including conversation persistence); hidden direct skill commands refused; route writes require identity + contract + a durable audit preflight + an enabled, bound Action Kernel GRANT | `JarvisMCPServer.tool_inventory`, `MutatingRouteTool.call` |
 | `agents/core/workflows/` | Multi-agent workflow engine | `WorkflowEngine` (engine.py), `WorkflowRegistry` (registry.py), `Pipeline`, `WorkflowStep` (pipeline.py), storage (storage.py) |
 | `agents/core/observability/tracer.py` | Request tracing | `Tracer`, trace context |
@@ -703,7 +703,7 @@ agents/
     plugins/                      All third-party integrations
     skills/                       Skill loader + importer + marketplace
     voice/                        Wake word + STT + TTS pipeline
-    mcp/                          MCP client (stdio/SSE)
+    mcp/                          MCP client (stdio only) + MCP server
     learning/                     Agent health tracking + promotions
     workflows/                    Multi-agent workflow engine
     observability/                Request tracing + LLM eval harness + runtime run-log

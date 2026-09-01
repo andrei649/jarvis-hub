@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
 
 from agents.core.routers._deps import user_guard
+from agents.core.routers._component import require_component
 
 from agents.core.web_helpers import nocache_json, logsafe
 from agents.core.app_state import get_orch
@@ -25,10 +26,9 @@ async def rooms_list():
 
 @router.post("/api/rooms", dependencies=[Depends(user_guard)])
 async def rooms_create(req: Request):
-    orch = get_orch()
-    store = getattr(orch, "rooms", None) if orch else None
-    if store is None:
-        return JSONResponse({"error": "rooms not available"}, status_code=503)
+    _, store, err = require_component("rooms", "rooms not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -71,10 +71,9 @@ async def rooms_history(room_id: str, limit: int = Query(50, ge=1, le=200)):
 @router.post("/api/rooms/{room_id}/message", dependencies=[Depends(user_guard)])
 async def rooms_message(room_id: str, req: Request):
     """Post a message to a room; @mention routes to a specific agent."""
-    orch = get_orch()
-    store = getattr(orch, "rooms", None) if orch else None
-    if store is None or not orch:
-        return JSONResponse({"error": "rooms not available"}, status_code=503)
+    orch, store, err = require_component("rooms", "rooms not available")
+    if err is not None:
+        return err
     room = store.get(room_id)
     if room is None:
         return JSONResponse({"error": "not found"}, status_code=404)

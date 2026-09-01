@@ -24,6 +24,7 @@ from agents.core.automation_contracts import (
     predicate,
 )
 from agents.core.paths import data_path
+from agents.core.persistence import atomic_write_json
 
 from ..http_client import PluginHTTPClient
 
@@ -539,7 +540,7 @@ class OracleBridgePlugin:
             "conflicts": [asdict(c) for c in self.conflicts],
         }
         try:
-            SESSION_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            atomic_write_json(SESSION_FILE, data)
         except Exception as e:
             logger.warning(f"Failed to save Oracle state: {e}")
 

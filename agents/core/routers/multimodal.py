@@ -3,6 +3,7 @@
 Extracted from the `agents/web.py` god-object. Covers the user-guarded surface:
 - `GET  /api/vlm/status`     — whether a local VLM endpoint is configured
 - `POST /api/vlm/describe`   — send image(s)+prompt to the local VLM
+- `POST /api/screen/reflex`  — screenshot bytes → strict-LOCAL VLM → answer/grounding
 - `POST /api/desktop/preview`— dry-run a desktop step plan
 - `GET  /api/media`          — supported media kinds + wired backends
 - `POST /api/media/generate` — governed media generation
@@ -22,7 +23,7 @@ from pydantic import BaseModel, Field, SkipValidation
 from agents.core.app_state import get_orch
 from agents.core.env_config import env_flag
 from agents.core.routers._deps import user_guard
-from agents.core.web_helpers import nocache_json
+from agents.core.web_helpers import error_json, nocache_json
 
 router = APIRouter(tags=["multimodal"])
 
@@ -90,6 +91,71 @@ async def vlm_describe(body: VLMDescribeBody):
         # paths — request-supplied images can't read host files.
         out = await vlm.generate_vision(model, body.prompt, images=body.images)
         return nocache_json({"ok": True, "model": model, "response": out})
+    finally:
+        await vlm.aclose()
+
+
+class ScreenReflexBody(BaseModel):
+    """Bytes-only contract: base64 image data, never a filesystem path."""
+
+    image_base64: str = Field(..., min_length=1)
+    question: str = Field("", max_length=4000)
+    mode: str = Field("answer", max_length=16)  # "answer" | "ground"
+
+
+@router.post("/api/screen/reflex", dependencies=[Depends(user_guard)])
+async def screen_reflex(body: ScreenReflexBody):
+    """0.65 — one screenshot → local VLM → answer (or UI grounding).
+
+    `agents/core/screen_reflex.py` is the orchestration core; this is its only
+    production caller. The image is held in memory for the duration of the
+    request and handed to nothing but the resolved VLM.
+
+    NON-NEGOTIABLE: a non-loopback VLM is refused (503) BEFORE any generation is
+    attempted. A screen capture can hold anything on the owner's display, so the
+    bytes must never reach a remote host — the `is_local` check is a gate here,
+    not a label. The owner-gated halves of the reflex (the OS-level screen grab
+    and the 0.64 global hotkey that fires it) stay on the host; this route takes
+    the bytes the console can legitimately produce.
+    """
+    import base64
+
+    from agents.core.llm.vlm import VLMBackend, VLMNotConfigured, resolve_vlm_config
+    from agents.core.screen_reflex import ScreenReflex
+
+    try:
+        image = base64.b64decode(body.image_base64, validate=True)
+    except Exception as exc:  # CWE-209: log the detail, return a static message
+        return error_json(exc, 400, "image_base64 is not valid base64")
+    try:
+        config = resolve_vlm_config()
+    except VLMNotConfigured as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "generated": False,
+                "reason": f"VLM not configured ({exc.reason})",
+            },
+            status_code=503,
+        )
+    if not config.is_local:
+        return JSONResponse(
+            {
+                "ok": False,
+                "generated": False,
+                "reason": (
+                    "screen reflex refuses a non-loopback VLM "
+                    "(screen bytes must never leave the host)"
+                ),
+            },
+            status_code=503,
+        )
+    vlm = VLMBackend(base_url=config.base_url, api_key=config.api_key)
+    try:
+        reflex = ScreenReflex.from_backend(vlm, model=config.model)
+        # observe() is already honest (ok/generated/reason, elements only in
+        # ground mode) — returned verbatim, with no fallback description path.
+        return nocache_json(await reflex.observe(image, body.question, mode=body.mode))
     finally:
         await vlm.aclose()
 

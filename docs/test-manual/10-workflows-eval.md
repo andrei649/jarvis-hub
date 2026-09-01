@@ -59,7 +59,7 @@ Run this group first; it establishes that every route in scope exists and answer
 | WFL-013 | Self-improvement rollup (admin) | `curl -s localhost:8080/api/self-improvement/status -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN"` | `{available:true, errors, observer, acquisition, ambient, tech_scout}`; each sub-block reports `enabled:false` honestly on a default box | MAJOR | ✅tests/test_self_improvement_router.py |
 | WFL-014 | Feedback summary (admin) | `curl -s localhost:8080/api/feedback/summary -H "X-Admin-Token: …"` | NPS + per-kind counts; zeros on a clean box | MINOR | ✅tests/test_feedback_widget.py |
 | WFL-015 | Legacy builder is reachable 👁 | Open `http://127.0.0.1:8080/v1` → topbar **⚙** → **Panels** → toggle **Workflows** (`agents/web/static/console.js:95`) | The `◆ Workflow Builder` panel appears with a `Load:` selector listing the three built-ins, `— select a workflow —` selected, and an empty canvas reading **"No steps yet — add steps below"** (`static/workflows.js:516,528,561`) | MAJOR | ❌ |
-| WFL-016 | v2 Console Build group 👁 | Open `/` → bottom-right **▦ CONSOLE** (or press `` ` ``) → **BUILD** section | Cards in order: `WORKFLOWS`, `AI STEP BUILDER`, `SANDBOX`, `AGENT TEMPLATES`, `CAPABILITY ACQUISITION`, then media/operator cards (`frontend/src/gap.tsx:2851`) | MAJOR | ⚠️frontend/src/test/workflows-panel.test.tsx |
+| WFL-016 | v2 Console Build group 👁 | Open `/` → bottom-right **▦ CONSOLE** (or press `` ` ``) → **BUILD** section | Cards in order: `WORKFLOWS`, `WORKFLOW BUILDER`, `SANDBOX`, `AGENT TEMPLATES`, `CAPABILITY ACQUISITION`, then media/operator cards (`frontend/src/gap.tsx:2851`) | MAJOR | ⚠️frontend/src/test/workflows-panel.test.tsx |
 | WFL-017 | v2 Console Observe group 👁 | Same overlay → **OBSERVE** section | Cards: `EVAL DATASETS`, `REVIEW QUEUE`, `MODEL ARENA`, `ANSWER QUALITY`, `APM`, plus onboarding/model-info/feedback/self-improvement (`gap.tsx:2850`) | MAJOR | ❌ |
 
 ---
@@ -271,7 +271,7 @@ it once; every case below then runs the same pipeline with a different input.
 | ID | Check | Do | Expect | Fail | Auto |
 |----|-------|----|--------|------|------|
 | WFL-050 | Empty description | `-d '{"description":""}'` | `{"kind":"agent","agent":<first roster agent>,"prompt":"{_input}","source":"heuristic"}` (`ai_builder.py:114-116`) | MINOR | ✅tests/test_ai_builder_h10_7.py::test_empty_description_defaults_to_agent |
-| WFL-051 | v2 panel round-trip 👁 | Console → BUILD → `AI STEP BUILDER`, paste `redact secrets`, click **generate step** | The JSON block renders the step incl. `"source"`; the caption reads `description → validated WorkflowStep config (H10.7) · paste into the workflow builder` (`gap.tsx:1013`) | MINOR | ❌ |
+| WFL-051 | v2 panel round-trip 👁 | Console → BUILD → `WORKFLOW BUILDER`, paste `redact secrets`, click **generate step**, then **add step to draft** | The JSON block renders the step incl. `"source"`, and the draft steps textarea gains the mapped `WorkflowStep`; the caption reads `generate → add to draft → save (admin)` | MINOR | ✅frontend/src/test/workflow-builder-panel.test.tsx |
 | WFL-052 | The generated step is actually usable | Take the JSON from WFL-051, wrap it into a `POST /api/workflows` steps array (adding `id`, `agent_id`, `prompt_template`) and run it | Saves 200 and runs. **Note the friction**: the builder returns `agent`/`prompt`/`transform` keys while the pipeline schema wants `agent_id`/`prompt_template`/`transform:{op:…}` — the two shapes do not match, so "paste into the workflow builder" is manual translation | MAJOR | ❌ |
 
 ---

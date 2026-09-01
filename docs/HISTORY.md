@@ -180,7 +180,7 @@ are verifiable only on a real device, not in headless CI.
 | H4.4 Ultron Security Monitoring | 8 | „status securitate?" → devices, ports, threats |
 | H4.5 Steve System Monitor | 8 | „cum e sistemul?" → metrics + alerts |
 | H4.6 Oracle n8n Workflow Designer | 5 | „creează workflow vreme" → creat |
-| H4.7 MCP Client real (stdio/SSE) + admin-wiring | 8 | Server adăugat din admin → disponibil ca plugin |
+| H4.7 MCP Client real (stdio; the SSE half was never implemented — see DRA-25) + admin-wiring | 8 | Server adăugat din admin → disponibil ca plugin |
 | H4.8 Sandbox Docker | 5 | „rulează Python" → container, output |
 | H4.9 Guardrails (REDACT/BLOCK) | 5 | Prompt injection → blocat; PII → redactat |
 | H4.10 Admin Charts & Audit | 8 | Admin arată ultimele 100 interacțiuni, latență |

@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Request, Depends
 from agents.core.routers._deps import user_guard
+from agents.core.routers._component import require_component
 from fastapi.responses import JSONResponse
 
 from agents.core.web_helpers import nocache_json, error_json
@@ -15,10 +16,9 @@ router = APIRouter(tags=["arena"])
 async def arena_run(req: Request):
     """Create a blind match. Body: {query, candidates:{model:response}} or
     {query, agents:[id,...]} to run the query against those agents live."""
-    orch = get_orch()
-    arena = getattr(orch, "arena", None) if orch else None
-    if arena is None:
-        return JSONResponse({"error": "arena not available"}, status_code=503)
+    orch, arena, err = require_component("arena", "arena not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -46,10 +46,9 @@ async def arena_run(req: Request):
 @router.post("/api/arena/vote", dependencies=[Depends(user_guard)])
 async def arena_vote(req: Request):
     """Vote for a label; reveals the mapping and updates ELO/win-rate."""
-    orch = get_orch()
-    arena = getattr(orch, "arena", None) if orch else None
-    if arena is None:
-        return JSONResponse({"error": "arena not available"}, status_code=503)
+    _, arena, err = require_component("arena", "arena not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -68,10 +67,9 @@ async def arena_vote(req: Request):
 
 @router.get("/api/arena/match/{match_id}", dependencies=[Depends(user_guard)])
 async def arena_match(match_id: str):
-    orch = get_orch()
-    arena = getattr(orch, "arena", None) if orch else None
-    if arena is None:
-        return JSONResponse({"error": "arena not available"}, status_code=503)
+    _, arena, err = require_component("arena", "arena not available")
+    if err is not None:
+        return err
     m = arena.get_match(match_id)
     if m is None:
         return JSONResponse({"error": "not found"}, status_code=404)

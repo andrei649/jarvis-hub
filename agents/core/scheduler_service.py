@@ -79,7 +79,8 @@ class SchedulerService:
         """H7.11 — periodically propose agent promotions to the decision inbox.
 
         Cadence from config (autonomy.learning_loop_interval_hours, default 168h =
-        weekly). Each run proposes gated, reversible promotions via the queue.
+        weekly). Each run proposes gated, reversible promotions via the queue, and
+        (DRA-41) gated prompt optimizations from the same learning-loop evidence.
         """
         sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
         if sched is None:
@@ -94,7 +95,12 @@ class SchedulerService:
         try:
             sched.add_job(self._orch._run_learning_loop, "interval", hours=hours,
                           id="learning-loop-promotions", replace_existing=True)
-            logger.info("Scheduled learning-loop promotions every %sh", hours)
+            # DRA-41 — the H20.4 self-evolution twin: same cadence, same inbox,
+            # nothing self-applies. This is the unattended production caller the
+            # trajectory/prompt-optimization mechanism never had.
+            sched.add_job(self._orch._run_prompt_evolution, "interval", hours=hours,
+                          id="learning-loop-prompt-evolution", replace_existing=True)
+            logger.info("Scheduled learning-loop promotions + prompt evolution every %sh", hours)
         except Exception as e:
             logger.warning(f"Failed to schedule learning loop: {e}")
 

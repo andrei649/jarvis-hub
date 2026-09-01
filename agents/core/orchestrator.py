@@ -407,12 +407,23 @@ class Orchestrator:
         self._settings_watcher_task: Optional[asyncio.Task] = None
         # ── Autonomy / Proactive Cortex (H6.1–H6.6) ──
         from .autonomy.mediation import DetachedHMACSigner
+        from .autonomy.mediation_head_store import (
+            make_task_mediation_anchor,
+            resolve_task_mediation_mode,
+        )
 
         _task_mediation_signer = DetachedHMACSigner(
             getattr(getattr(self, "intent_log", None), "sign_detached", None)
         )
+        # B7 evidence, shipped dark: JARVIS_TASK_MEDIATION is unset by default →
+        # mode "off" → classification short-circuits and behaviour is unchanged.
+        # The durable head anchor is wired regardless, because enforce/hold fail
+        # closed without it (the null anchor reads None and initialize() marks
+        # integrity broken), which made the mode unreachable in production.
         self.autonomy_queue = TaskQueue(
+            mediation_mode=resolve_task_mediation_mode(),
             mediation_signer=_task_mediation_signer,
+            mediation_head_anchor=make_task_mediation_anchor(),
             mediation_scope="*",
             mediation_policy_revision="nerva.action.v1",
         )
@@ -989,6 +1000,15 @@ class Orchestrator:
         from .learning.scheduler import propose_promotions
         return propose_promotions(self.learning, self.autonomy_queue, list(self.agents.keys()))
 
+    async def _run_prompt_evolution(self) -> list[dict]:
+        """Propose prompt optimizations into the decision inbox (gated, DRA-41).
+
+        The H20.4 self-evolution twin of `_run_learning_loop`: nothing self-
+        applies — approval routes the owner to the prompt-VC commit surface.
+        """
+        from .learning.evolution import propose_prompt_optimizations
+        return await propose_prompt_optimizations(self.learning, self.agents, self.autonomy_queue)
+
     async def _run_worldview_kg_sync(self):
         """Run one WorldView ontology -> knowledge-graph sync pass (best-effort)."""
         plugin = self.plugins.get("worldview")
@@ -1416,6 +1436,13 @@ class Orchestrator:
         # turn left behind, mislabeling locality for agents it never ran.
         self._last_routes = {}
         self._last_latencies = {}
+        # DRA-24: the per-turn cost inputs. `_record_interactions` used to write a
+        # literal cached_tokens=0 / cache_hit=False on every turn and price the input at
+        # `estimate_tokens(text)` — the user's raw words only. That under-reported what a
+        # streamed turn actually sent and reported no reuse on the one path that has a
+        # real Gemini context cache. Per turn, like the route/latency maps above.
+        self._last_cached_tokens = {}
+        self._last_prompt_tokens = {}
         t_s0 = time.perf_counter()
         for agent_id in target:
             if agent_id in self.agents:
@@ -1436,6 +1463,9 @@ class Orchestrator:
                 if checkpoint:
                     prompt = f"[RESUMED FROM CHECKPOINT]\n{checkpoint['prompt']}\n---\n{prompt}"
 
+                # Tokens served from a Gemini context cache this turn (0 unless a
+                # cache binding is actually acquired below).
+                cached_tok = 0
                 try:
                     backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
                     if router_model:
@@ -1496,6 +1526,23 @@ class Orchestrator:
                                         "[RESUMED FROM CHECKPOINT]\n"
                                         f"{checkpoint['prompt']}\n---\n{prompt}"
                                     )
+                                # DRA-24: what the cache is actually serving. The
+                                # binding was granted only after `_entry_matches`
+                                # verified the prefix digest and that
+                                # cached_prefix_count <= len(history), so this slice is
+                                # exactly the cached content. Estimated with the same
+                                # heuristic tokenizer the rest of the meter uses —
+                                # `GeminiBackend._extract_text` drops the response's
+                                # usageMetadata, so the provider's own
+                                # cachedContentTokenCount is not available here.
+                                cached_tok = estimate_tokens(
+                                    cache_material.system_instruction
+                                ) + sum(
+                                    estimate_tokens(part)
+                                    for part in cache_material.history[
+                                        : cache_binding.cached_prefix_count
+                                    ]
+                                )
                             else:
                                 self._spawn_cache_task(
                                     self._async_create_cache(
@@ -1541,6 +1588,18 @@ class Orchestrator:
                 synthesized = response
                 self._last_routes[agent_id] = route_name or ""
                 self._last_latencies[agent_id] = (time.perf_counter() - t_s0) * 1000
+                # DRA-24: the real size of the request that just went out. With a cache
+                # bound, `prompt` was rebuilt from tail history only and the system
+                # instruction is replaced by `cachedContent` on the wire
+                # (llm/gemini.py), so the three terms do not overlap and
+                # cached_tok + tail == the whole input. Without one, the prompt and the
+                # soul are both sent uncached.
+                self._last_cached_tokens[agent_id] = cached_tok
+                self._last_prompt_tokens[agent_id] = (
+                    cached_tok
+                    + estimate_tokens(prompt)
+                    + (0 if cached_tok else estimate_tokens(system_prompt))
+                )
                 break
 
         # ch02-G1: fan out to the remaining routed agents and synthesize. The
@@ -1558,13 +1617,19 @@ class Orchestrator:
         if secondaries:
             primary_route = route_name or ""
             primary_latency = self._last_latencies.get(agent_id, 0.0)
+            primary_cached = self._last_cached_tokens.get(agent_id, 0)
+            primary_prompt = self._last_prompt_tokens.get(agent_id, 0)
             secondary_responses = await self._call_agents_parallel(
                 secondaries, text, intent.context, plugin_data
             )
-            # _call_agents_parallel rebuilds both per-agent maps — re-insert the
-            # primary so _record_interactions scores it with its real route.
+            # _call_agents_parallel rebuilds all four per-agent maps — re-insert the
+            # primary so _record_interactions scores it with its real route and the
+            # real size of the request it streamed. Secondaries stay on the fallback
+            # estimate: that path bills them uncached, which is what they are.
             self._last_routes[agent_id] = primary_route
             self._last_latencies[agent_id] = primary_latency
+            self._last_cached_tokens[agent_id] = primary_cached
+            self._last_prompt_tokens[agent_id] = primary_prompt
             responses = {agent_id: synthesized, **secondary_responses}
             synthesized = await self._synthesize(responses, intent)
             _stream_responses = responses
@@ -2303,6 +2368,12 @@ class Orchestrator:
 
         results = {}
         self._last_latencies = {}
+        # DRA-24: this path never binds a Gemini cache, so it leaves both cost maps
+        # empty and `_record_interactions` falls back to today's estimate — but they
+        # must still be CLEARED, or a non-stream turn inherits the previous stream
+        # turn's cached-token counts and claims reuse that never happened.
+        self._last_cached_tokens = {}
+        self._last_prompt_tokens = {}
         # Per-agent routes, alongside the per-agent latencies that already live here.
         # Before this, ONE route_name was computed from target_agents[0] and recorded for
         # every agent that answered — so a turn where stark answered locally and athena
@@ -2450,15 +2521,26 @@ class Orchestrator:
                 # Prefer THIS agent's route over the turn-level scalar, which is computed
                 # from target_agents[0] and is only right for the primary responder.
                 agent_route = getattr(self, "_last_routes", {}).get(agent_id) or route_name
+                cached_prefix = getattr(self, "_last_cached_tokens", {}).get(agent_id, 0)
                 metadata = {
                     # CDX-2: record the real origin (web/telegram/discord/voice/
                     # autonomy/…) instead of always "web", so the %-local/cloud
                     # ratio and per-channel analytics aren't silently skewed.
                     "channel": channel,
-                    "input_tokens": estimate_tokens(text),
+                    # DRA-24: the streaming loop measures the request it actually
+                    # sent (prompt + soul, or cached prefix + tail); every other
+                    # channel — Telegram, Discord, voice, /chat, MCP, eval — leaves the
+                    # map empty and keeps today's raw-text estimate rather than
+                    # reporting zero. `cached_tokens <= input_tokens` holds by
+                    # construction, which is what stops the estimator inventing a
+                    # saving on tokens that were never sent.
+                    "input_tokens": (
+                        getattr(self, "_last_prompt_tokens", {}).get(agent_id)
+                        or estimate_tokens(text)
+                    ),
                     "output_tokens": estimate_tokens(resp),
-                    "cached_tokens": 0,
-                    "cache_hit": False,
+                    "cached_tokens": cached_prefix,
+                    "cache_hit": cached_prefix > 0,
                 }
                 self.learning.record(
                     agent_id=agent_id,

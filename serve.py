@@ -35,6 +35,7 @@ if importlib.util.find_spec("numpy") is None:
 # canonical entry and existing imports keep working.
 from agents.core.boot_guards import (  # noqa: E402,F401
     assert_hardened_posture,
+    assert_parseable_posture_flags,
     assert_safe_bind,
 )
 from agents.core.env_config import env_int  # noqa: E402  (O26-P2.1: was a local _env_int)
@@ -73,6 +74,7 @@ def server_config():
 def main():
     import uvicorn
     config = server_config()
+    assert_parseable_posture_flags()  # fail-closed on a mistyped posture flag (H23.30)
     assert_safe_bind(config.host)   # fail-closed on an unauthenticated external bind
     assert_hardened_posture()       # fail-closed on a mis-configured hardened profile (CDX-12)
     # Packaged installs: create + announce the owner's data folder up front so

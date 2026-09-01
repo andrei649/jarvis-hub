@@ -23,8 +23,8 @@ them unchanged::
 
 Each decorated method returns a *step spec* dict: ``agent``/``agent_id``,
 ``prompt``/``prompt_template``, and optional ``transform``/``guardrail``/
-``router``/``loop``/``output_schema``/``terminate_when``/``critic``. The step id
-is the method name; ``@listen`` sets dependencies; method definition order is
+``router``/``loop``/``subflow``/``output_schema``/``terminate_when``/``critic``.
+The step id is the method name; ``@listen`` sets dependencies; method definition order is
 preserved.
 """
 
@@ -85,12 +85,21 @@ def build_flow(flow: Union[type, object]) -> Pipeline:
         if not meta:
             continue
         spec = getattr(inst, name)() or {}
+        kind = spec.get("kind", meta["kind"])
+        if kind == "subflow" and not spec.get("subflow"):
+            # Fail at compile time. A subflow step with no config used to compile
+            # fine and then silently return the previous ctx value at run time
+            # (engine._run_subflow short-circuits on an empty sub-pipeline), so a
+            # typo produced a wrong answer with no error anywhere.
+            raise ValueError(
+                f"step '{meta['id']}' has kind='subflow' but no 'subflow' config"
+            )
         steps.append(WorkflowStep(
             id=meta["id"],
             agent_id=spec.get("agent_id", spec.get("agent", "")),
             prompt_template=spec.get("prompt_template", spec.get("prompt", "")),
             depends_on=meta["depends_on"],
-            kind=spec.get("kind", meta["kind"]),
+            kind=kind,
             terminate_when=spec.get("terminate_when"),
             output_schema=spec.get("output_schema"),
             critic=spec.get("critic"),
@@ -98,6 +107,7 @@ def build_flow(flow: Union[type, object]) -> Pipeline:
             transform=spec.get("transform"),
             guardrail=spec.get("guardrail"),
             loop=spec.get("loop"),
+            subflow=spec.get("subflow"),
         ))
     if not steps:
         raise ValueError(f"flow '{cls._flow_name}' defines no steps")

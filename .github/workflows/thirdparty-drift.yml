@@ -58,6 +58,21 @@ jobs:
             echo '_Vendored / doc-pinned sources only — package deps are handled by Dependabot._'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Close the tracking issue once every tracked pin is current again.
+      # Owner-gated: the closer only writes to GitHub when the repo variable
+      # THIRDPARTY_DRIFT_AUTOCLOSE is set to 'true'. It decides on positive
+      # evidence (check_thirdparty_drift.drift_resolved) rather than on the
+      # has_drift output, which is also 'false' after a crash or an API outage.
+      - name: Reconcile resolved drift alert
+        if: >-
+          vars.THIRDPARTY_DRIFT_AUTOCLOSE == 'true'
+          && steps.drift.outcome == 'success'
+          && steps.drift.outputs.has_drift == 'false'
+          && github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/reconcile_drift_alert.py --drift-json drift.json --drift-table drift.txt
+
       # On the scheduled / manual run (not PRs), raise or refresh a tracking issue.
       - name: Open or update drift issue
         if: steps.drift.outputs.has_drift == 'true' && github.event_name != 'pull_request'

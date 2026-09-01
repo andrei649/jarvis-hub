@@ -121,3 +121,44 @@ reaps stale ref locks automatically within seconds. (The tracked lock files in t
 `Unable to create '.git/…/index.lock': File exists`, a previous git process crashed or is still running. Confirm
 none is running, then remove that one stale lock: `rm -f .git/index.lock`. This is a local filesystem lock, distinct
 from the server-side ref lock above — the tree in this repo carries no stale `.git/*.lock` files by default.
+
+## 10. Merge deadlock: a required check that will never report ("Expected — Waiting for status to be reported")
+
+Distinct from §9. §9 is a *transient* 409 that clears on retry; this one is a **configuration
+deadlock** that never clears on its own.
+
+**Symptom.** A PR sits at `mergeStateStatus: BLOCKED` with one or more checks shown as
+**"Expected — Waiting for status to be reported"**. Nothing is queued, nothing is running, and the
+hourly `pr-auto-merge.yml` sweep never picks the PR up — that sweep merges only PRs GitHub reports
+as CLEAN, so a permanently-BLOCKED PR is simply skipped forever.
+
+**Cause.** Branch protection (or a ruleset) on `main` still lists **check names whose workflows no
+longer produce them**. The 2026-08-29 de-gate (#981) removed the `pull_request:` trigger from — or
+deleted outright — every PR-blocking workflow. A required name with no workflow behind it can never
+post a status, so the PR can never go CLEAN. The repo half of the de-gate is done and verifiable in
+the tree (`.github/workflows/` no longer contains `security.yml`; `codeql.yml`, `e2e.yml` and the
+rest have no `pull_request` trigger). The **settings** half is owner-side and cannot be observed
+from the repo — `docs/OWNER_TASKS.md` itself notes that if #981 was merged via admin bypass rather
+than by clearing the settings, the stale names are still there. This deadlock is what that looks
+like.
+
+**Resolution ladder:**
+
+1. **Clear the stale names (the real fix, owner-only).** Settings → Rules / Branch protection for
+   `main` → *Require status checks to pass* → remove the required status checks that no workflow
+   emits. The exact
+   list to drop is in [`OWNER_TASKS.md`](OWNER_TASKS.md) → "De-gate merges"; the per-group mapping
+   of check name → workflow is the table in [`docs/restore/README.md`](restore/README.md). Also
+   check *Require review from Code Owners* (CODEOWNERS was deleted — restore group I) and the
+   CodeQL merge-protection ruleset (group K).
+2. **Interim: admin-bypass merge.** Unblocks the one PR in front of you and leaves the deadlock in
+   place for the next one. Use it to land the fix, not as the fix.
+3. **If the gate is actually wanted back, restore BOTH halves.** Apply the workflow patch from
+   `docs/restore/groups/<group>.patch` **and** re-add that group's check names in branch
+   protection. Restoring one half reproduces the deadlock from the other direction: a required name
+   with no workflow blocks everything, and a workflow with no required name blocks nothing while
+   looking like a gate.
+
+**Telling the two apart:** *"A lock file already exists"* → §9, transient, retry.
+*"Expected — Waiting for status to be reported"* → this section, configuration, retrying forever
+will not help.

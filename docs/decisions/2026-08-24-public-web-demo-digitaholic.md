@@ -74,6 +74,12 @@ all.
   `seed_graph()` as-is. **Smallest fix:** gate the call in `MemoryManager.__init__` behind a new flag
   (e.g. `NERVA_PUBLIC_PROFILE=1` skips seeding, or seeds a generic/empty fixture instead). This is
   the one core-code change this spec actually requires; everything else above is configuration.
+  **Shipped, and its residual with it:** the seed self-gates on `NERVA_PUBLIC_PROFILE`
+  (`seed_graph.py`), and since DRA-07/DRA-14 a *mistyped* flag no longer resolves quietly to the
+  private default — `boot_guards.assert_parseable_posture_flags` refuses to start when the flag is
+  set to an unrecognized spelling, from both documented entry points
+  (`agents/core/boot_guards.py`, `serve.py`, `tests/test_public_profile_boot_guard.py`). The AUD-14
+  parse convention in `env_config` is deliberately unchanged; only the boot is refused.
 - **Agent roster for the public box needs an explicit allowlist**, not just "whatever's in
   `agents.yaml`." Practical shape: a `agents.public.yaml` overlay (or a `status: disabled` flip)
   limited to the cloud-capable, non-local-only agents relevant to a demo (jarvis / athena / vision /
@@ -151,7 +157,7 @@ claim holds:
 | `SEED_FACTS` hardcodes personal data, seeded unconditionally on empty graph | ✅ `seed_graph.py:10`, called at `memory/manager.py:45` — was **unconditional** when written; gated by `NERVA_PUBLIC_PROFILE` since 2026-08-26 |
 | `LOCAL_ONLY_AGENTS = {frigga, ultron, howard, hestia}` | ✅ `llm/hybrid_router.py:93` |
 | `cloud_llm_agents: [jarvis, athena, stark, vision, veronica]` | ✅ `agents/_system/agents.yaml:21` |
-| `NERVA_PUBLIC_PROFILE` is a *new* flag | ✅ zero occurrences in tree when this spec was written; **implemented 2026-08-26** in `seed_graph.py` |
+| `NERVA_PUBLIC_PROFILE` is a *new* flag | ✅ zero occurrences in tree when this spec was written; **implemented 2026-08-26** in `seed_graph.py`; malformed-value boot guard added (DRA-07/DRA-14) in `boot_guards.assert_parseable_posture_flags` |
 | CDX-12 / CDX-11 already listed as owner calls | ✅ `docs/OWNER_TASKS.md:253`, `:274` |
 
 One reference is **external to this repo**: `claude/nerva-jarvis-hub.md` (the public-repo exposure

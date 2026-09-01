@@ -85,6 +85,57 @@ async def acquisition_events(
     )
 
 
+@router.get("/api/acquisition/requests", dependencies=[Depends(admin_guard)])
+async def acquisition_requests(
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+):
+    """List the capability gaps a drive can actually be started from.
+
+    Without this, `POST /api/acquisition/{request_id}/drive` was unaddressable:
+    the audit ledger only exposes `request_hash` and the status snapshot only
+    exposes per-state counts, so no surface in the product ever hands out a
+    `request_id`. Only MISSING and BLOCKED are listed — `synthesize_and_propose`
+    moves the request to `researching`, and `_TRANSITIONS` allows that edge from
+    exactly those two states.
+
+    The raw `goal` and the `fingerprint` are deliberately NOT projected: the
+    ledger hashes goals on purpose and the HUD's contract is that they never
+    reach it. `agent_id` + `reason` + `occurrences` + a short id is enough to
+    pick a row.
+    """
+    runtime = _get_runtime()
+    if runtime is None:
+        return _unavailable()
+    if not runtime.is_enabled() or getattr(runtime, "request_store", None) is None:
+        # Disabled stays lazy: no ensure_ledger(), nothing touches disk.
+        return nocache_json({"enabled": False, "status": "disabled", "requests": []})
+    from agents.core.acquisition.models import RequestStatus
+
+    try:
+        rows = runtime.request_store.list(
+            statuses={RequestStatus.MISSING, RequestStatus.BLOCKED}
+        )
+    except Exception:  # fail closed, mirroring status_snapshot's closed-fail projection
+        logger.warning("acquisition request listing failed", exc_info=True)
+        rows = []
+    return nocache_json(
+        {
+            "enabled": True,
+            "requests": [
+                {
+                    "request_id": row.request_id,
+                    "status": row.status.value,
+                    "agent_id": row.agent_id,
+                    "reason": row.reason,
+                    "occurrences": row.occurrences,
+                    "updated_at": row.updated_at,
+                }
+                for row in rows[:limit]
+            ],
+        }
+    )
+
+
 @router.get("/api/acquisition/ledger/export", dependencies=[Depends(admin_guard)])
 async def acquisition_export():
     runtime = _get_runtime()

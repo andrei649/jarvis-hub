@@ -32,6 +32,7 @@ from fastapi.responses import JSONResponse
 
 from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
 from agents.core.routers._deps import user_guard
+from agents.core.routers._component import require_component
 
 from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
@@ -130,10 +131,9 @@ def _kg_kernel_denial(orch, payload: dict, token_id: Optional[str] = None, scope
 async def memory_consolidate(req: Request):
     """Plan Mem0-style consolidation ops (ADD/UPDATE/DELETE/NOOP) for candidates
     against existing memories. Returns a reversible plan (no mutation)."""
-    orch = get_orch()
-    eng = getattr(orch, "consolidation", None) if orch else None
-    if eng is None:
-        return JSONResponse({"error": "consolidation not available"}, status_code=503)
+    _, eng, err = require_component("consolidation", "consolidation not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -277,10 +277,9 @@ async def memory_decay_candidates(threshold: float = 0.0):
 @router.post("/api/memory/decay/forget", dependencies=[Depends(user_guard)])
 async def memory_decay_forget(req: Request):
     """Forget an item + its transitive dependents (anti-recontamination)."""
-    orch = get_orch()
-    d = getattr(orch, "decay", None) if orch else None
-    if d is None:
-        return JSONResponse({"error": "decay memory not available"}, status_code=503)
+    _, d, err = require_component("decay", "decay memory not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -451,10 +450,9 @@ async def kg_add_fact(req: Request):
     """Add a bi-temporal fact. Body: {subject, predicate, object, valid_from?,
     ingested_at?, multi?}. Single-valued predicates invalidate (not delete) a
     contradicting prior fact."""
-    orch = get_orch()
-    bt = getattr(orch, "bitemporal", None) if orch else None
-    if bt is None:
-        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
+    orch, bt, err = require_component("bitemporal", "bi-temporal KG not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -482,10 +480,9 @@ async def kg_add_fact(req: Request):
 @router.get("/api/kg/facts/as-of", dependencies=[Depends(user_guard)])
 async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicate: str = ""):
     """Valid-time recall: facts true in the world at time `at` (default now)."""
-    orch = get_orch()
-    bt = getattr(orch, "bitemporal", None) if orch else None
-    if bt is None:
-        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
+    _, bt, err = require_component("bitemporal", "bi-temporal KG not available")
+    if err is not None:
+        return err
     # Store reads share the writer's threading.Lock — keep the wait off the loop.
     facts = await _kg_call(bt.as_of, at, subject, predicate)
     return nocache_json({"at": at, "facts": facts})
@@ -494,10 +491,9 @@ async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicat
 @router.get("/api/kg/facts/history", dependencies=[Depends(user_guard)])
 async def kg_facts_history(subject: str, predicate: str = ""):
     """All versions (incl. invalidated) for a subject, oldest first."""
-    orch = get_orch()
-    bt = getattr(orch, "bitemporal", None) if orch else None
-    if bt is None:
-        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
+    _, bt, err = require_component("bitemporal", "bi-temporal KG not available")
+    if err is not None:
+        return err
     history = await _kg_call(bt.history, subject, predicate)
     return nocache_json({"subject": subject, "history": history})
 
@@ -505,10 +501,9 @@ async def kg_facts_history(subject: str, predicate: str = ""):
 @router.post("/api/kg/ingest", dependencies=[Depends(user_guard)])
 async def kg_ingest(req: Request):
     """H12.6 — extract triples from text and write them to the KG immediately."""
-    orch = get_orch()
-    updater = getattr(orch, "kg_updater", None) if orch else None
-    if updater is None:
-        return JSONResponse({"error": "incremental KG not available"}, status_code=503)
+    orch, updater, err = require_component("kg_updater", "incremental KG not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:

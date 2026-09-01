@@ -67,8 +67,12 @@ def _egress() -> dict:
     try:
         from agents.core.observability.egress_monitor import EGRESS_MONITOR
         snap = EGRESS_MONITOR.snapshot(limit=0)   # limit=0 → no event payloads, tallies only
+        # DRA-23: `model_egress_total` travels with the plugin tallies — without it the
+        # bundle asserts local-first purity from plugin traffic alone, while a cloud
+        # model may have answered every turn.
         return {k: snap[k] for k in
-                ("plugins", "external_egress_total", "local_only_violations", "clean") if k in snap}
+                ("plugins", "external_egress_total", "model_egress_total",
+                 "local_only_violations", "clean") if k in snap}
     except Exception:
         return {"error": "unavailable"}
 

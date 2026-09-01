@@ -174,4 +174,8 @@ def test_router_declares_complete_user_admin_surface():
         "/api/acquisition/{name}/revoke",
         "/api/acquisition/{name}/rollback",
         "/api/acquisition/{request_id}/drive",
+        # DRA-38: the admin read surface the HUD needs to address a drive target.
+        # /drive takes a request_id, but nothing enumerated pending requests, so the
+        # control had no way to name one — this is the missing half of that pair.
+        "/api/acquisition/requests",
     }

@@ -7,7 +7,34 @@ Blocks requests to private IPs and cloud metadata endpoints.
 
 import ipaddress
 import socket
+import threading
 from typing import Literal, Optional
+
+# DRA-47 — the guard was real but nothing counted its refusals, so
+# /security/status and /api/resilience had to publish `blocked_requests: null`.
+# Process-lifetime count (resets on restart), bumped in exactly one place so it
+# cannot drift from the refusal paths below.
+_BLOCKED = {"count": 0}
+_BLOCKED_LOCK = threading.Lock()
+
+
+def _refuse(reason: str) -> tuple[list[str], str]:
+    """Record one SSRF refusal and return the standard ``(ips, error)`` refusal."""
+    with _BLOCKED_LOCK:
+        _BLOCKED["count"] += 1
+    return [], reason
+
+
+def blocked_requests() -> int:
+    """How many SSRF refusals this process has made (not an all-time total)."""
+    with _BLOCKED_LOCK:
+        return _BLOCKED["count"]
+
+
+def reset_blocked_requests() -> None:
+    """Zero the refusal counter (tests; never called in production)."""
+    with _BLOCKED_LOCK:
+        _BLOCKED["count"] = 0
 
 BLOCKED_HOSTS = frozenset({
     "169.254.169.254",
@@ -102,11 +129,11 @@ def resolve_and_validate(
     """
     hostname = hostname.lower().rstrip(".")
     if not hostname:
-        return [], "DNS resolution failed for empty hostname"
+        return _refuse("DNS resolution failed for empty hostname")
     if mode not in {"public", "lan"}:
-        return [], "invalid SSRF address mode"
+        return _refuse("invalid SSRF address mode")
     if hostname in BLOCKED_HOSTS:
-        return [], f"Blocked host: {hostname} (cloud metadata endpoint)"
+        return _refuse(f"Blocked host: {hostname} (cloud metadata endpoint)")
 
     try:
         literal = ipaddress.ip_address(hostname)
@@ -116,25 +143,25 @@ def resolve_and_validate(
     if literal is not None:
         normalized = _normalized_address(hostname)
         if normalized is not None and str(normalized) in BLOCKED_HOSTS:
-            return [], f"Blocked host: {normalized} (cloud metadata endpoint)"
+            return _refuse(f"Blocked host: {normalized} (cloud metadata endpoint)")
         if not _safe_for_mode(hostname, mode):
-            return [], f"URL resolves to unsafe address for {mode} mode: {hostname}"
+            return _refuse(f"URL resolves to unsafe address for {mode} mode: {hostname}")
         return [str(normalized)], None
 
     try:
         resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
     except OSError:
-        return [], f"DNS resolution failed for {hostname}"
+        return _refuse(f"DNS resolution failed for {hostname}")
 
     ips: list[str] = []
     for family, stype, proto, canonname, sockaddr in resolved:
         ip = sockaddr[0].split("%")[0]
         normalized = _normalized_address(ip)
         if normalized is None or not _safe_for_mode(ip, mode):
-            return [], f"URL resolves to unsafe address for {mode} mode: {ip}"
+            return _refuse(f"URL resolves to unsafe address for {mode} mode: {ip}")
         ips.append(str(normalized))
     if not ips:
-        return [], f"DNS resolution failed for {hostname}"
+        return _refuse(f"DNS resolution failed for {hostname}")
     return list(dict.fromkeys(ips)), None
 
 
@@ -148,6 +175,7 @@ def check_ssrf(url: str) -> Optional[str]:
     parsed = urlparse(url)
     hostname = parsed.hostname
     if not hostname:
-        return "No hostname in URL"
+        # The one refusal that never reaches resolve_and_validate.
+        return _refuse("No hostname in URL")[1]
     _ips, err = resolve_and_validate(hostname)
     return err

@@ -54,8 +54,10 @@ that demos the loop, not all 18), and session-scoped tokens only — **no durabl
 call with a retention/deletion policy, never a default).
 
 **Suggested risk tier:** R2 (new deployment surface + one env-gated code path; no auth-identity model
-change, no kernel change) — classify properly against `.github/ai-development-policy.json` before
-opening a branch, don't trust the draft's read.
+change, no kernel change) — classify properly against the risk table in `docs/AGENT_WORKFLOW.md` before
+opening a branch, don't trust the draft's read. (`.github/ai-development-policy.json` and its checker were
+deleted by #981 / `824ff18` and archived in `docs/restore/dev-gates-restore-2026-08-30.zip`; `AGENTS.md` is
+canonical — see `DRA-26`.)
 
 **Blocked on four owner calls** (see [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md)): ratify H23.23 (A)
 — or note that this spec uses the install-per-user shape it already recommends and so doesn't block
@@ -727,6 +729,16 @@ defaulted to rejecting the claim). Every one of the 144 agents finished — the 
 not in agent completion: the sweep mined ~3 items out of a 71-route punch list it was pointed at.
 Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
 
+**Ledger status — recounted 2026-08-31 against the shipped code (PR `02970c4`).** This section holds
+**62 rows** (the 53 adversarially-confirmed findings plus the 9 completeness-critic additions). **51 are
+now ticked; 11 remain open:** `DRA-08`, `DRA-15`, `DRA-20`, `DRA-27`, `DRA-29`, `DRA-36`, `DRA-45`,
+`DRA-58`, `DRA-59`, `DRA-60`, `DRA-62`. Every open row carries a **Partially shipped** or
+**Remaining** note stating what landed and what deliberately did not — none of them is closed on an
+implementer's self-report, and several ticked rows carry **Residual (recorded, not closed)** clauses that
+are part of the tick, not decoration. Three of the 62 IDs are duplicates of another row
+(`DRA-10`→`DRA-05`, `DRA-42`→`DRA-22`, `DRA-56`→`DRA-24`) and are closed by pointing at the row that
+absorbed them, not as independently shipped work.
+
 **Wrongly killed — judged shipped, functionality actually missing (4).**
 
 - [x] ✅ **DRA-01 — WV-170 Neo4j live property-scan: the CI lane the kill relied on is RED on main and has
@@ -760,51 +772,159 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
 **Verified open but in no cluster — would be forgotten by executing the plan (6).**
 
   **Shipped 16557a5** — scalar seed nulled and the three truthiness guards dropped, so an unanswered endpoint renders `—` instead of the seeded 4.2s.
-- [ ] 🔴 **DRA-05 — Item 23 (0.40 OSINT live-enrichment plugin) has no cluster at all — only its owner keys
+- [x] ✅ **DRA-05 — Item 23 (0.40 OSINT live-enrichment plugin) has no cluster at all — only its owner keys
   appear, in the owner lane.** items_only.json[23] scopes an AI-doable build: "a governed OSINT enrichment
   tool/plugin that consumes a pivot suggestion and performs the actual lookup", explicitly ai_doable=true
   for the injectable-client scaffold (weather. *(evidence: `plan_only.json,
   agents/core/osint/investigate.py:40, investigate.py`)*
-- [ ] 🟡 **DRA-06 — Item 12's 0.65 half is only half-covered — the plan builds the ScreenReflex route but
+  **Shipped 02970c4** — new `agents/core/osint/enrich.py`: a `PivotLookupClient` protocol, offline
+  derivations that need no provider (url→domain, email→domain), and `enrich_pivots` /
+  `investigate_and_enrich` returning named refusal reasons rather than silence
+  (`enrichment_client_not_configured` / `provider_not_configured` / `lookup_budget_exhausted` /
+  `lookup_failed` / `offline_derivation_failed`). Plus `agents/core/plugins/osint_enrich.py`, the one
+  live keyless client: RESTRICTED manifest, default-off behind `JARVIS_OSINT_ENRICH` (flag unset ⇒
+  `supports()` False, zero HTTP calls), the indicator ALWAYS a query parameter against the fixed
+  `dns.google` host, and registered `gated=True` in `autonomy_coordinator` so an attacker-influenceable
+  outbound lookup rides the same approval rail as `desktop_run`. Every enriched record is taint-marked.
+  `tests/test_osint_enrich.py` (+20), including an explicit "the indicator never becomes the request
+  host" case.
+  **Residual (recorded, not closed) — `ip→asn` is deliberately NOT offered.** It was built in the first
+  pass against `rdap.org` and has been REMOVED rather than left advertised. It could never work:
+  `rdap.org` is a bootstrap redirector (302 to `rdap.arin.net`), `PluginHTTPClient` runs
+  `follow_redirects=False` and `raise_for_status` rejects 3xx, so every ASN call raised on the first
+  byte — and because all three resolvers shared one circuit-breaker key, those three guaranteed failures
+  opened the breaker and disabled the two *working* `dns.google` resolvers for 60s on any run over IP
+  evidence. Each resolver now owns its own breaker key (`plugin:osint_enrich:<resolver>`) so a dead pivot
+  can no longer take the live ones down, and `ip→asn` reports `provider_not_configured` — the honest
+  boundary, not a lookup. Making it real would mean allowlisting five registry hosts and following
+  redirects for a field only ARIN populates.
+  **Residual (recorded, not closed):** no HTTP route — ToolRPC is the production caller by design, so
+  `/api/osint/correlate` and `/api/osint/brief` stay on the `UNCALLED_BACKLOG` punch list. Keyed
+  providers (Shodan, HIBP, SpiderFoot, the WorldView REST) and flipping the flag stay owner-lane.
+- [x] ✅ **DRA-06 — Item 12's 0.65 half is only half-covered — the plan builds the ScreenReflex route but
   never the HUD overlay that renders its result.** items_only.json[12] scope (b) is two-part: 'a route/path
   that drives ScreenReflex (ScreenReflex. *(evidence: `plan_only.json, agents/core/screen_reflex.py:69,
   tests/test_screen_reflex.py`)*
-- [ ] 🟡 **DRA-07 — Item 19's malformed-NERVA_PUBLIC_PROFILE boot guard: the plan routes the owner decision
+  **Shipped 02970c4** — the row's premise was half wrong and the correction is part of the record: on
+  this branch NEITHER half existed (`agents/core/screen_reflex.py` had zero non-test importers and there
+  was no route), so both were built. `POST /api/screen/reflex` (user_guard) in `routers/multimodal.py`
+  takes a bytes-only base64 contract, and REFUSES a non-loopback VLM with 503 *before* any backend is
+  constructed or any generation happens — the screen never leaves the host. HUD: `ScreenReflexPanel` in
+  the Build row (file input, paste handler, and a `getDisplayMedia` capture button rendered only when the
+  browser actually offers it), which states the posture up front, renders a `200 {ok:false}` reason
+  verbatim, and renders the 503 as `refused · … -> 503` rather than letting a throw read as success.
+  `tests/test_screen_reflex_route.py` (+7) — including a case asserting `generate_vision` was never
+  awaited on the non-loopback path — and `screen-reflex-panel.test.tsx` (+7).
+  **The served HUD bundle was rebuilt in this PR** — `SCREEN REFLEX` is present in
+  `agents/web/v2/assets/*.js`. Before that rebuild the panel existed only in `frontend/src/gap.tsx` and
+  was invisible to an operator, which is the exact half this row names.
+  **Residual (recorded, not closed):** the 0.64 one-keypress global hotkey needs OS-level registration
+  and the OS screen grab needs host capture permission — both owner-gated and deliberately not faked;
+  the panel footer says so. A useful answer also needs the owner's local vision server. Unreconciled
+  prose, not behaviour: `llm/vlm.py`'s `_is_loopback_base` docstring calls `is_local` "a boolean *label*,
+  not a gate" while `multimodal.py:115-117` says the opposite. No bypass was found, but the two comments
+  should be made to agree.
+- [x] ✅ **DRA-07 — Item 19's malformed-NERVA_PUBLIC_PROFILE boot guard: the plan routes the owner decision
   but schedules no one to write the guard.** items_only.json[19] piece (a) is explicitly 'ai-doable
   code+tests': a fail-closed startup check in agents/core/boot_guards.py enforce_boot_posture (called from
   agents/web. *(evidence: `plan_only.json, agents/core/memory/seed_graph.py:8, manager.py:46`)*
+  **Shipped 02970c4 — ONE guard for DRA-07 and DRA-14, not two.** `env_config` gained two pure helpers
+  beside `truthy()` reusing the existing spelling sets — `is_recognized_bool(value)` and
+  `env_flag_is_malformed(name)` — with `truthy()` / `env_flag()` semantics byte-for-byte unchanged, so
+  the AUD-14 "unknown → declared default" convention did not grow a second dialect (a regression pins
+  that). `boot_guards.assert_parseable_posture_flags()` raises `SystemExit` naming
+  `NERVA_PUBLIC_PROFILE` and the accepted spellings — never the offending value — and runs FIRST inside
+  `enforce_boot_posture()`, before `assert_safe_bind`, so the refusal lands before anything constructs a
+  `MemoryManager`; `serve.main()` calls it directly too, because that path calls the guards individually.
+  `docs/OWNER_TASKS.md`'s about-to-be-false "no code change remains" line and the H23.23 decision doc
+  were corrected in the same change. `tests/test_public_profile_boot_guard.py` (+26), five realistic
+  typos among them.
+  **Residual (recorded, not closed):** the four H23.30 owner deployment decisions are untouched (none of
+  them gated this guard), the `agents.public.yaml` roster overlay is a separate change with a different
+  blast radius, and the pre-existing documented residual stands — a bind host passed only as a raw
+  uvicorn CLI flag is still invisible to the app.
 - [ ] 🟡 **DRA-08 — B7 Hermes v3 Phases 3/5/6 (sandbox file-RPC exec, gateway session keys, cron job store)
   has no build home in any cluster.** Item at index 43 ('B7 — Hermes v3 Phases 3/5/6 live wiring') is an
   L-size, three-part build: (1) Phase 3 — give ToolRPCSandboxRuntime a real production pull behind the
   governed execute_code path; (2) Phase 5 — consume SessionSource/build_session_key/DeliveryRouter from the
   live channel pat… *(evidence: `BACKLOG.md:1126, agents/core/tool_rpc_runtime.py:104,
   tests/test_tool_rpc_runtime.py:10`)*
-- [ ] 🟡 **DRA-09 — The now-factually-false SEC-B4 BACKLOG row (and the stale SEC-B5 row) is fixed by no
+  **Partially shipped 02970c4 — the row stays OPEN. Phase 3 only; Phases 5 and 6 are NOT implemented.**
+  `ToolRPCSandboxRuntime` gets its first production caller by extending the existing, already-gated
+  `/sandbox/execute` surface rather than adding a route: `SandboxExecuteBody` gains `tools: bool = False`;
+  when true, a non-python language is refused 422 `tool_rpc_pipeline_python_only`, a missing
+  `orch.tool_rpc` is refused 503 with **no** fallback to `execute_python` (a silent fallback would run the
+  same code ungoverned), and otherwise the governed runtime runs it and returns today's five keys plus
+  `tool_calls` and `timed_out`. `/sandbox/status` gained an additive `tool_rpc: {available, tools}` block.
+  The default path is byte-identical and a regression test pins that.
+  **Remaining — Phase 5 (gateway session keys) and Phase 6 (cron job store), deliberately not built.**
+  Phase 5 consumes `SessionSource` / `build_session_key` / `DeliveryRouter` in
+  `orchestrator.channel_handler`, which **mutates live session identity for every non-telegram channel**
+  and changes when a reply is emitted at all — that needs its own PR with its own red tests, not a wiring
+  pass at the end of a chain. Phase 6 has no merged primitive to wire and needs a product/governance
+  decision first (what may be scheduled unattended, at which autonomy tier), so it is not a wiring task
+  either. The HUD follow-on — a "governed tools" checkbox in `SandboxPanel` — is also still open.
+- [x] ✅ **DRA-09 — The now-factually-false SEC-B4 BACKLOG row (and the stale SEC-B5 row) is fixed by no
   cluster in the plan.** Five of the fourteen KILL verdicts (a748e9a8, ab340061, ab8855b9, a5bd5ffa,
   a93ab8b9) all end with the same prescription: the only AI-doable residue of SEC-B4/SEC-B5 is refreshing
   the stale rows at BACKLOG. *(evidence: `BACKLOG.md:761-762, BACKLOG.md:723-728,
   agents/core/http_client.py:382-437`)*
-- [ ] 🟡 **DRA-10 — 0.40 OSINT enrichment tool (injectable-client scaffold) appears in no cluster — only its
+  **Verified already fixed — no code shipped for this row.** Both rows this finding names now carry the
+  refresh it asked for, and they are in this file: SEC-B4 is annotated "🟡 Recounted 2026-08-29
+  (`DRA-09`) — the row below was factually false in the *safe* direction", records that #956 (`357cc60`)
+  closed the vulnerability, and restates what is left as a *capability* (the transport-bound pinning
+  boundary `browser_run` depends on) rather than a hole; SEC-B5 carries "🟡 Partial, recounted 2026-08-29
+  (`DRA-02`) — do NOT tick this row" and names the recall→action leg explicitly, which DRA-02 then
+  closed. Nothing further is owed here.
+- [x] ✅ **DRA-10 — 0.40 OSINT enrichment tool (injectable-client scaffold) appears in no cluster — only its
   owner keys survive in owner_lane.** items_only.json carries '0. *(evidence:
   `agents/core/osint/investigate.py:40-43, __init__.py, correlate.py`)*
+  **Closed by DRA-05, 02970c4 — duplicate, not a second piece of work.** Both rows were raised by
+  different lanes against the same module (`agents/core/osint/investigate.py`) for the same missing
+  injectable-client scaffold; DRA-05 had the smaller blast radius, and one change closed both. The
+  delivery detail, and the deliberate decision not to offer `ip→asn` at all, are written up in the
+  DRA-05 row above — read it before assuming this row shipped something of its own.
 
 **Planned work already done — kept for the record, do not rebuild (4).**
 
-- [ ] 🔴 **DRA-11 — Plan cluster 4 ("Emergency-stop control surface", ranked 4th) is entirely already
+- [x] ✅ **DRA-11 — Plan cluster 4 ("Emergency-stop control surface", ranked 4th) is entirely already
   merged.** Both items of cluster 4 are shipped at HEAD. Items 94 and 99 of my slice were wrongly judged
   open. The HUD half exists as EstopCard in modes3. *(evidence: `frontend/src/modes3.tsx:163-198,
   modes3.tsx:265, frontend/src/api/actions.ts:154-166`)*
-- [ ] 🔴 **DRA-12 — Cluster 4 (Emergency-stop control surface) is delivered — both items merged in #982; only
+  **Verified already fixed before this PR — no code shipped.** The kill was right and the finding is
+  right that it was already done: `EstopCard` is defined at `frontend/src/modes3.tsx:169` and rendered
+  at `:265`, the client half is `frontend/src/api/actions.ts:154-166`
+  (`/api/ops/estop` + `/engage` + `/resume`, with the comment distinguishing it from the Trust
+  kill-switch), and the regression is `frontend/src/test/estop-card.test.tsx`. Cluster 4 needs no build.
+- [x] ✅ **DRA-12 — Cluster 4 (Emergency-stop control surface) is delivered — both items merged in #982; only
   one stale PARITY.md phrase remains.** Both items shipped. (1) The HUD Admin card exists:
   frontend/src/modes3. *(evidence: `frontend/src/modes3.tsx:163, frontend/src/api/actions.ts:154-166,
   frontend/src/test/estop-card.test.tsx`)*
-- [ ] 🟡 **DRA-13 — Plan cluster 2 ("Non-gated honesty doc fixes", ranked 2nd) is entirely already merged.**
+  **Verified already fixed before this PR — no code shipped. Same defect as DRA-11 under a second ID.**
+  Both rows were raised against cluster 4 by different lanes; the same three artefacts close both
+  (`frontend/src/modes3.tsx:169`/`:265`, `frontend/src/api/actions.ts:154-166`,
+  `frontend/src/test/estop-card.test.tsx`). Recorded here rather than silently ticked so the audit's own
+  count stays honest.
+- [x] ✅ **DRA-13 — Plan cluster 2 ("Non-gated honesty doc fixes", ranked 2nd) is entirely already merged.**
   All four doc fixes in cluster 2 are already applied at HEAD by #982. Items 80, 114, 115 and 117 of my
   slice are this cluster's contents and were wrongly judged open. *(evidence: `docs/FEATURES.md:67-70,
   docs/MANUAL_TESTING.md:455-456, docs/test-manual/12-aios-owner-host.md:690`)*
-- [ ] 🟡 **DRA-14 — H23.30 malformed-NERVA_PUBLIC_PROFILE boot guard mis-parked owner-side; the guard code
+  **Verified already fixed before this PR — no code shipped.** Cluster 2's doc fixes are applied at HEAD
+  by #982; spot-checked at `docs/FEATURES.md:67-70`, which now carries the honest voice/channel wording
+  (browser-mic HUD today, server-side STT/TTS as manual extras that degrade to 503, Discord/Slack once
+  their SDKs are installed) rather than the claim the finding quoted. Items 80, 114, 115 and 117 of that
+  slice were wrongly judged open; nothing to rebuild.
+- [x] ✅ **DRA-14 — H23.30 malformed-NERVA_PUBLIC_PROFILE boot guard mis-parked owner-side; the guard code
   lands in no cluster.** Cluster 17's H23. *(evidence: `agents/core/boot_guards.py:69,
   tests/test_public_profile_seed_gate.py:69-85, BACKLOG.md:45-49`)*
+  **Shipped 02970c4 — merged into DRA-07, one guard written once.** One function
+  (`assert_parseable_posture_flags`), one new test file, wired into BOTH entry points —
+  `enforce_boot_posture` for the raw-uvicorn/lifespan path and `serve.main()` directly, since that path
+  calls the guards individually. DRA-14's own asks are all covered there: the third fail-closed guard
+  beside `assert_safe_bind`/`assert_hardened_posture`, the `serve.py` re-export and call site, the
+  untouched seed-gate assertions with only their docstring re-pointed, and the `docs/OWNER_TASKS.md`
+  correction, which was the honesty half of "mis-parked owner-side". Full delivery detail and residuals
+  are in the DRA-07 row above; this row shipped no second implementation.
 
 **Missed by the sweep entirely (39).**
 
@@ -812,9 +932,50 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   surfaced ~3.** tests/test_hud_v2_parity.py holds an explicit, CI-enforced in-code punch list of
   user-facing routes that exist in route_auth.json but are called by no client (HUD or mobile). *(evidence:
   `tests/test_hud_v2_parity.py:436-437, items_only.json`)*
-- [ ] 🔴 **DRA-16 — Issue #242 (CI/F-10): CodeQL is a permanently non-blocking gate behind a factually false
-  "private personal repo" rationale — the repo is public.** Open issue #242 explicitly flags this
-  (".github/workflows/codeql. *(evidence: `.github/workflows/codeql.yml:36-40, codeql.yml, release.yml`)*
+  **Partially shipped 02970c4 — the row stays OPEN, and cannot close in this PR.** It is an umbrella over
+  the in-code `UNCALLED_BACKLOG` punch list, not a unit of work. This PR retires 18 of its 79 entries
+  across several panels (cognition ×6, memory writes/eval ×5, note docs, marketplace rollback,
+  acquisition drive, screen reflex, VLM describe, audit anchors, sub-agents, review→dataset) — the
+  largest single cut the register has taken — and still leaves the campaign open. Among them a new
+  `COGNITION` panel making six user-tier reads as string literals, with an honest master/sub-flag display
+  and an explicit amber `unavailable` tag where a module answers `available:false`, never a silent 0, and
+  deliberately no enable button: the cognition flags are admin *settings*, not a route, and no
+  `/api/cognition/enable` exists.
+  **Correction to this row's own text:** the embedded count "71" was already stale when the finding was
+  written — the punch list held **79** entries. The row should be re-stated as a campaign with
+  per-cluster children rather than carried as one checkbox.
+  **Remaining:** the rest of the register. Two clusters were deliberately not wired and should stay that
+  way for now — `/api/signals/governance*` (waits on the owner flipping `JARVIS_SIGNAL_GOVERNANCE`) and
+  `/api/desktop/*` + `/api/operator/plan` (agent-driven; a HUD control there would be the
+  degenerate-surface trap). One piece of hygiene this PR left behind: three `UNCALLED_BACKLOG`
+  justification comments in `tests/test_hud_v2_parity.py` (:476, :523, :535) outlived the entries they
+  annotated and now sit above unrelated routes stating the opposite of what shipped.
+- [x] ✅ **DRA-16 — Issue #242 (CI/F-10): CodeQL *was* a permanently non-blocking gate behind a factually
+  false "private personal repo" rationale — the repo is public.** Open issue #242 flagged this. The
+  rationale is gone from the workflow and from this file; the framing is retained here only as the
+  historical statement of the finding, not as a live claim about the repo.
+  *(evidence: `.github/workflows/codeql.yml:36-40, codeql.yml, release.yml`)*
+  **Shipped 02970c4** — the claim was verified before it was rewritten: the repo is public (GitHub API
+  `private=false`) and CodeQL run 33384718270 / job 99464644882 shows "Perform CodeQL Analysis"
+  concluding success with "Analysis upload status is complete." So the "unavailable on this private
+  personal repo, so the upload always errors" rationale was false, and the `continue-on-error: true` it
+  justified was hiding real failures. That line is gone from `.github/workflows/codeql.yml` and the
+  four-line rationale now states the true posture: public repo, upload verified, advisory by design,
+  **not** a required check, no `pull_request` trigger, and re-gating means restoring patch K. No
+  `pull_request` trigger was added. `HUD_V2_REMAINING.md` §9, the `docs/OWNER_TASKS.md` "enable code
+  scanning" item and the roadmap's CI-posture bullet were corrected to match.
+  `tests/test_codeql_posture.py` (+6) parses the YAML, so the guard cannot be defeated by prose.
+  **The ledger contradiction was fixed in the same move, because this file was the last place carrying
+  it.** BACKLOG.md's SEC-4 row and Lane A's A4 row were rewritten — see the DRA-30 row below for what
+  changed and why — so BACKLOG.md no longer asserts a required-checks posture that every other surface
+  documents as de-gated.
+  **Residual (recorded, not closed):** the owner-side GitHub settings work is untouched and stays in
+  `docs/OWNER_TASKS.md` — dropping `Analyze (python)` / `CodeQL` from required status checks and
+  deleting the code-scanning merge-protection ruleset. With `continue-on-error` gone, a genuinely broken
+  analysis now goes red on `main`: that is the point, but it is a real behaviour change on the
+  push-to-main lane. And the new guard is weaker than it looks — `tests/test_codeql_posture.py:53`
+  asserts the bare substring `"required"`, which passes regardless of polarity; it should assert the
+  full phrase "NOT a required status check".
 - [x] ✅ **DRA-17 — CDX-8 quarantined generated-skill review/approve has no client surface at all.** The
   owner-approval gate for LLM-authored skill code is backend-only. `agents/core/skills/loader. *(evidence:
   `agents/core/routers/skills.py:310, agents/core/skills/loader.py:543, tests/test_hud_v2_parity.py:500`)*
@@ -843,6 +1004,12 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   straight off mobile/PARITY.md, but the ledger itself is stale: it is missing rows for most of what the HUD
   actually calls. *(evidence: `mobile/PARITY.md:10-20, PARITY.md, tests/_snapshots/route_auth.json`)*
   **Shipped 16557a5** — 43 rows added; the audit's ~40 was corrected to 38 genuinely absent (four were word collisions).
+  **Residual re-opened by this PR's own additions (recorded 2026-08-31, not closed):** `mobile/PARITY.md`
+  gained **zero** rows while this PR added eleven user-guarded routes (`/api/notes/docs*`,
+  `/api/notes/blocks/{id}`, `/api/screen/reflex`, `/api/system/hardware`, `/api/learning/evolve`,
+  `/api/acquisition/requests`) plus HUD callers for more. `mobile/PARITY.md:12-17` states the
+  same-PR sync rule, and this row is the one that made that ledger complete — so leaving it silent would
+  re-create exactly the staleness DRA-18 was raised about. The sync is owed.
 - [x] ✅ **DRA-19 — SignalGovernanceBridge has zero production constructors — the Signal Layer →
   approval-inbox bridge never runs.** agents/core/signal_governance.py ships a complete, contract-gated
   bridge (`SignalGovernanceBridge. *(evidence: `agents/core/signal_governance.py:33,
@@ -866,10 +1033,43 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   120 items, 26 clusters and the owner lane.** BACKLOG.md:1002 carries a live, unchecked dev row: `- [ ]
   Real payment rail adapter (AP2/ACP/x402) at payments.settle() — **owner decision required (moves
   money)**`. *(evidence: `BACKLOG.md:1002, agents/core/payments.py:5-7, agents/core/payments.py:293-296`)*
-- [ ] 🟡 **DRA-21 — The shipped keyless StockQuotesPlugin is never consumed by the market router — BACKLOG
+  **Partially shipped 02970c4 — the row stays OPEN.** Only the tracking half landed, which is the literal
+  defect the finding names: `docs/OWNER_TASKS.md` gained a parking-lot entry, "Pick the payment rail — or
+  ratify that there is none", mirroring this row. It records what is already built and rail-agnostic
+  (verified in `agents/core/payments.py`: mandate + per-payment cap + total cap + payee allowlist +
+  currency + expiry; everything created pending with no auto-approve at any amount; caps re-checked at
+  approve and again at settle; create/approve/reject/settle hash-chain audited) and names the three
+  things only the owner can supply — choose AP2/ACP/x402, open the account and provide credentials,
+  accept liability and name the production ceiling. So the row now appears in the owner lane.
+  **Remaining — the adapter itself. No code was written, deliberately.** `settle()` still records
+  "settled (no real rail)". A `PaymentRail` protocol with a `NullRail` default would look like progress
+  and be a regression in honesty — a selector with zero real implementations is dead plumbing — so the
+  standing instruction recorded in OWNER_TASKS is that no rail adapter gets written before those three
+  answers exist.
+  **Also remaining (test hygiene):** `tests/test_owner_lane_payment_rail.py:16-18` gates all three tests
+  on an exact backticked literal and returns early — green — on any mismatch, while this file already
+  writes the same sentence unbackticked and line-wrapped. It should assert the row exists at all.
+- [x] ✅ **DRA-21 — The shipped keyless StockQuotesPlugin is never consumed by the market router — BACKLOG
   names it as the explicit next step.** BACKLOG.md:973 records the stock-quotes feed as shipped and then
   names the un-done follow-on in the same sentence: '`market` router can consume it next. *(evidence:
   `BACKLOG.md:973, agents/core/routers/market.py:8-12, market.py:40`)*
+  **Shipped 02970c4** — `agents/core/routers/market.py` now fills missing quotes from the keyless
+  `StockQuotesPlugin`: opt-in (`live: bool = False` on `WatchlistBody`, inherited by `BriefBody`) and
+  with no fabricated prices. Caller-supplied quotes are normalised and always win; only unpriced watch
+  symbols are fetched (order-preserving dedupe); the plugin is reached through
+  `orch.permission_gate.check_call`; and both a `resilient_call` timeout / open breaker and a degraded
+  payload fall back honestly rather than inventing a number. Both handlers return a `quotes` provenance
+  block (`live` / `source` / `as_of` / `missing`, plus `degraded.reason`), and `source` is forced to
+  `provided` whenever `live` is False so the field can never advertise a feed that did not answer. The
+  module docstring's "does not fetch" claim was corrected and its owner-gated claim narrowed to the
+  bank/broker rail.
+  **Residual (recorded, not closed):** backend only — no route and no HUD button, so `/api/market/brief`
+  stays on the `UNCALLED_BACKLOG` punch list. Position symbols are not priced from the feed. Quotes are
+  delayed Stooq closes and go stale over weekends and holidays; the mandatory not-advice disclaimer plus
+  `quotes.as_of` carry that. Owed and not fixed here: `Watch.symbol` is only `str(max_length=24)` with no
+  charset and up to 500 of them are joined into the Stooq query string — the host, the RESTRICTED
+  manifest allowlist and the DNS pin all hold, so this is not an SSRF, but a charset and a symbol cap are
+  still missing.
 - [x] ✅ **DRA-22 — H28.2 ActionHierarchyRouter is dead code — a ✅-marked capability with zero production
   callers and zero registered implementations.**
   docs/research/2026-07-18-live-vs-plumbing-capability-audit.md:56 lists the 'Operator "pillar" router' as
@@ -889,25 +1089,122 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   `allow_visual_fallback` stays meaningful for when a real driver lands. The HTTP route is on the
   DRA-15/DRA-36 `UNCALLED_BACKLOG` punch list: the agent reaches the router through the tool, so the route
   has no client caller and the HUD control is the open half.
-- [ ] 🟡 **DRA-23 — The egress ledger that the HUD and support bundle present as local-first proof is blind
+- [x] ✅ **DRA-23 — The egress ledger that the HUD and support bundle present as local-first proof is blind
   to every LLM backend — model traffic never reaches it.**
   docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis. *(evidence: `agents/core/http_client.py:151,
   agents/core/observability/egress_monitor.py:161, agents/core/routers/admin.py:281-291`)*
-- [ ] 🟡 **DRA-24 — Cached-input token cost is unmodelled and hardcoded to zero, while Gemini context caching
+  **Shipped 02970c4** — new `agents/core/llm/egress.py`: `llm_async_client(backend, **kwargs)` builds an
+  `httpx.AsyncClient` whose async request event hook writes one `EGRESS_MONITOR` row per request under
+  `llm:<provider id>`. Recording from the hook means the logged host is the host actually dialled, and it
+  fires for streaming and non-streaming requests alike; the hook body is wrapped so observability can
+  never break generation. `allowed=True` is always correct on this path and the docstring says why — LLM
+  backends have no manifest gate, so the ledger records what left, never a block that did not happen.
+  Seven client constructions swapped (anthropic, gemini, gemini_cache folded under the same `llm:gemini`
+  row, openrouter, vlm, lm-studio, ollama). `egress_monitor.snapshot()` gained a derived
+  `model_egress_total` and `support_bundle.py` copies it, so the bundle stops asserting local-first
+  purity from plugin traffic alone.
+  **Residual (recorded, not closed) — the scope sentence at `egress.py:15` overclaims.** It declares the
+  deliberate cut line as "anything that carries a prompt, an image, or a model credential" and names only
+  the localhost control-plane pollers as omissions. That is not true: `agents/core/voice/tts.py:254`
+  POSTs the assistant's reply plus an `xi-api-key` to api.elevenlabs.io and `:305` posts text plus a
+  Bearer token to api.fish.audio, both on a bare `httpx.AsyncClient` with no `EGRESS_MONITOR` row —
+  cloud TTS still dials out unrecorded. `egress_monitor.py`'s retitle from "record every plugin outbound
+  attempt" to "record every outbound attempt" is wrong for the same reason: `skills/importer.py`,
+  `cameras/frigate.py`, `house/home_assistant.py` and `channels/telegram.py` all still bypass it. Both
+  sentences need narrowing to what is actually instrumented.
+  **Residual (recorded, not closed) — three of the five rewired clients have zero test coverage while a
+  test name asserts otherwise.** `tests/test_llm_egress_ledger.py:108` is called
+  `test_gemini_cache_control_traffic_folds_under_the_gemini_row` but never constructs a `ContextCache` —
+  it builds a `GeminiBackend` and calls `generate()` — so the one changed line in `gemini_cache.py:61` is
+  unexercised; and nothing anywhere in `tests/` asserts an `llm:vlm` or an `llm:openrouter` row.
+  **Residual (recorded, not closed):** the ledger is still in-memory and resets on restart (declared in
+  the module docstring, which points at the security audit log as the durable record); the surface this
+  row cites as evidence, `routers/admin.py:281-291`, still documents the endpoint as plugin-only; and
+  `NetworkMonitorPanel` still derives its headline from `local_only_violations` alone, so it can read
+  `local-only ✓` directly above an `llm:gemini · 12 ext` row.
+- [x] ✅ **DRA-24 — Cached-input token cost is unmodelled and hardcoded to zero, while Gemini context caching
   is live in production.** docs/research/2026-08-18-llm-pricing-verification.md:88-91 explicitly defers
   this: 'Cached-input pricing isn't tracked in the repo's schema — MODELS[model] only has input/output keys.
   *(evidence: `agents/core/llm/cost_estimator.py:135-138, agents/core/orchestrator.py:2441-2443,
   agents/core/routers/admin.py:548-556`)*
-- [ ] 🟡 **DRA-25 — MCP SSE transport is unimplemented but advertised end-to-end (admin UI select, API
+  **Shipped 02970c4** — two halves. **(A)** All 62 rows of `agents/core/llm/cost_estimator.py::MODELS`
+  gained a third key `cached`, taken verbatim from the `Cached Input $/M` column of
+  `docs/research/2026-08-18-llm-pricing-verification.md`, and `estimate_cost` now bills
+  `min(cached_tokens, input_tokens)` at the cached rate and the remainder at the full input rate,
+  reporting the saving. The eight rows no vendor publishes a cache-read rate for carry `None` and bill
+  cache hits at the FULL input rate with `savings 0.0` — never a discount nobody quoted.
+  `cost_tracker.MODEL_PRICES` got the mirrored key so the whole-dict drift guard keeps passing
+  unmodified. **(B)** `cached_tokens` is no longer a hardcoded literal: two per-turn maps in the
+  orchestrator compute it from the *verified* Gemini cached prefix and `_record_interactions` reads it.
+  Streamed turns now also record the real prompt size, so recorded spend rises and an install near
+  `llm.daily_cost_cap_usd` hits the cap sooner — the meter becoming honest, not a regression.
+  **Residual (recorded, not closed) — no number actually moves on the surface this row cites as its own
+  evidence.** `agents/core/routers/admin.py:548-556` builds each record as
+  `{'model': r.route_name or 'unknown'}`, and `route_name` is a ROUTE (`cloud`, `cloud-flash`, `claude`,
+  …), not a `MODELS` key: `estimate_cost('cloud-flash', 1000, 500, cached_tokens=800)` returns
+  `total 0.0, savings 0.0, priced False`, and `estimate_monthly` drops the `priced` flag — so
+  `/api/admin/stats` renders $0.00 for all cloud traffic as if it were a measurement. A route→model map,
+  or surfacing the unpriced state, is still owed.
+  **Residual (recorded, not closed) — the meter with the enforcement consequence still bills the cached
+  prefix at the uncached rate.** `orchestrator.py:2537` puts the cached prefix inside
+  `metadata['input_tokens']` and feeds that number to `cost_tracker.record` with a real model id, while
+  `cost_tracker._price_for` reads only input/output — its own comment at `cost_tracker.py:33-38` says
+  "this meter bills every token at the uncached rate". A Gemini prefix quoted at $0.03/M is billed to
+  `spend_today_usd()` at $0.30/M, and that number backs the `llm.daily_cost_cap_usd` refusal at
+  `hybrid_router.py:570-571`. The estimator is right; the meter that refuses work is still wrong, in the
+  direction of over-billing exactly the tokens this row exists to discount.
+  **Residual (recorded, not closed):** the provider's own `cachedContentTokenCount` is discarded by
+  `GeminiBackend._extract_text`, so cached tokens are ESTIMATED with the heuristic tokenizer; only the
+  streaming path measures its real prompt size (every non-streaming channel still meters
+  `estimate_tokens(text)`); Gemini's >200k tier is still unmodelled; the synthetic `gemini-3.1-pro` row
+  carries `cached: None` and so bills cache hits at the full $2.00/M although its own comment says it
+  inherits the preview rate that `gemini-3.1-pro-preview` gets at `0.2`; and
+  `docs/research/2026-08-18-llm-pricing-verification.md:88-91` still says cached pricing "isn't tracked
+  in the repo's schema" while `cost_estimator.py` now cites that same page as the authority for the
+  column it added.
+- [x] ✅ **DRA-25 — MCP SSE transport is unimplemented but advertised end-to-end (admin UI select, API
   schema, governance contract, module docstring).** agents/core/mcp/client.py:119-120 handles
   transport=='sse' by logging 'MCP SSE transport not yet implemented' at INFO and returning False. Nothing
   else in the module supports it: _send() (:195-198) bails unless self. *(evidence:
   `agents/core/mcp/client.py:3, agents/core/routers/mcp.py:73`)*
-- [ ] 🟡 **DRA-26 — GitHub-backed path-prefix lease service — fully specced, machine-asserted
-  'not_implemented', and absent from BACKLOG.md entirely.** The repo's own AI-workflow policy declares a
-  coordination primitive that does not exist and is nowhere on the backlog.
-  scripts/check_ai_workflow_policy. *(evidence: `scripts/check_ai_workflow_policy.py:219-224,
-  tests/test_ai_workflow_policy.py:77-79, PARALLEL_WORKFLOW.md:45-70`)*
+  **Shipped 02970c4** — two parts. The runtime now refuses what was never built: `routers/mcp.py`
+  answers `400 {"error": "unsupported_transport", "supported": ["stdio"]}` before anything is written or
+  persisted, so an `sse` config can no longer register a permanently dead admin row — and it persists the
+  NORMALISED transport rather than the raw one, which is the bug that survived the first pass
+  (`{"transport": "STDIO"}` cleared the lower-cased gate and then stored a spelling `connect()` does not
+  dispatch on, re-creating the same dead row one case further in).
+  `tests/test_mcp_transport_honesty.py` pins both the refusal and the normalise-vs-persist case. Then
+  every advertised surface was corrected: `GO_LIVE_PLAN.md:100`, `AI_SYSTEM_PROMPT.md:33`,
+  `docs/ARCHITECTURE.md:293` and `:706`, and `docs/HISTORY.md:183` — which keeps the H4.7 milestone as a
+  historical record but stops reading as a shipped capability.
+  **Residual (recorded, not closed):** the SSE transport is still unimplemented. This row closes the
+  *advertising*, not the feature. The H10.5 row further down this file still calls the stdio/SSE loop a
+  "follow-up", which is honest as written, but the client-side SSE transport is now actively refused
+  rather than merely pending.
+- [x] ✅ **DRA-26 — GitHub-backed path-prefix lease service — specced in the repo's own AI-workflow
+  policy, machine-asserted 'not_implemented', and absent from BACKLOG.md entirely.** The repo declared a
+  coordination primitive that does not exist and was nowhere on the backlog.
+  **Body corrected 2026-08-31 — two of this row's three citations were dead when it was ticked.**
+  `scripts/check_ai_workflow_policy.py:219-224` and `tests/test_ai_workflow_policy.py:77-79` no longer
+  exist: that checker and `.github/ai-development-policy.json` were DELETED by #981 / `824ff18` and
+  archived in `docs/restore/dev-gates-restore-2026-08-30.zip`. Leaving them here as "evidence" would have
+  recorded a shipped lease service that was never built, behind two file:line pointers a reader cannot
+  open. *(live evidence: `PARALLEL_WORKFLOW.md:45-70` §3 and §5; archived evidence: the zip above.)*
+  **Shipped 02970c4** — both deletions were confirmed first, then every surface still describing the
+  deleted machinery as live was corrected. `PARALLEL_WORKFLOW.md`: the header names `AGENTS.md` as
+  canonical and records that the machine policy and its checker were removed by #981 / `824ff18` and
+  archived; §3 records that the planned lease service is tracked here as DRA-26, scheduled post-1.0, and
+  that nothing in `agents/` implements it. `docs/AGENT_WORKFLOW.md` gained an "Advisory since #981"
+  banner above the R0–R3 table so the surviving ceremony is not read as an enforced gate.
+  `docs/DEVELOPMENT_ROADMAP.md` dropped the deleted JSON from its canonical-sources list and lost the
+  false line "the machine-readable policy still applies — you now verify conformance by reading it".
+  `AI_SYSTEM_PROMPT.md` lost the checker from its script inventory, its lint/health command block and its
+  step-8 validation chain. **This file was corrected too:** the H23.30 risk-tier note near line 57 no
+  longer tells an author to classify against the deleted `.github/ai-development-policy.json`.
+  **Residual (recorded, not closed):** the lease service itself is NOT built and is NOT proposed. It
+  needs an architecture decision on the system of record, GitHub settings and a write-scoped token, and
+  it would only be meaningful as the kind of PR-blocking gate the owner deliberately removed in #981.
+  What closed here is the false claim, not the feature.
 - [ ] 🟡 **DRA-27 — Memory write/hygiene controls are still built-but-unreachable (consolidate, decay
   candidates, memory-eval, remember-a-fact, KG ingest/relations).** The design punch lists name this cluster
   explicitly as a MUST-wire gap — SINGLE_PAGE_HUD_BRIEF.md §7.4/§7.5 ('KG editor + bitemporal facts + ingest
@@ -931,24 +1228,119 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
     deliberately not wired. Decide where `existing` comes from first.
   · `/api/memory/remember`, `/api/memory/eval/corpus`, `/api/memory/eval/run`, `/api/kg/ingest`,
     `/api/kg/relations` — untouched, still on the `UNCALLED_BACKLOG` punch list.
-- [ ] 🟡 **DRA-28 — HUD has no workflow create/edit surface — the shipped AI Step Builder generates JSON with
+  **Partially shipped 02970c4 — the row stays OPEN.** Five of the six legs are now wired into the Memory
+  cluster. `KgPanel` grew the two write halves it was missing: an add-relation row on `/api/kg/relations`
+  and an ingest textarea on `/api/kg/ingest` that renders the returned triples as rows rather than only a
+  count, both sharing a handler that distinguishes 400 ("invalid relation type" — `is_safe_kg_rel_type`
+  rejects a non-identifier before it is interpolated into Cypher), 503 ("graph unavailable") and the
+  contract/kernel 403; `apiPost` throws on all three, so without it the buttons would have read as silent
+  successes. A new `REMEMBER` panel on `/api/memory/remember` treats a `200 {ok:false, id:null}` as its
+  own outcome — "not stored: the write was accepted but no embedding was produced" — with an amber chip
+  rather than green, because that is what the route really answers with no embedder. A new `MEMORY EVAL`
+  panel reads `/api/memory/eval/corpus` and runs both modes, and states the recall mode's side effect
+  outright: it really calls `remember()` for every case fact, i.e. it writes the corpus into the vector
+  store.
+  **The sixth leg is deliberately NOT wired, and that is why this row is not ticked.**
+  `POST /api/memory/consolidate` takes `{candidates, existing}` and no route returns memories in its
+  `{id, key, text}` shape, so wiring it with `existing: []` would make every candidate an ADD ("novel")
+  and ship a planner that is degenerate by construction. Two things must be decided first and neither is
+  effort: where `existing` comes from, and where an APPLY surface lives — `ConsolidationEngine.apply`
+  has no HTTP caller at all, so any panel today would be a plan preview with nothing to accept. On a
+  deployment with no embedder the vector arm of `/api/memory/search` is empty and only graph hits (which
+  carry `name`, not `text`) come back, so every candidate would plan as ADD there regardless. It is the
+  one entry of the six that is still correctly on `UNCALLED_BACKLOG`.
+- [x] ✅ **DRA-28 — HUD has no workflow create/edit surface — the shipped AI Step Builder generates JSON with
   nowhere to paste it.** HUD_V2_REMAINING.md §3 Build says in as many words that 'deeper create/edit
   affordances remain in the Console panels' — the design-punchlists finder took the Build row for
   Memory/Dossier/wake-word but not this one, and no item in items_only. *(evidence:
   `agents/core/routers/workflows.py:114, frontend/src/gap.tsx:1177-1181, gap.tsx:1199-1206`)*
+  **Shipped 02970c4** — the read-only `StepGenPanel` is replaced by an exported `WorkflowBuilderPanel`
+  in the Build row (`WorkflowsPanel` stays untouched as list/run/delete). The old card generated a step
+  config, rendered it as JSON and captioned it "paste into the workflow builder" — a builder that only
+  ever existed in the legacy v1 surface, never in the default v2 HUD. The new panel owns the whole loop:
+  pick a registered pipeline to load its id/name/steps (update mode) or start new; the generate control
+  is preserved verbatim; "add step to draft" maps the builder config into a REAL `WorkflowStep` dict with
+  `agent_id` always present (a missing key would 422) and `depends_on` chained to the previous step so
+  the DAG is valid on the first save; the steps JSON textarea is the editor of record for
+  router/critic/loop/subflow configs; and save parses that textarea FIRST and makes no network call on a
+  parse failure, then POSTs or PUTs as admin and renders `refused · <status>` inline — because a silent
+  admin write is exactly the failure class this file's own `act`/`actA` comment block warns about.
+  **The served HUD bundle was rebuilt in this PR** — `WORKFLOW BUILDER` is present in
+  `agents/web/v2/assets/*.js`. The previously committed bundle still shipped `AI STEP BUILDER`, so until
+  the rebuild this row's defect was unchanged for an operator.
+  **Residual (recorded, not closed):** no graphical DAG canvas — the steps textarea is what closes
+  create/edit, and `docs/design/HUD_V2_REMAINING.md` now records the canvas as the open half. The v1
+  drag-and-drop SVG canvas was deliberately not revived. The parity gate is blind here (both
+  `/api/workflows` paths already had callers, and the legacy `workflows.js` counts as one), which is why
+  this finding survived at all. **Owed:** `docs/test-manual/05-console-panels-b.md:118` flipped PNB-026's
+  Auto column to `✅ frontend/src/test/workflow-builder-panel.test.tsx`, but none of that file's six tests
+  exercises the empty-description guard the case describes — a green coverage marker for coverage that
+  does not exist, added by an honesty pass, and it should be reverted to ❌ or the test written.
 - [ ] 🟡 **DRA-29 — Multimodal is output-only in the HUD: /api/vlm/describe and /api/media/generate have zero
   frontend callers.** SINGLE_PAGE_HUD_BRIEF. *(evidence: `agents/core/routers/multimodal.py:70,
   schema.gen.ts, frontend/src/cockpit.tsx`)*
-- [ ] 🟡 **DRA-30 — Issue #242 (CI/F-10): the SEC-4 required-checks posture contradicts itself across four
+  **Partially shipped 02970c4 — the row stays OPEN.** The `/api/vlm/describe` half is wired: a new
+  `VlmDescribePanel` in the Admin cluster reads `/api/vlm/status` for config truth, takes `image/*` files
+  through `FileReader` into `data:` URIs (never paths — `encode_image_block` rejects those by design),
+  enforces the backend's own bounds client-side (8 images, ~4 MB each, 4000-character prompt) and reports
+  each skip by name, renders the backend's own `reason` verbatim when unconfigured, never renders
+  `reachable` as up/down (the route deliberately returns null), and surfaces the route's 503 as
+  `describe failed · HTTP <status>` instead of reading as success. When the resolved VLM is not loopback
+  the panel names the destination verbatim and performs ZERO network calls until an explicit
+  acknowledgement is ticked — an informed-consent gate on owner-picked files, deliberately **not** a
+  route-level `is_local` guard: `_is_loopback_base` counts a LAN address as non-local, so a hard guard
+  would refuse the owner's own second box, and silently narrowing a snapshot-frozen user-guarded contract
+  is a behaviour change a HUD finding cannot justify. The code comment says so in those terms.
+  **The `/api/media/generate` half is deliberately NOT wired, and that is why this row is not ticked.**
+  `MediaGenManager` is constructed with no backends, so a button there would be dead by construction; the
+  owner must pick and deploy a media backend first. That route keeps its `UNCALLED_BACKLOG` entry, and
+  the row should be re-scoped rather than ticked.
+- [x] ✅ **DRA-30 — Issue #242 (CI/F-10): the SEC-4 required-checks posture contradicts itself across four
   in-repo files after the owner applied the settings on 2026-08-28.** Issue #242's second half asks to
   "Update OWNER_TASKS.md, BACKLOG.md, and workflow comments so they agree", to document required-check names
   in-repo, and to add a maintainer runbook section for the "required status checks are expected" merge
   deadlock. *(evidence: `BACKLOG.md:1109, BACKLOG.md:1935, docs/SECURITY_ROUTE_AUDIT_2026-06-17.md:55`)*
-- [ ] 🟡 **DRA-31 — BACKLOG.md's own "still open, verified real, not yet fixed" residual — the seeded
+  **Shipped 02970c4** — `docs/test-manual/08-security-privacy.md` no longer sends a tester hunting an
+  owner-side branch-protection setting with no workflow behind it: that question left item #15's "could
+  not verify on this checkout" list (with a short dated note saying why it moved), and a new item states
+  the true post-de-gate posture in the same terms as the other four surfaces — the four security jobs
+  (gitleaks / semgrep / pip-audit / bandit) lived in `.github/workflows/security.yml`, which #981 /
+  `824ff18` DELETED rather than promoting to required checks; what runs on a PR is the single advisory
+  `test (ubuntu-latest)` lane in `ci.yml`, where `test_route_auth_matrix.py` and the HUD-parity test
+  execute; nothing blocks a merge; and re-gating needs BOTH halves — the `docs/restore` group-A patch AND
+  the branch-protection name — because restoring only the settings half reproduces the "Expected —
+  Waiting for status to be reported" deadlock in `MAINTENANCE_RUNBOOK.md` §10. The tester-facing
+  consequence is stated outright: the SEC-137 scans are manual-only, and a green PR is not evidence that
+  anything was scanned.
+  **BACKLOG.md itself was the last file still contradicting the de-gate, and this PR fixed it** — which
+  is precisely the half of issue #242 this row quotes ("Update OWNER_TASKS.md, **BACKLOG.md**, and
+  workflow comments so they agree"). Two passages were rewritten. The **SEC-4** row in the
+  security-hardening table still carried "**Remaining:** promote matrix/parity tests to **required**
+  branch-protection checks", a plan the de-gate retired by deleting the very workflows it referred to; it
+  now records F-10 as *superseded, not done*, states what actually runs on a PR, and names the real
+  remaining owner action (removing the stale check names). And **A4** in Lane A read a bare
+  "✅ done (owner, 2026-08-28) — settings applied in the GitHub UI" while `docs/OWNER_TASKS.md:72-78`
+  still lists those same check names as needing removal; it is now 🟡 partial with that contradiction
+  spelled out. Both passages now agree with `codeql.yml`, `docs/MAINTENANCE_RUNBOOK.md` §10 and
+  `docs/SECURITY_ROUTE_AUDIT_2026-06-17.md` F-10.
+  **Residual (recorded, not closed):** the GitHub settings half stays unobservable from the repo — the
+  chapter now says so explicitly rather than filing it as unverified — and removing the stale
+  required-check names remains an open owner task. Separately, and not fixed here:
+  `docs/MAINTENANCE_RUNBOOK.md:157` still tells a maintainer under deadlock pressure to apply
+  `docs/restore/groups/<group>.patch`, a path that does not exist (the patches live inside
+  `dev-gates-restore-2026-08-30.zip`).
+- [x] ✅ **DRA-31 — BACKLOG.md's own "still open, verified real, not yet fixed" residual — the seeded
   ADMIN/OBSERVE corpora — is in none of the 120 items.** The governance-rails section itself carries an
   explicit open residual from the 2026-07-28 parallel bug hunt: "Still open from that run (verified real,
   not yet fixed): the seeded ADMIN/OBSERVE corpora in modes3. *(evidence: `BACKLOG.md:883-884,
   modes3.tsx/modes2.tsx, frontend/src/api/live.ts:197-199`)*
+  **Verified already fixed — closed by DRA-03 and DRA-04 (`16557a5`), no code shipped for this row.** The
+  residual this row quotes is gone on both sides: `honestAdminSeed()` at `frontend/src/api/live.ts:196`
+  now strips `plugins` alongside models/keys/backups/channels/system, so the ADMIN registry can no longer
+  render the 8-row demo corpus in live mode; and the OBSERVE scalar seed was nulled with its three
+  truthiness guards dropped, so an unanswered endpoint renders `—` instead of the seeded 4.2s p50. The
+  governance-rails "still open (verified real, not yet fixed)" note that this row quotes should be read
+  as closed by those two rows.
 - [x] ✅ **DRA-32 — WFL-062 — unbounded max_retries on the user-tier POST /api/workflows/hierarchical is
   still uncapped.** Named by the governance-rails audit's own gap ledger (chapter 15 ADV-136 points at §10's
   open-gaps list) and confirmed open in code today: `POST /api/workflows/hierarchical` is user-tier
@@ -976,21 +1368,100 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   tests/test_hud_v2_parity.py:436-514 declares UNCALLED_BACKLOG as 'Today's uncalled user-facing routes. A
   punch-list, not an allowance' — i.e. an in-repo register of shipped backends whose UI half is missing.
   *(evidence: `tests/test_hud_v2_parity.py:436-514, agents/core/routers/mesh.py:203, security.py:278`)*
-- [ ] 🟡 **DRA-37 — 0.58 marketplace package rollback has no HUD control — the version-history panel is
+  **Partially shipped 02970c4 — the row stays OPEN.** This is a meta-row ("a ~70–81 entry register was
+  mined for only two items"), and this PR mines exactly the two clusters its own evidence clause cites
+  (`mesh.py:203`, `security.py:278`) — which is a demonstration, not a closure. `AuditAnchorsPanel` in
+  Trust reads `/api/security/audit/anchors` and drives its chain header off `d.verify` (green "anchor
+  chain intact", red "chain broken @ #{bad_seq}", and a distinct grey "nothing anchored yet" wearing the
+  amber chip, because `TransparencyAnchor.verify()` returns ok over zero rows and rendering that green
+  would claim "checked" where the truth is "nothing to check"), plus one admin "anchor now" control with
+  both a success and a refusal line, and a footer saying the anchor log is local — it pins ordering, it
+  does not publish to a third party. `SubAgentsPanel` in Observe reads `/api/subagents` and spawns, with
+  the button disabled while in flight and a footer stating plainly that `SubAgentManager.spawn` awaits
+  the entire sub-agent turn inside the POST, so the connection is held for minutes and nothing polls.
+  Four entries leave the punch list; both panel names are present in the rebuilt `agents/web/v2` bundle.
+  **Remaining:** the rest of the register — mining it is DRA-15's campaign, not this row. Two entries
+  were deliberately not wired: `POST /api/security/audit/action` (a HUD form letting a human hand-type
+  provenance into a tamper-evident intent log is worse than no control) and `/api/signals/governance*`
+  (owner-gated, default-off). **Honesty limits worth stating:** the exact 429 reason
+  (`concurrency_cap` / `recursion_depth_cap` / `spawn_budget_exhausted`) cannot reach the UI —
+  `failMutation` discards the response body — so the panel shows the real refusal line and names the
+  three possible causes without claiming which fired; and a 429 is not proof a cap was hit at all, since
+  spawn also returns 429 when the sub-agent run itself fails.
+- [x] ✅ **DRA-37 — 0.58 marketplace package rollback has no HUD control — the version-history panel is
   read-only.** POST /api/skills/marketplace/{name}/rollback (agents/core/routers/skills.py:159) restores a
   marketplace skill's prior package (archiving the current one, 422 when nothing to restore) — it shipped as
   part of the 0. *(evidence: `agents/core/routers/skills.py:159-173, frontend/src/gap.tsx:1902-1930`)*
-- [ ] 🟡 **DRA-38 — H32/A8-i acquisition drive trigger is curl-only — the AcquisitionPanel exposes every
+  **Shipped 02970c4** — the EXISTING `MarketplacePanel` gained the write half rather than a new panel: a
+  per-row ⟲ admin button on `POST /api/skills/marketplace/{name}/rollback`, a version `<Tag>` on every
+  row so the version visibly changes after a rollback, a success line (`weather · restored 1.0.0 ←
+  2.0.0`) and a red `role="alert"` refusal line. The refusal line is mandatory here, not optional: "no
+  prior version archived" is the common case, it answers 422, and `apiPost` throws on 4xx, so a caller
+  without `onErr` would read as success. `MarketplacePanel` was chosen over `SkillHistoryPanel`
+  deliberately — the version archive is populated by every publish in a default install, while
+  `SkillHistoryPanel` renders zero rows unless `JARVIS_SKILL_HISTORY` is set, so a control hung off it
+  would vanish exactly when rollback is still usable. The footer is precise about what rollback does: it
+  reverts the registry package and is itself reversible; the installed skill is unchanged until it is
+  re-installed through the moderation gate.
+  **Two things the review found, both fixed in this PR rather than shipped around.** (1) The panel's list
+  read was `useApi('/api/skills/marketplace')` with no admin flag against an `admin_guard`'ed GET, so on
+  any token-configured install the list 401s, no rows render and the ⟲ button never mounts — the control
+  would have existed only on the localhost/no-token posture. The read now passes the admin flag. (2) The
+  served `agents/web/v2` bundle was rebuilt, so the control reaches an operator and not only
+  `frontend/src`.
+  **Residual (recorded, not closed):** the refusal line shows the HTTP status, not the backend's own
+  `error` string — `failMutation` in `frontend/src/api/client.ts` throws before reading the body, so no
+  call site in the HUD can display why a mutation was refused. Same limitation recorded under DRA-52 and
+  DRA-36; fixing it properly is a shared-client change.
+- [x] ✅ **DRA-38 — H32/A8-i acquisition drive trigger is curl-only — the AcquisitionPanel exposes every
   other admin lifecycle control but not drive.** POST /api/acquisition/{request_id}/drive
   (agents/core/routers/acquisition.py:230) was added explicitly as 'the production trigger for the governed
   acquisition loop' because synthesize_and_propose 'had no caller outside tests . *(evidence:
   `agents/core/routers/acquisition.py:144-150, frontend/src/gap.tsx:2579-2600,
   agents/core/routers/acquisition.py:41-67`)*
-- [ ] 🟡 **DRA-39 — flow_api.build_flow silently drops `subflow` — Python-authored subflow steps compile to a
+  **Shipped 02970c4** — both halves. **Backend:** `GET /api/acquisition/requests` (admin_guard) returns
+  only the drive-eligible gaps (`statuses={MISSING, BLOCKED}` — exactly the two states `_TRANSITIONS`
+  lets `synthesize_and_propose` move to `researching` from), projecting
+  `request_id/status/agent_id/reason/occurrences/updated_at` and deliberately NOT `goal` or
+  `fingerprint`, because the ledger hashes goals on purpose and the HUD contract is that raw goals never
+  arrive. A disabled or store-less install answers `{enabled:false}` WITHOUT calling `ensure_ledger`, so
+  the disabled-stays-lazy invariant holds, and the store read fails closed to an empty list.
+  **HUD:** an `OPEN CAPABILITY GAPS` subsection in `AcquisitionPanel` — entrypoint input, contract-cases
+  JSON textarea validated locally (1–16, no network call on a parse failure), one row per gap with a
+  Drive button, and `no open capability gaps` rather than a bare button when the list is empty. The read
+  route exists because the `request_id` was obtainable nowhere in the product: a paste-the-id textbox
+  would have been curl with a textbox.
+  **Three things the review found, all fixed in this PR rather than shipped around.** (1) The drive
+  control was gated on `hasAdmin` — a locally stored token — which hid it on the default no-token
+  localhost posture, where admin routes are exempt and the control actually works; so the route this row
+  calls unaddressable was still unaddressable there. The requests read now runs with the admin header
+  when a token exists and degrades to a visible `offline · GET … -> 401` otherwise, like every sibling
+  admin panel. (2) The 409 handler fabricated a fixed precondition list the route never gave; it now
+  prints the route's own reason verbatim (`reuse_available`, `acquisition_disabled`,
+  `promotion_unavailable`, `local_llm_required`, `searxng_backend_required`, `synthesis_failed`, …).
+  (3) The served `agents/web/v2` bundle was rebuilt, so the control reaches an operator.
+  **Residual (recorded, not closed):** an actual drive still needs settings `acquisition.enabled`, a live
+  local LLM backend, `SEARXNG_URL`, a digest-pinned sandbox image and a provisioned signing key — all
+  correctly surfaced as 409s rather than hidden. And a pre-existing backend quirk this row did not fix:
+  `routers/acquisition.py:107` treats `request_store is None` as "disabled", but the store is built
+  lazily on the first `capture_gap`, so an enabled install that has not yet captured a gap reports itself
+  affirmatively disabled.
+- [x] ✅ **DRA-39 — flow_api.build_flow silently drops `subflow` — Python-authored subflow steps compile to a
   no-op (WFL-057).** agents/core/workflows/flow_api.py:88-100 builds each WorkflowStep forwarding
   kind/terminate_when/output_schema/critic/router/transform/guardrail/loop — but NOT `subflow`. *(evidence:
   `agents/core/workflows/flow_api.py:88-100, agents/core/workflows/engine.py:232-246,
   docs/test-manual/10-workflows-eval.md:334`)*
+  **Shipped 02970c4** — `build_flow` now forwards `subflow=spec.get('subflow')` to `WorkflowStep`,
+  closing the Python-author → Pipeline → `to_dict` → engine path (every downstream piece already
+  existed), and the module docstring's list of recognised spec keys gained `subflow`. A step whose
+  resolved kind is `subflow` with no subflow config now raises `ValueError` at compile time instead of
+  compiling to a step that silently returns the previous ctx value at run time — the failure mode was
+  silent, which is why the drop survived this long.
+  **Residual (recorded, not closed):** `docs/test-manual/10-workflows-eval.md` still records the gap as
+  live in three places (:334 "Gap to record, not a test", :641, :664 → WFL-057); that file is generated
+  and must be regenerated rather than hand-edited. The Visual Builder still cannot author subflow steps
+  (no `kind` selector in `StepForm`), and no equivalent guard was added for `kind='loop'` with a missing
+  loop config — explicitly out of scope.
 - [x] ✅ **DRA-40 — native_fallback.load_native() has no caller — the H11.2 Rust hot-path is unreachable even
   when built.** BACKLOG.md:2492 marks H11.2 ✅ with the claim that `load_native()` 'preferă extensia
   compilată, altfel Python → comportament identic cu/fără build'. *(evidence:
@@ -1006,10 +1477,28 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   **Residual (recorded, not closed):** the crate itself is still host-built and unexercised by CI —
   the H11.2 row's own `⚠️ netestat în CI` caveat is unchanged, and the tests prove the *wiring* with a
   stand-in module, not the compiled Rust.
-- [ ] 🟡 **DRA-41 — self_evolution.py (H20.4 ✅) has no production caller — no trajectory is ever captured and
+- [x] ✅ **DRA-41 — self_evolution.py (H20.4 ✅) has no production caller — no trajectory is ever captured and
   no proposal reaches the decision inbox.** BACKLOG.md:2831 marks H20.4 ✅ 'Self-evolution (DSPy/GEPA) …
   gated prin decision inbox (reversibil)'. agents/core/self_evolution. *(evidence:
   `agents/core/self_evolution.py:18, BACKLOG.md:2831`)*
+  **Shipped 02970c4** — `self_evolution.py` gets its first production caller, mirroring the promotion
+  twin line for line. New `agents/core/learning/evolution.py`: `capture_trajectories` builds a real
+  `TrajectoryStore` from `learning.get_agent_records`, recording ONLY successful turns (a failed turn is
+  not a few-shot demo) with a score derived from the loop's own two signals;
+  `propose_prompt_optimizations` reads each agent's soul, skips empty ones, dedups against open proposals
+  of the same kind by agent, and enqueues at `risk_tier=2`, `autonomy_level='ask'`, `origin='generated'`,
+  `attention_mode='digest'` — digest rather than the default interrupt, because the payload carries
+  verbatim conversation text. Four more seams: `Orchestrator._run_prompt_evolution()`, a
+  `learning-loop-prompt-evolution` scheduler job beside `learning-loop-promotions` (the unattended
+  production caller — no owner action, no new setting), `POST /api/learning/evolve` (admin), and a
+  `propose prompt optimizations` button on `LearningPanel` with an explicit `onErr` so a 503 cannot read
+  as a silent success.
+  **Residual (recorded, not closed) — a deliberate honesty boundary, not an omission.** No autonomy
+  executor handler is registered for `prompt_optimization`, because approving one does NOT hot-swap a
+  live prompt: agents load SOUL from disk and `SoulVersionStore` is a version record. The payload says so
+  — `expected` names `POST /api/admin/prompts/{agent}/commit` as the real apply step, and `score_source`
+  reads "learning-loop success+latency (not a human rating)" so nobody downstream mistakes the score for
+  a human grade. Same precedent as `agent_promotion`. Nothing here executes an approved optimization.
 - [x] ✅ **DRA-42 — operator_router.py is dead code — the risk-ordered operator implementation selector is
   never wired, and a prior audit already flagged it.** agents/core/operator_router.py (259 lines) implements
   the Nerva computer-operator's risk-ordered implementation selection ('deliberately selects but never
@@ -1021,7 +1510,9 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   cites `:1-5`, that class's own file docstring) and quote the same audit line, whose remedy — "wire into
   app + register actuators" — is a single action. Closed by the one PR; the delivery detail and the
   deliberate visual-route residual are written up in the DRA-22 row above. **Recorded so the audit's own
-  count stays honest: 53 findings contained 52 distinct defects.**
+  count stays honest: the 53 confirmed findings contain 51 distinct defects — this pair, and
+  DRA-10/DRA-05 (folded 2026-08-31, same module, same missing scaffold). A third duplicate, DRA-56, sits
+  among the 9 completeness-critic additions and is closed by DRA-24.**
 - [x] ✅ **DRA-43 — desktop_control.py is entirely uncalled — T-0.25's OS-action and recording vocabulary is
   unreachable while BACKLOG declares the tail closed.** agents/core/desktop_control.py:143 `DesktopControl`
   plus `plan_launch`/`plan_os_action`/`plan_recording`/`allowlist` have zero production importers. The live
@@ -1045,42 +1536,166 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   fail that test and prompt closing this residual. The HUD control half also stays open (both routes are on
   the DRA-15/DRA-36 `UNCALLED_BACKLOG` punch list), as does the real driver + host key→launcher map, which
   is owner/host-gated.
-- [ ] ⬜ **DRA-44 — 0.23 Hardware Benchmark & Profiles is still 🟡 partial with zero delivered content — no
+- [x] ✅ **DRA-44 — 0.23 Hardware Benchmark & Profiles is still 🟡 partial with zero delivered content — no
   hardware scoring, and the detected GPU never reaches the VRAM budget.** BACKLOG.md:1259 is the one 🟡 row
   in the whole Competitive-Gap capability table (1237-1359) that carries no '→ … ✅' delivery clause and no
   'Remaining (owner-gated)' explanation: '| 0. *(evidence: `BACKLOG.md:1259, agents/core/bench.py:1-9,
   agents/core/system_profiles.py:62-92`)*
+  **Shipped 02970c4** — both defects this row names are closed. New `agents/core/hardware.py`:
+  `detect_gpu()` holds the nvidia-smi probe moved verbatim out of `agents/web.py::_sys_info()` (same
+  `shutil.which` guard, same query, same 5s timeout, same suppression) but reports MB and adds
+  `measured: bool`, with an honest `name='none'` when the binary is absent and `'unknown'` when it is
+  present but erroring. `score_hardware()` weights VRAM 50 / threads 25 / RAM 25, an unmeasured component
+  contributes ZERO and is never silently credited, and an all-unmeasured host is `tier='unknown'`, not
+  `'low'` — "we could not look" and "the box is weak" are different claims. `recommended_profile()` maps
+  onto an existing `system_profiles.PROFILES` key and is advisory: it never writes
+  `JARVIS_SYSTEM_PROFILE`. The row's second defect is the substantive one:
+  `agents/core/llm/model_manager.py` now probes `hardware.detected_vram_total_mb()` as `env_int`'s
+  default, making precedence explicit — arg > `JARVIS_VRAM_TOTAL_MB` > detected card > the 24576 constant
+  — so the detected GPU finally reaches the VRAM budget. Surfaced at `GET /api/system/hardware`
+  (user_guard) with a HUD panel.
+  **Residual (recorded, not closed):** the literal *Benchmark* half is deliberately NOT done — tokens/sec,
+  load latency, thermal headroom, and turning `DEFAULT_MODEL_SIZE_MB` into a measured number all need a
+  run on the owner's physical card with models loaded. That is a benchmark, not code, and it stays parked
+  with DRA-62. The module docstring, the `basis` field and the panel footer all say the score is
+  SPEC-based so nobody later reads it as measured throughput. Test hygiene owed:
+  `tests/test_hardware_profile.py:64` calls `detect_gpu(force=True)` with `shutil.which` patched to None
+  and nothing restores the module-global cache, so later tests in the same process can see a fabricated
+  "this box has no GPU".
 - [ ] ⬜ **DRA-45 — GAP-4 (run the Hermes head-to-head once) is an unchecked box no finder, cluster, or
   owner-lane entry covers.** docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md §6. *(evidence:
   `BACKLOG.md:675-678, items_only.json, plan_only.json`)*
-- [ ] ⬜ **DRA-46 — NERVA_VISION.md still claims the execution-target layer 'never executes — no transport
+  **Partially shipped 02970c4 — the row stays OPEN.** Only the tracking/protocol half landed.
+  `docs/HERMES_HEAD_TO_HEAD.md` now exists and opens with "Status: NOT RUN — owner-gated. No measurement
+  in this file has been taken. Any table below is a template.", states explicitly that the document is
+  **not** authorisation (the OWNER_TASKS parking-lot item withholds permission to pull, install or
+  execute Hermes pending the licence / CVE / transitive-licence / SBOM review), enumerates T1–T10 across
+  browser / desktop / house / acquisition — with T4, T6 and T8 aimed deliberately at the three limits
+  Hermes documents (UIPI, Wayland without XWayland, password entry) — each with a goal, the real Nerva
+  route it exercises (each verified to exist), the Hermes equivalent and a pass bar written *before* the
+  run, an all-`—` results table under a standing "publish the losses" rule, and an evidence section in
+  the A8 house style. An owner-lane entry, a back-pointer on the licence item and a roadmap link were
+  added.
+  **Remaining — GAP-4 itself: the head-to-head has NOT been run.** No number was invented and nothing in
+  that document should be read as a measurement. Running it needs the owner's box and an installed
+  Hermes, and before either, the licence/CVE/SBOM decision that currently withholds permission even to
+  pull the image.
+- [x] ✅ **DRA-46 — NERVA_VISION.md still claims the execution-target layer 'never executes — no transport
   exists', contradicting its own #980 changelog entry.** The 2026-08-09 honesty-debt research doc's claim 4
   ('environments/ is a policy plane that never executes; no SSH transport exists') was closed on the
   functional side by #980's GovernedTargetRunner, and docs/research/2026-08-09-gap9-honesty-debt.
   *(evidence: `NERVA_VISION.md:196-197, NERVA_VISION.md:618-621, agents/core/environments/execution.py`)*
-- [ ] ⬜ **DRA-47 — SSRF blocked-request counter and per-scanner finding counts are declared unmeasured;
+  **Shipped 133ab56** — both passages corrected. The layer DOES execute: `GovernedTargetRunner`
+  (`environments/execution.py:32-33`) authorizes against the policy plane then runs docker, and it is
+  constructed in production at `autonomy_coordinator.py:461-465`. Only the falsified half was changed —
+  `local`/`ssh` still refuse honestly and there is still no paramiko/asyncssh, so the no-SSH-transport
+  half is preserved verbatim. `tests/test_vision_execution_claim_honesty.py` pins it against the CODE,
+  not the prose: it first asserts the production constructor exists, so if that caller is ever removed
+  the guard inverts rather than forcing the doc to stay silent.
+  **Process note:** this row was the one finding that fell through the swarm's lane partition — it was
+  never assigned to any agent. Caught by the BACKLOG sync refusing to tick it, not by the partition.
+- [x] ✅ **DRA-47 — SSRF blocked-request counter and per-scanner finding counts are declared unmeasured;
   /api/resilience never emits uptime or redactions.** GET /security/status hardcodes the SSRF block as
   unmeasurable: blocked_requests: None, available: False, note: 'the SSRF guard is active but does not yet
   count blocked requests' (agents/core/routers/security_hud. *(evidence:
   `agents/core/routers/security_hud.py:75-80, frontend/src/api/live.ts:120-126,
   frontend/src/modes2.tsx:283-286`)*
-- [ ] ⬜ **DRA-48 — agents/_system/install.sh is a dead 'Installer not yet active — core Python modules are
+  **Shipped 02970c4** — three numbers that `/security/status` and `/api/resilience` published as
+  null/absent are now measured, so the UIs stop rendering a measurement where none existed.
+  `agents/core/security/ssrf.py` gained a process-wide refusal counter behind a lock, routed through a
+  single `_refuse(reason)` helper on every refusal return (the two success returns untouched) and exposed
+  as `blocked_requests()` / `reset_blocked_requests()`. `security/guardrails.py` bumps a per-scanner
+  finding counter inside the loop that already holds the producing scanner, and `stats()` emits
+  `{patterns, findings}` from the shared dict so `bind()`'s per-backend instances report the process
+  total rather than a fraction. `routers/security_hud.py` reports both with `available: True` and deletes
+  the now-false rationale "the engine merges results before it sees which scanner produced what".
+  `/api/resilience` gained `uptime_seconds`, `uptime`, `ssrf_blocked` and `redactions` — null, never 0,
+  when no guardrails engine is attached. No `errors_24h`: `ResilienceMetrics` has no time window, so that
+  key would be a mislabelled number.
+  **Residual (recorded, not closed) — the SSRF counter is not purely a policy-block counter.** `_refuse()`
+  is also reached by ordinary DNS failures — empty hostname, `getaddrinfo` OSError, empty resolution
+  (`ssrf.py:132, :154, :164`) — and `resolve_and_validate` runs on the happy path of every plugin
+  request, so a flaky resolver inflates a number published as `ssrf.blocked_requests` with
+  `available: true`. The reasons should be split, or the field renamed.
+  **Residual (recorded, not closed):** both counters are process-lifetime and reset on restart (stated in
+  the payload note rather than implied as all-time totals), and the guardrails counter counts redaction
+  *events* merging secrets and PII while `frontend/src/modes2.tsx` still labels its tile "PII
+  redactions".
+- [x] ✅ **DRA-48 — agents/_system/install.sh is a dead 'Installer not yet active — core Python modules are
   still WIP' stub shipping in a 1.0.0 repo.** agents/_system/install.sh is a 49-line echo-only script from
   the pre-rename 'Cabinet v0.1.0' era. It prints '⚠️ Installer not yet active — core Python modules are
   still WIP. *(evidence: `agents/_system/install.sh:1-11, agents/_system/WEEK-1.md:1-30, install.sh:1`)*
-- [ ] ⬜ **DRA-49 — tests/test_kernel_authorize.py docstring still points at a deferred K3 and a 'scaffolded
+  **Shipped 02970c4** — verified first, then deleted. A repo-wide grep found the only references to
+  `agents/_system/install.sh` and `agents/_system/WEEK-1.md` in prose — this row and
+  `docs/DEVELOPMENT_ROADMAP.md:125` — with no import, test, packaging manifest or release script behind
+  them (there is no `MANIFEST.in`, and `scripts/build_release.sh` reads only `agents/__init__.py`). Both
+  files are `git rm`'d, leaving `agents/_system/` holding just `agents.yaml`, the file the code actually
+  loads, and the roadmap line now names the live root `install.sh` rather than the deleted stub, so the
+  deletion leaves no dangling reference. The root `install.sh` is untouched.
+  **Residual (recorded, not closed):** the "or implement" branch — a real Bonobo-WS / Pi-5 provisioning
+  installer — is owner hardware work and stays unbuilt. The roadmap explicitly offered "delete or", and
+  the root `install.sh` already covers the software install honestly.
+- [x] ✅ **DRA-49 — tests/test_kernel_authorize.py docstring still points at a deferred K3 and a 'scaffolded
   xfail' that no longer exists.** The only occurrence of the string 'xfail' anywhere under tests/ is a stale
   reference. tests/test_kernel_authorize. *(evidence: `tests/test_kernel_authorize.py:4-6,
   tests/test_kernel_bypass_regressions.py, BACKLOG.md:1487`)*
-- [ ] ⬜ **DRA-50 — docs/AUDIT.md A5/Q2 — the `require_component` dependency was deferred and never built;
+  **Shipped 02970c4** — the module docstring of `tests/test_kernel_authorize.py` no longer calls K3
+  "deferred" or points at a "scaffolded xfail in test_kernel_bypass_regressions.py" that never existed.
+  Checked against code before rewriting: `kernel/budget.py:165` defines `LoopDetector`,
+  `kernel/syscalls.py:29/37/49` define halt/release/inject_guarded, `kernel/__init__.py:146-149`
+  documents the scheduler as inert unless a budget_ledger/loop_detector is supplied, and
+  `tests/test_kernel_bypass_regressions.py` contains no `xfail` anywhere. `test_budget_is_inert_in_k1`'s
+  docstring was sharpened from "(K3 gives it teeth)" to the real condition, pointing at
+  `tests/test_kernel_budget_binding.py`. No assertion and no behaviour was touched.
+- [x] ✅ **DRA-50 — docs/AUDIT.md A5/Q2 — the `require_component` dependency was deferred and never built;
   the boilerplate it targets has nearly tripled.** docs/AUDIT.md is one of this lane's named sources, and
   its §7 explicitly parks A5/Q2 as "Deferred to post-manual-testing": the `require_component` FastAPI
   dependency meant to dedupe the ~88 `getattr(orch, "X", None)` → 503 guards. *(evidence: `docs/AUDIT.md:43,
   agents/web.py`)*
-- [ ] ⬜ **DRA-51 — docs/AUDIT.md Q6 — two named JSON stores still write non-atomically (no tmp+replace).**
+  **Shipped 02970c4** — new `agents/core/routers/_component.py`. `require_component(name, message)`
+  returns a `ResolvedComponent(orch, value, error)` with the hand-written preamble's exact semantics
+  *including* the `if orch else None` short-circuit, and hands back `orch` too because nine migrated
+  handlers keep using it after the guard; `component_unavailable(message)` is the single 503 body
+  factory. Swept **45** guard sites across 12 routers (actions 2, arena 3, autonomy 1, memory_kg 6,
+  mesh 10, notes 2, presence 2, quality 1, review 3, rooms 2, secrets 3, security 10), each collapsing
+  four lines to three; two further sites keep a hand-written test but mint the body from the shared
+  factory. `message` is passed rather than derived from `name`, because the wording is part of each
+  endpoint's published contract and deriving it would silently rewrite ~45 response bodies.
+  Behaviour-exact and checked rather than assumed — same status, same body bytes, same response class,
+  same position in the handler; `git diff | grep '@router\.'` is empty and no route path, method or
+  guard tier moved.
+  **The design call, recorded because it contradicts the source document:** `docs/AUDIT.md` A5 specified
+  a FastAPI `Depends`. It cannot be one without changing behaviour — FastAPI's `solve_dependencies` runs
+  the dependency graph BEFORE `request_body_to_args`, so a dependency-shaped guard answers 503 where the
+  handler-shaped guard lets validation answer 422. Verified empirically against the installed FastAPI,
+  not assumed.
+  **Residual (recorded, not closed):** SEVEN component guards were deliberately left alone because
+  normalising them would be a behaviour change dressed as a refactor — `analytics.py`'s three answer
+  through `nocache_json` and distinguish "orchestrator not up" from "component missing", and `oauth.py`'s
+  four guard on truthiness rather than `is None` and answer a different body shape. Each is named in a
+  `DELIBERATELY_UNCONVERTED` list that a test keeps accurate. A much larger adjacent family is untouched
+  and is really a separate finding: **76** bare `if not orch: … 503 "not initialized"` guards across 20
+  routers, which disagree among themselves on response class and body shape, so deduping them needs a
+  decision about which shape is correct before any sweep. Also owed: `_component.py:29`'s docstring says
+  "seven of the migrated handlers" and then lists eight; the real count is nine.
+- [x] ✅ **DRA-51 — docs/AUDIT.md Q6 — two named JSON stores still write non-atomically (no tmp+replace).**
   Q6 in docs/AUDIT.md names three files that bypass the atomic tmp+replace pattern the JsonStore base uses;
   A3/Q1 shipped the base and migrated the 13 stores, but Q6's own three were never routed through it and the
   finding is unchecked. *(evidence: `docs/AUDIT.md:76, ingestion/watcher.py, memory/conversation.py`)*
+  **Shipped 02970c4** — the store's atomic write is extracted as
+  `persistence.atomic_write_json(path, data)` (serialize FIRST, sibling `<name>.tmp`, `replace`, tmp
+  unlinked on any failure) and exported from `agents/core/persistence/__init__.py`. `JsonStore._save()`
+  delegates to it, and the three non-store rewriters Q6 named now go through it —
+  `memory/persistence.py::save_memory`, `ingestion/watcher.py::_save_state`,
+  `plugins/oracle_bridge.py::_save_state`. The helper uses `with_name(name + '.tmp')` rather than the
+  base's `with_suffix('.tmp')`, so a multi-dot path such as `a.b.json` no longer collides with a sibling
+  `a.tmp`. `docs/AUDIT.md`'s Q6 row was corrected in the same change: the dangerous writer is
+  `memory/persistence.py::save_memory`, not `conversation.py`.
+  **Residual (recorded, not closed):** no `fsync` of the tmp or the parent directory — this matches
+  `JsonStore._save`, and full durability would change behaviour for all ~13 migrated stores, so it
+  belongs in its own row. The append-only JSONL transcript log
+  (`memory/conversation.py::_append_log_dict`) stays non-atomic by design, and AUDIT.md now says so
+  explicitly rather than leaving it as an unexplained omission.
 - [x] ✅ **DRA-52 — Review-queue → eval-dataset promotion is unwired in both clients, while the v1 HUD
   advertises it.** POST /api/review/{item_id}/dataset (agents/core/routers/review.py:71-73, user-guarded,
   'Promote a reviewed item into an eval dataset (H9.3b)') has no caller anywhere. *(evidence:
@@ -1101,41 +1716,129 @@ Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
   `await res.json().catch(() => null)` in the `!res.ok` branch and attach it to the thrown error — which
   would give every mutation in the HUD its real reason. Deliberately not done here: it changes shared
   client infrastructure for all mutations, which is wider than this row.
-- [ ] ⬜ **DRA-53 — notes_store.py — a 504-line block-tree document store with no adopter and no route.**
+- [x] ✅ **DRA-53 — notes_store.py — a 504-line block-tree document store with no adopter and no route.**
   agents/core/notes_store. *(evidence: `agents/core/notes_store.py:112-116,
   agents/core/routers/notes.py:3-10, agents/core/notes.py:1-8`)*
+  **Shipped 02970c4** — the roadmap's own option A: the block-tree store is adopted behind a real,
+  HUD-called route family rather than deleted. `agents/core/notes_store.py` gained `list_docs(limit=50)`
+  (id/title/timestamps only, ordered by `updated_at` — a summary, because a listing that rendered every
+  tree would read the whole store per request), `delete_doc(doc_id)` (deleting the doc's blocks
+  explicitly rather than trusting `ON DELETE CASCADE`, returning the block count and raising on an
+  unknown doc), and a process singleton whose path is resolved at call time so a test process'
+  `JARVIS_HOME` is honoured. Seven routes on the already-mounted notes router, every one `user_guard` +
+  `nocache_json`, with bounded pydantic bodies and `NotesStoreError` mapped to a 400 carrying the real
+  reason instead of an opaque 500, and every store call through `asyncio.to_thread` because each
+  `NotesStore` method takes a process-wide lock around SQLite. HUD: a `NOTE DOCS` panel beside
+  `NotesPanel` in Memory — doc list with per-row open/delete, recursive tree render, add block, per-block
+  edit (PATCH) and subtree delete, every mutation carrying an `onErr`. `apiPatch` was added to the API
+  client; it is the repo's first PATCH verb.
+  **The panel name is present in the rebuilt `agents/web/v2` bundle**, so this is a surface an operator
+  can reach, not a `frontend/src`-only one.
+  **Residual (recorded, not closed):** the roadmap framed this row as "adopt it behind a route OR delete
+  it"; this implements adoption, the AI-doable and reversible half, and choosing deletion instead remains
+  the owner's product call. `docs/test-manual/09-memory-knowledge.md` still cites the old test file for
+  this store.
 
 
 **Completeness-critic additions, now verified (9).** These 9 came from the discovery run's
 completeness critic, which ran *after* the adversarial verify phase — so unlike the other 120
 they carried no verdict and were single-source claims (audit gap **B1**). All 9 have now been
-checked against the code: **all 9 are genuinely still open**, each at high confidence.
+checked against the code: **all 9 were genuinely still open**, each at high confidence.
+**Recount 2026-08-31 (this PR):** 5 of the 9 are now closed — DRA-54, DRA-55, DRA-57 and DRA-61 shipped,
+and DRA-56 is folded into DRA-24 as a duplicate whose own prescription would have preserved the very
+defect it existed to fix. DRA-58, DRA-59, DRA-60 and DRA-62 stay open, each carrying a note saying
+exactly what landed and what did not.
 
-- [ ] 🟡 **DRA-54 — Skill approval lifecycle: revoke/prune approval rows + lock file when a skill is
+- [x] ✅ **DRA-54 — Skill approval lifecycle: revoke/prune approval rows + lock file when a skill is
   removed.** agents/core/skills/approval.py exposes only approve() (:111), approved_snapshot() (:128),
   tracks_path() (:150), is_approved() (:164) — no revoke/prune/remove anywhere. *Remaining: Full item
   remains. Needs: a revoke(path)/prune API on SkillApprovalStore, a call site on the removal paths
   (marketplace.py:504 remove_acquired_package and :642 remove_from_registry, plus any loader-side delete),
   lock-file cleanup, and a regression test proving a removed skill's approval row cannot r…*
-- [ ] 🟡 **DRA-55 — Fix stale TASK-5 'still open' expectations in test-manual chapters 07 and 13.** Both
+  **Shipped 02970c4** — an owner approval can now die with the skill it approved.
+  `SkillApprovalStore.revoke(path)` and `prune_missing()` are both written under the exact `approve()`
+  lock protocol (registry lock + process registry lock, then `_reload_locked()` BEFORE any write) and
+  both raise `SkillApprovalStoreError` on a corrupt registry so it is never silently rewritten as an
+  empty valid one. `prune_missing` drops only rows whose canonical path no longer exists on disk, plus
+  malformed or mis-keyed rows that can never authorize anything — **never** on fingerprint mismatch,
+  which preserves the `tracks_path` fail-safe that keeps drifted bytes classified external.
+  `SkillLoader.revoke_approval()` is the seam; `discover()` calls `prune_missing()` inside a
+  try/except-log so a store failure can never break discovery; and `marketplace_uninstall` calls it. Two
+  non-changes carried as explicit decisions: `remove_acquired_package` / `remove_from_registry` are
+  untouched (acquired packages never get an approval row), and the `.lock` file is NOT deleted — it is
+  registry-scoped, so unlinking it while another process holds an flock on its inode would break mutual
+  exclusion. That reasoning is a comment in the code, not only in the PR text.
+  **Residual (recorded, not closed):** no HTTP route and no HUD surface, so nothing leaves the
+  `UNCALLED_BACKLOG` punch list. A deletion performed by future code that neither calls
+  `revoke_approval` nor goes through `discover()` would still leave a row until the next discovery. And
+  the regression is weaker than its own docstring claims: `tests/test_skill_approval_revoke.py:124` says
+  "the router's uninstall path drops the row" but the body calls `loader.revoke_approval` directly, while
+  the real call site at `routers/skills.py:355` sits inside `contextlib.suppress(Exception)` — so a
+  breakage there is swallowed at runtime and invisible in CI. A test that drives `marketplace_uninstall`
+  is still owed.
+- [x] ✅ **DRA-55 — Fix stale TASK-5 'still open' expectations in test-manual chapters 07 and 13.** Both
   stale instructions are still present today: docs/test-manual/07-autonomy-governance.md:104 — 'Record this
   as **TASK-5 still open**, severity **MAJOR**' — and docs/test-manual/13-scenarios-and-chaos.md:187
   (JRN-064) — 'Current known behaviour: each task di. *Remaining: Two rows to rewrite, plus three stale
   citations found while verifying: (a) 07:104 'Expected' must become the current pass state and 07:100's
   Auto must become ✅ tests/test_dashboard.py; (b) 07:101 cites 'format_task at :150-157' — it is now
   dashboard.py:153-165; (c) 13:187 cites 'dashboard.py:136-194…*
-- [ ] 🟡 **DRA-56 — Add cached-input pricing to cost_estimator MODELS (rates already verified and
+  **Shipped 02970c4** — every claim was checked against code first, then only the false ones were
+  corrected across the three hand-written chapters. TASK-5 is genuinely FIXED in code
+  (`routers/dashboard.py::format_task` pops `payload` and `result` before any of the three view paths
+  build their response, pinned by
+  `tests/test_dashboard.py::test_tasks_user_tier_never_ships_payload_or_result`), so 07 GOV-020, 13
+  JRN-064 and 08 SEC-171 became regression cases with the correct Expected and a ✅ Auto marker. Five
+  stale `file:line` citations were repointed. Two tier claims were false and were rewritten:
+  `GET /api/autonomy/tasks/{id}/preview` is admin, not open; and `GET /api/agents/{id}/soul` is user, not
+  unauthenticated — that one rewritten as PARTLY fixed, keeping the half that is still true, namely that
+  it prefers the gitignored `SOUL.local.md`, so every user-token holder reads the personal overlay. Three
+  chapter-08 open gaps that contradicted FIXED rows in the same chapter were marked fixed.
+  **Follow-up landed in the same PR.** `scripts/gen_api_sweep.py`'s Pass C prose still told the tester
+  the known leak is `GET /tasks` returning full payload/result and to "confirm it still leaks" — false,
+  and worse, an invitation to write the entire leak-hunt pass off as not reproducible. It was rewritten
+  to the payload-free expectation (both keys ABSENT from `/tasks`, `?view=running` and `?view=history`;
+  either reappearing anywhere is a MAJOR finding), keeping the TASK-5 pointer and the severity, and
+  chapter 14 was regenerated so the byte-for-byte gate stays green.
+  **Residual (recorded, not closed):** the "N of M" auto-covered arithmetic in the 08.Z and 13.Z ledgers
+  is stale and was deliberately left as found — the counting convention does not reproduce for any group
+  in chapter 08 (08.12 says 10 of 11 where the table shows 11 covered), so re-deriving it would be
+  inventing precision. Only 07.Z, an explicit mark-by-mark tally that could be verified, was fixed. It
+  was also not audited whether any other known-issue claim in the generator has gone stale the same way;
+  only the Pass C `/tasks` claim was in scope.
+- [x] ✅ **DRA-56 — Add cached-input pricing to cost_estimator MODELS (rates already verified and
   tabulated).** agents/core/llm/cost_estimator.py MODELS is still input/output only — importing it and
   taking the union of every row's keys yields exactly ['input','output'] across all 62 rows; zero rows carry
   a 'cached' key. *Remaining: Unchanged: add an optional 'cached' key per vendor-priced MODELS row, bill
   cached_tokens at that rate (falling back to today's $0 behaviour when the key is absent so unknown rows do
   not change), and extend the drift guard at tests/test_cost_tracker.py:141 test_price_tables_do_not_drift.
   Note the cou…*
-- [ ] 🟡 **DRA-57 — Fix marketing/README.md reference to a hook video that does not exist in the repo.**
+  **Closed by DRA-24, 02970c4 — duplicate, not a second piece of work.** The two rows were raised by
+  different lanes against the same table and one change closed both: all 62 `MODELS` rows now carry a
+  `cached` rate and `estimate_cost` bills the cached prefix at it.
+  **This row's own prescription was deliberately NOT followed, which is the reason for folding it rather
+  than shipping it.** DRA-56 asked for the cached rate to fall "back to today's $0 behaviour when the key
+  is absent so unknown rows do not change". That is arithmetically the very defect the row exists to fix:
+  it prices an unknown cache read at zero and reports a discount no vendor quoted. DRA-24 instead falls
+  back to the FULL input rate with `savings 0.0`, which over-states a cached call rather than inventing a
+  discount — the conservative direction, flagged rather than hidden.
+  **Its residuals live in the DRA-24 row above and are not closed here:** `routers/admin.py` passes route
+  names, not model ids, so no number moves on the surface either row cites as evidence; and
+  `cost_tracker`, the meter that backs the daily-cap refusal, still bills the cached prefix at the
+  uncached rate.
+- [x] ✅ **DRA-57 — Fix marketing/README.md reference to a hook video that does not exist in the repo.**
   marketing/README.md:21 still lists '`jarvis-alpha-hook-vertical.mp4` + `INVITE_MESSAGE.md`' as the
   contents of marketing/alpha-testing/. *Remaining: Unchanged and trivially small: one table cell at
   marketing/README.md:21 — either drop the mp4 or annotate it as an owner-recorded asset not stored in the
   repo. Recording an actual video stays owner-side.*
+  **Shipped 02970c4** — `marketing/README.md`'s alpha-testing row advertised
+  `jarvis-alpha-hook-vertical.mp4`, which is not in the tree (confirmed absent, and the folder's own
+  manifest at `marketing/alpha-testing/README.md` never lists it) while hiding what *is* there. The row
+  now names `INVITE_MESSAGE.md`, `FAQ.md` and `screenshots/` (all four PNGs verified present) and says
+  plainly that the vertical hook video is owner-recorded and not stored in the repo. The `landing/` row
+  was left alone.
+  **Residual (recorded, not closed):** actually recording the video stays owner-side. The row no longer
+  promises it exists.
 - [ ] 🟡 **DRA-58 — Nerva E8.1c — Hermes executing adapter and its follow-on evidence packages (issue
   #804).** Issue #804 is state=open with body status 'BUILDING · E8.1A/B/C/D + EXACT-FETCH ACCEPTED ·
   EXECUTING ADAPTER BLOCKED'; four acceptance boxes remain unchecked (Hermes executes one synthetic bounded
@@ -1143,6 +1846,21 @@ checked against the code: **all 9 are genuinely still open**, each at high confi
   gone stale since the critic wrote this: the preflight's immutable upstream snapshot pins Hermes v2026.8.3,
   but agents/core/skills/hermes_pin_v1.json now records release_tag 'v2026.8.27' (commit 5fc308a…), landed
   by 8dd29aa 'feat(hermes-sync): port hermes-agent v2026.8.2…*
+  **Partially shipped 02970c4 — the row stays OPEN.** Only the pin-drift half landed, which was the one
+  input this row's own `Remaining:` clause flagged as having gone stale.
+  `docs/nerva2/EXECUTION_PROVIDER_E8_1A.md`'s 2026-08-08 refresh notice is now explicitly scoped to that
+  date and followed by a "Pin drift (2026-08-28)" paragraph recording upstream v2026.8.27 / `5fc308a7…`
+  (read from `agents/core/skills/hermes_pin_v1.json`), linking the delta-port research note, and stating
+  that the execution-provider pin deliberately stays at v2026.8.3 / `3c27eb6` because a preflight
+  snapshot is an immutable observation — with the E8.1C_PREFLIGHT quote establishing that the skills pin
+  is a separate, non-dependency inventory. `INTEGRATION_CATALOGUE_RFC.md:91` no longer claims "no newer
+  release … still current", and the 2026-08-08 refresh document carries a superseded banner over an
+  otherwise verbatim body.
+  **Remaining — the row's actual deliverable, the E8.1c executing adapter, was not written.** All four
+  acceptance boxes on #804 stay unchecked: Hermes executes one synthetic bounded task;
+  cancellation / timeout / partial-failure / rollback tested; native evidence packages. It needs a pulled
+  OCI image, a container runtime and registry egress the owner must authorize, plus the unresolved
+  licence question and the B7/#818 isolation decision. No adapter exists.
 - [ ] 🟡 **DRA-59 — Nerva B7 — task-persisted Ultron mediation evidence (issue #818): resolve the six
   architecture decisions, then build.** Issue #818 is state=open. But the critic's framing ('DISCOVERY · NO
   BRANCH · implementation must not start until six decisions are resolved') is materially stale — that text
@@ -1150,25 +1868,87 @@ checked against the code: **all 9 are genuinely still open**, each at high confi
   build'. Code is landed and default-off. What remains: (1) a Nerva Program Owner retain/exception-vs-revert
   decision on the #918 corrective merge (explicitly the 'exclusive next package', branch none); (2) the two
   authority invariants left unresolved by the final-round…*
+  **Partially shipped 02970c4 — the row stays OPEN.** The durable-evidence half landed: new
+  `agents/core/autonomy/mediation_head_store.py` with `FileMediationHeadStore` (default
+  `<data root>/security/task_mediation_head.json`, resolved in `__init__` rather than at import so
+  `JARVIS_HOME` is honoured), a `read()` that rebuilds `MediationHead` through `__post_init__` so
+  anything malformed returns None, and a `compare_and_swap()` that takes an exclusive OS lock on a
+  sibling `.lock`, re-reads under the lock, refuses a mismatch, a wrong schema version, a bootstrap at a
+  non-zero sequence and any non-monotonic replacement, then writes via mkstemp + fsync + `os.replace` +
+  directory fsync — every failure returning False rather than raising. The orchestrator now builds
+  `autonomy_queue` with `mediation_mode=resolve_task_mediation_mode()` and the anchor wired regardless,
+  because enforce/hold fail closed without it. Default env unset ⇒ mode `off` ⇒ behaviour unchanged. The
+  B7 design doc gained an "Operating the mode" section naming the env var, the head file, the durability
+  ordering and the honest limit (it defends against DB rollback, not against rewriting the whole data
+  directory).
+  **Remaining — and this is why the row is not ticked: the mode this now makes reachable does not work.**
+  With `JARVIS_TASK_MEDIATION=enforce`, a plain `enqueue(agent=…, kind='note', …)` raises
+  `TaskQueueError: classified task requires mediation`, because `kernel.registry.classify()` returns None
+  for essentially every real task kind (note, reminder, email_send, message, research, memory_write,
+  channel_send, prompt_optimization, agent_promotion, skill_install, calendar_event — only `kg.write`
+  classifies) while `queue.py:934-942` refuses whenever the classification `is not False`, and
+  `worker.py:769-781`'s intended "record it as ASK, then raise" is dead code because the enqueue raises
+  first. The default (unset → off) is unaffected, which is why the suite is green. Either the classifier
+  fallback is fixed, or the `orchestrator.py:415-418` comment must stop reading as "the mode is now
+  reachable in production".
+  **Remaining (owner):** the Nerva Program Owner retain/exception-vs-revert decision on the #918
+  corrective merge plus the #757/#778/#818 ledger reconciliation, and the two unresolved authority
+  invariants — whose clause is truncated mid-sentence in this row's own text and is carried by no other
+  file in the repo, so it cannot be reconstructed here and must come from the owner. No route or HUD
+  panel for `verified_mediation_stats()` / `mediation_events()`: it would show all-zero counters for a
+  mode nobody has enabled.
 - [ ] 🟡 **DRA-60 — Independent-integrator acceptance enforcement in repository controls (issues #906 and
   #846 steps 3-4).** #906 is state=open, assigned to andrei649; #846 is state=open (last updated
   2026-08-29). *Remaining: Partially done — the AI-buildable half has already landed and the critic missed
   it. PR #916 merged as 519dca0 'feat(governance): add external exact-head acceptance state core', adding
   services/integration_authority/state.py (703 lines), tests/test_integration_authority_state.py (1242
   lines) and docs…*
-- [ ] 🟡 **DRA-61 — Auto-reconcile resolved third-party drift alerts (issue #836) — pending owner
+  **Not touched by this PR — owner-only, and correctly so.** The AI-buildable half already landed before
+  this audit (PR #916 / `519dca0`: `services/integration_authority/state.py` plus its tests and docs, the
+  external exact-head acceptance-state core). What #906 and #846 steps 3-4 actually ask for is
+  *enforcement in repository controls* — GitHub repository settings — which no code change in this repo
+  can deliver. It stays parked in `docs/OWNER_TASKS.md`; nothing here is blocked on an AI session.
+- [x] ✅ **DRA-61 — Auto-reconcile resolved third-party drift alerts (issue #836) — pending owner
   scheduling.** Issue #836 is state=open with body status 'PROPOSED · UNSCHEDULED · NO IMPLEMENTATION
   AUTHORITY'; its last comment 5200552701 (2026-08-06) reaffirms that PR #837 retained only the decision and
   that 'no workflow, issue-closing permission, runtime path or schedu. *Remaining: Unchanged and fully
   unstarted: an idempotent, auditable closer that only touches repository-created alerts carrying the exact
   auto-managed marker, only after the canonical drift check reports no drift, never a manual or malformed
   issue, with one-revert rollback. Still owner-gated on scheduling via t…*
+  **Shipped 02970c4** — `scripts/check_thirdparty_drift.py` gained `drift_resolved(results)`, true only
+  when at least one tracked (non-`skipped`) row exists, no row is a consistency MISMATCH, and every
+  tracked row is exactly `ok`; any `DRIFT` or `error: …` returns False. New
+  `scripts/reconcile_drift_alert.py` with injected GitHub calls: `is_auto_managed` (exact title + hidden
+  marker + workflow footer + `github-actions[bot]` author + not a PR), `select_closable` (empty unless
+  resolved), `reconcile` (comment the resolution and the table FIRST, then close with
+  `state_reason='completed'`), and a `main()` that treats a missing or malformed `drift.json`, or an
+  unreachable API, as "no evidence, leave the alert open". The workflow gained one step gated on
+  `vars.THIRDPARTY_DRIFT_AUTOCLOSE == 'true'` plus a successful, drift-free check on a non-PR event; the
+  existing `issues: write` permission suffices. The closing decision is made by `drift_resolved`, never
+  by `has_drift` alone.
+  **Residual (recorded, not closed):** the closer makes NO GitHub write until the owner sets the repo
+  variable `THIRDPARTY_DRIFT_AUTOCLOSE=true` — deliberate, per #836's "PROPOSED · UNSCHEDULED · NO
+  IMPLEMENTATION AUTHORITY" status and the RFC's statement that ACCEPTED_FOR_EPIC does not authorize
+  GitHub writes. Moving #836 out of UNSCHEDULED and recording the reviewed evidence remain owner-only,
+  and the urllib client paths (list/comment/close against api.github.com) are not exercised by tests —
+  only the decision logic is.
 - [ ] 🟡 **DRA-62 — FB4 — fill the measured VRAM-tier benchmark numbers in docs/HARDWARE_BENCHMARKS.md.**
   docs/HARDWARE_BENCHMARKS.md:7-9 still self-declares 'Status: skeleton — awaiting measured runs on real
   hardware (owner-gated). *Remaining: Unchanged and genuinely owner-only: the reproducible measurement
   protocol is already written at docs/HARDWARE_BENCHMARKS.md:12-17 (fixed prompt, LM Studio/Ollama, record
   model+quant, context length, first-token latency, steady tokens/sec, deep-slot state;
   scripts/install_smoke.py for a boot+turn bas…*
+  **Partially shipped 02970c4 — the row stays OPEN.** Only the docs half landed, and only to stop two
+  pages promising results that do not exist: `README.md:68` said "Measured tokens/sec per tier live in
+  docs/HARDWARE_BENCHMARKS.md" and `docs/COMPATIBILITY.md:84` said "Measured per-tier throughput:
+  HARDWARE_BENCHMARKS.md", while that page's table is entirely `— to measure —` and its own status line
+  says "skeleton — awaiting measured runs on real hardware". Both now point at the measurement protocol
+  and the *unfilled* table and say plainly that no numbers are measured yet. No counter or badge line was
+  touched and no cell was invented.
+  **Remaining — the MEASUREMENT, which is this row's actual deliverable.** Every cell of the throughput
+  table is still blank; filling it needs runs on the owner's hardware (the reproducible protocol is
+  already written at `docs/HARDWARE_BENCHMARKS.md:12-17`) and stays parked. The spec-based hardware
+  *score* shipped under DRA-44 is explicitly not a substitute and says so in its own `basis` field.
 
 ---
 
@@ -1577,7 +2357,7 @@ was switched on over a layout that was never made responsive. Two facts frame th
 | A1 | ⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box. **Instrument ready (#728):** `docs/TEST_MANUAL.md` — 15 chapters giving the step-by-step depth behind every checklist row, plus `docs/COWORK_QA_RUNBOOK.md` §3b (the R1–R9 pass from the 2026-07-24 run) and **§3c (S1–S6, the 2026-07-27 run-2 findings)**. **Run 2 executed (2026-07-27, RTX box)** — findings fixed, re-proof pending on the box. **Chapter 15 (`ADV`) is new and unexecuted:** adversarial-audit verification + a missing-code/missing-feature ledger; §8a of the runbook is its launch prompt. | ⬜ **the gate** |
 | A2 | 72h soak (0.63) + record AUD-0 / H23.23 | ✅ **automated 2026-08-28 — gate removed (owner directive).** `scripts/soak_report.py` now grades its own window: `evaluate()` encodes the A2 bar as thresholds (availability ≥99%, 0 restarts, 0 audit-verify failures = AUD-0, 0 guardrail breaches, 0 open breakers, RSS growth ≤15%, WAL ≤64 MiB) and `--fail-on-verdict` turns the verdict into an exit code (PASS 0 · FAIL 1 · **INCONCLUSIVE 3** — a check with no evidence never passes quietly). `.github/workflows/soak.yml` boots the server, runs the window unattended, publishes the report to the run summary and uploads the evidence: weekly canary on a hosted runner, the full `72h` via `workflow_dispatch` with a self-hosted `runner` label. No owner read-through, no sign-off step. `tests/test_soak_report.py` 14→28 |
 | A3 | Dependabot re-triage — 19 open alerts on main (4 high, 2026-07-07) | 🟢 agent half done in #634 — local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees now 0 vulns with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface — the device gate is real). Owner tail: worldview 2 moderates (in-next postcss, wait for next 16.3), mobile Expo SDK upgrade on a device, dismiss stale alerts in UI |
-| A4 | GitHub settings batch (SEC-4 required checks · CQ-2 dismissals · CQ-3 paste · repo metadata) | ✅ **done (owner, 2026-08-28)** — settings applied in the GitHub UI |
+| A4 | GitHub settings batch (SEC-4 required checks · CQ-2 dismissals · CQ-3 paste · repo metadata) | 🟡 **partial (owner, 2026-08-28) — recounted 2026-08-31 (`DRA-30`).** The batch was applied in the GitHub UI, but the *required-checks* half was overtaken by the #981 de-gate: the workflows those check names refer to were deleted, so the names must now be **removed**, not added — and `docs/OWNER_TASKS.md:72-78` still lists exactly that as open. Reading this row as "✅ done — settings applied" is what left BACKLOG.md the last file in the tree contradicting the de-gate. See SEC-4 above. |
 | A5 | License flip MIT→Apache-2.0 + TRADEMARKS.md | 🟢 prep done in #634 — `TRADEMARKS.md` live, CONTRIBUTING relicense grant added, canonical Apache-2.0 staged in `docs/legal/`; the flip itself is 3 owner commands (steps in OWNER_TASKS), timing per LICENSE_DECISION = just before v1.0 |
 | A6 | Demo video (60s) + publish landing (dev half ✅ #512) | 🟡 **partial (owner, 2026-08-28)** — landing half moving; the 60s demo cut is the remaining piece. Not a 1.0 blocker (GTM, not proof) |
 | A7 | Recruit 1–3 design partners; north-star on a non-owner install ≥2 weeks | ✅ **done (owner, 2026-08-28)** — partners recruited off the FB tester call (see Alpha signals below) and running on non-owner installs |
@@ -2404,7 +3184,7 @@ route-policy table: **`docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`**.
 | SEC-1 ✅ | **Guard webhook management** — `GET/POST/DELETE /api/webhooks` → `admin_guard`; trigger keeps token/HMAC. Done: `webhooks.py` + contract test (`POST /api/webhooks` off-localhost → 403). | 2 | **P0** | ✅ unauth management → 401/403; trigger still works with token |
 | SEC-2 ✅ | **Route-auth matrix test** — `tests/test_route_auth_matrix.py` introspects `app.routes` vs `tests/_snapshots/route_auth.json`; fails CI on guard drift / new or unclassified open mutator. `PENDING_GUARD` set tracks the SEC-3 backlog (shrinks as guards land). | 3 | P1 | ✅ a new unguarded mutator fails CI |
 | SEC-3 ✅ | **Apply policy to remaining open mutators** — DONE. Batch 1 (12 → admin): workflows CRUD, plugin toggle, heartbeat ×3, traces/clear, oauth/refresh, oracle sync+resolve, audit/action. Batch 2 (23 → user): workflows run/hierarchical, KG writes ×6, local-docs, reflection, arena ×2, review ×3, eval ×2, autonomy/preview, agent-templates, llm/grammar, schedule/parse, security scan/spotlight. `PENDING_GUARD` is now **empty** — every mutating route is guarded or in `INTENTIONALLY_OPEN` (6 self-authenticating). Final surface: **110 user / 104 admin / 86 open**. Localhost dev unaffected. | 5 | P1 | ✅ enforced by SEC-2 matrix gate |
-| SEC-4 | Env/posture follow-ups: **npm Dependabot ✅** · **doc counters refreshed ✅** · **`JARVIS_HOME` runtime-state relocation ✅** (F-08). **Remaining:** promote matrix/parity tests to **required** branch-protection checks (F-10, owner GitHub setting). | 3 | P2 | — |
+| SEC-4 | Env/posture follow-ups: **npm Dependabot ✅** · **doc counters refreshed ✅** · **`JARVIS_HOME` runtime-state relocation ✅** (F-08). **F-10 — superseded, not done (recounted 2026-08-31, `DRA-30`/`DRA-16`).** "Promote matrix/parity tests to **required** branch-protection checks" is no longer the plan and was contradicting every other surface in the tree: #981 / `824ff18` DELETED the PR-gating workflows and the owner de-gated the repo deliberately. What runs on a PR today is the single advisory `test (ubuntu-latest)` lane in `ci.yml` (where `test_route_auth_matrix.py` and the HUD-parity test execute); nothing blocks a merge; CodeQL is advisory by design and is **not** a required check. Re-gating needs BOTH halves — restore the workflow patch from `docs/restore/` *and* set the branch-protection name; the settings half alone reproduces the "Expected — Waiting for status to be reported" deadlock (`docs/MAINTENANCE_RUNBOOK.md` §10). **Remaining (owner):** remove the now-stale required-check names still set in GitHub settings — tracked at `docs/OWNER_TASKS.md`. | 3 | P2 | — |
 | SEC-5 ✅ | **F-06 ✅** WorldView bridge Bearer auth (`WORLDVIEW_API_TOKEN`). **F-07 ✅** plugin egress boundary — anchored host/sub-domain matching + `PluginHTTPClient` per-request manifest enforcement, now **strict by default** (`JARVIS_STRICT_EGRESS=0` opts out). Renamed 9 `for_plugin` ids to match manifests; completed allowlists (cloud-llm +Gemini, gmail/gcal +oauth2.googleapis.com, news +RO feeds); self-consistency test pins each plugin's real hosts. | 3 | P2 | ✅ undeclared plugin egress blocked |
 | SEC-5b ✅ | **Manifest the remaining networked plugins** — DONE. Added RESTRICTED manifests for `balance`, `analytics`, `websearch`, `digest`, `n8n`, the social/writeback/call families (`social_x`, `writeback_{notion,github,google_calendar}`, `call_{twilio,telnyx}`) and the webhook channels (`channel_{whatsapp,google_chat,teams,signal,matrix}`). Config/env-driven hosts (n8n `N8N_BASE_URL`, websearch `SEARXNG_URL`, Signal `base_url`, Matrix `homeserver`) are handled by a new **`register_dynamic_domain`** runtime allowlist that the egress gate unions with the static `allowed_domains` — no FULL/unmanifested escape. A new registry-driven test (`test_dynamic_family_ids_all_have_manifests`) pins every concrete family member to a manifest so a new member fails CI instead of silently re-opening the gap (the literal-regex test couldn't see the f-string ids). In-code SSRF guards retained as defense-in-depth. **Residual:** per-call webhook URLs passed via `kwargs` to `channel_teams`/`channel_google_chat` are constrained to the Microsoft/Google host suffixes by the static allowlist, not to one specific webhook. | 3 | P2 | ✅ every networked plugin enforced by the gate |
 

@@ -19,9 +19,11 @@ Design constraints (H22.5):
     so the logic is unit-tested offline with fakes (no GPU / LM Studio / network).
     The default adapter wraps `LMStudioController`; for Ollama, eviction is a
     `keep_alive: 0` request and load is the H22.2 warm-up.
-  - **Coarse headroom.** Headroom + per-model size hints are static for now
-    (env `JARVIS_VRAM_RESERVE_MB`, `JARVIS_VRAM_TOTAL_MB`, per-model size hints).
-    Refine after measuring on the real card.
+  - **Coarse headroom.** Total VRAM is now *probed* (`core/hardware.py`, DRA-44)
+    with `JARVIS_VRAM_TOTAL_MB` as the override and the 24GB constant as the last
+    resort; the reserve and the per-model size hints are still static
+    (`JARVIS_VRAM_RESERVE_MB`, per-model size hints). Refine the size hints after
+    measuring on the real card.
 
 All public state mutation is guarded by an asyncio lock so concurrent
 `ensure_resident()` / `using()` calls can't race the resident set.
@@ -171,9 +173,20 @@ class ModelManager:
     ):
         self._controller = controller
         from agents.core.env_config import env_int
+        # DRA-44 — precedence: explicit arg > JARVIS_VRAM_TOTAL_MB > the detected
+        # card > the 24GB constant. env_int() returns its `default` on unset/blank/
+        # non-numeric, so the detected value slots in as that default with no extra
+        # branching. The probe is best-effort and cached in hardware.py: this runs on
+        # the orchestrator boot path and must never raise.
+        detected = None
+        try:
+            from agents.core import hardware
+            detected = hardware.detected_vram_total_mb()
+        except Exception:  # pragma: no cover - probe failures are not fatal
+            logger.debug("VRAM detection unavailable", exc_info=True)
         self.vram_total_mb = (
             vram_total_mb if vram_total_mb is not None
-            else env_int("JARVIS_VRAM_TOTAL_MB", DEFAULT_VRAM_TOTAL_MB, minimum=0)
+            else env_int("JARVIS_VRAM_TOTAL_MB", detected or DEFAULT_VRAM_TOTAL_MB, minimum=0)
         )
         self.vram_reserve_mb = (
             vram_reserve_mb if vram_reserve_mb is not None

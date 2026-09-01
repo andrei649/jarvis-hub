@@ -40,10 +40,12 @@ EXPORT_VERSION = 2
 # (config + secret references) and anything else are intentionally excluded.
 EXPORT_DBS: tuple[str, ...] = ("notes.db", "missions.db", "autonomy.db", "analytics.db")
 
-# Live JSON content stores. On main, notes are stored in notes.json (not the
-# notes.db block-tree, which is test-only), and canvas.json holds saved replies —
-# so a DB-only export silently omitted the user's actual notes. Mirrors
-# data_purge.PURGE_JSON so export and forget cover the same owner content.
+# Live JSON content stores. The per-session free-text note lives in notes.json,
+# and canvas.json holds saved replies — so a DB-only export silently omitted the
+# user's actual notes. Mirrors data_purge.PURGE_JSON so export and forget cover
+# the same owner content. (notes.db above is the block-tree document store; it
+# stopped being test-only when DRA-53 put it behind /api/notes/docs, and it was
+# already on EXPORT_DBS, so no allowlist change was needed for that adoption.)
 EXPORT_JSON: tuple[str, ...] = ("notes.json", "canvas.json")
 
 # Raw Howard imports and every derived archive artifact. These are directories,

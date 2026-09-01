@@ -2,9 +2,11 @@
 # headless Chromium (Playwright). Proves the canvas Neural Mesh actually paints +
 # the HUD mounts without an uncaught exception — the gap jsdom/vitest can't cover.
 #
-# Standalone workflow (not part of the required `CI` checks) so a heavier/slower
-# browser+backend lane can stabilise before it gates merges. Screenshots + the
-# Playwright report upload as artifacts for the human review pass.
+# Standalone workflow: nightly + workflow_dispatch, never on pull_request. Since the
+# 2026-08-29 de-gate (#981) no workflow blocks a PR at all, so this lane gates
+# nothing by design; re-adding its PR trigger is restore patch K
+# (docs/restore/README.md). Screenshots + the Playwright report upload as
+# artifacts for the human review pass.
 name: HUD E2E
 
 on:

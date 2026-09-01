@@ -30,7 +30,7 @@ capability-acquisition pipeline.
 | Voice | Browser loop (mic→`/api/voice/stt` Whisper→`/tts` clone chain) + server pipeline (openWakeWord, faster-whisper, XTTS→ElevenLabs→Fish→edge-tts→Kokoro) |
 | Channels | Web SSE, Voice, Telegram, Discord, Slack, Email (SMTP/IMAP), webhook bridges (WhatsApp/Signal/Matrix/Teams/Google Chat) |
 | Integrations | ~25 plugins (Gmail, Google Calendar, Spotify, Tavily/SearXNG, n8n, Homebridge, Tuya, Twilio, Notion, RevenueCat, Meta Ads, Postiz, …) behind a per-agent permission gate |
-| Protocols | MCP client (stdio/SSE) **and** MCP server (governed route tools); A2A inbound (HMAC + contract) |
+| Protocols | MCP client (**stdio only** — remote transports refused at the admin API) **and** MCP server (governed route tools); A2A inbound (HMAC + contract) |
 | Sibling stack | **WorldView** (4D OSINT) under `worldview/`: Vite/Next + CesiumJS + Fastify (ports 3000/4000, Docker); shares *no* runtime — bridged only via the versioned read-only contract `docs/contracts/worldview-bridge.md` through the **Argus** agent |
 | Tooling | pytest (`asyncio_mode=auto`, offline, socket-blocked), Ruff, Bandit, vulture; `scripts/code_health.py`; `scripts/status_sync.py` (generated counters) |
 
@@ -77,7 +77,7 @@ mobile/                        React Native companion (read-mostly parity)
 worldview/                     Separate OSINT stack (own CI/tests; only coupling = bridge contract)
 tests/                         pytest suite (~6,900+ backend tests, offline by default)
 memory_logs/                   All persistent state (SQLite DBs, JSONL, embedding cache) — gitignored
-scripts/                       status_sync.py, code_health.py, check_ai_workflow_policy.py, runtime_supervisor.py
+scripts/                       status_sync.py, code_health.py, runtime_supervisor.py
 ```
 
 ### Core Data Flow (request lifecycle — `Orchestrator.handle_input[_stream]`)
@@ -160,8 +160,8 @@ inbox/channels within the interrupt budget → executor dispatch, all kernel-med
    path; unrestricted self-modification is permanently out.
 8. **Autonomy is budgeted:** reversible work may act silently; interrupts respect the ≤4/day
    budget (`BudgetLedger`); money/locks/security actions never rise above the approval queue.
-9. **Workflow:** feature branch + PR into `main` (direct push disabled); classify risk R0–R3 per
-   `.github/ai-development-policy.json`; evidence receipts bind to the exact head SHA; never
+9. **Workflow:** feature branch + PR into `main` (direct push disabled); classify risk R0–R3 per the
+   `docs/AGENT_WORKFLOW.md` risk table (advisory convention, not an enforced gate); evidence receipts bind to the exact head SHA; never
    describe an unrun suite as passing. Don't touch `BACKLOG.md`/generated status in
    inspection-only tasks; **do** sync `BACKLOG.md` in the same PR that delivers roadmap items.
 10. **Generated counters are generated:** test/route counts in `STATUS.md`/`NERVA.md` are synced
@@ -182,7 +182,6 @@ make test                                      # same as full suite
 # Lint / health / policy
 ruff check .                                   # or the full pass:
 python scripts/code_health.py                  # lint + format + dead-code, identical to CI
-python scripts/check_ai_workflow_policy.py     # AGENTS.md ↔ machine policy consistency
 python scripts/status_sync.py                  # resync generated counters after surface changes
 
 # Frontend (from frontend/)
@@ -208,8 +207,8 @@ Standard workflow for any feature or refactor in this repository:
    WorldView). `BACKLOG.md` is the priority truth when docs disagree.
 2. **Safe start:** inspect `git status`, current branch, and pre-existing changes; preserve other
    agents' work; check for overlapping open PRs (draft PR = visibility signal, not a lock).
-3. **Classify risk** (`R0`–`R3` per `.github/ai-development-policy.json`) — it determines tests,
-   review, and merge controls. Record goal, non-goals, likely paths, tests, rollback before
+3. **Classify risk** (`R0`–`R3` per the `docs/AGENT_WORKFLOW.md` risk table — advisory since
+   #981) — it guides tests, review, and merge care. Record goal, non-goals, likely paths, tests, rollback before
    non-trivial implementation.
 4. **Branch:** create a feature branch; one coherent, independently revertible slice per PR
    (security/authority changes always separate).
@@ -225,8 +224,7 @@ Standard workflow for any feature or refactor in this repository:
    capabilities, `scripts/status_sync.py` for counters, `BACKLOG.md` checkboxes for delivered
    roadmap items.
 8. **Validate before push:** targeted pytest → adjacent sweep → ruff/`code_health` →
-   frontend/mobile typecheck+tests when touched → `check_ai_workflow_policy.py`. Never report an
-   unrun suite as passing.
+   frontend/mobile typecheck+tests when touched. Never report an unrun suite as passing.
 9. **PR with evidence:** exact commands + exit codes bound to the head SHA, risk tier, changed
    paths, rollback note. Any new commit stales prior evidence — re-establish it.
 10. **Review & merge:** max two consolidated review rounds, then escalate; `R3` requires separate

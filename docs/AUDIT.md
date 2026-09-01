@@ -40,7 +40,7 @@ phase, ship `1.0.0`. The big refactors (router split, service container) are
 | A2 | ✅ **done** | The 14 repetitive optional-component `try/except` blocks now go through a `ComponentRegistry` (`component_registry.py`): one registrar handles lazy-import + construct + status-tracking, sets `orch.<name>` (back-compat unchanged), and a startup **health report** logs `Components: N/N ok` (**A8**) + `GET /api/health/components`. Collapsed ~80 lines → ~20; failures are now visible, not silent. Remaining god-object surface (plugins/skills/channels init) can follow the same pattern later. | `agents/core/orchestrator.py`, `component_registry.py` | — |
 | A3 | ✅ **done** | (base shipped: `persistence/json_store.py`; 6 stores migrated — Widget/Room/Notes/ReviewQueue/Webhook/Arena. Memory/security stores can follow the same base later.) ~13 JSON stores re-implemented identical `_load`/`_save`(atomic tmp+replace)/`threading.Lock`/`__init__(path)` boilerplate (~26 `_load`/`_save` pairs). | `widget.py`, `rooms.py`, `notes.py`, `arena.py`, `webhooks.py`, `observability/review_queue.py`, `autonomy/action_approvals.py` (in-mem), `memory/{entity,bitemporal,decay}.py`, `security/{anchor,capability}.py`, `run_history.py`, `soul_versioning.py` | Extract `agents/core/persistence/json_store.py` `JsonStore` base; subclasses keep only their schema. Removes ~200 LOC and the drift risk. |
 | A4 | **Medium** | Blocking I/O on the async path: sync `write_text`/`sqlite3` inside `async def` handlers (JSON store saves, `/api/admin/audit` direct sqlite). | `web.py` store endpoints; `agents/web.py` audit route | Wrap blocking calls in `await asyncio.to_thread(...)`. Files are small so impact is moderate today, but it blocks the event loop under load. |
-| A5 | **Medium** | Repeated 503-guard preamble (`getattr(orch,...)→503`) in ~50+ endpoints. | `web.py` | Add one FastAPI dependency `require_component("arena")` returning the component or raising 503. Removes ~100 LOC. |
+| A5 | ✅ **done** (DRA-50) | The 503-guard preamble is now `agents/core/routers/_component.py::require_component(name, message)`: **45** handlers across 12 routers dropped their four-line `orch = get_orch()` / `getattr(...) if orch else None` / `if x is None: return JSONResponse(...)` block, and two more (`capabilities_check`, `sandbox_execute`) keep a hand-written test but mint the body from the shared `component_unavailable()`. Behaviour-exact: same status, same body, same response class. **Not a `Depends`**, contrary to the original sketch — FastAPI solves dependencies *before* `request_body_to_args`, so a dependency-shaped guard answers 503 on a malformed body where the handler-shaped one lets validation answer 422 (verified on fastapi 0.141.1). Seven sites are deliberately left inline; see §7. | `agents/core/routers/_component.py`, `tests/test_require_component_sweep.py` | — |
 | A6 | — | ✅ **verified safe** — `workflows/engine.py`'s `Orchestrator` import is `TYPE_CHECKING`-guarded (line 19), so there is **no** circular-import risk. (Flagged by the auto-audit; confirmed a non-issue.) | `agents/core/workflows/engine.py:19` | None needed. |
 | A7 | ✅ **done** | `ActionApprovalQueue` now inherits `JsonStore` with **opt-in** persistence (orchestrator passes a path; `path=None` stays in-memory for tests); `asyncio.Event`s re-created lazily for reloaded items. | `autonomy/action_approvals.py` | — |
 
@@ -69,11 +69,11 @@ defenses hold.
 | # | Severity | Finding | Recommendation |
 |---|----------|---------|----------------|
 | Q1 | High | Same as A3 (store duplication). | `JsonStore` base. |
-| Q2 | High | Same as A5 (getattr/503 boilerplate, ~88×). | `require_component` dependency. |
-| Q3 | ✅ **mostly done** | The systemic catch-all already returns a generic 500 (no leak); the explicit `str(e)`-on-500 handlers (TTS, notes-rewrite, skills/marketplace, MCP probe, review-dataset) now log the detail and return a generic `{"error": "internal error", "code": 500}`. 400/404 validation messages kept (user-facing). | `agents/web.py` (handlers exist at lines ~180–201). Full `require_component` boilerplate dedup (A5) deferred — see note. |
+| Q2 | ✅ **done** (DRA-50) | Same as A5 (getattr/503 boilerplate). Closed by `require_component`; a structural test (`test_no_router_reinlines_the_component_503_preamble`) now fails the build if a new router re-inlines the preamble, so it cannot triple again. | `require_component` helper — see A5 for why it is not a dependency. |
+| Q3 | ✅ **mostly done** | The systemic catch-all already returns a generic 500 (no leak); the explicit `str(e)`-on-500 handlers (TTS, notes-rewrite, skills/marketplace, MCP probe, review-dataset) now log the detail and return a generic `{"error": "internal error", "code": 500}`. 400/404 validation messages kept (user-facing). | `agents/web.py` (handlers exist at lines ~180–201). Full `require_component` boilerplate dedup (A5) shipped in DRA-50. |
 | Q4 | ✅ **partly done** | The named limits (`NOTES_MAX_LEN`, `ROOM_HISTORY_CAP`, `RUN_HISTORY_MAX_PER_AGENT`) + `MEMORY_DIR` + `data_path()` now live in `agents/core/config.py`; the three modules alias them (back-compat). Migrating every store's `DEFAULT_PATH` to `data_path()` left as an optional follow-up. | `agents/core/config.py` | — |
 | Q5 | Low | ~50+ public methods/classes lack docstrings/return-type hints (e.g. `agent.py`, `cost_tracker.py`, `resilience.py`). | Sweep; add `mypy`/`ruff` docstring lint (non-blocking) to CI. |
-| Q6 | Low | Atomic tmp+replace write used by stores but **not** in `ingestion/watcher.py`, `memory/conversation.py`, `plugins/oracle_bridge.py`. | Once `JsonStore` exists, route these through it. |
+| Q6 | ✅ **done** | The store atomic write is now a reusable helper, `persistence.atomic_write_json()` (serialize → sibling `.tmp` → `replace`, tmp removed on failure); `JsonStore._save()` delegates to it and the three non-store rewriters go through it too: `ingestion/watcher.py::_save_state`, `plugins/oracle_bridge.py::_save_state`, and the per-turn conversation snapshot — which lives in `memory/persistence.py::save_memory`, one hop from the `memory/conversation.py` the original finding named, and was the dangerous one (a raising dump used to truncate the whole session file). Intentionally exempt: the append-only JSONL transcript log in `memory/conversation.py::_append_log_dict` — it appends one line per turn, so tmp+replace would rewrite the entire transcript every turn. No fsync (matches `JsonStore._save`); full durability would be its own change. | `agents/core/persistence/json_store.py`, `tests/test_atomic_json_writes.py` |
 | Q7 | ✅ **done** | `tests/README.md` added — run commands, the `test_hXX_*`→backlog naming convention, an area-coverage table, conventions, and the `apscheduler` note. | `tests/README.md` | — |
 
 ---
@@ -101,7 +101,7 @@ a high-level overview (deferred; not blocking).
 
 **P0 — do during the fix phase, before 1.0 (low risk, high signal):**
 1. `JsonStore` base class; migrate the ~13 stores (A3/Q1). Big duplication win, all test-covered.
-2. `require_component` dependency + one `ErrorResponse` model/handler (A5/Q2/Q3). Kills boilerplate, standardizes the API surface.
+2. ✅ `require_component` helper (A5/Q2) — done in DRA-50; the shared `ErrorResponse` model/handler half of this item is still open.
 3. Wrap blocking store/sqlite writes in `asyncio.to_thread` (A4).
 4. The two real micro-bugs: `await_decision` `.get` guard (B1) and `create_task` done-callbacks (B6); demote `except:pass` to `debug` (B2).
 5. Persist `ActionApprovalQueue` (A7).
@@ -142,9 +142,18 @@ Applied (each its own PR, behavior-preserving, full-suite green):
   collapsed to a registrar with a startup health report (`GET /api/health/components`).
 
 **Deferred to post-manual-testing (mechanical, behavior-neutral, higher churn):**
-- **A5/Q2** the `require_component` FastAPI dependency to dedupe the ~88 `getattr(orch,…)→503`
-  guards — best done in one consistent sweep *after* manual testing has exercised
-  the real degradation paths, since many endpoints intentionally degrade gracefully
-  (return empty) rather than 503, and a blanket migration would change that.
+- ~~**A5/Q2** the `require_component` FastAPI dependency~~ — **shipped (DRA-50)**, swept last so it
+  caught the final router shape. The caveat that parked it was right and was honoured: the sweep
+  touched only sites that *already* answered 503, never the endpoints that deliberately degrade to
+  an empty 200. It is a request-time helper, not a `Depends` (a dependency runs before body
+  validation and would turn 422s into 503s). Seven guards were deliberately left inline because the
+  shared shape cannot reproduce them, and `tests/test_require_component_sweep.py` names each one:
+  `analytics.py` (`metrics_north_star`, `get_trace`, `clear_traces`) answer through `nocache_json`
+  *and* distinguish "orchestrator not up" from "component missing" with two different bodies;
+  `oauth.py` (`oracle_status`, `oracle_sync`, `oracle_conflicts`, `oracle_resolve_conflicts`) guard
+  on truthiness rather than `is None` and answer `{"ok": false, "error": …}`. Also still open: the
+  much larger family of bare `if not orch → 503 "not initialized"` guards, which is a different
+  finding — those disagree among themselves on response class and body and need their own decision
+  before any sweep.
 - **A1** `web.py` router split, **A2** orchestrator component registry, **A4** blocking-I/O
   offload, **Q4** config centralization — P1/P2, scheduled for after the test gate.

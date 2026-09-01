@@ -74,3 +74,24 @@ def test_tier_counts_match_the_auth_snapshot():
     for tier in ("user", "admin", "open"):
         n = sum(1 for v in auth.values() if v == tier)
         assert f"| `{tier}` | {n} |" in text, f"tier table wrong for {tier} (expected {n})"
+
+
+def test_pass_c_does_not_claim_the_tasks_payload_leak_is_live():
+    """DRA-55: Pass C used to tell the tester to 'confirm it still leaks' for
+    `GET /tasks`. That leak is closed — `format_task` in
+    agents/core/routers/dashboard.py pops `payload`/`result` on all three view
+    paths, pinned by tests/test_dashboard.py::test_tasks_user_tier_never_ships_payload_or_result.
+    A manual chapter that asserts a live leak sends the tester hunting for a
+    bug that does not exist, and invites a 'not reproducible' write-off of the
+    whole pass. The chapter must state the payload-free expectation instead.
+    """
+    text = gen.TARGET.read_text(encoding="utf-8")
+    pass_c = text.split("**Pass C")[1].split("\n\n")[0]
+    assert "confirm it still leaks" not in pass_c, (
+        "Pass C still tells the tester that GET /tasks leaks payload/result at user tier; "
+        "that regression was fixed (TASK-5) and is pinned by tests/test_dashboard.py"
+    )
+    assert "/tasks" in pass_c, "Pass C should still name GET /tasks as the worked example"
+    assert "absent" in pass_c, (
+        "Pass C should ask the tester to confirm payload/result are ABSENT at user tier"
+    )

@@ -82,11 +82,25 @@ async def admin_mcp_add(req: MCPServerConfig):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     from core.mcp.client import MCPServer
+    # stdio is the only transport MCPServer.connect() actually speaks. Accepting
+    # an "sse" config used to register + persist a server that could never
+    # connect, so the admin list showed a permanently dead row. Reject it here,
+    # before anything is written (DRA-25).
+    transport = (req.transport or "stdio").strip().lower()
+    if transport != "stdio":
+        return JSONResponse(
+            {"error": "unsupported_transport", "transport": req.transport, "supported": ["stdio"]},
+            status_code=400,
+        )
     if req.name in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{req.name}' already exists"}, status_code=409)
     srv = MCPServer(
         name=req.name,
-        transport=req.transport,
+        # Persist the NORMALISED value, not req.transport. The gate above lower-cases
+        # and strips only for its own comparison, so "  STDIO  " passed it and then
+        # stored a spelling connect() does not dispatch on — re-creating the
+        # permanently-dead admin row this row exists to remove, one case further in.
+        transport=transport,
         command=req.command,
         url=req.url,
     )
@@ -123,14 +137,20 @@ async def admin_mcp_connect(name: str):
         return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
     srv = orch.mcp.servers[name]
     try:
-        await srv.connect()
-        return {
-            "ok": True,
+        # connect() returns False for a failed handshake (and for any non-stdio
+        # transport). Reporting a hardcoded connected:true made every dead server
+        # look healthy in the admin panel.
+        connected = bool(await srv.connect())
+        body = {
+            "ok": connected,
             "server": name,
-            "connected": True,
+            "connected": connected,
             "tools_count": len(srv.tools),
             "tools": [{"name": t.name, "description": t.description} for t in srv.tools],
         }
+        if not connected:
+            body["error"] = "connect_failed"
+        return body
     except Exception:
         from core.log_safe import log_safe
         logger.exception("MCP server probe failed: %s", log_safe(name))

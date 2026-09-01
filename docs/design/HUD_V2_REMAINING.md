@@ -42,8 +42,12 @@
 PR #505 adds base LIVE/SEED gates for Build / Comms / Finance / Health / Knowledge / Family,
 with plugin-configured checks instead of seeded success. Still open:
 - **Build**: base live wiring reads workflow DAG + skills marketplace + sandbox from
-  `/api/workflows`, `/api/skills/marketplace`, and `/sandbox/status`; deeper create/edit affordances
-  remain in the Console panels.
+  `/api/workflows`, `/api/skills/marketplace`, and `/sandbox/status`. Create/edit is closed
+  (DRA-28): the Console's `WORKFLOW BUILDER` panel replaces the read-only step generator —
+  generate a step, append it to a draft, and save through `POST /api/workflows` /
+  `PUT /api/workflows/{id}` (admin), with the 422/401 refusal rendered inline. The steps
+  textarea stays the editor of record for the advanced `router`/`critic`/`loop`/`subflow`
+  configs; a graphical DAG canvas is still open.
 - **Memory**: `RECALLS` / `TOPICS` / `KG` live (recall search, decay ranking, bitemporal KG as‑of).
 - **Trust**: real `%‑local` meter (needs a locality/cost summary endpoint, §6).
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).
@@ -118,11 +122,15 @@ with plugin-configured checks instead of seeded success. Still open:
 - Once verified, flip the default: `JARVIS_HUD=v2` (or hardcode) so `/` serves v2; keep `/v1` as the
   escape hatch; then archive the old `agents/web/` HUD and update `README` / `STATUS.md` / `NERVA.md`.
 
-## 9. Known infra issue (not a code fix)
-- CI **`Analyze (python)` (CodeQL)** intermittently fails with *"Code scanning is not enabled for this
-  repository"* — a repo **Settings → Code security** toggle (or GHAS availability), owner‑controlled.
-  Unrelated to the HUD; `test` + `frontend` are green. Enable code scanning, or make that check
-  non‑required.
+## 9. Known infra issue — ✅ resolved (2026‑08‑31)
+- The old note here said CI **`Analyze (python)` (CodeQL)** intermittently failed because code
+  scanning was unavailable on a private repo. That is overtaken: the repo is public, code scanning
+  is enabled, and the analyze step uploads SARIF successfully (run 33384718270 logs *"Analysis
+  upload status is complete."*). Settled posture: **CodeQL = advisory, push‑to‑main + weekly, not a
+  required check, fails loudly on analysis/upload errors** (`continue-on-error` removed
+  2026‑08‑31). The only remaining action is owner‑side — drop `Analyze (python)` / `CodeQL` from
+  required status checks and delete the code‑scanning merge‑protection ruleset
+  ([`OWNER_TASKS.md`](../OWNER_TASKS.md) §GitHub settings).
 
 ## 10. Parity re‑audit — 2026‑06‑10 (backend moved ahead again)
 

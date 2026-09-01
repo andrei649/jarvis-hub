@@ -125,18 +125,57 @@ def test_status_says_unavailable_rather_than_zero_when_guardrails_are_off(monkey
     assert "not attached" in g["note"]
 
 
-def test_status_reports_unmeasured_counters_as_null_not_zero(monkeypatch):
-    """Per-scanner findings and SSRF blocks genuinely are not tracked. They are
-    reported as null with available:false — a 0 there would read as a reading."""
-    monkeypatch.setattr(web, "orch", SimpleNamespace(security=_engine()))
+def test_status_attributes_findings_to_the_scanner_that_produced_them(monkeypatch):
+    """DRA-47 — per-scanner findings used to be reported as null/available:false
+    ("the engine merges results before it sees which scanner produced what").
+    It does see: the merge loop holds the producing scanner."""
+    eng = _engine(RedactionMode.WARN)
+    eng._guard_input(f"key {_TRIPWIRE}")
+    monkeypatch.setattr(web, "orch", SimpleNamespace(security=eng))
 
     body = TestClient(web.app).get("/security/status").json()
+    scanners = body["scanners"]
 
-    assert body["ssrf"]["blocked_requests"] is None
-    assert body["ssrf"]["available"] is False
-    for info in body["scanners"].values():
-        assert info["findings"] is None
-        assert info["available"] is False
+    assert scanners["secrets"]["findings"] >= 1
+    assert scanners["pii"]["findings"] == 0          # the tripwire is not PII
+    assert scanners["secrets"]["available"] is True
+    assert scanners["pii"]["available"] is True
+
+
+def test_bound_engines_share_the_per_scanner_findings_total():
+    """Same rationale as the shared counter set: bind() forks an instance per
+    backend, so a per-instance per-scanner count would report a fraction."""
+    parent = _engine(RedactionMode.WARN)
+    child = parent.bind(SimpleNamespace(supports_tools=False))
+
+    child._guard_input(f"key {_TRIPWIRE}")
+    parent._guard_input(f"key {_TRIPWIRE}")
+
+    assert (parent.stats()["scanners"]["secrets"]["findings"]
+            == child.stats()["scanners"]["secrets"]["findings"] >= 2)
+
+
+def test_status_reports_the_real_ssrf_block_count(monkeypatch):
+    """DRA-47 — the guard was real, the counter was not wired. A refusal counts;
+    an allowed address does not."""
+    from agents.core.security.ssrf import (
+        blocked_requests,
+        check_ssrf,
+        reset_blocked_requests,
+        resolve_and_validate,
+    )
+
+    reset_blocked_requests()
+    assert blocked_requests() == 0
+    resolve_and_validate("169.254.169.254")          # cloud metadata literal
+    check_ssrf("http://10.0.0.1/x")                  # private range
+    resolve_and_validate("8.8.8.8")                  # allowed — must NOT count
+
+    monkeypatch.setattr(web, "orch", SimpleNamespace(security=_engine()))
+    body = TestClient(web.app).get("/security/status").json()
+
+    assert body["ssrf"]["blocked_requests"] == 2
+    assert body["ssrf"]["available"] is True
 
 
 def test_status_survives_no_orchestrator_at_all(monkeypatch):

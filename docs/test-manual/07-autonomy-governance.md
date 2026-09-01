@@ -96,15 +96,14 @@ kill-switch chip that disagrees with `GET /api/security/kill-switch` — **BLOCK
 | GOV-018 | Empty queue is honest | on a fresh `JARVIS_HOME`, `GET /tasks` | `{"tasks":[],"view":"legacy","history_included":false,...}` — never a dummy row (H7.7, `dashboard.py:184`) | **BLOCKER** if seeded rows appear | ✅tests/test_dashboard.py |
 | GOV-019 | `as_of` is real | any `/tasks` response | `as_of` is a current UTC ISO timestamp, within seconds of your clock | MINOR | ✅tests/test_dashboard.py |
 
-#### GOV-020 — The known user-tier payload leak (BACKLOG **TASK-5**) — verify current behaviour honestly
-- **Surface:** `GET /tasks` · **Tier:** user · **Auto:** ❌ (no test pins the projection)
-- **Why it matters:** every `/autonomy/*` read is admin-tier and the Mission Control feed deliberately whitelists 7 fields (`swarm.py:_PREVIEW_FIELDS`), but `/tasks` returns `Task.to_dict()` verbatim — including `payload` and `result` (`dashboard.py:136-194`, `format_task` at :150-157; `Task.to_dict` = `dict(self.__dict__)`, `queue.py:89-91`). On a LAN deployment where the user token ≠ admin token (a family member, a design partner), user-tier reads the admin cards: draft email bodies, writeback payloads, tool results.
+#### GOV-020 — User-tier `/tasks` is payload-free (**TASK-5**, fixed) — verify the projection still holds
+- **Surface:** `GET /tasks` · **Tier:** user · **Auto:** ✅`tests/test_dashboard.py::test_tasks_user_tier_never_ships_payload_or_result`
+- **Why it matters:** every `/autonomy/*` read is admin-tier and the Mission Control feed deliberately whitelists 7 fields (`swarm.py:_PREVIEW_FIELDS`, `swarm.py:156`). `/tasks` is the one *user*-tier task read, and it used to answer with `Task.to_dict()` verbatim — draft email bodies, writeback payloads, tool results (that was TASK-5). `Task.to_dict` is still `dict(self.__dict__)` (`queue.py:154-156`), so the only thing standing between a user token and an admin card is `format_task`, which now pops `payload` and `result` before the response (`dashboard.py:139-202`, `format_task` at :153-165). Re-run this case whenever that function is touched.
 - **Prereq:** `JARVIS_USER_TOKEN` set and different from `JARVIS_ADMIN_TOKEN`; at least one task with a non-empty payload (GOV-004 gives you `payload.service`, `payload.cmd`, `payload.signal`).
-- **Steps:** 1) `curl -s localhost:8080/tasks -H "X-User-Token: $JARVIS_USER_TOKEN" | python -c "import json,sys; [print(t.get('kind'), sorted(t)) for t in json.load(sys.stdin)['tasks']]"`.
-- **Expected — current, known behaviour:** each task dict **contains `payload` and `result`**. Record this as **TASK-5 still open**, severity **MAJOR** (P2 in `BACKLOG.md`), not as a new finding.
-- **Would-be PASS (after the fix):** `payload` and `result` absent at user tier; `owner/state/label/project/title/kind/status` present (what the HUD actually consumes).
-- **FAIL if:** the leak is *worse* than described — e.g. `payload` contains a resolved secret value rather than a `{{secret:NAME}}` handle → **BLOCKER**, escalate immediately.
-- **Evidence:** the key list per task, plus one redacted payload sample.
+- **Steps:** 1) `curl -s localhost:8080/tasks -H "X-User-Token: $JARVIS_USER_TOKEN" | python -c "import json,sys; [print(t.get('kind'), sorted(t)) for t in json.load(sys.stdin)['tasks']]"`. 2) repeat with `?view=running` and `?view=history` — all three code paths call `format_task`, so all three must be clean.
+- **Expected — current behaviour:** **no** task dict contains `payload` or `result`, on any of the three views; `owner/state/label/project/title/kind/status` are present (what the HUD actually consumes). Compare with the admin read `GET /autonomy/tasks`, which *does* carry the payload — that contrast is the point of the case.
+- **FAIL if:** `payload` or `result` reappears at user tier → **MAJOR**, TASK-5 has regressed and `tests/test_dashboard.py` should have caught it; **BLOCKER** if the payload also carries a resolved secret value rather than a `{{secret:NAME}}` handle.
+- **Evidence:** the key list per task for all three views, plus the admin-tier read showing the payload that user tier did not get.
 
 #### GOV-021 — Ownership & attribution survive the decision
 - **Surface:** `GET /autonomy/tasks` · **Tier:** admin · **Auto:** ✅`tests/test_autonomy_metadata_integrity.py`
@@ -625,7 +624,7 @@ condition says otherwise is the section's worst failure mode.
 | GOV-231 | Governed call abuse | `POST /api/autonomy/call -d '{"to":"+40700000000","message":"x","provider":"skynet"}'` | **422** `{"ok":false,"reason":"unknown_provider","supported":[…]}`; nothing dials. With the budget exhausted → 422 `reason:"interrupt_budget_exhausted"`; with valid input → a **queued, ask-tier** task (`call_broker.py:216-286`) | **BLOCKER** if a call is placed without approval | ✅tests/test_autonomy_advanced.py |
 | GOV-232 | Call field caps | `to` 100 chars, `message` 5 000 chars | 422 from pydantic (`max_length` 40 / 2 000, `routers/autonomy.py:104-110`) | MINOR | ⚠️ |
 | GOV-233 | Metrics as an oracle | `GET /api/metrics/north-star` and `GET /api/security/audit/verify` with **no** token from localhost | 200 — both are tier `open` by design (`docs/METRICS.md`: non-sensitive aggregates). Confirm they expose **no** task titles, payloads or payees | **BLOCKER** if any payload/title/payee leaks into either | ✅ |
-| GOV-234 | Preview-by-id at open tier | `GET /api/autonomy/tasks/<id>/preview` with **no** token from localhost | 200 (tier `open` in `route_auth.json`) — and the body may include payload-derived `effects` and `target`. Off-localhost this is still gated by the global posture; on a LAN box with a user token set, note that this route is **not** guarded while `/tasks` is. Record as MAJOR alongside TASK-5 | MAJOR | ⚠️ |
+| GOV-234 | Preview-by-id is admin-tier | `GET /api/autonomy/tasks/<id>/preview` tokenless, then with the **user** token, then with the **admin** token | the first two → 401/403; only admin → 200. The route carries `Depends(admin_guard)` (`routers/autonomy.py:92`) and is pinned `admin` in `route_auth.json`, which matches its siblings — its body echoes payload-derived `effects`/`target`, so it must never answer below admin | **BLOCKER** if a tokenless or user-tier caller reads payload-derived fields (that was the old open-tier posture) | ✅tests/test_route_auth_matrix.py |
 | GOV-235 | Autonomy mode enum abuse | `POST /autonomy/mode` with `{"mode":"AUTO"}`, `{"mode":"AUTO "}`, `{"mode":"yes"}`, `{"mode":null}` | `"AUTO"` → 200 `{"mode":"auto"}` (lower-cased); `"AUTO "` → **422** (`.lower()` without `.strip()`, `routers/autonomy.py:269-271` — a trailing space is a hard refusal, note it as a MINOR UX wart); `"yes"` → 422 `{"error":"mode must be auto\|ask\|off"}`; `null` → 422 from pydantic. Never a silent fall-through to `auto` | **BLOCKER** if an invalid mode silently enables autonomy | ✅tests/test_autonomy_settings_wiring.py |
 | GOV-236 | Per-agent policy abuse | `POST /autonomy/policy {"agent":"","mode":"off"}` and a 200-char agent name | empty → 422 (`min_length=1`); over 64 chars → 422 (`max_length=64`) | MINOR | ✅ |
 | GOV-237 | Settings write without admin | `PUT /api/admin/settings/autonomy` with the user token | 401; the caps/budget are unchanged | **BLOCKER** if 200 | ✅ |
@@ -638,7 +637,7 @@ condition says otherwise is the section's worst failure mode.
 | Group | Cases | Needs | Auto-covered | Notes |
 |---|---|---|---|---|
 | 07.1 Preflight & fixtures | 8 (GOV-001–008) | 🖥 (a stopped service) | 6 ✅ / 2 ⚠️ | GOV-004 is the model-free fixture the rest reuses |
-| 07.2 Task lifecycle & `/tasks` | 16 (009–024) | — | 13 ✅ / 1 ⚠️ / 2 ❌ | GOV-020 pins the known TASK-5 leak |
+| 07.2 Task lifecycle & `/tasks` | 16 (009–024) | — | 14 ✅ / 2 ⚠️ | GOV-020 is now the TASK-5 *regression* case |
 | 07.3 Decision Inbox surfaces | 12 (025–036) | 👁 | 6 ⚠️ / 4 ❌ / 2 ✅ | GOV-033 = R8, expected to reproduce |
 | 07.4 Dry-run & irreversibility | 12 (037–048) | 🔑 for GOV-045 | 9 ✅ / 3 ⚠️ | GOV-038 records the inverted tier comparison |
 | 07.5 ⭐B0 demo | 8 (049–056) | 🤖👁 | 5 ✅ / 3 ⚠️ | GOV-056 closes run 1's last open B0 item |
@@ -729,9 +728,11 @@ move, so re-grep before relying on one (see the note at the end).
     (`orchestrator.py:366-368`); the autonomy tick resyncs mode/caps/budget but not the TTL
     (`autonomy_coordinator.py:134-155`). Changing `autonomy.presence_ttl` needs a restart — worth
     documenting for testers (GOV-108 handles it).
-12. **`GET /api/autonomy/tasks/{id}/preview` is tier `open`** (`route_auth.json`) while every other task
-    read is user or admin. Its body can echo payload-derived `target`/`effects`. Combined with TASK-5 this
-    widens the same exposure at one tier lower. GOV-234. Severity: MAJOR.
+12. ~~**`GET /api/autonomy/tasks/{id}/preview` is tier `open`** while every other task read is user or
+    admin; its body can echo payload-derived `target`/`effects`.~~ **FIXED** — the route now carries
+    `Depends(admin_guard)` (`routers/autonomy.py:92`) and is pinned `admin` in `route_auth.json`, so it
+    sits at the same tier as its siblings. The TASK-5 half of this observation is closed too (see
+    GOV-020). GOV-234 updated to assert the enforcement instead of the leak.
 13. **The v2 HUD has no UI to set the admin token.** `hud.admin_token` is only *read*
     (`frontend/src/api/client.ts:15-17`, `gap.tsx:1953/2215/2333`); the only writer in the product is
     Mission Control's `#tokIn` field (`agents/web/mission_control.html:78, 157-160`). A tester who never

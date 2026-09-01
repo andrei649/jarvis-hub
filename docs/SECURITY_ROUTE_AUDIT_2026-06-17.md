@@ -9,7 +9,8 @@
 > `BACKLOG.md` SEC-1…SEC-5. The original verdicts below are kept as the historical
 > as-assessed record; each affected row and the remediation order now carry a
 > **current-status** note. Net: the P0 (F-01) and the P1s (F-02, F-03) are fixed
-> and CI-enforced; remaining items are owner-side (F-10) or deferred (SEC-5b, F-11).
+> and CI-enforced; F-10 is **superseded 2026-08-29 (de-gate)** — see its row below — and the
+> remaining items are deferred (SEC-5b, F-11).
 
 ## Method
 
@@ -52,7 +53,7 @@ on LAN / Pi / reverse-proxy / public-tunnel exposure.
 | **F-07** | PluginGate not a hard egress boundary | **FIXED.** Anchored host/sub-domain matching (kills the `api.openai.com.evil` substring bypass) + per-request manifest enforcement in `PluginHTTPClient` (`NONE` blocks; `LAN` local-only; `RESTRICTED` allowlist). **SEC-5: now strict by default** — `for_plugin` names reconciled to manifest ids and allowlists completed (Gemini, Google OAuth, RO news), so undeclared egress is blocked; `JARVIS_STRICT_EGRESS=0` is the escape hatch. Still-unmanifested networked plugins (websearch/balance/analytics/n8n + dynamic families) tracked as SEC-5b. |
 | **F-08** | Runtime state under repo (`memory_logs/`) | **Confirmed (by design).** Git-ignored, but colocated with source. `JARVIS_HOME` default would be cleaner. P2. **Since FIXED (SEC-4):** `JARVIS_HOME` runtime-state relocation landed. |
 | **F-09** | Stale route/test counters in docs | **Confirmed, cosmetic.** Runtime is 300 routes / 296 in the parity snapshot; docs say ~253. Fix counters or auto-generate. **Since FIXED (SEC-4):** counters refreshed. |
-| **F-10** | CI broad but some gates advisory/push-only | **Confirmed.** ruff `--exit-zero`, codeql `continue-on-error`, Windows smoke push-only. Acceptable pre-1.0; make the route-matrix test required once it exists. **Still open (owner-side, SEC-4):** the matrix/parity tests exist and run; promoting them to *required* branch-protection checks is a GitHub setting only the owner can flip. |
+| **F-10** | CI broad but some gates advisory/push-only | **Confirmed.** ruff `--exit-zero`, codeql `continue-on-error`, Windows smoke push-only. Acceptable pre-1.0; make the route-matrix test required once it exists. **Superseded 2026-08-29 (de-gate):** the owner decided to remove the merge gates rather than promote them (#981, `824ff18`). No workflow blocks a PR any more; the route-auth-matrix and HUD-parity tests run inside the single advisory `test (ubuntu-latest)` lane on PRs (`ci.yml`) plus the post-merge push-to-main lanes. Re-gating is a reversible owner action — the workflow half is a patch in [`docs/restore/`](restore/README.md), the branch-protection half is in [`docs/OWNER_TASKS.md`](OWNER_TASKS.md) → "De-gate merges". |
 | **F-11** | Large hubs (`web.py` ~2.4k, `orchestrator.py` ~1.5k) | **Confirmed** — already tracked as CLN-2/CLN-3 (owner decision: after the 1.0 gate). |
 | **F-12** | Mixed scale/storage policy | **Confirmed (acceptable for personal use).** `InMemoryVectorStore` uncapped + linear scan; bitemporal facts JSON append. P2. |
 
@@ -109,7 +110,7 @@ This ordering was followed; all but the owner-side GitHub setting is done.
 1. ✅ **F-01 (SEC-1)** — `GET/POST/DELETE /api/webhooks` now guarded with `admin_guard`; the trigger keeps its token/HMAC. Guard-contract test added. *(P0)*
 2. ✅ **F-03 (SEC-2)** — runtime route-auth **matrix test** (`tests/test_route_auth_matrix.py`) + checked-in policy snapshot (`tests/_snapshots/route_auth.json`); CI fails on any unclassified/unguarded mutator. *(P1)*
 3. ✅ **F-02 (SEC-3)** — policy applied to all remaining open mutators (12 admin / 23 user) and sensitive reads; `PENDING_GUARD` empty. Localhost dev unaffected (localhost passes guards token-free). *(P1)*
-4. **Env/posture (SEC-4, owner-side):** npm Dependabot ✅ (F-05), `JARVIS_HOME` for runtime state ✅ (F-08), doc counters ✅ (F-09). **Remaining:** promote the matrix/parity tests to a *required* branch-protection check (F-10) — a GitHub setting only the owner can flip.
+4. **Env/posture (SEC-4, owner-side):** npm Dependabot ✅ (F-05), `JARVIS_HOME` for runtime state ✅ (F-08), doc counters ✅ (F-09). **F-10 superseded 2026-08-29 (de-gate):** the gates were removed instead of promoted (#981); the matrix/parity tests run advisory on PRs and post-merge. Restoring a gate needs both halves — the workflow patch from [`docs/restore/`](restore/README.md) *and* the check name re-added in branch protection ([`docs/OWNER_TASKS.md`](OWNER_TASKS.md) → "De-gate merges").
 
 > Plus **SEC-5** (F-06 WorldView bridge auth ✅, F-07 plugin egress now strict by
 > default ✅). Deferred: **SEC-5b** (manifest the still-unmanifested networked

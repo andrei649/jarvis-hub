@@ -3,7 +3,7 @@
    degrades to an offline/empty state — never blocks. Admin-guarded calls work on
    localhost; on a network they surface the 401 via the client's token prompt. */
 import React, { useState, useEffect, useCallback } from 'react';
-import { apiGet, apiPost, apiPut, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
 import { localModelStatus } from './api/live';
 import { OperatorPanel } from './operator-panel';
 
@@ -193,6 +193,33 @@ export function KgPanel() {
   const ents = arr(d, 'entities');
   const [forgetId, setForgetId] = useState('');
   const [msg, setMsg] = useState(null);
+  /* DRA-27 (write legs) — the graph was read-only from the HUD: nothing in any client ever
+     posted `/api/kg/relations` or `/api/kg/ingest`. Both are contract- AND kernel-mediated
+     and answer 403 "kernel denied: …", plus add-relation answers 400 for a relation type
+     that is not a bare identifier (it is interpolated into Cypher). Both refusals are
+     rendered — apiPost throws, so a control without onErr reads as a silent success. */
+  const [relSrc, setRelSrc] = useState('');
+  const [relRel, setRelRel] = useState('');
+  const [relTgt, setRelTgt] = useState('');
+  const [ingestText, setIngestText] = useState('');
+  const [triples, setTriples] = useState([]);
+  const writeErr = (err) => setMsg(err?.status === 400 ? 'invalid relation type'
+    : err?.status === 503 ? 'refused · 503 · graph unavailable'
+    : `refused · ${err?.status || 'error'}`);
+  const addRelation = () => {
+    const source = relSrc.trim(); const relation = relRel.trim(); const target = relTgt.trim();
+    if (!source || !relation || !target) return;
+    act('/api/kg/relations', { source, relation, target },
+      () => { setRelSrc(''); setRelRel(''); setRelTgt(''); setMsg(`relation added · ${source} ${relation} ${target}`); reload(); },
+      writeErr);
+  };
+  const ingest = () => {
+    const text = ingestText.trim();
+    if (!text) return;
+    act('/api/kg/ingest', { text },
+      (r) => { setMsg(`added ${r?.added ?? 0} triple(s)`); setTriples(arr(r, 'triples')); setIngestText(''); reload(); },
+      writeErr);
+  };
   const del = (name) => apiDelete('/api/kg/entities/' + encodeURIComponent(name)).then(reload).catch(() => {});
   /* The old `r.error ? 'not found'` branch here was DEAD: apiPost throws on the route's 404
      and act's `.catch(() => {})` ate it, so a bad id silently cleared the box and looked like
@@ -226,7 +253,67 @@ export function KgPanel() {
         <input value={forgetId} onChange={(ev) => setForgetId(ev.target.value)} placeholder="memory item id to forget" style={{ ...inpS, flex: 1 }} />
         <button className="tool-btn" onClick={forget}>forget</button>
       </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <input value={relSrc} onChange={(ev) => setRelSrc(ev.target.value)} placeholder="source" style={{ ...inpS, flex: 1, minWidth: 0 }} />
+        <input value={relRel} onChange={(ev) => setRelRel(ev.target.value)} placeholder="relation" style={{ ...inpS, flex: 1, minWidth: 0 }} />
+        <input value={relTgt} onChange={(ev) => setRelTgt(ev.target.value)} placeholder="target" style={{ ...inpS, flex: 1, minWidth: 0 }} />
+        <button className="tool-btn" onClick={addRelation}>add relation</button>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <textarea value={ingestText} onChange={(ev) => setIngestText(ev.target.value)} placeholder="text to extract triples from…" style={{ ...taS, minHeight: 48 }} />
+        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <button className="tool-btn" onClick={ingest}>ingest</button>
+          <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>extraction is heuristic — the written triples are listed below, not just counted</span>
+        </div>
+      </div>
+      {triples.slice(0, 10).map((t, i) => (
+        <Row key={i}>
+          <span style={{ ...mono, color: 'var(--accent-light)' }}>
+            {Array.isArray(t) ? t.join(' · ') : [t?.source ?? t?.subject, t?.relation ?? t?.predicate, t?.target ?? t?.object].filter(Boolean).join(' · ')}
+          </span>
+        </Row>
+      ))}
       {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+    </Card>
+  );
+}
+/* DRA-27 (write legs) — `POST /api/memory/remember` had no client caller anywhere, so the
+   HUD could forget a memory but never make one. Placed beside MEMORY HYGIENE on purpose:
+   they are the two halves of the same loop.
+
+   Honesty: the route answers **200 `{ok:false, id:null}`** when the embedder is unavailable
+   — the write is accepted and then silently not stored. Printing "stored" for that would be
+   the exact lie this panel exists to avoid, so `ok:false` gets its own copy, and a 4xx/5xx
+   refusal (apiPost throws) reaches `onErr` and is rendered rather than swallowed. */
+export function MemoryWritePanel() {
+  const [text, setText] = useState('');
+  const [source, setSource] = useState('');
+  const [msg, setMsg] = useState(null);
+  const [last, setLast] = useState(null);
+  const remember = () => {
+    const t = text.trim();
+    if (!t) return;
+    setMsg(null);
+    act('/api/memory/remember', { text: t, metadata: { source: source.trim() || 'hud' } },
+      (r) => {
+        setLast(r);
+        if (r?.ok) { setMsg(`stored · ${r.id}`); setText(''); }
+        else setMsg('not stored — the write was accepted but no embedding was produced');
+      },
+      (err) => { setLast(null); setMsg(`refused · ${err?.status || 'error'}`); });
+  };
+  return (
+    <Card title="REMEMBER" live={asLive(last, last?.ok)} sub={last ? (last.ok ? 'stored' : 'not stored') : null}>
+      <textarea value={text} onChange={(ev) => setText(ev.target.value)} placeholder="fact to remember, in plain language…" style={taS} />
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        <input value={source} onChange={(ev) => setSource(ev.target.value)} placeholder="source (optional)" style={{ ...inpS, flex: 1 }} />
+        <button className="tool-btn" onClick={remember}>remember</button>
+      </div>
+      {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+        Long-term vector memory. Without an embedder the route still answers 200 — this card says
+        "not stored" for that case rather than claiming a write that did not happen.
+      </div>
     </Card>
   );
 }
@@ -269,6 +356,61 @@ export function MemoryHygienePanel() {
       <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
         ACT-R activation below the threshold — ✕ forgets the item AND its dependents.
       </div>
+    </Card>
+  );
+}
+/* DRA-27 (eval legs) — the memory harness (`/api/memory/eval/corpus` + `/run`) existed with
+   no way to run it outside pytest. Named MemoryEvalPanel, not EvalPanel: that name is already
+   taken by the Observe dataset panel.
+
+   The two modes are NOT interchangeable and the card says so: `keyword` scores a pure string
+   answerer over the corpus facts (no store touched), while `recall` really calls
+   `MemoryManager.remember()` for every case fact — it WRITES the corpus into the vector store
+   under deterministic ids. A run button with a side effect that big has to name it. */
+export function MemoryEvalPanel() {
+  const { d, e, loading, reload } = useApi('/api/memory/eval/corpus');
+  const cases = arr(d, 'cases');
+  const abilities = arr(d, 'abilities');
+  const [run, setRun] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const go = (mode) => {
+    setBusy(true); setMsg(null);
+    const done = () => setBusy(false);
+    if (mode === 'keyword') {
+      act('/api/memory/eval/run?mode=keyword', {},
+        (r) => { setRun(r); done(); },
+        (err) => { setMsg(`refused · ${err?.status || 'error'}`); done(); });
+    } else {
+      act('/api/memory/eval/run?mode=recall', {},
+        (r) => { setRun(r); done(); },
+        (err) => { setMsg(`refused · ${err?.status || 'error'}`); done(); });
+    }
+  };
+  const overall = run?.overall;
+  const byAbility = (run && (run.by_ability || run.per_ability)) || {};
+  return (
+    <Card title="MEMORY EVAL" live={asLive(d)} sub={d ? `${cases.length} cases` : null} onReload={reload}>
+      <State e={e} loading={loading} n={cases.length} />
+      {abilities.length > 0 && <Row><span style={{ ...mono, color: 'var(--ink-2)' }}>{abilities.join(' · ')}</span></Row>}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+        <button className="tool-btn" disabled={busy} onClick={() => go('keyword')}>run keyword</button>
+        <button className="tool-btn" disabled={busy} onClick={() => go('recall')}>run recall</button>
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>
+        recall writes the corpus into the vector store (one remembered record per case fact) — keyword does not.
+      </div>
+      {overall && <Row>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>{`${overall.passed}/${overall.n} passed`}</span>
+        <span style={{ marginLeft: 'auto' }}><Tag c={overall.score >= 0.8 ? 'var(--green)' : 'var(--amber)'}>{run?.mode || 'keyword'}</Tag></span>
+      </Row>}
+      {Object.entries(byAbility).map(([name, b]: any) => (
+        <Row key={name}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{name}</span>
+          <span style={{ marginLeft: 'auto' }}><Tag c={b?.score === 1 ? 'var(--green)' : 'var(--amber)'}>{`${b?.passed ?? 0}/${b?.n ?? 0} · ${b?.score}`}</Tag></span>
+        </Row>
+      ))}
+      {msg && <div style={{ fontSize: 10, color: 'var(--red)', marginTop: 6 }}>{msg}</div>}
     </Card>
   );
 }
@@ -343,6 +485,116 @@ function NotesPanel() {
       <button className="tool-btn" onClick={() => act('/api/notes/rewrite', { save: true }, reload)}>rewrite with AI</button>
     </div>
   </Card>;
+}
+
+/* DRA-53 — NOTE DOCS: the block-tree document store (agents/core/notes_store.py, H22.10)
+   adopted behind real routes. It shipped fully tested and reachable by NOTHING — no route,
+   no caller — which is why the roadmap framed it as "adopt it behind a route or delete it".
+
+   Sibling of NOTES above, not a replacement: `/api/notes` is the free-text session note
+   injected into every turn; this is the structured tree whose blocks carry STABLE ids, so a
+   memory reference survives edits and reordering. That stability is also why the listing
+   exists — without `GET /api/notes/docs` the panel could create a doc and immediately lose
+   its id, which would be a write-only surface pretending to be a store. */
+const NoteBlockRows = ({ nodes, depth = 0, onEdit, onDelete }: any) => (
+  <>
+    {(nodes || []).map((n) => (
+      <React.Fragment key={n.id}>
+        <Row>
+          <span style={{ width: depth * 12 }} />
+          <Tag>{n.type}</Tag>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{n.text}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+            <button className="tool-btn" title="edit this block" onClick={() => onEdit(n)}>edit</button>
+            <button className="tool-btn" title="delete this block and its children" onClick={() => onDelete(n)}>✕</button>
+          </span>
+        </Row>
+        <NoteBlockRows nodes={n.children} depth={depth + 1} onEdit={onEdit} onDelete={onDelete} />
+      </React.Fragment>
+    ))}
+  </>
+);
+export function NoteDocsPanel() {
+  const { d, e, loading, reload } = useApi('/api/notes/docs');
+  const docs = arr(d, 'docs');
+  const [title, setTitle] = useState('');
+  const [openId, setOpenId] = useState(null);
+  const [tree, setTree] = useState(null);
+  const [newBlock, setNewBlock] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [blockText, setBlockText] = useState('');
+  const [msg, setMsg] = useState(null);
+  /* Every mutation here can legitimately refuse: the store answers 400 for a missing doc or
+     block, a cross-doc parent, or a move that would make a cycle, and apiPost/apiPatch/
+     apiDelete THROW on 4xx. A control without this reads as a silent success. */
+  const refused = (err) => setMsg(`refused · ${err?.status || 'error'}`);
+  /* `keepMsg` matters: every mutation re-reads the tree afterwards, and a refresh that
+     cleared the message would erase the outcome it was just told to report ("deleted 2
+     block(s)") a frame after painting it. */
+  const openDoc = (id, keepMsg = false) => {
+    setOpenId(id); setEditing(null);
+    apiGet(`/api/notes/docs/${id}`).then((t) => { setTree(t); if (!keepMsg) setMsg(null); })
+      .catch((err) => { setTree(null); setMsg(`could not open · ${err?.status || 'offline'}`); });
+  };
+  const create = () => act('/api/notes/docs', { title: title.trim() },
+    (r) => { setTitle(''); setMsg(`created · ${r?.id || ''}`); reload(); }, refused);
+  const delDoc = (id) => apiDelete(`/api/notes/docs/${id}`)
+    .then((r: any) => { if (id === openId) { setOpenId(null); setTree(null); } setMsg(`deleted doc · ${r?.deleted ?? 0} block(s)`); reload(); })
+    .catch(refused);
+  const addBlock = () => {
+    const text = newBlock.trim();
+    if (!openId || !text) return;
+    act(`/api/notes/docs/${openId}/blocks`, { type: 'paragraph', text },
+      () => { setNewBlock(''); setMsg('block added'); openDoc(openId, true); }, refused);
+  };
+  const saveBlock = () => {
+    if (!editing) return;
+    apiPatch(`/api/notes/blocks/${editing}`, { text: blockText })
+      .then(() => { setEditing(null); setMsg('block saved'); openDoc(openId, true); })
+      .catch(refused);
+  };
+  const delBlock = (n) => apiDelete(`/api/notes/blocks/${n.id}`)
+    .then((r: any) => { setMsg(`deleted ${r?.deleted ?? 1} block(s)`); openDoc(openId, true); })
+    .catch(refused);
+  return (
+    <Card title="NOTE DOCS" live={asLive(d)} sub={d ? `${docs.length} docs` : null} onReload={reload}>
+      <State e={e} loading={loading} n={docs.length} />
+      {docs.slice(0, 12).map((doc) => (
+        <Row key={doc.id}>
+          <button
+            className="tool-btn"
+            title="open this doc"
+            style={{ ...mono, color: doc.id === openId ? 'var(--accent-light)' : 'var(--ink-2)' }}
+            onClick={() => openDoc(doc.id)}
+          >{doc.title || doc.id}</button>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag>{String(doc.updated_at || '').slice(0, 16).replace('T', ' ')}</Tag>
+            <button className="tool-btn" title="delete this doc and every block in it" onClick={() => delDoc(doc.id)}>✕</button>
+          </span>
+        </Row>
+      ))}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <input value={title} onChange={(ev) => setTitle(ev.target.value)} placeholder="doc title" style={{ ...inpS, flex: 1 }} />
+        <button className="tool-btn" onClick={create}>new doc</button>
+      </div>
+      {tree && <div style={{ marginTop: 8 }}>
+        <NoteBlockRows nodes={tree.children} onEdit={(n) => { setEditing(n.id); setBlockText(n.text || ''); }} onDelete={delBlock} />
+        {editing && <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <input value={blockText} onChange={(ev) => setBlockText(ev.target.value)} placeholder="block text" style={{ ...inpS, flex: 1 }} />
+          <button className="tool-btn" onClick={saveBlock}>save block</button>
+          <button className="tool-btn" onClick={() => setEditing(null)}>cancel</button>
+        </div>}
+        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <input value={newBlock} onChange={(ev) => setNewBlock(ev.target.value)} placeholder="new block…" style={{ ...inpS, flex: 1 }} />
+          <button className="tool-btn" onClick={addBlock}>add block</button>
+        </div>
+      </div>}
+      {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+        Stable block ids · ✕ on a block removes its whole subtree · inserting never renumbers siblings.
+      </div>
+    </Card>
+  );
 }
 
 /* T-0.20 — the encrypted personal blob vault (GET/POST/DELETE /api/vault[/{id}],
@@ -774,6 +1026,72 @@ export function PosturePanel() {
   );
 }
 
+/* DRA-36 (H17.4) — the transparency-anchor half of the tamper-evidence story. The Trust
+   Center already renders the sibling `/api/security/audit/verify` badge, but
+   `GET /api/security/audit/anchors` and `POST /api/security/audit/anchor` had no caller in
+   any client: the receipts that let the audit chain be checked from OUTSIDE the process
+   existed only as a file on disk.
+
+   Honesty contract: `TransparencyAnchor.verify()` returns ok:true over an EMPTY log (zero
+   rows chain trivially), so an empty anchor log renders "nothing anchored yet" and the amber
+   SEED chip — never a green verified chain. "Nothing to check" is not "checked". */
+export function AuditAnchorsPanel() {
+  const { d, e, loading, reload } = useApi('/api/security/audit/anchors');  // user-guarded read
+  const anchors = arr(d, 'anchors');
+  const v = (d && d.verify) || {};
+  const n = v.n ?? anchors.length;
+  const [note, setNote] = useState(null);
+  const short = (h) => (h ? String(h).slice(0, 12) : '—');
+  const when = (ts) => {
+    const t = Number(ts);
+    if (!Number.isFinite(t) || t <= 0) return '—';
+    try { return new Date(t * 1000).toISOString().replace('T', ' ').slice(0, 19); } catch { return '—'; }
+  };
+  return (
+    <Card title="AUDIT ANCHORS" live={asLive(d, n > 0)} sub={d ? `${n} receipt(s)` : null} onReload={reload}>
+      <State e={e} loading={loading} n={d ? 1 : 0} />
+      {d && (
+        <>
+          <Row><span style={mono}>chain</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              {n === 0
+                ? <Tag c="var(--ink-3)">nothing anchored yet</Tag>
+                : v.ok === false
+                  ? <Tag c="var(--red)">chain broken @ #{v.bad_seq ?? '?'}</Tag>
+                  : <Tag c="var(--green)">anchor chain intact · {n} receipt(s)</Tag>}
+            </span>
+          </Row>
+          {anchors.slice(0, 10).map((a, i) => (
+            <Row key={a.anchor_hash || i}>
+              <span style={{ ...mono, color: 'var(--accent-light)' }}>#{a.seq}</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{when(a.ts)}</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+                <Tag>{a.source || '—'}</Tag>
+                <Tag>root {short(a.root)}</Tag>
+                <Tag>anchor {short(a.anchor_hash)}</Tag>
+              </span>
+            </Row>
+          ))}
+          <Row>
+            <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>anchor the current chain head into the transparency log</span>
+            <button
+              className="tool-btn" style={{ marginLeft: 'auto' }} title="anchor now (admin)"
+              onClick={() => actA('/api/security/audit/anchor', {},
+                (r) => { setNote(`anchored · receipt #${(r && r.receipt && r.receipt.seq) ?? '?'}`); reload(); },
+                (err) => setNote(`refused · ${err?.message || 'anchor failed'}`))}
+            >anchor now</button>
+          </Row>
+          {note && <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+            Receipts are hash-linked, so a rewritten anchor log is detectable — but the log is
+            local: anchoring pins ordering, it does not publish to a third party (H17.4).
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 /* Self-Improvement dashboard — read-only aggregation of subsystems that already
    exist (error diagnostics, the resource/service Observer, H32 Capability
    Acquisition, H33 Ambient Intelligence, the Proactive Technology Scout), plus a
@@ -874,6 +1192,104 @@ export function PendingSkillsPanel() {
   );
 }
 
+/* Per-module row for COGNITION. A module answering `available: false` is rendered as
+   "unavailable" and never as a zero — "the module is not there" and "the module reports
+   nothing yet" are different facts, and collapsing them is how a dead subsystem comes to
+   look merely idle. */
+const CogModule = ({ label, s, children }: { label: any; s: any; children?: any }) => (
+  <Row>
+    <span style={mono}>{label}</span>
+    <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+      {s == null ? <Tag>loading…</Tag>
+        : s.available === false ? <Tag c="var(--amber)">unavailable</Tag>
+        : children}
+    </span>
+  </Row>
+);
+
+/* DRA-15 (H21 cognition cut) — the six user-tier cognition reads
+   (/api/cognition/status | honesty | personality | memory | learning | ensemble) shipped
+   with no client caller anywhere, so the whole H21 subsystem was a backend with no window.
+   This is the window; it is read-only.
+
+   Two deliberate honesty properties. (1) The flags gate cognition BEHAVIOUR, not these
+   reads — every registered module reports even while the master flag is off, so the panel
+   wears the amber SEED chip when cognition is off rather than pretending the reads are
+   meaningless or hiding them. (2) There is no enable button: the cognition flags are admin
+   *settings* (`cognition.*`), not a route, so unlike /api/self-improvement/enable there is
+   nothing honest to POST here. Sits beside SELF-IMPROVEMENT (the other "what is the
+   self-improving half actually doing" read), not beside the /learning bench-promotion
+   panel, which is an unrelated mechanism. */
+export function CognitionPanel() {
+  const st = useApi('/api/cognition/status');
+  const hon = useApi('/api/cognition/honesty');
+  const per = useApi('/api/cognition/personality');
+  const mem = useApi('/api/cognition/memory');
+  const lrn = useApi('/api/cognition/learning');
+  const ens = useApi('/api/cognition/ensemble');
+  const flags = (st.d && st.d.flags) || {};
+  const flagKeys = Object.keys(flags);
+  const onCount = flagKeys.filter((k) => flags[k]).length;
+  const reloadAll = () => { st.reload(); hon.reload(); per.reload(); mem.reload(); lrn.reload(); ens.reload(); };
+  const num = (x) => (x == null ? '—' : Number(x).toFixed(2));
+  return (
+    <Card
+      title="COGNITION (H21)"
+      live={asLive(st.d, st.d && st.d.enabled)}
+      sub={st.d ? `${onCount}/${flagKeys.length || 6} on` : null}
+      onReload={reloadAll}
+    >
+      <State e={st.e} loading={st.loading} n={st.d ? 1 : 0} />
+      {st.d && (
+        <>
+          <Row><span style={mono}>master</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={st.d.enabled ? 'var(--green)' : 'var(--ink-3)'}>{st.d.enabled ? 'on' : 'off'}</Tag>
+              <Tag>{arr(st.d, 'modules').length} module(s) registered</Tag>
+            </span>
+          </Row>
+          {flagKeys.map((k) => (
+            <Row key={k}>
+              <span style={mono}>{k.replace(/_enabled$/, '')}</span>
+              <span style={{ marginLeft: 'auto' }}>
+                <Tag c={flags[k] ? 'var(--green)' : 'var(--ink-3)'}>{flags[k] ? 'on' : 'off'}</Tag>
+              </span>
+            </Row>
+          ))}
+          <CogModule label="honesty index" s={hon.d}>
+            <Tag c={hon.d && hon.d.alerting ? 'var(--amber)' : 'var(--ink-3)'}>sycophancy {num(hon.d && hon.d.sycophancy_index)}</Tag>
+            {hon.d && hon.d.alerting ? <Tag c="var(--red)">alerting</Tag> : null}
+            <Tag>{(hon.d && hon.d.n) ?? 0} sample(s)</Tag>
+          </CogModule>
+          <CogModule label="personality" s={per.d}>
+            <Tag>{arr(per.d, 'agents').length} persona(s)</Tag>
+          </CogModule>
+          <CogModule label="living memory" s={mem.d}>
+            <Tag>core {(mem.d && mem.d.core) ?? 0} · user {(mem.d && mem.d.user_core) ?? 0}</Tag>
+            <Tag>embed {(mem.d && mem.d.embed_version) || '—'}</Tag>
+          </CogModule>
+          <CogModule label="governed learning" s={lrn.d}>
+            <Tag>{(lrn.d && lrn.d.kc_count) ?? 0} kc</Tag>
+            <Tag>{(lrn.d && lrn.d.corrections) ?? 0} correction(s)</Tag>
+            {lrn.d && lrn.d.review ? <Tag>review loop</Tag> : null}
+            {lrn.d && lrn.d.curator ? <Tag>curator</Tag> : null}
+            {lrn.d && lrn.d.skill_proposals ? <Tag>skill proposals</Tag> : null}
+          </CogModule>
+          <CogModule label="ensemble" s={ens.d}>
+            <Tag>{arr(ens.d, 'agents').length} agent(s)</Tag>
+            <Tag>diversity {num(ens.d && ens.d.diversity)}</Tag>
+          </CogModule>
+          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+            The modules are registered and reporting even while the flags are off — the flags
+            gate cognition behaviour, not these reads. No toggle here: the cognition flags are
+            admin settings (cognition.*), not an endpoint.
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 /* H34.4 — SwarmPanel: a compact read-only Console/Observe view over the H34.1
    swarm feed (`GET /api/swarm/summary`, open/user-tier), so the cabinet, the
    autonomy funnel and the *dev* swarm (Claude/Codex/opencode/Antigravity via
@@ -940,6 +1356,93 @@ export function SwarmPanel() {
           </Row>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
             <a className="tool-btn" href="/mission-control" target="_blank" rel="noopener noreferrer">open full cockpit →</a>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/* DRA-36 (H20.6) — the sub-agent spawn register. `GET /api/subagents` and
+   `POST /api/subagents/spawn` had no caller: MISSION CONTROL rendered `subagents.spawns` as
+   a bare integer, so a register with concurrency, recursion-depth and budget caps could be
+   neither listed nor used.
+
+   The spawn control is deliberately NOT presented as instant. `SubAgentManager.spawn`
+   awaits the sub-agent's ENTIRE turn inside the POST, so the request stays open for as long
+   as that turn runs (minutes, for a long task); the button locks while it is in flight and
+   the panel says why. Every cap refusal answers 429 and `apiPost` throws on 4xx, so the call
+   passes an `onErr` — without it a refused spawn would silently read as a success, which is
+   the swallowed-mutation bug the note at the top of this file warns about. */
+export function SubAgentsPanel() {
+  const { d, e, loading, reload } = useApi('/api/subagents');  // user-guarded
+  const spawns = arr(d, 'spawns');
+  const stats = (d && d.stats) || {};
+  const [task, setTask] = useState('');
+  const [agent, setAgent] = useState('');
+  const [pending, setPending] = useState(false);
+  const [note, setNote] = useState(null);
+  const atCap = stats.cap != null && (stats.active ?? 0) >= stats.cap;
+  const statusColor = (s) => (s === 'done' ? 'var(--green)' : s === 'failed' ? 'var(--red)' : 'var(--amber)');
+  const spawn = () => {
+    const t = task.trim();
+    if (!t || pending) return;
+    setPending(true);
+    setNote(null);
+    act('/api/subagents/spawn', { task: t, agent: agent.trim() },
+      (r) => {
+        setPending(false);
+        setNote(r && r.ok === false
+          ? `refused · ${r.reason || 'spawn_failed'}`
+          : `spawned ${(r && r.id) || ''} · ${(r && r.status) || 'done'}`);
+        setTask('');
+        reload();
+      },
+      (err) => { setPending(false); setNote(`refused · ${err?.message || 'spawn failed'}`); reload(); });
+  };
+  return (
+    <Card title="SUB-AGENTS" live={asLive(d)} sub={d ? `${stats.total ?? spawns.length} spawn(s)` : null} onReload={reload}>
+      <State e={e} loading={loading} n={d ? 1 : 0} />
+      {d && (
+        <>
+          <Row><span style={mono}>capacity</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={atCap ? 'var(--amber)' : 'var(--green)'}>{stats.active ?? 0}/{stats.cap ?? '—'} active</Tag>
+              {atCap && <Tag c="var(--amber)">at cap</Tag>}
+              <Tag>depth ≤ {stats.max_depth ?? '—'}</Tag>
+              <Tag>{stats.total ?? spawns.length} total</Tag>
+            </span>
+          </Row>
+          {spawns.slice(0, 10).map((s, i) => (
+            <Row key={s.id || i}>
+              <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.id}</span>
+              <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{String(s.task || '').slice(0, 40)}</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+                <Tag>{s.agent || 'sub'}</Tag>
+                <Tag c={statusColor(s.status)}>{s.status || '—'}</Tag>
+              </span>
+            </Row>
+          ))}
+          <Row>
+            <input
+              style={{ ...inpS, flex: 1 }} placeholder="task for the sub-agent" value={task}
+              disabled={pending} onChange={(ev) => setTask(ev.target.value)}
+            />
+            <input
+              style={{ ...inpS, width: 120 }} placeholder="agent (optional)" value={agent}
+              disabled={pending} onChange={(ev) => setAgent(ev.target.value)}
+            />
+            <button
+              className="tool-btn" title="spawn a sub-agent (long-running)"
+              disabled={pending || !task.trim()} onClick={spawn}
+            >spawn</button>
+          </Row>
+          {pending && <div role="status" style={{ ...mono, marginTop: 6, color: 'var(--amber)' }}>spawning… the connection is held for the whole turn</div>}
+          {note && <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+            Spawning is long-running, not fire-and-forget: the POST runs the sub-agent inline and
+            the request stays open until the sub-agent&apos;s turn finishes. Cap, recursion-depth and
+            budget refusals all answer 429 — the capacity row above says which limit is tight.
           </div>
         </>
       )}
@@ -1191,19 +1694,35 @@ export function A2AInboxPanel() {
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>verified peer tasks land here; never auto-execute (H16.2)</div>
   </Card>;
 }
-function MarketplacePanel() {
-  const { d, e, loading, reload } = useApi('/api/skills/marketplace');
+/* DRA-37 — package rollback lives HERE, not in SkillHistoryPanel. Rollback reads the
+   `marketplace_skill_versions` archive, which every publish populates in a default install,
+   whereas the history ledger is gated on JARVIS_SKILL_HISTORY and renders zero rows when it
+   is unset — a control hung off that panel would disappear exactly when rollback is still
+   perfectly usable. The refusal path is the COMMON case here ("no prior version archived"
+   answers 422), which is why the caller passes an `onErr`: apiPost throws on 4xx, so without
+   it the button would silently read as a success. */
+export function MarketplacePanel() {
+  // GET /api/skills/marketplace is admin_guard'ed like the mutations below it: without
+  // the admin flag the list 401s on a token-configured install and the rollback control
+  // has nothing to hang off.
+  const { d, e, loading, reload } = useApi('/api/skills/marketplace', true, true);
   const skills = arr(d, 'skills');
+  const [note, setNote] = useState(null);
   return <Card title="SKILLS MARKETPLACE" live={asLive(d)} sub={skills.length} onReload={reload}>
     <State e={e} loading={loading} n={skills.length} />
     {skills.slice(0, 10).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name}</span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+        <Tag>{s.version || '—'}</Tag>
         <Tag c={s.signed ? 'var(--green)' : 'var(--amber)'}>{s.signed ? 'signed' : 'unsigned'}</Tag>
         <Tag c={s.review_status === 'approved' ? 'var(--green)' : s.review_status === 'rejected' ? 'var(--red)' : 'var(--amber)'}>{s.review_status || 'pending'}</Tag>
         {s.review_status !== 'approved' && <button className="tool-btn" title="approve skill" onClick={() => actA('/api/skills/marketplace/review', { name: s.name, status: 'approved' }, reload)}>✓</button>}
         {s.review_status !== 'rejected' && <button className="tool-btn" title="reject skill" onClick={() => actA('/api/skills/marketplace/review', { name: s.name, status: 'rejected' }, reload)}>✕</button>}
+        <button className="tool-btn" title="roll back to the previous package" onClick={() => actA(`/api/skills/marketplace/${encodeURIComponent(s.name)}/rollback`, {}, (r) => { setNote(`${s.name} · restored ${(r && r.restored_version) || '?'} ← ${(r && r.previous_version) || '?'}`); reload(); }, (err) => setNote(`refused · ${err?.message || 'rollback failed'}`))}>⟲</button>
       </span></Row>)}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>signed + moderated — ✓/✕ sets review status (anti-ClawHub, H12.12)</div>
+    {note && <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>signed + moderated — ✓/✕ sets review status (anti-ClawHub, H12.12).
+      ⟲ reverts the registry package to its archived prior version and is itself reversible; the
+      installed skill is unchanged until it is re-installed through the moderation gate.</div>
   </Card>;
 }
 
@@ -1375,7 +1894,7 @@ function TemplatesPanel() {
 }
 
 /* ── Build ─────────────────────────────────────────────── */
-/* HUD-v3 C7 (workflow runtime management). StepGenPanel covers the AI step-BUILDER;
+/* HUD-v3 C7 (workflow runtime management). WorkflowBuilderPanel covers create/edit;
    this is the missing management surface for the 0.34 runtime: list registered
    pipelines (built-in + user-defined), run one, delete a user-defined one.
    GET open · run user-guard · delete admin. */
@@ -1402,15 +1921,117 @@ export function WorkflowsPanel() {
     </Card>
   );
 }
-function StepGenPanel() {
+/* DRA-28 — this replaces the read-only `StepGenPanel`, whose caption told the
+   owner to "paste into the workflow builder": a builder that only existed in the
+   legacy v1 surface (agents/web/static/workflows.js), never in the default v2
+   HUD. NOTE for the next reader: the route-parity gate is blind to this gap —
+   `/api/workflows` and `/api/workflows/{id}` already had GET/run/delete callers,
+   and the legacy v1 file counts as a client, so nothing flagged the missing
+   create/edit path. Generate → add to draft → save closes it. */
+const stepFromCfg = (cfg, steps) => {
+  const n = steps.length;
+  const step: any = {
+    id: 's' + (n + 1),
+    // `WorkflowStep.from_dict` does d["agent_id"] — a missing key is a 422, so it is always present.
+    agent_id: cfg.agent || '',
+    prompt_template: cfg.prompt || '{_input}',
+    // chain onto the previous step so the DAG is valid on the very first save
+    depends_on: n ? [steps[n - 1].id] : [],
+  };
+  if (cfg.kind && cfg.kind !== 'agent') step.kind = cfg.kind;   // to_dict omits kind==='agent'
+  if (cfg.kind === 'transform') step.transform = { op: cfg.transform || 'summarize' };
+  return step;
+};
+export function WorkflowBuilderPanel() {
+  const { d, e, loading, reload } = useApi('/api/workflows');
+  const rows = arr(d, 'workflows');
   const [desc, setDesc] = useState('');
-  const [out, setOut] = useState(null);
-  const gen = () => { if (!desc.trim()) return; setOut('generating…'); act('/api/workflows/step/generate', { description: desc }, (r) => setOut(r.step || r)); };
-  return <Card title="AI STEP BUILDER" live={'live'}>
-    <textarea value={desc} onChange={(ev) => setDesc(ev.target.value)} placeholder="describe the workflow step — e.g. 'have vision summarize the week's research and hand it to veronica'" style={taS} />
-    <button className="tool-btn" style={{ marginTop: 6 }} onClick={gen}>generate step</button>
-    {out != null && <Json v={out} />}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>description → validated WorkflowStep config (H10.7) · paste into the workflow builder</div>
+  const [gen, setGen] = useState(null);
+  const [wid, setWid] = useState('');
+  const [name, setName] = useState('');
+  const [desc2, setDesc2] = useState('');
+  const [stepsText, setStepsText] = useState('[]');
+  const [existing, setExisting] = useState(false);
+  const [note, setNote] = useState('');
+
+  const parseSteps = () => {
+    let parsed;
+    try { parsed = JSON.parse(stepsText); } catch { return null; }
+    return Array.isArray(parsed) ? parsed : null;
+  };
+  const generate = () => {
+    if (!desc.trim()) return;
+    setNote('generating…');
+    act('/api/workflows/step/generate', { description: desc },
+      (r) => { setGen((r && r.step) || r); setNote(''); },
+      (err) => setNote(`refused · ${err?.message || 'generate_failed'}`));
+  };
+  const addStep = () => {
+    if (!gen) return;
+    const steps = parseSteps();
+    if (steps === null) { setNote('steps must be a JSON array'); return; }
+    setStepsText(JSON.stringify(steps.concat([stepFromCfg(gen, steps)]), null, 2));
+    setNote('');
+  };
+  const pick = (id) => {
+    const w = rows.find((row) => String(row.id) === id);
+    if (!w) { setWid(''); setName(''); setDesc2(''); setStepsText('[]'); setExisting(false); setNote(''); return; }
+    setWid(w.id); setName(w.name || ''); setDesc2(w.description || '');
+    setStepsText(JSON.stringify(w.steps || [], null, 2)); setExisting(true); setNote('');
+  };
+  const save = () => {
+    const steps = parseSteps();
+    if (steps === null) { setNote('steps must be a JSON array'); return; }
+    const id = wid.trim();
+    if (!id) { setNote('an id is required'); return; }
+    const body = { id, name, description: desc2, steps };
+    setNote('saving…');
+    // apiPost/apiPut THROW on 4xx — a silent admin write is exactly the bug this
+    // catch exists to prevent (422 invalid workflow definition / 401 no token).
+    const sent = existing
+      ? apiPut('/api/workflows/' + encodeURIComponent(id), body, { admin: true })
+      : apiPost('/api/workflows', body, { admin: true });
+    sent
+      .then((r: any) => { setNote(`saved · ${(r && r.id) || id}`); setExisting(true); reload(); })
+      .catch((err) => setNote(`refused · ${err?.message || 'save_failed'}`));
+  };
+
+  return <Card title="WORKFLOW BUILDER" live={asLive(d)} sub={d ? `${rows.length} pipelines` : null} onReload={reload}>
+    <State e={e} loading={loading} n={undefined} />
+    <textarea
+      aria-label="workflow step description"
+      value={desc}
+      onChange={(ev) => setDesc(ev.target.value)}
+      placeholder="describe the workflow step — e.g. 'have vision summarize the week's research and hand it to veronica'"
+      style={{ ...taS, minHeight: 48 }}
+    />
+    <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+      <button className="tool-btn" type="button" onClick={generate}>generate step</button>
+      <button className="tool-btn" type="button" disabled={!gen} onClick={addStep} aria-label="add step to draft">add step to draft</button>
+    </div>
+    {gen != null && <Json v={gen} max={110} />}
+    <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>DRAFT</div>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+      <select aria-label="workflow to edit" value={existing ? wid : ''} onChange={(ev) => pick(ev.target.value)} style={inpS}>
+        <option value="">new workflow…</option>
+        {rows.map((w, i) => <option key={w.id ?? i} value={w.id}>{w.name || w.id}</option>)}
+      </select>
+      <input aria-label="workflow draft id" value={wid} onChange={(ev) => setWid(ev.target.value)} placeholder="id" style={inpS} />
+      <input aria-label="workflow draft name" value={name} onChange={(ev) => setName(ev.target.value)} placeholder="name" style={inpS} />
+      <input aria-label="workflow draft description" value={desc2} onChange={(ev) => setDesc2(ev.target.value)} placeholder="description" style={inpS} />
+    </div>
+    <textarea
+      aria-label="workflow draft steps"
+      value={stepsText}
+      onChange={(ev) => setStepsText(ev.target.value)}
+      spellCheck={false}
+      style={{ ...taS, marginTop: 6 }}
+    />
+    <button className="tool-btn" style={{ marginTop: 6 }} type="button" onClick={save} aria-label="save workflow">
+      {existing ? 'save workflow (update)' : 'save workflow'}
+    </button>
+    {note && <div role="status" style={{ ...mono, fontSize: 10, color: note.startsWith('refused') || note.startsWith('steps must') ? 'var(--red)' : 'var(--accent-light)', marginTop: 6 }}>{note}</div>}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>generate → add to draft → save (admin) · the steps JSON is the editor of record for router/critic/loop/subflow configs (H10.7)</div>
   </Card>;
 }
 export function SandboxPanel() {
@@ -1439,12 +2060,145 @@ export function SandboxPanel() {
   </Card>;
 }
 
+/* DRA-06 — 0.65 screen reflex, console half. The capture-to-answer core
+   (agents/core/screen_reflex.py) had no product caller at all; POST
+   /api/screen/reflex is its first one. Honest scope: the OS-level screen grab
+   and the 0.64 global hotkey that fires it are host-gated and NOT shipped here —
+   the panel says so instead of faking a hotkey. What the console can really
+   produce is bytes: a picked file, a pasted screenshot, or getDisplayMedia where
+   the browser offers it. The route refuses a non-loopback VLM with a 503, so the
+   screen never leaves the host; this panel shows that posture up front. */
+export function ScreenReflexPanel() {
+  const vlm = useApi('/api/vlm/status');
+  const [img, setImg] = useState('');
+  const [imgName, setImgName] = useState('');
+  const [question, setQuestion] = useState('');
+  const [mode, setMode] = useState('answer');
+  const [out, setOut] = useState(null);
+  const [note, setNote] = useState('');
+  // Feature-detect: absent in jsdom and on a non-secure-context LAN load.
+  const canCapture = typeof navigator !== 'undefined' && !!(navigator as any).mediaDevices?.getDisplayMedia;
+  const configured = !!vlm.d && vlm.d.configured === true;
+  const isLocal = configured && vlm.d.local === true;
+
+  const readBlob = (blob, label) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      setImg(result.slice(result.indexOf(',') + 1));   // strip the data: prefix — bytes only
+      setImgName(label || 'screenshot');
+      setOut(null);
+      setNote('');
+    };
+    reader.readAsDataURL(blob);
+  };
+  const onPaste = (ev) => {
+    const f = ev.clipboardData && ev.clipboardData.files && ev.clipboardData.files[0];
+    if (f) readBlob(f, f.name || 'pasted screenshot');
+  };
+  const capture = async () => {
+    let stream = null;
+    try {
+      stream = await (navigator as any).mediaDevices.getDisplayMedia({ video: true });
+      const video = document.createElement('video');
+      (video as any).srcObject = stream;
+      await video.play();
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+      await new Promise((done) => canvas.toBlob((b) => { if (b) readBlob(b, 'screen capture'); done(null); }, 'image/png'));
+    } catch (err: any) {
+      setNote(`refused · screen capture unavailable (${err?.message || 'denied'})`);
+    } finally {
+      try { ((stream as any)?.getTracks?.() || []).forEach((t) => t.stop()); } catch { /* already stopped */ }
+    }
+  };
+  const observe = () => {
+    if (!img) return;
+    setOut(null);
+    setNote('observing…');
+    // apiPost THROWS on the route's 503s (no VLM / non-loopback VLM) — without
+    // this catch the button would read as a silent success.
+    apiPost('/api/screen/reflex', { image_base64: img, question, mode })
+      .then((r) => { setOut(r); setNote(''); })
+      .catch((err) => setNote(`refused · ${err?.message || 'reflex_failed'}`));
+  };
+
+  const elements = arr(out, 'elements');
+  return <Card
+    title="SCREEN REFLEX"
+    live={asLive(vlm.d, configured && isLocal)}
+    sub={vlm.d ? (configured ? `${vlm.d.backend} · ${vlm.d.default_model || 'model unset'}` : 'no VLM') : null}
+    onReload={vlm.reload}
+  >
+    {vlm.d && !configured && (
+      <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginBottom: 6 }}>
+        no VLM configured · {vlm.d.reason || 'set JARVIS_VLM_BACKEND'} — the reflex will refuse rather than guess
+      </div>
+    )}
+    {configured && !isLocal && (
+      <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>
+        {vlm.d.base_url} is not loopback — the route refuses it (screen bytes must never leave the host)
+      </div>
+    )}
+    <div onPaste={onPaste}>
+      <input
+        aria-label="screenshot image file"
+        type="file"
+        accept="image/*"
+        onChange={(ev) => { const f = ev.target.files && ev.target.files[0]; if (f) readBlob(f, f.name); }}
+        style={{ ...inpS, width: '100%' }}
+      />
+      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>
+        {img ? `loaded · ${imgName}` : 'pick a screenshot, or paste one here (⌘/Ctrl+V)'}
+      </div>
+    </div>
+    <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      {canCapture && <button className="tool-btn" type="button" onClick={capture} aria-label="capture screen">capture screen</button>}
+      <select aria-label="reflex mode" value={mode} onChange={(ev) => setMode(ev.target.value)} style={inpS}>
+        <option value="answer">answer</option>
+        <option value="ground">ground</option>
+      </select>
+      <button className="tool-btn" type="button" disabled={!img} onClick={observe} aria-label="observe screen">observe screen</button>
+    </div>
+    <input
+      aria-label="reflex question"
+      value={question}
+      onChange={(ev) => setQuestion(ev.target.value)}
+      placeholder="question (optional) — e.g. what is this error asking me to do?"
+      style={{ ...inpS, width: '100%', marginTop: 6 }}
+    />
+    {out && out.ok && out.generated && (
+      <div style={{ ...mono, fontSize: 11, color: 'var(--ink)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{out.answer}</div>
+    )}
+    {out && out.ok && out.generated && out.mode === 'ground' && elements.map((el, i) => (
+      <Row key={`${el.label}:${i}`}>
+        <span style={{ ...mono, color: 'var(--accent-light)' }}>{`${el.label} · (${el.x}, ${el.y})`}</span>
+        <span style={{ marginLeft: 'auto' }}><Tag>{el.source || 'vlm'}</Tag></span>
+      </Row>
+    ))}
+    {out && out.ok !== true && (
+      <div role="alert" style={{ ...mono, fontSize: 11, color: 'var(--ink-3)', marginTop: 8 }}>{out.reason || 'no answer'}</div>
+    )}
+    {note && <div role="status" style={{ ...mono, fontSize: 10, color: note.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 6 }}>{note}</div>}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+      screen bytes are held in memory and sent only to the loopback VLM · the global hotkey + OS-level grab stay host-gated
+    </div>
+  </Card>;
+}
+
 /* ── Agents ops ────────────────────────────────────────── */
-function LearningPanel() {
+export function LearningPanel() {
   const { d, e, loading, reload } = useApi('/learning');
   const cands = arr(d, 'promotion_suggestions', 'promotion_candidates', 'candidates');
   const [agent, setAgent] = useState('');
   const [note, setNote] = useState('');
+  /* DRA-41 — the H20.4 self-evolution trigger, beside its promotion twin: the
+     trajectory→prompt-optimization mechanism had no caller anywhere in the
+     product. Both halves land in the same gated decision inbox; approval routes
+     the owner to the prompt-VC commit, it does not hot-swap a live prompt. */
+  const [evolveNote, setEvolveNote] = useState('');
   const promote = (id) => { if (!id) return; actA('/learning/promote', { bench_agent: id }, (r) => { setNote(r?.promoted ? 'promoted ' + id : 'not promoted'); setAgent(''); reload(); }); };
   return <Card title="LEARNING · BENCH" live={asLive(d)} sub={cands.length} onReload={reload}>
     <State e={e} loading={loading} n={cands.length} />
@@ -1455,7 +2209,22 @@ function LearningPanel() {
     </div>
     <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'center' }}>
       <button className="tool-btn" onClick={() => actA('/api/learning/propose', {}, reload)}>propose promotions</button>
+      <button
+        className="tool-btn"
+        onClick={() => {
+          setEvolveNote('proposing…');
+          // apiPost THROWS on the route's 503 (no orchestrator) — without onErr
+          // this button would read as a silent success.
+          actA('/api/learning/evolve', {},
+            (r) => { setEvolveNote(`${r?.count ?? 0} prompt optimization(s) proposed`); reload(); },
+            (err) => {
+              const status = Number(err?.status);
+              setEvolveNote(`refused${Number.isFinite(status) ? ` · HTTP ${status}` : ''}`);
+            });
+        }}
+      >propose prompt optimizations</button>
       {note && <span style={{ fontSize: 10, color: 'var(--green)' }}>{note}</span>}
+      {evolveNote && <span role="status" style={{ fontSize: 10, color: evolveNote.startsWith('refused') ? 'var(--red)' : 'var(--ink-3)' }}>{evolveNote}</span>}
     </div>
   </Card>;
 }
@@ -1531,6 +2300,155 @@ export function LMStudioPanel() {
         : `off · ${vlmD.reason || 'not configured'}`}
     </div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>configured routing is independent from provider-reported residency · lifecycle actions follow backend capabilities</div>
+  </Card>;
+}
+/* DRA-29 — the VLM *input* leg. The multimodal surface was output-only: the HUD
+   read `GET /api/vlm/status` (the LOCAL MODELS config line) but nothing in the
+   product ever called `POST /api/vlm/describe`. Images are read in the browser
+   into `data:` URIs; `encode_image_block` rejects filesystem paths by design, so
+   this control cannot smuggle a host file to the model.
+
+   EGRESS DISCLOSURE — why this panel is not a bare form. Unlike
+   `POST /api/screen/reflex`, `/api/vlm/describe` carries NO `is_local` gate, and
+   that is deliberate on the backend: `resolve_vlm_config` supports a `custom`
+   backend at an arbitrary URL and computes `is_local` as a *label*, and
+   `_is_loopback_base` counts a LAN address as non-local — so a hard route-level
+   gate would also refuse the owner's own second box, and would break an existing
+   documented, snapshot-frozen contract for every caller. What must not happen is
+   the HUD silently shipping owner-picked images off-host: so when the resolved
+   VLM is not loopback this panel names the exact destination and refuses to
+   upload until the owner ticks an explicit acknowledgement. This is a CONSENT
+   gate on files the owner chose one by one, not a security boundary — the route
+   is unchanged and behaves for curl exactly as it always has. A screen grab (which
+   the owner cannot review before it is sent) keeps its hard route-level refusal;
+   the asymmetry is the point. */
+export const VLM_MAX_IMAGES = 8;
+const VLM_MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+export function VlmDescribePanel() {
+  const { d: vlmD, e, loading, reload } = useApi('/api/vlm/status');
+  const [prompt, setPrompt] = useState('');
+  const [images, setImages] = useState<Array<{ name: string; data: string }>>([]);
+  const [out, setOut] = useState(null);
+  const [note, setNote] = useState('');
+  const [ack, setAck] = useState(false);
+  const configured = !!vlmD && vlmD.configured === true;
+  const isLocal = configured && vlmD.local === true;
+  const destination = configured ? String(vlmD.base_url || 'an unnamed endpoint') : '';
+  const needsAck = configured && !isLocal;
+
+  const addFiles = (files) => {
+    const picked = Array.from(files || []);
+    if (!picked.length) return;
+    const skipped: string[] = [];
+    const taking: any[] = [];
+    picked.forEach((f: any) => {
+      if (f.size > VLM_MAX_IMAGE_BYTES) { skipped.push(`${f.name} · over 4 MB`); return; }
+      if (images.length + taking.length >= VLM_MAX_IMAGES) { skipped.push(`${f.name} · over the ${VLM_MAX_IMAGES}-image limit`); return; }
+      taking.push(f);
+    });
+    setNote(skipped.length ? `skipped · ${skipped.join(' · ')}` : '');
+    taking.forEach((f: any) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || '');
+        if (!result.startsWith('data:')) return;
+        setImages((prev) => (prev.length >= VLM_MAX_IMAGES ? prev : prev.concat([{ name: f.name || 'image', data: result }])));
+      };
+      reader.readAsDataURL(f);
+    });
+  };
+
+  const describe = () => {
+    if (!configured || !prompt.trim() || !images.length) return;
+    if (needsAck && !ack) {
+      // Not a network call: nothing leaves the host until the destination is acknowledged.
+      setNote(`refused · ${destination} is not loopback — acknowledge the destination before any image is uploaded`);
+      return;
+    }
+    setOut(null);
+    setNote('describing…');
+    apiPost('/api/vlm/describe', { prompt, images: images.map((i) => i.data), model: '' })
+      .then((r) => { setOut(r); setNote(''); })
+      .catch((err) => {
+        const status = Number(err?.status);
+        setOut(null);
+        setNote(`describe failed${Number.isFinite(status) ? ` · HTTP ${status}` : ''}`);
+      });
+  };
+
+  return <Card
+    title="VLM · DESCRIBE"
+    live={asLive(vlmD, configured)}
+    sub={vlmD ? (configured ? `${vlmD.backend} · ${vlmD.default_model || 'model unset'}` : 'no VLM') : null}
+    onReload={reload}
+  >
+    <State e={e} loading={loading} n={null} />
+    {vlmD && !configured && (
+      <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginBottom: 6 }}>
+        VLM off · {vlmD.reason || 'not configured'} — configure JARVIS_VLM_BACKEND / JARVIS_VLM_URL
+      </div>
+    )}
+    {configured && isLocal && (
+      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginBottom: 6 }}>
+        {destination} · loopback · reachable not probed
+      </div>
+    )}
+    {needsAck && (
+      <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>
+        <div>{destination} is NOT loopback — every image you pick would be uploaded to that host.</div>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, color: 'var(--amber)' }}>
+          <input
+            type="checkbox"
+            aria-label={`acknowledge that images are uploaded to ${destination}`}
+            checked={ack}
+            onChange={(ev) => setAck(ev.target.checked)}
+          />
+          <span>I acknowledge these images leave this host</span>
+        </label>
+      </div>
+    )}
+    <input
+      aria-label="image files to describe"
+      type="file"
+      accept="image/*"
+      multiple
+      onChange={(ev) => { addFiles(ev.target.files); }}
+      style={{ ...inpS, width: '100%' }}
+    />
+    {images.map((im, i) => (
+      <Row key={`${im.name}:${i}`}>
+        <span style={{ ...mono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{im.name}</span>
+        <Btn onClick={() => setImages(images.filter((_, j) => j !== i))}>remove</Btn>
+      </Row>
+    ))}
+    <input
+      aria-label="describe prompt"
+      value={prompt}
+      maxLength={4000}
+      onChange={(ev) => setPrompt(ev.target.value)}
+      placeholder="prompt — e.g. what does this receipt total?"
+      style={{ ...inpS, width: '100%', marginTop: 6 }}
+    />
+    <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+      <button
+        className="tool-btn"
+        type="button"
+        disabled={!configured || !prompt.trim() || !images.length}
+        onClick={describe}
+        title={needsAck && !ack ? `acknowledge the ${destination} destination first` : 'describe the picked image(s)'}
+      >describe</button>
+      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>{images.length}/{VLM_MAX_IMAGES} image(s)</span>
+    </div>
+    {out && out.ok === true && (
+      <>
+        <div style={{ ...mono, fontSize: 11, color: 'var(--ink)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{out.response}</div>
+        <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>model · {out.model || 'unnamed'}</div>
+      </>
+    )}
+    {note && <div role="status" style={{ ...mono, fontSize: 10, color: /^(refused|describe failed)/.test(note) ? 'var(--red)' : 'var(--amber)', marginTop: 6 }}>{note}</div>}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+      images are read in the browser into data: URIs — the backend rejects file paths, so no host file can be smuggled through this control
+    </div>
   </Card>;
 }
 export function AuthProfilesPanel() {
@@ -2113,7 +3031,7 @@ export function SkillHistoryPanel() {
   return (
     <Card title="SKILL HISTORY" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} events` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={events.length} />
-      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_SKILL_HISTORY is on</div>}
+      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_SKILL_HISTORY is on — rollback does not depend on this ledger; its control is in SKILLS MARKETPLACE</div>}
       {enabled && Object.keys(byAction).length > 0 && (
         <Row>
           <span style={mono}>actions</span>
@@ -2765,8 +3683,18 @@ export function CameraPanel() {
 /* H32.6 — owner-visible acquisition lifecycle and hash-only audit projection.
    Raw goals, research extracts, package paths, and receipt bodies never reach the HUD. */
 export function AcquisitionPanel() {
+  let hasAdmin = false;
+  try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
   const status = useApi('/api/acquisition/status');
   const audit = useApi('/api/acquisition/events?limit=100');
+  // The drive control below needs a real request_id, and this list is the ONLY place
+  // the product ever hands one out — the ledger exposes hashes, the status snapshot
+  // per-state counts. So it is read unconditionally (with the admin header when a token
+  // is stored): admin routes are localhost-exempt, and gating the read on a locally
+  // stored token hid the whole control on the default posture where it works. On a
+  // token-configured install without the token the read simply degrades to a visible
+  // "offline · GET … -> 401", like every sibling admin panel.
+  const requests = useApi('/api/acquisition/requests', true, true);
   const data = status.d || {};
   const loaded = !!status.d;
   const enabled = loaded && !!data.enabled;
@@ -2777,8 +3705,9 @@ export function AcquisitionPanel() {
   const reuseRate = Math.round(Math.max(0, Math.min(1, Number(reuse.reuse_rate) || 0)) * 100);
   const [outcome, setOutcome] = useState('');
   const [purgeConfirmation, setPurgeConfirmation] = useState('');
-  let hasAdmin = false;
-  try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
+  const [entrypoint, setEntrypoint] = useState('run');
+  const [cases, setCases] = useState('[{"input": {}, "expected": null}]');
+  const gaps = arr(requests.d, 'requests').slice(0, 50);
 
   const reload = () => { status.reload(); audit.reload(); };
   const lifecycle = (name, action) => {
@@ -2805,6 +3734,34 @@ export function AcquisitionPanel() {
         reload();
       })
       .catch((error) => setOutcome(`refused · ${error?.message || 'purge_failed'}`));
+  };
+  // The goal stays system-owned (it comes from the captured request); only the
+  // entrypoint and the contract cases are caller-supplied, exactly as the route
+  // accepts them. Every missing precondition comes back as an explicit 409.
+  const drive = (requestId) => {
+    let parsed;
+    try { parsed = JSON.parse(cases); } catch { setOutcome('refused · cases must be valid JSON'); return; }
+    if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 16) {
+      setOutcome('refused · 1–16 contract cases required');
+      return;
+    }
+    setOutcome('driving…');
+    apiPost(`/api/acquisition/${encodeURIComponent(requestId)}/drive`, { entrypoint, cases: parsed }, { admin: true })
+      .then((result: any) => {
+        setOutcome(`${result.status || 'driven'} · ${result.name || result.reason || requestId.slice(0, 8)}`);
+        reload();
+        requests.reload();
+      })
+      // The route answers with its OWN reason (reuse_available, acquisition_disabled,
+      // promotion_unavailable, local_llm_required, searxng_backend_required,
+      // synthesis_failed, …). Print that verbatim — naming one fixed precondition list
+      // for every refusal told the operator a cause the server never gave.
+      .catch((error) => {
+        const body = error?.body || {};
+        const reason = body.reason || error?.message || 'drive_failed';
+        const needs = arr(body._degraded?.needs);
+        setOutcome(`refused · ${error?.status ? `${error.status} · ` : ''}${reason}${needs.length ? ` · needs ${needs.join(', ')}` : ''}`);
+      });
   };
 
   return (
@@ -2854,11 +3811,46 @@ export function AcquisitionPanel() {
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}><Tag>{item.status || 'recorded'}</Tag><Tag>{item.actor || 'system'}</Tag></span>
           </Row>
         ))}
-        {hasAdmin && <section aria-label="admin acquisition lifecycle" style={{ marginTop: 10 }}>
+        <section aria-label="admin acquisition lifecycle" style={{ marginTop: 10 }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
             <button className="tool-btn" type="button" onClick={exportLedger} aria-label="Export acquisition ledger">export ledger</button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
+          <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>OPEN CAPABILITY GAPS</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, marginBottom: 6 }}>
+            <input
+              aria-label="acquisition drive entrypoint"
+              value={entrypoint}
+              onChange={(event) => setEntrypoint(event.target.value)}
+              maxLength={64}
+              placeholder="entrypoint"
+              style={inpS}
+            />
+            <textarea
+              aria-label="acquisition drive contract cases"
+              value={cases}
+              onChange={(event) => setCases(event.target.value)}
+              style={{ ...taS, minHeight: 50 }}
+            />
+          </div>
+          {requests.e
+            ? <div role="alert" style={{ ...mono, color: 'var(--red)', fontSize: 10 }}>offline · {requests.e}</div>
+            : gaps.length === 0
+            ? <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10 }}>no open capability gaps</div>
+            : gaps.map((item) => (
+              <Row key={item.request_id}>
+                <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(item.request_id || '').slice(0, 8)}</span>
+                <span style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginLeft: 'auto', alignItems: 'center' }}>
+                  <Tag>{item.status}</Tag><Tag>{item.agent_id}</Tag><Tag>{item.reason}</Tag><Tag>×{Number(item.occurrences || 1)}</Tag>
+                  <button
+                    className="tool-btn"
+                    type="button"
+                    aria-label={`Drive ${item.request_id}`}
+                    onClick={() => drive(item.request_id)}
+                  >drive</button>
+                </span>
+              </Row>
+            ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, marginTop: 10 }}>
             <input
               aria-label="acquisition purge confirmation"
               value={purgeConfirmation}
@@ -2875,7 +3867,7 @@ export function AcquisitionPanel() {
               aria-label="Purge acquisition detail"
             >purge detail</button>
           </div>
-        </section>}
+        </section>
         {outcome && <div role="status" style={{ ...mono, color: outcome.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 7 }}>{outcome}</div>}
       </>}
     </Card>
@@ -3314,12 +4306,40 @@ export function WatchlistPanel() {
    cloud escalation. Read-only (selected via JARVIS_SYSTEM_PROFILE). */
 export function SystemProfilePanel() {
   const { d, e, loading, reload } = useApi('/api/system/profiles');
+  /* DRA-44 — the hardware leg. `/api/system/profiles` is an env-only read (support
+     bundles consume it too), so the nvidia-smi/psutil probe lives on its own route
+     and this panel joins them: what the box scores, what that suggests, and what is
+     actually selected. A component the probe never measured prints `not measured` —
+     never 0 and never a dash, which would both read as a measured number. */
+  const hwq = useApi('/api/system/hardware');
+  const hw = hwq.d && hwq.d.score ? hwq.d : null;
+  const detected = (hw && hw.detected) || {};
+  const comps = (hw && hw.score && hw.score.components) || {};
+  const gpu = detected.gpu || {};
   const active = d && d.active;
   const profiles = (d && d.profiles) || {};
   const names = Object.keys(profiles);
+  const part = (label, measured, value) => (
+    <Tag c={measured ? 'var(--ink-2)' : 'var(--amber)'}>{label} · {measured ? value : 'not measured'}</Tag>
+  );
   return (
     <Card title="SYSTEM PROFILE" live={asLive(d)} sub={d ? `${active || '—'}${active === (d && d.default) ? ' (default)' : ''}` : null} onReload={reload}>
       <State e={e} loading={loading} n={names.length} />
+      {hw && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>
+            score {hw.score.score}/100 · {hw.score.tier} · recommended · {hw.recommended_profile} · active · {hw.active_profile}
+          </div>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
+            {part('gpu', comps.gpu === 'measured', `${gpu.name || 'gpu'} · ${gpu.vram_total_mb} MB`)}
+            {part('cpu', comps.cpu === 'measured', `${detected.cpu_threads} threads`)}
+            {part('ram', comps.ram === 'measured', `${detected.ram_total_gb} GB`)}
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>
+            spec-based score (VRAM/threads/RAM as reported) — not a throughput benchmark · the recommendation is advisory, selection stays JARVIS_SYSTEM_PROFILE
+          </div>
+        </div>
+      )}
       {names.map((name) => {
         const p = profiles[name] || {};
         const isActive = name === active;
@@ -3520,13 +4540,13 @@ export function FirstRunGate({ onClose }) {
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Start', [CommandCenterPanel]],
   ['Home', [AmbientWatchPanel, HousePanel, CameraPanel]],
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, VaultPanel, KgPanel, MemoryHygienePanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
-  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, NoteDocsPanel, VaultPanel, KgPanel, MemoryWritePanel, MemoryHygienePanel, MemoryEvalPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
+  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
-  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, SwarmPanel, SystemMapPanel]],
-  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel]],
+  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, CognitionPanel, SwarmPanel, SubAgentsPanel, SystemMapPanel]],
+  ['Build', [WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
-  ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],
+  ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, VlmDescribePanel, AuthProfilesPanel, SystemProfilePanel]],
 ];
 
 /* Renders the failed-mutation sink from api/client.ts. This is the one place that makes

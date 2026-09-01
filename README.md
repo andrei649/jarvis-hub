@@ -3,7 +3,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-6957-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-7211-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-1.0.0-orange)
 <!-- project-status:badges:end -->
 
@@ -65,7 +65,7 @@ A personal AI mesh that handles the cross-section of *your* life: the day job an
 | 24 GB+ (3090/4090/5090) | `gemma-4-31b-a4b` (MoE) + a deep slot | the full reference experience |
 | CPU-only | `qwen2.5:3b` | it works; expect slow replies |
 
-No GPU rule is enforced — the model picker (`/api/onboarding/command-center`, HUD → Start) tells you honestly whether a model is reachable. Measured tokens/sec per tier live in [`docs/HARDWARE_BENCHMARKS.md`](docs/HARDWARE_BENCHMARKS.md). The reference rig below is what the project is developed on, **not a requirement**:
+No GPU rule is enforced — the model picker (`/api/onboarding/command-center`, HUD → Start) tells you honestly whether a model is reachable. The measurement protocol and the per-tier table live in [`docs/HARDWARE_BENCHMARKS.md`](docs/HARDWARE_BENCHMARKS.md) — the numbers themselves are not measured yet (owner hardware), and that page stays blank rather than guessing. The reference rig below is what the project is developed on, **not a requirement**:
 
 - **Bonobo WS** (Pop!_OS) — Intel Core Ultra 9, 192GB DDR5, RTX 5090 24GB, 4× NVMe + 18TB HDD
 - **Pi 5** — always-on services (Qdrant, Neo4j, n8n, Homebridge)
@@ -97,7 +97,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **6,957** · frontend **662** · mobile **110**. Route surface: **431**.
+Generated test matrix: backend **7,211** · frontend **734** · mobile **110**. Route surface: **442**.
 <!-- project-status:run:end -->
 
 ### Windows 11 — one-click (no terminal needed)
@@ -156,7 +156,7 @@ Your data is never touched unless you also pass `--purge-data`.
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **6,957** · frontend **662** · mobile **110** · **431** routes · **18** active agents · open release gates: **A1, A3, A5, A6, A9** · source commit `750eedd9456d`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **7,211** · frontend **734** · mobile **110** · **442** routes · **18** active agents · open release gates: **A1, A3, A5, A6, A9** · source commit `5a40a129068f`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for WorldView geoint, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +

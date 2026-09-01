@@ -122,7 +122,10 @@ class GuardrailsEngine:
             # number — the route claimed 10 secret and 6 PII patterns, and both
             # were wrong.
             "scanners": {
-                s.scanner_id: {"patterns": len(getattr(s, "_compiled", ()) or ())}
+                s.scanner_id: {
+                    "patterns": len(getattr(s, "_compiled", ()) or ()),
+                    "findings": counters.get(f"findings:{s.scanner_id}", 0),
+                }
                 for s in self._scanners
             },
         }
@@ -141,6 +144,11 @@ class GuardrailsEngine:
         for scanner in self._scanners:
             result = scanner.scan(text)
             merged.findings.extend(result.findings)
+            # DRA-47 — attribute findings to the scanner that produced them. The
+            # merge loop holds it; only the merged list forgot. Same shared
+            # counter dict, so the number is per-process, not per-bound-backend.
+            if result.findings:
+                self._bump(f"findings:{scanner.scanner_id}", len(result.findings))
         self._bump("scanned")
         if merged.findings:
             self._bump("findings", len(merged.findings))

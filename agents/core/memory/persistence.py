@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from agents.core.paths import data_root
+from agents.core.persistence import atomic_write_json
 from agents.core.session_files import is_session_stem, looks_like_session_snapshot
 from agents.core.validation import is_valid_session_id
 
@@ -44,8 +45,10 @@ def save_memory(session_id: str, turns: list[dict]):
     _memory_dir().mkdir(parents=True, exist_ok=True)
     path = _memory_dir() / f"{session_id}.json"
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"session_id": session_id, "turns": turns}, f, ensure_ascii=False, indent=2)
+        # tmp+replace, not open(path, "w"): the truncate-then-stream form left a
+        # half-written snapshot on disk whenever the dump raised (or the process
+        # died) mid-turn, and load_memory() reads that as an empty conversation.
+        atomic_write_json(path, {"session_id": session_id, "turns": turns})
         logger.info(f"Memory saved: {path} ({len(turns)} turns)")
     except Exception as e:
         logger.warning(f"Failed to save memory: {e}")

@@ -1127,6 +1127,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/notes/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Note Docs List */
+        get: operations["note_docs_list_api_notes_docs_get"];
+        put?: never;
+        /** Note Docs Create */
+        post: operations["note_docs_create_api_notes_docs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/docs/{doc_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Note Docs Get */
+        get: operations["note_docs_get_api_notes_docs__doc_id__get"];
+        put?: never;
+        post?: never;
+        /** Note Docs Delete */
+        delete: operations["note_docs_delete_api_notes_docs__doc_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/docs/{doc_id}/blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Note Docs Add Block */
+        post: operations["note_docs_add_block_api_notes_docs__doc_id__blocks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/blocks/{block_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Note Docs Delete Block */
+        delete: operations["note_docs_delete_block_api_notes_blocks__block_id__delete"];
+        options?: never;
+        head?: never;
+        /** Note Docs Update Block */
+        patch: operations["note_docs_update_block_api_notes_blocks__block_id__patch"];
+        trace?: never;
+    };
     "/api/osint/correlate": {
         parameters: {
             query?: never;
@@ -1178,7 +1249,7 @@ export interface paths {
         put?: never;
         /**
          * Market Watchlist
-         * @description Evaluate the watchlist against provided quotes → band-breach alerts (with disclaimer).
+         * @description Evaluate the watchlist against provided (and, with `live`, fetched) quotes.
          */
         post: operations["market_watchlist_api_market_watchlist_post"];
         delete?: never;
@@ -1198,7 +1269,7 @@ export interface paths {
         put?: never;
         /**
          * Market Brief
-         * @description The demoable daily brief: watchlist alerts + portfolio snapshot + headline (offline).
+         * @description The demoable daily brief: watchlist alerts + portfolio snapshot + headline.
          */
         post: operations["market_brief_api_market_brief_post"];
         delete?: never;
@@ -1531,6 +1602,30 @@ export interface paths {
          * @description List usage-mode profiles + the active one + its posture knobs.
          */
         get: operations["system_profiles_api_system_profiles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/hardware": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System Hardware
+         * @description DRA-44 — detected hardware + spec score + the profile it suggests.
+         *
+         *     The score is spec-based (VRAM / threads / RAM as reported), NOT a throughput
+         *     benchmark, and every component says whether it was measured — an unprobed
+         *     component scores zero rather than being credited.
+         */
+        get: operations["system_hardware_api_system_hardware_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2254,8 +2349,10 @@ export interface paths {
          *     measured security activity, so a hub running in BLOCK mode that had redacted
          *     forty PII spans reported a clean, untriggered system with the wrong mode.
          *
-         *     The engine now counts what it does; anything still unmeasured is reported as
-         *     null with `available: false`, never as a zero that reads like a measurement.
+         *     The engine now counts what it does — including per-scanner findings and the
+         *     SSRF guard's refusals (both process-lifetime). Anything still unmeasured is
+         *     reported as null with `available: false`, never as a zero that reads like a
+         *     measurement.
          */
         get: operations["security_status_security_status_get"];
         put?: never;
@@ -6463,6 +6560,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/screen/reflex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Screen Reflex
+         * @description 0.65 — one screenshot → local VLM → answer (or UI grounding).
+         *
+         *     `agents/core/screen_reflex.py` is the orchestration core; this is its only
+         *     production caller. The image is held in memory for the duration of the
+         *     request and handed to nothing but the resolved VLM.
+         *
+         *     NON-NEGOTIABLE: a non-loopback VLM is refused (503) BEFORE any generation is
+         *     attempted. A screen capture can hold anything on the owner's display, so the
+         *     bytes must never reach a remote host — the `is_local` check is a gate here,
+         *     not a label. The owner-gated halves of the reflex (the OS-level screen grab
+         *     and the 0.64 global hotkey that fires it) stay on the host; this route takes
+         *     the bytes the console can legitimately produce.
+         */
+        post: operations["screen_reflex_api_screen_reflex_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/desktop/allowlist": {
         parameters: {
             query?: never;
@@ -6841,6 +6969,31 @@ export interface paths {
          * @description Run the learning loop now: propose agent promotions into the decision inbox.
          */
         post: operations["learning_propose_api_learning_propose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/evolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Learning Evolve
+         * @description DRA-41 — propose prompt optimizations into the decision inbox now.
+         *
+         *     The self-evolution twin of `/api/learning/propose`. Also runs unattended on
+         *     the weekly learning-loop cadence; this route is the "run it now" surface.
+         *     Proposals are gated: approving one does not hot-swap a live prompt, it points
+         *     the owner at the existing prompt-VC commit route.
+         */
+        post: operations["learning_evolve_api_learning_evolve_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7286,6 +7439,15 @@ export interface paths {
         /**
          * Resilience Public
          * @description Public resilience metrics and circuit breaker states (no admin auth).
+         *
+         *     DRA-47 — also carries the three top-level numbers the Observe HUD reads
+         *     (`uptime`, `ssrf_blocked`, `redactions`) and used to substitute a seed for.
+         *     `uptime` is a DURATION since process start (HH:MM:SS), deliberately not an
+         *     availability percentage; the two counters are process-lifetime and reset with
+         *     the process. `redactions` is null — never 0 — when no guardrails engine is
+         *     attached, so the HUD renders "—" instead of "nothing was redacted". There is
+         *     deliberately no `errors_24h`: ResilienceMetrics has no time window, so a key
+         *     named that would be a mislabelled number.
          */
         get: operations["resilience_public_api_resilience_get"];
         put?: never;
@@ -7682,6 +7844,38 @@ export interface paths {
         };
         /** Acquisition Events */
         get: operations["acquisition_events_api_acquisition_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acquisition/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Acquisition Requests
+         * @description List the capability gaps a drive can actually be started from.
+         *
+         *     Without this, `POST /api/acquisition/{request_id}/drive` was unaddressable:
+         *     the audit ledger only exposes `request_hash` and the status snapshot only
+         *     exposes per-state counts, so no surface in the product ever hands out a
+         *     `request_id`. Only MISSING and BLOCKED are listed — `synthesize_and_propose`
+         *     moves the request to `researching`, and `_TRANSITIONS` allows that edge from
+         *     exactly those two states.
+         *
+         *     The raw `goal` and the `fingerprint` are deliberately NOT projected: the
+         *     ledger hashes goals on purpose and the HUD's contract is that they never
+         *     reach it. `agent_id` + `reason` + `occurrences` + a short id is enough to
+         *     pick a row.
+         */
+        get: operations["acquisition_requests_api_acquisition_requests_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8882,6 +9076,11 @@ export interface components {
              * @default python
              */
             language: string;
+            /**
+             * Tools
+             * @default false
+             */
+            tools: boolean;
         };
         /** SatelliteDispatchBody */
         SatelliteDispatchBody: {
@@ -8918,6 +9117,24 @@ export interface components {
              * @default
              */
             note: string;
+        };
+        /**
+         * ScreenReflexBody
+         * @description Bytes-only contract: base64 image data, never a filesystem path.
+         */
+        ScreenReflexBody: {
+            /** Image Base64 */
+            image_base64: string;
+            /**
+             * Question
+             * @default
+             */
+            question: string;
+            /**
+             * Mode
+             * @default answer
+             */
+            mode: string;
         };
         /** SecurityControlBody */
         SecurityControlBody: {
@@ -9130,6 +9347,11 @@ export interface components {
             quotes?: {
                 [key: string]: number;
             };
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
         };
         /** WebhookCreateBody */
         WebhookCreateBody: {
@@ -9204,6 +9426,38 @@ export interface components {
              */
             source: string;
         };
+        /** _BlockPatch */
+        _BlockPatch: {
+            /** Text */
+            text?: string | null;
+            /** Type */
+            type?: string | null;
+        };
+        /** _DocTitle */
+        _DocTitle: {
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+        };
+        /** _NewBlock */
+        _NewBlock: {
+            /**
+             * Type
+             * @default paragraph
+             */
+            type: string;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** After */
+            after?: string | null;
+        };
         /** _NoteBody */
         _NoteBody: {
             /**
@@ -9237,6 +9491,11 @@ export interface components {
             quotes?: {
                 [key: string]: number;
             };
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
             /** Positions */
             positions?: components["schemas"]["Position"][];
         };
@@ -11004,6 +11263,233 @@ export interface operations {
             };
         };
     };
+    note_docs_list_api_notes_docs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    note_docs_create_api_notes_docs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_DocTitle"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    note_docs_get_api_notes_docs__doc_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    note_docs_delete_api_notes_docs__doc_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    note_docs_add_block_api_notes_docs__doc_id__blocks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_NewBlock"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    note_docs_delete_block_api_notes_blocks__block_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                block_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    note_docs_update_block_api_notes_blocks__block_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                block_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_BlockPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     osint_correlate_api_osint_correlate_post: {
         parameters: {
             query?: never;
@@ -11620,6 +12106,26 @@ export interface operations {
         };
     };
     system_profiles_api_system_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    system_hardware_api_system_hardware_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -18464,6 +18970,39 @@ export interface operations {
             };
         };
     };
+    screen_reflex_api_screen_reflex_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScreenReflexBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     desktop_allowlist_api_desktop_allowlist_get: {
         parameters: {
             query?: never;
@@ -18967,6 +19506,26 @@ export interface operations {
         };
     };
     learning_propose_api_learning_propose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    learning_evolve_api_learning_evolve_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -20171,6 +20730,37 @@ export interface operations {
         };
     };
     acquisition_events_api_acquisition_events_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acquisition_requests_api_acquisition_requests_get: {
         parameters: {
             query?: {
                 limit?: number;

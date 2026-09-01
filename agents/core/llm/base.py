@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 import httpx
 
+from .egress import llm_async_client
 from .repetition_guard import is_repetition_dominated
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
 
@@ -419,7 +420,7 @@ class LMStudioBackend(LLMBackend):
     def __init__(self, base_url: str = "http://localhost:1234"):
         self.base_url = base_url
         # H23.12: short connect / long read so a down server fails fast (no hang).
-        self.client = httpx.AsyncClient(base_url=base_url, timeout=local_read_timeout(300.0))
+        self.client = llm_async_client("lm-studio", base_url=base_url, timeout=local_read_timeout(300.0))
 
     async def aclose(self):
         """Close the HTTP client's connection pool (BUG-7)."""
@@ -564,7 +565,7 @@ class OllamaBackend(LLMBackend):
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
         # H23.12: short connect / long read so a down server fails fast (no hang).
-        self.client = httpx.AsyncClient(base_url=base_url, timeout=local_read_timeout(120.0))
+        self.client = llm_async_client("ollama", base_url=base_url, timeout=local_read_timeout(120.0))
 
     async def aclose(self):
         """Close the HTTP client's connection pool (BUG-7)."""

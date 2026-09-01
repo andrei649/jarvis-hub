@@ -30,46 +30,52 @@ logger = logging.getLogger("jarvis.cost")
 # provider source URLs — live in `agents/core/llm/cost_estimator.py`; a test pins each
 # row below to that table's newest member so the two cannot drift apart silently.
 #
+# The `cached` rate on each row is the vendor's cache-read price, mirroring
+# `cost_estimator.MODELS` so `test_price_tables_do_not_drift` still compares whole rows;
+# `None` means the vendor publishes no cache-read rate. `_price_for` reads only
+# input/output — this meter bills every token at the uncached rate — so the key is inert
+# here and exists purely to keep the two tables shaped alike.
+#
 # Prices verified 2026-08-17. Three rows were priced for models retired months earlier:
 # Haiku was on Haiku 3's $0.25/$1.25 (~4x under), Opus on Opus 3/4's $15/$75 (3x over),
 # and gpt-4o on the superseded 2024-05-13 snapshot's $5/$15 (2x over). This meter is not
 # cosmetic: `record()` feeds `spend_today_usd()`, which backs the
 # `llm.daily_cost_cap_usd` check in the router.
 MODEL_PRICES = {
-    "default":         {"input": 3.00,  "output": 15.00},
+    "default":         {"input": 3.00,  "output": 15.00, "cached": 0.3},
     # Anthropic
-    "claude-fable":    {"input": 10.00, "output": 50.00},
-    "claude-mythos":   {"input": 10.00, "output": 50.00},
-    "claude-opus":     {"input": 5.00,  "output": 25.00},
-    "claude-sonnet":   {"input": 2.00,  "output": 10.00},
-    "claude-haiku":    {"input": 1.00,  "output": 5.00},
+    "claude-fable":    {"input": 10.00, "output": 50.00, "cached": 1.0},
+    "claude-mythos":   {"input": 10.00, "output": 50.00, "cached": 1.0},
+    "claude-opus":     {"input": 5.00,  "output": 25.00, "cached": 0.5},
+    "claude-sonnet":   {"input": 2.00,  "output": 10.00, "cached": 0.2},
+    "claude-haiku":    {"input": 1.00,  "output": 5.00, "cached": 0.1},
     # Google Gemini. "gemini-pro" is the legacy catch-all and tracks 2.5 Pro.
-    "gemini-pro":      {"input": 1.25,  "output": 10.00},
-    "gemini-2.5-pro":  {"input": 1.25,  "output": 10.00},
-    "gemini-3.1-pro":  {"input": 2.00,  "output": 12.00},
-    "gemini-flash-lite": {"input": 0.25, "output": 1.50},
-    "gemini-flash":    {"input": 0.30,  "output": 2.50},
+    "gemini-pro":      {"input": 1.25,  "output": 10.00, "cached": 0.125},
+    "gemini-2.5-pro":  {"input": 1.25,  "output": 10.00, "cached": 0.125},
+    "gemini-3.1-pro":  {"input": 2.00,  "output": 12.00, "cached": None},
+    "gemini-flash-lite": {"input": 0.25, "output": 1.50, "cached": 0.025},
+    "gemini-flash":    {"input": 0.30,  "output": 2.50, "cached": 0.03},
     # OpenAI, via OpenRouter or an OpenAI-compatible base URL.
-    "gpt-5-nano":      {"input": 0.05,  "output": 0.40},
-    "gpt-5-mini":      {"input": 0.25,  "output": 2.00},
-    "gpt-5-pro":       {"input": 15.00, "output": 120.00},
-    "gpt-5":           {"input": 1.25,  "output": 10.00},
-    "gpt-4.1-nano":    {"input": 0.10,  "output": 0.40},
-    "gpt-4.1-mini":    {"input": 0.40,  "output": 1.60},
-    "gpt-4.1":         {"input": 2.00,  "output": 8.00},
-    "gpt-4o-mini":     {"input": 0.15,  "output": 0.60},
-    "gpt-4o":          {"input": 2.50,  "output": 10.00},
+    "gpt-5-nano":      {"input": 0.05,  "output": 0.40, "cached": 0.005},
+    "gpt-5-mini":      {"input": 0.25,  "output": 2.00, "cached": 0.025},
+    "gpt-5-pro":       {"input": 15.00, "output": 120.00, "cached": None},
+    "gpt-5":           {"input": 1.25,  "output": 10.00, "cached": 0.125},
+    "gpt-4.1-nano":    {"input": 0.10,  "output": 0.40, "cached": 0.025},
+    "gpt-4.1-mini":    {"input": 0.40,  "output": 1.60, "cached": 0.1},
+    "gpt-4.1":         {"input": 2.00,  "output": 8.00, "cached": 0.5},
+    "gpt-4o-mini":     {"input": 0.15,  "output": 0.60, "cached": 0.075},
+    "gpt-4o":          {"input": 2.50,  "output": 10.00, "cached": 1.25},
     # Local backends bill nothing. Named explicitly because a local id such as
     # "google/gemma-4-31b-a4b" matches no family and would otherwise fall through to
     # `default` and be billed at cloud rates — the opposite of what the caller in
     # `orchestrator.py` documents ("A local route prices at zero").
-    "local":           {"input": 0.00,  "output": 0.00},
-    "gemma":           {"input": 0.00,  "output": 0.00},
-    "qwen":            {"input": 0.00,  "output": 0.00},
-    "deepseek":        {"input": 0.00,  "output": 0.00},
-    "llama":           {"input": 0.00,  "output": 0.00},
-    "mistral":         {"input": 0.00,  "output": 0.00},
-    "phi":             {"input": 0.00,  "output": 0.00},
+    "local":           {"input": 0.00,  "output": 0.00, "cached": 0.0},
+    "gemma":           {"input": 0.00,  "output": 0.00, "cached": 0.0},
+    "qwen":            {"input": 0.00,  "output": 0.00, "cached": 0.0},
+    "deepseek":        {"input": 0.00,  "output": 0.00, "cached": 0.0},
+    "llama":           {"input": 0.00,  "output": 0.00, "cached": 0.0},
+    "mistral":         {"input": 0.00,  "output": 0.00, "cached": 0.0},
+    "phi":             {"input": 0.00,  "output": 0.00, "cached": 0.0},
 }
 
 _lock = threading.RLock()

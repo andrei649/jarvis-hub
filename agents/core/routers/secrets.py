@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
 from agents.core.routers._deps import admin_guard
+from agents.core.routers._component import require_component
 
 from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
@@ -28,10 +29,9 @@ router = APIRouter(tags=["secrets"])
 @router.post("/api/secrets/broker", dependencies=[Depends(admin_guard)])
 async def secret_broker_put(req: Request):
     """Store a secret value (admin). Values go in, never come back out via API."""
-    orch = get_orch()
-    broker = getattr(orch, "secret_broker", None) if orch else None
-    if broker is None:
-        return JSONResponse({"error": "secret broker not available"}, status_code=503)
+    _, broker, err = require_component("secret_broker", "secret broker not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -65,10 +65,9 @@ async def secret_broker_delete(name: str):
 @router.post("/api/secrets/broker/redact", dependencies=[Depends(admin_guard)])
 async def secret_broker_redact(req: Request):
     """Mask any known secret value present in text (defense-in-depth)."""
-    orch = get_orch()
-    broker = getattr(orch, "secret_broker", None) if orch else None
-    if broker is None:
-        return JSONResponse({"error": "secret broker not available"}, status_code=503)
+    _, broker, err = require_component("secret_broker", "secret broker not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:
@@ -81,10 +80,9 @@ async def secret_broker_redact(req: Request):
 @router.post("/api/admin/widgets", dependencies=[Depends(admin_guard)])
 async def widgets_issue(req: Request):
     """Issue a widget token with theming config (admin)."""
-    orch = get_orch()
-    store = getattr(orch, "widgets", None) if orch else None
-    if store is None:
-        return JSONResponse({"error": "widget store not available"}, status_code=503)
+    _, store, err = require_component("widgets", "widget store not available")
+    if err is not None:
+        return err
     try:
         body = await req.json()
     except Exception:

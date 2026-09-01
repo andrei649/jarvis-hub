@@ -293,3 +293,49 @@ def test_round_trip_preserves_ordering_keys(tmp_path):
         assert _ids(s2.children(None, doc_id=doc)) == ids
     finally:
         s2.close()
+
+
+# ── DRA-53: the two methods adoption behind a route actually needs ────
+def test_list_docs_returns_docs_most_recently_updated_first(store):
+    """Without list_docs a HUD panel can create a doc and then lose its id on
+    reload — the surface would be write-only and degenerate."""
+    a = store.create_doc("alpha")
+    b = store.create_doc("beta")
+    # touching alpha's blocks bumps its updated_at (add_block does the UPDATE)
+    store.add_block(a, "paragraph", "hello")
+
+    docs = store.list_docs()
+    assert [d["id"] for d in docs] == [a, b]
+    assert docs[0]["title"] == "alpha"
+    # the listing is a summary, not the whole tree
+    assert set(docs[0]) == {"id", "title", "created_at", "updated_at"}
+
+
+def test_list_docs_respects_limit(store):
+    for i in range(5):
+        store.create_doc(f"doc-{i}")
+    assert len(store.list_docs(limit=2)) == 2
+
+
+def test_delete_doc_removes_the_doc_and_all_of_its_blocks(store):
+    doc = store.create_doc("throwaway")
+    head = store.add_block(doc, "heading", "H")
+    child = store.add_block(doc, "paragraph", "under H", parent_id=head)
+    keeper = store.create_doc("kept")
+    kept_block = store.add_block(keeper, "paragraph", "still here")
+
+    removed = store.delete_doc(doc)
+
+    assert removed == 2                      # both blocks, counted honestly
+    assert store.get_doc(doc) is None
+    assert store.get_block(head) is None
+    assert store.get_block(child) is None
+    # a delete must not reach into a different document
+    assert store.get_doc(keeper) is not None
+    assert store.get_block(kept_block) is not None
+    assert [d["id"] for d in store.list_docs()] == [keeper]
+
+
+def test_delete_doc_raises_on_an_unknown_doc(store):
+    with pytest.raises(NotesStoreError):
+        store.delete_doc("no-such-doc")

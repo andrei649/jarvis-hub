@@ -10,6 +10,7 @@ import pytest
 
 from agents.core.llm.gemini import GeminiBackend
 from agents.core.llm.gemini_context import GeminiRequestBinding
+from agents.core.llm.tokenizer import estimate_tokens
 from agents.core.orchestrator import Orchestrator
 from agents.core.security.guardrails import GuardrailsEngine, SecurityBlockError
 from agents.core.security.types import RedactionMode
@@ -418,3 +419,97 @@ async def test_shutdown_drains_cache_tasks_before_client_close():
 
     assert order.index("task-drained") < order.index("cache-closed")
     assert orchestrator._cache_tasks == set()
+
+
+# ── DRA-24: what a cached turn actually costs is recorded, not hardcoded to zero ──
+
+
+def _record_and_capture(orchestrator, text: str, reply: str) -> dict:
+    """Run the real `_record_interactions` and return the metadata it recorded."""
+    captured: dict = {}
+    orchestrator.learning = SimpleNamespace(record=lambda **kw: captured.update(kw))
+    orchestrator.bench = SimpleNamespace(record=lambda **kw: None)
+    orchestrator.run_history = None
+    orchestrator._record_interactions(text, {"jarvis": reply}, reply, "cloud")
+    return captured.get("metadata", {})
+
+
+@pytest.mark.asyncio
+async def test_cache_hit_records_the_cached_tokens_it_actually_reused(monkeypatch):
+    """A cached turn must report cached_tokens > 0 — the meter priced them as zero.
+
+    `_record_interactions` wrote a literal ``"cached_tokens": 0, "cache_hit": False`` on
+    every turn, so the one path that genuinely reuses a cached prefix reported no reuse
+    at all and the cost estimator had nothing to discount.
+    """
+    monkeypatch.setattr("agents.core.cost_tracker.record", lambda *a, **k: None)
+    history = (
+        "[user]: prior alpha",
+        "[jarvis]: prior beta",
+        "[user]: uncached gamma",
+    )
+
+    def hit(kwargs):
+        return GeminiRequestBinding(
+            lease=kwargs["lease"],
+            session_id=kwargs["session_id"],
+            cache_name="cachedContents/hit",
+            cached_prefix_count=2,
+        )
+
+    orchestrator, _backend, _memory, _router = _orchestrator(history, cache=_FakeCache(hit))
+    await orchestrator._handle_input_stream(
+        "current question",
+        channel="web",
+        session_id="cache-hit-cost",
+    )
+
+    meta = _record_and_capture(orchestrator, "current question", "gemini answer")
+    assert meta["cache_hit"] is True
+    assert meta["cached_tokens"] > 0
+    # The estimator's arithmetic depends on this invariant; break it and a cached
+    # prefix of thousands of tokens against a tiny input count fabricates a saving.
+    assert meta["cached_tokens"] <= meta["input_tokens"]
+
+
+@pytest.mark.asyncio
+async def test_uncached_turn_records_the_whole_prompt_it_actually_sent(monkeypatch):
+    """No cache bound → no reuse claimed, and the billed input is the real prompt.
+
+    `estimate_tokens(text)` counts only the user's raw turn, so a streamed turn that
+    shipped a soul, history and recall blocks was metered at a fraction of what it
+    spent.
+    """
+    monkeypatch.setattr("agents.core.cost_tracker.record", lambda *a, **k: None)
+    history = ("[user]: prior alpha", "[jarvis]: prior beta")
+    orchestrator, backend, _memory, _router = _orchestrator(history, cache=_FakeCache())
+    await orchestrator._handle_input_stream(
+        "current question",
+        channel="web",
+        session_id="cache-miss-cost",
+    )
+    await _drain_cache_tasks(orchestrator)
+
+    meta = _record_and_capture(orchestrator, "current question", "gemini answer")
+    assert meta["cache_hit"] is False
+    assert meta["cached_tokens"] == 0
+    sent = backend.calls[0]
+    expected = estimate_tokens(sent["prompt"]) + estimate_tokens(sent["system"])
+    assert meta["input_tokens"] == expected
+    assert meta["input_tokens"] > estimate_tokens("current question")
+
+
+def test_non_streaming_channels_keep_the_old_input_estimate(monkeypatch):
+    """Telegram/voice/-chat and every other non-streaming caller are unchanged.
+
+    Those paths never populate the per-turn prompt map, so the fallback keeps today's
+    `estimate_tokens(text)` behaviour rather than silently reporting zero.
+    """
+    monkeypatch.setattr("agents.core.cost_tracker.record", lambda *a, **k: None)
+    orchestrator, _backend, _memory, _router = _orchestrator((), cache=_FakeCache())
+    orchestrator.get_setting = lambda key, default=None: default
+
+    meta = _record_and_capture(orchestrator, "a telegram question", "an answer")
+    assert meta["input_tokens"] == estimate_tokens("a telegram question")
+    assert meta["cached_tokens"] == 0
+    assert meta["cache_hit"] is False
