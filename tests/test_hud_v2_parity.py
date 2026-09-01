@@ -514,7 +514,14 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/context/compress",
     "/api/digest/run",
     "/api/integrations/writeback",
-    "/api/llm/moe/route",
+    # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). Its docstring calls it a
+    # "/model hot-swap", but models_llm.py:69-77 swaps nothing: it parses the command
+    # string and returns `base` (a hardcoded module constant) plus `configured` (an
+    # OPENROUTER_API_KEY boolean). OpenRouterBackend is constructed nowhere outside
+    # tests, and LLMRouter.backend_type is auto|lm-studio|ollama with no openrouter
+    # branch — so that key has no consumer. Every byte a panel could render is the
+    # operator's own input echoed back, a constant, or a flag for a backend that never
+    # runs. A control here would report a hot-swap that cannot happen.
     "/api/llm/openrouter",
     "/api/media/generate",
     "/api/memory/consolidate",
@@ -531,8 +538,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/voice/wyoming",
     # render_snippet inlines colour/title/greeting (agents/core/widget.py), so nothing
     # fetches the config read surface.
-    "/api/workflows/hierarchical",
-    "/api/workflows/traces",
     "/api/worldview/status",
 ])
 
