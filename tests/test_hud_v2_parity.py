@@ -506,13 +506,10 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # and the `operator_plan` ToolRPC tool (which is what actually consumes the router
     # today — the agent, not our UI). The HUD control is the deliberately-open half, so
     # this belongs on the punch list rather than in MACHINE_FACING.
-    "/api/admin/rotate-tokens",
     "/api/agents/history",
     "/api/arena/match/{match_id}",
     "/api/canvas/clear",
     "/api/context/compress",
-    "/api/digest/run",
-    "/api/integrations/writeback",
     # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). Its docstring calls it a
     # "/model hot-swap", but models_llm.py:69-77 swaps nothing: it parses the command
     # string and returns `base` (a hardcoded module constant) plus `configured` (an
@@ -527,8 +524,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/metrics/capabilities",
     # MissionsPanel surfaces mission-level transitions only; there is no per-step UI.
     "/api/missions/{mission_id}/steps/{idx}/finish",
-    "/api/secrets/broker/redact",
-    "/api/security/spotlight",
     "/api/support/bundle",
     "/api/voice/wyoming",
     # render_snippet inlines colour/title/greeting (agents/core/widget.py), so nothing
