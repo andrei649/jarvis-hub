@@ -397,6 +397,19 @@ _GENERATED_CLIENT_FILES = ("schema.gen.ts",)
 # only by their panel tests, and the exclusion is what made that visible. Both have real
 # computed-URL callers, so both are declared in COMPUTED_URL_CALLERS below rather than added
 # to the punch list — the hole was already in use, not merely reachable.
+# KNOWN HOLE, and it has already bitten once. `_has_caller` matches the route text
+# anywhere in a client file, so a path written in a COMMENT counts as a caller. During the
+# 2026-09-01 sprint a panel documented, in its header, why it REFUSED to wire
+# /api/context/compress — and that documentation alone was enough to make the entry look
+# called, so delisting it passed this gate while no UI existed. The entry was restored and
+# the comment reworded to avoid the literal.
+#
+# Until the matcher strips comments, the rule for anyone writing a panel is: NEVER spell a
+# route path in prose inside a client file unless the panel actually calls it. Put the
+# reasoning on the entry here instead, where it cannot be mistaken for a call. That is why
+# several entries below carry long justifications that would more naturally live next to
+# the code that refused them.
+
 _TEST_FILE_SUFFIXES = (".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")
 
 
@@ -408,6 +421,13 @@ _CLIENT_GLOBS = (
     "frontend/src/**/*.ts", "frontend/src/**/*.tsx",
     "mobile/**/*.ts", "mobile/**/*.tsx",
     "agents/web/static/**/*.js", "agents/web/templates/**/*.html",
+    # agents/web/*.html — the four hand-written pages the backend serves directly
+    # (brain.html, index.html, mission_control.html, system_map.html). They were missing
+    # from this tuple, so their real fetches did not count as callers: brain.html:578
+    # fetches /api/brain/summary, which therefore sat on UNCALLED_BACKLOG as "no UI" while
+    # a shipping page had been calling it all along. A route the operator can already reach
+    # is not a gap, and listing it as one sends the next reader to build a duplicate panel.
+    "agents/web/*.html",
     "worldview/frontend/**/*.ts", "worldview/frontend/**/*.tsx",
     "desktop/**/*.ts", "desktop/**/*.tsx",
 )
@@ -432,6 +452,9 @@ MACHINE_FACING: dict[str, str] = {
     "/api/nodes/register": "node mesh peer registration",
     "/api/nodes/{node_id}": "node mesh peer",
     "/api/nodes/{node_id}/dispatch": "node mesh dispatch",
+    "/api/satellites/{satellite_id}/dispatch":
+        "mic satellite submits to the shared inference rail \u2014 the exact twin of "
+        "/api/nodes/{node_id}/dispatch above; the HUD does pairing only",
     "/api/sync": "device sync transport",
     "/api/sync/pull": "device sync transport",
     "/api/sync/push": "device sync transport",
@@ -459,94 +482,69 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
-    # DRA-19 gave the Signal Layer -> approval-inbox bridge its first production
-    # constructor plus these two routes to drive it. The bridge is default-off
-    # (JARVIS_SIGNAL_GOVERNANCE), and the handoff doc's own remaining item is the
-    # owner reviewing and enabling it (docs/worldview/continuation-handoff.md:412)
-    # -- a HUD control for a switch the owner has not thrown yet would be premature,
-    # so the client half is genuinely open. Punch list, not MACHINE_FACING: nothing
-    # outside our UI calls these either.
-    "/api/signals/governance",
-    "/api/signals/governance/submit",
-    # T-0.41: the morning brief DOES consume per-domain briefs, but in-process
-    # (scheduler_service._signal_briefs_or_none → build_domain_brief), so this
-    # HTTP route has no *client* caller. It stays as the external read surface
-    # for the same data; the HUD uses /routed and /agent/{id}.
-    "/api/signals/brief/{domain}",
-    # HUD drives acquisition through revoke/rollback only; the drive step has no control.
-    # DRA-43 made T-0.25's desktop vocabulary reachable (these two routes + the
-    # `desktop_plan` ToolRPC tool). The T-0.25 row lists "a user-facing control
-    # surface + HUD parity tracking" as its own remaining work, so the HUD half is
-    # still open by that row's own account — punch list, not MACHINE_FACING.
-    "/api/desktop/allowlist",
-    "/api/desktop/plan",
-    # DRA-22/DRA-42 wired the H28.2 router's two backend halves: this read-only route
-    # and the `operator_plan` ToolRPC tool (which is what actually consumes the router
-    # today — the agent, not our UI). The HUD control is the deliberately-open half, so
-    # this belongs on the punch list rather than in MACHINE_FACING.
-    "/api/operator/plan",
+    # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). Its docstring calls it a
+    # "/model hot-swap", but models_llm.py:69-77 swaps nothing: it parses the command
+    # string and returns `base` (a hardcoded module constant) plus `configured` (an
+    # OPENROUTER_API_KEY boolean). OpenRouterBackend is constructed nowhere outside
+    # tests, and LLMRouter.backend_type is auto|lm-studio|ollama with no openrouter
+    # branch — so that key has no consumer. Every byte a panel could render is the
+    # operator's own input echoed back, a constant, or a flag for a backend that never
+    # runs. A control here would report a hot-swap that cannot happen.
+    # STAYS UNWIRED ON PURPOSE (verified 2026-09-01, mission-canvas lane). Its entire
+    # request is `turns: list[dict]` — a transcript produced by a running session, never
+    # typed by a person, so a textarea asking the owner to paste JSON turns is a fake
+    # surface. No honest read can source it either: /sessions returns checkpoint metadata
+    # with no turns, /api/agents/history returns run rollups, and the only route yielding
+    # real turns (POST /sessions/resume) REASSIGNS orch.session_id — a destructive side
+    # effect disguised as a read. The route also persists nothing: it builds a throwaway
+    # ContextCompressor and returns. Production compression is in-process
+    # (orchestrator.get_context, orchestrator.py:2241) behind memory.context_compression,
+    # which no route exposes — so a button here could not enable, tune or influence it.
+    # RESTORED 2026-09-01. This branch moved it to MACHINE_FACING; the adversarial review
+    # showed that was wrong on the bucket's own terms. MACHINE_FACING means "something other
+    # than our own client calls them", but the producers here are IN-PROCESS python
+    # (browser_agent.py:134 and learning/background_review.py:324 call approvals.request(...)
+    # directly) — the opposite of an external HTTP caller. Nothing calls this route. The human
+    # half IS wired (/api/actions/pending + /decide, tools.js:79,81), but those are different
+    # routes and do not make this one called. Uncalled work, so it belongs on the ratchet.
     "/api/actions/request",
-    "/api/admin/rotate-tokens",
-    "/api/agents/history",
-    "/api/arena/match/{match_id}",
-    "/api/autonomy/call",
-    "/api/brain/summary",
-    "/api/canvas/clear",
-    "/api/channels/inbox/status",
-    "/api/coach/curriculum",
-    "/api/coach/review",
-    "/api/coach/session",
-    "/api/codeintel/reindex",
-    "/api/codeintel/search",
-    "/api/codeintel/stats",
     "/api/context/compress",
-    "/api/creative/export-packs",
-    "/api/creative/plan",
-    "/api/digest/run",
-    "/api/integrations/writeback",
-    "/api/llm/moe/route",
+    # RESTORED 2026-09-01, same correction as /api/actions/request. Agent-consumed via an
+    # IN-PROCESS import (autonomy_coordinator.py:499 `from .desktop_control import plan`),
+    # not over HTTP, so MACHINE_FACING was the wrong bucket. This file's own notes further
+    # down already said "punch list, not MACHINE_FACING" — the branch moved the two routes
+    # its own retained prose says must not move. Deliberately-open UI work: a HUD form over a
+    # plan the agent produces is the degenerate-surface trap (BACKLOG DRA-15).
+    "/api/desktop/plan",
     "/api/llm/openrouter",
-    "/api/market/brief",
     "/api/media/generate",
     "/api/memory/consolidate",
+    # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). It is a legacy ALIAS, not a gap:
+    # analytics.py:208-221 and analytics.py:224-235 return the identical `snapshot(orch)`,
+    # and /api/capabilities' own docstring says it "extends the legacy metrics surface
+    # without removing it". The HUD already renders that snapshot — ReadinessPanel,
+    # gap.tsx:838, useApi('/api/capabilities'). A panel here would duplicate a shipped one
+    # over a byte-identical payload. Whether to keep the alias or delete the route is an
+    # API decision for the owner, not something to paper over with a second panel.
     "/api/metrics/capabilities",
-    # MissionsPanel surfaces mission-level transitions only; there is no per-step UI.
-    "/api/missions/{mission_id}/steps/{idx}/finish",
-    "/api/osint/brief",
-    "/api/osint/correlate",
-    "/api/payments/mandates",
-    "/api/payments/request",
-    "/api/presence/owner",
-    "/api/quality/scores",
-    "/api/review/flag",
-    "/api/review/stats",
-    # the review queue wires 👍/👎 (/vote); "promote to dataset" has no button.
-    # SatellitesPanel pairs and unpairs only; nothing dispatches work to a satellite.
-    "/api/satellites/{satellite_id}/dispatch",
-    "/api/secrets/broker/redact",
-    "/api/security-skills/frameworks",
-    "/api/security-skills/map",
-    "/api/security-skills/playbook",
+    # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). A strict SUBSET of
+    # /api/worldview/overview, which returns {**status, "recon": ...} (worldview.py:34-49)
+    # and is what the World tab actually renders (frontend/src/modes_world.tsx:22). Its
+    # docstring aims it at "the HUD World tab", but the HUD chose the superset. A status
+    # chip would re-render data already on screen.
+    # RESTORED 2026-09-01 — see /api/desktop/plan. In-process consumer at
+    # autonomy_coordinator.py:535 `from .operator_router import plan_payload`.
+    "/api/operator/plan",
+    # RESTORED 2026-09-01. Moved to MACHINE_FACING on a DESIGN judgment ("a HUD form letting a
+    # human hand-type provenance into a tamper-evident intent log is worse than no control",
+    # BACKLOG DRA-36) — the same kind of argument kept on THIS list for /api/context/compress
+    # and /api/llm/openrouter, and not a claim that anything calls the route. Nothing does.
     "/api/security/audit/action",
-    "/api/security/spotlight",
-    "/api/skills/marketplace/install-zip",
-    "/api/skills/marketplace/publish",
-    "/api/skills/marketplace/uninstall",
-    # the marketplace panel has install/review/history, but no rollback control.
-    # skills are approved via marketplace/review; this per-skill route has no caller.
-    "/api/support/bundle",
-    "/api/voice/wyoming",
-    # render_snippet inlines colour/title/greeting (agents/core/widget.py), so nothing
-    # fetches the config read surface.
+    # RESTORED 2026-09-01. The MACHINE_FACING reason given was factually wrong: widget.py:158-166
+    # render_snippet inlines colour/title/greeting INTO the emitted snippet, and the snippet's
+    # only fetch (widget.py:118) posts to the /message route. Nothing fetches the config read.
     "/api/widget/{token}/config",
-    "/api/workflows/hierarchical",
-    "/api/workflows/traces",
     "/api/worldview/status",
-    "/autonomy/observer/run",
-    "/autonomy/preferences/suggestions",
-    "/autonomy/status",
-    "/skills/import",
-    "/skills/imported"
 ])
 
 # Routes whose client call is BUILT rather than written: the last segment comes from a

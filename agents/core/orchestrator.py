@@ -72,6 +72,7 @@ from .errors import (
 )
 from .channels.base import ChannelAdapter
 from .channels.manager import ChannelManager
+from .channels.session import DeliveryRouter, SessionSource, build_session_key
 from .settings_db import get_all as _get_settings
 # Live-plugin classes + oauth helpers moved with the registry to PluginManager (CLN-2).
 
@@ -205,6 +206,12 @@ _active_session: contextvars.ContextVar = contextvars.ContextVar(
 
 
 class Orchestrator:
+    # DRA-08: the reply-target resolver is pure and stateless (no per-instance
+    # config), so it lives on the class. That also keeps `channel_handler`
+    # usable on instances built via ``Orchestrator.__new__`` — the harness the
+    # channel tests use — without every such harness having to wire it.
+    _delivery_router = DeliveryRouter()
+
     def __init__(self, config: JarvisConfig):
         self.config = config
         self.agents: dict[str, Agent] = {}
@@ -1100,25 +1107,58 @@ class Orchestrator:
         action_origin = kwargs.pop("origin", origin_for_channel(channel))
         kwargs.pop("_inbound_meta", None)
         origin_token = bind_action_origin(action_origin)
-        chat_id = kwargs.get("chat_id")
+        # DRA-08: one description of *who is talking to us*, built from the
+        # identity metadata the adapters already put on the wire (telegram
+        # chat_id/sender, email sender, slack_channel, matrix room_id, teams
+        # conversation, google-chat space). Drives both halves below: the
+        # session key and the delivery decision.
+        source = SessionSource(
+            channel=channel,
+            sender=kwargs.get("sender"),
+            thread_id=(
+                kwargs.get("chat_id")
+                or kwargs.get("slack_channel")
+                or kwargs.get("room_id")
+                or kwargs.get("conversation")
+                or kwargs.get("space")
+            ),
+            client_id=kwargs.get("client_id"),
+        )
         try:
             # H3.3: cross-channel context is opt-in. When enabled, every channel
             # shares self.session_id (web<->telegram continuity). When off (default),
-            # telegram keeps per-chat_id isolation (H1.2).
+            # any channel turn that carries a real identity (a thread, a sender or a
+            # client) gets its own deterministic session — telegram's per-chat_id
+            # isolation (H1.2) generalised to email and the webhook channels.
+            # A turn with no identity at all (voice; web through the gateway with no
+            # client_id) has nothing to isolate *by*, so it stays on the shared session.
             cross_channel = self.get_setting("memory.cross_channel_sessions", False)
-            if not cross_channel and channel == "telegram" and chat_id:
-                ck = f"tg:{chat_id}"
-                if ck not in self._channel_sessions:
-                    self._channel_sessions[ck] = await self.memory.new_session()
-                # BUG-5: bind this telegram chat's session into the per-request async
-                # context instead of mutating shared `self.session_id` and restoring
-                # it in a finally. The old save/restore-on-self clobbered concurrent
-                # turns (the finally reset the *shared* attribute another in-flight
-                # request was reading). Here we set a *context-local* token and reset
-                # it in finally, so the binding is scoped to this request's async
-                # context only and never touches the shared default. `_resolve_session`
-                # inside handle_input keeps the value we set here.
-                token = _active_session.set(self._channel_sessions[ck])
+            if not cross_channel and (source.thread_id or source.sender or source.client_id):
+                key = build_session_key(source)
+                if key not in self._channel_sessions:
+                    # RESUME BEFORE CREATE. `_channel_sessions` is per-process, so this
+                    # branch is taken on the first turn after every restart — and
+                    # `new_session(key)` seeds an EMPTY turn list without touching disk
+                    # (memory/conversation.py:81-88; only `resume_session` calls
+                    # `load_memory`). Pairing a now-DETERMINISTIC key with new_session
+                    # would therefore reopen the same session id with no history and
+                    # overwrite the persisted transcript on the next save — the stable
+                    # key turning into data loss, which is strictly worse than the old
+                    # per-boot random id it replaces. Resume first, create only when
+                    # there is genuinely nothing on disk to resume.
+                    if await self.memory.resume_session(key):
+                        self._channel_sessions[key] = key
+                    else:
+                        self._channel_sessions[key] = await self.memory.new_session(key)
+                # BUG-5: bind this channel conversation's session into the per-request
+                # async context instead of mutating shared `self.session_id` and
+                # restoring it in a finally. The old save/restore-on-self clobbered
+                # concurrent turns (the finally reset the *shared* attribute another
+                # in-flight request was reading). Here we set a *context-local* token
+                # and reset it in finally, so the binding is scoped to this request's
+                # async context only and never touches the shared default.
+                # `_resolve_session` inside handle_input keeps the value we set here.
+                token = _active_session.set(self._channel_sessions[key])
                 try:
                     response = await self.handle_input(text, channel)
                 finally:
@@ -1126,7 +1166,13 @@ class Orchestrator:
             else:
                 response = await self.handle_input(text, channel)
 
-            await self.channel_manager.send(channel, response, **kwargs)
+            # DRA-08: whether to reply is the router's call (empty/silent/local-only
+            # turns are dropped here instead of being pushed at the transport).
+            # Whether we are *allowed* to reply on that channel stays
+            # ChannelManager.send's contract gate (_SUPPORTED_SEND_CHANNELS).
+            decision = self._delivery_router.resolve(source, text=response or "")
+            if decision.send and decision.target:
+                await self.channel_manager.send(decision.target.channel, response, **kwargs)
             return response
         finally:
             reset_action_origin(origin_token)
