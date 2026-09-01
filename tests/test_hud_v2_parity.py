@@ -408,6 +408,13 @@ _CLIENT_GLOBS = (
     "frontend/src/**/*.ts", "frontend/src/**/*.tsx",
     "mobile/**/*.ts", "mobile/**/*.tsx",
     "agents/web/static/**/*.js", "agents/web/templates/**/*.html",
+    # agents/web/*.html — the four hand-written pages the backend serves directly
+    # (brain.html, index.html, mission_control.html, system_map.html). They were missing
+    # from this tuple, so their real fetches did not count as callers: brain.html:578
+    # fetches /api/brain/summary, which therefore sat on UNCALLED_BACKLOG as "no UI" while
+    # a shipping page had been calling it all along. A route the operator can already reach
+    # is not a gap, and listing it as one sends the next reader to build a duplicate panel.
+    "agents/web/*.html",
     "worldview/frontend/**/*.ts", "worldview/frontend/**/*.tsx",
     "desktop/**/*.ts", "desktop/**/*.tsx",
 )
@@ -432,6 +439,27 @@ MACHINE_FACING: dict[str, str] = {
     "/api/nodes/register": "node mesh peer registration",
     "/api/nodes/{node_id}": "node mesh peer",
     "/api/nodes/{node_id}/dispatch": "node mesh dispatch",
+    # Reclassified 2026-09-01 after auditing all 61 UNCALLED_BACKLOG entries. Each of these
+    # has a non-UI caller by design; each sat on the punch list implying a UI half was owed,
+    # which is what sends the next reader to build a degenerate surface.
+    "/api/satellites/{satellite_id}/dispatch":
+        "mic satellite submits to the shared inference rail \u2014 the exact twin of "
+        "/api/nodes/{node_id}/dispatch above; the HUD does pairing only",
+    "/api/widget/{token}/config":
+        "public embed surface read by a third-party page, like /api/widget/{token}/message below",
+    "/api/actions/request":
+        "agents file approval requests in-process (browser_agent.py:134, "
+        "learning/background_review.py:324); the human half is /api/actions/pending + /decide, "
+        "already wired in agents/web/static/tools.js:79,81",
+    "/api/operator/plan":
+        "the ToolRPC tool consumes the router, not our UI (autonomy_coordinator.py:548); "
+        "BACKLOG.md DRA-15 records that a HUD control here is the degenerate-surface trap",
+    "/api/desktop/plan":
+        "same as /api/operator/plan \u2014 agent-consumed (autonomy_coordinator.py:510). "
+        "The sibling /api/desktop/allowlist IS honestly displayable and is wired",
+    "/api/security/audit/action":
+        "BACKLOG.md DRA-36: a HUD form letting a human hand-type provenance into a "
+        "tamper-evident intent log is worse than no control",
     "/api/sync": "device sync transport",
     "/api/sync/pull": "device sync transport",
     "/api/sync/push": "device sync transport",
@@ -473,32 +501,21 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # HTTP route has no *client* caller. It stays as the external read surface
     # for the same data; the HUD uses /routed and /agent/{id}.
     "/api/signals/brief/{domain}",
-    # HUD drives acquisition through revoke/rollback only; the drive step has no control.
     # DRA-43 made T-0.25's desktop vocabulary reachable (these two routes + the
     # `desktop_plan` ToolRPC tool). The T-0.25 row lists "a user-facing control
     # surface + HUD parity tracking" as its own remaining work, so the HUD half is
     # still open by that row's own account — punch list, not MACHINE_FACING.
     "/api/desktop/allowlist",
-    "/api/desktop/plan",
     # DRA-22/DRA-42 wired the H28.2 router's two backend halves: this read-only route
     # and the `operator_plan` ToolRPC tool (which is what actually consumes the router
     # today — the agent, not our UI). The HUD control is the deliberately-open half, so
     # this belongs on the punch list rather than in MACHINE_FACING.
-    "/api/operator/plan",
-    "/api/actions/request",
     "/api/admin/rotate-tokens",
     "/api/agents/history",
     "/api/arena/match/{match_id}",
     "/api/autonomy/call",
-    "/api/brain/summary",
     "/api/canvas/clear",
     "/api/channels/inbox/status",
-    "/api/coach/curriculum",
-    "/api/coach/review",
-    "/api/coach/session",
-    "/api/codeintel/reindex",
-    "/api/codeintel/search",
-    "/api/codeintel/stats",
     "/api/context/compress",
     "/api/creative/export-packs",
     "/api/creative/plan",
@@ -520,25 +537,18 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/quality/scores",
     "/api/review/flag",
     "/api/review/stats",
-    # the review queue wires 👍/👎 (/vote); "promote to dataset" has no button.
-    # SatellitesPanel pairs and unpairs only; nothing dispatches work to a satellite.
-    "/api/satellites/{satellite_id}/dispatch",
     "/api/secrets/broker/redact",
     "/api/security-skills/frameworks",
     "/api/security-skills/map",
     "/api/security-skills/playbook",
-    "/api/security/audit/action",
     "/api/security/spotlight",
     "/api/skills/marketplace/install-zip",
     "/api/skills/marketplace/publish",
     "/api/skills/marketplace/uninstall",
-    # the marketplace panel has install/review/history, but no rollback control.
-    # skills are approved via marketplace/review; this per-skill route has no caller.
     "/api/support/bundle",
     "/api/voice/wyoming",
     # render_snippet inlines colour/title/greeting (agents/core/widget.py), so nothing
     # fetches the config read surface.
-    "/api/widget/{token}/config",
     "/api/workflows/hierarchical",
     "/api/workflows/traces",
     "/api/worldview/status",

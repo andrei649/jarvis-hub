@@ -6,6 +6,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
 import { localModelStatus } from './api/live';
 import { OperatorPanel } from './operator-panel';
+import { CoachPanel } from './panels/coach';
+import { CodeIntelPanel } from './panels/codeintel';
 
 import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, inpS, taS, Json } from './panel-kit';
 
@@ -4465,7 +4467,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, NoteDocsPanel, VaultPanel, KgPanel, MemoryWritePanel, MemoryHygienePanel, MemoryEvalPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
-  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, CognitionPanel, SwarmPanel, SubAgentsPanel, SystemMapPanel]],
+  ['Observe', [OnboardingPanel, CodeIntelPanel, CoachPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, CognitionPanel, SwarmPanel, SubAgentsPanel, SystemMapPanel]],
   ['Build', [WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, VlmDescribePanel, AuthProfilesPanel, SystemProfilePanel]],
