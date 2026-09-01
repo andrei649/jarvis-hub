@@ -40,23 +40,85 @@ def _docline(node: ast.AST) -> str:
 
 
 def _symbols_in_source(source: str, rel_path: str) -> list[dict]:
-    """Extract module-level functions/classes (+ their methods) from one file."""
+    """Extract every function/class in one file, at any nesting depth.
+
+    This used to walk `tree.body` plus one pass over each module-level class body, which
+    silently dropped anything deeper: nested functions and closures, defs inside a
+    module-level ``if``/``try``/``with``, and classes nested in classes (skipped whole,
+    methods and all). Measured on this repo, that hid 267 of 6,007 function defs under
+    ``agents/`` — and a search miss reads to an operator as "not in the repo" rather than
+    "not indexed at this depth", which is the reason this is a correctness bug and not a
+    coverage preference.
+
+    Descends through every statement body rather than only the two it used to know about,
+    so a symbol's presence no longer depends on which block it happens to sit in. Each
+    symbol carries a dotted ``qualname`` built from its enclosing scopes
+    (``Outer.method.method_local``), so two same-named nested defs in one file stay
+    distinguishable. Non-scoping blocks (``if``/``try``/``with``/loops) do not contribute
+    a segment — the qualname names the SCOPE chain, which is what a reader can look up.
+    """
     tree = ast.parse(source)
     out: list[dict] = []
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            kind = "async_function" if isinstance(node, ast.AsyncFunctionDef) else "function"
-            out.append({"name": node.name, "qualname": node.name, "kind": kind,
-                        "file": rel_path, "lineno": node.lineno, "doc": _docline(node)})
-        elif isinstance(node, ast.ClassDef):
-            out.append({"name": node.name, "qualname": node.name, "kind": "class",
-                        "file": rel_path, "lineno": node.lineno, "doc": _docline(node)})
-            for sub in node.body:
-                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    out.append({"name": sub.name, "qualname": f"{node.name}.{sub.name}",
-                                "kind": "method", "file": rel_path, "lineno": sub.lineno,
-                                "doc": _docline(sub)})
+
+    def walk(body: list, scope: str, in_class: bool) -> None:
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                # "method" means: written directly in a class body. That is a property of
+                # the enclosing scope, so it is carried down the recursion rather than
+                # guessed from the name.
+                if in_class:
+                    kind = "method"
+                else:
+                    kind = "async_function" if isinstance(node, ast.AsyncFunctionDef) else "function"
+                qual = f"{scope}.{node.name}" if scope else node.name
+                out.append({"name": node.name, "qualname": qual, "kind": kind,
+                            "file": rel_path, "lineno": node.lineno, "doc": _docline(node)})
+                walk(node.body, qual, False)
+            elif isinstance(node, ast.ClassDef):
+                qual = f"{scope}.{node.name}" if scope else node.name
+                out.append({"name": node.name, "qualname": qual, "kind": "class",
+                            "file": rel_path, "lineno": node.lineno, "doc": _docline(node)})
+                walk(node.body, qual, True)
+            else:
+                # if / try / with / for / while: not a scope, so recurse WITHOUT extending
+                # the qualname and WITHOUT changing class-ness. A def here is as real as
+                # any other, and used to be invisible.
+                for attr in ("body", "orelse", "finalbody"):
+                    inner = getattr(node, attr, None)
+                    if isinstance(inner, list):
+                        walk(inner, scope, in_class)
+                for handler in getattr(node, "handlers", []) or []:
+                    walk(getattr(handler, "body", []) or [], scope, in_class)
+
+    walk(tree.body, "", False)
     return out
+
+
+def _in_virtualenv(path: Path, root: Path, cache: list[Path]) -> bool:
+    """True when *path* lives inside a virtualenv, detected by its ``pyvenv.cfg`` marker.
+
+    _SKIP_DIRS lists venv directories BY NAME (".venv", "venv", "env"), which misses any
+    other name — including ``.venv312``, this repo's actual interpreter. The effect was
+    not cosmetic: 37,220 of 53,641 indexed symbols were third-party site-packages, so
+    `symbol_count` was meaningless as a project measure and a search for a common name
+    drowned in vendored hits. A marker check is name-independent and cannot go stale the
+    next time someone picks a different directory name.
+
+    Discovered venv roots are cached in *cache* so the walk stays O(depth) per file
+    instead of re-statting the same ancestors for every file inside a large venv.
+    """
+    for known in cache:
+        if known in path.parents:
+            return True
+    for parent in path.parents:
+        if parent == root.parent:
+            break
+        if (parent / "pyvenv.cfg").exists():
+            cache.append(parent)
+            return True
+        if parent == root:
+            break
+    return False
 
 
 def build_index(root: str | Path) -> dict:
@@ -69,8 +131,11 @@ def build_index(root: str | Path) -> dict:
     symbols: list[dict] = []
     errors: list[dict] = []
     files = 0
+    venv_roots: list[Path] = []
     for path in sorted(root.rglob("*.py")):
         if any(part in _SKIP_DIRS for part in path.parts):
+            continue
+        if _in_virtualenv(path, root, venv_roots):
             continue
         rel = str(path.relative_to(root))
         try:

@@ -11,11 +11,8 @@
       query). That is a not-asked state, not a negative result — so no request is issued
       until a query is committed, and the panel says "enter a symbol substring".
    3. `_SKIP_DIRS` (index.py:22) skips ".venv"/"venv"/"env" but not this repo's actual
-      virtualenv dir ".venv312", so most of the index is third-party site-packages.
-      `symbol_count` is therefore NOT a project-size number and is never labelled one.
-   4. The index is one level deep. `_symbols_in_source` (index.py:44-59) iterates `tree.body`
-      only, plus one pass over each module-level class body, so nested defs, closures, defs
-      inside a module-level if/try/with and classes nested in classes are never indexed —
+      virtualenv dir ".venv312", so most of the index WAS third-party site-packages; the skip is
+      now keyed on a pyvenv.cfg marker instead, and the index reaches every nesting depth. Before that,
       measured on agents/ alone, 267 of 6,007 defs are missing, and searching one of them
       (e.g. a closure defined inside a factory function) returns count:0. A zero-result search
       is therefore NOT evidence that a name is absent from the repo, and the panel must never
@@ -156,22 +153,21 @@ export function CodeIntelPanel() {
       <div style={{ fontSize: 10, color: 'var(--ink-3)', margin: '6px 0' }}>
         <div>
           <b>Directory scope</b> — every *.py under the repo root except .git/.hg/.svn/__pycache__/
-          .venv/venv/env/node_modules/.mypy_cache/.pytest_cache/.ruff_cache/build/dist
-          (agents/core/codeintel/index.py:22). This repo's virtualenv is <b>.venv312</b>, which is NOT on
-          that skip list — measured 2026-09-01, 37,220 of 53,641 indexed symbols came from .venv312
-          site-packages. So these counts are "*.py under the repo root", not the size of Nerva's own
-          code. Every hit shows its path.
+          node_modules/.mypy_cache/.pytest_cache/.ruff_cache/build/dist, plus any directory holding a
+          <b> pyvenv.cfg</b> (agents/core/codeintel/index.py). The venv skip is by that marker rather
+          than by directory name: the name list missed <b>.venv312</b>, this repo's actual interpreter,
+          so 37,220 of 53,641 symbols used to be third-party site-packages and `symbol_count` meant
+          nothing as a measure of Nerva's own code. Measured after the fix: 0 vendored symbols,
+          1,278 files, 18,542 symbols. Every hit still shows its path.
         </div>
-        {/* The scope that actually bites on this repo. The directory caveat above INFLATES the
-            counts; this one DEFLATES them, and unlike the parse-error warning (errors was [] when
-            measured) it fires on every search. */}
         <div style={{ marginTop: 4 }}>
-          <b>Symbol scope</b> — the indexer reads only the top level of each file
-          (agents/core/codeintel/index.py:44-59): module-level functions and classes, plus the methods
-          written directly in a module-level class body. Anything nested deeper is absent from the index
-          and can never be found here — inner functions and closures, defs inside a module-level
-          if/try/with, classes nested in classes. Measured 2026-09-01 over this repo's own agents/ tree:
-          6,007 function/async defs exist, 5,740 are indexed — 267 are invisible to this search.
+          <b>Symbol scope</b> — the index now reaches every function and class at any nesting depth:
+          inner functions and closures, defs inside a module-level if/try/with, and classes nested in
+          classes. It used to read only the top level of each file, which hid 267 of the 6,007
+          function/async defs under agents/ — and a miss there reads as "not in the repo" rather than
+          "not indexed", which is why it was a correctness bug rather than a coverage preference.
+          Nested hits carry a dotted qualname naming their enclosing scopes, so two same-named inner
+          defs in one file stay tellable apart.
         </div>
       </div>
 
