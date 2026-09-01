@@ -729,11 +729,13 @@ defaulted to rejecting the claim). Every one of the 144 agents finished — the 
 not in agent completion: the sweep mined ~3 items out of a 71-route punch list it was pointed at.
 Full write-up: `docs/research/2026-08-29-discovery-run-audit.md`.
 
-**Ledger status — recounted 2026-08-31 against the shipped code (PR `02970c4`).** This section holds
-**62 rows** (the 53 adversarially-confirmed findings plus the 9 completeness-critic additions). **51 are
-now ticked; 11 remain open:** `DRA-08`, `DRA-15`, `DRA-20`, `DRA-27`, `DRA-29`, `DRA-36`, `DRA-45`,
-`DRA-58`, `DRA-59`, `DRA-60`, `DRA-62`. Every open row carries a **Partially shipped** or
-**Remaining** note stating what landed and what deliberately did not — none of them is closed on an
+**Ledger status — recounted 2026-09-01 against the shipped code (PR #1000).** This section holds
+**62 rows** (the 53 adversarially-confirmed findings plus the 9 completeness-critic additions). **53 are
+now ticked; 9 remain open:** `DRA-08`, `DRA-20`, `DRA-27`, `DRA-29`, `DRA-45`, `DRA-58`, `DRA-59`, `DRA-60`, `DRA-62`.
+DRA-15 and DRA-36 closed in the reachability sprint (punch list 61 → 11, every survivor annotated
+with why it is not work) and DRA-08 Phase 5 landed, though that row stays open for Phase 6.
+Every open row carries a **Partially shipped** or **Remaining** note stating what landed and what
+deliberately did not — none of them is closed on an
 implementer's self-report, and several ticked rows carry **Residual (recorded, not closed)** clauses that
 are part of the tick, not decoration. Three of the 62 IDs are duplicates of another row
 (`DRA-10`→`DRA-05`, `DRA-42`→`DRA-22`, `DRA-56`→`DRA-24`) and are closed by pointing at the row that
@@ -850,6 +852,24 @@ absorbed them, not as independently shipped work.
   live channel pat… *(evidence: `BACKLOG.md:1126, agents/core/tool_rpc_runtime.py:104,
   tests/test_tool_rpc_runtime.py:10`)*
   **Partially shipped 02970c4 — the row stays OPEN. Phase 3 only; Phases 5 and 6 are NOT implemented.**
+  **PHASE 5 LANDED 2026-09-01 (PR #1000). Phase 6 is the only part still owed.** `channels/session.py`
+  had shipped `SessionSource`, `build_session_key` and `DeliveryRouter` since #626 with a docstring
+  admitting "It does not change live gateway routing yet" — six references repo-wide, all in one test
+  file, nothing under `agents/` importing it. `channel_handler` now uses them: the hand-rolled
+  `ck = f"tg:{chat_id}"` is gone, any turn carrying an identity gets a deterministic key, telegram
+  keeps its isolation and gains restart stability, and email plus the webhook channels gain the
+  per-sender isolation they never had. Delivery is the router's call, so an empty reply is dropped
+  here rather than pushed at the transport.
+  **The first implementation was a data-loss bug and two adversarial reviewers caught it.** It paired
+  the new deterministic key with `memory.new_session(key)`, which seeds an EMPTY turn list and never
+  touches disk (only `resume_session` calls `load_memory`, `memory/conversation.py:81-88`). Since
+  `_channel_sessions` is per-process, that branch runs on the first turn after EVERY restart — so a
+  stable key would reopen the same session id with no history and overwrite the persisted transcript.
+  The headline benefit *was* the bug, and it was strictly worse than the per-boot random id it
+  replaced. It now resumes before creating, pinned by a red-proofed test.
+  **Remaining — Phase 6 (the cron job store).** Recon found it buildable but dependent on Phase 5's
+  router, and it needs a new HTTP route, which would add a fresh punch-list entry unless its UI half
+  ships with it. A CRUD store with no firing leg is a settings page that does nothing.
   `ToolRPCSandboxRuntime` gets its first production caller by extending the existing, already-gated
   `/sandbox/execute` surface rather than adding a route: `SandboxExecuteBody` gains `tools: bool = False`;
   when true, a non-python language is refused 422 `tool_rpc_pipeline_python_only`, a missing
@@ -928,7 +948,7 @@ absorbed them, not as independently shipped work.
 
 **Missed by the sweep entirely (39).**
 
-- [ ] 🔴 **DRA-15 — UNCALLED_BACKLOG punch list: 71 shipped user-facing routes have no client caller; the run
+- [x] ✅ **DRA-15 — UNCALLED_BACKLOG punch list: 71 shipped user-facing routes have no client caller; the run
   surfaced ~3.** tests/test_hud_v2_parity.py holds an explicit, CI-enforced in-code punch list of
   user-facing routes that exist in route_auth.json but are called by no client (HUD or mobile). *(evidence:
   `tests/test_hud_v2_parity.py:436-437, items_only.json`)*
@@ -944,6 +964,47 @@ absorbed them, not as independently shipped work.
   **Correction to this row's own text:** the embedded count "71" was already stale when the finding was
   written — the punch list held **79** entries. The row should be re-stated as a campaign with
   per-cluster children rather than carried as one checkbox.
+
+  **CLOSED 2026-09-01 (reachability sprint, PR #1000). 61 → 11.** Twenty new panels under
+  `frontend/src/panels/` retire 49 entries; a 50th (`/api/brain/summary`) was never uncalled at all —
+  `agents/web/*.html` was missing from the gate's `_CLIENT_GLOBS`, so `brain.html:578` fetching it did
+  not count. The row is ticked because every one of the 11 survivors is now annotated on its own entry
+  with why it is NOT work: six are deliberate refusals (an agent-produced input with no honest source,
+  a route that swaps nothing, two dead by construction, two duplicates of already-wired surfaces) and
+  five are deliberately-open UI work whose HUD half would be the degenerate-surface trap. The campaign
+  is finished in the sense that matters — nothing on the list is an unexamined gap.
+  **`gap.tsx` was the bottleneck, and it is gone.** It had grown to 4,605 lines with every panel and
+  every primitive in one file, so two panels could never be written in parallel without colliding on
+  the same `SECTIONS` array — which is why the previous cut managed only 18 of 79. `panel-kit.tsx`
+  exports the primitives verbatim; panels now live in their own modules.
+  **Two self-inflicted errors, recorded because both are the exact defect this campaign exists to
+  remove.** (1) `/api/context/compress` was delisted on the strength of a panel COMMENT naming the
+  path: `_has_caller` matches route text anywhere in a client file, so documenting a refusal faked a
+  caller. Caught by hand, reverted. (2) Six routes were then moved into `MACHINE_FACING` and called an
+  honest shrink; the adversarial review proved four of those reasons false and showed that for two of
+  them the move was *what made the gate green* — the same bug routed around instead of fixed. All five
+  are back on the list; only `/api/satellites/{satellite_id}/dispatch` stands, on the precedent of its
+  twin already accepted on main. The matcher hole is now documented at the top of the gate with the
+  rule it implies: never spell a route path in prose inside a client file unless the panel calls it.
+  **Backend defects surfaced by the panels and deliberately NOT fixed here** (each would widen the PR;
+  recorded for the owner):
+  1. `agents/core/skills/marketplace.py` — `uninstall_skill(purge=True)` calls `remove_from_registry`
+     with the on-disk FOLDER while `marketplace_skills` is keyed by the MANIFEST TITLE, and discards
+     the returned boolean; `skills.py` then echoes the request flag back as `"purged"`. Net effect: a
+     purge reports success while the published package survives, blob and all. Reproduced against the
+     real class. **This is the one worth fixing first.**
+  2. `agents/core/codeintel/index.py:44-59` — `_symbols_in_source` walks only `tree.body`, so nested
+     defs, closures and classes-in-classes are never indexed (267 of 6,007 functions under `agents/`
+     are invisible); and `_SKIP_DIRS` misses `.venv312`, so 37,220 of 53,641 symbols are site-packages.
+  3. `agents/core/signal_governance.py` — `submit_recommendations` swallows per-recommendation
+     failures at DEBUG, so a brief that failed to enqueue is indistinguishable from one that carried
+     nothing.
+  4. `agents/core/cognition_trace.py:163` — when `orch.review_queue` is None the auto-file safety net
+     drops every low-scoring turn silently, with no warning-level log.
+  5. `agents/core/channel_inbox.py:136` — `stats()` reports a module-level constant as its channel
+     list, so the payload carries no information about which channels actually hold messages.
+  6. `agents/core/routers/missions.py:104-113` — `_transition` collapses three distinct `MissionError`
+     causes into one 409 string.
   **Remaining:** the rest of the register.
   **Update 2026-09-01 — one of the two "do not wire" clusters is REVERSED, deliberately and with
   reasons.** `/api/desktop/plan` + `/api/operator/plan` stand: they are agent-driven, and they have now
@@ -1373,7 +1434,7 @@ absorbed them, not as independently shipped work.
   whether the stem appears anywhere in the concatenated client blob. *(evidence:
   `tests/test_hud_v2_parity.py:540-547, tests/_snapshots/route_auth.json`)*
   **Shipped c9463ca** — matcher now requires the stem AND every static segment after a path param; the ~70 vacuous passes split into an honest punch list and a re-derived `COMPUTED_URL_CALLERS` that a test keeps real.
-- [ ] 🟡 **DRA-36 — UNCALLED_BACKLOG (~70 declared-open UI halves) was mined for only two items.**
+- [x] ✅ **DRA-36 — UNCALLED_BACKLOG (~70 declared-open UI halves) was mined for only two items.**
   tests/test_hud_v2_parity.py:436-514 declares UNCALLED_BACKLOG as 'Today's uncalled user-facing routes. A
   punch-list, not an allowance' — i.e. an in-repo register of shipped backends whose UI half is missing.
   *(evidence: `tests/test_hud_v2_parity.py:436-514, agents/core/routers/mesh.py:203, security.py:278`)*
@@ -1389,6 +1450,17 @@ absorbed them, not as independently shipped work.
   the button disabled while in flight and a footer stating plainly that `SubAgentManager.spawn` awaits
   the entire sub-agent turn inside the POST, so the connection is held for minutes and nothing polls.
   Four entries leave the punch list; both panel names are present in the rebuilt `agents/web/v2` bundle.
+
+  **CLOSED 2026-09-01 (PR #1000) — the register was mined properly.** See DRA-15 for the full record;
+  this row's own complaint (a ~70-entry register mined for two items) no longer holds: the register
+  went 61 → 11, and every survivor carries its reason on its own entry. The two clusters this row cited
+  as deliberately unwired are handled honestly rather than quietly: `/api/security/audit/action` stays
+  UNWIRED and ON the punch list — an earlier commit in this very PR moved it to `MACHINE_FACING`, which
+  the adversarial review correctly called out as a design judgment dressed as a caller claim — and
+  `/api/signals/governance*` was WIRED, reversing this row's guidance for stated reasons: that guidance
+  predates the governance surface, which exists only because DRA-19 added it in #992, and the route
+  reports its own `enabled/flag/kind/pending` state, so rendering the disabled case as the documented
+  default is an honest status display rather than a dead control.
   **Remaining:** the rest of the register — mining it is DRA-15's campaign, not this row. Two entries
   were deliberately not wired: `POST /api/security/audit/action` (a HUD form letting a human hand-type
   provenance into a tamper-evident intent log is worse than no control) and `/api/signals/governance*`
