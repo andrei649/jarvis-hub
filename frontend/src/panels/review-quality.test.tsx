@@ -272,6 +272,55 @@ describe('ReviewQualityPanel — the rollup, the score ring and the flag control
     expect(alert).not.toMatch(/^flagged ·/m);
   });
 
+  /* REGRESSION (adversarial review, section-2 threshold note). The auto-file step lives
+     behind `if getattr(orch, "review_queue", None) is not None:` (cognition_trace.py:163),
+     and `quality` / `review_queue` are independent registry entries — so "monitor up with a
+     threshold, queue absent" is reachable. The note used to be gated on the threshold alone,
+     so the SAME card printed "review queue not available" and, 60px lower, "a turn below it
+     is auto-filed into the review queue", which reads as: the safety net still catches bad
+     answers. It does not — nothing is filed and the low score is dropped. The three states
+     are separate cases so each pins its own branch. */
+  const txt = () => document.body.textContent;
+
+  it('denies auto-filing when the rollup proved the review queue absent', async () => {
+    // monitor wired with a threshold (PROBE_OK: 0.6) but orch.review_queue is None
+    mount({ stats: STATS_ABSENT, probe: PROBE_OK });
+    render(<ReviewQualityPanel />);
+    await waitFor(() => expect(screen.getByText('review queue not available')).toBeTruthy());
+
+    // the threshold itself is still attributed to its real source
+    expect(txt()).toMatch(/threshold 0\.6, read from \/api\/quality/);
+    // but the consequence that depends on the ABSENT component is denied, not asserted
+    expect(txt()).not.toMatch(/auto: score <score> < 0\.6/);
+    expect(txt()).not.toMatch(/is auto-filed into the review queue/);
+    expect(txt()).toMatch(/nothing is auto-filed at this cutoff/);
+    expect(txt()).toMatch(/no review row is created for it/);
+  });
+
+  it('still states the auto-file reason when the rollup shows the queue answering', async () => {
+    // guard against "fixing" the lie by deleting the true half of it
+    mount({ probe: PROBE_OK });
+    render(<ReviewQualityPanel />);
+    await waitFor(() => expect(screen.getByText('total')).toBeTruthy());
+    expect(txt()).toMatch(/auto: score <score> < 0\.6/);
+    expect(txt()).not.toMatch(/nothing is auto-filed/);
+  });
+
+  it('claims nothing about auto-filing when the rollup could not be read', async () => {
+    mockRoutes((u, m) => {
+      if (u === FLAG && m === 'POST') return { status: 200, body: {} };
+      if (u === STATS) return { status: 503, body: {} };      // s.d stays null
+      if (u === SCORES) return { status: 200, body: SCORES_OK };
+      if (u === TRACES) return { status: 200, body: TRACES_OK };
+      if (u === PROBE) return { status: 200, body: PROBE_OK };
+      return null;
+    });
+    render(<ReviewQualityPanel />);
+    await waitFor(() => expect(txt()).toMatch(/has not reported on/));
+    expect(txt()).not.toMatch(/auto: score <score> < 0\.6/);
+    expect(txt()).not.toMatch(/nothing is auto-filed at this cutoff/);
+  });
+
   it('renders the tracer degradation string VERBATIM and disables the flag control', async () => {
     mount({ traces: { traces: [], error: 'tracer not available' } });
     render(<ReviewQualityPanel />);

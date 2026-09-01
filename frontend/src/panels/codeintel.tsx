@@ -1,7 +1,7 @@
 /* CODE INTEL — the 0.31 read-only AST symbol index (agents/core/routers/codeintel.py),
    which shipped with three user-reachable routes and no client that ever called them.
 
-   Three honesty problems this panel exists to NOT reproduce:
+   Four honesty problems this panel exists to NOT reproduce:
 
    1. `count` is len(results) AFTER the limit slice (search_payload, codeintel.py:35), so
       "50" can mean "exactly 50" or "the first 50 of thousands" and the API cannot tell you
@@ -13,6 +13,13 @@
    3. `_SKIP_DIRS` (index.py:22) skips ".venv"/"venv"/"env" but not this repo's actual
       virtualenv dir ".venv312", so most of the index is third-party site-packages.
       `symbol_count` is therefore NOT a project-size number and is never labelled one.
+   4. The index is one level deep. `_symbols_in_source` (index.py:44-59) iterates `tree.body`
+      only, plus one pass over each module-level class body, so nested defs, closures, defs
+      inside a module-level if/try/with and classes nested in classes are never indexed —
+      measured on agents/ alone, 267 of 6,007 defs are missing, and searching one of them
+      (e.g. a closure defined inside a factory function) returns count:0. A zero-result search
+      is therefore NOT evidence that a name is absent from the repo, and the panel must never
+      render the shared bare "nothing yet" for it.
 
    There is NO component guard and NO 503 anywhere in this router: the only non-200s are
    401/403 (auth), 429 (rate limit), 422 (limit outside [1,500] — unreachable here, the
@@ -147,11 +154,25 @@ export function CodeIntelPanel() {
       )}
 
       <div style={{ fontSize: 10, color: 'var(--ink-3)', margin: '6px 0' }}>
-        Index scope: every *.py under the repo root except .git/.hg/.svn/__pycache__/.venv/venv/env/
-        node_modules/.mypy_cache/.pytest_cache/.ruff_cache/build/dist (agents/core/codeintel/index.py:22).
-        This repo's virtualenv is <b>.venv312</b>, which is NOT on that skip list — measured 2026-09-01,
-        37,220 of 53,632 indexed symbols came from .venv312 site-packages. So these counts are "*.py
-        under the repo root", not the size of Nerva's own code. Every hit shows its path.
+        <div>
+          <b>Directory scope</b> — every *.py under the repo root except .git/.hg/.svn/__pycache__/
+          .venv/venv/env/node_modules/.mypy_cache/.pytest_cache/.ruff_cache/build/dist
+          (agents/core/codeintel/index.py:22). This repo's virtualenv is <b>.venv312</b>, which is NOT on
+          that skip list — measured 2026-09-01, 37,220 of 53,641 indexed symbols came from .venv312
+          site-packages. So these counts are "*.py under the repo root", not the size of Nerva's own
+          code. Every hit shows its path.
+        </div>
+        {/* The scope that actually bites on this repo. The directory caveat above INFLATES the
+            counts; this one DEFLATES them, and unlike the parse-error warning (errors was [] when
+            measured) it fires on every search. */}
+        <div style={{ marginTop: 4 }}>
+          <b>Symbol scope</b> — the indexer reads only the top level of each file
+          (agents/core/codeintel/index.py:44-59): module-level functions and classes, plus the methods
+          written directly in a module-level class body. Anything nested deeper is absent from the index
+          and can never be found here — inner functions and closures, defs inside a module-level
+          if/try/with, classes nested in classes. Measured 2026-09-01 over this repo's own agents/ tree:
+          6,007 function/async defs exist, 5,740 are indexed — 267 are invisible to this search.
+        </div>
       </div>
 
       <Row>
@@ -178,7 +199,17 @@ export function CodeIntelPanel() {
         </div>
       ) : (
         <>
-          <State e={hits.e} loading={hits.loading} n={h ? results.length : null} />
+          {/* The shared zero-state reads "nothing yet", which an operator takes as "no such
+              symbol in this repo". For THIS index that is not what zero means (see Symbol scope),
+              so the empty case is rendered below with its caveat instead of through State. */}
+          <State e={hits.e} loading={hits.loading} n={h && results.length > 0 ? results.length : null} />
+          {h && results.length === 0 && (
+            <div style={{ fontSize: 12, color: 'var(--amber)', padding: '5px 0' }}>
+              0 indexed symbols matched — that is not proof the name is absent from the repo. The index
+              holds only module-level functions/classes and the methods directly in a class body, so a
+              nested def or a closure with this name would match nothing here even though it exists.
+            </div>
+          )}
           {h && (
             <Row>
               {/* Labelled with the ECHOED query, so a stale render can never claim results

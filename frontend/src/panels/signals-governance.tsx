@@ -158,10 +158,17 @@ export function SignalGovernancePanel() {
             <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 6 }}>{note}</div>
           )}
 
-          {pending != null && pending > 0 && (
+          {/* Only the DISABLED branch needs this: with the flag unset the bridge queues
+              nothing, so a non-zero count would otherwise look like a contradiction. It
+              says only that, and attributes the items to nothing — the response carries
+              no timestamps and no provenance, so "left over from an earlier run" would
+              be an invented cause. On the ENABLED branch the row above is already the
+              whole truth and this note would be a lie about the live queue. */}
+          {!enabled && pending != null && pending > 0 && (
             <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 6 }}>
-              A disabled bridge can still report a non-zero count — those are items left
-              over from an earlier enabled run, still sitting in the inbox.
+              The bridge queues nothing while the flag is unset, so this count is of items
+              already in the inbox — the response does not say when, or by what, they were
+              queued.
             </div>
           )}
         </>
@@ -258,9 +265,16 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
             {ids.map((id, i) => <Tag key={i} c="var(--ink-2)">#{String(id)}</Tag>)}
           </div>
         )}
+        {/* queued 0 has more than one producer and the response distinguishes none of
+            them: an empty/non-actionable brief, and a brief whose every enqueue or
+            transition raised — signal_governance.py:138-140 catches, logs at debug,
+            audits, and increments NEITHER task_ids NOR skipped. So the count is stated
+            and the cause is not. */}
         {queued === 0 && (
           <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
-            brief carried no actionable recommendations — nothing was queued.
+            Nothing was queued, and this response does not say why: a brief with no
+            actionable recommendations and a run whose queue writes all raised both arrive
+            here as queued 0 — a swallowed per-item failure increments neither counter.
           </div>
         )}
         {str(r.note) && <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>{str(r.note)}</div>}
@@ -270,11 +284,15 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
             attributed to that number here.
           </div>
         )}
-        <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 4 }}>
-          Each id above is BLOCKED with decision=await_human_approval, waiting in the
-          decision inbox. A per-item enqueue failure is swallowed server-side and simply
-          shrinks `queued`, with nothing surfaced in this response.
-        </div>
+        {/* "Each id above" is only true when there ARE ids, and the swallow caveat is
+            already carried by the queued-0 line, so neither is printed unconditionally. */}
+        {ids.length > 0 && (
+          <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 4 }}>
+            Each id above is BLOCKED with decision=await_human_approval, waiting in the
+            decision inbox. A per-item enqueue failure is swallowed server-side and simply
+            shrinks `queued`, with nothing surfaced in this response.
+          </div>
+        )}
       </>
     ));
   }

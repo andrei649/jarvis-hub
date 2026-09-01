@@ -176,6 +176,68 @@ describe('SignalGovernancePanel — a bridge that is off by default, said as a f
     await waitFor(() => expect(getCount(fn)).toBeGreaterThan(before));
   });
 
+  /* REGRESSION (adversarial review, finding 1): the "non-zero count" explainer was gated
+     only on `pending > 0`, so it also rendered on the ENABLED branch — telling the
+     operator that the queue the bridge is filling right now is stale residue. */
+  it('does NOT call a live pending queue leftovers when the bridge is ENABLED', async () => {
+    withStatus({ ...DISABLED_STATUS, enabled: true, pending: 4 });
+    render(<SignalGovernancePanel />);
+    await waitFor(() => expect(screen.getByText('ENABLED')).toBeTruthy());
+
+    // the live count is still reported
+    expect(screen.getByText(/4 × signal_recommendation awaiting a human decision/)).toBeTruthy();
+    // ...but nothing calls it leftovers, or attributes it to an earlier run
+    const body = document.body.textContent;
+    expect(body).not.toMatch(/left\s*over/i);
+    expect(body).not.toMatch(/earlier (enabled )?run/i);
+    expect(body).not.toMatch(/A disabled bridge/i);
+    // and the disabled-only flag copy stays off this branch too
+    expect(screen.queryByText(/JARVIS_SIGNAL_GOVERNANCE is not set/)).toBeNull();
+  });
+
+  /* REGRESSION (finding 1, other half): on the DISABLED branch a non-zero count does need
+     explaining, but the panel may not invent a provenance the response never carried. */
+  it('explains a non-zero count on the DISABLED branch without inventing its provenance', async () => {
+    withStatus(DISABLED_STATUS);   // enabled:false, pending:3
+    render(<SignalGovernancePanel />);
+    await waitFor(() => expect(screen.getByText('DISABLED')).toBeTruthy());
+
+    expect(screen.getByText(/queues nothing while the flag is unset/)).toBeTruthy();
+    expect(screen.getByText(/does not say when, or by what, they were\s+queued/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/left\s*over|earlier (enabled )?run/i);
+  });
+
+  /* REGRESSION (adversarial review, finding 2): queued:0/skipped:0 was reported, in green,
+     as "brief carried no actionable recommendations". signal_governance.py catches a failed
+     enqueue/transition, logs at debug, and increments NEITHER task_ids NOR skipped — so an
+     all-failed run produces the identical body. The panel may not pick one cause. */
+  it('does not attribute queued:0 to an empty brief — the response cannot tell the causes apart', async () => {
+    withStatus(ENABLED_STATUS, {
+      status: 200,
+      body: {
+        available: true, reason: null, status: 'ok', queued: 0, task_ids: [], skipped: 0,
+        note: 'Preview only. Route through Jarvis approval before action.',
+      },
+    });
+    render(<SignalGovernancePanel />);
+    await waitFor(() => expect(screen.getByText('ENABLED')).toBeTruthy());
+    fireEvent.click(screen.getByText('submit brief → inbox'));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    const alert = screen.getByRole('alert').textContent;
+    expect(alert).toContain('queued 0 · skipped 0');
+    // the count is stated...
+    expect(alert).toContain('Nothing was queued');
+    // ...and the cause is NOT: no "the brief had nothing actionable" verdict
+    expect(alert).not.toMatch(/brief carried no actionable/i);
+    expect(alert).not.toMatch(/nothing actionable to say/i);
+    // both producers are named as indistinguishable
+    expect(alert).toMatch(/does not say why/i);
+    expect(alert).toMatch(/queue writes all raised|swallowed per-item failure/i);
+    // with no ids, nothing claims "each id above"
+    expect(alert).not.toMatch(/Each id above/);
+  });
+
   it('renders a transport refusal (403) as a visible failure carrying the status', async () => {
     withStatus(ENABLED_STATUS, { status: 403, body: { detail: 'user token required' } });
     render(<SignalGovernancePanel />);

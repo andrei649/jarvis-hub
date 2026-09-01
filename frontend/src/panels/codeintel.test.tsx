@@ -164,6 +164,39 @@ describe('CodeIntelPanel — the code index is reachable and honest about its sc
     expect(screen.getByRole('alert').textContent).toContain('refused · 429');
   });
 
+  /* index.py:44-59 walks `tree.body` only (+ one pass over each module-level class body), so
+     nested defs / closures / defs inside a module-level if-try-with are NEVER in the index.
+     Verified against the real indexer on 2026-09-01: `credential_ref_matches` is defined three
+     times under agents/ (call_broker.py, social.py, writeback.py) and search_symbols returns 0
+     hits for it. The panel must disclose that depth limit, and must not let the shared
+     zero-state say "nothing yet" — which an operator reads as "no such symbol in the repo". */
+  it('discloses the SYMBOL-DEPTH scope, not just the directory scope', async () => {
+    statsOnly();
+    render(<CodeIntelPanel />);
+    await waitFor(() => expect(screen.getByText('3,411 files')).toBeTruthy());
+    expect(screen.getByText(/Symbol scope/)).toBeTruthy();
+    expect(screen.getByText(/inner functions and closures/)).toBeTruthy();
+    expect(screen.getByText(/6,007 function\/async defs exist, 5,740 are indexed/)).toBeTruthy();
+  });
+
+  it('renders a zero-hit search as "not in the index", never as the bare shared "nothing yet"', async () => {
+    mockRoutes((u) => {
+      if (u.includes('/api/codeintel/stats')) return { status: 200, body: STATS };
+      // The real backend answer for a symbol that exists 3x in the repo but is nested.
+      if (u.includes('/api/codeintel/search')) {
+        return { status: 200, body: { query: 'credential_ref_matches', kind: null, count: 0, results: [] } };
+      }
+      return null;
+    });
+    render(<CodeIntelPanel />);
+    await waitFor(() => expect(screen.getByText('3,411 files')).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText('symbol substring (e.g. build_index)'), { target: { value: 'credential_ref_matches' } });
+    fireEvent.click(screen.getByText('search'));
+    await waitFor(() => expect(screen.getByText(/not proof the name is absent from the repo/)).toBeTruthy());
+    // The shared zero-state would flatly assert the symbol was not found.
+    expect(screen.queryByText('nothing yet')).toBeNull();
+  });
+
   it('renders a failed stats GET verbatim and never as zero files / zero symbols', async () => {
     mockRoutes((u) => (u.includes('/api/codeintel/stats') ? { status: 403, body: { detail: 'nope' } } : null));
     render(<CodeIntelPanel />);

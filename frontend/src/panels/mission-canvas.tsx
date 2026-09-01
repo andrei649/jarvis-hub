@@ -34,10 +34,16 @@
        gap — the fix belongs in the router, not here.)
 
    (D) MISSION-LEVEL TRANSITIONS ARE OUT OF LANE. gap.tsx MissionsPanel already ships
-       start/pause/resume/complete/cancel over /api/missions/{id}/{op}. This card is the
+       start/pause/resume/complete/cancel over the mission-op routes. This card is the
        per-step half that had no UI at all. When a mission is not ACTIVE the finish controls are
        not rendered at all — because finish_step raises unless status == "active" — and the
-       panel points at the MISSIONS panel instead of duplicating its buttons.
+       panel points at the MISSIONS panel only for the two statuses that can actually get back
+       to active: planned → start, paused → resume. done/failed/cancelled are TERMINAL with an
+       EMPTY exit set in `_TRANSITIONS` (agents/core/autonomy/missions.py), every status write
+       goes through `_set_status`, which raises unless the target is in that set, and the
+       MissionsPanel renders no button for them — so for those three the panel names no control
+       at all and says the mission cannot return to active. (Sending the operator hunting for a
+       start/resume there would be a dead control AND a 409.)
 
    (E) /api/canvas/clear TAKES NO REQUEST BODY. Both handler args are bare scalars, so FastAPI
        binds them as QUERY parameters (`agent: Optional[str] = None`, `keep_pinned: bool = True`;
@@ -94,6 +100,36 @@ const missionColor = (s: string) => s === 'active' ? GREEN : s === 'paused' ? AM
   : s === 'failed' ? RED : s === 'done' ? 'var(--accent-light)' : INK3;
 const stepColor = (s: string) => s === 'running' ? AMBER : s === 'done' ? GREEN
   : s === 'failed' ? RED : INK3;
+
+/* Why a mission that is not active gets three different sentences, not one.
+
+   `_TRANSITIONS` (agents/core/autonomy/missions.py) is the whole state machine, and every
+   status write goes through `_set_status`, which raises MissionError unless the target status
+   is in the current status's exit set:
+
+     planned → {active, cancelled}     paused → {active, cancelled, failed}
+     done / failed / cancelled → {}    ← TERMINAL, no exit at all
+
+   So only planned (start) and paused (resume) can return to active, and each accepts exactly
+   ONE of those two ops — not "start or resume". For the three terminal statuses NO caller can
+   revive the mission: the mission-op routes answer 409 and gap.tsx MissionsPanel renders no
+   button for them, so naming a control there would point at one that does not exist. */
+const REVIVE: Record<string, string> = { planned: 'start', paused: 'resume' };
+const TERMINAL_MISSION: Record<string, boolean> = { done: true, failed: true, cancelled: true };
+
+const notActiveHint = (raw: any): string => {
+  const s = typeof raw === 'string' && raw ? raw : '';
+  const head = s
+    ? 'finish_step runs only while the mission is active (this one is ' + s + ')'
+    : 'finish_step runs only while the mission is active (this row carries no status)';
+  if (REVIVE[s]) return head + ' — ' + REVIVE[s] + ' it from the MISSIONS panel.';
+  if (TERMINAL_MISSION[s]) {
+    return head + '. ' + s + ' is terminal — the mission state machine has no transition out of '
+      + 'done, failed or cancelled, so nothing can put this mission back to active and these '
+      + 'steps can no longer be finished.';
+  }
+  return head + '.';
+};
 
 const note = (children: any, c = INK3) => (
   <div style={{ ...mono, fontSize: 10, lineHeight: 1.5, color: c, padding: '4px 0' }}>{children}</div>
@@ -201,11 +237,7 @@ export function MissionCanvasPanel() {
                 <div style={{ padding: '2px 0 8px 10px', borderLeft: '1px solid var(--panel-line)' }}>
                   {plan.length === 0 && note('this mission has no plan steps — nothing to finish')}
 
-                  {m.status !== 'active' && plan.length > 0 && note(
-                    'finish_step runs only while the mission is active (this one is ' + m.status
-                    + ') — start or resume it from the MISSIONS panel.',
-                    AMBER,
-                  )}
+                  {m.status !== 'active' && plan.length > 0 && note(notActiveHint(m.status), AMBER)}
 
                   {plan.map((s: any, si: number) => {
                     const idx = typeof s.idx === 'number' ? s.idx : si;

@@ -64,10 +64,26 @@
    7. uninstall's success is `removed`, NOT `ok`. With purge=true and nothing on disk the
       route answers 200 {"ok":true,"removed":false,"purged":true} — nothing was deleted.
       The result branches on r.removed and the false branch is amber and never uses the
-      word "uninstalled". rmtree is irreversible; without purge the published package
-      survives and the documented recovery is the already-shipped marketplace INSTALL
-      control (frontend/src/api/actions.ts:77), which is why that is named instead of
-      being re-implemented here.
+      word "uninstalled". rmtree is irreversible; the registry row and its package blob
+      are a separate store, and the documented recovery is the already-shipped marketplace
+      INSTALL control (frontend/src/api/actions.ts:77), which is why that is named instead
+      of being re-implemented here.
+
+   7b. `purged` IS NOT A RESULT. skills.py:356 answers `"purged": body.purge` — this
+      panel's own request flag handed straight back. Underneath, uninstall_skill
+      (marketplace.py:635-636) calls remove_from_registry(name) and DISCARDS its boolean,
+      so no row count ever reaches the wire. Worse, that DELETE runs
+      `WHERE name = ?` against a registry keyed by the MANIFEST TITLE (publish_skill
+      stores manifest["name"], marketplace.py:361) while `name` here is the ON-DISK
+      FOLDER — the same folder-vs-title split §2 is about. Reproduced against the real
+      class: publish('weather') registers 'Weather Intel'; uninstall_skill('weather',
+      purge=True) returns removed=True while list_skills() still shows ['Weather Intel'].
+      Every skill bundled in this repo has a title that differs from its folder
+      (weather -> "Weather Intel", brief -> "Brief", pm -> "PM" — all 12), so on a default
+      install the purge box deletes NOTHING. Therefore: the checkbox is labelled as the
+      literal string-match it is, the panel compares the folder it SENT against the tree's
+      manifest title to say whether a row published from this skill could have matched,
+      and the word "purged" is never printed as an outcome.
 
    8. apiPost THROWS on 4xx and the parsed body rides on err.body (client.ts:98-104);
       err.message is only "POST <path> -> <status>". Every write passes onErr and renders
@@ -189,8 +205,13 @@ export function MarketplaceAdminPanel() {
   const confirmRemove = () => {
     if (unBusy || !unName.trim()) return;
     setUnBusy(true); setUn(null);
+    /* What we SENT is the only trustworthy record of the purge request — the response's
+       `purged` is that same flag echoed, and the box unmounts on success. */
+    const sentFolder = unName.trim();
+    const sentTitle = armed;
+    const sentPurge = purge;
     actA(UNINSTALL_PATH, { name: unName, purge },
-      (r) => { setUn({ res: r }); setUnBusy(false); setArmed(null); reload(); },
+      (r) => { setUn({ res: r, sentFolder, sentTitle, sentPurge }); setUnBusy(false); setArmed(null); reload(); },
       /* Stay armed on a refusal — the folder name is usually what needs fixing. */
       (err) => { setUn({ msg: why(err), status: err && err.status }); setUnBusy(false); });
   };
@@ -295,8 +316,8 @@ export function MarketplaceAdminPanel() {
               onChange={(ev) => setUnName(ev.target.value)}
             />
             <label style={{ ...mono, fontSize: 10, display: 'flex', gap: 4, alignItems: 'center', color: 'var(--ink-2)' }}>
-              <input type="checkbox" aria-label="purge registry row" checked={purge} onChange={(ev) => setPurge(!!ev.target.checked)} />
-              purge registry row (deletes the published package too)
+              <input type="checkbox" aria-label="purge registry row matching the folder string" checked={purge} onChange={(ev) => setPurge(!!ev.target.checked)} />
+              purge · also delete the registry row whose name equals the folder string
             </label>
             <button className="tool-btn" disabled={unBusy || !unName.trim()} onClick={confirmRemove} style={{ color: 'var(--red)' }}>
               {unBusy ? 'removing…' : 'confirm remove'}
@@ -308,18 +329,40 @@ export function MarketplaceAdminPanel() {
             it. For a marketplace-installed package that is right; for a repo-bundled skill it can be wrong
             (“Weather Intel” → weather_intel, actual folder “weather”) and the 404 is what tells you.
           </Note>
-          <Note>rmtree is irreversible. Without purge the published package survives, so the marketplace INSTALL
-            control can restore it — through the moderation/signature gate.</Note>
+          <Note>
+            the registry is keyed by the <b>manifest title</b>, not by the folder, and the purge delete matches the
+            folder string above verbatim — it can only hit a row published under that same string.{' '}
+            {unName.trim() === armed
+              ? <>here the two are identical (“{armed}”), so a row published from this skill is in range.</>
+              : <>here they differ (“{unName.trim() || '—'}” vs the tree’s title “{armed}”), so ticking the box
+                  deletes <b>no</b> row published from this skill — the package blob survives either way.</>}
+          </Note>
+          <Note>rmtree is irreversible. The registry row and its package blob live in a separate store, so the
+            marketplace INSTALL control can restore the skill from there — through the moderation/signature gate.</Note>
         </div>
       )}
       {un && (un as any).msg && <Fail msg={(un as any).msg} status={(un as any).status} />}
       {ures && (ures.removed === true
-        ? <Good>removed skills/{ures.uninstalled ?? '—'}{ures.purged
-            ? ' · registry row purged'
-            : ' · package retained — re-install via the marketplace INSTALL control'}</Good>
+        ? <Good>removed skills/{ures.uninstalled ?? '—'}</Good>
         : ures.removed === false
-          ? <Amber>ok:true but removed:false — nothing was deleted from disk (purged: {String(ures.purged)})</Amber>
+          ? <Amber>ok:true but removed:false — nothing was deleted from disk</Amber>
           : <Amber>the response carried no `removed` field<Json v={ures} max={90} /></Amber>)}
+      {/* The registry half of the outcome. `removed` above is a real result; `purged` is NOT —
+          it is the request flag echoed, so everything below is stated from what was SENT. */}
+      {ures && ((un as any).sentPurge
+        ? <Note>
+            purge was requested. The response does not say whether a registry row was deleted — its `purged` field
+            is this panel’s own flag handed back, and the backend drops the delete’s row count.{' '}
+            {(un as any).sentFolder === (un as any).sentTitle
+              ? <>the folder sent and the tree’s manifest title were the same string
+                  (“{(un as any).sentTitle}”), so a row published under that name was in range of the delete.</>
+              : <>the delete matched the literal folder “{(un as any).sentFolder}”, while a row published from this
+                  skill is keyed by its manifest title “{(un as any).sentTitle}” — those differ, so that row was
+                  <b> not</b> deleted and the published package is still installable.</>}
+            {' '}Registry rows are shown in the SKILLS MARKETPLACE panel, not here.
+          </Note>
+        : <Note>purge was not requested: the registry row and its package blob are untouched, so the marketplace
+            INSTALL control can restore the skill — through the moderation/signature gate.</Note>)}
 
       <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         all three writes are <b>admin tier</b> (actA · X-Admin-Token); the installed-tree read above is GET /skills at

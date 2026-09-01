@@ -11,7 +11,8 @@
       overlay — presence.py:1-14 says so in the module docstring). The entire value of the
       signal is that a daemon OBSERVED it; a textarea letting a human type "away" would
       forge exactly that, and would forge it into the one input that decides whether
-      decision cards escalate to the owner's phone. So there is no setter here.
+      decision cards ALSO escalate off Telegram, wherever that path happens to be wired.
+      So there is no setter here.
    2. NO INBOX ENABLE TOGGLE. `orch.channel_inbox` is bound in process by
       agents/web.py:334-337; no route binds or unbinds it. A switch here would drive
       nothing.
@@ -32,6 +33,15 @@
       the silent-zero lie; they are tagged '(placeholder)' and the cap renders as an em
       dash. And because the branch is a 200, it belongs in an amber unavailable tag, never
       in <State e=.../>.
+   d) `stats.channels` IS NOT A MEASUREMENT. Both branches emit the same compile-time
+      constant: ChannelInboxStore.stats() returns sorted(SUPPORTED_INBOX_CHANNELS)
+      regardless of what it holds (channel_inbox.py:136), and the unbound branch types the
+      same list into the hardcoded dict beside the placeholder zeros (integrations.py:131).
+      It is the accept-allowlist, so it is marked as a constant and never called "persisted".
+   e) AWAY IS NOT DELIVERY. The away fan-out exists only if autonomy_coordinator.wire()
+      wrapped the notifier (Telegram bot with send_card + an owner chat id) and only if the
+      governed target set minus telegram is non-empty. This panel reads neither, so the
+      consequence is written as a condition, never as an outcome.
 
    Why this is not a duplicate of anything shipped. GET /api/swarm/summary embeds the same
    presence snapshot (swarm.py:277-280), but the shipped SwarmPanel (gap.tsx) reads only
@@ -152,14 +162,20 @@ export function PresenceInboxPanel() {
             <span style={mono}>away</span>
             <Right>
               {p.away === true
-                ? <Tag c="var(--accent)">AWAY &middot; cards also escalate</Tag>
+                ? <Tag c="var(--accent)">AWAY</Tag>
                 : <Tag c="var(--ink-3)">not known to be away</Tag>}
             </Right>
           </Row>
           {p.away === true ? (
             <Note>
-              Decision cards also fan out to the governed escalation channels, inside the same budget-gated
-              push &mdash; no extra interrupt slot (autonomy/escalation.py AwayNotifier).
+              away is the INPUT the autonomy decision-card notifier reads; on its own it is not evidence that
+              anything was delivered anywhere. IF the decision inbox was wired at boot, that notifier is wrapped
+              in an AwayNotifier and an away card ALSO fans out to the governed escalation channels inside the
+              same budget-gated push &mdash; no extra interrupt slot (autonomy/escalation.py). The wrap happens
+              only when a Telegram bot exposing send_card AND an owner chat id are configured
+              (autonomy_coordinator.py:85-98), and even then the fan-out is skipped when the governed target set
+              minus telegram is empty. This panel reads neither the wiring nor that channel set, so it cannot
+              tell you which of those you are in.
             </Note>
           ) : (
             <Note>
@@ -258,8 +274,9 @@ export function PresenceInboxPanel() {
           {unbound && (
             <Note c="var(--amber)">
               orch.channel_inbox is unbound &mdash; nothing is being persisted. The threads/messages figures below
-              are the handler&rsquo;s hardcoded placeholders (integrations.py:132-133), not a measurement, and the
-              ring-buffer cap is absent from this branch entirely.
+              are the handler&rsquo;s hardcoded placeholders (integrations.py:132-133), not a measurement; the channels
+              list is the constant typed into that same dict (integrations.py:131); and the ring-buffer cap is
+              absent from this branch entirely.
             </Note>
           )}
 
@@ -295,13 +312,22 @@ export function PresenceInboxPanel() {
             <Right>
               {channels.length === 0
                 ? <Tag c="var(--amber)">{EM} no channels key</Tag>
-                : channels.map((c) => <Tag key={String(c)}>{String(c)}</Tag>)}
+                : <>
+                    {channels.map((c) => <Tag key={String(c)} c="var(--ink-3)">{String(c)}</Tag>)}
+                    <Tag c="var(--ink-3)">{unbound ? '(placeholder)' : '(constant list)'}</Tag>
+                  </>}
             </Right>
           </Row>
           <Note>
-            Persisted channels exactly as the store reports them. The handler notes that only telegram/web are
-            live reply transports in this wave (integrations.py:124) while SUPPORTED_INBOX_CHANNELS also contains
-            email &mdash; so a channel listed here is not automatically replyable.
+            Not a measurement, and not a per-channel count: both branches emit the same constant.
+            ChannelInboxStore.stats() returns sorted(SUPPORTED_INBOX_CHANNELS) whatever it holds
+            (channel_inbox.py:136), and the unbound branch types that same list into its hardcoded dict
+            (integrations.py:131) &mdash; so this row reads identically for a store holding 41 messages, an empty
+            store, and no store at all. It is the allowlist of channels the store would ACCEPT (anything outside
+            it is dropped on record, channel_inbox.py:55), never evidence that one of them delivered. The handler
+            also notes that only telegram/web are live reply transports in this wave (integrations.py:124) while
+            SUPPORTED_INBOX_CHANNELS additionally contains email &mdash; so a channel listed here is not
+            automatically replyable.
           </Note>
         </>
       )}

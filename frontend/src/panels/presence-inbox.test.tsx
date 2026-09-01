@@ -1,5 +1,5 @@
 // @ts-nocheck
-/* PRESENCE & INBOX — the four ways this panel could have lied, each pinned here:
+/* PRESENCE & INBOX — the six ways this panel could have lied, each pinned here:
 
      1. `away:false` painted as "the owner is present". _compute_away fails calm — it is
         false for a stale signal and for state 'unknown' — so false means "not known to be
@@ -9,7 +9,13 @@
      3. The inbox's unbound branch painted as a real count. Its threads/messages zeros are
         literals in integrations.py:132-133 and max_messages is absent from that branch, so
         a bare 0 and a fabricated 500 would both be fabrications.
-     4. The presence 503 painted as a received reason. apiGet (client.ts:106) throws before
+     4. `stats.channels` painted as persisted traffic. Both branches emit the same
+        compile-time constant (sorted(SUPPORTED_INBOX_CHANNELS)), so the row is identical
+        for a store with 41 messages, an empty store, and no store at all.
+     5. `away:true` painted as "the card reached your phone". The fan-out exists only if
+        autonomy_coordinator.wire() wrapped the notifier and only if the governed target
+        set minus telegram is non-empty — neither of which this panel reads.
+     6. The presence 503 painted as a received reason. apiGet (client.ts:106) throws before
         reading the body, so the only string the panel HOLDS is
         'GET /api/presence/owner -> 503'; the handler's own words may be cited from source
         and must appear nowhere else.
@@ -18,7 +24,7 @@
    (admin-guarded POST), so the panel must expose no control that lets a human set it. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import { PresenceInboxPanel } from './presence-inbox';
 
 const NOW = Math.floor(Date.now() / 1000);
@@ -83,6 +89,13 @@ const INBOX_BOUND = {
   stats: { enabled: true, channels: ['email', 'telegram', 'web'], threads: 3, messages: 41, max_messages: 500 },
 };
 
+/* Branch (B) with a store that has recorded NOTHING. stats() still returns the same
+   sorted(SUPPORTED_INBOX_CHANNELS) constant — that is the point of the pin below. */
+const INBOX_BOUND_EMPTY = {
+  enabled: true,
+  stats: { enabled: true, channels: ['email', 'telegram', 'web'], threads: 0, messages: 0, max_messages: 500 },
+};
+
 /* Branch (A) — store unbound. Note what the handler does NOT send: max_messages. */
 const INBOX_UNBOUND = {
   enabled: false,
@@ -112,8 +125,8 @@ describe('PresenceInboxPanel — owner desk presence + the inbox flag COMMS cann
     expect(rowText('freshness')).toContain('fresh');
     expect(rowText('freshness')).toContain('900');
 
-    // the operator consequence of away, quoted from AwayNotifier
-    expect(screen.getByText(/no extra interrupt slot/)).toBeTruthy();
+    // the away consequence is stated as a CONDITION on wiring this panel cannot read
+    expect(screen.getByText(/IF the decision inbox was wired/)).toBeTruthy();
 
     // inbox, measured
     expect(rowText('threads')).toContain('3');
@@ -183,6 +196,62 @@ describe('PresenceInboxPanel — owner desk presence + the inbox flag COMMS cann
     expect(screen.queryByText(/offline ·/)).toBeNull();
   });
 
+  /* REGRESSION — the channels row was rendered bare, directly above "Persisted channels
+     exactly as the store reports them". It is neither persisted nor store-reported: it is
+     sorted(SUPPORTED_INBOX_CHANNELS), the accept-allowlist, identical in all three states. */
+  it('marks channels as a constant and never calls it persisted traffic', async () => {
+    mockFetch(ok(PRESENCE_NEVER), ok(INBOX_BOUND));
+    render(<PresenceInboxPanel />);
+    await waitFor(() => expect(screen.getByText('BOUND')).toBeTruthy());
+
+    const busy = rowText('channels');
+    expect(busy).toContain('(constant list)');
+    // the discredited claim must be gone, not softened
+    expect(screen.queryByText(/Persisted channels/)).toBeNull();
+    expect(screen.queryByText(/exactly as the store reports/)).toBeNull();
+    expect(screen.getByText(/reads identically/)).toBeTruthy();
+    cleanup();
+
+    // a store that has captured nothing reports the identical list — so the row cannot be
+    // read as "traffic on these channels is being captured"
+    mockFetch(ok(PRESENCE_NEVER), ok(INBOX_BOUND_EMPTY));
+    render(<PresenceInboxPanel />);
+    await waitFor(() => expect(screen.getByText('BOUND')).toBeTruthy());
+    expect(rowText('channels')).toBe(busy);
+    cleanup();
+
+    // and with no store at all it is a handler literal, tagged like its sibling zeros
+    mockFetch(ok(PRESENCE_NEVER), ok(INBOX_UNBOUND));
+    render(<PresenceInboxPanel />);
+    await waitFor(() => expect(screen.getByText('NOT BOUND')).toBeTruthy());
+    expect(rowText('channels')).toContain('(placeholder)');
+  });
+
+  /* REGRESSION — away:true used to be labelled 'AWAY · cards also escalate' and footnoted
+     with a flat assertion that cards fan out. On a default install nothing is wrapped, and
+     this panel reads neither the wiring nor the governed channel set. */
+  it('states the away fan-out as a condition, never as an outcome', async () => {
+    mockFetch(ok(PRESENCE_AWAY), ok(INBOX_BOUND));
+    render(<PresenceInboxPanel />);
+    await waitFor(() => expect(screen.getByText('state')).toBeTruthy());
+
+    // the tag reports the flag and nothing beyond it
+    const away = rowText('away');
+    expect(away).toContain('AWAY');
+    expect(away).not.toMatch(/escalate/i);
+
+    // the note carries the preconditions the panel cannot observe
+    const note = screen.getByText(/AwayNotifier/);
+    expect(note.textContent).toMatch(/IF the decision inbox was wired/);
+    expect(note.textContent).toMatch(/send_card/);
+    expect(note.textContent).toMatch(/owner chat id/);
+    expect(note.textContent).toMatch(/skipped when the governed target set/);
+    expect(note.textContent).toMatch(/cannot tell you which/);
+
+    // no phrasing anywhere that reports the fan-out as having happened
+    expect(document.body.textContent).not.toMatch(/Decision cards also fan out/);
+  });
+
   it('a presence 503 renders verbatim, cites the handler for its meaning, and paints no state', async () => {
     mockFetch(
       { ok: false, status: 503, json: async () => ({ error: 'presence not available' }) },
@@ -197,7 +266,7 @@ describe('PresenceInboxPanel — owner desk presence + the inbox flag COMMS cann
     expect(screen.queryByText('state')).toBeNull();
     expect(screen.queryByText('away')).toBeNull();
     expect(screen.queryByText('idle_seconds')).toBeNull();
-    expect(screen.queryByText('AWAY · cards also escalate')).toBeNull();
+    expect(screen.queryByText('AWAY')).toBeNull();
     expect(screen.queryByText('not known to be away')).toBeNull();
 
     /* The handler's own words appear exactly once, in the innermost element that carries

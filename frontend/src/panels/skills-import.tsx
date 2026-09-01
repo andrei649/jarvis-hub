@@ -52,7 +52,12 @@
       {"detail":"user routes disabled from network — set JARVIS_USER_TOKEN to enable remote
       access"} — HTTPException bodies keyed `detail`. The route's own refusals are keyed
       `error`. A guard 403 means DEV_MODE was NEVER EVALUATED, so reading it as "DEV_MODE=0"
-      would invent a fact. body.error => the route spoke; body.detail => the guard spoke.
+      would invent a fact. body.error => a server-formatted refusal; body.detail => a raised
+      HTTPException, which on this route is the guard. `error` is NOT proof the DEV_MODE check
+      ran: the handler's own 503 (skills.py:135-136) and the per-IP throttle's 429
+      (web.py:560-563) are both keyed `error` and both answer BEFORE it. Only the 400 and the
+      403 texts carry the flag, so every other answer leaves availability unknown and is
+      explained by the shape that actually arrived — never by one fixed origin.
 
    7. The 404 {"ok":false,"error":"Skill '<name>' not found in <source>"} is ONE string for
       several very different realities: not in the Hermes pin allowlist, a slug rejected by
@@ -141,6 +146,12 @@ export function SkillsImportPanel() {
   /* Availability of the WRITE half — only ever set from the backend's own answer. */
   const [avail, setAvail] = useState('unknown');   // unknown | checking | enabled | disabled | blocked
   const [availMsg, setAvailMsg] = useState('');
+  /* The SHAPE of the refusal that produced a `blocked`, kept so the explanation below can
+     be derived from what actually came back instead of naming one fixed origin. A 503
+     keyed `error` is the route's own orchestrator check (skills.py:135-136, which returns
+     BEFORE the DEV_MODE check) and a `detail` body is a raised HTTPException — those are
+     different causes and must not share a sentence. */
+  const [availFrom, setAvailFrom] = useState<{ status: number; kind: 'route' | 'guard' | 'none' } | null>(null);
 
   const [skill, setSkill] = useState('');
   const [source, setSource] = useState('hermes');  // hermes | openclaw | github
@@ -152,20 +163,26 @@ export function SkillsImportPanel() {
      so a success branch here would be dead code that only ever lies. */
   const check = () => {
     if (avail === 'checking') return;
-    setAvail('checking'); setAvailMsg(''); setNote(null);
+    setAvail('checking'); setAvailMsg(''); setAvailFrom(null); setNote(null);
     act(IMPORT_PATH, { skill: '' }, undefined, (err) => {
       const r = refusal(err);
       if (r.status === 400 && r.kind === 'route') {
         setAvail('enabled');
         setAvailMsg(`HTTP 400 · ${r.text} — argument validation was reached, so the DEV_MODE gate was passed`);
+        setAvailFrom({ status: r.status, kind: r.kind });
       } else if (r.status === 403 && r.kind === 'route') {
         setAvail('disabled');
         setAvailMsg(`HTTP 403 · ${r.text}`);
+        setAvailFrom({ status: r.status, kind: r.kind });
       } else {
-        /* 401/403 with `detail` (the guard — DEV_MODE never evaluated), 503, or an
-           opaque 500 from an unhandled SkillImportError. Verbatim, never collapsed. */
+        /* Everything else: a 401/403 keyed `detail` (a raised HTTPException), the route's
+           own 503, a throttle or any other server answer keyed `error`, or a body this
+           panel cannot key at all (the generic 500 handler answers with `message`,
+           web.py:509-514). These are DIFFERENT causes — the text is printed verbatim and
+           the shape is carried so the note below can say which one arrived. */
         setAvail('blocked');
         setAvailMsg(`HTTP ${r.status || '?'} · ${r.text}`);
+        setAvailFrom({ status: r.status, kind: r.kind });
       }
     });
   };
@@ -188,8 +205,13 @@ export function SkillsImportPanel() {
         setBusy(false);
         setNote({ ok: false, text: `refused · HTTP ${x.status || '?'} · ${x.text}` });
         /* Availability is re-derived only from answers that actually carry it. */
-        if (x.status === 403 && x.kind === 'route') { setAvail('disabled'); setAvailMsg(`HTTP 403 · ${x.text}`); }
-        else if (x.kind === 'guard' || x.status === 503) { setAvail('blocked'); setAvailMsg(`HTTP ${x.status || '?'} · ${x.text}`); }
+        if (x.status === 403 && x.kind === 'route') {
+          setAvail('disabled'); setAvailMsg(`HTTP 403 · ${x.text}`);
+          setAvailFrom({ status: x.status, kind: x.kind });
+        } else if (x.kind === 'guard' || x.status === 503) {
+          setAvail('blocked'); setAvailMsg(`HTTP ${x.status || '?'} · ${x.text}`);
+          setAvailFrom({ status: x.status, kind: x.kind });
+        }
       });
   };
 
@@ -271,10 +293,27 @@ export function SkillsImportPanel() {
         is real and is recorded in the action-failure banner.
       </Note>
       {availMsg ? (avail === 'enabled' ? <Good>{availMsg}</Good> : <Fail>{availMsg}</Fail>) : null}
+      {/* WHY it is blocked is read off the refusal that arrived — never asserted. The three
+          shapes below are three different backend causes and are kept apart; the only claim
+          common to all of them is about this panel's own knowledge. */}
       {avail === 'blocked' && (
         <Note>
-          that answer carries <code>detail</code> (or no route body at all), so it came from the user-route guard
-          or from an unhandled server error — the DEV_MODE gate was never reached and its state is unknown.
+          {availFrom && availFrom.kind === 'guard' && (availFrom.status === 401 || availFrom.status === 403)
+            ? <>that answer is keyed <code>detail</code>, the shape of a raised HTTPException: on this route the
+                user-tier guard is what raises one, and it runs before the handler — so the DEV_MODE check was
+                never evaluated. </>
+            : availFrom && availFrom.kind === 'route' && availFrom.status === 503
+              ? <>that answer is keyed <code>error</code> at HTTP 503, which matches the handler’s own
+                  not-initialized refusal — it is returned before the DEV_MODE check, so the flag was not
+                  evaluated. </>
+              : availFrom && availFrom.kind === 'route'
+                ? <>that answer is keyed <code>error</code>, so it is a server-formatted refusal — but not one of
+                    the two this probe can read (the 400 that means the gate was passed, the 403 that means it is
+                    shut). What produced it is not identified here. </>
+                : <>that answer carried neither an <code>error</code> nor a <code>detail</code> key, so there is
+                    nothing in it to attribute — only the status and the client’s own message above. </>}
+          Either way it carries no DEV_MODE evidence, so availability stays unknown here and import stays
+          disabled.
         </Note>
       )}
 

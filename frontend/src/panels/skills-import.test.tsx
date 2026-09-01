@@ -150,7 +150,100 @@ describe('SkillsImportPanel — imported sidecars and the DEV_MODE-gated import'
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('user routes disabled from network — set JARVIS_USER_TOKEN to enable remote access');
     expect(screen.queryByText('DEV_MODE=0 — import disabled by the server')).toBeNull();
-    expect(screen.getByText(/the DEV_MODE gate was never reached and its state is unknown/)).toBeTruthy();
+    expect(screen.getByText(/the shape of a raised HTTPException/)).toBeTruthy();
+    expect(screen.getByText(/the DEV_MODE check was never evaluated/)).toBeTruthy();
+    expect(btn('import').disabled).toBe(true);
+  });
+
+  /* ── the blocked EXPLANATION must be read off the refusal, never asserted ──────────
+     A route-keyed refusal (503 from the handler's orchestrator check, 429 from the
+     throttle) is keyed `error` and is NOT the guard and NOT an unhandled error. The
+     panel used to print one fixed sentence for every blocked answer, which named a
+     fabricated origin on the most common failure state of this surface. */
+  const OLD_LIE = [
+    /it came from the user-route guard/,
+    /from an unhandled server error/,
+    /or no route body at all/,
+  ];
+  const assertNoInventedOrigin = () => OLD_LIE.forEach((re) => expect(screen.queryByText(re)).toBeNull());
+
+  it('CHECK against the route-keyed 503 names that refusal — not the guard, not an unhandled error', async () => {
+    mockRoutes((u, method) => (u === '/skills/import' && method === 'POST'
+      ? { status: 503, body: { error: 'not initialized' } } : null));
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
+
+    fireEvent.click(btn('check availability'));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('HTTP 503');
+    expect(alert.textContent).toContain('not initialized');
+    // NOT the guard / unhandled-error story the panel used to print for every blocked answer
+    assertNoInventedOrigin();
+    // keyed `error`, at 503 — the handler's own pre-DEV_MODE refusal
+    expect(screen.getByText(/which matches the handler/)).toBeTruthy();
+    expect(screen.getByText(/returned before the DEV_MODE check/)).toBeTruthy();
+    expect(screen.queryByText(/raised HTTPException/)).toBeNull();
+    expect(screen.queryByText(/user-tier guard/)).toBeNull();
+    expect(screen.getByText('import unavailable — see the server’s answer below')).toBeTruthy();
+    expect(btn('import').disabled).toBe(true);
+  });
+
+  it('CHECK against a throttle keyed `error` attributes nothing and never says guard', async () => {
+    mockRoutes((u, method) => (u === '/skills/import' && method === 'POST'
+      ? { status: 429, body: { error: 'rate limit exceeded', code: 429 } } : null));
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
+
+    fireEvent.click(btn('check availability'));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('HTTP 429');
+    expect(alert.textContent).toContain('rate limit exceeded');
+    expect(screen.getByText(/What produced it is not identified here/)).toBeTruthy();
+    expect(screen.queryByText(/raised HTTPException/)).toBeNull();
+    expect(screen.queryByText(/user-tier guard/)).toBeNull();
+    expect(screen.queryByText(/matches the handler/)).toBeNull();
+    assertNoInventedOrigin();
+    expect(btn('import').disabled).toBe(true);
+  });
+
+  it('CHECK against a body keyed neither `error` nor `detail` attributes nothing at all', async () => {
+    // the app's generic 500 handler answers with `message`, not `error`/`detail`
+    mockRoutes((u, method) => (u === '/skills/import' && method === 'POST'
+      ? { status: 500, body: { code: 'JARVIS-INTERNAL-001', category: 'internal', severity: 'error', message: 'Internal server error' } } : null));
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
+
+    fireEvent.click(btn('check availability'));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('HTTP 500');
+    expect(screen.getByText(/nothing in it to attribute/)).toBeTruthy();
+    expect(screen.queryByText(/user-tier guard/)).toBeNull();
+    expect(screen.queryByText(/matches the handler/)).toBeNull();
+    assertNoInventedOrigin();
+    expect(btn('import').disabled).toBe(true);
+  });
+
+  it('a 503 on the real import re-blocks availability with the same honest reason', async () => {
+    mockRoutes((u, method, body) => {
+      if (u !== '/skills/import' || method !== 'POST') return null;
+      if (body && body.skill === '') return { status: 400, body: { error: 'skill name required' } };
+      return { status: 503, body: { error: 'not initialized' } };
+    });
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
+    await enableImport();
+
+    fireEvent.change(screen.getByLabelText('skill name'), { target: { value: 'deep-research' } });
+    fireEvent.click(btn('import'));
+
+    await waitFor(() => expect(screen.getByText(/refused · HTTP 503/)).toBeTruthy());
+    expect(screen.getByText(/which matches the handler/)).toBeTruthy();
+    expect(screen.queryByText(/user-tier guard/)).toBeNull();
+    assertNoInventedOrigin();
+    expect(screen.queryByText('import available')).toBeNull();
     expect(btn('import').disabled).toBe(true);
   });
 

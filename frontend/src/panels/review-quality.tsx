@@ -60,6 +60,12 @@
       nothing at all rather than 0 or "unknown".
    6. Neither the review queue nor the quality monitor has any enable/disable route, so this
       panel draws no toggle for either. The truthful statement is printed instead.
+   7. THE CROSS-COMPONENT CONSEQUENCE. A threshold read off the quality monitor does NOT by
+      itself mean a low score gets filed: cognition_trace.py:163 calls auto_flag only when
+      orch.review_queue is not None, and quality / review_queue are two independent registry
+      entries — either can be None while the other is up. So the auto-filing sentence is
+      gated on the QUEUE evidence this panel already holds (section 1's `total`), not on the
+      threshold, and it is denied outright in the queue-absent state instead of repeated.
 
    apiPost THROWS on every refusal here — 503 {"error": "review queue not available"}
    (require_component, review.py:36), 400 {"error": "trace required"} (review.py:44-45), and
@@ -291,11 +297,34 @@ export function ReviewQualityPanel() {
 
       <div style={note}>
         {thr != null
-          ? `score colour uses threshold ${thr}, read from ${PROBE_PATH} (stats.threshold). A turn below it is auto-filed into the review queue with reason \`auto: score <score> < ${thr}\`.`
+          ? `score colour uses threshold ${thr}, read from ${PROBE_PATH} (stats.threshold).`
           : `no colour: ${PROBE_PATH} reported no threshold, so no cutoff is asserted here.`}
         {' '}This ring is the in-memory live-quality signal, not durable history; its capacity is
         exposed by no route, so none is shown.
       </div>
+
+      {/* AUTO-FILING IS NOT A PROPERTY OF THE THRESHOLD. cognition_trace.py:163 calls
+          review_queue.auto_flag only inside `if getattr(orch, "review_queue", None) is not
+          None:` — and `quality` and `review_queue` are two INDEPENDENT registry entries
+          (orchestrator.py), so "monitor up, queue absent" is a reachable state, not a
+          hypothetical. Gating this claim on `thr != null` alone printed "a turn below it is
+          auto-filed" in exactly the state where nothing is filed at all, on the same card
+          that had just said the queue component is absent. The claim is now made only when
+          the rollup above proved the queue answered, denied when it proved it absent, and
+          withheld when the rollup could not be read. */}
+      {thr != null && (queueWired ? (
+        <div style={note}>
+          {`auto-filing runs only where the review queue component exists, and the rollup above shows it answering — so a turn scored below ${thr} on this path is filed with reason \`auto: score <score> < ${thr}\`.`}
+        </div>
+      ) : s.d ? (
+        <div style={amber}>
+          {`nothing is auto-filed at this cutoff: auto-filing runs only where the review queue component exists, and the rollup above reports it absent. A turn scoring below ${thr} still lands in this ring, but no review row is created for it.`}
+        </div>
+      ) : (
+        <div style={note}>
+          {`whether a turn below ${thr} is auto-filed depends on the review queue component, which the rollup above has not reported on, so nothing is claimed about it here.`}
+        </div>
+      ))}
 
       {/* ── 3 · FLAG A TRACE — POST /api/review/flag ───────────────────────── */}
       <div style={label}>FLAG A TRACE FOR REVIEW · POST /api/review/flag</div>

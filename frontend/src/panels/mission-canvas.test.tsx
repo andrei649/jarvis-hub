@@ -16,7 +16,11 @@
    · 503 "missions not available" is rendered verbatim;
    · an empty {"missions": []} is drawn as the ambiguity it is, never as a clean "nothing yet";
    · the canvas sweep sends its scope as QUERY PARAMS with NO request body (a JSON body is
-     ignored by FastAPI and the defaults would sweep everything), and needs two clicks. */
+     ignored by FastAPI and the defaults would sweep everything), and needs two clicks;
+   · a mission that is NOT active is routed only to a control that exists: planned → start,
+     paused → resume, and for the three TERMINAL statuses (done/failed/cancelled, whose exit set
+     in `_TRANSITIONS` is empty and for which gap.tsx MissionsPanel renders no button) the panel
+     names no control at all. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
@@ -71,6 +75,23 @@ const callsTo = (fn, path) => fn.mock.calls.filter((c) => String(c[0]) === path)
 const spans = () => Array.from(document.querySelectorAll('span,div')).map((el) => el.textContent || '');
 const hasText = (re) => spans().some((t) => re.test(t));
 const exactSpan = (s) => Array.from(document.querySelectorAll('span')).some((el) => el.textContent === s);
+
+/* The one amber line the expanded card prints for a non-active mission, isolated from its
+   containers: every ancestor div's textContent starts with it too, so the SHORTEST match is
+   the note element itself. Asserted with toBe, not a substring — the pre-fix text
+   ("… — start or resume it from the MISSIONS panel.") contains the paused wording as a
+   substring, so a loose matcher would pin nothing. */
+const hint = () => {
+  const texts = Array.from(document.querySelectorAll('div'))
+    .map((n) => n.textContent || '')
+    .filter((t) => t.indexOf('finish_step runs only while the mission is active') === 0)
+    .sort((a, b) => a.length - b.length);
+  return texts.length ? texts[0] : null;
+};
+const TERMINAL_HINT = (st) => 'finish_step runs only while the mission is active (this one is '
+  + st + '). ' + st + ' is terminal — the mission state machine has no transition out of done, '
+  + 'failed or cancelled, so nothing can put this mission back to active and these steps can no '
+  + 'longer be finished.';
 
 const openSteps = async () => {
   await waitFor(() => expect(screen.getByLabelText('steps of mission 7')).toBeTruthy());
@@ -289,5 +310,85 @@ describe('MissionCanvasPanel · canvas sweep', () => {
     )).toBe(true));
     expect(screen.getByText('403')).toBeTruthy();
     expect(hasText(/removed \d+ element/)).toBe(false);
+  });
+});
+
+/* REGRESSION — a non-active mission must not be pointed at a control that cannot exist.
+   done/failed/cancelled are TERMINAL: `_TRANSITIONS` gives them an EMPTY exit set
+   (agents/core/autonomy/missions.py) and every status write goes through `_set_status`, so the
+   mission-op routes answer 409 "operation not allowed in current mission state"; gap.tsx
+   MissionsPanel's actionsFor returns [] for exactly those three, so there is no button to
+   press either. The panel used to print one fixed line — "start or resume it from the MISSIONS
+   panel" — for EVERY non-active status. */
+describe('MissionCanvasPanel · a non-active mission is routed only to a control that exists', () => {
+  const board = (status) => ({
+    '/api/missions': { status: 200, body: { missions: [MISSION({ status })] } },
+    '/api/canvas': CANVAS,
+  });
+
+  it('names no control for a terminal mission and says it cannot return to active', async () => {
+    mockRoutes(board('failed'));
+    render(<MissionCanvasPanel />);
+    await openSteps();
+
+    await waitFor(() => expect(hint()).toBe(TERMINAL_HINT('failed')));
+    // the dead control: no start, no resume, no pointer at another panel
+    expect(hint()).not.toMatch(/MISSIONS panel/);
+    expect(hint()).not.toMatch(/start|resume/);
+    // …and no finish button either, since finish_step needs an ACTIVE mission
+    expect(screen.queryByLabelText('done step 2 of mission 7')).toBe(null);
+  });
+
+  it('says the same for cancelled', async () => {
+    mockRoutes(board('cancelled'));
+    render(<MissionCanvasPanel />);
+    await openSteps();
+
+    await waitFor(() => expect(hint()).toBe(TERMINAL_HINT('cancelled')));
+  });
+
+  it('names start — and only start — for a planned mission', async () => {
+    mockRoutes(board('planned'));
+    render(<MissionCanvasPanel />);
+    await openSteps();
+
+    await waitFor(() => expect(hint()).toBe(
+      'finish_step runs only while the mission is active (this one is planned) — start it from the MISSIONS panel.',
+    ));
+    // planned → {active, cancelled}: there is no resume out of it, and no resume button
+    expect(hint()).not.toMatch(/resume/);
+  });
+
+  it('names resume — and only resume — for a paused mission', async () => {
+    mockRoutes(board('paused'));
+    render(<MissionCanvasPanel />);
+    await openSteps();
+
+    await waitFor(() => expect(hint()).toBe(
+      'finish_step runs only while the mission is active (this one is paused) — resume it from the MISSIONS panel.',
+    ));
+    expect(hint()).not.toMatch(/start/);
+  });
+
+  it('does not contradict itself after the budget 409 auto-fails the mission', async () => {
+    mockRoutes({
+      '/api/missions': [
+        { status: 200, body: { missions: [MISSION()] } },
+        { status: 200, body: { missions: [MISSION({ status: 'failed', steps_used: 20 })] } },
+      ],
+      '/api/canvas': CANVAS,
+      '/api/missions/7/steps/2/finish': {
+        status: 409,
+        body: { error: 'mission step budget exhausted', budget_exceeded: true },
+      },
+    });
+    render(<MissionCanvasPanel />);
+    await openSteps();
+    fireEvent.click(screen.getByLabelText('done step 2 of mission 7'));
+
+    // the side-effect note stays…
+    await waitFor(() => expect(hasText(/There is nothing to retry/)).toBe(true));
+    // …and the same expanded card must not, in the same breath, offer to restart the mission
+    await waitFor(() => expect(hint()).toBe(TERMINAL_HINT('failed')));
   });
 });
