@@ -162,9 +162,11 @@ describe('SignalGovernancePanel — a bridge that is off by default, said as a f
     expect(screen.getByText('#7')).toBeTruthy();
     expect(screen.getByText('#8')).toBeTruthy();
     expect(alert).toContain('Preview only. Route through Jarvis approval before action.');
-    // `skipped` is printed bare, with no cause attributed to it
+    // `skipped` still carries no server-side breakdown, so the split is described but
+    // never guessed — and failures are explicitly NOT folded into it
     expect(alert).toContain('1 not queued');
-    expect(alert).toContain('no breakdown');
+    expect(alert).toContain('refused by the recommendation contract');
+    expect(alert).toContain('never folded into this number');
     expect(alert).not.toMatch(/advisory/);
     // nothing is claimed to have been approved or run
     expect(alert).toContain('BLOCKED with decision=await_human_approval');
@@ -207,6 +209,59 @@ describe('SignalGovernancePanel — a bridge that is off by default, said as a f
     expect(document.body.textContent).not.toMatch(/left\s*over|earlier (enabled )?run/i);
   });
 
+  /* The bridge now counts failures separately (DRA-15 backend defect 3), so these two pin
+     the CURRENT shape: with `failed` present the cause is knowable, and a dropped
+     recommendation must be shown as dropped rather than shrinking `queued` in silence. */
+
+  it('states the cause when the response carries failed:0', async () => {
+    withStatus(ENABLED_STATUS, {
+      status: 200,
+      body: {
+        available: true, reason: null, status: 'ok', queued: 0, task_ids: [], skipped: 0,
+        failed: 0, failures: [],
+        note: 'Preview only. Route through Jarvis approval before action.',
+      },
+    });
+    render(<SignalGovernancePanel />);
+    await waitFor(() => expect(screen.getByText('ENABLED')).toBeTruthy());
+    fireEvent.click(screen.getByText('submit brief → inbox'));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    const alert = screen.getByRole('alert').textContent;
+    expect(alert).toContain('Nothing was queued and nothing failed');
+    expect(alert).toContain('carried no actionable');
+    expect(alert).not.toMatch(/does not say why/i);
+  });
+
+  it('shows dropped recommendations as dropped, with the backend reason verbatim', async () => {
+    withStatus(ENABLED_STATUS, {
+      status: 200,
+      body: {
+        available: true, reason: null, status: 'partial', queued: 0, task_ids: [], skipped: 0,
+        failed: 2,
+        failures: [
+          { label: 'Monitor watched airports again within 24h.', error: 'db is gone' },
+          { label: 'Review cyber exposure before action.', error: 'db is gone' },
+        ],
+        note: 'Preview only. Route through Jarvis approval before action.',
+      },
+    });
+    render(<SignalGovernancePanel />);
+    await waitFor(() => expect(screen.getByText('ENABLED')).toBeTruthy());
+    fireEvent.click(screen.getByText('submit brief → inbox'));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    const alert = screen.getByRole('alert').textContent;
+    expect(alert).toMatch(/2 recommendations were DROPPED/);
+    // the consequence, not just the count: nobody will be asked to approve them
+    expect(alert).toContain('not waiting in the decision inbox');
+    // the backend's own reason reaches the screen
+    expect(alert).toContain('db is gone');
+    expect(alert).toContain('Monitor watched airports again within 24h.');
+    // and a dropped run is never described as an empty brief
+    expect(alert).not.toContain('carried no actionable');
+  });
+
   /* REGRESSION (adversarial review, finding 2): queued:0/skipped:0 was reported, in green,
      as "brief carried no actionable recommendations". signal_governance.py catches a failed
      enqueue/transition, logs at debug, and increments NEITHER task_ids NOR skipped — so an
@@ -226,14 +281,12 @@ describe('SignalGovernancePanel — a bridge that is off by default, said as a f
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     const alert = screen.getByRole('alert').textContent;
     expect(alert).toContain('queued 0 · skipped 0');
-    // the count is stated...
-    expect(alert).toContain('Nothing was queued');
-    // ...and the cause is NOT: no "the brief had nothing actionable" verdict
-    expect(alert).not.toMatch(/brief carried no actionable/i);
-    expect(alert).not.toMatch(/nothing actionable to say/i);
-    // both producers are named as indistinguishable
+    // This fixture is the OLD response shape, with no `failed` key. Absent is not zero:
+    // such a bridge genuinely could not tell an empty brief from one whose every enqueue
+    // raised, so the hedge is still the honest answer and must survive.
     expect(alert).toMatch(/does not say why/i);
-    expect(alert).toMatch(/queue writes all raised|swallowed per-item failure/i);
+    expect(alert).toContain('carries no `failed` count');
+    expect(alert).not.toMatch(/nothing failed/i);
     // with no ids, nothing claims "each id above"
     expect(alert).not.toMatch(/Each id above/);
   });

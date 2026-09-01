@@ -93,12 +93,19 @@ class SignalGovernanceBridge:
         Returns a summary; never raises for ordinary input.
         """
         if not self.enabled:
-            return {"status": "disabled", "queued": 0, "task_ids": [], "skipped": 0}
+            return {"status": "disabled", "queued": 0, "task_ids": [], "skipped": 0,
+                    "failed": 0, "failures": []}
 
         recs = recommendations or []
         actionable = [r for r in recs if isinstance(r, dict) and r.get("requiresApproval")]
         skipped = len(recs) - len(actionable)
         task_ids: list[int] = []
+        # Failures are tracked separately from `skipped`. `skipped` means "not queued for a
+        # reason the system intended" (not actionable, or the contract denied it); a failure
+        # means the system TRIED and lost the work. Counting the two together — or, as this
+        # did, counting a failure in neither — makes queued:0 mean two different things, and
+        # a caller cannot tell an idle bridge from a broken one.
+        failures: list[dict[str, str]] = []
 
         for rec in actionable:
             label = str(rec.get("label") or "Signal Layer recommendation")
@@ -136,14 +143,22 @@ class SignalGovernanceBridge:
                 task_ids.append(task_id)
                 self._audit("signal_governance.queued", {"task_id": task_id, "label": label})
             except Exception as e:
-                logger.debug("Failed to queue recommendation %r: %s", label, e)
+                # WARNING, not DEBUG: a recommendation the operator would have been asked to
+                # approve has been dropped. That is an operational event, and at DEBUG it was
+                # invisible on a default install.
+                logger.warning("Failed to queue recommendation %r: %s", label, e, exc_info=True)
+                failures.append({"label": label, "error": str(e)})
                 self._audit("signal_governance.error", {"label": label, "error": str(e)})
 
         return {
-            "status": "ok",
+            # "partial" whenever anything was lost, so a caller that only reads `status`
+            # still cannot mistake a broken run for a quiet one.
+            "status": "partial" if failures else "ok",
             "queued": len(task_ids),
             "task_ids": task_ids,
             "skipped": skipped,
+            "failed": len(failures),
+            "failures": failures,
             "note": "Preview only. Route through Jarvis approval before action.",
         }
 
