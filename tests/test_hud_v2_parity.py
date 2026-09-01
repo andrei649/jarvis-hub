@@ -532,13 +532,7 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/review/flag",
     "/api/review/stats",
     "/api/secrets/broker/redact",
-    "/api/security-skills/frameworks",
-    "/api/security-skills/map",
-    "/api/security-skills/playbook",
     "/api/security/spotlight",
-    "/api/skills/marketplace/install-zip",
-    "/api/skills/marketplace/publish",
-    "/api/skills/marketplace/uninstall",
     "/api/support/bundle",
     "/api/voice/wyoming",
     # render_snippet inlines colour/title/greeting (agents/core/widget.py), so nothing
