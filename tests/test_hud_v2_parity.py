@@ -494,8 +494,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # -- a HUD control for a switch the owner has not thrown yet would be premature,
     # so the client half is genuinely open. Punch list, not MACHINE_FACING: nothing
     # outside our UI calls these either.
-    "/api/signals/governance",
-    "/api/signals/governance/submit",
     # T-0.41: the morning brief DOES consume per-domain briefs, but in-process
     # (scheduler_service._signal_briefs_or_none → build_domain_brief), so this
     # HTTP route has no *client* caller. It stays as the external read surface

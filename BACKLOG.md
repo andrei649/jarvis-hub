@@ -944,12 +944,21 @@ absorbed them, not as independently shipped work.
   **Correction to this row's own text:** the embedded count "71" was already stale when the finding was
   written — the punch list held **79** entries. The row should be re-stated as a campaign with
   per-cluster children rather than carried as one checkbox.
-  **Remaining:** the rest of the register. Two clusters were deliberately not wired and should stay that
-  way for now — `/api/signals/governance*` (waits on the owner flipping `JARVIS_SIGNAL_GOVERNANCE`) and
-  `/api/desktop/*` + `/api/operator/plan` (agent-driven; a HUD control there would be the
-  degenerate-surface trap). One piece of hygiene this PR left behind: three `UNCALLED_BACKLOG`
-  justification comments in `tests/test_hud_v2_parity.py` (:476, :523, :535) outlived the entries they
-  annotated and now sit above unrelated routes stating the opposite of what shipped.
+  **Remaining:** the rest of the register.
+  **Update 2026-09-01 — one of the two "do not wire" clusters is REVERSED, deliberately and with
+  reasons.** `/api/desktop/plan` + `/api/operator/plan` stand: they are agent-driven, and they have now
+  moved to `MACHINE_FACING` so the list stops implying a UI half is owed. But `/api/signals/governance*`
+  is now WIRED, reversing this row's own instruction. The reasoning: that guidance predates the
+  governance surface itself, which only exists because DRA-19 added it in #992. The route reports its
+  own `enabled/flag/kind/pending` state, so a panel that renders `enabled: false` as the documented
+  default — naming `JARVIS_SIGNAL_GOVERNANCE` from the payload, drawing no toggle because no route sets
+  the flag, and refusing to print the handler's hardcoded `pending: 0` as a count because on that branch
+  it is filler rather than a measurement — is an honest status display, not a dead control. Waiting on
+  the owner to flip a flag is a reason to *describe* the flag accurately, not to hide that the capability
+  exists. If this reads as the wrong call, the panel is one import and one `SECTIONS` entry to remove.
+  The three stale `UNCALLED_BACKLOG` justification comments this row logged as debt are now fixed: two
+  stated the opposite of what shipped (DRA-52's dataset button, DRA-37's rollback control) and three
+  were orphaned onto unrelated entries; all five are deleted.
 - [x] ✅ **DRA-16 — Issue #242 (CI/F-10): CodeQL *was* a permanently non-blocking gate behind a factually
   false "private personal repo" rationale — the repo is public.** Open issue #242 flagged this. The
   rationale is gone from the workflow and from this file; the framing is retained here only as the
