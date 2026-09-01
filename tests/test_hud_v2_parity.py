@@ -510,7 +510,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/agents/history",
     "/api/arena/match/{match_id}",
     "/api/canvas/clear",
-    "/api/channels/inbox/status",
     "/api/context/compress",
     "/api/digest/run",
     "/api/integrations/writeback",
@@ -528,10 +527,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/metrics/capabilities",
     # MissionsPanel surfaces mission-level transitions only; there is no per-step UI.
     "/api/missions/{mission_id}/steps/{idx}/finish",
-    "/api/presence/owner",
-    "/api/quality/scores",
-    "/api/review/flag",
-    "/api/review/stats",
     "/api/secrets/broker/redact",
     "/api/security/spotlight",
     "/api/support/bundle",
