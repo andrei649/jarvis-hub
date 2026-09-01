@@ -525,8 +525,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/metrics/capabilities",
     # MissionsPanel surfaces mission-level transitions only; there is no per-step UI.
     "/api/missions/{mission_id}/steps/{idx}/finish",
-    "/api/payments/mandates",
-    "/api/payments/request",
     "/api/presence/owner",
     "/api/quality/scores",
     "/api/review/flag",
@@ -543,8 +541,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/autonomy/observer/run",
     "/autonomy/preferences/suggestions",
     "/autonomy/status",
-    "/skills/import",
-    "/skills/imported"
 ])
 
 # Routes whose client call is BUILT rather than written: the last segment comes from a

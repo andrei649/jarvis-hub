@@ -12,6 +12,8 @@ import { CreativePanel } from './panels/creative';
 import { OsintPanel } from './panels/osint';
 import { MarketplaceAdminPanel } from './panels/marketplace-admin';
 import { SecuritySkillsMapPanel } from './panels/security-skills-map';
+import { PaymentsPanel } from './panels/payments';
+import { SkillsImportPanel } from './panels/skills-import';
 
 import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, inpS, taS, Json } from './panel-kit';
 
@@ -4469,8 +4471,8 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Start', [CommandCenterPanel]],
   ['Home', [AmbientWatchPanel, HousePanel, CameraPanel]],
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, NoteDocsPanel, VaultPanel, KgPanel, MemoryWritePanel, MemoryHygienePanel, MemoryEvalPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
-  ['Trust', [SecuritySkillsMapPanel, KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
-  ['Interop', [OsintPanel, MarketplaceAdminPanel, A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
+  ['Trust', [SecuritySkillsMapPanel, PaymentsPanel, KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Interop', [OsintPanel, MarketplaceAdminPanel, SkillsImportPanel, A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, CodeIntelPanel, CoachPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, CognitionPanel, SwarmPanel, SubAgentsPanel, SystemMapPanel]],
   ['Build', [CreativePanel, WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
