@@ -541,10 +541,22 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/llm/openrouter",
     "/api/media/generate",
     "/api/memory/consolidate",
+    # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). It is a legacy ALIAS, not a gap:
+    # analytics.py:208-221 and analytics.py:224-235 return the identical `snapshot(orch)`,
+    # and /api/capabilities' own docstring says it "extends the legacy metrics surface
+    # without removing it". The HUD already renders that snapshot — ReadinessPanel,
+    # gap.tsx:838, useApi('/api/capabilities'). A panel here would duplicate a shipped one
+    # over a byte-identical payload. Whether to keep the alias or delete the route is an
+    # API decision for the owner, not something to paper over with a second panel.
     "/api/metrics/capabilities",
     # MissionsPanel surfaces mission-level transitions only; there is no per-step UI.
     # render_snippet inlines colour/title/greeting (agents/core/widget.py), so nothing
     # fetches the config read surface.
+    # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). A strict SUBSET of
+    # /api/worldview/overview, which returns {**status, "recon": ...} (worldview.py:34-49)
+    # and is what the World tab actually renders (frontend/src/modes_world.tsx:22). Its
+    # docstring aims it at "the HUD World tab", but the HUD chose the superset. A status
+    # chip would re-render data already on screen.
     "/api/worldview/status",
 ])
 
