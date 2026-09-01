@@ -164,19 +164,22 @@ describe('CodeIntelPanel — the code index is reachable and honest about its sc
     expect(screen.getByRole('alert').textContent).toContain('refused · 429');
   });
 
-  /* index.py:44-59 walks `tree.body` only (+ one pass over each module-level class body), so
-     nested defs / closures / defs inside a module-level if-try-with are NEVER in the index.
-     Verified against the real indexer on 2026-09-01: `credential_ref_matches` is defined three
-     times under agents/ (call_broker.py, social.py, writeback.py) and search_symbols returns 0
-     hits for it. The panel must disclose that depth limit, and must not let the shared
-     zero-state say "nothing yet" — which an operator reads as "no such symbol in the repo". */
-  it('discloses the SYMBOL-DEPTH scope, not just the directory scope', async () => {
+  /* The depth limit is FIXED (index.py now descends every statement body and skips venvs by
+     their pyvenv.cfg marker), and this test moved with it rather than being deleted. It was
+     correct when written: `credential_ref_matches` is defined three times under agents/ and
+     search_symbols returned 0 hits; measured after the fix it returns 3, each with a qualname
+     locating it inside its enclosing function. What the panel must still do is DISCLOSE the
+     scope honestly — including that the old numbers were the before, not the now — because a
+     zero-hit search must never read as "no such symbol in the repo". */
+  it('discloses the SYMBOL-DEPTH scope, and states it as fixed rather than current', async () => {
     statsOnly();
     render(<CodeIntelPanel />);
     await waitFor(() => expect(screen.getByText('3,411 files')).toBeTruthy());
     expect(screen.getByText(/Symbol scope/)).toBeTruthy();
     expect(screen.getByText(/inner functions and closures/)).toBeTruthy();
-    expect(screen.getByText(/6,007 function\/async defs exist, 5,740 are indexed/)).toBeTruthy();
+    // the fixed behaviour, not the old measurement, is what the operator is told
+    expect(screen.getByText(/any nesting depth/)).toBeTruthy();
+    expect(screen.getByText(/dotted qualname/)).toBeTruthy();
   });
 
   it('renders a zero-hit search as "not in the index", never as the bare shared "nothing yet"', async () => {

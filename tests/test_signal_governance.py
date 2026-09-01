@@ -263,3 +263,73 @@ def test_the_bridge_now_has_production_importers(queue):
     source = (root / "agents/core/orchestrator.py").read_text(encoding="utf-8")
     assert "SignalGovernanceBridge.from_env(" in source
     assert "SignalGovernanceBridge(" not in source.replace("SignalGovernanceBridge.from_env(", "")
+
+
+# ── DRA-15 backend defect 3: a swallowed enqueue was indistinguishable from ────
+#                            "the brief carried nothing"
+#
+# The per-recommendation `except Exception` logged at DEBUG, audited, and then fell
+# through — the returned summary counted the failure in NEITHER `queued` nor `skipped`.
+# So a brief whose every enqueue blew up answered {"status":"ok","queued":0,"skipped":0},
+# byte-identical to a brief that genuinely carried no actionable recommendations. The
+# operator (and the HUD, which renders this summary) had no way to tell a governance
+# bridge that is idle from one that is broken.
+
+class _ExplodingQueue:
+    """Accepts the constructor contract, fails every enqueue the way a real outage would."""
+
+    def __init__(self, exc=None):
+        # built inside __init__, not in the default: a mutable/stateful default is shared
+        # across every instance (ruff B008)
+        self._exc = exc or RuntimeError("db is gone")
+        self.calls = 0
+
+    def enqueue(self, **_kw):
+        self.calls += 1
+        raise self._exc
+
+
+def test_a_failed_enqueue_is_reported_not_swallowed(queue):
+    bridge = SignalGovernanceBridge(_ExplodingQueue(), enabled=True)
+    out = bridge.submit_recommendations(RECS)
+
+    assert out["queued"] == 0
+    assert out["failed"] == 2, "both actionable recommendations failed and must be counted"
+    assert out["status"] == "partial", "a run that dropped work must not report plain ok"
+    # the cause has to survive to the caller, not only to a DEBUG line
+    assert [f["error"] for f in out["failures"]] == ["db is gone", "db is gone"]
+    assert [f["label"] for f in out["failures"]] == [
+        "Monitor watched airports again within 24h.",
+        "Review cyber exposure before action.",
+    ]
+
+
+def test_an_empty_brief_is_distinguishable_from_a_broken_one(queue):
+    """The whole point: queued:0 must not mean two different things."""
+    healthy = SignalGovernanceBridge(queue, enabled=True)
+    idle = healthy.submit_recommendations([])
+    broken = SignalGovernanceBridge(_ExplodingQueue(), enabled=True).submit_recommendations(RECS)
+
+    assert idle["queued"] == broken["queued"] == 0        # same on the old shape…
+    assert (idle["status"], idle["failed"]) == ("ok", 0)  # …and now tellable apart
+    assert (broken["status"], broken["failed"]) == ("partial", 2)
+
+
+def test_a_failure_is_logged_at_warning_not_debug(queue, caplog):
+    """A dropped recommendation is an operational event, not a debug detail."""
+    import logging
+    bridge = SignalGovernanceBridge(_ExplodingQueue(), enabled=True)
+    with caplog.at_level(logging.WARNING, logger="jarvis.signal_governance"):
+        bridge.submit_recommendations(RECS)
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert warnings, "an enqueue failure produced no warning-level log"
+    assert "db is gone" in caplog.text
+
+
+def test_a_healthy_run_still_reports_ok_with_no_failures(queue):
+    bridge = SignalGovernanceBridge(queue, enabled=True)
+    out = bridge.submit_recommendations(RECS)
+    assert out["status"] == "ok"
+    assert out["failed"] == 0
+    assert out["failures"] == []
+    assert out["queued"] == 2

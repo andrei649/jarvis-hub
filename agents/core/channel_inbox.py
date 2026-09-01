@@ -130,10 +130,27 @@ class ChannelInboxStore(JsonStore):
                      if t["thread_id"] == thread_id), None)
 
     def stats(self) -> dict:
+        """Inbox roll-up. `channels` is the supported VOCABULARY; `active_channels` and
+        `by_channel` are what is actually stored.
+
+        Those used to be one field: `channels` returned sorted(SUPPORTED_INBOX_CHANNELS), a
+        module constant identical on every install. It looked like an answer to "which
+        channels have traffic" and was not one — a box where email flows and a box where it
+        was never configured rendered the same three words. The vocabulary is still worth
+        publishing, so it keeps its key; the measurement is a separate field, and a
+        supported-but-silent channel is ABSENT from it rather than reported as a zero.
+        """
         threads = self.threads(limit=self.max_messages)
+        by_channel: dict[str, int] = {}
+        for m in self._messages:
+            ch = str(m.get("channel") or "")
+            if ch:
+                by_channel[ch] = by_channel.get(ch, 0) + 1
         return {
             "enabled": True,
             "channels": sorted(SUPPORTED_INBOX_CHANNELS),
+            "active_channels": sorted(by_channel),
+            "by_channel": dict(sorted(by_channel.items())),
             "threads": len(threads),
             "messages": len(self._messages),
             "max_messages": self.max_messages,

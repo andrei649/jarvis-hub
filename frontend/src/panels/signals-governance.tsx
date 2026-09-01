@@ -42,7 +42,8 @@
    is a real, reachable shape that queued NOTHING (signal_governance.py:95-96) — reading
    `available` alone as success would report a governance submission that never happened.
    The outcome is therefore classified in a fixed order: available===false → refused,
-   status==='disabled' → refused, status==='ok' → the only success, anything else → the
+   status==='disabled' → refused, status==='ok'/'partial' → recognised (partial means some
+   recommendations were queued and some were DROPPED), anything else → the
    raw body verbatim rather than a guess. onErr is still mandatory and carries the
    401/403/500 path (err.body from client.ts failMutation).
 
@@ -95,7 +96,7 @@ export function SignalGovernancePanel() {
         setBusy(false);
         setOut({ t: 'body', r });
         // Re-read rather than incrementing anything here: submitting is not idempotent.
-        if (r && r.available === true && r.status === 'ok') reload();
+        if (r && r.available === true && (r.status === 'ok' || r.status === 'partial')) reload();
       },
       (err) => { setBusy(false); setOut({ t: 'err', err }); },
     );
@@ -206,7 +207,8 @@ export function SignalGovernancePanel() {
 
 /* Every refusal from this route is a 200 with a body, so the classification order below is
    the whole safety property: `available` is checked first, then `status === 'disabled'`,
-   and only `status === 'ok'` may render as success. */
+   and only `status === 'ok'` or `'partial'` is recognised — `partial` still renders the
+   queued ids, but its `failed` block says plainly what was lost. */
 function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
   const box = (c: string, children: any) => (
     <div role="alert" style={{ marginTop: 8, padding: 6, border: `1px solid ${c}`, borderRadius: 4 }}>{children}</div>
@@ -251,37 +253,66 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
   }
 
   // (3) the one success branch.
-  if (r.status === 'ok') {
+  if (r.status === 'ok' || r.status === 'partial') {
     const queued = int(r.queued);
     const skipped = int(r.skipped);
     const ids = Array.isArray(r.task_ids) ? r.task_ids : [];
-    return box('var(--green)', (
+    const failed = int(r.failed);
+    const failures = Array.isArray(r.failures) ? r.failures : [];
+    // A `partial` run LOST work. Framing it green would make a dropped recommendation read
+    // as a success with a footnote, so the whole box takes the amber of what happened.
+    const lost = failed != null && failed > 0;
+    const tone = lost ? 'var(--amber)' : 'var(--green)';
+    return box(tone, (
       <>
-        <div style={{ ...mono, color: 'var(--green)' }}>
+        <div style={{ ...mono, color: tone }}>
           queued {queued == null ? '?' : queued} · skipped {skipped == null ? '?' : skipped}
+          {lost ? ` · failed ${failed}` : ''}
         </div>
         {ids.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
             {ids.map((id, i) => <Tag key={i} c="var(--ink-2)">#{String(id)}</Tag>)}
           </div>
         )}
-        {/* queued 0 has more than one producer and the response distinguishes none of
-            them: an empty/non-actionable brief, and a brief whose every enqueue or
-            transition raised — signal_governance.py:138-140 catches, logs at debug,
-            audits, and increments NEITHER task_ids NOR skipped. So the count is stated
-            and the cause is not. */}
-        {queued === 0 && (
+        {/* queued 0 used to have two indistinguishable producers — an empty brief, and a
+            brief whose every enqueue raised into a swallowed `except` that incremented
+            NEITHER counter. The bridge now counts failures separately and returns them, so
+            the cause can be stated instead of hedged. */}
+        {queued === 0 && failed === 0 && (
           <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
-            Nothing was queued, and this response does not say why: a brief with no
-            actionable recommendations and a run whose queue writes all raised both arrive
-            here as queued 0 — a swallowed per-item failure increments neither counter.
+            Nothing was queued and nothing failed — the brief carried no actionable
+            recommendations.
+          </div>
+        )}
+        {/* `failed` ABSENT is not `failed: 0`. A response without the key came from a bridge
+            that could not separate the two producers of queued:0, so the honest answer there
+            is still the hedge — the panel does not upgrade an unknown into a verdict. */}
+        {queued === 0 && failed == null && (
+          <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+            Nothing was queued, and this response does not say why: it carries no `failed`
+            count, so an empty brief and a run whose queue writes all raised are
+            indistinguishable here.
+          </div>
+        )}
+        {failed > 0 && (
+          <div style={{ ...mono, color: 'var(--red)', marginTop: 4 }}>
+            {failed} recommendation{failed > 1 ? 's were' : ' was'} DROPPED — the bridge tried
+            to queue {failed > 1 ? 'them' : 'it'} and failed, so {failed > 1 ? 'they are' : 'it is'}{' '}
+            not waiting in the decision inbox and no one will be asked to approve{' '}
+            {failed > 1 ? 'them' : 'it'}.
+            {failures.map((f: any, i: number) => (
+              <div key={i} style={{ color: 'var(--ink-2)', marginTop: 2 }}>
+                {String((f && f.label) ?? '—')} — {String((f && f.error) ?? 'no reason given')}
+              </div>
+            ))}
           </div>
         )}
         {str(r.note) && <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>{str(r.note)}</div>}
         {skipped != null && skipped > 0 && (
           <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 4 }}>
-            {skipped} not queued — the response carries no breakdown, so no cause is
-            attributed to that number here.
+            {skipped} not queued — these were either non-actionable or refused by the
+            recommendation contract. That split is not in the response, so it is not guessed
+            here; failures are counted separately above and are never folded into this number.
           </div>
         )}
         {/* "Each id above" is only true when there ARE ids, and the swallow caveat is
@@ -289,8 +320,8 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
         {ids.length > 0 && (
           <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 4 }}>
             Each id above is BLOCKED with decision=await_human_approval, waiting in the
-            decision inbox. A per-item enqueue failure is swallowed server-side and simply
-            shrinks `queued`, with nothing surfaced in this response.
+            decision inbox. A per-item enqueue failure is reported separately as `failed`
+            rather than silently shrinking this list.
           </div>
         )}
       </>

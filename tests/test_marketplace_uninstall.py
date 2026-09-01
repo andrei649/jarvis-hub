@@ -61,3 +61,105 @@ def test_purge_removes_the_registry_row(tmp_path):
 def test_remove_from_registry_unknown_is_false(tmp_path):
     m = _market(tmp_path)
     assert m.remove_from_registry("ghost") is False
+
+
+# ── purge must actually unpublish (the registry is keyed by MANIFEST TITLE) ──
+#
+# publish_skill stores `manifest.get("name", skill_name)` — the SKILL.md '# ' heading —
+# in marketplace_skills.name (marketplace.py:367), but uninstall_skill(purge=True) called
+# remove_from_registry(skill_name) with the ON-DISK FOLDER, and discarded its boolean. For
+# every skill bundled in this repo the two differ (skills/weather -> '# Weather Intel'), so
+# the delete matched nothing while the caller was told the package was gone. The HUD then
+# rendered `"purged": body.purge` — the request flag echoed back — as a result, so the
+# operator read "registry row purged" at the moment the published package survived, blob
+# and all, re-installable by anyone with the admin token.
+
+_WEATHER = "# Weather Intel\n> forecasts\n**Version:** 1.0.0\n"
+
+
+def test_purge_unpublishes_a_skill_whose_title_differs_from_its_folder(tmp_path):
+    m = _market(tmp_path)
+    _make_installed(m, name="weather", body=_WEATHER)
+    m.publish_skill("weather")
+    assert [s["name"] for s in m.list_skills()] == ["Weather Intel"]
+
+    assert m.uninstall_skill("weather", purge=True) is True
+    assert m.list_skills() == [], (
+        "purge left the published package behind — it is still installable by anyone "
+        "with the admin token"
+    )
+
+
+def test_purge_reports_whether_the_registry_row_actually_went(tmp_path):
+    """The caller must be able to tell an unpublish from a no-op."""
+    m = _market(tmp_path)
+    _make_installed(m, name="weather", body=_WEATHER)
+    m.publish_skill("weather")
+
+    assert m.purge_registry_row("weather") is True     # published -> deleted
+    assert m.purge_registry_row("weather") is False    # already gone -> honest False
+
+
+def test_purge_of_an_unpublished_skill_still_uninstalls_and_says_nothing_was_purged(tmp_path):
+    m = _market(tmp_path)
+    d = _make_installed(m, name="weather", body=_WEATHER)   # installed, never published
+
+    assert m.uninstall_skill("weather", purge=True) is True   # the directory did go
+    assert not d.exists()
+    assert m.purge_registry_row("weather") is False           # and there was no row to drop
+
+
+# ── the API surface: `purged` must be an OBSERVATION, never the request flag ──
+
+def test_api_reports_purged_false_when_nothing_was_published(tmp_path, monkeypatch):
+    """POST .../uninstall {purge: true} on an unpublished skill must not claim a purge.
+
+    The route used to return `"purged": body.purge`, so this case answered purged=true
+    while no row had ever existed. An operator reading that believes the published
+    package is gone.
+    """
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    import agents.web as web
+
+    m = _market(tmp_path)
+    _make_installed(m, name="weather", body=_WEATHER)     # installed, never published
+
+    skills = SimpleNamespace(skills={}, revoke_approval=lambda *_a, **_k: None)
+    monkeypatch.setattr(web, "orch", SimpleNamespace(marketplace=m, skills=skills))
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "t")
+    client = TestClient(web.app)                          # no lifespan: web.orch stays ours
+
+    r = client.post("/api/skills/marketplace/uninstall",
+                    json={"name": "weather", "purge": True},
+                    headers={"X-Admin-Token": "t"})
+    assert r.status_code == 200, r.text
+    assert r.json()["removed"] is True                     # the directory really went
+    assert r.json()["purged"] is False, "claimed a purge with no registry row to purge"
+
+
+def test_api_reports_purged_true_only_when_the_row_really_went(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    import agents.web as web
+
+    m = _market(tmp_path)
+    _make_installed(m, name="weather", body=_WEATHER)
+    m.publish_skill("weather")
+    assert [s["name"] for s in m.list_skills()] == ["Weather Intel"]
+
+    skills = SimpleNamespace(skills={}, revoke_approval=lambda *_a, **_k: None)
+    monkeypatch.setattr(web, "orch", SimpleNamespace(marketplace=m, skills=skills))
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "t")
+    client = TestClient(web.app)
+
+    r = client.post("/api/skills/marketplace/uninstall",
+                    json={"name": "weather", "purge": True},
+                    headers={"X-Admin-Token": "t"})
+    assert r.status_code == 200, r.text
+    assert r.json()["purged"] is True
+    assert m.list_skills() == []

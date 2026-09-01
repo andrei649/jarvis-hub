@@ -19,13 +19,16 @@
        lie. This panel reloads on the error branch too and says the side effect out loud, and it
        offers no retry there.
 
-   (B) THE GENERIC 409 COLLAPSES THREE CAUSES, AT THE ROUTER. `_transition` (missions.py:104)
-       catches MissionError and answers the single fixed string
-       409 {"error": "operation not allowed in current mission state"}. The real texts —
-       "mission {id} not active (is {status})", "step {idx} out of range for mission {id}",
-       "invalid step status: {status}" — are logged and never returned (CodeQL: no info
-       exposure). The panel renders the string VERBATIM and states that the backend does not
-       disclose which of the three it was. Naming one would be fabrication.
+   (B) THE 409 NOW NAMES ITS CAUSE. `_transition` used to catch MissionError and answer one
+       fixed string, 409 {"error": "operation not allowed in current mission state"}, for
+       every refusal. For finish_step that covered four — mission gone, mission not active,
+       step index out of range, invalid step status — and for two of them the string was not
+       merely vague but WRONG: an out-of-range index is not a mission-state problem, yet the
+       body blamed mission state and this panel duly told the operator to start or resume the
+       mission, advice that could not be followed. The raise sites now carry a literal `code`
+       and the router maps it to one fixed sentence per cause; the exception TEXT still never
+       reaches the body (it interpolates ids and statuses). The panel renders the backend's
+       string verbatim, as before — it is simply true now.
 
    (C) AN EMPTY MISSION BOARD IS AMBIGUOUS. `missions_list` (missions.py:36) has NO 503 branch:
        when `_store()` is None it answers 200 {"missions": []}. So {"missions": []} means EITHER
@@ -166,7 +169,7 @@ export function MissionCanvasPanel() {
     const body: any = draft ? { status, result: draft } : { status };
     // Single-line URL on purpose: the parity matcher needs the stem, '/steps/' and '/finish'
     // on ONE line with ≤60 chars of interpolation between them.
-    act('/api/missions/' + m.id + '/steps/' + s.idx + '/finish', body, (r: any) => { setErrFor(null); setLast({ id: m.id, idx: s.idx, mission: r && r.mission }); setDrafts((p) => ({ ...p, [key(m.id, s.idx)]: '' })); reload(); }, (err: any) => { setLast(null); setErrFor({ id: m.id, idx: s.idx, status: err && err.status, msg: reason(err), budget: !!(err && err.body && err.body.budget_exceeded) }); reload(); });
+    act('/api/missions/' + m.id + '/steps/' + s.idx + '/finish', body, (r: any) => { setErrFor(null); setLast({ id: m.id, idx: s.idx, mission: r && r.mission }); setDrafts((p) => ({ ...p, [key(m.id, s.idx)]: '' })); reload(); }, (err: any) => { setLast(null); setErrFor({ id: m.id, idx: s.idx, status: err && err.status, msg: reason(err), budget: !!(err && err.body && err.body.budget_exceeded), code: (err && err.body && typeof err.body.code === 'string') ? err.body.code : null }); reload(); });
   };
 
   /* Authors seen in the LAST fetch. There is no route listing canvas authors, so the choices
@@ -302,9 +305,12 @@ export function MissionCanvasPanel() {
                         'the step WAS recorded and the mission was auto-failed by the backend before it raised — the row above is reloaded from the server, check its status. There is nothing to retry.',
                         AMBER,
                       )}
-                      {/* (B) — three causes, one string; the panel does not guess. */}
-                      {errFor.status === 409 && !errFor.budget && note(
-                        'the backend returns one fixed string for three causes (mission not active / step index out of range / invalid step status) and does not disclose which.',
+                      {/* (B) — the 409 names its cause now, so the message above IS the cause
+                          and there is nothing to hedge. A refusal WITHOUT a code came from an
+                          older backend that answered one string for every cause; only then is
+                          the hedge still the honest thing to say. */}
+                      {errFor.status === 409 && !errFor.budget && errFor.code == null && note(
+                        'this refusal carries no `code`: an older backend answered one fixed string for every cause, so which one it was is not knowable here.',
                       )}
                     </div>
                   )}

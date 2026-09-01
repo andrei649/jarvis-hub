@@ -86,20 +86,39 @@ const PRESENCE_NEVER = {
 /* Branch (B) of channels_inbox_status — orch.channel_inbox bound, stats() measured. */
 const INBOX_BOUND = {
   enabled: true,
-  stats: { enabled: true, channels: ['email', 'telegram', 'web'], threads: 3, messages: 41, max_messages: 500 },
+  stats: {
+    enabled: true, channels: ['email', 'telegram', 'web'],
+    active_channels: ['telegram', 'web'], by_channel: { telegram: 38, web: 3 },
+    threads: 3, messages: 41, max_messages: 500,
+  },
 };
 
-/* Branch (B) with a store that has recorded NOTHING. stats() still returns the same
-   sorted(SUPPORTED_INBOX_CHANNELS) constant — that is the point of the pin below. */
+/* Branch (B) with a store that has recorded NOTHING. `channels` is the SAME constant as
+   above — that is the accept-list, not a measurement — while the measured fields are empty.
+   The pair is what makes the two rows tellable apart. */
 const INBOX_BOUND_EMPTY = {
   enabled: true,
-  stats: { enabled: true, channels: ['email', 'telegram', 'web'], threads: 0, messages: 0, max_messages: 500 },
+  stats: {
+    enabled: true, channels: ['email', 'telegram', 'web'],
+    active_channels: [], by_channel: {},
+    threads: 0, messages: 0, max_messages: 500,
+  },
 };
 
 /* Branch (A) — store unbound. Note what the handler does NOT send: max_messages. */
 const INBOX_UNBOUND = {
   enabled: false,
-  stats: { enabled: false, channels: ['email', 'telegram', 'web'], threads: 0, messages: 0 },
+  stats: {
+    enabled: false, channels: ['email', 'telegram', 'web'],
+    active_channels: [], by_channel: {}, threads: 0, messages: 0,
+  },
+};
+
+/* A backend from BEFORE the vocabulary/measurement split: no active_channels at all. The
+   panel must say it cannot tell, rather than reading absent as "none". */
+const INBOX_LEGACY = {
+  enabled: true,
+  stats: { enabled: true, channels: ['email', 'telegram', 'web'], threads: 3, messages: 41, max_messages: 500 },
 };
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
@@ -197,34 +216,51 @@ describe('PresenceInboxPanel — owner desk presence + the inbox flag COMMS cann
   });
 
   /* REGRESSION — the channels row was rendered bare, directly above "Persisted channels
-     exactly as the store reports them". It is neither persisted nor store-reported: it is
-     sorted(SUPPORTED_INBOX_CHANNELS), the accept-allowlist, identical in all three states. */
-  it('marks channels as a constant and never calls it persisted traffic', async () => {
+     exactly as the store reports them". It was neither persisted nor store-reported: it was
+     sorted(SUPPORTED_INBOX_CHANNELS), the accept-allowlist, identical in all three states.
+     The store now also returns active_channels/by_channel, so the panel shows the vocabulary
+     and the measurement as separate rows — and this pins that they cannot be confused. */
+  it('separates the accept-list constant from the channels actually holding traffic', async () => {
     mockFetch(ok(PRESENCE_NEVER), ok(INBOX_BOUND));
     render(<PresenceInboxPanel />);
     await waitFor(() => expect(screen.getByText('BOUND')).toBeTruthy());
 
-    const busy = rowText('channels');
-    expect(busy).toContain('(constant list)');
+    // the vocabulary, explicitly labelled as a constant
+    expect(rowText('accepts')).toContain('(constant list)');
+    // the measurement: only channels that really hold messages, with their counts
+    const busy = rowText('holds traffic');
+    expect(busy).toContain('telegram');
+    expect(busy).toContain('38');
+    expect(busy).toContain('web');
+    expect(busy).not.toContain('email');      // supported but silent — absent, not zero
     // the discredited claim must be gone, not softened
     expect(screen.queryByText(/Persisted channels/)).toBeNull();
     expect(screen.queryByText(/exactly as the store reports/)).toBeNull();
-    expect(screen.getByText(/reads identically/)).toBeTruthy();
     cleanup();
 
-    // a store that has captured nothing reports the identical list — so the row cannot be
-    // read as "traffic on these channels is being captured"
+    // an empty store now reads DIFFERENTLY from a busy one — the whole point of the fix
     mockFetch(ok(PRESENCE_NEVER), ok(INBOX_BOUND_EMPTY));
     render(<PresenceInboxPanel />);
     await waitFor(() => expect(screen.getByText('BOUND')).toBeTruthy());
-    expect(rowText('channels')).toBe(busy);
+    expect(rowText('accepts')).toContain('(constant list)');   // vocabulary unchanged…
+    expect(rowText('holds traffic')).toContain('none');        // …measurement is not
+    expect(rowText('holds traffic')).not.toBe(busy);
     cleanup();
 
-    // and with no store at all it is a handler literal, tagged like its sibling zeros
+    // no store at all: nothing is held, and it says so rather than echoing the constant
     mockFetch(ok(PRESENCE_NEVER), ok(INBOX_UNBOUND));
     render(<PresenceInboxPanel />);
     await waitFor(() => expect(screen.getByText('NOT BOUND')).toBeTruthy());
-    expect(rowText('channels')).toContain('(placeholder)');
+    expect(rowText('holds traffic')).toContain('no store');
+  });
+
+  it('says it cannot tell when the payload predates the split', async () => {
+    mockFetch(ok(PRESENCE_NEVER), ok(INBOX_LEGACY));
+    render(<PresenceInboxPanel />);
+    await waitFor(() => expect(screen.getByText('BOUND')).toBeTruthy());
+    // absent is not "none": an older backend genuinely cannot answer this
+    expect(rowText('holds traffic')).toContain('not in payload');
+    expect(rowText('holds traffic')).not.toContain('none');
   });
 
   /* REGRESSION — away:true used to be labelled 'AWAY · cards also escalate' and footnoted
