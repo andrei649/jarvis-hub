@@ -18,6 +18,44 @@ import logging
 logger = logging.getLogger("jarvis.orchestrator")
 
 
+
+# ── DRA-15 defect 4: the auto-file net's absence, reported once ──────────────────
+#
+# Module-level because the condition is a STATE (the component is missing), not a
+# per-turn event: warning on every turn would bury it. It re-arms when the component
+# comes back, so a second outage is reported too rather than being masked by the first.
+_autofile_warned = False
+
+
+def _autofile_ok() -> None:
+    """Note that the review queue is present, so a later outage warns again."""
+    global _autofile_warned
+    _autofile_warned = False
+
+
+def reset_autofile_warning() -> None:
+    """Test seam: forget that the warning has been emitted."""
+    _autofile_ok()
+
+
+def _warn_autofile_unavailable(score, threshold) -> None:
+    global _autofile_warned
+    try:
+        if score is None or threshold is None or score >= threshold:
+            return          # the net would not have caught this turn; nothing was lost
+    except TypeError:
+        return
+    if _autofile_warned:
+        return
+    _autofile_warned = True
+    logger.warning(
+        "review_queue is unavailable — a turn scoring %s (below threshold %s) was NOT "
+        "flagged for human review, and neither will any other until it is back. The "
+        "auto-file safety net is off; quality scores are still recorded.",
+        score, threshold,
+    )
+
+
 def update_cognition(orch, text, intent, plugin_data, synthesized,
                      t_classify, t_route, t_plugin, t_synthesize):
     from core.router import INTENT_RULES
@@ -160,8 +198,18 @@ def update_cognition(orch, text, intent, plugin_data, synthesized,
                                 trace_id=trace_dict.get("id", ""),
                             )
                     # H10.25: auto-flag low-scoring traces for human review.
-                    if getattr(orch, "review_queue", None) is not None:
-                        orch.review_queue.auto_flag(trace_dict, q.get("score"), orch.quality.threshold)
+                    _rq = getattr(orch, "review_queue", None)
+                    if _rq is not None:
+                        _rq.auto_flag(trace_dict, q.get("score"), orch.quality.threshold)
+                        _autofile_ok()
+                    else:
+                        # DRA-15 defect 4: this branch used to be empty. A low-scoring turn
+                        # was scored into the quality ring and then dropped — no review row,
+                        # no log, nothing to notice. The safety net for bad output was the
+                        # one component whose absence was unobservable. Say it once, naming
+                        # the score that went unflagged, and only for a turn the net would
+                        # actually have caught.
+                        _warn_autofile_unavailable(q.get("score"), getattr(orch.quality, "threshold", None))
                 except Exception:
                     logger.debug("quality scoring skipped", exc_info=True)
             else:
