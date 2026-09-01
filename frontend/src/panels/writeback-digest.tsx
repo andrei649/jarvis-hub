@@ -259,7 +259,7 @@ export function WritebackDigestPanel() {
             queued for approval · task #{String(wbOut.task_id)} · {String(wbOut.kind || '')}
           </div>
           <Note>
-            Held as an ask-tier task. NOTHING has been written to {String((selected && selected.target) || 'the external system')} —
+            Held as an ask-tier task. NOTHING has been written to {String(wbOut.kind || '').split('.')[1] || 'the external system'} —
             the API call runs later, in WriteBackBroker.execute, only after you approve it, and an unconfigured
             host defers it instead (a result this route never reports back).
           </Note>

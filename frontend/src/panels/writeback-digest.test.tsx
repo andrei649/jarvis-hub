@@ -204,7 +204,9 @@ describe('WRITEBACK & DIGEST · digest', () => {
     expect(link.getAttribute('rel')).toBe('noreferrer noopener');
 
     // chips learned from the echo; deselecting all disables the run rather than sending []
-    for (const n of ['hn', 'reddit', 'arxiv', 'youtube', 'news']) fireEvent.click(screen.getByText(n));
+    // the chips are the aria-pressed buttons — "hn" also appears as an item's source Tag
+    const chip = (n) => screen.getAllByRole('button').find((b) => b.textContent === n && b.hasAttribute('aria-pressed'));
+    for (const n of ['hn', 'reddit', 'arxiv', 'youtube', 'news']) fireEvent.click(chip(n));
     expect(screen.getByText('run digest').disabled).toBe(true);
     expect(body()).toContain('an empty list would silently run all of them');
     expect(seen).toHaveLength(1);
