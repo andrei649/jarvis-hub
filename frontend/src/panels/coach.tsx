@@ -162,7 +162,13 @@ export function CoachPanel() {
 
   useEffect(() => {
     if (!sessionRes) return;
-    if (sessionIds.length && !sessionIds.includes(selId)) setSelId(sessionIds[0]);
+    // Clear the selection when the session yields NOTHING, do not just skip. The old guard
+    // was `sessionIds.length && !sessionIds.includes(selId)`, so an empty session (due: [],
+    // new: []) left `selId` on whatever was picked before it was built. `gradable` is then
+    // [] and the select shows only the placeholder — but `selected` still resolves that
+    // stale id out of the deck, so the grade buttons stayed ENABLED and posted a review for
+    // a card the session does not contain and the operator cannot see selected.
+    if (!sessionIds.includes(selId)) setSelId(sessionIds[0] || '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionRes]);
 

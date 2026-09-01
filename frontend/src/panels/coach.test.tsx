@@ -196,4 +196,43 @@ describe('CoachPanel — deck is browser-local, the three POSTs are real', () =>
     await waitFor(() => expect(screen.getByText('LIVE')).toBeTruthy());
     expect(container.textContent).toContain('this deck lives in this browser only');
   });
+  /* An empty session must DISARM grading, not silently keep the previous pick.
+
+     Found by the adversarial review pass. The reset effect used to be guarded by
+     `sessionIds.length && …`, so a session returning due: [] / new: [] skipped the reset
+     entirely and `selId` kept its pre-session value. The select then rendered only the
+     placeholder (gradable is empty), while `selected` still resolved the stale id out of
+     the deck — so the grade buttons stayed live and POSTed a review for a card the session
+     does not contain and the operator cannot see selected. Worse than a dead control: an
+     ARMED one, aimed at something invisible. */
+  it('an empty session clears the pick and disables grading', async () => {
+    ok({});
+    render(<CoachPanel />);
+    addCards(['Alpha', 'Beta']);
+
+    const sel = screen.getByLabelText('card to grade');
+    fireEvent.change(sel, { target: { value: sel.options[1].value } });
+    expect(sel.value).toBeTruthy();
+    // Select by the unique title ('grade N — …'); filtering on digit text also caught
+    // unrelated buttons in the deck rows.
+    const gradeBtns = () => screen.getAllByRole('button')
+      .filter((b) => /^grade [0-5] /.test(b.getAttribute('title') || ''));
+    expect(gradeBtns().length).toBeGreaterThan(0);
+    expect(gradeBtns().every((b) => b.disabled)).toBe(false);   // armed while a card is picked
+
+    // the session says nothing is due and nothing is new
+    ok({ now_day: 20000, due: [], new: [],
+         counts: { due_total: 0, due_selected: 0, new_total: 0, new_selected: 0, deferred: 0 } });
+    fireEvent.click(screen.getByText('build session'));
+
+    // Wait for the SESSION to actually render before asserting. A select whose value
+    // matches no option reports '' in the DOM even while React state still holds the stale
+    // id, so `select.value === ''` is not on its own evidence the pick was cleared.
+    await waitFor(() => expect(screen.getByText(/due_total 0/)).toBeTruthy());
+    // Wait for the DISABLED state, not just the session text: clearing the pick is a state
+    // update that flushes on a later render than the one that paints the counts, so asserting
+    // immediately after the counts appear tests the gap rather than the behaviour.
+    await waitFor(() => expect(gradeBtns().every((b) => b.disabled)).toBe(true));
+    expect(screen.getByLabelText('card to grade').value).toBe('');
+  });
 });
