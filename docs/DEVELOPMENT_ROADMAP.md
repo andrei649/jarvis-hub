@@ -165,9 +165,13 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
-61 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
+48 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
 `UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`; it held 79 before this wave, and
-`tests/test_doc_reference_integrity.py` keeps this number honest). DRA-15 and DRA-36 both stay
+`tests/test_doc_reference_integrity.py` keeps this number honest). Of the 13 that left the list
+at 61, only 6 left because a panel was built: 1 was never uncalled at all (`agents/web/*.html`
+was missing from the gate's client globs, so `brain.html` fetching `/api/brain/summary` did not
+count), and 6 have a non-UI caller by design and moved to `MACHINE_FACING`. A shrinking number
+is only good news when it shrinks for the right reason. DRA-15 and DRA-36 both stay
 open — the list is shorter, not empty. Work it as a series of small vertical slices, each
 deleting entries from the punch list; prioritize by user value:
 
