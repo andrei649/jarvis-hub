@@ -1,0 +1,33 @@
+name: Lockfiles
+
+# AUD-10 (F33): guard that every requirements*.lock stays in sync with its
+# requirements*.txt source. The check is deterministic — it compares the source
+# sha256 that scripts/lock_deps.sh embeds in each lock, so it fails only when a
+# source .txt was edited without regenerating its lock, and never reds an
+# unrelated PR just because an upstream release appeared (version refreshes are
+# thirdparty-autoupdate.yml's job). The locks' integrity — that their pinned
+# hashes actually install — is proven separately by ci.yml + smoke.yml, which
+# install from them with `--require-hashes` across the ubuntu+windows matrix.
+#
+# History: deleted by the 2026-08-29 de-gate (#981, archived as docs/restore group E);
+# restored on the PR path 2026-09-02 by CTO decision D1b — it costs ~15 s. The archived
+# copy only triggered on requirements*/lock_deps paths; the path filters are dropped so
+# the `in-sync` check is reported on EVERY pull request — a path-filtered check that is
+# marked required in branch protection leaves unrelated PRs stuck at "Expected — Waiting
+# for status to be reported" (docs/MAINTENANCE_RUNBOOK.md §10). Blocking is still the
+# owner's branch-protection call. No secrets are used.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  in-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Locks in sync with their requirements*.txt sources
+        run: ./scripts/lock_deps.sh --check

@@ -89,8 +89,21 @@ class RealityEvidenceLedger:
         lane: str = "local",
         started_at: str = "",
         live_enabled: bool | None = None,
+        expected_seam: set[str] | frozenset[str] | None = None,
     ) -> dict:
         results = list(run.get("results") or [])
+        seam_ids = set(expected_seam or ())
+        # A SEAM capability (registered, but with no runtime behind it) is *expected*
+        # to fail its probe — the pytest lane pins exactly that contract
+        # (tests/test_reality_harness.py). Count those separately so the exit
+        # verdict can distinguish "the seam is still a seam" from a real regression.
+        expected_failures = sorted(
+            str(result.get("capability_id"))
+            for result in results
+            if not result.get("passed")
+            and not result.get("skipped")
+            and result.get("capability_id") in seam_ids
+        )
         paired = list(zip(results, cases, strict=True)) if cases is not None else [
             (result, None) for result in results
         ]
@@ -108,7 +121,9 @@ class RealityEvidenceLedger:
                 "total": run.get("total"),
                 "skipped": run.get("skipped"),
                 "cases": len(results),
+                "expected_seam_failures": len(expected_failures),
             },
+            "expected_seam_failures": expected_failures,
             # The honesty fields: this artifact is a transcript, not authority.
             "promotion_scope": "in_process_only",
             "durable_promotion": False,
@@ -148,7 +163,6 @@ class RealityEvidenceLedger:
 async def _run_and_record(args) -> dict:
     # Boot the same fixture the readiness tests use: a real orchestrator with
     # discovered skills, so the derived plugin/component/skill cases exist.
-    from agents.core import skills as skill_registry
     from agents.core.config import JarvisConfig
     from agents.core.observability.reality_harness import (
         all_reality_cases,
@@ -159,9 +173,15 @@ async def _run_and_record(args) -> dict:
 
     started = _now_iso()
     orch = Orchestrator(JarvisConfig())
-    skill_registry.discover()
+    # Discovery lives on the orchestrator's SkillLoader (the package exposes no
+    # module-level ``discover``) — the same call the readiness fixture makes
+    # and that ``Orchestrator.initialize`` would make on a real boot.
+    orch.skills.discover()
     cases = all_reality_cases(orch)
     run = await run_reality(cases)
+    from agents.core.observability import capability_registry as cr
+
+    seam_ids = {record.id for record in cr.build_records(orch) if record.state == cr.SEAM}
     ledger = RealityEvidenceLedger(Path(args.store_root) if args.store_root else None)
     return ledger.record_run(
         run,
@@ -171,6 +191,7 @@ async def _run_and_record(args) -> dict:
         lane=args.lane,
         started_at=started,
         live_enabled=reality_enabled(),
+        expected_seam=seam_ids,
     )
 
 
@@ -188,13 +209,19 @@ def main(argv=None) -> int:
             json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
     totals = record["totals"]
+    expected = int(totals.get("expected_seam_failures") or 0)
     print(
         f"reality evidence: {totals['passed']}/{totals['total']} passed, "
-        f"{totals['skipped']} skipped, {totals['cases']} cases -> recorded"
+        f"{totals['skipped']} skipped, {expected} expected seam failures, "
+        f"{totals['cases']} cases -> recorded"
     )
     # The run is recorded either way; a red run is evidence too. Exit red so
-    # CI surfaces it, matching the pytest lane's behavior.
-    return 0 if totals["passed"] == totals["total"] else 1
+    # CI surfaces it, matching the pytest lane's contract: every failing case
+    # must be a SEAM capability the harness test already expects to fail;
+    # anything else is a regression.
+    passed = int(totals.get("passed") or 0)
+    total = int(totals.get("total") or 0)
+    return 0 if passed + expected >= total else 1
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry

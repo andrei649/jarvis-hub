@@ -1,0 +1,114 @@
+name: Security
+
+# AUD-10 — security CI scans (each fails only on NEW findings):
+#   gitleaks          (F36)  secret scan, allowlist in .gitleaks.toml
+#   sast / semgrep    (F35)  SAST; the 9 pre-existing findings were triaged —
+#                            2 real (xml.etree → defusedxml) fixed, 7 logger-credential
+#                            false positives suppressed inline with named `# nosemgrep`
+#   dependency-audit  (F34)  pip-audit against the hashed lockfile (F33);
+#                            triaged/unfixable CVEs go in the --ignore-vuln list below
+#   bandit            (F34/F35)  SAST, baseline in .bandit-baseline.json
+#
+# History: deleted by the 2026-08-29 de-gate (#981, archived as docs/restore group A);
+# restored on the PR path 2026-09-02 by CTO decision D1b (docs/decisions/
+# 2026-09-02-cto-ci-posture-and-1.0-freeze.md) because the four jobs cost ~1–1.5 min
+# in parallel with ci.yml's `test` lane. All four jobs exit non-zero on a new finding,
+# but none of them BLOCKS a merge until the owner lists the check names again under
+# branch protection (docs/restore/README.md → "The other half"). No secrets are used.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Superseded PR runs are cancelled; a push to main always completes (D1c, same
+# rule as ci.yml).
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install gitleaks (pinned + checksum-verified)
+        run: |
+          set -euo pipefail
+          VERSION=8.30.1
+          SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          echo "${SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks version
+
+      - name: Scan working tree (blocking gate)
+        # AUD-10 (F36): blocking secret-scan gate. Known false positives (test
+        # fixtures, doc examples, settings-schema key names) are allowlisted in
+        # .gitleaks.toml (which extends the default ruleset), so only NEW secrets
+        # fail the build. Re-scan locally with the same command after edits.
+        run: ./gitleaks dir . --config .gitleaks.toml --redact --no-banner --verbose
+
+  sast:
+    name: SAST (semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Semgrep scan (blocking)
+        # AUD-10 (F35): blocking SAST gate. --error makes semgrep exit non-zero on any
+        # finding. The current tree is clean: the 2 real findings (stdlib xml.etree on
+        # untrusted feeds) were fixed with defusedxml, and the 7 logger-credential-leak
+        # false positives are suppressed at the call site with a named `# nosemgrep:`
+        # (so the rule still fires on genuinely new code). New findings fail the build.
+        run: |
+          python -m pip install --quiet 'semgrep==1.167.0'
+          semgrep scan --config p/python --config p/security-audit \
+            --error --quiet --metrics off --disable-version-check \
+            agents worldview
+
+  dependency-audit:
+    name: Dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: pip-audit (blocking)
+        # AUD-10 (F34): blocking dependency-CVE gate against the hash-pinned lockfile
+        # (F33) — auditing the exact resolved versions, not the loose constraints. A
+        # newly-disclosed CVE in a pinned dependency fails the build, forcing an
+        # upgrade (regenerate with ./scripts/lock_deps.sh). If an advisory is triaged
+        # as not-applicable / unfixable, add it here, e.g.:
+        #   pip-audit -r requirements-beta.lock --desc --ignore-vuln GHSA-xxxx-xxxx-xxxx
+        # The ignore-list is intentionally empty today — the lockfile audits clean.
+        run: |
+          python -m pip install --quiet 'pip-audit==2.10.1'
+          pip-audit -r requirements-beta.lock --desc
+
+  bandit:
+    name: SAST (bandit — blocking gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Bandit (blocking, baselined)
+        # AUD-10 (F34/F35): blocking SAST gate over the hub source. Pre-existing
+        # findings are frozen in .bandit-baseline.json so this fails only on NEW
+        # issues (matched by file + rule + code snippet, so line shifts don't
+        # count). Baseline regenerated 2026-09-02 on restore — the 2026-08-30
+        # archive copy was three findings stale. Regenerate after an intentional
+        # change with:
+        #   python -m bandit -r agents scripts -q -f json -o .bandit-baseline.json
+        run: |
+          python -m pip install --quiet 'bandit==1.9.4'
+          python -m bandit -r agents scripts -q -b .bandit-baseline.json

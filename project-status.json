@@ -1,170 +1,205 @@
 {
   "active_agents": 18,
+  "horizon_totals": {
+    "blocked": 1,
+    "delivered": 33,
+    "done": 254,
+    "open": 13,
+    "open_or_blocked": 14,
+    "total": 301
+  },
   "horizons": {
     "H10": {
       "blocked": 0,
+      "delivered": 0,
       "done": 30,
       "open": 0,
       "total": 30
     },
     "H11": {
       "blocked": 0,
+      "delivered": 0,
       "done": 4,
       "open": 0,
       "total": 4
     },
     "H12": {
       "blocked": 0,
+      "delivered": 0,
       "done": 24,
       "open": 2,
       "total": 26
     },
     "H13": {
       "blocked": 0,
+      "delivered": 0,
       "done": 3,
       "open": 1,
       "total": 4
     },
     "H14": {
       "blocked": 0,
+      "delivered": 0,
       "done": 4,
       "open": 0,
       "total": 4
     },
     "H15": {
       "blocked": 0,
+      "delivered": 0,
       "done": 4,
       "open": 0,
       "total": 4
     },
     "H16": {
       "blocked": 0,
+      "delivered": 0,
       "done": 4,
       "open": 0,
       "total": 4
     },
     "H17": {
       "blocked": 0,
+      "delivered": 0,
       "done": 4,
       "open": 0,
       "total": 4
     },
     "H18": {
       "blocked": 0,
+      "delivered": 0,
       "done": 22,
       "open": 3,
       "total": 25
     },
     "H19": {
       "blocked": 0,
+      "delivered": 33,
       "done": 2,
-      "open": 33,
+      "open": 0,
       "total": 35
     },
     "H20": {
       "blocked": 0,
+      "delivered": 0,
       "done": 6,
       "open": 0,
       "total": 6
     },
     "H21": {
       "blocked": 0,
+      "delivered": 0,
       "done": 6,
       "open": 0,
       "total": 6
     },
     "H22": {
       "blocked": 0,
+      "delivered": 0,
       "done": 9,
       "open": 3,
       "total": 12
     },
     "H23": {
       "blocked": 1,
-      "done": 29,
-      "open": 0,
+      "delivered": 0,
+      "done": 28,
+      "open": 1,
       "total": 30
     },
     "H27": {
       "blocked": 0,
+      "delivered": 0,
       "done": 8,
       "open": 0,
       "total": 8
     },
     "H28": {
       "blocked": 0,
+      "delivered": 0,
       "done": 6,
       "open": 0,
       "total": 6
     },
     "H29": {
       "blocked": 0,
+      "delivered": 0,
       "done": 6,
       "open": 0,
       "total": 6
     },
     "H30": {
       "blocked": 0,
+      "delivered": 0,
       "done": 7,
       "open": 1,
       "total": 8
     },
     "H31": {
       "blocked": 0,
+      "delivered": 0,
       "done": 6,
       "open": 0,
       "total": 6
     },
     "H32": {
       "blocked": 0,
+      "delivered": 0,
       "done": 7,
       "open": 0,
       "total": 7
     },
     "H33": {
       "blocked": 0,
+      "delivered": 0,
       "done": 6,
       "open": 0,
       "total": 6
     },
     "H34": {
       "blocked": 0,
+      "delivered": 0,
       "done": 6,
       "open": 1,
       "total": 7
     },
     "H5": {
       "blocked": 0,
+      "delivered": 0,
       "done": 16,
       "open": 1,
       "total": 17
     },
     "H6": {
       "blocked": 0,
+      "delivered": 0,
       "done": 7,
       "open": 0,
       "total": 7
     },
     "H7": {
       "blocked": 0,
+      "delivered": 0,
       "done": 16,
       "open": 0,
       "total": 16
     },
     "H8": {
       "blocked": 0,
+      "delivered": 0,
       "done": 9,
       "open": 0,
       "total": 9
     },
     "H9": {
       "blocked": 0,
+      "delivered": 0,
       "done": 4,
       "open": 0,
       "total": 4
     }
   },
-  "latest_ci_commit": "9f31a50b0cf3e9a0bec7dd430322a714a7643df2",
+  "latest_ci_commit": "268793a40963379c841c87b1642c89dc9e260350",
   "open_release_gates": [
     {
       "id": "A1",
@@ -173,8 +208,13 @@
     },
     {
       "id": "A3",
-      "name": "Dependabot re-triage — 19 open alerts on main (4 high, 2026-07-07)",
-      "status": "🟢 agent half done in #634 — local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees now 0 vulns with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface — the device gate is real). Owner tail: worldview 2 moderates (in-next postcss, wait for next 16.3), mobile Expo SDK upgrade on a device, dismiss stale alerts in UI"
+      "name": "Dependabot re-triage — offline `npm audit` / `pip-audit`, measured 2026-09-02: frontend **0** · root `package-lock` (HUD-test tree) **5** (2 high) · worldview **3 high** · worldview/mcp **5** (2 high) · mobile **21–22** (10–11 high; device-gated Expo chain) · Python `requirements.lock` **clean**. *(Superseded figure: 19 open alerts / 4 high, 2026-07-07.)*",
+      "status": "🟢 agent half done in #634 — local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees 0 vulns at the time with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface — the device gate is real). **Recounted 2026-09-02 (measured offline; GitHub's own alert count still to be read by the owner — Security tab, or `gh api repos/andrei649/jarvis-hub/dependabot/alerts?state=open`):** frontend still 0; worldview/mcp is back to 5 (2 high), worldview at 3 high and the root HUD-test tree at 5 (2 high) — all `fixAvailable`, taken by the 2026-09-02 dependency audit wave (CTO D7: `npm audit fix` + that tree's own tests/build; frontend and mobile untouched); Python clean via `pip-audit`. Owner tail: mobile Expo SDK upgrade on a device (21–22 findings, 10–11 high), read the real Dependabot count, dismiss stale alerts in UI"
+    },
+    {
+      "id": "A4",
+      "name": "GitHub settings batch (SEC-4 required checks · CQ-2 dismissals · CQ-3 paste · repo metadata)",
+      "status": "⬜ **open (owner) — partial 2026-08-28, recounted 2026-08-31 (`DRA-30`) and 2026-09-02.** The batch was applied in the GitHub UI, but the *required-checks* half was overtaken by the #981 de-gate: the stale check names (deleted workflows) must be **removed**, and — per the 2026-09-02 CTO re-gate (D1, [decision doc](docs/decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md)) — the four PR checks that now run pre-merge must be marked **required**: `test (ubuntu-latest)` (incl. the tracked-test-count drift step), `hud-v2-build` (bundle staleness), the `security-scans` lanes (`Secret scan (gitleaks)` · `SAST (semgrep)` · `Dependency audit (pip-audit)` · `SAST (bandit — blocking gate)`) and `lockfile-drift` (`in-sync`). Until the owner lists them, they are advisory and `pr-auto-merge.yml` merges any non-draft CLEAN PR hourly with no review. `docs/OWNER_TASKS.md` → \"De-gate merges\" lists exactly that as open. Reading this row as \"done — settings applied\" (a check mark quoted mid-prose) is what left BACKLOG.md the last file in the tree contradicting the de-gate, and what mis-reported A4 as closed in `project-status.json` until the classifier switched to the status cell's *leading* marker (2026-09-02). See SEC-4 above."
     },
     {
       "id": "A5",
@@ -189,12 +229,12 @@
     {
       "id": "A9",
       "name": "Tag 1.0.0",
-      "status": "🟢 **release prep landed 2026-08-28 — two owner commands left.** `agents.__version__` bumped `0.11.0`→`1.0.0` and the CHANGELOG `[Unreleased]` block cut to a `[1.0.0]` section, so `release.yml`'s tag/version check passes. **Owner, in order: (1) A5 — flip MIT→Apache-2.0 (3 commands in [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md)); a tag pushed before the flip ships 1.0.0 under MIT. (2) `git tag v1.0.0 && git push origin v1.0.0` *on `main`, after this PR merges* — the tag publishes a public GitHub Release with artifacts, SBOM and checksums, so it must not be cut from a feature branch.** **Ordering confirmed by owner 2026-09-01:** the tag is exactly these two commands; the A1 `docs/MANUAL_TESTING.md` §0 runbook is post-tag proof, not a tag precondition."
+      "status": "🟢 **release prep landed 2026-08-28 — two owner commands left.** `agents.__version__` bumped `0.11.0`→`1.0.0` and the CHANGELOG `[Unreleased]` block cut to a `[1.0.0]` section, so `release.yml`'s tag/version check passes. **Owner, in order: (1) A5 — flip MIT→Apache-2.0 (3 commands in [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md)); a tag pushed before the flip ships 1.0.0 under MIT. (2) `git tag v1.0.0 && git push origin v1.0.0` *on `main`, after this PR merges* — the tag publishes a public GitHub Release with artifacts, SBOM and checksums, so it must not be cut from a feature branch.** **Ordering confirmed by owner 2026-09-01:** the tag is exactly these two commands; the A1 `docs/MANUAL_TESTING.md` §0 runbook is post-tag proof, not a tag precondition. **CTO 2026-09-02 (D5 — [decision doc](docs/decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md)):** `main` is feature-frozen for 1.0 from the merge of that PR; the tag is cut immediately after A5 merges. **Before tagging, fold CHANGELOG `[Unreleased]` into `[1.0.0]` and set its date** (the #981 de-gate entry has accumulated above the cut section). Note: `release.yml` has never run on GitHub — a `workflow_dispatch` `dry_run` was triggered 2026-09-02 by the coordinator as its first end-to-end check; read its result before tagging. Definition of done / freeze: [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) → \"1.0 definition of done / freeze\"."
     }
   ],
   "routes": 442,
   "tests": {
-    "backend": 7244,
+    "backend": 7265,
     "frontend": 927,
     "mobile": 110
   },

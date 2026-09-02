@@ -339,3 +339,76 @@ def test_delete_doc_removes_the_doc_and_all_of_its_blocks(store):
 def test_delete_doc_raises_on_an_unknown_doc(store):
     with pytest.raises(NotesStoreError):
         store.delete_doc("no-such-doc")
+
+
+# ── strictly-monotonic _now(): list_docs must not flake inside one clock tick ─
+def test_now_is_strictly_monotonic_when_the_wall_clock_stands_still(monkeypatch):
+    """On Windows (pre-3.13) the wall clock ticks every ~15.6 ms, so two
+    writes routinely read the *same* instant; ``list_docs`` orders on
+    ``updated_at`` alone and the tie broke on a random UUID (~50% red in CI).
+    ``_now`` must hand out strictly increasing stamps regardless of the clock."""
+    from datetime import UTC, datetime
+
+    from agents.core import notes_store
+
+    frozen = datetime(2026, 9, 2, 12, 0, 0, 500_000, tzinfo=UTC)
+    monkeypatch.setattr(notes_store, "_wall_clock", lambda: frozen)
+    monkeypatch.setattr(notes_store, "_LAST_NOW", None)
+
+    stamps = [notes_store._now() for _ in range(5)]
+    # Strictly increasing both as datetimes and as the TEXT SQLite compares.
+    assert stamps == sorted(stamps) and len(set(stamps)) == len(stamps)
+    for earlier, later in zip(stamps, stamps[1:], strict=False):
+        assert later > earlier
+        assert datetime.fromisoformat(later) > datetime.fromisoformat(earlier)
+    # Format is unchanged (ISO-8601 UTC with microseconds) so rows written
+    # before the fix still compare correctly with rows written after it.
+    assert stamps[0] == "2026-09-02T12:00:00.500000+00:00"
+    assert stamps[1] == "2026-09-02T12:00:00.500001+00:00"
+
+
+def test_now_never_goes_backwards_if_the_wall_clock_does(monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from agents.core import notes_store
+
+    base = datetime(2026, 9, 2, 12, 0, 0, tzinfo=UTC)
+    reads = iter([base, base - timedelta(seconds=5), base + timedelta(seconds=1)])
+    monkeypatch.setattr(notes_store, "_wall_clock", lambda: next(reads))
+    monkeypatch.setattr(notes_store, "_LAST_NOW", None)
+    first, second, third = (notes_store._now() for _ in range(3))
+    assert first < second < third
+    # once the clock genuinely advances, the real reading is used again
+    assert third == "2026-09-02T12:00:01.000000+00:00"
+
+
+def test_list_docs_orders_correctly_inside_a_single_clock_tick(store, monkeypatch):
+    """The Windows-red regression, forced deterministically: every writer of
+    docs.updated_at (create_doc, add_block, update/move/delete_block) reads the
+    same wall-clock instant, yet the most recently touched doc still lists first."""
+    from datetime import UTC, datetime
+
+    from agents.core import notes_store
+
+    frozen = datetime(2026, 9, 2, 12, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(notes_store, "_wall_clock", lambda: frozen)
+    monkeypatch.setattr(notes_store, "_LAST_NOW", None)
+
+    a = store.create_doc("alpha")
+    b = store.create_doc("beta")
+    assert [d["id"] for d in store.list_docs()] == [b, a]
+
+    block = store.add_block(a, "paragraph", "hello")
+    assert [d["id"] for d in store.list_docs()] == [a, b]
+
+    store.add_block(b, "paragraph", "world")
+    assert [d["id"] for d in store.list_docs()] == [b, a]
+
+    store.update_block(block, text="hello again")
+    assert [d["id"] for d in store.list_docs()] == [a, b]
+
+    c = store.create_doc("gamma")
+    assert [d["id"] for d in store.list_docs()] == [c, a, b]
+
+    store.delete_block(block)
+    assert [d["id"] for d in store.list_docs()] == [a, c, b]

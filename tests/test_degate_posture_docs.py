@@ -58,12 +58,16 @@ def test_no_workflow_comment_presumes_required_checks() -> None:
         assert "the required `CI` checks" not in text, path.name
 
 
-def test_deleted_security_workflow_stays_deleted_unless_restored_deliberately() -> None:
+def test_security_and_lockfile_lanes_are_restored_deliberately() -> None:
     """The four security scan jobs (gitleaks/semgrep/pip-audit/bandit) went with security.yml on
-    2026-08-29; they live in docs/restore/ group A. If someone restores the workflow, the docs
-    above need revisiting — this asserts the premise the other assertions rest on."""
-    assert not (WORKFLOWS / "security.yml").exists()
-    assert "A-security-scans" in _read("docs/restore/README.md")
+    2026-08-29 (#981) and came back on 2026-09-02 (CTO decision D1, docs/decisions/
+    2026-09-02-cto-ci-posture-and-1.0-freeze.md) together with the lockfile-drift lane. A restore
+    is only honest when docs/restore/README.md records it, so this pins both halves."""
+    assert (WORKFLOWS / "security.yml").exists()
+    assert (WORKFLOWS / "lockfile.yml").exists()
+    readme = _read("docs/restore/README.md")
+    assert "A-security-scans" in readme
+    assert "2026-09-02" in readme
 
 
 def test_security_chapter_states_the_de_gate_posture_instead_of_deferring_it() -> None:

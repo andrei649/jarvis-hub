@@ -14,6 +14,11 @@ to feature work, fixes, refactors, security changes, CI/governance work, and mul
 > **Advisory since #981.** The R0–R3 tiers below are a convention agents follow, not a gate GitHub
 > enforces — see [`AGENTS.md`](../AGENTS.md) → "Development posture". Nothing fails a PR if a tier
 > is mis-assigned; the value is in choosing the right amount of test and review for the change.
+> Two facts to keep in mind (CTO, 2026-09-02): `pr-auto-merge.yml` merges any non-draft PR GitHub
+> reports CLEAN, hourly, with no review; and the PR checks re-gated on 2026-09-02 (`test` incl. the
+> test-count drift step, `hud-v2-build`, security-scans, lockfile-drift) become blocking only once the
+> owner lists them as required in branch protection (owner item under A4 in
+> [`docs/OWNER_TASKS.md`](OWNER_TASKS.md)).
 
 Classify the smallest coherent change before implementation:
 
@@ -21,8 +26,8 @@ Classify the smallest coherent change before implementation:
 |---|---|---|
 | `R0` | prose, comments, non-executable diagrams | scope/content check + policy lint |
 | `R1` | tests, developer tooling, internal no-contract refactor | design summary + targeted tests + diff review |
-| `R2` | runtime, API/contract, dependency, generated truth, user-facing behavior | design receipt + regression + independent review + relevant full CI + rollback |
-| `R3` | security/authority, credentials, destructive/external writes, release governance, migrations | failure model + separated roles + owner/policy gate + independent verification + rollback proof |
+| `R2` | runtime, API/contract, dependency, generated truth, user-facing behavior | design receipt + regression + independent review *recommended* (not required since #981) + relevant full CI + rollback |
+| `R3` | security/authority, credentials, destructive/external writes, release governance, migrations | failure model + owner/policy gate + independent review *recommended*; runtime/security changes get a **recorded post-merge attestation in `BACKLOG.md`** (the SEC-B4 / SEC-B6 / #911 model from #1009) + rollback proof |
 
 When uncertain, choose the higher tier until evidence narrows it. Split mixed-risk work when the
 pieces can ship independently.
@@ -90,7 +95,10 @@ For parallel waves, compare both direct paths and indirect collision surfaces:
 - branch/governance configuration;
 - status and roadmap ledgers.
 
-For `R3`, builder, reviewer, and integrator are separate actors.
+For `R3`, separating builder, reviewer and integrator is recommended, not enforced (de-gated in
+#981): what is recorded instead is the post-merge attestation row in `BACKLOG.md` — a reviewer
+distinct from the builder, bound to the merged SHA, ending in PASS/HOLD (the SEC-B4 / SEC-B6 / #911
+model from #1009).
 
 ## 5. Verify the exact head
 

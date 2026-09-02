@@ -6,6 +6,8 @@ survives — nothing reads the ledger back into the registry, so a persisted
 green run cannot resurrect VERIFIED across a boot.
 """
 
+import json
+
 import pytest
 
 from agents.core.observability import capability_registry
@@ -48,7 +50,9 @@ async def test_run_is_recorded_with_schema_join_and_honesty_fields(tmp_path):
     ledger = RealityEvidenceLedger(tmp_path)
     record = ledger.record_run(run, cases, revision="abc123", lane="scheduled")
     assert record["schema"] == SCHEMA
-    assert record["totals"] == {"passed": 1, "total": 1, "skipped": 0, "cases": 1}
+    assert record["totals"] == {
+            "passed": 1, "total": 1, "skipped": 0, "cases": 1, "expected_seam_failures": 0,
+        }
     # The artifact says what it is: a transcript, never authority.
     assert record["promotion_scope"] == "in_process_only"
     assert record["durable_promotion"] is False
@@ -162,3 +166,65 @@ def test_ledger_lives_directly_under_its_root(tmp_path):
     ledger = RealityEvidenceLedger(tmp_path / "nested")
     assert ledger.path.parent == (tmp_path / "nested")
     assert ledger.path.name == "runs.jsonl"
+
+
+# ── the scheduled lane's actual entry point (red 4 nights: #980 called a
+#    non-existent ``agents.core.skills.discover``) ──────────────────────────
+@pytest.mark.asyncio
+async def test_run_and_record_boots_the_orchestrator_and_discovers_skills(tmp_path):
+    """Exercise ``_run_and_record`` in-process, offline, exactly as
+    ``python -m agents.core.observability.reality_evidence --lane scheduled``
+    does: it must return a record (not raise) and the skills-discovery path
+    must have produced the derived ``skill:*`` cases."""
+    import argparse
+
+    from agents.core.observability.reality_evidence import _run_and_record
+
+    args = argparse.Namespace(
+        store_root=str(tmp_path),
+        revision="deadbeef",
+        runner_id="pytest",
+        lane="scheduled",
+    )
+    record = await _run_and_record(args)
+
+    assert record["schema"] == SCHEMA
+    assert record["lane"] == "scheduled"
+    assert record["revision"] == "deadbeef"
+    assert record["totals"]["cases"] == len(record["cases"]) > 0
+    skill_cases = [c for c in record["cases"] if str(c["capability_id"]).startswith("skill:")]
+    assert skill_cases, "skills discovery ran, so skill:* cases must exist"
+    # The ledger landed under the requested root, not the data root.
+    ledger = RealityEvidenceLedger(tmp_path)
+    assert ledger.path.exists()
+    assert len(ledger.runs()) == 1
+
+
+def test_run_and_record_uses_the_loader_discover_not_a_package_attribute():
+    """Pin the fix shape: discovery is ``SkillLoader.discover`` on the
+    orchestrator — the ``agents.core.skills`` package exposes no ``discover``."""
+    import inspect
+
+    from agents.core import skills as skills_pkg
+    from agents.core.observability import reality_evidence
+
+    assert not hasattr(skills_pkg, "discover")
+    source = inspect.getsource(reality_evidence._run_and_record)
+    assert "orch.skills.discover()" in source
+    assert "skill_registry.discover()" not in source
+
+
+def test_main_exits_zero_offline_when_only_seam_capabilities_fail(tmp_path):
+    """The scheduled lane's exit verdict mirrors the pytest contract: a SEAM capability
+    (registered, no runtime behind it) is expected to fail its probe and must not turn the
+    nightly red — anything else failing still exits 1 (CTO decision D3, 2026-09-02)."""
+    from agents.core.observability.reality_evidence import main
+
+    out = tmp_path / "latest-run.json"
+    rc = main(["--store-root", str(tmp_path), "--json-out", str(out), "--lane", "local"])
+    record = json.loads(out.read_text(encoding="utf-8"))
+    totals = record["totals"]
+    failing = {case["capability_id"] for case in record["cases"] if not case["passed"] and not case["skipped"]}
+    assert rc == 0
+    assert totals["passed"] + totals["expected_seam_failures"] >= totals["total"]
+    assert set(record["expected_seam_failures"]) == failing

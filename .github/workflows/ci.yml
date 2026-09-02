@@ -1,10 +1,24 @@
 name: CI
 
-# Development-speed posture (2026-08-29, owner decision): pull requests run ONE
-# fast advisory lane — ruff + the pytest suite on ubuntu (~3 min). Everything
-# heavier (Windows matrix, sandbox containment, Signal Layer smoke, HUD suites,
-# OpenAPI typegen drift) runs post-merge on push to main, so it still catches
-# regressions without ever blocking a merge.
+# Development-speed posture (2026-08-29, owner decision): pull requests run a
+# fast advisory lane — ruff + the pytest suite on ubuntu (~3 min). The heavy
+# lanes (Windows matrix, sandbox containment, Signal Layer smoke, HUD JSDOM
+# suite, OpenAPI typegen drift) run post-merge on push to main, so they still
+# catch regressions without sitting on the PR critical path.
+#
+# Partial re-gate (2026-09-02, CTO decision D1 — docs/decisions/
+# 2026-09-02-cto-ci-posture-and-1.0-freeze.md), bounded to ~+0 min wall-clock on
+# the PR path because every added job runs in parallel with `test`:
+#   * hud-v2-build also runs on pull requests (~1.7 min, deterministic — the
+#     committed agents/web/v2 bundle went stale twice on main in one week);
+#   * the ubuntu `test` lane compares the JUnit test count of the run it just
+#     executed with project-status.json (`status_sync.py --verify-test-count`);
+#   * push-to-main runs are never cancelled by a newer push (4 of the last 15
+#     main runs were cancelled and never verified) — only PR runs supersede;
+#   * security scans and lockfile drift live in security.yml / lockfile.yml.
+# Whether any of these checks BLOCKS a merge is still branch-protection (owner
+# side); the hourly pr-auto-merge sweep merges any non-draft PR GitHub reports
+# as CLEAN.
 
 on:
   pull_request:
@@ -12,10 +26,13 @@ on:
   push:
     branches: [main]
 
-# Cancel superseded runs for the same ref (e.g. rapid pushes to a PR).
+# Cancel superseded runs for the same ref only on pull requests (rapid pushes to
+# a PR). A push to main is never cancelled by a newer push: every merge gets a
+# complete post-merge verdict (D1c — cancelled main runs hid a stale-bundle red
+# for two merges on 2026-08-31).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -45,10 +62,24 @@ jobs:
       - name: Test
         # -n auto: parallelize across runner cores. --dist loadfile keeps each
         # test file on one worker, and conftest gives each worker an isolated
-        # JARVIS_HOME so file stores don't race.
-        run: python -m pytest tests/ -n auto --dist loadfile --timeout=90 -q --tb=short
+        # JARVIS_HOME so file stores don't race. --junitxml is written once by
+        # the xdist controller with the aggregate tests="N" of the whole run.
+        run: >-
+          python -m pytest tests/ -n auto --dist loadfile --timeout=90 -q --tb=short
+          --junitxml=pytest-junit.xml
         env:
           JARVIS_TESTING: "1"
+      - name: Tracked backend test count matches this run
+        # D1e — test-count drift became invisible once the in-suite release gate
+        # switched to --reuse-test-counts (#988 was an 80-test drift). Compare the
+        # JUnit aggregate of the run above (not a second collection, and not the
+        # per-worker counts xdist prints) with project-status.json tests.backend.
+        # Ubuntu only: the tracked count is the Linux collection.
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python scripts/status_sync.py --verify-test-count backend --test-result pytest-junit.xml \
+            || { echo "::error::project-status.json tests.backend does not match the number of tests this run executed — run 'python scripts/status_sync.py' locally and commit the regenerated status files (project-status.json, README.md, STATUS.md, NERVA.md, GO_LIVE_PLAN.md)."; exit 1; }
 
   sandbox-isolation:
     # Post-merge only. Proves the Docker sandbox actually CONTAINS code — no
@@ -118,10 +149,10 @@ jobs:
       - run: npm run test:coverage
 
   hud-v2-build:
-    # Post-merge only. Build the v2 HUD (Vite + React + TS) and verify the
-    # committed bundle is current — so agents/web/v2 (served at /v2) can't
-    # silently go stale.
-    if: github.event_name == 'push'
+    # PRs and push to main (D1a, 2026-09-02). Build the v2 HUD (Vite + React +
+    # TS) and verify the committed bundle is current — so agents/web/v2 (served
+    # at /v2) can't silently go stale. Deterministic and ~1.7 min, in parallel
+    # with `test`; it would have caught both stale-bundle reds of 2026-08-31.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

@@ -62,7 +62,12 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
 ## Delivery workflow
 
 - Work on a feature branch and use a PR into `main` (keeps history reviewable and lets the
-  hourly auto-merge sweep pick it up); nothing GitHub-side blocks a merge anymore.
+  hourly auto-merge sweep pick it up); nothing GitHub-side blocks a merge anymore — the sweep
+  merges any non-draft PR GitHub reports CLEAN with **no review**, and the PR checks re-gated on
+  2026-09-02 (`test` incl. the test-count drift step, `hud-v2-build`, security-scans,
+  lockfile-drift) block only once the owner marks them required (owner item A4). Independent
+  review is *recommended* for R2/R3; R3 runtime/security changes get a recorded post-merge
+  attestation in `BACKLOG.md` (the SEC-B4 / SEC-B6 / #911 model from #1009).
 - Before non-trivial implementation, record goal, non-goals, likely paths, tests, rollback,
   and dependencies. Prefer one coherent rollback unit over arbitrary micro-commits or push-per-step
   churn.
