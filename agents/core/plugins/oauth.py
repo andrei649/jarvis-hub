@@ -24,6 +24,46 @@ logger = logging.getLogger("jarvis.oauth")
 _pending_verifiers: dict[str, str] = {}
 _expected_states: set[str] = set()
 
+
+class NotAuthenticated(RuntimeError):
+    """No OAuth credential is stored for a provider.
+
+    This is a *configuration* state, not a fault: the owner has simply not
+    connected the account yet. It is raised before the request leaves the
+    process, so it never reaches the ``resilient_call`` circuit breaker and can
+    never be damped by it — which is why the polled read paths log it through
+    :func:`log_not_authenticated` instead of at ERROR.
+    """
+
+
+# Providers whose missing-credential state has already been reported once.
+_unauthenticated_reported: set[str] = set()
+
+
+def log_not_authenticated(log: logging.Logger, provider: str, exc: BaseException) -> None:
+    """Report a missing credential once at INFO, then at DEBUG.
+
+    The autonomy tick re-probes Gmail and Calendar roughly every 60s
+    (``system.autonomy_tick``). Logging an unconnected account at ERROR on every
+    tick buries the real log and feeds ``log_scanner.quick_scan``'s ERROR-spike
+    detector with a non-problem — a disconnected account manufactures a
+    permanent, growing entry in ``memory_logs/diagnostics.md`` about itself.
+    """
+    if provider in _unauthenticated_reported:
+        log.debug("%s is still not connected: %s", provider, exc)
+        return
+    _unauthenticated_reported.add(provider)
+    log.info("%s is not connected — %s", provider, exc)
+
+
+def clear_not_authenticated(provider: str) -> None:
+    """Forget that *provider* was reported, so a later disconnect logs again.
+
+    Called when a credential turns up, so connect → disconnect → connect gives
+    one honest line per transition rather than silence after the first.
+    """
+    _unauthenticated_reported.discard(provider)
+
 TOKEN_DIR = data_path("tokens")
 TOKEN_DIR.mkdir(parents=True, exist_ok=True)
 

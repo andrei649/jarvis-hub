@@ -68,29 +68,47 @@ class Sandbox:
         self.wasm_runtime = wasm_runtime or os.environ.get("JARVIS_WASM_PYTHON", "")
         self._has_wasmtime = self._check_wasmtime() if allow_wasm else False
 
-    def _check_docker(self) -> bool:
+    @staticmethod
+    def _probe_binary(argv: list[str], missing_note: str) -> bool:
+        """Run a `--version`-style probe; True when the tool answers cleanly.
+
+        Docker and wasmtime are both *optional* host tools — the class comment
+        above promises the backend "degrades silently" when either is absent. It
+        did not: every failure was logged with `exc_info=True`, so a host that
+        simply does not have wasmtime installed greeted the operator with a
+        `FileNotFoundError: [WinError 2]` traceback at every startup, for a
+        configuration that is entirely supported.
+
+        A binary that is not on PATH is the ordinary case and gets one line. A
+        probe that fails for any other reason (a permission problem, a hung
+        daemon) is genuinely unexpected and keeps its traceback.
+        """
+        import subprocess
+
         try:
-            import subprocess
-            result = subprocess.run(
-                ["docker", "info"],
-                capture_output=True, text=True, timeout=5,
-            )
-            return result.returncode == 0
-        except Exception:
-            logger.warning("Docker availability check failed — falling back to subprocess sandbox", exc_info=True)
+            result = subprocess.run(argv, capture_output=True, text=True, timeout=5)
+        except (FileNotFoundError, NotADirectoryError):
+            logger.info("%s is not installed — %s", argv[0], missing_note)
             return False
+        except Exception:
+            logger.warning(
+                "%s availability check failed — %s", argv[0], missing_note, exc_info=True
+            )
+            return False
+        if result.returncode != 0:
+            logger.info("%s is installed but not usable — %s", argv[0], missing_note)
+            return False
+        return True
+
+    def _check_docker(self) -> bool:
+        return self._probe_binary(
+            ["docker", "info"], "falling back to the subprocess sandbox"
+        )
 
     def _check_wasmtime(self) -> bool:
-        try:
-            import subprocess
-            result = subprocess.run(
-                ["wasmtime", "--version"],
-                capture_output=True, text=True, timeout=5,
-            )
-            return result.returncode == 0
-        except Exception:
-            logger.warning("wasmtime availability check failed — WASM sandbox unavailable", exc_info=True)
-            return False
+        return self._probe_binary(
+            ["wasmtime", "--version"], "the WASM sandbox is unavailable"
+        )
 
     def wasm_available(self) -> bool:
         """True only if wasmtime AND a Python WASM runtime are usable right now."""

@@ -41,6 +41,10 @@ class _FakePostClient:
 
 
 class _FakeStreamResp:
+    # A real httpx.Response always carries a status; generate_stream reads it to
+    # decide whether the body has to be pulled in before the error is inspected.
+    status_code = 200
+
     def __init__(self, lines):
         self._lines = lines
 

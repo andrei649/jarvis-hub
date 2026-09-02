@@ -93,6 +93,53 @@ class LLMRouter:
         logger.warning("No LLM backend detected (backend_type=%s) — start LM Studio (%s) or Ollama (%s)",
                        bt, lm_url, ol_url)
 
+    async def refresh_availability(self) -> bool:
+        """Re-probe the local backends; re-detect only if the picture changed.
+
+        `detect()` runs once, at orchestrator startup. Anything that comes up
+        afterwards stayed invisible for the life of the process — observed in a
+        real session as Ollama being down at boot and answering on :11434 from
+        11:38, with Howard still falling back for the remaining two hours because
+        nothing ever looked again.
+
+        Cheap on the common path: two GETs on a 3s budget and nothing else. A
+        full `detect()` (which tears down and rebuilds the backend's connection
+        pool, so it is not free and is best not run against a live request) only
+        happens when a backend actually appeared or disappeared.
+
+        Returns True when a re-detect was performed.
+        """
+        lm_url = (self.lm_studio_url or "http://localhost:1234").rstrip("/")
+        ol_url = (self.ollama_url or "http://localhost:11434").rstrip("/")
+
+        lm_up = await self._check(f"{lm_url}/v1/models")
+        ol_up = await self._check(f"{ol_url}/api/tags")
+
+        if not self._availability_changed(lm_up, ol_up):
+            return False
+
+        logger.info(
+            "Local LLM availability changed (lm-studio=%s, ollama=%s) — re-detecting",
+            lm_up, ol_up,
+        )
+        await self.detect()
+        return True
+
+    def _availability_changed(self, lm_up: bool, ol_up: bool) -> bool:
+        """Whether the observed backends disagree with what detect() settled on.
+
+        Mirrors `detect()`'s own preference order so the two cannot drift: with
+        `backend_type` on "auto", LM Studio wins, then Ollama, then nothing.
+        """
+        bt = self.backend_type or "auto"
+        if bt in ("auto", "lm-studio") and lm_up:
+            expected = "lm-studio"
+        elif bt in ("auto", "ollama") and ol_up:
+            expected = "ollama"
+        else:
+            expected = "none"
+        return expected != (self._backend_name or "none")
+
     async def _check(self, url: str) -> bool:
         try:
             async with httpx.AsyncClient(timeout=3.0) as c:

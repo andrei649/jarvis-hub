@@ -141,20 +141,37 @@ class CircuitBreaker:
     """
     failure_threshold: int = 5
     recovery_timeout: float = 60.0
+    # The registry key this breaker was created under ("plugin:gmail", …). Every
+    # log line carries it: there are a dozen-odd breakers in a running process,
+    # and an unlabelled transition tells an operator nothing about which backend
+    # it concerns. Defaults to "" so a directly-constructed breaker still works.
+    key: str = ""
     failure_count: int = field(default=0, init=False)
     last_failure_time: float = field(default=0.0, init=False)
     state: str = field(default="closed", init=False)
-    
+
+    @property
+    def _label(self) -> str:
+        return f" [{self.key}]" if self.key else ""
+
     def record_success(self):
         """Record a successful call, reset failure count."""
+        if self.state != "closed":
+            # The recovery is the event worth an operator's attention, and it was
+            # previously silent: the log said when a backend broke but never when
+            # it came back, so a tripped breaker looked permanent in the log.
+            logger.info(
+                f"Circuit breaker{self._label} recovered — closed after "
+                f"{self.failure_count} consecutive failure(s)"
+            )
         self.failure_count = 0
         self.state = "closed"
-    
+
     def record_failure(self):
         """Record a failed call, potentially open the circuit."""
         self.failure_count += 1
         self.last_failure_time = time.time()
-        
+
         if self.failure_count >= self.failure_threshold:
             # Log the transition ONCE at WARNING (closed → open). A half-open probe that
             # re-fails is an expected re-open while the backend stays down — keep it at DEBUG
@@ -162,23 +179,34 @@ class CircuitBreaker:
             was_tripped = self.state in ("open", "half-open")
             self.state = "open"
             if was_tripped:
-                logger.debug(f"Circuit breaker re-opened after {self.failure_count} failures")
+                logger.debug(
+                    f"Circuit breaker{self._label} re-opened after "
+                    f"{self.failure_count} failures"
+                )
             else:
-                logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
-    
+                logger.warning(
+                    f"Circuit breaker{self._label} opened after "
+                    f"{self.failure_count} failures"
+                )
+
     def is_open(self) -> bool:
         """Check if circuit is open (should fail fast)."""
         if self.state == "closed":
             return False
-            
+
         if self.state == "open":
             # Check if recovery timeout has passed
             if time.time() - self.last_failure_time >= self.recovery_timeout:
                 self.state = "half-open"
-                logger.info("Circuit breaker transitioned to half-open")
+                # DEBUG, not INFO: this fires once per recovery_timeout for as long
+                # as the backend stays down — forever, for an optional backend that
+                # is simply not installed. The transitions worth a line are the
+                # open above and the recovery in record_success; a half-open probe
+                # is mechanical bookkeeping between them.
+                logger.debug(f"Circuit breaker{self._label} transitioned to half-open")
                 return False
             return True
-            
+
         # half-open: allow one call
         return False
     
@@ -202,6 +230,7 @@ def get_circuit_breaker(
         _circuit_breakers[key] = CircuitBreaker(
             failure_threshold=failure_threshold,
             recovery_timeout=recovery_timeout,
+            key=key,
         )
     return _circuit_breakers[key]
 

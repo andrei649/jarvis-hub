@@ -3730,6 +3730,58 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ## 🐛 Bugs & Hot Fixes
 
+> **Server-log triage 2026-09-02 (owner Windows box, 10:34–13:28 — 7 fixes, all shipped in one PR).**
+> Un run real de ~3h citit end-to-end. Constatarea dominantă: din momentul în care browserul a
+> tăcut (~11:47) până la oprire, un ciclu s-a repetat la fiecare ~75s (= `system.autonomy_tick`)
+> **la infinit**, iar restul log-ului era practic invizibil sub el.
+> - **LOG-1 ✅ Bucla ERROR Gmail/Calendar.** Contul Google nu era conectat — o *stare de configurare*,
+>   nu o eroare. `_request()` ridica `RuntimeError` **înainte** de `_do_request()` (cel decorat cu
+>   `resilient_call`), deci circuit-breaker-ul nu vedea niciodată eșecurile și nu le putea amortiza;
+>   calea de citire loga ERROR la fiecare tick. Aceleași linii alimentau `log_scanner.quick_scan`
+>   (la 900s), deci un cont deconectat își fabrica singur o intrare permanentă în `diagnostics.md`.
+>   Fix: `oauth.NotAuthenticated` + `log_not_authenticated` (o dată INFO, apoi DEBUG; latch-ul se
+>   resetează la reconectare). Măsurat: 20 de poll-uri × 2 pluginuri = **40 → 0 linii ERROR**.
+>   `tests/test_unauthenticated_plugin_log_hygiene.py` (+8).
+> - **LOG-2 ✅ Circuit breaker mut și zgomotos.** `is_open()` loga „transitioned to half-open" la INFO
+>   la fiecare `recovery_timeout` — pentru un backend pur și simplu neinstalat, o linie/minut la
+>   nesfârșit — și **fără cheie**, deși există 14 breakere, deci operatorul nu putea ști care.
+>   În plus `record_success` închidea circuitul **în tăcere**: log-ul spunea când se strica un backend,
+>   niciodată când revenea. Fix: `CircuitBreaker.key` pe toate liniile, half-open coborât la DEBUG,
+>   linie nouă de recovery la INFO. `tests/test_resilience.py` (+5).
+> - **LOG-3 ✅ LM Studio „Model unloaded".** `400 {"error":"Model unloaded by user or API request."}`
+>   era înghițit de `except Exception` și servit ca răspuns degradat, deși LM Studio face JIT-load la
+>   următorul request. Fix: `is_model_unloaded_error` + un singur retry pe `generate` /
+>   `generate_tool_turn` / `generate_stream` (niciodată după ce un token a ajuns la utilizator).
+>   Bonus: un stream 4xx își citește acum corpul, deci explicația serverului nu se mai pierde.
+>   `tests/test_lmstudio_model_unloaded_retry.py` (+12).
+> - **LOG-4 ✅ Detecție backend „one-shot".** `LLMRouter.detect()` rulează o singură dată, la boot.
+>   Ollama era jos la pornire și răspundea pe `:11434` de la 11:38 — Howard a rămas pe fallback încă
+>   două ore. Fix: `refresh_availability()` (două GET-uri; `detect()` complet doar la tranziție) +
+>   jobul `llm-backend-refresh` la 5 min. `HybridRouter` suprascrie verificarea fiindcă Ollama-ul lui
+>   Howard e urmărit separat de backendul principal — exact cazul din log.
+>   `tests/test_llm_backend_refresh.py` (+8).
+> - **LOG-5 ✅ wasmtime lipsă = traceback.** `_check_wasmtime` loga cu `exc_info=True`, deci o
+>   configurație perfect suportată se anunța cu `FileNotFoundError: [WinError 2]` la fiecare boot —
+>   contrazicând comentariul propriei clase („degrades silently"). Docker avea aceeași formă. Fix:
+>   `_probe_binary` comun — binar absent = o linie INFO; orice altceva își păstrează traceback-ul.
+>   `tests/test_sandbox_optional_binary_probe.py` (+7).
+> - **LOG-6 ✅ `/v2/assets/index-Dnsy9sQO.js` → 404** (cu CSS-ul 200): `index.html` și `assets/`
+>   comise decalat → HUD alb, fără nicio suprafață de eroare. Fix: gardă la nivel de arbore care
+>   rezolvă orice referință locală din paginile comise în directoarele montate de `agents/web.py`,
+>   plus detecția bundle-urilor orfane (cealaltă jumătate a driftului).
+>   `tests/test_web_asset_manifest_integrity.py` (+9).
+> - **LOG-7 ✅ `POST /api/skills/marketplace/install` → 404** (×3 în 2s). Ruta există; 404-ul e
+>   `ValueError` „not found in registry", dar nimic din log nu o spunea. Mai grav, refuzul vecin —
+>   un pachet *acquired*, care se deployează doar prin sandbox broker — raporta „blocked by
+>   moderation/signature policy", trimițând operatorul să modereze ceva ce moderarea nu putea
+>   debloca, fiindcă ambele erau `PermissionError` gol. Fix: `BrokerOnlyInstall` (tot `PermissionError`,
+>   deci handlerele existente merg), mesaje distincte, log pe fiecare refuz, și `installable` /
+>   `install_path` pe fiecare rând din `list_skills` ca UI-ul să nu mai ofere un install imposibil.
+>   `tests/test_marketplace_install_failure_reporting.py` (+9).
+>
+> Rămân **owner-side**, nu de cod: `JARVIS_HOME` nesetat (starea runtime trăiește în checkout-ul git)
+> și `wasmtime` neinstalat pe boxa Windows (sandbox-ul WASM rămâne indisponibil — vezi `docs/OWNER_TASKS.md`).
+
 > Buguri cunoscute + taskuri „orfane" (amânate/abandonate prin alte docs/note, fără item trackuit).
 > Audit 2026-06-02: am promovat aici follow-up-urile care altfel cădeau de pe radar.
 > Audit cod 2026-06-04 (orchestrare + memorie/autonomie + securitate): adăugate BUG-5…BUG-12,

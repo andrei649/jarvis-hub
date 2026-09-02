@@ -41,6 +41,7 @@ class SchedulerService:
         self.schedule_retention()
         self.schedule_memory_maintenance()
         self.schedule_tech_scout()
+        self.schedule_llm_backend_refresh()
 
     # ── scheduling (registration) ─────────────────────────────────
     def schedule_daily_digests(self):
@@ -205,7 +206,40 @@ class SchedulerService:
         except Exception:
             logger.warning("Failed to schedule tech scout", exc_info=True)
 
+    def schedule_llm_backend_refresh(self):
+        """Re-probe the local LLM backends every 5 minutes (H23 log finding).
+
+        `LLMRouter.detect()` otherwise runs exactly once, at startup, so a model
+        server started *after* Jarvis stayed invisible for the life of the
+        process. Observed in a real session: Ollama was down at boot and
+        answering from 11:38, and Howard kept falling back for the next two hours.
+
+        The pass is two GETs on a 3s budget unless something actually changed —
+        `refresh_availability` only pays for a full re-detect on a transition.
+        """
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_llm_backend_refresh, "interval", seconds=300,
+                          id="llm-backend-refresh", replace_existing=True)
+            logger.info("Scheduled local LLM backend re-probe every 5 min")
+        except Exception:
+            logger.warning("Failed to schedule the LLM backend re-probe", exc_info=True)
+
     # ── job bodies (no external callers) ──────────────────────────
+    async def run_llm_backend_refresh(self):
+        """One availability pass. Never raises — a failed probe is not fatal."""
+        router = getattr(self._orch, "llm_router", None)
+        refresh = getattr(router, "refresh_availability", None)
+        if refresh is None:
+            return {"skipped": True, "reason": "unavailable"}
+        try:
+            return {"redetected": bool(await refresh())}
+        except Exception:
+            logger.warning("Local LLM backend re-probe failed", exc_info=True)
+            return {"skipped": True, "reason": "probe_failed"}
+
     async def run_tech_scout(self):
         """Run one tech-scout pass, reading live settings each time (H27-self-improve)."""
         scout = getattr(self._orch, "tech_scout", None)

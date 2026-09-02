@@ -12,7 +12,13 @@ from email.mime.text import MIMEText
 from typing import Optional
 
 from ..http_client import PluginHTTPClient
-from .oauth import refresh_google_token, load_token
+from .oauth import (
+    NotAuthenticated,
+    clear_not_authenticated,
+    load_token,
+    log_not_authenticated,
+    refresh_google_token,
+)
 from ..resilience import resilient_call
 
 logger = logging.getLogger("jarvis.plugins.gmail")
@@ -39,12 +45,13 @@ class GmailPlugin:
         token_data = load_token("google")
         if token_data and token_data.get("access_token"):
             self.access_token = token_data["access_token"]
+            clear_not_authenticated("Gmail")
             logger.info("Gmail: token restored from persistent store")
 
     async def _request(self, method: str, path: str, **kwargs):
         await self._ensure_token()
         if not self.access_token:
-            raise RuntimeError(
+            raise NotAuthenticated(
                 "Gmail not authenticated — connect your Google account in Settings"
             )
         return await self._do_request(method, path, **kwargs)
@@ -90,6 +97,11 @@ class GmailPlugin:
                 if detail:
                     result.append(detail)
             return result
+        except NotAuthenticated as e:
+            # EmailProbe polls this every autonomy tick; an unconnected account
+            # is not a fault and must not be logged as one on every pass.
+            log_not_authenticated(logger, "Gmail", e)
+            return [{"error": f"Gmail error: {e}"}]
         except Exception as e:
             logger.error(f"Gmail list error: {e}")
             return [{"error": f"Gmail error: {e}"}]

@@ -111,6 +111,31 @@ def _server_error_detail(exc: Exception, limit: int = 300) -> str:
     return body.strip()[:limit]
 
 
+# LM Studio's reply when the requested model was unloaded out from under a
+# request: HTTP 400 with {"error": "Model unloaded by user or API request."}.
+_MODEL_UNLOADED = re.compile(r"model\s+unloaded", re.IGNORECASE)
+
+
+def is_model_unloaded_error(exc: BaseException) -> bool:
+    """True for LM Studio's "model unloaded" 400 — a recoverable condition.
+
+    Unloading a model (from the LM Studio UI, or via its API) makes exactly one
+    in-flight or next request fail; LM Studio then JIT-loads the model named in
+    the following request. Observed in a real session: the owner sent a message
+    seconds after a model swap, the 400 was swallowed by the blanket
+    ``except Exception`` below, and a degraded "check the server" bubble was
+    served for a condition that a single retry clears.
+    """
+    response = getattr(exc, "response", None)
+    if response is None or getattr(response, "status_code", None) != 400:
+        return False
+    try:
+        return bool(_MODEL_UNLOADED.search(response.text or ""))
+    except Exception:
+        # A streaming response whose body was never read cannot be inspected.
+        return False
+
+
 def is_degraded_reply(text: object) -> bool:
     """True if *text* is a backend failure/degraded reply, not a real answer.
 
@@ -426,6 +451,28 @@ class LMStudioBackend(LLMBackend):
         """Close the HTTP client's connection pool (BUG-7)."""
         await self.client.aclose()
 
+    async def _post_chat(self, payload: dict) -> httpx.Response:
+        """POST a completion, retrying once if the model was unloaded mid-flight.
+
+        The retry is deliberately narrow: only LM Studio's "model unloaded" 400,
+        only once. Anything else — including a second unload — propagates to the
+        caller's degraded-reply handling unchanged.
+        """
+        resp = await self.client.post("/v1/chat/completions", json=payload)
+        try:
+            resp.raise_for_status()
+        except Exception as exc:
+            if not is_model_unloaded_error(exc):
+                raise
+            logger.info(
+                "LM Studio reported model %r unloaded — retrying once so it can "
+                "JIT-load rather than serving a degraded reply",
+                payload.get("model"),
+            )
+            resp = await self.client.post("/v1/chat/completions", json=payload)
+            resp.raise_for_status()
+        return resp
+
     async def generate(
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7
@@ -441,8 +488,7 @@ class LMStudioBackend(LLMBackend):
         if not is_auto_max_tokens(max_tokens):
             payload["max_tokens"] = max_tokens
         try:
-            resp = await self.client.post("/v1/chat/completions", json=payload)
-            resp.raise_for_status()
+            resp = await self._post_chat(payload)
             data = resp.json()
             choice = data["choices"][0]
             msg = choice.get("message", {})
@@ -470,8 +516,7 @@ class LMStudioBackend(LLMBackend):
         if not is_auto_max_tokens(max_tokens):
             payload["max_tokens"] = max_tokens
         try:
-            resp = await self.client.post("/v1/chat/completions", json=payload)
-            resp.raise_for_status()
+            resp = await self._post_chat(payload)
             choice = resp.json()["choices"][0]
             message = choice.get("message", {})
             finish = choice.get("finish_reason")
@@ -508,41 +553,63 @@ class LMStudioBackend(LLMBackend):
         # loaded model's full context — the single dial sized in LM Studio.
         if not is_auto_max_tokens(max_tokens):
             payload["max_tokens"] = max_tokens
-        emitted = ""          # filtered text actually streamed to the user
-        reasoning_full = ""   # accumulated reasoning_content (never emitted live)
-        finish = None
-        sf = ThinkingStreamFilter()
-        try:
-            async with self.client.stream("POST", "/v1/chat/completions", json=payload) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if line.startswith("data: "):
-                        chunk = line[6:]
-                        if chunk.strip() == "[DONE]":
-                            break
-                        try:
-                            data = json.loads(chunk)
-                            choice = data.get("choices", [{}])[0]
-                            if choice.get("finish_reason"):
-                                finish = choice["finish_reason"]
-                            delta = choice.get("delta", {})
-                            content = delta.get("content", "")
-                            reasoning = delta.get("reasoning_content", "")
-                            if content:
-                                safe = sf.feed(content)
-                                if safe:
-                                    emitted += safe
-                                    if on_token:
-                                        await _emit(on_token, safe)
-                            if reasoning:
-                                reasoning_full += reasoning
-                        except json.JSONDecodeError:
-                            continue
-        except Exception as e:
-            err = local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e)
-            if on_token:
-                await _emit(on_token, err)
-            return err
+        # Attempt 0 may be retried once, and only once, when LM Studio reports the
+        # model unloaded before any token reached the user — see `_post_chat`.
+        for attempt in (0, 1):
+            emitted = ""          # filtered text actually streamed to the user
+            reasoning_full = ""   # accumulated reasoning_content (never emitted live)
+            finish = None
+            sf = ThinkingStreamFilter()
+            try:
+                async with self.client.stream(
+                    "POST", "/v1/chat/completions", json=payload
+                ) as resp:
+                    if resp.status_code >= 400:
+                        # A streaming response arrives with its body unread, so the
+                        # server's own explanation is invisible to both the unload
+                        # check and `_server_error_detail`. Pull it in first.
+                        await resp.aread()
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if line.startswith("data: "):
+                            chunk = line[6:]
+                            if chunk.strip() == "[DONE]":
+                                break
+                            try:
+                                data = json.loads(chunk)
+                                choice = data.get("choices", [{}])[0]
+                                if choice.get("finish_reason"):
+                                    finish = choice["finish_reason"]
+                                delta = choice.get("delta", {})
+                                content = delta.get("content", "")
+                                reasoning = delta.get("reasoning_content", "")
+                                if content:
+                                    safe = sf.feed(content)
+                                    if safe:
+                                        emitted += safe
+                                        if on_token:
+                                            await _emit(on_token, safe)
+                                if reasoning:
+                                    reasoning_full += reasoning
+                            except json.JSONDecodeError:
+                                continue
+            except Exception as e:
+                # Never retry once text is on screen — the user would see the
+                # answer restart mid-sentence.
+                if attempt == 0 and not emitted and is_model_unloaded_error(e):
+                    logger.info(
+                        "LM Studio reported model %r unloaded before the stream "
+                        "started — retrying once so it can JIT-load",
+                        model,
+                    )
+                    continue
+                err = local_backend_degraded_reply(
+                    "LM Studio", f"LM Studio ({self.base_url})", e
+                )
+                if on_token:
+                    await _emit(on_token, err)
+                return err
+            break
 
         # Flush any remaining buffered text (drops an unterminated think block)
         remainder = sf.flush()
