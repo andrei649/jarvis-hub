@@ -13,7 +13,13 @@ from typing import Optional
 import httpx
 
 from ..http_client import PluginHTTPClient
-from .oauth import refresh_google_token, load_token
+from .oauth import (
+    NotAuthenticated,
+    clear_not_authenticated,
+    load_token,
+    log_not_authenticated,
+    refresh_google_token,
+)
 from ..resilience import resilient_call
 
 logger = logging.getLogger("jarvis.plugins.google_calendar")
@@ -40,12 +46,13 @@ class GoogleCalendarPlugin:
         token_data = load_token("google")
         if token_data and token_data.get("access_token"):
             self.access_token = token_data["access_token"]
+            clear_not_authenticated("Google Calendar")
             logger.info("Calendar: token restored from persistent store")
 
     async def _request(self, method: str, path: str, **kwargs):
         await self._ensure_token()
         if not self.access_token:
-            raise RuntimeError(
+            raise NotAuthenticated(
                 "Google Calendar not authenticated — connect your Google account in Settings"
             )
         return await self._do_request(method, path, **kwargs)
@@ -130,6 +137,11 @@ class GoogleCalendarPlugin:
                     "hangout": ev.get("hangoutLink", ""),
                 })
             return result
+        except NotAuthenticated as e:
+            # CalendarProbe polls this every autonomy tick; an unconnected
+            # account is not a fault and must not be logged as one every pass.
+            log_not_authenticated(logger, "Google Calendar", e)
+            return [{"error": f"Calendar error: {e}"}]
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 logger.error("Google Calendar auth expired — need re-auth")

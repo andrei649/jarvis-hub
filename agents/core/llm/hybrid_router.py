@@ -367,6 +367,18 @@ class HybridRouter(LLMRouter):
         # `/readyz` must cover every flag this method sets, not just the first.
         self._mark_probed()
 
+    def _availability_changed(self, lm_up: bool, ol_up: bool) -> bool:
+        """Howard's Ollama is tracked separately from the primary backend.
+
+        With LM Studio serving, `_backend_name` stays "lm-studio" whether or not
+        Ollama is up, so the base check alone cannot see an Ollama that arrived
+        after boot — which is precisely the case that left Howard degraded for a
+        whole session against a server that was answering.
+        """
+        if ol_up != self._ollama_available:
+            return True
+        return super()._availability_changed(lm_up, ol_up)
+
     def get_agent_policy(self, agent_id: str) -> str:
         # Security floor first: code-enforced, the registry cannot override it.
         if agent_id in LOCAL_ONLY_AGENTS:

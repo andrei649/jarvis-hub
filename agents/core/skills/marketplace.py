@@ -125,6 +125,17 @@ def _require_reviewed() -> bool:
     return env_flag("JARVIS_REQUIRE_REVIEWED_SKILLS")
 
 
+class BrokerOnlyInstall(PermissionError):
+    """An acquired package was sent to the in-process install path.
+
+    A distinct type because the refusal has nothing to do with moderation or
+    signatures: the caller used the wrong endpoint for this kind of package.
+    Both refusals used to be a bare ``PermissionError``, so the API reported
+    "blocked by moderation/signature policy" for a package that had passed every
+    such check — and no amount of moderating it would ever have helped.
+    """
+
+
 class SkillMarketplace:
     def __init__(self, skills_dir: Optional[str] = None, db_path: Optional[str] = None,
                  *, history: Optional[SkillHistory] = None, clock=None):
@@ -418,6 +429,10 @@ class SkillMarketplace:
                     "review_status": r["review_status"] or REVIEW_PENDING,
                     "signed": bool(r["signature"]),
                     "execution_mode": "in_process",
+                    # Whether POST /api/skills/marketplace/install can accept this
+                    # row at all. Without it the listing looks uniform and a UI
+                    # offers an install that the acquired rows below must refuse.
+                    "installable": True,
                 }
                 for r in rows
             ]
@@ -436,6 +451,11 @@ class SkillMarketplace:
                     "package_hash": row["package_hash"],
                     "receipt_hash": row["receipt_hash"],
                     "runtime_image": row["runtime_image"],
+                    # An acquired package never ships its code into skills/; the
+                    # sandbox broker is its only deployment path, so the install
+                    # endpoint refuses it by design (see install_skill).
+                    "installable": False,
+                    "install_path": "sandbox-broker",
                 }
                 for row in acquired
             ]
@@ -558,7 +578,7 @@ class SkillMarketplace:
                     (skill_name,),
                 ).fetchone()
                 if acquired is not None:
-                    raise PermissionError(
+                    raise BrokerOnlyInstall(
                         "sandbox broker is the only install path for acquired packages"
                     )
                 row = conn.execute(

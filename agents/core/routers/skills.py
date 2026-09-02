@@ -20,6 +20,7 @@ from agents.core.routers._component import component_unavailable
 from agents.core.web_helpers import error_json, logger
 from agents.core import app_state
 from agents.core.app_state import get_orch
+from agents.core.skills.marketplace import BrokerOnlyInstall
 
 
 router = APIRouter(tags=["skills"])
@@ -251,6 +252,22 @@ async def marketplace_install(body: InstallSkillBody):
             orch.skills.discover()
             return {"ok": True, "installed": body.name}
         return JSONResponse({"error": f"Failed to install skill '{body.name}'"}, status_code=500)
+    except BrokerOnlyInstall:
+        # Not a moderation verdict: an acquired package's code never lands in
+        # skills/, so this endpoint is simply the wrong path for it. Reported
+        # separately because "blocked by moderation/signature policy" sent
+        # operators to moderate a package that moderation could never unblock.
+        logger.warning("Skill install refused: acquired packages deploy via the sandbox broker")
+        return JSONResponse(
+            {
+                "error": (
+                    f"skill '{body.name}' is an acquired package — it deploys through "
+                    "the sandbox broker, not this endpoint"
+                ),
+                "install_path": "sandbox-broker",
+            },
+            status_code=403,
+        )
     except PermissionError:
         # Blocked by the moderation/signature gate (H12.12). Don't log the
         # caller-supplied name (log-injection); the response echoes it instead.
@@ -260,6 +277,9 @@ async def marketplace_install(body: InstallSkillBody):
             status_code=403,
         )
     except ValueError:
+        # Observed in a real session as three POSTs → 404 in two seconds: the
+        # name reached the endpoint but is in neither registry table.
+        logger.warning("Skill install failed: no such skill in the marketplace registry")
         return JSONResponse({"error": f"skill '{body.name}' not found in registry"}, status_code=404)
     except Exception:
         logger.exception("Failed to install skill")

@@ -150,6 +150,123 @@ async def test_circuit_breaker_half_open_after_timeout():
 
 
 @pytest.mark.asyncio
+async def test_a_permanently_down_backend_does_not_log_once_per_recovery_window(caplog):
+    """The 3h-of-`transitioned to half-open` regression, from a real server log.
+
+    `is_open()` flips open → half-open every `recovery_timeout`, and that fired at
+    INFO. For a backend that is simply not installed, the loop never ends: one
+    INFO line per minute, forever, for each open breaker. Ten windows here must
+    produce no INFO at all — the transitions worth reporting are the open and the
+    eventual recovery, both asserted below.
+    """
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.01, key="plugin:nowhere")
+
+    with caplog.at_level(logging.DEBUG, logger="jarvis.resilience"):
+        cb.record_failure()  # closed → open, one WARNING
+        for _ in range(10):
+            await asyncio.sleep(0.02)
+            cb.is_open()  # open → half-open
+            cb.record_failure()  # half-open → open again
+
+    half_open = [r for r in caplog.records if "half-open" in r.message]
+    assert len(half_open) == 10, "the transition should still be traceable at DEBUG"
+    assert {r.levelno for r in half_open} == {logging.DEBUG}, (
+        "a permanently-unreachable backend must not emit an INFO line per window"
+    )
+    assert len([r for r in caplog.records if r.levelno >= logging.WARNING]) == 1, (
+        "closed → open is reported once; the re-opens stay at DEBUG"
+    )
+
+
+@pytest.mark.asyncio
+async def test_every_breaker_log_line_names_the_breaker(caplog):
+    """An unlabelled transition tells an operator nothing: there are 14 keys."""
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.01, key="plugin:gmail")
+
+    with caplog.at_level(logging.DEBUG, logger="jarvis.resilience"):
+        cb.record_failure()
+        await asyncio.sleep(0.02)
+        cb.is_open()
+        cb.record_success()
+
+    assert caplog.records, "expected the breaker to log at all"
+    for record in caplog.records:
+        assert "plugin:gmail" in record.message, record.message
+
+
+@pytest.mark.asyncio
+async def test_recovery_is_reported_and_not_silent(caplog):
+    """`record_success` used to close the circuit silently.
+
+    The log therefore said when a backend broke but never when it came back, so
+    every tripped breaker looked permanent to anyone reading the log.
+    """
+    cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.01, key="plugin:weather")
+    cb.record_failure()
+    cb.record_failure()
+
+    with caplog.at_level(logging.INFO, logger="jarvis.resilience"):
+        cb.record_success()
+
+    assert cb.state == "closed"
+    recovered = [r for r in caplog.records if "recovered" in r.message]
+    assert len(recovered) == 1, caplog.text
+    assert recovered[0].levelno == logging.INFO
+    assert "plugin:weather" in recovered[0].message
+
+
+def test_the_registry_stamps_the_key_onto_the_breaker():
+    """`get_circuit_breaker` is the only construction path in production."""
+    from agents.core.resilience import _circuit_breakers, get_circuit_breaker
+
+    key = "plugin:test-registry-stamp"
+    _circuit_breakers.pop(key, None)
+    try:
+        assert get_circuit_breaker(key).key == key
+    finally:
+        _circuit_breakers.pop(key, None)
+
+
+@pytest.mark.asyncio
+async def test_a_healthy_call_after_a_trip_logs_the_recovery_through_resilient_call(caplog):
+    """End-to-end: the decorator's own success path must report the recovery."""
+    from agents.core.resilience import _circuit_breakers, resilient_call
+
+    key = "plugin:test-e2e-recovery"
+    _circuit_breakers.pop(key, None)
+    fail = True
+
+    @resilient_call(
+        max_retries=0,
+        timeout=5.0,
+        circuit_breaker_key=key,
+        circuit_breaker_threshold=1,
+        circuit_breaker_recovery=0.01,
+    )
+    async def flaky():
+        if fail:
+            raise RuntimeError("backend down")
+        return "ok"
+
+    try:
+        with pytest.raises(RuntimeError):
+            await flaky()
+        assert _circuit_breakers[key].state == "open"
+
+        await asyncio.sleep(0.02)
+        fail = False
+        with caplog.at_level(logging.INFO, logger="jarvis.resilience"):
+            assert await flaky() == "ok"
+
+        assert _circuit_breakers[key].state == "closed"
+        assert any(
+            "recovered" in r.message and key in r.message for r in caplog.records
+        ), caplog.text
+    finally:
+        _circuit_breakers.pop(key, None)
+
+
+@pytest.mark.asyncio
 async def test_resilient_call_with_circuit_breaker():
     call_count = 0
     
