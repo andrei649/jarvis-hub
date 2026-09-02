@@ -138,3 +138,6 @@ unit tests, the parity gate, and the unknown-never-green rule.
 
 None blocking. Optional later: whether `/map` joins the cinema/wall rotation as a stage, and
 whether the Archify snapshot job runs in CI (needs `npx` network) or stays a local dev script.
+
+Decided 2026-09-01 (owner): no cinema/wall stage for now — `/map` stays the Console → Observe
+panel plus the standalone page; the Archify snapshot stays a local, on-demand dev script (no CI job).

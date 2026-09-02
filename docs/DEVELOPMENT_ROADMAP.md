@@ -101,8 +101,11 @@ don't create more of them.
 3. **Reachability beats features**: the dominant confirmed defect class (DRA audit, 53 findings)
    is *built-but-unreachable* — shipped backends with no caller/UI. Wiring what exists comes
    before building anything new.
-4. **Time-to-first-value outranks capability** (GAP-0: 24k visitors → 0 partners; demand exists,
-   the first ten minutes fail).
+4. **Time-to-first-value outranks capability** (GAP-0: 24k visitors and demand exists, the first
+   ten minutes fail; the "0 partners" premise is stale — A7 closed 2026-08-28). *Decided
+   2026-09-01 (owner):* the first-value path is the one-step design-partner bootstrap (Gate-2 🚧1)
+   plus the first-30-minutes fully-local zero-key loop (🚧4), measured as **activation rate**; the
+   H23.30 public demo is sequenced after it, as reach.
 5. Every phase has an **owner lane** running in parallel — never fake it, never block on it;
    reduce owner items to ready-to-sign packets in `docs/OWNER_TASKS.md`.
 
@@ -161,7 +164,16 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
   already fixed before this branch — `_resolve_pinned` runs the resolver through
   `asyncio.to_thread` (`frigate.py:236`), so it is off the event loop; that clause was stale.
 - **SEC-B6 / #911 / #916 / B7-#918 acceptances**: drive the recorded post-merge HOLDs to an
-  evidence-backed accept-or-revert — reviewer/owner lane, prepared by you.
+  evidence-backed accept-or-revert — reviewer/owner lane, prepared by you. *Owner decisions
+  2026-09-01:* SEC-B6 #896 — the #894 directive is amended: an evidence-backed independent
+  post-merge review of the merged artifact on current `main` (every `INTENTIONALLY_OPEN_READS`
+  row of `docs/security/SEC-B6-open-reads-evidence.md` against handler source +
+  `tests/test_route_auth_matrix.py` re-run) suffices instead of re-landing identical bytes —
+  **PASS/HOLD: pending**, ✅ only on PASS; #911 **RETAINED**, post-merge SEC-B8 security audit
+  commissioned bound to merge 790a725 — **PASS/HOLD: pending**; #916 **RETAINED**, the existing
+  exact-head receipt (PR #916 comment 5308830474, head a2438d8) recorded as its attestation;
+  B7 #918 **RETAINED** under a bounded default-off owner exception, still not program-accepted
+  (see Phase 6). None of the four is governance-complete on the retain decision alone.
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
@@ -235,7 +247,11 @@ Real code, still AI-doable without owner hardware:
   `routers/media_director.py`; the acquisition **caller** (scheduled worker or admin action
   invoking `synthesize_and_propose`); the node-mesh transport (`node_transport_not_built`).
 - Agent depth — `agents/vision` + `agents/argus` real implementation (persona-only today);
-  wire Hestia's reads/proposals onto `agents/core/house/**`; H30.8 tail.
+  wire Hestia's reads/proposals onto `agents/core/house/**`; H30.8 tail. *Refreshed 2026-09-01
+  (no owner decision taken):* #287 already routes world-intelligence queries through
+  `ArgusInterface` via `plugin_gatherer._signal_layer_answer`; the WorldView handoff's "deeper
+  Argus agent-dispatch routing" is this Phase-4 `agents/argus` slice (BACKLOG ORIZONT 19,
+  no dedicated BACKLOG row yet), still unscheduled.
 - ~~DRA-24 — model cached-input token cost (Gemini context caching is live but costed at zero)~~
   **done** — every price row carries a third `cached` rate and the estimator bills cached input at
   it, so the saving is no longer over-reported (`tests/test_cost_estimator.py`);
@@ -257,6 +273,10 @@ machine rows are green; what remains is evidence, not code:
   [`docs/HERMES_HEAD_TO_HEAD.md`](HERMES_HEAD_TO_HEAD.md) (pinned by
   `tests/test_hermes_head_to_head_protocol.py`), and it now has a row in `docs/OWNER_TASKS.md`.
   Status **NOT RUN**: the measurement itself is owner-gated behind the Hermes licence/CVE review.
+  *Owner decision 2026-09-01:* the four Anthropic-terms productivity subtrees are out of scope
+  (removed from the importer allowlist); a **static-only** fresh review is commissioned against
+  the exact pinned artifact (v2026.8.3 / 3c27eb6) — **PASS/HOLD: pending**; pull-for-execution,
+  install and execute stay **WITHHELD**, so the head-to-head still cannot run.
 - **Live-eval owner run** — `companion_eval --live-gate` against the real local model (the
   release-gate owner row stays FAIL until run).
 - **A7 design partners** — recruit 1–3, ≥2 weeks usage, north-star measured on real usage;
@@ -271,21 +291,43 @@ Contract-first epics, every slice bounded, no new authority (Ultron/`nerva.actio
 sole privileged-action authority):
 
 - Close the retained-but-unaccepted evidence (E6 #860, E9 #861/#864) with fresh post-B2
-  acceptance decisions; keep B2's live issue-ledger enforcement (#943) reconciled.
-- E1 Cortex: from shadow/measured to the E1.2b owner-evidence gate; E6 Reflection and E9
+  acceptance decisions; keep B2's live issue-ledger enforcement (#943) reconciled. *Owner decision
+  2026-09-01:* three read-only post-merge integrator reviews authorized, in order E6 #860 →
+  E9-authority #861 → E9-totals #864, each an agent role distinct from the original builder and
+  each recording an explicit GO/HOLD bound to the **real merge commit** of that PR on `main` —
+  **results: pending**; the owner's yes authorizes the reviews and is explicitly not dependency
+  acceptance.
+- E1 Cortex: from shadow/measured to the E1.2b owner-evidence gate (owner inputs 3–5 decided
+  2026-09-01 — sampling rule, retention policy `owner-local-e1-2-v1`, one owner-local run
+  permitted; inputs 1–2 and the run itself still pending); E6 Reflection and E9
   Research Lab from `BUILDING` to accepted.
 - B3 Continuity Core (#731): the one named gap is **Jarvis's own Identity Manifest** — give it a
-  destination issue and an acceptance test.
-- B7 task-level mediation: owner records retain/exception for #918 and ledgers reconcile — only
-  then E5 **Night Shift** unblocks; E8 Hermes provider needs its provider-specific E9 evidence,
-  license/SBOM closure, and the adoption-grade primary-source pass (one Tier A candidate at a
-  time, per the Innovation Lab catalogue §5).
+  destination issue and an acceptance test. *Decided 2026-09-01:* destination issue **#1008**
+  (E4 identity-boundary lane, not Howard; #762 stays Howard-only; no authority change); the
+  acceptance test is still owed. Same day: criterion 5 (observed/inferred/simulated) homed in
+  E2 #760 observation provenance, criterion 6 (Frigga isolation) under RISKS.md PRIV-02, the
+  evaluation suite on the E9.0 harness as `evaluation_only`, MEM-03's taint line into #761.
+- B7 task-level mediation: ~~owner records retain/exception for #918 and ledgers reconcile~~
+  *done 2026-09-01 — #918 RETAINED under a bounded default-off owner exception, ledgers
+  reconciled;* B7 stays **not program-accepted** and E5 **Night Shift** / E8 stay blocked until
+  #906 is provisioned or re-scoped by a separate owner decision; E8 Hermes provider needs its
+  provider-specific E9 evidence, license/SBOM closure (static review commissioned 2026-09-01,
+  pending; E8.1c stays EXECUTING ADAPTER BLOCKED), and the adoption-grade primary-source pass
+  (one Tier A candidate at a time, per the Innovation Lab catalogue §5).
 
 ### Phase 7 — Post-1.0 horizons (month 4+)
 
-- **H23.30 public web demo** on digitaholic.ro — once the four owner calls land (host, LLM
-  provider, hardened profile, H23.23 ratification); the code halves ship in Phase 4.
-- **H23.23 option B** — per-user isolation, if design-partner demand triggers it.
+- **H23.30 public web demo** on digitaholic.ro — spec approved 2026-09-01 (v1 as written; roster
+  overlay R2, deploy slice R3) and two of the four owner calls landed the same day (hardened
+  profile + empty grants on the public box, H23.23 ratified); still waits on the remaining two
+  (container host, LLM provider/key); the code halves ship in Phase 4.
+- **H23.23 option B** — per-user isolation, if design-partner demand triggers it (option A
+  ratified 2026-09-01: single-user per install for 1.0).
+- **WorldView scale proof — owner-infra, opportunistic** (rescoped 2026-09-01): the KEDA 50k msg/s
+  load test, 10k concurrent WS clients, multi-AZ DR game-day and CDN/1M-point tiles are off the
+  Nerva 1.x critical path; the H19.x rows keep their honest 🔨 "code delivered, scale unproven"
+  status. The live-source hops (ADS-B/AIS/TLE egress + local Kafka via the worldview
+  docker-compose) stay pickable/owner-runnable because they feed the rebuilt globe.
 - **0.18 GPU minor** — Howard fine-tune (H12.14), speculative decoding (H13.3);
   ~~DRA-44 hardware benchmark & profiles (still content-free)~~ **done** — detection now feeds the
   VRAM budget (no more static 24GB assumption) and `GET /api/system/hardware` publishes a

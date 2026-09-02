@@ -164,12 +164,12 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "66e589e8e7abde80f15ff002a213a3d90529ef8d",
+  "latest_ci_commit": "9f31a50b0cf3e9a0bec7dd430322a714a7643df2",
   "open_release_gates": [
     {
       "id": "A1",
-      "name": "⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box. **Instrument ready (#728):** `docs/TEST_MANUAL.md` — 15 chapters giving the step-by-step depth behind every checklist row, plus `docs/COWORK_QA_RUNBOOK.md` §3b (the R1–R9 pass from the 2026-07-24 run) and **§3c (S1–S6, the 2026-07-27 run-2 findings)**. **Run 2 executed (2026-07-27, RTX box)** — findings fixed, re-proof pending on the box. **Chapter 15 (`ADV`) is new and unexecuted:** adversarial-audit verification + a missing-code/missing-feature ledger; §8a of the runbook is its launch prompt.",
-      "status": "⬜ **the gate**"
+      "name": "⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box. **Instrument ready (#728):** `docs/TEST_MANUAL.md` — 15 chapters giving the step-by-step depth behind every checklist row, plus `docs/COWORK_QA_RUNBOOK.md` §3b (the R1–R9 pass from the 2026-07-24 run) and **§3c (S1–S6, the 2026-07-27 run-2 findings)**. **Run 2 executed (2026-07-27, RTX box)** — findings fixed, re-proof pending on the box. **Chapter 15 (`ADV`) is new and unexecuted:** adversarial-audit verification + a missing-code/missing-feature ledger; §8a of the runbook is its launch prompt. **Ordering confirmed by owner 2026-09-01:** the §0 run is post-tag proof of the tagged build (A5 flip → tag → A1), not a tag precondition.",
+      "status": "⬜ **post-tag proof**"
     },
     {
       "id": "A3",
@@ -189,12 +189,12 @@
     {
       "id": "A9",
       "name": "Tag 1.0.0",
-      "status": "🟢 **release prep landed 2026-08-28 — two owner commands left.** `agents.__version__` bumped `0.11.0`→`1.0.0` and the CHANGELOG `[Unreleased]` block cut to a `[1.0.0]` section, so `release.yml`'s tag/version check passes. **Owner, in order: (1) A5 — flip MIT→Apache-2.0 (3 commands in [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md)); a tag pushed before the flip ships 1.0.0 under MIT. (2) `git tag v1.0.0 && git push origin v1.0.0` *on `main`, after this PR merges* — the tag publishes a public GitHub Release with artifacts, SBOM and checksums, so it must not be cut from a feature branch.**"
+      "status": "🟢 **release prep landed 2026-08-28 — two owner commands left.** `agents.__version__` bumped `0.11.0`→`1.0.0` and the CHANGELOG `[Unreleased]` block cut to a `[1.0.0]` section, so `release.yml`'s tag/version check passes. **Owner, in order: (1) A5 — flip MIT→Apache-2.0 (3 commands in [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md)); a tag pushed before the flip ships 1.0.0 under MIT. (2) `git tag v1.0.0 && git push origin v1.0.0` *on `main`, after this PR merges* — the tag publishes a public GitHub Release with artifacts, SBOM and checksums, so it must not be cut from a feature branch.** **Ordering confirmed by owner 2026-09-01:** the tag is exactly these two commands; the A1 `docs/MANUAL_TESTING.md` §0 runbook is post-tag proof, not a tag precondition."
     }
   ],
   "routes": 442,
   "tests": {
-    "backend": 7243,
+    "backend": 7244,
     "frontend": 927,
     "mobile": 110
   },

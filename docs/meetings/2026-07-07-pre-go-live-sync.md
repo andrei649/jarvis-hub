@@ -43,15 +43,23 @@ The README's subtitle names the owner's machines; WorldView (a full OSINT stack)
 LICENSE_DECISION says flip at "just before v1.0"; GTM argues the flip must land **before the first external install** ("trivial now, contested after outside usage") — and Security's CLA-note prep (already merged) points the same way.
 *Resolution:* re-anchor the flip to the **partner-invite milestone**, not the tag. Everything is staged (`docs/legal/`, TRADEMARKS.md, CONTRIBUTING grant); it remains a 3-command owner action.
 
-## 3. Decisions (pending owner ratification)
+## 3. Decisions (ratified / superseded 2026-09-01 — only decision 6 still pending owner wording)
 
-1. **Conditional GO.** No partner invite ships until the Gate-2 checklist (§4, items marked 🚧) is complete. Target: invite-ready within ~2 weeks of B0.
-2. **Partner installs = signed release tag + hardened posture by default**, never `main`, never the demo posture. Owner soaks each tag ≥1 week on his box before recommending it; monthly upgrade cadence; the update path takes an automatic pre-upgrade snapshot and refuses to migrate without one.
-3. **WorldView and the Signal Layer leave the default install/start path** (opt-in, companion-project section at the bottom of the README). The private-assistant promise stays unmuddied.
-4. **The first-30-minutes path must end in one accepted, fully-local, zero-key autonomous action** (e.g. propose daily brief → approve in the queue → watch it land in the audit log). The north-star metric, demonstrated inside onboarding. The 0.19 Command Center is the natural surface for it.
-5. **No public surface until the partner gate:** no Show HN, no teaser, no published landing page (strip the embedded capture-checklist section before it ever goes live), no r/LocalLLaMA thread. Recruitment = owner's personal 1:1 outreach (2 warm + 3–5 OpenClaw-burned self-hosters), screened for: 16–24GB-class GPU, already self-hosts, 30-day daily-driver commitment, weekly 30-min call, north-star metrics opt-in.
-6. **Honest support contract:** 48h *first-response* (workdays, solo maintainer), fix **or** clear won't-fix/workaround — never promised fix timelines, never after-hours, never remote-access debugging. Onboarding includes one supervised backup+restore drill per partner. Kickoff email asks for version + support bundle + feedback export (closing Ops's "feedback cul-de-sac": the NPS store lives on the partner's box and must be exported to be seen).
-7. **Messaging stays inside the repo's own honesty rules:** the narrowed competitive claim ("no *shipping consumer* product combines…"), preference-learning not led with until measured, and the OpenClaw counter-position *shown* (B0 footage of an action visibly waiting for approval) rather than told.
+> **Owner ratification 2026-09-01:** decisions **3, 4 and 7 ratified** as written; **2 ratified**
+> minus the unbuilt snapshot-refusal clause (dropped until Gate-2 🚧5 ships; effective from the
+> v1.0.0 tag); **1 superseded** by the A7 close-out (2026-08-28); **5 superseded** by the A7
+> close-out plus the H23.30 public-demo approval (2026-09-01); **6 stays PENDING** the owner's own
+> SLA wording (T-0.55 stays open). Per-decision annotations inline below.
+
+1. ~~**Conditional GO.**~~ *Superseded 2026-09-01 — overtaken by the A7 close-out (2026-08-28:
+   partners recruited and running on non-owner installs while Gate-2 🚧5/6/8/9 stay open).*
+   Original text: No partner invite ships until the Gate-2 checklist (§4, items marked 🚧) is complete. Target: invite-ready within ~2 weeks of B0.
+2. **Partner installs = signed release tag + hardened posture by default**, never `main`, never the demo posture. Owner soaks each tag ≥1 week on his box before recommending it; monthly upgrade cadence; ~~the update path takes an automatic pre-upgrade snapshot and refuses to migrate without one~~. *✅ Ratified 2026-09-01 minus the struck clause — dropped until Gate-2 🚧5 ships; effective from the v1.0.0 tag.*
+3. **WorldView and the Signal Layer leave the default install/start path** (opt-in, companion-project section at the bottom of the README). The private-assistant promise stays unmuddied. *✅ Ratified 2026-09-01 as written.*
+4. **The first-30-minutes path must end in one accepted, fully-local, zero-key autonomous action** (e.g. propose daily brief → approve in the queue → watch it land in the audit log). The north-star metric, demonstrated inside onboarding. The 0.19 Command Center is the natural surface for it. *✅ Ratified 2026-09-01 as written.*
+5. ~~**No public surface until the partner gate**~~ *Superseded 2026-09-01 — by the A7 close-out (2026-08-28) plus the H23.30 public-demo approval (2026-09-01).* Original text: no Show HN, no teaser, no published landing page (strip the embedded capture-checklist section before it ever goes live), no r/LocalLLaMA thread. Recruitment = owner's personal 1:1 outreach (2 warm + 3–5 OpenClaw-burned self-hosters), screened for: 16–24GB-class GPU, already self-hosts, 30-day daily-driver commitment, weekly 30-min call, north-star metrics opt-in.
+6. **Honest support contract:** 48h *first-response* (workdays, solo maintainer), fix **or** clear won't-fix/workaround — never promised fix timelines, never after-hours, never remote-access debugging. Onboarding includes one supervised backup+restore drill per partner. Kickoff email asks for version + support bundle + feedback export (closing Ops's "feedback cul-de-sac": the NPS store lives on the partner's box and must be exported to be seen). *⏳ PENDING 2026-09-01 — the owner's own SLA wording is still owed (T-0.55 stays open); not ratified yet.*
+7. **Messaging stays inside the repo's own honesty rules:** the narrowed competitive claim ("no *shipping consumer* product combines…"), preference-learning not led with until measured, and the OpenClaw counter-position *shown* (B0 footage of an action visibly waiting for approval) rather than told. *✅ Ratified 2026-09-01 as written.*
 
 ## 4. Action items
 
@@ -66,7 +74,7 @@ LICENSE_DECISION says flip at "just before v1.0"; GTM argues the flip must land 
 | 🚧7 | 72h soak (A2) + one clean-machine install on a partner-shaped box (Windows, Ollama-only, 3.11 & 3.12) with install-smoke exit-0 | **Owner** | before invites |
 | 🚧8 | Cut 3–5 min unlisted partner walkthrough from the B0 recording (shots 2–4) + one-page partner brief | **Owner** (+AI draft) | before invites |
 | 🚧9 | License flip (3 staged commands) + GitHub settings batch (SEC-4 required checks, CQ-2/3) + flip `JARVIS_EVAL_CI_SMALL_MODEL=1` | **Owner** | before invites |
-| 10 | Python floor decision (recommend: add 3.11 to CI + update COMPATIBILITY) | **Owner** ratifies, AI executes | with #634 follow-up |
+| 10 | ~~Python floor decision (recommend: add 3.11 to CI + update COMPATIBILITY)~~ ✅ **decided 2026-09-01: keep the 3.12 floor** — no CI-matrix change, the 3.11 numpy marker stays as a courtesy and COMPATIBILITY.md says 3.11 is unsupported/untested | **Owner** ratified, AI executes the doc fix | closed |
 | 11 | First 3–5 outreach touches under the owner's personal identity, using the screening bar | **Owner** | at gate |
 | 12 | Support-loop dry run: owner plays remote partner once (bundle → diagnose → fix) | Owner + AI | before invites |
 

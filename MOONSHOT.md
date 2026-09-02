@@ -102,7 +102,7 @@ a clear "done" gate; we do not skip gates.
 > "v3.0 ambition", including the Hermes-integration/superiority goal) was pulled **into** 1.0,
 > and the owner accepts this moves the tag out by roughly a year. The proof track (2a) is not
 > displaced: B0, the soak and design partners remain the critical path and run in parallel.
-> Manual testing/audit stays the *release step that tags a version*, not a gate item. Rationale
+> Manual testing/audit is the *post-tag proof of the tagged build*, not a gate item (owner directive 2026-08-28: the tag is the A5 license flip then the tag; the §0 run proves the build — ordering confirmed 2026-09-01). Rationale
 > + provenance: [decision log](docs/HISTORY.md) ·
 > [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md).
 

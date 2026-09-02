@@ -95,7 +95,15 @@ PIN_RELEASE_TAG = "v2026.8.27"
 PIN_COMMIT = "5fc308a70719a83cccdbba4c0e39c23f5a8239d5"
 PIN_TREE = "222ec43b5237deb643277bc2f64fa4b873dd7f28"
 PIN_PATH = "skills/github/github-issues/SKILL.md"
-PIN_FILE_SHA256 = "0acc2b07b31afc24ab04eac56596e6dde6427eaf5b1370009f5ec138f0c3f7fb"
+PIN_FILE_SHA256 = "f573f832b100540b77acbe345f31acd1bd5f262ac6cc4ef0209d77a7a1c00bd2"
+# Owner decision 2026-09-01: the four productivity subtrees carrying separate Anthropic terms are
+# NOT accepted, so the shipped allowlist must not let the importer fetch them (82 -> 78 skills).
+EXCLUDED_HERMES_SUBTREES = (
+    "skills/productivity/docx/",
+    "skills/productivity/pdf/",
+    "skills/productivity/powerpoint/",
+    "skills/productivity/xlsx/",
+)
 HERMES_SKILL_BYTES = HERMES_SKILL_MD.encode("utf-8")
 
 PDF_SKILL_MD = """---
@@ -221,8 +229,18 @@ def test_repository_hermes_pin_is_exact_release_inventory():
     assert pin.release_tag == PIN_RELEASE_TAG
     assert pin.commit == PIN_COMMIT
     assert pin.tree == PIN_TREE
-    assert len(pin.skills) == 82
+    assert len(pin.skills) == 78
     assert hashlib.sha256(importer_mod.HERMES_PIN_PATH.read_bytes()).hexdigest() == PIN_FILE_SHA256
+
+
+def test_repository_hermes_pin_excludes_the_anthropic_terms_subtrees():
+    pin = importer_mod._load_hermes_pin()
+
+    for entry in pin.skills:
+        assert not entry.path.startswith(EXCLUDED_HERMES_SUBTREES), entry.path
+    assert {entry.slug for entry in pin.skills}.isdisjoint({"docx", "pdf", "powerpoint", "xlsx"})
+    # the rest of the productivity category is untouched
+    assert any(entry.path.startswith("skills/productivity/") for entry in pin.skills)
 
 
 @pytest.mark.asyncio

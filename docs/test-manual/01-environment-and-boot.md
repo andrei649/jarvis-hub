@@ -567,7 +567,9 @@ poller of the second instance must not open a tab pointed at the first).
     root-logger records can include request-derived content (e.g. a voice-transcript preview) and that
     this file is **not** covered by the H23.10 retention sweep, bounded only by
     `max_bytes × backups`. With an in-repo data root (the default) the log lands inside the git
-    checkout. Worth an owner decision, not a test.
+    checkout. Worth an owner decision, not a test. **Decided 2026-09-01 (owner):** accept the bound
+    (opt-in/default-off, bounded only by `max_bytes × backups`; any box that turns it on sets
+    `JARVIS_HOME` off the checkout and uses `WARNING` level); no sweep coverage or path change.
 11. **`docs/GPU_RUNBOOK.md` tells the owner to set two env vars that are never read.** Its H12.14 step 3
     says: "replace the Howard tier: set `HOWARD_OLLAMA_MODEL` to your model (served at
     `HOWARD_OLLAMA_URL`, default `http://localhost:11434`)". Both are plain module constants

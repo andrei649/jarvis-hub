@@ -81,18 +81,19 @@ const DOSSIER = {
   frigga:{ archetype:'Family Matriarch', personality:'Warm, protective, family-focused. Manages family data, local-only.', model:'gemma-4-26b-a4b', channel:'local', heartbeat:'4h', policy:'local', plugins:['whatsapp-bridge'], skills:2, memory_facts:18, soul:'You are Frigga, the family guardian. Protect fiercely, remember always.' },
 };
 
-/* cognition scoring keywords (from product) */
+/* cognition scoring keywords (from product) — generic placeholders only; the personal terms were
+   scrubbed 2026-09-01 (owner decision). Mirrors agents/web/static/data.js; cockpit.tsx buildTrace consumes it. */
 const COGNITION_SCORING = [
   {keyword:'calendar',weight:.82,agents:['pepper']},{keyword:'meeting',weight:.78,agents:['pepper']},
   {keyword:'schedule',weight:.75,agents:['pepper']},{keyword:'email',weight:.67,agents:['pepper','veronica','stark']},
   {keyword:'write',weight:.71,agents:['veronica']},{keyword:'draft',weight:.69,agents:['veronica']},
   {keyword:'linkedin',weight:.74,agents:['veronica']},{keyword:'research',weight:.81,agents:['vision']},
   {keyword:'search',weight:.63,agents:['vision']},{keyword:'kpi',weight:.77,agents:['stark']},
-  {keyword:'raiffeisen',weight:.85,agents:['stark']},{keyword:'strategy',weight:.73,agents:['athena']},
-  {keyword:'digitaholic',weight:.79,agents:['athena']},{keyword:'money',weight:.68,agents:['gecko']},
+  {keyword:'revenue',weight:.85,agents:['stark']},{keyword:'strategy',weight:.73,agents:['athena']},
+  {keyword:'brand',weight:.79,agents:['athena']},{keyword:'money',weight:.68,agents:['gecko']},
   {keyword:'budget',weight:.72,agents:['gecko']},{keyword:'sleep',weight:.76,agents:['hercules']},
-  {keyword:'workout',weight:.74,agents:['hercules']},{keyword:'cosmina',weight:.83,agents:['hephaestus']},
-  {keyword:'bmw',weight:.80,agents:['hephaestus']},{keyword:'max',weight:.70,agents:['frigga']},
+  {keyword:'workout',weight:.74,agents:['hercules']},{keyword:'house',weight:.83,agents:['hephaestus']},
+  {keyword:'garage',weight:.80,agents:['hephaestus']},{keyword:'kids',weight:.70,agents:['frigga']},
   {keyword:'family',weight:.75,agents:['frigga']},{keyword:'music',weight:.66,agents:['jerome']},
   {keyword:'playlist',weight:.64,agents:['jerome']},{keyword:'security',weight:.78,agents:['ultron']},
   {keyword:'workflow',weight:.71,agents:['oracle']},{keyword:'weather',weight:.69,agents:['friday']},

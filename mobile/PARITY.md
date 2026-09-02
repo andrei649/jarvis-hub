@@ -71,12 +71,14 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Encrypted personal vault | `GET/POST /api/vault`, `GET/DELETE /api/vault/{vault_id}` | ✅ | ⬜ | |
 | Memory search + data-space admin | `GET /api/memory/search`; admin `GET/POST /api/memory/spaces`, `POST /api/memory/spaces/{assign,unassign}`, `DELETE /api/memory/spaces/{name}` | ✅ | ⬜ | |
 | Write legs on surfaces mobile already reads (notes, KG, memory decay) | `PUT /api/notes`, `POST /api/notes/rewrite`, `DELETE /api/kg/entities/{name}`, `POST /api/memory/decay/forget` | ✅ | ⬜ | |
+| Block-tree note docs (DRA-53 `notes_store`, `NOTE DOCS` HUD panel — owner confirmed keep 2026-09-01) | user `GET/POST /api/notes/docs`, `GET/DELETE /api/notes/docs/{doc_id}`, `POST /api/notes/docs/{doc_id}/blocks` | ✅ | ⬜ | |
+| Block-tree note blocks (edit / delete one block in a doc) | user `PATCH /api/notes/blocks/{block_id}`, `DELETE /api/notes/blocks/{block_id}` | ✅ | ⬜ | |
 | Local docs index | `GET /api/local-docs` (open), `POST /api/local-docs/index` | ✅ | ⬜ | |
 | Nightly reflection (status + manual run) | `GET /api/reflection/status`, `POST /api/reflection/run` | ✅ | ⬜ | |
 | Security skills browser (ATT&CK tactics → curated techniques, read-only) | `GET /api/security-skills/tactics`, `GET /api/security-skills/techniques` | ✅ | ⬜ | |
 | Prompt-injection scan | `POST /api/security/scan-injection` | ✅ | ⬜ | |
 | Audit-chain verification (tamper-evidence read) | `GET /api/security/audit/intent`, `GET /api/security/audit/verify` | ✅ | ⬜ | |
-| Channel pairing ceremony | admin `GET /api/channels/pairing`, `POST /api/channels/pairing/code`, `POST /api/channels/pairing/decide` | ✅ | ⬜ | |
+| Channel pairing ceremony | admin `GET /api/channels/pairing`, `POST /api/channels/pairing/code`, `POST /api/channels/pairing/decide` | ✅ | ➖ admin ceremony run from the owner HUD (triage 2026-09-01) | — |
 | Governed social drafts (draft-before-send) | `GET/POST /api/integrations/social` | ✅ | ⬜ | |
 | Mic satellites (pair a device as a mic) | `GET /api/satellites`, `POST /api/satellites/register`, `DELETE /api/satellites/{satellite_id}` | ✅ | ⬜ | |
 | Oracle sync (conflicts read off the status payload) | `GET /api/oracle/status` (open); admin `POST /api/oracle/sync`, `POST /api/oracle/conflicts/resolve` | ✅ | ⬜ | |
@@ -89,18 +91,18 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Reasoning traces list | `GET /api/traces` | ✅ | ⬜ | |
 | Cognition read + live scoring stream | `GET /api/cognition`, `GET /api/cognition/stream` (SSE) | ✅ | ⬜ | |
 | Workflows (list / run / step-generate) | `GET /api/workflows`, `POST /api/workflows/run`, `POST /api/workflows/step/generate`; admin `DELETE /api/workflows/{pipeline_id}` | ✅ | ⬜ | |
-| Sandboxed code execution | `GET /sandbox/status` (open), `POST /sandbox/execute` | ✅ | ⬜ | |
+| Sandboxed code execution | `GET /sandbox/status` (open), `POST /sandbox/execute` | ✅ | ➖ hub-host capability (runs on the hub box, not a phone surface; triage 2026-09-01) | — |
 | Agent templates (instantiate a config) | `GET /api/agent-templates` (open), `POST /api/agent-templates/instantiate` | ✅ | ⬜ | |
 | Publish readiness (creative checklist + package) | `POST /api/creative/publish/checklist`, `POST /api/creative/publish/package` | ✅ | ⬜ | |
 | Missions board (long-horizon governed workspaces) | `GET /api/missions`, `POST /api/missions/{mission_id}/{start,pause,resume,complete,cancel}` | ✅ | ⬜ | |
 | Today board (daily digest) | `GET /api/dashboard/today` | ✅ | ⬜ | |
 | Natural-language schedule parser | `POST /api/schedule/parse` | ✅ | ⬜ | |
 | Bench-agent learning + promotion | `GET /learning`; admin `POST /learning/promote`, `POST /api/learning/propose` | ✅ | ⬜ | |
-| Heartbeats (per-agent run/start/stop) | `GET /heartbeat/status` (open); admin `POST /heartbeat/{agent_id}/{run,start,stop}` | ✅ | ⬜ | |
+| Heartbeats (per-agent run/start/stop) | `GET /heartbeat/status` (open); admin `POST /heartbeat/{agent_id}/{run,start,stop}` | ✅ | ➖ admin ceremony run from the owner HUD (triage 2026-09-01) | — |
 | Transcript → tasks ingest | `POST /api/transcripts/ingest` | ✅ | ⬜ | |
-| Escalation (ask-tier fan-out) | `GET /api/autonomy/escalation/targets` (open); admin `POST /api/autonomy/escalate` | ✅ | ⬜ | |
+| Escalation (ask-tier fan-out) | `GET /api/autonomy/escalation/targets` (open); admin `POST /api/autonomy/escalate` | ✅ | ➖ admin ceremony run from the owner HUD; the phone is the escalation *target*, not the fan-out control (triage 2026-09-01) | — |
 | Agent dossier (soul + run history) | `GET /api/agents/{agent_id}/soul`, `GET /api/agents/{agent_id}/history` | ✅ | ⬜ | |
-| Local models + cloud auth profiles + VLM status | user `GET /api/vlm/status`; admin `POST /api/llm/{load,unload}`, `GET /api/llm/auth-profiles`, `GET /api/models/info`, `GET /api/models/local`, `POST /api/models/local/switch` | ✅ | ⬜ | |
+| Local models + cloud auth profiles + VLM status | user `GET /api/vlm/status`; admin `POST /api/llm/{load,unload}`, `GET /api/llm/auth-profiles`, `GET /api/models/info`, `GET /api/models/local`, `POST /api/models/local/switch` | ✅ | ➖ hub-host capability (model lifecycle lives on the hub's GPU box; triage 2026-09-01) | — |
 | System profile (read-only; selected via `JARVIS_SYSTEM_PROFILE`) | `GET /api/system/profiles` | ✅ | ⬜ | |
 | Sentence-streamed TTS | `POST /tts/stream` | ✅ | ⬜ | |
 | Eval datasets (run / compare / history) | `GET /api/eval/datasets`, `GET /api/eval/datasets/{name}/{runs,compare}` (open), `POST /api/eval/datasets/run` | ✅ | ➖ | — |
@@ -121,11 +123,13 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 > and the `Arena / review / quality` row is already ➖ on exactly that basis. They are developer
 > regression tooling read while changing the hub, not owner surfaces.
 
-> **On the ⬜ rows added above:** every one of them is *not ported* — no native screen, no client
-> call, no partial. Several would be defensible ➖ candidates (sandboxed execution and the local-model
-> lifecycle are hub-host capabilities; heartbeats, channel pairing and escalation are admin
-> ceremonies), but no such decision exists in the repo today, so recording one here would be the
-> aspiration-as-fact this ledger exists to prevent. They stay ⬜ until the owner triages them.
+> **Triage (owner, 2026-09-01):** exactly five of the ⬜ rows above are marked ➖ desktop-only, each
+> with its one-line reason in the Mobile cell — Sandboxed code execution and Local models + cloud auth
+> profiles + VLM status (hub-host capabilities), Heartbeats, Channel pairing ceremony and Escalation
+> (admin ceremonies run from the owner HUD). The remaining 33 ⬜ rows at triage time (plus the two
+> block-tree notes rows added the same day under DRA-18/DRA-53) stay tracked-but-unscheduled with
+> empty Task cells: none is ported — no native screen, no client call, no partial — and an `H18.x`
+> id is assigned only when a design partner asks for that surface on the phone.
 
 > **H18.20 ✅ (delivered):** native artifact workspace parity — the Memory tab gains an
 > Artifacts view (browse Canvas artifacts with safe typed rendering, remote images behind an

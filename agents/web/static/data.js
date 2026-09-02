@@ -143,6 +143,8 @@ model: 'google/gemma-4-31b-a4b',
 }
 
 // ─── v0.3 Cognition Data ─────────────────────────────────────────────────
+// Generic placeholder keywords only — the personal terms were scrubbed 2026-09-01 (owner
+// decision; docs/test-manual/06-standalone-pages.md open gap 9). Same shape as frontend/src/data.ts.
 const COGNITION_SCORING = [
   { keyword: 'calendar',    weight: 0.82, agents: ['pepper'],                        category: 'schedule' },
   { keyword: 'meeting',     weight: 0.78, agents: ['pepper'],                        category: 'schedule' },
@@ -154,16 +156,16 @@ const COGNITION_SCORING = [
   { keyword: 'research',    weight: 0.81, agents: ['vision'],                        category: 'intel' },
   { keyword: 'search',      weight: 0.63, agents: ['vision'],                        category: 'intel' },
   { keyword: 'kpi',         weight: 0.77, agents: ['stark'],                         category: 'business' },
-  { keyword: 'raiffeisen',  weight: 0.85, agents: ['stark'],                         category: 'business' },
+  { keyword: 'revenue',     weight: 0.85, agents: ['stark'],                         category: 'business' },
   { keyword: 'strategy',    weight: 0.73, agents: ['athena'],                        category: 'strategy' },
-  { keyword: 'digitaholic', weight: 0.79, agents: ['athena'],                        category: 'business' },
+  { keyword: 'brand',       weight: 0.79, agents: ['athena'],                        category: 'business' },
   { keyword: 'money',       weight: 0.68, agents: ['gecko'],                         category: 'finance' },
   { keyword: 'budget',      weight: 0.72, agents: ['gecko'],                         category: 'finance' },
   { keyword: 'sleep',       weight: 0.76, agents: ['hercules'],                      category: 'health' },
   { keyword: 'workout',     weight: 0.74, agents: ['hercules'],                      category: 'health' },
-  { keyword: 'cosmina',     weight: 0.83, agents: ['hephaestus'],                    category: 'project' },
-  { keyword: 'bmw',         weight: 0.80, agents: ['hephaestus'],                    category: 'project' },
-  { keyword: 'max',         weight: 0.70, agents: ['frigga'],                        category: 'family' },
+  { keyword: 'house',       weight: 0.83, agents: ['hephaestus'],                    category: 'project' },
+  { keyword: 'garage',      weight: 0.80, agents: ['hephaestus'],                    category: 'project' },
+  { keyword: 'kids',        weight: 0.70, agents: ['frigga'],                        category: 'family' },
   { keyword: 'family',      weight: 0.75, agents: ['frigga'],                        category: 'family' },
   { keyword: 'music',       weight: 0.66, agents: ['jerome'],                        category: 'leisure' },
   { keyword: 'playlist',    weight: 0.64, agents: ['jerome'],                        category: 'leisure' },
@@ -172,73 +174,6 @@ const COGNITION_SCORING = [
   { keyword: 'weather',     weight: 0.69, agents: ['friday'],                        category: 'daily' },
   { keyword: 'news',        weight: 0.67, agents: ['friday'],                        category: 'daily' },
 ];
-
-const ROUTING_DECISION = {
-  source: 'keyword_match',
-  confidence: 0.84,
-  agents_selected: ['pepper', 'stark'],
-  alternatives: [
-    { agent: 'veronica', score: 0.31 },
-    { agent: 'friday',   score: 0.18 },
-  ],
-  timing: { classify: 12, route: 8, total: 20 },
-};
-
-const ORCHESTRATION_TRACE = [
-  { step: 'classify',     duration_ms: 12,  result: 'keyword_match' },
-  { step: 'route',        duration_ms: 8,   agents: ['pepper', 'stark'] },
-  { step: 'plugin_data',  duration_ms: 145, plugins: ['gmail', 'google-calendar'] },
-  { step: 'synthesize',   duration_ms: 890, tokens: 234 },
-];
-
-// ─── v0.3 Systems Data ───────────────────────────────────────────────────
-const PLUGINS = {
-  plugins: [
-    { id: 'weather', name: 'Weather (wttr.in)', version: '0.1.0', network_access: 'RESTRICTED', data_scope: 'PROCESSED', allowed_domains: ['wttr.in'], agents_served: ['all'], enabled: true },
-    { id: 'news', name: 'News (BBC RSS)', version: '0.1.0', network_access: 'RESTRICTED', data_scope: 'PROCESSED', allowed_domains: ['feeds.bbci.co.uk'], agents_served: ['all'], enabled: true },
-    { id: 'cloud-llm', name: 'Cloud LLM Fallback', version: '0.1.0', network_access: 'RESTRICTED', data_scope: 'TRANSMITTED', allowed_domains: ['api.anthropic.com', 'api.openai.com'], agents_served: ['jarvis', 'athena', 'stark', 'vision', 'veronica'], enabled: true },
-    { id: 'telegram', name: 'Telegram Bot', version: '0.1.0', network_access: 'RESTRICTED', data_scope: 'TRANSMITTED', allowed_domains: ['api.telegram.org'], agents_served: ['all'], enabled: true },
-    { id: 'gmail', name: 'Gmail API', version: '0.1.0', network_access: 'RESTRICTED', data_scope: 'PROCESSED', allowed_domains: ['gmail.googleapis.com', 'www.googleapis.com'], agents_served: ['stark', 'pepper', 'veronica'], enabled: true },
-    { id: 'google-calendar', name: 'Google Calendar API', version: '0.1.0', network_access: 'RESTRICTED', data_scope: 'PROCESSED', allowed_domains: ['www.googleapis.com'], agents_served: ['pepper'], enabled: true },
-    { id: 'whatsapp-bridge', name: 'WhatsApp Local Bridge', version: '0.1.0', network_access: 'LAN', data_scope: 'LOCAL_ONLY', allowed_domains: [], agents_served: ['frigga'], enabled: true },
-    { id: 'spotify', name: 'Spotify Control', version: '0.1.0', network_access: 'RESTRICTED', data_scope: 'PROCESSED', allowed_domains: ['api.spotify.com', 'accounts.spotify.com'], agents_served: ['jerome'], enabled: true },
-    { id: 'apple-health', name: 'Apple Health Sync', version: '0.1.0', network_access: 'LAN', data_scope: 'LOCAL_ONLY', allowed_domains: [], agents_served: ['hercules'], enabled: true },
-    { id: 'homebridge', name: 'Homebridge Smart Home', version: '0.1.0', network_access: 'LAN', data_scope: 'LOCAL_ONLY', allowed_domains: [], agents_served: ['jarvis', 'ultron'], enabled: true },
-    { id: 'oracle-bridge', name: 'Oracle Pipeline Weaver', version: '0.1.0', network_access: 'RESTRICTED', data_scope: 'PROCESSED', allowed_domains: ['api.github.com'], agents_served: ['oracle'], enabled: true },
-  ],
-  total: 11,
-};
-
-const MEMORY_STATS = {
-  sessions: { total: 47, current: '20260531-1423', active: 3 },
-  vectors: { stored: 1284, dimension: 768, backend: 'qdrant' },
-  knowledge_graph: { entities: 89, relations: 156, last_seed: '2026-05-30' },
-  agent_contexts: { pepper: 12, stark: 8, friday: 15, jarvis: 22, vision: 6, frigga: 18 },
-};
-
-const LEARNING = {
-  interactions_total: 847,
-  success_rate: 0.91,
-  prompt_optimizations: [
-    { agent: 'jarvis', before: 'Summarize briefly', after: 'Provide structured summary with key points', improvement: '+12%' },
-    { agent: 'pepper', before: 'Check calendar', after: 'Check calendar and suggest optimal scheduling', improvement: '+8%' },
-    { agent: 'stark',  before: 'Report KPIs', after: 'Report KPIs with trend analysis and recommendations', improvement: '+15%' },
-  ],
-  promotion_candidates: [{ agent: 'howard', triggers: 23, threshold: 20 }],
-  demotion_warnings: [],
-};
-
-const SECURITY = {
-  guardrails: { mode: 'WARN', redact_count: 3, block_count: 0 },
-  scanners: { secret: { patterns: 10, findings: 0 }, pii: { patterns: 6, findings: 2 } },
-  ssrf: { enabled: true, blocked_requests: 1, max_redirects: 5 },
-};
-
-const BENCH = {
-  latency: { p50: 4.2, p95: 7.8, p99: 12.1, unit: 's' },
-  throughput: { rpm: 12, avg_tokens: 234 },
-  by_agent: { jarvis: 4.1, pepper: 3.8, stark: 5.2, friday: 4.5, vision: 6.8, steve: 5.9, athena: 3.2 },
-};
 
 // ─── v0.3 Dossier Data ───────────────────────────────────────────────────
 const DOSSIER = {
@@ -268,11 +203,4 @@ window.JARVIS_FALLBACK_CALENDAR = JARVIS_FALLBACK_CALENDAR;
 window.JARVIS_FALLBACK_NOTIFICATIONS = JARVIS_FALLBACK_NOTIFICATIONS;
 window.loadJarvisData = loadJarvisData;
 window.COGNITION_SCORING = COGNITION_SCORING;
-window.ROUTING_DECISION = ROUTING_DECISION;
-window.ORCHESTRATION_TRACE = ORCHESTRATION_TRACE;
-window.PLUGINS = PLUGINS;
-window.MEMORY_STATS = MEMORY_STATS;
-window.LEARNING = LEARNING;
-window.SECURITY = SECURITY;
-window.BENCH = BENCH;
 window.DOSSIER = DOSSIER;

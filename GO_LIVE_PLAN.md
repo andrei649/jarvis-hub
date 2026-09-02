@@ -5,7 +5,7 @@
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v1.0.0** · backend **7,243** · frontend **927** · mobile **110** · **442** routes · **18** active agents · open owner gates: **A1, A3, A5, A6, A9** · commit `66e589e8e7ab`.
+> Generated project status: **v1.0.0** · backend **7,244** · frontend **927** · mobile **110** · **442** routes · **18** active agents · open owner gates: **A1, A3, A5, A6, A9** · commit `9f31a50b0cf3`.
 <!-- project-status:go-live-header:end -->
 >
 > **2026-07-11 — the 1.0 gate expanded (owner decision):** this plan's launch checklist remains the
@@ -342,14 +342,16 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 | Personal Memory H8 (8 items) | P1 | 48 | ✅ Done |
 | Security wedge H12.1 (P0, anti-OpenClaw) | P0 | 8 | ✅ Done |
 | **Remaining backlog** — H12.14 + H13.3 (both GPU-host-bound; runbook `docs/GPU_RUNBOOK.md`) | P2–P3 | ~13 | ⏳ Open |
-| **Manual-test runbook sign-off** — the human gate; full pass on the RTX box ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md) §0, ⭐B0 governed-autonomy demo) | P0 | — | ⏳ Run before tag |
-| **AI-OS v1 owner-host proof (Lane A / A8)** — real Chromium+Windows UIA, Home Assistant device/room/occupant/presence graph + actuation, consented Frigate→house flow, presence-aware `present()` on ≥2 non-chat surfaces/device classes, acquisition→reuse and ambient ladder; evidence steps in [`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md) §N | P0 | — | ⏳ Blocking owner/live gate |
+| **Manual-test runbook sign-off** — the human gate; full pass on the RTX box ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md) §0, ⭐B0 governed-autonomy demo) | P0 | — | ⏳ Post-tag proof (owner directive 2026-08-28, confirmed 2026-09-01) |
+| **AI-OS v1 owner-host proof (Lane A / A8)** — real Chromium+Windows UIA, Home Assistant device/room/occupant/presence graph + actuation, consented Frigate→house flow, presence-aware `present()` on ≥2 non-chat surfaces/device classes, acquisition→reuse and ambient ladder; evidence steps in [`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md) §N | P0 | — | ✅ cleared (owner, 2026-08-28) |
 
-**Estimated gap to v1.0: ~13 SP** (two GPU-host-bound items), then the **human gate**. The software backlog
-H1–H17 is ✅ code-complete (194/196 items, ≈99% SP, 2026-06-09); v1.0 ships when the audit
-([docs/AUDIT.md](docs/AUDIT.md)) and the manual-test runbook ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md))
-are signed off green on real hardware — that runbook *is* the audit gate, and no tag ships without
-its §0 sign-off **and the A8 owner-host proof in §N**.
+**Estimated gap to v1.0: ~13 SP** (two GPU-host-bound items). The software backlog
+H1–H17 is ✅ code-complete (194/196 items, ≈99% SP, 2026-06-09). **Tag ordering (owner directive
+2026-08-28, confirmed 2026-09-01):** the `v1.0.0` tag is two owner commands — the A5 license flip, then
+the tag on `main` (A9). The audit ([docs/AUDIT.md](docs/AUDIT.md)) and the manual-test runbook
+([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md)) §0 sign-off are the **post-tag proof** of the tagged
+build on real hardware, not a tag precondition; the A8 owner-host proof in §N was cleared by the owner
+on 2026-08-28.
 
 ---
 

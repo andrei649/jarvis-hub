@@ -57,6 +57,11 @@ owns Howard only. This reconciliation does not create a new issue to fill that g
 that is an owner-scoping decision (new E4 sub-scope vs. a distinct small issue), not a
 documentation call this pass should make unilaterally.
 
+**Resolved 2026-09-01 (owner): #1008** — new small tracked issue under #757 owns Jarvis's own
+Identity Manifest (E4 identity-boundary lane, not Howard); #762 stays Howard-only; no authority
+change — identity changes are versioned proposals through the existing approval queue, Ultron
+stays sole privileged-action authority.
+
 ### 2. Autobiographical Event Ledger → E2 / #760 + E3 / #761 (real prior art)
 
 Accepted E2.0 (#781/PR #794) provides immutable `nerva.observation.v1` projections and
@@ -68,8 +73,11 @@ deletion lineage and correction/merge/split/tombstone semantics — matching #73
 
 **Gap:** neither #760 nor #761 names an "append-only autobiographical event ledger" as
 its own artifact; the overlap is structural, not a literal 1:1 contract match. #731's
-`event_id` / observed-vs-recorded time / actor / channel / observed-inferred-simulated
-classification fields are not yet individually pinned to either issue's acceptance list.
+`event_id` / observed-vs-recorded time / actor / channel fields are not yet individually
+pinned to either issue's acceptance list. The observed-inferred-simulated classification
+is placed (decided 2026-09-01, owner): E2/#760 observation provenance — an epistemic-status
+field on `nerva.observation.v1` with exactly those three values; the field name is left to
+the E2 slice, and the #760 checklist line is added by the epic owner in that slice.
 
 ### 3. Self-model and autobiography → split across E4 (gap), E3 / #761, E12 / #773
 
@@ -139,13 +147,19 @@ register already does. That is a smaller gap than "no owner" — it is "owned in
 register, not yet promoted into an epic's acceptance list" — and closing it is an
 epic-owner decision, not one this document makes unilaterally.
 
+**Decided 2026-09-01 (owner):** only the narrow line *"every production-recall admission
+decision records a taint/provenance reason"* is proposed into E3 Episodes #761's formal
+acceptance (via a comment on #761, for the epic owner to add as an unchecked bullet); the
+"cannot lower an approval floor or trigger execution" half stays with the kernel / `SEC-05`
+owners; E6/E12 remain `MEM-03` register co-owners. Nothing is claimed done.
+
 ## Delivery slices A–E
 
 | Slice | Destination | Prior art | Gap |
 |---|---|---|---|
 | A — schema and ledger | E2 + E3 | `nerva.observation.v1`, `nerva.atlas.snapshot.v1`, `nerva.episode.v1` cover versioned schema, append/correct/supersede, provenance, temporal validity | export/import round-trip test not yet proven — E3's own "residual risks" says so |
 | B — identity and autobiography | E4 (gap) | none | see primitive 1/3 gap above |
-| C — trusted recall | E3 + E6 | typed provenance (E3.0), contradiction-surfacing acceptance (E6), `RISKS.md` `MEM-03`/`SEC-05` already own the taint check | not yet promoted from risk register into an epic's formal acceptance criteria |
+| C — trusted recall | E3 + E6 | typed provenance (E3.0), contradiction-surfacing acceptance (E6), `RISKS.md` `MEM-03`/`SEC-05` already own the taint check | decided 2026-09-01: narrow admission-reason line proposed for #761 acceptance (epic owner adds the bullet); E6/E12 remain register co-owners — see §7 |
 | D — proactive relief loop | E5 + E10 | time-ROI formula, Build/acceptance shape already match | implementation not started (`NOT STARTED`) |
 | E — migration harness | E11 | backup/restore/export/delete/rollback drills named | bundle-content detail gap above |
 
@@ -155,8 +169,8 @@ epic-owner decision, not one this document makes unilaterally.
 2. Model replacement preserves continuity eval baseline → E11 (no eval baseline defined yet).
 3. Corrected fact never resurfaces as current truth → E3.0 supersession/tombstone semantics are directly relevant, already accepted.
 4. Every recalled memory explains source/time/confidence/admission reason → E3 (provenance exists) + E6/E12 (admission-reason explainability not yet built).
-5. Distinguish observed/inferred/simulated → no destination issue currently names this three-way classification explicitly; closest fit is E2's observation provenance.
-6. Family-domain isolation → not covered by any Nerva 2.0 epic issue read for this document; #731 names Frigga as a separate, stricter-privacy domain outside Jarvis/Nerva identity — likely an owner-scoping question rather than an E-epic fit.
+5. Distinguish observed/inferred/simulated → E2/#760 observation provenance — epistemic-status field ∈ {observed, inferred, simulated} on `nerva.observation.v1`, decided 2026-09-01 (owner); field name left to the E2 slice, #760 checklist line added by the epic owner in that slice.
+6. Family-domain isolation → decided 2026-09-01 (owner): owned under `docs/nerva2/RISKS.md` `PRIV-02` with its existing E2/E3/E4/E10 owners (E2 #760 primary; a Frigga cross-person leakage fixture is the mitigation named there; E3/E4/E10 inherit). Recorded in this document only — no epic acceptance list (#760 or other) is edited. #731 names Frigga as a separate, stricter-privacy domain outside Jarvis/Nerva identity.
 7. Export→wipe→import without embedding-model lock-in → E11 (gap, same as bundle content above).
 8. Proactive suggestions rate-limited and measured by verified net time saved → E5/E10, strong prior art (see primitive 5).
 9. System can say "I do not know / may misremember" → E12 calibration, advisory-only per #778 §2.2.
@@ -170,12 +184,12 @@ consistency across base models, privacy boundary tests, proactive precision/inte
 burden, migration parity) maps naturally to **E9 Research Lab** (#767, epic; accepted
 first slice E9.0/#784/PR #803) as the harness that would run it — E9's own stream
 description is "continuous model/tool benchmark harness using real Nerva task suites."
-This connection is not stated anywhere in #731,
-#778 B3, or the owner's #731 comment; it is this document's own inference, flagged as
-such rather than presented as an existing decision. E9.0/#784/PR #803 and E9.1/#807/
-PR #809 are accepted evaluation-only foundations that a future Continuity Core suite
-could plausibly reuse, subject to the owner or an independent reviewer confirming the
-fit.
+**Confirmed by owner 2026-09-01:** the accepted E9.0 `nerva.benchmark.v1` store/harness
+(with its privacy lanes) hosts the suite as a future, separately-scoped `evaluation_only`
+suite package, outside E9's serialized #854 repair queue; acceptance ownership of each
+metric stays with its destination epic (E3/E6/E12 for recall, contradiction and abstention;
+E11 for model-replacement and migration parity). This is a destination mapping only — no
+suite package exists yet and nothing is queue-jumped.
 
 ## Next smallest slice
 
@@ -186,7 +200,7 @@ slice directly; it is resolving the Identity Manifest destination gap (primitive
 since three other gaps (self-model anchors, acceptance criteria 1 and 10) all depend on
 it. That is an owner-scoping decision (extend #762's scope with an explicit boundary
 section, or open a new small issue) rather than something this reconciliation should
-decide unilaterally.
+decide unilaterally. **Resolved 2026-09-01: #1008** (new small issue; #762 stays Howard-only).
 
 ## Status after this document
 

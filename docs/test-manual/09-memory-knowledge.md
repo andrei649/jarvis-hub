@@ -256,7 +256,7 @@ PY
 ## 09.4 Notes (H10.21) — context injection you can prove
 
 #### MEM-052 — A note changes behaviour, and removing it changes it back 🤖👁
-- **Surface:** `PUT /api/notes` + chat · **Tier:** user · **Auto:** ✅tests/test_h10_21_conversation_notes.py, ✅tests/test_notes_store.py
+- **Surface:** `PUT /api/notes` + chat · **Tier:** user · **Auto:** ✅tests/test_h10_21_conversation_notes.py (`tests/test_notes_store.py` / `tests/test_notes_docs_routes.py` cover the separate block-tree `/api/notes/docs*` + `/api/notes/blocks/*` store, not the session note — citation fixed 2026-09-01)
 - **Why it matters:** the note is claimed to be injected as persistent context every turn
   (`agents/core/notes.py` `context_for` → `"[Session notes]\n…"`). The **only** honest proof is a
   reproducible behaviour change with a control.
@@ -276,9 +276,9 @@ PY
 
 | ID | Check | Do | Expect | Fail | Auto |
 |----|-------|----|--------|------|------|
-| MEM-053 | Note is keyed by **session** | `PUT /api/notes` with text, then `POST /memory/clear -H 'X-Confirm: true'`, then `GET /api/notes` | `content: ""` under the **new** session id, while `<data_root>/notes.json` still holds the text under the *old* id — the note is orphaned, not migrated. Record as an expectation, and grade the product decision: a user who resets the chat silently loses their standing instruction → **MINOR/MAJOR judgement call** | MINOR | ✅tests/test_notes_store.py |
+| MEM-053 | Note is keyed by **session** | `PUT /api/notes` with text, then `POST /memory/clear -H 'X-Confirm: true'`, then `GET /api/notes` | `content: ""` under the **new** session id, while `<data_root>/notes.json` still holds the text under the *old* id — the note is orphaned, not migrated. Record as an expectation, and grade the product decision: a user who resets the chat silently loses their standing instruction → **MINOR/MAJOR judgement call** | MINOR | ⚠️ manual — `tests/test_h10_21_conversation_notes.py` covers set/get/delete under one session only, not the `/memory/clear` re-key |
 | MEM-054 | Length cap is enforced at the schema | `PUT /api/notes` with 25 000 chars | `422` (Pydantic `max_length=20000`, `agents/core/routers/notes.py:20`) — a truncate-and-accept would be worse than a reject | MAJOR | ✅tests/test_h10_21_conversation_notes.py |
-| MEM-055 | `DELETE` is idempotent | `DELETE /api/notes` twice | First `{"ok":true,"cleared":true}`, second `{"ok":true,"cleared":false}` | MINOR | ✅tests/test_notes_store.py |
+| MEM-055 | `DELETE` is idempotent | `DELETE /api/notes` twice | First `{"ok":true,"cleared":true}`, second `{"ok":true,"cleared":false}` | MINOR | ⚠️tests/test_h10_21_conversation_notes.py (asserts the first `cleared:true` only) |
 | MEM-056 🤖 | `POST /api/notes/rewrite` (preview vs save) | With a messy note saved: `-d '{}'` then `-d '{"save":true,"instruction":"Rewrite as three bullet points."}'` | First: `{"ok":true,"rewritten":"…","saved":false}` and `GET /api/notes` **unchanged**. Second: `saved:true` and `GET /api/notes` now returns the rewritten text. The prompt is `"<instruction>\n\n---\n<content>"`, sent on channel `notes` | MAJOR | ✅tests/test_h10_21_conversation_notes.py |
 | MEM-057 | Rewrite an empty note | `DELETE /api/notes` then `POST /api/notes/rewrite -d '{}'` | `400 {"error":"note is empty"}` | MINOR | ✅same |
 | MEM-058 🤖 | Rewrite failure is a controlled 500 | Stop LM Studio/Ollama entirely, `POST /api/notes/rewrite -d '{}'` with a note saved | Either a degraded-reply string in `rewritten` (the LLM layer's own honest `⚠️ I can't reach…`) **or** `500 {"error":"internal error","code":500}` — never a stack trace, never the note silently overwritten by an error string when `save:true` was **not** sent | MAJOR | ⚠️same |

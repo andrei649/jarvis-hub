@@ -889,6 +889,12 @@ Observations only — **no code was changed.** Each is a pointer for the owner t
    weight — but they are one `||` away from being rendered, and `COGNITION_SCORING` in the same file
    contains apparently personal keywords (`raiffeisen`, `digitaholic`, `cosmina`, `bmw`, `max`) in a
    committed, browser-served file. Worth an owner decision on both counts (privacy + dead seed data).
+   **Decided 2026-09-01 (owner):** scrub the personal keywords from `COGNITION_SCORING` in **both**
+   `agents/web/static/data.js` and `frontend/src/data.ts` (scope widened to the v2 bundle, since
+   `frontend/src/cockpit.tsx` `buildTrace` consumes the v2 list — replace with generic placeholders
+   of the same shape) and delete the unused `data.js` mock datasets above plus their `window`
+   exports after verifying each is unreferenced; keep `/v1` and the `DOSSIER`/`JARVIS` data; backend
+   router keyword lists are grepped and reported, not changed. Landed 2026-09-01 in the same PR as the decision record (data.js + data.ts scrubbed, v2 bundle rebuilt).
 10. **The legacy plugin toggle reports success on a 401.** `PUT /plugins/{plugin_id}/toggle` is
     **admin**-tier, but `static/app.js:402` calls plain `fetch` with no admin header and only catches
     *network* errors; a 401 body parses as JSON, so the handler logs `plugin toggled:` and dispatches
