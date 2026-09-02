@@ -958,6 +958,31 @@ async def _probe_room_output_governed() -> dict[str, object]:
     )
 
 
+def _live_secret_broker():
+    """Seed a broker with the owner-live HA token.
+
+    The adapter resolves its bearer token through a `SecretBroker` handle, so an
+    adapter built without one can never authenticate: `_token()` raises
+    `credential_unavailable` before the first request and `snapshot()` reports
+    `degraded`. That is exactly how this probe used to be constructed, which made
+    the owner-live read case unpassable against a *working* Home Assistant.
+
+    Returns None when the run is not configured, so the caller degrades honestly
+    instead of reporting a transport failure it never attempted.
+    """
+    from agents.core.env_config import env_str
+    from agents.core.house.home_assistant import _SECRET_HANDLE
+    from agents.core.security.secret_broker import SecretBroker
+
+    match = _SECRET_HANDLE.fullmatch(env_str("JARVIS_HA_TOKEN_REF").strip())
+    token = env_str("JARVIS_H30_HA_TOKEN").strip()
+    if match is None or not token:
+        return None
+    broker = SecretBroker()
+    broker.put(match.group(1), token)
+    return broker
+
+
 async def _probe_owner_live_read() -> dict[str, object]:
     from agents.core.env_config import env_flag
     from agents.core.house.home_assistant import HomeAssistantAdapter
@@ -967,14 +992,112 @@ async def _probe_owner_live_read() -> dict[str, object]:
             "passed": False,
             "metadata": {"status": "degraded", "reason": "owner_live_opt_in_missing"},
         }
-    snapshot = await HomeAssistantAdapter().snapshot()
+    broker = _live_secret_broker()
+    if broker is None:
+        return {
+            "passed": False,
+            "metadata": {"status": "degraded", "reason": "owner_live_credential_missing"},
+        }
+    snapshot = await HomeAssistantAdapter(secret_broker=broker).snapshot()
     return {
         "passed": snapshot.status == "live",
         "metadata": {
             "status": snapshot.status,
             "reason": snapshot.reason or "",
             "entities": len(snapshot.entities),
+            "areas": len(snapshot.areas),
             "mutation_probe": False,
+        },
+    }
+
+
+async def _probe_owner_live_actuation() -> dict[str, object]:
+    """Drive one reversible light through the real HA REST service API.
+
+    The hermetic pack already proves the governance chain against a simulator;
+    what no offline case can prove is the *protocol*: that our POST body, auth
+    header, pinned-origin rewrite and Host header are accepted by a real Home
+    Assistant, and that the mutation is observable in a subsequent read. This
+    probe covers exactly that seam and restores the prior state afterwards.
+    """
+    from agents.core.env_config import env_flag
+    from agents.core.house.actuation import HomeAssistantServiceDriver
+    from agents.core.house.home_assistant import HomeAssistantAdapter
+
+    if not env_flag("JARVIS_H30_HA_LIVE"):
+        return {
+            "passed": False,
+            "metadata": {"status": "degraded", "reason": "owner_live_opt_in_missing"},
+        }
+    broker = _live_secret_broker()
+    if broker is None:
+        return {
+            "passed": False,
+            "metadata": {"status": "degraded", "reason": "owner_live_credential_missing"},
+        }
+
+    adapter = HomeAssistantAdapter(secret_broker=broker)
+    before = await adapter.snapshot()
+    if before.status != "live":
+        return {
+            "passed": False,
+            "metadata": {"status": before.status, "reason": before.reason or "read_failed"},
+        }
+
+    lights = [entity for entity in before.entities if entity.entity_id.startswith("light.")]
+    target = next((entity for entity in lights if entity.state == "off"), None)
+    if target is None:
+        return {
+            "passed": False,
+            "metadata": {"status": "degraded", "reason": "no_off_light_available"},
+        }
+
+    driver = HomeAssistantServiceDriver(adapter=adapter)
+    applied = await driver.apply(
+        {"control": "light", "entity_id": target.entity_id, "action": "on"}
+    )
+
+    async def _state_of(entity_id: str) -> str:
+        snap = await adapter.snapshot()
+        for entity in snap.entities:
+            if entity.entity_id == entity_id:
+                return entity.state
+        return ""
+
+    observed = await _state_of(target.entity_id)
+
+    # Restore unconditionally: a failed verification must not leave the device on.
+    restored = await driver.apply(
+        {"control": "light", "entity_id": target.entity_id, "action": "off"}
+    )
+    rolled_back = await _state_of(target.entity_id)
+
+    # A lock is not representable through the light control mapping — the
+    # allowlist refuses to synthesise a service for it at all.
+    lock_refused = False
+    try:
+        HomeAssistantServiceDriver._service(
+            {"control": "light", "entity_id": "lock.front_door", "action": "on"}
+        )
+    except ValueError:
+        lock_refused = True
+
+    passed = bool(
+        applied.get("ok")
+        and observed == "on"
+        and restored.get("ok")
+        and rolled_back == "off"
+        and lock_refused
+    )
+    return {
+        "passed": passed,
+        "metadata": {
+            "status": "live" if passed else "degraded",
+            "entity": target.entity_id,
+            "observed_after_apply": observed,
+            "observed_after_rollback": rolled_back,
+            "lock_refused_by_allowlist": lock_refused,
+            "mutation_probe": True,
         },
     }
 
@@ -1039,5 +1162,13 @@ H30_HOUSE_LIVE_CASES: list[RealityCase] = [
         _probe_owner_live_read,
         live=True,
         metadata=dict(_HOUSE_LIVE_METADATA),
-    )
+    ),
+    RealityCase(
+        "action:house.control",
+        "house-owner-live-actuation",
+        "a reversible light reaches a real HA service call, is observed, and rolls back",
+        _probe_owner_live_actuation,
+        live=True,
+        metadata=dict(_HOUSE_LIVE_METADATA),
+    ),
 ]

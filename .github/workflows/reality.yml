@@ -105,3 +105,113 @@ jobs:
           JARVIS_TESTING: "1"
           JARVIS_NEO4J_LIVE: "1"
           NEO4J_URL: "http://localhost:7474"
+
+  # A8 pre-flight — the H30 owner-live cases against a REAL Home Assistant with
+  # simulated devices. The hermetic pack injects a simulator in place of the
+  # REST/WebSocket transports, so it never exercises the wire: auth header,
+  # pinned-origin rewrite, Host header, /api/states payload shapes, or the
+  # /api/services POST body. Those are the seams that fail first on the owner's
+  # hardware, and this lane finds them without touching a real device or any
+  # household data. Same never-blocks-a-PR boundary as the jobs above.
+  home-assistant-live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-beta.lock
+      - run: pip install --require-hashes -r requirements-beta.lock
+      - run: pip install --require-hashes -r requirements-dev.lock
+
+      # Not a service container: the config (which supplies the simulated
+      # devices) has to exist before Home Assistant starts, and service
+      # containers boot before any step can write it.
+      - name: Start Home Assistant with simulated devices
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ha-config"
+          cat > "$RUNNER_TEMP/ha-config/configuration.yaml" <<'CONF'
+          default_config:
+          # The demo integration supplies lights/climate/cover/sensor entities that
+          # respond to real service calls. No physical device, no household data.
+          demo:
+          logger:
+            default: warning
+          CONF
+          docker run -d --name ha \
+            -p 8123:8123 \
+            -v "$RUNNER_TEMP/ha-config:/config" \
+            ghcr.io/home-assistant/home-assistant:stable
+
+      - name: Wait for the API to answer
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8123/api/ || true)
+            # 401 means the API is up and demanding a token — exactly what we want.
+            if [ "$code" = "401" ] || [ "$code" = "200" ]; then
+              echo "Home Assistant API responding after ${i}0s (HTTP $code)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Home Assistant did not become ready" >&2
+          docker logs ha --tail 100 >&2
+          exit 1
+
+      - name: Onboard and mint an access token
+        id: ha_token
+        run: |
+          set -euo pipefail
+          CLIENT_ID="http://localhost:8123/"
+          code=$(curl -sS -X POST http://localhost:8123/api/onboarding/users \
+            -H 'Content-Type: application/json' \
+            -d "{\"client_id\":\"$CLIENT_ID\",\"name\":\"Reality Lane\",\"username\":\"reality\",\"password\":\"reality-lane-ci\",\"language\":\"en\"}" \
+            | python -c 'import json,sys; print(json.load(sys.stdin).get("auth_code",""))')
+          if [ -z "$code" ]; then
+            echo "::error::onboarding did not return an auth_code" >&2
+            docker logs ha --tail 100 >&2
+            exit 1
+          fi
+          token=$(curl -sS -X POST http://localhost:8123/auth/token \
+            -d "grant_type=authorization_code" -d "code=$code" -d "client_id=$CLIENT_ID" \
+            | python -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))')
+          if [ -z "$token" ]; then
+            echo "::error::token exchange failed" >&2
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Put the simulated lights in a known state
+        env:
+          HA_TOKEN: ${{ steps.ha_token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # The actuation probe needs at least one light that starts 'off'.
+          curl -sS -X POST http://localhost:8123/api/services/light/turn_off \
+            -H "Authorization: Bearer $HA_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"entity_id":"all"}' > /dev/null
+          echo "lights reporting 'off':"
+          curl -sS http://localhost:8123/api/states \
+            -H "Authorization: Bearer $HA_TOKEN" \
+            | python -c 'import json,sys; s=json.load(sys.stdin); print(sum(1 for e in s if e["entity_id"].startswith("light.") and e["state"]=="off"), "of", sum(1 for e in s if e["entity_id"].startswith("light.")))'
+
+      - name: H30 owner-live read + actuation against real Home Assistant
+        env:
+          JARVIS_TESTING: "1"
+          JARVIS_HOUSE_BRAIN: "1"
+          JARVIS_HOME_ASSISTANT: "1"
+          JARVIS_HA_URL: "http://localhost:8123"
+          JARVIS_HA_ALLOWED_HOSTS: "localhost"
+          JARVIS_HA_TOKEN_REF: "{{secret:home_assistant_token}}"
+          JARVIS_H30_HA_LIVE: "1"
+          JARVIS_H30_HA_TOKEN: ${{ steps.ha_token.outputs.token }}
+        run: python -m pytest tests/test_h30_ha_container_live.py -v -s --timeout=120 --tb=short
+
+      - name: Home Assistant logs on failure
+        if: ${{ failure() }}
+        run: docker logs ha --tail 200
