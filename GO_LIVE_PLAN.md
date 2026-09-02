@@ -1,17 +1,19 @@
 # Jarvis Hub — Go-Live Plan
 
-> Generated: 2026-06-02 · Updated: 2026-07-11 · Current: **v0.11.0** (feature-complete + refactor done) · Target: **v1.0.0 = the proof track (H23 + design partners) + the AI-OS capability program** ([NERVA_VISION.md](NERVA_VISION.md) · [version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
+> Generated: 2026-06-02 · Updated: 2026-09-02 · Current: **`__version__` 1.0.0 on `main`, tag not yet cut** (feature-complete; `main` feature-frozen for 1.0 since 2026-09-02) · Target: **v1.0.0 = the A5 licence-flip PR, then `git tag v1.0.0 && git push origin v1.0.0` on `main`** (owner directive 2026-08-28, confirmed 2026-09-01; the A1 §0 run is *post-tag proof*; the AI-OS capability program is a 1.x roadmap, not a gate — see [1.0 definition of done / freeze](#10-definition-of-done--freeze-cto-2026-09-02) · [version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
 > North star (vision & phase gates): [MOONSHOT.md](MOONSHOT.md)
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v1.0.0** · backend **7,244** · frontend **927** · mobile **110** · **442** routes · **18** active agents · open owner gates: **A1, A3, A5, A6, A9** · commit `9f31a50b0cf3`.
+> Generated project status: **v1.0.0** · backend **7,265** · frontend **927** · mobile **110** · **442** routes · **18** active agents · open owner gates: **A1, A3, A4, A5, A6, A9** · backlog: **254 done · 33 delivered (runtime proof pending) · 14 open or blocked of 301 horizon rows** · commit `268793a40963`.
 <!-- project-status:go-live-header:end -->
 >
-> **2026-07-11 — the 1.0 gate expanded (owner decision):** this plan's launch checklist remains the
-> **proof track** half of 1.0 and is unchanged; the second half — the AI-OS capability program
-> (capability registry, operators, media director, house brain, cameras, acquisition, ambient) —
-> lives in [NERVA_VISION.md](NERVA_VISION.md) + BACKLOG ORIZONT 27–33. The feature inventory below
+> **2026-07-11 — the 1.0 gate expanded (owner decision) — superseded 2026-08-28:** the July framing
+> made this plan's launch checklist the **proof track** half of 1.0, with the AI-OS capability program
+> (capability registry, operators, media director, house brain, cameras, acquisition, ambient —
+> [NERVA_VISION.md](NERVA_VISION.md) + BACKLOG ORIZONT 27–33) the second half. *Since the owner's
+> 2026-08-28 "gates removed" directive (confirmed 2026-09-01) the program is a 1.x roadmap, not a tag
+> gate — see "1.0 definition of done / freeze" below.* The feature inventory below
 > is a snapshot — when it disagrees with BACKLOG, BACKLOG wins.
 
 ---
@@ -330,7 +332,7 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 
 ### v1.0 Launch Checklist
 
-> We are at **v0.11.0** — every feature horizon is delivered. This checklist is the **proof track**: the **productionization layer (H23)** done **and** the system proven by real design partners. Since 2026-07-11 the 1.0 tag additionally requires the **AI-OS capability program** ([NERVA_VISION.md](NERVA_VISION.md), ORIZONT 27–33). The version line in [BACKLOG.md](BACKLOG.md#version-roadmap) is the plan.
+> `main` carries **`__version__` 1.0.0** (bumped 2026-08-28; tag not yet cut) — every feature horizon is delivered. This checklist is the **proof track**: the **productionization layer (H23)** done **and** the system proven by real design partners. The July expansion (the tag additionally requiring the **AI-OS capability program**, [NERVA_VISION.md](NERVA_VISION.md) ORIZONT 27–33) was **superseded 2026-08-28**: the program is a 1.x roadmap, and the tag is two owner commands — the A5 licence flip, then `git tag v1.0.0 && git push origin v1.0.0` on `main` — with the §0 run as post-tag proof (see "1.0 definition of done / freeze" below). The version line in [BACKLOG.md](BACKLOG.md#version-roadmap) is the plan.
 
 | Item | Priority | SP | Status |
 |------|----------|----|--------|
@@ -355,6 +357,31 @@ on 2026-08-28.
 
 ---
 
+### 1.0 definition of done / freeze (CTO, 2026-09-02)
+
+> Decision doc: [docs/decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md](docs/decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md)
+> — Status: DECIDED (CTO, 2026-09-02); the owner ratifies by merging. It writes down, once, the
+> 2026-08-28 owner directive ("gates removed"; tag = A5 licence flip then the tag; A1 §0 = post-tag
+> proof, confirmed 2026-09-01) as a definition of done, so no surface has to re-derive it.
+
+- **Frozen.** `main` is **feature-frozen for 1.0 from the merge of the 2026-09-02 CTO PR.** Between
+  that merge and the tag only three kinds of change land: (1) red-`main` fixes, (2) the dependency
+  audit wave (`npm audit fix` in `worldview/`, `worldview/mcp/` and the repo-root HUD-test tree, each
+  followed by that tree's own tests/build; `frontend/` and `mobile/` untouched), (3) the A5 relicense
+  PR (MIT → Apache-2.0, three owner commands in [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md)).
+- **Done = tagged.** The tag is cut **immediately after A5 merges**: `git tag v1.0.0 && git push
+  origin v1.0.0` on `main` (A9). **Before tagging** the owner folds CHANGELOG `[Unreleased]` into
+  `[1.0.0]` and sets its date. `release.yml` has never run on GitHub; a `workflow_dispatch` `dry_run`
+  was triggered on 2026-09-02 by the coordinator as its first end-to-end check — read its result
+  before pushing the tag.
+- **Proof is post-tag.** The A1 [docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md) §0 run proves the
+  *tagged* build; its findings are **1.0.1**, not tag blockers.
+- **Everything else is 1.x:** the 8 open DRA rows (DRA-08 Phase 6, 27, 29, 45, 58, 59, 60, 62),
+  SEC-B4's `browser_run` egress-boundary capability residual, H23.30 public demo, GAP-0
+  (distribution), the ORIZONT 27–33 capability program, the H19 🔨 scale proofs.
+
+---
+
 ### Roadmap Summary
 
 | Version | Status | Milestone |
@@ -362,7 +389,7 @@ on 2026-08-28.
 | v0.5-beta | 🟢 Live | H1–H4 foundation complete |
 | v0.9.1-beta | 🟢 Live | H7 perf hotpath + real embeddings |
 | v0.9.2-beta | 🟢 Live | H7 hardening + H8 personal memory + cost analytics + onboarding |
-| v1.0.0 | 🎯 Stable | **Entire backlog done** — H10 + H11 + H12 + H13–H17 |
+| v1.0.0 | 🎯 Stable — `__version__` bumped 2026-08-28, tag pending | **Feature backlog delivered (H10–H23 + WorldView O19); tag = A5 licence flip → `git tag v1.0.0` on `main`; the A1 §0 run is post-tag proof** — `main` feature-frozen for 1.0 since 2026-09-02 (see above) |
 | v1.x → 2.0 | Planned | Business leaps beyond the backlog: hosted Pro, multi-user, ecosystem at scale |
 
 ---

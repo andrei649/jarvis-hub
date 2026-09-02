@@ -47,7 +47,7 @@ boundaries, from most to least trusted:
 | T8 | **Network exposure** — a non-loopback bind leaks the API | Loopback default; `serve.assert_safe_bind()` **fails closed** on a non-loopback bind without a token; CSP + `X-Content-Type-Options`/`X-Frame-Options` headers (`_security_headers`); WorldView backend **fails closed** on `0.0.0.0` + empty secret. |
 | T9 | **Credential/authZ abuse** — stolen token replays | Managed **token store** (hashed-at-rest, TTL, rotation revokes prior + the bootstrap env token); admin/user route-guard matrix (`test_route_auth_matrix.py`). |
 | T10 | **Path traversal** — `session_id`/file inputs escape the data root | Anchored validation (`^[A-Za-z0-9_-]+$`) at the persistence boundary (`test_session_traversal.py`). |
-| T11 | **Supply-chain** — tampered dependency or CI action | Hash-pinned lockfiles (`--require-hashes`); SHA-pinned GitHub Actions; weekly scheduled CodeQL scan. *(2026-08-29: the blocking SAST/secret-scan/dependency-CVE CI gates from `AUD-10` were removed by owner decision to unblock development speed — scanning can be run manually with the same tools.)* |
+| T11 | **Supply-chain** — tampered dependency or CI action | Hash-pinned lockfiles (`--require-hashes`); SHA-pinned GitHub Actions; weekly scheduled CodeQL scan; SAST (bandit/semgrep) + secret-scan (gitleaks) + dependency-CVE (pip-audit) lanes on every PR (`AUD-10`, `.github/workflows/security.yml`) plus the lockfile-drift lane (`lockfile.yml`). *(2026-08-29: removed by owner decision (#981); restored 2026-09-02 (CTO decision D1) — they block a merge only once the owner marks them required in branch protection.)* |
 
 ## 4. Continuous verification (defense that can't silently rot)
 

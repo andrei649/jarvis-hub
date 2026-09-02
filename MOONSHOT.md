@@ -93,7 +93,7 @@ a clear "done" gate; we do not skip gates.
 | **1 — Feature-complete** ✅ | H10 + H11 + H12 + H13–H17 + H18–H22 + WorldView O19 → **v0.10.0** | From "works for Andrei" to a feature-rich, local-first AI OS — *every feature horizon shipped* | All feature backlog delivered; north-star instrumented. **But: single-user, unproven, not yet productionized.** |
 | **2a — Proven core** 🎯 (in flight) | **H23** + O24–O26 → **v0.12 … v0.20** | From "code-complete" to a product a stranger can install, trust, upgrade — **the proof track** | H23 spine done · ⭐B0 manual run · 72h soak · 1–3 design partners ≥2 weeks with real north-star data. *Formerly the whole 1.0 gate; now the trust half of it.* |
 | **2b — The AI OS** 🎯 | **O27–O33 → v0.21 … v0.27** | From governed assistant to a system that perceives, operates and grows: capability registry, computer/browser operators, media director, house brain, cameras, capability acquisition, ambient intelligence | Per-horizon gates in [BACKLOG.md](BACKLOG.md); each of the six pillars reaches its **v1 bar** ([NERVA_VISION.md](NERVA_VISION.md) §10); parked modules unfreeze per phase |
-| **→ 1.0** | **2a AND 2b complete** | "Owned & proven" becomes "**the governed Personal AI OS — owned & proven**" | Both gates met + owner legal/brand done + manual-test/audit pass → tag |
+| **→ 1.0** | **2a proof track; 2b continues as a 1.x roadmap** *(superseded 2026-08-28: 2b no longer gates the tag)* | "Owned & proven" becomes "**the governed Personal AI OS — owned & proven**" | **Tag = A5 licence flip, then `git tag v1.0.0 && git push origin v1.0.0` on `main`** (owner directive 2026-08-28, confirmed 2026-09-01); `main` feature-frozen for 1.0 from 2026-09-02; the manual-test/audit §0 run is the *post-tag proof* of the tagged build ([GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) → "1.0 definition of done / freeze"). *Superseded July wording: both gates met + owner legal/brand done + manual-test/audit pass → tag.* |
 | **3 — Sellable / ecosystem** | Hosted Pro + multi-user + moderated marketplace → post-1.0 (v1.x → v2.0) | Hosted tier, first revenue; others build *on* Jarvis; households/teams not just Andrei | Paid conversion measured; multi-user + signed marketplace + 3rd-party A2A/widget adoption |
 
 > Phase boundaries are **release gates**, not suggestions. We are at **v0.11.0**. The version
@@ -102,6 +102,10 @@ a clear "done" gate; we do not skip gates.
 > "v3.0 ambition", including the Hermes-integration/superiority goal) was pulled **into** 1.0,
 > and the owner accepts this moves the tag out by roughly a year. The proof track (2a) is not
 > displaced: B0, the soak and design partners remain the critical path and run in parallel.
+> **Superseded 2026-08-28 (owner: "gates removed"; frozen 2026-09-02, CTO):** the capability program is a
+> 1.x roadmap, not a tag gate — the tag is the A5 licence flip then the tag on `main`; the 1.0
+> definition of done / freeze lives in [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) and
+> [docs/decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md](docs/decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md).
 > Manual testing/audit is the *post-tag proof of the tagged build*, not a gate item (owner directive 2026-08-28: the tag is the A5 license flip then the tag; the §0 run proves the build — ordering confirmed 2026-09-01). Rationale
 > + provenance: [decision log](docs/HISTORY.md) ·
 > [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md).

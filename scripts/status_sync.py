@@ -28,8 +28,15 @@ There are deliberately two policies:
   not a reason to nest a second full test run inside the release-gate test.
 
 Ready-head CI does not re-collect the backend suite after executing it. Pytest writes
-one JUnit result and ``--verify-test-count backend`` compares that exact run with the
-tracked count; Vitest and Jest use their equivalent JSON results.
+one JUnit result and ``--verify-test-count backend --test-result <junit.xml>`` compares
+that exact run with the tracked ``tests.backend`` count (exit 1 on drift, so the PR
+lane fails when a test lands without regenerating the artifact); Vitest and Jest use
+their equivalent JSON results.
+
+BACKLOG rows are classified from the *leading* marker of their status cell only
+(``✅``/``🟢``/``done`` → done, ``🔨`` → delivered = code landed, runtime proof
+pending, ``🔴``/``blocked`` → blocked, anything else → open). A ``✅`` quoted later
+inside prose never counts, and Lane A release gates close only on a leading ``✅``.
 
 ``--check`` deliberately ignores the ``latest_ci_commit`` stamp (it adopts whatever
 the committed files carry): the stamp is cosmetic provenance and inherently
@@ -254,32 +261,110 @@ def load_registry(path: Path = REGISTRY) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+# Row-state vocabulary shared by the horizon tables and Lane A (release gates).
+# A row's state is decided ONLY by the leading marker of its status cell — never by
+# a "✅"/"done" quoted later inside explanatory prose (that misread A4 as closed).
+_STATE_BY_MARKER = {
+    "✅": "done",
+    "🟢": "done",
+    "🔨": "delivered",  # code delivered, runtime proof pending — neither done nor open
+    "🔴": "blocked",
+    "⬜": "open",
+    "🟡": "open",
+    "⏳": "open",
+}
+_STATE_BY_WORD = {"done": "done", "merged": "done", "blocked": "blocked"}
+_STATE_KEYS = ("total", "done", "delivered", "blocked", "open")
+_HORIZON_ROW_RE = re.compile(r"^\|\s*(H(\d+)\.\d+[^|]*)\|")
+_CELL_DECORATION = "*_`~ \t"
+
+
+def leading_marker_state(cell: str) -> str | None:
+    """State named by the *leading* marker of a table cell, or ``None``.
+
+    Whitespace and Markdown emphasis are stripped first, then only the first emoji
+    (✅/🟢/🔨/🔴/⬜/🟡/⏳) or the first word (done/merged/blocked) counts. Anything
+    appearing later in the cell is prose and is ignored on purpose.
+    """
+    text = cell.strip().lstrip(_CELL_DECORATION)
+    if not text:
+        return None
+    if text[0] in _STATE_BY_MARKER:
+        return _STATE_BY_MARKER[text[0]]
+    word = re.match(r"[A-Za-z]+", text)
+    return _STATE_BY_WORD.get(word.group(0).lower()) if word else None
+
+
+def classify_row(cells: list[str]) -> str:
+    """Classify a BACKLOG table row as done / delivered / blocked / open.
+
+    The marker is read from the item cell right after the id (``H24.1 ⬜``); when
+    the id carries none, the first later cell whose *leading* token is a marker
+    decides (``| H23.2 | name | 🟢 **done** … |``). Rows without any marker are open.
+    """
+    if not cells:
+        return "open"
+    trailing = re.match(r"^\S+\s+(.*)$", cells[0].strip())
+    state = leading_marker_state(trailing.group(1)) if trailing else None
+    if state is None:
+        for cell in cells[1:]:
+            state = leading_marker_state(cell)
+            if state is not None:
+                break
+    return state or "open"
+
+
+def _row_cells(line: str) -> list[str]:
+    return line.strip().strip("|").split("|")
+
+
 def horizon_rollups(backlog_text: str) -> dict[str, dict[str, int]]:
-    """Aggregate machine-readable done/blocked/open counts by H-number."""
+    """Aggregate machine-readable done/delivered/blocked/open counts by H-number.
+
+    ``delivered`` is the third horizon state (🔨: code delivered, runtime proof
+    pending); ``total`` stays the row count, so ``done + delivered + blocked + open
+    == total`` for every horizon.
+    """
     rollups: dict[str, dict[str, int]] = {}
     for line in backlog_text.splitlines():
-        match = re.match(r"^\|\s*(H(\d+)\.\d+[^|]*)\|", line)
+        match = _HORIZON_ROW_RE.match(line)
         if not match:
             continue
-        item, number = match.groups()
-        horizon = f"H{number}"
-        row = rollups.setdefault(horizon, {"total": 0, "done": 0, "blocked": 0, "open": 0})
+        horizon = f"H{match.group(2)}"
+        row = rollups.setdefault(horizon, dict.fromkeys(_STATE_KEYS, 0))
         row["total"] += 1
-        lowered = line.lower()
-        if "✅" in item or "🟢" in line or "done" in lowered or "merged" in lowered:
-            row["done"] += 1
-        elif "🔴" in line or "blocked" in lowered:
-            row["blocked"] += 1
-        else:
-            row["open"] += 1
+        row[classify_row(_row_cells(line))] += 1
     return dict(sorted(rollups.items(), key=lambda item: int(item[0][1:])))
+
+
+def horizon_totals(rollups: dict[str, dict[str, int]]) -> dict[str, int]:
+    """Roll every horizon up into one bucket set; delivered rows are reported on
+    their own and are excluded from the ``open_or_blocked`` figure."""
+    totals = dict.fromkeys(_STATE_KEYS, 0)
+    for row in rollups.values():
+        for key in _STATE_KEYS:
+            totals[key] += int(row.get(key, 0))
+    totals["open_or_blocked"] = totals["open"] + totals["blocked"]
+    return totals
+
+
+def gate_is_closed(status: str) -> bool:
+    """A Lane A (release-gate) row is closed only when its status cell *leads* with
+    ✅ (or the word ``done``). Lane A uses 🟢 for "agent half done, owner tail
+    left", so 🟢 keeps the gate open there — unlike the horizon tables — and a
+    ✅ quoted later inside prose never closes a gate."""
+    text = status.strip().lstrip(_CELL_DECORATION)
+    if text.startswith("✅"):
+        return True
+    word = re.match(r"[A-Za-z]+", text)
+    return bool(word) and word.group(0).lower() == "done"
 
 
 def open_release_gates(backlog_text: str) -> list[dict[str, str]]:
     gates = []
     for match in _LANE_ROW_RE.finditer(backlog_text):
         gate_id, name, status = (part.strip() for part in match.groups())
-        if "✅" not in status:
+        if not gate_is_closed(status):
             gates.append({"id": gate_id, "name": name, "status": status})
     return gates
 
@@ -305,6 +390,7 @@ def build_project_status(
         "routes": routes,
         "active_agents": count_active_agents(registry),
         "horizons": horizon_rollups(backlog_text),
+        "horizon_totals": horizon_totals(horizon_rollups(backlog_text)),
         "latest_ci_commit": latest_ci_commit,
         "open_release_gates": open_release_gates(backlog_text),
     }
@@ -321,15 +407,50 @@ def replace_generated_block(text: str, name: str, content: str, *, strict: bool 
     return pattern.sub(f"{start}\n{content.rstrip()}\n{end}", text, count=1)
 
 
+def _empty_horizon() -> dict[str, int]:
+    return dict.fromkeys(_STATE_KEYS, 0)
+
+
+def horizon_summary(name: str, row: dict[str, int]) -> str:
+    """Human form of one horizon's buckets, delivered shown explicitly, e.g.
+    ``H19 — 2 done · 33 delivered (runtime proof pending) · 0 open``."""
+    parts = [f"{int(row.get('done', 0))} done"]
+    if int(row.get("delivered", 0)):
+        parts.append(f"{int(row['delivered'])} delivered (runtime proof pending)")
+    if int(row.get("blocked", 0)):
+        parts.append(f"{int(row['blocked'])} blocked")
+    parts.append(f"{int(row.get('open', 0))} open")
+    return f"{name} — " + " · ".join(parts)
+
+
+def _totals_for(status: dict) -> dict[str, int]:
+    totals = status.get("horizon_totals")
+    if isinstance(totals, dict) and "open_or_blocked" in totals:
+        return totals
+    return horizon_totals(status.get("horizons", {}))
+
+
 def generated_snippets(status: dict) -> dict[str, str]:
     tests = status["tests"]
     gates = status["open_release_gates"]
     gate_ids = ", ".join(gate["id"] for gate in gates) or "none"
-    h23 = status["horizons"].get("H23", {"total": 0, "done": 0, "blocked": 0, "open": 0})
+    horizons = status.get("horizons", {})
+    h23 = {**_empty_horizon(), **horizons.get("H23", {})}
+    totals = _totals_for(status)
+    pending = [name for name, row in horizons.items() if int(row.get("delivered", 0))]
+    pending_lines = [
+        f"- Runtime proof pending: {horizon_summary(name, horizons[name])}" for name in pending
+    ]
     commit = status["latest_ci_commit"][:12]
     matrix = (
         f"backend **{tests['backend']:,}** · frontend **{tests['frontend']:,}** · "
         f"mobile **{tests['mobile']:,}**"
+    )
+    # The global figure: delivered rows are neither done nor open — they are shown on
+    # their own and never inflate "open or blocked".
+    ledger = (
+        f"{totals['done']} done · {totals['delivered']} delivered (runtime proof pending) · "
+        f"{totals['open_or_blocked']} open or blocked of {totals['total']} horizon rows"
     )
     return {
         "badges": "\n".join(
@@ -342,6 +463,7 @@ def generated_snippets(status: dict) -> dict[str, str]:
         "readme-status": (
             f"Generated status: **v{status['version']}** · {matrix} · **{status['routes']}** routes · "
             f"**{status['active_agents']}** active agents · open release gates: **{gate_ids}** · "
+            f"backlog: **{ledger}** · "
             f"source commit `{commit}`. Full data: [`project-status.json`](project-status.json)."
         ),
         "jarvis-stats": "\n".join(
@@ -350,13 +472,19 @@ def generated_snippets(status: dict) -> dict[str, str]:
                 f"- {status['routes']} HTTP routes; parity-snapshot-derived",
                 f"- Tests: {matrix}",
                 f"- Version: **v{status['version']}** · source commit `{commit}`",
-                f"- H23 roll-up: {h23['done']}/{h23['total']} done, {h23['blocked']} blocked, {h23['open']} open; release gates: {gate_ids}",
+                f"- Backlog ledger: {ledger}",
+                *pending_lines,
+                (
+                    f"- H23 roll-up: {h23['done']}/{h23['total']} done, "
+                    f"{h23['delivered']} delivered (runtime proof pending), "
+                    f"{h23['blocked']} blocked, {h23['open']} open; release gates: {gate_ids}"
+                ),
             ]
         ),
         "go-live-header": (
             f"> Generated project status: **v{status['version']}** · {matrix} · "
             f"**{status['routes']}** routes · **{status['active_agents']}** active agents · "
-            f"open owner gates: **{gate_ids}** · commit `{commit}`."
+            f"open owner gates: **{gate_ids}** · backlog: **{ledger}** · commit `{commit}`."
         ),
     }
 
@@ -599,9 +727,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--verify-test-count",
         choices=("backend", "frontend", "mobile"),
-        help="verify an existing pytest/Vitest/Jest result against tracked status",
+        help=(
+            "compare an already-produced test result with the tracked count in "
+            "project-status.json (tests.<surface>) and exit 1 on drift, 2 on a missing/"
+            "unreadable result; backend reads pytest's JUnit XML (pytest --junitxml=PATH), "
+            "frontend/mobile read Vitest/Jest --json output. Requires --test-result. "
+            "Example: --verify-test-count backend --test-result reports/junit.xml"
+        ),
     )
-    parser.add_argument("--test-result", type=Path, help="pytest/Vitest/Jest result path")
+    parser.add_argument(
+        "--test-result",
+        type=Path,
+        help="path of the pytest JUnit XML / Vitest JSON / Jest JSON result to verify",
+    )
     return parser
 
 

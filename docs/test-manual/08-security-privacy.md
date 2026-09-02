@@ -448,8 +448,8 @@ Chain: `memory_logs/security/audit.db`, table `security_events`, per-row `row_ha
 | SEC-134 | Sandbox-only acquired packages stay out-of-process | confirm `ACQUIRED_SANDBOX_ONLY` handling: a package dir carrying that marker | loader logs `Refused in-process discovery of sandbox-only acquired package` and skips it (`agents/core/skills/loader.py:230`) | **BLOCKER** | ✅`tests/test_h32_acquisition_sandbox_isolation.py` |
 | SEC-135 | Acquisition ledger is admin-only and purge needs an exact phrase | `GET /api/acquisition/ledger/export` with a user token; then `POST /api/acquisition/ledger/purge` with `{"confirm":"purge"}` | 401 for the user token; the wrong confirm → **409** `{"status":"refused","reason":"exact_owner_confirmation_required"}` | MAJOR | ✅`tests/test_h32_acquisition_audit.py` |
 | SEC-136 | Marketplace install is admin-only | `POST /api/skills/marketplace/install` and `/install-zip` with a user token | 401 both | **BLOCKER** | ⚠️`tests/test_route_auth_matrix.py` |
-| SEC-137 | Supply-chain tooling still works (advisory) | `python scripts/check_thirdparty_drift.py --consistency`; `python scripts/gen_sbom.py requirements-beta.txt /tmp/sbom.json /tmp/NOTICE 0.0.0` | drift check exits 0 (manifest `.github/third-party-manifest.json` matches the vendored versions); the SBOM is valid CycloneDX JSON and deterministic (run twice, `diff` is empty). *(2026-08-29: the blocking security.yml gates — gitleaks/semgrep/pip-audit/bandit — were removed by owner decision; scans are manual-only now.)* | MAJOR | ✅`tests/test_release_gate.py` |
-| SEC-138 | *(retired 2026-08-29)* Secret-scan gate really blocks | n/a — the CI secret-scan gate and `.gitleaks.toml` were removed; run `gitleaks dir .` manually if a scan is wanted | n/a | — | ❌ |
+| SEC-137 | Supply-chain lanes run on every PR | `python scripts/check_thirdparty_drift.py --consistency`; `python scripts/gen_sbom.py requirements-beta.txt /tmp/sbom.json /tmp/NOTICE 0.0.0`; and read `.github/workflows/security.yml` + `.github/workflows/lockfile.yml` | drift check exits 0 (manifest `.github/third-party-manifest.json` matches the vendored versions); the SBOM is valid CycloneDX JSON and deterministic (run twice, `diff` is empty); the four jobs — gitleaks, semgrep, pip-audit, bandit — plus the lockfile `in-sync` check all run on `pull_request` with no `continue-on-error` *(restored 2026-09-02, CTO decision D1; they **block** a merge only once the owner marks them required in branch protection — see `docs/OWNER_TASKS.md` A4)* | MAJOR | ✅`tests/test_degate_posture_docs.py` |
+| SEC-138 | Secret-scan lane really catches a key | on a scratch branch add a file containing a **fake but realistic** key (`AKIAQAFAKE0000000000`), run the same gitleaks command the workflow uses (`gitleaks dir . --config .gitleaks.toml --redact`) | non-zero exit, finding redacted in the output. Delete the file afterwards | MAJOR | ❌ |
 
 ---
 
@@ -707,21 +707,25 @@ Observations from reading the source. **No code was changed.** Line numbers were
     the 401 in SEC-004 step 5 is the self-validating gate before trusting §08.2;
     and ONVIF/Frigate camera behaviour (SEC-181…183).
     *(Dropped from this list 2026-08-31: the required-branch-protection status of the CI security
-    jobs. It is answerable from the tree, and the answer is that there is no gate left to
-    configure — see #16 below.)*
-16. **The four CI security jobs are gone, not gated.** gitleaks / semgrep / pip-audit / bandit
+    jobs. It is answerable from the tree: the lanes are back on the PR path since 2026-09-02 and
+    become blocking only once marked required — see #16 below.)*
+16. **The four CI security jobs were gone 2026-08-29 → 2026-09-02, and are back on the PR path — but not yet required.** gitleaks / semgrep / pip-audit / bandit
     lived in `.github/workflows/security.yml`, which the 2026-08-29 de-gate (**#981**, `824ff18`)
     **deleted** rather than promoting its jobs to required checks — the owner chose removal over
-    promotion (F-10 "superseded (de-gate)" in `docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`). What
-    still runs on a PR is the single advisory `test (ubuntu-latest)` lane in `ci.yml` — which is
-    where `tests/test_route_auth_matrix.py` and the HUD-parity test execute — plus the
-    post-merge push-to-main lanes. Nothing blocks a merge. Consequences for a tester: the scans
-    behind SEC-137 are **manual-only**, and a green PR is not evidence that anything was scanned.
-    Re-gating is a reversible owner action and needs **both** halves — the workflow patch in
-    [`docs/restore/`](../restore/README.md) (group `A-security-scans`) **and** the check name
-    re-added in branch protection (`docs/OWNER_TASKS.md` → "De-gate merges"). Restoring only the
-    branch-protection half produces the permanent "Expected — Waiting for status to be reported"
-    merge deadlock documented in `docs/MAINTENANCE_RUNBOOK.md` §10.
+    promotion (F-10 "superseded (de-gate)" in `docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`). On
+    2026-09-02 the CTO restored that workflow and the lockfile-drift lane from
+    [`docs/restore/`](../restore/README.md) (group `A-security-scans` + `E-lockfile-drift`;
+    decision doc `docs/decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md`), and the
+    `hud-v2-build` bundle check now runs on PRs too. What runs on a PR today: the advisory
+    `test (ubuntu-latest)` lane in `ci.yml` — where `tests/test_route_auth_matrix.py` and the
+    HUD-parity test execute — plus `hud-v2-build`, the four security scans and the lockfile
+    `in-sync` check; the Windows matrix and the heavier lanes stay post-merge. **Nothing blocks a
+    merge until the owner marks those checks required** (`docs/OWNER_TASKS.md` → A4): a failing
+    check turns the PR `UNSTABLE`, which stops the hourly auto-merge, but a human can still merge.
+    Consequences for a tester: SEC-137's scans are automated again and a red scan on a PR is
+    evidence; a green PR is evidence only for what those lanes cover. Re-adding only the
+    branch-protection half without the workflow produces the permanent "Expected — Waiting for
+    status to be reported" merge deadlock documented in `docs/MAINTENANCE_RUNBOOK.md` §10.
 17. **No automated test pins the four guard *response strings*** ("user routes disabled from network…",
     "admin disabled from network…", "user token required", "admin token required"). They are the contract
     this section's evidence quotes; a wording change would silently invalidate a tester's pass criteria.

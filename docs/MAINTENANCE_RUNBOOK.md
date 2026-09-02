@@ -136,8 +136,11 @@ as CLEAN, so a permanently-BLOCKED PR is simply skipped forever.
 longer produce them**. The 2026-08-29 de-gate (#981) removed the `pull_request:` trigger from — or
 deleted outright — every PR-blocking workflow. A required name with no workflow behind it can never
 post a status, so the PR can never go CLEAN. The repo half of the de-gate is done and verifiable in
-the tree (`.github/workflows/` no longer contains `security.yml`; `codeql.yml`, `e2e.yml` and the
-rest have no `pull_request` trigger). The **settings** half is owner-side and cannot be observed
+the tree (`codeql.yml`, `e2e.yml` and the other heavy workflows have no `pull_request` trigger;
+`security.yml` and `lockfile.yml` were deleted by #981 and **restored on 2026-09-02** by CTO
+decision D1b — they post `Secret scan (gitleaks)`, `SAST (semgrep)`, `Dependency audit (pip-audit)`,
+`SAST (bandit — blocking gate)` and `in-sync` on every PR again, and `ci.yml` posts `hud-v2-build`
+on PRs — but none of them is *required* until the owner says so). The **settings** half is owner-side and cannot be observed
 from the repo — `docs/OWNER_TASKS.md` itself notes that if #981 was merged via admin bypass rather
 than by clearing the settings, the stale names are still there. This deadlock is what that looks
 like.
@@ -153,9 +156,11 @@ like.
    CodeQL merge-protection ruleset (group K).
 2. **Interim: admin-bypass merge.** Unblocks the one PR in front of you and leaves the deadlock in
    place for the next one. Use it to land the fix, not as the fix.
-3. **If the gate is actually wanted back, restore BOTH halves.** Apply the workflow patch from
-   `docs/restore/groups/<group>.patch` **and** re-add that group's check names in branch
-   protection. Restoring one half reproduces the deadlock from the other direction: a required name
+3. **If the gate is actually wanted back, restore BOTH halves.** Apply the workflow patch —
+   the per-group patches live *inside* `docs/restore/dev-gates-restore-2026-08-30.zip` as
+   `groups/<group>.patch` (unzip it outside the tree first; `docs/restore/README.md` has the exact
+   commands and the current restored/archived status per group) — **and** re-add that group's
+   check names in branch protection. Restoring one half reproduces the deadlock from the other direction: a required name
    with no workflow blocks everything, and a workflow with no required name blocks nothing while
    looking like a gate.
 

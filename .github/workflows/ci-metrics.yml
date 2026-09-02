@@ -2,7 +2,7 @@ name: CI Metrics
 
 on:
   workflow_run:
-    workflows: ["CI", "Code Health"]
+    workflows: ["CI", "Security", "Code Health"]
     types: [completed]
 
 concurrency:

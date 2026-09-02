@@ -121,12 +121,94 @@ def test_horizon_rollups_and_open_release_gates_are_structured():
 | A2 | Soak | ✅ report |
 """
     assert status_sync.horizon_rollups(backlog) == {
-        "H23": {"total": 2, "done": 1, "blocked": 1, "open": 0},
-        "H24": {"total": 2, "done": 1, "blocked": 0, "open": 1},
+        "H23": {"total": 2, "done": 1, "delivered": 0, "blocked": 1, "open": 0},
+        "H24": {"total": 2, "done": 1, "delivered": 0, "blocked": 0, "open": 1},
     }
     assert status_sync.open_release_gates(backlog) == [
         {"id": "A1", "name": "Manual", "status": "⬜ the gate"}
     ]
+
+
+def test_horizon_rollups_count_delivered_rows_as_their_own_bucket():
+    # D4(a): 🔨 = code delivered, runtime proof pending — neither done nor open.
+    backlog = """
+| H19.1.1 🔨 | **Sursă ADS-B reală** — **Livrat:** `adsb/sources.py`; **AC îndeplinit** | 5 | P1 |
+| H19.1.2 🔨 | **Sursă AIS reală** | 5 | P1 |
+| H19.0.1 ✅ | done row | 1 | P1 |
+| H19.0.2 ⬜ | open row | 1 | P1 |
+"""
+    rollups = status_sync.horizon_rollups(backlog)
+    assert rollups == {
+        "H19": {"total": 4, "done": 1, "delivered": 2, "blocked": 0, "open": 1},
+    }
+    row = rollups["H19"]
+    assert row["done"] + row["delivered"] + row["blocked"] + row["open"] == row["total"]
+    totals = status_sync.horizon_totals(rollups)
+    assert totals["delivered"] == 2
+    assert totals["open_or_blocked"] == 1  # delivered rows never inflate open/blocked
+    assert status_sync.horizon_summary("H19", row) == (
+        "H19 — 1 done · 2 delivered (runtime proof pending) · 1 open"
+    )
+
+
+def test_row_state_comes_from_the_leading_marker_not_prose():
+    # D4(b): a "✅" quoted inside explanatory prose must not flip an open row to done,
+    # and "done"/"merged" inside prose must not either.
+    backlog = """
+| H40.1 ⬜ | Reading this row as "✅ done — settings applied" is what went wrong; PR merged | 1 |
+| H40.2 | Name mentions done work | ⬜ **owner tail** — the dev half is ✅ done (#512) | 1 |
+| H40.3 | Name | 🟡 partial — first half done | 1 |
+| H40.4 | Name | 🔴 blocked on owner | 1 |
+| H40.5 | Name | **✅ done** (#300) | 1 |
+| H40.6 | Name | 🟢 **backend done** | 1 |
+| H40.7 | Name | 3 | P1 | — |
+"""
+    assert status_sync.horizon_rollups(backlog) == {
+        "H40": {"total": 7, "done": 2, "delivered": 0, "blocked": 1, "open": 4},
+    }
+    assert status_sync.leading_marker_state("  **✅ done**") == "done"
+    assert status_sync.leading_marker_state("🔨 shipped") == "delivered"
+    assert status_sync.leading_marker_state("prose that says ✅ later") is None
+    assert status_sync.leading_marker_state("Done (2026-07-01)") == "done"
+    assert status_sync.leading_marker_state("") is None
+    assert status_sync.classify_row(["H1.1 ⬜", "x ✅ y"]) == "open"
+    assert status_sync.classify_row(["H1.1", "name", "✅ done"]) == "done"
+    assert status_sync.classify_row(["H1.1", "name", "3", "P1"]) == "open"
+
+
+def test_open_release_gates_ignore_checkmarks_quoted_in_prose():
+    # Lane A: only a *leading* ✅ closes a gate. A4's prose quotes the misreading
+    # ("✅ done — settings applied") while its status is 🟡 partial — it is open.
+    backlog = """
+| A4 | GitHub settings batch | 🟡 **partial (owner)** — reading this row as "✅ done — settings applied" was the bug |
+| A5 | License flip | 🟢 prep done — the flip itself is 3 owner commands |
+| A7 | Partners | ✅ **done (owner, 2026-08-28)** |
+| A2 | Soak | **✅ automated — gate removed** |
+| A0 | Old | done (owner) |
+"""
+    gates = status_sync.open_release_gates(backlog)
+    assert [gate["id"] for gate in gates] == ["A4", "A5"]
+    assert status_sync.gate_is_closed("✅ done")
+    assert status_sync.gate_is_closed("**✅** done")
+    assert not status_sync.gate_is_closed("🟢 half done, prose says ✅")
+    assert not status_sync.gate_is_closed("⬜ pending ✅")
+
+
+def test_live_backlog_a4_reads_open_and_h19_delivered():
+    # Ledger truth on the real BACKLOG (D4): A4 is an open owner item even though its
+    # prose quotes "✅ done", and every 🔨 H19 row lands in the delivered bucket.
+    backlog = (REPO / "BACKLOG.md").read_text(encoding="utf-8")
+    gates = {gate["id"] for gate in status_sync.open_release_gates(backlog)}
+    assert "A4" in gates
+    rollups = status_sync.horizon_rollups(backlog)
+    h19 = rollups["H19"]
+    h19_rows = sum(1 for line in backlog.splitlines() if line.startswith("| H19."))
+    assert h19["total"] == h19_rows
+    assert h19["delivered"] == h19_rows - h19["done"] - h19["open"] - h19["blocked"]
+    assert h19["delivered"] > 0
+    assert sum(row["total"] for row in rollups.values()) == sum(
+        row["done"] + row["delivered"] + row["blocked"] + row["open"] for row in rollups.values()
+    )
 
 
 def test_owner_gates_a2_and_a8_are_closed_not_blocking():
@@ -177,6 +259,15 @@ def test_build_project_status_has_one_machine_readable_truth():
     assert status["tests"] == {"backend": 4200, "frontend": 208, "mobile": 55}
     assert status["routes"] == 368 and status["active_agents"] == 1
     assert status["horizons"]["H23"]["open"] == 1
+    assert status["horizons"]["H23"]["delivered"] == 0
+    assert status["horizon_totals"] == {
+        "total": 1,
+        "done": 0,
+        "delivered": 0,
+        "blocked": 0,
+        "open": 1,
+        "open_or_blocked": 1,
+    }
     assert status["open_release_gates"][0]["id"] == "A1"
     assert status["latest_ci_commit"] == "abcdef1234567890"
     json.dumps(status, sort_keys=True)
@@ -203,7 +294,10 @@ def test_generated_snippets_include_all_counts_and_open_gates():
         "tests": {"backend": 4200, "frontend": 208, "mobile": 55},
         "routes": 368,
         "active_agents": 17,
-        "horizons": {"H23": {"total": 28, "done": 23, "blocked": 0, "open": 5}},
+        "horizons": {
+            "H19": {"total": 35, "done": 2, "delivered": 33, "blocked": 0, "open": 0},
+            "H23": {"total": 28, "done": 23, "blocked": 0, "open": 5},
+        },
         "latest_ci_commit": "abcdef1234567890",
         "open_release_gates": [{"id": "A1", "name": "Manual", "status": "⬜"}],
     }
@@ -212,6 +306,19 @@ def test_generated_snippets_include_all_counts_and_open_gates():
     joined = "\n".join(snippets.values())
     for token in ("4,200", "208", "55", "368", "17", "A1", "abcdef123456"):
         assert token in joined
+    # D4(a): every done/open surface shows the delivered bucket explicitly and the
+    # global open-or-blocked figure excludes delivered rows (5 open, not 38).
+    ledger = "25 done · 33 delivered (runtime proof pending) · 5 open or blocked of 63 horizon rows"
+    for name in ("readme-status", "jarvis-stats", "go-live-header"):
+        assert ledger in snippets[name], name
+    assert (
+        "Runtime proof pending: H19 — 2 done · 33 delivered (runtime proof pending) · 0 open"
+        in snippets["jarvis-stats"]
+    )
+    assert (
+        "H23 roll-up: 23/28 done, 0 delivered (runtime proof pending), 0 blocked, 5 open"
+        in (snippets["jarvis-stats"])
+    )
 
 
 def test_json_test_count_parser_accepts_vitest_and_jest_key_order():

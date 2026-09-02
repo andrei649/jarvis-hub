@@ -52,7 +52,7 @@ import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from agents.core.paths import data_path
@@ -102,8 +102,30 @@ def _key_between(lo: Optional[str], hi: Optional[str]) -> str:
             return "".join(out)
 
 
+# ``docs.updated_at`` is the sole ORDER BY key of ``list_docs`` (ties break on a
+# random UUID), so two writes inside one clock tick used to come back in random
+# order — a ~50% flake on Windows, whose pre-3.13 wall clock ticks at ~15.6 ms.
+# ``_now`` is therefore strictly monotonic within the process: when the wall
+# clock has not advanced past the last stamp handed out, bump by 1 µs instead.
+# The column keeps its ISO-8601 UTC text shape (always with microseconds) so
+# rows written before this change still compare correctly as TEXT.
+_NOW_LOCK = threading.Lock()
+_LAST_NOW: Optional[datetime] = None
+
+
+def _wall_clock() -> datetime:
+    """The raw UTC wall clock — a seam so tests can freeze it."""
+    return datetime.now(timezone.utc)
+
+
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    global _LAST_NOW
+    with _NOW_LOCK:
+        current = _wall_clock()
+        if _LAST_NOW is not None and current <= _LAST_NOW:
+            current = _LAST_NOW + timedelta(microseconds=1)
+        _LAST_NOW = current
+    return current.isoformat(timespec="microseconds")
 
 
 def _new_id() -> str:

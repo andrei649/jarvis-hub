@@ -7,6 +7,9 @@
 > *2026-07-14: the 1.0 **tag** additionally requires both the AI-OS implementation program
 > ([NERVA_VISION.md](../NERVA_VISION.md), ORIZONT 27–33) and its real-host v1 proof. BACKLOG A8
 > names that owner-only hardware gate explicitly; hermetic reality packs do not clear it.*
+> *Superseded 2026-08-28 (owner: "gates removed"; confirmed 2026-09-01; frozen 2026-09-02): the tag is
+> two owner commands — the A5 licence flip, then `git tag v1.0.0` on `main` — the capability program is a
+> 1.x roadmap, and A8 was cleared by the owner on 2026-08-28 (see the A9 item below).*
 
 ## 🔴 Owner gates that block tagging a release (and ultimately 1.0)
 
@@ -37,6 +40,12 @@
     Evaluation-only: its report earns no E1, B2, program or release decision by itself.
   - Still yours: input 1 (the ≥20-task dataset) and input 2 (acceptable routes/categories per
     case) are written together at the desk; this box stays open until the run has actually executed.
+- [ ] **A9 — tag v1.0.0** (in this order, after the A5 relicense PR merges; `main` is feature-frozen
+  for 1.0 since 2026-09-02 — [decision doc](decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md)):
+  (1) fold `CHANGELOG.md` `[Unreleased]` into `[1.0.0]` and set its date (the #981 de-gate entry
+  has accumulated above the cut section); (2) check the `release.yml` `workflow_dispatch` `dry_run`
+  triggered 2026-09-02 by the coordinator — the workflow has never run on GitHub before; (3)
+  `git tag v1.0.0 && git push origin v1.0.0` on `main`. Findings from the post-tag §0 run are 1.0.1.
 - [ ] **Run the manual-test runbook on the RTX box** — [`docs/MANUAL_TESTING.md`](MANUAL_TESTING.md),
   full pass incl. §0 sign-off and the ⭐B0 governed-autonomy demo. *Ordering decided 2026-09-01
   (owner, confirming the 2026-08-28 "gates removed" directive in BACKLOG.md): the v1.0.0 tag is
@@ -47,9 +56,11 @@
   Console (▦) panel against the live backend ([`docs/design/HUD_V2_REMAINING.md`](design/HUD_V2_REMAINING.md) §0).
   The mock-fallback design hides wrong-but-not-failing wiring; the 2026-06-10 depth pass (PR #181)
   shipped ~16 new control surfaces that have only been verified offline (tsc + mocked tests).
-- [ ] **A8 — AI-OS v1 owner-host proof** — run [`docs/MANUAL_TESTING.md`](MANUAL_TESTING.md) §N
-  on the isolated RTX/Windows host and real household integrations. This is a blocking release
-  gate, separate from code-complete H28–H33 and their hermetic reality packs. It must prove:
+- [x] **A8 — AI-OS v1 owner-host proof** — ✅ **cleared by the owner 2026-08-28** (the owner-host
+  proof run on real hardware came back with good feedback; A8-iv closed independently on `main` in
+  #946 + #972) — **no longer a blocking release gate**. Original ask, kept for the record: run
+  [`docs/MANUAL_TESTING.md`](MANUAL_TESTING.md) §N on the isolated RTX/Windows host and real
+  household integrations, separate from code-complete H28–H33 and their hermetic reality packs, proving:
   installed Chromium + Windows UIA through the governed browser/desktop path; live Home Assistant
   state projected into the device/room/occupant/presence graph plus a safe governed actuation; a
   consented Frigate event flowing through house/memory/ambient without raw-frame egress;
@@ -59,15 +70,20 @@
 - [x] **Dependabot: 54 vulnerabilities on main** — ✅ fixed 2026-06-10 (agent wave): HUD
   frontend 5→0 (vite 7/vitest 4), worldview 13→2 (fastify 5, next 16.2.9 + react 19,
   vitest 4, tsx), mcp 2→0; all suites green (HUD 19, WV frontend 101, backend 218).
-  - [ ] **Remaining, needs you (re-audited 2026-07-07, agent-side fixes shipped in #634):**
-    the agent fixed the 2 fixable highs (frontend `undici` dev-chain; worldview/mcp `hono`
-    ×5 advisories + `esbuild`) with suites green (176 vitest · 51 mcp tests). Still yours:
-    (a) the 2 worldview moderates — postcss XSS *bundled inside next itself*, clears when
-    Vercel ships next 16.3 stable (re-run `npm audit` then); (b) **mobile/: 11 moderates**
-    — the Expo SDK chain. The gate was *tested* 2026-07-07: a non-forced `npm audit fix`
-    bump broke `tsc` in the audio path (`expo-audio` AudioPlayer.addListener), so it truly
-    needs the SDK upgrade + real-device validation; (c) dismiss the stale alerts in the
-    GitHub UI once #634 merges. Python deps: clean (`pip-audit`, CI).
+  - [ ] **Remaining, needs you (re-measured offline 2026-09-02; the 2026-07-07 re-audit and its
+    #634 fixes — frontend `undici`, worldview/mcp `hono` ×5 + `esbuild` — are history):**
+    `npm audit --omit=dev` today: **frontend 0** · root `package-lock` (HUD-test tree) **5 (2 high)**
+    · **worldview 3 high** · **worldview/mcp 5 (2 high)** · **mobile 21–22 (10–11 high)**; Python
+    `requirements.lock` clean (`pip-audit`). The worldview, worldview/mcp and root trees are all
+    `fixAvailable` and are being fixed by the 2026-09-02 dependency audit wave (engineering, not
+    you). Still yours: (a) **mobile/** — the Expo SDK chain. The gate was *tested* 2026-07-07: a
+    non-forced `npm audit fix` bump broke `tsc` in the audio path (`expo-audio`
+    AudioPlayer.addListener), so it truly needs the SDK upgrade + real-device validation;
+    (b) **read GitHub's own Dependabot count** — the figures above are offline measurements, the
+    alert count on the default branch has not been read since the 2026-08-28 UI snapshot (35 / 22
+    high in the handoff): Security tab, or
+    `gh api repos/andrei649/jarvis-hub/dependabot/alerts?state=open`; (c) dismiss the stale alerts
+    in the GitHub UI once the audit wave merges.
 - [ ] **Relicense MIT → Apache-2.0** — decided 2026-06-04, deferred to pre-1.0
   ([`docs/LICENSE_DECISION.md`](LICENSE_DECISION.md)). **Fully prepared in #634 (2026-07-07):**
   `TRADEMARKS.md` is live, `CONTRIBUTING.md` carries the relicense grant (in place BEFORE any
@@ -95,8 +111,15 @@
         `review (tests)`, `Secret scan (gitleaks)`, `SAST (semgrep)`, `SAST (bandit — blocking gate)`,
         `Dependency audit (pip-audit)`, `in-sync`, `parked-modules`, `validate`, `Analyze (python)` /
         `CodeQL`, `sandbox-isolation`, `signal-layer-smoke (…)`, `frontend`, `hud-v2-build`,
-        `openapi-types`, `e2e`, `server-boot`, `analyze`, `drift`. Keeping `test (ubuntu-latest)`
-        required is optional — it's the one fast (~3 min) lane left on PRs.
+        `openapi-types`, `e2e`, `server-boot`, `analyze`, `drift` — *except the four below, which
+        came back on 2026-09-02.*
+  - [ ] **Mark the four re-gated PR checks required (CTO D1, 2026-09-02 —
+        [decision doc](decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md)):**
+        `test (ubuntu-latest)` (ruff + pytest + the tracked-test-count drift step), `hud-v2-build`
+        (committed-bundle staleness), the security-scans lanes (`Secret scan (gitleaks)`,
+        `SAST (semgrep)`, `Dependency audit (pip-audit)`, `SAST (bandit — blocking gate)`) and the
+        lockfile-drift lane (`in-sync`). Until you list them they are advisory only — and
+        `pr-auto-merge.yml` merges any non-draft PR GitHub reports CLEAN, hourly, with no review.
   - [ ] Turn off **Require review from Code Owners** and any required-approvals count
         (CODEOWNERS was deleted).
   - [ ] Delete the **CodeQL merge-protection ruleset** if one exists (code-scanning merge rule).

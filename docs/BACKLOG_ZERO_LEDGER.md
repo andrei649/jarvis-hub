@@ -33,7 +33,7 @@
 
 | id | section | bucket | size | dependencies | terminal-state target |
 |----|---------|--------|------|---------------|------------------------|
-| A1 | Handoff Fable — Lane A, line 1059 | OWNER-DECISION | XL | Real RTX hardware; chapter-15 ADV manual pass; is **the** 1.0 gate | OWNER-PACKET |
+| A1 | Handoff Fable — Lane A, line 1059 | OWNER-DECISION | XL | Real RTX hardware; chapter-15 ADV manual pass; *was* **the** 1.0 gate in the 2026-08-28 handoff — re-ordered by the owner 2026-09-01: **post-tag proof** of the tagged build, not a tag precondition (findings → 1.0.1) | OWNER-PACKET |
 | A8 | Handoff Fable — Lane A, line 1066 | OWNER-DECISION (hardware) | XL | Real HA install, Frigate hardware, media-output devices | OWNER-PACKET |
 | A8-iv | Handoff Fable — Lane A, line 1066 sub-item | AI-EXEC | M | Redesign per `docs/superpowers/plans/2026-08-02-qa4-ungoverned-counter-park.md`: persist kernel decision at `govern_enqueue`, read at worker seam | **CLOSED** — persisted-stamp redesign shipped in #946 (2026-08-26, pre-dates this ledger's generation but was missed by the initial sweep); the two still-missing snapshot fields (`enabled`, scalar `ungoverned_actions`) shipped this run (2026-08-28, `agents/core/kernel/metrics.py`) — see `BACKLOG.md` line 1066 and `docs/MAX_RUNS.md` |
 | H23.23 | H23 table, line 1316 | OWNER-DECISION | S | Blocks A2; decision already drafted at `docs/decisions/2026-07-11-single-user-1.0.md`, needs owner ratification only. **Ratified 2026-09-01 (owner) — option (A)**; recorded in the `BACKLOG.md` H23.23 row + the decision doc; boundary notes landed 2026-09-01 (SECURITY / COMPATIBILITY / THREAT_MODEL / FAQ) | **CLOSED** (recorded 2026-09-01) |
@@ -41,7 +41,7 @@
 | A2 | Handoff Fable — Lane A, line 1060 | OWNER-CONFIG (hardware/time) | L | H23.23 ratification; `scripts/soak_report.py` tooling already ✅ done | OWNER-PACKET |
 | H23.4 | H23 table, line 1296 | OWNER-CONFIG | S | Same shape as A2 — run `--live-gate` on owner box against real local model | OWNER-PACKET |
 | T-0.63 | Competitive-Gap, line 1248 | OWNER-CONFIG | M | Duplicate of A2 (72h soak) + failure injection | OWNER-PACKET |
-| A3 | Handoff Fable — Lane A, line 1061 | OWNER-CONFIG | S | Owner tail only: dismiss stale Dependabot alerts in GitHub UI, wait on next.js for worldview moderates, Expo SDK bump on device | OWNER-PACKET |
+| A3 | Handoff Fable — Lane A, line 1061 | OWNER-CONFIG | S | Owner tail only: read the real Dependabot count (Security tab / `gh api repos/andrei649/jarvis-hub/dependabot/alerts?state=open`), dismiss stale alerts, Expo SDK bump on device; the worldview / worldview-mcp / root npm findings (offline 2026-09-02: 3 high · 5 · 5) are engineering — 2026-09-02 audit wave | OWNER-PACKET |
 | A4 | Handoff Fable — Lane A, line 1062 | OWNER-CONFIG | S | GitHub org settings batch | OWNER-PACKET |
 | SEC-4 | Security route-policy gate, line 1831 | OWNER-CONFIG | S | **CLOSED by reversal** — the 2026-08-29 de-gate decision removed the gates instead of promoting matrix/parity to required checks (#981); only the GitHub-settings cleanup in `docs/OWNER_TASKS.md` → "De-gate merges" remains | OWNER-PACKET |
 | CQ-2 | CodeQL alerts, line 1881 | OWNER-CONFIG | S | Same GitHub-settings batch as A4 | OWNER-PACKET |
