@@ -121,18 +121,41 @@ def test_house_ledger_detects_an_ungoverned_or_unapproved_ha_mutation():
 async def test_owner_live_probe_is_double_opt_in_and_missing_configuration_is_not_a_pass(
     monkeypatch,
 ):
-    assert len(H30_HOUSE_LIVE_CASES) == 1
-    case = H30_HOUSE_LIVE_CASES[0]
-    assert case.live is True
+    # Both owner-live cases (read + actuation) must obey the same double opt-in.
+    expected = {"house-owner-live-read", "house-owner-live-actuation"}
+    assert {case.name for case in H30_HOUSE_LIVE_CASES} == expected
+    assert all(case.live is True for case in H30_HOUSE_LIVE_CASES)
+    total_live = len(H30_HOUSE_LIVE_CASES)
 
     monkeypatch.delenv("JARVIS_REALITY_HARNESS", raising=False)
     monkeypatch.delenv("JARVIS_H30_HA_LIVE", raising=False)
     skipped = await run_reality(H30_HOUSE_LIVE_CASES, promote=False)
-    assert skipped["skipped"] == 1 and skipped["total"] == 0
+    assert skipped["skipped"] == total_live and skipped["total"] == 0
 
     monkeypatch.setenv("JARVIS_REALITY_HARNESS", "1")
     degraded = await run_reality(H30_HOUSE_LIVE_CASES, promote=False)
-    assert degraded["total"] == 1 and degraded["passed"] == 0
-    assert degraded["results"][0]["metadata"]["status"] == "degraded"
-    assert degraded["results"][0]["metadata"]["reason"] == "owner_live_opt_in_missing"
+    assert degraded["total"] == total_live and degraded["passed"] == 0
+    for item in degraded["results"]:
+        assert item["metadata"]["status"] == "degraded", item
+        assert item["metadata"]["reason"] == "owner_live_opt_in_missing", item
+
+
+@pytest.mark.asyncio
+async def test_owner_live_probes_degrade_when_the_credential_is_absent(monkeypatch):
+    """Opted in but no token: an honest credential reason, never a silent pass.
+
+    The regression this guards: the read probe used to build the adapter with no
+    SecretBroker at all, so it reported `credential_unavailable` whether or not a
+    healthy Home Assistant was reachable — the case could not go green.
+    """
+    monkeypatch.setenv("JARVIS_REALITY_HARNESS", "1")
+    monkeypatch.setenv("JARVIS_H30_HA_LIVE", "1")
+    monkeypatch.setenv("JARVIS_HA_TOKEN_REF", "{{secret:" + "home_assistant_token}}")
+    monkeypatch.delenv("JARVIS_H30_HA_TOKEN", raising=False)
+
+    out = await run_reality(H30_HOUSE_LIVE_CASES, promote=False)
+
+    assert out["passed"] == 0
+    for item in out["results"]:
+        assert item["metadata"]["reason"] == "owner_live_credential_missing", item
 
