@@ -6,7 +6,7 @@
 pyyaml>=6.0.3
 apscheduler>=3.11.3
 httpx>=0.28.1
-websockets>=17.0.1,<18
+websockets>=17.1,<18
 pillow>=12.3.0,<13
 python-dotenv>=1.2.3
 
@@ -24,7 +24,7 @@ starlette>=1.6.0,<2.0
 uvicorn>=0.52.4
 
 # Security
-cryptography>=50.0.0
+cryptography>=50.0.1
 # defusedxml: hardened parsing of untrusted RSS/Atom feeds (news + digest plugins);
 # stdlib xml.etree is unsafe on hostile XML (entity-expansion DoS).
 defusedxml>=0.7.1
