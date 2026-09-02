@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-09-02
+
+The 1.0 line: every feature horizon (H1–H23 + WorldView O19) delivered, the productionization
+spine done, and the owner gates closed. Release-gate changes in this cut:
+
+- **Relicensed MIT → Apache-2.0** (#1012), decided 2026-06-04 in `docs/LICENSE_DECISION.md` and
+  deferred to pre-1.0. `LICENSE` now carries the canonical Apache-2.0 text staged in #634;
+  `TRADEMARKS.md` and the CONTRIBUTING relicense grant were already in place before any outside
+  contribution could land, which was the precondition for flipping. README badge follows.
 - **De-gated development (owner decision).** Removed every PR-blocking CI gate and scan:
   `security.yml` (gitleaks/semgrep/pip-audit/bandit), `ai-review.yml` (three AI reviewers per PR),
   `autonomy.yml` (tier/boundary classifier), `lockfile.yml`, `park-guard.yml`, `nerva-roadmap.yml`
@@ -10,13 +19,19 @@
   fast advisory lane (`ruff` + `pytest` on ubuntu, ~3 min); the Windows matrix, sandbox-isolation,
   HUD/frontend suites and OpenAPI typegen drift check moved post-merge (push to `main`), and
   CodeQL/e2e/smoke/code-health/eval/third-party-drift dropped their `pull_request` triggers.
-  The matching branch-protection cleanup is an owner task (`docs/OWNER_TASKS.md` → "De-gate merges").
-
-## [1.0.0] — 2026-08-28
-
-The 1.0 line: every feature horizon (H1–H23 + WorldView O19) delivered, the productionization
-spine done, and the owner gates closed. Release-gate changes in this cut:
-
+  Partially walked back four days later — see the next entry.
+- **Partial PR re-gate and the 1.0 freeze** (#1011, CTO decisions 2026-09-02 —
+  `docs/decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md`). Back on the PR path, at roughly
+  zero added wall-clock because they run beside `test`: `hud-v2-build` (committed-bundle
+  staleness), the four security-scan lanes, and the lockfile-drift lane (`in-sync`); the PR pytest
+  run additionally verifies the tracked backend test count. Push-to-`main` runs are no longer
+  cancelled by newer pushes, and the Windows matrix stays post-merge because its catch is
+  probabilistic — the flaky test was fixed instead: `notes_store._now()` is now strictly monotonic,
+  closing the Windows-only `list_docs` ordering tie that had turned two `main` pushes red. The
+  nightly Reality Harness no longer crashes on the `agents.core.skills.discover` removed in #980,
+  and `status_sync.py` gained a third horizon state (🔨 — delivered, runtime proof pending), so the
+  ledger stopped over-reporting open work 3×. Dependency wave: `npm audit fix` across the three JS
+  trees (all three to 0 findings) and the three Python locks regenerated.
 - **A2 — the 72h soak grades itself.** `scripts/soak_report.py` gained `evaluate()`: the A2 bar is
   now written down as thresholds (availability ≥99%, zero restarts, zero audit-verify failures
   (AUD-0), zero guardrail breaches, no open circuit breaker, RSS growth ≤15%, WAL ≤64 MiB) instead
@@ -29,8 +44,11 @@ spine done, and the owner gates closed. Release-gate changes in this cut:
 - **`.github/workflows/soak.yml`** runs the window unattended — boots the server, samples, grades,
   publishes the report to the run summary, uploads the evidence. A weekly canary on a hosted
   runner; the full `72h` via `workflow_dispatch` with a self-hosted `runner` label.
-- Owner gates A4 (GitHub settings) and A7 (design partners) closed; A8's owner-host proof ran on
-  real hardware with good feedback. A6 (60s demo cut) stays open as GTM work, never a tag blocker.
+- Owner gate A7 (design partners) is closed and A8's owner-host proof ran on real hardware with
+  good feedback. **A4 (GitHub settings)**, which the 2026-09-02 re-gate reopened, closed the same
+  day: the seven PR checks above are listed as required in the `main` branch ruleset, so a red
+  check now blocks a merge instead of merely stopping the auto-merge sweep. A6 (60s demo cut)
+  stays open as GTM work, never a tag blocker.
 - `agents.__version__` `0.11.0` → `1.0.0`.
 ### Q10 — the public widget door is governed like the external input it is (2026-08-02)
 - **ch11 CHN-061**: `widget` no longer sits in `INTERNAL_TURN_CHANNELS`. The embed endpoint is
