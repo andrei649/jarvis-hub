@@ -34,6 +34,13 @@ The compatibility contract covers:
 Internal modules, private helpers (leading `_`), and anything marked experimental
 are **not** part of the contract and may change at any time.
 
+**Trust boundary — one user per install (1.x).** The contract assumes a single user per
+install (H23.23, ratified 2026-09-01 — [decision](decisions/2026-07-11-single-user-1.0.md)):
+there is no per-user identity, isolation or multi-tenant surface in the 1.x API, settings or
+data formats, and none is promised. A second person gets a second install; per-user isolation
+is a post-1.0 horizon that opens only when a design partner needs several distinct people on
+one shared install.
+
 ## Supported versions
 
 From 1.0.0 the support window is **rolling**: the current `MAJOR.MINOR` line plus the
@@ -74,7 +81,7 @@ pre-upgrade backup (H23.8) is your rollback.
 
 | Component | Supported | Notes |
 |-----------|-----------|-------|
-| **Python** | **3.12+** | Hard floor: a core dependency (`numpy >= 2.5`) requires Python ≥ 3.12. 3.11 and older are **not** supported. |
+| **Python** | **3.12+** | Official floor (decided 2026-09-01: keep 3.12); the CI matrix runs 3.12 only. `requirements-beta.txt` carries a `numpy` version marker (`numpy>=2.0,<2.5` when `python_version < "3.12"`, because `numpy >= 2.5` requires 3.12) as a **courtesy** so an install does not break on a 3.11 box — but 3.11 is **unsupported and untested in CI**, and 3.10 and older are not supported. |
 | **OS (hub)** | Linux · macOS (incl. **Apple Silicon M1–M4**) · Windows 11 | Pure-Python + FastAPI. `install.sh` covers macOS/Linux; Windows has a one-click launcher. On Apple Silicon, run local models via LM Studio/Ollama on unified memory (owner M-series smoke = FB1). The CI matrix runs Ubuntu + Windows; macOS is community-validated. Windows 10 is untested (Win 11 is the supported baseline). Service templates: [`deploy/`](../deploy/). |
 | **Local LLM** | LM Studio or Ollama | Local-first; cloud is opt-in, per-agent. |
 | **Model providers** | LM Studio · Ollama · Anthropic · OpenAI · Gemini · **OpenRouter** · any **OpenAI-compatible** endpoint | Keys stay local (`.env`), called directly — no owner relay (see [`SECURITY.md`](../SECURITY.md)). Switch with `/model`; OpenRouter via `agents/core/llm/openrouter.py`. A **subscription (ChatGPT Plus / Claude Pro) is not an API key** and cannot be used. |

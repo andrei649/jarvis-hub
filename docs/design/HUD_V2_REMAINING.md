@@ -47,7 +47,10 @@ with plugin-configured checks instead of seeded success. Still open:
   generate a step, append it to a draft, and save through `POST /api/workflows` /
   `PUT /api/workflows/{id}` (admin), with the 422/401 refusal rendered inline. The steps
   textarea stays the editor of record for the advanced `router`/`critic`/`loop`/`subflow`
-  configs; a graphical DAG canvas is still open.
+  configs; a graphical DAG canvas for v2 was **dropped by owner decision 2026-09-01** (BUG-2b.2):
+  the JSON-paste `WORKFLOW BUILDER` panel is the v2 editing surface of record; the legacy v1 HUD's
+  `WorkflowCanvas` (`agents/web/static/workflows.js`) does exist and retires together with the v1
+  HUD (§8 / AUD-15) — ported only on demonstrated demand, as a fresh spec with its own id.
 - **Memory**: `RECALLS` / `TOPICS` / `KG` live (recall search, decay ranking, bitemporal KG as‑of).
 - **Trust**: real `%‑local` meter (needs a locality/cost summary endpoint, §6).
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).

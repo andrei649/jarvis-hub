@@ -1201,7 +1201,9 @@
 - **Still deferred (the genuinely hard one — flagging for your call):** carrying taint *through* a
   memory-derived **action** to the Action Kernel (so a GRANT escalates to QUEUE) is full data-flow
   propagation — `taint.py`'s own docstring documents it as deferred, and the naive hook broke with a
-  NameError last time. That one wants a design decision, not a blind attempt.
+  NameError last time. That one wants a design decision, not a blind attempt. *Decided 2026-09-01 (owner):
+  not commissioned now — TASK-3 stays open, rescoped to the channel-boundary `TaintedValue` +
+  `QuarantinePolicy.check_step` slice; see the `BACKLOG.md` TASK-3 row.*
 
 ### CDX-12 — the "Design-Partner / Hardened" profile (one switch, opt-in, default-off)
 - **What:** a single `JARVIS_HARDENED=1` preset that tightens four security toggles at once for a

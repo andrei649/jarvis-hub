@@ -1,7 +1,9 @@
 # Decision — database future check: SQLite/WAL vs Turso/libSQL (0.61)
 
-> **Status: RECOMMENDED — stay on SQLite + WAL; re-evaluate on named triggers.** This is the
-> written eval the 0.61 row asks for. Owner ratifies or overrides.
+> **Status: RATIFIED (owner, 2026-09-01) — stay on SQLite + WAL; re-evaluate on the four named
+> triggers.** Ratified as written: SQLite + WAL through 1.0 and the design-partner phase; if a
+> trigger fires, the libSQL embedded-replica path, never the hosted tier. This is the written eval
+> the 0.61 row asked for.
 
 ## Current state (what we actually run)
 

@@ -1,8 +1,9 @@
 # CLN-2 / CLN-3 — God-Object Decomposition Plan
 
-> Generated: 2026-06-13 · Owner: Andrei · Status: **Phase 0 LANDED · Phases 1–3 not started** · Priority: P3
-> Gate: Phase 0 is gate-safe (pure-additive) and shipped. **Phases 1–3 remain post-1.0 / after the
-> manual-test sign-off** (owner decision 2026-06-10 stands).
+> Generated: 2026-06-13 · Owner: Andrei · Status: **Superseded — landed in #293/#296** (v0.11.0; owner decision 2026-09-01) · Priority: P3
+> Gate: Phase 0 is gate-safe (pure-additive) and shipped. The web.py/orchestrator split itself shipped
+> as v0.11.0 (#293/#296) under route-parity guards, so the 2026-06-10 "after the manual-test pass"
+> green-light is retired as superseded (2026-09-01); the phase text below is historical.
 > Backlog rows: `BACKLOG.md` CLN-2 / CLN-3. Related: `docs/2026-06-08-future-developments-report.md` §4.
 >
 > Produced from a 4-agent parallel analysis (orchestrator decomposition · route inventory ·

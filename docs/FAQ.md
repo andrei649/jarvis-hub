@@ -28,7 +28,10 @@ All three. **Windows is first-class** (one-click `INSTALL.bat` / `START.bat`); P
 is the floor (see [`COMPATIBILITY.md`](COMPATIBILITY.md)).
 
 ### Is it multi-user?
-**No — single-user** for now (a deliberate 0.x scope; multi-user isolation is post-1.0).
+**No — single-user per install** (a deliberate 1.x scope, ratified 2026-09-01 — see
+[`decisions/2026-07-11-single-user-1.0.md`](decisions/2026-07-11-single-user-1.0.md)). A second
+person gets a second install; per-user isolation is post-1.0 and opens only when a design partner
+needs several distinct people on one shared install.
 
 ### How do I stop proactive messages / autonomy?
 Engage the **kill-switch** (Admin panel), lower the **interrupt budget**, or disable the

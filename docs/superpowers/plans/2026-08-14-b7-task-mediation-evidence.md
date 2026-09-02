@@ -74,3 +74,16 @@ truth changes; `BACKLOG.md`, `docs/MAX_RUNS.md`, generated status surfaces
   and no release/live-hardware claim moves.
 - [ ] Commit in bounded steps, push one draft PR, request fresh exact-head security
   review, and wait for terminal hosted Windows/Linux CI.
+
+## Status note — owner decision 2026-09-01
+
+PR #918 (merge `b5e52c6`, reviewed source `6eed5a7`, R3 PASS comment 5313004564) is **retained**
+on `main` under a recorded bounded owner exception — default-off (`JARVIS_TASK_MEDIATION` unset ⇒
+off), no revert, no successor PR. The two authority invariants left unresolved by the #912
+final-round R3 BLOCK — (1) degraded global mediation-head state fails closed before any
+apparently-direct execution path is trusted; (2) the private execution permit binds and
+revalidates the complete immutable persisted task tuple before handler dispatch — are recorded as
+closed by #918 at `6eed5a7` per that attestation. B7 stays **not program-accepted** and E5/E8 stay
+blocked until #906 is provisioned or re-scoped by a separate owner decision; retention is not
+acceptance and moves no release/live-hardware claim. Ledgers (#757/#778/#818, `BACKLOG.md`) are
+reconciled to this decision, not to a new evidence state.

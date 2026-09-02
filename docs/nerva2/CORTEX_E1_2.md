@@ -233,6 +233,42 @@ delete only owner-approved local artifacts under the named policy. No production
 data migration or route-state reversal is required. Existing owner-local data
 must not be deleted merely because the repository code is reverted.
 
+## Owner decisions for E1.2b (2026-09-01)
+
+Recorded 2026-09-01 (owner). Inputs 3, 4 and 5 of the five-input E1.2b gate are
+decided below, exactly as approved; **inputs 1 (the owner-private historical task
+dataset) and 2 (acceptable primary routes and task categories per case) remain
+pending** and are written at the desk. The gate stays open, no run has executed,
+and none of this earns E1, B2, program or release evidence.
+
+- **Input 3 — sampling / exclusion rule and source window.** `sampling_rule` =
+  `consecutive-distinct-eligible-tasks` over `source_window`
+  `2026-08-01T00:00:00.000Z` .. `2026-08-31T23:59:59.000Z`, taken in timestamp
+  order from the persisted conversation transcripts (role=user turns only);
+  predeclared exclusions: non-task turns (greetings/acks/meta), duplicates of an
+  already-selected task, and any turn the label-set loader cannot hold verbatim
+  (containing `/` or `\`, control or line-separator characters) — excluded, not
+  normalised. The label file's `sampling_rule` and `source_window` fields carry
+  this at run time.
+- **Input 4 — retention / access / deletion policy.** Policy id
+  `owner-local-e1-2-v1` for all five artifact classes: access = the owner's own
+  OS account on the owner box only (Windows owner-only DACL / POSIX 0700);
+  storage = one git-ignored directory on a single local disk, excluded from
+  backups; retention = until the owner deletes them, reviewed at the
+  `audit_ttl_days` horizon; deletion = the operator securely deletes every copy;
+  the "never copied, quoted or published" restriction applies to the raw-prompt
+  artifacts (label file, E9 suite vN.jsonl) and to digests/fingerprints only —
+  aggregate counts, adequacy ratios and privacy-minimised report text may be
+  shared; the code records only the policy id and enforcement is the operator's.
+- **Input 5 — permission for the owner-local measured run.** Exactly one
+  owner-local E1.2b measured run is permitted — one warm-up plus five retained
+  runs via the documented Python API against the current router on a pinned
+  `main` commit, results persisted to the owner-local E9 store under policy
+  `owner-local-e1-2-v1` — to be executed only after inputs 1–4 are present in
+  the label file and the policy's filesystem controls are in place, on the
+  understanding that the run is evaluation-only and its report earns no E1, B2,
+  program or release decision by itself.
+
 ## Next state
 
 After the owner supplies the five inputs and permits a local run, E1.2b may

@@ -24,9 +24,13 @@ this protocol.
    *"Before any future Hermes adapter proposal"*, currently states that E8.1c is **static preflight
    evidence only** and **"grants no permission to pull, install or execute Hermes"** pending a
    decision on the four productivity-skill subtrees under separate Anthropic terms, plus a fresh
-   CVE, transitive-license, SBOM/provenance and platform review of the exact artifact. Until the
-   owner records that decision, Hermes must not be pulled, installed or executed — so this run
-   cannot legitimately be scheduled.
+   CVE, transitive-license, SBOM/provenance and platform review of the exact artifact. **Owner
+   decision 2026-09-01** (`docs/decisions/2026-09-01-hermes-evaluation-scope-and-anthropic-skill-terms.md`):
+   the four productivity-skill subtrees are **not accepted / out of scope**; a static-only fresh
+   review is commissioned against the exact pinned artifact (v2026.8.3 / `3c27eb6`) with
+   inspection-only access — outcome pending; permission to pull-for-execution, install or execute
+   Hermes stays **withheld** until a recorded PASS — so this run still cannot legitimately be
+   scheduled.
 2. **A host to run it on.** Both sides run on the *same* box, in the same session, same network,
    same accounts. The Nerva side needs `JARVIS_DESKTOP_HOST=1` and `JARVIS_DESKTOP_ISOLATED=1`
    (see `agents/core/desktop_host.py`) — i.e. the isolated RTX/Windows host from the A8 owner row,

@@ -150,7 +150,7 @@ primary artifact or decision that would reopen it.
 
 | Candidate | Gives Nerva | License (secondary) | Class | Status | Reconsideration trigger |
 |---|---|---|---|---|---|
-| **E2B** | Firecracker microVM isolation for untrusted code | Apache-2.0 | `thin_adapter` | `PARKED` — self-host is heavy | self-host requirements and session-lifetime limits read in upstream docs at source, plus an owner decision that a KVM control plane is acceptable |
+| **E2B** | Firecracker microVM isolation for untrusted code | Apache-2.0 | `thin_adapter` | `PARKED` — self-host is heavy | upstream self-host/session-lifetime docs read at source **and** a named consumer the Docker/T7 sandbox cannot isolate **and** a Linux KVM host in `docs/COMPATIBILITY.md` — owner recorded 2026-09-01: no self-hosted KVM/Firecracker control plane on the 1.x single-box (Windows/RTX) install |
 | **browser-use** | LLM-driven browser agent over DOM + vision | permissive (unverified) | `thin_adapter` | `PARKED` — overlaps Hermes (overlap re-verified 2026-08-08) | an E8.1b decision on which single browser surface Nerva adopts; two stacks are not an option |
 | **Stagehand** | typed `act`/`extract`/`observe` over Playwright | permissive (unverified) | `thin_adapter` | `PARKED` — TypeScript in a Python core | a decision that a TypeScript sidecar is acceptable, plus a LICENSE and API pass at source |
 | **Letta** | OS-style tiered agent memory | Apache-2.0 (unverified) | `reject` **as memory authority** | `PARKED` — experiment only | an architecture decision that Atlas/Episodes cede memory authority. Currently forbidden by B3, so this is a CEO-level call, not a project comparison |

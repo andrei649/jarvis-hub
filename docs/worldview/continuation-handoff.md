@@ -121,7 +121,7 @@ docs/worldview/worldview-worldmonitor-fusion.md
 Remaining future lanes (not started):
 
 ```text
-feature/world-intelligence-argus-routing       # deeper agent-dispatch routing (needs human verification)
+feature/world-intelligence-argus-routing       # = roadmap Phase-4 `agents/argus real implementation` slice, unscheduled (refreshed 2026-09-01; #287 already routes world queries via ArgusInterface)
 feature/world-intelligence-governance-enable   # owner decision to enable #280
 ```
 
@@ -415,5 +415,10 @@ Remaining (owner / needs a real service):
    `JARVIS_SIGNAL_GOVERNANCE` to route recs into the approval inbox once happy.
 2. **Validate the real WorldMonitor feed** — run `npm run test:live-contract` against a real
    `:3100` sidecar (CI already exercises the code path via the mock: `npm run test:live-contract:mock`).
-3. **Deeper Argus agent-dispatch routing** — route the `argus` agent's world queries through
-   `ArgusInterface`; deferred because it changes conversational behavior and needs human verification.
+3. **Deeper Argus agent-dispatch routing** — *refreshed 2026-09-01 (no owner decision taken):*
+   #287 already routes world-intelligence queries through `ArgusInterface` via
+   `plugin_gatherer._signal_layer_answer` (the facade is wired at startup as `orch.argus`). What
+   remains is the `argus` *agent* itself, persona-only today (`agents/argus/SOUL.md`, zero code):
+   that is the roadmap's Phase-4 "`agents/vision` + `agents/argus` real implementation" slice
+   (`docs/DEVELOPMENT_ROADMAP.md` Phase 4; no dedicated BACKLOG row yet), still unscheduled; it
+   changes conversational behavior and needs owner verification at the box before it lands.

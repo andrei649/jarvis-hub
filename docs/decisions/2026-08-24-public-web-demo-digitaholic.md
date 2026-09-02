@@ -1,7 +1,11 @@
 # Decision + spec — public web demo instance for digitaholic.ro (H23.23-adjacent)
 
-> **Status: DRAFT — produced outside the normal dev session, for owner review before any branch is
-> opened.** Written by a Claude (Cowork) session working on digitaholic.ro, at Andrei's request,
+> **Status: APPROVED by owner 2026-09-01 — v1 as written; roster overlay R2, deploy slice R3;
+> calls 3–4 (LLM provider/key, container host) open.** Approved exactly as written below:
+> session-only disposable install as the save slot, in-memory stores, cloud LLM only, no
+> external-transmit plugin and no `LOCAL_ONLY` agent reachable, no durable cross-visit save,
+> smallest roster that demonstrates the loop. *(Originally DRAFT — produced outside the normal dev
+> session, for owner review before any branch was opened.)* Written by a Claude (Cowork) session working on digitaholic.ro, at Andrei's request,
 > after reading [`docs/decisions/2026-07-11-single-user-1.0.md`](2026-07-11-single-user-1.0.md),
 > `agents/core/security/hardened.py`, `agents/core/memory/{manager,graph,seed_graph}.py`,
 > `agents/core/llm/hybrid_router.py`, and `agents/_system/agents.yaml` against the `main` branch as
@@ -27,7 +31,7 @@ gets something like a save-game slot for their own personalization.
 ## This is not a new question — H23.23 already answered the hard part
 
 [`docs/decisions/2026-07-11-single-user-1.0.md`](2026-07-11-single-user-1.0.md) (status:
-RECOMMENDED, still awaiting owner ratification) already chose, for the exact same underlying
+RATIFIED 2026-09-01, option A) already chose, for the exact same underlying
 tension: ship single-user per install; treat per-user isolation inside one running instance (shared
 memory/session/canvas/approval partitioned by identity) as a large, security-sensitive, explicitly
 post-1.0 horizon. Nothing about wanting a public demo changes that reasoning — if anything it raises
@@ -128,14 +132,21 @@ path (`seed_graph()` skip), no auth-identity model change, no kernel change. Who
 should classify it properly against [`.github/ai-development-policy.json`](../../.github/ai-development-policy.json)
 rather than trusting this read.
 
+**Classification recorded (owner, 2026-09-01):** the **roster-overlay slice** (`agents.public.yaml`
++ env overlay) is **R2**; the **deploy slice** (internet-facing box holding an LLM key and an audit
+key, auto-redeployed from `main`) is **R3** — credentials, external exposure and release governance
+sit at R3 under `docs/AGENT_WORKFLOW.md`, and the higher tier wins when uncertain.
+
 ## Dependencies / open calls (Andrei's, not this session's)
 
-- Ratify H23.23 (A) — or note explicitly that this spec uses the install-per-user shape it already
-  recommends, so it doesn't block on ratification either way.
-- Turn on CDX-12 hardened + decide `JARVIS_PLUGIN_GRANTS` for this box specifically (already an open
-  [`docs/OWNER_TASKS.md`](../OWNER_TASKS.md) item — this is that decision, scoped).
-- Pick the free LLM provider/key.
-- Pick the container host.
+- ~~Ratify H23.23 (A)~~ — **resolved 2026-09-01:** ratified, option (A) (single-user per install).
+- ~~Turn on CDX-12 hardened + decide `JARVIS_PLUGIN_GRANTS` for this box specifically~~ —
+  **resolved 2026-09-01:** `JARVIS_HARDENED=1` + off-box `JARVIS_AUDIT_KEY` + `NERVA_PUBLIC_PROFILE=1`
+  + `JARVIS_PLUGIN_GRANTS` empty on the public box (no external-transmit plugin reachable); the
+  personal install's posture is unchanged ([`docs/OWNER_TASKS.md`](../OWNER_TASKS.md), public-demo
+  call 2 + the CDX-12 item).
+- Pick the free LLM provider/key — **open.**
+- Pick the container host — **open.**
 
 ## Rollback
 
@@ -158,7 +169,7 @@ claim holds:
 | `LOCAL_ONLY_AGENTS = {frigga, ultron, howard, hestia}` | ✅ `llm/hybrid_router.py:93` |
 | `cloud_llm_agents: [jarvis, athena, stark, vision, veronica]` | ✅ `agents/_system/agents.yaml:21` |
 | `NERVA_PUBLIC_PROFILE` is a *new* flag | ✅ zero occurrences in tree when this spec was written; **implemented 2026-08-26** in `seed_graph.py`; malformed-value boot guard added (DRA-07/DRA-14) in `boot_guards.assert_parseable_posture_flags` |
-| CDX-12 / CDX-11 already listed as owner calls | ✅ `docs/OWNER_TASKS.md:253`, `:274` |
+| CDX-12 / CDX-11 already listed as owner calls | ✅ `docs/OWNER_TASKS.md` → Parking lot, the *CDX-12 hardened profile* and *CDX-11 plugin grants* items (line numbers drift; CDX-12 posture + the public-box grants decided 2026-09-01) |
 
 One reference is **external to this repo**: `claude/nerva-jarvis-hub.md` (the public-repo exposure
 note) is not in `jarvis-hub` — it lives in the digitaholic.ro workspace. Don't hunt for it here.

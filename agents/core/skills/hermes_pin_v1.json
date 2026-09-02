@@ -246,11 +246,6 @@
       "content_sha256": "f114af652272b56c8736172eab8ee870bd8c1004965b698d4ae5c705d8b6e554"
     },
     {
-      "slug": "docx",
-      "path": "skills/productivity/docx/SKILL.md",
-      "content_sha256": "9678b14d5e7841d588b969f6a4696cd46bcc46c3e4ac1479edc7656a051aa5ff"
-    },
-    {
       "slug": "google-workspace",
       "path": "skills/productivity/google-workspace/SKILL.md",
       "content_sha256": "5bdca0d898744fbf4d66df611116b5c776b1297b964fbcfd86b3004c20e46fd7"
@@ -281,16 +276,6 @@
       "content_sha256": "856c1bce359ca7da0cc83f06e7b6b59f9445c16084d0510fc1541101af57f263"
     },
     {
-      "slug": "pdf",
-      "path": "skills/productivity/pdf/SKILL.md",
-      "content_sha256": "14e1be6e302bc1a9d66cdf3220d636a5acaa500b78c365f5a453f55dc3217934"
-    },
-    {
-      "slug": "powerpoint",
-      "path": "skills/productivity/powerpoint/SKILL.md",
-      "content_sha256": "b71d29d9809c4464d7f8d10afabf4f22f6a26c647cf7aacb6f9faf196ebe82f2"
-    },
-    {
       "slug": "product-price-monitor",
       "path": "skills/productivity/product-price-monitor/SKILL.md",
       "content_sha256": "b87bf2102fed13d2c7c64759fa153f24f5e43a0afcf6f8ec5e13def92a6642ef"
@@ -309,11 +294,6 @@
       "slug": "weekly-review-planning",
       "path": "skills/productivity/weekly-review-planning/SKILL.md",
       "content_sha256": "a689257facb937cfca9bc5507dd9e729f287f0cd3f6abbf73448eb25f73fbaab"
-    },
-    {
-      "slug": "xlsx",
-      "path": "skills/productivity/xlsx/SKILL.md",
-      "content_sha256": "b302d7ac997843a757ab3c11513ea012889ebdae32f842edb44faa9a4485f19b"
     },
     {
       "slug": "arxiv",

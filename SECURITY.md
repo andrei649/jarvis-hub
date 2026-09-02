@@ -51,6 +51,12 @@ give a reasonable window to ship a fix before any public write-up.
 - Default bind is **loopback** (`127.0.0.1`). Binding off-loopback without an auth
   token is refused at boot unless explicitly overridden (`JARVIS_ALLOW_INSECURE_BIND=1`).
   For remote access, put it behind a reverse proxy with TLS.
+- **One user per install (1.x).** There is no per-user isolation, row-level security or
+  multi-tenant boundary: whoever reaches the bound port with the token *is* the user. Give a
+  second person a second install. Ratified 2026-09-01 (H23.23 —
+  [`docs/decisions/2026-07-11-single-user-1.0.md`](docs/decisions/2026-07-11-single-user-1.0.md));
+  per-user isolation reopens only when a design partner needs several distinct people on one
+  shared install.
 - Run it as an unprivileged service — see the hardened templates in [`deploy/`](deploy/).
 - The full trust docs already ship: [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and
   [`docs/PRIVACY.md`](docs/PRIVACY.md) in the repo; `NOTICE` + the SBOM are generated

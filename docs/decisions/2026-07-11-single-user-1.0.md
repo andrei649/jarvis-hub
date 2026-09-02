@@ -1,8 +1,13 @@
 # Decision — multi-user readiness for 1.0 (H23.23)
 
-> **Status: RECOMMENDED — awaiting owner ratification.** This records the decision the H23.23
-> row asks for (*"accept single-user for 1.0 & document it, OR scope per-user isolation"*) so it
-> stops blocking Lane A / A2. The owner makes the final call; this is the reasoned default.
+> **Status: RATIFIED 2026-09-01 by owner — option (A).** Nerva 1.0 is single-user per install;
+> per-user isolation stays a post-1.0 horizon that opens only when a design partner needs multiple
+> distinct people on one shared install. This is the recorded default the H23.30 public-demo spec
+> assumes — v1.0.0 itself is not tagged yet. The boundary notes "What (A) requires" asked for
+> landed with the ratification (2026-09-01) in `SECURITY.md`, `docs/COMPATIBILITY.md`,
+> `docs/THREAT_MODEL.md` and `docs/FAQ.md`. *(Original framing: recorded the decision the H23.23 row asked for —
+> "accept single-user for 1.0 & document it, OR scope per-user isolation" — so it stopped
+> blocking Lane A / A2; the owner made the final call.)*
 
 ## The question
 

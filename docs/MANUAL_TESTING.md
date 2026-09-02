@@ -32,9 +32,12 @@ real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (tes
 
 ## 0. Run record & 1.0 sign-off
 
-> This runbook **is the release step that tags a version** (the human verification before any tag, 1.0 included). A clean pass — every critical area ✅
+> This runbook is the **human verification record of a tagged version** — the **post-tag proof**, not a
+> tag precondition. **Ordering (owner directive 2026-08-28, confirmed 2026-09-01):** the `v1.0.0` tag is two
+> owner commands — the A5 license flip, then the tag on `main` (A9) — and this §0 run then proves the
+> tagged build. A clean pass — every critical area ✅
 > with no open ❌ blocker — *plus* the green offline suite at the generated project-status count is what
-> clears tagging `v1.0.0`. Record results inline (tick the box; for any ❌/⚠️ add a one-line note
+> signs the `v1.0.0` build off. Record results inline (tick the box; for any ❌/⚠️ add a one-line note
 > and log it in **§K Blockers**). Fill this header on each run.
 
 | Field | Value |
@@ -64,7 +67,7 @@ real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (tes
 | N | AI-OS owner-host v1 proof (A8) | / 7 | |
 
 **Sign-off:** ☐ all critical areas pass · ☐ §N A8 passes · ☐ no open ❌ blocker (§K) →
-**cleared to tag `v1.0.0`.** Signed: ____________
+**`v1.0.0` build proven (post-tag).** Signed: ____________
 
 ---
 
@@ -603,8 +606,9 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 |---|---|----------|------------|-------|-------------|
 |   |   |          |            |       |             |
 
-**1.0 sign-off rule:** the run clears `v1.0.0` when this table has **no open blocker** — every
-row is either fixed or explicitly accepted as out-of-1.0 scope (say which).
+**1.0 sign-off rule:** the run proves the tagged `v1.0.0` build when this table has **no open blocker** — every
+row is either fixed or explicitly accepted as out-of-1.0 scope (say which). The tag itself is not held for
+this run (owner directive 2026-08-28, confirmed 2026-09-01).
 
 ---
 
