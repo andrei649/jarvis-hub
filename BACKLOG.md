@@ -2383,11 +2383,35 @@ counter metric (all-time stays available to `/api/analytics/locality`).
   flag in; `secrets.py` was the one `os.open` in the repo that did not. +3 tests, one of which pins
   the flag by giving POSIX an `O_BINARY`, so a Linux-only run can still catch its removal.
 
-**The phone surface — open question, owner call (2026-07-29).** The scheduled e2e run fails 9
-`mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button "intercept pointer events" at
-the 393×851 Pixel 5 viewport). Nothing regressed: `E2E_BROWSER_MATRIX` is set only on `schedule`
-events, and **all 26 scheduled runs since 2026-07-04 have failed — none has ever passed.** The matrix
-was switched on over a layout that was never made responsive. Two facts frame the decision:
+**The phone surface — open question, owner call (2026-07-29; re-measured 2026-09-04).** The
+scheduled e2e run fails `mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button
+report "intercept pointer events" at the 393×851 Pixel 5 viewport). Nothing regressed:
+`E2E_BROWSER_MATRIX` is set only on `schedule` events, and **no scheduled run has ever passed** —
+63 runs to 2026-09-04, the 20 most recent all red. The matrix was switched on over a layout that
+was never made responsive. Two facts frame the decision:
+
+> **Counts refreshed 2026-09-04** (run [33850948593](https://github.com/andrei649/jarvis-hub/actions/runs/33850948593)):
+> the failure is now **22 cases, not 9** — 12 `mobile-chrome` + **10 `webkit`**. The webkit half is
+> *not* part of this phone question (Desktop Safari runs at 1280×720) and has its own row below.
+>
+> **The recorded mechanism above was wrong, and the correction matters to the decision.**
+> "Intercept pointer events" reads like an overlay bug; there is no overlay. Measured at the Pixel 5
+> viewport: `document.elementFromPoint()` at the button's centre returns *the button*, and both
+> `click({force:true})` and `dispatchEvent('click')` succeed. What actually happens is a coordinate
+> mismatch. The HUD lays out at 915px inside a 393px viewport, so mobile Chromium applies a
+> shrink-to-fit page scale (measured `innerWidth` 915 vs `clientWidth` 393 → scale 0.43); Playwright
+> then resolves the element's quad in the page-scaled frame and hit-tests at the wrong point, which
+> the browser reports as whatever sits there — `.agent-row` inside `.col`. The overflow has two
+> sources, both the same bare-`1fr` floor (`1fr` == `minmax(auto,1fr)`, so the track cannot shrink
+> below min-content): `.topbar` (`styles.css:89`), whose first column holds `.brand` with the 6-badge
+> status strip nested inside it (`shell.tsx:52`, `.badges` flex + `.badge{min-width:70px}` = 469px
+> min-content → a 627.66px track), and `.main[data-ia="rail"]` (`styles.css:128`, measured
+> `60px 551.984px` inside a 393px box).
+>
+> So the row's own conclusion — "not a pointer-events tweak" — still holds, for a better reason:
+> there is nothing to tweak. **The decision below is unchanged and still the owner's.**
+> The ≥760px half of the overflow was a separate desktop defect and is fixed (see the layout-fit row);
+> that fix deliberately does not close the sub-760px gap, so it does not pre-empt this call.
 
 - [ ] 🟡 **The web HUD is not reachable from a phone today, by design.** `serve.py:66` defaults
   `JARVIS_HOST` to `127.0.0.1`, and `assert_safe_bind()` (`boot_guards.py:25`) **exits** on a
@@ -2401,6 +2425,33 @@ was switched on over a layout that was never made responsive. Two facts frame th
   desktop surface and `mobile-chrome` should come **out** of the matrix rather than stay permanently
   red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
   (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
+
+- [x] ✅ **Laptop-width layout fit — the ≥760px half, fixed 2026-09-04.** Separating this out is the
+  point: the same bare-`1fr` bug also broke *desktop* widths, which no owner call covers. Measured on
+  `main` @ `bf48cf2`: at 1000px, 900px and 800px viewports the document was **1082px wide** and the
+  cockpit scrolled sideways — a normal laptop window or a half-screen split, not a phone.
+  `.topbar` now uses `minmax(0,1fr)` (both the base rule and the ≤760px override) so the flexible
+  tracks may shrink below min-content. Measured after: 1000→1000, 900→900, 800→800, 1280 unchanged.
+  `frontend/e2e/layout.spec.ts` (+4) pins it at those four widths and was red-proved first (3 of 4
+  failed before the rule changed). Below 760px the document is still 915px wide — untouched on
+  purpose, because closing that is the stacked-layout work the owner call above has to decide.
+
+- [ ] 🔴 **The `webkit` half — a test-harness defect, not a HUD defect, and not the phone question.**
+  10 of the 22 nightly failures are `[webkit]` at 1280×720: `a11y.spec.ts:33` ×1 and
+  `hud.spec.ts:87/:123/:153` ×3 each. **In WebKit `page.route()` does not intercept**, so those specs
+  drive the *real*, model-less CI backend instead of their mocks and time out. Evidence from the CI
+  log of run 33850948593: the webkit a11y failure dumps a live DOM containing the specs' own literal
+  strings — `hello jarvis` (`hud.spec.ts:116`) and `please stop` (`hud.spec.ts:144`), two copies each,
+  one per prior repeat — which can only have reached it through the server: nothing persists the
+  transcript client-side, and `app.tsx:161-177` rehydrates it from `GET /memory`
+  (`routers/memory_hud.py:41-55` → `orch.memory.get_history`). `orchestrator.py:1412` writes the USER
+  turn before the model runs, so a turn that never completes leaves exactly the user-only transcript
+  the log shows. That also explains the a11y asymmetry (mobile-chrome ×3 vs webkit ×1) — it is
+  cross-test contamination through real server state, not three independent a11y regressions.
+  **Next slice, not this one.** Prime suspect is the PWA service worker (T-0.29) intercepting fetches
+  ahead of Playwright's route handler; if so the fix is `serviceWorkers: 'block'` in the Playwright
+  context — which removes an interference, it does not disable a test. Must be confirmed against a
+  real webkit run (`workflow_dispatch` of `e2e.yml` on a branch) before anything is claimed fixed.
 
 ---
 
@@ -2885,7 +2936,7 @@ Figma API token, stays a separate owner-gated follow-up.)* | — |
 | H23.14 | **Semver compatibility contract** + supported-versions matrix + deprecation policy + platform matrix | ✅ **done** — `docs/COMPATIBILITY.md` (SemVer + pre-1.0 caveat, public-surface definition, supported-versions matrix, deprecation policy, platform matrix incl. the real **Python 3.12+** floor / Node 20+ / Docker-optional) + `SECURITY.md` rewritten from the GitHub placeholder into a real supported-versions + disclosure policy. **Gated:** `tests/test_compatibility.py` asserts the docs' supported-version lines track the single-sourced `agents.__version__` (so CDX-5 drift can't return) + valid SemVer + the documented Python floor. | 0.15 |
 | H23.15 | systemd/service templates (Linux/Windows) | ✅ **done** — `deploy/systemd/jarvis-hub.service` (hardened unit: `ProtectSystem=strict`/`NoNewPrivileges`/restricted address families; `KillSignal=SIGTERM` + `TimeoutStopSec` margin over `JARVIS_SHUTDOWN_TIMEOUT` → the H23.11 bounded graceful drain) + `jarvis-hub.env` + README; `deploy/windows/install-service.ps1` (NSSM, Ctrl-C graceful stop) + README; `deploy/README.md` index wiring the `/healthz`·`/readyz` probes. Both consume the H23.11 env knobs; guarded by `tests/test_compatibility.py`. | 0.15 |
 | H23.16 | **Network monitor** HUD panel (prove LOCAL_ONLY agents make zero outbound calls) | ✅ **DONE (verified 2026-07-02** — data layer + API + HUD panel all in tree; only the live-pixel render stays owner-runtime-gated, CDX-9**)** — **data layer + API done**: thread-safe `observability/egress_monitor.py` (in-memory ring buffer + monotonic per-plugin counters) records *every* outbound attempt — allowed **and** blocked — at the `http_client.py` choke point (all 6 verbs via one `_guard`); `GET /api/admin/network/calls?plugin=&limit=` (admin-guarded) serves per-plugin tallies + recent events + `local_only_violations` (the proof: a NONE/LAN plugin with an allowed external call surfaces as a violation → `clean=False`). `tests/test_network_monitor.py` (+9, MockTransport — no real socket). **HUD panel done:** `NetworkMonitorPanel` in the Console (`gap.tsx`, Trust section) reads the endpoint and renders the `clean` local-only proof + per-plugin allowed/blocked/external + any violation in red; `frontend/src/test/network-monitor.test.tsx` (+2, fetch-mocked) — passes `tsc --noEmit` + vitest. ⚠️ Only the live-pixel render is owner-runtime-gated (CDX-9), as for every HUD panel. | 0.16 |
-| H23.17 | **Quality gates** — E2E (Playwright), load/soak, a11y (WCAG), i18n completeness, browser+mobile matrix | ✅ **done (2026-07-03)** — i18n completeness, sandbox isolation, p95 load, live Playwright canvas/cinema smoke, axe a11y, nightly soak/browser matrix, and the chat send→SSE→stop + voice push-to-talk flow specs are all wired. M2.1 added the degraded-model chat/voice flow E2E; M2.2 added scheduled/manual browser matrix + soak knobs (`E2E_BROWSER_MATRIX`, `E2E_SOAK_ITERATIONS`). | 0.19 |
+| H23.17 | **Quality gates** — E2E (Playwright), load/soak, a11y (WCAG), i18n completeness, browser+mobile matrix | ✅ **done (2026-07-03)** — i18n completeness, sandbox isolation, p95 load, live Playwright canvas/cinema smoke, axe a11y, nightly soak/browser matrix, and the chat send→SSE→stop + voice push-to-talk flow specs are all wired. M2.1 added the degraded-model chat/voice flow E2E; M2.2 added scheduled/manual browser matrix + soak knobs (`E2E_BROWSER_MATRIX`, `E2E_SOAK_ITERATIONS`). **⚠️ Wired ≠ green (recorded 2026-09-04):** the chromium push lane passes, but the *scheduled* matrix has failed every run since it was switched on — 63 runs, none green. The tick stands for the wiring, which did ship; it is not evidence that webkit/mobile-chrome pass. Both halves are diagnosed under "The phone surface" above (owner call for the phone half; the webkit half is a `page.route` harness defect). | 0.19 |
 | H23.18 | **User docs** — USER_GUIDE, FAQ, UPGRADE (per-version migration notes) | 🟢 **done** — `docs/USER_GUIDE.md` (requirements → install (Win one-click / any-OS) → start → the cabinet → configure a model → daily use (chat/voice/autonomy/plugins) → admin panel → data controls), `docs/FAQ.md` (data-leaves-machine, telemetry, GPU, models, OS, multi-user, stop-autonomy, channels, cost, update, backup/export/delete, WorldView/Signal), `docs/UPGRADE.md` (Win `UPDATE.bat` / manual `git pull`+reinstall+restart / release-bundle; **automatic forward-only migrations** H23.7; backup-first rollback; graceful restart H23.11; per-version notes → COMPATIBILITY/SemVer). Linked from README; `tests/test_user_docs.py` (+4). | 0.19 |
 | H23.19 | **Trust/security docs** — THREAT_MODEL, SECURITY disclosure policy + advisories, NOTICE/SBOM, **telemetry opt-in disclosure**, privacy policy | 🟢 **done** — `docs/THREAT_MODEL.md` (boundaries + assets + 11 threats each mapped to the *real* seam: egress gate/monitor, action kernel, K3 budgets/loop-breaker, encrypted secrets, HMAC audit, injection/Cypher/WKT guards, sandbox isolation, fail-closed bind, supply-chain) + continuous-verification matrices + honest residual risks; `docs/PRIVACY.md` (local-first, **no telemetry / no phone-home** disclosure, first-party-analytics clarification, opt-in egress data-flow table, user controls: export/forget/retention/kill-switch). SECURITY disclosure + NOTICE/SBOM already shipped (H23.14 / H23.13). Linked from README + SECURITY.md; `tests/test_trust_docs.py` (+3) guards existence/grounding/discoverability. | 0.19 |
 | H23.20 | **Onboarding wizard** + activation-funnel instrumentation + cold-start error guidance | 🟢 **backend done** — `routers/onboarding.py`: `GET /api/onboarding/wizard` (ordered steps intro→model→test_chat→autonomy, `complete` **derived from recorded funnel events** so onboarding resumes across reloads; `model_ready` + a friendly cold-start `hint` when no backend is reachable) + `POST /api/onboarding/funnel` (records first-party local `funnel.<step>.<event>` via `analytics_store`, bounded to known steps); both `user_guard`'d. `tests/test_onboarding_wizard.py` (+4); route parity/auth/openapi + HUD-v2 IA (cockpit home) snapshots reseeded. **HUD `OnboardingPanel` ✅** — Console *Observe* panel renders the ordered steps with done/pending state + progress + the cold-start `hint`, and a per-step **done** button records the funnel event (`POST /api/onboarding/funnel`) so completion persists; `frontend/src/test/onboarding-panel.test.tsx` (+2, fetch-mocked; vitest + tsc green). **Pending:** only the live-pixel render (owner-runtime-gated, CDX-9). | 0.19 |

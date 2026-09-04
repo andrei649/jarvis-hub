@@ -315,6 +315,36 @@ built on your Windows box:
 
 ## Parking lot (decisions, no rush)
 
+- [ ] **Is the web HUD a phone surface? — one decision, and it unblocks a nightly that has never
+  been green.** Packet refreshed 2026-09-04 against `main` @ `bf48cf2`; the question itself is the
+  2026-07-29 call recorded in `BACKLOG.md` → *"The phone surface"*. Nothing about it is engineering-
+  blocked — it needs your answer, not more code.
+  **Where it stands.** `HUD E2E` runs nightly. It has failed **every scheduled run — 63 of 63**.
+  22 cases fail: 12 `mobile-chrome`, 10 `webkit`. Only the 12 are yours to decide; the webkit 10 are
+  a `page.route` harness defect and are being fixed as ordinary engineering.
+  **What was already wrong in the old packet, corrected here.** It said the buttons "intercept
+  pointer events", which reads as an overlay bug. There is no overlay: at the Pixel 5 viewport
+  `elementFromPoint()` at the button's centre returns the button, and `force`/`dispatchEvent` clicks
+  both succeed. The HUD simply lays out 915px wide inside 393px, mobile Chromium shrink-to-fits
+  (measured page scale 0.43), and Playwright then hit-tests at the wrong coordinates. So there is no
+  small fix hiding here — the old packet's instinct was right, its reason was not.
+  **The two options, unchanged:**
+  - **(A) The phone story is the `mobile/` React Native app.** Then the web HUD is a desktop
+    surface, `mobile-chrome` comes out of the Playwright matrix, and the nightly can be green.
+    Cost: ~1 slice. Consequence: the HUD is documented as desktop-only and the LAN-access note
+    below still needs writing.
+  - **(B) The web HUD should also work on a phone.** Then it needs a real stacked-layout breakpoint
+    below 760px — single column, chat pane full-height, rails collapsed or drawered. Cost: a genuine
+    responsive slice with design decisions in it (R2), not a CSS tweak.
+  **Either way, one thing is owed regardless:** the supported LAN path is documented nowhere. A
+  `docs/` grep for LAN/remote-access guidance returns nothing, while `serve.py:66` +
+  `boot_guards.py:25` + `web.py:192` make reaching the HUD from another device a deliberate,
+  token-gated setup. That note should be written whichever way you decide.
+  **Not blocking you:** the ≥760px half of the same overflow bug was a plain desktop defect (at
+  800/900/1000px the cockpit scrolled sideways) and is already fixed and pinned by
+  `frontend/e2e/layout.spec.ts`. That fix stops deliberately at 760px so it does not pre-empt this
+  decision.
+
 - [x] **Pick the payment rail — or ratify that there is none** — ✅ ratified 2026-09-01 (owner):
   **no real payment rail for 1.0.** `PaymentBroker.settle()` keeps auditing *"settled (no real
   rail)"*, no money moves, and no AP2/ACP/x402 adapter, `PaymentRail` protocol or `NullRail` gets

@@ -86,7 +86,10 @@ input { font-family: inherit; }
 
 /* ============================================================ LAYOUT */
 .shell { display:flex; flex-direction:column; height:100%; position:relative; z-index:1; }
-.topbar { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:18px; padding:12px 22px; border-bottom:1px solid var(--panel-line); background:linear-gradient(180deg, var(--void-2), transparent); backdrop-filter:blur(10px); }
+/* minmax(0,…), not a bare 1fr: `1fr` is `minmax(auto,1fr)`, whose auto minimum is the
+   item's min-content width, so the track cannot shrink below the brand block and the
+   whole document scrolls sideways from ~1080px down. */
+.topbar { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:18px; padding:12px 22px; border-bottom:1px solid var(--panel-line); background:linear-gradient(180deg, var(--void-2), transparent); backdrop-filter:blur(10px); }
 .brand { display:flex; align-items:center; gap:13px; }
 .brand svg.reactor { width:30px; height:30px; color:var(--accent); flex:none; }
 .brand .reactor .spin1 { transform-origin:center; animation:spin 48s linear infinite; }
@@ -585,7 +588,7 @@ input { font-family: inherit; }
   .rail .rl { display: none; }                    /* icon-only rail */
 }
 @media (max-width: 760px) {
-  .topbar { grid-template-columns: 1fr auto !important; }
+  .topbar { grid-template-columns: minmax(0,1fr) auto !important; }
   .clock { display: none; }
 }
 /* visible keyboard focus (a11y) — the prototype relied on hover only */
