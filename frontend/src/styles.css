@@ -579,7 +579,17 @@ input { font-family: inherit; }
 /* ── P5 polish — responsive + accessibility ───────────────────────── */
 /* collapse the 3-column cockpit/agents layouts on narrow screens */
 @media (max-width: 1100px) {
-  .workzone.cockpit, .workzone.wide { grid-template-columns: 1fr !important; }
+  /* Stacking the columns is only half of collapsing to one. The workzone is a grid inside
+     a height:100% shell that cannot grow, so with auto rows the FIRST column took its whole
+     content height and the chat column got the remainder — measured `577px 18px` at
+     1000x800. An 18px row cannot hold a 77px input bar, so it painted at y=931 in an 800px
+     viewport with nothing scrollable to reach it: the cockpit was unusable at 1100/1000/
+     900/800. Let the rows size to their content and let the stack scroll. */
+  .workzone.cockpit, .workzone.wide {
+    grid-template-columns: 1fr !important;
+    grid-auto-rows: minmax(0, auto);
+    overflow-y: auto;
+  }
   .col.scrollcol { display: none; }              /* hide the right context column when stacked */
   .topbar .clock-time { font-size: 30px; }
   .rail .rl { display: none; }                    /* icon-only rail */
