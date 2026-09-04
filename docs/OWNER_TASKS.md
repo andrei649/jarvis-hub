@@ -360,9 +360,24 @@ built on your Windows box:
     surface, `mobile-chrome` comes out of the Playwright matrix, and the nightly can be green.
     Cost: ~1 slice. Consequence: the HUD is documented as desktop-only and the LAN-access note
     below still needs writing.
-  - **(B) The web HUD should also work on a phone.** Then it needs a real stacked-layout breakpoint
-    below 760px — single column, chat pane full-height, rails collapsed or drawered. Cost: a genuine
-    responsive slice with design decisions in it (R2), not a CSS tweak.
+  - **(B) The web HUD should also work on a phone.** The earlier estimate here — "a genuine
+    responsive slice with design decisions in it (R2)" — **looks too pessimistic, and you should
+    know that before choosing.** An A/B test found **four CSS declarations** that turn all six
+    `mobile-chrome` specs green, and I verified the load-bearing half myself: with them the layout
+    viewport becomes 393px = the visual viewport (scale 1, no shrink-to-fit) and the transmit click
+    lands instead of being intercepted.
+    ```css
+    .main[data-ia="rail"]{grid-template-columns:60px minmax(0,1fr)}
+    .badges{flex-wrap:wrap}
+    .badge{min-width:0}
+    .workzone{overflow-y:auto;grid-auto-rows:minmax(0,auto)}
+    ```
+    **Read that honestly, though: "the specs pass" is not "the phone experience is designed."**
+    Those four declarations stop the cockpit being broken by overflow; whether a stacked desktop
+    cockpit is actually *good* on a 393px screen is still a design judgement, and it is yours. What
+    has changed is the price of finding out — closer to one small slice than to a redesign.
+    Note also that the fourth declaration is the same lever as the separate **≤1100px chat-off-screen
+    desktop bug** recorded in `BACKLOG.md`, so option B and that fix may well be one piece of work.
   **Either way, one thing is owed regardless:** the supported LAN path is documented nowhere. A
   `docs/` grep for LAN/remote-access guidance returns nothing, while `serve.py:66` +
   `boot_guards.py:25` + `web.py:192` make reaching the HUD from another device a deliberate,

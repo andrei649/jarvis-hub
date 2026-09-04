@@ -2454,6 +2454,23 @@ was never made responsive. Two facts frame the decision:
   draft — that claim was wrong and is retracted here. The phone gap is narrower but still open, and
   closing it is still the stacked-layout work the owner call above has to decide.
 
+- [ ] 🔴 **The cockpit's chat surface is off-screen at ≤1100px — a plain desktop bug, worse than the
+  topbar one, found in the same investigation (2026-09-04).** Nothing to do with phones: 1100px,
+  1000px and 900px are ordinary laptop and split-screen widths that the product unambiguously
+  supports. `@media (max-width:1100px)` (`styles.css:581`) collapses `.workzone.cockpit` to a single
+  column, so the remaining `.col` children stack **vertically** inside a `height:100%` shell that
+  cannot grow — and the chat column is the one pushed off the bottom.
+  Measured on this branch at an 800px-tall viewport: at 1280px the input bar sits at `bottom=785`
+  (in view) with `.convo` 163px tall; at **1100, 1000, 900 and 800 it sits at `bottom=931` — below a
+  799px fold, `inView=false` — and `.convo` collapses to 32px.** A user at those widths cannot see
+  or reach the message box at all.
+  **This is not what the topbar fix addressed**, and the fix does not help it: the two are
+  independent, one horizontal and one vertical. Recording it here rather than widening that PR, and
+  flagging it as the higher-severity of the two — a clipped topbar badge is cosmetic; an unreachable
+  input bar makes the cockpit unusable. The likely shape of a fix is giving the collapsed
+  single-column workzone a scrollable/auto-height main region instead of a fixed one, which needs a
+  look at `.shell`/`.main`/`.workzone` heights together — its own slice, not a one-liner.
+
 - [ ] 🔴 **The `webkit` half — a test-harness defect, not a HUD defect, and not the phone question.**
   10 of the 22 nightly failures are `[webkit]` at 1280×720: `a11y.spec.ts:33` ×1 and
   `hud.spec.ts:87/:123/:153` ×3 each. **In WebKit `page.route()` does not intercept**, so those specs
