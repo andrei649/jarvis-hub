@@ -20,7 +20,16 @@ const ENV_PREFIX = process.platform === 'win32'
   ? `set JARVIS_PORT=${PORT}&& set JARVIS_LOG_LEVEL=warning&& `
   : `JARVIS_PORT=${PORT} JARVIS_LOG_LEVEL=warning `;
 const BROWSER_MATRIX = process.env.E2E_BROWSER_MATRIX === '1';
-const SOAK_ITERATIONS = Math.max(1, Number(process.env.E2E_SOAK_ITERATIONS || 1));
+// e2e.yml now exposes this as a dispatch input, so pin what a non-integer means here
+// instead of leaving it to coercion. `Math.max(1, Number(x))` returns NaN for an
+// unparseable x and passes it straight to `repeatEach`; measured on @playwright/test
+// 1.62.1, `repeatEach: NaN` behaves as 1, so this is not a bug being fixed — it is
+// undocumented behaviour being made explicit. It does change one case: a fractional
+// value floors (2.7 -> 2) rather than reaching `repeatEach` as 2.7.
+const SOAK_ITERATIONS = (() => {
+  const n = Number(process.env.E2E_SOAK_ITERATIONS);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+})();
 
 export default defineConfig({
   testDir: './e2e',
@@ -37,6 +46,37 @@ export default defineConfig({
     headless: true,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
+    /* index.html registers `/sw-v2.js` at scope '/', so every page in this lane is a
+       service-worker-controlled client by the time `#root` is non-empty (measured). On
+       webkit that made `page.route` never fire, so the three specs that mock the chat
+       stream drove the real model-less backend instead of the mock — and persisted their
+       user turns into the SHARED session, which a later page load rehydrated into a
+       user-only transcript that failed an a11y scan several projects downstream. Ten of
+       the 22 permanently-red nightly cases were those two symptoms.
+
+       Measured across five browser-matrix runs, 32 or 96 cases each:
+         baseline, n=1                7 failed
+         this line, n=1               4 failed  (webkit routing + a11y fixed)
+         scoped to those 3 specs, n=1 3 failed
+         this line, n=3               9 failed  = 3 mobile-chrome specs x 3 iterations
+         scoped, n=3                  9 failed  = identical
+       The n=1 pair looked like a trade — a global block appeared to break the Neural Mesh
+       canvas assertion on webkit. At n=3 it passes 3 of 3 and the two forms are
+       indistinguishable, so that was a flake and the special-casing it justified is gone.
+
+       What is NOT claimed: the precise WebKit path. "Playwright's interception is
+       Chromium-only for service-worker-mediated requests" is the obvious explanation and
+       it does not survive — firefox is also non-Chromium and passes 24 of 24, and this
+       worker never mediates the request anyway (`sw-v2.js` returns early on
+       `req.method !== 'GET'`; the chat stream is a POST). The worker is causally involved
+       on WebKit specifically, by a mechanism this comment does not pretend to know.
+
+       Cost, stated rather than hand-waved: the lane no longer registers the worker. That
+       costs no assertion — `grep -rniE "serviceworker|caches|offline|manifest" frontend/e2e/`
+       finds nothing, and the worker's fetch handler serves no request in any spec, because
+       every spec navigates once and both its branches need a second navigation. If a real
+       PWA spec is ever added it should opt back in with `test.use({ serviceWorkers: 'allow' })`. */
+    serviceWorkers: 'block',
   },
   projects: BROWSER_MATRIX ? [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },

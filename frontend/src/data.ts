@@ -230,6 +230,8 @@ const I18N = {
     inbox:'UNIFIED INBOX', allChannels:'All channels',
     finance:'Finance', health:'Health', knowledge:'Knowledge', family:'Family',
     projects:'Projects',
+    convoRegion:'Conversation transcript',
+    timeTravel:'Time travel — knowledge as of',
   },
   ro:{
     sub:'INTELIGENȚĂ PERSONALĂ · OS', online:'ONLINE', local:'% LOCAL', agents:'AGENȚI',
@@ -250,6 +252,8 @@ const I18N = {
     inbox:'CĂSUȚĂ UNIFICATĂ', allChannels:'Toate canalele',
     finance:'Finanțe', health:'Sănătate', knowledge:'Cunoaștere', family:'Familie',
     projects:'Proiecte',
+    convoRegion:'Transcrierea conversației',
+    timeTravel:'Călătorie în timp — cunoștințe la data de',
   },
 };
 

@@ -2386,7 +2386,8 @@ counter metric (all-time stays available to `/api/analytics/locality`).
 **The phone surface — open question, owner call (2026-07-29).** The scheduled e2e run fails 9
 `mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button "intercept pointer events" at
 the 393×851 Pixel 5 viewport). Nothing regressed: `E2E_BROWSER_MATRIX` is set only on `schedule`
-events, and **all 26 scheduled runs since 2026-07-04 have failed — none has ever passed.** The matrix
+events, and **every scheduled run has failed — 63 as of 2026-09-04, none has ever passed.** *(Said 26
+when written on 2026-07-29; refreshed against the Actions API.)* The matrix
 was switched on over a layout that was never made responsive. Two facts frame the decision:
 
 - [ ] 🟡 **The web HUD is not reachable from a phone today, by design.** `serve.py:66` defaults
@@ -2401,6 +2402,220 @@ was switched on over a layout that was never made responsive. Two facts frame th
   desktop surface and `mobile-chrome` should come **out** of the matrix rather than stay permanently
   red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
   (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
+
+**The transcript had no keyboard route — fixed (2026-09-04).** The *other* failure in that same
+scheduled matrix was an accessibility one, and it was a real product defect rather than a test
+artefact: `a11y.spec.ts:33` reported `serious · scrollable-region-focusable` against
+`<div class="convo">` — WCAG 2.1.1/2.1.3, "Scrollable region must have keyboard access" — on
+**mobile-chrome 3/3 iterations and webkit 1/3, with chromium and firefox 0/3**
+([run 33850948593](https://github.com/andrei649/jarvis-hub/actions/runs/33850948593), head `bf48cf2`).
+`.convo` is `overflow-y:auto`, and its only focusable descendants (⧉ save-artifact, 🔊 replay) are
+rendered on **agent** bubbles — so a transcript of user turns whose replies never arrived (no model
+loaded, an aborted turn) is a scrollable region with no way in, and everything below the fold is
+unreachable without a mouse.
+
+- [x] ✅ `.convo` now carries `tabIndex={0}` + `role="log"` + a localized `aria-label`
+      (`frontend/src/cockpit.tsx`, `convoRegion` in both locales). That satisfies axe's
+      `focusable-element` check unconditionally — in every transcript state and every browser —
+      rather than depending on content that happens to be focusable.
+- [x] ✅ `e2e/a11y.spec.ts` gained a third scan that **seeds** the failing state instead of waiting
+      for the soak to stumble into it: six user-only turns injected by shimming `window.fetch` for
+      `GET /memory` before boot (not `page.route`, which webkit does not intercept here; not a
+      backend write, which would leak into the next spec). Its two load-bearing assertions — the axe
+      rule and the `tabIndex` contract — are each red-proofed against the unfixed build. The two
+      pre-existing scans run against an *empty* transcript, which is exactly why they stayed green
+      for months while the matrix was red.
+- [x] ✅ `frontend/src/test/convo-keyboard-access.test.tsx` (+3) pins the same contract at component
+      level, so dropping the attributes fails without a browser or a backend.
+- [x] ✅ Putting a reading surface in the tab order needed the global hotkey guard to follow:
+      `app.tsx` now bails inside `[role="log"]` as it already does for `input`/`textarea`. Measured
+      before: with `.convo` focused, `2` jumped to AGENTS *and* dropped focus to `<body>`, `a` opened
+      the ambient overlay. After, with a control: focused → both keys inert, focus retained; blurred
+      → `2` still switches mode.
+- [x] ✅ `role="log"` makes the transcript an implicit `aria-live="polite"` region, so `.thinking`
+      carries an explicit `aria-live="off"` — its label cycles classify → route → gather → synthesize
+      within one turn. **Residual, recorded not fixed:** the `GET /memory` rehydration injects a whole
+      restored transcript into an already-mounted live region, which an AT may announce in bulk. Not
+      measured with a real screen reader; scoping the live region to a messages-only wrapper is the
+      fix if it matters, and that is a DOM restructure inside a flex column.
+
+**The cockpit is not the HUD.** `a11y.spec.ts` scans the cockpit route and the cinema overlay —
+nothing else — so a green a11y lane says nothing about the other nine modes. Walking all ten with axe
+on the fixed build (chromium 1440×900, 2026-09-04) found **three blocking violations on surfaces no
+spec has ever scanned**, one of them the *same rule* this row just closed on `.convo`:
+
+- [ ] 🔴 **mode 2 (AGENTS) — `serious · scrollable-region-focusable` on `.scroll > .panel-body`**
+      (`frontend/src/modes.tsx:11-14`). Measured 774px of content in a 670px box, `tabIndex -1`, zero
+      focusable descendants — the agent cards are `<div className="acard" onClick=…>`, click handlers
+      on non-focusable divs. Identical defect, identical rule. The repo already uses `tabIndex={0}`
+      for exactly this at `panel-kit.tsx:69` and `shell.tsx:137,152,172,186,205,225`.
+- [ ] 🔴 **mode 4 (MEMORY) — `critical · label` on an unlabeled `<input type="range">`.**
+- [ ] 🔴 **mode 6 (BUILD) — `serious · color-contrast` on `.sb-in > span:nth-child(2)`.**
+- [ ] 🟡 Each needs its own red-proof and the spec needs to walk the mode surfaces, so they are the
+      next slice rather than a widening of this one. Modes 0/1/3/5/7/8/9 came back clean.
+
+two of seventeen surfaces — so a green a11y lane said nothing about the rest. A mode walk found
+blocking violations on surfaces no spec had ever visited. **The first version of that walk was
+itself wrong in two ways, both caught by independent review, and the corrected walk finds nearly
+three times as much**, which is the more useful fact:
+
+| lane | violations found |
+|---|---|
+| live · 1280×720 | 2 — agents, memory |
+| live · 1440×900 | 3 — agents, memory, build |
+| demo · 1440×900 | **8 across 5 modes** — agents, memory, autonomy, build, comms ×4 |
+
+- [x] ✅ **mode 2 (AGENTS) — `serious · scrollable-region-focusable` on `.scroll > .panel-body`**
+      (`modes.tsx`). 774px of content in a 670px box, `tabIndex -1`, zero focusable descendants —
+      the agent cards are `<div className="acard" onClick=…>`. Fixed with `tabIndex={0}` **plus
+      `aria-label={t.roster}`**: the `.convo` fix one commit earlier added a role and a name for
+      exactly this reason, and a keyboard user should not land on an unnamed generic div.
+      *Correction to how this was first written:* "the roster scrolled past the fold unreachable by
+      keyboard" is **false in Chromium**, which ships keyboard-focusable scrollers — measured, the
+      panel is reached at Tab 23 both before and after. The axe result is real and the fix is the
+      WCAG 2.1.1 authoring contract; the browsers where it is a live user-facing defect are Firefox
+      and Safari.
+- [x] ✅ **mode 4 (MEMORY) — `critical · label`** on the time-travel `<input type="range">`; now
+      `aria-label={t.timeTravel}`, localized in both locales.
+- [x] ✅ **mode 6 (BUILD) — `serious · color-contrast`** on the sandbox placeholder: `--ink-3`
+      measured **2.80:1** against `--void` where 4.5:1 is required.
+- [x] ✅ **modes 5 (AUTONOMY) and 0 (COMMS) — five more, found only after the review.** The first
+      walk called them "clean". They were not scanned: `app.tsx`'s honest gate renders `ModeEmpty`
+      — an 11-node "Not connected" card — for any capability mode whose source is not live, which
+      against the e2e backend is exactly those two. Their real surfaces carry
+      `serious · color-contrast` on the speak-brief button and on **four interactive channel-filter
+      buttons** (`.cf`), all the same 2.80:1 token. Fixed in `styles.css` (`.cf`, `.pmode` base and
+      `.pmode.off` → `--ink-2`, measured 7.06:1).
+- [x] ✅ **`frontend/e2e/a11y-modes.spec.ts`** walks all ten hotkey-reachable modes, **in four
+      lanes** — live and `?demo=1` × 1280×720 and 1440×900 — and red-proofs to the table above.
+      Three pins, each for a way the first version lied:
+      **(a)** its non-vacuity check compared `.workzone` classNames, but `app.tsx` emits only three
+      across ten modes (`cockpit`, `wide`, and `full` for the other eight), so `seen.size > 1` was
+      satisfied by two of ten — **demonstrated inert**, and the walk could scan AGENTS eight times
+      and pass. It now fingerprints the active rail label and asserts it saw all ten (red-proofed:
+      forcing every keypress to `1` fails with `saw: Cockpit ×10`).
+      **(b)** it now records `empty` per mode and, in demo, asserts no surface is an empty card —
+      so a green scan of "Not connected" can never be counted as coverage.
+      **(c)** the 900 ms sleep is gone. Under 1.5 s of added API latency AGENTS is at 64 of its
+      final 318 nodes at 900 ms, and two of three red-proof findings vanished — a silent green, not
+      a flake. It now waits for the DOM to stop changing.
+- [x] ✅ `frontend/src/test/mode-surface-a11y.test.tsx` (+2) pins both attributes at component
+      level, red-proofed, so deleting them fails in the PR lane without a browser.
+- [ ] 🟡 **Two viewports, and the stated reason for the first one was wrong.** BUILD's contrast
+      violation is invisible at 1280×720 and reported at 1440×900 — but the cause is **width**, not
+      the fold: `styles.css` `@media (max-width:1300px)` collapses `.build-grid` to one column and
+      pushes the node to y=1122. And in the other direction AGENTS' `scrollable-region-focusable`
+      **disappears at 1920×1080**, because the panel stops overflowing. No single viewport sees
+      everything; two is a floor, not a proof.
+- [ ] 🔴 **`--ink-3` is a systemic contrast failure, not three sites.** The token composites to
+      `#52585f` on `--void` = **2.80:1**. Counted on the shipped bundle in demo at 1440×900:
+      **276 text-bearing elements** carry it (cockpit 59 · agents 61 · observe 43 · autonomy 32 ·
+      comms 22 · memory 20 · trust 18 · build 13 · interop 4 · chat 4), from 89 uses in
+      `styles.css` plus ~220 inline. This slice fixed the ones axe could resolve; the rest are
+      invisible to it because axe parks contrast it cannot compute over a gradient in
+      `incomplete`, not `violations` (e.g. `.timeslider .tlab`, measured **2.88:1** from real
+      screenshot pixels). The spec now writes `incomplete` and a counts tally into its artifact so
+      the backlog is visible; **retiring `--ink-3` as a text colour is its own slice.**
+- [ ] 🟡 **Coverage is 10 of 16 rail modes.** The number hotkeys do not reach `projects`,
+      `finance`, `health`, `knowledge`, `family` or `admin`. All six were walked manually via the
+      rail at 1440×900, live and demo, and came back clean — but no spec covers them.
+
+**Unchanged in the E2E lane:** the 9 mobile-chrome pointer cases (the owner call above) and the
+9 webkit cases where `page.route` does not intercept — **but the causal chain is no longer inferred.**
+A single-iteration matrix run from a branch ([run 33882549024](https://github.com/andrei649/jarvis-hub/actions/runs/33882549024),
+made possible by the `workflow_dispatch` matrix inputs) runs each spec exactly once in project order,
+and reads as one trace: `a11y.spec.ts:33` passes on chromium, firefox **and webkit**, then fails on
+mobile-chrome — the first scan *after* webkit's three `page.route` specs, which are the only webkit
+failures and which drive the real backend and persist user turns. The next page load rehydrates them
+(`app.tsx:161-177` ← `GET /memory`) into exactly the state seeded above. The three webkit specs that
+use no `page.route` (`hud.spec.ts:21/59/73`) pass, isolating the defect to route interception alone.
+No webkit fix is claimed here and none has been run off-box.
+
+**The matrix is now reachable from `workflow_dispatch` (2026-09-04).** Part of *why* that lane stayed
+red for 63 consecutive nights is that nobody could iterate on it: `E2E_BROWSER_MATRIX` was gated on
+`github.event_name == 'schedule'`, so firefox and webkit could not be exercised from a branch **at
+all** — a dispatch ran chromium only, and the only way to test a fix was to merge a guess to `main`
+and wait until 03:15 UTC. `.github/workflows/e2e.yml` now takes two dispatch inputs.
+
+- [x] ✅ `browsers: chromium | matrix` and `iterations: 1 | 2 | 3 | 5` on `workflow_dispatch`. The
+      defaults reproduce the previous dispatch behaviour exactly (chromium, one iteration), and the
+      `schedule` and `push` paths are byte-for-byte unchanged — `inputs` is `null` on those events,
+      so each expression falls through its `||` to the old value. This lane has **no `pull_request`
+      trigger** and gates nothing; the change adds no required check and does not touch the D1/D5 CI
+      posture.
+- [x] ✅ `iterations` is a `choice`, not free text, because `playwright.config.ts` feeds it through
+      `Number(...)` into `repeatEach`. The config now also pins what a non-integer means (measured:
+      `repeatEach: NaN` behaves as 1 on `@playwright/test` 1.62.1 — undocumented, so it is made
+      explicit rather than relied on; a fractional value now floors instead of passing through).
+- [ ] 🔴 **Still red, still unfixed:** the 10 webkit cases (`page.route` does not intercept, so those
+      specs drive the real model-less backend; prime suspect the PWA service worker, candidate fix
+      `serviceWorkers: 'block'`) and the 9 mobile-chrome pointer cases (the owner call above). This
+      row unblocks *working on* them; it does not fix either, and no webkit run has been performed —
+      there is no webkit binary off-box.
+
+**The webkit half is solved — the service worker, confirmed by intervention (2026-09-04).** Ten of the
+22 nightly failures were webkit, and the standing diagnosis was a vague "`page.route` does not
+intercept". The mechanism is now identified and the fix is measured, not argued.
+
+`index.html` registers `/sw-v2.js` at scope `/`, the worker is **activated and controlling before any
+assertion in the file runs** (measured), and on webkit the three specs in `hud.spec.ts` that mock the
+chat-stream route never intercept: they drive the real model-less backend, the click lands, the user
+bubble renders, and the mocked agent reply never arrives.
+
+**The obvious mechanism does not survive its own data, so it is not claimed.** "Playwright's
+interception is Chromium-only for service-worker-mediated requests" predicts firefox failing too —
+firefox passes **24 of 24**. It also predicts this worker mediating the request, and it does not:
+`sw-v2.js` returns early on `req.method !== 'GET'` and the chat stream is a POST. The worker is
+causally involved **on WebKit specifically**, by a path not established here.
+
+Webkit's 10 nightly failures are those 9 `hud` cases **plus one `a11y.spec.ts:33`** — the latter is the
+shared-session contamination below, not a tenth routing case. The three specs in the same file that use no `page.route` (`:21`, `:59`, `:73`) always
+passed — which is what isolates it.
+
+**Five** matrix runs, dispatched from a branch. That is only possible with the `workflow_dispatch`
+inputs PR #1021 adds, **merged 2026-09-04** — so these are now reproducible from `main`. Absent a
+dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
+
+| run | cases | failures |
+|---|---|---|
+| baseline, `n=1` | 32 | **7** — webkit ×3 · mobile-chrome a11y:33 · mobile-chrome ×3 |
+| service workers blocked globally, `n=1` | 32 | **4** — webkit ×3 and a11y fixed, but `hud.spec.ts:21` newly broke on webkit (canvas, 0 lit pixels) |
+| blocked only for the three route-mocked specs, `n=1` | 32 | **3** — all 8 webkit green |
+| **globally, `n=3`** | 96 | **9** — 3 mobile-chrome specs × 3 iterations. `:21` passes **3 of 3** on webkit |
+| **scoped, `n=3`** | 96 | **9** — identical |
+
+- [x] ✅ **`serviceWorkers: 'block'` in `playwright.config.ts`.** One declaration.
+      **This started out scoped to the three specs and was reverted to the simple global form after
+      review, because the reason for scoping was a flake.** The `n=1` pair looked like a trade — the
+      global block appeared to cost a canvas assertion on webkit to buy the routing ones — and that
+      single observation is what justified a `test.describe` wrapper and a 150-line re-indent. An
+      independent reviewer pointed out the lane demonstrably flakes on webkit (`a11y:33` failed 1 of 3
+      iterations in the nightly) and that n=1 is not evidence. At `n=3` the two forms are
+      indistinguishable and `:21` passes 3 of 3. The reviewer was right; the special case is gone.
+- [x] ✅ **This also removes the a11y failures at their source.** `mobile-chrome a11y.spec.ts:33`
+      went green in every fixed run, because webkit stops persisting user turns into the shared
+      session. PR #1019's `.convo` `tabIndex` fix clears the same rule in any transcript state, but
+      **it is not in this branch and was not in these runs** — the green here comes from the
+      service-worker side effect alone. Once both land, the a11y half is closed from either end.
+- [ ] 🟡 **What is NOT claimed: the mechanism.** "Playwright's interception is Chromium-only for
+      service-worker-mediated requests" is the obvious explanation and it does not survive its own
+      data — firefox is also non-Chromium and passes **24 of 24**, and this worker never mediates the
+      request anyway (`sw-v2.js` returns early on `req.method !== 'GET'`; the chat stream is a POST).
+      The worker is causally involved **on WebKit specifically**, by a path not established here.
+- [ ] 🟡 **The cost, stated rather than hand-waved.** The lane no longer registers the worker. That
+      costs **no assertion**: there are zero PWA assertions in `frontend/e2e/`, and the worker's
+      `fetch` handler serves no request in any spec, because every spec navigates once and both its
+      branches need a second navigation. `tests/test_pwa_v2.py` covers the worker by regex over its
+      source, not behaviourally. A real PWA spec should opt back in with
+      `test.use({ serviceWorkers: 'allow' })`.
+- [ ] 🟡 **Remaining: 3 mobile-chrome pointer cases** — the open owner call above. Measured at
+      `n=3`: **9 failures, down from 22**, and all nine are that one decision.
+- [ ] 🔴 **`npx tsc --noEmit` does not cover `frontend/e2e`** (`tsconfig.json` has `include: ["src"]`).
+      Found the hard way: a block comment containing `*` + `/` closed itself early, tsc passed clean,
+      and only Playwright's loader rejected the file. Adding `e2e` to `include` needs `@types/node`
+      (measured: 2 errors, both `TS2591` on `node:fs`), so it is a dependency change, not a one-line
+      fix. A cheaper guard for the PR lane is `npx playwright test --list`, which loads every spec
+      without running one. Neither is done here.
 
 ---
 
