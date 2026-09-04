@@ -344,7 +344,9 @@ built on your Windows box:
   2026-07-29 call recorded in `BACKLOG.md` → *"The phone surface"*. Nothing about it is engineering-
   blocked — it needs your answer, not more code.
   **Where it stands.** `HUD E2E` runs nightly. It has failed **every scheduled run — 63 of 63**.
-  22 cases fail: 12 `mobile-chrome`, 10 `webkit`. Only the 12 are yours to decide; the webkit 10 are
+  22 cases fail: 12 `mobile-chrome`, 10 `webkit`. The 12 are **4 specs × 3 soak repeats**
+  (`E2E_SOAK_ITERATIONS: 3` → `repeatEach`): `a11y.spec.ts:33` plus `hud.spec.ts:87/:123/:153`.
+  Only those 12 are yours to decide; the webkit 10 are
   a `page.route` harness defect and are being fixed as ordinary engineering.
   **What was already wrong in the old packet, corrected here.** It said the buttons "intercept
   pointer events", which reads as an overlay bug. There is no overlay: at the Pixel 5 viewport
@@ -353,7 +355,7 @@ built on your Windows box:
   Playwright then hit-tests at the wrong coordinates. Numbers, dated so they cannot go stale
   silently: **915px inside 393px, scale 0.43 @ `bf48cf2`**; after the laptop-width topbar fix
   landed on this branch, **640px inside 393px, scale ≈ 0.61**. Narrower, still mismatched, and
-  the three `mobile-chrome` specs still fail with the identical symptom — so there is no
+  the failing `mobile-chrome` cases still fail with the identical symptom — so there is no
   small fix hiding here — the old packet's instinct was right, its reason was not.
   **The two options, unchanged:**
   - **(A) The phone story is the `mobile/` React Native app.** Then the web HUD is a desktop
@@ -362,8 +364,9 @@ built on your Windows box:
     below still needs writing.
   - **(B) The web HUD should also work on a phone.** The earlier estimate here — "a genuine
     responsive slice with design decisions in it (R2)" — **looks too pessimistic, and you should
-    know that before choosing.** An A/B test found **four CSS declarations** that turn all six
-    `mobile-chrome` specs green, and I verified the load-bearing half myself: with them the layout
+    know that before choosing.** An A/B test found **four CSS declarations** that turn every
+    test in `hud.spec.ts` green under `mobile-chrome` — all six, i.e. the three that fail plus the
+    three that already pass — and I verified the load-bearing half myself: with them the layout
     viewport becomes 393px = the visual viewport (scale 1, no shrink-to-fit) and the transmit click
     lands instead of being intercepted.
     ```css

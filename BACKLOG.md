@@ -2400,6 +2400,19 @@ was never made responsive. Two facts frame the decision:
 > `click({force:true})` and `dispatchEvent('click')` succeed. What actually happens is a coordinate
 > mismatch. The HUD laid out at 915px inside a 393px viewport, so mobile Chromium applies a
 > shrink-to-fit page scale (measured `innerWidth` 915 vs `clientWidth` 393 → scale 0.43).
+> **How much of the Playwright side is actually established (corrected 2026-09-04).** What is
+> measured: the button's box lies outside the layout viewport of a page that `body{overflow:hidden}`
+> (`styles.css:25`) makes unscrollable, so Playwright's "scrolling into view" is a no-op and it
+> never obtains a valid hit point; and `isMobile` is load-bearing — at 393×851 the spec FAILS with
+> it and PASSES without it, reproduced on `main` and on this branch. What is **not** established:
+> an earlier draft here asserted that Playwright "resolves the element's quad in the page-scaled
+> frame", with arithmetic (`centre × pageScale`) that reproduces the CI interceptor names exactly.
+> An adversarial check registered window-capture listeners at `document_start` and saw **zero**
+> mouse events during the failing click — Playwright dispatches no input event at all, the
+> actionability test runs entirely in the injected world. So that arithmetic is a *coincidence-fit*,
+> not a reading of Playwright's coordinates, and it is demoted to a plausible explanation of why
+> the named interceptor churns between retries (`.col`, `.panel-head`, `.agent-row`, a bare div).
+> The decision below does not rest on it either way.
 > **Those two numbers are @ `bf48cf2`.** The topbar-fit row below has since narrowed it to a
 > 640px layout viewport (scale ≈ 0.61) — still mismatched, and the three `mobile-chrome` specs
 > still fail with the identical symptom, so nothing about this decision changes. Playwright
@@ -2449,7 +2462,9 @@ was never made responsive. Two facts frame the decision:
   measurement counted badges inside the *viewport* rather than inside the box that does the
   clipping — the third time in this slice that measuring the wrong box produced a confident wrong
   number. Measured inside the clip box, badges fully visible: **1920 → 6, 1536 → 5, 1440 → 4,
-  1366 → 4, 1280 → 4, 1024 → 3, 900 → 2, 800 → 1.** All six survive only above ~1780px.
+  1366 → 4, 1280 → 4, 1024 → 3, 900 → 2, 800 → 1.** All six survive only above **~1700px** (measured 1690 → 5, 1700 → 6, by this
+  row's own "fully visible inside the clip box" metric; ~1780px is where the strip reaches its
+  494px max-content with no badge squeezed to its 70px floor — a different threshold).
   **And the drop order is the wrong way round.** `justify-content:flex-end` means the clip eats the
   *first* children, so the first to go are `AGENTS`, then `LLM` (model READY / NO MODEL / OFFLINE),
   then `DATA` (LIVE / DEMO / OFFLINE) — the model- and data-health indicators, silently, at ordinary
@@ -2471,20 +2486,21 @@ was never made responsive. Two facts frame the decision:
   `minmax`-only version. The overlap assertion had to measure the painted badges, not `.brand`,
   whose rect is the grid track and *does* shrink — measuring `.brand` passed the very regression
   it existed to catch.
-  **Below 760px, honestly:** 760 and 700 now fit; 600, 500 and 393 all lay out **640px**
-  (was 915px). So the ≤760px override was *not* behaviour-neutral, contrary to this row's first
+  **Below 760px, honestly:** 760 and 700 now fit; 600, 500 and 393 lay out **640px under Pixel 5 emulation**
+  (was 915px) and **625px in plain desktop chromium** — those are different measurements and the
+  earlier draft did not say which it meant. So the ≤760px override was *not* behaviour-neutral, contrary to this row's first
   draft — that claim was wrong and is retracted here. The phone gap is narrower but still open, and
   closing it is still the stacked-layout work the owner call above has to decide.
 
 - [ ] 🔴 **The cockpit's chat surface is off-screen at ≤1100px — a plain desktop bug, worse than the
   topbar one, found in the same investigation (2026-09-04).** Nothing to do with phones: 1100px,
   1000px and 900px are ordinary laptop and split-screen widths that the product unambiguously
-  supports. `@media (max-width:1100px)` (`styles.css:581`) collapses `.workzone.cockpit` to a single
+  supports. `@media (max-width:1100px)` (`styles.css:594` on this branch, `:581` on `main`) collapses `.workzone.cockpit` to a single
   column, so the remaining `.col` children stack **vertically** inside a `height:100%` shell that
   cannot grow — and the chat column is the one pushed off the bottom.
   Measured on this branch at an 800px-tall viewport: at 1280px the input bar sits at `bottom=785`
-  (in view) with `.convo` 163px tall; at **1100, 1000, 900 and 800 it sits at `bottom=931` — below a
-  799px fold, `inView=false` — and `.convo` collapses to 32px.** A user at those widths cannot see
+  (in view) with `.convo` 163px tall; at **1100, 1000, 900 and 800 it sits at `bottom=931` — below the
+  800px fold, `inView=false` — and `.convo` collapses to 32px.** A user at those widths cannot see
   or reach the message box at all.
   **This is not what the topbar fix addressed**, and the fix does not help it: the two are
   independent, one horizontal and one vertical. Recording it here rather than widening that PR, and
@@ -2496,7 +2512,11 @@ was never made responsive. Two facts frame the decision:
 - [ ] 🔴 **The `webkit` half — a test-harness defect, not a HUD defect, and not the phone question.**
   10 of the 22 nightly failures are `[webkit]` at 1280×720: `a11y.spec.ts:33` ×1 and
   `hud.spec.ts:87/:123/:153` ×3 each. **In WebKit `page.route()` does not intercept**, so those specs
-  drive the *real*, model-less CI backend instead of their mocks and time out. Evidence from the CI
+  drive the *real*, model-less CI backend instead of their mocks. Precisely: on webkit the click
+  **lands** — `hud.spec.ts:119`'s `.msg.user .bubble` "hello jarvis" passes — and `:120` fails
+  because the mocked agent reply `.msg.agent .bubble` never appears; `:123` fails because the
+  stop button never exists. There is no pointer interception anywhere in the webkit blocks, so
+  "they time out" understates it: the user turn renders, the mocked reply never does. Evidence from the CI
   log of run 33850948593: the webkit a11y failure dumps a live DOM containing the specs' own literal
   strings — `hello jarvis` (`hud.spec.ts:116`) and `please stop` (`hud.spec.ts:144`), two copies each,
   one per prior repeat — which can only have reached it through the server: nothing persists the
@@ -2508,8 +2528,8 @@ was never made responsive. Two facts frame the decision:
   **Correction to this row's first draft (2026-09-04).** It said the a11y failures were "cross-test
   contamination … not independent a11y regressions". That was wrong, and the difference matters:
   the contamination *exposes* a **real WCAG defect in the shipped HUD**, it does not manufacture one.
-  `.convo` (`cockpit.tsx:38`, `styles.css:230`) is `overflow-y:auto` with no `tabIndex` and no `role`,
-  and its only focusable descendants (the Save/TTS buttons, `cockpit.tsx:51-52`) live inside *agent*
+  `.convo` (`cockpit.tsx:38`, `styles.css:240` on this branch, `:227` on `main`) is `overflow-y:auto` with no `tabIndex` and no `role`,
+  and its only focusable descendants (the Save/TTS buttons, `cockpit.tsx:52-53`) live inside *agent*
   messages — so a user-only transcript is a scrollable region with **zero** focusable content, which a
   keyboard user cannot scroll (WCAG 2.1.1/2.1.3). Verified standalone in **desktop chromium at
   1280×720**, not on a phone and not through webkit: reload the HUD against a model-less backend so
