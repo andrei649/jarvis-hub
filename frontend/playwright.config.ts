@@ -46,13 +46,6 @@ export default defineConfig({
     headless: true,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
-    // EXPERIMENT (not for merge as-is): the HUD registers /sw-v2.js at scope '/'
-    // (index.html). On webkit, exactly the three specs that use `page.route` fail while
-    // the three that do not use it pass, so the interception is what breaks. Playwright
-    // documents request interception for service-worker-mediated requests as
-    // Chromium-only. Blocking registration removes the SW from the request path
-    // entirely; if the webkit three go green, that is the mechanism.
-    serviceWorkers: 'block',
   },
   projects: BROWSER_MATRIX ? [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },

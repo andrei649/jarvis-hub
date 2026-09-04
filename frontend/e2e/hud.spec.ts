@@ -84,157 +84,177 @@ test('golden-signals /metrics stays available during the HUD soak', async ({ req
   }
 });
 
-test('chat flow renders SSE tokens and the final reply', async ({ page }) => {
-  await page.route('**/chat/stream', async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
-      body: sse([
-        { type: 'start', agent: 'jarvis' },
-        { type: 'token', text: 'hello ' },
-        { type: 'token', text: 'from e2e' },
-        { type: 'end', agent: 'jarvis', text: 'hello from e2e' },
-      ]),
-    });
-  });
-  await page.route('**/api/cognition', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        decision: { agents_selected: ['jarvis'], confidence: 0.9, source: 'e2e', timing: { total: 1 } },
-        scoring: [],
-        plugins: [],
-        local: true,
-      }),
-    });
-  });
+/* The three specs below mock the chat-stream route with `page.route`, and that is exactly the
+   set that failed on webkit in every scheduled run. Measured, not guessed: a matrix run
+   with service workers blocked turned all three green in one go, and the three specs in
+   this file that use no `page.route` were unaffected.
 
-  await page.goto('/v2', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
+   The mechanism: index.html registers `/sw-v2.js` at scope '/', so every page here is a
+   service-worker-controlled client, and Playwright documents request interception for
+   service-worker-mediated requests as Chromium-only. The route never fires, the specs
+   drive the real model-less backend, and the mocked reply never renders — which also
+   persisted their user turns into the shared session and made a LATER a11y scan fail
+   (see BACKLOG.md). Both symptoms cleared together when the worker was taken out.
 
-  await page.locator('.inputbar input').first().fill('hello jarvis');
-  await page.locator('.inputbar .transmit').first().click();
+   Scoped to these three on purpose. Blocking the worker for the whole project also broke
+   `hud.spec.ts:21` on webkit (the Neural Mesh canvas reported 0 lit pixels where it had
+   passed) — measured in the same run. The PWA path is part of what this lane exists to
+   cover, so it stays on everywhere except where interception provably needs it off. */
+test.describe('route-mocked chat flows (service workers off — see above)', () => {
+  test.use({ serviceWorkers: 'block' });
 
-  await expect(page.locator('.msg.user .bubble').filter({ hasText: 'hello jarvis' })).toBeVisible();
-  await expect(page.locator('.msg.agent .bubble').filter({ hasText: 'hello from e2e' })).toBeVisible();
-});
-
-test('stop button aborts an in-flight chat stream', async ({ page }) => {
-  await page.route('**/chat/stream', async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    try {
+  test('chat flow renders SSE tokens and the final reply', async ({ page }) => {
+    await page.route('**/chat/stream', async (route) => {
       await route.fulfill({
         status: 200,
         headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
         body: sse([
           { type: 'start', agent: 'jarvis' },
-          { type: 'token', text: 'late token' },
-          { type: 'end', agent: 'jarvis', text: 'late token' },
+          { type: 'token', text: 'hello ' },
+          { type: 'token', text: 'from e2e' },
+          { type: 'end', agent: 'jarvis', text: 'hello from e2e' },
         ]),
       });
-    } catch {
-      // The page intentionally aborts this request; route.fulfill can race that abort.
-    }
-  });
-
-  await page.goto('/v2', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
-
-  await page.locator('.inputbar input').first().fill('please stop');
-  await page.locator('.inputbar .transmit').first().click();
-
-  const stop = page.getByRole('button', { name: /stop generating/i });
-  await expect(stop).toBeVisible();
-  await stop.click();
-  await expect(stop).toHaveCount(0);
-});
-
-test('voice push-to-talk captures STT text and drives a chat turn', async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem('hud.voice', JSON.stringify({
-      mode: 'ptt',
-      tts: 'off',
-      lang: 'en',
-      barge: 'off',
-    }));
-
-    Object.defineProperty(navigator, 'mediaDevices', {
-      configurable: true,
-      value: {
-        getUserMedia: async () => ({
-          getTracks: () => [{ stop: () => undefined }],
+    });
+    await page.route('**/api/cognition', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          decision: { agents_selected: ['jarvis'], confidence: 0.9, source: 'e2e', timing: { total: 1 } },
+          scoring: [],
+          plugins: [],
+          local: true,
         }),
-      },
+      });
     });
 
-    class FakeMediaRecorder {
-      state = 'inactive';
-      ondataavailable: ((event: { data: Blob }) => void) | null = null;
-      onstop: (() => void) | null = null;
-      static isTypeSupported() { return true; }
-      start() {
-        this.state = 'recording';
-        setTimeout(() => {
-          this.ondataavailable?.({ data: new Blob([new Uint8Array(4096)], { type: 'audio/webm' }) });
-          this.stop();
-        }, 120);
-      }
-      stop() {
-        if (this.state === 'inactive') return;
-        this.state = 'inactive';
-        this.onstop?.();
-      }
-    }
+    await page.goto('/v2', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
 
-    class FakeAudioContext {
-      createMediaStreamSource() { return { connect: () => undefined }; }
-      createAnalyser() {
-        return {
-          fftSize: 1024,
-          getByteTimeDomainData: (buf: Uint8Array) => buf.fill(128),
-        };
-      }
-      resume() { return Promise.resolve(); }
-      close() { return Promise.resolve(); }
-    }
+    await page.locator('.inputbar input').first().fill('hello jarvis');
+    await page.locator('.inputbar .transmit').first().click();
 
-    // @ts-expect-error test shim for browser APIs
-    window.MediaRecorder = FakeMediaRecorder;
-    // @ts-expect-error test shim for browser APIs
-    window.AudioContext = FakeAudioContext;
+    await expect(page.locator('.msg.user .bubble').filter({ hasText: 'hello jarvis' })).toBeVisible();
+    await expect(page.locator('.msg.agent .bubble').filter({ hasText: 'hello from e2e' })).toBeVisible();
   });
 
-  await page.route('**/api/voice/capabilities', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ stt: true, tts: true }) });
-  });
-  await page.route('**/api/voice/stt?**', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ text: 'voice hello' }) });
-  });
-  await page.route('**/chat/stream', async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
-      body: sse([
-        { type: 'start', agent: 'jarvis' },
-        { type: 'token', text: 'voice reply' },
-        { type: 'end', agent: 'jarvis', text: 'voice reply from e2e' },
-      ]),
+  test('stop button aborts an in-flight chat stream', async ({ page }) => {
+    await page.route('**/chat/stream', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      try {
+        await route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+          body: sse([
+            { type: 'start', agent: 'jarvis' },
+            { type: 'token', text: 'late token' },
+            { type: 'end', agent: 'jarvis', text: 'late token' },
+          ]),
+        });
+      } catch {
+        // The page intentionally aborts this request; route.fulfill can race that abort.
+      }
     });
+
+    await page.goto('/v2', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
+
+    await page.locator('.inputbar input').first().fill('please stop');
+    await page.locator('.inputbar .transmit').first().click();
+
+    const stop = page.getByRole('button', { name: /stop generating/i });
+    await expect(stop).toBeVisible();
+    await stop.click();
+    await expect(stop).toHaveCount(0);
   });
-  await page.route('**/api/cognition', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ decision: { agents_selected: ['jarvis'], confidence: 0.9 }, scoring: [] }),
+
+  test('voice push-to-talk captures STT text and drives a chat turn', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('hud.voice', JSON.stringify({
+        mode: 'ptt',
+        tts: 'off',
+        lang: 'en',
+        barge: 'off',
+      }));
+
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: {
+          getUserMedia: async () => ({
+            getTracks: () => [{ stop: () => undefined }],
+          }),
+        },
+      });
+
+      class FakeMediaRecorder {
+        state = 'inactive';
+        ondataavailable: ((event: { data: Blob }) => void) | null = null;
+        onstop: (() => void) | null = null;
+        static isTypeSupported() { return true; }
+        start() {
+          this.state = 'recording';
+          setTimeout(() => {
+            this.ondataavailable?.({ data: new Blob([new Uint8Array(4096)], { type: 'audio/webm' }) });
+            this.stop();
+          }, 120);
+        }
+        stop() {
+          if (this.state === 'inactive') return;
+          this.state = 'inactive';
+          this.onstop?.();
+        }
+      }
+
+      class FakeAudioContext {
+        createMediaStreamSource() { return { connect: () => undefined }; }
+        createAnalyser() {
+          return {
+            fftSize: 1024,
+            getByteTimeDomainData: (buf: Uint8Array) => buf.fill(128),
+          };
+        }
+        resume() { return Promise.resolve(); }
+        close() { return Promise.resolve(); }
+      }
+
+      // @ts-expect-error test shim for browser APIs
+      window.MediaRecorder = FakeMediaRecorder;
+      // @ts-expect-error test shim for browser APIs
+      window.AudioContext = FakeAudioContext;
     });
+
+    await page.route('**/api/voice/capabilities', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ stt: true, tts: true }) });
+    });
+    await page.route('**/api/voice/stt?**', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ text: 'voice hello' }) });
+    });
+    await page.route('**/chat/stream', async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        body: sse([
+          { type: 'start', agent: 'jarvis' },
+          { type: 'token', text: 'voice reply' },
+          { type: 'end', agent: 'jarvis', text: 'voice reply from e2e' },
+        ]),
+      });
+    });
+    await page.route('**/api/cognition', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ decision: { agents_selected: ['jarvis'], confidence: 0.9 }, scoring: [] }),
+      });
+    });
+
+    await page.goto('/v2', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
+
+    await page.locator('.inputbar button[title*="push-to-talk"]').first().click();
+
+    await expect(page.locator('.msg.user .bubble').filter({ hasText: 'voice hello' })).toBeVisible();
+    await expect(page.locator('.msg.agent .bubble').filter({ hasText: 'voice reply from e2e' })).toBeVisible();
   });
-
-  await page.goto('/v2', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
-
-  await page.locator('.inputbar button[title*="push-to-talk"]').first().click();
-
-  await expect(page.locator('.msg.user .bubble').filter({ hasText: 'voice hello' })).toBeVisible();
-  await expect(page.locator('.msg.agent .bubble').filter({ hasText: 'voice reply from e2e' })).toBeVisible();
 });
