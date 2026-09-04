@@ -103,7 +103,13 @@ input { font-family: inherit; }
 .clock { text-align:center; }
 .clock-time { font-family:var(--font-mono); font-size:40px; line-height:.98; color:var(--accent); text-shadow:var(--glow-text); font-variant-numeric:tabular-nums; letter-spacing:.02em; }
 .clock-date { font-family:var(--font-mono); font-size:9.5px; letter-spacing:.2em; color:var(--ink-3); margin-top:5px; }
-.badges { display:flex; gap:9px; justify-content:flex-end; align-items:center; min-width:0; overflow:hidden; }
+.badges { display:flex; gap:9px; justify-content:flex-end; align-items:center; }
+/* Scoped to the BRAND strip on purpose. `.badges` is used twice (shell.tsx:52 status
+   strip, shell.tsx:65 tool strip); only the first one overflows. Clipping the second
+   ate the focus ring on its buttons — `:focus-visible` draws at outline-offset:2px,
+   4px outside a border box that sits flush with the strip — which is a WCAG 2.4.11
+   defect, and one axe cannot see, since it does not check clipped outlines. */
+.brand .badges { min-width:0; overflow:hidden; }
 .badge { position:relative; padding:7px 12px; min-width:70px; background:var(--surface); border:1px solid var(--panel-line); clip-path:polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%); }
 .badge .k { font-size:8px; font-weight:600; letter-spacing:.14em; color:var(--ink-3); text-transform:uppercase; }
 .badge .v { font-family:var(--font-mono); font-size:11.5px; margin-top:3px; display:flex; align-items:center; gap:5px; }

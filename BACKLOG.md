@@ -2441,8 +2441,30 @@ was never made responsive. Two facts frame the decision:
   reviewer caught that before merge; the first draft of this row and its test had both missed it,
   because a `scrollWidth` check goes green *because* of overlap — superimposing content is exactly
   how you make an overflow vanish from that metric. `.brand{min-width:0}` +
-  `.badges{min-width:0;overflow:hidden}` complete it: the strip now clips inside its own box instead
-  of on its neighbour (6 of 6 badges visible down to 1280, 4 of 6 at 800).
+  `.brand .badges{min-width:0;overflow:hidden}` complete it: the strip clips inside its own box
+  instead of on its neighbour.
+  **What that costs, measured honestly — the first draft of this sentence was wrong.** It claimed
+  "6 of 6 badges visible down to 1280, 4 of 6 at 800". Both figures are false and *arithmetically
+  impossible*: at 1280 the clip box is 312px and six badges need 6×70 + 5×9 = 465px. The first
+  measurement counted badges inside the *viewport* rather than inside the box that does the
+  clipping — the third time in this slice that measuring the wrong box produced a confident wrong
+  number. Measured inside the clip box, badges fully visible: **1920 → 6, 1536 → 5, 1440 → 4,
+  1366 → 4, 1280 → 4, 1024 → 3, 900 → 2, 800 → 1.** All six survive only above ~1780px.
+  **And the drop order is the wrong way round.** `justify-content:flex-end` means the clip eats the
+  *first* children, so the first to go are `AGENTS`, then `LLM` (model READY / NO MODEL / OFFLINE),
+  then `DATA` (LIVE / DEMO / OFFLINE) — the model- and data-health indicators, silently, at ordinary
+  laptop widths. For a repo that refuses silent degradation elsewhere that is a poor trade, so it is
+  recorded as a live residual rather than sold as a clean win. It is still strictly better than
+  274px of badges painted across the clock; the real answer is a topbar content strategy, which
+  belongs with the ≤1100px row above rather than bolted on here.
+  **One regression this introduced, then fixed.** The rule was first written unscoped, and `.badges`
+  is used twice — `shell.tsx:52` (the status strip, which needs clipping) and `shell.tsx:65` (the
+  demo/EN/AMBIENT/⌘K tool strip, which never overflows at any width). Clipping the second ate the
+  keyboard focus ring on its buttons at *every* width, 1920 included: `:focus-visible` draws at
+  `outline-offset:2px`, 4px outside a border box sitting flush with the strip. A WCAG 2.4.11 defect,
+  invisible to axe — it does not check clipped outlines — and caught only because an independent
+  review looked at a screenshot. Scoping to `.brand .badges` restores the full ring, verified by
+  screenshot rather than by assertion.
   `frontend/e2e/layout.spec.ts` (+4) asserts **both** — fits AND does not stack — and each half is
   red-proved against a different broken state: the fit assertion fails at 900/800 on unmodified
   `main`, and the overlap assertion fails at 1280/900/800 (109/274/324px) against the
