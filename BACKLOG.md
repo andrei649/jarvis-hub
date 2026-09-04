@@ -2745,11 +2745,18 @@ and wait until 03:15 UTC. `.github/workflows/e2e.yml` now takes two dispatch inp
       `Number(...)` into `repeatEach`. The config now also pins what a non-integer means (measured:
       `repeatEach: NaN` behaves as 1 on `@playwright/test` 1.62.1 — undocumented, so it is made
       explicit rather than relied on; a fractional value now floors instead of passing through).
-- [ ] 🔴 **Still red, still unfixed:** the 10 webkit cases (`page.route` does not intercept, so those
-      specs drive the real model-less backend; prime suspect the PWA service worker, candidate fix
-      `serviceWorkers: 'block'`) and the 9 mobile-chrome pointer cases (the owner call above). This
-      row unblocks *working on* them; it does not fix either, and no webkit run has been performed —
-      there is no webkit binary off-box.
+- [x] ✅ **Superseded — measured on `main` 2026-09-04.** When this bullet was written both halves were
+      open and no webkit run had ever been performed off-box. Both are now settled by a real matrix run
+      on `main` rather than by argument:
+      [run 33919809105](https://github.com/andrei649/jarvis-hub/actions/runs/33919809105)
+      (`browsers: matrix`, `iterations: 3`, head `4ae4bbdc`, 27.7 min) reports **9 failed, 195 passed**.
+      The **10 webkit cases are gone** — the service-worker fix below holds on `main`, not just on a
+      branch. The remaining nine are all `mobile-chrome`: `hud.spec.ts:87`, `:123` and `:153`, three
+      iterations each, every one `<div class="agent-row active"> … intercepts pointer events` at the
+      Pixel 5 viewport — that is, **all nine are the open owner call above**, and nothing else in the
+      lane is red. Nightly went 22 → 9 as predicted. Two caveats kept honest: the run predates #1018 by
+      minutes (a ≤1100px change whose own PR states it does not move the phone outcome, which this
+      result is consistent with), and 9 is one sample at n=3, not a distribution.
 
 **The webkit half is solved — the service worker, confirmed by intervention (2026-09-04).** Ten of the
 22 nightly failures were webkit, and the standing diagnosis was a vague "`page.route` does not
