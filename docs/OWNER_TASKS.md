@@ -52,6 +52,25 @@
   two owner commands — the A5 licence flip, then the tag on `main` — and this runbook is
   **post-tag proof**, not a tag precondition; the §0 run record is still owed*
   ([GO_LIVE_PLAN](../GO_LIVE_PLAN.md) §launch checklist).
+- [ ] **Dispatch the 72h soak — needs a self-hosted runner, which only you can register.**
+  *Why this is yours and not an agent slice:* `soak.yml`'s real lane is `workflow_dispatch` with
+  `runner` pointed at a **self-hosted label**, because a GitHub-hosted runner is capped at ~6h of
+  wall clock. Registering that runner is repo-settings + your hardware; nothing an agent can do.
+  *Current state, measured 2026-09-04:* the workflow has **one run in its entire history** — the
+  weekly canary, 2026-08-30, `schedule`, a 90-minute window, PASS
+  ([run 33295821935](https://github.com/andrei649/jarvis-hub/actions/runs/33295821935)). The
+  workflow landed 2026-08-28, so that is the one Sunday it has had. **The 72h window has never
+  run.**
+  *What it costs you:* register a self-hosted runner on the box, then Actions → Soak → Run
+  workflow with `duration: 72h`, `interval: 5m`, `runner: <your label>`. The job is unattended —
+  `scripts/soak_report.py --fail-on-verdict` grades it (PASS 0 · FAIL 1 · INCONCLUSIVE 3) and
+  publishes the report plus evidence to the run summary. No read-through, no sign-off.
+  *What it unblocks:* the **Burn-In** half of the `0.90–1.0 gates` row in
+  [`BACKLOG.md`](../BACKLOG.md) (the A2 *gate* was removed by your 2026-08-28 directive, but the
+  window itself has still never been executed), and criterion (c) of the Action-Kernel
+  default-rail decision
+  ([2026-09-01](decisions/2026-09-01-action-kernel-default-rail.md)) — one 72h PASS soak with
+  both `JARVIS_ACTION_KERNEL` and `JARVIS_UNIFIED_ACTION_API` on.
 - [ ] **HUD v2 runtime verification** — `python serve.py`, open `/`, click every mode + every
   Console (▦) panel against the live backend ([`docs/design/HUD_V2_REMAINING.md`](design/HUD_V2_REMAINING.md) §0).
   The mock-fallback design hides wrong-but-not-failing wiring; the 2026-06-10 depth pass (PR #181)
