@@ -149,7 +149,9 @@ def _isolate_gpu_probe_cache():
     """
     from agents.core import hardware
 
-    saved = hardware._gpu_cache
+    # by value: `detect_gpu` only ever rebinds the global, so a reference would
+    # do today — but a future in-place mutation would make this a silent no-op.
+    saved = dict(hardware._gpu_cache) if hardware._gpu_cache is not None else None
     try:
         yield
     finally:
