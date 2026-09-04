@@ -446,8 +446,10 @@ input { font-family: inherit; }
 .pol-row { display:grid; grid-template-columns:96px 1fr 64px; gap:11px; align-items:center; padding:9px 0; border-bottom:1px solid var(--panel-line-2); }
 .pol-row .pag { font-family:var(--font-mono); font-size:11px; color:var(--ink); display:flex; align-items:center; gap:6px; }
 .pol-row .pscope { font-size:11.5px; color:var(--ink-2); } .pol-row .pbud { font-family:var(--font-mono); font-size:9px; color:var(--ink-3); margin-top:2px; }
-.pmode { font-family:var(--font-mono); font-size:9px; letter-spacing:.08em; padding:5px 0; border-radius:4px; border:1px solid var(--panel-line); background:var(--void); transition:all .15s; }
-.pmode.auto { color:var(--green); border-color:var(--green-dim); } .pmode.ask { color:var(--amber); border-color:rgba(255,194,77,.4); } .pmode.off { color:var(--ink-3); }
+/* Base colour stated rather than inherited: the one .pmode with no state class (the
+   speak-brief button, modes2.tsx) inherited --ink-3 and failed contrast at 2.80:1. */
+.pmode { font-family:var(--font-mono); font-size:9px; letter-spacing:.08em; padding:5px 0; border-radius:4px; border:1px solid var(--panel-line); background:var(--void); color:var(--ink-2); transition:all .15s; }
+.pmode.auto { color:var(--green); border-color:var(--green-dim); } .pmode.ask { color:var(--amber); border-color:rgba(255,194,77,.4); } .pmode.off { color:var(--ink-2); }
 .pol-note { font-size:11px; color:var(--ink-3); margin-top:12px; } .pol-note b { color:var(--accent-light); font-weight:600; }
 
 /* Build */
@@ -509,7 +511,9 @@ input { font-family: inherit; }
 .comms-body { flex:1; min-height:0; display:grid; grid-template-columns:340px 1fr; }
 .comms-list { border-right:1px solid var(--panel-line); overflow-y:auto; min-height:0; }
 .comms-filters { display:flex; flex-wrap:wrap; gap:6px; padding:12px; border-bottom:1px solid var(--panel-line); position:sticky; top:0; background:var(--void-2); z-index:1; }
-.cf { font-family:var(--font-mono); font-size:9px; letter-spacing:.06em; padding:5px 9px; border-radius:12px; border:1px solid var(--panel-line); background:transparent; color:var(--ink-3); transition:all .15s; }
+/* --ink-2, not --ink-3: these are interactive channel filters. --ink-3 composites to
+   #52585f on --void = 2.80:1 where 4.5:1 is required (axe agrees); --ink-2 measures 7.06:1. */
+.cf { font-family:var(--font-mono); font-size:9px; letter-spacing:.06em; padding:5px 9px; border-radius:12px; border:1px solid var(--panel-line); background:transparent; color:var(--ink-2); transition:all .15s; }
 .cf.on { color:var(--accent-light); border-color:var(--accent-dim); background:var(--accent-faint); }
 .comms-row { display:grid; grid-template-columns:26px 1fr auto; gap:10px; align-items:start; padding:12px 14px; border-bottom:1px solid var(--panel-line-2); cursor:pointer; transition:background .14s; }
 .comms-row:hover { background:var(--surface-2); } .comms-row.sel { background:var(--accent-faint); }

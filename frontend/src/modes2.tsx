@@ -160,7 +160,7 @@ function BuildMode({ t }){
             {B.sandbox.map((s,i)=>(
               <div key={i} className="sb-line"><div className="sb-in"><span className="sb-pre">›</span> {s.in}</div><div className="sb-out">{s.out}</div></div>
             ))}
-            <div className="sb-line"><div className="sb-in"><span className="sb-pre" style={{animation:'blink 1.4s infinite'}}>›</span> <span style={{color:'var(--ink-3)'}}>type a call to simulate…</span></div></div>
+            <div className="sb-line"><div className="sb-in"><span className="sb-pre" style={{animation:'blink 1.4s infinite'}}>›</span> <span style={{color:'var(--ink-2)'}}>type a call to simulate…</span></div></div>
           </div>
         </div>
       </div>
