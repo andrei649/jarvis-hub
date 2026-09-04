@@ -11,7 +11,12 @@ function AgentsMode({ agents, onOpen, t }) {
     <div className="panel scroll" style={{flex:1}}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
       <div className="panel-head"><Icon d={ICONS.agents} size={14}/><span className="ttl">{t.roster}</span><span className="st">{agents.length} agents · {agents.filter(a=>a.status!=='idle').length} live</span></div>
-      <div className="panel-body">
+      {/* `overflow-y:auto` with no focusable child is WCAG 2.1.1: the agent cards are
+          `<div className="acard" onClick=…>`, so there is nothing to tab to and the roster
+          scrolls past the fold unreachable by keyboard (measured 774px of content in a
+          670px box). `tabIndex={0}` is what the rest of the HUD already does for exactly
+          this — panel-kit.tsx:69, shell.tsx:137/152/172/186/205/225. */}
+      <div className="panel-body" tabIndex={0} aria-label={t.roster}>
         {TIERS.map(tier=>{
           const list=agents.filter(a=>a.tier===tier.id);
           if(!list.length) return null;
@@ -328,7 +333,10 @@ function MemoryMode({ t }) {
             </div>
             <div className="timeslider" style={{border:'1px solid var(--panel-line)',borderTop:0,borderRadius:'0 0 var(--radius) var(--radius)'}}>
               <span className="tlab">{t.asof}</span>
-              <input type="range" min="0" max={marks.length-1} step="1" value={ti} onChange={e=>setTi(+e.target.value)}/>
+              {/* An unlabelled input is `critical · label`: a screen reader announced this
+                  only as "slider". The visible "AS OF" text is a sibling, not a label. */}
+              <input type="range" min="0" max={marks.length-1} step="1" value={ti}
+                     aria-label={t.timeTravel} onChange={e=>setTi(+e.target.value)}/>
               <span className="asof">{marks[ti]}</span>
             </div>
             <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,color:'var(--ink-4)',marginTop:8,textAlign:'center'}}>bitemporal · drag to travel through what Nerva knew</div>
