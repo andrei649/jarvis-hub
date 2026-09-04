@@ -625,3 +625,26 @@ built on your Windows box:
   (broadening what that issue owns), or explicitly decide this isn't worth tracking separately from
   the existing SOUL/persona system. Whichever you pick, a one-line note back in `BACKLOG.md` closes
   the row.
+
+- **The a11y contrast gate is structurally blind on a gradient shell — a design call, not an
+  engineering one (2026-09-04).** Measured, not inferred: on the live 1280×720 lane,
+  `a11y-modes.spec.ts` records **700 `incomplete` `color-contrast` nodes against 0 violations**,
+  every one of them *"Element's background color could not be determined due to a background
+  gradient"*. The spec gates on `violations`, so contrast across most of the HUD is not failing —
+  it is **unknown**, and a green a11y lane should not be read as "the contrast is fine". Elements
+  explicitly styled `var(--ink-3)` sit in that unresolved bucket.
+
+  This is not fixable by tightening the spec. axe can only resolve contrast when it can compute a
+  single backdrop colour; `.pal-scrim`, the mesh canvas and the panel gradients defeat that by
+  construction. The options are yours to weigh, because each trades away something visual:
+
+  1. **Give text-bearing surfaces an opaque backdrop** behind the gradient (e.g. a solid
+     `--void`-derived layer under panel bodies). Makes axe authoritative; costs some of the depth
+     the shell is designed around.
+  2. **Accept the blindness and audit by hand** on a schedule, treating `incomplete` as a
+     review queue rather than noise — the artifacts are already written to `e2e/artifacts/`.
+  3. **Assert on `incomplete` too**, which would fail the lane today on all 700 and force (1).
+
+  What is already done without a decision: the 17 contrast failures axe *could* resolve are fixed
+  and pinned (`tag-consent-contrast.test.ts`), and the reasoning is recorded in `BACKLOG.md`. No
+  option above has been taken, and none should be assumed from the fact that the lane is green.

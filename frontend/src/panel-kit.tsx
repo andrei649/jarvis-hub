@@ -74,7 +74,15 @@ export const State = ({ e, loading, n }) => (loading ? <div style={{ color: 'var
   : e ? <div style={{ color: 'var(--amber)', fontSize: 12 }}>offline · {e}</div>
   : n === 0 ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>nothing yet</div> : null);
 export const Row = ({ children }) => <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>{children}</div>;
-export const Tag = ({ c, children }: { c?: any; children?: any }) => <span style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: c || 'var(--ink-3)' }}>{children}</span>;
+/* --ink-2, not --ink-3, as the uncoloured default. --ink-3 composites to 2.82:1 on
+   --void where AA wants 4.5:1, and an axe sweep of all ten modes found the untinted
+   <Tag> to be the single largest source of contrast failures — 14 of 17 distinct
+   elements, all of them the onboarding surface's privacy chips ("connected account
+   · cloud model may receive context", "external websites", "read-only"). That is
+   consent copy: the text telling a new user what leaves their machine, which is the
+   last thing that should be hard to read. 92 uncoloured call sites inherit this; the
+   83 that pass an explicit `c` are untouched. */
+export const Tag = ({ c, children }: { c?: any; children?: any }) => <span style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: c || 'var(--ink-2)' }}>{children}</span>;
 export const Btn = ({ onClick, children }) => <button className="tool-btn" onClick={onClick} style={{ marginLeft: 'auto' }}>{children}</button>;
 export const act = (p, body, then?, onErr?) => apiPost(p, body)
   .then(then || (() => {}))

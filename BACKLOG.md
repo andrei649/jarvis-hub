@@ -2815,6 +2815,36 @@ dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
       fix. A cheaper guard for the PR lane is `npx playwright test --list`, which loads every spec
       without running one. Neither is done here.
 
+**Consent copy failed AA at 2.82:1, and the a11y gate could not see it (2026-09-04).** An axe
+sweep forcing `color-contrast` across all ten modes found **17 distinct failing elements at
+2.82–2.88:1** where AA wants 4.5:1. A CSS read would have sent the fix to the wrong place —
+`.rail-btn`, `.tab-btn` and `.center-tab` all *look* like `--ink-3` offenders in `styles.css`
+and none of them fail — so the fix followed the scan, not the stylesheet.
+
+- [x] ✅ **Three sites, one of them shared.** 14 of the 17 were the untinted `<Tag>` chip
+      (`panel-kit.tsx`), whose default was `--ink-3`; the other two are inline styles in the
+      onboarding block (`gap.tsx`). `<Tag>` has **92 uncoloured call sites** and 83 that pass an
+      explicit colour and are untouched, so this is one token fixing a systemic failure rather
+      than 17 patches. Measured after: the same sweep reports **0**.
+- [x] ✅ **It is consent copy, not decoration.** The chips render the privacy rows of the
+      first-run gate — *"connected account · cloud model may receive context"*, *"external
+      websites"*, *"read-only"* — i.e. the text telling a new user what leaves their machine.
+- [x] ✅ Pinned by `frontend/src/test/tag-consent-contrast.test.ts`, which recomputes the ratio
+      from `styles.css` rather than hard-coding it (retuning the palette re-runs the check) and
+      also asserts `--ink-3` still *fails*, so the premise itself is guarded. Red-proved by
+      reverting the token.
+- [ ] 🔴 **The mode-walk a11y gate is blind to contrast here, and that is not fixed.** Two
+      measured reasons, both recorded rather than patched: **(1)** axe reports contrast it cannot
+      resolve as `incomplete`, not `violations`, and this shell is gradients — the live 1280×720
+      lane of `a11y-modes.spec.ts` records **700 incomplete `color-contrast` nodes against 0
+      violations**, including elements explicitly styled `var(--ink-3)`. Gating on `violations`
+      therefore says nothing about contrast. **(2)** The failing surface is `FirstRunGate`, a
+      modal gated on backend state *and* a `localStorage` dismiss flag: `.pal-scrim` count was
+      **0 in all 40** of that spec's scans. An e2e pin was written and then withdrawn because it
+      could not be red-proved — it failed on a run where the modal simply did not open, which is
+      a flaky test, not a gate. Making a gradient-backed shell determinable for axe is a design
+      question; owner packet rather than a guess.
+
 ---
 
 ## 🔌 Live-vs-Plumbing Remediation — mock → real (owner request 2026-07-18)
