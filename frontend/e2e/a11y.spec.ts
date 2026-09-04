@@ -97,9 +97,16 @@ test('Cinema mode overlay has no critical/serious accessibility violations', asy
    backend produces this transcript (the nightly already showed that it does).
 
    Why the assertions are shaped the way they are: Chromium makes overflow scrollers
-   focusable on its own, so a tab-walk reaches `.convo` even with the defect present —
-   a tab-reachability assertion here is VACUOUS and self-passes. The portable facts are
-   the axe rule (`scrollable-region-focusable`, serious, WCAG 2.1.1) and `tabIndex`. */
+   focusable on its own, so a tab-walk reaches `.convo` even with the defect present
+   (measured: 39th Tab unfixed, 28th fixed) — a tab-reachability assertion here is
+   VACUOUS and self-passes, and so is a PageDown-after-`.focus()` check. That masking is
+   about FOCUS, not about axe: Chromium's axe reports the violation on an overflowing
+   unfixed transcript exactly as webkit does. The portable facts are the axe rule
+   (`scrollable-region-focusable`, serious, WCAG 2.1.1) and `tabIndex`.
+
+   Scope, so a green run is not read as more than it is: this scans the cockpit route,
+   like the two above it. Other HUD surfaces have their own scrollable regions and are
+   not covered — see BACKLOG.md for the ones already measured and still open. */
 test('the chat transcript stays keyboard-reachable when it holds only user turns', async ({ page }) => {
   await page.addInitScript(() => {
     const turns = Array.from({ length: 6 }, (_, i) => ({
@@ -109,9 +116,14 @@ test('the chat transcript stays keyboard-reachable when it holds only user turns
     }));
     const orig = window.fetch;
     window.fetch = (input: any, init?: any) => {
-      const url = typeof input === 'string' ? input : (input && input.url) || '';
-      // GET /memory only — NOT /memory/stats or /api/memory/*, which other panels poll.
-      if (/(^|\/)memory(\?|$)/.test(url)) {
+      const raw = typeof input === 'string' ? input : (input && input.url) || '';
+      // Compare the PATHNAME, exactly. A `/…memory(\?|$)/` shape reads like it excludes
+      // the other memory routes and mostly does — but it also matches
+      // `/api/cognition/memory`, which CognitionPanel polls (gap.tsx). Harmless on this
+      // route today, silently wrong the moment this scan covers the mode that mounts it.
+      let path = '';
+      try { path = new URL(raw, window.location.origin).pathname; } catch { path = ''; }
+      if (path === '/memory') {
         return Promise.resolve(new Response(JSON.stringify({ session: 'e2e-a11y', turns }), {
           status: 200, headers: { 'Content-Type': 'application/json' },
         }));
@@ -156,15 +168,9 @@ test('the chat transcript stays keyboard-reachable when it holds only user turns
     `(overflow-y: ${state!.overflowY}, ${state!.scrollHeight}px of content in ${state!.clientHeight}px)`,
   ).toBeGreaterThan(state!.clientHeight + 1);
 
-  expect(
-    state!.tabIndex,
-    'the transcript is a scrollable region with no focusable content, so it must itself be ' +
-    'in the sequential focus order (tabindex="0") — otherwise a keyboard user cannot read ' +
-    'past the fold. Chromium focuses overflow scrollers implicitly; webkit and firefox do not.',
-  ).toBe(0);
-  expect(state!.role, 'the transcript should carry the chat-log role').toBe('log');
-  expect(state!.name, 'a focusable region needs an accessible name').toBeTruthy();
-
+  // The WCAG assertion comes FIRST on purpose: it is the one that names the defect. With
+  // the DOM-contract checks ahead of it, removing the fix failed on "tabIndex must be 0"
+  // and the violation was never reported, so a red run said less than it knew.
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze();
@@ -181,13 +187,20 @@ test('the chat transcript stays keyboard-reachable when it holds only user turns
     `axe found ${blocking.length} critical/serious violation(s) on a user-only transcript:\n` + summarise(blocking).join('\n'),
   ).toEqual([]);
 
-  // …and the region really does scroll once focus is on it, which is the point of
-  // putting it in the tab order at all.
-  await page.evaluate(() => { const c = document.querySelector('.convo') as HTMLElement; c.scrollTop = 0; c.focus(); });
-  await page.keyboard.press('PageDown');
-  await page.waitForTimeout(250);
-  const scrolled = await page.evaluate(() => (document.querySelector('.convo') as HTMLElement).scrollTop);
-  expect(scrolled, 'PageDown on the focused transcript should scroll it').toBeGreaterThan(0);
+  expect(
+    state!.tabIndex,
+    'the transcript is a scrollable region with no focusable content, so it must itself be ' +
+    'in the sequential focus order (tabindex="0") — otherwise a keyboard user cannot read ' +
+    'past the fold. Chromium focuses overflow scrollers implicitly; webkit and firefox do not.',
+  ).toBe(0);
+  expect(state!.role, 'the transcript should carry the chat-log role').toBe('log');
+  expect(state!.name, 'a focusable region needs an accessible name').toBeTruthy();
+
+  // Deliberately NOT asserted here: that PageDown scrolls the focused region. Measured
+  // both ways — programmatic `.focus()` succeeds on an overflow scroller in Chromium
+  // with and without `tabindex`, so PageDown moves scrollTop to 94 either way and the
+  // check cannot go red for the defect it would be placed after. It is the same trap as
+  // the tab-walk, one layer down. Do not re-add it without a red-proof.
 });
 
 /** Count violations by impact level for the artifact header. */

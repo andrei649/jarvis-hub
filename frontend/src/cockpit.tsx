@@ -39,14 +39,27 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
      failure. It has no focusable children of its own: the ⧉/🔊 controls live on AGENT
      bubbles only, so a run of user turns with no reply (an unreachable model, an
      aborted turn) leaves the region overflowing with nothing to tab to. axe reports
-     `serious · scrollable-region-focusable` in exactly that state; the scheduled HUD
-     E2E matrix hit it on webkit and mobile-chrome. Chromium masks it — it makes
-     overflow scrollers focusable on its own, so the region IS tab-reachable there
-     even unfixed — which is why a tab-walk assertion proves nothing and the spec
-     (e2e/a11y.spec.ts) asserts the axe rule and `tabIndex` instead.
+     `serious · scrollable-region-focusable` in exactly that state.
 
-     `role="log"` is the ARIA APG role for a chat transcript; the label is what a
-     keyboard user hears when focus lands on the region. */
+     Two facts that are easy to conflate, so stated apart. (1) Chromium makes overflow
+     scrollers focusable on its own, so an unfixed `.convo` IS tab-reachable there —
+     measured, reached at the 39th Tab with `tabIndex === -1`, and at the 28th with the
+     fix. That is why a tab-walk assertion proves nothing and e2e/a11y.spec.ts asserts
+     the axe rule and `tabIndex` instead. (2) It does NOT mask the axe rule: Chromium's
+     axe reports the violation on an overflowing unfixed transcript just as webkit does.
+     Chromium was 0/3 in the nightly for the other reason — the existing scans run
+     against an EMPTY transcript, where the rule cannot apply at all.
+
+     `role="log"` is the ARIA APG role for a chat transcript and is what gives the
+     focused region an accessible name (`aria-label` alone would sit on a `generic`
+     element, which prohibits naming). It also makes the region `aria-live="polite"` by
+     default. Known trade, only half of it measured: the `.thinking` block below is
+     inside the region and its label churns several times per turn, so it carries an
+     explicit `aria-live="off"`. Not addressed, and not measured with a real screen
+     reader: the `GET /memory` rehydration (app.tsx) injects a whole restored transcript
+     into an already-mounted live region, which an AT may announce in bulk. Scoping the
+     live region to a messages-only wrapper is the fix if that turns out to matter — it
+     is a DOM restructure inside a flex column, so it belongs in its own change. */
   return (
     <div className="convo" ref={endRef} tabIndex={0} role="log"
          aria-label={(t && t.convoRegion) || 'Conversation transcript'}>
@@ -79,7 +92,11 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
         )
       )}
       {thinking && (
-        <div className="thinking">
+        /* aria-live="off" overrides the `role="log"` region above: the label cycles
+           classify -> route -> gather -> synthesize within a single turn, and a polite
+           live region would announce every step. The finished reply is the thing worth
+           announcing, and it arrives as a `.msg.agent` addition. */
+        <div className="thinking" aria-live="off">
           <div className="tl"><span className="ar">▸</span> {thinking.label}
             {thinking.route && <span className="route-pill">→ {thinking.route.join(' · ')}</span>}
             <span className="dots"><span></span><span></span><span></span></span>
