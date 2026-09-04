@@ -170,6 +170,14 @@ jobs:
       - name: Typecheck (tsc --noEmit)
         run: npx tsc --noEmit
         working-directory: frontend
+      - name: Typecheck E2E (specs + playwright.config.ts)
+        # The step above only sees src/ (tsconfig.json `include`), and e2e.yml has
+        # no `pull_request` trigger — so nothing on the PR path ever compiled
+        # frontend/e2e or playwright.config.ts. A block comment containing the
+        # glob `**/chat/stream` closed early on its `*/` and still exited 0 here;
+        # only Playwright's loader caught it, post-merge on the nightly.
+        run: npm run typecheck:e2e
+        working-directory: frontend
       - name: Test (vitest)
         run: npm test
         working-directory: frontend

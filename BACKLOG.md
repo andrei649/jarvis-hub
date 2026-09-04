@@ -2424,6 +2424,24 @@ and wait until 03:15 UTC. `.github/workflows/e2e.yml` now takes two dispatch inp
       row unblocks *working on* them; it does not fix either, and no webkit run has been performed —
       there is no webkit binary off-box.
 
+**The E2E lane's own source was compiled by nothing (2026-09-04).** `frontend/tsconfig.json` has
+`include: ["src"]`, so `npm run typecheck` never looked at `frontend/e2e/*.spec.ts` or
+`playwright.config.ts`; `e2e.yml` has no `pull_request` trigger, so the only thing that ever parsed
+them was Playwright's own loader — on the nightly, *after* the merge. That gap shipped a real defect
+during this work: a block comment inside a spec containing the glob `**/chat/stream` closed itself
+early on the `*/`, turning the rest of the line into code, and `tsc --noEmit` still exited 0.
+
+- [x] ✅ `frontend/tsconfig.e2e.json` (extends the root config, adds `types: ["node"]`, includes
+      `e2e` + `playwright.config.ts`) and `npm run typecheck:e2e`, wired as a step in `hud-v2-build`
+      so it runs on every PR. Red-proofed against both failure shapes: the real `**/chat/stream`
+      comment (7 syntax errors, exit 1) and a plain undefined identifier (`TS2304`, exit 1) — with
+      the existing `npm run typecheck` measured at exit **0** on the same broken tree, which is the
+      gap. `@types/node@^22` added as a devDependency; the lockfile diff is purely additive
+      (18 insertions, 0 deletions) so no unrelated package moved.
+- [ ] 🟡 **Not covered:** this type-checks the specs, it does not run them on a PR. `e2e.yml` still
+      has no `pull_request` trigger (restore patch K, `docs/restore/README.md`) — re-adding it is a
+      separate decision about the D1/D5 CI posture, not this row.
+
 ---
 
 ## 🔌 Live-vs-Plumbing Remediation — mock → real (owner request 2026-07-18)

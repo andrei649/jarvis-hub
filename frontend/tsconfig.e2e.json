@@ -1,0 +1,21 @@
+// HUD v2 · type-check for the E2E lane. The root tsconfig.json has
+// `include: ["src"]`, so e2e/*.spec.ts and playwright.config.ts were compiled by
+// NOTHING: `npm run typecheck` skips them by include, and e2e.yml has no
+// `pull_request` trigger (see its header), so the only thing that ever parsed
+// them was Playwright's own loader — on the nightly, after the merge.
+//
+// That gap shipped a real defect: a block comment in a spec containing the glob
+// `**/chat/stream` closed itself early on the `*/`, turning the rest of the line
+// into code. `tsc --noEmit` exited 0 on that tree; the failure surfaced only when
+// Playwright tried to load the file.
+//
+// Separate file rather than widening the root include: the specs need Node's
+// globals (`process`, `node:fs`), and the app must not get them. src/ references
+// `process` nowhere today and the built bundle contains no `process.env.*` at
+// all; putting `types: ["node"]` on the root config would make `process.env`
+// type-check inside src/ with nothing supplying it in the served bundle.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["e2e", "playwright.config.ts"]
+}
