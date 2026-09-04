@@ -14,6 +14,33 @@ on:
     # Nightly 03:15 UTC: browser matrix + repeated soak against /metrics.
     - cron: "15 3 * * *"
   workflow_dispatch:
+    # The matrix used to be reachable ONLY from `schedule`, which meant firefox and
+    # webkit could not be exercised from a branch at all: the nightly went red for 63
+    # consecutive runs with no way for anyone to iterate on the failures except by
+    # merging a guess to main and waiting until 03:15 UTC. These two inputs make the
+    # same lane runnable on demand. They change nothing about what runs on `schedule`
+    # or on `push` — the defaults are exactly the previous dispatch behaviour
+    # (chromium, one iteration), and this workflow still has no `pull_request`
+    # trigger, so it gates no PR (see the de-gate note above).
+    inputs:
+      browsers:
+        description: "chromium (fast) or the full matrix (chromium + firefox + webkit + mobile emulation)"
+        type: choice
+        options:
+          - chromium
+          - matrix
+        default: chromium
+      iterations:
+        # A choice, not free text: `playwright.config.ts` reads this through
+        # `Number(...)` into `repeatEach`, and an unparseable value gets there as NaN.
+        description: "Repeat every spec N times (the soak knob; the nightly uses 3)"
+        type: choice
+        options:
+          - "1"
+          - "2"
+          - "3"
+          - "5"
+        default: "1"
   push:
     branches: [main]
 
@@ -25,11 +52,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      # PR/push stays lightweight (Chromium x1). Scheduled runs become the M2.2 soak:
+      # Push stays lightweight (Chromium x1). Scheduled runs are the M2.2 soak:
       # Chromium + Firefox + WebKit + mobile emulation, with every spec repeated.
-      E2E_BROWSER_MATRIX: ${{ github.event_name == 'schedule' && '1' || '0' }}
-      E2E_SOAK_ITERATIONS: ${{ github.event_name == 'schedule' && '3' || '1' }}
-      PLAYWRIGHT_BROWSERS: ${{ github.event_name == 'schedule' && 'chromium firefox webkit' || 'chromium' }}
+      # A dispatch is whatever the operator asked for, defaulting to the lightweight
+      # shape. `inputs` is null on schedule/push, so `inputs.x` is falsy there and the
+      # `||` fallback supplies the old value unchanged.
+      E2E_BROWSER_MATRIX: ${{ (github.event_name == 'schedule' || inputs.browsers == 'matrix') && '1' || '0' }}
+      E2E_SOAK_ITERATIONS: ${{ github.event_name == 'schedule' && '3' || inputs.iterations || '1' }}
+      PLAYWRIGHT_BROWSERS: ${{ (github.event_name == 'schedule' || inputs.browsers == 'matrix') && 'chromium firefox webkit' || 'chromium' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
