@@ -184,6 +184,12 @@ function App() {
       if (ambient || cinema) return;   // overlays own the keyboard (Esc exits them)
       const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
+      // The chat transcript is now in the tab order (cockpit.tsx `.convo`), so it is a
+      // place a keyboard user reads FROM. Without this, typing a digit while reading
+      // jumps to another mode and drops focus to <body>; `a` opens the ambient overlay.
+      // Same reasoning as the input/textarea bail: a surface you are reading or typing
+      // into owns its keys.
+      if (e.target && e.target.closest && e.target.closest('[role="log"]')) return;
       const m = { '1': 'cockpit', '2': 'agents', '3': 'trust', '4': 'memory', '5': 'autonomy', '6': 'build', '7': 'observe', '8': 'interop', '9': 'chat', '0': 'comms' };
       if (m[e.key]) setMode(m[e.key]);
       else if (e.key.toLowerCase() === 'a') setAmbient(true);
