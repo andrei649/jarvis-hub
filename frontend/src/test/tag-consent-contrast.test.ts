@@ -20,7 +20,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = process.cwd();
-const styles = readFileSync(join(root, 'src', 'styles.css'), 'utf8');
+// Comments first: a `--ink-3:` written inside a /* ... */ note is prose, not a definition,
+// and matching it makes every ratio below read a sentence as a colour. (Found by this test.)
+const styles = readFileSync(join(root, 'src', 'styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 const panelKit = readFileSync(join(root, 'src', 'panel-kit.tsx'), 'utf8');
 
 /** WCAG 2.x relative luminance of an sRGB triple. */
@@ -46,10 +48,12 @@ function composite(rgba: string, bg: number[]): number[] {
   return [r, g, b].map((c, i) => c * a + bg[i] * (1 - a));
 }
 
-function token(name: string): string {
-  const m = new RegExp(`--${name}\\s*:\\s*([^;]+);`).exec(styles);
-  if (!m) throw new Error(`token --${name} not found in styles.css`);
-  return m[1].trim();
+/** Every definition of a token, in source order — styles.css redefines the palette per
+    `[data-look=...]`, and a check that reads only the first one guards a single theme. */
+function tokens(name: string): string[] {
+  const all = [...styles.matchAll(new RegExp(`--${name}\\s*:\\s*([^;]+);`, 'g'))].map((m) => m[1].trim());
+  if (!all.length) throw new Error(`token --${name} not found in styles.css`);
+  return all;
 }
 
 function hex(h: string): number[] {
@@ -59,25 +63,49 @@ function hex(h: string): number[] {
 }
 
 describe('the <Tag> chip carries consent copy, so its colour is a contract', () => {
-  const void_ = hex(token('void'));
+  // Both backdrops the chips are painted on: the app ground and the modal surface.
+  const grounds = [...tokens('void'), ...tokens('void-2')].map(hex);
+  const inks2 = tokens('ink-2');
+  const inks3 = tokens('ink-3');
 
-  it('uses --ink-2, the token that clears AA over --void', () => {
-    // the default is what 92 uncoloured call sites inherit; the 83 that pass `c` opt out
+  it('uses --ink-2, the token that clears AA on every ground', () => {
+    // the default is what the 203 uncoloured call sites inherit; the 199 that pass `c` opt out
     expect(panelKit).toContain("color: c || 'var(--ink-2)'");
     expect(panelKit).not.toContain("color: c || 'var(--ink-3)'");
   });
 
-  it('--ink-2 over --void meets AA for normal text', () => {
-    const r = ratio(composite(token('ink-2'), void_), void_);
-    expect(r, `--ink-2 on --void is ${r.toFixed(2)}:1, AA normal text needs 4.5:1`)
-      .toBeGreaterThanOrEqual(4.5);
+  it('--ink-2 meets AA for normal text in every palette styles.css defines', () => {
+    // styles.css defines the palette more than once (`[data-look="graphite"]`); a check
+    // that read only the first definition would leave the other themes unguarded.
+    expect(inks2.length, 'expected at least one --ink-2 definition').toBeGreaterThan(0);
+    for (const ink of inks2) {
+      for (const ground of grounds) {
+        const r = ratio(composite(ink, ground), ground);
+        expect(r, `--ink-2 "${ink}" on ${JSON.stringify(ground)} is ${r.toFixed(2)}:1, AA needs 4.5:1`)
+          .toBeGreaterThanOrEqual(4.5);
+      }
+    }
   });
 
   it('--ink-3 does NOT, which is why the default moved off it', () => {
     // Guards the reasoning, not just the outcome: if the palette is ever retuned so
     // --ink-3 clears AA, this fails and the move can be revisited on evidence.
-    const r = ratio(composite(token('ink-3'), void_), void_);
-    expect(r, `--ink-3 on --void is now ${r.toFixed(2)}:1 — if that clears 4.5:1 the premise changed`)
-      .toBeLessThan(4.5);
+    for (const ink of inks3) {
+      for (const ground of grounds) {
+        const r = ratio(composite(ink, ground), ground);
+        expect(r, `--ink-3 "${ink}" on ${JSON.stringify(ground)} is now ${r.toFixed(2)}:1 — if that clears 4.5:1 the premise changed`)
+          .toBeLessThan(4.5);
+      }
+    }
+  });
+
+  it('the command palette chrome is off --ink-4 — it was the worst ratio in the HUD', () => {
+    // Measured with axe on the open overlay: .pal-group and .pal-foot at 1.59:1, the
+    // keyboard hints telling you how to leave it. --ink-4 is a background/border token.
+    for (const sel of ['.pal-group', '.pal-foot']) {
+      const rule = new RegExp(`\\${sel}\\s*\\{[^}]*\\}`).exec(styles);
+      expect(rule, `${sel} rule not found`).not.toBeNull();
+      expect(rule![0], `${sel} must not colour text with --ink-4`).not.toMatch(/color:var\(--ink-4\)/);
+    }
   });
 });
