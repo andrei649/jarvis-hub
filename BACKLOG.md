@@ -2422,35 +2422,44 @@ Webkit's 10 nightly failures are those 9 `hud` cases **plus one `a11y.spec.ts:33
 shared-session contamination below, not a tenth routing case. The three specs in the same file that use no `page.route` (`:21`, `:59`, `:73`) always
 passed — which is what isolates it.
 
-Three matrix runs at `iterations: 1`, 32 cases each, dispatched from a branch. That is only possible
-with the `workflow_dispatch` inputs PR #1021 adds, and **#1021 is still open** — until it merges these
-runs cannot be reproduced from `main`, and this fix's effect is unobservable until the next 03:15 UTC
-nightly:
+**Five** matrix runs, dispatched from a branch. That is only possible with the `workflow_dispatch`
+inputs PR #1021 adds, and **#1021 is still open** — until it merges these cannot be reproduced from
+`main`, and this fix's effect is unobservable until the next 03:15 UTC nightly:
 
-| | failures | detail |
+| run | cases | failures |
 |---|---|---|
-| baseline | **7** | webkit ×3 · mobile-chrome a11y:33 · mobile-chrome ×3 |
-| service workers blocked **globally** | **4** | webkit ×3 fixed, a11y fixed — but `hud.spec.ts:21` newly **broke** on webkit (Neural Mesh canvas, 0 lit pixels) |
-| blocked **only for the three route-mocked specs** | **3** | all 8 webkit cases green incl. `:21`; only the mobile-chrome pointer cases remain |
+| baseline, `n=1` | 32 | **7** — webkit ×3 · mobile-chrome a11y:33 · mobile-chrome ×3 |
+| service workers blocked globally, `n=1` | 32 | **4** — webkit ×3 and a11y fixed, but `hud.spec.ts:21` newly broke on webkit (canvas, 0 lit pixels) |
+| blocked only for the three route-mocked specs, `n=1` | 32 | **3** — all 8 webkit green |
+| **globally, `n=3`** | 96 | **9** — 3 mobile-chrome specs × 3 iterations. `:21` passes **3 of 3** on webkit |
+| **scoped, `n=3`** | 96 | **9** — identical |
 
-- [x] ✅ `frontend/e2e/hud.spec.ts` wraps the three route-mocking specs in a `test.describe` with
-      `test.use({ serviceWorkers: 'block' })`. Ignoring the re-indent the change is **+27 lines**
-      (`git diff -w --numstat origin/main HEAD`; the +20 figure was measured on an earlier probe commit
-      and never refreshed). Scoped rather than global because the global switch broke a canvas
-      assertion — but see the caveat below: that rests on one observation, and *"the PWA path is part
-      of what this lane exists to cover"*, which is how the choice was first justified, is **false**.
-      There are zero PWA assertions in `frontend/e2e/`, and the worker's `fetch` handler serves no
-      request in any spec (every spec navigates once; the cache-first and network-first branches need
-      a second navigation). Blocking it costs ambient execution, not coverage. `tests/test_pwa_v2.py`
-      covers the worker by regex over its source, not behaviourally.
+- [x] ✅ **`serviceWorkers: 'block'` in `playwright.config.ts`.** One declaration.
+      **This started out scoped to the three specs and was reverted to the simple global form after
+      review, because the reason for scoping was a flake.** The `n=1` pair looked like a trade — the
+      global block appeared to cost a canvas assertion on webkit to buy the routing ones — and that
+      single observation is what justified a `test.describe` wrapper and a 150-line re-indent. An
+      independent reviewer pointed out the lane demonstrably flakes on webkit (`a11y:33` failed 1 of 3
+      iterations in the nightly) and that n=1 is not evidence. At `n=3` the two forms are
+      indistinguishable and `:21` passes 3 of 3. The reviewer was right; the special case is gone.
 - [x] ✅ **This also removes the a11y failures at their source.** `mobile-chrome a11y.spec.ts:33`
-      went green in both fixed runs, because webkit stops persisting user turns into the shared
+      went green in every fixed run, because webkit stops persisting user turns into the shared
       session. PR #1019's `.convo` `tabIndex` fix clears the same rule in any transcript state, but
-      **it is not in this branch and was not in these runs** — the green above comes from the
-      service-worker side effect alone. Once both land, the a11y half is closed from either end
-      independently.
-- [ ] 🟡 **Remaining: 3 mobile-chrome pointer cases** — the open owner call above. Projected nightly
-      at `iterations: 3`: **9 failures, down from 22**, all of them that one decision.
+      **it is not in this branch and was not in these runs** — the green here comes from the
+      service-worker side effect alone. Once both land, the a11y half is closed from either end.
+- [ ] 🟡 **What is NOT claimed: the mechanism.** "Playwright's interception is Chromium-only for
+      service-worker-mediated requests" is the obvious explanation and it does not survive its own
+      data — firefox is also non-Chromium and passes **24 of 24**, and this worker never mediates the
+      request anyway (`sw-v2.js` returns early on `req.method !== 'GET'`; the chat stream is a POST).
+      The worker is causally involved **on WebKit specifically**, by a path not established here.
+- [ ] 🟡 **The cost, stated rather than hand-waved.** The lane no longer registers the worker. That
+      costs **no assertion**: there are zero PWA assertions in `frontend/e2e/`, and the worker's
+      `fetch` handler serves no request in any spec, because every spec navigates once and both its
+      branches need a second navigation. `tests/test_pwa_v2.py` covers the worker by regex over its
+      source, not behaviourally. A real PWA spec should opt back in with
+      `test.use({ serviceWorkers: 'allow' })`.
+- [ ] 🟡 **Remaining: 3 mobile-chrome pointer cases** — the open owner call above. Measured at
+      `n=3`: **9 failures, down from 22**, and all nine are that one decision.
 - [ ] 🔴 **`npx tsc --noEmit` does not cover `frontend/e2e`** (`tsconfig.json` has `include: ["src"]`).
       Found the hard way: a block comment containing `*` + `/` closed itself early, tsc passed clean,
       and only Playwright's loader rejected the file. Adding `e2e` to `include` needs `@types/node`
