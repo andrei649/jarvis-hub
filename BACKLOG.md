@@ -2443,15 +2443,34 @@ nothing else — so a green a11y lane says nothing about the other nine modes. W
 on the fixed build (chromium 1440×900, 2026-09-04) found **three blocking violations on surfaces no
 spec has ever scanned**, one of them the *same rule* this row just closed on `.convo`:
 
-- [ ] 🔴 **mode 2 (AGENTS) — `serious · scrollable-region-focusable` on `.scroll > .panel-body`**
-      (`frontend/src/modes.tsx:11-14`). Measured 774px of content in a 670px box, `tabIndex -1`, zero
-      focusable descendants — the agent cards are `<div className="acard" onClick=…>`, click handlers
-      on non-focusable divs. Identical defect, identical rule. The repo already uses `tabIndex={0}`
-      for exactly this at `panel-kit.tsx:69` and `shell.tsx:137,152,172,186,205,225`.
-- [ ] 🔴 **mode 4 (MEMORY) — `critical · label` on an unlabeled `<input type="range">`.**
-- [ ] 🔴 **mode 6 (BUILD) — `serious · color-contrast` on `.sb-in > span:nth-child(2)`.**
-- [ ] 🟡 Each needs its own red-proof and the spec needs to walk the mode surfaces, so they are the
-      next slice rather than a widening of this one. Modes 0/1/3/5/7/8/9 came back clean.
+- [x] ✅ **mode 2 (AGENTS) — `serious · scrollable-region-focusable` on `.scroll > .panel-body`**
+      (`frontend/src/modes.tsx`). Was 774px of content in a 670px box, `tabIndex -1`, zero focusable
+      descendants — the agent cards are `<div className="acard" onClick=…>`, click handlers on
+      non-focusable divs. Fixed with `tabIndex={0}`, the pattern the rest of the HUD already uses for
+      exactly this (`panel-kit.tsx:69`, `shell.tsx:137,152,172,186,205,225`). Verified it does not
+      repeat the #1018 focus-ring mistake: `.panel-body` is `overflow:auto/auto`, but an element's
+      own overflow does not clip its own outline, and every ancestor up to `<body>` computes
+      `visible` — probed at all four ring edges, no intermediate clipper, ring fully in viewport.
+- [x] ✅ **mode 4 (MEMORY) — `critical · label`** on the time-travel `<input type="range">`
+      (`modes.tsx`). It announced as a bare "slider"; the visible AS OF text is a sibling, not a
+      label. Now `aria-label={t.timeTravel}`, localized in both locales (`data.ts`).
+- [x] ✅ **mode 6 (BUILD) — `serious · color-contrast`** on the sandbox placeholder
+      (`modes2.tsx`). Measured `--ink-3` at **2.8:1** against `--void` where 4.5:1 is required;
+      `--ink-2` passes. One token change, no new colour.
+- [x] ✅ **NEW `frontend/e2e/a11y-modes.spec.ts`** walks all ten modes by their number hotkeys and
+      scans each with axe. Red-proofed: against the unfixed build it names all three, by mode, rule
+      and selector. It carries two pins of its own — a non-vacuity check that the hotkeys actually
+      reach different surfaces (otherwise it scans the cockpit ten times and proves nothing), and an
+      explicit **1440×900** viewport, because axe's contrast rule can only sample pixels that are in
+      the viewport: measured, the BUILD violation sits below the fold at 1280×720 and axe skips it
+      silently, then reports it at 1440×900 and 1920×1080. *A scan is only as wide as the window.*
+- [ ] 🟡 **Residual, measured not fixed:** `.panel-body` is now the 8th `tabIndex={0}` reading
+      surface, and with one focused a number key still switches mode *and* drops focus to `<body>`
+      (measured: focus `.panel-body` in AGENTS, press `1` → cockpit, `document.activeElement` is
+      `<body>`). The `[role="log"]` guard added for the transcript does not cover it. Extending the
+      guard to every panel body would swallow the number keys across most of the HUD, which is a
+      product call about the mode-switching UX, not an accessibility bug — recorded for the owner
+      rather than decided here. Pre-existing for the other 7 instances.
 
 **Unchanged in the E2E lane:** the 9 mobile-chrome pointer cases (the owner call above) and the
 9 webkit cases where `page.route` does not intercept — **but the causal chain is no longer inferred.**
