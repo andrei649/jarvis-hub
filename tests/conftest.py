@@ -133,6 +133,30 @@ def _disable_user_guard():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_gpu_probe_cache():
+    """Keep one test's fabricated GPU probe out of the next one.
+
+    `hardware.detect_gpu()` memoises into a module global so the boot path pays
+    the nvidia-smi subprocess cost once per process, and `force=True` overwrites
+    it (the readiness screen wants live numbers). Nothing put it back, so a test
+    that patches `shutil.which` to None to prove the honest no-GPU path — or any
+    test that drives the force-probing readiness route — left every later test in
+    the same xdist worker reading "this box has no GPU". Off a GPU box that is
+    invisible, because the leaked value and the real one are both `"none"`; on the
+    owner's RTX box it is a fabrication. Same reasoning as the fixture below: a
+    worker runs many files in one process, so snapshot and restore around every
+    test rather than letting the probe cross a file boundary.
+    """
+    from agents.core import hardware
+
+    saved = hardware._gpu_cache
+    try:
+        yield
+    finally:
+        hardware._gpu_cache = saved
+
+
+@pytest.fixture(autouse=True)
 def _isolate_action_origin():
     """Keep one test's action-origin binding out of the next one.
 

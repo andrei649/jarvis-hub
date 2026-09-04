@@ -1730,10 +1730,20 @@ absorbed them, not as independently shipped work.
   load latency, thermal headroom, and turning `DEFAULT_MODEL_SIZE_MB` into a measured number all need a
   run on the owner's physical card with models loaded. That is a benchmark, not code, and it stays parked
   with DRA-62. The module docstring, the `basis` field and the panel footer all say the score is
-  SPEC-based so nobody later reads it as measured throughput. Test hygiene owed:
-  `tests/test_hardware_profile.py:64` calls `detect_gpu(force=True)` with `shutil.which` patched to None
-  and nothing restores the module-global cache, so later tests in the same process can see a fabricated
-  "this box has no GPU".
+  SPEC-based so nobody later reads it as measured throughput.
+  **Test hygiene owed — closed 2026-09-04.** `tests/test_hardware_profile.py:64` called
+  `detect_gpu(force=True)` with `shutil.which` patched to None and nothing restored the module-global
+  cache, so later tests in the same worker process read a fabricated "this box has no GPU". Measured:
+  `hardware._gpu_cache` is `None` when that file runs alone and
+  `{'name': 'none', 'vram_total_mb': None, …}` for the rest of the process afterwards. Off a GPU box the
+  leak is *invisible* — the leaked reading and the true one are both `"none"` — which is why it survived;
+  on the owner's RTX box it is a fabrication, and `--dist loadfile` puts many files in one worker, so
+  which later tests saw it depended on scheduling. Fixed with an autouse `_isolate_gpu_probe_cache`
+  fixture in `tests/conftest.py`, alongside the `_isolate_action_origin` fixture that exists for exactly
+  this reason; the regression test pins the module global to a card for the file's duration so restored
+  and leaked are distinguishable on a runner with no card at all. *(Checked and refuted while chasing a
+  separate flake: this leak does **not** explain the `test_reality_evidence` CI failure — the poisoning
+  test and that test pass together in one process.)*
 - [ ] ⬜ **DRA-45 — GAP-4 (run the Hermes head-to-head once) is an unchecked box no finder, cluster, or
   owner-lane entry covers.** docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md §6. *(evidence:
   `BACKLOG.md:675-678, items_only.json, plan_only.json`)*

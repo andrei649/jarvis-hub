@@ -13,6 +13,7 @@ import shutil
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 repo_root = Path(__file__).resolve().parent.parent
@@ -33,6 +34,22 @@ class _FakeController:
 def _gpu(vram=None, measured=False, name="none"):
     return {"name": name, "vram_total_mb": vram, "vram_used_mb": None,
             "load_pct": None, "measured": measured}
+
+
+# A card this box does not have. Every test below forces a *fabricated* probe, and
+# on a runner with no nvidia-smi a leaked probe and a restored one both read
+# {"name": "none"} — indistinguishable. Pinning the module global to a card for
+# the file's duration makes the difference observable.
+_A_REAL_CARD = {"name": "a real card", "vram_total_mb": 24576, "vram_used_mb": 0,
+                "load_pct": 3, "measured": True}
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _pretend_this_box_has_a_card():
+    saved = hardware._gpu_cache
+    hardware._gpu_cache = dict(_A_REAL_CARD)
+    yield
+    hardware._gpu_cache = saved
 
 
 def test_model_manager_uses_detected_vram_when_env_unset(monkeypatch):
@@ -69,6 +86,19 @@ def test_detect_gpu_is_honest_when_nvidia_smi_absent(monkeypatch):
     assert gpu["measured"] is False
     blob = repr(gpu)
     assert "RTX" not in blob and "24576" not in blob
+
+
+def test_the_forced_probe_above_did_not_outlive_its_test():
+    """`detect_gpu()` memoises into a module global and `force=True` overwrites
+    it. Nothing put it back, so a pytest worker — which runs many files in one
+    process — carried that fabricated "this box has no GPU" into every later
+    test, including on the owner's RTX box where it is false.
+
+    `conftest._isolate_gpu_probe_cache` snapshots and restores it per test.
+    Without that fixture this reads {"name": "none"} and fails; the module pin
+    above is what makes the two cases distinguishable off a GPU box.
+    """
+    assert hardware._gpu_cache == _A_REAL_CARD
 
 
 def test_score_never_credits_an_unmeasured_component():
