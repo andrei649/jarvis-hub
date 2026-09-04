@@ -2489,20 +2489,41 @@ and wait until 03:15 UTC. `.github/workflows/e2e.yml` now takes two dispatch inp
 **The E2E lane's own source was compiled by nothing (2026-09-04).** `frontend/tsconfig.json` has
 `include: ["src"]`, so `npm run typecheck` never looked at `frontend/e2e/*.spec.ts` or
 `playwright.config.ts`; `e2e.yml` has no `pull_request` trigger, so the only thing that ever parsed
-them was Playwright's own loader — on the nightly, *after* the merge. That gap shipped a real defect
-during this work: a block comment inside a spec containing the glob `**/chat/stream` closed itself
-early on the `*/`, turning the rest of the line into code, and `tsc --noEmit` still exited 0.
+them was Playwright's own loader — on the nightly, *after* the merge. The gap is not hypothetical:
+while this lane was being worked on, a block comment inside a spec containing the glob
+`**/chat/stream` closed itself early on the `*/`, turning the rest of the line into code, and
+`tsc --noEmit` still exited 0. **Nothing shipped** — it was caught in the working tree by
+Playwright's loader and never reached a commit (checked: no revision reachable from any ref has a
+comment containing that glob under `frontend/e2e`). What the gap cost is that no gate *could* have
+caught it.
 
 - [x] ✅ `frontend/tsconfig.e2e.json` (extends the root config, adds `types: ["node"]`, includes
-      `e2e` + `playwright.config.ts`) and `npm run typecheck:e2e`, wired as a step in `hud-v2-build`
-      so it runs on every PR. Red-proofed against both failure shapes: the real `**/chat/stream`
-      comment (7 syntax errors, exit 1) and a plain undefined identifier (`TS2304`, exit 1) — with
-      the existing `npm run typecheck` measured at exit **0** on the same broken tree, which is the
-      gap. `@types/node@^22` added as a devDependency; the lockfile diff is purely additive
-      (18 insertions, 0 deletions) so no unrelated package moved.
-- [ ] 🟡 **Not covered:** this type-checks the specs, it does not run them on a PR. `e2e.yml` still
-      has no `pull_request` trigger (restore patch K, `docs/restore/README.md`) — re-adding it is a
-      separate decision about the D1/D5 CI posture, not this row.
+      `e2e` + `playwright.config.ts`, excludes the gitignored `e2e/artifacts`/`e2e/.results`
+      Playwright output) and `npm run typecheck:e2e`, wired as a step in `hud-v2-build` so it runs
+      on every PR. Red-proofed against both failure shapes: the `**/chat/stream` comment (syntax
+      errors, exit 1 — the exact count depends on the comment's tail text) and a plain undefined
+      identifier (`TS2304`, exit 1) — with the existing `npm run typecheck` measured at exit **0**
+      on the same broken tree, which is the gap. `@types/node@^22` added as a devDependency; the
+      lockfile diff is purely additive (18 insertions, 0 deletions) so no unrelated package moved.
+- [x] ✅ `types: []` pinned on the root `tsconfig.json`. TypeScript's documented behaviour for an
+      unspecified `types` is "every `node_modules/@types/*` package", so adding `@types/node` for
+      the e2e config could have made `process.env` type-check inside `src/`, where the served bundle
+      supplies no `process` (`grep -ro 'process\.env' agents/web/v2/` → 0). Measured both ways: with
+      `types: ["node"]` on the root config a `process.env` probe in `src/` passes at exit 0; with
+      `types: []` it is `TS2591`. The isolation is now a stated property, not a toolchain default.
+- [ ] 🟡 **What the gate does NOT do.** It type-checks the specs; it does not *run* them on a PR —
+      `e2e.yml` still has no `pull_request` trigger (restore patch K, `docs/restore/README.md`), and
+      re-adding it is a separate decision about the D1/D5 CI posture. And it inherits the root
+      config's `strict: false` / `noImplicitAny: false`, so `const s: string = null` and implicit-any
+      chains pass, and a `// @ts-nocheck` header opts a spec out entirely: it is a
+      syntax-and-signature gate (parse errors, unresolved names, `page.goto(42)` → `TS2345`), not a
+      strictness gate.
+- [ ] 🔴 **Still compiled by nothing: `frontend/vite.config.ts`** — the same defect class, one word
+      away in the include array, and deliberately left out of this slice because closing it is not
+      free. Measured: compiling it surfaces a real pre-existing error, `vite.config.ts(28,3)
+      TS2769 — 'test' does not exist in type 'UserConfigExport'` (the `/// <reference types="vitest" />`
+      form no longer augments the type under vitest 4; it wants `defineConfig` from `vitest/config`).
+      That is its own slice, with its own red-proof.
 
 ---
 
