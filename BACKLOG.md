@@ -2445,9 +2445,24 @@ was never made responsive. Two facts frame the decision:
   one per prior repeat — which can only have reached it through the server: nothing persists the
   transcript client-side, and `app.tsx:161-177` rehydrates it from `GET /memory`
   (`routers/memory_hud.py:41-55` → `orch.memory.get_history`). `orchestrator.py:1412` writes the USER
-  turn before the model runs, so a turn that never completes leaves exactly the user-only transcript
-  the log shows. That also explains the a11y asymmetry (mobile-chrome ×3 vs webkit ×1) — it is
-  cross-test contamination through real server state, not three independent a11y regressions.
+  turn before the model runs, and on the model-less backend the *assistant* turn is never persisted —
+  the "language backend is not available" fallback reply never reaches `memory.add_turn` — so the
+  server keeps exactly the user-only transcript the log shows.
+  **Correction to this row's first draft (2026-09-04).** It said the a11y failures were "cross-test
+  contamination … not independent a11y regressions". That was wrong, and the difference matters:
+  the contamination *exposes* a **real WCAG defect in the shipped HUD**, it does not manufacture one.
+  `.convo` (`cockpit.tsx:38`, `styles.css:230`) is `overflow-y:auto` with no `tabIndex` and no `role`,
+  and its only focusable descendants (the Save/TTS buttons, `cockpit.tsx:51-52`) live inside *agent*
+  messages — so a user-only transcript is a scrollable region with **zero** focusable content, which a
+  keyboard user cannot scroll (WCAG 2.1.1/2.1.3). Verified standalone in **desktop chromium at
+  1280×720**, not on a phone and not through webkit: reload the HUD against a model-less backend so
+  `app.tsx` rehydrates from `GET /memory` → 4 user bubbles, 0 agent bubbles, 0 focusables,
+  `scrollHeight 251` vs `clientHeight 108` → axe reports exactly one `serious`
+  `scrollable-region-focusable` on `.convo`. Live-sending turns instead does *not* reproduce it (the
+  agent bubbles bring 8 focusables with them), which is why the defect hid: it needs the reload path,
+  and that is the path a real user takes whenever their model backend is down.
+  **Own slice, next.** One line — `tabIndex={0} role="log" aria-label=…` on `cockpit.tsx:38` — plus a
+  regression test; it is not folded into the layout-fit PR because that would widen a reviewed diff.
   **Next slice, not this one.** Prime suspect is the PWA service worker (T-0.29) intercepting fetches
   ahead of Playwright's route handler; if so the fix is `serviceWorkers: 'block'` in the Playwright
   context — which removes an interference, it does not disable a test. Must be confirmed against a
