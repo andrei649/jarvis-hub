@@ -16,7 +16,7 @@ function AgentsMode({ agents, onOpen, t }) {
           scrolls past the fold unreachable by keyboard (measured 774px of content in a
           670px box). `tabIndex={0}` is what the rest of the HUD already does for exactly
           this — panel-kit.tsx:69, shell.tsx:137/152/172/186/205/225. */}
-      <div className="panel-body" tabIndex={0}>
+      <div className="panel-body" tabIndex={0} aria-label={t.roster}>
         {TIERS.map(tier=>{
           const list=agents.filter(a=>a.tier===tier.id);
           if(!list.length) return null;
