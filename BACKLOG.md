@@ -2386,7 +2386,8 @@ counter metric (all-time stays available to `/api/analytics/locality`).
 **The phone surface — open question, owner call (2026-07-29).** The scheduled e2e run fails 9
 `mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button "intercept pointer events" at
 the 393×851 Pixel 5 viewport). Nothing regressed: `E2E_BROWSER_MATRIX` is set only on `schedule`
-events, and **all 26 scheduled runs since 2026-07-04 have failed — none has ever passed.** The matrix
+events, and **every scheduled run has failed — 63 as of 2026-09-04, none has ever passed.** *(Said 26
+when written on 2026-07-29; refreshed against the Actions API.)* The matrix
 was switched on over a layout that was never made responsive. Two facts frame the decision:
 
 - [ ] 🟡 **The web HUD is not reachable from a phone today, by design.** `serve.py:66` defaults
@@ -2406,16 +2407,25 @@ was switched on over a layout that was never made responsive. Two facts frame th
 22 nightly failures were webkit, and the standing diagnosis was a vague "`page.route` does not
 intercept". The mechanism is now identified and the fix is measured, not argued.
 
-`index.html` registers `/sw-v2.js` at scope `/`, so every page in the lane is a
-service-worker-controlled client — and Playwright documents request interception for
-service-worker-mediated requests as **Chromium-only**. So on webkit the three specs in `hud.spec.ts`
-that mock the chat-stream route (`:87`, `:123`, `:153`) never intercept: they drive the real
-model-less backend, the click lands, the user bubble renders and the mocked agent reply never
-arrives. The three specs in the same file that use no `page.route` (`:21`, `:59`, `:73`) always
+`index.html` registers `/sw-v2.js` at scope `/`, the worker is **activated and controlling before any
+assertion in the file runs** (measured), and on webkit the three specs in `hud.spec.ts` that mock the
+chat-stream route never intercept: they drive the real model-less backend, the click lands, the user
+bubble renders, and the mocked agent reply never arrives.
+
+**The obvious mechanism does not survive its own data, so it is not claimed.** "Playwright's
+interception is Chromium-only for service-worker-mediated requests" predicts firefox failing too —
+firefox passes **24 of 24**. It also predicts this worker mediating the request, and it does not:
+`sw-v2.js` returns early on `req.method !== 'GET'` and the chat stream is a POST. The worker is
+causally involved **on WebKit specifically**, by a path not established here.
+
+Webkit's 10 nightly failures are those 9 `hud` cases **plus one `a11y.spec.ts:33`** — the latter is the
+shared-session contamination below, not a tenth routing case. The three specs in the same file that use no `page.route` (`:21`, `:59`, `:73`) always
 passed — which is what isolates it.
 
-Three matrix runs at `iterations: 1`, 32 cases each, dispatched from a branch (only possible because
-of the `workflow_dispatch` inputs above):
+Three matrix runs at `iterations: 1`, 32 cases each, dispatched from a branch. That is only possible
+with the `workflow_dispatch` inputs PR #1021 adds, and **#1021 is still open** — until it merges these
+runs cannot be reproduced from `main`, and this fix's effect is unobservable until the next 03:15 UTC
+nightly:
 
 | | failures | detail |
 |---|---|---|
@@ -2424,13 +2434,21 @@ of the `workflow_dispatch` inputs above):
 | blocked **only for the three route-mocked specs** | **3** | all 8 webkit cases green incl. `:21`; only the mobile-chrome pointer cases remain |
 
 - [x] ✅ `frontend/e2e/hud.spec.ts` wraps the three route-mocking specs in a `test.describe` with
-      `test.use({ serviceWorkers: 'block' })`. Ignoring the re-indent the change is **+20 lines**.
-      Scoped deliberately: the global switch bought the routing assertions at the cost of a canvas
-      one, and the PWA path is part of what this lane exists to cover.
+      `test.use({ serviceWorkers: 'block' })`. Ignoring the re-indent the change is **+27 lines**
+      (`git diff -w --numstat origin/main HEAD`; the +20 figure was measured on an earlier probe commit
+      and never refreshed). Scoped rather than global because the global switch broke a canvas
+      assertion — but see the caveat below: that rests on one observation, and *"the PWA path is part
+      of what this lane exists to cover"*, which is how the choice was first justified, is **false**.
+      There are zero PWA assertions in `frontend/e2e/`, and the worker's `fetch` handler serves no
+      request in any spec (every spec navigates once; the cache-first and network-first branches need
+      a second navigation). Blocking it costs ambient execution, not coverage. `tests/test_pwa_v2.py`
+      covers the worker by regex over its source, not behaviourally.
 - [x] ✅ **This also removes the a11y failures at their source.** `mobile-chrome a11y.spec.ts:33`
       went green in both fixed runs, because webkit stops persisting user turns into the shared
-      session. Combined with the `.convo` `tabIndex` fix (which clears the same rule in any state),
-      the a11y half is closed twice over.
+      session. PR #1019's `.convo` `tabIndex` fix clears the same rule in any transcript state, but
+      **it is not in this branch and was not in these runs** — the green above comes from the
+      service-worker side effect alone. Once both land, the a11y half is closed from either end
+      independently.
 - [ ] 🟡 **Remaining: 3 mobile-chrome pointer cases** — the open owner call above. Projected nightly
       at `iterations: 3`: **9 failures, down from 22**, all of them that one decision.
 - [ ] 🔴 **`npx tsc --noEmit` does not cover `frontend/e2e`** (`tsconfig.json` has `include: ["src"]`).

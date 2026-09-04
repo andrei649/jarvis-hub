@@ -88,13 +88,20 @@ test('golden-signals /metrics stays available during the HUD soak', async ({ req
    the set that failed on webkit in every one of the 63 scheduled runs. The three specs in
    this file that use NO `page.route` always passed there — which is the whole diagnosis.
 
-   The mechanism: index.html registers `/sw-v2.js` at scope '/', so every page in this lane
-   is a service-worker-controlled client, and Playwright documents request interception for
-   service-worker-mediated requests as Chromium-only. The route never fires, so these three
-   drive the real model-less backend instead of the mock: the click lands, the user bubble
-   appears, and the mocked agent reply never arrives. It also persisted their user turns
-   into the SHARED session, so a later page load rehydrated a user-only transcript and made
-   an a11y scan fail several projects downstream (BACKLOG.md has the trace).
+   What is established: `index.html` registers `/sw-v2.js` at scope '/', the worker is
+   ACTIVATED AND CONTROLLING before any assertion in this file runs (measured), and removing
+   it turns the three green on webkit. Consequence of the route not firing: they drive the
+   real model-less backend instead of the mock — the click lands, the user bubble appears,
+   the mocked agent reply never arrives — and their user turns persist into the SHARED
+   session, so a later page load rehydrates a user-only transcript and an a11y scan fails
+   several projects downstream (BACKLOG.md has the trace).
+
+   What is NOT established, stated because the obvious explanation does not survive its own
+   data: "Playwright's interception is Chromium-only for service-worker-mediated requests"
+   predicts firefox failing too, and firefox passes 24 of 24. It also predicts this worker
+   mediating the request, and it does not — `sw-v2.js` returns early on `req.method !== 'GET'`
+   and the chat stream is a POST. So the worker is causally involved on WebKit specifically,
+   by a path this comment does not claim to know.
 
    Measured, not reasoned — three matrix runs at `iterations: 1`, 32 cases each:
      baseline                            7 failed  (webkit x3, mobile-chrome a11y + x3)
