@@ -2386,7 +2386,8 @@ counter metric (all-time stays available to `/api/analytics/locality`).
 **The phone surface — open question, owner call (2026-07-29).** The scheduled e2e run fails 9
 `mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button "intercept pointer events" at
 the 393×851 Pixel 5 viewport). Nothing regressed: `E2E_BROWSER_MATRIX` is set only on `schedule`
-events, and **all 26 scheduled runs since 2026-07-04 have failed — none has ever passed.** The matrix
+events, and **every scheduled run has failed — 63 as of 2026-09-04, none has ever passed.** *(Said 26
+when written on 2026-07-29; refreshed against the Actions API.)* The matrix
 was switched on over a layout that was never made responsive. Two facts frame the decision:
 
 - [ ] 🟡 **The web HUD is not reachable from a phone today, by design.** `serve.py:66` defaults
@@ -2485,6 +2486,70 @@ and wait until 03:15 UTC. `.github/workflows/e2e.yml` now takes two dispatch inp
       `serviceWorkers: 'block'`) and the 9 mobile-chrome pointer cases (the owner call above). This
       row unblocks *working on* them; it does not fix either, and no webkit run has been performed —
       there is no webkit binary off-box.
+
+**The webkit half is solved — the service worker, confirmed by intervention (2026-09-04).** Ten of the
+22 nightly failures were webkit, and the standing diagnosis was a vague "`page.route` does not
+intercept". The mechanism is now identified and the fix is measured, not argued.
+
+`index.html` registers `/sw-v2.js` at scope `/`, the worker is **activated and controlling before any
+assertion in the file runs** (measured), and on webkit the three specs in `hud.spec.ts` that mock the
+chat-stream route never intercept: they drive the real model-less backend, the click lands, the user
+bubble renders, and the mocked agent reply never arrives.
+
+**The obvious mechanism does not survive its own data, so it is not claimed.** "Playwright's
+interception is Chromium-only for service-worker-mediated requests" predicts firefox failing too —
+firefox passes **24 of 24**. It also predicts this worker mediating the request, and it does not:
+`sw-v2.js` returns early on `req.method !== 'GET'` and the chat stream is a POST. The worker is
+causally involved **on WebKit specifically**, by a path not established here.
+
+Webkit's 10 nightly failures are those 9 `hud` cases **plus one `a11y.spec.ts:33`** — the latter is the
+shared-session contamination below, not a tenth routing case. The three specs in the same file that use no `page.route` (`:21`, `:59`, `:73`) always
+passed — which is what isolates it.
+
+**Five** matrix runs, dispatched from a branch. That is only possible with the `workflow_dispatch`
+inputs PR #1021 adds, **merged 2026-09-04** — so these are now reproducible from `main`. Absent a
+dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
+
+| run | cases | failures |
+|---|---|---|
+| baseline, `n=1` | 32 | **7** — webkit ×3 · mobile-chrome a11y:33 · mobile-chrome ×3 |
+| service workers blocked globally, `n=1` | 32 | **4** — webkit ×3 and a11y fixed, but `hud.spec.ts:21` newly broke on webkit (canvas, 0 lit pixels) |
+| blocked only for the three route-mocked specs, `n=1` | 32 | **3** — all 8 webkit green |
+| **globally, `n=3`** | 96 | **9** — 3 mobile-chrome specs × 3 iterations. `:21` passes **3 of 3** on webkit |
+| **scoped, `n=3`** | 96 | **9** — identical |
+
+- [x] ✅ **`serviceWorkers: 'block'` in `playwright.config.ts`.** One declaration.
+      **This started out scoped to the three specs and was reverted to the simple global form after
+      review, because the reason for scoping was a flake.** The `n=1` pair looked like a trade — the
+      global block appeared to cost a canvas assertion on webkit to buy the routing ones — and that
+      single observation is what justified a `test.describe` wrapper and a 150-line re-indent. An
+      independent reviewer pointed out the lane demonstrably flakes on webkit (`a11y:33` failed 1 of 3
+      iterations in the nightly) and that n=1 is not evidence. At `n=3` the two forms are
+      indistinguishable and `:21` passes 3 of 3. The reviewer was right; the special case is gone.
+- [x] ✅ **This also removes the a11y failures at their source.** `mobile-chrome a11y.spec.ts:33`
+      went green in every fixed run, because webkit stops persisting user turns into the shared
+      session. PR #1019's `.convo` `tabIndex` fix clears the same rule in any transcript state, but
+      **it is not in this branch and was not in these runs** — the green here comes from the
+      service-worker side effect alone. Once both land, the a11y half is closed from either end.
+- [ ] 🟡 **What is NOT claimed: the mechanism.** "Playwright's interception is Chromium-only for
+      service-worker-mediated requests" is the obvious explanation and it does not survive its own
+      data — firefox is also non-Chromium and passes **24 of 24**, and this worker never mediates the
+      request anyway (`sw-v2.js` returns early on `req.method !== 'GET'`; the chat stream is a POST).
+      The worker is causally involved **on WebKit specifically**, by a path not established here.
+- [ ] 🟡 **The cost, stated rather than hand-waved.** The lane no longer registers the worker. That
+      costs **no assertion**: there are zero PWA assertions in `frontend/e2e/`, and the worker's
+      `fetch` handler serves no request in any spec, because every spec navigates once and both its
+      branches need a second navigation. `tests/test_pwa_v2.py` covers the worker by regex over its
+      source, not behaviourally. A real PWA spec should opt back in with
+      `test.use({ serviceWorkers: 'allow' })`.
+- [ ] 🟡 **Remaining: 3 mobile-chrome pointer cases** — the open owner call above. Measured at
+      `n=3`: **9 failures, down from 22**, and all nine are that one decision.
+- [ ] 🔴 **`npx tsc --noEmit` does not cover `frontend/e2e`** (`tsconfig.json` has `include: ["src"]`).
+      Found the hard way: a block comment containing `*` + `/` closed itself early, tsc passed clean,
+      and only Playwright's loader rejected the file. Adding `e2e` to `include` needs `@types/node`
+      (measured: 2 errors, both `TS2591` on `node:fs`), so it is a dependency change, not a one-line
+      fix. A cheaper guard for the PR lane is `npx playwright test --list`, which loads every spec
+      without running one. Neither is done here.
 
 ---
 
