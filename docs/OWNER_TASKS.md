@@ -100,6 +100,30 @@
 
 ## 🟠 GitHub settings (5 minutes, Settings → …)
 
+- [ ] **Let Actions open PRs — one checkbox, and it un-reds a weekly workflow** (found 2026-09-04
+  while triaging red scheduled lanes). **Settings → Actions → General → Workflow permissions →
+  tick "Allow GitHub Actions to create and approve pull requests."** If the account sits under an
+  org, the org-level toggle has to allow it first.
+  **What is broken.** `Third-Party Auto-Update` (`.github/workflows/thirdparty-autoupdate.yml`,
+  Thursdays 07:00 UTC) does all of its real work correctly — `discover` finds the drifted sources,
+  each `update` job re-vendors, bumps the pin, passes `check_thirdparty_drift.py --consistency`,
+  and force-pushes its per-source branch to origin. It then dies on the last step, when
+  `peter-evans/create-pull-request` calls the REST API with the workflow token:
+  `GitHub Actions is not permitted to create or approve pull requests.` The
+  `permissions: pull-requests: write` already in the YAML is necessary but **not** sufficient —
+  that repo/org toggle overrides it for `GITHUB_TOKEN`. Nothing in the repo is at fault and there
+  is no code fix; this is why it is here and not in the backlog.
+  **Scale.** 8 of 11 runs have failed this way (2026-07-02 → 2026-09-03, latest
+  [33751779652](https://github.com/andrei649/jarvis-hub/actions/runs/33751779652)); the 3 "green"
+  runs are ones where nothing had drifted, so the `update` job was skipped entirely. The lane has
+  therefore never once delivered its output.
+  **Note the side effect:** the update branches *are* on origin already — the work exists, only the
+  PR is missing. After you tick the box the next scheduled run opens them.
+  **If you would rather not flip the global toggle:** a fine-grained PAT with contents +
+  pull-requests write on this repo, stored as a secret and passed to the action as `token:`, does
+  the same job with a narrower blast radius. That one is a code change and I can do it — say which
+  you prefer.
+
 - [x] **De-gate merges (decided 2026-08-29 — remove the branch-protection gates)** — ✅ the repo
   half shipped in #981 (merged 2026-08-30 09:09 UTC); that merge going through indicates the
   required checks no longer block. *If you merged it via admin bypass rather than clearing the
