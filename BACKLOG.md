@@ -2439,6 +2439,20 @@ unreachable without a mouse.
       fix if it matters, and that is a DOM restructure inside a flex column.
 
 **The cockpit is not the HUD.** `a11y.spec.ts` scans the cockpit route and the cinema overlay —
+nothing else — so a green a11y lane says nothing about the other nine modes. Walking all ten with axe
+on the fixed build (chromium 1440×900, 2026-09-04) found **three blocking violations on surfaces no
+spec has ever scanned**, one of them the *same rule* this row just closed on `.convo`:
+
+- [ ] 🔴 **mode 2 (AGENTS) — `serious · scrollable-region-focusable` on `.scroll > .panel-body`**
+      (`frontend/src/modes.tsx:11-14`). Measured 774px of content in a 670px box, `tabIndex -1`, zero
+      focusable descendants — the agent cards are `<div className="acard" onClick=…>`, click handlers
+      on non-focusable divs. Identical defect, identical rule. The repo already uses `tabIndex={0}`
+      for exactly this at `panel-kit.tsx:69` and `shell.tsx:137,152,172,186,205,225`.
+- [ ] 🔴 **mode 4 (MEMORY) — `critical · label` on an unlabeled `<input type="range">`.**
+- [ ] 🔴 **mode 6 (BUILD) — `serious · color-contrast` on `.sb-in > span:nth-child(2)`.**
+- [ ] 🟡 Each needs its own red-proof and the spec needs to walk the mode surfaces, so they are the
+      next slice rather than a widening of this one. Modes 0/1/3/5/7/8/9 came back clean.
+
 two of seventeen surfaces — so a green a11y lane said nothing about the rest. A mode walk found
 blocking violations on surfaces no spec had ever visited. **The first version of that walk was
 itself wrong in two ways, both caught by independent review, and the corrected walk finds nearly
