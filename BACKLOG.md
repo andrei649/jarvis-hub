@@ -2442,6 +2442,68 @@ was never made responsive. Two facts frame the decision:
   red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
   (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
 
+**The transcript had no keyboard route — fixed (2026-09-04).** The *other* failure in that same
+scheduled matrix was an accessibility one, and it was a real product defect rather than a test
+artefact: `a11y.spec.ts:33` reported `serious · scrollable-region-focusable` against
+`<div class="convo">` — WCAG 2.1.1/2.1.3, "Scrollable region must have keyboard access" — on
+**mobile-chrome 3/3 iterations and webkit 1/3, with chromium and firefox 0/3**
+([run 33850948593](https://github.com/andrei649/jarvis-hub/actions/runs/33850948593), head `bf48cf2`).
+`.convo` is `overflow-y:auto`, and its only focusable descendants (⧉ save-artifact, 🔊 replay) are
+rendered on **agent** bubbles — so a transcript of user turns whose replies never arrived (no model
+loaded, an aborted turn) is a scrollable region with no way in, and everything below the fold is
+unreachable without a mouse.
+
+- [x] ✅ `.convo` now carries `tabIndex={0}` + `role="log"` + a localized `aria-label`
+      (`frontend/src/cockpit.tsx`, `convoRegion` in both locales). That satisfies axe's
+      `focusable-element` check unconditionally — in every transcript state and every browser —
+      rather than depending on content that happens to be focusable.
+- [x] ✅ `e2e/a11y.spec.ts` gained a third scan that **seeds** the failing state instead of waiting
+      for the soak to stumble into it: six user-only turns injected by shimming `window.fetch` for
+      `GET /memory` before boot (not `page.route`, which webkit does not intercept here; not a
+      backend write, which would leak into the next spec). Its two load-bearing assertions — the axe
+      rule and the `tabIndex` contract — are each red-proofed against the unfixed build. The two
+      pre-existing scans run against an *empty* transcript, which is exactly why they stayed green
+      for months while the matrix was red.
+- [x] ✅ `frontend/src/test/convo-keyboard-access.test.tsx` (+3) pins the same contract at component
+      level, so dropping the attributes fails without a browser or a backend.
+- [x] ✅ Putting a reading surface in the tab order needed the global hotkey guard to follow:
+      `app.tsx` now bails inside `[role="log"]` as it already does for `input`/`textarea`. Measured
+      before: with `.convo` focused, `2` jumped to AGENTS *and* dropped focus to `<body>`, `a` opened
+      the ambient overlay. After, with a control: focused → both keys inert, focus retained; blurred
+      → `2` still switches mode.
+- [x] ✅ `role="log"` makes the transcript an implicit `aria-live="polite"` region, so `.thinking`
+      carries an explicit `aria-live="off"` — its label cycles classify → route → gather → synthesize
+      within one turn. **Residual, recorded not fixed:** the `GET /memory` rehydration injects a whole
+      restored transcript into an already-mounted live region, which an AT may announce in bulk. Not
+      measured with a real screen reader; scoping the live region to a messages-only wrapper is the
+      fix if it matters, and that is a DOM restructure inside a flex column.
+
+**The cockpit is not the HUD.** `a11y.spec.ts` scans the cockpit route and the cinema overlay —
+nothing else — so a green a11y lane says nothing about the other nine modes. Walking all ten with axe
+on the fixed build (chromium 1440×900, 2026-09-04) found **three blocking violations on surfaces no
+spec has ever scanned**, one of them the *same rule* this row just closed on `.convo`:
+
+- [ ] 🔴 **mode 2 (AGENTS) — `serious · scrollable-region-focusable` on `.scroll > .panel-body`**
+      (`frontend/src/modes.tsx:11-14`). Measured 774px of content in a 670px box, `tabIndex -1`, zero
+      focusable descendants — the agent cards are `<div className="acard" onClick=…>`, click handlers
+      on non-focusable divs. Identical defect, identical rule. The repo already uses `tabIndex={0}`
+      for exactly this at `panel-kit.tsx:69` and `shell.tsx:137,152,172,186,205,225`.
+- [ ] 🔴 **mode 4 (MEMORY) — `critical · label` on an unlabeled `<input type="range">`.**
+- [ ] 🔴 **mode 6 (BUILD) — `serious · color-contrast` on `.sb-in > span:nth-child(2)`.**
+- [ ] 🟡 Each needs its own red-proof and the spec needs to walk the mode surfaces, so they are the
+      next slice rather than a widening of this one. Modes 0/1/3/5/7/8/9 came back clean.
+
+**Unchanged in the E2E lane:** the 9 mobile-chrome pointer cases (the owner call above) and the
+9 webkit cases where `page.route` does not intercept — **but the causal chain is no longer inferred.**
+A single-iteration matrix run from a branch ([run 33882549024](https://github.com/andrei649/jarvis-hub/actions/runs/33882549024),
+made possible by the `workflow_dispatch` matrix inputs) runs each spec exactly once in project order,
+and reads as one trace: `a11y.spec.ts:33` passes on chromium, firefox **and webkit**, then fails on
+mobile-chrome — the first scan *after* webkit's three `page.route` specs, which are the only webkit
+failures and which drive the real backend and persist user turns. The next page load rehydrates them
+(`app.tsx:161-177` ← `GET /memory`) into exactly the state seeded above. The three webkit specs that
+use no `page.route` (`hud.spec.ts:21/59/73`) pass, isolating the defect to route interception alone.
+No webkit fix is claimed here and none has been run off-box.
+
 - [x] ✅ **Laptop-width topbar fit — fixed 2026-09-04.** Separating this out is the point: the same
   bare-`1fr` bug also broke *desktop* widths, which no owner call covers. Measured on `main` @
   `bf48cf2`: from 761px to 1080px the document laid out **1082px wide**. And it did not scroll —
