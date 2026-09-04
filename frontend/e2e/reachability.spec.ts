@@ -111,6 +111,15 @@ for (const width of WIDTHS) {
     });
 
     expect(m, 'the workzone should exist').not.toBeNull();
+    // Pin the probe's ring geometry. Without this the assertion below can pass VACUOUSLY:
+    // if the probe ever stops matching :focus-visible, or picks up an `outline:0` override
+    // (as `.inputbar .field input` does), `ring` silently becomes 0 and nothing can overhang.
+    // That is exactly how the first version of this test self-passed against a broken build.
+    expect(
+      m!.ring,
+      `the focus-ring probe (${m!.who || 'first focusable'}) reported a ${m!.ring}px ring; ` +
+      'it should be 4px (outline 2px + offset 2px). A 0px ring makes the check below vacuous.',
+    ).toBe(4);
     if (m!.clips) {
       expect(
         m!.worstOverhang,

@@ -2427,7 +2427,7 @@ was switched on over a layout that was never made responsive. Two facts frame th
   `visible` promotes the used `overflow-x` to `auto`, so the box began clipping horizontally and cut
   the `:focus-visible` ring (drawn 4px outside the border box) off every focusable panel body —
   confirmed by sampling painted pixels, where the accent ring simply stopped being painted.
-  `padding-left`/`padding-right: 4px` give it room. `frontend/e2e/reachability.spec.ts` (+5) pins it at
+  `padding-left`/`padding-right: 4px` give it room. `frontend/e2e/reachability.spec.ts` (+10 — five widths × two assertions) pins it at
   1280/1100/1000/900/800 and was red-proved first: 1280 passed, the other four failed, naming the
   measured rows (`577px 18px` at 1100/1000, `547px 18px` at 900/800). A second assertion pins the
   focus ring, and it too was red-proved — its *first* version passed against the broken state,
@@ -2443,7 +2443,10 @@ was switched on over a layout that was never made responsive. Two facts frame th
   so these declarations *do* apply under Pixel 5 emulation: the workzone's computed `overflow-y` goes
   `visible → auto` there too. What is unchanged is what matters — the layout viewport is still 915px,
   the transmit click still fails, and the owner's decision is unpre-empted. The interceptor named
-  does change (`div.rl` inside `.col` → `span.chan` inside the input bar), so "the identical symptom"
+  does change — on the branch it is reliably `span.chan` inside the input bar, while on `main` it
+  varies run to run across the roster's children (`div.agent-row`, `div.panel-head`, `div.col`,
+  `div.convo`, `div.panel` all observed; an earlier draft named `div.rl`, which a later reviewer could
+  not reproduce). Which child Playwright names is hit-point dependent, so "the identical symptom"
   would also overstate it: same failure class, different reported element. Note the same two
   declarations are two of the four in that decision's option B, so the two pieces of work share a
   lever even though this one stops well short of it.
