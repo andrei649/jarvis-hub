@@ -26,7 +26,11 @@ permissions:
 # Superseded PR runs are cancelled; a push to main always completes (D1c, same
 # rule as ci.yml).
 concurrency:
-  group: security-${{ github.ref }}
+  # PRs: one run per ref, newer pushes supersede. push-to-main: one group per
+  # commit — GitHub keeps at most one *pending* run per group, so a ref-wide
+  # group still replaced queued main runs (#1013 on 2026-09-02) even with
+  # cancel-in-progress off. Every main commit now gets its own verified run.
+  group: security-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

@@ -107,6 +107,19 @@ class RealityEvidenceLedger:
         paired = list(zip(results, cases, strict=True)) if cases is not None else [
             (result, None) for result in results
         ]
+        # Owner-hardware cases (case metadata mode "owner-live") can only pass on
+        # the owner's box: anywhere else their probe reports the opt-in / config /
+        # credential as missing. Off-box that is "not exercised", not a
+        # regression — the pytest lane skips them for the same reason.
+        owner_live_not_exercised = sorted(
+            str(result.get("capability_id"))
+            for result, case in paired
+            if not result.get("passed")
+            and not result.get("skipped")
+            and case is not None
+            and dict(getattr(case, "metadata", None) or {}).get("mode") == "owner-live"
+            and str(dict(result.get("metadata") or {}).get("reason") or "").startswith("owner_live_")
+        )
         record = {
             "schema": SCHEMA,
             "harness_id": run.get("harness_id"),
@@ -122,8 +135,10 @@ class RealityEvidenceLedger:
                 "skipped": run.get("skipped"),
                 "cases": len(results),
                 "expected_seam_failures": len(expected_failures),
+                "owner_live_not_exercised": len(owner_live_not_exercised),
             },
             "expected_seam_failures": expected_failures,
+            "owner_live_not_exercised": owner_live_not_exercised,
             # The honesty fields: this artifact is a transcript, not authority.
             "promotion_scope": "in_process_only",
             "durable_promotion": False,
@@ -210,18 +225,21 @@ def main(argv=None) -> int:
         )
     totals = record["totals"]
     expected = int(totals.get("expected_seam_failures") or 0)
+    off_box = int(totals.get("owner_live_not_exercised") or 0)
     print(
         f"reality evidence: {totals['passed']}/{totals['total']} passed, "
         f"{totals['skipped']} skipped, {expected} expected seam failures, "
+        f"{off_box} owner-live cases not exercised on this host, "
         f"{totals['cases']} cases -> recorded"
     )
     # The run is recorded either way; a red run is evidence too. Exit red so
     # CI surfaces it, matching the pytest lane's contract: every failing case
-    # must be a SEAM capability the harness test already expects to fail;
-    # anything else is a regression.
+    # must be a SEAM capability the harness test already expects to fail, or
+    # an owner-hardware case that reported itself un-exercisable off the owner
+    # box; anything else is a regression.
     passed = int(totals.get("passed") or 0)
     total = int(totals.get("total") or 0)
-    return 0 if passed + expected >= total else 1
+    return 0 if passed + expected + off_box >= total else 1
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry

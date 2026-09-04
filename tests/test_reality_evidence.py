@@ -52,6 +52,7 @@ async def test_run_is_recorded_with_schema_join_and_honesty_fields(tmp_path):
     assert record["schema"] == SCHEMA
     assert record["totals"] == {
             "passed": 1, "total": 1, "skipped": 0, "cases": 1, "expected_seam_failures": 0,
+            "owner_live_not_exercised": 0,
         }
     # The artifact says what it is: a transcript, never authority.
     assert record["promotion_scope"] == "in_process_only"
@@ -227,4 +228,27 @@ def test_main_exits_zero_offline_when_only_seam_capabilities_fail(tmp_path):
     failing = {case["capability_id"] for case in record["cases"] if not case["passed"] and not case["skipped"]}
     assert rc == 0
     assert totals["passed"] + totals["expected_seam_failures"] >= totals["total"]
-    assert set(record["expected_seam_failures"]) == failing
+    assert set(record["expected_seam_failures"]) | set(record["owner_live_not_exercised"]) == failing
+
+
+def test_main_exits_zero_in_live_mode_when_owner_hardware_is_absent(tmp_path, monkeypatch):
+    """The scheduled lane runs with JARVIS_REALITY_HARNESS=1 on a GitHub runner: the
+    owner-live house/camera cases report their opt-in as missing and must count as
+    'not exercised on this host', never as a red nightly (2026-09-03 run 70)."""
+    from agents.core.observability.reality_evidence import main
+
+    monkeypatch.setenv("JARVIS_REALITY_HARNESS", "1")
+    monkeypatch.delenv("JARVIS_H30_HA_LIVE", raising=False)
+    out = tmp_path / "latest-run.json"
+    rc = main(["--store-root", str(tmp_path), "--json-out", str(out), "--lane", "scheduled"])
+    record = json.loads(out.read_text(encoding="utf-8"))
+    totals = record["totals"]
+    failing = {c["capability_id"] for c in record["cases"] if not c["passed"] and not c["skipped"]}
+    assert rc == 0
+    assert totals["owner_live_not_exercised"] >= 1
+    assert set(record["expected_seam_failures"]) | set(record["owner_live_not_exercised"]) == failing
+    for case in record["cases"]:
+        # a capability id is shared by its offline and owner-live cases; only the
+        # failing owner-live rows are the ones the verdict excused
+        if case["capability_id"] in record["owner_live_not_exercised"] and not case["passed"]:
+            assert case["live"] is True and case["promotable"] is False
