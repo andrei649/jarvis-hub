@@ -44,6 +44,18 @@ async def _run(cases):
     return await run_reality(cases)
 
 
+def _verdict_message(record):
+    """Newline-joined, NOT the raw list.
+
+    A bare `assert rc == 0` reports only "assert 1 == 0" and discards which case
+    broke the verdict. But passing the list itself is barely better: pytest
+    renders it through `saferepr`, which truncates in the middle — measured, the
+    `[UNEXCUSED]` row is elided when it is not last, i.e. exactly the line the
+    message exists to carry. Joining on newlines renders every row.
+    """
+    return "\n" + "\n".join(explain_verdict(record)["lines"])
+
+
 def _row(cid, *, passed, live=False, name=None, skipped=False):
     return {"capability_id": cid, "name": name or f"{cid} probe",
             "passed": passed, "skipped": skipped, "live": live}
@@ -285,7 +297,7 @@ def test_main_exits_zero_offline_when_only_seam_capabilities_fail(tmp_path):
     record = json.loads(out.read_text(encoding="utf-8"))
     totals = record["totals"]
     failing = {case["capability_id"] for case in record["cases"] if not case["passed"] and not case["skipped"]}
-    assert rc == 0
+    assert rc == 0, _verdict_message(record)
     assert totals["passed"] + totals["expected_seam_failures"] >= totals["total"]
     assert set(record["expected_seam_failures"]) | set(record["owner_live_not_exercised"]) == failing
 
@@ -303,10 +315,7 @@ def test_main_exits_zero_in_live_mode_when_owner_hardware_is_absent(tmp_path, mo
     record = json.loads(out.read_text(encoding="utf-8"))
     totals = record["totals"]
     failing = {c["capability_id"] for c in record["cases"] if not c["passed"] and not c["skipped"]}
-    # Name the culprit in the failure message. A bare `assert rc == 0` reports
-    # "assert 1 == 0" and discards the one fact a CI reader needs — which is
-    # exactly what happened when this flaked on #1017.
-    assert rc == 0, explain_verdict(record)["lines"]
+    assert rc == 0, _verdict_message(record)
     assert totals["owner_live_not_exercised"] >= 1
     assert set(record["expected_seam_failures"]) | set(record["owner_live_not_exercised"]) == failing
     for case in record["cases"]:
