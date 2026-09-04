@@ -579,16 +579,24 @@ input { font-family: inherit; }
 /* ── P5 polish — responsive + accessibility ───────────────────────── */
 /* collapse the 3-column cockpit/agents layouts on narrow screens */
 @media (max-width: 1100px) {
-  /* Stacking the columns is only half of collapsing to one. The workzone is a grid inside
-     a height:100% shell that cannot grow, so with auto rows the FIRST column took its whole
-     content height and the chat column got the remainder — measured `577px 18px` at
-     1000x800. An 18px row cannot hold a 77px input bar, so it painted at y=931 in an 800px
-     viewport with nothing scrollable to reach it: the cockpit was unusable at 1100/1000/
-     900/800. Let the rows size to their content and let the stack scroll. */
+  /* Stacking the columns is only half of collapsing to one. The workzone is a grid inside a
+     height:100% shell that cannot grow, so the FIRST column takes its whole content height
+     and the chat column gets the remainder — measured `577px 18px` at 1000x800. An 18px row
+     cannot hold a 77px input bar, so it painted at y=931 in an 800px viewport with nothing
+     scrollable to reach it: the cockpit was unusable at 1100/1000/900/800.
+     `overflow-y:auto` does NOT un-crush that row — measured, the rows are still `577px 18px`
+     and `.convo` is still 32px. What it changes is that the stack can now be scrolled to, so
+     the input bar is reachable. Sizing the rows properly is the stacked-layout design work
+     that belongs with the open owner call, not here.
+     The padding is load-bearing, not cosmetic: per spec an `overflow-y` other than `visible`
+     promotes the used `overflow-x` to `auto`, so this box now clips horizontally, and the
+     a11y focus ring below (`:focus-visible`, outline-offset:2px = 4px outside the border box)
+     was being cut off every focusable panel body. Verified by sampling the painted pixels. */
   .workzone.cockpit, .workzone.wide {
     grid-template-columns: 1fr !important;
-    grid-auto-rows: minmax(0, auto);
     overflow-y: auto;
+    padding-left: 4px;
+    padding-right: 4px;
   }
   .col.scrollcol { display: none; }              /* hide the right context column when stacked */
   .topbar .clock-time { font-size: 30px; }

@@ -2411,21 +2411,40 @@ was switched on over a layout that was never made responsive. Two facts frame th
   column got the remainder — measured `grid-template-rows: 577px 18px` at 1000×800. An 18px row
   cannot hold a 77px input bar, so it painted at **y=931 in an 800px viewport**, below the fold,
   with **no scrollable ancestor** to reach it. `.convo` collapsed to 32px at the same time.
-  Measured on `main` @ `4e74b9c`: 1280 → bar bottom 785, in view; 1100 → 866; 1000/900/800 → 931,
-  none in view, nothing scrollable.
-  **Fix.** The collapsed workzone gets `grid-auto-rows: minmax(0, auto)` + `overflow-y: auto`, so
-  the rows size to their content and the stack scrolls instead of crushing its last row. Two
-  declarations, inside the existing breakpoint. `frontend/e2e/reachability.spec.ts` (+5) pins it at
-  1280/1100/1000/900/800 and was red-proved first: 1280 passed, the other four failed with the
-  measured `577px 18px` rows named in the failure message.
+  Measured on `main` @ `4e74b9c`, once settled: 1280 → bar bottom 785, in view; **1100/1000/900/800
+  → 931**, none in view, nothing scrollable. (An earlier draft said "1100 → 866". That was read from
+  the pre-data frame: at t≈0 the rows are `472px 167px` and the bar ends at 866; by t≈200ms they
+  settle to `577px 18px` and 931 and stay there. A number measured before the roster loads is not
+  the number.)
+  **Fix — and what it does *not* do.** The collapsed workzone gets `overflow-y: auto`, so the stack
+  can be scrolled to. An earlier draft also added `grid-auto-rows: minmax(0, auto)` and claimed the
+  pair made "the rows size to their content instead of crushing the last row". **Both halves of that
+  were false and are retracted.** Isolating each declaration at 1000×800: `grid-auto-rows` alone is
+  identical to `main` (rows `577px 18px`, no scroll, bar 931) — a **provable no-op**, now deleted;
+  and with `overflow-y:auto` the rows are **still `577px 18px`** and `.convo` is still 32px. The row
+  stays crushed; what changes is only that it becomes reachable.
+  Horizontal padding is then load-bearing, not cosmetic: per spec an `overflow-y` other than
+  `visible` promotes the used `overflow-x` to `auto`, so the box began clipping horizontally and cut
+  the `:focus-visible` ring (drawn 4px outside the border box) off every focusable panel body —
+  confirmed by sampling painted pixels, where the accent ring simply stopped being painted.
+  `padding-left`/`padding-right: 4px` give it room. `frontend/e2e/reachability.spec.ts` (+5) pins it at
+  1280/1100/1000/900/800 and was red-proved first: 1280 passed, the other four failed, naming the
+  measured rows (`577px 18px` at 1100/1000, `547px 18px` at 900/800). A second assertion pins the
+  focus ring, and it too was red-proved — its *first* version passed against the broken state,
+  because it read `outline-width`/`outline-offset` from **unfocused** elements where both are `0px`;
+  it now reads them from a focused probe and fires with a 3px overhang on `div.panel-body`.
   **What this does NOT do, stated because the screenshot makes it obvious.** The input bar is now
-  reachable and usable, but the transcript above it is still ~32px until you scroll — the stack is
-  navigable, not well-proportioned. How tall a stacked transcript should be is a layout-design
+  reachable and usable, but the transcript stays 32px — **before and after scrolling alike**. An
+  earlier draft said "~32px until you scroll", which implied scrolling changes it; it does not. The
+  stack is navigable, not well-proportioned. How tall a stacked transcript should be is a layout-design
   question, and it belongs with the still-open owner call above rather than being invented here.
   The assertion is therefore *reachability*, not comfort.
-  **It also does not touch the phone surface.** Verified: with this fix applied under Pixel 5
-  emulation the layout viewport is still 915px and the transmit click still fails with the identical
-  interception symptom — the owner's decision is unchanged and unpre-empted. Note the same two
+  **It does not change the phone outcome — but "does not touch it" would be wrong.** 915px is ≤1100,
+  so these declarations *do* apply under Pixel 5 emulation: the workzone's computed `overflow-y` goes
+  `visible → auto` there too. What is unchanged is what matters — the layout viewport is still 915px,
+  the transmit click still fails, and the owner's decision is unpre-empted. The interceptor named
+  does change (`div.rl` inside `.col` → `span.chan` inside the input bar), so "the identical symptom"
+  would also overstate it: same failure class, different reported element. Note the same two
   declarations are two of the four in that decision's option B, so the two pieces of work share a
   lever even though this one stops well short of it.
 

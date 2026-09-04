@@ -70,4 +70,54 @@ for (const width of WIDTHS) {
       'the chat row instead of letting the stack scroll',
     ).toBe(true);
   });
+
+  test(`the focus ring is not clipped at ${width}px`, async ({ page }) => {
+    // Companion to the test above, and it exists because the fix for that one caused this
+    // bug: `overflow-y:auto` promotes the used `overflow-x` to `auto` per spec, so the
+    // workzone starts clipping horizontally and eats the `:focus-visible` outline — which
+    // is drawn at outline-offset:2px, i.e. 4px OUTSIDE the border box. axe cannot see a
+    // clipped outline, so a11y.spec.ts passes either way; only geometry catches it.
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto('/v2', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
+    await page.waitForTimeout(600);
+
+    const m = await page.evaluate(() => {
+      const wz = document.querySelector('.workzone') as HTMLElement | null;
+      if (!wz) return null;
+      const clips = getComputedStyle(wz).overflowX !== 'visible';
+      const box = wz.getBoundingClientRect();
+      const focusables = Array.from(wz.querySelectorAll<HTMLElement>('[tabindex="0"], button, a[href], input'))
+        .filter((el) => el.getBoundingClientRect().width > 0);
+      if (!focusables.length) return { clips, worstOverhang: 0, who: 'none', ring: 0 };
+
+      // Read the ring geometry from a FOCUSED element. Unfocused ones report
+      // outline-width/offset as 0px — measuring those makes this assertion always pass,
+      // which is exactly how the first version of it failed its own red-proof.
+      const probe = focusables[0];
+      const active = document.activeElement as HTMLElement | null;
+      probe.focus();
+      const pcs = getComputedStyle(probe);
+      const ring = parseFloat(pcs.outlineWidth || '0') + parseFloat(pcs.outlineOffset || '0');
+      if (active && active !== probe) active.focus(); else probe.blur();
+
+      let worst = 0; let who = '';
+      for (const el of focusables) {
+        const r = el.getBoundingClientRect();
+        const overhang = Math.round(Math.max(box.left - (r.left - ring), (r.right + ring) - box.right));
+        if (overhang > worst) { worst = overhang; who = el.tagName.toLowerCase() + '.' + ((el.className || '').toString().trim().split(/\s+/)[0] || ''); }
+      }
+      return { clips, worstOverhang: worst, who, ring };
+    });
+
+    expect(m, 'the workzone should exist').not.toBeNull();
+    if (m!.clips) {
+      expect(
+        m!.worstOverhang,
+        `at ${width}px the workzone clips horizontally and ${m!.who}'s focus ring overhangs ` +
+        `its clip box by ${m!.worstOverhang}px — the ring will be cut off. Give the ` +
+        'collapsed workzone enough horizontal padding to hold a 4px outline.',
+      ).toBeLessThanOrEqual(0);
+    }
+  });
 }
