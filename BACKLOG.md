@@ -2402,6 +2402,44 @@ was switched on over a layout that was never made responsive. Two facts frame th
   red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
   (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
 
+**The webkit half is solved — the service worker, confirmed by intervention (2026-09-04).** Ten of the
+22 nightly failures were webkit, and the standing diagnosis was a vague "`page.route` does not
+intercept". The mechanism is now identified and the fix is measured, not argued.
+
+`index.html` registers `/sw-v2.js` at scope `/`, so every page in the lane is a
+service-worker-controlled client — and Playwright documents request interception for
+service-worker-mediated requests as **Chromium-only**. So on webkit the three specs in `hud.spec.ts`
+that mock the chat-stream route (`:87`, `:123`, `:153`) never intercept: they drive the real
+model-less backend, the click lands, the user bubble renders and the mocked agent reply never
+arrives. The three specs in the same file that use no `page.route` (`:21`, `:59`, `:73`) always
+passed — which is what isolates it.
+
+Three matrix runs at `iterations: 1`, 32 cases each, dispatched from a branch (only possible because
+of the `workflow_dispatch` inputs above):
+
+| | failures | detail |
+|---|---|---|
+| baseline | **7** | webkit ×3 · mobile-chrome a11y:33 · mobile-chrome ×3 |
+| service workers blocked **globally** | **4** | webkit ×3 fixed, a11y fixed — but `hud.spec.ts:21` newly **broke** on webkit (Neural Mesh canvas, 0 lit pixels) |
+| blocked **only for the three route-mocked specs** | **3** | all 8 webkit cases green incl. `:21`; only the mobile-chrome pointer cases remain |
+
+- [x] ✅ `frontend/e2e/hud.spec.ts` wraps the three route-mocking specs in a `test.describe` with
+      `test.use({ serviceWorkers: 'block' })`. Ignoring the re-indent the change is **+20 lines**.
+      Scoped deliberately: the global switch bought the routing assertions at the cost of a canvas
+      one, and the PWA path is part of what this lane exists to cover.
+- [x] ✅ **This also removes the a11y failures at their source.** `mobile-chrome a11y.spec.ts:33`
+      went green in both fixed runs, because webkit stops persisting user turns into the shared
+      session. Combined with the `.convo` `tabIndex` fix (which clears the same rule in any state),
+      the a11y half is closed twice over.
+- [ ] 🟡 **Remaining: 3 mobile-chrome pointer cases** — the open owner call above. Projected nightly
+      at `iterations: 3`: **9 failures, down from 22**, all of them that one decision.
+- [ ] 🔴 **`npx tsc --noEmit` does not cover `frontend/e2e`** (`tsconfig.json` has `include: ["src"]`).
+      Found the hard way: a block comment containing `*` + `/` closed itself early, tsc passed clean,
+      and only Playwright's loader rejected the file. Adding `e2e` to `include` needs `@types/node`
+      (measured: 2 errors, both `TS2591` on `node:fs`), so it is a dependency change, not a one-line
+      fix. A cheaper guard for the PR lane is `npx playwright test --list`, which loads every spec
+      without running one. Neither is done here.
+
 ---
 
 ## 🔌 Live-vs-Plumbing Remediation — mock → real (owner request 2026-07-18)
