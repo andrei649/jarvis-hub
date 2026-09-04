@@ -2386,8 +2386,55 @@ counter metric (all-time stays available to `/api/analytics/locality`).
 **The phone surface — open question, owner call (2026-07-29).** The scheduled e2e run fails 9
 `mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button "intercept pointer events" at
 the 393×851 Pixel 5 viewport). Nothing regressed: `E2E_BROWSER_MATRIX` is set only on `schedule`
-events, and **all 26 scheduled runs since 2026-07-04 have failed — none has ever passed.** The matrix
+events, and **every scheduled run has failed — 63 as of 2026-09-04, none has ever passed.** *(Said 26
+when written on 2026-07-29; refreshed against the Actions API.)* The matrix
 was switched on over a layout that was never made responsive. Two facts frame the decision:
+
+**The phone surface — open question, owner call (2026-07-29; re-measured 2026-09-04).** The
+scheduled e2e run fails `mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button
+report "intercept pointer events" at the 393×851 Pixel 5 viewport). Nothing regressed:
+`E2E_BROWSER_MATRIX` is set only on `schedule` events, and **no scheduled run has ever passed** —
+63 runs to 2026-09-04, the 20 most recent all red. The matrix was switched on over a layout that
+was never made responsive. Two facts frame the decision:
+
+> **Counts refreshed 2026-09-04** (run [33850948593](https://github.com/andrei649/jarvis-hub/actions/runs/33850948593)):
+> the failure is now **22 cases, not 9** — 12 `mobile-chrome` + **10 `webkit`**. The webkit half is
+> *not* part of this phone question (Desktop Safari runs at 1280×720) and has its own row below.
+>
+> **The recorded mechanism above was wrong, and the correction matters to the decision.**
+> "Intercept pointer events" reads like an overlay bug; there is no overlay. Measured at the Pixel 5
+> viewport: `document.elementFromPoint()` at the button's centre returns *the button*, and both
+> `click({force:true})` and `dispatchEvent('click')` succeed. What actually happens is a coordinate
+> mismatch. The HUD laid out at 915px inside a 393px viewport, so mobile Chromium applies a
+> shrink-to-fit page scale (measured `innerWidth` 915 vs `clientWidth` 393 → scale 0.43).
+> **How much of the Playwright side is actually established (corrected 2026-09-04).** What is
+> measured: the button's box lies outside the layout viewport of a page that `body{overflow:hidden}`
+> (`styles.css:25`) makes unscrollable, so Playwright's "scrolling into view" is a no-op and it
+> never obtains a valid hit point; and `isMobile` is load-bearing — at 393×851 the spec FAILS with
+> it and PASSES without it, reproduced on `main` and on this branch. What is **not** established:
+> an earlier draft here asserted that Playwright "resolves the element's quad in the page-scaled
+> frame", with arithmetic (`centre × pageScale`) that reproduces the CI interceptor names exactly.
+> An adversarial check registered window-capture listeners at `document_start` and saw **zero**
+> mouse events during the failing click — Playwright dispatches no input event at all, the
+> actionability test runs entirely in the injected world. So that arithmetic is a *coincidence-fit*,
+> not a reading of Playwright's coordinates, and it is demoted to a plausible explanation of why
+> the named interceptor churns between retries (`.col`, `.panel-head`, `.agent-row`, a bare div).
+> The decision below does not rest on it either way.
+> **Those two numbers are @ `bf48cf2`.** The topbar-fit row below has since narrowed it to a
+> 640px layout viewport (scale ≈ 0.61) — still mismatched, and the three `mobile-chrome` specs
+> still fail with the identical symptom, so nothing about this decision changes. Playwright
+> then resolves the element's quad in the page-scaled frame and hit-tests at the wrong point, which
+> the browser reports as whatever sits there — `.agent-row` inside `.col`. The overflow has two
+> sources, both the same bare-`1fr` floor (`1fr` == `minmax(auto,1fr)`, so the track cannot shrink
+> below min-content): `.topbar` (`styles.css:89`), whose first column holds `.brand` with the 6-badge
+> status strip nested inside it (`shell.tsx:52`, `.badges` flex + `.badge{min-width:70px}` = 469px
+> min-content → a 627.66px track), and `.main[data-ia="rail"]` (`styles.css:128`, measured
+> `60px 551.984px` inside a 393px box).
+>
+> So the row's own conclusion — "not a pointer-events tweak" — still holds, for a better reason:
+> there is nothing to tweak. **The decision below is unchanged and still the owner's.**
+> The ≥760px half of the overflow was a separate desktop defect and is fixed (see the layout-fit row);
+> that fix deliberately does not close the sub-760px gap, so it does not pre-empt this call.
 
 - [ ] 🟡 **The web HUD is not reachable from a phone today, by design.** `serve.py:66` defaults
   `JARVIS_HOST` to `127.0.0.1`, and `assert_safe_bind()` (`boot_guards.py:25`) **exits** on a
@@ -2502,6 +2549,72 @@ spec has ever scanned**, one of them the *same rule* this row just closed on `.c
 - [ ] 🟡 Each needs its own red-proof and the spec needs to walk the mode surfaces, so they are the
       next slice rather than a widening of this one. Modes 0/1/3/5/7/8/9 came back clean.
 
+two of seventeen surfaces — so a green a11y lane said nothing about the rest. A mode walk found
+blocking violations on surfaces no spec had ever visited. **The first version of that walk was
+itself wrong in two ways, both caught by independent review, and the corrected walk finds nearly
+three times as much**, which is the more useful fact:
+
+| lane | violations found |
+|---|---|
+| live · 1280×720 | 2 — agents, memory |
+| live · 1440×900 | 3 — agents, memory, build |
+| demo · 1440×900 | **8 across 5 modes** — agents, memory, autonomy, build, comms ×4 |
+
+- [x] ✅ **mode 2 (AGENTS) — `serious · scrollable-region-focusable` on `.scroll > .panel-body`**
+      (`modes.tsx`). 774px of content in a 670px box, `tabIndex -1`, zero focusable descendants —
+      the agent cards are `<div className="acard" onClick=…>`. Fixed with `tabIndex={0}` **plus
+      `aria-label={t.roster}`**: the `.convo` fix one commit earlier added a role and a name for
+      exactly this reason, and a keyboard user should not land on an unnamed generic div.
+      *Correction to how this was first written:* "the roster scrolled past the fold unreachable by
+      keyboard" is **false in Chromium**, which ships keyboard-focusable scrollers — measured, the
+      panel is reached at Tab 23 both before and after. The axe result is real and the fix is the
+      WCAG 2.1.1 authoring contract; the browsers where it is a live user-facing defect are Firefox
+      and Safari.
+- [x] ✅ **mode 4 (MEMORY) — `critical · label`** on the time-travel `<input type="range">`; now
+      `aria-label={t.timeTravel}`, localized in both locales.
+- [x] ✅ **mode 6 (BUILD) — `serious · color-contrast`** on the sandbox placeholder: `--ink-3`
+      measured **2.80:1** against `--void` where 4.5:1 is required.
+- [x] ✅ **modes 5 (AUTONOMY) and 0 (COMMS) — five more, found only after the review.** The first
+      walk called them "clean". They were not scanned: `app.tsx`'s honest gate renders `ModeEmpty`
+      — an 11-node "Not connected" card — for any capability mode whose source is not live, which
+      against the e2e backend is exactly those two. Their real surfaces carry
+      `serious · color-contrast` on the speak-brief button and on **four interactive channel-filter
+      buttons** (`.cf`), all the same 2.80:1 token. Fixed in `styles.css` (`.cf`, `.pmode` base and
+      `.pmode.off` → `--ink-2`, measured 7.06:1).
+- [x] ✅ **`frontend/e2e/a11y-modes.spec.ts`** walks all ten hotkey-reachable modes, **in four
+      lanes** — live and `?demo=1` × 1280×720 and 1440×900 — and red-proofs to the table above.
+      Three pins, each for a way the first version lied:
+      **(a)** its non-vacuity check compared `.workzone` classNames, but `app.tsx` emits only three
+      across ten modes (`cockpit`, `wide`, and `full` for the other eight), so `seen.size > 1` was
+      satisfied by two of ten — **demonstrated inert**, and the walk could scan AGENTS eight times
+      and pass. It now fingerprints the active rail label and asserts it saw all ten (red-proofed:
+      forcing every keypress to `1` fails with `saw: Cockpit ×10`).
+      **(b)** it now records `empty` per mode and, in demo, asserts no surface is an empty card —
+      so a green scan of "Not connected" can never be counted as coverage.
+      **(c)** the 900 ms sleep is gone. Under 1.5 s of added API latency AGENTS is at 64 of its
+      final 318 nodes at 900 ms, and two of three red-proof findings vanished — a silent green, not
+      a flake. It now waits for the DOM to stop changing.
+- [x] ✅ `frontend/src/test/mode-surface-a11y.test.tsx` (+2) pins both attributes at component
+      level, red-proofed, so deleting them fails in the PR lane without a browser.
+- [ ] 🟡 **Two viewports, and the stated reason for the first one was wrong.** BUILD's contrast
+      violation is invisible at 1280×720 and reported at 1440×900 — but the cause is **width**, not
+      the fold: `styles.css` `@media (max-width:1300px)` collapses `.build-grid` to one column and
+      pushes the node to y=1122. And in the other direction AGENTS' `scrollable-region-focusable`
+      **disappears at 1920×1080**, because the panel stops overflowing. No single viewport sees
+      everything; two is a floor, not a proof.
+- [ ] 🔴 **`--ink-3` is a systemic contrast failure, not three sites.** The token composites to
+      `#52585f` on `--void` = **2.80:1**. Counted on the shipped bundle in demo at 1440×900:
+      **276 text-bearing elements** carry it (cockpit 59 · agents 61 · observe 43 · autonomy 32 ·
+      comms 22 · memory 20 · trust 18 · build 13 · interop 4 · chat 4), from 89 uses in
+      `styles.css` plus ~220 inline. This slice fixed the ones axe could resolve; the rest are
+      invisible to it because axe parks contrast it cannot compute over a gradient in
+      `incomplete`, not `violations` (e.g. `.timeslider .tlab`, measured **2.88:1** from real
+      screenshot pixels). The spec now writes `incomplete` and a counts tally into its artifact so
+      the backlog is visible; **retiring `--ink-3` as a text colour is its own slice.**
+- [ ] 🟡 **Coverage is 10 of 16 rail modes.** The number hotkeys do not reach `projects`,
+      `finance`, `health`, `knowledge`, `family` or `admin`. All six were walked manually via the
+      rail at 1440×900, live and demo, and came back clean — but no spec covers them.
+
 **Unchanged in the E2E lane:** the 9 mobile-chrome pointer cases (the owner call above) and the
 9 webkit cases where `page.route` does not intercept — **but the causal chain is no longer inferred.**
 A single-iteration matrix run from a branch ([run 33882549024](https://github.com/andrei649/jarvis-hub/actions/runs/33882549024),
@@ -2512,6 +2625,109 @@ failures and which drive the real backend and persist user turns. The next page 
 (`app.tsx:161-177` ← `GET /memory`) into exactly the state seeded above. The three webkit specs that
 use no `page.route` (`hud.spec.ts:21/59/73`) pass, isolating the defect to route interception alone.
 No webkit fix is claimed here and none has been run off-box.
+
+- [x] ✅ **Laptop-width topbar fit — fixed 2026-09-04.** Separating this out is the point: the same
+  bare-`1fr` bug also broke *desktop* widths, which no owner call covers. Measured on `main` @
+  `bf48cf2`: from 761px to 1080px the document laid out **1082px wide**. And it did not scroll —
+  `body{overflow:hidden}` (`styles.css:25`) propagates to the viewport, so there was no scrollbar and
+  no way to reach the excess: it was **clipped and unreachable**, which is worse than scrolling.
+  **The fix needed two halves, and shipping only the first made things worse.** `minmax(0,1fr)` on
+  `.topbar` lets the *track* shrink — but `.brand` is a flex item with no `min-width:0`, so its
+  628px of content did not reflow, it **spilled over the centred clock**: measured 109px of overlap
+  at 1280, 274px at 900, 324px at 800, with the clock digits unreadable underneath. An independent
+  reviewer caught that before merge; the first draft of this row and its test had both missed it,
+  because a `scrollWidth` check goes green *because* of overlap — superimposing content is exactly
+  how you make an overflow vanish from that metric. `.brand{min-width:0}` +
+  `.brand .badges{min-width:0;overflow:hidden}` complete it: the strip clips inside its own box
+  instead of on its neighbour.
+  **What that costs, measured honestly — the first draft of this sentence was wrong.** It claimed
+  "6 of 6 badges visible down to 1280, 4 of 6 at 800". Both figures are false and *arithmetically
+  impossible*: at 1280 the clip box is 312px and six badges need 6×70 + 5×9 = 465px. The first
+  measurement counted badges inside the *viewport* rather than inside the box that does the
+  clipping — the third time in this slice that measuring the wrong box produced a confident wrong
+  number. Measured inside the clip box, badges fully visible: **1920 → 6, 1536 → 5, 1440 → 4,
+  1366 → 4, 1280 → 4, 1024 → 3, 900 → 2, 800 → 1.** All six survive only above **~1700px** (measured 1690 → 5, 1700 → 6, by this
+  row's own "fully visible inside the clip box" metric; ~1780px is where the strip reaches its
+  494px max-content with no badge squeezed to its 70px floor — a different threshold).
+  **And the drop order is the wrong way round.** `justify-content:flex-end` means the clip eats the
+  *first* children, so the first to go are `AGENTS`, then `LLM` (model READY / NO MODEL / OFFLINE),
+  then `DATA` (LIVE / DEMO / OFFLINE) — the model- and data-health indicators, silently, at ordinary
+  laptop widths. For a repo that refuses silent degradation elsewhere that is a poor trade, so it is
+  recorded as a live residual rather than sold as a clean win. It is still strictly better than
+  274px of badges painted across the clock; the real answer is a topbar content strategy, which
+  belongs with the ≤1100px row above rather than bolted on here.
+  **One regression this introduced, then fixed.** The rule was first written unscoped, and `.badges`
+  is used twice — `shell.tsx:52` (the status strip, which needs clipping) and `shell.tsx:65` (the
+  demo/EN/AMBIENT/⌘K tool strip, which never overflows at any width). Clipping the second ate the
+  keyboard focus ring on its buttons at *every* width, 1920 included: `:focus-visible` draws at
+  `outline-offset:2px`, 4px outside a border box sitting flush with the strip. A WCAG 2.4.11 defect,
+  invisible to axe — it does not check clipped outlines — and caught only because an independent
+  review looked at a screenshot. Scoping to `.brand .badges` restores the full ring, verified by
+  screenshot rather than by assertion.
+  `frontend/e2e/layout.spec.ts` (+4) asserts **both** — fits AND does not stack — and each half is
+  red-proved against a different broken state: the fit assertion fails at 900/800 on unmodified
+  `main`, and the overlap assertion fails at 1280/900/800 (109/274/324px) against the
+  `minmax`-only version. The overlap assertion had to measure the painted badges, not `.brand`,
+  whose rect is the grid track and *does* shrink — measuring `.brand` passed the very regression
+  it existed to catch.
+  **Below 760px, honestly:** 760 and 700 now fit; 600, 500 and 393 lay out **640px under Pixel 5 emulation**
+  (was 915px) and **625px in plain desktop chromium** — those are different measurements and the
+  earlier draft did not say which it meant. So the ≤760px override was *not* behaviour-neutral, contrary to this row's first
+  draft — that claim was wrong and is retracted here. The phone gap is narrower but still open, and
+  closing it is still the stacked-layout work the owner call above has to decide.
+
+- [ ] 🔴 **The cockpit's chat surface is off-screen at ≤1100px — a plain desktop bug, worse than the
+  topbar one, found in the same investigation (2026-09-04).** Nothing to do with phones: 1100px,
+  1000px and 900px are ordinary laptop and split-screen widths that the product unambiguously
+  supports. `@media (max-width:1100px)` (`styles.css:594` on this branch, `:581` on `main`) collapses `.workzone.cockpit` to a single
+  column, so the remaining `.col` children stack **vertically** inside a `height:100%` shell that
+  cannot grow — and the chat column is the one pushed off the bottom.
+  Measured on this branch at an 800px-tall viewport: at 1280px the input bar sits at `bottom=785`
+  (in view) with `.convo` 163px tall; at **1100, 1000, 900 and 800 it sits at `bottom=931` — below the
+  800px fold, `inView=false` — and `.convo` collapses to 32px.** A user at those widths cannot see
+  or reach the message box at all.
+  **This is not what the topbar fix addressed**, and the fix does not help it: the two are
+  independent, one horizontal and one vertical. Recording it here rather than widening that PR, and
+  flagging it as the higher-severity of the two — a clipped topbar badge is cosmetic; an unreachable
+  input bar makes the cockpit unusable. The likely shape of a fix is giving the collapsed
+  single-column workzone a scrollable/auto-height main region instead of a fixed one, which needs a
+  look at `.shell`/`.main`/`.workzone` heights together — its own slice, not a one-liner.
+
+- [ ] 🔴 **The `webkit` half — a test-harness defect, not a HUD defect, and not the phone question.**
+  10 of the 22 nightly failures are `[webkit]` at 1280×720: `a11y.spec.ts:33` ×1 and
+  `hud.spec.ts:87/:123/:153` ×3 each. **In WebKit `page.route()` does not intercept**, so those specs
+  drive the *real*, model-less CI backend instead of their mocks. Precisely: on webkit the click
+  **lands** — `hud.spec.ts:119`'s `.msg.user .bubble` "hello jarvis" passes — and `:120` fails
+  because the mocked agent reply `.msg.agent .bubble` never appears; `:123` fails because the
+  stop button never exists. There is no pointer interception anywhere in the webkit blocks, so
+  "they time out" understates it: the user turn renders, the mocked reply never does. Evidence from the CI
+  log of run 33850948593: the webkit a11y failure dumps a live DOM containing the specs' own literal
+  strings — `hello jarvis` (`hud.spec.ts:116`) and `please stop` (`hud.spec.ts:144`), two copies each,
+  one per prior repeat — which can only have reached it through the server: nothing persists the
+  transcript client-side, and `app.tsx:161-177` rehydrates it from `GET /memory`
+  (`routers/memory_hud.py:41-55` → `orch.memory.get_history`). `orchestrator.py:1412` writes the USER
+  turn before the model runs, and on the model-less backend the *assistant* turn is never persisted —
+  the "language backend is not available" fallback reply never reaches `memory.add_turn` — so the
+  server keeps exactly the user-only transcript the log shows.
+  **Correction to this row's first draft (2026-09-04).** It said the a11y failures were "cross-test
+  contamination … not independent a11y regressions". That was wrong, and the difference matters:
+  the contamination *exposes* a **real WCAG defect in the shipped HUD**, it does not manufacture one.
+  `.convo` (`cockpit.tsx:38`, `styles.css:240` on this branch, `:227` on `main`) is `overflow-y:auto` with no `tabIndex` and no `role`,
+  and its only focusable descendants (the Save/TTS buttons, `cockpit.tsx:52-53`) live inside *agent*
+  messages — so a user-only transcript is a scrollable region with **zero** focusable content, which a
+  keyboard user cannot scroll (WCAG 2.1.1/2.1.3). Verified standalone in **desktop chromium at
+  1280×720**, not on a phone and not through webkit: reload the HUD against a model-less backend so
+  `app.tsx` rehydrates from `GET /memory` → 4 user bubbles, 0 agent bubbles, 0 focusables,
+  `scrollHeight 251` vs `clientHeight 108` → axe reports exactly one `serious`
+  `scrollable-region-focusable` on `.convo`. Live-sending turns instead does *not* reproduce it (the
+  agent bubbles bring 8 focusables with them), which is why the defect hid: it needs the reload path,
+  and that is the path a real user takes whenever their model backend is down.
+  **Own slice, next.** One line — `tabIndex={0} role="log" aria-label=…` on `cockpit.tsx:38` — plus a
+  regression test; it is not folded into the layout-fit PR because that would widen a reviewed diff.
+  **Next slice, not this one.** Prime suspect is the PWA service worker (T-0.29) intercepting fetches
+  ahead of Playwright's route handler; if so the fix is `serviceWorkers: 'block'` in the Playwright
+  context — which removes an interference, it does not disable a test. Must be confirmed against a
+  real webkit run (`workflow_dispatch` of `e2e.yml` on a branch) before anything is claimed fixed.
 
 **The matrix is now reachable from `workflow_dispatch` (2026-09-04).** Part of *why* that lane stayed
 red for 63 consecutive nights is that nobody could iterate on it: `E2E_BROWSER_MATRIX` was gated on
@@ -2534,6 +2750,70 @@ and wait until 03:15 UTC. `.github/workflows/e2e.yml` now takes two dispatch inp
       `serviceWorkers: 'block'`) and the 9 mobile-chrome pointer cases (the owner call above). This
       row unblocks *working on* them; it does not fix either, and no webkit run has been performed —
       there is no webkit binary off-box.
+
+**The webkit half is solved — the service worker, confirmed by intervention (2026-09-04).** Ten of the
+22 nightly failures were webkit, and the standing diagnosis was a vague "`page.route` does not
+intercept". The mechanism is now identified and the fix is measured, not argued.
+
+`index.html` registers `/sw-v2.js` at scope `/`, the worker is **activated and controlling before any
+assertion in the file runs** (measured), and on webkit the three specs in `hud.spec.ts` that mock the
+chat-stream route never intercept: they drive the real model-less backend, the click lands, the user
+bubble renders, and the mocked agent reply never arrives.
+
+**The obvious mechanism does not survive its own data, so it is not claimed.** "Playwright's
+interception is Chromium-only for service-worker-mediated requests" predicts firefox failing too —
+firefox passes **24 of 24**. It also predicts this worker mediating the request, and it does not:
+`sw-v2.js` returns early on `req.method !== 'GET'` and the chat stream is a POST. The worker is
+causally involved **on WebKit specifically**, by a path not established here.
+
+Webkit's 10 nightly failures are those 9 `hud` cases **plus one `a11y.spec.ts:33`** — the latter is the
+shared-session contamination below, not a tenth routing case. The three specs in the same file that use no `page.route` (`:21`, `:59`, `:73`) always
+passed — which is what isolates it.
+
+**Five** matrix runs, dispatched from a branch. That is only possible with the `workflow_dispatch`
+inputs PR #1021 adds, **merged 2026-09-04** — so these are now reproducible from `main`. Absent a
+dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
+
+| run | cases | failures |
+|---|---|---|
+| baseline, `n=1` | 32 | **7** — webkit ×3 · mobile-chrome a11y:33 · mobile-chrome ×3 |
+| service workers blocked globally, `n=1` | 32 | **4** — webkit ×3 and a11y fixed, but `hud.spec.ts:21` newly broke on webkit (canvas, 0 lit pixels) |
+| blocked only for the three route-mocked specs, `n=1` | 32 | **3** — all 8 webkit green |
+| **globally, `n=3`** | 96 | **9** — 3 mobile-chrome specs × 3 iterations. `:21` passes **3 of 3** on webkit |
+| **scoped, `n=3`** | 96 | **9** — identical |
+
+- [x] ✅ **`serviceWorkers: 'block'` in `playwright.config.ts`.** One declaration.
+      **This started out scoped to the three specs and was reverted to the simple global form after
+      review, because the reason for scoping was a flake.** The `n=1` pair looked like a trade — the
+      global block appeared to cost a canvas assertion on webkit to buy the routing ones — and that
+      single observation is what justified a `test.describe` wrapper and a 150-line re-indent. An
+      independent reviewer pointed out the lane demonstrably flakes on webkit (`a11y:33` failed 1 of 3
+      iterations in the nightly) and that n=1 is not evidence. At `n=3` the two forms are
+      indistinguishable and `:21` passes 3 of 3. The reviewer was right; the special case is gone.
+- [x] ✅ **This also removes the a11y failures at their source.** `mobile-chrome a11y.spec.ts:33`
+      went green in every fixed run, because webkit stops persisting user turns into the shared
+      session. PR #1019's `.convo` `tabIndex` fix clears the same rule in any transcript state, but
+      **it is not in this branch and was not in these runs** — the green here comes from the
+      service-worker side effect alone. Once both land, the a11y half is closed from either end.
+- [ ] 🟡 **What is NOT claimed: the mechanism.** "Playwright's interception is Chromium-only for
+      service-worker-mediated requests" is the obvious explanation and it does not survive its own
+      data — firefox is also non-Chromium and passes **24 of 24**, and this worker never mediates the
+      request anyway (`sw-v2.js` returns early on `req.method !== 'GET'`; the chat stream is a POST).
+      The worker is causally involved **on WebKit specifically**, by a path not established here.
+- [ ] 🟡 **The cost, stated rather than hand-waved.** The lane no longer registers the worker. That
+      costs **no assertion**: there are zero PWA assertions in `frontend/e2e/`, and the worker's
+      `fetch` handler serves no request in any spec, because every spec navigates once and both its
+      branches need a second navigation. `tests/test_pwa_v2.py` covers the worker by regex over its
+      source, not behaviourally. A real PWA spec should opt back in with
+      `test.use({ serviceWorkers: 'allow' })`.
+- [ ] 🟡 **Remaining: 3 mobile-chrome pointer cases** — the open owner call above. Measured at
+      `n=3`: **9 failures, down from 22**, and all nine are that one decision.
+- [ ] 🔴 **`npx tsc --noEmit` does not cover `frontend/e2e`** (`tsconfig.json` has `include: ["src"]`).
+      Found the hard way: a block comment containing `*` + `/` closed itself early, tsc passed clean,
+      and only Playwright's loader rejected the file. Adding `e2e` to `include` needs `@types/node`
+      (measured: 2 errors, both `TS2591` on `node:fs`), so it is a dependency change, not a one-line
+      fix. A cheaper guard for the PR lane is `npx playwright test --list`, which loads every spec
+      without running one. Neither is done here.
 
 ---
 
@@ -3018,7 +3298,7 @@ Figma API token, stays a separate owner-gated follow-up.)* | — |
 | H23.14 | **Semver compatibility contract** + supported-versions matrix + deprecation policy + platform matrix | ✅ **done** — `docs/COMPATIBILITY.md` (SemVer + pre-1.0 caveat, public-surface definition, supported-versions matrix, deprecation policy, platform matrix incl. the real **Python 3.12+** floor / Node 20+ / Docker-optional) + `SECURITY.md` rewritten from the GitHub placeholder into a real supported-versions + disclosure policy. **Gated:** `tests/test_compatibility.py` asserts the docs' supported-version lines track the single-sourced `agents.__version__` (so CDX-5 drift can't return) + valid SemVer + the documented Python floor. | 0.15 |
 | H23.15 | systemd/service templates (Linux/Windows) | ✅ **done** — `deploy/systemd/jarvis-hub.service` (hardened unit: `ProtectSystem=strict`/`NoNewPrivileges`/restricted address families; `KillSignal=SIGTERM` + `TimeoutStopSec` margin over `JARVIS_SHUTDOWN_TIMEOUT` → the H23.11 bounded graceful drain) + `jarvis-hub.env` + README; `deploy/windows/install-service.ps1` (NSSM, Ctrl-C graceful stop) + README; `deploy/README.md` index wiring the `/healthz`·`/readyz` probes. Both consume the H23.11 env knobs; guarded by `tests/test_compatibility.py`. | 0.15 |
 | H23.16 | **Network monitor** HUD panel (prove LOCAL_ONLY agents make zero outbound calls) | ✅ **DONE (verified 2026-07-02** — data layer + API + HUD panel all in tree; only the live-pixel render stays owner-runtime-gated, CDX-9**)** — **data layer + API done**: thread-safe `observability/egress_monitor.py` (in-memory ring buffer + monotonic per-plugin counters) records *every* outbound attempt — allowed **and** blocked — at the `http_client.py` choke point (all 6 verbs via one `_guard`); `GET /api/admin/network/calls?plugin=&limit=` (admin-guarded) serves per-plugin tallies + recent events + `local_only_violations` (the proof: a NONE/LAN plugin with an allowed external call surfaces as a violation → `clean=False`). `tests/test_network_monitor.py` (+9, MockTransport — no real socket). **HUD panel done:** `NetworkMonitorPanel` in the Console (`gap.tsx`, Trust section) reads the endpoint and renders the `clean` local-only proof + per-plugin allowed/blocked/external + any violation in red; `frontend/src/test/network-monitor.test.tsx` (+2, fetch-mocked) — passes `tsc --noEmit` + vitest. ⚠️ Only the live-pixel render is owner-runtime-gated (CDX-9), as for every HUD panel. | 0.16 |
-| H23.17 | **Quality gates** — E2E (Playwright), load/soak, a11y (WCAG), i18n completeness, browser+mobile matrix | ✅ **done (2026-07-03)** — i18n completeness, sandbox isolation, p95 load, live Playwright canvas/cinema smoke, axe a11y, nightly soak/browser matrix, and the chat send→SSE→stop + voice push-to-talk flow specs are all wired. M2.1 added the degraded-model chat/voice flow E2E; M2.2 added scheduled/manual browser matrix + soak knobs (`E2E_BROWSER_MATRIX`, `E2E_SOAK_ITERATIONS`). | 0.19 |
+| H23.17 | **Quality gates** — E2E (Playwright), load/soak, a11y (WCAG), i18n completeness, browser+mobile matrix | ✅ **done (2026-07-03)** — i18n completeness, sandbox isolation, p95 load, live Playwright canvas/cinema smoke, axe a11y, nightly soak/browser matrix, and the chat send→SSE→stop + voice push-to-talk flow specs are all wired. M2.1 added the degraded-model chat/voice flow E2E; M2.2 added scheduled/manual browser matrix + soak knobs (`E2E_BROWSER_MATRIX`, `E2E_SOAK_ITERATIONS`). **⚠️ Wired ≠ green (recorded 2026-09-04):** the chromium push lane passes, but the *scheduled* matrix has failed every run since it was switched on — 63 runs, none green. **The tick is correct as written and is not being disputed:** M2.2 commissioned the matrix as a reporting lane, explicitly *"non-blocking at first"*, with the acceptance criterion *"Nightly lane exists and reports; matrix runs 3 engines; PR path unchanged"* (`docs/superpowers/specs/2026-07-02-orizont25-execution-blueprint.md:212-220`) — an existence claim, which was true the day it was written. It was never evidence that webkit/mobile-chrome pass, and this note exists so no later reader mistakes it for that. Both halves are diagnosed under "The phone surface" above (owner call for the phone half; the webkit half is a `page.route` harness defect). | 0.19 |
 | H23.18 | **User docs** — USER_GUIDE, FAQ, UPGRADE (per-version migration notes) | 🟢 **done** — `docs/USER_GUIDE.md` (requirements → install (Win one-click / any-OS) → start → the cabinet → configure a model → daily use (chat/voice/autonomy/plugins) → admin panel → data controls), `docs/FAQ.md` (data-leaves-machine, telemetry, GPU, models, OS, multi-user, stop-autonomy, channels, cost, update, backup/export/delete, WorldView/Signal), `docs/UPGRADE.md` (Win `UPDATE.bat` / manual `git pull`+reinstall+restart / release-bundle; **automatic forward-only migrations** H23.7; backup-first rollback; graceful restart H23.11; per-version notes → COMPATIBILITY/SemVer). Linked from README; `tests/test_user_docs.py` (+4). | 0.19 |
 | H23.19 | **Trust/security docs** — THREAT_MODEL, SECURITY disclosure policy + advisories, NOTICE/SBOM, **telemetry opt-in disclosure**, privacy policy | 🟢 **done** — `docs/THREAT_MODEL.md` (boundaries + assets + 11 threats each mapped to the *real* seam: egress gate/monitor, action kernel, K3 budgets/loop-breaker, encrypted secrets, HMAC audit, injection/Cypher/WKT guards, sandbox isolation, fail-closed bind, supply-chain) + continuous-verification matrices + honest residual risks; `docs/PRIVACY.md` (local-first, **no telemetry / no phone-home** disclosure, first-party-analytics clarification, opt-in egress data-flow table, user controls: export/forget/retention/kill-switch). SECURITY disclosure + NOTICE/SBOM already shipped (H23.14 / H23.13). Linked from README + SECURITY.md; `tests/test_trust_docs.py` (+3) guards existence/grounding/discoverability. | 0.19 |
 | H23.20 | **Onboarding wizard** + activation-funnel instrumentation + cold-start error guidance | 🟢 **backend done** — `routers/onboarding.py`: `GET /api/onboarding/wizard` (ordered steps intro→model→test_chat→autonomy, `complete` **derived from recorded funnel events** so onboarding resumes across reloads; `model_ready` + a friendly cold-start `hint` when no backend is reachable) + `POST /api/onboarding/funnel` (records first-party local `funnel.<step>.<event>` via `analytics_store`, bounded to known steps); both `user_guard`'d. `tests/test_onboarding_wizard.py` (+4); route parity/auth/openapi + HUD-v2 IA (cockpit home) snapshots reseeded. **HUD `OnboardingPanel` ✅** — Console *Observe* panel renders the ordered steps with done/pending state + progress + the cold-start `hint`, and a per-step **done** button records the funnel event (`POST /api/onboarding/funnel`) so completion persists; `frontend/src/test/onboarding-panel.test.tsx` (+2, fetch-mocked; vitest + tsc green). **Pending:** only the live-pixel render (owner-runtime-gated, CDX-9). | 0.19 |
