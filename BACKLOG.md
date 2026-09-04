@@ -2454,6 +2454,72 @@ spec has ever scanned**, one of them the *same rule* this row just closed on `.c
 - [ ] 🟡 Each needs its own red-proof and the spec needs to walk the mode surfaces, so they are the
       next slice rather than a widening of this one. Modes 0/1/3/5/7/8/9 came back clean.
 
+two of seventeen surfaces — so a green a11y lane said nothing about the rest. A mode walk found
+blocking violations on surfaces no spec had ever visited. **The first version of that walk was
+itself wrong in two ways, both caught by independent review, and the corrected walk finds nearly
+three times as much**, which is the more useful fact:
+
+| lane | violations found |
+|---|---|
+| live · 1280×720 | 2 — agents, memory |
+| live · 1440×900 | 3 — agents, memory, build |
+| demo · 1440×900 | **8 across 5 modes** — agents, memory, autonomy, build, comms ×4 |
+
+- [x] ✅ **mode 2 (AGENTS) — `serious · scrollable-region-focusable` on `.scroll > .panel-body`**
+      (`modes.tsx`). 774px of content in a 670px box, `tabIndex -1`, zero focusable descendants —
+      the agent cards are `<div className="acard" onClick=…>`. Fixed with `tabIndex={0}` **plus
+      `aria-label={t.roster}`**: the `.convo` fix one commit earlier added a role and a name for
+      exactly this reason, and a keyboard user should not land on an unnamed generic div.
+      *Correction to how this was first written:* "the roster scrolled past the fold unreachable by
+      keyboard" is **false in Chromium**, which ships keyboard-focusable scrollers — measured, the
+      panel is reached at Tab 23 both before and after. The axe result is real and the fix is the
+      WCAG 2.1.1 authoring contract; the browsers where it is a live user-facing defect are Firefox
+      and Safari.
+- [x] ✅ **mode 4 (MEMORY) — `critical · label`** on the time-travel `<input type="range">`; now
+      `aria-label={t.timeTravel}`, localized in both locales.
+- [x] ✅ **mode 6 (BUILD) — `serious · color-contrast`** on the sandbox placeholder: `--ink-3`
+      measured **2.80:1** against `--void` where 4.5:1 is required.
+- [x] ✅ **modes 5 (AUTONOMY) and 0 (COMMS) — five more, found only after the review.** The first
+      walk called them "clean". They were not scanned: `app.tsx`'s honest gate renders `ModeEmpty`
+      — an 11-node "Not connected" card — for any capability mode whose source is not live, which
+      against the e2e backend is exactly those two. Their real surfaces carry
+      `serious · color-contrast` on the speak-brief button and on **four interactive channel-filter
+      buttons** (`.cf`), all the same 2.80:1 token. Fixed in `styles.css` (`.cf`, `.pmode` base and
+      `.pmode.off` → `--ink-2`, measured 7.06:1).
+- [x] ✅ **`frontend/e2e/a11y-modes.spec.ts`** walks all ten hotkey-reachable modes, **in four
+      lanes** — live and `?demo=1` × 1280×720 and 1440×900 — and red-proofs to the table above.
+      Three pins, each for a way the first version lied:
+      **(a)** its non-vacuity check compared `.workzone` classNames, but `app.tsx` emits only three
+      across ten modes (`cockpit`, `wide`, and `full` for the other eight), so `seen.size > 1` was
+      satisfied by two of ten — **demonstrated inert**, and the walk could scan AGENTS eight times
+      and pass. It now fingerprints the active rail label and asserts it saw all ten (red-proofed:
+      forcing every keypress to `1` fails with `saw: Cockpit ×10`).
+      **(b)** it now records `empty` per mode and, in demo, asserts no surface is an empty card —
+      so a green scan of "Not connected" can never be counted as coverage.
+      **(c)** the 900 ms sleep is gone. Under 1.5 s of added API latency AGENTS is at 64 of its
+      final 318 nodes at 900 ms, and two of three red-proof findings vanished — a silent green, not
+      a flake. It now waits for the DOM to stop changing.
+- [x] ✅ `frontend/src/test/mode-surface-a11y.test.tsx` (+2) pins both attributes at component
+      level, red-proofed, so deleting them fails in the PR lane without a browser.
+- [ ] 🟡 **Two viewports, and the stated reason for the first one was wrong.** BUILD's contrast
+      violation is invisible at 1280×720 and reported at 1440×900 — but the cause is **width**, not
+      the fold: `styles.css` `@media (max-width:1300px)` collapses `.build-grid` to one column and
+      pushes the node to y=1122. And in the other direction AGENTS' `scrollable-region-focusable`
+      **disappears at 1920×1080**, because the panel stops overflowing. No single viewport sees
+      everything; two is a floor, not a proof.
+- [ ] 🔴 **`--ink-3` is a systemic contrast failure, not three sites.** The token composites to
+      `#52585f` on `--void` = **2.80:1**. Counted on the shipped bundle in demo at 1440×900:
+      **276 text-bearing elements** carry it (cockpit 59 · agents 61 · observe 43 · autonomy 32 ·
+      comms 22 · memory 20 · trust 18 · build 13 · interop 4 · chat 4), from 89 uses in
+      `styles.css` plus ~220 inline. This slice fixed the ones axe could resolve; the rest are
+      invisible to it because axe parks contrast it cannot compute over a gradient in
+      `incomplete`, not `violations` (e.g. `.timeslider .tlab`, measured **2.88:1** from real
+      screenshot pixels). The spec now writes `incomplete` and a counts tally into its artifact so
+      the backlog is visible; **retiring `--ink-3` as a text colour is its own slice.**
+- [ ] 🟡 **Coverage is 10 of 16 rail modes.** The number hotkeys do not reach `projects`,
+      `finance`, `health`, `knowledge`, `family` or `admin`. All six were walked manually via the
+      rail at 1440×900, live and demo, and came back clean — but no spec covers them.
+
 **Unchanged in the E2E lane:** the 9 mobile-chrome pointer cases (the owner call above) and the
 9 webkit cases where `page.route` does not intercept — **but the causal chain is no longer inferred.**
 A single-iteration matrix run from a branch ([run 33882549024](https://github.com/andrei649/jarvis-hub/actions/runs/33882549024),
