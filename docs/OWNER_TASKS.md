@@ -40,7 +40,7 @@
     Evaluation-only: its report earns no E1, B2, program or release decision by itself.
   - Still yours: input 1 (the ≥20-task dataset) and input 2 (acceptable routes/categories per
     case) are written together at the desk; this box stays open until the run has actually executed.
-- [ ] **A9 — tag v1.0.0** (in this order, after the A5 relicense PR merges; `main` is feature-frozen
+- [x] **A9 — tag v1.0.0** — ✅ done 2026-09-02: `v1.0.0` tagged, GitHub Release published (`release.yml` run 2 green). (in this order, after the A5 relicense PR merges; `main` is feature-frozen
   for 1.0 since 2026-09-02 — [decision doc](decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md)):
   (1) fold `CHANGELOG.md` `[Unreleased]` into `[1.0.0]` and set its date (the #981 de-gate entry
   has accumulated above the cut section); (2) check the `release.yml` `workflow_dispatch` `dry_run`
@@ -84,7 +84,7 @@
     high in the handoff): Security tab, or
     `gh api repos/andrei649/jarvis-hub/dependabot/alerts?state=open`; (c) dismiss the stale alerts
     in the GitHub UI once the audit wave merges.
-- [ ] **Relicense MIT → Apache-2.0** — decided 2026-06-04, deferred to pre-1.0
+- [x] **Relicense MIT → Apache-2.0** — ✅ done 2026-09-02 (#1012). — decided 2026-06-04, deferred to pre-1.0
   ([`docs/LICENSE_DECISION.md`](LICENSE_DECISION.md)). **Fully prepared in #634 (2026-07-07):**
   `TRADEMARKS.md` is live, `CONTRIBUTING.md` carries the relicense grant (in place BEFORE any
   design-partner contribution lands), and the canonical Apache-2.0 text is staged at

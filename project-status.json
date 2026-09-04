@@ -199,7 +199,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "bf48cf22db29d935174cbd99895a9058c8b10a80",
+  "latest_ci_commit": "4e74b9c2a8d7289e9a3f0a4737d616bd43c46cce",
   "open_release_gates": [
     {
       "id": "A1",
@@ -217,24 +217,14 @@
       "status": "⬜ **open (owner) — partial 2026-08-28, recounted 2026-08-31 (`DRA-30`) and 2026-09-02.** The batch was applied in the GitHub UI, but the *required-checks* half was overtaken by the #981 de-gate: the stale check names (deleted workflows) must be **removed**, and — per the 2026-09-02 CTO re-gate (D1, [decision doc](docs/decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md)) — the four PR checks that now run pre-merge must be marked **required**: `test (ubuntu-latest)` (incl. the tracked-test-count drift step), `hud-v2-build` (bundle staleness), the `security-scans` lanes (`Secret scan (gitleaks)` · `SAST (semgrep)` · `Dependency audit (pip-audit)` · `SAST (bandit — blocking gate)`) and `lockfile-drift` (`in-sync`). Until the owner lists them, they are advisory and `pr-auto-merge.yml` merges any non-draft CLEAN PR hourly with no review. `docs/OWNER_TASKS.md` → \"De-gate merges\" lists exactly that as open. Reading this row as \"done — settings applied\" (a check mark quoted mid-prose) is what left BACKLOG.md the last file in the tree contradicting the de-gate, and what mis-reported A4 as closed in `project-status.json` until the classifier switched to the status cell's *leading* marker (2026-09-02). See SEC-4 above."
     },
     {
-      "id": "A5",
-      "name": "License flip MIT→Apache-2.0 + TRADEMARKS.md",
-      "status": "🟢 prep done in #634 — `TRADEMARKS.md` live, CONTRIBUTING relicense grant added, canonical Apache-2.0 staged in `docs/legal/`; the flip itself is 3 owner commands (steps in OWNER_TASKS), timing per LICENSE_DECISION = just before v1.0"
-    },
-    {
       "id": "A6",
       "name": "Demo video (60s) + publish landing (dev half ✅ #512)",
       "status": "🟡 **partial (owner, 2026-08-28)** — landing half moving; the 60s demo cut is the remaining piece. Not a 1.0 blocker (GTM, not proof)"
-    },
-    {
-      "id": "A9",
-      "name": "Tag 1.0.0",
-      "status": "🟢 **release prep landed 2026-08-28 — two owner commands left.** `agents.__version__` bumped `0.11.0`→`1.0.0` and the CHANGELOG `[Unreleased]` block cut to a `[1.0.0]` section, so `release.yml`'s tag/version check passes. **Owner, in order: (1) A5 — flip MIT→Apache-2.0 (3 commands in [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md)); a tag pushed before the flip ships 1.0.0 under MIT. (2) `git tag v1.0.0 && git push origin v1.0.0` *on `main`, after this PR merges* — the tag publishes a public GitHub Release with artifacts, SBOM and checksums, so it must not be cut from a feature branch.** **Ordering confirmed by owner 2026-09-01:** the tag is exactly these two commands; the A1 `docs/MANUAL_TESTING.md` §0 runbook is post-tag proof, not a tag precondition. **CTO 2026-09-02 (D5 — [decision doc](docs/decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md)):** `main` is feature-frozen for 1.0 from the merge of that PR; the tag is cut immediately after A5 merges. **Before tagging, fold CHANGELOG `[Unreleased]` into `[1.0.0]` and set its date** (the #981 de-gate entry has accumulated above the cut section). Note: `release.yml` has never run on GitHub — a `workflow_dispatch` `dry_run` was triggered 2026-09-02 by the coordinator as its first end-to-end check; read its result before tagging. Definition of done / freeze: [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) → \"1.0 definition of done / freeze\"."
     }
   ],
   "routes": 442,
   "tests": {
-    "backend": 7323,
+    "backend": 7324,
     "frontend": 927,
     "mobile": 110
   },
