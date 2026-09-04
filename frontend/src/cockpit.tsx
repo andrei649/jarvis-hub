@@ -34,8 +34,22 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
   // (the cockpit does; ChatMode doesn't).
   const canSave = (m, i) => !!onArtifactSaved && !!m.text && m.who !== 'system'
     && !(thinking && i === messages.length - 1);
+  /* The transcript is `overflow-y:auto` (styles.css `.convo`), so it is a scrollable
+     region — and a scrollable region a keyboard user cannot enter is a WCAG 2.1.1
+     failure. It has no focusable children of its own: the ⧉/🔊 controls live on AGENT
+     bubbles only, so a run of user turns with no reply (an unreachable model, an
+     aborted turn) leaves the region overflowing with nothing to tab to. axe reports
+     `serious · scrollable-region-focusable` in exactly that state; the scheduled HUD
+     E2E matrix hit it on webkit and mobile-chrome. Chromium masks it — it makes
+     overflow scrollers focusable on its own, so the region IS tab-reachable there
+     even unfixed — which is why a tab-walk assertion proves nothing and the spec
+     (e2e/a11y.spec.ts) asserts the axe rule and `tabIndex` instead.
+
+     `role="log"` is the ARIA APG role for a chat transcript; the label is what a
+     keyboard user hears when focus lands on the region. */
   return (
-    <div className="convo" ref={endRef}>
+    <div className="convo" ref={endRef} tabIndex={0} role="log"
+         aria-label={(t && t.convoRegion) || 'Conversation transcript'}>
       {messages.map((m,i)=> m.role==='user'
         ? (
           <div className="msg user" key={i}>

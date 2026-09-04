@@ -2402,6 +2402,36 @@ was switched on over a layout that was never made responsive. Two facts frame th
   red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
   (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
 
+**The transcript had no keyboard route — fixed (2026-09-04).** The *other* failure in that same
+scheduled matrix was an accessibility one, and it was a real product defect rather than a test
+artefact: `a11y.spec.ts:33` reported `serious · scrollable-region-focusable` against
+`<div class="convo">` — WCAG 2.1.1/2.1.3, "Scrollable region must have keyboard access" — on
+**mobile-chrome 3/3 iterations and webkit 1/3, with chromium and firefox 0/3**
+([run 33850948593](https://github.com/andrei649/jarvis-hub/actions/runs/33850948593), head `bf48cf2`).
+`.convo` is `overflow-y:auto`, and its only focusable descendants (⧉ save-artifact, 🔊 replay) are
+rendered on **agent** bubbles — so a transcript of user turns whose replies never arrived (no model
+loaded, an aborted turn) is a scrollable region with no way in, and everything below the fold is
+unreachable without a mouse.
+
+- [x] ✅ `.convo` now carries `tabIndex={0}` + `role="log"` + a localized `aria-label`
+      (`frontend/src/cockpit.tsx`, `convoRegion` in both locales). That satisfies axe's
+      `focusable-element` check unconditionally — in every transcript state and every browser —
+      rather than depending on content that happens to be focusable.
+- [x] ✅ `e2e/a11y.spec.ts` gained a third scan that **seeds** the failing state instead of waiting
+      for the soak to stumble into it: six user-only turns injected by shimming `window.fetch` for
+      `GET /memory` before boot (not `page.route`, which webkit does not intercept here; not a
+      backend write, which would leak into the next spec). Red-proofed on both of its assertions.
+      The two pre-existing scans run against an *empty* transcript, which is exactly why they stayed
+      green for months while the matrix was red.
+- [x] ✅ `frontend/src/test/convo-keyboard-access.test.tsx` (+3) pins the same contract at component
+      level, so dropping the attributes fails without a browser or a backend.
+- [ ] 🟡 Unchanged in that lane: the 9 mobile-chrome pointer cases (the owner call above) and the
+      9 webkit cases where `page.route` does not intercept. The failure *distribution* — clean on
+      chromium and firefox, 1/3 on webkit, 3/3 on the mobile-chrome block that runs last — is what
+      you would see if webkit's un-intercepted `/chat/stream` writes user turns into the shared
+      backend partway through its block and every later page load rehydrates them. Consistent with
+      the evidence, but inferred: it has not been re-run (no webkit binary off-box).
+
 ---
 
 ## 🔌 Live-vs-Plumbing Remediation — mock → real (owner request 2026-07-18)
