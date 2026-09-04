@@ -349,8 +349,11 @@ built on your Windows box:
   **What was already wrong in the old packet, corrected here.** It said the buttons "intercept
   pointer events", which reads as an overlay bug. There is no overlay: at the Pixel 5 viewport
   `elementFromPoint()` at the button's centre returns the button, and `force`/`dispatchEvent` clicks
-  both succeed. The HUD simply lays out 915px wide inside 393px, mobile Chromium shrink-to-fits
-  (measured page scale 0.43), and Playwright then hit-tests at the wrong coordinates. So there is no
+  both succeed. The HUD simply lays out wider than the viewport, mobile Chromium shrink-to-fits, and
+  Playwright then hit-tests at the wrong coordinates. Numbers, dated so they cannot go stale
+  silently: **915px inside 393px, scale 0.43 @ `bf48cf2`**; after the laptop-width topbar fix
+  landed on this branch, **640px inside 393px, scale ≈ 0.61**. Narrower, still mismatched, and
+  the three `mobile-chrome` specs still fail with the identical symptom — so there is no
   small fix hiding here — the old packet's instinct was right, its reason was not.
   **The two options, unchanged:**
   - **(A) The phone story is the `mobile/` React Native app.** Then the web HUD is a desktop

@@ -2398,8 +2398,11 @@ was never made responsive. Two facts frame the decision:
 > "Intercept pointer events" reads like an overlay bug; there is no overlay. Measured at the Pixel 5
 > viewport: `document.elementFromPoint()` at the button's centre returns *the button*, and both
 > `click({force:true})` and `dispatchEvent('click')` succeed. What actually happens is a coordinate
-> mismatch. The HUD lays out at 915px inside a 393px viewport, so mobile Chromium applies a
-> shrink-to-fit page scale (measured `innerWidth` 915 vs `clientWidth` 393 → scale 0.43); Playwright
+> mismatch. The HUD laid out at 915px inside a 393px viewport, so mobile Chromium applies a
+> shrink-to-fit page scale (measured `innerWidth` 915 vs `clientWidth` 393 → scale 0.43).
+> **Those two numbers are @ `bf48cf2`.** The topbar-fit row below has since narrowed it to a
+> 640px layout viewport (scale ≈ 0.61) — still mismatched, and the three `mobile-chrome` specs
+> still fail with the identical symptom, so nothing about this decision changes. Playwright
 > then resolves the element's quad in the page-scaled frame and hit-tests at the wrong point, which
 > the browser reports as whatever sits there — `.agent-row` inside `.col`. The overflow has two
 > sources, both the same bare-`1fr` floor (`1fr` == `minmax(auto,1fr)`, so the track cannot shrink
@@ -2426,15 +2429,30 @@ was never made responsive. Two facts frame the decision:
   red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
   (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
 
-- [x] ✅ **Laptop-width layout fit — the ≥760px half, fixed 2026-09-04.** Separating this out is the
-  point: the same bare-`1fr` bug also broke *desktop* widths, which no owner call covers. Measured on
-  `main` @ `bf48cf2`: at 1000px, 900px and 800px viewports the document was **1082px wide** and the
-  cockpit scrolled sideways — a normal laptop window or a half-screen split, not a phone.
-  `.topbar` now uses `minmax(0,1fr)` (both the base rule and the ≤760px override) so the flexible
-  tracks may shrink below min-content. Measured after: 1000→1000, 900→900, 800→800, 1280 unchanged.
-  `frontend/e2e/layout.spec.ts` (+4) pins it at those four widths and was red-proved first (3 of 4
-  failed before the rule changed). Below 760px the document is still 915px wide — untouched on
-  purpose, because closing that is the stacked-layout work the owner call above has to decide.
+- [x] ✅ **Laptop-width topbar fit — fixed 2026-09-04.** Separating this out is the point: the same
+  bare-`1fr` bug also broke *desktop* widths, which no owner call covers. Measured on `main` @
+  `bf48cf2`: from 761px to 1080px the document laid out **1082px wide**. And it did not scroll —
+  `body{overflow:hidden}` (`styles.css:25`) propagates to the viewport, so there was no scrollbar and
+  no way to reach the excess: it was **clipped and unreachable**, which is worse than scrolling.
+  **The fix needed two halves, and shipping only the first made things worse.** `minmax(0,1fr)` on
+  `.topbar` lets the *track* shrink — but `.brand` is a flex item with no `min-width:0`, so its
+  628px of content did not reflow, it **spilled over the centred clock**: measured 109px of overlap
+  at 1280, 274px at 900, 324px at 800, with the clock digits unreadable underneath. An independent
+  reviewer caught that before merge; the first draft of this row and its test had both missed it,
+  because a `scrollWidth` check goes green *because* of overlap — superimposing content is exactly
+  how you make an overflow vanish from that metric. `.brand{min-width:0}` +
+  `.badges{min-width:0;overflow:hidden}` complete it: the strip now clips inside its own box instead
+  of on its neighbour (6 of 6 badges visible down to 1280, 4 of 6 at 800).
+  `frontend/e2e/layout.spec.ts` (+4) asserts **both** — fits AND does not stack — and each half is
+  red-proved against a different broken state: the fit assertion fails at 900/800 on unmodified
+  `main`, and the overlap assertion fails at 1280/900/800 (109/274/324px) against the
+  `minmax`-only version. The overlap assertion had to measure the painted badges, not `.brand`,
+  whose rect is the grid track and *does* shrink — measuring `.brand` passed the very regression
+  it existed to catch.
+  **Below 760px, honestly:** 760 and 700 now fit; 600, 500 and 393 all lay out **640px**
+  (was 915px). So the ≤760px override was *not* behaviour-neutral, contrary to this row's first
+  draft — that claim was wrong and is retracted here. The phone gap is narrower but still open, and
+  closing it is still the stacked-layout work the owner call above has to decide.
 
 - [ ] 🔴 **The `webkit` half — a test-harness defect, not a HUD defect, and not the phone question.**
   10 of the 22 nightly failures are `[webkit]` at 1280×720: `a11y.spec.ts:33` ×1 and

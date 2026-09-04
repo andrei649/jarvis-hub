@@ -90,7 +90,11 @@ input { font-family: inherit; }
    item's min-content width, so the track cannot shrink below the brand block and the
    whole document scrolls sideways from ~1080px down. */
 .topbar { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:18px; padding:12px 22px; border-bottom:1px solid var(--panel-line); background:linear-gradient(180deg, var(--void-2), transparent); backdrop-filter:blur(10px); }
-.brand { display:flex; align-items:center; gap:13px; }
+/* min-width:0 is the other half of the topbar's minmax(0,1fr): letting the TRACK
+   shrink is useless if the flex item inside it still refuses to, so the content
+   spills over the centred clock instead of overflowing the page. `.badges` then
+   clips inside its own box rather than superimposing on its neighbour. */
+.brand { display:flex; align-items:center; gap:13px; min-width:0; }
 .brand svg.reactor { width:30px; height:30px; color:var(--accent); flex:none; }
 .brand .reactor .spin1 { transform-origin:center; animation:spin 48s linear infinite; }
 .brand .reactor .spin2 { transform-origin:center; animation:spin 22s linear infinite reverse; }
@@ -99,7 +103,7 @@ input { font-family: inherit; }
 .clock { text-align:center; }
 .clock-time { font-family:var(--font-mono); font-size:40px; line-height:.98; color:var(--accent); text-shadow:var(--glow-text); font-variant-numeric:tabular-nums; letter-spacing:.02em; }
 .clock-date { font-family:var(--font-mono); font-size:9.5px; letter-spacing:.2em; color:var(--ink-3); margin-top:5px; }
-.badges { display:flex; gap:9px; justify-content:flex-end; align-items:center; }
+.badges { display:flex; gap:9px; justify-content:flex-end; align-items:center; min-width:0; overflow:hidden; }
 .badge { position:relative; padding:7px 12px; min-width:70px; background:var(--surface); border:1px solid var(--panel-line); clip-path:polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%); }
 .badge .k { font-size:8px; font-weight:600; letter-spacing:.14em; color:var(--ink-3); text-transform:uppercase; }
 .badge .v { font-family:var(--font-mono); font-size:11.5px; margin-top:3px; display:flex; align-items:center; gap:5px; }
