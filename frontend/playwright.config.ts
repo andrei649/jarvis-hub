@@ -20,7 +20,16 @@ const ENV_PREFIX = process.platform === 'win32'
   ? `set JARVIS_PORT=${PORT}&& set JARVIS_LOG_LEVEL=warning&& `
   : `JARVIS_PORT=${PORT} JARVIS_LOG_LEVEL=warning `;
 const BROWSER_MATRIX = process.env.E2E_BROWSER_MATRIX === '1';
-const SOAK_ITERATIONS = Math.max(1, Number(process.env.E2E_SOAK_ITERATIONS || 1));
+// e2e.yml now exposes this as a dispatch input, so pin what a non-integer means here
+// instead of leaving it to coercion. `Math.max(1, Number(x))` returns NaN for an
+// unparseable x and passes it straight to `repeatEach`; measured on @playwright/test
+// 1.62.1, `repeatEach: NaN` behaves as 1, so this is not a bug being fixed — it is
+// undocumented behaviour being made explicit. It does change one case: a fractional
+// value floors (2.7 -> 2) rather than reaching `repeatEach` as 2.7.
+const SOAK_ITERATIONS = (() => {
+  const n = Number(process.env.E2E_SOAK_ITERATIONS);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+})();
 
 export default defineConfig({
   testDir: './e2e',

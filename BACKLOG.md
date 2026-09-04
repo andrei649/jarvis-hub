@@ -2403,6 +2403,28 @@ was switched on over a layout that was never made responsive. Two facts frame th
   red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
   (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
 
+**The matrix is now reachable from `workflow_dispatch` (2026-09-04).** Part of *why* that lane stayed
+red for 63 consecutive nights is that nobody could iterate on it: `E2E_BROWSER_MATRIX` was gated on
+`github.event_name == 'schedule'`, so firefox and webkit could not be exercised from a branch **at
+all** — a dispatch ran chromium only, and the only way to test a fix was to merge a guess to `main`
+and wait until 03:15 UTC. `.github/workflows/e2e.yml` now takes two dispatch inputs.
+
+- [x] ✅ `browsers: chromium | matrix` and `iterations: 1 | 2 | 3 | 5` on `workflow_dispatch`. The
+      defaults reproduce the previous dispatch behaviour exactly (chromium, one iteration), and the
+      `schedule` and `push` paths are byte-for-byte unchanged — `inputs` is `null` on those events,
+      so each expression falls through its `||` to the old value. This lane has **no `pull_request`
+      trigger** and gates nothing; the change adds no required check and does not touch the D1/D5 CI
+      posture.
+- [x] ✅ `iterations` is a `choice`, not free text, because `playwright.config.ts` feeds it through
+      `Number(...)` into `repeatEach`. The config now also pins what a non-integer means (measured:
+      `repeatEach: NaN` behaves as 1 on `@playwright/test` 1.62.1 — undocumented, so it is made
+      explicit rather than relied on; a fractional value now floors instead of passing through).
+- [ ] 🔴 **Still red, still unfixed:** the 10 webkit cases (`page.route` does not intercept, so those
+      specs drive the real model-less backend; prime suspect the PWA service worker, candidate fix
+      `serviceWorkers: 'block'`) and the 9 mobile-chrome pointer cases (the owner call above). This
+      row unblocks *working on* them; it does not fix either, and no webkit run has been performed —
+      there is no webkit binary off-box.
+
 **The webkit half is solved — the service worker, confirmed by intervention (2026-09-04).** Ten of the
 22 nightly failures were webkit, and the standing diagnosis was a vague "`page.route` does not
 intercept". The mechanism is now identified and the fix is measured, not argued.
@@ -2423,8 +2445,8 @@ shared-session contamination below, not a tenth routing case. The three specs in
 passed — which is what isolates it.
 
 **Five** matrix runs, dispatched from a branch. That is only possible with the `workflow_dispatch`
-inputs PR #1021 adds, and **#1021 is still open** — until it merges these cannot be reproduced from
-`main`, and this fix's effect is unobservable until the next 03:15 UTC nightly:
+inputs PR #1021 adds, **merged 2026-09-04** — so these are now reproducible from `main`. Absent a
+dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
 
 | run | cases | failures |
 |---|---|---|
@@ -2895,7 +2917,7 @@ Figma API token, stays a separate owner-gated follow-up.)* | — |
 | 0.67 Emotion Voice (Fish Audio) | ✅ done (2026-07-18, guide-gap wave) | `voice/tts.py` gains a **Fish Audio** backend in the chain (XTTS→ElevenLabs→**Fish**→edge→Kokoro; `FISH_AUDIO_API_KEY`/`VOICE_ID`/`MODEL`, `voice="fish[:ref]"`, persona-consent-gated like the other clones) + **inline `[emotion]` tags** (`[calm]`/`[amused]`… pass through to Fish S-series, `strip_emotion_tags()` for every other backend so tags are never read aloud) + the HUD **🔊 SPEAK morning brief** button (Autonomy panel → `POST /tts`, local `speechSynthesis` fallback; `mobile/PARITY.md` row added, mobile ⬜). `tests/test_tts_fish_emotion.py` (+12), `frontend/src/test/brief-speak.test.tsx` (+2). *(Remaining, owner-gated: browser wake-word — needs a licensed JS lib (Porcupine) or cloud hop, per `docs/VOICE.md` §6.)* | — |
 | 0.68 Revenue & Ads Connectors | ✅ done (2026-07-18, guide-gap wave) | **NEW `plugins/revenuecat.py`** (read-only RevenueCat API v2 overview — active subs/MRR/revenue; `REVENUECAT_API_KEY`+`PROJECT_ID`) + **NEW `plugins/meta_ads.py`** (read-only Meta Marketing API insights/campaigns; `META_ADS_ACCESS_TOKEN`+`ACCOUNT_ID`, act_ normalization; **no budget mutators by design** — a future write goes through an ask-tier contract). Manifested (SEC-5 domains `api.revenuecat.com`/`graph.facebook.com`), gathered on revenue/ads keywords, settings toggles, injectable clients. `tests/test_guide_gap_plugins.py`. *(Remaining: owner keys.)* | — |
 | 0.69 Social Scheduler (Postiz) | ✅ done (2026-07-18, guide-gap wave) | **NEW `plugins/postiz.py`** — self-hosted Postiz public API: queue/integration reads + **draft-first** `schedule_post` (`type="draft"` unless an explicitly governed caller passes `kind="schedule"`; Safe Comms posture). Config-driven host via `register_dynamic_domain` (SEC-5b, like n8n); manifest `data_scope=TRANSMITTED`; gathered on social-queue keywords. **Governed live scheduling ✅ (2026-07-18):** `social.postiz.schedule` joins the Safe Comms catalog — requests queue ask-tier approval via the same `/api/integrations/social` funnel, and only an APPROVED task executes through `PostizPlugin.schedule_post(kind="schedule")` (the plugin default stays draft-first; unconfigured fails honestly). *(Remaining: owner self-host.)* | — |
-| 0.90–1.0 gates (Freeze · RC · Partner · Burn-In · Owned) | ⬜ pending | `AUDIT.md`,`MANUAL_TESTING.md`,parity/auth gates, north-star eval / promote eval→required gate; design partners; landing+demo | 1.0.0 row + H23.21/22 |
+| 0.90–1.0 gates (Freeze · RC · Partner · Burn-In · Owned) | 🟡 **partial — three of five closed, two not; annotated 2026-09-04, deliberately NOT ticked.** The row read `⬜ pending` while `v1.0.0` was already tagged, which is stale — but the fix is to say which of the five are closed, not to tick the aggregate, because two of them are not. Reconciled against CTO decision **D5** ([decision doc](docs/decisions/2026-09-02-cto-ci-posture-and-1.0-freeze.md)). **Closed:** *Freeze* — `main` feature-frozen for 1.0 from the merge of the D5 PR (only red-`main` fixes, the D7 dependency wave and the A5 relicense were to land before the tag). *RC* — A9 ✅: `v1.0.0` tagged 2026-09-02 and `release.yml` run 2 published the [GitHub Release](https://github.com/andrei649/jarvis-hub/releases/tag/v1.0.0) (published 2026-09-02T17:15Z) with artifacts, SBOM and checksums. *Partner* — A7 ✅ (owner, 2026-08-28): partners recruited and running on non-owner installs. **Not closed — this is why the row is not ticked:** *Burn-In* — A2 ✅ records that the **gate** was removed by owner directive and the soak now grades itself (`scripts/soak_report.py --fail-on-verdict`), which is not the same as a window having run. `soak.yml` has **one run in its entire history**: the weekly canary, 2026-08-30, `schedule`, a 90-minute window, PASS ([run 33295821935](https://github.com/andrei649/jarvis-hub/actions/runs/33295821935)) — and the workflow only landed 2026-08-28, so that is the one Sunday it has had. The **72h lane has never been run**: it is `workflow_dispatch` with `runner` pointed at a self-hosted label, because a GitHub-hosted runner is capped at ~6h. That is owner infrastructure, so it is a packet in `docs/OWNER_TASKS.md`, not an engineering slice. It is also criterion (c) of the Action-Kernel default-rail decision ([2026-09-01](docs/decisions/2026-09-01-action-kernel-default-rail.md)), so it blocks more than this row. *Owned* — A1 is ⬜ **post-tag proof**: the `docs/MANUAL_TESTING.md` §0 run on the RTX box is, by the owner's 2026-09-01 ordering, proof *of* the tagged build rather than a tag precondition, and its findings are 1.0.1 (D5). Ticking this row today would assert a 72h burn-in and an owner-hardware pass that have not happened — the two things `MOONSHOT.md` §5 names as never to fake. | `AUDIT.md`,`MANUAL_TESTING.md`,parity/auth gates, north-star eval / promote eval→required gate; design partners; landing+demo | 1.0.0 row + H23.21/22 · D5 |
 
 > **T-0.25 supersession (H28.4, 2026-07-14):** H28 now supplies the real Windows driver seam,
 > ToolRPC/Action-Kernel execution path, governed browser driver, and the user-facing Console →
