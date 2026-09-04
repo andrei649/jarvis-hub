@@ -2402,6 +2402,28 @@ was switched on over a layout that was never made responsive. Two facts frame th
   red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
   (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
 
+**The matrix is now reachable from `workflow_dispatch` (2026-09-04).** Part of *why* that lane stayed
+red for 63 consecutive nights is that nobody could iterate on it: `E2E_BROWSER_MATRIX` was gated on
+`github.event_name == 'schedule'`, so firefox and webkit could not be exercised from a branch **at
+all** — a dispatch ran chromium only, and the only way to test a fix was to merge a guess to `main`
+and wait until 03:15 UTC. `.github/workflows/e2e.yml` now takes two dispatch inputs.
+
+- [x] ✅ `browsers: chromium | matrix` and `iterations: 1 | 2 | 3 | 5` on `workflow_dispatch`. The
+      defaults reproduce the previous dispatch behaviour exactly (chromium, one iteration), and the
+      `schedule` and `push` paths are byte-for-byte unchanged — `inputs` is `null` on those events,
+      so each expression falls through its `||` to the old value. This lane has **no `pull_request`
+      trigger** and gates nothing; the change adds no required check and does not touch the D1/D5 CI
+      posture.
+- [x] ✅ `iterations` is a `choice`, not free text, because `playwright.config.ts` feeds it through
+      `Number(...)` into `repeatEach`. The config now also pins what a non-integer means (measured:
+      `repeatEach: NaN` behaves as 1 on `@playwright/test` 1.62.1 — undocumented, so it is made
+      explicit rather than relied on; a fractional value now floors instead of passing through).
+- [ ] 🔴 **Still red, still unfixed:** the 10 webkit cases (`page.route` does not intercept, so those
+      specs drive the real model-less backend; prime suspect the PWA service worker, candidate fix
+      `serviceWorkers: 'block'`) and the 9 mobile-chrome pointer cases (the owner call above). This
+      row unblocks *working on* them; it does not fix either, and no webkit run has been performed —
+      there is no webkit binary off-box.
+
 ---
 
 ## 🔌 Live-vs-Plumbing Remediation — mock → real (owner request 2026-07-18)
