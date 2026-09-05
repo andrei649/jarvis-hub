@@ -2600,7 +2600,9 @@ spec has ever scanned**, one of them the *same rule* this row just closed on `.c
       on non-focusable divs. Identical defect, identical rule. The repo already uses `tabIndex={0}`
       for exactly this at `panel-kit.tsx:69` and `shell.tsx:137,152,172,186,205,225`.
       → Fixed in #1022 by `<div className="panel-body" tabIndex={0} aria-label={t.roster}>` — **and
-      that fix shipped a new serious finding of its own; see the 🔴 row below.**
+      that fix shipped a new serious finding of its own; see the row below beginning *"The mode-2
+      fix traded one serious finding for another"* — ✅ now that #1031 has merged, 🔴 when this
+      pointer was written.**
 - [x] ✅ **mode 4 (MEMORY) — `critical · label` on an unlabeled `<input type="range">`.**
       → Fixed in #1022: the time-travel slider carries `aria-label={t.timeTravel}`, in both locales.
 - [x] ✅ **mode 6 (BUILD) — `serious · color-contrast` on `.sb-in > span:nth-child(2)`.**
@@ -2638,7 +2640,11 @@ spec has ever scanned**, one of them the *same rule* this row just closed on `.c
       lanes, which previously all carried it. (Those lane artifacts are run output, not repo files:
       `frontend/e2e/artifacts/` is gitignored, and the pre-fix evidence has been overwritten by the
       post-fix green run — reproduce it by reverting the role and re-running the lane.)
-- [ ] 🟡 **The mode walk records `serious` findings it cannot fail on, and nothing surfaces them.**
+- [x] ✅ **The mode walk records `serious` findings it cannot fail on, and nothing surfaces them.**
+      *(Ticked 2026-09-05 on the merge. The reasoning below for leaving it open — "ticked there
+      rather than here" — held only while #1033 was an unmerged sibling; both are on `main` now, so
+      an unchecked box here just reads as work that does not exist. The closure record stays in
+      #1033's row; this one keeps the account of how the regression got through.)*
       The spec gates on `violations` and stores `incomplete` only as a count, so a `serious`
       `incomplete` entry is invisible unless someone opens the JSON — which is exactly how the
       `aria-prohibited-attr` above sat unread. On this commit every remaining `incomplete` entry in
@@ -2812,7 +2818,9 @@ three times as much**, which is the more useful fact:
       very finding that went unnoticed, named on the first run. **Red-proofed in the other
       direction:** applying #1031's `role="group"` locally drops it to *"0 mode(s) with a surfaced
       incomplete finding"*, so the report tracks the finding rather than always printing something.
-      **Reconciliation note:** #1031 (open) carries a 🟡 row opening this same gap — written when
+      **Reconciliation note (settled 2026-09-05):** #1031 — since **merged** as `67d0ba74`, and
+      merged *before* this slice, so the ordering contingency below never fired — carries a 🟡 row
+      opening this same gap, written when
       this follow-up was still blocked on #1030. The two merge *cleanly* into a contradiction (one
       row unstarted, one done, 147 lines apart, no conflict marker), so #1031's row is being
       repointed at this slice rather than left to be reconciled by luck; if the order still slips,
@@ -2921,7 +2929,7 @@ three times as much**, which is the more useful fact:
       exactly those six, reached by rail **label** rather than index, plus an `ALL_MODE_COUNT`
       non-vacuity pin against the app's own `.rail-btn` count so the walk cannot silently shrink.
       **This row was already contradicted inside this same file** — the ✅ *"Coverage is now 16 of
-      16 rail modes"* row sits 156 lines above it and has since #1030 merged, which is the failure
+      16 rail modes"* row sits earlier in this same file and has since #1030 merged, which is the failure
       mode this pass exists to catch: superseding a row by writing a newer one somewhere else,
       instead of ticking the row that is now false. The manual walk this row rests on is also
       worth less than it reads: per that ✅ row, a hand-walk cannot regress-guard anything, and
@@ -3004,8 +3012,9 @@ No webkit fix is claimed here and none has been run off-box.
   input bar makes the cockpit unusable. The likely shape of a fix is giving the collapsed
   single-column workzone a scrollable/auto-height main region instead of a fixed one, which needs a
   look at `.shell`/`.main`/`.workzone` heights together — its own slice, not a one-liner.
-  → **Closed by #1018 (`8145c8a1`); this row then stayed open across the seven commits that
-  landed on `main` after it.** The
+  → **Closed by #1018 (`8145c8a1`); this row then stayed open across the **14** commits that
+  landed on `main` after it** (it said "seven" when written — true on the PR branch, stale the
+  moment the batch it merged in landed six more). The
   collapsed `.workzone.cockpit, .workzone.wide` now carries `overflow-y:auto` plus 4px of
   horizontal padding (`styles.css`), so the stack can be scrolled to. The fix is deliberately
   *reachability*, not sizing: `.convo` is still 32px when stacked, because how tall a stacked
@@ -3050,6 +3059,14 @@ No webkit fix is claimed here and none has been run off-box.
   ahead of Playwright's route handler; if so the fix is `serviceWorkers: 'block'` in the Playwright
   context — which removes an interference, it does not disable a test. Must be confirmed against a
   real webkit run (`workflow_dispatch` of `e2e.yml` on a branch) before anything is claimed fixed.
+  → **Closed by #1023 (`24bd78e4`), and the paragraph above is what it was closed against.** The
+  prime suspect named there was right and the confirmation it demanded was taken: `serviceWorkers:
+  'block'` in `playwright.config.ts`, verified by five dispatched matrix runs, all 8 webkit cases
+  green at `n=3`. *The "Next slice, not this one" wording above is preserved deliberately — it is
+  what the row said before the fix, not a live instruction.* This row was ticked in #1035 by
+  flipping the box alone, without this pointer, which left a ✅ sitting over text that still read
+  as forward-looking; added here because a tick a reader cannot reconcile with the row's own body
+  is the same defect as a stale open box, pointing the other way.
 
 **The matrix is now reachable from `workflow_dispatch` (2026-09-04).** Part of *why* that lane stayed
 red for 63 consecutive nights is that nobody could iterate on it: `E2E_BROWSER_MATRIX` was gated on
@@ -3144,11 +3161,20 @@ caught it.
       needs that alias mapped first — a different slice.
       **This row is about `frontend/` only and must not be read as a repo-wide claim.** There are
       **217** other tracked `.ts`/`.tsx` files elsewhere. This slice compiles none of them; what
-      follows is a coverage census of their `include` globs, not a green gate. `mobile/` and the
-      three `worldview/` packages each carry a `tsconfig.json` and a CI typecheck step — but
-      *having* a tsconfig is not *being covered by* one: `worldview/backend-api` includes only
-      `src/**/*.ts`, leaving its **24** files under `test/` compiled by nothing, which is this
-      row's own defect class one directory over. Beyond those, **8** files under
+      follows is a coverage census of their `include` globs, not a green gate. *Corrected
+      2026-09-05, after the merge that landed this row: two of its clauses were wrong within
+      minutes of being written, both in the direction of overstating coverage — which is the
+      failure this row is about, committed by the row itself.* **(a)** It said `mobile/` and the
+      three `worldview/` packages "each carry a `tsconfig.json` and a CI typecheck step". The
+      `worldview/` three do; **`mobile/` does not** — no workflow runs `tsc` over it and
+      `mobile/package.json` has no `typecheck` script at all (`start`, `android`, `ios`, `web`,
+      `test`). It belongs on the *uncovered* side of this census, not the covered one.
+      **(b)** *"`worldview/backend-api` includes only `src/**/*.ts`, leaving its 24 files under
+      `test/` compiled by nothing"* was true when written and false by the time it merged:
+      **#1036 closed it in the same batch** (`backend-api/tsconfig.test.json` + `typecheck:test`,
+      wired into `worldview.yml`), and `tsc -p tsconfig.test.json --listFilesOnly` now puts all 24
+      into a real program. Kept rather than deleted because the point it illustrates still stands:
+      *having* a tsconfig is not *being covered by* one — `mobile/` is now the example. Beyond those, **8** files under
       `apps/jarvis-hub/` (the WorldView page and its components) and **2** under
       `packages/worldview-core/` have **no tsconfig at all** — and, *checked before listing them
       as a gap rather than after*, **that one is not a gap**: both are bare `src/` trees with no
@@ -3371,8 +3397,12 @@ modal changes. Every one was inside `FirstRunGate`.
       records **701 `incomplete` `color-contrast` nodes against 0 violations** (899/954/1198 on
       the other three lanes), of which **630 — 90%, not all —** are the gradient message; the rest
       are non-text characters, images, too-short content and overlap. It gates on `violations`.
+      ⚠️ **Those four numbers are the ten-mode-era count and are retained only as the measurement
+      that was actually taken.** #1030 widened the same walk from 10 modes to 16, so the per-lane
+      totals scale with it; the post-widening figure is the *order of 1,100–1,800 per lane,
+      run-variable* recorded by #1033 earlier in this file. Do not quote 701 as current.
       Separately, that spec's own `beforeEach` sets `hud.firstrun.dismissed`, so `.pal-scrim` was
-      **0 in all 40** of its scans — the modal is suppressed deliberately, not flaky: measured, it
+      **0 in all 40** of its scans (40 = 4 lanes × 10 modes; the widened walk makes it 64) — the modal is suppressed deliberately, not flaky: measured, it
       opens 12/12 on a fresh `JARVIS_HOME`. An e2e pin for it was written and withdrawn as
       unnecessary once the token pin covered the contract deterministically. Owner packet
       (`docs/OWNER_TASKS.md`) carries the options, including fixing the palette.
