@@ -318,7 +318,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~7,333 backend collected (+936 frontend vitest, +110 mobile jest;
+python -m pytest tests/ -v          # ~7,324 backend collected (+932 frontend vitest, +110 mobile jest;
 #   counters generated into project-status.json via scripts/status_sync.py)
 ```
 
@@ -2224,10 +2224,8 @@ written here when the review lands.
   pinning (rebinding TOCTOU). **R3 post-merge review commissioned 2026-09-01 — PASS/HOLD: pending** (see
   the section header); the capability residual (`browser_run` egress boundary) stays regardless of the
   outcome.
-- [x] ✅ **SEC-B5 — taint by dataflow, not just declared origin.** **Closed 2026-09-05: the last
-  named residual — the explicit bind/reset around the HTTP recall route, plus its regression — is
-  done; see the ✅ bullet at the end of this row.** *(Historical, kept for the record: **🟡 Partial,
-  recounted 2026-08-29 (`DRA-02`) — do NOT tick this row.** #941 (`8179b38`) closed three of four legs: proactive
+- [ ] 🟡 **SEC-B5 — taint by dataflow, not just declared origin.** **🟡 Partial, recounted 2026-08-29
+  (`DRA-02`) — do NOT tick this row.** #941 (`8179b38`) closed three of four legs: proactive
   (`tech_scout` submits `origin="websearch"`), ambient (`AmbientProposalSink` taint-marks derived
   payloads) and the *storage* side of recall (`WorldViewKGSync` taint-marks stored KG properties —
   which is exactly what `tests/test_sec_b5_dataflow_taint.py` scopes). **The recall→action leg
@@ -2242,25 +2240,38 @@ written here when the review lands.
   `MemorySearchTool`): today the mark is bounded there only incidentally by asyncio's per-task context
   copy, not by a designed bind-on-entry / reset-on-exit, plus a regression pinning that behaviour.
   Original wording: proactive/recall/ambient payloads rebuilt outside an
-  inbound turn drop ingress taint (worst confirmed case is READ_ONLY-bounded).)*
-- [x] ✅ **The bind/reset residual is closed — and what it buys is smaller than it sounds, so it is
-  stated exactly.** `recall_taint.bounded_recall_taint()` binds the origin already in force and
-  resets to it on exit (including on an exception path), and `POST /api/memory/search-tool` wraps
-  its search in it. **Today this changes no observable behaviour, by design, and that was measured
-  rather than assumed:** `_kg_call` is `asyncio.to_thread`, which runs the sync tool in a *copy* of
-  the context, so a mark raised in the worker thread dies with the copy and never reaches the
-  request handler. Probed both ways — through `to_thread` the caller's origin is unchanged; called
-  inline it becomes `recall:untrusted` and stays. That second line is the point: the confinement
-  was a property of the **dispatch mechanism**, not of the recall code, so dropping the offload (an
-  easy call, since the default in-memory backend is cheap) would have started leaking the mark. It
-  is now a property of the code that recalls. *This also sharpens the old wording above: the bound
-  was `asyncio.to_thread`'s context copy, not the per-task copy the row named.*
-  **Red-proofed:** neutering the guard to a bare `yield` fails 3 of the 6 new tests in
-  `tests/test_sec_b5_recall_taint_bounded.py`; restoring it passes all 6. One of those six exists
-  only to document *why* the guard reads as a no-op today, so nobody deletes it as dead code.
-  **Deliberately not applied to the turn paths** (`Orchestrator.handle_input`): there the mark is
-  *supposed* to outlive the recall and reach `kernel.authorize` so the turn's actions escalate to
-  QUEUE. Wrapping those would silently defeat SEC-B5's purpose.
+  inbound turn drop ingress taint (worst confirmed case is READ_ONLY-bounded).
+- [ ] 🟡 **Re-measured 2026-09-05, and the residual above is described wrongly — the route is not
+  the leak.** A slice was written to add a bind/reset around the HTTP recall route, reviewed
+  independently, and **withdrawn**, because the premise did not survive the review. Recording what
+  was measured, since the next person will otherwise redo it:
+  - **The route cannot leak, with or without the `_kg_call` offload.** The mark is raised inside
+    the request's own asyncio Task, and a `ContextVar` set in a Task never propagates outward, so
+    it dies at the `return` regardless of dispatch. Probed against a real server with the offload
+    replaced by an inline call: three requests, each `origin` at handler entry `generated`, server
+    context after `generated`. The row's original *"asyncio's per-task context copy"* was
+    **correct**; a draft of this row that "sharpened" it to `to_thread`'s copy was wrong and is
+    retracted. (The earlier probe that appeared to show a leak ran the recall inline in one
+    coroutine with **no Task boundary** — not how the route runs.)
+  - **A bind/reset there would have been actively wrong.** It discards the mark on exit, and
+    measured against the kernel, `origin='recall:untrusted'` → **QUEUE** while `'generated'` →
+    **GRANT**. So on any future route that recalled and then acted, the "hardening" would convert
+    an escalation into an auto-execute — fail-open, the opposite polarity to what SEC-B5 exists
+    for.
+  - **The genuinely unbounded path is `Orchestrator.process()`, and no row named it.**
+    `process()` (`orchestrator.py:1206`) reaches `_recall_block` → `mark_turn_recall_tainted()`
+    via `_call_agents_parallel`, and unlike `handle_input` it binds **no** turn origin and resets
+    nothing (`inspect.getsource`: no `bind_action_origin`, no `reset_action_origin`). Measured with
+    a tainted hit: caller's origin `generated` before, **`recall:untrusted` after**, with no reset.
+    Its production callers are `_reflect_llm` (DailyReflector, `orchestrator.py:710`), the autonomy
+    task executor and subagent (`autonomy_coordinator.py:700`, `:920`), and
+    `POST /api/context/compress` (`routers/tools.py:40`).
+  - **Not fixed here, and deliberately not fixed by reflex.** The leak direction is fail-*safe*
+    (over-escalation to QUEUE, never a silent GRANT), so it is not urgent. The obvious fix — give
+    `process()` the same bind-on-entry / reset-on-exit `handle_input` has — changes escalation
+    behaviour for the reflector, the autonomy executor and the compress route, which is an owner
+    decision about approval-queue volume (`MOONSHOT.md` caps owner interrupts at ≤4/day), not a
+    hygiene edit. It needs its own designed slice.
 **Adversarial audit, 2026-07-25 (26 agents · 18 findings tested · 2 confirmed · 10 corrected down ·
 6 refuted · 3 new from the completeness critic).** Its headline is a compliment: independent agents
 trying hard to embarrass this codebase mostly re-discovered SEC-B1…B6 above. Two need owner triage

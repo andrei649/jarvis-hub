@@ -232,7 +232,6 @@ async def memory_tool_spec():
 async def memory_search_tool(req: Request):
     """H8.3b — a single search_memory tool call. Body: {query, top_k?}."""
     from agents.core.memory.rag_tool import MemorySearchTool
-    from agents.core.security.recall_taint import bounded_recall_taint
     try:
         body = await req.json()
     except Exception:
@@ -245,17 +244,9 @@ async def memory_search_tool(req: Request):
     except (TypeError, ValueError):
         top_k = 5
     tool = MemorySearchTool(_structured_recall)
-    # SEC-B5: a tainted hit makes the tool raise this context's action origin to
-    # `recall:untrusted`. On a turn that mark is meant to survive the recall and reach
-    # kernel.authorize; here there is no turn and no action downstream, so it must not
-    # outlive the request. `bounded_recall_taint` resets the origin on the way out, which
-    # is a no-op while `_kg_call` offloads (to_thread runs the tool in a context COPY, so
-    # the mark dies with it) and is what keeps the route correct if that offload is ever
-    # removed. See agents/core/security/recall_taint.py.
-    with bounded_recall_taint():
-        # _structured_recall hits the graph (a blocking neo4j call on the neo4j
-        # backend) — run the whole sync tool call in a worker thread.
-        return nocache_json(await _kg_call(tool.search, query, top_k))
+    # _structured_recall hits the graph (a blocking neo4j call on the neo4j
+    # backend) — run the whole sync tool call in a worker thread.
+    return nocache_json(await _kg_call(tool.search, query, top_k))
 
 
 # ── H14.4 Decay-based forgetting (ACT-R activation + dependency-aware delete) ──
