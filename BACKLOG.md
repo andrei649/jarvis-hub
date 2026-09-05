@@ -3002,8 +3002,14 @@ caught it.
       `src/**/*.ts`, leaving its **24** files under `test/` compiled by nothing, which is this
       row's own defect class one directory over. Beyond those, **8** files under
       `apps/jarvis-hub/` (the WorldView page and its components) and **2** under
-      `packages/worldview-core/` have **no tsconfig at all**. Unexamined by this slice, not
-      cleared by it.
+      `packages/worldview-core/` have **no tsconfig at all** — and, *checked before listing them
+      as a gap rather than after*, **that one is not a gap**: both are bare `src/` trees with no
+      `package.json`, no build config and no importer anywhere in the repo, and the docs say so on
+      purpose — `docs/worldview/runbook.md:147` calls the `apps/jarvis-hub` cockpit "a reference
+      scaffold unless it is explicitly mounted later", and `signal-layer-sprint.md:104` says the
+      next step is to port it into the real `frontend/` app. Gating them would mean inventing a
+      package for code documented as deliberately unmounted. They are uncompiled **by design**;
+      the row that should move is the one that mounts them.
 
 **The webkit half is solved — the service worker, confirmed by intervention (2026-09-04).** Ten of the
 22 nightly failures were webkit, and the standing diagnosis was a vague "`page.route` does not
