@@ -2883,9 +2883,18 @@ three times as much**, which is the more useful fact:
       **The 🔴 above stays open**: this slice makes the debt legible and costs it, it does not pay
       it. Retiring `--ink-3` as a text colour is a palette decision for the owner, and this row —
       not `docs/OWNER_TASKS.md`, which carries no palette packet — is where it is costed.
-- [ ] 🟡 **Coverage is 10 of 16 rail modes.** The number hotkeys do not reach `projects`,
+- [x] ✅ **Coverage is 10 of 16 rail modes.** The number hotkeys do not reach `projects`,
       `finance`, `health`, `knowledge`, `family` or `admin`. All six were walked manually via the
       rail at 1440×900, live and demo, and came back clean — but no spec covers them.
+      → **Closed by #1030 (`c2c3d711`)**: `a11y-modes.spec.ts` carries a `RAIL_ONLY` list holding
+      exactly those six, reached by rail **label** rather than index, plus an `ALL_MODE_COUNT`
+      non-vacuity pin against the app's own `.rail-btn` count so the walk cannot silently shrink.
+      **This row was already contradicted inside this same file** — the ✅ *"Coverage is now 16 of
+      16 rail modes"* row sits 156 lines above it and has since #1030 merged, which is the failure
+      mode this pass exists to catch: superseding a row by writing a newer one somewhere else,
+      instead of ticking the row that is now false. The manual walk this row rests on is also
+      worth less than it reads: per that ✅ row, a hand-walk cannot regress-guard anything, and
+      `admin` — the largest surface in the HUD — had never been scanned by axe at all.
 
 **Unchanged in the E2E lane:** the 9 mobile-chrome pointer cases (the owner call above) and the
 9 webkit cases where `page.route` does not intercept — **but the causal chain is no longer inferred.**
@@ -2948,7 +2957,7 @@ No webkit fix is claimed here and none has been run off-box.
   draft — that claim was wrong and is retracted here. The phone gap is narrower but still open, and
   closing it is still the stacked-layout work the owner call above has to decide.
 
-- [ ] 🔴 **The cockpit's chat surface is off-screen at ≤1100px — a plain desktop bug, worse than the
+- [x] ✅ **The cockpit's chat surface is off-screen at ≤1100px — a plain desktop bug, worse than the
   topbar one, found in the same investigation (2026-09-04).** Nothing to do with phones: 1100px,
   1000px and 900px are ordinary laptop and split-screen widths that the product unambiguously
   supports. `@media (max-width:1100px)` (`styles.css:594` on this branch, `:581` on `main`) collapses `.workzone.cockpit` to a single
@@ -2964,8 +2973,18 @@ No webkit fix is claimed here and none has been run off-box.
   input bar makes the cockpit unusable. The likely shape of a fix is giving the collapsed
   single-column workzone a scrollable/auto-height main region instead of a fixed one, which needs a
   look at `.shell`/`.main`/`.workzone` heights together — its own slice, not a one-liner.
+  → **Closed by #1018 (`8145c8a1`); this row then stayed open across the seven commits that
+  landed on `main` after it.** The
+  collapsed `.workzone.cockpit, .workzone.wide` now carries `overflow-y:auto` plus 4px of
+  horizontal padding (`styles.css`), so the stack can be scrolled to. The fix is deliberately
+  *reachability*, not sizing: `.convo` is still 32px when stacked, because how tall a stacked
+  transcript should be belongs to the still-open owner call on the sub-760px surface.
+  `frontend/e2e/reachability.spec.ts` pins the contract at 1280/1100/1000/900/800 — the input bar
+  must be inside the viewport, or inside an ancestor that genuinely scrolls to it. **Gate
+  honesty:** that spec lives in `e2e.yml`, which has no `pull_request` trigger, so it guards the
+  nightly and push-to-main, not the PR lane.
 
-- [ ] 🔴 **The `webkit` half — a test-harness defect, not a HUD defect, and not the phone question.**
+- [x] ✅ **The `webkit` half — a test-harness defect, not a HUD defect, and not the phone question.**
   10 of the 22 nightly failures are `[webkit]` at 1280×720: `a11y.spec.ts:33` ×1 and
   `hud.spec.ts:87/:123/:153` ×3 each. **In WebKit `page.route()` does not intercept**, so those specs
   drive the *real*, model-less CI backend instead of their mocks. Precisely: on webkit the click
@@ -3166,12 +3185,27 @@ dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
       `test.use({ serviceWorkers: 'allow' })`.
 - [ ] 🟡 **Remaining: 3 mobile-chrome pointer cases** — the open owner call above. Measured at
       `n=3`: **9 failures, down from 22**, and all nine are that one decision.
-- [ ] 🔴 **`npx tsc --noEmit` does not cover `frontend/e2e`** (`tsconfig.json` has `include: ["src"]`).
+- [x] ✅ **`npx tsc --noEmit` does not cover `frontend/e2e`** (`tsconfig.json` has `include: ["src"]`).
       Found the hard way: a block comment containing `*` + `/` closed itself early, tsc passed clean,
       and only Playwright's loader rejected the file. Adding `e2e` to `include` needs `@types/node`
       (measured: 2 errors, both `TS2591` on `node:fs`), so it is a dependency change, not a one-line
       fix. A cheaper guard for the PR lane is `npx playwright test --list`, which loads every spec
       without running one. Neither is done here.
+      → **Closed by #1025 (`de3c4684`)**, which took the first option rather than the cheaper one:
+      `frontend/tsconfig.e2e.json` extends the root config with `types: ["node"]` and its own
+      `include`, and `npm run typecheck:e2e` runs it in the PR lane.
+      **This row's own pricing was right and was paid, not dodged:** `#1025`
+      added `"@types/node": "^22.20.1"` to `frontend/package.json` devDependencies — it was not
+      there before (`git show de3c4684^:frontend/package.json | grep types/node` finds nothing) —
+      so it really was a dependency change. What the row did not foresee is the isolation that
+      made it safe: a *second* tsconfig, so the specs get Node's globals and `src/` does not, with
+      the root config pinning `types: []` to keep that a stated property.
+      **What this tick does NOT cover, because #1025 did not cover it:** #1025's include was
+      `["e2e", "playwright.config.ts"]`, so `frontend/vite.config.ts` was left compiled by nothing
+      — a `frontend/` source file outside every gate, which is exactly the defect class this row is
+      about. It had its own 🔴 row (*"Still compiled by nothing: `frontend/vite.config.ts`"*),
+      closed separately by **#1034**, which widened the include to cover it. This row is ticked for
+      what #1025 delivered; #1034 is ticked for the rest.
 
 **WorldView's API tests were compiled by nothing, and that hid a phantom dependency
 (2026-09-05).** `worldview/backend-api/tsconfig.json` has `include: ["src/**/*.ts"]`, so the
@@ -3285,6 +3319,23 @@ modal changes. Every one was inside `FirstRunGate`.
       resolve is failing"*, not *"contrast is fine"* — an earlier draft of this row said these
       three "look like offenders and none of them fails", which inverted the finding and is
       retracted.
+      → **Half of this is no longer true, and the half that is left is the important one.**
+      #1029 (`39ce740b`) built `frontend/e2e/contrast.spec.ts`, which measures exactly this chrome
+      from painted pixels instead of asking axe: `.rail` and `.center-tabs` are in its
+      `CHROME_PARTS`, and it asserts the rail labels and the three centre tabs actually land in its
+      `measured` bucket (`railRuns >= 15`, `tabRuns === 3`) so the lane cannot go quietly vacuous.
+      So "NOT covered" is retired — **but "covered" here means measured and reported, not gated**:
+      the spec's `failing` list (verdict `FAIL`, i.e. `specMin` under the AA threshold) is written
+      to the artifact and the console and **nothing asserts it is empty**. Its hard assertions are
+      about coverage and integrity — every run lands in a bucket the file knows how to print, and
+      no run bucketed `measured` is missing either ratio — not about the ratios passing. (It also
+      asserts the printed denominator equals the run count, but that one is not evidence of
+      anything: the spec's own comment calls it "an arithmetic identity … asserting it proves
+      nothing".) This row
+      therefore stays open: the sub-AA chrome it names is now visible on every nightly rather than
+      invisible everywhere, and that is a smaller claim than fixed. Closing it means either
+      retiring `--ink-3` as a text colour (the 🔴 row above) or turning `failing` into an
+      assertion, which cannot land before the palette does or the lane goes red on day one.
 - [ ] 🔴 **The gate is structurally blind here.** The live 1280×720 lane of `a11y-modes.spec.ts`
       records **701 `incomplete` `color-contrast` nodes against 0 violations** (899/954/1198 on
       the other three lanes), of which **630 — 90%, not all —** are the gradient message; the rest
