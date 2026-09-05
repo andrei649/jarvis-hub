@@ -13,6 +13,7 @@ import shutil
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 repo_root = Path(__file__).resolve().parent.parent
@@ -33,6 +34,31 @@ class _FakeController:
 def _gpu(vram=None, measured=False, name="none"):
     return {"name": name, "vram_total_mb": vram, "vram_used_mb": None,
             "load_pct": None, "measured": measured}
+
+
+# A card this box does not have. Exactly one test below forces a *fabricated*
+# probe (`test_detect_gpu_is_honest_when_nvidia_smi_absent`) — the rest use
+# `_gpu(...)` literals or patch `detected_vram_total_mb` — but that one is enough
+# to have leaked. On a runner with no nvidia-smi a leaked probe and a restored one
+# both read {"name": "none"}, indistinguishable; pinning the module global to a
+# card for the file's duration makes the difference observable.
+_A_REAL_CARD = {"name": "a real card", "vram_total_mb": 24576, "vram_used_mb": 0,
+                "load_pct": 3, "measured": True}
+
+
+# Set by the forced-probe test below, read by the leak test after it. Without
+# this, every way of losing the ordering — running the leak test alone, `-k`,
+# `--dist load`/`worksteal` instead of CI's `loadfile`, or renaming the prober —
+# makes the leak test pass vacuously instead of failing loudly.
+_forced_a_probe = False
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _pretend_this_box_has_a_card():
+    saved = hardware._gpu_cache
+    hardware._gpu_cache = dict(_A_REAL_CARD)
+    yield
+    hardware._gpu_cache = saved
 
 
 def test_model_manager_uses_detected_vram_when_env_unset(monkeypatch):
@@ -62,13 +88,36 @@ def test_detection_failure_never_raises_and_falls_back(monkeypatch):
 
 
 def test_detect_gpu_is_honest_when_nvidia_smi_absent(monkeypatch):
+    global _forced_a_probe
     monkeypatch.setattr(shutil, "which", lambda _n: None)
     gpu = hardware.detect_gpu(force=True)
+    _forced_a_probe = True
     assert gpu["name"] == "none"
     assert gpu["vram_total_mb"] is None
     assert gpu["measured"] is False
     blob = repr(gpu)
     assert "RTX" not in blob and "24576" not in blob
+
+
+def test_the_forced_probe_above_did_not_outlive_its_test():
+    """`detect_gpu()` memoises into a module global and `force=True` overwrites
+    it. Nothing put it back, so a pytest worker — which runs many files in one
+    process — carried that fabricated "this box has no GPU" into every later
+    test, including on the owner's RTX box where it is false.
+
+    `conftest._isolate_gpu_probe_cache` snapshots and restores it per test.
+    Without that fixture this reads {"name": "none"} and fails; the module pin
+    above is what makes the two cases distinguishable off a GPU box.
+    """
+    if not _forced_a_probe:
+        # Not a quarantine: without the prober having run there is nothing for
+        # the fixture to have restored, so the assertion below would PASS while
+        # proving nothing. Skipping makes that visible in the report instead.
+        # CI runs `-n auto --dist loadfile`, which keeps a file on one worker in
+        # definition order, so this never skips there; `--dist load`,
+        # `--dist worksteal`, `-k` and running this test alone do.
+        pytest.skip("needs test_detect_gpu_is_honest_when_nvidia_smi_absent to run first")
+    assert hardware._gpu_cache == _A_REAL_CARD
 
 
 def test_score_never_credits_an_unmeasured_component():
@@ -107,7 +156,12 @@ def test_detect_hardware_accepts_an_injected_probe():
     assert "cpu_threads" in hw and "ram_total_gb" in hw
 
 
-def test_hardware_route_shape():
+def test_hardware_route_shape(monkeypatch):
+    # This route reads detect_gpu() *unforced*, so the module pin above would
+    # feed it the fabricated card and flip its score component from
+    # "not_measured" to "measured" — silently changing which branch a no-GPU
+    # runner covers. Clear the cache for this test so it probes the real box.
+    monkeypatch.setattr(hardware, "_gpu_cache", None)
     from agents import web
     old = web.USER_TOKEN
     web.USER_TOKEN = "user-secret"
