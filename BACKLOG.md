@@ -2241,6 +2241,37 @@ written here when the review lands.
   copy, not by a designed bind-on-entry / reset-on-exit, plus a regression pinning that behaviour.
   Original wording: proactive/recall/ambient payloads rebuilt outside an
   inbound turn drop ingress taint (worst confirmed case is READ_ONLY-bounded).
+- [ ] 🟡 **Re-measured 2026-09-05, and the residual above is described wrongly — the route is not
+  the leak.** A slice was written to add a bind/reset around the HTTP recall route, reviewed
+  independently, and **withdrawn**, because the premise did not survive the review. Recording what
+  was measured, since the next person will otherwise redo it:
+  - **The route cannot leak, with or without the `_kg_call` offload.** The mark is raised inside
+    the request's own asyncio Task, and a `ContextVar` set in a Task never propagates outward, so
+    it dies at the `return` regardless of dispatch. Probed against a real server with the offload
+    replaced by an inline call: three requests, each `origin` at handler entry `generated`, server
+    context after `generated`. The row's original *"asyncio's per-task context copy"* was
+    **correct**; a draft of this row that "sharpened" it to `to_thread`'s copy was wrong and is
+    retracted. (The earlier probe that appeared to show a leak ran the recall inline in one
+    coroutine with **no Task boundary** — not how the route runs.)
+  - **A bind/reset there would have been actively wrong.** It discards the mark on exit, and
+    measured against the kernel, `origin='recall:untrusted'` → **QUEUE** while `'generated'` →
+    **GRANT**. So on any future route that recalled and then acted, the "hardening" would convert
+    an escalation into an auto-execute — fail-open, the opposite polarity to what SEC-B5 exists
+    for.
+  - **The genuinely unbounded path is `Orchestrator.process()`, and no row named it.**
+    `process()` (`orchestrator.py:1206`) reaches `_recall_block` → `mark_turn_recall_tainted()`
+    via `_call_agents_parallel`, and unlike `handle_input` it binds **no** turn origin and resets
+    nothing (`inspect.getsource`: no `bind_action_origin`, no `reset_action_origin`). Measured with
+    a tainted hit: caller's origin `generated` before, **`recall:untrusted` after**, with no reset.
+    Its production callers are `_reflect_llm` (DailyReflector, `orchestrator.py:710`), the autonomy
+    task executor and subagent (`autonomy_coordinator.py:700`, `:920`), and
+    `POST /api/context/compress` (`routers/tools.py:40`).
+  - **Not fixed here, and deliberately not fixed by reflex.** The leak direction is fail-*safe*
+    (over-escalation to QUEUE, never a silent GRANT), so it is not urgent. The obvious fix — give
+    `process()` the same bind-on-entry / reset-on-exit `handle_input` has — changes escalation
+    behaviour for the reflector, the autonomy executor and the compress route, which is an owner
+    decision about approval-queue volume (`MOONSHOT.md` caps owner interrupts at ≤4/day), not a
+    hygiene edit. It needs its own designed slice.
 **Adversarial audit, 2026-07-25 (26 agents · 18 findings tested · 2 confirmed · 10 corrected down ·
 6 refuted · 3 new from the completeness critic).** Its headline is a compliment: independent agents
 trying hard to embarrass this codebase mostly re-discovered SEC-B1…B6 above. Two need owner triage
