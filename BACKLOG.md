@@ -3062,12 +3062,12 @@ dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
       so it really was a dependency change. What the row did not foresee is the isolation that
       made it safe: a *second* tsconfig, so the specs get Node's globals and `src/` does not, with
       the root config pinning `types: []` to keep that a stated property.
-      **What this tick does NOT cover, stated because the same defect class is still live here:**
-      on `main` that config's include is `["e2e", "playwright.config.ts"]`, so `vite.config.ts` is
-      still compiled by nothing — a `frontend/` source file outside every gate, which is exactly
-      what this row is about. It is tracked by its own open 🔴 row (*"Still compiled by nothing:
-      `frontend/vite.config.ts`"*) and widening the include is proposed in **#1034, not yet
-      merged**. This row is ticked for what #1025 delivered, not for that.
+      **What this tick does NOT cover, because #1025 did not cover it:** #1025's include was
+      `["e2e", "playwright.config.ts"]`, so `frontend/vite.config.ts` was left compiled by nothing
+      — a `frontend/` source file outside every gate, which is exactly the defect class this row is
+      about. It had its own 🔴 row (*"Still compiled by nothing: `frontend/vite.config.ts`"*),
+      closed separately by **#1034**, which widened the include to cover it. This row is ticked for
+      what #1025 delivered; #1034 is ticked for the rest.
 
 **A red reality run now names the case that broke the verdict (2026-09-04).** The reality verdict is
 arithmetic — `passed + expected_seam + owner_live >= total` — so `reality_evidence.main()` could print
