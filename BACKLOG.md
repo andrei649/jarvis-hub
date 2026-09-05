@@ -2785,9 +2785,18 @@ three times as much**, which is the more useful fact:
       **The 🔴 above stays open**: this slice makes the debt legible and costs it, it does not pay
       it. Retiring `--ink-3` as a text colour is a palette decision for the owner, and this row —
       not `docs/OWNER_TASKS.md`, which carries no palette packet — is where it is costed.
-- [ ] 🟡 **Coverage is 10 of 16 rail modes.** The number hotkeys do not reach `projects`,
+- [x] ✅ **Coverage is 10 of 16 rail modes.** The number hotkeys do not reach `projects`,
       `finance`, `health`, `knowledge`, `family` or `admin`. All six were walked manually via the
       rail at 1440×900, live and demo, and came back clean — but no spec covers them.
+      → **Closed by #1030 (`c2c3d711`)**: `a11y-modes.spec.ts` carries a `RAIL_ONLY` list holding
+      exactly those six, reached by rail **label** rather than index, plus an `ALL_MODE_COUNT`
+      non-vacuity pin against the app's own `.rail-btn` count so the walk cannot silently shrink.
+      **This row was already contradicted inside this same file** — the ✅ *"Coverage is now 16 of
+      16 rail modes"* row sits 156 lines above it and has since #1030 merged, which is the failure
+      mode this pass exists to catch: superseding a row by writing a newer one somewhere else,
+      instead of ticking the row that is now false. The manual walk this row rests on is also
+      worth less than it reads: per that ✅ row, a hand-walk cannot regress-guard anything, and
+      `admin` — the largest surface in the HUD — had never been scanned by axe at all.
 
 **Unchanged in the E2E lane:** the 9 mobile-chrome pointer cases (the owner call above) and the
 9 webkit cases where `page.route` does not intercept — **but the causal chain is no longer inferred.**
