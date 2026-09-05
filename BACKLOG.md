@@ -1730,10 +1730,28 @@ absorbed them, not as independently shipped work.
   load latency, thermal headroom, and turning `DEFAULT_MODEL_SIZE_MB` into a measured number all need a
   run on the owner's physical card with models loaded. That is a benchmark, not code, and it stays parked
   with DRA-62. The module docstring, the `basis` field and the panel footer all say the score is
-  SPEC-based so nobody later reads it as measured throughput. Test hygiene owed:
-  `tests/test_hardware_profile.py:64` calls `detect_gpu(force=True)` with `shutil.which` patched to None
-  and nothing restores the module-global cache, so later tests in the same process can see a fabricated
-  "this box has no GPU".
+  SPEC-based so nobody later reads it as measured throughput.
+  **Test hygiene owed — closed 2026-09-04.** `detect_gpu()` memoises into a module global and
+  `force=True` overwrites it unconditionally; nothing put it back, so later tests in the same worker
+  process read a fabricated "this box has no GPU". **Two live sites, not one:**
+  `tests/test_hardware_profile.py:66` (patches `shutil.which` to None, then forces a probe) and
+  `tests/test_sys_info_honest.py::test_no_fabricated_hardware_or_model`, which does the same through
+  `web._sys_info()` — the `GET /status` path, where `agents/web.py:683` force-probes. Measured at the
+  parent commit with a `pytest_sessionfinish` hook: running **either** file alone ends the session with
+  `_gpu_cache = {'name': 'none', 'vram_total_mb': None, …}`; with the fix both end at `None`. Off a GPU
+  box the leak is *invisible* — the leaked reading and the true one are both `"none"` — which is why it
+  survived; on the owner's RTX box it is a fabrication, and `--dist loadfile` puts many files in one
+  worker, so which later tests saw it depended on scheduling. Fixed with an autouse
+  `_isolate_gpu_probe_cache` fixture in `tests/conftest.py`, alongside the `_isolate_action_origin`
+  fixture that exists for exactly this reason. The regression test pins the module global to a card for
+  the file's duration so restored and leaked are distinguishable on a runner with no card at all, and
+  guards its own precondition: it depends on the forced-probe test running first, so in any invocation
+  that does not preserve that order (`-k`, running it alone, `--dist load`/`worksteal`) it **skips
+  visibly** rather than passing vacuously — CI's `-n auto --dist loadfile` keeps the order, so there it
+  always runs. *(Checked and refuted while chasing a separate flake: this leak does **not** explain the
+  `test_reality_evidence` CI failure. The strong form of the refutation is structural, not a passing
+  pair — `grep -rn "detect_gpu\|core.hardware" agents/core/observability/` returns nothing, so no
+  reality case can read the global at all.)*
 - [ ] ⬜ **DRA-45 — GAP-4 (run the Hermes head-to-head once) is an unchecked box no finder, cluster, or
   owner-lane entry covers.** docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md §6. *(evidence:
   `BACKLOG.md:675-678, items_only.json, plan_only.json`)*
@@ -2390,6 +2408,52 @@ events, and **every scheduled run has failed — 63 as of 2026-09-04, none has e
 when written on 2026-07-29; refreshed against the Actions API.)* The matrix
 was switched on over a layout that was never made responsive. Two facts frame the decision:
 
+**The phone surface — open question, owner call (2026-07-29; re-measured 2026-09-04).** The
+scheduled e2e run fails `mobile-chrome` cases (`.inputbar .transmit` and the push-to-talk button
+report "intercept pointer events" at the 393×851 Pixel 5 viewport). Nothing regressed:
+`E2E_BROWSER_MATRIX` is set only on `schedule` events, and **no scheduled run has ever passed** —
+63 runs to 2026-09-04, the 20 most recent all red. The matrix was switched on over a layout that
+was never made responsive. Two facts frame the decision:
+
+> **Counts refreshed 2026-09-04** (run [33850948593](https://github.com/andrei649/jarvis-hub/actions/runs/33850948593)):
+> the failure is now **22 cases, not 9** — 12 `mobile-chrome` + **10 `webkit`**. The webkit half is
+> *not* part of this phone question (Desktop Safari runs at 1280×720) and has its own row below.
+>
+> **The recorded mechanism above was wrong, and the correction matters to the decision.**
+> "Intercept pointer events" reads like an overlay bug; there is no overlay. Measured at the Pixel 5
+> viewport: `document.elementFromPoint()` at the button's centre returns *the button*, and both
+> `click({force:true})` and `dispatchEvent('click')` succeed. What actually happens is a coordinate
+> mismatch. The HUD laid out at 915px inside a 393px viewport, so mobile Chromium applies a
+> shrink-to-fit page scale (measured `innerWidth` 915 vs `clientWidth` 393 → scale 0.43).
+> **How much of the Playwright side is actually established (corrected 2026-09-04).** What is
+> measured: the button's box lies outside the layout viewport of a page that `body{overflow:hidden}`
+> (`styles.css:25`) makes unscrollable, so Playwright's "scrolling into view" is a no-op and it
+> never obtains a valid hit point; and `isMobile` is load-bearing — at 393×851 the spec FAILS with
+> it and PASSES without it, reproduced on `main` and on this branch. What is **not** established:
+> an earlier draft here asserted that Playwright "resolves the element's quad in the page-scaled
+> frame", with arithmetic (`centre × pageScale`) that reproduces the CI interceptor names exactly.
+> An adversarial check registered window-capture listeners at `document_start` and saw **zero**
+> mouse events during the failing click — Playwright dispatches no input event at all, the
+> actionability test runs entirely in the injected world. So that arithmetic is a *coincidence-fit*,
+> not a reading of Playwright's coordinates, and it is demoted to a plausible explanation of why
+> the named interceptor churns between retries (`.col`, `.panel-head`, `.agent-row`, a bare div).
+> The decision below does not rest on it either way.
+> **Those two numbers are @ `bf48cf2`.** The topbar-fit row below has since narrowed it to a
+> 640px layout viewport (scale ≈ 0.61) — still mismatched, and the three `mobile-chrome` specs
+> still fail with the identical symptom, so nothing about this decision changes. Playwright
+> then resolves the element's quad in the page-scaled frame and hit-tests at the wrong point, which
+> the browser reports as whatever sits there — `.agent-row` inside `.col`. The overflow has two
+> sources, both the same bare-`1fr` floor (`1fr` == `minmax(auto,1fr)`, so the track cannot shrink
+> below min-content): `.topbar` (`styles.css:89`), whose first column holds `.brand` with the 6-badge
+> status strip nested inside it (`shell.tsx:52`, `.badges` flex + `.badge{min-width:70px}` = 469px
+> min-content → a 627.66px track), and `.main[data-ia="rail"]` (`styles.css:128`, measured
+> `60px 551.984px` inside a 393px box).
+>
+> So the row's own conclusion — "not a pointer-events tweak" — still holds, for a better reason:
+> there is nothing to tweak. **The decision below is unchanged and still the owner's.**
+> The ≥760px half of the overflow was a separate desktop defect and is fixed (see the layout-fit row);
+> that fix deliberately does not close the sub-760px gap, so it does not pre-empt this call.
+
 - [ ] 🟡 **The web HUD is not reachable from a phone today, by design.** `serve.py:66` defaults
   `JARVIS_HOST` to `127.0.0.1`, and `assert_safe_bind()` (`boot_guards.py:25`) **exits** on a
   non-loopback bind unless `JARVIS_USER_TOKEN`/`JARVIS_ADMIN_TOKEN` is set (or
@@ -2402,6 +2466,55 @@ was switched on over a layout that was never made responsive. Two facts frame th
   desktop surface and `mobile-chrome` should come **out** of the matrix rather than stay permanently
   red. If the web HUD is also meant to work on phones, the fix is a real stacked-layout breakpoint
   (single column, chat pane full-height, rails collapsed/drawered) — not a pointer-events tweak.
+
+- [x] ✅ **The chat input bar was unreachable at ≤1100px — fixed 2026-09-04.** Not the phone
+  question: 1100px, 1000px, 900px and 800px are ordinary laptop and split-screen widths the product
+  unambiguously supports, and the cockpit was unusable at all four.
+  **Mechanism.** `@media (max-width:1100px)` collapses `.workzone.cockpit` to a single column, so
+  its `.col` children stack vertically. The workzone is a grid inside a `height:100%` shell that
+  cannot grow, and with auto rows the FIRST column took its entire content height while the chat
+  column got the remainder — measured `grid-template-rows: 577px 18px` at 1000×800. An 18px row
+  cannot hold a 77px input bar, so it painted at **y=931 in an 800px viewport**, below the fold,
+  with **no scrollable ancestor** to reach it. `.convo` collapsed to 32px at the same time.
+  Measured on `main` @ `4e74b9c`, once settled: 1280 → bar bottom 785, in view; **1100/1000/900/800
+  → 931**, none in view, nothing scrollable. (An earlier draft said "1100 → 866". That was read from
+  the pre-data frame: at t≈0 the rows are `472px 167px` and the bar ends at 866; by t≈200ms they
+  settle to `577px 18px` and 931 and stay there. A number measured before the roster loads is not
+  the number.)
+  **Fix — and what it does *not* do.** The collapsed workzone gets `overflow-y: auto`, so the stack
+  can be scrolled to. An earlier draft also added `grid-auto-rows: minmax(0, auto)` and claimed the
+  pair made "the rows size to their content instead of crushing the last row". **Both halves of that
+  were false and are retracted.** Isolating each declaration at 1000×800: `grid-auto-rows` alone is
+  identical to `main` (rows `577px 18px`, no scroll, bar 931) — a **provable no-op**, now deleted;
+  and with `overflow-y:auto` the rows are **still `577px 18px`** and `.convo` is still 32px. The row
+  stays crushed; what changes is only that it becomes reachable.
+  Horizontal padding is then load-bearing, not cosmetic: per spec an `overflow-y` other than
+  `visible` promotes the used `overflow-x` to `auto`, so the box began clipping horizontally and cut
+  the `:focus-visible` ring (drawn 4px outside the border box) off every focusable panel body —
+  confirmed by sampling painted pixels, where the accent ring simply stopped being painted.
+  `padding-left`/`padding-right: 4px` give it room. `frontend/e2e/reachability.spec.ts` (+10 — five widths × two assertions) pins it at
+  1280/1100/1000/900/800 and was red-proved first: 1280 passed, the other four failed, naming the
+  measured rows (`577px 18px` at 1100/1000, `547px 18px` at 900/800). A second assertion pins the
+  focus ring, and it too was red-proved — its *first* version passed against the broken state,
+  because it read `outline-width`/`outline-offset` from **unfocused** elements where both are `0px`;
+  it now reads them from a focused probe and fires with a 3px overhang on `div.panel-body`.
+  **What this does NOT do, stated because the screenshot makes it obvious.** The input bar is now
+  reachable and usable, but the transcript stays 32px — **before and after scrolling alike**. An
+  earlier draft said "~32px until you scroll", which implied scrolling changes it; it does not. The
+  stack is navigable, not well-proportioned. How tall a stacked transcript should be is a layout-design
+  question, and it belongs with the still-open owner call above rather than being invented here.
+  The assertion is therefore *reachability*, not comfort.
+  **It does not change the phone outcome — but "does not touch it" would be wrong.** 915px is ≤1100,
+  so these declarations *do* apply under Pixel 5 emulation: the workzone's computed `overflow-y` goes
+  `visible → auto` there too. What is unchanged is what matters — the layout viewport is still 915px,
+  the transmit click still fails, and the owner's decision is unpre-empted. The interceptor named
+  does change — on the branch it is reliably `span.chan` inside the input bar, while on `main` it
+  varies run to run across the roster's children (`div.agent-row`, `div.panel-head`, `div.col`,
+  `div.convo`, `div.panel` all observed; an earlier draft named `div.rl`, which a later reviewer could
+  not reproduce). Which child Playwright names is hit-point dependent, so "the identical symptom"
+  would also overstate it: same failure class, different reported element. Note the same two
+  declarations are two of the four in that decision's option B, so the two pieces of work share a
+  lever even though this one stops well short of it.
 
 **The transcript had no keyboard route — fixed (2026-09-04).** The *other* failure in that same
 scheduled matrix was an accessibility one, and it was a real product defect rather than a test
@@ -2531,6 +2644,109 @@ failures and which drive the real backend and persist user turns. The next page 
 use no `page.route` (`hud.spec.ts:21/59/73`) pass, isolating the defect to route interception alone.
 No webkit fix is claimed here and none has been run off-box.
 
+- [x] ✅ **Laptop-width topbar fit — fixed 2026-09-04.** Separating this out is the point: the same
+  bare-`1fr` bug also broke *desktop* widths, which no owner call covers. Measured on `main` @
+  `bf48cf2`: from 761px to 1080px the document laid out **1082px wide**. And it did not scroll —
+  `body{overflow:hidden}` (`styles.css:25`) propagates to the viewport, so there was no scrollbar and
+  no way to reach the excess: it was **clipped and unreachable**, which is worse than scrolling.
+  **The fix needed two halves, and shipping only the first made things worse.** `minmax(0,1fr)` on
+  `.topbar` lets the *track* shrink — but `.brand` is a flex item with no `min-width:0`, so its
+  628px of content did not reflow, it **spilled over the centred clock**: measured 109px of overlap
+  at 1280, 274px at 900, 324px at 800, with the clock digits unreadable underneath. An independent
+  reviewer caught that before merge; the first draft of this row and its test had both missed it,
+  because a `scrollWidth` check goes green *because* of overlap — superimposing content is exactly
+  how you make an overflow vanish from that metric. `.brand{min-width:0}` +
+  `.brand .badges{min-width:0;overflow:hidden}` complete it: the strip clips inside its own box
+  instead of on its neighbour.
+  **What that costs, measured honestly — the first draft of this sentence was wrong.** It claimed
+  "6 of 6 badges visible down to 1280, 4 of 6 at 800". Both figures are false and *arithmetically
+  impossible*: at 1280 the clip box is 312px and six badges need 6×70 + 5×9 = 465px. The first
+  measurement counted badges inside the *viewport* rather than inside the box that does the
+  clipping — the third time in this slice that measuring the wrong box produced a confident wrong
+  number. Measured inside the clip box, badges fully visible: **1920 → 6, 1536 → 5, 1440 → 4,
+  1366 → 4, 1280 → 4, 1024 → 3, 900 → 2, 800 → 1.** All six survive only above **~1700px** (measured 1690 → 5, 1700 → 6, by this
+  row's own "fully visible inside the clip box" metric; ~1780px is where the strip reaches its
+  494px max-content with no badge squeezed to its 70px floor — a different threshold).
+  **And the drop order is the wrong way round.** `justify-content:flex-end` means the clip eats the
+  *first* children, so the first to go are `AGENTS`, then `LLM` (model READY / NO MODEL / OFFLINE),
+  then `DATA` (LIVE / DEMO / OFFLINE) — the model- and data-health indicators, silently, at ordinary
+  laptop widths. For a repo that refuses silent degradation elsewhere that is a poor trade, so it is
+  recorded as a live residual rather than sold as a clean win. It is still strictly better than
+  274px of badges painted across the clock; the real answer is a topbar content strategy, which
+  belongs with the ≤1100px row above rather than bolted on here.
+  **One regression this introduced, then fixed.** The rule was first written unscoped, and `.badges`
+  is used twice — `shell.tsx:52` (the status strip, which needs clipping) and `shell.tsx:65` (the
+  demo/EN/AMBIENT/⌘K tool strip, which never overflows at any width). Clipping the second ate the
+  keyboard focus ring on its buttons at *every* width, 1920 included: `:focus-visible` draws at
+  `outline-offset:2px`, 4px outside a border box sitting flush with the strip. A WCAG 2.4.11 defect,
+  invisible to axe — it does not check clipped outlines — and caught only because an independent
+  review looked at a screenshot. Scoping to `.brand .badges` restores the full ring, verified by
+  screenshot rather than by assertion.
+  `frontend/e2e/layout.spec.ts` (+4) asserts **both** — fits AND does not stack — and each half is
+  red-proved against a different broken state: the fit assertion fails at 900/800 on unmodified
+  `main`, and the overlap assertion fails at 1280/900/800 (109/274/324px) against the
+  `minmax`-only version. The overlap assertion had to measure the painted badges, not `.brand`,
+  whose rect is the grid track and *does* shrink — measuring `.brand` passed the very regression
+  it existed to catch.
+  **Below 760px, honestly:** 760 and 700 now fit; 600, 500 and 393 lay out **640px under Pixel 5 emulation**
+  (was 915px) and **625px in plain desktop chromium** — those are different measurements and the
+  earlier draft did not say which it meant. So the ≤760px override was *not* behaviour-neutral, contrary to this row's first
+  draft — that claim was wrong and is retracted here. The phone gap is narrower but still open, and
+  closing it is still the stacked-layout work the owner call above has to decide.
+
+- [ ] 🔴 **The cockpit's chat surface is off-screen at ≤1100px — a plain desktop bug, worse than the
+  topbar one, found in the same investigation (2026-09-04).** Nothing to do with phones: 1100px,
+  1000px and 900px are ordinary laptop and split-screen widths that the product unambiguously
+  supports. `@media (max-width:1100px)` (`styles.css:594` on this branch, `:581` on `main`) collapses `.workzone.cockpit` to a single
+  column, so the remaining `.col` children stack **vertically** inside a `height:100%` shell that
+  cannot grow — and the chat column is the one pushed off the bottom.
+  Measured on this branch at an 800px-tall viewport: at 1280px the input bar sits at `bottom=785`
+  (in view) with `.convo` 163px tall; at **1100, 1000, 900 and 800 it sits at `bottom=931` — below the
+  800px fold, `inView=false` — and `.convo` collapses to 32px.** A user at those widths cannot see
+  or reach the message box at all.
+  **This is not what the topbar fix addressed**, and the fix does not help it: the two are
+  independent, one horizontal and one vertical. Recording it here rather than widening that PR, and
+  flagging it as the higher-severity of the two — a clipped topbar badge is cosmetic; an unreachable
+  input bar makes the cockpit unusable. The likely shape of a fix is giving the collapsed
+  single-column workzone a scrollable/auto-height main region instead of a fixed one, which needs a
+  look at `.shell`/`.main`/`.workzone` heights together — its own slice, not a one-liner.
+
+- [ ] 🔴 **The `webkit` half — a test-harness defect, not a HUD defect, and not the phone question.**
+  10 of the 22 nightly failures are `[webkit]` at 1280×720: `a11y.spec.ts:33` ×1 and
+  `hud.spec.ts:87/:123/:153` ×3 each. **In WebKit `page.route()` does not intercept**, so those specs
+  drive the *real*, model-less CI backend instead of their mocks. Precisely: on webkit the click
+  **lands** — `hud.spec.ts:119`'s `.msg.user .bubble` "hello jarvis" passes — and `:120` fails
+  because the mocked agent reply `.msg.agent .bubble` never appears; `:123` fails because the
+  stop button never exists. There is no pointer interception anywhere in the webkit blocks, so
+  "they time out" understates it: the user turn renders, the mocked reply never does. Evidence from the CI
+  log of run 33850948593: the webkit a11y failure dumps a live DOM containing the specs' own literal
+  strings — `hello jarvis` (`hud.spec.ts:116`) and `please stop` (`hud.spec.ts:144`), two copies each,
+  one per prior repeat — which can only have reached it through the server: nothing persists the
+  transcript client-side, and `app.tsx:161-177` rehydrates it from `GET /memory`
+  (`routers/memory_hud.py:41-55` → `orch.memory.get_history`). `orchestrator.py:1412` writes the USER
+  turn before the model runs, and on the model-less backend the *assistant* turn is never persisted —
+  the "language backend is not available" fallback reply never reaches `memory.add_turn` — so the
+  server keeps exactly the user-only transcript the log shows.
+  **Correction to this row's first draft (2026-09-04).** It said the a11y failures were "cross-test
+  contamination … not independent a11y regressions". That was wrong, and the difference matters:
+  the contamination *exposes* a **real WCAG defect in the shipped HUD**, it does not manufacture one.
+  `.convo` (`cockpit.tsx:38`, `styles.css:240` on this branch, `:227` on `main`) is `overflow-y:auto` with no `tabIndex` and no `role`,
+  and its only focusable descendants (the Save/TTS buttons, `cockpit.tsx:52-53`) live inside *agent*
+  messages — so a user-only transcript is a scrollable region with **zero** focusable content, which a
+  keyboard user cannot scroll (WCAG 2.1.1/2.1.3). Verified standalone in **desktop chromium at
+  1280×720**, not on a phone and not through webkit: reload the HUD against a model-less backend so
+  `app.tsx` rehydrates from `GET /memory` → 4 user bubbles, 0 agent bubbles, 0 focusables,
+  `scrollHeight 251` vs `clientHeight 108` → axe reports exactly one `serious`
+  `scrollable-region-focusable` on `.convo`. Live-sending turns instead does *not* reproduce it (the
+  agent bubbles bring 8 focusables with them), which is why the defect hid: it needs the reload path,
+  and that is the path a real user takes whenever their model backend is down.
+  **Own slice, next.** One line — `tabIndex={0} role="log" aria-label=…` on `cockpit.tsx:38` — plus a
+  regression test; it is not folded into the layout-fit PR because that would widen a reviewed diff.
+  **Next slice, not this one.** Prime suspect is the PWA service worker (T-0.29) intercepting fetches
+  ahead of Playwright's route handler; if so the fix is `serviceWorkers: 'block'` in the Playwright
+  context — which removes an interference, it does not disable a test. Must be confirmed against a
+  real webkit run (`workflow_dispatch` of `e2e.yml` on a branch) before anything is claimed fixed.
+
 **The matrix is now reachable from `workflow_dispatch` (2026-09-04).** Part of *why* that lane stayed
 red for 63 consecutive nights is that nobody could iterate on it: `E2E_BROWSER_MATRIX` was gated on
 `github.event_name == 'schedule'`, so firefox and webkit could not be exercised from a branch **at
@@ -2547,11 +2763,18 @@ and wait until 03:15 UTC. `.github/workflows/e2e.yml` now takes two dispatch inp
       `Number(...)` into `repeatEach`. The config now also pins what a non-integer means (measured:
       `repeatEach: NaN` behaves as 1 on `@playwright/test` 1.62.1 — undocumented, so it is made
       explicit rather than relied on; a fractional value now floors instead of passing through).
-- [ ] 🔴 **Still red, still unfixed:** the 10 webkit cases (`page.route` does not intercept, so those
-      specs drive the real model-less backend; prime suspect the PWA service worker, candidate fix
-      `serviceWorkers: 'block'`) and the 9 mobile-chrome pointer cases (the owner call above). This
-      row unblocks *working on* them; it does not fix either, and no webkit run has been performed —
-      there is no webkit binary off-box.
+- [x] ✅ **Superseded — measured on `main` 2026-09-04.** When this bullet was written both halves were
+      open and no webkit run had ever been performed off-box. Both are now settled by a real matrix run
+      on `main` rather than by argument:
+      [run 33919809105](https://github.com/andrei649/jarvis-hub/actions/runs/33919809105)
+      (`browsers: matrix`, `iterations: 3`, head `4ae4bbdc`, 27.7 min) reports **9 failed, 195 passed**.
+      The **10 webkit cases are gone** — the service-worker fix below holds on `main`, not just on a
+      branch. The remaining nine are all `mobile-chrome`: `hud.spec.ts:87`, `:123` and `:153`, three
+      iterations each, every one `<div class="agent-row active"> … intercepts pointer events` at the
+      Pixel 5 viewport — that is, **all nine are the open owner call above**, and nothing else in the
+      lane is red. Nightly went 22 → 9 as predicted. Two caveats kept honest: the run predates #1018 by
+      minutes (a ≤1100px change whose own PR states it does not move the phone outcome, which this
+      result is consistent with), and 9 is one sample at n=3, not a distribution.
 
 **The E2E lane's own source was compiled by nothing (2026-09-04).** `frontend/tsconfig.json` has
 `include: ["src"]`, so `npm run typecheck` never looked at `frontend/e2e/*.spec.ts` or
@@ -3139,7 +3362,7 @@ Figma API token, stays a separate owner-gated follow-up.)* | — |
 | H23.14 | **Semver compatibility contract** + supported-versions matrix + deprecation policy + platform matrix | ✅ **done** — `docs/COMPATIBILITY.md` (SemVer + pre-1.0 caveat, public-surface definition, supported-versions matrix, deprecation policy, platform matrix incl. the real **Python 3.12+** floor / Node 20+ / Docker-optional) + `SECURITY.md` rewritten from the GitHub placeholder into a real supported-versions + disclosure policy. **Gated:** `tests/test_compatibility.py` asserts the docs' supported-version lines track the single-sourced `agents.__version__` (so CDX-5 drift can't return) + valid SemVer + the documented Python floor. | 0.15 |
 | H23.15 | systemd/service templates (Linux/Windows) | ✅ **done** — `deploy/systemd/jarvis-hub.service` (hardened unit: `ProtectSystem=strict`/`NoNewPrivileges`/restricted address families; `KillSignal=SIGTERM` + `TimeoutStopSec` margin over `JARVIS_SHUTDOWN_TIMEOUT` → the H23.11 bounded graceful drain) + `jarvis-hub.env` + README; `deploy/windows/install-service.ps1` (NSSM, Ctrl-C graceful stop) + README; `deploy/README.md` index wiring the `/healthz`·`/readyz` probes. Both consume the H23.11 env knobs; guarded by `tests/test_compatibility.py`. | 0.15 |
 | H23.16 | **Network monitor** HUD panel (prove LOCAL_ONLY agents make zero outbound calls) | ✅ **DONE (verified 2026-07-02** — data layer + API + HUD panel all in tree; only the live-pixel render stays owner-runtime-gated, CDX-9**)** — **data layer + API done**: thread-safe `observability/egress_monitor.py` (in-memory ring buffer + monotonic per-plugin counters) records *every* outbound attempt — allowed **and** blocked — at the `http_client.py` choke point (all 6 verbs via one `_guard`); `GET /api/admin/network/calls?plugin=&limit=` (admin-guarded) serves per-plugin tallies + recent events + `local_only_violations` (the proof: a NONE/LAN plugin with an allowed external call surfaces as a violation → `clean=False`). `tests/test_network_monitor.py` (+9, MockTransport — no real socket). **HUD panel done:** `NetworkMonitorPanel` in the Console (`gap.tsx`, Trust section) reads the endpoint and renders the `clean` local-only proof + per-plugin allowed/blocked/external + any violation in red; `frontend/src/test/network-monitor.test.tsx` (+2, fetch-mocked) — passes `tsc --noEmit` + vitest. ⚠️ Only the live-pixel render is owner-runtime-gated (CDX-9), as for every HUD panel. | 0.16 |
-| H23.17 | **Quality gates** — E2E (Playwright), load/soak, a11y (WCAG), i18n completeness, browser+mobile matrix | ✅ **done (2026-07-03)** — i18n completeness, sandbox isolation, p95 load, live Playwright canvas/cinema smoke, axe a11y, nightly soak/browser matrix, and the chat send→SSE→stop + voice push-to-talk flow specs are all wired. M2.1 added the degraded-model chat/voice flow E2E; M2.2 added scheduled/manual browser matrix + soak knobs (`E2E_BROWSER_MATRIX`, `E2E_SOAK_ITERATIONS`). | 0.19 |
+| H23.17 | **Quality gates** — E2E (Playwright), load/soak, a11y (WCAG), i18n completeness, browser+mobile matrix | ✅ **done (2026-07-03)** — i18n completeness, sandbox isolation, p95 load, live Playwright canvas/cinema smoke, axe a11y, nightly soak/browser matrix, and the chat send→SSE→stop + voice push-to-talk flow specs are all wired. M2.1 added the degraded-model chat/voice flow E2E; M2.2 added scheduled/manual browser matrix + soak knobs (`E2E_BROWSER_MATRIX`, `E2E_SOAK_ITERATIONS`). **⚠️ Wired ≠ green (recorded 2026-09-04):** the chromium push lane passes, but the *scheduled* matrix has failed every run since it was switched on — 63 runs, none green. **The tick is correct as written and is not being disputed:** M2.2 commissioned the matrix as a reporting lane, explicitly *"non-blocking at first"*, with the acceptance criterion *"Nightly lane exists and reports; matrix runs 3 engines; PR path unchanged"* (`docs/superpowers/specs/2026-07-02-orizont25-execution-blueprint.md:212-220`) — an existence claim, which was true the day it was written. It was never evidence that webkit/mobile-chrome pass, and this note exists so no later reader mistakes it for that. Both halves are diagnosed under "The phone surface" above (owner call for the phone half; the webkit half is a `page.route` harness defect). | 0.19 |
 | H23.18 | **User docs** — USER_GUIDE, FAQ, UPGRADE (per-version migration notes) | 🟢 **done** — `docs/USER_GUIDE.md` (requirements → install (Win one-click / any-OS) → start → the cabinet → configure a model → daily use (chat/voice/autonomy/plugins) → admin panel → data controls), `docs/FAQ.md` (data-leaves-machine, telemetry, GPU, models, OS, multi-user, stop-autonomy, channels, cost, update, backup/export/delete, WorldView/Signal), `docs/UPGRADE.md` (Win `UPDATE.bat` / manual `git pull`+reinstall+restart / release-bundle; **automatic forward-only migrations** H23.7; backup-first rollback; graceful restart H23.11; per-version notes → COMPATIBILITY/SemVer). Linked from README; `tests/test_user_docs.py` (+4). | 0.19 |
 | H23.19 | **Trust/security docs** — THREAT_MODEL, SECURITY disclosure policy + advisories, NOTICE/SBOM, **telemetry opt-in disclosure**, privacy policy | 🟢 **done** — `docs/THREAT_MODEL.md` (boundaries + assets + 11 threats each mapped to the *real* seam: egress gate/monitor, action kernel, K3 budgets/loop-breaker, encrypted secrets, HMAC audit, injection/Cypher/WKT guards, sandbox isolation, fail-closed bind, supply-chain) + continuous-verification matrices + honest residual risks; `docs/PRIVACY.md` (local-first, **no telemetry / no phone-home** disclosure, first-party-analytics clarification, opt-in egress data-flow table, user controls: export/forget/retention/kill-switch). SECURITY disclosure + NOTICE/SBOM already shipped (H23.14 / H23.13). Linked from README + SECURITY.md; `tests/test_trust_docs.py` (+3) guards existence/grounding/discoverability. | 0.19 |
 | H23.20 | **Onboarding wizard** + activation-funnel instrumentation + cold-start error guidance | 🟢 **backend done** — `routers/onboarding.py`: `GET /api/onboarding/wizard` (ordered steps intro→model→test_chat→autonomy, `complete` **derived from recorded funnel events** so onboarding resumes across reloads; `model_ready` + a friendly cold-start `hint` when no backend is reachable) + `POST /api/onboarding/funnel` (records first-party local `funnel.<step>.<event>` via `analytics_store`, bounded to known steps); both `user_guard`'d. `tests/test_onboarding_wizard.py` (+4); route parity/auth/openapi + HUD-v2 IA (cockpit home) snapshots reseeded. **HUD `OnboardingPanel` ✅** — Console *Observe* panel renders the ordered steps with done/pending state + progress + the cold-start `hint`, and a per-step **done** button records the funnel event (`POST /api/onboarding/funnel`) so completion persists; `frontend/src/test/onboarding-panel.test.tsx` (+2, fetch-mocked; vitest + tsc green). **Pending:** only the live-pixel render (owner-runtime-gated, CDX-9). | 0.19 |

@@ -119,6 +119,30 @@
 
 ## 🟠 GitHub settings (5 minutes, Settings → …)
 
+- [ ] **Let Actions open PRs — one checkbox, and it un-reds a weekly workflow** (found 2026-09-04
+  while triaging red scheduled lanes). **Settings → Actions → General → Workflow permissions →
+  tick "Allow GitHub Actions to create and approve pull requests."** If the account sits under an
+  org, the org-level toggle has to allow it first.
+  **What is broken.** `Third-Party Auto-Update` (`.github/workflows/thirdparty-autoupdate.yml`,
+  Thursdays 07:00 UTC) does all of its real work correctly — `discover` finds the drifted sources,
+  each `update` job re-vendors, bumps the pin, passes `check_thirdparty_drift.py --consistency`,
+  and force-pushes its per-source branch to origin. It then dies on the last step, when
+  `peter-evans/create-pull-request` calls the REST API with the workflow token:
+  `GitHub Actions is not permitted to create or approve pull requests.` The
+  `permissions: pull-requests: write` already in the YAML is necessary but **not** sufficient —
+  that repo/org toggle overrides it for `GITHUB_TOKEN`. Nothing in the repo is at fault and there
+  is no code fix; this is why it is here and not in the backlog.
+  **Scale.** 8 of 11 runs have failed this way (2026-07-02 → 2026-09-03, latest
+  [33751779652](https://github.com/andrei649/jarvis-hub/actions/runs/33751779652)); the 3 "green"
+  runs are ones where nothing had drifted, so the `update` job was skipped entirely. The lane has
+  therefore never once delivered its output.
+  **Note the side effect:** the update branches *are* on origin already — the work exists, only the
+  PR is missing. After you tick the box the next scheduled run opens them.
+  **If you would rather not flip the global toggle:** a fine-grained PAT with contents +
+  pull-requests write on this repo, stored as a secret and passed to the action as `token:`, does
+  the same job with a narrower blast radius. That one is a code change and I can do it — say which
+  you prefer.
+
 - [x] **De-gate merges (decided 2026-08-29 — remove the branch-protection gates)** — ✅ the repo
   half shipped in #981 (merged 2026-08-30 09:09 UTC); that merge going through indicates the
   required checks no longer block. *If you merged it via admin bypass rather than clearing the
@@ -333,6 +357,57 @@ built on your Windows box:
     already-public, HEAD-equivalent facts are gated by `NERVA_PUBLIC_PROFILE`.
 
 ## Parking lot (decisions, no rush)
+
+- [ ] **Is the web HUD a phone surface? — one decision, and it unblocks a nightly that has never
+  been green.** Packet refreshed 2026-09-04 against `main` @ `bf48cf2`; the question itself is the
+  2026-07-29 call recorded in `BACKLOG.md` → *"The phone surface"*. Nothing about it is engineering-
+  blocked — it needs your answer, not more code.
+  **Where it stands.** `HUD E2E` runs nightly. It has failed **every scheduled run — 63 of 63**.
+  22 cases fail: 12 `mobile-chrome`, 10 `webkit`. The 12 are **4 specs × 3 soak repeats**
+  (`E2E_SOAK_ITERATIONS: 3` → `repeatEach`): `a11y.spec.ts:33` plus `hud.spec.ts:87/:123/:153`.
+  Only those 12 are yours to decide; the webkit 10 are
+  a `page.route` harness defect and are being fixed as ordinary engineering.
+  **What was already wrong in the old packet, corrected here.** It said the buttons "intercept
+  pointer events", which reads as an overlay bug. There is no overlay: at the Pixel 5 viewport
+  `elementFromPoint()` at the button's centre returns the button, and `force`/`dispatchEvent` clicks
+  both succeed. The HUD simply lays out wider than the viewport, mobile Chromium shrink-to-fits, and
+  Playwright then hit-tests at the wrong coordinates. Numbers, dated so they cannot go stale
+  silently: **915px inside 393px, scale 0.43 @ `bf48cf2`**; after the laptop-width topbar fix
+  landed on this branch, **640px inside 393px, scale ≈ 0.61**. Narrower, still mismatched, and
+  the failing `mobile-chrome` cases still fail with the identical symptom — so there is no
+  small fix hiding here — the old packet's instinct was right, its reason was not.
+  **The two options, unchanged:**
+  - **(A) The phone story is the `mobile/` React Native app.** Then the web HUD is a desktop
+    surface, `mobile-chrome` comes out of the Playwright matrix, and the nightly can be green.
+    Cost: ~1 slice. Consequence: the HUD is documented as desktop-only and the LAN-access note
+    below still needs writing.
+  - **(B) The web HUD should also work on a phone.** The earlier estimate here — "a genuine
+    responsive slice with design decisions in it (R2)" — **looks too pessimistic, and you should
+    know that before choosing.** An A/B test found **four CSS declarations** that turn every
+    test in `hud.spec.ts` green under `mobile-chrome` — all six, i.e. the three that fail plus the
+    three that already pass — and I verified the load-bearing half myself: with them the layout
+    viewport becomes 393px = the visual viewport (scale 1, no shrink-to-fit) and the transmit click
+    lands instead of being intercepted.
+    ```css
+    .main[data-ia="rail"]{grid-template-columns:60px minmax(0,1fr)}
+    .badges{flex-wrap:wrap}
+    .badge{min-width:0}
+    .workzone{overflow-y:auto;grid-auto-rows:minmax(0,auto)}
+    ```
+    **Read that honestly, though: "the specs pass" is not "the phone experience is designed."**
+    Those four declarations stop the cockpit being broken by overflow; whether a stacked desktop
+    cockpit is actually *good* on a 393px screen is still a design judgement, and it is yours. What
+    has changed is the price of finding out — closer to one small slice than to a redesign.
+    Note also that the fourth declaration is the same lever as the separate **≤1100px chat-off-screen
+    desktop bug** recorded in `BACKLOG.md`, so option B and that fix may well be one piece of work.
+  **Either way, one thing is owed regardless:** the supported LAN path is documented nowhere. A
+  `docs/` grep for LAN/remote-access guidance returns nothing, while `serve.py:66` +
+  `boot_guards.py:25` + `web.py:192` make reaching the HUD from another device a deliberate,
+  token-gated setup. That note should be written whichever way you decide.
+  **Not blocking you:** the ≥760px half of the same overflow bug was a plain desktop defect (at
+  800/900/1000px the cockpit scrolled sideways) and is already fixed and pinned by
+  `frontend/e2e/layout.spec.ts`. That fix stops deliberately at 760px so it does not pre-empt this
+  decision.
 
 - [x] **Pick the payment rail — or ratify that there is none** — ✅ ratified 2026-09-01 (owner):
   **no real payment rail for 1.0.** `PaymentBroker.settle()` keeps auditing *"settled (no real
