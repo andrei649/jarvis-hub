@@ -1,5 +1,12 @@
-/// <reference types="vitest" />
-import { defineConfig } from 'vite';
+// `defineConfig` comes from `vitest/config`, not `vite`: the `test` key below is Vitest's, and
+// Vite's own `UserConfig` does not have it. This file previously carried
+// `/// <reference types="vitest" />` for that, which stopped working when Vitest moved the
+// augmentation to its `vitest/config` entrypoint (this repo is on vitest 4.1.11) — and nothing
+// noticed, because no tsconfig `include` covered this file, so `tsc` never compiled it. Adding it
+// to tsconfig.e2e.json surfaces the error it had been carrying, reported against the `test:` key
+// below:
+//   error TS2769 ... 'test' does not exist in type 'UserConfigExport'
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
