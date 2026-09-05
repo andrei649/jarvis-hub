@@ -2617,7 +2617,12 @@ spec has ever scanned**, one of them the *same rule* this row just closed on `.c
       non-contrast `incomplete` entries at serious/critical impact in the walk's console summary and
       artifact header. Deferred out of this slice because `a11y-modes.spec.ts` was being rewritten
       in a sibling PR and two PRs editing it would have conflicted; that PR (#1030) has since
-      merged, so the follow-up is unblocked and is now only unstarted.
+      merged, so the follow-up was unblocked — and **taken**: #1033 surfaces every non-exempt
+      `incomplete` entry at serious/critical or unrated impact, by mode, in the console and in
+      the artifact header. Against `main` at `39ce740b` it prints exactly the finding this PR
+      fixes, which is the demonstration that the gap was real. Ticked there rather than here,
+      so the two rows do not merge into a contradiction: this one records the gap that let the
+      regression through, #1033 records its closure.
 
 two of seventeen surfaces — so a green a11y lane said nothing about the rest. A mode walk found
 blocking violations on surfaces no spec had ever visited. **The first version of that walk was
