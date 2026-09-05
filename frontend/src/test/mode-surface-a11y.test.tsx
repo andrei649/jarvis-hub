@@ -26,6 +26,11 @@ describe('mode surfaces keep their accessibility contract', () => {
     expect(container.querySelectorAll('.acard button, .acard a[href], .acard [tabindex]').length).toBe(0);
     expect(body.getAttribute('tabindex')).toBe('0');
     expect(body.getAttribute('aria-label')).toBe(V2.I18N.en.roster);
+    // The name needs a role that PERMITS it. Without one, `aria-label` on a <div> is axe
+    // `serious · aria-prohibited-attr` — which is what the first version of this fix shipped, and
+    // which the mode walk could not fail on because axe files that rule under `incomplete`.
+    // Pinned here so the pair cannot drift apart again in the PR lane, without a browser.
+    expect(body.getAttribute('role')).toBe('group');
   });
 
   it('names the MEMORY time-travel slider in the active locale', () => {
