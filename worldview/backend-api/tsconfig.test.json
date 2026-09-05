@@ -1,0 +1,34 @@
+// WorldView API · type-check for the code tsconfig.json does not reach.
+//
+// `tsconfig.json` has `include: ["src/**/*.ts"]`, so this package's 24 files under `test/` and its
+// `integration/run.mts` were compiled by NOTHING: `npm run typecheck` skips them by include, and
+// `npm test` runs them through `tsx`, which strips types without checking them. A test could
+// reference a renamed export, misuse a typed repository, or carry a self-closing block comment,
+// and no gate here would say so.
+//
+// WHY `noUncheckedIndexedAccess` IS OFF, measured rather than asserted. Widening the include with
+// the base config untouched reports **58** errors. **54** of them are that one flag against test
+// fixtures whose invariants the tests establish by construction — `buildChain([...])` returns
+// three rows and the next line reads `chain[1]`, which the compiler must call
+// `StoredChainRow | undefined` and which never is. Silencing those needs ~54 non-null assertions
+// written into assertions' own setup, which buys no safety and costs review attention.
+// The flag stays ON for `src/` (this file does not touch the root config), where an unchecked
+// index really can be undefined at runtime.
+//
+// The remaining **4** errors were real and are fixed rather than configured away: `test/
+// liveRoute.test.ts` imported `ws` — a package nothing here declared, resolving only through
+// `@fastify/websocket`'s own dependency — with no `@types/ws`, so all three of its WebSocket
+// `message` handlers took an implicitly-`any` payload. Both are now devDependencies of this
+// package (`ws` pinned to the version already in the lockfile, so declaring it installs nothing
+// new).
+//
+// WHAT THIS DOES NOT DO: `worldview.yml` carries no `pull_request` trigger — removed by #981 as
+// an owner de-gate decision, restorable as group **K** in `docs/restore/`. So this check runs
+// after a merge to `main`, like every other job in that workflow. It is a real gate on `main`,
+// not a PR gate, and widening it is the owner's call, not this file's.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noUncheckedIndexedAccess": false },
+  "include": ["src/**/*.ts", "test/**/*.ts", "integration/**/*.mts"],
+  "exclude": ["node_modules", "dist"]
+}
