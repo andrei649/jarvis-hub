@@ -210,6 +210,43 @@ async def _run_and_record(args) -> dict:
     )
 
 
+def explain_verdict(record: dict) -> dict:
+    """Name the cases a red verdict did not excuse.
+
+    The verdict is arithmetic (`passed + expected_seam + owner_live >= total`),
+    so a red run could report its counts and exit 1 without saying *which* case
+    broke it.
+
+    Both excusals are counted per CASE, but the record stores them as
+    capability-id lists and an id is shared by a capability's offline and
+    owner-live rows. The owner-live excusal therefore only applies to a row that
+    is itself `live`: an offline sibling failing under the same id would be a
+    regression wearing its twin's excuse. `expected_seam_failures` has no such
+    ambiguity - a SEAM capability has no runtime behind it either way.
+
+    Returns `{"unexcused": [...], "lines": [...]}`: the rows the verdict did not
+    excuse, and a printable listing of *every* failing row with its tag, so a
+    mis-tagged excusal is visible rather than silently swallowed.
+    """
+    seam = set(record.get("expected_seam_failures") or ())
+    owner_live = set(record.get("owner_live_not_exercised") or ())
+    unexcused: list[dict] = []
+    lines: list[str] = []
+    for row in record.get("cases") or ():
+        if row.get("passed") or row.get("skipped"):
+            continue
+        cid = row.get("capability_id")
+        if cid in seam:
+            tag = "expected-seam"
+        elif cid in owner_live and row.get("live") is True:
+            tag = "owner-live-not-exercised"
+        else:
+            tag = "UNEXCUSED"
+            unexcused.append(row)
+        lines.append(f"    [{tag}] {cid} -> {row.get('name')}")
+    return {"unexcused": unexcused, "lines": lines}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--store-root", default="", help="ledger directory (default: data root)")
@@ -239,7 +276,24 @@ def main(argv=None) -> int:
     # box; anything else is a regression.
     passed = int(totals.get("passed") or 0)
     total = int(totals.get("total") or 0)
-    return 0 if passed + expected + off_box >= total else 1
+    if passed + expected + off_box >= total:
+        return 0
+    verdict = explain_verdict(record)
+    # Report the LISTING's own count, not the arithmetic shortfall: the two are
+    # computed by different rules (the shortfall from the excused-row tallies,
+    # the listing per row with the `live` check above), so a header taken from
+    # one and a body from the other could disagree. They agree on every record
+    # record_run produces today; if that ever stops being true, say so rather
+    # than printing a number the listing below contradicts.
+    shortfall = total - passed - expected - off_box
+    print(f"  {len(verdict['unexcused'])} failing case(s) the verdict did not excuse. "
+          f"Every failing case, tagged:")
+    if len(verdict["unexcused"]) != shortfall:
+        print(f"  NOTE: the exit verdict's arithmetic makes that {shortfall}; the two "
+              f"disagree, which should not be possible - trust the listing.")
+    for line in verdict["lines"]:
+        print(line)
+    return 1
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry

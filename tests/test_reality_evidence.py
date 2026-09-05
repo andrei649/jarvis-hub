@@ -15,6 +15,7 @@ from agents.core.observability.reality_evidence import (
     _RING_LIMIT,
     SCHEMA,
     RealityEvidenceLedger,
+    explain_verdict,
 )
 from agents.core.observability.reality_harness import run_reality
 from agents.core.observability.reality_types import RealityCase
@@ -41,6 +42,76 @@ def _case(name="rail", *, passed=True, capability_id="action:echo"):
 
 async def _run(cases):
     return await run_reality(cases)
+
+
+def _verdict_message(record):
+    """Newline-joined, NOT the raw list.
+
+    A bare `assert rc == 0` reports only "assert 1 == 0" and discards which case
+    broke the verdict. But passing the list itself is barely better: pytest
+    renders it through `saferepr`, which truncates in the middle — measured, the
+    `[UNEXCUSED]` row is elided when it is not last, i.e. exactly the line the
+    message exists to carry. Joining on newlines renders every row.
+    """
+    return "\n" + "\n".join(explain_verdict(record)["lines"])
+
+
+def _row(cid, *, passed, live=False, name=None, skipped=False):
+    return {"capability_id": cid, "name": name or f"{cid} probe",
+            "passed": passed, "skipped": skipped, "live": live}
+
+
+def test_explain_verdict_names_the_unexcused_case_and_nothing_else():
+    """A red run used to print only the arithmetic — "131/136 passed, 1 expected
+    seam failures, 3 owner-live cases not exercised" — and exit 1. The one fact
+    a reader needs, *which* case broke the verdict, was in the JSON artifact and
+    nowhere in the log, so a flake here cost #1017 a full investigation.
+
+    The two excusals are per-CASE, but the record stores them as capability-id
+    lists, and an id is shared by a capability's offline and owner-live rows.
+    So the owner-live excusal only applies to a row that is itself `live`:
+    an offline sibling failing under the same id is a regression, not an
+    excusal — the same distinction the run-verdict test below pins.
+    """
+    record = {
+        "cases": [
+            _row("action:echo", passed=True),
+            _row("skill:Weather Intel", passed=False),                 # expected seam
+            _row("action:house.control", passed=False, live=True),     # owner-live, off-box
+            _row("action:house.control", passed=False, live=False),    # its OFFLINE sibling: real
+            _row("component:camera_source", passed=False, skipped=True),
+            _row("component:orchestrator", passed=False, name="the regression"),
+        ],
+        "expected_seam_failures": ["skill:Weather Intel"],
+        "owner_live_not_exercised": ["action:house.control"],
+    }
+    unexcused = explain_verdict(record)["unexcused"]
+    ids = [c["capability_id"] for c in unexcused]
+
+    assert "component:orchestrator" in ids
+    # the offline sibling must NOT be excused by its owner-live twin's id
+    assert ids.count("action:house.control") == 1
+    # …and the genuinely excused / passing / skipped rows must not appear
+    assert "skill:Weather Intel" not in ids
+    assert "action:echo" not in ids
+    assert "component:camera_source" not in ids
+    assert len(ids) == 2
+
+    lines = explain_verdict(record)["lines"]
+    blob = "\n".join(lines)
+    assert "component:orchestrator" in blob and "the regression" in blob
+    assert "skill:Weather Intel" in blob, "every failing row is listed, tagged"
+    assert "expected-seam" in blob and "owner-live" in blob and "UNEXCUSED" in blob
+
+
+def test_explain_verdict_is_quiet_when_every_failure_is_excused():
+    record = {
+        "cases": [_row("action:echo", passed=True),
+                  _row("skill:Weather Intel", passed=False)],
+        "expected_seam_failures": ["skill:Weather Intel"],
+        "owner_live_not_exercised": [],
+    }
+    assert explain_verdict(record)["unexcused"] == []
 
 
 @pytest.mark.asyncio
@@ -226,7 +297,7 @@ def test_main_exits_zero_offline_when_only_seam_capabilities_fail(tmp_path):
     record = json.loads(out.read_text(encoding="utf-8"))
     totals = record["totals"]
     failing = {case["capability_id"] for case in record["cases"] if not case["passed"] and not case["skipped"]}
-    assert rc == 0
+    assert rc == 0, _verdict_message(record)
     assert totals["passed"] + totals["expected_seam_failures"] >= totals["total"]
     assert set(record["expected_seam_failures"]) | set(record["owner_live_not_exercised"]) == failing
 
@@ -244,7 +315,7 @@ def test_main_exits_zero_in_live_mode_when_owner_hardware_is_absent(tmp_path, mo
     record = json.loads(out.read_text(encoding="utf-8"))
     totals = record["totals"]
     failing = {c["capability_id"] for c in record["cases"] if not c["passed"] and not c["skipped"]}
-    assert rc == 0
+    assert rc == 0, _verdict_message(record)
     assert totals["owner_live_not_exercised"] >= 1
     assert set(record["expected_seam_failures"]) | set(record["owner_live_not_exercised"]) == failing
     for case in record["cases"]:
