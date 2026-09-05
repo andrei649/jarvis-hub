@@ -318,7 +318,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~7,324 backend collected (+932 frontend vitest, +110 mobile jest;
+python -m pytest tests/ -v          # ~7,327 backend collected (+936 frontend vitest, +110 mobile jest;
 #   counters generated into project-status.json via scripts/status_sync.py)
 ```
 
