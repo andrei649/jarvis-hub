@@ -3173,6 +3173,53 @@ dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
       fix. A cheaper guard for the PR lane is `npx playwright test --list`, which loads every spec
       without running one. Neither is done here.
 
+**WorldView's API tests were compiled by nothing, and that hid a phantom dependency
+(2026-09-05).** `worldview/backend-api/tsconfig.json` has `include: ["src/**/*.ts"]`, so the
+package's **24** files under `test/` and its `integration/run.mts` reached no compiler at all —
+and `npm test` runs them through `tsx`, which strips types without checking them. The same defect
+class as `frontend/e2e` (above), in a second package, found by asking which tracked `.ts` files no
+`tsconfig` claims.
+
+- [x] ✅ **`backend-api/tsconfig.test.json` + `npm run typecheck:test`, wired into `worldview.yml`'s
+      node job.** **Red-proofed:** a `const x: string = 42` planted in `test/geohash.test.ts` is
+      **0 errors** under the existing `npm run typecheck` and `TS2322` under the new one — the old
+      gate is blind to it by include, which is the whole claim.
+- [x] ✅ **The one relaxed flag is relaxed on measurement, not taste.** Widening the include with
+      the base config untouched reports **58** errors; **54** are `noUncheckedIndexedAccess`
+      against fixtures the tests establish by construction — `test/auditChain.test.ts:109-110`
+      builds a two-row chain and the very next line reads `chain[1]`, which the compiler must type
+      `StoredChainRow | undefined` and which never is. Suppressing those means ~54 non-null
+      assertions inside the tests' own setup,
+      bought with no safety. The flag stays **on** for `src/` — the new config does not touch the
+      root — where an unchecked index really can be undefined at runtime.
+- [x] ✅ **The 4 errors that survived that flag were real, and are fixed rather than configured
+      away.** `test/liveRoute.test.ts` imports `ws` — which **no package here declared in its
+      manifest**. It reached the test only as `@fastify/websocket`'s own dependency, hoisted to the
+      workspace root: nothing stated that this package uses it, so a change to `@fastify/websocket`
+      could remove it with no signal from anything here. (The lockfile *did* carry
+      `node_modules/ws` at `8.21.0` — a resolved transitive install is exactly what a hoisted
+      dependency looks like. What was missing was the declaration, not the entry.) With no
+      `@types/ws` either, all three of its WebSocket `message` handlers took an implicitly-`any`
+      payload, making the realtime surface's tests the least type-checked code in the package.
+      Both are now devDependencies, and `ws` is pinned **exactly** to `8.21.0` — the version
+      already resolved — matching how `@types/node` and `@types/pg` are pinned two lines above it.
+      Exact rather than `^8.21.0` on purpose: the point is to declare what is already installed
+      without changing it, and a caret range would let the next lock regeneration move it. Verified
+      against `main`'s lockfile: **added** `node_modules/@types/ws`, **removed** nothing,
+      **version-changed** nothing.
+- [ ] 🟡 **What this is NOT: a PR gate.** `worldview.yml` has no `pull_request` trigger — #981
+      removed it as an owner de-gate decision (2026-08-30), and it is restorable as group **K**
+      (`pr-triggers-7-workflows`) in [`docs/restore/`](docs/restore/README.md). So every check in
+      that workflow, this new one included, runs **after** a merge to `main`. It is a real gate on
+      `main` and a post-mortem for a PR. Re-widening it is the owner's call and is deliberately not
+      taken here. Worth knowing before that call: on `main` at `39ce740b` the node job's checks
+      pass locally — all six of its steps: backend `tsc` exit 0, the new `typecheck:test` exit 0,
+      **222** backend tests, frontend `tsc` exit 0, **161** frontend tests, frontend build exit 0 —
+      so restoring the trigger would not start red.
+      The `ingestion`, `mcp` and container-backed `integration` jobs were **not** verified here:
+      this box has no `worldview/mcp/node_modules` and no `aiokafka`/`sgp4`, so their local failures
+      are missing dependencies, not evidence either way.
+
 **A red reality run now names the case that broke the verdict (2026-09-04).** The reality verdict is
 arithmetic — `passed + expected_seam + owner_live >= total` — so `reality_evidence.main()` could print
 *"131/136 passed, 1 expected seam failures, 3 owner-live cases not exercised"*, exit 1, and never say

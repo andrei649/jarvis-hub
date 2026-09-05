@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json --noEmit false --outDir dist",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "test:integration": "tsx integration/run.mts"
   },
@@ -29,7 +30,9 @@
   "devDependencies": {
     "@types/node": "26.4.0",
     "@types/pg": "8.23.1",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.23.11",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "ws": "8.21.0"
   }
 }

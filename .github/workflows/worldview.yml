@@ -51,6 +51,12 @@ jobs:
       - run: npm ci
       - name: Backend typecheck
         run: npm run typecheck --workspace backend-api
+      - name: Backend typecheck (test + integration sources)
+        # `tsconfig.json` includes only src/**, and `npm test` runs the suite through tsx, which
+        # strips types without checking them — so this package's test/ and integration/ sources
+        # were compiled by nothing. See backend-api/tsconfig.test.json for why the one relaxed
+        # flag is relaxed, measured.
+        run: npm run typecheck:test --workspace backend-api
       - name: Backend tests
         run: npm test --workspace backend-api
       - name: Frontend typecheck
