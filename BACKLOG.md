@@ -2840,6 +2840,35 @@ dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
       fix. A cheaper guard for the PR lane is `npx playwright test --list`, which loads every spec
       without running one. Neither is done here.
 
+**A red reality run now names the case that broke the verdict (2026-09-04).** The reality verdict is
+arithmetic — `passed + expected_seam + owner_live >= total` — so `reality_evidence.main()` could print
+*"131/136 passed, 1 expected seam failures, 3 owner-live cases not exercised"*, exit 1, and never say
+which case was unexcused. That cost a real investigation: when this lane flaked on 2026-09-04 it
+reddened #1017 with a bare `assert 1 == 0`, and the failure could be characterised (CI 131/136 vs
+local 132/136 ⇒ exactly one unexcused case) but **not named**.
+
+- [x] ✅ Pure `explain_verdict(record)` returns the unexcused rows plus a printable listing of *every*
+      failing row with its tag, so a mis-tagged excusal is visible rather than swallowed. `main()`
+      prints it on a red verdict only — the green path is byte-identical (measured: same single
+      summary line, exit 0, `diff` clean against the parent). Reachable in production:
+      `.github/workflows/reality.yml` runs this module, so the lines land in the scheduled job's log.
+- [x] ✅ **The subtlety that made it a helper, not a one-liner.** Both excusals are counted per *case*,
+      but the record stores them as capability-id lists and an id is shared by a capability's offline
+      and owner-live rows — so the owner-live excusal is applied only to a row that is itself `live`.
+      Not theoretical: the real 136-case record has **three** ids carrying rows of differing `live`
+      (`action:house.control`, `component:camera_source`, `component:house_adapter`) and those are
+      exactly the owner-live set. Mutation-proved — dropping the `live` check makes a failing offline
+      sibling vanish from the listing, wearing its twin's excuse.
+- [x] ✅ Red-proofed twice: a synthetic record containing that offline/owner-live pair, and end-to-end
+      by injecting a failing case into the real harness (`[UNEXCUSED] component:injected_regression`,
+      exit 1 preserved). Both `assert rc == 0` sites now carry the listing **newline-joined** — passing
+      the raw list lets pytest's `saferepr` truncate mid-message, measured to elide the `[UNEXCUSED]`
+      row itself when it is not last.
+- [ ] 🟡 **What this does not do.** It does not fix the flake — its cause is still unidentified; the
+      #1017 comment records what was ruled out. And it is a *diagnosis* improvement: today all three
+      offline siblings pass, so the `live` guard is protecting against a future regression rather than
+      catching a present one.
+
 ---
 
 ## 🔌 Live-vs-Plumbing Remediation — mock → real (owner request 2026-07-18)
