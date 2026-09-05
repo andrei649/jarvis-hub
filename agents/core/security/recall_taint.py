@@ -33,15 +33,59 @@ context. No production caller does that today (the only two are listed above), a
 autouse fixture in ``tests/conftest.py`` restores the binding around every test so a
 pytest worker running many files in one context cannot carry a mark across a file.
 
-Residual, recorded rather than papered over: making the second path scope the mark
-explicitly — binding and resetting around the search instead of relying on Task
-isolation — is the remaining hardening. It is not done here.
+That residual is now closed by ``bounded_recall_taint`` below, which the HTTP route wraps
+its search in. Read its docstring for what it does and does not buy: it is deliberately a
+no-op under today's implementation, and the whole point is that it stays correct under the
+refactor that would otherwise break the incidental isolation.
 """
 
 from __future__ import annotations
 
-from ..action_origin import bind_action_origin, current_action_origin
+from collections.abc import Iterator
+from contextlib import contextmanager
+
+from ..action_origin import (
+    bind_action_origin,
+    current_action_origin,
+    reset_action_origin,
+)
 from .taint import TAINTED_RECALL_ORIGIN, is_untrusted_source
+
+
+@contextmanager
+def bounded_recall_taint() -> Iterator[None]:
+    """Confine any recall taint mark raised inside this block to the block.
+
+    For callers that recall memory **outside a turn** — today only the HTTP route
+    ``POST /api/memory/search-tool`` — there is no turn ``finally`` to restore the
+    ambient origin, so without this the mark's lifetime is whatever the caller's context
+    happens to be.
+
+    What it buys, stated precisely so nobody reads more into it. **Today it changes
+    nothing**, and that is measurable: the route dispatches the sync tool through
+    ``asyncio.to_thread``, which runs it in a *copy* of the context, so a mark raised in
+    the worker thread is discarded when the copy dies and never reaches the request
+    handler at all. Verified by probe: through ``to_thread`` the caller's origin is
+    unchanged; called inline the caller's origin becomes ``recall:untrusted`` and stays
+    that way.
+
+    That second line is the point. The current safety is a property of the *dispatch
+    mechanism*, not of this module — delete the offload (an easy call to make, since the
+    default in-memory backend is cheap) and the mark starts escaping into the caller's
+    context. This block makes the confinement a property of the code that recalls, so it
+    survives that refactor. It binds the origin already in force, then resets to it on
+    exit, discarding any escalation raised inside — including on an exception path.
+
+    It is deliberately NOT used on the turn paths (``Orchestrator.handle_input``): there
+    the mark is *supposed* to outlive the recall and reach ``kernel.authorize`` so the
+    turn's actions escalate to QUEUE. Wrapping those would silently defeat SEC-B5's whole
+    purpose. This is for recall with no action downstream of it.
+    """
+    token = bind_action_origin(current_action_origin())
+    try:
+        yield
+    finally:
+        reset_action_origin(token)
 
 
 def mark_turn_recall_tainted() -> str:
