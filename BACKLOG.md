@@ -318,7 +318,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~7,089 backend collected (+627 frontend vitest, +103 mobile jest;
+python -m pytest tests/ -v          # ~7,324 backend collected (+932 frontend vitest, +110 mobile jest;
 #   counters generated into project-status.json via scripts/status_sync.py)
 ```
 
@@ -2724,6 +2724,70 @@ three times as much**, which is the more useful fact:
       rather than a longer sleep, so the gate stops inferring completeness from stillness. Until
       then `nodes` and `pending` are recorded per scan so a short scan is visible in the artifact
       rather than silently counted as coverage.
+
+- [x] ✅ **The blind spot is now measured, not estimated — `frontend/e2e/contrast.spec.ts` (+3).**
+      The row above says the failures are "invisible to axe". That was diagnosed from a tally of
+      `incomplete` nodes, which counts what axe *declined* to judge — it does not say what the
+      ratios are. This lane says. It recovers the true backdrop from **rendered pixels** instead of
+      from a compositing model, with a two-shot differential: shot A as painted, shot B identical
+      but with `-webkit-text-fill-color: transparent` (and `fill: transparent` for SVG text) forced
+      on every node. Both properties are paint-only, so B cannot reflow — the spec asserts that rect
+      by rect — and B is therefore pixel-exact the surface the glyph fill composited over, with
+      every gradient, `backdrop-filter: blur()`, blend mode and stacked rgba already resolved by
+      Chromium's own compositor. No compositing model is written, so no compositing model can be
+      wrong. The number is SC 1.4.3's own question — the **specified** colour, composited at the
+      run's effective alpha over the backdrop those pixels prove was there (`specMin`). `paintBest`,
+      the best ratio any single painted pixel achieved, is reported beside it but never decides:
+      glyph antialiasing caps it below the specified ratio for small text (2.23 against a specified
+      2.78 on the 7.5px rail labels), so gating on it would fail a palette that passes AA.
+      **HUD chrome, obsidian, 1440×900, dpr 1: 191 text runs → 86 distinct decisions, 27 below their
+      AA threshold** — 15 `.rail-btn` labels at **2.78–2.79:1**, `.sit` "ALL NOMINAL" 2.78:1, the
+      brand sub-line 2.80:1, the clock date 2.83:1, **`.center-tab` "COGNITION"/"Artifacts" at
+      2.86:1** — the element axe reports as `incomplete` over a gradient and never as a violation —
+      the five status keys 2.87:1, the composer's `span.chan` "VOICE · LOCAL" 2.87:1 and the mic
+      settings glyph 3.17:1, against a `color-contrast` lane that reports all of them as zero
+      violations.
+      **How it refuses to lie:** every run lands in exactly one bucket (`measured` 43 · `unpainted` 3
+      · `excluded` 145, denominator 191) and every bucket prints its reasons (`masked-ancestor` 144
+      · `glyphs-changed-no-pixels` 3 · `occluded` 1), so "0 failing" is never sayable without the
+      rest of the numbers beside it; a run bucketed `measured` without a ratio is a hard failure;
+      two calibration nodes of known ratio (21.00 and 2.789) are injected every run and must come
+      back within tolerance, so a broken mask, a wrong stride, a dpr slip or a gamma bug moves them
+      before it can produce a silent green; and it pauses every animation at t=0 rather than using
+      Playwright's `animations: 'disabled'`, which fast-forwards finite animations to their end
+      frame and cancels infinite ones to their initial frame — neither a frame the page ever holds.
+      Two red proofs ship with it: dimming `.topbar *` must produce *more* FAIL decisions, and a
+      `visibility:hidden` node must land in `unpainted`, never in `measured`.
+      **What review caught before this shipped, recorded because it is the argument for the buckets.**
+      An independent adversarial pass (4 lenses → 18 findings → per-finding refutation → deciding
+      reviewer) killed three defects in the first draft. It excluded `.workzone` wholesale, which
+      silently dropped `.center-tab` **and** the input bar — two of the things the lane's own header
+      said it existed to measure; the exclude-list is now a positive `CHROME_PARTS` include-list the
+      artifact publishes, and reach proofs assert each part is not just present but **measured**. It
+      let `paintBest` decide the verdict, so every finding was labelled by an antialiasing artefact.
+      And it had no notion of occlusion, so it published **`.rl "Admin" 1.55:1`** as a palette
+      finding — a real-looking ratio measured *through* the translucent fixed WORLD toggle
+      (`world_app.tsx:32`, `rgba(10,22,38,.55)`, z-60) parked on top of that label. That number was
+      a measurement artefact, not a contrast defect; the lane now detects painting occluders and
+      buckets that run `excluded`, and refuses to publish a ratio for it at all.
+      **What it does not do, stated here and printed into the artifact as `nonClaims`:** it does not
+      change the palette (no file under `frontend/src/` is touched) and it does not gate a merge —
+      it lives in the e2e lane, which has no `pull_request` trigger, and it asserts only on its own
+      integrity, never on a ratio. It covers **one** surface (the HUD chrome, part by part), one
+      look, one viewport, dpr 1, Chromium, text only (SC 1.4.3). The 16 mode surfaces and every
+      overlay are **not** measured — running 17 surfaces in one process exhausted the container's
+      memory, so that is a follow-up which grows the registry without touching the measurement core.
+      The 144 `masked-ancestor` runs are the ticker under `.ticker-marq`'s gradient fade, whose
+      painted alpha varies along the run's own length so no single specified colour describes it.
+      A run with its own `text-shadow` is measured and flagged `ownShadow` — CSS paints a text
+      shadow *beneath* the glyph fill, so shot B is still what the fill composited over, but that
+      backdrop includes the run's own halo (`.clock-time`, PASS at 6.69:1, is the only one here).
+      **The 🔴 above stays open**: this slice makes the debt legible and costs it, it does not pay
+      it. Retiring `--ink-3` as a text colour is a palette decision for the owner, and this row —
+      not `docs/OWNER_TASKS.md`, which carries no palette packet — is where it is costed.
+- [ ] 🟡 **Coverage is 10 of 16 rail modes.** The number hotkeys do not reach `projects`,
+      `finance`, `health`, `knowledge`, `family` or `admin`. All six were walked manually via the
+      rail at 1440×900, live and demo, and came back clean — but no spec covers them.
 
 **Unchanged in the E2E lane:** the 9 mobile-chrome pointer cases (the owner call above) and the
 9 webkit cases where `page.route` does not intercept — **but the causal chain is no longer inferred.**
