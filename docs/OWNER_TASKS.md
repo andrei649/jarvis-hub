@@ -625,3 +625,38 @@ built on your Windows box:
   (broadening what that issue owns), or explicitly decide this isn't worth tracking separately from
   the existing SOUL/persona system. Whichever you pick, a one-line note back in `BACKLOG.md` closes
   the row.
+
+- **HUD chrome is painted below AA contrast, and the a11y gate cannot see it (2026-09-04).**
+  Two separate facts, both measured.
+
+  *The defect.* `styles.css` colours text with `--ink-3` (**2.79:1** on `--void`, **2.83:1** on
+  `--void-2`) and `--ink-4` (**1.56 / 1.59:1**) in places AA requires **4.5:1**. Already fixed
+  where a scan could prove it: the `<Tag>` chip's default, two onboarding inline styles, and the
+  command palette's `.pal-group` / `.pal-foot` / `kbd` — that last one was 1.59:1 on the keyboard
+  hints telling you how to close the overlay. Still on `--ink-3` and **not** fixed: `.rail-btn`
+  (16 in the DOM) and `.center-tab`, i.e. the primary navigation.
+
+  *The measurement problem.* axe can only judge contrast when it can compute one backdrop colour,
+  and this shell is gradients. On the live 1280×720 lane `a11y-modes.spec.ts` records **701
+  `incomplete` `color-contrast` nodes against 0 violations** (899 / 954 / 1198 on its other three
+  lanes); **630 of the 701** carry *"background color could not be determined due to a background
+  gradient"*, the rest are non-text characters, images, short content and overlap. `.center-tab`
+  sits in that bucket; the rail labels are not reported at all. So contrast across most of the HUD
+  is not passing — it is **unknown**, and a green a11y lane must not be read as "contrast is fine".
+
+  Your call, and the first option is the one that fixes the defect rather than the instrument:
+
+  1. **Retune the palette so chrome text clears AA.** Raise `--ink-3` (and stop using `--ink-4`
+     for text), or introduce a dedicated "dim but legible" token and move `.rail-btn` /
+     `.center-tab` onto it. Costs de-emphasis contrast between active and inactive states; costs
+     nothing in depth or layout. This is what the numbers point at, and it is a design decision
+     about how muted "muted" may be — which is why it is yours and not taken here.
+  2. **Give text-bearing surfaces an opaque backdrop** behind the gradient, so axe becomes
+     authoritative. Costs some of the depth the shell is designed around — and note it converts
+     ~700 unknowns into real violations, most of which option 1 would then have to fix anyway.
+  3. **Accept the blindness and audit by hand** on a schedule, treating `incomplete` as a review
+     queue rather than noise. The artifacts already exist: `e2e.yml` uploads `e2e/artifacts/`.
+  4. **Assert on `incomplete` too**, which fails the lane today on all ~700 and forces 1 or 2.
+
+  Nothing above is assumed from the fact that the lane is green, and no option has been taken.
+
