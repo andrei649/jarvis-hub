@@ -408,14 +408,17 @@ input { font-family: inherit; }
 .pal-input input { flex:1; background:transparent; border:0; outline:0; color:var(--ink); font-size:16px; }
 .pal-input input::placeholder { color:var(--ink-3); }
 .pal-list { max-height:46vh; overflow-y:auto; padding:8px; }
-.pal-group { font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-4); padding:10px 12px 5px; }
+/* --ink-2 on all three, not --ink-4/--ink-3: measured with axe on the open palette,
+   .pal-group and .pal-foot were 1.59:1 and .pal-foot kbd 2.82:1 against AA's 4.5:1 — the
+   worst ratios in the HUD, on the keyboard hints that tell you how to leave the overlay. */
+.pal-group { font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-2); padding:10px 12px 5px; }
 .pal-item { display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius:var(--radius); cursor:pointer; }
 .pal-item svg { width:16px; height:16px; color:var(--ink-3); flex:none; }
 .pal-item.sel { background:var(--accent-faint); } .pal-item.sel svg { color:var(--accent-light); }
 .pal-item .pi-name { font-size:13px; } .pal-item.sel .pi-name { color:var(--accent-light); }
 .pal-item .pi-hint { margin-left:auto; font-family:var(--font-mono); font-size:9px; color:var(--ink-4); letter-spacing:.06em; }
-.pal-foot { display:flex; gap:16px; padding:10px 16px; border-top:1px solid var(--panel-line); font-family:var(--font-mono); font-size:9px; color:var(--ink-4); }
-.pal-foot kbd { border:1px solid var(--panel-line); border-radius:3px; padding:1px 5px; color:var(--ink-3); }
+.pal-foot { display:flex; gap:16px; padding:10px 16px; border-top:1px solid var(--panel-line); font-family:var(--font-mono); font-size:9px; color:var(--ink-2); }
+.pal-foot kbd { border:1px solid var(--panel-line); border-radius:3px; padding:1px 5px; color:var(--ink-2); }
 
 /* AMBIENT MODE */
 .ambient { position:fixed; inset:0; z-index:40; background:radial-gradient(circle at 50% 40%, var(--void-2), var(--void)); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:30px; animation:pal-fade .4s; }

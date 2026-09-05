@@ -2908,6 +2908,52 @@ local 132/136 ⇒ exactly one unexcused case) but **not named**.
       offline siblings pass, so the `live` guard is protecting against a future regression rather than
       catching a present one.
 
+**Consent copy failed AA contrast, and the a11y gate could not see it (2026-09-04).** An axe
+sweep forcing `color-contrast` over the ten mode hotkeys found **8 failing elements** (six
+distinct strings) at **2.83:1** on the modal ground, against AA's 4.5:1 — reported under 15–17
+selector paths depending on the run, because axe's path generation shifts as the DOM behind the
+modal changes. Every one was inside `FirstRunGate`.
+
+- [x] ✅ **Three sites, one of them shared.** Six of the eight are the untinted `<Tag>` chip
+      (`panel-kit.tsx`), whose default was `--ink-3`; the other two are inline styles in the
+      onboarding block (`gap.tsx`). Counted repo-wide rather than in one file: **203 uncoloured
+      `<Tag>` uses across 22 files** inherit that default, and the **199** that pass an explicit
+      colour are untouched because only the fallback branch moved. Computed from the tokens:
+      `--ink-3` is **2.79:1** on `--void` and **2.83:1** on `--void-2`; `--ink-2` is 7.07 and 7.03.
+- [x] ✅ **It is consent copy, not decoration.** The chips render the first-run gate's privacy
+      rows — *"connected account · cloud model may receive context"*, *"stored locally · cloud
+      model may receive context"*, *"external websites"*, *"read-only"* — the text telling a new
+      user what leaves their machine.
+- [x] ✅ **The command palette was worse and was missed on the first pass.** `Ctrl+K` is one
+      keystroke off the mode walk, so the sweep never opened it. Measured there: **5 resolvable
+      violations**, four at **1.59:1** — `.pal-group` and `.pal-foot`, the keyboard hints telling
+      you how to leave the overlay, on `--ink-4`, a background/border token. Now `--ink-2`.
+      After both fixes the same sweep reports **0** on the ten modes *and* **0** on the open
+      palette.
+- [x] ✅ Pinned by `frontend/src/test/tag-consent-contrast.test.ts` (4 tests), which recomputes
+      ratios from `styles.css` for **every palette it defines** — `[data-look="graphite"]` was
+      unguarded in the first cut — and also asserts `--ink-3` still *fails*, so the premise is
+      guarded and not just the outcome. Red-proved four ways. Its CSS parse strips comments
+      first, after the test caught itself reading a `--ink-3:` written inside a comment.
+- [ ] 🔴 **Chrome that axe cannot evaluate is NOT covered, and "0" does not mean "the HUD".**
+      `.rail-btn` (16 in the DOM) and `.center-tab` are styled `--ink-3` in `styles.css`, which
+      computes to 2.79:1 — below AA. axe does not report them: `.center-tab` lands in
+      `incomplete` ("background could not be determined due to a background gradient") and the
+      rail labels are not reported at all. `.tab-btn` is styled `--ink-3` too but renders **zero**
+      elements on the scanned route. So a forced-rule sweep returning 0 means *"nothing axe could
+      resolve is failing"*, not *"contrast is fine"* — an earlier draft of this row said these
+      three "look like offenders and none of them fails", which inverted the finding and is
+      retracted.
+- [ ] 🔴 **The gate is structurally blind here.** The live 1280×720 lane of `a11y-modes.spec.ts`
+      records **701 `incomplete` `color-contrast` nodes against 0 violations** (899/954/1198 on
+      the other three lanes), of which **630 — 90%, not all —** are the gradient message; the rest
+      are non-text characters, images, too-short content and overlap. It gates on `violations`.
+      Separately, that spec's own `beforeEach` sets `hud.firstrun.dismissed`, so `.pal-scrim` was
+      **0 in all 40** of its scans — the modal is suppressed deliberately, not flaky: measured, it
+      opens 12/12 on a fresh `JARVIS_HOME`. An e2e pin for it was written and withdrawn as
+      unnecessary once the token pin covered the contract deterministically. Owner packet
+      (`docs/OWNER_TASKS.md`) carries the options, including fixing the palette.
+
 ---
 
 ## 🔌 Live-vs-Plumbing Remediation — mock → real (owner request 2026-07-18)
