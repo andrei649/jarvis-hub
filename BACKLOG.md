@@ -3042,7 +3042,8 @@ comment containing that glob under `frontend/e2e`). What the gap cost is that no
 caught it.
 
 - [x] ✅ `frontend/tsconfig.e2e.json` (extends the root config, adds `types: ["node"]`, includes
-      `e2e` + `playwright.config.ts`, excludes the gitignored `e2e/artifacts`/`e2e/.results`
+      `e2e` + `playwright.config.ts` — *since widened to add `vite.config.ts`; see the row below* —
+      excludes the gitignored `e2e/artifacts`/`e2e/.results`
       Playwright output) and `npm run typecheck:e2e`, wired as a step in `hud-v2-build` so it runs
       on every PR. Red-proofed against both failure shapes: the `**/chat/stream` comment (syntax
       errors, exit 1 — the exact count depends on the comment's tail text) and a plain undefined
@@ -3062,12 +3063,51 @@ caught it.
       chains pass, and a `// @ts-nocheck` header opts a spec out entirely: it is a
       syntax-and-signature gate (parse errors, unresolved names, `page.goto(42)` → `TS2345`), not a
       strictness gate.
-- [ ] 🔴 **Still compiled by nothing: `frontend/vite.config.ts`** — the same defect class, one word
-      away in the include array, and deliberately left out of this slice because closing it is not
-      free. Measured: compiling it surfaces a real pre-existing error, `vite.config.ts(28,3)
-      TS2769 — 'test' does not exist in type 'UserConfigExport'` (the `/// <reference types="vitest" />`
-      form no longer augments the type under vitest 4; it wants `defineConfig` from `vitest/config`).
-      That is its own slice, with its own red-proof.
+- [x] ✅ **Closed: `frontend/vite.config.ts` is compiled now** — the same defect class, one word
+      away in the include array, deliberately left out of that slice because closing it was not
+      free. It was measured then and reproduced on `main` at `39ce740b` now: adding the file to
+      `tsconfig.e2e.json` surfaces a real pre-existing error, `vite.config.ts(28,3) TS2769 — 'test'
+      does not exist in type 'UserConfigExport'`. The prescribed cause held exactly — the
+      `/// <reference types="vitest" />` form stopped augmenting Vite's config type when Vitest
+      moved the augmentation to its `vitest/config` entrypoint (this repo is on **vitest 4.1.11**),
+      and nothing noticed because nothing compiled the file.
+      Fixed as the row predicted: `defineConfig` now comes from `vitest/config` instead of `vite`,
+      and `vite.config.ts` joins `playwright.config.ts` in the e2e include. **Why the e2e program
+      and not the app's — measured, because the direction is the opposite of the obvious one:**
+      the file does not *consume* that config's `types: ["node"]`, it *supplies* node types to
+      everything compiled beside it. `vite/dist/node/index.d.ts` opens with a program-wide
+      `/// <reference types="node" />`, so compiling `vite.config.ts` by itself under the root
+      config's `types: []` exits 0, while adding it to the root `include: ["src"]` makes a bare
+      `process.env.FOO` in `src/` type-check at exit 0 — the exact leak that `types: []` exists to
+      stop, and the reason this file must not share a program with the app.
+      **The import change is inert at runtime, proved rather than assumed:** `npm run build` leaves
+      `agents/web/v2` byte-identical, and `vitest run` is 936/936 across 124 files, so the `test`
+      block still applies. **Red-proofed:** putting `defineConfig` back to `vite` fails
+      `npm run typecheck:e2e` with that same TS2769, so the new include gates rather than decorates.
+      *What is now covered under `frontend/`, and what still is not — counted, not assumed:* the
+      root config covers `src`, the e2e config covers `e2e/`, `playwright.config.ts` and
+      `vite.config.ts`. The gap left inside `frontend/` is **71 tracked `.tsx` files under
+      `.design-sync/previews/`**, which no tsconfig includes. They are out on purpose and the
+      reason is checkable: they are inputs to the DesignSync tooling flow
+      (`.design-sync/config.json`, `conventions.md`), they import a `jarvis-hud-v2` alias neither
+      tsconfig resolves, and no npm script or workflow references the directory. Compiling them
+      needs that alias mapped first — a different slice.
+      **This row is about `frontend/` only and must not be read as a repo-wide claim.** There are
+      **217** other tracked `.ts`/`.tsx` files elsewhere. This slice compiles none of them; what
+      follows is a coverage census of their `include` globs, not a green gate. `mobile/` and the
+      three `worldview/` packages each carry a `tsconfig.json` and a CI typecheck step — but
+      *having* a tsconfig is not *being covered by* one: `worldview/backend-api` includes only
+      `src/**/*.ts`, leaving its **24** files under `test/` compiled by nothing, which is this
+      row's own defect class one directory over. Beyond those, **8** files under
+      `apps/jarvis-hub/` (the WorldView page and its components) and **2** under
+      `packages/worldview-core/` have **no tsconfig at all** — and, *checked before listing them
+      as a gap rather than after*, **that one is not a gap**: both are bare `src/` trees with no
+      `package.json`, no build config and no importer anywhere in the repo, and the docs say so on
+      purpose — `docs/worldview/runbook.md:147` calls the `apps/jarvis-hub` cockpit "a reference
+      scaffold unless it is explicitly mounted later", and `signal-layer-sprint.md:104` says the
+      next step is to port it into the real `frontend/` app. Gating them would mean inventing a
+      package for code documented as deliberately unmounted. They are uncompiled **by design**;
+      the row that should move is the one that mounts them.
 
 **The webkit half is solved — the service worker, confirmed by intervention (2026-09-04).** Ten of the
 22 nightly failures were webkit, and the standing diagnosis was a vague "`page.route` does not

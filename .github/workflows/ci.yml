@@ -170,7 +170,7 @@ jobs:
       - name: Typecheck (tsc --noEmit)
         run: npx tsc --noEmit
         working-directory: frontend
-      - name: Typecheck E2E (specs + playwright.config.ts)
+      - name: Typecheck E2E (specs + playwright.config.ts + vite.config.ts)
         # The step above only sees src/ (tsconfig.json `include`), and e2e.yml has
         # no `pull_request` trigger — so nothing on the PR path ever compiled
         # frontend/e2e or playwright.config.ts. A block comment containing the

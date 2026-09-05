@@ -31,7 +31,20 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "types": ["node"] },
-  "include": ["e2e", "playwright.config.ts"],
+  // `vite.config.ts` is here for the same reason `playwright.config.ts` is: the root config's
+  // `include: ["src"]` does not cover it, so nothing compiled it and it had been carrying a real
+  // TS2769 (`test` not in `UserConfigExport`) that no gate could see. Why *this* program and not
+  // the app's runs opposite to the obvious reading, so it is measured rather than argued: this
+  // file does not consume the `types: ["node"]` above, it supplies node types to everything
+  // compiled beside it. `vite/dist/node/index.d.ts` opens with a program-wide
+  // `/// <reference types="node" />`, so importing `vite`/`vitest/config` anywhere hands
+  // @types/node globals to every file in the program. Compiling `vite.config.ts` by itself under
+  // the root config's `types: []` exits 0; adding it to the root `include: ["src"]` makes a bare
+  // `process.env.FOO` inside `src/` type-check at exit 0 — the leak that `types: []` exists to
+  // stop. `types: ["node"]` above therefore stays for the specs, whose own need for `process` and
+  // `node:fs` should be a stated property of this config and not something inherited from
+  // whatever a vite `.d.ts` happens to reference.
+  "include": ["e2e", "playwright.config.ts", "vite.config.ts"],
   // gitignored Playwright output; it lands inside the include glob after a
   // local `npm run e2e` and would red a developer's gate on artifacts.
   "exclude": ["e2e/artifacts", "e2e/.results"]
