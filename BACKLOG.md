@@ -3061,8 +3061,13 @@ dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
       there before (`git show de3c4684^:frontend/package.json | grep types/node` finds nothing) —
       so it really was a dependency change. What the row did not foresee is the isolation that
       made it safe: a *second* tsconfig, so the specs get Node's globals and `src/` does not, with
-      the root config pinning `types: []` to keep that a stated property. Since widened to cover
-      `vite.config.ts`, which had been carrying an invisible `TS2769` of its own.
+      the root config pinning `types: []` to keep that a stated property.
+      **What this tick does NOT cover, stated because the same defect class is still live here:**
+      on `main` that config's include is `["e2e", "playwright.config.ts"]`, so `vite.config.ts` is
+      still compiled by nothing — a `frontend/` source file outside every gate, which is exactly
+      what this row is about. It is tracked by its own open 🔴 row (*"Still compiled by nothing:
+      `frontend/vite.config.ts`"*) and widening the include is proposed in **#1034, not yet
+      merged**. This row is ticked for what #1025 delivered, not for that.
 
 **A red reality run now names the case that broke the verdict (2026-09-04).** The reality verdict is
 arithmetic — `passed + expected_seam + owner_live >= total` — so `reality_evidence.main()` could print
@@ -3137,8 +3142,11 @@ modal changes. Every one was inside `FirstRunGate`.
       So "NOT covered" is retired — **but "covered" here means measured and reported, not gated**:
       the spec's `failing` list (verdict `FAIL`, i.e. `specMin` under the AA threshold) is written
       to the artifact and the console and **nothing asserts it is empty**. Its hard assertions are
-      about coverage and integrity — every run in a known bucket, no `measured` run without both
-      ratios, the denominator matching the run count — not about the ratios passing. This row
+      about coverage and integrity — every run lands in a bucket the file knows how to print, and
+      no run bucketed `measured` is missing either ratio — not about the ratios passing. (It also
+      asserts the printed denominator equals the run count, but that one is not evidence of
+      anything: the spec's own comment calls it "an arithmetic identity … asserting it proves
+      nothing".) This row
       therefore stays open: the sub-AA chrome it names is now visible on every nightly rather than
       invisible everywhere, and that is a smaller claim than fixed. Closing it means either
       retiring `--ink-3` as a text colour (the 🔴 row above) or turning `failing` into an
