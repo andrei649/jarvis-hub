@@ -4398,7 +4398,7 @@ export function CommandCenterPanel() {
       )}
       {outcomes.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.12em', color: 'var(--ink-3)', marginBottom: 3 }}>
+          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.12em', color: 'var(--ink-2)', marginBottom: 3 }}>
             WHAT NERVA CAN DO FOR YOU
           </div>
           {outcomes.map((o) => {
@@ -4468,7 +4468,7 @@ export function FirstRunGate({ onClose }) {
       <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px,95vw)', maxHeight: '84vh', overflow: 'auto', background: 'var(--void-2)', border: '1px solid var(--border-active, var(--panel-line))', borderRadius: 'var(--radius)', padding: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 12 }}>
           <span style={{ fontFamily: 'var(--font-mono)', letterSpacing: '.14em', color: 'var(--accent-light)' }}>FIRST RUN</span>
-          <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>let's get you to a working assistant</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>let's get you to a working assistant</span>
         </div>
         <CommandCenterPanel />
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
