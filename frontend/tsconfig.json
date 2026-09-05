@@ -15,6 +15,11 @@
     "allowJs": true,
     "strict": false,
     "noImplicitAny": false,
+    // Pin the app gate to the DOM lib only. Without this, an unspecified
+    // `types` means "every node_modules/@types/* package", so adding
+    // @types/node for tsconfig.e2e.json would silently make `process.env`
+    // type-check inside src/ — where the served bundle has no `process`.
+    "types": [],
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
