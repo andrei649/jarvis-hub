@@ -2776,6 +2776,45 @@ and wait until 03:15 UTC. `.github/workflows/e2e.yml` now takes two dispatch inp
       minutes (a ≤1100px change whose own PR states it does not move the phone outcome, which this
       result is consistent with), and 9 is one sample at n=3, not a distribution.
 
+**The E2E lane's own source was compiled by nothing (2026-09-04).** `frontend/tsconfig.json` has
+`include: ["src"]`, so `npm run typecheck` never looked at `frontend/e2e/*.spec.ts` or
+`playwright.config.ts`; `e2e.yml` has no `pull_request` trigger, so the only thing that ever parsed
+them was Playwright's own loader — on the nightly, *after* the merge. The gap is not hypothetical:
+while this lane was being worked on, a block comment inside a spec containing the glob
+`**/chat/stream` closed itself early on the `*/`, turning the rest of the line into code, and
+`tsc --noEmit` still exited 0. **Nothing shipped** — it was caught in the working tree by
+Playwright's loader and never reached a commit (checked: no revision reachable from any ref has a
+comment containing that glob under `frontend/e2e`). What the gap cost is that no gate *could* have
+caught it.
+
+- [x] ✅ `frontend/tsconfig.e2e.json` (extends the root config, adds `types: ["node"]`, includes
+      `e2e` + `playwright.config.ts`, excludes the gitignored `e2e/artifacts`/`e2e/.results`
+      Playwright output) and `npm run typecheck:e2e`, wired as a step in `hud-v2-build` so it runs
+      on every PR. Red-proofed against both failure shapes: the `**/chat/stream` comment (syntax
+      errors, exit 1 — the exact count depends on the comment's tail text) and a plain undefined
+      identifier (`TS2304`, exit 1) — with the existing `npm run typecheck` measured at exit **0**
+      on the same broken tree, which is the gap. `@types/node@^22` added as a devDependency; the
+      lockfile diff is purely additive (18 insertions, 0 deletions) so no unrelated package moved.
+- [x] ✅ `types: []` pinned on the root `tsconfig.json`. TypeScript's documented behaviour for an
+      unspecified `types` is "every `node_modules/@types/*` package", so adding `@types/node` for
+      the e2e config could have made `process.env` type-check inside `src/`, where the served bundle
+      supplies no `process` (`grep -ro 'process\.env' agents/web/v2/` → 0). Measured both ways: with
+      `types: ["node"]` on the root config a `process.env` probe in `src/` passes at exit 0; with
+      `types: []` it is `TS2591`. The isolation is now a stated property, not a toolchain default.
+- [ ] 🟡 **What the gate does NOT do.** It type-checks the specs; it does not *run* them on a PR —
+      `e2e.yml` still has no `pull_request` trigger (restore patch K, `docs/restore/README.md`), and
+      re-adding it is a separate decision about the D1/D5 CI posture. And it inherits the root
+      config's `strict: false` / `noImplicitAny: false`, so `const s: string = null` and implicit-any
+      chains pass, and a `// @ts-nocheck` header opts a spec out entirely: it is a
+      syntax-and-signature gate (parse errors, unresolved names, `page.goto(42)` → `TS2345`), not a
+      strictness gate.
+- [ ] 🔴 **Still compiled by nothing: `frontend/vite.config.ts`** — the same defect class, one word
+      away in the include array, and deliberately left out of this slice because closing it is not
+      free. Measured: compiling it surfaces a real pre-existing error, `vite.config.ts(28,3)
+      TS2769 — 'test' does not exist in type 'UserConfigExport'` (the `/// <reference types="vitest" />`
+      form no longer augments the type under vitest 4; it wants `defineConfig` from `vitest/config`).
+      That is its own slice, with its own red-proof.
+
 **The webkit half is solved — the service worker, confirmed by intervention (2026-09-04).** Ten of the
 22 nightly failures were webkit, and the standing diagnosis was a vague "`page.route` does not
 intercept". The mechanism is now identified and the fix is measured, not argued.
@@ -2839,6 +2878,35 @@ dispatch, this fix's effect is unobservable until the next 03:15 UTC nightly:
       (measured: 2 errors, both `TS2591` on `node:fs`), so it is a dependency change, not a one-line
       fix. A cheaper guard for the PR lane is `npx playwright test --list`, which loads every spec
       without running one. Neither is done here.
+
+**A red reality run now names the case that broke the verdict (2026-09-04).** The reality verdict is
+arithmetic — `passed + expected_seam + owner_live >= total` — so `reality_evidence.main()` could print
+*"131/136 passed, 1 expected seam failures, 3 owner-live cases not exercised"*, exit 1, and never say
+which case was unexcused. That cost a real investigation: when this lane flaked on 2026-09-04 it
+reddened #1017 with a bare `assert 1 == 0`, and the failure could be characterised (CI 131/136 vs
+local 132/136 ⇒ exactly one unexcused case) but **not named**.
+
+- [x] ✅ Pure `explain_verdict(record)` returns the unexcused rows plus a printable listing of *every*
+      failing row with its tag, so a mis-tagged excusal is visible rather than swallowed. `main()`
+      prints it on a red verdict only — the green path is byte-identical (measured: same single
+      summary line, exit 0, `diff` clean against the parent). Reachable in production:
+      `.github/workflows/reality.yml` runs this module, so the lines land in the scheduled job's log.
+- [x] ✅ **The subtlety that made it a helper, not a one-liner.** Both excusals are counted per *case*,
+      but the record stores them as capability-id lists and an id is shared by a capability's offline
+      and owner-live rows — so the owner-live excusal is applied only to a row that is itself `live`.
+      Not theoretical: the real 136-case record has **three** ids carrying rows of differing `live`
+      (`action:house.control`, `component:camera_source`, `component:house_adapter`) and those are
+      exactly the owner-live set. Mutation-proved — dropping the `live` check makes a failing offline
+      sibling vanish from the listing, wearing its twin's excuse.
+- [x] ✅ Red-proofed twice: a synthetic record containing that offline/owner-live pair, and end-to-end
+      by injecting a failing case into the real harness (`[UNEXCUSED] component:injected_regression`,
+      exit 1 preserved). Both `assert rc == 0` sites now carry the listing **newline-joined** — passing
+      the raw list lets pytest's `saferepr` truncate mid-message, measured to elide the `[UNEXCUSED]`
+      row itself when it is not last.
+- [ ] 🟡 **What this does not do.** It does not fix the flake — its cause is still unidentified; the
+      #1017 comment records what was ruled out. And it is a *diagnosis* improvement: today all three
+      offline siblings pass, so the `live` guard is protecting against a future regression rather than
+      catching a present one.
 
 **Consent copy failed AA contrast, and the a11y gate could not see it (2026-09-04).** An axe
 sweep forcing `color-contrast` over the ten mode hotkeys found **8 failing elements** (six
