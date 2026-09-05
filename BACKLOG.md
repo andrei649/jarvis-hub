@@ -2692,6 +2692,102 @@ three times as much**, which is the more useful fact:
 - [ ] 🟡 **Coverage is 10 of 16 rail modes.** The number hotkeys do not reach `projects`,
       `finance`, `health`, `knowledge`, `family` or `admin`. All six were walked manually via the
       rail at 1440×900, live and demo, and came back clean — but no spec covers them.
+- [x] ✅ **Coverage is now 16 of 16 rail modes.** The number hotkeys reach ten; `projects`,
+      `finance`, `health`, `knowledge`, `family` and `admin` have none, so they were reachable
+      only by clicking the rail — which no spec did. The rail-coverage row this replaces said
+      all six "were walked manually … and came back clean", and that was true and worth nothing
+      as a gate: a hand-walk cannot regress-guard anything, and **`admin` is the largest surface
+      in the HUD (482 nodes in demo at 1440×900) and had never been scanned by axe at all.**
+      `a11y-modes.spec.ts` now walks
+      all sixteen in each of its four lanes (live/demo × 1280×720/1440×900) — the ten by hotkey,
+      the six by clicking their rail **label** (not index: `shell.tsx` interleaves `{sep:true}`
+      rows, so inserting one silently renumbers every mode after it and an index walk would keep
+      passing while scanning the wrong surfaces).
+      **Result: 0 critical and 0 serious across all sixteen, in all four lanes.** The six confirm
+      clean — but now as a gate rather than a memory. In demo every one of them renders for real
+      (projects 85 nodes · finance 96 · health 102 · knowledge 79 · family 67 · admin 482); live
+      renders four of them as the honest `ModeEmpty` card, which the artifact records per mode as
+      `empty: true` so a green live lane is never read as covering them.
+      **Two red proofs, because a walk that silently misses is worse than no walk.** (1) An
+      alt-less `<img>` injected into the `admin` surface fails the lane with
+      `critical · image-alt (1) → img` against `mode: admin, via: rail` — so the six are genuinely
+      gated, not merely visited. (2) Making the `Family` rail button deaf to clicks (the same
+      no-op `shell.tsx:107` produces for a locked entry) is caught and **named**: `family -> active
+      rail was "Knowledge"`. That second assertion runs *before* the distinct-surface count
+      deliberately: a miss always duplicates the previous mode's label so the count catches it too
+      (it failed at 15 of 16), but it fails with sixteen labels to eyeball where this one says
+      which mode missed and what was on screen instead.
+      Each scan now records `via: 'hotkey' | 'rail'` and `scrollY` in the artifact, so which path
+      reached a surface — and in what viewport state — is a fact in the record rather than an
+      inference from the mode name.
+      **Four things review caught that the walk itself could not.** (1) `ALL_MODE_COUNT` was
+      derived from this spec's own two lists, so a **17th** mode added to `shell.tsx` would have
+      left all four lanes green while never being scanned — re-creating the exact hole this row
+      closes. The walk now asserts `.rail-btn` count against the rail itself, so the app's own list
+      is the authority. (2) A `click()` scrolls its target into view, and at 1280×720 the HUD is
+      **831px tall in a 720px viewport** — `Family`, `Comms` and `Admin` are below the fold, and
+      clicking Admin scrolled the document to y=240. Since axe samples contrast only inside the
+      viewport (point 3 in the file's own header), the six rail modes were being scanned in a state
+      no hotkey mode is ever scanned in. Every mode is now returned to `scrollY: 0` before its
+      scan, and an assertion fails if any scan is not. (3) The settle memo lived on `window` with
+      its timestamp reset only on a node-count change, so whenever a new surface's first paint
+      matched the previous surface's final count the 450ms quiet window was already satisfied on
+      entry — unlikely across ten modes, not across sixteen. It is now cleared per mode.
+      (4) **`projects` is not covered by the demo lane at all**: `app.tsx:604` returns
+      `ProjectsMode` *before* the `isLive` gate at 607-608 and never passes `demo`, so both lanes
+      run the same component against the same backend, and against this e2e backend its four
+      panels are their own "nothing yet" empty states. That is not `ModeEmpty`, so the demo pin
+      cannot flag it — what a green lane proves for `projects` is that its chrome and empty states
+      are clean, and the spec says so in a comment rather than letting the tick imply more.
+      (5) **The Admin rail button could not be clicked reliably at all** — and the walk was passing
+      by luck. `world_app.tsx` paints a `button.tool-btn` at `position:fixed; left:16; bottom:16;
+      zIndex:60`, directly over the bottom of the rail; at 1440×900 Admin occupies y 847.8–885.9
+      and that overlay covers its action point, so `click()` fails Playwright's actionability check
+      and retries — landing only when `.tex-scanbar`'s 9s animation transiently grows the document
+      enough for `scrollIntoViewIfNeeded` to shift the rail clear. A surface gate whose
+      reachability rides on a decorative animation is a flake with a countdown on it. The six now
+      activate via a real DOM click through React's `onClick`, which tests the **mode**
+      deterministically and does not pretend to test pointer reachability. **That the overlay
+      covers a real control is a genuine product defect and gets its own row below, not a quiet
+      workaround here.** (It is the same overlay the painted-contrast lane found sitting on the
+      `Admin` rail *label*.)
+      (6) The settle predicate proves the DOM *stopped* changing, not that it *finished*, and 450ms
+      was short enough to release mid-build. Reproduced against a real backend: the cockpit
+      workzone sat at **147 of 306 nodes** from t=101ms to t=2019ms — the entire agent roster
+      missing — and `admin` settled at **34** of ~442 on one run in three. Every assertion in the
+      file stayed green through both. The window is now **1600ms**, which clears the observed gaps
+      with margin, and `admin` came back a consistent 442 in all four lanes on the recorded run
+      (it had been alternating 442/482). That is a mitigation, not a proof: no DOM-quiescence
+      heuristic can see an outstanding fetch, and `AdminMode` reads `V2.ADMIN`, which `api/live.ts`
+      zeroes via `honestAdminSeed()` and refills on a 30s interval — so its node count is
+      phase-dependent, not settle-dependent. Each scan records `nodes` and `pending` so a short
+      scan is visible in the artifact after the fact; the real fix is a readiness signal per
+      surface, which gets its own row below.
+      **Cost:** the four lanes went from ~13s each to ~38–39s (16 axe passes instead of 10, and a
+      1600ms quiet window instead of 450ms); the `test.slow()` budget is 180s, so the margin is
+      ~4.6x rather than ~13x.
+- [ ] 🟡 **The fixed WORLD toggle sits on top of two real rail controls.** `world_app.tsx` renders
+      `button.tool-btn` (World Intelligence) at `position:fixed; left:16; bottom:16; zIndex:60`,
+      over the bottom of the mode rail. Measured at 1440×900: it covers the **action point of the
+      `Admin` rail button** (y 847.8–885.9 vs the overlay's 855–884), and it veils the `Admin` rail
+      **label** enough that the painted-contrast lane had to bucket that run `excluded/occluded`
+      rather than publish a ratio for it. Two independent lanes hit the same overlay from opposite
+      directions, which is the argument that it is a product defect and not a test artifact: a
+      pointer user at 1440×900 cannot reliably hit the last rail button. Not fixed here —
+      `a11y-modes` routes around it with DOM activation and says so — because moving or reserving
+      space for that overlay is a layout decision, not a test decision.
+- [ ] 🟡 **The mode walk's settle helper can release before a surface finishes building.** It waits
+      for `.workzone`'s descendant count to hold still (now 1600ms, was 450ms), which proves the
+      DOM *stopped* changing and not that it *finished*. Reproduced: cockpit at 147 of 306 nodes,
+      `admin` at 34 of ~442 on one run in three, and — with 2.5s of added API latency — `admin`
+      scanned at 178 of 454 nodes with axe covering 123 elements instead of 151, every assertion
+      green. The longer window mitigates the observed gaps but cannot close the class: a surface
+      whose async section swaps a same-size placeholder is genuinely flat while its request is in
+      flight, and `AdminMode`'s data is refilled on a 30s `setInterval` regardless of any wait.
+      The close is a **readiness signal per surface** (each mode exposing "my data has arrived")
+      rather than a longer sleep, so the gate stops inferring completeness from stillness. Until
+      then `nodes` and `pending` are recorded per scan so a short scan is visible in the artifact
+      rather than silently counted as coverage.
 
 **Unchanged in the E2E lane:** the 9 mobile-chrome pointer cases (the owner call above) and the
 9 webkit cases where `page.route` does not intercept — **but the causal chain is no longer inferred.**
@@ -2967,6 +3063,52 @@ local 132/136 ⇒ exactly one unexcused case) but **not named**.
       #1017 comment records what was ruled out. And it is a *diagnosis* improvement: today all three
       offline siblings pass, so the `live` guard is protecting against a future regression rather than
       catching a present one.
+
+**Consent copy failed AA contrast, and the a11y gate could not see it (2026-09-04).** An axe
+sweep forcing `color-contrast` over the ten mode hotkeys found **8 failing elements** (six
+distinct strings) at **2.83:1** on the modal ground, against AA's 4.5:1 — reported under 15–17
+selector paths depending on the run, because axe's path generation shifts as the DOM behind the
+modal changes. Every one was inside `FirstRunGate`.
+
+- [x] ✅ **Three sites, one of them shared.** Six of the eight are the untinted `<Tag>` chip
+      (`panel-kit.tsx`), whose default was `--ink-3`; the other two are inline styles in the
+      onboarding block (`gap.tsx`). Counted repo-wide rather than in one file: **203 uncoloured
+      `<Tag>` uses across 22 files** inherit that default, and the **199** that pass an explicit
+      colour are untouched because only the fallback branch moved. Computed from the tokens:
+      `--ink-3` is **2.79:1** on `--void` and **2.83:1** on `--void-2`; `--ink-2` is 7.07 and 7.03.
+- [x] ✅ **It is consent copy, not decoration.** The chips render the first-run gate's privacy
+      rows — *"connected account · cloud model may receive context"*, *"stored locally · cloud
+      model may receive context"*, *"external websites"*, *"read-only"* — the text telling a new
+      user what leaves their machine.
+- [x] ✅ **The command palette was worse and was missed on the first pass.** `Ctrl+K` is one
+      keystroke off the mode walk, so the sweep never opened it. Measured there: **5 resolvable
+      violations**, four at **1.59:1** — `.pal-group` and `.pal-foot`, the keyboard hints telling
+      you how to leave the overlay, on `--ink-4`, a background/border token. Now `--ink-2`.
+      After both fixes the same sweep reports **0** on the ten modes *and* **0** on the open
+      palette.
+- [x] ✅ Pinned by `frontend/src/test/tag-consent-contrast.test.ts` (4 tests), which recomputes
+      ratios from `styles.css` for **every palette it defines** — `[data-look="graphite"]` was
+      unguarded in the first cut — and also asserts `--ink-3` still *fails*, so the premise is
+      guarded and not just the outcome. Red-proved four ways. Its CSS parse strips comments
+      first, after the test caught itself reading a `--ink-3:` written inside a comment.
+- [ ] 🔴 **Chrome that axe cannot evaluate is NOT covered, and "0" does not mean "the HUD".**
+      `.rail-btn` (16 in the DOM) and `.center-tab` are styled `--ink-3` in `styles.css`, which
+      computes to 2.79:1 — below AA. axe does not report them: `.center-tab` lands in
+      `incomplete` ("background could not be determined due to a background gradient") and the
+      rail labels are not reported at all. `.tab-btn` is styled `--ink-3` too but renders **zero**
+      elements on the scanned route. So a forced-rule sweep returning 0 means *"nothing axe could
+      resolve is failing"*, not *"contrast is fine"* — an earlier draft of this row said these
+      three "look like offenders and none of them fails", which inverted the finding and is
+      retracted.
+- [ ] 🔴 **The gate is structurally blind here.** The live 1280×720 lane of `a11y-modes.spec.ts`
+      records **701 `incomplete` `color-contrast` nodes against 0 violations** (899/954/1198 on
+      the other three lanes), of which **630 — 90%, not all —** are the gradient message; the rest
+      are non-text characters, images, too-short content and overlap. It gates on `violations`.
+      Separately, that spec's own `beforeEach` sets `hud.firstrun.dismissed`, so `.pal-scrim` was
+      **0 in all 40** of its scans — the modal is suppressed deliberately, not flaky: measured, it
+      opens 12/12 on a fresh `JARVIS_HOME`. An e2e pin for it was written and withdrawn as
+      unnecessary once the token pin covered the contract deterministically. Owner packet
+      (`docs/OWNER_TASKS.md`) carries the options, including fixing the palette.
 
 ---
 
