@@ -98,7 +98,41 @@ const VIEWPORTS = [
 type ModeScan = {
   mode: string; via: 'hotkey' | 'rail'; rail: string | null; empty: boolean; nodes: number;
   scrollY: number; pending: boolean; blocking: string[]; incomplete: number;
+  unreported: string[];
 };
+
+/* axe's `incomplete` is "I could not decide", not "this is fine" — and on this shell it is where
+   the real findings hide. The lane gates on `violations` and has only ever stored `incomplete` as
+   a COUNT, so a `serious` entry there is invisible unless a human opens the JSON. That is not
+   hypothetical: #1022 fixed `scrollable-region-focusable` on the AGENTS roster by adding
+   `aria-label` to a role-less <div>, which is `serious · aria-prohibited-attr` — axe filed it
+   under `incomplete` while the roster had content, the walk stayed green, and the regression
+   merged and went unnoticed for 8.5 hours, until a review pass read the JSON. (It is a hard
+   `violations` entry when the roster is
+   empty, which the e2e backend never is.)
+
+   So: SURFACE them, never gate on them. `incomplete` is not one thing — for some rules axe genuinely
+   cannot decide, for others it declines for a specific resolvable reason — so a blanket gate would
+   be wrong for the first kind and a blanket ignore is wrong for the second. Reporting is correct
+   for both, and it is what this lane was missing entirely.
+
+   `color-contrast` is exempted from the LISTING and counted beside it, because roughly 1,100-1,800
+   nodes per lane would bury everything else. That figure is run-variable — backend state and how
+   much of each surface has rendered move it — so it is a scale, not a bracket. Stated honestly,
+   because the exemption is broader than its reason: it filters by RULE ID, so it suppresses every
+   color-contrast incomplete, not only the ones this shell cannot resolve over a gradient. The
+   gradient backlog is what `contrast.spec.ts` measures from pixels — but only for the HUD
+   **chrome** (its `CHROME_PARTS`; its own NON_CLAIMS says the 16 mode surfaces are not measured).
+   So EVERY color-contrast node on a mode surface is suppressed here and covered by no lane at all,
+   gradient or not — measured, that is most of the suppressed total, not a non-gradient sliver.
+   Real gap, recorded in BACKLOG.md rather than papered over by the wording.
+
+   Where this is visible: `e2e.yml` triggers on schedule, dispatch and push-to-main — it has **no**
+   `pull_request` trigger — so this reaches a human on the nightly and in the uploaded
+   `hud-e2e-artifacts` (where `surfacedIncomplete` sits at the top level of the JSON, not buried in
+   `detail`), NOT on the PR that introduces a regression. It shortens the next one from unread to
+   one line in a place someone looks; it does not stop it landing. */
+const SURFACE_EXEMPT = new Set(['color-contrast']);
 
 test.describe('HUD mode surfaces', () => {
   test.beforeEach(async ({ page }) => {
@@ -242,16 +276,59 @@ test.describe('HUD mode surfaces', () => {
             mode: name, via, rail: meta.rail, empty: meta.empty, nodes: meta.nodes,
             scrollY: meta.scrollY, pending: meta.pending,
             incomplete: results.incomplete.length,
+            // `impact == null` is surfaced too, not dropped. Every `incomplete` entry this shell
+            // produces today carries one (measured across the four lanes: 64 color-contrast + 4
+            // aria-prohibited-attr entries, all `serious`), but axe leaves `impact` null when it cannot
+            // even estimate severity — and silently discarding an unrated finding is the same bug
+            // this block exists to close, one level down. An unknown severity is not a safe one.
+            unreported: results.incomplete
+              .filter((v) => v.impact == null || BLOCKING.includes(v.impact as never))
+              .filter((v) => !SURFACE_EXEMPT.has(v.id))
+              .map((v) => `${v.impact ?? 'unrated'} · ${v.id} (${v.nodes.length}) → ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`),
             blocking: results.violations
               .filter((v) => BLOCKING.includes((v.impact ?? '') as never))
               .map((v) => `${v.impact} · ${v.id} (${v.nodes.length}) → ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`),
           });
         }
 
+        // Surfaced, not gated (see SURFACE_EXEMPT above). This is the only place a `serious`
+        // `incomplete` finding becomes visible without opening the JSON, so it goes to the console
+        // as well as the artifact — a lane that is green while hiding a serious finding is exactly
+        // how the last one got in.
+        const unreported = scans.filter((s) => s.unreported.length);
+        // NODES, not entries. axe returns ONE `incomplete` entry per rule id with every unresolved
+        // node inside its `nodes[]`, so counting entries answers "how many of the 16 modes had any
+        // contrast incomplete" (always ~16) and not "how much is suppressed" (order of a thousand per lane).
+        // The first version of this line reported 16 and read as a node count — a number labelled
+        // as one thing that measured another, which is the failure this whole block is about.
+        const contrastExempt = (all as { incomplete: { id: string; nodes: unknown[] }[] }[])
+          .flatMap((e) => e.incomplete.filter((v) => SURFACE_EXEMPT.has(v.id)));
+        const contrastIncompleteNodes = contrastExempt.reduce((n, v) => n + v.nodes.length, 0);
+        const contrastIncompleteModes = contrastExempt.length;
+        if (unreported.length) {
+          console.log(`a11y ${lane} · findings this lane SURFACES but does not fail on:`);
+          for (const s of unreported) for (const line of s.unreported) console.log(`    ${s.mode}: ${line}`);
+        }
+        console.log(
+          `a11y ${lane} · ${unreported.length} mode(s) with a surfaced incomplete finding; `
+          + `${contrastIncompleteNodes} color-contrast incomplete NODES across `
+          + `${contrastIncompleteModes} mode(s), not listed — see the note above SURFACE_EXEMPT`,
+        );
+
         mkdirSync('e2e/artifacts', { recursive: true });
         writeFileSync(
           `e2e/artifacts/a11y-modes-${demo ? 'demo' : 'live'}-${vp.width}x${vp.height}.json`,
-          JSON.stringify({ lane, counts: tally(all), scans, detail: all }, null, 2),
+          JSON.stringify({
+            lane,
+            counts: tally(all),
+            // Header, so a reader sees this without walking `scans`: what axe declined to judge at
+            // serious/critical or unrated impact, minus the color-contrast entries counted beside it.
+            surfacedIncomplete: unreported.map((s) => ({ mode: s.mode, findings: s.unreported })),
+            contrastIncompleteNodes,
+            contrastIncompleteModes,
+            scans,
+            detail: all,
+          }, null, 2),
         );
 
         // A rail click that does not land is SILENT: `setMode` is skipped for a locked entry

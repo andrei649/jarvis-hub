@@ -2702,6 +2702,47 @@ three times as much**, which is the more useful fact:
       **Cost:** the four lanes went from ~13s each to ~38–39s (16 axe passes instead of 10, and a
       1600ms quiet window instead of 450ms); the `test.slow()` budget is 180s, so the margin is
       ~4.6x rather than ~13x.
+- [x] ✅ **The walk recorded `serious` findings it could not fail on, and nothing surfaced them.**
+      axe's `incomplete` means *"I could not decide"*, not *"this is fine"* — and on this shell it
+      is where the real findings hide. The lane gates on `violations` and stored `incomplete` only
+      as a **count**, so a `serious` entry there was invisible unless a human opened the JSON.
+      **That is not hypothetical, and the cost is on the record:** #1022 fixed
+      `scrollable-region-focusable` on the AGENTS roster by adding `aria-label` to a role-less
+      `<div>` — which is `serious · aria-prohibited-attr`. axe filed it under `incomplete` while
+      the roster had content, the walk stayed green, and the regression merged and went unnoticed
+      for 8.5 hours, until a review pass read the JSON (it is a hard `violations` entry when the
+      roster is **empty**, which the e2e backend never is; the fix is #1031).
+      Now **surfaced, never gated**: every `incomplete` entry at serious/critical impact is printed
+      by mode to the console and written into the artifact header as `surfacedIncomplete`.
+      `incomplete` is not one thing — for some rules axe genuinely cannot decide, for others it
+      declines for a specific resolvable reason — so a blanket gate is wrong for the first kind and
+      a blanket ignore is wrong for the second. Reporting is right for both, and it is what this
+      lane was missing entirely. Unrated (`impact: null`) entries are surfaced too: an unknown
+      severity is not a safe one.
+      **Demonstrated against `main` at `39ce740b`, #1031 unmerged:** all four lanes print
+      `agents: serious · aria-prohibited-attr (1) → div[aria-label="ROSTER"]` and stay green — the
+      very finding that went unnoticed, named on the first run. **Red-proofed in the other
+      direction:** applying #1031's `role="group"` locally drops it to *"0 mode(s) with a surfaced
+      incomplete finding"*, so the report tracks the finding rather than always printing something.
+      **Reconciliation note:** #1031 (open) carries a 🟡 row opening this same gap — written when
+      this follow-up was still blocked on #1030. The two merge *cleanly* into a contradiction (one
+      row unstarted, one done, 147 lines apart, no conflict marker), so #1031's row is being
+      repointed at this slice rather than left to be reconciled by luck; if the order still slips,
+      whichever lands second retires the other's row in the same commit, per AGENTS.md's
+      BACKLOG-sync rule.
+- [ ] 🟡 **Two honest limits on that reporting, neither papered over.** **(1)** The `color-contrast`
+      exemption filters by **rule id**, which is broader than its stated reason: it suppresses every
+      color-contrast `incomplete`, not only the nodes this shell cannot resolve over a gradient. `contrast.spec.ts` measures that backlog from pixels but only for the HUD
+      **chrome** — its own non-claims say the 16 mode surfaces are not measured — so **every**
+      color-contrast node on a mode surface is suppressed here and covered by no lane at all,
+      gradient or not. That is most of the suppressed total, not a sliver. **(2)** `e2e.yml` triggers on schedule, dispatch and push-to-main — it has **no**
+      `pull_request` trigger — so this reaches a human on the nightly and in the uploaded
+      `hud-e2e-artifacts`, **not** on the PR that introduces the regression. It shortens the next one
+      from unread to one line where someone looks; it does not stop it landing.
+      *Counting note, because the first version of this got it wrong:* axe returns **one**
+      `incomplete` entry per rule id with every node inside its `nodes[]`, so entry counts are mode
+      counts. The artifact now reports `contrastIncompleteNodes` (order of 1,100–1,800 per lane, run-variable)
+      beside `contrastIncompleteModes` (16); an earlier draft printed 16 and read as a node count.
 - [ ] 🟡 **The fixed WORLD toggle sits on top of two real rail controls.** `world_app.tsx` renders
       `button.tool-btn` (World Intelligence) at `position:fixed; left:16; bottom:16; zIndex:60`,
       over the bottom of the mode rail. Measured at 1440×900: it covers the **action point of the
