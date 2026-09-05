@@ -1,0 +1,38 @@
+// HUD v2 · type-check for the E2E lane. The root tsconfig.json has
+// `include: ["src"]`, so e2e/*.spec.ts and playwright.config.ts are compiled by
+// NOTHING: `npm run typecheck` skips them by include, and e2e.yml has no
+// `pull_request` trigger (see its header), so the only thing that ever parses
+// them is Playwright's own loader — on the nightly, after the merge.
+//
+// The gap is not hypothetical. While this lane was being worked on, a block
+// comment in a spec containing the glob `**/chat/stream` closed itself early on
+// the `*/`, turning the rest of the line into code. `tsc --noEmit` exited 0 on
+// that tree and Playwright's loader was what caught it. It never reached a
+// commit — it was fixed in the working tree — so nothing shipped; what the gap
+// cost was that no gate could have told anyone.
+//
+// What this catches: parse errors, unresolved names, and misuse of a typed API
+// (`page.goto(42)` is TS2345). What it does NOT catch: the root config's
+// `strict: false` / `noImplicitAny: false` are inherited, so `const s: string =
+// null` and implicit-any chains pass, and a `// @ts-nocheck` header opts a spec
+// out entirely. It is a syntax-and-signature gate, not a strictness gate.
+//
+// Separate file rather than widening the root include: the specs need Node's
+// globals (`process`, `node:fs`) and the app must not get them. Measured, so
+// the next reader does not have to re-derive it: putting `types: ["node"]` on
+// the root config makes `process.env.X` type-check inside src/ at exit 0, with
+// nothing supplying `process` in the served bundle (`grep -ro 'process\.env'
+// agents/web/v2/` returns nothing). src/ is not free of `process` today — six
+// files under src/test/ call `process.cwd()` — but every one of them carries a
+// `// @ts-nocheck` header, so the app gate is green over them by opt-out, not
+// by absence. The root config now pins `types: []` so this isolation is a
+// stated property rather than a TypeScript default that a version bump could
+// change.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["e2e", "playwright.config.ts"],
+  // gitignored Playwright output; it lands inside the include glob after a
+  // local `npm run e2e` and would red a developer's gate on artifacts.
+  "exclude": ["e2e/artifacts", "e2e/.results"]
+}
