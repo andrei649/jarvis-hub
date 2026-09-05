@@ -16,7 +16,15 @@ function AgentsMode({ agents, onOpen, t }) {
           scrolls past the fold unreachable by keyboard (measured 774px of content in a
           670px box). `tabIndex={0}` is what the rest of the HUD already does for exactly
           this — panel-kit.tsx:69, shell.tsx:137/152/172/186/205/225. */}
-      <div className="panel-body" tabIndex={0} aria-label={t.roster}>
+      {/* `role="group"` is not decoration: `aria-label` on a role-less <div> is axe
+          `serious · aria-prohibited-attr` ("cannot be used on a div with no valid role"), so the
+          fix that added the name traded one serious finding for another. It went unnoticed because
+          axe files that rule under `incomplete` here, and the mode walk gates on `violations` —
+          the same blind spot the painted-contrast lane exists for, in a second rule. `group` is
+          the minimal role that PERMITS a name (unlike `region` it adds no landmark), and it is the
+          same shape as the `.convo` fix one commit earlier, which paired `role="log"` with its
+          label for exactly this reason. */}
+      <div className="panel-body" tabIndex={0} role="group" aria-label={t.roster}>
         {TIERS.map(tier=>{
           const list=agents.filter(a=>a.tier===tier.id);
           if(!list.length) return null;

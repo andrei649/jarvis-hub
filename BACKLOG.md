@@ -2539,15 +2539,66 @@ nothing else — so a green a11y lane says nothing about the other nine modes. W
 on the fixed build (chromium 1440×900, 2026-09-04) found **three blocking violations on surfaces no
 spec has ever scanned**, one of them the *same rule* this row just closed on `.convo`:
 
-- [ ] 🔴 **mode 2 (AGENTS) — `serious · scrollable-region-focusable` on `.scroll > .panel-body`**
-      (`frontend/src/modes.tsx:11-14`). Measured 774px of content in a 670px box, `tabIndex -1`, zero
+> **This is the DISCOVERY list; all three were fixed in the next a11y slice (#1022, `e4396d24` —
+> #1023 merged between, so it was not the next merge) and the
+> ✅ block below is the record of each fix.** They are ticked here so the section does not read as
+> three open blocking defects. **One of those fixes was itself defective — see the row directly
+> below the third bullet.**
+
+- [x] ✅ **mode 2 (AGENTS) — `serious · scrollable-region-focusable` on `.scroll > .panel-body`**
+      (`frontend/src/modes.tsx`). Measured 774px of content in a 670px box, `tabIndex -1`, zero
       focusable descendants — the agent cards are `<div className="acard" onClick=…>`, click handlers
       on non-focusable divs. Identical defect, identical rule. The repo already uses `tabIndex={0}`
       for exactly this at `panel-kit.tsx:69` and `shell.tsx:137,152,172,186,205,225`.
-- [ ] 🔴 **mode 4 (MEMORY) — `critical · label` on an unlabeled `<input type="range">`.**
-- [ ] 🔴 **mode 6 (BUILD) — `serious · color-contrast` on `.sb-in > span:nth-child(2)`.**
-- [ ] 🟡 Each needs its own red-proof and the spec needs to walk the mode surfaces, so they are the
-      next slice rather than a widening of this one. Modes 0/1/3/5/7/8/9 came back clean.
+      → Fixed in #1022 by `<div className="panel-body" tabIndex={0} aria-label={t.roster}>` — **and
+      that fix shipped a new serious finding of its own; see the 🔴 row below.**
+- [x] ✅ **mode 4 (MEMORY) — `critical · label` on an unlabeled `<input type="range">`.**
+      → Fixed in #1022: the time-travel slider carries `aria-label={t.timeTravel}`, in both locales.
+- [x] ✅ **mode 6 (BUILD) — `serious · color-contrast` on `.sb-in > span:nth-child(2)`.**
+      → Fixed in #1022: the sandbox placeholder is `--ink-2` (`modes2.tsx`), not `--ink-3`.
+      One qualification on how this is confirmed: BUILD's violation is only *reported* at 1440×900
+      — at 1280×720 `@media (max-width:1300px)` collapses `.build-grid` to one column and pushes the
+      node to y≈1116, outside anything axe can sample — so the four-lane green is **two**
+      independent confirmations for this one, not four.
+- [x] ✅ Each got its own red-proof and `a11y-modes.spec.ts` walks the mode surfaces in four lanes.
+      *Carried over from the original bullet and now known to be too strong:* "modes 0/1/3/5/7/8/9
+      came back clean" was written before the empty-state gate was understood — in the **live** lanes
+      `trust`, `autonomy` and `comms` render the 11-node "Not connected" card, so a green live lane
+      covers 7 real surfaces, not 10. The demo lanes cover all ten. The artifact records `empty` per
+      mode, which is what settles it.
+- [x] ✅ **The mode-2 fix traded one serious finding for another, and no gate could see it.**
+      `aria-label` on a role-less `<div>` is axe `serious · aria-prohibited-attr` ("cannot be used
+      on a div with no valid role"), so #1022 removed `scrollable-region-focusable` from that node
+      and added `aria-prohibited-attr` to it. **This was not cosmetic.** With the roster populated
+      axe files it under `incomplete`, and the mode walk gates on `violations` — the same blind
+      spot the painted-contrast lane exists for, in a second rule. But with the roster **empty** it
+      is a hard `violations` entry, reproduced at both viewports by serving `/api/agents → {agents:
+      []}`. That state is production-reachable: `app.tsx` renders `AgentsMode` ungated (it is not
+      behind `ModeEmpty`) and `agents` initialises to `[]`, so it is the state of **every cold
+      mount before `/api/agents` resolves**. The four-lane walk can never reach it — the e2e
+      backend reports 18 agents and `?demo=1` seeds the roster — so the gate was blind twice over.
+      The block above even names the pattern that would have prevented it — *"the `.convo` fix one
+      commit earlier added a role **and** a name for exactly this reason"* — and the roster got the
+      name without the role.
+      → **Fixed:** `role="group"` on the roster's `panel-body`. `group` is the minimal role that
+      *permits* a name and, unlike `region`, adds no landmark.
+      `frontend/src/test/mode-surface-a11y.test.tsx` pins the role beside the label so the pair
+      cannot drift apart again in the PR lane without a browser (red-proofed: dropping the role
+      fails with `expected null to be 'group'`). Verified end to end — the empty-roster state now
+      scans `violations: []` at both viewports, and `aria-prohibited-attr` is absent from all four
+      lanes, which previously all carried it. (Those lane artifacts are run output, not repo files:
+      `frontend/e2e/artifacts/` is gitignored, and the pre-fix evidence has been overwritten by the
+      post-fix green run — reproduce it by reverting the role and re-running the lane.)
+- [ ] 🟡 **The mode walk records `serious` findings it cannot fail on, and nothing surfaces them.**
+      The spec gates on `violations` and stores `incomplete` only as a count, so a `serious`
+      `incomplete` entry is invisible unless someone opens the JSON — which is exactly how the
+      `aria-prohibited-attr` above sat unread. On this commit every remaining `incomplete` entry in
+      all four lanes is `color-contrast`, the known gradient blind spot `frontend/e2e/contrast.spec.ts`
+      exists to measure, so there is no unread non-contrast signal *right now*; the gap is that
+      there would be no way to tell if there were. The cheap close is to **report** (not gate on)
+      non-contrast `incomplete` entries at serious/critical impact in the walk's console summary and
+      artifact header. Not done in this slice: `a11y-modes.spec.ts` is being rewritten in a sibling
+      PR and two PRs editing it would conflict.
 
 two of seventeen surfaces — so a green a11y lane said nothing about the rest. A mode walk found
 blocking violations on surfaces no spec had ever visited. **The first version of that walk was
