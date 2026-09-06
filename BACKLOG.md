@@ -100,8 +100,17 @@
   that spends budget rather than silently retried; the same failure 3× in a row ends the run; and no
   way to mark a run succeeded — only the graders settle it. 21 tests.
   [`docs/nerva2/NIGHT_SHIFT_E5_0.md`](docs/nerva2/NIGHT_SHIFT_E5_0.md) · `nerva.work-run.v1`
-  `proposed → candidate`. **Open:** the planner (`plan_next`) is injected and no real one ships here;
-  routes, HUD and scheduled continuity are separate slices.
+  `proposed → candidate`. **Open:** routes, HUD and scheduled continuity are separate slices.
+- [x] ✅ **CO-RUN-5 — the planner, and its clamps.** `agents/core/autonomy/company_planner.py` is the
+  one place a model gets to propose, so it is also where the clamps live: **scope is enforced at
+  proposal time**, so a run never spends a step on work the judge would reject at the end; a proposal
+  repeating a step already taken is refused (looping while looking busy is the classic long-run
+  failure, and the check normalises casing/whitespace so it cannot be dodged); a proposer that
+  crashes, times out or answers junk proposes *nothing*, which the supervisor reads as "out of ideas"
+  rather than "finished"; and with no step budget left it stops proposing instead of feeding the
+  ledger refusals. Two proposers: `ChecklistPlanner` (deterministic, position derived from the ledger
+  so it resumes correctly after a reboot) and `ModelPlanner` (an injected LLM behind the same
+  clamps — a hand-written checklist gets clamped exactly like a model). 23 tests.
 
 **Activation — the first ten minutes**
 

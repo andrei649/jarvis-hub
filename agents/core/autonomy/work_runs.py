@@ -93,6 +93,27 @@ TERMINAL_STATUSES = frozenset(
     status for status, onward in _TRANSITIONS.items() if not onward
 )
 
+# The terminal statuses in a fixed order, plus the two queries that select around
+# them, written out as whole literals. Interpolating the placeholders would be safe
+# — every value is a module constant and each is still bound as a parameter — but a
+# query assembled from an f-string reads exactly like an injectable one, to a human
+# and to the SAST gate alike. The guard below keeps the literals in step, so adding
+# a terminal status fails at import rather than silently widening what "active"
+# means.
+_TERMINAL_ORDER: tuple[str, ...] = tuple(sorted(TERMINAL_STATUSES))
+_SQL_OPEN_FOR_GOAL = (
+    "SELECT id FROM runs WHERE goal_id = ? "
+    "AND status NOT IN (?, ?, ?, ?) LIMIT 1"
+)
+_SQL_ACTIVE_RUNS = (
+    "SELECT * FROM runs WHERE status NOT IN (?, ?, ?, ?) "
+    "ORDER BY updated_at DESC LIMIT ?"
+)
+if _SQL_OPEN_FOR_GOAL.count("?") != len(_TERMINAL_ORDER) + 1:
+    raise RuntimeError(
+        "work-run terminal statuses changed; update the placeholders in the queries above"
+    )
+
 STEP_OUTCOMES = ("ok", "failed", "refused", "queued")
 
 # A verdict may only be written by these roles, and only one verdict per role
@@ -414,10 +435,8 @@ class WorkRunLedger:
         return run
 
     def _open_for_goal(self, goal_id: str) -> str | None:
-        placeholders = ",".join("?" * len(TERMINAL_STATUSES))
         row = self._conn.execute(
-            f"SELECT id FROM runs WHERE goal_id = ? AND status NOT IN ({placeholders}) LIMIT 1",  # noqa: S608
-            (goal_id, *sorted(TERMINAL_STATUSES)),
+            _SQL_OPEN_FOR_GOAL, (goal_id, *_TERMINAL_ORDER)
         ).fetchone()
         return row["id"] if row is not None else None
 
@@ -432,11 +451,8 @@ class WorkRunLedger:
         limit = max(1, min(int(limit), 1000))
         with self._lock:
             if active_only:
-                placeholders = ",".join("?" * len(TERMINAL_STATUSES))
                 rows = self._conn.execute(
-                    f"SELECT * FROM runs WHERE status NOT IN ({placeholders}) "  # noqa: S608
-                    "ORDER BY updated_at DESC LIMIT ?",
-                    (*sorted(TERMINAL_STATUSES), limit),
+                    _SQL_ACTIVE_RUNS, (*_TERMINAL_ORDER, limit)
                 ).fetchall()
             else:
                 rows = self._conn.execute(
