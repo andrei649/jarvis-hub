@@ -18,12 +18,23 @@
    · A probe that could not run answers `probed:false` with `reason:"probe_failed"` and
      no facts. That renders as its own state, never as a host with zero capabilities.
 
+   It also carries the S1 operator benchmark (GET /api/operator/benchmark), because
+   "what can this box do" and "what did we measure it doing" belong on one card. Two
+   rules there, both about a benchmark's usual dishonesty: the backend's headline is
+   rendered verbatim (it always says the word "hermetic", and this panel never
+   composes a rate of its own), and a result measured against a different set of
+   questions renders as STALE rather than as a current score. Never-run renders as
+   never-run, not as a zero.
+
    NOTE: never spell a route path in this comment unless the panel calls it —
    tests/test_hud_v2_parity.py:_has_caller matches comment text as a caller. */
-import React from 'react';
+import React, { useState } from 'react';
+import { apiGet } from '../api/client';
 import { useApi, mono, asLive, Card, State, Row, Tag } from '../panel-kit';
 
 const PROBE_PATH = '/api/host/probe';
+const BENCH_PATH = '/api/operator/benchmark';
+const BENCH_PACK_PATH = '/api/operator/benchmark/pack';
 
 const EM = '—';
 
@@ -67,6 +78,8 @@ const isPlain = (v: any) => typeof v === 'string' || typeof v === 'number';
 
 export function HostReadinessPanel() {
   const { d, e, loading, reload } = useApi(PROBE_PATH);
+  const bench = useApi(BENCH_PATH);
+  const [pack, setPack] = useState(null);
   const raw: any = d;
   const probed = !!(raw && raw.probed);
   const deps: Record<string, any> = (raw && raw.deps) || {};
@@ -199,6 +212,81 @@ export function HostReadinessPanel() {
           </Note>
         </>
       )}
+
+      <Head k="OPERATOR BENCHMARK (S1)" />
+      {bench.d && !bench.d.recorded && (
+        <>
+          <Row>
+            <span style={mono}>never run</span>
+            <span style={{ marginLeft: 'auto' }}>
+              <Tag c="var(--ink-3)">{bench.d.tasks ?? EM} task(s)</Tag>
+            </span>
+          </Row>
+          {/* Not a zero score: nobody has measured, which is a different claim. */}
+          <Note c="var(--ink-2)">
+            {String(bench.d.reason || '')} — run <span style={mono}>{String(bench.d.how || '')}</span>.
+          </Note>
+        </>
+      )}
+      {bench.d && bench.d.recorded && (
+        <>
+          <Row>
+            <span style={mono}>result</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={bench.d.governance_clean ? 'var(--green)' : 'var(--red)'}>
+                {bench.d.governance_clean ? 'governance clean' : 'governance breach'}
+              </Tag>
+              {bench.d.stale && <Tag c="var(--amber)">stale</Tag>}
+            </span>
+          </Row>
+          {/* The backend's sentence, verbatim. It always says "hermetic"; this panel
+              never composes a rate of its own from the counts. */}
+          <Note c={bench.d.governance_clean ? 'var(--ink-2)' : 'var(--red)'}>
+            {String(bench.d.headline || '')}
+          </Note>
+          {bench.d.stale && (
+            <Note c="var(--amber)">
+              This result was measured against a different set of questions, so it is not a
+              score for the current pack. Re-run the benchmark.
+            </Note>
+          )}
+          {Object.keys(bench.d.by_surface || {}).sort().map((surface) => (
+            <Row key={surface}>
+              <span style={{ ...mono, fontSize: 10 }}>{surface}</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+                <Tag c="var(--green)">{bench.d.by_surface[surface].passed} passed</Tag>
+                {bench.d.by_surface[surface].failed > 0 && (
+                  <Tag c="var(--red)">{bench.d.by_surface[surface].failed} failed</Tag>
+                )}
+                {bench.d.by_surface[surface].skipped > 0 && (
+                  <Tag c="var(--ink-3)">{bench.d.by_surface[surface].skipped} skipped</Tag>
+                )}
+              </span>
+            </Row>
+          ))}
+        </>
+      )}
+      <Row>
+        <button
+          className="tool-btn" title="show the benchmark questions and their live twins"
+          onClick={() => {
+            if (pack) { setPack(null); return; }
+            apiGet(BENCH_PACK_PATH).then(setPack).catch(() => setPack(null));
+          }}
+        >{pack ? 'hide questions' : 'questions'}</button>
+      </Row>
+      {pack && (pack.tasks || []).map((task: any) => (
+        <Row key={task.id}>
+          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{task.surface}</span>
+          <span style={{ fontSize: 11 }}>{task.describe}</span>
+          {task.negative_control && (
+            <span style={{ marginLeft: 'auto' }}>
+              {/* Labelled so its expected failure never reads as a defect. */}
+              <Tag c="var(--ink-3)">negative control</Tag>
+            </span>
+          )}
+        </Row>
+      ))}
     </Card>
   );
 }

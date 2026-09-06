@@ -139,6 +139,8 @@
   "GET /api/onboarding/command-center": "user",
   "GET /api/onboarding/model-plan": "user",
   "GET /api/onboarding/wizard": "user",
+  "GET /api/operator/benchmark": "user",
+  "GET /api/operator/benchmark/pack": "user",
   "GET /api/ops/estop": "user",
   "GET /api/oracle/conflicts": "user",
   "GET /api/oracle/status": "open",

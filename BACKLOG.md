@@ -187,6 +187,21 @@
   step by name — *not* a null driver answering "deferred", which reads like pending work — and the
   posture flags are still checked first, so the owner reads "the feature is off" before "your machine
   cannot do it".
+- [x] ✅ **OP-BENCH — the S1 benchmark (20 tasks, hermetic + live twins, persisted).**
+  `agents/core/observability/operator_benchmark.py` + `operator_pack.py`, two user-guarded read
+  routes, and `scripts/operator_bench.py`. A pass rate is easy to inflate, so the whole design is
+  about the ways a benchmark lies: **a hermetic pass is never reported as a live pass** (two
+  columns, and the headline always says the word "hermetic" — the live column stays `not_run` until
+  someone runs each task's named live twin on a real box); **governance outranks correctness** (a
+  task that got the right answer via an ungoverned action FAILS, and one ungoverned action fails
+  the whole pack at any rate); **skips leave the denominator**, so "we could not try" never flatters
+  the score; and a persisted rate carries the **fingerprint of the questions it answered**, so a
+  changed pack reads as `stale` rather than being served as current. The pack spreads 4 tasks over
+  each of desktop/browser/terminal/files/vision — 20 passes inside one surface would be a real
+  20/20 and a useless one — and ships a **negative control**: one task that reaches a correct
+  result ungoverned and is therefore expected to fail, because a governance rule with no failing
+  example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
+  and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
 **Activation — the first ten minutes**
 

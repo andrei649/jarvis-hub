@@ -139,6 +139,8 @@
   "GET /api/onboarding/command-center",
   "GET /api/onboarding/model-plan",
   "GET /api/onboarding/wizard",
+  "GET /api/operator/benchmark",
+  "GET /api/operator/benchmark/pack",
   "GET /api/ops/estop",
   "GET /api/oracle/conflicts",
   "GET /api/oracle/status",

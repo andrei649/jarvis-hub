@@ -150,6 +150,17 @@ default: every new capability is off behind its own flag.
   lands in the decision inbox; the approved goal is minted only from a **human** accept or edit, and
   a payload fingerprint stops an edit between the card and the execution riding an approval that was
   given for a different goal.
+- **The operator can now be measured, S1's way.** A twenty-task pack across desktop, browser,
+  terminal, files and vision, with `scripts/operator_bench.py` to run it and two read routes to
+  serve the result. Everything about it is shaped by how a benchmark usually lies: the report
+  carries **two columns**, so a hermetic pass can never be read as a live one (the headline always
+  says the word "hermetic", and each task names the live twin a person would run on their own
+  machine); **governance outranks correctness**, so a task that reached the right answer through an
+  ungoverned action fails, and one such action fails the whole pack at any rate; skipped tasks leave
+  the denominator rather than flattering the score; and a stored rate carries the fingerprint of the
+  questions it answered, so a changed pack reads as stale instead of being served as current. The
+  pack ships a negative control — a task expected to fail — because a governance rule with no
+  failing example is a rule nobody has tested.
 - `permissions.db` and `work_runs.db` join the purge and export sets.
 
 ## [1.0.0] — 2026-09-02
