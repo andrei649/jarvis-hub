@@ -13,9 +13,10 @@ Three honesty boundaries, stated once here and echoed in every payload:
   `ollama_present` / `ollama_pull` refuse any Ollama URL that is not loopback with
   ``ollama_url_not_loopback`` — there is no LAN mode for this path.
 * **Every pull crosses the Action Kernel.** `MODEL_PULL_KIND` + `MODEL_PULL_CONTRACT`
-  + `MODEL_PULL_MANIFEST` are defined here; the router binds `ModelSetupService.
-  handle_pull` on a `CapabilityActionAPI` whose authorizer is the injected kernel
-  hook (`make_action_kernel(orch)`). Nothing in this file self-authorizes: the
+  are defined here; the capability manifest lives with every other action kind in
+  `capability_manifests.ACTION_CAPABILITY_MANIFESTS`, and the router binds
+  `ModelSetupService.handle_pull` on a `CapabilityActionAPI` whose authorizer is the
+  injected kernel hook (`make_action_kernel(orch)`). Nothing in this file self-authorizes: the
   handler is only reachable through the facade, and the facade refuses when the
   kernel/unified-action flags are off. Rollback is honest ``compensate`` — the
   pulled blobs are deleted through `ollama_delete` (``ollama rm`` over HTTP).
@@ -51,8 +52,6 @@ from agents.core.automation_contracts import (
     field_present,
     predicate,
 )
-from agents.core.capability_manifests import CapabilityManifest, RollbackContract
-from agents.core.capability_verification import action_verification_ref
 
 logger = logging.getLogger("jarvis.llm.model_setup")
 
@@ -208,28 +207,6 @@ MODEL_PULL_CONTRACT = ContractTemplate(
         predicate("max_bytes_positive", _max_bytes_ok, reason="invalid_max_bytes"),
     ),
 )
-
-MODEL_PULL_MANIFEST = CapabilityManifest(
-    id=MODEL_PULL_CAPABILITY_ID,
-    description="Pull a hardware-tiered local model into the loopback Ollama store.",
-    inputs={"type": "object", "required": ["model"], "additionalProperties": True},
-    risk="reversible",
-    requires=("action-kernel",),
-    supports=("execute",),
-    verification=action_verification_ref(MODEL_PULL_KIND),
-    rollback=RollbackContract(
-        mode="compensate",
-        description="Delete the pulled model from the local Ollama store (ollama rm); disk is reclaimed.",
-        automatic=False,
-        handler_ref="agents.core.llm.model_setup:ollama_delete",
-        limitations="Bandwidth already spent is not recoverable; a partially pulled blob is removed by Ollama's own cleanup.",
-    ),
-    confidence=0.0,
-    implementation="agents.core.llm.model_setup:ModelSetupService.handle_pull",
-    action_kind=MODEL_PULL_KIND,
-    contract_ref="agents.core.llm.model_setup:MODEL_PULL_CONTRACT",
-)
-
 
 # ── Ollama HTTP (loopback only, injectable client) ───────────────────────────
 
@@ -542,12 +519,3 @@ def _installed(model: Any, installed: list[str]) -> bool:
     want = model if ":" in model else f"{model}:latest"
     have = {m if ":" in m else f"{m}:latest" for m in installed}
     return want in have
-
-
-def manifests_with_model_pull(existing: Mapping[str, CapabilityManifest]) -> list[CapabilityManifest]:
-    """The action manifests plus ours — until the integrator lands the registry row,
-    the facade would otherwise answer ``unknown_capability`` for the pull."""
-    rows = list(existing.values())
-    if MODEL_PULL_CAPABILITY_ID not in existing:
-        rows.append(MODEL_PULL_MANIFEST)
-    return rows

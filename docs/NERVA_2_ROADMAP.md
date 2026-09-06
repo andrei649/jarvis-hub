@@ -81,72 +81,80 @@ Each line is one file-disjoint slice built by one builder, checked by an indepen
 reviewer, with one fix round. Backlog ids in brackets are the rows the slice closes; hardware-
 dependent behaviour lands as 🔨. Anything that did not make it is listed honestly in §5.
 
+> **Delivery marks added 2026-09-06** (integration of commit `214bc5eb`, run `opus-integration`,
+> PR #1039). A line carries **✅ landed** only when its module, its tests and its slice report are
+> all in the tree; **🔨 landed** when the code is in but the proof needs owner hardware,
+> credentials or a network read (owner packets: [`OWNER_TASKS.md`](OWNER_TASKS.md) §Wave 2026-09-06);
+> **⬜** — no mark — when the slice **did not land in this wave**, whatever this section originally
+> promised. Three lines landed without an adjudicated slice report and are marked as such. Row-level
+> statuses live in [`BACKLOG.md`](../BACKLOG.md) §Wave 2026-09-06.
+
 **Hands — a governed computer operator on three operating systems (P3 / S1–S3)**
-- `op-host-probe` — per-OS capability probe (dependencies, TCC/portal permissions, display
+- ✅ **landed** *(no slice report — `agents/core/host_probe.py`, `routers/host_probe.py`, `tests/test_host_probe.py` are in the tree; not adjudicated in this wave's report set)* `op-host-probe` — per-OS capability probe (dependencies, TCC/portal permissions, display
   server) with an honest-refusal vocabulary and a Console panel.
-- `op-driver-factory` — cross-platform capture/input layer (lazy `mss`/Pillow, `pynput`) and an
+- ⬜ **did not land in this wave** — `op-driver-factory` — cross-platform capture/input layer (lazy `mss`/Pillow, `pynput`) and an
   OS-dispatching driver factory replacing the hard-coded Windows construction.
-- `op-macos-driver` 🔨 — pyobjc accessibility tree, `AXPress`/`AXSetValue`, TCC preflight.
-- `op-linux-driver` 🔨 — AT-SPI2 tree; X11 input via `xdotool` argv; Wayland via the XDG
+- ⬜ **did not land in this wave** — `op-macos-driver` — pyobjc accessibility tree, `AXPress`/`AXSetValue`, TCC preflight.
+- ⬜ **did not land in this wave** — `op-linux-driver` — AT-SPI2 tree; X11 input via `xdotool` argv; Wayland via the XDG
   RemoteDesktop portal (`python-libei`), the compositor's consent dialog being the human gate.
-- `op-windows-backend` 🔨 — `uiautomation` second UIA backend, elevated-window refusal,
+- ⬜ **did not land in this wave** — `op-windows-backend` — `uiautomation` second UIA backend, elevated-window refusal,
   DPI-aware capture, coordinate actions with provenance.
-- `op-desktop-core` — batch steps with stop-on-first-failure and post-action snapshots, OS
+- ⬜ **did not land in this wave** — `op-desktop-core` — batch steps with stop-on-first-failure and post-action snapshots, OS
   actions (volume, brightness, lock), the DRA-43 validator reconciliation [DRA-43].
-- `op-permission-ledger` — per-app / per-site grants {once, session, always, never} with a default
+- ✅ **landed** — `op-permission-ledger` — per-app / per-site grants {once, session, always, never} with a default
   deny list, a `permission.grant` kernel kind and a Permissions panel (the consent-ledger bet v0).
-- `op-visual-grounding` — `LocalVLMLocator` gated to a proven-local VLM, pinned open-weight
+- 🔨 **landed** *(presets pinned from published notes; owner packet P3 proves them)* — `op-visual-grounding` — `LocalVLMLocator` gated to a proven-local VLM, pinned open-weight
   grounder presets and coordinate conventions, the visual route registered last [DRA-06 residual].
-- `op-terminal-local` — governed local-host transport under the targets policy plane with a
+- 🔨 **landed** *(hermetic only; owner packet P1 proves it on a real host)* — `op-terminal-local` — governed local-host transport under the targets policy plane with a
   `terminal.exec` kernel kind and a static hardline denylist evaluated before any autonomy level.
-- `op-file-tools` — governed file read/list/write/delete inside declared roots with snapshot-based
+- ✅ **landed** *(kernel/manifest/coordinator registration by the integrator)* — `op-file-tools` — governed file read/list/write/delete inside declared roots with snapshot-based
   rollback, reachable from the model loop [H20.R1 residual].
-- `op-browser-transport` — the IP-pinned browser transport that lets the governed browser navigate
+- 🔨 **landed** *(30 hermetic tests green; owner packet P2 proves it against a real Chromium)* — `op-browser-transport` — the IP-pinned browser transport that lets the governed browser navigate
   at all, redirect re-validation, accessibility-snapshot-first observation, isolated profiles [SEC-B4].
-- `op-browser-governed` — `browser.step` kernel kind, batch steps, `browser_run` as a model-loop
+- ⬜ **did not land in this wave** — `op-browser-governed` — `browser.step` kernel kind, batch steps, `browser_run` as a model-loop
   tool and route, Operator panel wiring.
-- `op-benchmark` — the 20-task browser/computer benchmark (hermetic + live twins) that NERVA_VISION
+- ⬜ **did not land in this wave** — `op-benchmark` — the 20-task browser/computer benchmark (hermetic + live twins) that NERVA_VISION
   S1 requires, with a persisted pass rate.
-- `llm-tool-turns`, `runtime-breakers` — tool turns on Ollama and OpenAI-compatible backends
+- ⬜ **did not land in this wave** — `llm-tool-turns`, `runtime-breakers` — tool turns on Ollama and OpenAI-compatible backends
   [H13.2]; stuck-pattern and idle-timeout breakers with per-step token accounting.
 
 **Company — the verified-outcome 24×7 loop (E5.0 candidate, delivered not program-accepted)**
-- `co-goal-contract` — goal contract (outcome / verification / constraints / boundaries /
+- ⬜ **did not land in this wave** — `co-goal-contract` — goal contract (outcome / verification / constraints / boundaries /
   stop_when) with deterministic gates.
-- `co-work-run-ledger` — `nerva.work-run.v1`: goals, opportunities, work runs, progress ledger.
-- `co-planner` — deterministic role assignment across the 18 specialists, tier ≤1 by construction.
-- `co-judge` — fail-closed judge with a `work.gate` kernel kind; `co-verifier` — receipts per child
+- ⬜ **did not land in this wave** — `co-work-run-ledger` — `nerva.work-run.v1`: goals, opportunities, work runs, progress ledger.
+- ⬜ **did not land in this wave** — `co-planner` — deterministic role assignment across the 18 specialists, tier ≤1 by construction.
+- ⬜ **did not land in this wave** — `co-judge` — fail-closed judge with a `work.gate` kernel kind; `co-verifier` — receipts per child
   task, noop/degraded/refused never verified.
-- `co-supervisor` — the tick: stop checks first, reconcile, progress ledger, idempotent enqueue
+- ⬜ **did not land in this wave** — `co-supervisor` — the tick: stop checks first, reconcile, progress ledger, idempotent enqueue
   through `govern_enqueue`, checkpoints; `co-durable-hitl` — pending decisions survive restarts.
-- `co-scheduled-continuity` — continuity, monitor-mode that skips the LLM when nothing changed,
+- 🟡 **partly landed** — only `co-subagent-steer` (✅, steerable/budgeted subagents with typed outputs) came in; `co-scheduled-continuity` and `co-context-compaction` did not. `co-scheduled-continuity` — continuity, monitor-mode that skips the LLM when nothing changed,
   pinned model, missed-run policy; `co-context-compaction` — two-tier compaction policy;
   `co-subagent-steer` — steerable, budgeted subagents with typed outputs.
-- `co-report-brief`, `co-company-routes`, `co-company-room-hud` — the verified-only daily report
+- ⬜ **did not land in this wave** — `co-report-brief`, `co-company-routes`, `co-company-room-hud` — the verified-only daily report
   in the morning brief, `/api/company/*`, the Company Room panel; `n2-e5-slice-doc`.
 
 **Activation — the first ten minutes (S8, GAP-0)**
-- `install-bootstrap-doctor` — one stdlib bootstrap behind thin installers, `nerva doctor`, the
+- 🔨 **landed** *(doctor ✅ hermetic; the installers and the hosted one-liner need owner packet P7)* — `install-bootstrap-doctor` — one stdlib bootstrap behind thin installers, `nerva doctor`, the
   full-pytest-on-install removed [phone-surface-LAN-path].
-- `model-setup` — hardware tiers (NVIDIA / AMD / Apple Silicon), model recommendation, governed
+- 🔨 **landed** *(owner packet P4 proves the pull and the Apple/AMD probes)* — `model-setup` — hardware tiers (NVIDIA / AMD / Apple Silicon), model recommendation, governed
   Ollama pull (`model.pull` kernel kind).
-- `first-action-activation` — wizard step 6: one zero-key read-only proposal accepted from the
+- ⬜ **did not land in this wave** — `first-action-activation` — wizard step 6: one zero-key read-only proposal accepted from the
   phone; truth-derived wizard steps; a goals gallery.
-- `ad-activation-metrics` — activation ≤30 min, D1/D7/D30, time-to-first-accepted-action on the
+- 🟡 **partly landed** — `ad-day-report-receipts` ✅ (redacted day report + Proof-of-Action receipts + `TodayReceiptPanel`); `ad-activation-metrics` did **not** land. `ad-activation-metrics` — activation ≤30 min, D1/D7/D30, time-to-first-accepted-action on the
   north-star; `ad-day-report-receipts` — the redacted day report and proof-of-action receipt.
-- `telegram-pair-60s`, `posture-wave2`, `seed-overlay`, `public-profile-overlay` [H23.30],
+- 🟡 **partly landed** — of this line only `ad-hermes-import` came in (✅ `scripts/nerva_import.py` + `agents/core/skills/importer.py`, no slice report). `telegram-pair-60s`, `posture-wave2`, `seed-overlay`, `public-profile-overlay` [H23.30],
   `release-channels` (Homebrew/winget/GHCR manifest generators), `ad-hermes-import` (import from
   Hermes / OpenClaw / Claude Code) [BUG-13].
 
 **Nerva 2.0 program — contracts that had no code**
-- `gov-cognitive-ledger` (B4 / E1.3), `n2-evidence-receipt` (E11.0), `nerva2-e2e3-contracts`
+- 🟡 **partly landed** — ✅ `gov-cognitive-ledger` (B4 / E1.3, record_only), ✅ `n2-evidence-receipt` (`agents/core/observability/evidence_receipt.py`, no slice report), ✅ `nerva2-continuity-suite`, ✅ `nerva2-program-control`; **did not land:** `nerva2-e2e3-contracts`, `identity-manifest-e4-1`, `proof-track-reviews`. All four that landed are **delivered, not program-accepted**. Original line: `gov-cognitive-ledger` (B4 / E1.3), `n2-evidence-receipt` (E11.0), `nerva2-e2e3-contracts`
   (E2.1 epistemic status, E3.2 recall admission), `nerva2-continuity-suite` (#731 suite on the E9.0
   harness), `identity-manifest-e4-1` (#1008), `nerva2-program-control` (B2 manifest reconciled to
   post-#981 truth, non-blocking checker, one Tier A integration pass), `proof-track-reviews` (the six
   pending independent attestations recorded as PASS/HOLD, never assumed).
 
 **Security, memory and debt residuals**
-- `autonomy-routes-honesty` [DRA-59], `taint-boundary` [TASK-3, H20.1], `egress-ssrf-honesty`
+- 🟡 **partly landed** — of this whole residual line, five slices came in: ✅ `memory-hygiene-leg6` [DRA-27 ✅, CDX-7 ✅, SEC-B5 🟡 one residual], 🔨 `live-rails-behind-flags` [T-0.66, H10.30, H12.21, H12.22, H12.25 — all flag-armed, none provider-proven], ✅ `mcp-transports` [DRA-25 ✅, H10.5 ✅/🔨], ✅ `fault-injection` [T-0.63 failure-injection half; the 72h soak stays owner], and `house-hestia-wled` [LVP-hestia-wiring ✅, H30.8 🔨]. **Everything else on this line did not land in this wave.** Original line: `autonomy-routes-honesty` [DRA-59], `taint-boundary` [TASK-3, H20.1], `egress-ssrf-honesty`
   [DRA-47, DRA-23], `cost-accuracy` [DRA-24 ×3, H10.24], `memory-hygiene-leg6` [DRA-27, SEC-B5,
   CDX-7], `mem-data-spaces` [H10.26], `subagent-shape-gate` [V3], `live-rails-behind-flags`
   [T-0.66, H10.30, H12.21, H12.22, H12.25], `llm-routing-upgrades` [H20.2, H13.4],

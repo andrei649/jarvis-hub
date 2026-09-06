@@ -558,6 +558,153 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         else:
             assert driver.calls == []
             assert result["ran"][0]["status"] == "blocked"
+    elif kind == "permission.grant":
+        # 1.1.0: widening the consent ledger is itself privileged. The ask crosses
+        # the kernel before it can reach the decision inbox; the grant row is only
+        # ever written later, from the owner-approved task's execution.
+        from agents.core.permission_ledger import PermissionLedger
+
+        class _Secrets:
+            def __init__(self):
+                self.rows = {}
+
+            def put(self, name, value):
+                self.rows[name] = value
+
+            def get(self, name):
+                return self.rows.get(name)
+
+            def delete(self, name):
+                self.rows.pop(name, None)
+
+        ledger = PermissionLedger(
+            tmp_path / "permissions.db", enabled=True, authorizer=spy, secret_store=_Secrets()
+        )
+        try:
+            ledger.request(
+                "site", "example.com", "once", "browser", lambda **kwargs: 1
+            )
+        finally:
+            ledger.close()
+    elif kind == "terminal.exec":
+        # 1.1.0: a governed host shell command crosses the kernel after the hardline
+        # denylist, the target policy and the contract, and before any process exists.
+        import asyncio
+
+        from agents.core.environments.execution import GovernedTargetRunner
+        from agents.core.environments.targets import (
+            TargetAuditChain,
+            TargetRegistry,
+            TerminalTarget,
+        )
+
+        class _Transport:
+            roots = ()
+            max_timeout = 600
+
+            def __init__(self, root):
+                self.roots = (str(root.resolve()),)
+                self.runs = []
+
+            def bound_timeout(self, timeout):
+                return int(timeout or 60)
+
+            def resolve_cwd(self, cwd):
+                return tmp_path
+
+            async def run(self, argv, *, cwd=None, timeout=None, max_output=None):
+                self.runs.append(list(argv))
+                return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+
+        class _Sandbox:
+            def active_backend(self):
+                return "docker"
+
+        monkeypatch.setenv("JARVIS_TERMINAL_LOCAL_HOST", "1")
+        registry = TargetRegistry(
+            (
+                TerminalTarget(
+                    name="local-host",
+                    backend="local",
+                    enabled=True,
+                    allowed_agents=frozenset({"jarvis"}),
+                    capabilities=frozenset({"terminal.exec"}),
+                    approval_required=frozenset({"terminal.exec"}),
+                ),
+            ),
+            audit=TargetAuditChain(),
+        )
+        transport = _Transport(tmp_path)
+        runner = GovernedTargetRunner(
+            registry,
+            _Sandbox(),
+            local_transport=transport,
+            authorizer=spy,
+            approval_check=lambda task_id: task_id == 12,
+        )
+        result = asyncio.run(
+            runner.run(
+                target="local-host",
+                agent="jarvis",
+                command="git status",
+                approved_task_id=12,
+                cwd=str(tmp_path),
+            )
+        )
+        if spy.calls:
+            assert transport.runs == [["git", "status"]], result
+        else:
+            assert transport.runs == []
+    elif kind == "file.write":
+        # 1.1.0: a governed file write crosses the kernel after the snapshot is taken,
+        # so the rollback contract is real whatever the verdict.
+        import asyncio
+
+        from agents.core.file_tools import FileScope, FileTools, SnapshotStore
+
+        root = tmp_path / "workspace"
+        root.mkdir()
+        tools = FileTools(
+            FileScope([root]),
+            snapshots=SnapshotStore(tmp_path / "snapshots"),
+            authorizer=spy,
+        )
+        asyncio.run(tools.write_file({"path": str(root / "note.txt"), "content": "hi"}))
+    elif kind == "model.pull":
+        # 1.1.0: pulling a local model crosses the O27 facade, whose authorizer is the
+        # production kernel binding. The pull itself is stubbed — the gate is the point.
+        import asyncio
+
+        from agents.core.capability_actions import CapabilityActionAPI, PerformContext
+        from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
+        from agents.core.llm.model_setup import MODEL_PULL_CAPABILITY_ID
+
+        monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+
+        async def _handle(_params, _context=None):
+            return {"ok": True, "started": False, "already_installed": True}
+
+        api = CapabilityActionAPI(
+            authorizer=spy, manifests=list(ACTION_CAPABILITY_MANIFESTS.values())
+        )
+        api.register(MODEL_PULL_CAPABILITY_ID, _handle)
+        asyncio.run(
+            api.perform(
+                MODEL_PULL_CAPABILITY_ID,
+                {"model": "qwen2.5:7b"},
+                PerformContext(capability_name="model.pull"),
+            )
+        )
+    elif kind == "report.export":
+        # 1.1.0: writing the redacted day report to disk leaves the process, so the
+        # export crosses the kernel before the file is created.
+        from agents.core.day_report import DayReportExporter, build_day_report
+
+        report = build_day_report(None, None, now=1_760_000_000.0)
+        exporter = DayReportExporter(tmp_path / "reports", authorizer=spy)
+        # Default-off is the pre-kernel path, not a refusal: the export still
+        # writes with the flag unset (the outer test proves the spy stayed idle).
+        assert exporter.export(report, "json")["ok"] is True
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 

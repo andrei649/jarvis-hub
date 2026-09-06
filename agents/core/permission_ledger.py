@@ -422,6 +422,14 @@ MIGRATIONS = [_v1]
 
 # ── the ledger ───────────────────────────────────────────────────────────────
 
+def _kernel_on() -> bool:
+    """Default-off, like ``FileTools._authorize`` and ``ToolRPCServer``: the hook is
+    bound at boot but consulted only once ``JARVIS_ACTION_KERNEL`` is on."""
+    from agents.core.kernel import kernel_enabled
+
+    return kernel_enabled()
+
+
 class PermissionLedger:
     """The durable consent ledger. See the module docstring for the rules.
 
@@ -688,7 +696,7 @@ class PermissionLedger:
         with self._lock:
             if self._never_row(surface, norm) is not None:
                 raise PermissionRequestError("never_entry")
-        if self._authorizer is not None:
+        if self._authorizer is not None and _kernel_on():
             from agents.core.kernel import Action, Verdict
 
             verdict = self._authorizer(

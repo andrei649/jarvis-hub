@@ -229,8 +229,7 @@
       "references": [
         {"kind": "issue", "value": 763},
         {"kind": "issue", "value": 818},
-        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"},
-        {"kind": "repo_path", "value": "docs/nerva2/NIGHT_SHIFT_E5_0.md"}
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
       ]
     },
     {
@@ -596,7 +595,7 @@
   },
   "contract_registry": {
     "path": "docs/nerva2/CONTRACT_REGISTRY.json",
-    "sha256": "3fb98a378b9ac0d42afe51fd545cf0f1a087cd4bc9abbae5801bd09e34d6a856",
+    "sha256": "07d74039791e8307eed7229bca0090e5981dd236722f5371ac2beb7bea833832",
     "statuses": {
       "nerva.observation.v1": "proposed",
       "nerva.atlas.snapshot.v1": "proposed",
@@ -606,7 +605,7 @@
       "nerva.episode.v1": "proposed",
       "nerva.lesson.v1": "proposed",
       "nerva.preference.v1": "proposed",
-      "nerva.work-run.v1": "candidate",
+      "nerva.work-run.v1": "proposed",
       "nerva.scenario.v1": "proposed",
       "nerva.benchmark.v1": "proposed",
       "nerva.evidence.v1": "evolves_existing"
@@ -644,9 +643,9 @@
     {
       "id": "2026-09-06-e5-candidate",
       "date": "2026-09-06",
-      "decision": "nerva.work-run.v1 moves to candidate on the E5.0 slice (work-run ledger, company supervisor, verifier, judge); E5 program_status not_started -> building.",
-      "effect": "Delivery eligibility derives to in_progress; every E5 delivery gate and the B7 program gate stay open; delivered, not program-accepted.",
-      "evidence": ["docs/nerva2/CONTRACT_REGISTRY.json", "docs/nerva2/NIGHT_SHIFT_E5_0.md"]
+      "decision": "WITHDRAWN the same day, before merge. The row read: nerva.work-run.v1 moves to candidate on the E5.0 slice (work-run ledger, company supervisor, verifier, judge). It was written ahead of the code — none of work_runs.py, company_supervisor.py, work_verifier.py, work_judge.py or NIGHT_SHIFT_E5_0.md exist in the tree — so the claim, its evidence paths and the E5 status move described nothing. nerva.work-run.v1 stays proposed until the modules ship; E5 was already building/in_progress before this row, so the status move it described was not a move at all.",
+      "effect": "No status, gate or eligibility change. The withdrawal is recorded rather than deleted so the attempted claim stays auditable.",
+      "evidence": ["docs/nerva2/CONTRACT_REGISTRY.json"]
     }
   ]
 }

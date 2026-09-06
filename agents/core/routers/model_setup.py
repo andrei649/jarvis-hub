@@ -62,15 +62,12 @@ def _build_api(service):
     from agents.core.capability_actions import CapabilityActionAPI
     from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
     from agents.core.kernel.binding import make_action_kernel
-    from agents.core.llm.model_setup import (
-        MODEL_PULL_CAPABILITY_ID,
-        manifests_with_model_pull,
-    )
+    from agents.core.llm.model_setup import MODEL_PULL_CAPABILITY_ID
 
     orch = get_orch()
     api = CapabilityActionAPI(
         authorizer=make_action_kernel(orch) if orch else None,
-        manifests=manifests_with_model_pull(ACTION_CAPABILITY_MANIFESTS),
+        manifests=list(ACTION_CAPABILITY_MANIFESTS.values()),
     )
     api.register(MODEL_PULL_CAPABILITY_ID, service.handle_pull)
     return api

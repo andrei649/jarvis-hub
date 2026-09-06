@@ -290,7 +290,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | `agents/core/sandbox.py` | Docker + subprocess code execution | `Sandbox.execute_python`, `execute_shell` |
 | `agents/core/plugin_gate.py` | Per-agent plugin permission | `PermissionGate.check_call` |
 | `agents/core/learning/loop.py` | Agent health + promotion loop | `LearningLoop.record`, `rank_candidates`, `suggest_promotions`, `is_unhealthy` |
-| `agents/core/mcp/client.py` | MCP client (**stdio only**; remote transports unimplemented and refused) | `MCPManager`, `MCPServer.connect`, `MCPTool` |
+| `agents/core/mcp/client.py` | MCP client (**stdio; `streamable-http` behind `JARVIS_MCP_HTTP_CLIENT`**, default off — the deprecated HTTP+SSE pair stays refused by name). Optional Hermes-parity env stripping for stdio subprocesses behind `JARVIS_MCP_STDIO_ENV_BASELINE` | `MCPManager`, `MCPServer.connect`, `MCPTool` |
 | `agents/core/mcp/server.py`, `route_tools.py` | MCP server RPC: explicit state-effect inventory (including conversation persistence); hidden direct skill commands refused; route writes require identity + contract + a durable audit preflight + an enabled, bound Action Kernel GRANT | `JarvisMCPServer.tool_inventory`, `MutatingRouteTool.call` |
 | `agents/core/workflows/` | Multi-agent workflow engine | `WorkflowEngine` (engine.py), `WorkflowRegistry` (registry.py), `Pipeline`, `WorkflowStep` (pipeline.py), storage (storage.py) |
 | `agents/core/observability/tracer.py` | Request tracing | `Tracer`, trace context |
@@ -300,6 +300,54 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | `agents/core/observability/datasets.py` | Eval dataset store + regression runs | `DatasetStore` |
 | `agents/core/observability/north_star.py` | North-star + counter-metric aggregator (MOONSHOT §6) — exposed at `GET /api/metrics/north-star?days=1-90`; see [METRICS.md](METRICS.md) | `compute_north_star` |
 | `agents/core/observability/runtime_log.py` | Per-cycle run-log for the headless runtime supervisor (H23.29) — one bounded JSON line per autonomy-coordinator tick into `logs/runtime.jsonl`, plus a cycle counter that survives a restart so crash recovery is provable. Driven by `scripts/runtime_supervisor.py` → `scripts/coordinator.py`; inert unless an orchestrator has `runtime_log` wired. `read_runtime_health()` is the consumer side — a bounded tail read reduced to the loop-health summary the morning brief renders | `RuntimeRunLog.record_cycle`, `RuntimeCycleRecord`, `read_runtime_health`, `default_log_path` |
+
+### Wave 2026-09-06 — operator hands, activation, program contracts
+
+Landed in `214bc5eb` (run `opus-integration`, PR #1039). Every runtime-visible module here is
+**default-off behind its own flag** — see [`FLAGS.md`](FLAGS.md) for what each flag costs.
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/permission_ledger.py` | One consent ledger: per-app / per-site / OS-input / file-root / terminal-target grants {once, session, always, never} over SQLite, with a curated default-deny list; widening a grant is the kernel kind `permission.grant` (EXTERNAL tier, ASK → decision inbox, applied only from the human-decided task). Flag `JARVIS_PERMISSION_LEDGER` (off ⇒ `check()` allows legacy callers and records nothing) | `PermissionLedger`, `check`, `request`, `apply_grant`, `revoke`, `deny`, `PERMISSION_GRANT_CONTRACT`, `KIND` |
+| `agents/core/routers/permissions.py` | `GET /api/permissions`, `POST /api/permissions/{grant_id}/revoke` (user-guarded, narrowing only) | `router` |
+| `agents/core/file_tools.py` | Governed file tools: `file_read`/`file_list` ungated inside `JARVIS_FILE_ROOTS`; `file_write`/`file_delete` gated ask-tier ToolRPC tools that snapshot the previous bytes first. Kernel kind `file.write`, rollback mode `restore`. Flag `JARVIS_FILE_TOOLS` (off ⇒ `register_file_tools` is a no-op) | `FileTools`, `FileScope`, `FILE_WRITE_CONTRACT`, `restore_snapshot`, `register_file_tools`, `GATED_TOOL_KINDS` |
+| `agents/core/environments/terminal_contract.py` | Governed host shell contract: the static HARDLINE denylist evaluated **before** authorize on every backend (a hit leaves no audit entry and never spawns) + `terminal.exec` kind and contract (fingerprinted argv, cwd inside roots, timeout ≤ 600s, durable approved task, rollback `none`) | `TERMINAL_EXEC_KIND`, `TERMINAL_EXEC_CONTRACT`, `hardline_match`, `parse_argv` |
+| `agents/core/environments/local_transport.py` | `LocalHostTransport` — argv only, cwd-jailed, output-capped, kill-on-timeout; reached from `GovernedTargetRunner` after hardline → target policy → durable approval → contract → kernel GRANT. Flags `JARVIS_TERMINAL_LOCAL_HOST`, `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S` | `LocalHostTransport` |
+| `agents/core/browser_transport.py` | SEC-B4 IP-pinned Chromium transport: one `resolve_and_validate`-validated IP per host, `--host-resolver-rules=MAP host ip, …, MAP * ~NOTFOUND` launch args, throw-away profile per run; consumed by `browser_playwright.PlaywrightBrowserDriver.set_transport` (required before `navigate()`). Flag `JARVIS_BROWSER_ALLOW_PRIVATE_URLS` for LAN mode | `PinnedResolver`, `PinnedTarget`, `transport_from_env`, `PlaywrightEgressBlocked` |
+| `agents/core/screen_locator.py` | Visual-grounding fallback: a11y first, then a **proven-local** VLM (`local_vlm_not_proven_local` otherwise); `provenance=local_vlm` + `screenshot_sha256` on every result; the gate is the locality check, not the label; kernel kind stays `desktop.step`. Flag `JARVIS_VLM_PRESET` (with `JARVIS_VLM_MODEL`) | `LocalVLMLocator`, `build_local_vlm_locator` |
+| `agents/core/llm/model_setup.py` | Hardware-tiered local-model recommendation (`TIERS`) + loopback-only Ollama presence / pull / delete; governed pull as kernel kind `model.pull` (reversible, rollback `ollama_delete`), size-capped by `llm.model_pull_max_gb`, one job at a time. Flag `JARVIS_MODEL_PULL` | `ModelSetupService`, `recommend_model`, `ollama_present`, `ollama_delete`, `MODEL_PULL_KIND`, `MODEL_PULL_CONTRACT`, `MODEL_PULL_MANIFEST`, `manifests_with_model_pull` |
+| `agents/core/routers/model_setup.py` | `GET /api/onboarding/model-plan` (tier card + plan, polled while a pull runs), `POST /api/onboarding/model-pull` via a request-scoped `CapabilityActionAPI` (kernel DENY → 403, QUEUE → 202) | `router` |
+| `agents/core/day_report.py` | Redacted, allow-listed, payload-free day report + Proof-of-Action receipts over the IntentLog; export writes under `data_path('reports')` through the kernel (kind `report.export`) | `build_day_report`, `render_report_html`, `DayReportExporter`, `EXPORT_CONTRACT`, `build_receipt`, `KIND` |
+| `agents/core/routers/report.py` | `GET /api/report/today` (`?format=html`), `POST /api/report/today/export`, `GET /api/report/receipt/{audit_id}` — all user-guarded | `router` |
+| `agents/core/house/hestia_bridge.py` | `HestiaBridge`: `observe()` (strict-local snapshot → shared `HouseGraph` projection + presence writer, aggregate occupancy only), `propose()` (explicit local rules → `HouseActuator.request_*` → kernel intake gate → `govern_enqueue`, agent `hestia`, ask floor, cooldown/daily caps), `ambient(state)` (orb state → strip). Flag `JARVIS_HESTIA_BRIDGE` | `HestiaBridge`, `from_orchestrator`, `observe`, `propose`, `ambient` |
+| `agents/core/house/wled.py` | H30.8 strict-local WLED ambient scenes mirroring the six orb states; **every** write is a `house.control` action through `CapabilityActionAPI`, echo-verified (`"v": true`), per-minute write budget, `wled_not_configured` / `wled_unreachable` named refusals. Flag `JARVIS_WLED_URL` | `WLEDBridge`, `WLED_SCENES`, `set_scene` |
+| `agents/core/mcp/http_transport.py` | Streamable HTTP client transport for MCP: POST JSON-RPC, `Mcp-Session-Id` capture/echo/release, negotiated `MCP-Protocol-Version`, JSON or SSE replies bounded to 256 events / 4 MiB, every byte through the SSRF-pinned `PluginHTTPClient`. Flag `JARVIS_MCP_HTTP_CLIENT` (default off) | `StreamableHttpTransport`, `SUPPORTED_TRANSPORTS`, `normalize_transport`, `transport_allowed` |
+| `agents/core/observability/fault_injection.py` | T-0.63 in-process failure-injection harness for the **test lane** (`llm_down` / `db_corrupt` / `disk_full` / `clock_skew`), default-off behind `JARVIS_FAULT_INJECT`, refused unconditionally under `JARVIS_HARDENED`, path faults fenced to `data_root()`; manual chapter 13 §13.16b | `FaultPlan`, `inject`, `FaultHandle`, `active_faults`, `boot_problem`, `refusal_reason`, `FAULT_SCOPE` |
+| `agents/core/observability/continuity_suite.py` | Continuity Core (#731) `evaluation_only` suite `continuity-core-v1` on the accepted E9.0 `nerva.benchmark.v1` harness — 20 synthetic-public scenarios over 7 criteria, pinned content fingerprint, per-criterion `nerva.continuity.report.v1` with `can_accept_epic=false` | `continuity_cases`, `run_continuity_suite`, `build_report`, `main` |
+| `agents/core/cognitive_ledger.py` | `nerva.ledger.v1` cognitive-ledger records — **record_only** authority, no runtime path; external refs are verified only when the caller passes their fingerprints to `LedgerChain.validate(external=…)`. Doc: [`nerva2/CORTEX_E1_3.md`](nerva2/CORTEX_E1_3.md) | `LedgerRef`, `GoalSpec`, `EvidenceRecord`, `ActionIntent`, `AuthorizationRecord`, `ExecutionRecord`, `VerificationRecord`, `OutcomeRecord`, `LedgerChain` |
+| `scripts/bootstrap.py` | One-step native install, **stdlib-only**: Python ≥3.12 floor with a named refusal, idempotent `.venv`, `pip --require-hashes` from `requirements-beta.lock`, loopback-only runtime detection, install smoke with `JARVIS_HOST` pinned to `127.0.0.1` and cloud keys scrubbed. Driven by `install.sh` / `INSTALL.bat` / `install.ps1` | `main`, `VENV_DIR` |
+| `scripts/doctor.py` | Install check-up (`./start.sh --doctor`, `START.bat doctor`): required rows `python` / `venv` / `locks_in_sync` / `bind_is_loopback` / `data_root_writable` + advisory `runtimes` / `readyz` / `smoke`, one named reason each, `--json`, exit 0/1 | `main`, `resolve_data_root`, `LOOPBACK_HOSTS` |
+| `scripts/nerva_mcp_stdio.py` | stdio bridge from a stdio MCP client (Claude Desktop, Cursor) to a running hub's `POST /api/mcp/server/rpc`: token from an env var (never argv), client ids re-stamped, stderr-only logging, **no hub gate widened**. Requires `mcp.server_enabled=true` | `main` |
+| `scripts/check_nerva_program_manifest.py` + `.github/workflows/nerva-manifest-check.yml` | Nerva program-manifest checker — **advisory only, never a PR gate** (post-#981 posture); `--write` regenerates the CONTRACT_REGISTRY SHA-256 mirror and `docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md` | `main`, `--write` |
+| `docs/INSTALL.md` · `docs/PHONE_ACCESS.md` | The install path per OS (one-liner, `INSTALL.bat`, Docker quickstart, doctor) and the supported phone / second-device LAN path (what `assert_safe_bind` refuses, what `_user_guard` 403s, why `JARVIS_HOST` + `JARVIS_USER_TOKEN` must be in the process environment) | — |
+
+**Amended in the same wave** (rows above unchanged otherwise):
+`agents/core/subagents.py` — sub-agents gained `steer()` / `stop()` (a `SteerChannel` inbox whose
+origin is `user|agent` and which is **never** an approval — `decide()` refuses agent origin before
+the hook), a typed `output_schema` hand-off (`validate_output`), per-spawn cost, an optional
+`IterationBudget`, and finished-spawn records appended to `data/subagents/spawns.jsonl` behind
+`JARVIS_SUBAGENT_SPAWN_LOG` (observability only). `decide()` remains the only approval seam.
+`agents/core/writeback.py` / `social.py` / `autonomy/call_broker.py` / `writeback_connectors.py` —
+the live rails are now flag-armed: `JARVIS_WRITEBACK_LIVE`, `JARVIS_SOCIAL_LIVE`, `JARVIS_CALL_LIVE`
+(all default off ⇒ Null clients, byte-identical). The 0.66 connector catalogue **and** the
+`create_task` / `task.create` transcript kinds execute through `WriteBackBroker.execute`; credentials
+resolve from the SecretBroker at execute time, behind approval, never at request time.
+`agents/core/memory/consolidation.py` + `agents/core/routers/memory_kg.py` — consolidation gained
+`existing_from_hits` / `validate_plan` / `ListStore` / `ConsolidationEngine.apply_report`, and the
+router hosts `_recall_scope` (bind-on-entry / reset-after-the-response for the whole handler) plus
+`_guard_hit` / `_guard_store_row` for the JSON recall path.
+`agents/core/hardware.py` — `detect_gpu` now probes NVIDIA → Apple Silicon (`sysctl hw.memsize`) →
+AMD (`rocm-smi` CSV) through `_run_argv`.
 
 ### Agent Registry
 
@@ -703,7 +751,7 @@ agents/
     plugins/                      All third-party integrations
     skills/                       Skill loader + importer + marketplace
     voice/                        Wake word + STT + TTS pipeline
-    mcp/                          MCP client (stdio only) + MCP server
+    mcp/                          MCP client (stdio; streamable-http behind JARVIS_MCP_HTTP_CLIENT) + MCP server
     learning/                     Agent health tracking + promotions
     workflows/                    Multi-agent workflow engine
     observability/                Request tracing + LLM eval harness + runtime run-log

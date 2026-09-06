@@ -2,6 +2,76 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-06 — 17 builder slices: operator hands, live rails, activation, program contracts
+
+Seventeen file-partitioned slices landed as one commit (`214bc5eb`, run `opus-integration`,
+PR #1039), each with its own hermetic tests and its own red-proof, then registered by three
+integrators working on disjoint files. **Nothing here changes default behaviour**: every new
+capability is default-off behind its own flag ([`docs/FLAGS.md`](docs/FLAGS.md)), and every
+privileged effect still crosses the Action Kernel and the approval queue.
+
+- **A governed computer operator grew hands.** A consent ledger
+  (`agents/core/permission_ledger.py`, `JARVIS_PERMISSION_LEDGER`) holds per-app / per-site /
+  OS-input / file-root / terminal-target grants `{once, session, always, never}` over a curated
+  default-deny list, widened only through the new `permission.grant` approval task. Governed **file
+  tools** (`JARVIS_FILE_TOOLS`) read and list inside declared roots and write/delete only as
+  approved ask-tier ToolRPC tasks that snapshot the previous bytes first (kernel kind `file.write`,
+  rollback `restore`). A governed **local terminal** (`JARVIS_TERMINAL_LOCAL_HOST`) runs argv-only,
+  cwd-jailed commands behind a static HARDLINE denylist evaluated *before* authorize on every
+  backend — a hardline hit leaves no audit entry and never spawns — then target policy, a durable
+  approved task, the new `terminal.exec` contract, and a kernel GRANT. The **browser** got the
+  IP-pinned Chromium transport it needed to navigate at all (SEC-B4's browser leg): one validated IP
+  per host, `MAP * ~NOTFOUND` for everything else, redirect and subresource re-validation, a
+  throw-away profile per run, and accessibility-snapshot-first observation. **Visual grounding**
+  falls back to a proven-local VLM with pinned open-weight presets so a model's coordinate
+  convention is normalized before a click (`JARVIS_VLM_PRESET`).
+- **The live rails exist, and stay off.** `JARVIS_WRITEBACK_LIVE`, `JARVIS_SOCIAL_LIVE` and
+  `JARVIS_CALL_LIVE` arm the real Notion/GitHub/Calendar/Linear/Asana/Trello/Todoist/ClickUp/Sheets/M365
+  write, the X post, and the Twilio/Telnyx dial — each only after an approved ask-tier task, each
+  refusing `credential_not_configured` rather than sending an unauthenticated request. Approved
+  transcript `create_task` items now execute through `WriteBackBroker` instead of the LLM fallback.
+- **Activation is one step again.** `scripts/bootstrap.py` (stdlib-only, hash-pinned install, a
+  real install smoke, loopback-bound) sits behind thin `install.sh` / `INSTALL.bat` /
+  `install.ps1` wrappers and a `docker-compose.quickstart.yml`; `scripts/doctor.py` answers "why
+  isn't it working" with named reasons and an exit code. New docs: [`docs/INSTALL.md`](docs/INSTALL.md)
+  and [`docs/PHONE_ACCESS.md`](docs/PHONE_ACCESS.md) — the latter closes a long-standing gap where
+  the supported LAN path for a phone was documented nowhere. Model setup now tiers on real hardware
+  (NVIDIA → Apple Silicon → AMD) and can pull a recommended model through the kernel
+  (`model.pull`, `JARVIS_MODEL_PULL`, loopback-only, size-capped).
+- **Memory hygiene closed its sixth leg.** `GET /api/memory/consolidate/preview` finally answers
+  where `existing` comes from, `POST /api/memory/consolidate/apply` is the apply surface, and every
+  JSON recall hit is now injection-scanned, redacted when flagged, and carries provenance and a
+  `tainted` verdict. The HTTP recall routes bind turn origin on entry and reset **after the response
+  is built** — not the fail-open shape an earlier draft withdrew.
+- **MCP speaks Streamable HTTP** behind `JARVIS_MCP_HTTP_CLIENT` (the deprecated HTTP+SSE pair
+  stays refused *by name*, closing DRA-25's honesty finding), a reusable stdio loop plus
+  `scripts/nerva_mcp_stdio.py` bridges Claude Desktop / Cursor to a running hub without widening a
+  single gate, and `JARVIS_MCP_STDIO_ENV_BASELINE` stops stdio servers inheriting the hub's
+  credentials.
+- **House:** Hestia is wired onto the house modules (`observe()` / `propose()`, aggregate occupancy
+  only, proposals through the approval queue) and a strict-local WLED bridge mirrors the six orb
+  states — every write a kernel-mediated `house.control`, echo-verified, silent when unreachable.
+- **Chaos and program contracts:** an in-process failure-injection harness for the test lane
+  (`JARVIS_FAULT_INJECT`, refused under `JARVIS_HARDENED`, fenced to the data root),
+  `nerva.ledger.v1` cognitive-ledger records (record_only), the #731 Continuity Core evaluation
+  suite on the accepted E9.0 benchmark harness, an advisory-only Nerva program-manifest checker
+  reconciled to the post-#981 posture, and the first Tier A integration adoption pass (Playwright —
+  pass recorded, nothing adopted).
+- **New surfaces:** `GET /api/report/today` (a redacted, payload-free day report, `?format=html`),
+  `POST /api/report/today/export` (kernel kind `report.export`), `GET /api/report/receipt/{audit_id}`
+  (a chain-verified Proof-of-Action receipt), `GET /api/permissions` +
+  `POST /api/permissions/{id}/revoke`, `GET /api/onboarding/model-plan` +
+  `POST /api/onboarding/model-pull`, `GET /api/memory/consolidate/preview` +
+  `POST /api/memory/consolidate/apply`, and `POST /api/subagents/{id}/steer|stop` — with Console
+  panels for the day receipt, permissions, model setup and consolidation.
+- **Honest limits, recorded rather than glossed:** the browser transport, the local terminal, the
+  visual-grounding presets, the model pull, all three live rails, the native installers and the
+  stdio bridge are **delivered, not proven on real hardware/credentials** — they are marked 🔨 in
+  [`BACKLOG.md`](BACKLOG.md) and each has an owner packet with exact commands in
+  [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md). SEC-B5 stays 🟡 on one named residual
+  (`Orchestrator.process()` binds no turn origin — an approval-volume owner decision). T-0.63's
+  72h soak half remains an owner lane; the harness does not replace it.
+
 ## [1.0.0] — 2026-09-02
 
 The 1.0 line: every feature horizon (H1–H23 + WorldView O19) delivered, the productionization

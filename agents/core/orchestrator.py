@@ -245,6 +245,7 @@ class Orchestrator:
         self.channel_inbox = None
         self.oracle_bridge = None
         self.argus = None
+        self.permission_ledger = None
 
         # ── optional components via the registry (A2: tames the god-object) ──
         from .component_registry import ComponentRegistry

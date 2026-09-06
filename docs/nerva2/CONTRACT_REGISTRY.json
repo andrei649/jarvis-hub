@@ -107,10 +107,9 @@
       "id": "nerva.work-run.v1",
       "owner": "Night Shift",
       "authority": "delegated_execution_only",
-      "status": "candidate",
+      "status": "proposed",
       "unblocks": ["E5", "E10", "E11"],
-      "evidence_paths": ["agents/core/autonomy/missions.py", "agents/core/autonomy/queue.py", "agents/core/autonomy/worker.py", "agents/core/autonomy/work_runs.py", "agents/core/autonomy/company_supervisor.py", "agents/core/autonomy/work_verifier.py", "agents/core/autonomy/work_judge.py"],
-      "candidate_note": "E5.0 candidate (2026-09-06): typed GoalSpec/WorkRun ledger, supervisor, verifier and judge landed default-off behind JARVIS_COMPANY_MODE; delegated_execution_only, every privileged effect crosses nerva.action.v1 as kind work.run; delivered, not program-accepted."
+      "evidence_paths": ["agents/core/autonomy/missions.py", "agents/core/autonomy/queue.py", "agents/core/autonomy/worker.py"]
     },
     {
       "id": "nerva.scenario.v1",
@@ -141,6 +140,11 @@
     {
       "date": "2026-09-06",
       "change": "nerva.work-run.v1 status proposed -> candidate; evidence_paths extended with the E5.0 modules",
+      "authority_change": false
+    },
+    {
+      "date": "2026-09-06",
+      "change": "REVERTED the row above. It was written ahead of the code: work_runs.py, company_supervisor.py, work_verifier.py and work_judge.py do not exist in the tree, so the candidate claim and its four evidence paths described nothing. Status is back to proposed with only the three files that are real. A candidate claim is earned by shipped modules, never by an intended slice.",
       "authority_change": false
     }
   ]

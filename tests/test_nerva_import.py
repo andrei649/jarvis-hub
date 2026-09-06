@@ -8,6 +8,7 @@ at the bottom is gated by ``NERVA_HERMES_LIVE=1`` (skipped by default) — it is
 BUG-13 "verificare live restantă" lane, meant for the schedule-only CI job.
 """
 
+import contextlib
 import importlib.util
 import json
 import os
@@ -66,22 +67,72 @@ Paragraph note about the house.
 """
 
 
-def _snapshot(root: Path) -> dict[str, bytes]:
-    """Content of every durable file under root.
+def _sqlite_content(path: Path) -> tuple:
+    """Every row of every table, ordered — the DATA in a SQLite file.
 
-    SQLite's WAL sidecars (``-shm``/``-wal``) are excluded: merely *opening* a
-    WAL database — which a dry run legitimately does to read what has already
-    been imported — rewrites the shared-memory header even when no row is
-    touched. The invariant under test is that a plan writes no data, so the
-    ``.db`` file itself is still compared byte for byte, and the callers
-    additionally assert ``store.count() == 0`` and an empty secret store; a
-    sidecar byte cannot carry a row.
+    A WAL database is not byte-stable at rest even when nothing is written to it:
+    opening it rewrites the ``-shm`` header, and SQLite's auto-checkpoint moves
+    already-committed pages out of the ``-wal`` into the main file whenever it
+    likes, bumping the change counter and the page count. Both are bookkeeping.
+    The invariant under test — a plan stores nothing — lives in the rows, so
+    that is what is compared. It is the stricter reading: a row written and
+    checkpointed away still shows up here, where a byte compare of a WAL file
+    could only report that *something* moved.
     """
-    return {
-        str(p.relative_to(root)): p.read_bytes()
-        for p in sorted(root.rglob("*"))
-        if p.is_file() and not p.name.endswith(("-shm", "-wal"))
-    }
+    with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
+        tables = [
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            )
+        ]
+        return tuple(
+            (table, tuple(conn.execute(f'SELECT * FROM "{table}"').fetchall()))  # noqa: S608
+            for table in tables
+        )
+
+
+def _snapshot(root: Path) -> dict[str, object]:
+    """What every durable file under root holds.
+
+    Ordinary files are compared byte for byte. SQLite databases are compared by
+    their rows (see :func:`_sqlite_content`), and their ``-shm``/``-wal``
+    sidecars are skipped, because neither a sidecar byte nor a checkpoint can
+    carry data the rows do not already show.
+    """
+    out: dict[str, object] = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.name.endswith(("-shm", "-wal")):
+            continue
+        key = str(path.relative_to(root))
+        if path.suffix == ".db":
+            out[key] = _sqlite_content(path)
+        else:
+            out[key] = path.read_bytes()
+    return out
+
+
+def test_snapshot_ignores_a_checkpoint_but_still_catches_a_written_row(tmp_path):
+    """The guard has teeth. A WAL checkpoint rewrites the main file's header and page
+    count with no data change — that must read as no change — while a single inserted
+    row must be caught even when a checkpoint then moves it into the main file."""
+    db = tmp_path / "probe.db"
+    with contextlib.closing(sqlite3.connect(db)) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("CREATE TABLE t (v TEXT)")
+        conn.commit()
+    before = _snapshot(tmp_path)
+
+    with contextlib.closing(sqlite3.connect(db)) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    assert _snapshot(tmp_path) == before, "a checkpoint is bookkeeping, not a write"
+    assert db.read_bytes() != b"", "sanity: the probe database is real"
+
+    with contextlib.closing(sqlite3.connect(db)) as conn:
+        conn.execute("INSERT INTO t VALUES ('written')")
+        conn.commit()
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    assert _snapshot(tmp_path) != before, "a written row must never read as no change"
 
 
 @pytest.fixture

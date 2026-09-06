@@ -184,7 +184,7 @@ A satisfied delivery edge requires an accepted 40-hex commit, an artifact presen
 
 ## Contract registry mirror
 
-- Source: `docs/nerva2/CONTRACT_REGISTRY.json` (SHA-256 `3fb98a378b9ac0d42afe51fd545cf0f1a087cd4bc9abbae5801bd09e34d6a856`)
+- Source: `docs/nerva2/CONTRACT_REGISTRY.json` (SHA-256 `07d74039791e8307eed7229bca0090e5981dd236722f5371ac2beb7bea833832`)
 
 | Contract | Status |
 |---|---|
@@ -196,7 +196,7 @@ A satisfied delivery edge requires an accepted 40-hex commit, an artifact presen
 | `nerva.episode.v1` | `proposed` |
 | `nerva.lesson.v1` | `proposed` |
 | `nerva.preference.v1` | `proposed` |
-| `nerva.work-run.v1` | `candidate` |
+| `nerva.work-run.v1` | `proposed` |
 | `nerva.scenario.v1` | `proposed` |
 | `nerva.benchmark.v1` | `proposed` |
 | `nerva.evidence.v1` | `evolves_existing` |
@@ -213,7 +213,7 @@ A satisfied delivery edge requires an accepted 40-hex commit, an artifact presen
 | 2026-08-28 | `2026-08-28-a8-owner-host-cleared` | Owner cleared the A8 owner-host proof gate after a real-hardware run with good feedback; the E11 owner_live blocker is re-scoped to the post-tag A1 section 0 run record. | E11 stays blocked; the reason is narrower and names the artifact still owed. | `BACKLOG.md:3587` · `docs/HISTORY.md:386` · `docs/MANUAL_TESTING.md` |
 | 2026-09-01 | `2026-09-01-918-retained` | PR #918 (B7 task mediation corrective, merge b5e52c6) RETAINED on main under a bounded owner exception, default-off; not program-accepted. | E5 and E8 keep the B7 program_gate blocker with an explanatory note; no authority change. | `BACKLOG.md:280` · `docs/HISTORY.md:384` |
 | 2026-09-01 | `2026-09-01-1008-identity-manifest` | Issue #1008 owns Jarvis's own Identity Manifest (E4 identity-boundary lane, not Howard); #762 stays Howard-only. | E4 gains an issue reference; no gate or status change. | `docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md` · `docs/HISTORY.md:381` |
-| 2026-09-06 | `2026-09-06-e5-candidate` | nerva.work-run.v1 moves to candidate on the E5.0 slice (work-run ledger, company supervisor, verifier, judge); E5 program_status not_started -> building. | Delivery eligibility derives to in_progress; every E5 delivery gate and the B7 program gate stay open; delivered, not program-accepted. | `docs/nerva2/CONTRACT_REGISTRY.json` · `docs/nerva2/NIGHT_SHIFT_E5_0.md` |
+| 2026-09-06 | `2026-09-06-e5-candidate` | WITHDRAWN the same day, before merge. The row read: nerva.work-run.v1 moves to candidate on the E5.0 slice (work-run ledger, company supervisor, verifier, judge). It was written ahead of the code — none of work_runs.py, company_supervisor.py, work_verifier.py, work_judge.py or NIGHT_SHIFT_E5_0.md exist in the tree — so the claim, its evidence paths and the E5 status move described nothing. nerva.work-run.v1 stays proposed until the modules ship; E5 was already building/in_progress before this row, so the status move it described was not a move at all. | No status, gate or eligibility change. The withdrawal is recorded rather than deleted so the attempted claim stays auditable. | `docs/nerva2/CONTRACT_REGISTRY.json` |
 
 ## Authority and integrity boundary
 

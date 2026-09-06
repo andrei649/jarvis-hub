@@ -1884,6 +1884,11 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
                 "properties": {
                     "target": {"type": "string", "maxLength": 64},
                     "command": {"type": "string", "maxLength": 4000},
+                    # 1.1.0: the local-host backend needs a working directory and a
+                    # bounded timeout. The durable approval id is NOT here on purpose —
+                    # it arrives out of band so a model cannot forge one.
+                    "cwd": {"type": "string", "maxLength": 1024},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 600},
                 },
                 "required": ["target", "command"],
                 "additionalProperties": False,

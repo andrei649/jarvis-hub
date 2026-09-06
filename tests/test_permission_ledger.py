@@ -227,7 +227,8 @@ def test_request_refuses_bad_input_before_enqueue(ledger):
     assert enq.calls == []
 
 
-def test_request_honours_a_kernel_deny(tmp_path):
+def test_request_honours_a_kernel_deny(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
     seen = []
 
     def authorize(action, capability=None):
@@ -246,7 +247,29 @@ def test_request_honours_a_kernel_deny(tmp_path):
         led.close()
 
 
-def test_request_with_kernel_queue_still_enqueues(tmp_path):
+def test_kernel_hook_is_not_consulted_while_the_kernel_flag_is_off(tmp_path, monkeypatch):
+    """Default-off, like FileTools and ToolRPCServer: the hook is bound at boot but
+    only consulted once JARVIS_ACTION_KERNEL is on, so the ask still reaches the inbox."""
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    seen = []
+
+    def authorize(action, capability=None):
+        seen.append(action)
+        return Decision(Verdict.DENY, reason="kill_switch")
+
+    led = pl.PermissionLedger(tmp_path / "p.db", enabled=True, authorizer=authorize, secret_store=_Secrets())
+    try:
+        enq = _Enqueue()
+        assert led.request("site", "example.com", "once", "browser", enq) == 101
+        assert seen == []
+        assert len(enq.calls) == 1
+    finally:
+        led.close()
+
+
+def test_request_with_kernel_queue_still_enqueues(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+
     def authorize(action, capability=None):
         return Decision(Verdict.QUEUE, reason="approval_required", tier=2)
 

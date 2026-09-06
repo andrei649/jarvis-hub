@@ -108,7 +108,12 @@ PURGE_PRIVATE_DIRS: tuple[str, ...] = PRIVATE_INGESTION_ROOTS
 # Retained for callers and tests that name specific stores, and because the DB/JSON passes
 # below still describe *how* each kind is erased. They are no longer the definition of
 # WHAT is erased — the KEEP sets above are.
-PURGE_DBS: tuple[str, ...] = ("missions.db", "autonomy.db", "analytics.db")
+PURGE_DBS: tuple[str, ...] = (
+    "missions.db", "autonomy.db", "analytics.db",
+    # The consent ledger: which apps/sites/roots the owner allowed Nerva to touch,
+    # and the audit of every widening. Owner content, so a forget clears it too.
+    "permissions.db",
+)
 # canvas.json holds explicitly saved assistant replies (Canvas artifacts) — user content;
 # CanvasStore._deserialize({}) loads the reset file as an empty store.
 PURGE_JSON: tuple[str, ...] = ("notes.json", "canvas.json")

@@ -97,6 +97,23 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # PromotionProposal exists (make_skill_install_kernel_gate); even a kernel
     # GRANT cannot bypass the permanent owner-approval floor (GAP-3).
     "skill.install": Mediation.KERNEL,
+    # 1.1.0 operator wave — widening what Nerva may touch is itself a privileged
+    # act: the consent ledger crosses the kernel at request time and the grant is
+    # written only from the approved task's execution (never by the requester).
+    "permission.grant": Mediation.KERNEL,
+    # Governed host shell. The hardline denylist and TERMINAL_EXEC_CONTRACT run
+    # first; a durable accepted task is required before any process exists, and
+    # the irreversible tier keeps this at the approval QUEUE floor.
+    "terminal.exec": Mediation.KERNEL,
+    # A governed file write/delete crosses the kernel before the bytes move; the
+    # previous bytes are snapshotted so the rollback contract is real.
+    "file.write": Mediation.KERNEL,
+    # Pulling a local model is reversible (ollama rm) but spends disk and
+    # bandwidth on the owner's box, so it crosses the facade like any actuation.
+    "model.pull": Mediation.KERNEL,
+    # Writing the redacted day report to disk leaves the process, so the export
+    # crosses the kernel before the file is created; a QUEUE refuses it outright.
+    "report.export": Mediation.KERNEL,
 }
 
 

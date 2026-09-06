@@ -16,6 +16,7 @@ via the back-ref so the public surface stays byte-compatible.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import os
 from datetime import datetime
@@ -27,10 +28,23 @@ from .orchestrator_bindings import bind_external_orchestrator_attribute
 from .system_profiles import active_posture
 from .workflows.pending_queue import WorkflowPendingQueue
 
+# The durable approved task for the turn the trusted executor is running. Set only
+# by the TaskExecutor handler below and read by the gated tools that need to prove a
+# human accepted THIS row; deliberately not a model-facing tool argument, so a model
+# can never forge an approval id through the input schema.
+_APPROVED_TASK: contextvars.ContextVar = contextvars.ContextVar(
+    "nerva_approved_task", default=None
+)
+
 # Gated ToolRPC tools whose approved tasks may reach trusted execution. Every
-# entry actuates only through its own governed rail (desktop kernel steps,
-# target policy plane) after durable ask-tier approval.
-_TRUSTED_TOOL_RPC_KINDS = frozenset({"toolrpc.desktop_run", "toolrpc.terminal_run"})
+# entry actuates only through its own governed rail (desktop kernel steps, target
+# policy plane, file scope + snapshot) after durable ask-tier approval.
+_TRUSTED_TOOL_RPC_KINDS = frozenset({
+    "toolrpc.desktop_run",
+    "toolrpc.terminal_run",
+    "toolrpc.file_write",
+    "toolrpc.file_delete",
+})
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -450,25 +464,57 @@ class AutonomyCoordinator:
             trusted_execution=True,
         )
 
+        def _durable_terminal_approval(task_id):
+            """True only when *task_id* is the running, human-accepted terminal row.
+
+            The local-host backend refuses to spawn anything without this, so the
+            check re-reads the durable queue rather than trusting the caller —
+            same shape as ``_approved_execution_context``.
+            """
+            queue = getattr(self._orch, "autonomy_queue", None)
+            if queue is None or isinstance(task_id, bool) or not isinstance(task_id, int):
+                return False
+            persisted = queue.get(task_id)
+            if persisted is None:
+                return False
+            return (
+                persisted.status == "running"
+                and persisted.kind == "toolrpc.terminal_run"
+                and persisted.autonomy_level == "ask"
+                and persisted.decision in {"accept", "edit"}
+                and bool(persisted.decided_by)
+                and str(persisted.decided_by).lower() != "policy"
+            )
+
         async def _rpc_terminal_run(args):
             """Run a command on a named target AFTER durable approval (GAP-9).
 
             Policy layers, outermost first: JARVIS_TERMINAL_TARGETS default-off
             flag → this gated tool's kernel/approval rail → the target policy
-            plane (audit-chained authorize) → the docker-only transport.
+            plane (audit-chained authorize) → the transport (docker, or the
+            local host behind JARVIS_TERMINAL_LOCAL_HOST). The durable task id
+            comes from the executor's contextvar, never from the model's args.
             """
             from .env_config import env_flag
             from .environments import GovernedTargetRunner
 
             if not env_flag("JARVIS_TERMINAL_TARGETS"):
                 return {"ok": False, "reason": "terminal_targets_disabled"}
+            approved = _APPROVED_TASK.get()
+            approved_task_id = getattr(approved, "id", None) if approved is not None else None
             runner = GovernedTargetRunner(
-                self._target_registry(), getattr(self._orch, "sandbox", None)
+                self._target_registry(),
+                getattr(self._orch, "sandbox", None),
+                authorizer=action_kernel,
+                approval_check=_durable_terminal_approval,
             )
             return await runner.run(
                 target=args["target"],
                 agent="jarvis",
                 command=args["command"],
+                approved_task_id=approved_task_id,
+                cwd=args.get("cwd"),
+                timeout=args.get("timeout"),
             )
 
         server.register_tool(
@@ -481,6 +527,8 @@ class AutonomyCoordinator:
                 "properties": {
                     "target": {"type": "string", "maxLength": 64},
                     "command": {"type": "string", "maxLength": 4000},
+                    "cwd": {"type": "string", "maxLength": 1024},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 600},
                 },
                 "required": ["target", "command"],
                 "additionalProperties": False,
@@ -636,6 +684,20 @@ class AutonomyCoordinator:
             },
             capability_id="tool:time",
         )
+        # 1.1.0 operator wave — governed file read/list/write/delete. Default-off:
+        # register_file_tools returns [] and touches nothing unless JARVIS_FILE_TOOLS
+        # is set. The two mutating tools are gated, so they can only run from an
+        # owner-approved durable task, and each write crosses the Action Kernel with
+        # a snapshot already taken so the rollback contract is real.
+        from .file_tools import FileTools, register_file_tools
+
+        register_file_tools(
+            server,
+            FileTools.from_env(
+                authorizer=action_kernel,
+                audit=getattr(self._orch, "intent_log", None),
+            ),
+        )
 
         acquisition = AcquisitionRuntime(
             enabled=lambda: _get_setting("acquisition.enabled", False) is True,
@@ -654,7 +716,14 @@ class AutonomyCoordinator:
         bind_external_orchestrator_attribute(self._orch, "agent_tool_runtime", runtime)
 
         async def _approved_desktop_tool_rpc_execute(task):
-            return await server.execute(task, execution_context=execution_token)
+            # Publish the durable row for the length of this turn so a gated tool can
+            # prove a human accepted *this* task without the id passing through the
+            # model-facing schema. Reset in `finally` so nothing leaks to the next turn.
+            token = _APPROVED_TASK.set(task)
+            try:
+                return await server.execute(task, execution_context=execution_token)
+            finally:
+                _APPROVED_TASK.reset(token)
 
         self._approved_desktop_tool_rpc_execute = _approved_desktop_tool_rpc_execute
         self._targets = None
@@ -788,6 +857,11 @@ class AutonomyCoordinator:
             ),
         )
         executor.register("writeback", self._orch.writeback.execute)
+        # TranscriptWatcher enqueues `create_task`; WriteBackBroker.execute accepts
+        # both spellings. Without these two rows an approved transcript task fell
+        # through to the generic LLM fallback instead of creating anything.
+        executor.register("create_task", self._orch.writeback.execute)
+        executor.register("task.create", self._orch.writeback.execute)
 
         # H12.21 — governed social actions (X/Twitter post/reply/DM). Same
         # governance: approved `social.*` tasks resolve OAuth/bearer credentials
@@ -882,6 +956,38 @@ class AutonomyCoordinator:
             "toolrpc.terminal_run",
             self._approved_desktop_tool_rpc_execute,
         )
+        # 1.1.0 operator wave — the two mutating file tools take the same trusted
+        # execution path: a gated tool only runs from the durable approved task.
+        executor.register(
+            "toolrpc.file_write",
+            self._approved_desktop_tool_rpc_execute,
+        )
+        executor.register(
+            "toolrpc.file_delete",
+            self._approved_desktop_tool_rpc_execute,
+        )
+        # 1.1.0 operator wave — the durable consent ledger. The request half runs at
+        # the routers/brokers (crossing the kernel first); the grant row itself is
+        # only ever written from here, out of the owner-approved task's execution, so
+        # a requester can never widen its own permissions.
+        from .permission_ledger import PermissionLedger
+
+        try:
+            bind_external_orchestrator_attribute(
+                self._orch,
+                "permission_ledger",
+                # secret_store stays default: os_input restore tokens go to the
+                # encrypted SecretStore (set/get/delete), not the handle-shaped
+                # SecretBroker facade.
+                PermissionLedger(authorizer=_broker_kernel),
+            )
+        except Exception:
+            logger.warning("permission ledger unavailable; consent stays default-deny",
+                           exc_info=True)
+        ledger = getattr(self._orch, "permission_ledger", None)
+        if ledger is not None:
+            executor.register("permission.grant", ledger.apply_grant)
+
         acquisition = getattr(self._orch, "acquisition", None)
         if acquisition is not None:
             from .acquisition.promotion import make_skill_install_kernel_gate
@@ -927,6 +1033,10 @@ class AutonomyCoordinator:
                 runner=_subagent_runner,
                 max_concurrent=self._subagent_concurrency(),
                 max_depth=int(self._orch.get_setting("autonomy.max_subagent_depth", 8) or 8),
+                # Concurrency caps how many run at once; this caps how many may be
+                # spawned in total for the life of the process, so a delegation loop
+                # burns out instead of running all night. 0 keeps it unbounded.
+                budget=self._subagent_spawn_budget(),
             ),
         )
 
@@ -935,6 +1045,19 @@ class AutonomyCoordinator:
         # the concrete executor; the worker still receives only ``execute``.
         bind_external_orchestrator_attribute(self._orch, "task_executor", executor)
         return executor
+
+    def _subagent_spawn_budget(self):
+        """Total-spawn budget for one boot, or ``None`` when the setting is 0.
+
+        Reads ``autonomy.max_subagent_spawns_per_boot``; an unreadable or
+        non-positive value means unbounded, which is the pre-1.1.0 behaviour."""
+        from .iteration_budget import IterationBudget
+
+        try:
+            cap = int(self._orch.get_setting("autonomy.max_subagent_spawns_per_boot", 50) or 0)
+        except (TypeError, ValueError):
+            return None
+        return IterationBudget(cap) if cap > 0 else None
 
     def _subagent_concurrency(self) -> int:
         """Effective subagent concurrency cap (0.62 system-profile consumer).

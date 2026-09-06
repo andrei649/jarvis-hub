@@ -139,7 +139,13 @@ def test_manifest_truth_after_reconciliation(fixture_repo: Path) -> None:
     assert e11["reason_code"] == "a1_section0_run_record_owed"
     b7 = {b["id"]: b for b in streams["E5"]["blockers"]}["E5-program-B7"]
     assert "#918" in b7["note"] and "not program-accepted" in b7["note"]
-    assert data["contract_registry"]["statuses"]["nerva.work-run.v1"] == "candidate"
+    # The mirror is a projection of the registry, so compare it to the registry rather
+    # than to a word: a hard-coded status turns into a false claim the moment the real
+    # row moves, which is exactly what it is here to catch.
+    registry_now = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    assert data["contract_registry"]["statuses"] == {
+        c["id"]: c["status"] for c in registry_now["contracts"]
+    }
     assert data["evidence_snapshot"]["live_issue_state_verified_by_checker"] is False
 
 
@@ -243,9 +249,18 @@ def test_contract_status_drift_fails(fixture_repo: Path) -> None:
 
 
 def test_dead_contract_evidence_path_fails(fixture_repo: Path) -> None:
-    (fixture_repo / "agents/core/autonomy/work_runs.py").unlink()
+    """Deleting a file the registry cites must be caught by name.
+
+    The path is READ from the registry rather than written here: an earlier version
+    named a file the registry had stopped citing, so the red path stopped exercising
+    the check it exists to prove.
+    """
+    registry = json.loads((fixture_repo / checker.REGISTRY_RELATIVE).read_text(encoding="utf-8"))
+    contract = next(c for c in registry["contracts"] if c["id"] == "nerva.work-run.v1")
+    relative = contract["evidence_paths"][0]
+    (fixture_repo / relative).unlink()
     report = checker.check_manifest(repo_root=fixture_repo)
-    assert "dead_contract_evidence_path:nerva.work-run.v1:agents/core/autonomy/work_runs.py" in report.errors
+    assert f"dead_contract_evidence_path:nerva.work-run.v1:{relative}" in report.errors
 
 
 def test_stale_markdown_view_fails_and_write_repairs_it(fixture_repo: Path) -> None:
@@ -369,16 +384,24 @@ def test_real_manifest_is_fully_green_once_siblings_land() -> None:
     assert report.ok is True
 
 
-def test_real_contract_registry_marks_work_run_candidate() -> None:
+def test_real_contract_registry_work_run_row_claims_only_what_exists() -> None:
+    """The Night Shift row's authority is fixed; its status is whatever the shipped code
+    earns, and every evidence path it names must be a real file.
+
+    This deliberately does NOT pin the status word. The row was briefly written as
+    `candidate` ahead of the E5.0 modules, naming four files that did not exist; a test
+    that hard-codes the word makes that kind of claim look verified. What must always
+    hold is the pair below: the authority never widens, and the evidence is real.
+    """
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
     contract = next(c for c in registry["contracts"] if c["id"] == "nerva.work-run.v1")
-    assert contract["status"] == "candidate"
     assert contract["authority"] == "delegated_execution_only"
-    assert {
-        "agents/core/autonomy/work_runs.py",
-        "agents/core/autonomy/company_supervisor.py",
-        "agents/core/autonomy/work_verifier.py",
-    } <= set(contract["evidence_paths"])
+    assert contract["status"] in checker.CONTRACT_STATES
+    # `accepted` is the owner's word, never the program's.
+    assert contract["status"] != "accepted"
+    assert contract["evidence_paths"]
+    for relative in contract["evidence_paths"]:
+        assert (REPO / relative).is_file(), relative
     assert all(c["status"] in checker.CONTRACT_STATES for c in registry["contracts"])
     assert copy.deepcopy(registry) == registry
 

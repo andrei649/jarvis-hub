@@ -128,13 +128,17 @@ def test_contract_denies_bad_tag_lan_url_and_bad_cap():
 
 
 def test_manifest_is_valid_and_reversible():
-    assert ms.MODEL_PULL_MANIFEST.id == "action:model.pull"
-    assert ms.MODEL_PULL_MANIFEST.risk == "reversible"
-    assert ms.MODEL_PULL_MANIFEST.rollback.mode == "compensate"
-    assert ms.MODEL_PULL_MANIFEST.rollback.handler_ref.endswith(":ollama_delete")
+    """The pull's manifest lives with every other action kind — one registry, no shim."""
     from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
 
-    rows = ms.manifests_with_model_pull(ACTION_CAPABILITY_MANIFESTS)
+    manifest = ACTION_CAPABILITY_MANIFESTS["model.pull"]
+    assert manifest.id == ms.MODEL_PULL_CAPABILITY_ID == "action:model.pull"
+    assert manifest.action_kind == ms.MODEL_PULL_KIND
+    assert manifest.risk == "reversible"
+    assert manifest.rollback.mode == "compensate"
+    assert manifest.rollback.handler_ref.endswith(":ollama_delete")
+    assert manifest.contract_ref == "agents.core.llm.model_setup:MODEL_PULL_CONTRACT"
+    rows = list(ACTION_CAPABILITY_MANIFESTS.values())
     assert sum(1 for r in rows if r.id == "action:model.pull") == 1
 
 
@@ -353,7 +357,7 @@ def _facade(svc, verdict, reason=""):
     from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
 
     api = CapabilityActionAPI(authorizer=authorizer,
-                              manifests=ms.manifests_with_model_pull(ACTION_CAPABILITY_MANIFESTS))
+                              manifests=list(ACTION_CAPABILITY_MANIFESTS.values()))
     api.register(ms.MODEL_PULL_CAPABILITY_ID, svc.handle_pull)
     return api, seen
 

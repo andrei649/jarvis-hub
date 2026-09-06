@@ -69,6 +69,10 @@ RULES = [
     # AD day report: the redacted, shareable projection of one day plus Proof-of-Action
     # receipts — Console → Start (TodayReceiptPanel), the cockpit's own narrative tier.
     ("/api/report/", "cockpit"),
+    # 1.1.0 operator wave: the observe-only host probe — what this machine can offer
+    # the computer operator and what is blocking — Console → Build (HostReadinessPanel),
+    # beside the desktop allowlist and operator surfaces it explains.
+    ("/api/host/", "build"),
     ("/ticker", "cockpit"),
     ("/tasks", "cockpit"),
     ("/api/cognition", "cockpit"),

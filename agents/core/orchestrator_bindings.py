@@ -28,6 +28,7 @@ ExternalBindingName = Literal[
     "channel_inbox",
     "oracle_bridge",
     "argus",
+    "permission_ledger",
 ]
 
 ExternalBindingCallsite = tuple[str, int, int]
@@ -36,19 +37,20 @@ ExternalBindingCallsite = tuple[str, int, int]
 EXTERNAL_BINDING_WRITERS: Mapping[str, tuple[ExternalBindingCallsite, ...]] = MappingProxyType(
     {
         "ambient_runtime": (("agents/core/ambient/runtime.py", 216, 16),),
-        "acquisition": (("agents/core/autonomy_coordinator.py", 643, 8),),
-        "tool_rpc": (("agents/core/autonomy_coordinator.py", 653, 8),),
-        "agent_tool_runtime": (("agents/core/autonomy_coordinator.py", 654, 8),),
-        "writeback": (("agents/core/autonomy_coordinator.py", 780, 8),),
-        "social": (("agents/core/autonomy_coordinator.py", 797, 8),),
-        "channel_replies": (("agents/core/autonomy_coordinator.py", 818, 8),),
-        "call_broker": (("agents/core/autonomy_coordinator.py", 838, 8),),
-        "node_mesh": (("agents/core/autonomy_coordinator.py", 858, 8),),
-        "subagents": (("agents/core/autonomy_coordinator.py", 923, 8),),
-        "task_executor": (("agents/core/autonomy_coordinator.py", 936, 8),),
+        "acquisition": (("agents/core/autonomy_coordinator.py", 705, 8),),
+        "tool_rpc": (("agents/core/autonomy_coordinator.py", 715, 8),),
+        "agent_tool_runtime": (("agents/core/autonomy_coordinator.py", 716, 8),),
+        "writeback": (("agents/core/autonomy_coordinator.py", 849, 8),),
+        "social": (("agents/core/autonomy_coordinator.py", 871, 8),),
+        "channel_replies": (("agents/core/autonomy_coordinator.py", 892, 8),),
+        "call_broker": (("agents/core/autonomy_coordinator.py", 912, 8),),
+        "node_mesh": (("agents/core/autonomy_coordinator.py", 932, 8),),
+        "subagents": (("agents/core/autonomy_coordinator.py", 1029, 8),),
+        "task_executor": (("agents/core/autonomy_coordinator.py", 1046, 8),),
         "last_memory_maintenance": (("agents/core/scheduler_service.py", 323, 8),),
         "channel_inbox": (("agents/web.py", 336, 4),),
         "oracle_bridge": (("agents/core/plugin_manager.py", 146, 8),),
+        "permission_ledger": (("agents/core/autonomy_coordinator.py", 976, 12),),
         "argus": (("agents/core/plugin_manager.py", 192, 8),),
     }
 )
@@ -73,6 +75,7 @@ class ExternalOrchestratorBindings(Protocol):
     channel_inbox: Any | None
     oracle_bridge: Any | None
     argus: Any | None
+    permission_ledger: Any | None
 
 
 def bind_external_orchestrator_attribute(

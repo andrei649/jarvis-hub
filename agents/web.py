@@ -1112,6 +1112,10 @@ from agents.core.routers.ambient import router as _ambient_router  # noqa: E402
 from agents.core.routers.self_improvement import router as _self_improvement_router  # noqa: E402
 from agents.core.routers.house import router as _house_router  # noqa: E402
 from agents.core.routers.backup import router as _backup_router  # noqa: E402
+from agents.core.routers.host_probe import router as _host_probe_router  # noqa: E402
+from agents.core.routers.model_setup import router as _model_setup_router  # noqa: E402
+from agents.core.routers.permissions import router as _permissions_router  # noqa: E402
+from agents.core.routers.report import router as _report_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
@@ -1237,6 +1241,10 @@ app.include_router(_acquisition_router)
 app.include_router(_ambient_router)
 app.include_router(_self_improvement_router)
 app.include_router(_backup_router)
+app.include_router(_host_probe_router)
+app.include_router(_model_setup_router)
+app.include_router(_permissions_router)
+app.include_router(_report_router)
 
 
 # /api/digest/run (+ DigestRunBody) and /api/schedule/parse extracted to routers/tools.py (CLN-3)

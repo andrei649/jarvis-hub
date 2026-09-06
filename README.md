@@ -3,7 +3,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-7329-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-8020-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-1.0.0-orange)
 <!-- project-status:badges:end -->
 
@@ -97,24 +97,40 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **7,329** · frontend **936** · mobile **110**. Route surface: **442**.
+Generated test matrix: backend **8,020** · frontend **974** · mobile **110**. Route surface: **454**.
 <!-- project-status:run:end -->
 
-### Windows 11 — one-click (no terminal needed)
+**One step per OS.** Every path ends the same way: a `.venv` with the **hash-pinned**
+dependency set, a passed **install smoke** (real boot + `/readyz` + one deterministic chat turn),
+and the Command Center open at `http://127.0.0.1:8080/v2` — bound to **loopback only**. No cloud
+key is asked for at any point. Requires **Python 3.12+**; a local model runtime (Ollama / LM Studio)
+is detected, never installed.
 
-1. **`INSTALL.bat`** — first time on a clean PC. Checks/installs Python + Git
-   (via winget), gets the code, builds the environment, installs everything,
-   runs the tests. Double-click and follow the prompts.
-   *(PowerShell users: `install.ps1` is the same installer as a script — no
-   double-click, no winget; it assumes Python/Node are already present.)*
-2. **`UPDATE.bat`** — double-click to pull the latest from GitHub, install
-   dependencies, and run the tests. Run this whenever you want the newest version.
-3. **`START.bat`** — double-click to launch JARVIS (`:8080`) and open the HUD.
-   Keep its window open; close it to stop the server. The optional companions are
-   **opt-in**: `set JARVIS_WORLDVIEW=1` also starts the 4D OSINT globe (`:3000`),
-   `set JARVIS_SIGNAL_LAYER=1` also starts the Signal Layer (`:8787`).
+```bash
+# Linux / macOS — hosted one-liner (clones into ~/nerva, or $NERVA_DIR)
+curl -fsSL https://raw.githubusercontent.com/andrei649/jarvis-hub/main/install.sh | bash
 
-### Manual (any OS)
+# …or, from a checkout
+./install.sh                 # venv + locked deps + smoke, then starts Nerva and opens /v2
+```
+
+**Windows 11:** double-click **`INSTALL.bat`** — it checks for Python 3.12 (offers `winget` when
+missing), builds the environment from the lock, and then offers to start Nerva; **`START.bat`**
+launches it later. *(PowerShell / packaged executable: `packaging\windows\install.ps1 -Launch`.)*
+
+```bash
+# Docker, if you would rather not touch the host at all (loopback posture, same as native)
+docker compose -f docker-compose.quickstart.yml up --build
+
+# Something not working? One command, named reasons, exit 0/1
+python scripts/doctor.py
+```
+
+Full per-OS detail: **[`docs/INSTALL.md`](docs/INSTALL.md)**. Reaching the HUD from your phone or a
+second device on the LAN — what the boot guards refuse and the one supported way through:
+**[`docs/PHONE_ACCESS.md`](docs/PHONE_ACCESS.md)**.
+
+_Manual, if you prefer to drive it yourself:_
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
@@ -123,7 +139,9 @@ python serve.py              # → http://127.0.0.1:8080
 python -m pytest             # full offline suite — current count auto-synced in STATUS.md
 ```
 
-_Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + tests); `./start.sh` launches the server, WorldView when available, and the Signal Layer unless disabled.
+_Also on Windows:_ **`UPDATE.bat`** pulls the latest and reinstalls. The optional companions are
+**opt-in** on every platform: `JARVIS_WORLDVIEW=1` also starts the 4D OSINT globe (`:3000`),
+`JARVIS_SIGNAL_LAYER=1` also starts the Signal Layer (`:8787`).
 
 _Changed your mind?_ `./uninstall.sh --confirm` (`UNINSTALL.bat` on Windows) removes the
 installer-created software footprint (`.venv/`, WorldView's `node_modules/` + env files).
@@ -156,7 +174,7 @@ Your data is never touched unless you also pass `--purge-data`.
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **7,329** · frontend **936** · mobile **110** · **442** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **254 done · 33 delivered (runtime proof pending) · 14 open or blocked of 301 horizon rows** · source commit `c16d84e989ff`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **8,020** · frontend **974** · mobile **110** · **454** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **250 done · 38 delivered (runtime proof pending) · 13 open or blocked of 301 horizon rows** · source commit `c16d84e989ff`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for WorldView geoint, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
