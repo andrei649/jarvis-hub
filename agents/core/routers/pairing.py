@@ -84,3 +84,48 @@ async def pairing_set_code(body: PairingCodeBody):
     reg = _get_sender_pairing()
     reg.set_code(body.code)
     return nocache_json({"has_code": reg.has_code()})
+
+
+class PairingLinkBody(BaseModel):
+    channel: str = Field("telegram", max_length=32)
+    # The bot's @username, so the link can be built. Optional: without it the
+    # token is still returned and the caller assembles the URL itself.
+    bot_username: Optional[str] = Field(None, max_length=64)
+
+
+@router.post("/api/channels/pairing/link", dependencies=[Depends(admin_guard)])
+async def pairing_mint_link(body: PairingLinkBody):
+    """Mint a single-use pairing deeplink — the 60-second path.
+
+    Admin-guarded, because the token IS the credential: whoever holds it pairs.
+    It is returned exactly once and is never logged. The link is one-use and
+    expires in minutes, so a screenshot of it is worthless tomorrow.
+
+    Copying a code between two devices is where people give up, which is why this
+    exists; it is safe because the token can only ever pair one sender, once.
+    """
+    reg = _get_sender_pairing()
+    minted = reg.mint_deeplink(body.channel)
+    username = (body.bot_username or "").strip().lstrip("@")
+    url = f"https://t.me/{username}?start={minted['token']}" if username else ""
+    return nocache_json({
+        "ok": True,
+        "token": minted["token"],
+        "url": url,
+        "channel": minted["channel"],
+        "expires_at": minted["expires_at"],
+        "ttl_seconds": minted["ttl"],
+        "single_use": True,
+        # Said plainly, because a link that looks reusable gets treated as one.
+        "note": "one use, then dead. Anyone who opens it first is the one paired.",
+    })
+
+
+@router.post("/api/channels/pairing/link/revoke", dependencies=[Depends(admin_guard)])
+async def pairing_revoke_links():
+    """Invalidate every outstanding pairing link at once.
+
+    The button for "I pasted that in the wrong window". Narrowing, so it needs no
+    approval — the same shape as revoking a permission.
+    """
+    return nocache_json({"ok": True, "revoked": _get_sender_pairing().revoke_deeplinks()})

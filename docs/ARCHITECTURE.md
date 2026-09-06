@@ -184,6 +184,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/channels/gateway.py` | Message routing gateway (incl. inbound rate limit) | `Gateway.route` |
 | `agents/core/channels/webhook_channels.py` | HTTP webhook channels (WhatsApp/Signal/Matrix/Teams/Google Chat) | `WebhookChannel`, `build_send`, `parse_inbound` |
 | `agents/core/channels/send_rate_limit.py` | 0.44 opt-in per-channel **outbound** send rate limit (`JARVIS_CHANNEL_SEND_RATE[S]`) | `allow_send`, `SendRateLimiter`, `limit_for` |
+| `agents/core/channels/pairing.py` | Which senders may talk to Nerva, plus the **60-second path**: single-use Telegram deeplinks. The token is the credential — one use ever, 5-minute TTL, wrong/spent/expired indistinguishable, channel-bound, ≤20 outstanding (oldest dropped), revocable. Minting is admin-guarded (`POST /api/channels/pairing/link`) and returns the value exactly once | `SenderPairing`, `mint_deeplink`, `redeem_deeplink`, `outstanding_deeplinks`, `revoke_deeplinks`, `DEEPLINK_TTL_SECONDS` |
 
 ### Plugins
 

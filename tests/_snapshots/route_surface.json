@@ -298,6 +298,8 @@
   "POST /api/channels/inbox/{thread_id}/reply",
   "POST /api/channels/pairing/code",
   "POST /api/channels/pairing/decide",
+  "POST /api/channels/pairing/link",
+  "POST /api/channels/pairing/link/revoke",
   "POST /api/channels/pairing/request",
   "POST /api/channels/{channel_id}/inbound",
   "POST /api/coach/curriculum",

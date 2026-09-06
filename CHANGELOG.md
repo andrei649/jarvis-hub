@@ -170,6 +170,17 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **Pairing became a tap.** Copying a code between two devices is where onboarding loses people, so
+  the owner can now mint a single-use Telegram deeplink from the HUD and tap it on their phone. The
+  convenience is only acceptable because the token behaves like a credential and is built that way:
+  one use ever (a link that paired twice would pair whoever saw the screen next), a five-minute TTL
+  so a screenshot in a chat log rots, wrong/spent/expired **indistinguishable** from outside because
+  telling them apart tells a guesser which it was, a token minted for one channel unusable on
+  another, at most twenty outstanding with the oldest dropped first, and a revoke button for "I
+  pasted that in the wrong window". The `/start` message carrying it is **swallowed** — it never
+  reaches the orchestrator, the transcript or a log line, including on the failure and exception
+  paths, because until it is spent it is live. Minting is admin-guarded and returns the value
+  exactly once; it is never readable back.
 - `permissions.db` and `work_runs.db` join the purge and export sets.
 
 ## [1.0.0] — 2026-09-02

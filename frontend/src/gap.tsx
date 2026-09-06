@@ -638,7 +638,17 @@ export function PairingPanel() {
   const { d, e, loading, reload } = useApi('/api/channels/pairing', true, true);
   const senders = arr(d, 'senders');
   const [code, setCode] = useState('');
+  const [bot, setBot] = useState('');
+  const [link, setLink] = useState(null);
   const decide = (s, action) => actA('/api/channels/pairing/decide', { channel: s.channel, sender_id: s.sender_id || s.id, action }, reload);
+  /* The 60-second path: mint a one-use link and open it on the phone. The token is
+     a live credential until it is spent, so it is shown once, never re-fetched,
+     and cleared from the screen as soon as the owner revokes or mints again. */
+  const mintLink = () => actA('/api/channels/pairing/link',
+    { channel: 'telegram', bot_username: bot.trim() || null },
+    (r) => { setLink(r); reload(); });
+  const revokeLinks = () => actA('/api/channels/pairing/link/revoke', {},
+    () => { setLink(null); reload(); });
   return <Card title="SENDER PAIRING" live={asLive(d)} sub={d?.summary ? (d.summary.pending ?? senders.length) + ' pending' : senders.length} onReload={reload}>
     <State e={e} loading={loading} n={senders.length} />
     {senders.slice(0, 10).map((s, i) => <Row key={i}>
@@ -655,6 +665,20 @@ export function PairingPanel() {
       <input value={code} onChange={(ev) => setCode(ev.target.value)} placeholder="pairing code (empty = clear)" style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={() => actA('/api/channels/pairing/code', { code: code || null }, () => { setCode(''); reload(); })}>set code</button>
     </div>
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input value={bot} onChange={(ev) => setBot(ev.target.value)} placeholder="bot @username (for the link)" style={{ ...inpS, flex: 1 }} />
+      <button className="tool-btn" title="mint a one-use pairing link" onClick={mintLink}>pair a phone</button>
+      {(d?.summary?.deeplinks_outstanding ?? 0) > 0
+        && <button className="tool-btn" title="invalidate every outstanding link" onClick={revokeLinks}>revoke links</button>}
+    </div>
+    {link && <div style={{ ...mono, fontSize: 11, marginTop: 6, wordBreak: 'break-all' }}>
+      <div style={{ color: 'var(--green)' }}>{link.url || link.token}</div>
+      {/* Said plainly: a link that looks reusable gets treated as one. */}
+      <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 3 }}>
+        One use, then dead — whoever opens it first is the one paired. Expires in
+        {' '}{Math.round((link.ttl_seconds || 0) / 60)} min.
+      </div>
+    </div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>unknown senders are held until you decide (H12.19)</div>
   </Card>;
 }

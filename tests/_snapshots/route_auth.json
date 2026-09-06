@@ -302,6 +302,8 @@
   "POST /api/channels/inbox/{thread_id}/reply": "user",
   "POST /api/channels/pairing/code": "admin",
   "POST /api/channels/pairing/decide": "admin",
+  "POST /api/channels/pairing/link": "admin",
+  "POST /api/channels/pairing/link/revoke": "admin",
   "POST /api/channels/pairing/request": "open",
   "POST /api/channels/{channel_id}/inbound": "user",
   "POST /api/coach/curriculum": "user",

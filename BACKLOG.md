@@ -216,6 +216,18 @@
   *reported state carrying how long it has been*, never a blank and never a zero. Wired into
   `AutonomyWorker.apply_decision`, so it is recorded wherever a decision actually lands, and a
   failed metric write can never fail the decision. 40 tests.
+- [x] ✅ **AD-PAIR — pairing in one tap, without weakening pairing.**
+  Copying a code between two devices is where onboarding loses people, so the owner mints a
+  **single-use Telegram deeplink** from the HUD (`POST /api/channels/pairing/link`, admin-guarded,
+  the value returned exactly once and never readable back) and taps it on their phone. The
+  convenience is only acceptable because the token behaves like a credential: **one use ever** (a
+  link that paired twice would pair whoever saw the screen next), a **5-minute TTL** so a
+  screenshot in a chat log rots, wrong/spent/expired **indistinguishable** from outside (telling
+  them apart tells a guesser which it was), channel-bound so a Telegram link cannot pair Discord,
+  ≤20 outstanding with the oldest dropped, and `POST .../link/revoke` for "I pasted that in the
+  wrong window". The `/start` message carrying it is **swallowed** — it never reaches the
+  orchestrator, the transcript or a log line, on the success, failure *and* exception paths, since
+  until it is spent it is live. 25 pytest + 5 vitest.
 
 **Activation — the first ten minutes**
 

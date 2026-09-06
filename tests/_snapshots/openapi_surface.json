@@ -298,6 +298,8 @@
   "POST /api/channels/inbox/{thread_id}/reply": "channels_inbox_reply_api_channels_inbox__thread_id__reply_post",
   "POST /api/channels/pairing/code": "pairing_set_code_api_channels_pairing_code_post",
   "POST /api/channels/pairing/decide": "pairing_decide_api_channels_pairing_decide_post",
+  "POST /api/channels/pairing/link": "pairing_mint_link_api_channels_pairing_link_post",
+  "POST /api/channels/pairing/link/revoke": "pairing_revoke_links_api_channels_pairing_link_revoke_post",
   "POST /api/channels/pairing/request": "pairing_request_api_channels_pairing_request_post",
   "POST /api/channels/{channel_id}/inbound": "channel_inbound_api_channels__channel_id__inbound_post",
   "POST /api/coach/curriculum": "coach_curriculum_api_coach_curriculum_post",
