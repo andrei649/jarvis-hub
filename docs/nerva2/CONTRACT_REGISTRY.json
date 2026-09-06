@@ -107,9 +107,10 @@
       "id": "nerva.work-run.v1",
       "owner": "Night Shift",
       "authority": "delegated_execution_only",
-      "status": "proposed",
+      "status": "candidate",
       "unblocks": ["E5", "E10", "E11"],
-      "evidence_paths": ["agents/core/autonomy/missions.py", "agents/core/autonomy/queue.py", "agents/core/autonomy/worker.py"]
+      "evidence_paths": ["agents/core/autonomy/missions.py", "agents/core/autonomy/queue.py", "agents/core/autonomy/worker.py", "agents/core/autonomy/work_runs.py", "agents/core/autonomy/work_verifier.py", "agents/core/autonomy/work_judge.py", "agents/core/autonomy/company_supervisor.py"],
+      "candidate_note": "E5.0 candidate (2026-09-06): the work-run chain shipped — durable ledger, evidence verifier, goal judge and the supervising loop, default-off behind JARVIS_COMPANY_MODE, with 80 hermetic tests. delegated_execution_only holds structurally: the ledger refuses an unapproved goal, the supervisor hands every effect to the governed intake and records the durable task id, and nothing in the chain can mark a run succeeded except the judge after the verifier. Delivered, not program-accepted."
     },
     {
       "id": "nerva.scenario.v1",
@@ -144,7 +145,12 @@
     },
     {
       "date": "2026-09-06",
-      "change": "REVERTED the row above. It was written ahead of the code: work_runs.py, company_supervisor.py, work_verifier.py and work_judge.py do not exist in the tree, so the candidate claim and its four evidence paths described nothing. Status is back to proposed with only the three files that are real. A candidate claim is earned by shipped modules, never by an intended slice.",
+      "change": "REVERTED the row above. It was written ahead of the code: work_runs.py, company_supervisor.py, work_verifier.py and work_judge.py did not exist in the tree, so the candidate claim and its four evidence paths described nothing. Status went back to proposed with only the three files that were real. A candidate claim is earned by shipped modules, never by an intended slice.",
+      "authority_change": false
+    },
+    {
+      "date": "2026-09-06",
+      "change": "nerva.work-run.v1 proposed -> candidate, this time on shipped code: work_runs.py, work_verifier.py, work_judge.py and company_supervisor.py are in the tree with 80 hermetic tests (docs/nerva2/NIGHT_SHIFT_E5_0.md). Authority is unchanged at delegated_execution_only; every E5 delivery gate and the B7 program gate stay open.",
       "authority_change": false
     }
   ]

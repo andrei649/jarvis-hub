@@ -113,6 +113,9 @@ PURGE_DBS: tuple[str, ...] = (
     # The consent ledger: which apps/sites/roots the owner allowed Nerva to touch,
     # and the audit of every widening. Owner content, so a forget clears it too.
     "permissions.db",
+    # Company-mode work runs: the owner's goals, every step taken toward them and
+    # the verdicts. As much owner content as a mission is.
+    "work_runs.db",
 )
 # canvas.json holds explicitly saved assistant replies (Canvas artifacts) — user content;
 # CanvasStore._deserialize({}) loads the reset file as an empty store.

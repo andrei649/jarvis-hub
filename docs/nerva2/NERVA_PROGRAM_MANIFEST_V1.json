@@ -229,7 +229,8 @@
       "references": [
         {"kind": "issue", "value": 763},
         {"kind": "issue", "value": 818},
-        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/NIGHT_SHIFT_E5_0.md"}
       ]
     },
     {
@@ -299,7 +300,8 @@
       ],
       "references": [
         {"kind": "issue", "value": 765},
-        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/NIGHT_SHIFT_E5_0.md"}
       ]
     },
     {
@@ -400,7 +402,8 @@
       ],
       "references": [
         {"kind": "issue", "value": 768},
-        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/NIGHT_SHIFT_E5_0.md"}
       ]
     },
     {
@@ -595,7 +598,7 @@
   },
   "contract_registry": {
     "path": "docs/nerva2/CONTRACT_REGISTRY.json",
-    "sha256": "07d74039791e8307eed7229bca0090e5981dd236722f5371ac2beb7bea833832",
+    "sha256": "01c490cc62a7550a5207eeb20e66c5ade25ec8847f3f4d716f0ffa316b39f7c9",
     "statuses": {
       "nerva.observation.v1": "proposed",
       "nerva.atlas.snapshot.v1": "proposed",
@@ -605,7 +608,7 @@
       "nerva.episode.v1": "proposed",
       "nerva.lesson.v1": "proposed",
       "nerva.preference.v1": "proposed",
-      "nerva.work-run.v1": "proposed",
+      "nerva.work-run.v1": "candidate",
       "nerva.scenario.v1": "proposed",
       "nerva.benchmark.v1": "proposed",
       "nerva.evidence.v1": "evolves_existing"
@@ -644,8 +647,15 @@
       "id": "2026-09-06-e5-candidate",
       "date": "2026-09-06",
       "decision": "WITHDRAWN the same day, before merge. The row read: nerva.work-run.v1 moves to candidate on the E5.0 slice (work-run ledger, company supervisor, verifier, judge). It was written ahead of the code — none of work_runs.py, company_supervisor.py, work_verifier.py, work_judge.py or NIGHT_SHIFT_E5_0.md exist in the tree — so the claim, its evidence paths and the E5 status move described nothing. nerva.work-run.v1 stays proposed until the modules ship; E5 was already building/in_progress before this row, so the status move it described was not a move at all.",
-      "effect": "No status, gate or eligibility change. The withdrawal is recorded rather than deleted so the attempted claim stays auditable.",
+      "effect": "No status, gate or eligibility change at the time. The withdrawal is recorded rather than deleted so the attempted claim stays auditable. The modules shipped later the same day and the contract moved to candidate on that evidence — see the 2026-09-06-e5-shipped row.",
       "evidence": ["docs/nerva2/CONTRACT_REGISTRY.json"]
+    },
+    {
+      "id": "2026-09-06-e5-shipped",
+      "date": "2026-09-06",
+      "decision": "nerva.work-run.v1 moves to candidate on the E5.0 work-run chain, now in the tree: work_runs.py (durable ledger), work_verifier.py (evidence), work_judge.py (goal fit) and company_supervisor.py (the loop), default-off behind JARVIS_COMPANY_MODE with 80 hermetic tests.",
+      "effect": "Contract status only. Authority stays delegated_execution_only; E5 remains building/in_progress and every E5 delivery gate plus the B7 program gate stay open. Delivered, not program-accepted.",
+      "evidence": ["docs/nerva2/CONTRACT_REGISTRY.json", "docs/nerva2/NIGHT_SHIFT_E5_0.md"]
     }
   ]
 }

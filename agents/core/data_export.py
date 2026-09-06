@@ -44,6 +44,9 @@ EXPORT_DBS: tuple[str, ...] = (
     # tokens are NOT in here: they live in the SecretStore under
     # permission.os_input.<grant_id> and travel with the secrets path.
     "permissions.db",
+    # Company-mode work runs: goals, steps and verdicts. An export that omitted
+    # them would leave out what Nerva actually spent the owner's nights doing.
+    "work_runs.db",
 )
 
 # Live JSON content stores. The per-session free-text note lives in notes.json,

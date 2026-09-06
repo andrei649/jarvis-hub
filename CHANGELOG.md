@@ -72,6 +72,47 @@ privileged effect still crosses the Action Kernel and the approval queue.
   (`Orchestrator.process()` binds no turn origin — an approval-volume owner decision). T-0.63's
   72h soak half remains an owner lane; the harness does not replace it.
 
+### Wave 2026-09-06 (part 2) — the operator is wired, and the company loop exists
+
+The seventeen slices above were isolated modules. This part registers them in the running
+system and adds the work-run chain the "24/7 company" goal needs. Still nothing changes by
+default: every new capability is off behind its own flag.
+
+- **The action plane went from 21 to 26 kinds.** `permission.grant`, `terminal.exec`,
+  `file.write`, `model.pull` and `report.export` are registered kernel-mediated, each with a
+  capability manifest carrying its real rollback contract, and each with a live exerciser in the
+  action-auth matrix — so "kernel-mediated" is proved against the production entry point rather
+  than asserted in a snapshot. The permission ledger's kernel hook now honours
+  `JARVIS_ACTION_KERNEL` like every other hook; it was the one consulted with the flag off.
+- **The operator's routes are mounted and its executors wired.** The four new routers are on the
+  app (all twelve routes user-guarded); `toolrpc.file_write` / `toolrpc.file_delete` joined the
+  trusted-execution kinds; `terminal_run` now crosses the kernel with a durable approval check
+  whose task id reaches it through a contextvar set by the executor — deliberately *not* through
+  the model-facing schema, so a model cannot forge an approval. The consent ledger is an
+  orchestrator binding and `permission.grant` executes only from the owner-approved task.
+- **Company mode (E5.0), default-off behind `JARVIS_COMPANY_MODE`.** A work run is one
+  owner-approved goal worked across turns, sessions and reboots. Four components, each able to do
+  exactly one thing: a durable **ledger** (`work_runs.py` — strict transitions, hard budgets for
+  steps/seconds/deadline/owner-interrupts, one open run per goal, a fingerprint per row, and a
+  refusal to open on a goal nobody approved); an evidence **verifier** (`work_verifier.py` — a
+  check with no probe is `unverifiable`, never `passed`; a broken probe is a failure, not a skip);
+  a goal **judge** (`work_judge.py` — fail-closed, scope a hard boundary, and an optional LLM
+  rubric that can only ever *withhold* a pass); and the **supervisor** (`company_supervisor.py` —
+  one tick one step, stop read before planning, a refusal recorded as a step that spends budget,
+  and no way to mark a run succeeded itself). 80 hermetic tests.
+  [`docs/nerva2/NIGHT_SHIFT_E5_0.md`](docs/nerva2/NIGHT_SHIFT_E5_0.md).
+- **Two HUD surfaces instead of two punch-list rows.** A Host Readiness panel over the
+  observe-only probe — tri-state permissions render as *unknown*, never as a guess, and each
+  refusal shows the backend's own hint — and steer/stop controls on running sub-agent rows, where
+  an undelivered steer reads as "recorded, not delivered" rather than as success.
+- **Two honesty corrections.** `nerva.work-run.v1` had been moved to `candidate` naming four E5.0
+  modules that did not exist; the claim, its manifest reference and its reconciliation row were
+  withdrawn, the tests that pinned the word now read the registry, and the status was re-raised
+  only once the modules shipped. Separately, the import dry-run guard compared a WAL database
+  byte-for-byte, which a checkpoint breaks under load; it now compares rows, with a test proving a
+  written row is still caught.
+- `permissions.db` and `work_runs.db` join the purge and export sets.
+
 ## [1.0.0] — 2026-09-02
 
 The 1.0 line: every feature horizon (H1–H23 + WorldView O19) delivered, the productionization

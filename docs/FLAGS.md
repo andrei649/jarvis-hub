@@ -189,6 +189,29 @@ own on this page) still decides whether a real browser runtime may start at all.
 (`agents/core/browser_transport.py`) so navigation **can** start; `firefox`/`webkit`
 stay transport-less and refuse `pinned_transport_requires_chromium`.
 
+### `JARVIS_COMPANY_MODE`
+
+**Default: OFF** (`autonomy/company_supervisor.py` `FLAG`, plus
+`SupervisorConfig.enabled`, which defaults to `False` independently — a supervisor
+built by accident still does nothing).
+
+**ON:** the runtime may construct a `CompanySupervisor` and tick an open work run:
+a single owner-approved goal worked continuously across turns and reboots
+(`autonomy/work_runs.py`, `work_verifier.py`, `work_judge.py`).
+
+What the flag does **not** change: who may authorise an effect. Every action the
+supervisor arranges is handed to the same governed intake as everything else and
+lands in the decision inbox as an ask-tier task — the contract's authority is
+`delegated_execution_only`. A run cannot open without an owner-approved goal, a
+step that changed something with no durable task id fails verification, and only
+the judge (after the verifier) can mark a run succeeded.
+
+**Cost:** an active run consumes its own budget — steps, wall-clock, deadline and
+a hard cap on how many times it may interrupt you. Running out of interrupts
+blocks the run rather than ending it, so the work waits instead of nagging.
+**Revert:** unset; every tick answers `disabled` and no run is opened. Existing
+run rows stay in `work_runs.db` as a record and can be purged with a forget.
+
 ### `JARVIS_MODEL_PULL`
 
 **Default: OFF** (`routers/model_setup.py` `_enabled`, `env_flag`).
@@ -306,6 +329,7 @@ targets outside `data_root()` are refused by name; a misspelled value stays off
 | `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore | The model loop can read your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
 | `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout) | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
 | `JARVIS_BROWSER_ALLOW_PRIVATE_URLS` | off (`browser_transport.py`) | `PinnedResolver` in `lan` mode; the driver route layer admits RFC1918/loopback literals | Governed browsing can reach house devices. Honest limit: `BrowserPolicy.domain_allowed` still runs `check_ssrf` in public mode, so end-to-end LAN browsing needs a `BrowserPolicy` lan mode too | Unset + restart: unpinned hosts fail at name resolution |
+| `JARVIS_COMPANY_MODE` | off (`autonomy/company_supervisor.py`) | Arms the work-run loop: one owner-approved goal worked across turns/reboots, ticked one governed step at a time | Sustained autonomous *sequencing*; authority is unchanged — every action still enters the approval queue, budgets (steps/seconds/deadline/interrupts) are hard, and only the judge can mark a run succeeded | Unset: every tick answers `disabled`; run rows remain as a record and are purged by a forget |
 | `JARVIS_MODEL_PULL` | off (`routers/model_setup.py`) | `POST /api/onboarding/model-pull` may reach `action:model.pull` | Bandwidth + disk; needs both posture flags, loopback Ollama, and stays under `llm.model_pull_max_gb`; rollback is a manual `ollama rm` | Unset: the route refuses `model_pull_disabled` |
 | `JARVIS_HESTIA_BRIDGE` | off (`house/hestia_bridge.py`) | Hestia may `observe()` (aggregate occupancy only) and `propose()` house tasks through `govern_enqueue` | Proposals land in the approval queue, capped per cycle/cooldown/day (in-memory, reset by a restart) | Unset + restart: no observation, no proposals |
 | `JARVIS_WLED_URL` | unset (`house/wled.py`) | Names a LAN `http(s)` WLED origin so orb state can drive the strip | Real light writes — still `house.control` through the kernel (DENY → nothing sent, QUEUE → `approval_required`); needs `JARVIS_ACTION_KERNEL` + `JARVIS_UNIFIED_ACTION_API` | Unset: `wled_not_configured`, nothing is sent |

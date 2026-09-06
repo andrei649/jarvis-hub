@@ -77,6 +77,31 @@
   `tests/test_subagent_steer.py` (25) + `test_subagents_h20_6.py::test_spawn_budget_exhausted`.
   **Open:** coordinator wiring of the per-boot spawn budget + the steer-aware runner is an integrator
   edit (I1); until it lands `steer()` records the message and answers `delivered=False` honestly.
+- [x] ✅ **CO-RUN-1 — the work-run ledger (E5.0).** `agents/core/autonomy/work_runs.py`: one
+  owner-approved goal worked across turns, sessions and reboots. Strict status transitions (terminal
+  states have no outgoing edge), hard budgets — steps / wall-clock / deadline / **owner interrupts**,
+  where running out of interrupts *blocks* rather than ends the run (attention is the owner's, so
+  stop asking, don't abandon the work) — one open run per goal, `request_stop` as a one-way door, and
+  a canonical-JSON SHA-256 per row so a hand-edited run is detectable on read. `open_run` refuses a
+  goal with no `approved_by` ref: there is no provisional mode. 28 hermetic tests.
+- [x] ✅ **CO-RUN-2 — the evidence verifier.** `agents/core/autonomy/work_verifier.py` refuses the
+  leap from "I ran the build" to "the build passes": a check with no probe is `unverifiable`, never
+  `passed`; a probe that raises is a failure, not a skip; a probe that answers anything but yes/no
+  establishes nothing; and a step that changed something with no approved task id fails the run
+  whatever the probes say. 14 tests.
+- [x] ✅ **CO-RUN-3 — the goal judge.** `agents/core/autonomy/work_judge.py`, the fail-closed last
+  gate: rules applied worst-news-first, scope as a hard boundary (useful adjacent work still fails),
+  a fired stop condition decisive even if the run finished first, and an optional LLM rubric that can
+  only ever **withhold** a pass — a model saying "looks good" can never rescue a failing run, and a
+  broken grader can never sink a clean one. 17 tests.
+- [x] ✅ **CO-RUN-4 — the supervising loop.** `agents/core/autonomy/company_supervisor.py`, default-off
+  twice over (`JARVIS_COMPANY_MODE` + `SupervisorConfig.enabled`). One tick, one step, so the budget
+  means something; stop read before planning so it always wins the race; a refusal recorded as a step
+  that spends budget rather than silently retried; the same failure 3× in a row ends the run; and no
+  way to mark a run succeeded — only the graders settle it. 21 tests.
+  [`docs/nerva2/NIGHT_SHIFT_E5_0.md`](docs/nerva2/NIGHT_SHIFT_E5_0.md) · `nerva.work-run.v1`
+  `proposed → candidate`. **Open:** the planner (`plan_next`) is injected and no real one ships here;
+  routes, HUD and scheduled continuity are separate slices.
 
 **Activation — the first ten minutes**
 
