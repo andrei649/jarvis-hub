@@ -206,11 +206,31 @@ lands in the decision inbox as an ask-tier task — the contract's authority is
 step that changed something with no durable task id fails verification, and only
 the judge (after the verifier) can mark a run succeeded.
 
+**What it takes to actually run.** As of `company_runtime.py`, the flag being set
+**at boot** is what registers the `company-mode-sweep` job
+(`scheduler_service.schedule_company_mode`, every `autonomy.company_tick_seconds`,
+floor 60s). The asymmetry is deliberate: **clearing the flag stops work at the very
+next tick** (the runtime re-reads it each sweep), while **setting it needs a
+restart** — a capability that can start a night of autonomous work should not begin
+because a config file changed while nobody was looking. Nothing is registered if the
+chain cannot be built, and every refusal is named in the log: no work-run ledger, no
+governed intake. A missing task queue is reported rather than fatal — the runtime
+builds, but a blocked run could never be resumed, so it says so.
+
+**What it will actually do.** The planner is the **checklist the owner read on the
+approval card** (`GoalDraft.plan`, inside the payload fingerprint, so editing it
+invalidates the approval). A goal approved with **no** plan and no explicitly-passed
+model planner **proposes nothing** and goes straight to grading: "you approved a goal
+with no plan, so nothing happened" is a better outcome than a model improvising a
+night's work from a one-line title. A goal that cannot be read yields an *empty*
+plan, never an unrestricted one.
+
 **Cost:** an active run consumes its own budget — steps, wall-clock, deadline and
 a hard cap on how many times it may interrupt you. Running out of interrupts
 blocks the run rather than ending it, so the work waits instead of nagging.
-**Revert:** unset; every tick answers `disabled` and no run is opened. Existing
-run rows stay in `work_runs.db` as a record and can be purged with a forget.
+**Revert:** unset; the next sweep answers `company mode is off`, every tick answers
+`disabled` and no run is opened. Existing run rows stay in `work_runs.db` as a
+record and can be purged with a forget.
 
 ### `JARVIS_MODEL_PULL`
 

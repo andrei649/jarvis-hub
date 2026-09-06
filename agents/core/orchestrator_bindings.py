@@ -30,6 +30,7 @@ ExternalBindingName = Literal[
     "argus",
     "permission_ledger",
     "work_runs",
+    "company_runtime",
 ]
 
 ExternalBindingCallsite = tuple[str, int, int]
@@ -48,12 +49,13 @@ EXTERNAL_BINDING_WRITERS: Mapping[str, tuple[ExternalBindingCallsite, ...]] = Ma
         "node_mesh": (("agents/core/autonomy_coordinator.py", 932, 8),),
         "subagents": (("agents/core/autonomy_coordinator.py", 1077, 8),),
         "task_executor": (("agents/core/autonomy_coordinator.py", 1094, 8),),
-        "last_memory_maintenance": (("agents/core/scheduler_service.py", 323, 8),),
+        "last_memory_maintenance": (("agents/core/scheduler_service.py", 366, 8),),
         "channel_inbox": (("agents/web.py", 336, 4),),
         "oracle_bridge": (("agents/core/plugin_manager.py", 146, 8),),
         "permission_ledger": (("agents/core/autonomy_coordinator.py", 976, 12),),
         "work_runs": (("agents/core/autonomy_coordinator.py", 997, 12),),
         "argus": (("agents/core/plugin_manager.py", 192, 8),),
+        "company_runtime": (("agents/core/scheduler_service.py", 244, 12),),
     }
 )
 
@@ -79,6 +81,7 @@ class ExternalOrchestratorBindings(Protocol):
     argus: Any | None
     permission_ledger: Any | None
     work_runs: Any | None
+    company_runtime: Any | None
 
 
 def bind_external_orchestrator_attribute(

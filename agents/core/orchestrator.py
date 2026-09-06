@@ -247,6 +247,7 @@ class Orchestrator:
         self.argus = None
         self.permission_ledger = None
         self.work_runs = None
+        self.company_runtime = None
 
         # ── optional components via the registry (A2: tames the god-object) ──
         from .component_registry import ComponentRegistry

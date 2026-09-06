@@ -64,6 +64,9 @@ MAX_SENTENCE = 500
 MAX_CHECKS = 20
 MAX_STOP_CONDITIONS = 10
 MAX_SCOPE_KINDS = 20
+# A plan the owner reads before approving. Bounded because a card nobody can
+# finish reading is a card nobody actually approved.
+MAX_PLAN_STEPS = 40
 
 
 class GoalContractError(ValueError):
@@ -130,6 +133,14 @@ class GoalDraft:
     checks: tuple[SuccessCheck, ...] = ()
     deliverable: str = ""
     requested_by: str = "owner"
+    # The steps the owner is approving, in order. Optional, and its absence is a
+    # real state rather than a gap to fill in later: a goal approved with no plan
+    # and no model planner bound proposes NOTHING and grades immediately. "You
+    # approved a goal with no plan, so nothing happened" is a better outcome than
+    # a model inventing a night's work off a one-line title — and it is the only
+    # reading under which approving the goal and approving the work are the same
+    # act, which is what makes the card meaningful.
+    plan: tuple[Mapping[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "title", _text(self.title, "title", limit=MAX_TITLE))
@@ -175,6 +186,32 @@ class GoalDraft:
             raise GoalContractError("at_least_one_required_check")
         object.__setattr__(self, "checks", checks)
 
+        plan: list[dict[str, Any]] = []
+        for row in self.plan or ():
+            if not isinstance(row, Mapping):
+                raise GoalContractError("invalid_plan_step")
+            kind = str(row.get("kind", "") or "").strip().lower()
+            summary = str(row.get("summary", "") or "").strip()[:MAX_SENTENCE]
+            if not kind or not summary:
+                # A step with no kind cannot be scope-checked and a step with no
+                # summary cannot be read on the card. Either one makes the plan
+                # unapprovable rather than merely untidy.
+                raise GoalContractError("invalid_plan_step")
+            if not self.unrestricted and kinds and kind not in kinds:
+                # Refused here, not at 3am: a plan that leaves the goal's scope is
+                # a contradiction in the card the owner is being shown.
+                raise GoalContractError("plan_step_out_of_scope")
+            task = row.get("task")
+            plan.append({
+                "kind": kind,
+                "summary": summary,
+                "task": dict(task) if isinstance(task, Mapping) else {},
+                "interrupts_owner": bool(row.get("interrupts_owner", False)),
+            })
+        if len(plan) > MAX_PLAN_STEPS:
+            raise GoalContractError("plan_too_long")
+        object.__setattr__(self, "plan", tuple(plan))
+
         object.__setattr__(
             self, "deliverable", str(self.deliverable or "").strip()[:MAX_SENTENCE]
         )
@@ -203,6 +240,10 @@ class GoalDraft:
             "checks": [c.as_dict() for c in self.checks],
             "deliverable": self.deliverable,
             "requested_by": self.requested_by,
+            # In the payload, therefore in the fingerprint: editing the plan after
+            # the card was shown invalidates the approval, exactly like editing
+            # the budget would.
+            "plan": [dict(step) for step in self.plan],
             "risk_tier": int(RiskTier.EXTERNAL),
             "reversible": True,
         }
@@ -241,6 +282,23 @@ class ApprovedGoal:
     @property
     def budget(self) -> Budget:
         return self.draft.budget
+
+    def plan_steps(self) -> list[Any]:
+        """The approved plan as planner ``PlanStep`` objects.
+
+        Empty when the owner approved a goal without one — which the runtime reads
+        as "propose nothing", not as "improvise".
+        """
+        from agents.core.autonomy.company_planner import PlanStep
+
+        return [
+            PlanStep(
+                kind=row["kind"], summary=row["summary"],
+                task=dict(row.get("task") or {}),
+                interrupts_owner=bool(row.get("interrupts_owner", False)),
+            )
+            for row in self.draft.plan
+        ]
 
     def verifier_checks(self, probes: Mapping[str, Any] | None = None) -> list[Any]:
         """The declared checks as verifier ``Check`` objects.
@@ -408,6 +466,7 @@ def draft_from_payload(payload: Mapping[str, Any]) -> GoalDraft:
             checks=checks,
             deliverable=str(payload.get("deliverable", "") or ""),
             requested_by=str(payload.get("requested_by", "owner") or "owner"),
+            plan=tuple(row for row in (payload.get("plan") or ()) if isinstance(row, Mapping)),
         )
     except GoalContractError:
         raise

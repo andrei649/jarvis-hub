@@ -203,6 +203,22 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+- [x] ✅ **CO-RUNTIME — company mode actually runs a night.** `agents/core/autonomy/company_runtime.py`
+  + `SchedulerService.schedule_company_mode` + `GoalDraft.plan`. Everything else in the chain was a
+  *component*: a ledger, a planner, a supervisor, graders, a reconciler, a scheduler — nine parts that
+  **never met**, which is a specific kind of dishonesty (the tests pass, the docs are accurate, and no
+  night of work ever happens). This is the wiring. **Off means nothing is constructed**, not "built but
+  inert". **Clearing the flag stops work at the very next tick; setting it needs a restart** — stopping
+  should always be easy, starting always deliberate, because a capability that can begin a night of
+  autonomous work must not start because a config file changed while nobody was looking. The planner is
+  **the checklist the owner read on the card** (`GoalDraft.plan`, validated against the goal's own scope
+  when the card is *built* rather than at 3am, and inside the payload fingerprint so an edited plan
+  invalidates the approval); a goal with **no** plan proposes **nothing**, and an unreadable goal yields
+  an **empty** plan rather than an unrestricted one. A failing sweep is reported, never raised into the
+  timer. Also fixed a real shadowing bug: `snapshot()` let the scheduler's `enabled` config overwrite the
+  runtime's own gate, so a runtime with the flag cleared reported itself as enabled. 26 pytest; the
+  empty-plan and flag-caching rules both red-proven.
+
 - [x] ✅ **OP-BROWSER-KERNEL — a browser click crosses the kernel like everything else.**
   `agents/core/browser_kernel.py` + `browser.step` (kernel kind #28) + a live exerciser in
   `tests/test_action_auth_matrix.py`. The browser had an egress allowlist and an approval queue

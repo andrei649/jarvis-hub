@@ -170,6 +170,25 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **Company mode stopped being nine parts that never met.** A ledger, a planner, a supervisor,
+  two graders, a reconciler and a scheduler all existed and were all tested, and no night of work
+  could ever happen because nothing built them into a loop — the specific kind of dishonesty where
+  the tests pass and the documentation is accurate. `agents/core/autonomy/company_runtime.py` is the
+  wiring, registered by `SchedulerService.schedule_company_mode` as a `company-mode-sweep` job
+  (`autonomy.company_tick_seconds`, floor 60s). **Off means nothing is constructed** — a supervisor
+  that exists is one something can call. **Clearing the flag stops work at the very next tick;
+  setting it needs a restart**: stopping should always be easy and starting always deliberate,
+  because a capability that can begin a night of autonomous work must not start because a config
+  file changed while nobody was looking. The planner is **the checklist the owner read on the
+  approval card** — `GoalDraft.plan` is new, validated against the goal's own scope when the card is
+  *built* rather than discovered mid-run, and inside the payload fingerprint so editing the plan
+  invalidates the approval exactly as editing the budget would. A goal approved with **no** plan
+  proposes **nothing** and goes straight to grading ("you approved a goal with no plan, so nothing
+  happened" beats a model improvising from a one-line title), and a goal that cannot be read yields
+  an **empty** plan, never an unrestricted one. A failing sweep is reported, never raised into the
+  timer. One real bug fell out: `snapshot()` spread the scheduler's config last, so its `enabled`
+  shadowed the runtime's own gate and a runtime with the flag cleared reported itself as enabled —
+  two different facts sharing one key, now named apart. 26 pytest.
 - **A browser click finally crosses the kernel.** `browser.step` is the 28th kernel kind.
   The browser agent always had two gates — an egress allowlist navigation cannot escape and
   an approval queue mutating steps must pass — but it was the one privileged surface that

@@ -1,5 +1,5 @@
 {
-  "_comment": "A worked nerva.goal-contract.v1 draft \u2014 exactly what a decision card carries when Nerva asks to be allowed a night of work. Every field is required by GoalDraft: an approval that named none of them would be an approval of nothing in particular. Note 'reads-well' declares no probe_ref: it grades as unverifiable rather than being dropped, so an unprobed criterion can never quietly become a pass. The fingerprint is over this exact payload \u2014 an edit between the card and the execution cannot ride the approval given for it.",
+  "_comment": "A worked nerva.goal-contract.v1 draft — exactly what a decision card carries when Nerva asks to be allowed a night of work. Every field is required by GoalDraft: an approval that named none of them would be an approval of nothing in particular. Note 'reads-well' declares no probe_ref: it grades as unverifiable rather than being dropped, so an unprobed criterion can never quietly become a pass. 'plan' is the ordered work the owner is approving alongside the goal — every step's kind is inside scope_kinds, which is enforced when the card is built rather than discovered at 3am; a goal approved with an empty plan and no model planner proposes nothing at all rather than improvising. The fingerprint is over this exact payload — an edit between the card and the execution, the plan included, cannot ride the approval given for it.",
   "example": {
     "schema": "nerva.goal-contract.v1",
     "kind": "goal.approve",
@@ -42,8 +42,28 @@
     ],
     "deliverable": "one brief under <data root>/reports, two pages or fewer",
     "requested_by": "owner",
+    "plan": [
+      {
+        "kind": "research",
+        "summary": "collect the Q3 figures from the source ledger",
+        "task": {},
+        "interrupts_owner": false
+      },
+      {
+        "kind": "write",
+        "summary": "draft the two-page brief from those figures",
+        "task": {},
+        "interrupts_owner": false
+      },
+      {
+        "kind": "file.write",
+        "summary": "save the brief under the reports directory",
+        "task": {},
+        "interrupts_owner": false
+      }
+    ],
     "risk_tier": 2,
     "reversible": true,
-    "fingerprint": "a791fad3b16673e24defae44be0aa6c9d6366ba6f92d24788c87b78635ccb537"
+    "fingerprint": "c8b9a83c4475e9da8f75310df153b8fbbcd919f3459359e91cdda1dc42f18296"
   }
 }
