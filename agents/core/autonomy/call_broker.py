@@ -17,6 +17,12 @@ Same governance shape as the write-back / social brokers (H10.30 / H12.21):
 A persona voice is isolated per the provider config. Pure-Python and
 offline-testable; the enqueue sink, budget, secret broker and live client are
 all injected.
+
+Live rail (default-off): ``JARVIS_CALL_LIVE=1`` constructs the broker with
+:class:`HttpCallClient` (transport injectable). Unset → Null client, byte-
+identical to before. A live client refuses with ``credential_not_configured``
+(no telephony secret) or ``call_config_missing:<keys>`` (no ``JARVIS_CALL_CONFIG``
+entry for the provider) instead of dialling with an incomplete request.
 """
 
 from __future__ import annotations
@@ -29,6 +35,7 @@ from urllib.parse import urlparse
 
 from ..automation_contracts import ContractTemplate, predicate
 from .dry_run import preview_task
+from ..env_config import env_flag
 from ..security.secret_broker import SecretBroker
 
 logger = logging.getLogger("jarvis.autonomy.call")
@@ -42,6 +49,29 @@ def _assert_allowed_host(url: str, allowed=_ALLOWED_HOSTS) -> str:
     if host not in allowed:
         raise ValueError(f"call host not allowed: {host!r}")
     return host
+
+# Live rail flag (default-off). Read at call time, never cached (env_config rule).
+LIVE_FLAG = "JARVIS_CALL_LIVE"
+
+
+def live_rail_enabled() -> bool:
+    """True only when the owner explicitly set ``JARVIS_CALL_LIVE``."""
+    return env_flag(LIVE_FLAG)
+
+
+# Per-provider config keys the live request cannot be built without.
+_CONFIG_REQUIRED: dict[str, tuple[str, ...]] = {
+    "twilio": ("account_sid", "from"),
+    "telnyx": ("connection_id", "from"),
+}
+
+
+def missing_config(provider: str, config: dict) -> list[str]:
+    """Provider config keys absent from *config* (pure; used before a live dial)."""
+    cfg = config if isinstance(config, dict) else {}
+    return [k for k in _CONFIG_REQUIRED.get((provider or "").lower(), ())
+            if not _present(cfg.get(k))]
+
 
 # A phone call is an external action that reaches a person → ASK (tier 2,
 # consistent with the write-back/social brokers); it additionally spends an
@@ -189,13 +219,19 @@ class CallBroker:
 
     def __init__(self, enqueue: Optional[Callable] = None, agent: str = "jarvis",
                  secret_broker=None, client=None, audit=None, budget=None,
-                 config: Optional[dict] = None, kernel=None, ledger=None) -> None:
+                 config: Optional[dict] = None, kernel=None, ledger=None,
+                 http=None) -> None:
         self._enqueue = enqueue
         self.agent = agent
         self._secrets = secret_broker
         # An explicitly injected client (tests, custom rails) is never replaced;
         # only the default NullCallClient may lazily upgrade to the live rail.
         self._client_injected = client is not None
+        # Live rail behind the flag: JARVIS_CALL_LIVE=1 → the telephony HTTP
+        # client (transport injectable via ``http``). Unset → Null client.
+        self.live = client is None and live_rail_enabled()
+        if client is None and self.live:
+            client = HttpCallClient(http=http)
         self._client = client or NullCallClient()
         self._audit = audit
         self._budget = budget   # InterruptBudget: .remaining() / .consume()
@@ -316,6 +352,23 @@ class CallBroker:
                             "using HttpCallClient")
                 self._client = HttpCallClient()
             config = self.config.get(provider, {}) if isinstance(self.config, dict) else {}
+            if isinstance(self._client, HttpCallClient):
+                # Live rail armed: refuse an unauthenticated or half-configured
+                # dial with the exact missing piece (no budget slot is spent).
+                if not credentials.get("token"):
+                    cred_name = _CREDENTIAL.get(provider, "credential")
+                    self._record("call.refuse", "credential_not_configured", to=to)
+                    return {"status": "failed", "reason": "credential_not_configured",
+                            "provider": provider, "needs": [f"secret:{cred_name}"]}
+                # Config completeness is enforced on the flag-armed rail only; the
+                # lazy credential-triggered upgrade keeps its shipped behaviour.
+                missing = missing_config(provider, config) if self.live else []
+                if missing:
+                    self._record("call.refuse", "call_config_missing", to=to)
+                    return {"status": "failed",
+                            "reason": "call_config_missing:" + ",".join(missing),
+                            "provider": provider,
+                            "needs": [f"JARVIS_CALL_CONFIG.{provider}.{k}" for k in missing]}
             delivery_broker = getattr(self._budget, "delivery_broker", None)
             performed = False
             if delivery_broker is not None:

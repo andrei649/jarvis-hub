@@ -24,7 +24,17 @@ from agents.core.env_config import env_flag
 
 _APP_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _OBSERVE_ACTIONS = frozenset({"observe", "read", "locate", "screenshot"})
-_MUTATE_ACTIONS = frozenset({"click", "type", "launch"})
+# Kept in step with agents/core/desktop_drivers/base.MUTATE_ACTIONS by
+# tests/test_desktop_operator_actions.py: a plan that works on macOS and silently
+# does nothing on Windows is worse than one that refuses on both, because it is
+# only discovered by the owner. ``launch`` is the deliberate exception — the
+# allowlisted-app launcher is Windows-only and has no cross-platform twin yet.
+_MUTATE_ACTIONS = frozenset({"click", "type", "launch", "key", "scroll", "focus"})
+
+# Same bounds, same reasons, as the cross-platform base: scrolling to the bottom
+# of an infinite feed is a loop, so the amount is a finite number of notches.
+_MAX_SCROLL_NOTCHES = 20
+_SCROLL_DIRECTIONS = frozenset({"up", "down", "left", "right"})
 _LOCAL_PROVENANCE = frozenset({"local", "local-only", "local_only", "strict-local", "strict_local"})
 _MAX_LOCAL_NUMERIC_MAGNITUDE = 1_000_000_000
 
@@ -96,8 +106,75 @@ class _PywinautoBackend:
         control = element.get("_control") if isinstance(element, Mapping) else element
         control.set_edit_text(text)
 
+    @staticmethod
+    def focus(element) -> None:
+        control = element.get("_control") if isinstance(element, Mapping) else element
+        control.set_focus()
+
+    @staticmethod
+    def scroll(element, direction: str, notches: int) -> None:
+        control = element.get("_control") if isinstance(element, Mapping) else element
+        control.scroll(_UIA_SCROLL_AXIS[direction], _UIA_SCROLL_AMOUNT[direction], int(notches))
+
+    @staticmethod
+    def key(chord: str) -> None:
+        """Send one allowlisted chord through pywinauto's keyboard module.
+
+        The chord reached here through ``keys.canonical_chord``, so it is one of a
+        finite set; this only translates that set into pywinauto's own syntax. A
+        chord is never passed through as typed.
+        """
+        from pywinauto import keyboard
+
+        keyboard.send_keys(_pywinauto_chord(chord), pause=0.0)
+
     def close(self) -> None:
         self._desktop = None
+
+
+# pywinauto's ``scroll`` takes (axis, amount, count). The direction names describe
+# what the reader sees moving, so "down" scrolls the content down the screen.
+_UIA_SCROLL_AXIS: Mapping[str, str] = {
+    "up": "up", "down": "down", "left": "left", "right": "right",
+}
+_UIA_SCROLL_AMOUNT: Mapping[str, str] = {
+    "up": "line", "down": "line", "left": "line", "right": "line",
+}
+
+# pywinauto's send_keys syntax. ``^`` / ``%`` / ``+`` are *held* modifier
+# prefixes; the Win key is not one of them — ``{VK_LWIN}`` on its own presses AND
+# releases it, so a naive prefix would tap Win and then send the rest without it.
+# Win is therefore emitted as an explicit down/up pair around the whole chord.
+_PYWINAUTO_MODIFIERS: Mapping[str, str] = {
+    "ctrl": "^", "alt": "%", "shift": "+",
+}
+_PYWINAUTO_WIN_DOWN = "{VK_LWIN down}"
+_PYWINAUTO_WIN_UP = "{VK_LWIN up}"
+_PYWINAUTO_KEYS: Mapping[str, str] = {
+    "enter": "{ENTER}", "return": "{ENTER}", "tab": "{TAB}", "escape": "{ESC}",
+    "space": "{SPACE}", "backspace": "{BACKSPACE}", "delete": "{DELETE}",
+    "up": "{UP}", "down": "{DOWN}", "left": "{LEFT}", "right": "{RIGHT}",
+    "home": "{HOME}", "end": "{END}", "pageup": "{PGUP}", "pagedown": "{PGDN}",
+    **{f"f{n}": f"{{F{n}}}" for n in range(1, 13)},
+}
+
+
+def _pywinauto_chord(chord: str) -> str:
+    """One canonical chord in pywinauto's send_keys syntax.
+
+    The chord already passed ``keys.canonical_chord``, so this only translates a
+    finite set; nothing is ever passed through as typed.
+    """
+    from agents.core.desktop_drivers.keys import parse_chord
+
+    mods, base = parse_chord(chord)
+    prefix = "".join(_PYWINAUTO_MODIFIERS[m] for m in mods if m in _PYWINAUTO_MODIFIERS)
+    body = prefix + _PYWINAUTO_KEYS.get(base, base)
+    if "cmd" in mods:
+        # Held explicitly, and released explicitly: a Win key left down outlives
+        # this step and changes every key the owner presses afterwards.
+        return f"{_PYWINAUTO_WIN_DOWN}{body}{_PYWINAUTO_WIN_UP}"
+    return body
 
 
 def _default_screenshotter() -> bytes:
@@ -256,6 +333,8 @@ class WindowsDesktopDriver:
     async def _mutate(self, action: str, args: dict) -> dict:
         if action == "launch":
             return await self._launch(args)
+        if action == "key":
+            return await self._key(args)
 
         raw_name = args.get("name")
         if not isinstance(raw_name, str) or not raw_name.strip():
@@ -264,13 +343,27 @@ class WindowsDesktopDriver:
         if len(name) > self.max_text_chars:
             return {"ok": False, "reason": "element_name_too_large"}
         text = ""
+        direction = ""
+        notches = 0
         if action == "type":
             text = args.get("text")
             if not isinstance(text, str):
                 return {"ok": False, "reason": "text_required"}
             if len(text) > self.max_type_chars:
                 return {"ok": False, "reason": "text_too_large"}
-        elif action != "click":
+        elif action == "scroll":
+            direction = str(args.get("direction") or "").strip().lower()
+            if direction not in _SCROLL_DIRECTIONS:
+                return {"ok": False, "reason": "scroll_direction_required"}
+            raw_notches = args.get("notches", 3)
+            if isinstance(raw_notches, bool) or not isinstance(raw_notches, int):
+                return {"ok": False, "reason": "scroll_notches_invalid"}
+            if raw_notches < 1 or raw_notches > _MAX_SCROLL_NOTCHES:
+                # Refused, not clamped — the same choice, and the same reason, as
+                # the cross-platform base: 500 notches meant something else.
+                return {"ok": False, "reason": "scroll_notches_out_of_range"}
+            notches = int(raw_notches)
+        elif action not in {"click", "focus"}:
             return {"ok": False, "reason": "unsupported_action"}
 
         snapshot, _truncated = await self._accessibility_snapshot()
@@ -283,7 +376,45 @@ class WindowsDesktopDriver:
             await _call_host(backend.click, raw)
         elif action == "type":
             await _call_host(backend.type, raw, text)
-        return {"ok": True, "action": action, "element": normalized.get("name", "")}
+        elif action == "focus":
+            handler = getattr(backend, "focus", None)
+            if not callable(handler):
+                return {"ok": False, "reason": "desktop_focus_unsupported"}
+            await _call_host(handler, raw)
+        elif action == "scroll":
+            handler = getattr(backend, "scroll", None)
+            if not callable(handler):
+                return {"ok": False, "reason": "desktop_scroll_unsupported"}
+            await _call_host(handler, raw, direction, notches)
+        result = {"ok": True, "action": action, "element": normalized.get("name", "")}
+        if action == "scroll":
+            result["direction"] = direction
+            result["notches"] = notches
+        return result
+
+    async def _key(self, args: dict) -> dict:
+        """Press one allowlisted chord on the frontmost window.
+
+        Shares ``desktop_drivers.keys`` with macOS and Linux rather than keeping a
+        Windows list: a chord refused on one platform and pressed on another would
+        make the policy a per-platform accident instead of a decision.
+        """
+        from agents.core.desktop_drivers.keys import KeyRefused, canonical_chord
+
+        try:
+            chord = canonical_chord(args.get("chord") or args.get("key") or "")
+        except KeyRefused as exc:
+            return {"ok": False, "reason": exc.reason, "action": "key",
+                    "detail": exc.detail[:200]}
+        backend = await self._ensure_backend()
+        handler = getattr(backend, "key", None)
+        if not callable(handler):
+            # A backend gap, not a host fact: saying "your machine cannot" when
+            # the truth is "nobody wrote this" sends the owner to fix the wrong
+            # thing.
+            return {"ok": False, "reason": "desktop_key_unsupported", "action": "key"}
+        await _call_host(handler, chord)
+        return {"ok": True, "action": "key", "chord": chord}
 
     async def _launch(self, args: dict) -> dict:
         raw_key = args.get("app")

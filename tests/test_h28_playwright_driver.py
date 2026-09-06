@@ -175,12 +175,21 @@ class FakeBrowserType:
         self.browser = browser
         self.error = error
         self.launch_kwargs = None
+        self.persistent_kwargs = None
+        self.user_data_dir = None
 
     async def launch(self, **kwargs):
         self.launch_kwargs = kwargs
         if self.error:
             raise self.error
         return self.browser
+
+    async def launch_persistent_context(self, user_data_dir, **kwargs):
+        self.user_data_dir = user_data_dir
+        self.persistent_kwargs = kwargs
+        if self.error:
+            raise self.error
+        return self.browser.context
 
 
 class FakePlaywright:
@@ -315,18 +324,27 @@ async def test_lazy_fresh_context_navigation_extract_screenshot_wait_and_close(t
     }
     assert shot["mime"] == "image/png" and shot["image_base64"] == "UE5H"
     assert waited == {"waited": "selector", "selector": "#ready", "timeout_ms": 400}
-    assert manager.playwright.browser.context_kwargs == {
+    chromium = manager.playwright.chromium
+    # Isolated per-run profile: a throw-away temp dir, never the owner's profile.
+    assert chromium.persistent_kwargs == {
+        "headless": True,
+        "args": [],
         "accept_downloads": True,
         "service_workers": "block",
     }
+    assert chromium.launch_kwargs is None
+    profile = Path(chromium.user_data_dir)
+    assert profile.name.startswith("nerva-browser-") and profile.is_dir()
+    assert driver.profile_dir == profile
     assert manager.playwright.page.default_timeout == 15_000
     assert manager.started == 1
 
     await driver.close()
     await driver.close()
     assert manager.playwright.context.closed == 1
-    assert manager.playwright.browser.closed == 1
     assert manager.playwright.stopped == 1
+    assert not profile.exists()
+    assert driver.profile_dir is None
 
 
 @pytest.mark.asyncio
@@ -394,7 +412,7 @@ async def test_governed_browser_blocks_before_real_driver_and_null_default_is_un
     assert allowed == {
         "action": "navigate",
         "status": "blocked",
-        "reason": "browser transport unavailable",
+        "reason": "browser transport not configured",
     }
     assert manager.started == 0
 
@@ -424,6 +442,9 @@ async def test_governed_policy_blocks_redirects_and_subresources_inside_playwrig
     blocked = FakeRoute("https://evil.com/redirected")
     await handler(blocked)
     assert blocked.continued == 0 and blocked.aborted == ["blockedbyclient"]
+    reasons = [entry["reason"] for entry in driver.blocked_requests]
+    assert len(reasons) == 2 and all(r.startswith("policy_denied:") for r in reasons)
+    assert "evil.com not in egress allowlist" in reasons[1]
     await driver.close()
 
 

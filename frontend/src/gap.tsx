@@ -26,6 +26,12 @@ import { SupportVoicePanel } from './panels/support-voice';
 import { AgentsArenaPanel } from './panels/agents-arena';
 import { MissionCanvasPanel } from './panels/mission-canvas';
 import { SkillsImportPanel } from './panels/skills-import';
+import { TodayReceiptPanel } from './panels/today-receipt';
+import { ModelSetupPanel } from './panels/model-setup';
+import { HostReadinessPanel } from './panels/host-readiness';
+import { CompanyRoomPanel } from './panels/company-room';
+import { MemoryConsolidatePanel } from './panels/memory-consolidate';
+import { PermissionsPanel } from './panels/permissions';
 
 import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, inpS, taS, Json } from './panel-kit';
 
@@ -632,7 +638,17 @@ export function PairingPanel() {
   const { d, e, loading, reload } = useApi('/api/channels/pairing', true, true);
   const senders = arr(d, 'senders');
   const [code, setCode] = useState('');
+  const [bot, setBot] = useState('');
+  const [link, setLink] = useState(null);
   const decide = (s, action) => actA('/api/channels/pairing/decide', { channel: s.channel, sender_id: s.sender_id || s.id, action }, reload);
+  /* The 60-second path: mint a one-use link and open it on the phone. The token is
+     a live credential until it is spent, so it is shown once, never re-fetched,
+     and cleared from the screen as soon as the owner revokes or mints again. */
+  const mintLink = () => actA('/api/channels/pairing/link',
+    { channel: 'telegram', bot_username: bot.trim() || null },
+    (r) => { setLink(r); reload(); });
+  const revokeLinks = () => actA('/api/channels/pairing/link/revoke', {},
+    () => { setLink(null); reload(); });
   return <Card title="SENDER PAIRING" live={asLive(d)} sub={d?.summary ? (d.summary.pending ?? senders.length) + ' pending' : senders.length} onReload={reload}>
     <State e={e} loading={loading} n={senders.length} />
     {senders.slice(0, 10).map((s, i) => <Row key={i}>
@@ -649,6 +665,20 @@ export function PairingPanel() {
       <input value={code} onChange={(ev) => setCode(ev.target.value)} placeholder="pairing code (empty = clear)" style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={() => actA('/api/channels/pairing/code', { code: code || null }, () => { setCode(''); reload(); })}>set code</button>
     </div>
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input value={bot} onChange={(ev) => setBot(ev.target.value)} placeholder="bot @username (for the link)" style={{ ...inpS, flex: 1 }} />
+      <button className="tool-btn" title="mint a one-use pairing link" onClick={mintLink}>pair a phone</button>
+      {(d?.summary?.deeplinks_outstanding ?? 0) > 0
+        && <button className="tool-btn" title="invalidate every outstanding link" onClick={revokeLinks}>revoke links</button>}
+    </div>
+    {link && <div style={{ ...mono, fontSize: 11, marginTop: 6, wordBreak: 'break-all' }}>
+      <div style={{ color: 'var(--green)' }}>{link.url || link.token}</div>
+      {/* Said plainly: a link that looks reusable gets treated as one. */}
+      <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 3 }}>
+        One use, then dead — whoever opens it first is the one paired. Expires in
+        {' '}{Math.round((link.ttl_seconds || 0) / 60)} min.
+      </div>
+    </div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>unknown senders are held until you decide (H12.19)</div>
   </Card>;
 }
@@ -1315,7 +1345,16 @@ export function SwarmPanel() {
    as that turn runs (minutes, for a long task); the button locks while it is in flight and
    the panel says why. Every cap refusal answers 429 and `apiPost` throws on 4xx, so the call
    passes an `onErr` — without it a refused spawn would silently read as a success, which is
-   the swallowed-mutation bug the note at the top of this file warns about. */
+   the swallowed-mutation bug the note at the top of this file warns about.
+
+   1.1.0 — steer and stop per running spawn (`POST /api/subagents/{id}/steer`, `/stop`).
+   Both are only offered while a row is `running`; the backend answers 409 `not_running`
+   otherwise and the row's controls are hidden rather than shown-and-refused. Steer is
+   guidance, never an approval — the panel says so, and a `delivered: false` reply (the
+   runner never opted into the steer kwarg) is rendered as "recorded, not delivered"
+   rather than as a success, because the message did reach the spawn record but not the
+   running turn. Stop reports the status the backend read back after yielding, so a child
+   that unwinds immediately shows `stopped` and one that does not shows `stopping`. */
 export function SubAgentsPanel() {
   const { d, e, loading, reload } = useApi('/api/subagents');  // user-guarded
   const spawns = arr(d, 'spawns');
@@ -1324,6 +1363,8 @@ export function SubAgentsPanel() {
   const [agent, setAgent] = useState('');
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState(null);
+  const [steerFor, setSteerFor] = useState(null);
+  const [steerText, setSteerText] = useState('');
   const atCap = stats.cap != null && (stats.active ?? 0) >= stats.cap;
   const statusColor = (s) => (s === 'done' ? 'var(--green)' : s === 'failed' ? 'var(--red)' : 'var(--amber)');
   const spawn = () => {
@@ -1342,6 +1383,32 @@ export function SubAgentsPanel() {
       },
       (err) => { setPending(false); setNote(`refused · ${err?.message || 'spawn failed'}`); reload(); });
   };
+  const sendSteer = (id) => {
+    const msg = steerText.trim();
+    if (!msg) return;
+    setNote(null);
+    act(`/api/subagents/${id}/steer`, { message: msg },
+      (r) => {
+        // `delivered: false` is an honest partial: the record kept the message but the
+        // running turn never saw it. Never render that as a plain success.
+        setNote(r && r.ok
+          ? (r.delivered ? `steered ${id} · delivered` : `steered ${id} · recorded, not delivered to the running turn`)
+          : `refused · ${(r && r.reason) || 'steer failed'}`);
+        setSteerFor(null); setSteerText(''); reload();
+      },
+      (err) => { setNote(`refused · ${err?.message || 'steer failed'}`); reload(); });
+  };
+  const stopSpawn = (id) => {
+    setNote(null);
+    act(`/api/subagents/${id}/stop`, {},
+      (r) => {
+        setNote(r && r.ok
+          ? `stop requested · ${id} is ${String((r && r.status) || 'stopping')}`
+          : `refused · ${(r && r.reason) || 'stop failed'}`);
+        reload();
+      },
+      (err) => { setNote(`refused · ${err?.message || 'stop failed'}`); reload(); });
+  };
   return (
     <Card title="SUB-AGENTS" live={asLive(d)} sub={d ? `${stats.total ?? spawns.length} spawn(s)` : null} onReload={reload}>
       <State e={e} loading={loading} n={d ? 1 : 0} />
@@ -1356,14 +1423,42 @@ export function SubAgentsPanel() {
             </span>
           </Row>
           {spawns.slice(0, 10).map((s, i) => (
-            <Row key={s.id || i}>
-              <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.id}</span>
-              <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{String(s.task || '').slice(0, 40)}</span>
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-                <Tag>{s.agent || 'sub'}</Tag>
-                <Tag c={statusColor(s.status)}>{s.status || '—'}</Tag>
-              </span>
-            </Row>
+            <React.Fragment key={s.id || i}>
+              <Row>
+                <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.id}</span>
+                <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{String(s.task || '').slice(0, 40)}</span>
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+                  <Tag>{s.agent || 'sub'}</Tag>
+                  <Tag c={statusColor(s.status)}>{s.status || '—'}</Tag>
+                  {s.status === 'running' && (
+                    <>
+                      <button
+                        className="tool-btn" title="send guidance to this running sub-agent"
+                        onClick={() => { setSteerFor(steerFor === s.id ? null : s.id); setSteerText(''); }}
+                      >steer</button>
+                      <button
+                        className="tool-btn" title="cancel this running sub-agent"
+                        onClick={() => stopSpawn(s.id)}
+                      >stop</button>
+                    </>
+                  )}
+                </span>
+              </Row>
+              {steerFor === s.id && (
+                <Row>
+                  <input
+                    style={{ ...inpS, flex: 1 }} autoFocus
+                    placeholder={`guidance for ${s.id} (not an approval)`}
+                    value={steerText} onChange={(ev) => setSteerText(ev.target.value)}
+                    onKeyDown={(ev) => { if (ev.key === 'Enter') sendSteer(s.id); }}
+                  />
+                  <button
+                    className="tool-btn" disabled={!steerText.trim()}
+                    onClick={() => sendSteer(s.id)}
+                  >send</button>
+                </Row>
+              )}
+            </React.Fragment>
           ))}
           <Row>
             <input
@@ -1385,6 +1480,8 @@ export function SubAgentsPanel() {
             Spawning is long-running, not fire-and-forget: the POST runs the sub-agent inline and
             the request stays open until the sub-agent&apos;s turn finishes. Cap, recursion-depth and
             budget refusals all answer 429 — the capacity row above says which limit is tight.
+            Steer is guidance to a running child, never an approval: a queue decision only ever
+            comes from the decision inbox. Steer and stop appear only while a spawn is running.
           </div>
         </>
       )}
@@ -4480,14 +4577,14 @@ export function FirstRunGate({ onClose }) {
 }
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
-  ['Start', [CommandCenterPanel]],
+  ['Start', [CommandCenterPanel, TodayReceiptPanel, ModelSetupPanel]],
   ['Home', [PresenceInboxPanel, AmbientWatchPanel, HousePanel, CameraPanel]],
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, NoteDocsPanel, VaultPanel, KgPanel, MemoryWritePanel, MemoryHygienePanel, MemoryEvalPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
-  ['Trust', [SecuritySkillsMapPanel, PaymentsPanel, SignalGovernancePanel, TrustOpsPanel, KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, NoteDocsPanel, VaultPanel, KgPanel, MemoryWritePanel, MemoryHygienePanel, MemoryConsolidatePanel, MemoryEvalPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
+  ['Trust', [SecuritySkillsMapPanel, PaymentsPanel, SignalGovernancePanel, TrustOpsPanel, KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel, PermissionsPanel]],
   ['Interop', [OsintPanel, MarketplaceAdminPanel, SkillsImportPanel, WritebackDigestPanel, A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, CodeIntelPanel, CoachPanel, ReviewQualityPanel, AgentsArenaPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, CognitionPanel, SwarmPanel, SubAgentsPanel, SystemMapPanel]],
-  ['Build', [CreativePanel, DesktopAllowlistPanel, WorkflowTracesPanel, WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],
-  ['Autonomy & Agents', [AutonomyControlPanel, MissionCanvasPanel, DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
+  ['Build', [HostReadinessPanel, CreativePanel, DesktopAllowlistPanel, WorkflowTracesPanel, WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],
+  ['Autonomy & Agents', [CompanyRoomPanel, AutonomyControlPanel, MissionCanvasPanel, DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [LlmRoutingPanel, SupportVoicePanel, BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, VlmDescribePanel, AuthProfilesPanel, SystemProfilePanel]],
 ];
 

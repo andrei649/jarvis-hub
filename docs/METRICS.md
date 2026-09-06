@@ -67,6 +67,7 @@ the thing that turns "prove value to a user" from a slogan into a number.
 | % local vs cloud | `RunHistory.locality()` | `agents/core/run_history.py` |
 | p95 per-turn latency | `Tracer.list()` → `timings.total_ms` | `agents/core/observability/tracer.py` |
 | interrupt budget | `InterruptBudget` (≤4/day) | `agents/core/autonomy/worker.py` |
+| activation (time to first governed action) | `first_action.activation_state()` | `agents/core/first_action.py` |
 
 ## Honesty caveats (by design)
 

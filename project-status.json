@@ -2,17 +2,17 @@
   "active_agents": 18,
   "horizon_totals": {
     "blocked": 1,
-    "delivered": 33,
-    "done": 254,
-    "open": 13,
-    "open_or_blocked": 14,
+    "delivered": 38,
+    "done": 250,
+    "open": 12,
+    "open_or_blocked": 13,
     "total": 301
   },
   "horizons": {
     "H10": {
       "blocked": 0,
-      "delivered": 0,
-      "done": 30,
+      "delivered": 1,
+      "done": 29,
       "open": 0,
       "total": 30
     },
@@ -25,8 +25,8 @@
     },
     "H12": {
       "blocked": 0,
-      "delivered": 0,
-      "done": 24,
+      "delivered": 3,
+      "done": 21,
       "open": 2,
       "total": 26
     },
@@ -130,9 +130,9 @@
     },
     "H30": {
       "blocked": 0,
-      "delivered": 0,
+      "delivered": 1,
       "done": 7,
-      "open": 1,
+      "open": 0,
       "total": 8
     },
     "H31": {
@@ -199,7 +199,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "de3c4684ff5a0ddf9be7d2adab4f177820fc678c",
+  "latest_ci_commit": "c16d84e989ffd26ea941e02ae8ae49750d7dd8ca",
   "open_release_gates": [
     {
       "id": "A1",
@@ -222,10 +222,10 @@
       "status": "🟡 **partial (owner, 2026-08-28)** — landing half moving; the 60s demo cut is the remaining piece. Not a 1.0 blocker (GTM, not proof)"
     }
   ],
-  "routes": 442,
+  "routes": 462,
   "tests": {
-    "backend": 7327,
-    "frontend": 936,
+    "backend": 8574,
+    "frontend": 997,
     "mobile": 110
   },
   "version": "1.0.0"

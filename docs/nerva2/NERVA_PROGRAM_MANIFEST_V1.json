@@ -3,8 +3,8 @@
   "manifest_id": "nerva.program-manifest.v1",
   "evidence_snapshot": {
     "repository": "andrei649/jarvis-hub",
-    "baseline_commit": "458df5afabdf12536236522034e7c84493200147",
-    "observed_at_utc": "2026-08-06T06:19:08Z",
+    "baseline_commit": "c16d84e989ffd26ea941e02ae8ae49750d7dd8ca",
+    "observed_at_utc": "2026-09-06T10:19:43Z",
     "program_issue": 757,
     "blocker_plan_issue": 778,
     "control_issue": 839,
@@ -12,7 +12,7 @@
   },
   "movement_gate": {
     "schema_version": 1,
-    "enforcement_state": "required",
+    "enforcement_state": "safety_disabled",
     "bootstrap": {
       "source_sha": "843918848c11bbd3f0099f9504d0e0eaaa56b9d6",
       "accepted_base_sha": "e596920ec60f19d2e7f0937819c892746a1c42b2",
@@ -22,41 +22,26 @@
     },
     "branch_prefix": "nerva2/",
     "attestation_start_marker": "<!-- NERVA2:MOVEMENT-ATTESTATION:START -->",
-    "registry": [
-      ".github/workflows/ci.yml",
-      ".github/workflows/nerva-roadmap.yml",
-      ".github/workflows/pr-auto-merge.yml",
-      "BACKLOG.md",
-      "GO_LIVE_PLAN.md",
-      "NERVA.md",
-      "README.md",
-      "STATUS.md",
-      "docs/nerva2/NERVA_ISSUE_MOVEMENT_V1.md",
-      "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json",
-      "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md",
-      "docs/superpowers/plans/2026-08-07-b2-live-issue-ledger.md",
-      "docs/superpowers/specs/2026-08-07-b2-live-issue-ledger-design.md",
-      "project-status.json",
-      "scripts/check_nerva_issue_movement.py",
-      "scripts/check_nerva_program_manifest.py",
-      "tests/test_nerva_issue_movement.py",
-      "tests/test_nerva_program_manifest.py",
-      "tests/test_pr_auto_merge_policy.py"
-    ],
+    "registry": [".github/workflows/ci.yml", ".github/workflows/nerva-manifest-check.yml", ".github/workflows/pr-auto-merge.yml", "BACKLOG.md", "GO_LIVE_PLAN.md", "NERVA.md", "README.md", "STATUS.md", "docs/nerva2/CONTRACT_REGISTRY.json", "docs/nerva2/INTEGRATION_CATALOGUE_ADOPTION_PASS_PLAYWRIGHT.md", "docs/nerva2/ISSUE_LEDGER_RECONCILIATION.md", "docs/nerva2/NERVA_ISSUE_MOVEMENT_V1.md", "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json", "docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.md", "docs/superpowers/plans/2026-08-07-b2-live-issue-ledger.md", "docs/superpowers/specs/2026-08-07-b2-live-issue-ledger-design.md", "project-status.json", "scripts/check_nerva_program_manifest.py", "tests/test_nerva_program_manifest_checker.py", "tests/test_pr_auto_merge_policy.py"],
     "program_control_issues": [846],
-    "receipt_control": {
-      "mode": "point_in_time",
-      "live_pr_reread_required": true,
-      "fresh_exact_head_rerun_required": true,
+    "receipt_control": {"mode": "point_in_time", "live_pr_reread_required": true, "fresh_exact_head_rerun_required": true, "fresh_owner_receipts_required": true, "continuous_currentness": false},
+    "manual_integration": {"issue": 847, "workflow_path": ".github/workflows/pr-auto-merge.yml", "policy_test_path": "tests/test_pr_auto_merge_policy.py"},
+    "registry_retired": [
+      {"path": ".github/workflows/nerva-roadmap.yml", "retired_in_commit": "824ff18749630e3ee6a6d6bfd5b4d362b1d388f6", "pull_request": 981},
+      {"path": "scripts/check_nerva_issue_movement.py", "retired_in_commit": "824ff18749630e3ee6a6d6bfd5b4d362b1d388f6", "pull_request": 981},
+      {"path": "tests/test_nerva_issue_movement.py", "retired_in_commit": "824ff18749630e3ee6a6d6bfd5b4d362b1d388f6", "pull_request": 981},
+      {"path": "tests/test_nerva_program_manifest.py", "retired_in_commit": "824ff18749630e3ee6a6d6bfd5b4d362b1d388f6", "pull_request": 981}
+    ],
+    "program_control_pull_requests": [981],
+    "rollback": {
+      "issue": null,
+      "pull_request": 981,
+      "commit": "824ff18749630e3ee6a6d6bfd5b4d362b1d388f6",
+      "rollback_of_issue": 846,
+      "reason": "Owner de-gate decision 2026-08-28/29 (#981): the PR-blocking Nerva movement and roadmap checkers were deleted from CI before this forward-rollback record was written; the record is reconciled after the fact (2026-09-06) and the manifest checker returns as an advisory post-merge/scheduled job.",
       "fresh_owner_receipts_required": true,
-      "continuous_currentness": false
-    },
-    "manual_integration": {
-      "issue": 847,
-      "workflow_path": ".github/workflows/pr-auto-merge.yml",
-      "policy_test_path": "tests/test_pr_auto_merge_policy.py"
-    },
-    "rollback": null
+      "exact_head_checks_required": true
+    }
   },
   "authority": {
     "status_is_evidence_label_only": true,
@@ -74,13 +59,7 @@
       "program_status": "done",
       "delivery_eligibility": "satisfied",
       "completion_evidence": [
-        {
-          "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
-          "repo_path": "docs/nerva2/E0_COMPLETION.json",
-          "issue": 758,
-          "pull_request": 790,
-          "claim_code": "e0_control_gate_accepted"
-        }
+        {"commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4", "repo_path": "docs/nerva2/E0_COMPLETION.json", "issue": 758, "pull_request": 790, "claim_code": "e0_control_gate_accepted"}
       ],
       "delivery_prerequisites": [],
       "blockers": [],
@@ -101,13 +80,7 @@
           "source": "E0",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
-              "repo_path": "docs/nerva2/E0_COMPLETION.json",
-              "issue": 758,
-              "pull_request": 790,
-              "claim_code": "e0_control_gate_accepted"
-            }
+            {"commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4", "repo_path": "docs/nerva2/E0_COMPLETION.json", "issue": 758, "pull_request": 790, "claim_code": "e0_control_gate_accepted"}
           ]
         }
       ],
@@ -132,13 +105,7 @@
           "source": "E0",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
-              "repo_path": "docs/nerva2/E0_COMPLETION.json",
-              "issue": 758,
-              "pull_request": 790,
-              "claim_code": "e0_control_gate_accepted"
-            }
+            {"commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4", "repo_path": "docs/nerva2/E0_COMPLETION.json", "issue": 758, "pull_request": 790, "claim_code": "e0_control_gate_accepted"}
           ]
         }
       ],
@@ -160,26 +127,14 @@
           "source": "E0",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
-              "repo_path": "docs/nerva2/E0_COMPLETION.json",
-              "issue": 758,
-              "pull_request": 790,
-              "claim_code": "e0_control_gate_accepted"
-            }
+            {"commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4", "repo_path": "docs/nerva2/E0_COMPLETION.json", "issue": 758, "pull_request": 790, "claim_code": "e0_control_gate_accepted"}
           ]
         },
         {
           "source": "E2",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "9a13a0241fb65d01809f539f1048944ea01a3bf5",
-              "repo_path": "docs/nerva2/ATLAS_E2_0.md",
-              "issue": 781,
-              "pull_request": 795,
-              "claim_code": "atlas_minimum_for_episodes_accepted"
-            }
+            {"commit": "9a13a0241fb65d01809f539f1048944ea01a3bf5", "repo_path": "docs/nerva2/ATLAS_E2_0.md", "issue": 781, "pull_request": 795, "claim_code": "atlas_minimum_for_episodes_accepted"}
           ]
         }
       ],
@@ -202,69 +157,80 @@
           "source": "E0",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
-              "repo_path": "docs/nerva2/E0_COMPLETION.json",
-              "issue": 758,
-              "pull_request": 790,
-              "claim_code": "e0_control_gate_accepted"
-            }
+            {"commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4", "repo_path": "docs/nerva2/E0_COMPLETION.json", "issue": 758, "pull_request": 790, "claim_code": "e0_control_gate_accepted"}
           ]
         },
-        {"source": "E3", "gate_state": "unsatisfied", "accepted_evidence": []}
+        {
+          "source": "E3",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        }
       ],
       "blockers": [
-        {
-          "id": "E4-delivery-E3",
-          "kind": "delivery_gate",
-          "target": "E3",
-          "issue": 761,
-          "artifact": "docs/nerva2/DEPENDENCIES.md",
-          "reason_code": "upstream_gate_not_accepted"
-        }
+        {"id": "E4-delivery-E3", "kind": "delivery_gate", "target": "E3", "issue": 761, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"}
       ],
       "references": [
         {"kind": "issue", "value": 762},
-        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"},
+        {"kind": "issue", "value": 1008}
       ]
     },
     {
       "id": "E5",
       "name": "Night Shift autonomous work loop",
       "epic_issue": 763,
-      "program_status": "not_started",
-      "delivery_eligibility": "blocked",
+      "program_status": "building",
+      "delivery_eligibility": "in_progress",
       "completion_evidence": [],
       "delivery_prerequisites": [
         {
           "source": "E0",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
-              "repo_path": "docs/nerva2/E0_COMPLETION.json",
-              "issue": 758,
-              "pull_request": 790,
-              "claim_code": "e0_control_gate_accepted"
-            }
+            {"commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4", "repo_path": "docs/nerva2/E0_COMPLETION.json", "issue": 758, "pull_request": 790, "claim_code": "e0_control_gate_accepted"}
           ]
         },
-        {"source": "E1", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E2", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E3", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E6", "gate_state": "unsatisfied", "accepted_evidence": []}
+        {
+          "source": "E1",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E2",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E3",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E6",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        }
       ],
       "blockers": [
         {"id": "E5-delivery-E1", "kind": "delivery_gate", "target": "E1", "issue": 759, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
         {"id": "E5-delivery-E2", "kind": "delivery_gate", "target": "E2", "issue": 760, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
         {"id": "E5-delivery-E3", "kind": "delivery_gate", "target": "E3", "issue": 761, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
         {"id": "E5-delivery-E6", "kind": "delivery_gate", "target": "E6", "issue": 764, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
-        {"id": "E5-program-B7", "kind": "program_gate", "target": "B7", "issue": 818, "artifact": "BACKLOG.md", "reason_code": "task_mediation_acceptance_pending"}
+        {
+          "id": "E5-program-B7",
+          "kind": "program_gate",
+          "target": "B7",
+          "issue": 818,
+          "artifact": "BACKLOG.md",
+          "reason_code": "task_mediation_acceptance_pending",
+          "note": "PR #918 (merge b5e52c6, reviewed source 6eed5a7) RETAINED on main by owner decision 2026-09-01, default-off; merged but not program-accepted, so this gate stays open until #906 is provisioned or re-scoped."
+        }
       ],
       "references": [
         {"kind": "issue", "value": 763},
         {"kind": "issue", "value": 818},
-        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/NIGHT_SHIFT_E5_0.md"}
       ]
     },
     {
@@ -279,26 +245,14 @@
           "source": "E0",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
-              "repo_path": "docs/nerva2/E0_COMPLETION.json",
-              "issue": 758,
-              "pull_request": 790,
-              "claim_code": "e0_control_gate_accepted"
-            }
+            {"commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4", "repo_path": "docs/nerva2/E0_COMPLETION.json", "issue": 758, "pull_request": 790, "claim_code": "e0_control_gate_accepted"}
           ]
         },
         {
           "source": "E3",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "a33c9a5db5cc4b1e2f1849ebc39e28d197f66b5f",
-              "repo_path": "docs/nerva2/REFLECTION_E6_0.md",
-              "issue": 806,
-              "pull_request": 823,
-              "claim_code": "episodes_minimum_for_reflection_accepted"
-            }
+            {"commit": "a33c9a5db5cc4b1e2f1849ebc39e28d197f66b5f", "repo_path": "docs/nerva2/REFLECTION_E6_0.md", "issue": 806, "pull_request": 823, "claim_code": "episodes_minimum_for_reflection_accepted"}
           ]
         }
       ],
@@ -317,10 +271,26 @@
       "delivery_eligibility": "blocked",
       "completion_evidence": [],
       "delivery_prerequisites": [
-        {"source": "E1", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E2", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E3", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E4", "gate_state": "unsatisfied", "accepted_evidence": []}
+        {
+          "source": "E1",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E2",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E3",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E4",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        }
       ],
       "blockers": [
         {"id": "E7-delivery-E1", "kind": "delivery_gate", "target": "E1", "issue": 759, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
@@ -330,7 +300,8 @@
       ],
       "references": [
         {"kind": "issue", "value": 765},
-        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/NIGHT_SHIFT_E5_0.md"}
       ]
     },
     {
@@ -345,18 +316,20 @@
           "source": "E0",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
-              "repo_path": "docs/nerva2/E0_COMPLETION.json",
-              "issue": 758,
-              "pull_request": 790,
-              "claim_code": "e0_control_gate_accepted"
-            }
+            {"commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4", "repo_path": "docs/nerva2/E0_COMPLETION.json", "issue": 758, "pull_request": 790, "claim_code": "e0_control_gate_accepted"}
           ]
         }
       ],
       "blockers": [
-        {"id": "E8-program-B7", "kind": "program_gate", "target": "B7", "issue": 818, "artifact": "BACKLOG.md", "reason_code": "task_mediation_acceptance_pending"},
+        {
+          "id": "E8-program-B7",
+          "kind": "program_gate",
+          "target": "B7",
+          "issue": 818,
+          "artifact": "BACKLOG.md",
+          "reason_code": "task_mediation_acceptance_pending",
+          "note": "PR #918 (merge b5e52c6, reviewed source 6eed5a7) RETAINED on main by owner decision 2026-09-01, default-off; merged but not program-accepted, so this gate stays open until #906 is provisioned or re-scoped."
+        },
         {"id": "E8-external-PROVIDER_E9", "kind": "external_dependency", "target": "PROVIDER_E9", "issue": 767, "artifact": "docs/nerva2/RESEARCH_LAB_E9_1.md", "reason_code": "provider_specific_evidence_missing"}
       ],
       "references": [
@@ -381,13 +354,7 @@
           "source": "E0",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
-              "repo_path": "docs/nerva2/E0_COMPLETION.json",
-              "issue": 758,
-              "pull_request": 790,
-              "claim_code": "e0_control_gate_accepted"
-            }
+            {"commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4", "repo_path": "docs/nerva2/E0_COMPLETION.json", "issue": 758, "pull_request": 790, "claim_code": "e0_control_gate_accepted"}
           ]
         }
       ],
@@ -406,10 +373,26 @@
       "delivery_eligibility": "blocked",
       "completion_evidence": [],
       "delivery_prerequisites": [
-        {"source": "E1", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E2", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E5", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E6", "gate_state": "unsatisfied", "accepted_evidence": []}
+        {
+          "source": "E1",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E2",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E5",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E6",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        }
       ],
       "blockers": [
         {"id": "E10-delivery-E1", "kind": "delivery_gate", "target": "E1", "issue": 759, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
@@ -419,7 +402,8 @@
       ],
       "references": [
         {"kind": "issue", "value": 768},
-        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"}
+        {"kind": "repo_path", "value": "docs/nerva2/DEPENDENCIES.md"},
+        {"kind": "repo_path", "value": "docs/nerva2/NIGHT_SHIFT_E5_0.md"}
       ]
     },
     {
@@ -434,26 +418,64 @@
           "source": "E0",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
-              "repo_path": "docs/nerva2/E0_COMPLETION.json",
-              "issue": 758,
-              "pull_request": 790,
-              "claim_code": "e0_control_gate_accepted"
-            }
+            {"commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4", "repo_path": "docs/nerva2/E0_COMPLETION.json", "issue": 758, "pull_request": 790, "claim_code": "e0_control_gate_accepted"}
           ]
         },
-        {"source": "E1", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E2", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E3", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E4", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E5", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E6", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E7", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E8", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E9", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E10", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E12", "gate_state": "unsatisfied", "accepted_evidence": []}
+        {
+          "source": "E1",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E2",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E3",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E4",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E5",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E6",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E7",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E8",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E9",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E10",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E12",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        }
       ],
       "blockers": [
         {"id": "E11-delivery-E1", "kind": "delivery_gate", "target": "E1", "issue": 759, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
@@ -467,7 +489,15 @@
         {"id": "E11-delivery-E9", "kind": "delivery_gate", "target": "E9", "issue": 767, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
         {"id": "E11-delivery-E10", "kind": "delivery_gate", "target": "E10", "issue": 768, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
         {"id": "E11-delivery-E12", "kind": "delivery_gate", "target": "E12", "issue": 773, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
-        {"id": "E11-owner-OWNER_LIVE", "kind": "owner_live", "target": "OWNER_LIVE", "issue": 769, "artifact": "docs/nerva2/RISKS.md", "reason_code": "owner_live_proof_missing"},
+        {
+          "id": "E11-owner-OWNER_LIVE",
+          "kind": "owner_live",
+          "target": "OWNER_LIVE",
+          "issue": 769,
+          "artifact": "docs/MANUAL_TESTING.md",
+          "reason_code": "a1_section0_run_record_owed",
+          "note": "A8 owner-host proof cleared by the owner on 2026-08-28 (good feedback); the remaining owner-live item is the post-tag A1 MANUAL_TESTING section 0 run record, still owed."
+        },
         {"id": "E11-program-RESTORE_SOAK", "kind": "program_gate", "target": "RESTORE_SOAK", "issue": 769, "artifact": "docs/nerva2/RISKS.md", "reason_code": "restore_soak_proof_missing"},
         {"id": "E11-program-RECURRING_WORKFLOWS", "kind": "program_gate", "target": "RECURRING_WORKFLOWS", "issue": 769, "artifact": "docs/nerva2/RISKS.md", "reason_code": "recurring_workflow_proof_missing"}
       ],
@@ -488,20 +518,34 @@
           "source": "E0",
           "gate_state": "satisfied",
           "accepted_evidence": [
-            {
-              "commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4",
-              "repo_path": "docs/nerva2/E0_COMPLETION.json",
-              "issue": 758,
-              "pull_request": 790,
-              "claim_code": "e0_control_gate_accepted"
-            }
+            {"commit": "ec2c281a9bc800bc1152f9cef865eca3be2a5fd4", "repo_path": "docs/nerva2/E0_COMPLETION.json", "issue": 758, "pull_request": 790, "claim_code": "e0_control_gate_accepted"}
           ]
         },
-        {"source": "E1", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E2", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E3", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E6", "gate_state": "unsatisfied", "accepted_evidence": []},
-        {"source": "E9", "gate_state": "unsatisfied", "accepted_evidence": []}
+        {
+          "source": "E1",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E2",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E3",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E6",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        },
+        {
+          "source": "E9",
+          "gate_state": "unsatisfied",
+          "accepted_evidence": []
+        }
       ],
       "blockers": [
         {"id": "E12-delivery-E1", "kind": "delivery_gate", "target": "E1", "issue": 759, "artifact": "docs/nerva2/DEPENDENCIES.md", "reason_code": "upstream_gate_not_accepted"},
@@ -551,5 +595,67 @@
       "done_clear_result": "satisfied",
       "done_open_cause_allowed": false
     }
-  }
+  },
+  "contract_registry": {
+    "path": "docs/nerva2/CONTRACT_REGISTRY.json",
+    "sha256": "01c490cc62a7550a5207eeb20e66c5ade25ec8847f3f4d716f0ffa316b39f7c9",
+    "statuses": {
+      "nerva.observation.v1": "proposed",
+      "nerva.atlas.snapshot.v1": "proposed",
+      "nerva.capability.v1": "evolves_existing",
+      "nerva.decision.v1": "proposed",
+      "nerva.action.v1": "evolves_existing",
+      "nerva.episode.v1": "proposed",
+      "nerva.lesson.v1": "proposed",
+      "nerva.preference.v1": "proposed",
+      "nerva.work-run.v1": "candidate",
+      "nerva.scenario.v1": "proposed",
+      "nerva.benchmark.v1": "proposed",
+      "nerva.evidence.v1": "evolves_existing"
+    }
+  },
+  "reconciliation_log": [
+    {
+      "id": "2026-09-06-981-safety-disabled",
+      "date": "2026-09-06",
+      "decision": "movement_gate.enforcement_state required -> safety_disabled with a rollback record bound to PR #981 / 824ff187; four deleted control files move to registry_retired; scripts/check_nerva_program_manifest.py is restored as a compact advisory checker.",
+      "effect": "The manifest stops claiming an enforcement that CI no longer performs; dead registry paths become checker errors.",
+      "evidence": ["docs/nerva2/NERVA_ISSUE_MOVEMENT_V1.md", "scripts/check_nerva_program_manifest.py", ".github/workflows/nerva-manifest-check.yml"]
+    },
+    {
+      "id": "2026-08-28-a8-owner-host-cleared",
+      "date": "2026-08-28",
+      "decision": "Owner cleared the A8 owner-host proof gate after a real-hardware run with good feedback; the E11 owner_live blocker is re-scoped to the post-tag A1 section 0 run record.",
+      "effect": "E11 stays blocked; the reason is narrower and names the artifact still owed.",
+      "evidence": ["BACKLOG.md:3587", "docs/HISTORY.md:386", "docs/MANUAL_TESTING.md"]
+    },
+    {
+      "id": "2026-09-01-918-retained",
+      "date": "2026-09-01",
+      "decision": "PR #918 (B7 task mediation corrective, merge b5e52c6) RETAINED on main under a bounded owner exception, default-off; not program-accepted.",
+      "effect": "E5 and E8 keep the B7 program_gate blocker with an explanatory note; no authority change.",
+      "evidence": ["BACKLOG.md:280", "docs/HISTORY.md:384"]
+    },
+    {
+      "id": "2026-09-01-1008-identity-manifest",
+      "date": "2026-09-01",
+      "decision": "Issue #1008 owns Jarvis's own Identity Manifest (E4 identity-boundary lane, not Howard); #762 stays Howard-only.",
+      "effect": "E4 gains an issue reference; no gate or status change.",
+      "evidence": ["docs/nerva2/CONTINUITY_CORE_RECONCILIATION.md", "docs/HISTORY.md:381"]
+    },
+    {
+      "id": "2026-09-06-e5-candidate",
+      "date": "2026-09-06",
+      "decision": "WITHDRAWN the same day, before merge. The row read: nerva.work-run.v1 moves to candidate on the E5.0 slice (work-run ledger, company supervisor, verifier, judge). It was written ahead of the code — none of work_runs.py, company_supervisor.py, work_verifier.py, work_judge.py or NIGHT_SHIFT_E5_0.md exist in the tree — so the claim, its evidence paths and the E5 status move described nothing. nerva.work-run.v1 stays proposed until the modules ship; E5 was already building/in_progress before this row, so the status move it described was not a move at all.",
+      "effect": "No status, gate or eligibility change at the time. The withdrawal is recorded rather than deleted so the attempted claim stays auditable. The modules shipped later the same day and the contract moved to candidate on that evidence — see the 2026-09-06-e5-shipped row.",
+      "evidence": ["docs/nerva2/CONTRACT_REGISTRY.json"]
+    },
+    {
+      "id": "2026-09-06-e5-shipped",
+      "date": "2026-09-06",
+      "decision": "nerva.work-run.v1 moves to candidate on the E5.0 work-run chain, now in the tree: work_runs.py (durable ledger), work_verifier.py (evidence), work_judge.py (goal fit) and company_supervisor.py (the loop), default-off behind JARVIS_COMPANY_MODE with 80 hermetic tests.",
+      "effect": "Contract status only. Authority stays delegated_execution_only; E5 remains building/in_progress and every E5 delivery gate plus the B7 program gate stay open. Delivered, not program-accepted.",
+      "evidence": ["docs/nerva2/CONTRACT_REGISTRY.json", "docs/nerva2/NIGHT_SHIFT_E5_0.md"]
+    }
+  ]
 }

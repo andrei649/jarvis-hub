@@ -27,6 +27,9 @@ Hermes"/"superior lui Hermes"** → citește `NERVA_VISION.md` (viziunea de prod
 brand architecture, cei 6 piloni, arhitectura țintă, registry, graduated autonomy, criteriile
 S1–S8 vs Hermes; orizonturile ORIZONT 27–33 în `BACKLOG.md`). MOONSHOT.md rămâne north-star-ul
 scurt. **Nerva = brandul de produs (rename-ul în cod/suprafețe de produs executat 2026-07-19); jarvis-hub = codename-ul repo-ului/engine-ului până la redenumirea repo-ului GitHub (owner).**
+Când se discută **roadmap 1.x → 2.0 / "ce urmează după 1.0" / milestone-uri / "developerul continuă singur"** →
+citește `docs/NERVA_2_ROADMAP.md` (secvența de release-uri 1.1.0 … 2.0.0 cu exit gates, livrarea 1.1.0, lane-ul owner-ului,
+bara Hermes S1–S8) și rulează `docs/prompts/BACKLOG_DRIVER.md` pentru un developer autonom (ordinea de pick, gates, stop conditions).
 Taskurile care țin **doar de owner** (hardware, GitHub settings, decizii) → `docs/OWNER_TASKS.md`.
 Când se discută **metrici/KPI/măsurarea north-star** (accepted actions, interrupt/reject rate, %-local, p95) → `docs/METRICS.md`
 (definiții + endpoint `GET /api/metrics/north-star`). Retrospectiva anuală (status, învățăminte, gap-uri) → `docs/REVIEW_YEAR_ONE.md`.

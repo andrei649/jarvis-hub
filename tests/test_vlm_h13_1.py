@@ -189,3 +189,96 @@ async def test_vlm_routes_resolve_config_and_refuse_honestly(monkeypatch):
     assert payload["local"] is True
     # reachable stays null: the route does no network probe, and says so.
     assert payload["reachable"] is None
+
+
+# --- op-visual-grounding: pinned local grounder presets (JARVIS_VLM_PRESET) ---
+
+from agents.core.llm.vlm import (  # noqa: E402
+    COORDINATE_CONVENTIONS,
+    VLM_PRESETS,
+    VLMConfig,
+    VLMPreset,
+    resolve_vlm_preset,
+)
+
+
+def test_preset_table_is_pinned_and_apache_licensed():
+    assert set(VLM_PRESETS) == {
+        "qwen3-vl-4b", "qwen3-vl-8b", "ui-tars-1.5-7b", "holo-3.1-35b-a3b", "qwen3.8-27b",
+    }
+    for preset_id, preset in VLM_PRESETS.items():
+        assert preset.id == preset_id
+        assert preset.license == "Apache-2.0"
+        assert preset.convention in COORDINATE_CONVENTIONS
+        assert preset.size_gb > 0
+        assert preset.prompt_hint
+    # The two families that disagree are pinned to different conventions.
+    assert VLM_PRESETS["qwen3-vl-8b"].convention == "relative_1000"
+    assert VLM_PRESETS["ui-tars-1.5-7b"].convention == "absolute_resized"
+
+
+def test_preset_dataclass_validates_itself():
+    with pytest.raises(ValueError, match="convention"):
+        VLMPreset("x", "fam", "pixels", 1.0, "hint")
+    with pytest.raises(ValueError, match="size_gb"):
+        VLMPreset("x", "fam", "absolute", 0, "hint")
+    with pytest.raises(ValueError, match="preset id"):
+        VLMPreset("", "fam", "absolute", 1.0, "hint")
+    with pytest.raises(ValueError, match="convention"):
+        VLMConfig(backend="custom", base_url="http://localhost:1/v1", model="m",
+                  api_key="", is_local=True, convention="pixels")
+
+
+def test_resolve_vlm_preset_is_case_insensitive_and_never_guesses():
+    assert resolve_vlm_preset(" UI-TARS-1.5-7B ").id == "ui-tars-1.5-7b"
+    with pytest.raises(VLMNotConfigured) as exc:
+        resolve_vlm_preset("gpt-4v")
+    assert exc.value.reason == "vlm_preset_unknown"
+
+
+def test_resolver_annotates_the_preset_but_still_requires_the_model_pin():
+    config = resolve_vlm_config(env={
+        "JARVIS_VLM_BACKEND": "lmstudio", "JARVIS_VLM_MODEL": "ui-tars-1.5-7b-q4",
+        "JARVIS_VLM_PRESET": "ui-tars-1.5-7b",
+    })
+    assert config.preset == "ui-tars-1.5-7b"
+    assert config.convention == "absolute_resized"
+    assert config.model == "ui-tars-1.5-7b-q4"   # the served name, not the preset id
+
+    # preset without a model → refused on every backend, legacy URL path included
+    for env in (
+        {"JARVIS_VLM_BACKEND": "lmstudio", "JARVIS_VLM_PRESET": "qwen3-vl-4b"},
+        {"JARVIS_VLM_BACKEND": "custom", "JARVIS_VLM_URL": "http://localhost:8000/v1",
+         "JARVIS_VLM_PRESET": "qwen3-vl-4b"},
+        {"JARVIS_VLM_URL": "http://localhost:8000/v1", "JARVIS_VLM_PRESET": "qwen3-vl-4b"},
+    ):
+        with pytest.raises(VLMNotConfigured) as exc:
+            resolve_vlm_config(env=env)
+        assert exc.value.reason == "vlm_model_unset"
+
+
+def test_resolver_unknown_preset_is_a_refusal():
+    with pytest.raises(VLMNotConfigured) as exc:
+        resolve_vlm_config(env={"JARVIS_VLM_BACKEND": "lmstudio", "JARVIS_VLM_MODEL": "m",
+                                "JARVIS_VLM_PRESET": "nope"})
+    assert exc.value.reason == "vlm_preset_unknown"
+
+
+def test_no_preset_means_absolute_pixels_and_untouched_legacy_shape():
+    config = resolve_vlm_config(env={"JARVIS_VLM_URL": "http://localhost:8000/v1"})
+    assert config.preset == "" and config.convention == "absolute"
+    assert config.backend == "custom" and config.model == "qwen2-vl"
+    # 'off' still wins over everything, preset included
+    with pytest.raises(VLMNotConfigured) as exc:
+        resolve_vlm_config(env={"JARVIS_VLM_BACKEND": "off", "JARVIS_VLM_PRESET": "qwen3-vl-4b",
+                                "JARVIS_VLM_MODEL": "m"})
+    assert exc.value.reason == "vlm_disabled"
+
+
+def test_loopback_label_docstring_names_the_real_gates():
+    """DRA-06 residual (b): the docstring must say who enforces, not just 'label'."""
+    from agents.core.llm.vlm import _is_loopback_base
+
+    doc = _is_loopback_base.__doc__ or ""
+    assert "label" in doc and "gate" in doc
+    assert "routers/multimodal.py" in doc and "screen_locator" in doc

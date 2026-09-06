@@ -29,6 +29,9 @@ class TelegramChannel(ChannelAdapter):
         self._poll_task = None
         # Decision-inbox callback: on_callback(task_id, action, chat_id=..., user_id=...)
         self.on_callback: Optional[Callable] = None
+        # Injectable so deeplink pairing is testable without touching the data
+        # root; production leaves it None and the store is built on first use.
+        self._pairing = None
 
     async def start(self):
         self._running = True
@@ -112,12 +115,52 @@ class TelegramChannel(ChannelAdapter):
                     chat_id = msg["chat"]["id"]
                     if not text:
                         continue
+                    # A `/start <token>` deeplink pairs this sender and stops here:
+                    # the payload is a credential, so it must never be forwarded to
+                    # the orchestrator, echoed, or logged as message text.
+                    if await self._maybe_pair_deeplink(text, uid, chat_id):
+                        continue
                     # Pass the sender id so the gateway's H12.19 pairing gate can
                     # hold unknown senders for approval (no-op unless enabled).
                     await self.receive(text, chat_id=chat_id, sender=str(uid))
             except Exception as e:
                 logger.warning(f"Telegram poll error: {e}")
                 await __import__("asyncio").sleep(3)
+
+    async def _maybe_pair_deeplink(self, text: str, uid, chat_id) -> bool:
+        """Redeem a ``/start <token>`` deeplink. True when this message was one.
+
+        Returning True swallows the message deliberately: the payload is a live
+        credential until it is spent, so it must not reach the orchestrator, the
+        transcript, or a log line. A plain ``/start`` with no payload is not a
+        pairing attempt and falls through to normal handling.
+
+        The reply is the same length either way — "paired" or "that link is not
+        valid" — and never says *why* a token failed. Wrong, spent and expired are
+        indistinguishable from outside on purpose.
+        """
+        stripped = str(text or "").strip()
+        if not stripped.startswith("/start"):
+            return False
+        parts = stripped.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            return False  # bare /start — an ordinary message
+        token = parts[1].strip()
+        try:
+            from ..channels.pairing import SenderPairing
+
+            pairing = self._pairing or SenderPairing()
+            result = pairing.redeem_deeplink(token, "telegram", str(uid))
+        except Exception:
+            # Never leak the token or the failure detail through an exception path.
+            logger.warning("Telegram deeplink pairing failed")
+            result = {"ok": False}
+        if result.get("ok"):
+            logger.info("Telegram sender paired by deeplink: %s", log_safe(uid))
+            await self.send("Paired. This device can now talk to Nerva.", chat_id=chat_id)
+        else:
+            await self.send("That pairing link is not valid.", chat_id=chat_id)
+        return True
 
     async def _handle_callback(self, cb: dict):
         """Parse an inline-button tap and dispatch to on_callback."""

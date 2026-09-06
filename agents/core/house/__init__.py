@@ -1,4 +1,4 @@
-"""House Brain contracts and strict-local adapters (ORIZONT 30)."""
+"""House Brain contracts, strict-local adapters (ORIZONT 30) and Hestia's binding."""
 
 from .actuation import (
     HOUSE_CONTROL_KIND,
@@ -13,6 +13,7 @@ from .camera_feed import HouseCameraFeedConsumer
 from .confirmation import ConfirmationError, StrongConfirmationStore
 from .contracts import HouseArea, HouseEntity, HouseEvent, HouseSnapshot
 from .graph import HouseGraph
+from .hestia_bridge import HESTIA_BRIDGE_ENV, HestiaBridge, hestia_bridge_enabled
 from .home_assistant import HAConfig, HAConfigError, HomeAssistantAdapter, load_ha_config
 from .ingest import HousePresenceIngestor
 from .presence import (
@@ -23,9 +24,11 @@ from .presence import (
     PresenceOutcome,
 )
 from .private_store import PrivateHouseStore, PrivateStoreError
+from .wled import WLED_SCENES, WLED_URL_ENV, WLEDBridge, WLEDConfigError
 
 __all__ = [
     "ConfirmationError",
+    "HESTIA_BRIDGE_ENV",
     "HAConfig",
     "HAConfigError",
     "HOUSE_CONTROL_KIND",
@@ -39,6 +42,7 @@ __all__ = [
     "HouseEvent",
     "HouseGraph",
     "HouseSnapshot",
+    "HestiaBridge",
     "HouseActuator",
     "HouseActuationError",
     "LocalPresenceExplainer",
@@ -50,6 +54,11 @@ __all__ = [
     "PrivateHouseStore",
     "PrivateStoreError",
     "StrongConfirmationStore",
+    "WLED_SCENES",
+    "WLED_URL_ENV",
+    "WLEDBridge",
+    "WLEDConfigError",
+    "hestia_bridge_enabled",
     "load_ha_config",
     "register_house_handlers",
 ]

@@ -134,6 +134,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="hybrid_flash_max", value=1000000,                label="Cloud Flash routing threshold — above N input tokens escalates to Pro (0 = unlimited)", kind="number"),
     dict(category="llm",     key="tool_loop_enabled", value=False,                  label="Agent tool loop (experimental)", kind="toggle"),
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),
+    dict(category="llm",     key="model_pull_max_gb", value=20,                    label="Local model pull size cap (GB) — a governed Ollama pull whose layers exceed it is refused", kind="number"),
     # voice
     dict(category="voice",   key="stt_model_size",   value="medium",              label="STT model size",     kind="select",  opts=["tiny","base","small","medium","large"]),
     dict(category="voice",   key="stt_language",     value="ro",                  label="STT language",       kind="text"),
@@ -251,6 +252,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="night_shift",     value=False,  label="Night shift enabled",  kind="toggle"),
     dict(category="autonomy", key="night_start",     value=23,     label="Night window start (h)", kind="number"),
     dict(category="autonomy", key="night_end",       value=6,      label="Night window end (h)", kind="number"),
+    dict(category="autonomy", key="max_subagent_spawns_per_boot", value=50, label="Max sub-agent spawns per boot (0 = unbounded)", kind="number"),
     dict(category="autonomy", key="priority_senders", value=["andrei"], label="Priority email senders", kind="tags"),
     dict(category="autonomy", key="finance_min_ron",  value=2000.0,   label="Minimum balance threshold (RON)", kind="number"),
     dict(category="autonomy", key="finance_min_eur",  value=400.0,    label="Minimum balance threshold (EUR)", kind="number"),

@@ -10,6 +10,8 @@ Orchestrator-only: every handler reads its subsystem off the live orchestrator
 `orch.subagents`) via `get_orch()`, with no web-module globals.
 """
 
+import asyncio
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
@@ -189,6 +191,15 @@ async def toolrpc_call(body: ToolRPCCallBody):
 class SubAgentSpawnBody(BaseModel):
     task: str = Field(..., max_length=4000)
     agent: str = Field("", max_length=40)
+    # Typed hand-off: type/required/enum schema the child's result must satisfy.
+    output_schema: dict | None = None
+
+
+# Reasons a spawn was refused at the gate (429), as opposed to a child that ran
+# and failed / violated its output schema (422 — the request itself was fine).
+_SPAWN_GATE_REASONS = frozenset({
+    "concurrency_cap", "spawn_budget_exhausted", "recursion_depth_cap",
+})
 
 
 @router.get("/api/subagents", dependencies=[Depends(user_guard)])
@@ -207,5 +218,53 @@ async def subagents_spawn(body: SubAgentSpawnBody):
     _, m, err = require_component("subagents", "sub-agents unavailable")
     if err is not None:
         return err
-    result = await m.spawn(body.task, agent=body.agent)
-    return nocache_json(result, status_code=200 if result.get("ok") else 429)
+    result = await m.spawn(body.task, agent=body.agent, output_schema=body.output_schema)
+    if result.get("ok"):
+        status = 200
+    elif result.get("reason") in _SPAWN_GATE_REASONS:
+        status = 429
+    else:
+        status = 422        # ran and failed / schema violation / invalid schema
+    return nocache_json(result, status_code=status)
+
+
+class SubAgentSteerBody(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+
+
+def _steer_status(result: dict) -> int:
+    if result.get("ok"):
+        return 200
+    reason = result.get("reason")
+    if reason == "unknown_spawn":
+        return 404
+    if reason == "not_running":
+        return 409
+    return 422
+
+
+@router.post("/api/subagents/{spawn_id}/steer", dependencies=[Depends(user_guard)])
+async def subagents_steer(spawn_id: str, body: SubAgentSteerBody):
+    """Steer a running sub-agent (company mode). The message is delivered to the
+    child's inbox with origin=user; it is guidance, never an approval — a queue
+    decision only ever comes from the inbox path (worker.apply_decision)."""
+    _, m, err = require_component("subagents", "sub-agents unavailable")
+    if err is not None:
+        return err
+    result = m.steer(spawn_id, body.message, origin="user")
+    return nocache_json(result, status_code=_steer_status(result))
+
+
+@router.post("/api/subagents/{spawn_id}/stop", dependencies=[Depends(user_guard)])
+async def subagents_stop(spawn_id: str):
+    """Stop (cancel) a running sub-agent. Yields once so a child that unwinds
+    immediately reports `stopped` rather than the transient `stopping`."""
+    _, m, err = require_component("subagents", "sub-agents unavailable")
+    if err is not None:
+        return err
+    result = m.stop(spawn_id, reason="operator")
+    if result.get("ok"):
+        await asyncio.sleep(0)
+        rec = m.get(spawn_id) or {}
+        result["status"] = rec.get("status", result.get("status"))
+    return nocache_json(result, status_code=_steer_status(result))
