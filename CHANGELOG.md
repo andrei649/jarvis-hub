@@ -121,6 +121,13 @@ default: every new capability is off behind its own flag.
   Console panel expose it — with **no way to start a run**, because a goal is approved in the
   decision inbox like everything else, and a start button here would be a second, weaker approval
   path. Stop is offered, since narrowing needs no approval.
+- **And it keeps going on its own.** `schedule_runtime.py` decides when a run advances, and
+  every rule in it is restraint rather than throughput: a terminal, stopping, blocked or
+  budget-spent run is never woken (an unreadable budget fails closed as spent), concurrency is
+  bounded so ten open goals are not ten simultaneous agents, and the night window is quiet hours
+  for *attention* only — the work continues, the interruption waits for morning. A failed tick is
+  reported but never retried there, because a second retry loop would multiply the supervisor's
+  failure budget behind its back.
 - `permissions.db` and `work_runs.db` join the purge and export sets.
 
 ## [1.0.0] — 2026-09-02

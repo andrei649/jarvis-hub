@@ -101,6 +101,7 @@ that is structurally true rather than a promise:
 - `tests/test_company_planner.py` — 23 cases
 - `tests/test_company_report.py` — 19 cases
 - `tests/test_company_routes.py` — 16 cases
+- `tests/test_schedule_runtime.py` — 22 cases
 - `frontend/src/panels/company-room.test.tsx` — 9 cases
 
 All hermetic: in-memory SQLite, injected clocks, hand-written planners and
@@ -138,12 +139,17 @@ Landed in the same PR, after the four components above:
   in the inbox, and a start control here would be a second, weaker approval path
   for the most powerful thing in the product. Stop is offered, because narrowing
   never needs approval. 16 pytest + 9 vitest.
+- `agents/core/autonomy/schedule_runtime.py` — the "24/7" half. Waking is not a
+  licence: a terminal, stopping, blocked or budget-spent run is never ticked (an
+  unreadable budget fails closed as spent), concurrency is bounded, and the night
+  window is quiet hours for *attention* only — work continues, owner interruptions
+  defer. Sweeps are stateless and idempotent, and a failed tick is reported but
+  never retried here, because a second retry loop would multiply the supervisor's
+  failure budget behind its back. 22 tests.
 
 ## What is deliberately NOT in this slice
 
 - **A real proposer.** `ModelPlanner` takes an injected call; wiring a live model
   into it is a separate slice, and the clamps above are what make that safe to do
   later rather than now.
-- **Scheduled continuity.** Waking a run on a schedule is a separate slice; this
-  one is tick-driven by its caller.
 - **Anything that opens a run from a UI.** By design, as above.

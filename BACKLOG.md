@@ -127,6 +127,16 @@
   product; a test asserts the absence. Stop is offered because narrowing never needs approval, the
   same shape as revoking a permission. The panel renders the backend's headline verbatim and shows
   a step with no task id as "no approved task" in red. 16 pytest + 9 vitest.
+- [x] ✅ **CO-RUN-8 — scheduled continuity (the "24/7" half).**
+  `agents/core/autonomy/schedule_runtime.py` decides *when* a run is advanced, and waking is not a
+  licence, so every rule is restraint: a terminal, stopping or budget-spent run is never ticked
+  (waking it would burn the supervisor's failure streak against a wall); a **blocked run is not
+  poked**, because it waits on the owner and a tick only adds noise; an unreadable budget fails
+  closed as spent; concurrency is bounded (`max_concurrent`, default 1) so ten open goals are not
+  ten simultaneous agents; **night hours are quiet hours for attention, not for work** — steps
+  continue, only owner interruptions defer; and a failed tick is reported but never retried here,
+  since a second retry loop would multiply the supervisor's failure budget behind its back. Sweeps
+  are stateless and idempotent, so a restart resumes correctly. 22 tests.
 
 **Activation — the first ten minutes**
 
