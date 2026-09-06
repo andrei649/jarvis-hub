@@ -170,6 +170,25 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **Three ways to install it, and a channel that cannot lie.** Package managers are the
+  cheapest distribution there is — `brew install --cask nerva` is a different product from
+  "clone the repo and read INSTALL.md", off the same build. Every tagged release now generates
+  a Homebrew cask, the three winget manifest documents and a `channel.json`
+  (`scripts/gen_package_manifests.py`), and publishes a multi-arch GHCR image from a `Dockerfile`
+  extracted from the quickstart compose. The design is entirely about the one thing that makes
+  packaging dangerous — a mistake is found on a *stranger's* machine, at install time, by someone
+  with no idea what went wrong. So: the **checksum comes from the build that just ran**, never a
+  committed template, and a missing one is a **refusal** rather than an empty string that renders
+  as a valid manifest and fails on download; a **prerelease is never promoted to `stable`**,
+  because promoting an rc on a loose regex is how a knowingly-unfinished build reaches everyone
+  who typed `brew upgrade`; a version that is not a version is **refused, not coerced**; and the
+  channel is **decided once** and passed downstream as a job output, since two jobs each working
+  out "is this a prerelease" is how a tag lands in both channels or in neither. The image keeps
+  the native install's posture exactly: `JARVIS_HOST=127.0.0.1`, no `EXPOSE`, the data root a
+  volume rather than a layer, hash-pinned dependencies, and **no credential as a build argument**
+  — a secret in an ARG is a secret in the image history. Publishing the tap and the winget PR are
+  owner gates (`docs/OWNER_TASKS.md` **P10**); the manifests those steps consume are produced
+  here. 51 pytest.
 - **A 24/7 run stops dying after twenty screenshots.** The context compressor had a token budget
   but no *policy* — nothing that decided when to act or what to give up first — so a long run on a
   local 32–128k window ran out of room and got truncated by the provider, which truncates the

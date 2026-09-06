@@ -203,6 +203,20 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+- [ ] 🔨 **REL-CHANNELS — package managers, the free distribution.**
+  `scripts/gen_package_manifests.py` + `Dockerfile` + the `image` job and channel outputs in
+  `release.yml`. Every tagged release generates a Homebrew cask, the three winget documents and
+  a `channel.json`, attaches them, and pushes a multi-arch GHCR image. Built around the one thing
+  that makes packaging dangerous — a mistake is discovered on a **stranger's** machine at install
+  time: the **checksum comes from the build that just ran** (a missing one is a *refusal*, never
+  an empty string that renders fine and fails on download); a **prerelease never becomes
+  `stable`**; a malformed version is **refused, not coerced**; and the channel is **decided once**
+  and passed downstream, because two jobs each deciding "is this a prerelease" is how a tag lands
+  in both channels or neither. The image keeps the native posture (loopback bind, no `EXPOSE`,
+  data root a volume, hash-pinned deps, no credential as a build ARG). 51 pytest.
+  **🔨 not ✅:** nothing has been published. The Homebrew tap repo, the winget PR and making the
+  GHCR package public are owner gates — `docs/OWNER_TASKS.md` **P10**.
+
 - [x] ✅ **CO-COMPACT — a 24/7 run stops dying after twenty screenshots.**
   `ContextCompressor.compact` + `CompactionPolicy` + `memory.compaction_{soft,hard,protect_last}`.
   The compressor had a budget but **no policy** — nothing deciding *when* to act or *what to give up

@@ -512,6 +512,32 @@ built on your Windows box:
       *Report back:* which OS, and for (a) exactly which chords arrived. If a chord silently does
       nothing, that is a mapping bug worth a row, not something to work around.
 
+- [ ] **P10 — Publish the two package-manager channels** *(unblocks the live half of
+      `REL-CHANNELS`)*
+      The cask and the winget manifests are generated on every tagged release, from the
+      checksums that release actually produced, and attached to it (`dist/packaging/*`). What
+      only you can do is create the two places they get published to — both are free, and both
+      turn "clone the repo" into one command.
+      **Homebrew:** create a public repo named **`homebrew-nerva`** under your account. That name
+      is what makes `brew tap andrei649/nerva` work; any other name will not. Then, per release,
+      copy `nerva.rb` from the release assets into `Casks/nerva.rb` and push.
+      ```bash
+      brew tap andrei649/nerva && brew install --cask nerva
+      ```
+      **winget:** fork `microsoft/winget-pkgs`, copy the three
+      `Nerva.Nerva.*.yaml` files into
+      `manifests/n/Nerva/Nerva/<version>/`, and open a PR. First submission is reviewed by a
+      human and takes a few days; later ones are usually automatic.
+      **Confirm three things:** (a) `brew install --cask nerva` on a Mac you have not installed
+      on before ends at a working `./install.sh`; (b) the sha256 in the cask matches the release
+      asset — if it does not, **stop and report it**, because that means the generator and the
+      build disagree and every user would hit a corrupt-download error; (c) a **prerelease** tag
+      (`v1.1.1-rc1`) does **not** move the `stable` cask or the `:stable` image tag.
+      *Also needs:* GHCR publishing is on by default for the repo's own `GITHUB_TOKEN`, but the
+      package is **private** until you make it public once, in the repo's Packages settings.
+      Until then `docker pull ghcr.io/andrei649/nerva:stable` fails for everyone but you — which
+      is the single most likely reason a "it works for me" install report is wrong.
+
 - [ ] **P8 — The 72h soak, and the two chaos rows a simulation cannot close**
       *(unblocks the remaining half of `T-0.63`)*
       The failure-injection harness shipped and is green in CI; it **does not replace the soak**.
