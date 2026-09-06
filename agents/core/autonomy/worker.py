@@ -1136,6 +1136,16 @@ class AutonomyWorker:
                 self.prefs.record(task, action, decided_by=decided_by)
             except Exception as e:
                 logger.warning(f"Preference record failed for #{task_id}: {e}")
+        # S8 / GAP-0 — time to first governed action. Called on every decision;
+        # first_action owns the rules (owner-decided, accepted, once only), so
+        # there is one place to read them and no chance of two callers disagreeing.
+        # A metric write must never be able to fail a decision that already landed.
+        try:
+            from agents.core.first_action import record_first_action
+
+            record_first_action(task)
+        except Exception:
+            logger.debug("activation record skipped", exc_info=True)
         return task
 
     # ── audit ─────────────────────────────────────────────────────

@@ -161,6 +161,15 @@ default: every new capability is off behind its own flag.
   questions it answered, so a changed pack reads as stale instead of being served as current. The
   pack ships a negative control — a task expected to fail — because a governance rule with no
   failing example is a rule nobody has tested.
+- **Activation is measured, and measured honestly.** Time to first governed action is the adoption
+  number S8 and GAP-0 both come down to, and it is the one most easily flattered — so the clock
+  starts at *install* rather than first launch (someone who installed on Monday and opened it on
+  Friday took five days, not ninety seconds), only an owner-**accepted** action counts (proposing
+  quickly and being rejected has activated nobody, and a policy auto-approval is not the owner
+  choosing to trust anything), the first recorded activation is immutable so a later faster action
+  cannot improve it, and a never-activated install reports *how long it has been waiting* rather
+  than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
+  of the install rather than of the trailing window.
 - `permissions.db` and `work_runs.db` join the purge and export sets.
 
 ## [1.0.0] — 2026-09-02

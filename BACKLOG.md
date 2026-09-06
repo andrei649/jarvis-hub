@@ -203,6 +203,20 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+**Activation — the first ten minutes (S8 / GAP-0)**
+
+- [x] ✅ **AD-ACT — time to first governed action, measured honestly.**
+  `agents/core/first_action.py` + the `activation` field on the north-star. It is the adoption
+  number and the one most easily flattered, so each definition is chosen against a specific way of
+  flattering it: the clock starts at **install**, not first launch (someone who installed Monday and
+  opened it Friday took five days); "first governed action" means one the owner **accepted**, since
+  a product that proposes fast and gets rejected has activated nobody, and a policy auto-approval is
+  not the owner choosing to trust it; **the first is the first**, so a later faster action cannot
+  improve the number, and a re-install starts a new honest clock; and never-activated is a
+  *reported state carrying how long it has been*, never a blank and never a zero. Wired into
+  `AutonomyWorker.apply_decision`, so it is recorded wherever a decision actually lands, and a
+  failed metric write can never fail the decision. 40 tests.
+
 **Activation — the first ten minutes**
 
 - [ ] 🔨 **install-one-step-native — one-step native install per OS.** `install.sh` (checkout or the
