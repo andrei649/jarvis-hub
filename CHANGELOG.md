@@ -128,6 +128,19 @@ default: every new capability is off behind its own flag.
   for *attention* only — the work continues, the interruption waits for morning. A failed tick is
   reported but never retried there, because a second retry loop would multiply the supervisor's
   failure budget behind its back.
+- **The operator grew the other two platforms.** `build_desktop_runtime` picked
+  `WindowsDesktopDriver` unconditionally — which is why the desktop operator only ever worked on
+  Windows. There is now a `desktop_drivers` package: a shared base holding the observe/act policy
+  and every bound (a mutation re-snapshots and matches by *exact* name immediately before acting, so
+  a stale handle cannot click something else; `requires_kernel` is inherited so an adapter cannot
+  omit it), a macOS adapter over the AX API, a Linux adapter over AT-SPI, and per-platform capture.
+  The factory chooses from the host probe's own verdict, so it can never disagree with the Host
+  Readiness panel, and it never downgrades silently: an undrivable host gets a named refusal and the
+  probe's hint, and the runtime binds an `UnavailableDriver` that refuses each step by name rather
+  than a null driver answering "deferred". Two refusals are deliberate rather than incidental —
+  Wayland input through `uinput`/`ydotool` is refused *by policy* (it works, and that is the problem:
+  it bypasses the compositor's consent model), and Wayland capture refuses X11 grabbers outright
+  because under Xwayland they return black frames rather than errors.
 - `permissions.db` and `work_runs.db` join the purge and export sets.
 
 ## [1.0.0] — 2026-09-02

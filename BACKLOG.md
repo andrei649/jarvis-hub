@@ -138,6 +138,42 @@
   since a second retry loop would multiply the supervisor's failure budget behind its back. Sweeps
   are stateless and idempotent, so a restart resumes correctly. 22 tests.
 
+**Operator hands — the other two platforms**
+
+- [x] ✅ **OP-DRV-1 — the driver factory + shared policy.** `agents/core/desktop_drivers/`:
+  `base.py` lifts the observe/act policy `WindowsDesktopDriver` proved (accessibility first, pixels
+  last; a mutation **re-snapshots and matches by exact name immediately before acting**, so a stale
+  handle cannot click something else; every bound — element count, name length, typed text,
+  screenshot bytes — lives on the base so an adapter cannot widen one by forgetting to check;
+  `requires_kernel = True` is inherited, so a new adapter cannot omit it and take the legacy direct
+  path). `platform.py` chooses from the **host probe's own verdict**, so the factory and the Host
+  Readiness panel can never disagree, and it **never downgrades silently** — a host that cannot be
+  driven gets a named refusal plus the probe's hint, not a driver that quietly does less.
+  A missing vision model does not veto the driver (it vetoes only the visual fallback). 32 tests.
+- [x] ✅ **OP-DRV-2 — macOS.** `desktop_drivers/macos.py` over the AX API. `AXPress` rather than a
+  synthetic click at a point (it cannot land on whatever moved under the pointer since the
+  snapshot, and works unfocused) and `AXValue` rather than synthetic keystrokes (keys go to whatever
+  is focused *now*, which may not be the matched element). **Nerva never asks macOS for a
+  permission**: the trust check runs with the prompt option OFF, and an absent grant is
+  `accessibility_permission_missing` — granting is the owner's deliberate act.
+- [x] ✅ **OP-DRV-3 — Linux, X11 and Wayland.** `desktop_drivers/linux.py` over AT-SPI, with the one
+  genuinely hard part handled honestly: under Wayland, input goes through the consent-based
+  RemoteDesktop portal (v2+) or libei, and **uinput/ydotool are refused by policy, not merely
+  unsupported** — they work, and that is the problem, because they bypass the compositor's consent
+  model so "Nerva can type" would silently become "anything running as the owner can type, including
+  into a password prompt". No portal and no libei → `wayland_input_unavailable`.
+- [x] ✅ **OP-DRV-4 — capture per platform.** `desktop_drivers/capture.py`. Wayland refuses X11
+  grabbers (mss, ImageGrab) **outright** rather than using them: under Xwayland they return a black
+  frame instead of an error, and a black screenshot that looks like a screenshot is worse than none.
+  Bytes are capped before return — an oversized capture is refused, never cropped, because cropping
+  would hand a model a picture of something other than the screen it asked about.
+- [x] ✅ **OP-DRV-5 — the runtime uses them.** `build_desktop_runtime` picked
+  `WindowsDesktopDriver` unconditionally, which is why the operator only ever worked on Windows; it
+  now takes the factory's choice. A host with no driver gets an `UnavailableDriver` that refuses each
+  step by name — *not* a null driver answering "deferred", which reads like pending work — and the
+  posture flags are still checked first, so the owner reads "the feature is off" before "your machine
+  cannot do it".
+
 **Activation — the first ten minutes**
 
 - [ ] 🔨 **install-one-step-native — one-step native install per OS.** `install.sh` (checkout or the
