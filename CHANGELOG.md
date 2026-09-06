@@ -170,6 +170,29 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **A browser click finally crosses the kernel.** `browser.step` is the 28th kernel kind.
+  The browser agent always had two gates — an egress allowlist navigation cannot escape and
+  an approval queue mutating steps must pass — but it was the one privileged surface that
+  never reached `kernel.authorize`, and that gap had teeth: the **kill switch** is honoured
+  by the kernel, so a halted install could still have clicked through an already-approved
+  plan; **taint escalation** lives in the kernel, and a plan assembled from a page the agent
+  just read is precisely the case that must be forced back to ASK, which the browser's own
+  approval object cannot know; and the **policy floor** (money caps, daily ceilings) is
+  applied by the kernel, while a browser is the easiest way to spend money without touching
+  the payments kind. `agents/core/browser_kernel.py` binds it in the same shape as
+  `desktop.step` — two surfaces meaning "one governed step on the owner's machine" should not
+  be two shapes. Two orderings are deliberate: the kernel is asked **before** an approval card
+  exists (a DENY must never reach the owner as a decision they cannot safely make — asking the
+  queue first teaches them their approvals do not mean anything), and the kernel is asked
+  about the **same payload the driver receives**, not a summary of it. Two bugs fell out:
+  `NullBrowserDriver.__getattr__` answered *any* attribute with a coroutine, so a
+  `requires_kernel` probe came back truthy and every offline driver would have demanded a
+  binding it does not have (the flag is now stated explicitly and read with `is True`); and
+  navigation's blanket "browser transport unavailable" now distinguishes **not configured**
+  (the owner never enabled the pinned transport — a config fix) from `browser_playwright`'s
+  *unavailable* (a configured one could not bind — a bug report), with an allowlisted
+  navigation reaching the driver once a transport is bound. 35 pytest + a live kernel
+  exerciser in the action-auth matrix.
 - **The night shift can hear you say yes.** A company-mode run that needs something
   privileged queues a durable task and blocks — and until now that was where the story ended:
   the task got approved in the morning and the run stayed blocked forever, because nothing

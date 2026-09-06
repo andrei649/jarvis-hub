@@ -317,6 +317,8 @@ async def _probe_operator_browser_playwright_governed() -> dict:
     runtime = _OperatorPlaywright(ledger=ledger, url_actions=url_actions)
     manager = _OperatorPlaywrightManager(runtime)
     policy = _MeasuredPolicy(["93.184.216.34"])
+    from agents.core.browser_agent import TRANSPORT_NOT_CONFIGURED as _TRANSPORT_NOT_CONFIGURED
+
     driver = PlaywrightBrowserDriver(
         host_enabled=True,
         playwright_factory=lambda: manager,
@@ -333,12 +335,12 @@ async def _probe_operator_browser_playwright_governed() -> dict:
     goto_calls = [call for call in runtime.page.calls if call[0] == "goto"]
     passed = (
         blocked.get("status") == "blocked"
-        and blocked.get("reason") == "browser transport unavailable"
+        and blocked.get("reason") == _TRANSPORT_NOT_CONFIGURED
         and manager.started == 0
         and goto_calls == []
     )
     result = ledger.result(passed, driver_call_count=0)
-    result["metadata"]["browser_transport"] = "unavailable"
+    result["metadata"]["browser_transport"] = "not_configured"
     result["metadata"]["browser_driver_calls"] = 0
     return result
 

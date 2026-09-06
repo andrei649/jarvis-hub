@@ -1,6 +1,7 @@
 {
   "action:admin.capability_issue": "wired",
   "action:admin.kill_switch": "wired",
+  "action:browser.step": "wired",
   "action:call.outbound": "wired",
   "action:channel.reply": "wired",
   "action:desktop.step": "wired",

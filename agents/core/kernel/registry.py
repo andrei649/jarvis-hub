@@ -83,6 +83,13 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # action facade immediately before actuation. Null/manual offline drivers
     # keep their legacy direct path; a requires_kernel driver cannot use it.
     "desktop.step": Mediation.KERNEL,
+    # A mutating browser step is a governed step on the owner's machine, and it
+    # was the one that never crossed here: the allowlist stops it going somewhere
+    # it should not, and the approval queue stops it happening unasked, but only
+    # the kernel applies the kill switch, taint escalation and the policy floor.
+    # A plan assembled from a page the agent just read is precisely the case that
+    # has to be forced back to ASK, and the browser's own queue cannot know that.
+    "browser.step": Mediation.KERNEL,
     # ORIZONT 30 — every Home Assistant mutation crosses the unified facade.
     # Security control retains an owner-confirmation floor; recovery is separate
     # so a halt or policy change can refuse compensation honestly.

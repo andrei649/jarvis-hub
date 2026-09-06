@@ -203,6 +203,21 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+- [x] ✅ **OP-BROWSER-KERNEL — a browser click crosses the kernel like everything else.**
+  `agents/core/browser_kernel.py` + `browser.step` (kernel kind #28) + a live exerciser in
+  `tests/test_action_auth_matrix.py`. The browser had an egress allowlist and an approval queue
+  but was the **one privileged surface that never reached `kernel.authorize`** — so the kill
+  switch, taint escalation (a plan assembled from a page the agent just read!) and the policy
+  floor did not apply to it. Bound in the same shape as `desktop.step`. Two orderings pinned:
+  the kernel is asked **before** an approval card exists (a DENY must not become a decision the
+  owner is asked to make), and it is asked about the **same bounded payload the driver receives**
+  — a gate on a summary is a gate on a different action. Two real bugs found on the way:
+  `NullBrowserDriver.__getattr__` answered *any* attribute with a coroutine, so a `requires_kernel`
+  probe read as truthy and every offline driver would have demanded a binding it lacks (now an
+  explicit flag read with `is True`); and navigation's blanket "transport unavailable" now separates
+  **not configured** (config fix) from **unavailable** (bug report), and an allowlisted navigation
+  reaches the driver once a transport is bound. 35 pytest; both orderings red-proven.
+
 - [x] ✅ **CO-HITL — a run that asked can hear the answer.**
   `agents/core/autonomy/pending_requests.py` + `WorkRunLedger.{outstanding_asks,resolve_step,run_waiting_on}`
   + read-only `GET /api/company/waiting`. Before this, the chain queued a durable task, blocked,

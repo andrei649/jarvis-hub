@@ -352,6 +352,23 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.desktop_operator:DesktopActionExecutor.perform",
         contract_ref="agents.core.desktop_operator:DESKTOP_STEP_CONTRACT",
     ),
+    "browser.step": _action(
+        "browser.step",
+        "Perform one mutating browser step through a governed, allowlisted driver.",
+        required=("action", "args"),
+        risk="sensitive",
+        supports=("mutate",),
+        rollback=RollbackContract(
+            mode="implementation_specific",
+            description="Navigate back or re-submit the prior form state where the site allows it.",
+            limitations=(
+                "A submitted form, a sent message or a completed purchase cannot be "
+                "undone by the browser; recovery is site-specific and often manual."
+            ),
+        ),
+        implementation="agents.core.browser_kernel:BrowserActionExecutor.perform",
+        contract_ref="agents.core.browser_kernel:BROWSER_STEP_CONTRACT",
+    ),
     "house.control": _action(
         "house.control",
         "Apply a bounded reversible light or climate command through Home Assistant.",

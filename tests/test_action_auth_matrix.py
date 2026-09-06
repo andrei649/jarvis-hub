@@ -558,6 +558,57 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         else:
             assert driver.calls == []
             assert result["ran"][0]["status"] == "blocked"
+    elif kind == "browser.step":
+        # A mutating browser step is the surface that used to reach a driver with
+        # only its own approval object behind it. The kernel is consulted BEFORE
+        # the approval card exists, so a DENY never becomes a decision the owner is
+        # asked to make — which is why the deny leg asserts the driver was untouched.
+        import asyncio
+
+        from agents.core.browser_agent import BrowserPolicy, GovernedBrowser
+        from agents.core.browser_kernel import BrowserActionExecutor
+
+        class _BrowserDriver:
+            requires_kernel = True
+
+            def __init__(self):
+                self.calls = []
+
+            async def click(self, **kw):
+                self.calls.append(("click", kw))
+                return {"ok": True}
+
+        class _Approvals:
+            """Present, and required to stay unused: the kernel answers first."""
+
+            def __init__(self):
+                self.requested = []
+
+            def request(self, payload):
+                self.requested.append(payload)
+                return {"id": 1}
+
+            async def await_decision(self, _id, timeout=0):
+                return "approved"
+
+        monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+        driver = _BrowserDriver()
+        approvals = _Approvals()
+        browser = GovernedBrowser(
+            driver=driver,
+            policy=BrowserPolicy(["example.com"]),
+            approvals=approvals,
+            action_executor=BrowserActionExecutor(driver, authorizer=spy),
+        )
+        result = asyncio.run(browser.run_step({"action": "click", "selector": "#buy"}))
+        if spy.calls:
+            assert driver.calls == [("click", {"selector": "#buy"})]
+            assert result["status"] == "done"
+        else:
+            assert driver.calls == []
+            assert result["status"] in {"blocked", "error"}
+        # Either way the owner was never shown a card the kernel had already ruled on.
+        assert approvals.requested == []
     elif kind == "permission.grant":
         # 1.1.0: widening the consent ledger is itself privileged. The ask crosses
         # the kernel before it can reach the decision inbox; the grant row is only

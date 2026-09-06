@@ -412,7 +412,7 @@ async def test_governed_browser_blocks_before_real_driver_and_null_default_is_un
     assert allowed == {
         "action": "navigate",
         "status": "blocked",
-        "reason": "browser transport unavailable",
+        "reason": "browser transport not configured",
     }
     assert manager.started == 0
 
