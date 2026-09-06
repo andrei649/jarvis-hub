@@ -1,0 +1,8311 @@
+# Hermes Agent v2026.8.31 — exhaustive feature & UI inventory (reverse-engineering reference)
+
+> Generated 2026-09-05/06 from a live install of `NousResearch/hermes-agent` at tag `v2026.8.31` (package `hermes-agent` 0.21.0, MIT). Evidence and method below. Total entries: **8038** across 47 sections.
+
+## Ce este documentul acesta
+
+Un inventar exhaustiv al **Hermes Agent v2026.8.31** (pachet `hermes-agent` 0.21.0, NousResearch, licență MIT),
+făcut pe o instalare **reală** — nu pe baza documentației upstream. Scopul: fiecare comandă, fiecare buton,
+fiecare setare și fiecare cuvânt din interfață să fie aici, explicat suficient de precis încât să poată fi
+reimplementat pornind doar de la acest text.
+
+Fiecare intrare are aceeași structură: **unde se vede** (comanda exactă, pagina → secțiunea → eticheta,
+citată literal, cu cheia i18n când există), **ce face**, **cum funcționează** (fișier:linie, algoritm, ce
+scrie pe disc, ce protocol vorbește), **toate** intrările și opțiunile, efectele secundare, cheile de
+configurare și variabilele de mediu care o guvernează, limitele și cazurile-limită, plus **note de
+reconstrucție**: specificația minimă de reimplementare și o observație despre ce ar face o versiune mai bună.
+
+## Harta lui Hermes, pe scurt
+
+Hermes e un agent cu apel de unelte care se expune prin șase suprafețe peste același nucleu:
+
+1. **CLI** — 73 de comenzi de nivel întâi (434 de ecrane de ajutor cu tot cu subcomenzi), de la `hermes chat`
+   până la `hermes kanban swarm`. Include un REPL interactiv cu propriile comenzi slash.
+2. **Gateway de mesagerie** — botul din Telegram, Discord, Slack, WhatsApp, Matrix, Feishu și încă ~15
+   platforme. 57 de handlere de comenzi slash, politici de acces, împerechere prin cod, aprobări în chat.
+3. **Dashboard web** — SPA React pe portul 9119 (`hermes dashboard`), 19 pagini plus Swagger, peste 260 de
+   rute FastAPI în spate.
+4. **Aplicație desktop** — Electron, cu HUD flotant, paletă de comenzi, panouri de terminal și fișiere,
+   ~90 de fișiere doar de setări; vorbește cu backend-ul prin JSON-RPC peste WebSocket.
+5. **TUI** — interfață în terminal peste `tui_gateway`, cu propriile suprapuneri și scurtături.
+6. **API-uri de protocol** — endpoint-uri compatibile OpenAI (`/v1/chat/completions`, `/v1/responses`),
+   un API de rulări (`/v1/runs`) cu dirijare și oprire, server MCP, server ACP, camere găzduite între instanțe.
+
+Nucleul comun: 83 de unelte grupate în 59 de toolset-uri, 785 de chei de configurare, peste 1.000 de variabile
+de mediu, 58 de skill-uri incluse (în 13 categorii) plus 137 opționale (23 de categorii), 65 de servere MCP
+în catalog, 40 de furnizori de modele, 22 de adaptoare de platformă, interfață tradusă în 17 limbi,
+plus subsisteme de automatizare (cron cu monitorizare de sursă, bucle, heartbeat, obiective, kanban cu roiuri
+de agenți).
+
+## Cum a fost verificat
+
+Instalare reală din tag-ul `v2026.8.31`, dashboard pornit și interogat, arborele de ajutor CLI extras prin
+execuție, registrul de unelte extras prin introspecție Python, interfața web parcursă cu un browser real.
+Ce nu s-a putut executa (gateway cu token real de Telegram, apeluri către modele, aplicația Electron fără
+ecran) e documentat din sursă și marcat ca atare în tabelul de dovezi de mai jos.
+
+**Un cuvânt despre onestitate:** unde codul contrazice documentația upstream, sau unde o setare există dar
+nu e citită de nimeni, inventarul o spune explicit. Sunt câteva zeci de astfel de constatări — de exemplu
+chei de configurare declarate și expuse în interfață care nu au niciun cititor în v2026.8.31.
+
+## Coverage matrix
+
+| # | Section | Title | Entries | Size |
+|---:|---|---|---:|---:|
+| 1 | [cli-a](01-cli-a.md) | CLI part A — `hermes` root options, chat REPL, model/moa/fallback/worktree/browser/secrets/egress/migrate | 149 | 229 KB |
+| 2 | [cli-b](02-cli-b.md) | CLI part B — gateway, proxy, lsp, setup, whatsapp, whatsapp-cloud, slack, send, login/logout, auth, status, pause/resume | 142 | 300 KB |
+| 3 | [cli-c](03-cli-c.md) | CLI Part C — cron / sync / webhook / peer / portal / kanban / project | 129 | 242 KB |
+| 4 | [cli-d](04-cli-d.md) | CLI part D — hooks, doctor, verify, security, approvals, dump, debug, backup, checkpoints, import, import-agent, config, skin, console, pairing | 80 | 235 KB |
+| 5 | [cli-e](05-cli-e.md) | CLI part E — skills, bundles, plugins, curator, pets, journey/learning/memory-graph, memory, tools, computer-use, mcp | 110 | 258 KB |
+| 6 | [cli-f](06-cli-f.md) | CLI part F — sessions, insights, monitoring, claw, update, uninstall, acp, profile, completion, dashboard, serve, desktop, logs, prompt-size | 104 | 239 KB |
+| 7 | [gw-slash](07-gw-slash.md) | Gateway Slash Commands (Telegram & all chat platforms) | 91 | 223 KB |
+| 8 | [gw-core](08-gw-core.md) | Gateway Runtime & Chat Behaviours (platform-independent) | 210 | 280 KB |
+| 9 | [platform-telegram](09-platform-telegram.md) | Telegram platform adapter — every feature | 182 | 287 KB |
+| 10 | [platforms-a](10-platforms-a.md) | Platform adapters A — Discord, Slack, WhatsApp, Matrix, Mattermost, Microsoft Teams, Google Chat, Email | 226 | 447 KB |
+| 11 | [platforms-b](11-platforms-b.md) | Platform adapters B — IRC, LINE, DingTalk, Feishu/Lark, WeCom, SimpleX, SMS, ntfy, Photon, Raft, Buzz, A2A, Home Assistant, Yuanbao | 161 | 351 KB |
+| 12 | [web-shell](12-web-shell.md) | Web dashboard shell, navigation, shared components, i18n | 139 | 315 KB |
+| 13 | [web-a](13-web-a.md) | Web dashboard pages: Chat, Sessions, Files, Analytics, Models | 147 | 234 KB |
+| 14 | [web-b](14-web-b.md) | Web dashboard (B): Logs, Cron, Skills, Plugins, MCP pages | 76 | 275 KB |
+| 15 | [web-c](15-web-c.md) | Web dashboard — Channels, Webhooks, Pairing, Profiles, Config, Keys/Env, System, Docs, Login | 141 | 325 KB |
+| 16 | [desktop-main](16-desktop-main.md) | Desktop app — Electron main process, backend lifecycle, remote/SSH backends, updates, deep links, SDK/plugins | 202 | 354 KB |
+| 17 | [desktop-a](17-desktop-a.md) | Desktop app — HUD, command palette, command center, shell chrome, sidebars, overlays | 120 | 222 KB |
+| 18 | [desktop-b](18-desktop-b.md) | Desktop app — Chat, sessions, messaging, agents, artifacts, gateway, cron, webhooks, profiles, skills, starmap, learning, pets, hooks, contrib | 173 | 387 KB |
+| 19 | [desktop-settings](19-desktop-settings.md) | Desktop app — Settings (every panel, every field) | 107 | 121 KB |
+| 20 | [tui](20-tui.md) | TUI (`ui-tui`) + `tui_gateway` | 475 | 496 KB |
+| 21 | [config-a](21-config-a.md) | Configuration keys A — General, Agent, Terminal, Display, Delegation, Memory, Compression, Security, Browser, Voice, Text-to-Speech, Speech-to-Text, Logging | 243 | 380 KB |
+| 22 | [config-b](22-config-b.md) | Configuration keys B — platform, auxiliary, gateway & ops sections, hidden keys, and the config.yaml machinery | 196 | 327 KB |
+| 23 | [env-vars](23-env-vars.md) | Environment Variables — every variable Hermes Agent v2026.8.31 reads | 1390 | 2620 KB |
+| 24 | [tools](24-tools.md) | Tools (83) and Toolsets (59) | 170 | 266 KB |
+| 25 | [skills-core](25-skills-core.md) | Built-in Skills (58) and the Skills System | 118 | 264 KB |
+| 26 | [optional](26-optional.md) | Optional Skills, Optional MCPs, Plugin Packs & the Plugin Ecosystem | 243 | 555 KB |
+| 27 | [providers](27-providers.md) | Model Providers, Model Catalog, Routing, Credentials & Billing | 137 | 322 KB |
+| 28 | [agent-core-a](28-agent-core-a.md) | Agent Core A — conversation loop, prompts, context management, guards, reasoning | 201 | 394 KB |
+| 29 | [agent-core-b](29-agent-core-b.md) | Agent core B — delegation, background review, verification, learning, e-stop, hooks, webhooks, safety | 157 | 356 KB |
+| 30 | [memory](30-memory.md) | Memory, Sessions, Checkpoints & Context Engine | 105 | 269 KB |
+| 31 | [automation](31-automation.md) | Automation — cron, loops, heartbeat, goals, kanban, projects, worktrees, hosted rooms, runs API, peers, webhooks, send | 153 | 297 KB |
+| 32 | [security](32-security.md) | Security — approvals, yolo/safe mode, egress firewall, secrets, pairing, managed scope, audits, dashboard auth, TLS | 139 | 336 KB |
+| 33 | [media](33-media.md) | Media & Environment Stack — browser, computer use, vision, image/video generation, TTS/STT, wake word, voice mode, document extraction, code-execution kernels, desktop UI tools | 216 | 363 KB |
+| 34 | [acp-mcp-dev](34-acp-mcp-dev.md) | Protocol surfaces — ACP, MCP, OpenAI-compatible API, A2A, LSP, proxy, plugin/hook developer API | 118 | 166 KB |
+| 35 | [docs-features](35-docs-features.md) | Feature Docs Cross-Check — `website/docs/user-guide/features/*` | 821 | 1511 KB |
+| 36 | [docs-rest](36-docs-rest.md) | Remaining Documentation Cross-Check — Getting Started, Guides, Integrations, Developer Guide, User-Guide Top Level, Reference Misc | 208 | 677 KB |
+| 37 | [delta-27-31](37-delta-27-31.md) | Delta v2026.8.27 → v2026.8.31 — everything that changed | 135 | 236 KB |
+| 38 | [gapfill-desktop-a-r0](38-gapfill-desktop-a-r0.md) | Gap-fill (round 0, area "desktop-a") — boot-failure recovery overlay, toast/notification stack, Send diagnostics | 27 | 116 KB |
+| 39 | [gapfill-desktop-b-0-r0](39-gapfill-desktop-b-0-r0.md) | Gap-fill — Desktop app: profile remote-override store, session status/unread, sidebar grouping, projects & worktrees, orphan profile strings | 10 | 41 KB |
+| 40 | [gapfill-desktop-b-1-r0](40-gapfill-desktop-b-1-r0.md) | Gap-fill — Desktop app: session/prompt action feedback, image + export flows, shared UI primitives (round 0, area desktop-b-1) | 21 | 64 KB |
+| 41 | [gapfill-desktop-b-r0](41-gapfill-desktop-b-r0.md) | Gap-fill — Desktop app (area desktop-b, round 0) | 6 | 29 KB |
+| 42 | [gapfill-desktop-main-r0](42-gapfill-desktop-main-r0.md) | Gap-fill — Desktop self-update: version-skew toasts and the Settings → About updates card | 10 | 55 KB |
+| 43 | [gapfill-desktop-settings-0-r0](43-gapfill-desktop-settings-0-r0.md) | Gap-fill — Hermes Desktop Settings: Language, Appearance rows, Notifications, Plugins (round 0, area `desktop-settings-0`) | 16 | 61 KB |
+| 44 | [gapfill-desktop-settings-2-r0](44-gapfill-desktop-settings-2-r0.md) | Gap-fill — Hermes Desktop Settings → Gateways: connection modes, Hermes Cloud, connections registry, managed updates (round 0, area `desktop-settings-2`) | 27 | 78 KB |
+| 45 | [gapfill-gw-core-r0](45-gapfill-gw-core-r0.md) | Gap-fill: Gateway core — kanban wake-notification message composer | 3 | 16 KB |
+| 46 | [gapfill-web-a-r0](46-gapfill-web-a-r0.md) | Gap-fill (round 0, area web-a): Files page row identity, accessible-name templates and the default browsable root | 2 | 14 KB |
+| 47 | [gapfill-web-c-r0](47-gapfill-web-c-r0.md) | Gap-fill: Web dashboard "Keys" page — composed accessible names (round 0, area web-c) | 2 | 16 KB |
+
+### UI-string coverage (mechanical)
+
+| Catalog | Strings | Covered |
+|---|---:|---:|
+| desktop_en | 2354 | 2282 (96%) |
+| gateway_locale_en | 367 | 356 (97%) |
+| tui_content | 137 | 137 (100%) |
+| web_en | 656 | 656 (100%) |
+| web_live | 1205 | 1205 (100%) |
+
+Full per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).
+
+## Live test evidence (what was actually executed on 2026-09-05)
+
+| Step | Command / action | Result |
+|---|---|---|
+| Clone + checkout | `git clone NousResearch/hermes-agent && git checkout v2026.8.31` | ok (tag = `hermes-agent` 0.21.0) |
+| Install | `python -m venv .venv && .venv/bin/pip install -e .` (log: hermes_install.log) | exit 0; `hermes --version` ok; entry points `hermes`, `hermes-agent`, `hermes-acp` |
+| CLI help tree | `hermes <cmd> [--help]` recursively, 2 levels | 434 help screens, 73 top-level commands (hermes_inv/cli_help/) |
+| Tool registry | `discover_builtin_tools()` then dump registry | 83 tools with JSON schemas, 59 toolsets (tools_full.json, tools_toolsets.json) |
+| Config defaults | import `hermes_cli.config_defaults.DEFAULT_CONFIG` | 785 leaf keys (config_defaults.json) |
+| Web build | `npm install` (workspaces web + apps/shared) + `cd web && npm run build` | built into hermes_cli/web_dist in 7.75 s |
+| Dashboard boot | `HERMES_DASHBOARD_SESSION_TOKEN=… hermes dashboard --skip-build --no-open --host 127.0.0.1 --port 9119` | `HERMES_DASHBOARD_READY port=9119`; `/api/health` → `{"ok":true,"version":"0.21.0","auth_required":false}` |
+| API sweep | GET every parameterless FastAPI route with header `X-Hermes-Session-Token` | 92 routes: 61 × 200; 22 × 422 (need query params), 4 × 400, 3 × 404, 1 × 401 (`/api/auth/me` without OAuth), 1 × 503 (`/api/auth/providers` — no auth provider configured) |
+| Config schema | GET `/api/config/schema` | `{fields:[…], category_order:[…]}`, 52 sections, 128 KB |
+| SPA crawl | Playwright (Chromium 1194) over 20 routes, capture headings/buttons/links/inputs/controls/labels/tooltips/bodyText + full-page PNGs | 20/20 rendered without console errors (except `/docs` = Swagger UI iframe, 3 asset errors); e.g. `/env` 164 visible buttons, `/skills` 126, `/channels` 109 |
+| Not executed | gateway with real Telegram token, model calls (no API key), Electron desktop app (no display), TUI interactive | documented from source + docs only |
+
+## Table of contents (every entry)
+
+### 01 · CLI part A — `hermes` root options, chat REPL, model/moa/fallback/worktree/browser/secrets/egress/migrate
+
+- `hermes` executable — argument parsing, fast paths and dispatch — `cli-a.entrypoint`
+- Startup fast paths (fast chat launch, Termux launches, ultrafast --version) — `cli-a.startup-fast-paths`
+- `--version` / `-V` — `cli-a.opt-version`
+- `--profile <name>` / `-p <name>` (pre-argparse profile selector) — `cli-a.opt-profile`
+- `-z PROMPT` / `--oneshot PROMPT` (scripted one-shot) — `cli-a.opt-oneshot`
+- `--usage-file PATH` — `cli-a.opt-usage-file`
+- `-m MODEL` / `--model MODEL` (root) — `cli-a.opt-model`
+- `--provider PROVIDER` (root) — `cli-a.opt-provider`
+- `--reasoning LEVEL` (root) — `cli-a.opt-reasoning`
+- `-t TOOLSETS` / `--toolsets TOOLSETS` (root) — `cli-a.opt-toolsets`
+- `--resume SESSION` / `-r SESSION` (root) — `cli-a.opt-resume`
+- `--no-restore-cwd` — `cli-a.opt-no-restore-cwd`
+- `--in DIR` — `cli-a.opt-in-dir`
+- `--continue [SESSION_NAME]` / `-c [SESSION_NAME]` — `cli-a.opt-continue`
+- `--worktree` / `-w` — `cli-a.opt-worktree`
+- `--accept-hooks` — `cli-a.opt-accept-hooks`
+- `--skills SKILLS` / `-s SKILLS` — `cli-a.opt-skills`
+- `--yolo` — `cli-a.opt-yolo`
+- `--pass-session-id` — `cli-a.opt-pass-session-id`
+- `--ignore-user-config` — `cli-a.opt-ignore-user-config`
+- `--ignore-rules` — `cli-a.opt-ignore-rules`
+- `--safe-mode` — `cli-a.opt-safe-mode`
+- `--tui` — `cli-a.opt-tui`
+- `--cli` — `cli-a.opt-cli`
+- `--dev` — `cli-a.opt-dev`
+- Startup expensive-model / data-policy confirmation — `cli-a.startup-expensive-model-guard`
+- First-run provider guard — `cli-a.first-run-provider-guard`
+- xAI retirement startup warning — `cli-a.xai-retirement-warning`
+- Relaunch — flags inherited across self re-exec — `cli-a.relaunch-inherited-flags`
+- `hermes chat` (interactive chat sub-command) — `cli-a.chat`
+- `-q QUERY` / `--query QUERY` — `cli-a.chat-query`
+- `--query-file PATH` — `cli-a.chat-query-file`
+- `--oneshot` (chat form) — `cli-a.chat-oneshot-flag`
+- `--image IMAGE` — `cli-a.chat-image`
+- `-v` / `--verbose` (chat) — `cli-a.chat-verbose`
+- `-Q` / `--quiet` (chat) — `cli-a.chat-quiet`
+- `--create-if-missing` — `cli-a.chat-create-if-missing`
+- `--checkpoints` — `cli-a.chat-checkpoints`
+- `--max-turns N` — `cli-a.chat-max-turns`
+- `--run-budget SECONDS` — `cli-a.chat-run-budget`
+- `--source SOURCE` — `cli-a.chat-source`
+- Shared flags redeclared on `chat` — `cli-a.chat-shared-flags`
+- `hermes model` (provider & model selector) — `cli-a.model`
+- `hermes model --refresh` — `cli-a.model-refresh`
+- `hermes model --portal-url PORTAL_URL` — `cli-a.model-portal-url`
+- `hermes model --inference-url INFERENCE_URL` — `cli-a.model-inference-url`
+- `hermes model --client-id CLIENT_ID` — `cli-a.model-client-id`
+- `hermes model --scope SCOPE` — `cli-a.model-scope`
+- `hermes model --no-browser` — `cli-a.model-no-browser`
+- `hermes model --timeout TIMEOUT` — `cli-a.model-timeout`
+- `hermes model --ca-bundle CA_BUNDLE` — `cli-a.model-ca-bundle`
+- `hermes model --insecure` — `cli-a.model-insecure`
+- Provider picker — canonical provider rows — `cli-a.model-provider-rows`
+- Provider picker — provider groups (collapsed rows) — `cli-a.model-provider-groups`
+- Provider picker — `Custom endpoint (enter URL manually)` — `cli-a.model-custom-endpoint-row`
+- Provider picker — API compatibility mode prompt — `cli-a.model-api-mode-picker`
+- Provider picker — `Remove a saved custom provider` — `cli-a.model-remove-custom`
+- Provider picker — `Configure auxiliary models...` — `cli-a.model-aux-config-menu`
+- Auxiliary task picker (per task) — `cli-a.model-aux-task-picker`
+- Auxiliary task — `Custom endpoint (direct URL)` flow — `cli-a.model-aux-custom-endpoint`
+- Picker keyboard navigation (curses radiolist) — `cli-a.model-picker-keys`
+- Post-switch cleanup — stale `OPENAI_BASE_URL` — `cli-a.model-clear-stale-base-url`
+- `hermes moa` (command group) — `cli-a.moa`
+- `hermes moa list` / `hermes moa ls` — `cli-a.moa-list`
+- `hermes moa configure [name]` / `hermes moa config [name]` — `cli-a.moa-configure`
+- `hermes moa delete <name>` / `hermes moa rm <name>` — `cli-a.moa-delete`
+- MoA preset schema (what `configure` writes) — `cli-a.moa-preset-schema`
+- `hermes fallback` (command group) — `cli-a.fallback`
+- `hermes fallback list` / `hermes fallback ls` — `cli-a.fallback-list`
+- `hermes fallback add` — `cli-a.fallback-add`
+- `hermes fallback remove` / `hermes fallback rm` — `cli-a.fallback-remove`
+- `hermes fallback clear` — `cli-a.fallback-clear`
+- Fallback chain storage and merge rules — `cli-a.fallback-storage`
+- `hermes worktree` (command group) — `cli-a.worktree`
+- `hermes worktree list` (aliases `ls`, `audit`) — `cli-a.worktree-list`
+- `hermes worktree list --repo REPO` — `cli-a.worktree-list-repo`
+- `hermes worktree prune` — `cli-a.worktree-prune`
+- `hermes worktree prune --repo REPO` — `cli-a.worktree-prune-repo`
+- `hermes worktree prune --dry-run` — `cli-a.worktree-prune-dry-run`
+- `hermes worktree prune --trees-only` — `cli-a.worktree-prune-trees-only`
+- `hermes worktree prune --branches-only` — `cli-a.worktree-prune-branches-only`
+- Worktree verdicts (audit classification) — `cli-a.worktree-verdicts`
+- Branch verdicts (audit classification) — `cli-a.worktree-branch-verdicts`
+- Untracked-scratch archive — `cli-a.worktree-archive`
+- `hermes browser` (command group) — `cli-a.browser`
+- `hermes browser close-profile` — `cli-a.browser-close-profile`
+- `hermes browser close-profile --browser BROWSER` — `cli-a.browser-close-profile-browser`
+- `hermes secrets` (command group) — `cli-a.secrets`
+- `hermes secrets bitwarden` / `hermes secrets bw` — `cli-a.secrets-bitwarden`
+- `hermes secrets bitwarden setup` — `cli-a.secrets-bw-setup`
+- Bitwarden region picker — `cli-a.secrets-bw-region`
+- `hermes secrets bitwarden status` — `cli-a.secrets-bw-status`
+- `hermes secrets bitwarden token` — `cli-a.secrets-bw-token`
+- `hermes secrets bitwarden sync` — `cli-a.secrets-bw-sync`
+- `hermes secrets bitwarden disable` — `cli-a.secrets-bw-disable`
+- `hermes secrets bitwarden install` — `cli-a.secrets-bw-install`
+- `hermes secrets onepassword` / `op` / `1password` — `cli-a.secrets-onepassword`
+- `hermes secrets onepassword setup` — `cli-a.secrets-op-setup`
+- `hermes secrets onepassword status` — `cli-a.secrets-op-status`
+- `hermes secrets onepassword token` — `cli-a.secrets-op-token`
+- `hermes secrets onepassword set <env_var> <reference>` — `cli-a.secrets-op-set`
+- `hermes secrets onepassword remove <env_var>` — `cli-a.secrets-op-remove`
+- `hermes secrets onepassword sync` — `cli-a.secrets-op-sync`
+- `hermes secrets onepassword disable` — `cli-a.secrets-op-disable`
+- `hermes egress` (command group) — `cli-a.egress`
+- `hermes egress install` — `cli-a.egress-install`
+- `hermes egress setup` — `cli-a.egress-setup`
+- Egress provider coverage (minted mappings) — `cli-a.egress-provider-coverage`
+- `hermes egress start` — `cli-a.egress-start`
+- `hermes egress stop` — `cli-a.egress-stop`
+- `hermes egress restart` — `cli-a.egress-restart`
+- `hermes egress reload` — `cli-a.egress-reload`
+- `hermes egress status` — `cli-a.egress-status`
+- `hermes egress disable` — `cli-a.egress-disable`
+- `hermes egress config` — `cli-a.egress-config`
+- Egress state directory layout — `cli-a.egress-state-files`
+- `hermes migrate` (command group) — `cli-a.migrate`
+- `hermes migrate xai` — `cli-a.migrate-xai`
+- xAI retirement replacement map — `cli-a.migrate-xai-map`
+- Interactive CLI REPL (overall shell) — `cli-a.repl`
+- Welcome banner — `cli-a.repl-banner`
+- Status bar — `cli-a.repl-status-bar`
+- Prompt symbol and per-state prompts — `cli-a.repl-prompt`
+- Keybinding — `Enter` (send) — `cli-a.repl-key-enter`
+- Keybinding — `Alt+Enter` / `Ctrl+J` / `Ctrl+Enter` / `Shift+Enter` (newline) — `cli-a.repl-key-newline`
+- Keybinding — `Tab` (completion / suggestion) — `cli-a.repl-key-tab`
+- Keybinding — `↑` / `↓` (history and cursor) — `cli-a.repl-key-history`
+- Keybinding — `Ctrl+L` (redraw) — `cli-a.repl-key-ctrl-l`
+- Keybinding — `Ctrl+C` (cancel / interrupt / exit) — `cli-a.repl-key-ctrl-c`
+- Keybinding — `Ctrl+Q` (alternative interrupt) — `cli-a.repl-key-ctrl-q`
+- Keybinding — `Ctrl+D` (delete-char / exit) — `cli-a.repl-key-ctrl-d`
+- Keybinding — `Ctrl+Z` (suspend) — `cli-a.repl-key-ctrl-z`
+- Keybinding — `Ctrl+G` / `Alt+G` / `Ctrl+X Ctrl+E` (external editor) — `cli-a.repl-key-editor`
+- Keybinding — `Ctrl+S` (prompt stash) and the stash panel — `cli-a.repl-key-stash`
+- Keybinding — `Ctrl+P` (command palette) — `cli-a.repl-key-palette`
+- Keybinding — `Ctrl+V` and `Alt+V` (clipboard image paste) — `cli-a.repl-key-paste-image`
+- Keybinding — voice record key (default `Ctrl+B`) — `cli-a.repl-key-voice`
+- Keybinding — `Esc` (cancel modal) and `Esc Esc` (discard draft) — `cli-a.repl-key-escape`
+- Keybinding — number keys in modal overlays — `cli-a.repl-key-numbers`
+- Clarify overlay keys — `cli-a.repl-key-clarify`
+- Inline model picker overlay — `cli-a.repl-model-picker`
+- `!` shell mode — `cli-a.repl-bang-shell`
+- Slash-command completer and CLI-only commands — `cli-a.repl-slash-commands`
+- Thinking spinner — `cli-a.repl-spinner`
+- Tool progress feed and preview truncation — `cli-a.repl-tool-feed`
+- Skins (CLI theming) — `cli-a.repl-skins`
+- Bracketed paste, paste collapse, and file drop — `cli-a.repl-paste`
+- Busy input mode (typing while the agent works) — `cli-a.repl-busy-input`
+- Final-response rendering (markdown stripping) — `cli-a.repl-render`
+
+### 02 · CLI part B — gateway, proxy, lsp, setup, whatsapp, whatsapp-cloud, slack, send, login/logout, auth, status, pause/resume
+
+- hermes gateway (command group) — `cli-b.gateway`
+- --accept-hooks (auto-approve unseen shell hooks) — `cli-b.gateway.accept-hooks`
+- hermes gateway run — `cli-b.gateway.run`
+- gateway run — automatic s6 supervision redirect (Docker image) — `cli-b.gateway.run.s6-redirect`
+- gateway run — startup guards — `cli-b.gateway.run.guards`
+- gateway run — respawn-storm circuit breaker — `cli-b.gateway.run.respawn-storm`
+- gateway run — exit diagnostics log — `cli-b.gateway.run.exit-diag`
+- hermes gateway start — `cli-b.gateway.start`
+- hermes gateway stop — `cli-b.gateway.stop`
+- hermes gateway restart — `cli-b.gateway.restart`
+- hermes gateway status — `cli-b.gateway.status`
+- hermes gateway install — `cli-b.gateway.install`
+- gateway install — generated systemd unit — `cli-b.gateway.install.systemd-unit`
+- gateway install — generated launchd plist — `cli-b.gateway.install.launchd-plist`
+- gateway install — Windows Scheduled Task backend — `cli-b.gateway.install.windows-task`
+- hermes gateway uninstall — `cli-b.gateway.uninstall`
+- hermes gateway list — `cli-b.gateway.list`
+- hermes gateway setup (interactive platform wizard) — `cli-b.gateway.setup`
+- gateway setup — platform menu and status strings — `cli-b.gateway.setup.platform-menu`
+- gateway setup — standard vars-driven wizard — `cli-b.gateway.setup.standard-platform`
+- gateway setup — Signal wizard — `cli-b.gateway.setup.signal`
+- gateway setup — Weixin / WeChat wizard — `cli-b.gateway.setup.weixin`
+- gateway setup — QQ Bot wizard — `cli-b.gateway.setup.qqbot`
+- gateway setup — BlueBubbles (iMessage) wizard — `cli-b.gateway.setup.bluebubbles`
+- gateway setup — Telegram wizard — `cli-b.gateway.setup.telegram`
+- gateway setup — Discord wizard — `cli-b.gateway.setup.discord`
+- gateway setup — Slack wizard — `cli-b.gateway.setup.slack`
+- gateway setup — WhatsApp (Baileys) plugin wizard — `cli-b.gateway.setup.whatsapp`
+- gateway setup — DingTalk wizard — `cli-b.gateway.setup.dingtalk`
+- gateway setup — Feishu / Lark wizard — `cli-b.gateway.setup.feishu`
+- gateway setup — WeCom (Enterprise WeChat) wizard — `cli-b.gateway.setup.wecom`
+- gateway setup — Matrix wizard — `cli-b.gateway.setup.matrix`
+- gateway setup — IRC wizard — `cli-b.gateway.setup.irc`
+- gateway setup — LINE wizard — `cli-b.gateway.setup.line`
+- gateway setup — SimpleX Chat wizard — `cli-b.gateway.setup.simplex`
+- gateway setup — Microsoft Teams wizard — `cli-b.gateway.setup.teams`
+- gateway setup — Google Chat wizard — `cli-b.gateway.setup.google-chat`
+- gateway setup — Buzz (Nostr) wizard — `cli-b.gateway.setup.buzz`
+- gateway setup — Raft wizard — `cli-b.gateway.setup.raft`
+- gateway setup — A2A (Agent-to-Agent) wizard — `cli-b.gateway.setup.a2a`
+- gateway setup — iMessage via Photon wizard — `cli-b.gateway.setup.photon`
+- gateway setup — env-hint platforms (Email, Home Assistant, ntfy, SMS, WeCom Callback) — `cli-b.gateway.setup.envhint`
+- gateway setup — post-setup service block — `cli-b.gateway.setup.post-setup-service`
+- gateway setup — Linux service scope prompt — `cli-b.gateway.setup.linux-scope-prompt`
+- gateway — non-interactive service reconcile (ensure_gateway_service) — `cli-b.gateway.ensure-service`
+- hermes gateway migrate-legacy — `cli-b.gateway.migrate-legacy`
+- hermes gateway enroll (relay connector enrollment) — `cli-b.gateway.enroll`
+- gateway enroll — caller-identity token resolution — `cli-b.gateway.enroll.identity-token`
+- gateway — s6 container service-manager dispatch — `cli-b.gateway.s6-dispatch`
+- gateway — service naming and paths per profile — `cli-b.gateway.service-naming`
+- hermes proxy (command group) — `cli-b.proxy`
+- hermes proxy start — `cli-b.proxy.start`
+- hermes proxy status — `cli-b.proxy.status`
+- hermes proxy providers — `cli-b.proxy.providers`
+- Proxy upstream adapter: Nous Portal — `cli-b.proxy.adapter.nous`
+- Proxy upstream adapter: xAI Grok OAuth — `cli-b.proxy.adapter.xai`
+- hermes lsp (command group) — `cli-b.lsp`
+- hermes lsp status — `cli-b.lsp.status`
+- hermes lsp list — `cli-b.lsp.list`
+- LSP server registry (27 servers) — `cli-b.lsp.registry`
+- LSP install recipes (14) — `cli-b.lsp.recipes`
+- hermes lsp install — `cli-b.lsp.install`
+- hermes lsp install-all — `cli-b.lsp.install-all`
+- hermes lsp restart — `cli-b.lsp.restart`
+- hermes lsp which — `cli-b.lsp.which`
+- hermes setup (interactive wizard) — `cli-b.setup`
+- setup — non-interactive guidance block — `cli-b.setup.noninteractive`
+- setup — curses navigation model (Escape / Left arrow / Space / Enter) — `cli-b.setup.navigation`
+- setup — first-run mode picker — `cli-b.setup.mode-picker`
+- setup — existing-install reconfigure header — `cli-b.setup.reconfigure`
+- setup — Configuration Location block — `cli-b.setup.location-block`
+- setup model — Inference Provider section — `cli-b.setup.model`
+- setup — provider fallback model lists — `cli-b.setup.default-provider-models`
+- setup — credential-pool strategy helpers — `cli-b.setup.credential-pool`
+- setup — reasoning-effort helpers — `cli-b.setup.reasoning-effort`
+- setup tts — Text-to-Speech Provider section — `cli-b.setup.tts`
+- setup tts — xAI OAuth helpers — `cli-b.setup.tts.xai-oauth`
+- setup terminal — Terminal Backend section — `cli-b.setup.terminal`
+- setup terminal — Local backend — `cli-b.setup.terminal.local`
+- setup terminal — Docker backend — `cli-b.setup.terminal.docker`
+- setup terminal — Singularity/Apptainer backend — `cli-b.setup.terminal.singularity`
+- setup terminal — Modal backend — `cli-b.setup.terminal.modal`
+- setup terminal — Daytona backend — `cli-b.setup.terminal.daytona`
+- setup terminal — Vercel Sandbox backend — `cli-b.setup.terminal.vercel`
+- setup terminal — SSH backend — `cli-b.setup.terminal.ssh`
+- setup terminal — container resource prompts — `cli-b.setup.terminal.container-resources`
+- setup agent — Agent Settings section — `cli-b.setup.agent`
+- setup — recommended agent defaults (silent) — `cli-b.setup.agent-defaults`
+- setup gateway — Messaging Platforms section — `cli-b.setup.gateway`
+- setup gateway — built-in Telegram wizard (setup.py copy) — `cli-b.setup.gateway.telegram`
+- setup gateway — built-in BlueBubbles (iMessage) wizard — `cli-b.setup.gateway.bluebubbles`
+- setup gateway — QQ Bot delegation — `cli-b.setup.gateway.qqbot`
+- setup gateway — Webhooks wizard — `cli-b.setup.gateway.webhooks`
+- setup tools — Tools section — `cli-b.setup.tools`
+- setup telemetry — Shared Metrics section — `cli-b.setup.telemetry`
+- setup — section runner (`hermes setup <section>`) — `cli-b.setup.section-runner`
+- setup --portal — one-shot Nous Portal setup — `cli-b.setup.portal`
+- setup — first-time Quick Setup (Nous Portal track) — `cli-b.setup.quick-firsttime`
+- setup — macOS Full Disk Access tip — `cli-b.setup.macos-fda-tip`
+- setup — Blank Slate install — `cli-b.setup.blank-slate`
+- Blank Slate — minimal toolset enforcement — `cli-b.setup.blank-slate.toolsets`
+- Blank Slate — minimized config knobs — `cli-b.setup.blank-slate.config`
+- Blank Slate — opt-in walkthrough — `cli-b.setup.blank-slate.walkthrough`
+- setup --quick — missing-items-only flow — `cli-b.setup.quick`
+- setup — API-key prompt card — `cli-b.setup.api-key-card`
+- setup — OpenClaw migration offer — `cli-b.setup.openclaw-migration`
+- setup — migration preview renderer and high-impact warnings — `cli-b.setup.migration-preview`
+- setup — post-migration section skip — `cli-b.setup.section-skip`
+- setup — completion summary and Tool Availability table — `cli-b.setup.summary`
+- hermes whatsapp (Baileys QR pairing wizard) — `cli-b.whatsapp`
+- hermes whatsapp-cloud (Meta Cloud API wizard) — `cli-b.whatsapp-cloud`
+- hermes slack (command group) — `cli-b.slack`
+- hermes slack manifest — `cli-b.slack.manifest`
+- hermes send — `cli-b.send`
+- hermes send --list — `cli-b.send.list`
+- hermes login (deprecated) — `cli-b.login`
+- hermes logout — `cli-b.logout`
+- hermes logout --provider nous — `cli-b.logout.nous`
+- hermes logout --provider openai-codex — `cli-b.logout.openai-codex`
+- hermes logout --provider xai-oauth — `cli-b.logout.xai-oauth`
+- hermes logout --provider spotify — `cli-b.logout.spotify`
+- hermes auth (command group + interactive mode) — `cli-b.auth`
+- hermes auth add — `cli-b.auth.add`
+- hermes auth list — `cli-b.auth.list`
+- auth — exhaustion status rendering — `cli-b.auth.exhaustion-status`
+- hermes auth remove — `cli-b.auth.remove`
+- hermes auth reset — `cli-b.auth.reset`
+- hermes auth status — `cli-b.auth.status`
+- hermes auth logout — `cli-b.auth.logout`
+- hermes auth spotify — `cli-b.auth.spotify`
+- auth spotify — first-time developer-app wizard — `cli-b.auth.spotify.setup`
+- auth — interactive add / remove / reset / strategy — `cli-b.auth.interactive`
+- hermes status — `cli-b.status`
+- status — ESTOP pause banner — `cli-b.status.estop-banner`
+- status — Gateway Service block — `cli-b.status.gateway-service`
+- status — session slot usage — `cli-b.status.session-slots`
+- hermes pause (global emergency stop) — `cli-b.pause`
+- hermes resume — `cli-b.resume`
+- slack manifest — native slash-command generation (50 commands) — `cli-b.slack.native-slashes`
+- pause — reason is overwritten on re-engage — `cli-b.pause.reason-overwrite`
+- setup — docs/help drift on the `telemetry` section — `cli-b.setup.docs-drift`
+- status --all — accepted but inert — `cli-b.status.all-flag-inert`
+
+### 03 · CLI Part C — cron / sync / webhook / peer / portal / kanban / project
+
+- Cron command group — `cli-c.cron-group`
+- Cron scheduler provider selection (`cron.provider`) — `cli-c.cron-provider`
+- `hermes cron list` — list scheduled jobs — `cli-c.cron-list`
+- `hermes cron create` (alias `add`) — create a scheduled job — `cli-c.cron-create`
+- Cron schedule syntax — `cli-c.cron-schedule-syntax`
+- Cron monitor mode (`--monitor-script` / `--monitor-url`) — `cli-c.cron-monitor-mode`
+- Cron no-agent mode (`--no-agent` / `--agent`) — `cli-c.cron-no-agent`
+- Cron run-to-run continuity (`--continuity` / `--no-continuity`) — `cli-c.cron-continuity`
+- `hermes cron edit` — edit an existing job — `cli-c.cron-edit`
+- `hermes cron pause` — pause a job — `cli-c.cron-pause`
+- `hermes cron resume` — resume / re-arm a job — `cli-c.cron-resume`
+- `hermes cron run` — trigger a job now — `cli-c.cron-run`
+- `hermes cron remove` (aliases `rm`, `delete`) — delete a job — `cli-c.cron-remove`
+- `hermes cron status` — is the scheduler running? — `cli-c.cron-status`
+- `hermes cron runs` (alias `history`) — durable execution attempts — `cli-c.cron-runs`
+- `hermes cron incidents` — durable failure incidents — `cli-c.cron-incidents`
+- `hermes cron notepad` — per-job durable KV scratchpad — `cli-c.cron-notepad`
+- `hermes cron doctor` — job health check — `cli-c.cron-doctor`
+- `hermes cron tick` — run due jobs once and exit — `cli-c.cron-tick`
+- Sync command group — `cli-c.sync-group`
+- `hermes sync status` — what is synced, and from where — `cli-c.sync-status`
+- `hermes sync pull` — pull your synced skills — `cli-c.sync-pull`
+- `hermes sync push` — push your opted-in skills — `cli-c.sync-push`
+- `hermes sync now` — reconcile (pull then push) — `cli-c.sync-now`
+- `hermes sync enable` — opt a skill into sync — `cli-c.sync-enable`
+- `hermes sync disable` — opt a skill out of sync — `cli-c.sync-disable`
+- `hermes sync device` — show or set this device's label — `cli-c.sync-device`
+- `hermes sync propose` — share a skill with your organisation — `cli-c.sync-propose`
+- Webhook command group — `cli-c.webhook-group`
+- Webhook enablement gate + setup hint — `cli-c.webhook-enable-gate`
+- Webhook base-URL display — `cli-c.webhook-base-url`
+- `hermes webhook subscribe` (alias `add`) — create a subscription — `cli-c.webhook-subscribe`
+- Webhook direct-delivery mode (`--deliver-only`) — `cli-c.webhook-deliver-only`
+- Webhook filter/transform script (`--script`) — `cli-c.webhook-script`
+- `hermes webhook list` (alias `ls`) — list subscriptions — `cli-c.webhook-list`
+- `hermes webhook remove` (alias `rm`) — delete a subscription — `cli-c.webhook-remove`
+- `hermes webhook test` — send a signed test POST — `cli-c.webhook-test`
+- Peer command group — `cli-c.peer-group`
+- Peer target syntax `<peer>[/<agent>]` — `cli-c.peer-target-syntax`
+- Remote canonical "Bot Chat" resolution — `cli-c.peer-bot-chat`
+- `hermes peer add` (alias `set`) — register/update a peer — `cli-c.peer-add`
+- `hermes peer list` (alias `ls`) — list registered peers — `cli-c.peer-list`
+- `hermes peer remove` (alias `rm`) — remove a peer — `cli-c.peer-remove`
+- `hermes peer dm` — one synchronous remote turn — `cli-c.peer-dm`
+- `hermes peer run` — start an asynchronous remote run — `cli-c.peer-run`
+- `hermes peer status` — read an asynchronous run — `cli-c.peer-status`
+- `hermes peer stop` — stop one asynchronous run — `cli-c.peer-stop`
+- Portal command group — `cli-c.portal-group`
+- `hermes portal` / `hermes portal login` — one-shot Portal onboarding — `cli-c.portal-login`
+- `hermes portal info` (alias `status`) — Portal auth + routing summary — `cli-c.portal-info`
+- `hermes portal open` — open the subscription page — `cli-c.portal-open`
+- `hermes portal tools` — Tool Gateway catalog — `cli-c.portal-tools`
+- Project command group — `cli-c.project-group`
+- Project store (`$HERMES_HOME/projects.db`) — `cli-c.project-store`
+- Project slug rules — `cli-c.project-slug`
+- Deterministic project branch names — `cli-c.project-branch-name`
+- `hermes project create` — create a project — `cli-c.project-create`
+- `hermes project list` (alias `ls`) — list projects — `cli-c.project-list`
+- `hermes project show` — show a project's details — `cli-c.project-show`
+- `hermes project add-folder` — add a folder — `cli-c.project-add-folder`
+- `hermes project remove-folder` — remove a folder — `cli-c.project-remove-folder`
+- `hermes project rename` — rename a project — `cli-c.project-rename`
+- `hermes project set-primary` — set the primary folder — `cli-c.project-set-primary`
+- `hermes project use` — set / clear the active project — `cli-c.project-use`
+- `hermes project archive` — archive a project — `cli-c.project-archive`
+- `hermes project restore` — restore an archived project — `cli-c.project-restore`
+- `hermes project bind-board` — bind/unbind a kanban board — `cli-c.project-bind-board`
+- Kanban command group — `cli-c.kanban-group`
+- Kanban `--board <slug>` global flag — `cli-c.kanban-board-flag`
+- Kanban storage layout & board isolation — `cli-c.kanban-store`
+- Kanban task status lifecycle — `cli-c.kanban-statuses`
+- Kanban `--workspace` kinds — `cli-c.kanban-workspace-flag`
+- Kanban duration parsing (`--max-runtime`) — `cli-c.kanban-duration`
+- Delegated-child mutation guard — `cli-c.kanban-delegate-guard`
+- `hermes kanban init` — create the board DB — `cli-c.kanban-init`
+- `hermes kanban boards` — board management sub-group — `cli-c.kanban-boards-group`
+- `hermes kanban boards list` (alias `ls`) — list boards — `cli-c.kanban-boards-list`
+- `hermes kanban boards create` (alias `new`) — create a board — `cli-c.kanban-boards-create`
+- `hermes kanban boards rm` (aliases `remove`, `delete`) — archive/delete a board — `cli-c.kanban-boards-rm`
+- `hermes kanban boards switch` (alias `use`) — set the active board — `cli-c.kanban-boards-switch`
+- `hermes kanban boards show` (alias `current`) — print the active board — `cli-c.kanban-boards-show`
+- `hermes kanban boards rename` — rename a board's display name — `cli-c.kanban-boards-rename`
+- `hermes kanban boards set-default-workdir` — set/clear a board's default workspace — `cli-c.kanban-boards-set-default-workdir`
+- `hermes kanban boards export` — export a board to an archive — `cli-c.kanban-boards-export`
+- `hermes kanban boards import` — import a board archive — `cli-c.kanban-boards-import`
+- `hermes kanban create` — create a task — `cli-c.kanban-create`
+- Dispatcher-presence warning — `cli-c.kanban-dispatcher-warning`
+- `hermes kanban swarm` — create a Swarm v1 graph — `cli-c.kanban-swarm`
+- `hermes kanban list` (alias `ls`) — list tasks — `cli-c.kanban-list`
+- `hermes kanban show` — show a task in full — `cli-c.kanban-show`
+- `hermes kanban assign` — assign or unassign a task — `cli-c.kanban-assign`
+- `hermes kanban set-model` — per-task model/provider override — `cli-c.kanban-set-model`
+- `hermes kanban reclaim` — release a worker claim — `cli-c.kanban-reclaim`
+- `hermes kanban reassign` — reassign (optionally reclaiming) — `cli-c.kanban-reassign`
+- `hermes kanban diagnostics` (alias `diag`) — board health — `cli-c.kanban-diagnostics`
+- `hermes kanban link` — add a dependency — `cli-c.kanban-link`
+- `hermes kanban unlink` — remove a dependency — `cli-c.kanban-unlink`
+- `hermes kanban claim` — atomically claim a ready task — `cli-c.kanban-claim`
+- `hermes kanban comment` — append a comment — `cli-c.kanban-comment`
+- `hermes kanban attach` — attach a local file — `cli-c.kanban-attach`
+- `hermes kanban attachments` — list a task's attachments — `cli-c.kanban-attachments`
+- `hermes kanban attach-rm` — delete an attachment — `cli-c.kanban-attach-rm`
+- `hermes kanban complete` — mark tasks done — `cli-c.kanban-complete`
+- `hermes kanban edit` — backfill a completed task's result — `cli-c.kanban-edit`
+- `hermes kanban block` — block tasks (typed) — `cli-c.kanban-block`
+- `hermes kanban schedule` — park tasks in Scheduled — `cli-c.kanban-schedule`
+- `hermes kanban unblock` — return tasks to ready/todo — `cli-c.kanban-unblock`
+- `hermes kanban request-review` — move a task to review — `cli-c.kanban-request-review`
+- `hermes kanban request-changes` — reviewer verdict — `cli-c.kanban-request-changes`
+- `hermes kanban reopen-review` — send review tasks back — `cli-c.kanban-reopen-review`
+- `hermes kanban promote` — force tasks to ready — `cli-c.kanban-promote`
+- `hermes kanban archive` — archive or purge tasks — `cli-c.kanban-archive`
+- `hermes kanban tail` — follow one task's events — `cli-c.kanban-tail`
+- `hermes kanban watch` — live-stream board events — `cli-c.kanban-watch`
+- `hermes kanban stats` — board statistics — `cli-c.kanban-stats`
+- `hermes kanban dispatch` — one dispatcher pass — `cli-c.kanban-dispatch`
+- `hermes kanban daemon` — DEPRECATED standalone dispatcher — `cli-c.kanban-daemon`
+- `hermes kanban notify-subscribe` — subscribe a chat to a task — `cli-c.kanban-notify-subscribe`
+- `hermes kanban notify-list` — list subscriptions — `cli-c.kanban-notify-list`
+- `hermes kanban notify-unsubscribe` — remove a subscription — `cli-c.kanban-notify-unsubscribe`
+- `hermes kanban log` — print a worker log — `cli-c.kanban-log`
+- `hermes kanban runs` — attempt history for a task — `cli-c.kanban-runs`
+- `hermes kanban heartbeat` — worker liveness signal — `cli-c.kanban-heartbeat`
+- `hermes kanban assignees` — known profiles and their load — `cli-c.kanban-assignees`
+- `hermes kanban context` — print a worker's full context — `cli-c.kanban-context`
+- `hermes kanban specify` — triage → todo via auxiliary LLM — `cli-c.kanban-specify`
+- `hermes kanban decompose` — triage → child-task graph — `cli-c.kanban-decompose`
+- `hermes kanban gc` — garbage-collect workspaces, events and logs — `cli-c.kanban-gc`
+- `hermes kanban repair` — DB integrity check and index repair — `cli-c.kanban-repair`
+
+### 04 · CLI part D — hooks, doctor, verify, security, approvals, dump, debug, backup, checkpoints, import, import-agent, config, skin, console, pairing
+
+- hooks — command group — `cli-d.hooks`
+- hermes hooks list / ls — `cli-d.hooks-list`
+- hermes hooks test — `cli-d.hooks-test`
+- hermes hooks revoke / remove / rm — `cli-d.hooks-revoke`
+- hermes hooks doctor — `cli-d.hooks-doctor`
+- Shell-hook consent & runtime semantics (context for the `hooks` group) — `cli-d.hooks-consent-model`
+- hermes doctor — `cli-d.doctor`
+- hermes doctor — section “Security Advisories” — `cli-d.doctor-sec-advisories`
+- hermes doctor — section “MCP Server Security” — `cli-d.doctor-sec-mcp`
+- hermes doctor — section “Python Environment” — `cli-d.doctor-python-env`
+- hermes doctor — section “SSL / CA Certificates” — `cli-d.doctor-ssl`
+- hermes doctor — section “Required Packages” — `cli-d.doctor-packages`
+- hermes doctor — section “Configuration Files” — `cli-d.doctor-config-files`
+- hermes doctor — section “xAI Model Retirement (May 15, 2026)” — `cli-d.doctor-xai-retirement`
+- hermes doctor — section “Auth Providers” — `cli-d.doctor-auth-providers`
+- hermes doctor — section “Directory Structure” — `cli-d.doctor-dirs`
+- hermes doctor — section “Gateway Service” — `cli-d.doctor-gateway-service`
+- hermes doctor — section “s6 Supervision” — `cli-d.doctor-s6`
+- hermes doctor — section “Command Installation” — `cli-d.doctor-command-install`
+- hermes doctor — section “External Tools” — `cli-d.doctor-external-tools`
+- hermes doctor — section “API Connectivity” — `cli-d.doctor-api-connectivity`
+- hermes doctor — section “Tool Availability” — `cli-d.doctor-tool-availability`
+- hermes doctor — section “Skills Hub” — `cli-d.doctor-skills-hub`
+- hermes doctor — section “Memory Provider” — `cli-d.doctor-memory-provider`
+- hermes doctor — section “Profiles” — `cli-d.doctor-profiles`
+- hermes doctor --fix — `cli-d.doctor-fix`
+- hermes doctor --live — `cli-d.doctor-live`
+- hermes doctor --ack ADVISORY_ID — `cli-d.doctor-ack`
+- hermes verify — `cli-d.verify`
+- `hermes verify` phase — bootstrap — `cli-d.verify-phase-bootstrap`
+- `hermes verify` phase — build — `cli-d.verify-phase-build`
+- `hermes verify` phase — test — `cli-d.verify-phase-test`
+- `hermes verify` phase — start (background boot + readiness poll) — `cli-d.verify-phase-start`
+- `hermes verify --detect-only` — `cli-d.verify-detect-only`
+- `hermes verify --save` / the `.hermes/environment.json` manifest — `cli-d.verify-manifest`
+- hermes security — `cli-d.security`
+- hermes security audit — `cli-d.security-audit`
+- hermes approvals — `cli-d.approvals`
+- hermes approvals suggest — `cli-d.approvals-suggest`
+- hermes approvals test — `cli-d.approvals-test`
+- hermes dump — `cli-d.dump`
+- hermes debug — `cli-d.debug`
+- hermes debug share — `cli-d.debug-share`
+- hermes debug delete — `cli-d.debug-delete`
+- hermes backup (full zip) — `cli-d.backup`
+- hermes backup --quick (state snapshot) — `cli-d.backup-quick`
+- hermes import — `cli-d.import`
+- hermes checkpoints — `cli-d.checkpoints`
+- hermes checkpoints status — `cli-d.checkpoints-status`
+- hermes checkpoints list — `cli-d.checkpoints-list`
+- hermes checkpoints prune — `cli-d.checkpoints-prune`
+- hermes checkpoints clear — `cli-d.checkpoints-clear`
+- hermes checkpoints clear-legacy — `cli-d.checkpoints-clear-legacy`
+- hermes import-agent — `cli-d.import-agent`
+- `hermes import-agent claude-code` — mappings — `cli-d.import-agent-claude-code`
+- `hermes import-agent codex` — mappings — `cli-d.import-agent-codex`
+- hermes config — `cli-d.config`
+- hermes config show — `cli-d.config-show`
+- hermes config edit — `cli-d.config-edit`
+- hermes config get — `cli-d.config-get`
+- hermes config set — `cli-d.config-set`
+- hermes config unset — `cli-d.config-unset`
+- hermes config path — `cli-d.config-path`
+- hermes config env-path — `cli-d.config-env-path`
+- hermes config check — `cli-d.config-check`
+- hermes config migrate — `cli-d.config-migrate`
+- hermes skin — `cli-d.skin`
+- hermes skin list — `cli-d.skin-list`
+- hermes skin use — `cli-d.skin-use`
+- hermes skin set — `cli-d.skin-set`
+- hermes console — `cli-d.console`
+- `hermes console` — the command table — `cli-d.console-commands`
+- hermes pairing — `cli-d.pairing`
+- hermes pairing list — `cli-d.pairing-list`
+- hermes pairing approve — `cli-d.pairing-approve`
+- hermes pairing revoke — `cli-d.pairing-revoke`
+- hermes pairing clear-pending — `cli-d.pairing-clear-pending`
+- `hermes verify <path>` — the project-root positional — `cli-d.verify-path`
+- `hermes checkpoints` with no sub-command — `cli-d.checkpoints-default`
+- `hermes security` with no sub-command — `cli-d.security-default`
+
+### 05 · CLI part E — skills, bundles, plugins, curator, pets, journey/learning/memory-graph, memory, tools, computer-use, mcp
+
+- Skills command group — `cli-e.skills`
+- Trust a project's repo-local skills — `cli-e.skills-trust`
+- Untrust a project — `cli-e.skills-untrust`
+- Browse all skills (paginated) — `cli-e.skills-browse`
+- Search skill registries — `cli-e.skills-search`
+- Install a skill — `cli-e.skills-install`
+- Preview a skill without installing — `cli-e.skills-inspect`
+- List installed skills — `cli-e.skills-list`
+- Check hub skills for updates — `cli-e.skills-check`
+- Update hub skills — `cli-e.skills-update`
+- Re-scan installed skills — `cli-e.skills-audit`
+- Uninstall a hub skill — `cli-e.skills-uninstall`
+- Reset a bundled skill's modification tracking — `cli-e.skills-reset`
+- List user-modified bundled skills — `cli-e.skills-list-modified`
+- Diff a bundled skill against stock — `cli-e.skills-diff`
+- Opt out of bundled-skill seeding — `cli-e.skills-opt-out`
+- Opt back in to bundled skills — `cli-e.skills-opt-in`
+- Repair official optional skills — `cli-e.skills-repair-official`
+- Publish a skill to a registry — `cli-e.skills-publish`
+- Export skill configuration — `cli-e.skills-snapshot-export`
+- Import skill configuration — `cli-e.skills-snapshot-import`
+- List configured taps — `cli-e.skills-tap-list`
+- Add a skill tap — `cli-e.skills-tap-add`
+- Remove a skill tap — `cli-e.skills-tap-remove`
+- Interactive skills configurator (curses) — `cli-e.skills-config`
+- Bundles command group — `cli-e.bundles`
+- List skill bundles — `cli-e.bundles-list`
+- Show one bundle — `cli-e.bundles-show`
+- Create a skill bundle — `cli-e.bundles-create`
+- Delete a skill bundle — `cli-e.bundles-delete`
+- Reload the bundles directory — `cli-e.bundles-reload`
+- Plugins command group (and interactive toggle) — `cli-e.plugins`
+- Install a plugin — `cli-e.plugins-install`
+- Search the community plugin index — `cli-e.plugins-search`
+- Update an installed plugin — `cli-e.plugins-update`
+- Remove a plugin — `cli-e.plugins-remove`
+- List installed plugins — `cli-e.plugins-list`
+- Enable a plugin — `cli-e.plugins-enable`
+- Disable a plugin — `cli-e.plugins-disable`
+- Show declared vs granted capabilities — `cli-e.plugins-capabilities`
+- Validate a plugin (doctor) — `cli-e.plugins-doctor`
+- Show one plugin — `cli-e.plugins-show`
+- Interactive plugins screen — `cli-e.plugins-toggle`
+- Install a plugin pack — `cli-e.plugins-pack-install`
+- Export a plugin pack — `cli-e.plugins-pack-export`
+- Inspect a plugin pack (dry run) — `cli-e.plugins-pack-show`
+- Curator command group — `cli-e.curator`
+- Curator status — `cli-e.curator-status`
+- Skill usage telemetry — `cli-e.curator-usage`
+- Run a curator review — `cli-e.curator-run`
+- Pause the curator — `cli-e.curator-pause`
+- Resume the curator — `cli-e.curator-resume`
+- Pin a skill — `cli-e.curator-pin`
+- Unpin a skill — `cli-e.curator-unpin`
+- List unmanaged skills — `cli-e.curator-list-unmanaged`
+- Adopt unmanaged skills — `cli-e.curator-adopt`
+- Restore an archived skill — `cli-e.curator-restore`
+- List archived skills — `cli-e.curator-list-archived`
+- Manually archive a skill — `cli-e.curator-archive`
+- Bulk-prune idle skills — `cli-e.curator-prune`
+- Take a manual snapshot — `cli-e.curator-backup`
+- Rollback (snapshot or single mutation) — `cli-e.curator-rollback`
+- Skill audit ledger — `cli-e.curator-ledger`
+- Purge old archives — `cli-e.curator-purge`
+- Pets command group — `cli-e.pets`
+- Browse the petdex gallery — `cli-e.pets-list`
+- Install a pet — `cli-e.pets-install`
+- Set the active pet — `cli-e.pets-select`
+- Animate the pet in the terminal — `cli-e.pets-show`
+- Disable the pet display — `cli-e.pets-off`
+- Resize the pet everywhere — `cli-e.pets-scale`
+- Delete an installed pet — `cli-e.pets-remove`
+- Pet doctor — `cli-e.pets-doctor`
+- Journey timeline (default action) — `cli-e.journey`
+- Journey aliases `learning` / `memory-graph` — `cli-e.journey-aliases`
+- List journey node ids — `cli-e.journey-list`
+- Delete a journey node — `cli-e.journey-delete`
+- Edit a journey node in $EDITOR — `cli-e.journey-edit`
+- Memory command group — `cli-e.memory`
+- Interactive memory provider setup — `cli-e.memory-setup`
+- Memory status — `cli-e.memory-status`
+- Disable the external memory provider — `cli-e.memory-off`
+- Erase built-in memory — `cli-e.memory-reset`
+- Tools command group — `cli-e.tools`
+- Tools summary (non-interactive) — `cli-e.tools-summary`
+- Interactive tools configurator — `cli-e.tools-configurator`
+- List tools for a platform — `cli-e.tools-list`
+- Enable toolsets or MCP tools — `cli-e.tools-enable`
+- Disable toolsets or MCP tools — `cli-e.tools-disable`
+- Run a provider post-setup hook — `cli-e.tools-post-setup`
+- Computer-use command group — `cli-e.computer-use`
+- Install or repair cua-driver — `cli-e.computer-use-install`
+- cua-driver status — `cli-e.computer-use-status`
+- cua-driver doctor — `cli-e.computer-use-doctor`
+- Computer-use permissions group — `cli-e.computer-use-permissions`
+- Permissions status — `cli-e.computer-use-permissions-status`
+- Permissions grant — `cli-e.computer-use-permissions-grant`
+- MCP command group (and the default picker) — `cli-e.mcp`
+- `--accept-hooks` (MCP) — `cli-e.mcp-accept-hooks`
+- Run Hermes as an MCP server — `cli-e.mcp-serve`
+- Add an MCP server — `cli-e.mcp-add`
+- Remove an MCP server — `cli-e.mcp-remove`
+- List configured MCP servers — `cli-e.mcp-list`
+- Test an MCP server connection — `cli-e.mcp-test`
+- Toggle an MCP server's tools — `cli-e.mcp-configure`
+- Force MCP OAuth re-authentication — `cli-e.mcp-login`
+- Re-authenticate one or all OAuth servers — `cli-e.mcp-reauth`
+- Interactive MCP catalog picker — `cli-e.mcp-picker`
+- List the MCP catalog — `cli-e.mcp-catalog`
+- Install a catalog MCP by name — `cli-e.mcp-install`
+
+### 06 · CLI part F — sessions, insights, monitoring, claw, update, uninstall, acp, profile, completion, dashboard, serve, desktop, logs, prompt-size
+
+- Sessions command group — `cli-f.sessions`
+- Shared session filter flags (`--older-than … --max-tool-calls`) — `cli-f.sessions.filters`
+- `hermes sessions list` — `cli-f.sessions.list`
+- `hermes sessions export` — `cli-f.sessions.export`
+- `hermes sessions delete` — `cli-f.sessions.delete`
+- `hermes sessions prune` — `cli-f.sessions.prune`
+- `hermes sessions prune --never-active` — `cli-f.sessions.prune-never-active`
+- `hermes sessions archive` — `cli-f.sessions.archive`
+- `hermes sessions optimize` — `cli-f.sessions.optimize`
+- `hermes sessions clean-markers` — `cli-f.sessions.clean-markers`
+- `hermes sessions optimize-storage` — `cli-f.sessions.optimize-storage`
+- `hermes sessions repair` — `cli-f.sessions.repair`
+- `hermes sessions repair-routing` — `cli-f.sessions.repair-routing`
+- `hermes sessions recover` — `cli-f.sessions.recover`
+- `hermes sessions stats` — `cli-f.sessions.stats`
+- `hermes sessions rename` — `cli-f.sessions.rename`
+- `hermes sessions pin` — `cli-f.sessions.pin`
+- `hermes sessions unpin` — `cli-f.sessions.unpin`
+- `hermes sessions pinned` — `cli-f.sessions.pinned`
+- `hermes sessions retitle-skills` — `cli-f.sessions.retitle-skills`
+- `hermes sessions browse` — `cli-f.sessions.browse`
+- Interactive session browser (curses picker) — `cli-f.sessions.browse-picker`
+- `hermes sessions import` — `cli-f.sessions.import`
+- `hermes insights` — `cli-f.insights`
+- `hermes monitoring` — `cli-f.monitoring`
+- `hermes monitoring status` — `cli-f.monitoring.status`
+- `hermes claw` — `cli-f.claw`
+- `hermes claw migrate` — `cli-f.claw.migrate`
+- `hermes claw cleanup` (alias `hermes claw clean`) — `cli-f.claw.cleanup`
+- `hermes prompt-size` — `cli-f.prompt-size`
+- `hermes logs` — `cli-f.logs`
+- `hermes completion` — `cli-f.completion`
+- `hermes completion bash` — `cli-f.completion.bash`
+- `hermes completion zsh` — `cli-f.completion.zsh`
+- `hermes completion fish` — `cli-f.completion.fish`
+- `hermes update` — `cli-f.update`
+- `hermes update --check` — `cli-f.update.check`
+- `hermes update --plan` — `cli-f.update.plan`
+- `hermes update --gateway` — `cli-f.update.gateway`
+- `hermes update --backup` / `--no-backup` — `cli-f.update.backup`
+- `hermes update --yes` / `-y` — `cli-f.update.yes`
+- `hermes update --keep-stash` — `cli-f.update.keep-stash`
+- `hermes update --branch NAME` / `--switch-branch` — `cli-f.update.branch`
+- `hermes update --force` / `--force-venv` (Windows guards) — `cli-f.update.force`
+- Update lock (`.hermes-update-in-progress`) — `cli-f.update.lock`
+- Update receipts (`logs/update_receipts/`) — `cli-f.update.receipt`
+- Update admission contract (image/package-managed refusal) — `cli-f.update.admission`
+- `hermes uninstall` — `cli-f.uninstall`
+- `hermes uninstall --full` — `cli-f.uninstall.full`
+- `hermes uninstall --gui` — `cli-f.uninstall.gui`
+- `hermes uninstall --gui-summary` — `cli-f.uninstall.gui-summary`
+- `hermes uninstall --dry-run` — `cli-f.uninstall.dry-run`
+- `hermes uninstall --yes` / `-y` — `cli-f.uninstall.yes`
+- `python -m hermes_cli.uninstall --mode <gui|lite|full>` — `cli-f.uninstall.module-entry`
+- `hermes acp` — `cli-f.acp`
+- `hermes acp --version` — `cli-f.acp.version`
+- `hermes acp --check` — `cli-f.acp.check`
+- `hermes acp --setup` — `cli-f.acp.setup`
+- `hermes acp --setup-browser` — `cli-f.acp.setup-browser`
+- `hermes acp --yes` / `-y` — `cli-f.acp.yes`
+- `hermes acp --accept-hooks` — `cli-f.acp.accept-hooks`
+- Profile command group / bare `hermes profile` — `cli-f.profile`
+- `hermes profile list` — `cli-f.profile.list`
+- `hermes profile use <profile_name>` — `cli-f.profile.use`
+- `hermes profile create <profile_name>` — `cli-f.profile.create`
+- `hermes profile delete <profile_name>` — `cli-f.profile.delete`
+- `hermes profile describe [profile_name]` — `cli-f.profile.describe`
+- `hermes profile show <profile_name>` — `cli-f.profile.show`
+- `hermes profile alias <profile_name>` — `cli-f.profile.alias`
+- `hermes profile rename <old_name> <new_name>` — `cli-f.profile.rename`
+- `hermes profile export <profile_name>` — `cli-f.profile.export`
+- `hermes profile import <archive>` — `cli-f.profile.import`
+- `hermes profile install <source>` — `cli-f.profile.install`
+- `hermes profile update <profile_name>` — `cli-f.profile.update`
+- `hermes profile info <profile_name>` — `cli-f.profile.info`
+- Profile wrapper scripts / aliases (`~/.local/bin/<alias>`) — `cli-f.profile.wrappers`
+- Profile metadata file (`<profile>/profile.yaml`) — `cli-f.profile.meta`
+- Distribution manifest (`distribution.yaml`) — `cli-f.profile.manifest`
+- `hermes dashboard` — `cli-f.dashboard`
+- `hermes dashboard --status` — `cli-f.dashboard.status`
+- `hermes dashboard --stop` — `cli-f.dashboard.stop`
+- `hermes dashboard --isolated` — `cli-f.dashboard.isolated`
+- Unified profile-launch routing (`--open-profile`) — `cli-f.dashboard.profile-routing`
+- `hermes dashboard --skip-build` — `cli-f.dashboard.skip-build`
+- `hermes dashboard --insecure` (deprecated no-op) — `cli-f.dashboard.insecure`
+- `hermes dashboard --no-open` — `cli-f.dashboard.no-open`
+- `hermes dashboard register` — `cli-f.dashboard.register`
+- Interactive dashboard-auth setup prompt — `cli-f.dashboard.auth-setup`
+- Dashboard auth gate (fail-closed on public binds) — `cli-f.dashboard.auth-gate`
+- Dashboard session token (`X-Hermes-Session-Token`) — `cli-f.dashboard.session-token`
+- Backend ready sentinels and ready file — `cli-f.serve.ready`
+- Port-conflict detection (`BACKEND_PORT_IN_USE`) — `cli-f.serve.port-conflict`
+- `hermes serve` — `cli-f.serve`
+- `hermes serve --ssh-session-token-file PATH` — `cli-f.serve.ssh-token-file`
+- `hermes serve --ssh-owner-nonce NONCE` — `cli-f.serve.ssh-owner-nonce`
+- `hermes desktop` (alias `hermes gui`) — `cli-f.desktop`
+- `hermes desktop --source` — `cli-f.desktop.source`
+- `hermes desktop --build-only` — `cli-f.desktop.build-only`
+- `hermes desktop --fake-boot` — `cli-f.desktop.fake-boot`
+- `hermes desktop --ignore-existing` — `cli-f.desktop.ignore-existing`
+- `hermes desktop --hermes-root HERMES_ROOT` — `cli-f.desktop.hermes-root`
+- `hermes desktop --cwd CWD` — `cli-f.desktop.cwd`
+- `hermes desktop --skip-build` / `--force-build` — `cli-f.desktop.build-control`
+- `hermes desktop --setup-tcc-identity` / `--identity` — `cli-f.desktop.tcc-identity`
+
+### 07 · Gateway Slash Commands (Telegram & all chat platforms)
+
+- Slash-command recognition (what counts as a command) — `gw-slash.command-grammar`
+- `!command` prefix (Slack threads, Matrix) — `gw-slash.bang-prefix`
+- Alias resolution and canonicalisation — `gw-slash.alias-resolution`
+- Dispatch order for a chat slash command — `gw-slash.dispatch-order`
+- Running-agent (busy) slash dispatch — `gw-slash.busy-dispatch`
+- Slash-command access control (admin / user tiers) — `gw-slash.access-control`
+- Unknown-command notice — `gw-slash.unknown-command`
+- Command hooks: `pre_command` and `command:<name>` — `gw-slash.command-hooks`
+- Slash-confirm dialog (Approve Once / Always Approve / Cancel) — `gw-slash.slash-confirm`
+- Destructive-command confirmation (`/new`, `/reset`, `/undo`) — `gw-slash.destructive-confirm`
+- EphemeralReply (self-deleting system notices) — `gw-slash.ephemeral-reply`
+- Emergency-stop pass-through for slash commands — `gw-slash.estop-gate`
+- Plain-text `restart gateway` coercion — `gw-slash.plaintext-restart`
+- User-defined quick commands (`type: exec` / `type: alias`) — `gw-slash.quick-commands`
+- Plugin-registered slash commands — `gw-slash.plugin-commands`
+- Skill slash commands (`/<skill-name>`) — `gw-slash.skill-commands`
+- Stacked skill invocations (`/a /b do XYZ`) — `gw-slash.stacked-skills`
+- Skill bundles (`/<bundle-slug>`) — `gw-slash.bundle-commands`
+- Telegram command menu (`setMyCommands`) — `gw-slash.telegram-menu`
+- Slack native slash commands and `/hermes <subcommand>` — `gw-slash.slack-slashes`
+- Discord slash registration for skills — `gw-slash.discord-skill-slashes`
+- Telegram command-mention rewriting in help text — `gw-slash.telegramize-mentions`
+- `/start` — `gw-slash.start`
+- `/new` (alias `/reset`) — `gw-slash.new`
+- `/topic` — `gw-slash.topic`
+- `/save` — `gw-slash.save`
+- `/retry` — `gw-slash.retry`
+- `/undo [N]` — `gw-slash.undo`
+- `/title [name]` — `gw-slash.title`
+- `/branch [name]` (alias `/fork`) — `gw-slash.branch`
+- `/compress` (alias `/compact`) — `gw-slash.compress`
+- `/rollback [number] [--all]` — `gw-slash.rollback`
+- `/stop` — `gw-slash.stop`
+- `/pause [reason | off]` — `gw-slash.pause`
+- `/approve [all] [session|always]` — `gw-slash.approve`
+- `/deny [all] [reason]` — `gw-slash.deny`
+- `/bg <prompt>` — `gw-slash.bg`
+- `/btw <question>` — `gw-slash.btw`
+- `/agents` (alias `/tasks`) — `gw-slash.agents`
+- `/queue <prompt>` (alias `/q`) — `gw-slash.queue`
+- `/steer <prompt>` — `gw-slash.steer`
+- `/goal` — `gw-slash.goal`
+- `/subgoal` — `gw-slash.subgoal`
+- `/heartbeat` (alias `/hb`) — `gw-slash.heartbeat`
+- `/refine [focus]` — `gw-slash.refine`
+- `/review [instructions]` — `gw-slash.review`
+- `/loop` (alias `/proactive`) — `gw-slash.loop`
+- `/plan [task]` — `gw-slash.plan`
+- `/moa <prompt>` — `gw-slash.moa`
+- `/learn <what to learn from>` — `gw-slash.learn`
+- `/init [notes]` — `gw-slash.init`
+- `/suggestions` (alias `/suggest`) — `gw-slash.suggestions`
+- `/blueprint [name] [slot=value …]` (alias `/bp`) — `gw-slash.blueprint`
+- `/curator` — `gw-slash.curator`
+- `/kanban <action>` — `gw-slash.kanban`
+- `/model` — `gw-slash.model`
+- `/codex-runtime` (alias `/codex_runtime`) — `gw-slash.codex-runtime`
+- `/personality [name]` — `gw-slash.personality`
+- `/reasoning` — `gw-slash.reasoning`
+- `/fast` — `gw-slash.fast`
+- `/voice` — `gw-slash.voice`
+- `/yolo` — `gw-slash.yolo`
+- `/approvals [manual|smart|off]` — `gw-slash.approvals`
+- `/busy [queue|steer|interrupt|status]` — `gw-slash.busy`
+- `/footer [on|off|status]` — `gw-slash.footer`
+- `/verbose` — `gw-slash.verbose`
+- `/memory` — `gw-slash.memory`
+- `/skills` (gateway subset) — `gw-slash.skills`
+- `/status` — `gw-slash.status`
+- `/context [all]` (alias `/ctx`) — `gw-slash.context`
+- `/whoami` — `gw-slash.whoami`
+- `/profile` — `gw-slash.profile`
+- `/sethome` (alias `/set-home`) — `gw-slash.sethome`
+- `/resume [name]` — `gw-slash.resume`
+- `/sessions` — `gw-slash.sessions`
+- `/egress [status]` — `gw-slash.egress`
+- `/usage [reset [--force]]` — `gw-slash.usage`
+- `/topup` — `gw-slash.topup`
+- `/insights [days]` — `gw-slash.insights`
+- `/version` (alias `/v`) — `gw-slash.version`
+- `/help [skills|<filter>]` — `gw-slash.help`
+- `/commands [page]` — `gw-slash.commands`
+- `/bundles` — `gw-slash.bundles`
+- `/diff [staged|all|session] [--stat] [path…]` — `gw-slash.diff`
+- `/debug [nous|local]` — `gw-slash.debug`
+- `/platform <list|pause|resume> [name]` — `gw-slash.platform`
+- `/restart` — `gw-slash.restart`
+- `/update` — `gw-slash.update`
+- `/reload-mcp` (alias `/reload_mcp`) — `gw-slash.reload-mcp`
+- `/reload-skills` (alias `/reload_skills`) — `gw-slash.reload-skills`
+- Discrepancies between `website/docs/reference/slash-commands.md` and the shipped gateway code — `gw-slash.docs-reconciliation`
+
+### 08 · Gateway Runtime & Chat Behaviours (platform-independent)
+
+- The gateway process — `gw-core.gateway-process`
+- Gateway config load order — `gw-core.config-load-order`
+- Shared per-platform config keys bridged into `extra` — `gw-core.platform-shared-keys`
+- `Platform` enum & dynamic plugin platforms — `gw-core.platform-enum`
+- Port-binding platform conflict rule — `gw-core.port-binding-platforms`
+- `HomeChannel` — default destination per platform — `gw-core.home-channel`
+- `PlatformConfig` — per-platform gateway options — `gw-core.platform-config`
+- Platform "connected" detection — `gw-core.platform-connected`
+- Empty & placeholder token guards — `gw-core.token-validation`
+- `platforms` map — `gw-core.cfg-platforms`
+- `default_reset_policy` / `session_reset` — `gw-core.cfg-default-reset-policy`
+- `reset_by_type` / `reset_by_platform` — `gw-core.cfg-reset-overrides`
+- `reset_triggers` — `gw-core.cfg-reset-triggers`
+- `quick_commands` — `gw-core.cfg-quick-commands`
+- `sessions_dir` — `gw-core.cfg-sessions-dir`
+- `write_sessions_json` — `gw-core.cfg-write-sessions-json`
+- `always_log_local` — `gw-core.cfg-always-log-local`
+- `filter_silence_narration` — `gw-core.cfg-filter-silence-narration`
+- `stt_enabled` — `gw-core.cfg-stt-enabled`
+- `stt_echo_transcripts` — `gw-core.cfg-stt-echo`
+- `group_sessions_per_user` — `gw-core.cfg-group-sessions-per-user`
+- `thread_sessions_per_user` — `gw-core.cfg-thread-sessions-per-user`
+- `max_concurrent_sessions` — `gw-core.cfg-max-concurrent-sessions`
+- `multiplex_profiles` — `gw-core.cfg-multiplex-profiles`
+- `multiplex_profile_allowlist` — `gw-core.cfg-multiplex-allowlist`
+- `profile_routes` — `gw-core.cfg-profile-routes`
+- `room_link_url` — `gw-core.cfg-room-link-url`
+- `systemd_watchdog_seconds` — `gw-core.cfg-systemd-watchdog`
+- In-process loop watchdog — `gw-core.cfg-loop-watchdog`
+- `unauthorized_dm_behavior` — `gw-core.cfg-unauthorized-dm-behavior`
+- `notice_delivery` — `gw-core.cfg-notice-delivery`
+- `streaming` (StreamingConfig) — `gw-core.cfg-streaming`
+- `session_store_max_age_days` — `gw-core.cfg-session-store-max-age`
+- `gateway.delivery_ledger` — `gw-core.cfg-delivery-ledger`
+- `gateway.platform_connect_timeout` — `gw-core.cfg-platform-connect-timeout`
+- `gateway.signal_interrupt_grace_timeout` — `gw-core.cfg-signal-interrupt-grace`
+- `gateway.max_inbound_media_bytes` — `gw-core.cfg-max-inbound-media`
+- Media-delivery policy (`gateway.strict`, `media_delivery_allow_dirs`, `trust_recent_files`) — `gw-core.cfg-media-policy`
+- `gateway.message_timestamps.enabled` — `gw-core.cfg-message-timestamps`
+- `gateway.scale_to_zero.idle_timeout_minutes` — `gw-core.cfg-scale-to-zero-timeout`
+- `gateway.restart_loop_guard.*` — `gw-core.cfg-restart-loop-guard`
+- `gateway.respawn_storm.*` — `gw-core.cfg-respawn-storm`
+- `gateway.api_server.max_concurrent_runs` — `gw-core.cfg-api-max-runs`
+- Environment-variable overrides for platforms — `gw-core.env-overrides`
+- Relay-exclusive mode — `gw-core.relay-exclusive`
+- The inbound message pipeline — `gw-core.message-pipeline`
+- Cross-session ContextVar leak guard — `gw-core.contextvar-reset`
+- Session context variables — `gw-core.session-context-vars`
+- Slack ignored-channel guard — `gw-core.slack-ignored-channels`
+- Startup-restore queueing — `gw-core.startup-restore-queue`
+- `pre_gateway_dispatch` plugin hook — `gw-core.pre-gateway-dispatch-hook`
+- User authorization & allowlists — `gw-core.authorization`
+- DM pairing — `gw-core.dm-pairing`
+- Global emergency stop (`hermes pause`) gate — `gw-core.estop-gate`
+- Pending `/update` prompt interception — `gw-core.update-prompt-interception`
+- Pending clarify interception — `gw-core.clarify-interception`
+- Pending slash-confirm interception — `gw-core.slash-confirm-interception`
+- Destructive slash-command confirmation — `gw-core.destructive-slash-confirm`
+- Stale running-agent eviction — `gw-core.stale-agent-eviction`
+- Durable-reaped session eviction — `gw-core.reaped-session-eviction`
+- Busy-input mode (queue / steer / interrupt) — `gw-core.busy-input-mode`
+- Busy acknowledgment message — `gw-core.busy-ack`
+- First-time busy-input tip — `gw-core.busy-input-onboarding-tip`
+- Busy slash-command dispatch — `gw-core.busy-slash-dispatch`
+- `/start` platform ping suppression — `gw-core.start-ping`
+- `/stop` hard stop — `gw-core.stop-hard`
+- `/queue <prompt>` FIFO — `gw-core.queue-command`
+- `/steer <prompt>` mid-run injection — `gw-core.steer-command`
+- `/goal` and `/loop` mid-run control verbs — `gw-core.busy-goal-loop`
+- Photo-burst batching — `gw-core.photo-burst`
+- Telegram follow-up grace window — `gw-core.telegram-followup-grace`
+- Pending-agent sentinel — `gw-core.pending-sentinel`
+- Subagent-protection demotion — `gw-core.subagent-demotion`
+- Compression-protection demotion — `gw-core.compression-demotion`
+- Drain replies to busy messages — `gw-core.drain-busy-reply`
+- External-drain new-turn gate — `gw-core.external-drain-gate`
+- Slash-command access control (admin / user tiers) — `gw-core.slash-access`
+- `pre_command` and `command:<name>` hooks — `gw-core.command-hooks`
+- Plugin slash commands — `gw-core.plugin-slash-commands`
+- Skill bundle slash commands — `gw-core.skill-bundle-commands`
+- Skill slash commands and stacking — `gw-core.skill-slash-commands`
+- Unknown-command notice — `gw-core.unknown-command`
+- Prompt-rewriting commands (`/learn`, `/plan`, `/init`, `/blueprint`) — `gw-core.prompt-rewriting-commands`
+- `/moa <prompt>` one-shot — `gw-core.moa-one-shot`
+- One-turn model override restore (`/model --once`) — `gw-core.one-turn-model-restore`
+- Session key construction — `gw-core.session-key`
+- Runner-side session-key resolution — `gw-core.session-key-runner`
+- Per-channel model / provider / system-prompt overrides — `gw-core.channel-overrides`
+- Persistent `/model` override across restarts — `gw-core.session-model-override`
+- Session expiry watcher — `gw-core.session-expiry-watcher`
+- Session stall watcher — `gw-core.session-stall-watcher`
+- Turn lease (per-session-id serialization) — `gw-core.turn-lease`
+- Run generations — `gw-core.run-generation`
+- Active-session slot claim — `gw-core.session-slot-claim`
+- Session state container — `gw-core.session-state`
+- Per-session agent cache — `gw-core.agent-cache`
+- Memory-pressure eviction of cached agents — `gw-core.agent-cache-pressure`
+- Session DB handle recovery — `gw-core.session-db-recovery`
+- Telegram DM topic mode (multi-session DMs) — `gw-core.telegram-topic-mode`
+- Discord auto-thread lanes and semantic renaming — `gw-core.discord-thread-lanes`
+- Session mirroring — `gw-core.session-mirror`
+- Channel directory — `gw-core.channel-directory`
+- Per-platform display-setting resolver — `gw-core.display-config`
+- Platform display tiers and defaults — `gw-core.display-tiers`
+- `tool_progress` modes — `gw-core.tool-progress-modes`
+- `tool_progress_grouping` — `gw-core.tool-progress-grouping`
+- `tool_progress: log` — audit file instead of chat — `gw-core.tool-progress-log`
+- `live_status` — text typing-status line — `gw-core.live-status`
+- Typing indicator — `gw-core.typing-indicator`
+- `typing_status_text` — `gw-core.typing-status-text`
+- Long-running heartbeat — `gw-core.long-running-heartbeat`
+- Progress bubble cleanup — `gw-core.cleanup-progress`
+- Interim assistant messages — `gw-core.interim-assistant-messages`
+- Reasoning display and style — `gw-core.reasoning-display`
+- Streaming consumer (edit / draft transport) — `gw-core.stream-consumer`
+- Structured stream events — `gw-core.stream-events`
+- Stream event dispatcher — `gw-core.stream-dispatch`
+- Streaming TTS consumer — `gw-core.streaming-tts`
+- Silence tokens — `gw-core.silence-tokens`
+- Final-response sanitizer — `gw-core.final-response-sanitizer`
+- Secret redaction on outbound chat — `gw-core.secret-redaction`
+- Provider-error mapping — `gw-core.provider-error-mapping`
+- Status-message filtering — `gw-core.status-message-filter`
+- Runtime footer — `gw-core.runtime-footer`
+- Configurable status phrases — `gw-core.status-phrases`
+- Command-mention Telegramization — `gw-core.telegramize-command-mentions`
+- Cron output truncation — `gw-core.cron-truncation`
+- Delivery routing — `gw-core.delivery-routing`
+- Inbound image handling (native vs. text) — `gw-core.image-input-mode`
+- Media placeholders and document context notes — `gw-core.media-placeholders`
+- Auto-appended media tags & history dedup — `gw-core.auto-append-media`
+- Post-stream media delivery — `gw-core.media-out`
+- `computer_use` screenshot path repair — `gw-core.media-repair`
+- Voice transcription of inbound audio — `gw-core.stt`
+- Spoken (TTS) replies — `gw-core.voice-reply`
+- Discord voice-channel conversations — `gw-core.voice-channel`
+- Dangerous-command approval in chat — `gw-core.approval-prompt`
+- Clarify prompt rendering — `gw-core.clarify-render`
+- Reaction events → hooks — `gw-core.reactions`
+- `/bg` background sessions — `gw-core.background-sessions`
+- `/btw` side questions — `gw-core.btw`
+- Background-process notifications — `gw-core.background-process-notifications`
+- Watch-pattern and delegation notifications — `gw-core.watch-notifications`
+- Completion-notification coalescing — `gw-core.completion-coalescing`
+- Async-delegation watcher — `gw-core.async-delegation-watcher`
+- Session wake for stateless adapters — `gw-core.wake`
+- Delivery ledger (durable at-least-once replies) — `gw-core.delivery-ledger`
+- Dead-target registry — `gw-core.dead-targets`
+- Restart / online notifications — `gw-core.restart-notification`
+- Session resume across gateway restarts — `gw-core.session-resume`
+- Shutdown notifications to active sessions — `gw-core.shutdown-notifications`
+- Restart machinery — `gw-core.restart`
+- Adapter fatal errors, circuit breaker, pause/resume — `gw-core.platform-breaker`
+- Reconnect watcher — `gw-core.reconnect-watcher`
+- Adapter creation, credential and listener claims — `gw-core.adapter-claims`
+- Startup security guard for `open` own-policy platforms — `gw-core.own-policy-open-guard`
+- Drain control marker — `gw-core.drain-control`
+- Gateway control socket — `gw-core.control-socket`
+- PID file, runtime lock and gateway state — `gw-core.status-pid-lock`
+- Readiness probes — `gw-core.readiness`
+- Disk-status block for `/api/status` — `gw-core.disk-status`
+- Memory-status block for `/api/status` — `gw-core.memory-status`
+- Memory monitor — `gw-core.memory-monitor`
+- Lifecycle ledger (unclean-death evidence) — `gw-core.lifecycle-ledger`
+- Shutdown watchdog and loop heartbeat — `gw-core.shutdown-watchdog`
+- Shutdown forensics — `gw-core.shutdown-forensics`
+- Shutdown flush (data-loss prevention) — `gw-core.shutdown-flush`
+- cgroup cleanup — `gw-core.cgroup-cleanup`
+- Code-skew detection — `gw-core.code-skew`
+- Scale-to-zero — `gw-core.scale-to-zero`
+- Event hook system — `gw-core.hooks`
+- Platform adapter registry — `gw-core.platform-registry`
+- Relay (connector-fronted platforms) — `gw-core.relay`
+- Browser-control broker — `gw-core.browser-control-broker`
+- Browser-control artifact store — `gw-core.browser-control-artifacts`
+- Kanban watchers — `gw-core.kanban-watchers`
+- Turn context and turn runner — `gw-core.turn-context`
+- WhatsApp identity canonicalisation — `gw-core.whatsapp-identity`
+- `terminal.cwd` placeholder resolution — `gw-core.cwd-placeholder`
+- Telegram rich-message reply index — `gw-core.rich-sent-store`
+- Sticker description cache — `gw-core.sticker-cache`
+- Gateway localisation catalog — `gw-core.locale-catalog`
+- Systemd sd_notify support — `gw-core.systemd-notify`
+- Handoff watcher (cross-instance session handoff) — `gw-core.handoff`
+- Supervised subprocess spawning — `gw-core.supervised-spawn`
+- Hosted-room worker lifecycle (gateway side) — `gw-core.hosted-room-worker`
+- Plugin message injection — `gw-core.plugin-message-injection`
+- Session-hygiene compaction — `gw-core.hygiene-compaction`
+- Empty / failed response normalization — `gw-core.empty-response`
+- Turn model / runtime resolution — `gw-core.turn-runtime`
+- Fallback provider chain — `gw-core.fallback-chain`
+- Provider routing (OpenRouter) — `gw-core.provider-routing`
+- Priority Processing (`service_tier`) — `gw-core.service-tier`
+- Prefill messages — `gw-core.prefill-messages`
+- Ephemeral system prompt — `gw-core.ephemeral-system-prompt`
+- Agent history construction — `gw-core.agent-history`
+- Egress proxy mode — `gw-core.egress-proxy`
+- Session context prompt & session store — `gw-core.session-store`
+- Session environment binding — `gw-core.session-env`
+- Windows venv import bootstrap — `gw-core.windows-venv-imports`
+- SSL certificate bootstrap — `gw-core.ssl-certs`
+- Transient network-error classification — `gw-core.transient-network-errors`
+- Loop exception handler — `gw-core.loop-exception-handler`
+- Gateway package public API — `gw-core.package-api`
+- Built-in gateway hooks package — `gw-core.builtin-hooks`
+- Gateway assets — `gw-core.assets`
+- Messaging Gateway overview page — `gw-core.docs-messaging-index`
+- Bot Mode documentation — `gw-core.docs-bot-mode`
+- `hermes peer` — gateway-to-gateway messaging — `gw-core.peer`
+- Running many gateways at once — `gw-core.docs-multi-profile`
+
+### 09 · Telegram platform adapter — every feature
+
+- Telegram platform plugin manifest — `platform-telegram.plugin-manifest`
+- `register(ctx)` — platform registration contract — `platform-telegram.register`
+- Lazy install of `python-telegram-bot` — `platform-telegram.lazy-deps`
+- Telegram "connected" check — `platform-telegram.is-connected`
+- `hermes gateway setup` → Telegram wizard — `platform-telegram.setup-wizard`
+- Automatic bot creation via QR (Managed Bots onboarding) — `platform-telegram.setup-auto-qr`
+- Manual bot creation via @BotFather — `platform-telegram.botfather-newbot`
+- BotFather customization commands — `platform-telegram.botfather-customize`
+- Group privacy mode — `platform-telegram.privacy-mode`
+- Finding your Telegram user ID — `platform-telegram.find-user-id`
+- Single-token exclusivity lock — `platform-telegram.platform-lock`
+- Long polling (default transport) — `platform-telegram.polling-mode`
+- Webhook mode — `platform-telegram.webhook-mode`
+- Polling vs webhook comparison table — `platform-telegram.transport-comparison`
+- Custom Bot API base URL (local telegram-bot-api server) — `platform-telegram.base-url`
+- `local_mode` — read Telegram files from disk — `platform-telegram.local-mode`
+- HTTP client tuning (pools and timeouts) — `platform-telegram.http-tuning`
+- Fallback-IP transport with DNS-over-HTTPS discovery — `platform-telegram.fallback-ips`
+- TCP keepalive on Telegram sockets — `platform-telegram.tcp-keepalive`
+- Telegram-specific proxy — `platform-telegram.proxy`
+- Connect retry ladder and total watchdog — `platform-telegram.connect-retry`
+- Wall-clock deadline helper (`_await_with_thread_deadline`) — `platform-telegram.thread-deadline`
+- `deleteWebhook` before polling — `platform-telegram.delete-webhook`
+- Polling generations and progress verifier — `platform-telegram.polling-generation`
+- Polling heartbeat (CLOSE-WAIT detector) — `platform-telegram.polling-heartbeat`
+- Pending-update probe (wedged consumer detector) — `platform-telegram.pending-probe`
+- Polling stall watchdog — `platform-telegram.polling-stall`
+- 409 Conflict recovery ladder — `platform-telegram.conflict-recovery`
+- Network-error reconnect ladder — `platform-telegram.network-ladder`
+- Connection-pool drains — `platform-telegram.pool-drains`
+- Transport error classifiers — `platform-telegram.error-classifiers`
+- Fatal-error surfacing and handoff — `platform-telegram.fatal-errors`
+- Graceful disconnect — `platform-telegram.disconnect`
+- Held-inbound queue and redispatch — `platform-telegram.held-inbound`
+- Send-time reconnect wait / adapter replacement — `platform-telegram.send-reconnect-wait`
+- Bot identity tracking (BotFather rename) — `platform-telegram.bot-identity`
+- Online/Offline status indicator — `platform-telegram.status-indicator`
+- Post-connect housekeeping task — `platform-telegram.post-connect`
+- Bot command menu registration (`setMyCommands`) — `platform-telegram.command-menu`
+- Telegram menu command builder and cap — `platform-telegram.menu-builder`
+- Lazy command registration for forum supergroups — `platform-telegram.forum-commands`
+- Inline command picker (`@botname <query>`) — `platform-telegram.inline-picker`
+- BotFather `/setinline` prerequisite — `platform-telegram.setinline`
+- PTB handler registration — `platform-telegram.handlers`
+- Plugin-provided Telegram handlers — `platform-telegram.plugin-handlers`
+- `gateway_platform_event` observer (reactions, edits) — `platform-telegram.platform-event`
+- `send()` — MarkdownV2 message delivery with chunking — `platform-telegram.send`
+- `format_message()` — Markdown → Telegram MarkdownV2 — `platform-telegram.format-message`
+- Markdown table normalization — `platform-telegram.tables`
+- `edit_message()` — streaming edits and finalization — `platform-telegram.edit-message`
+- Saturated-preview deduplication — `platform-telegram.overflow-dedup`
+- Oversized-edit split into continuation messages — `platform-telegram.overflow-split`
+- `send_or_update_status()` — status bubbles edited in place — `platform-telegram.status-bubble`
+- `delete_message()` — `platform-telegram.delete-message`
+- Native draft streaming (`sendMessageDraft`) — `platform-telegram.draft-streaming`
+- Rich Messages (Bot API 10.1 `sendRichMessage`) — `platform-telegram.rich-messages`
+- Rich draft frames (`sendRichMessageDraft`) — `platform-telegram.rich-drafts`
+- Rich edit finalize (`editMessageText` + `rich_message`) — `platform-telegram.rich-edit`
+- Rich reply echo store — `platform-telegram.rich-sent-store`
+- Rich-message flattening of Telegram's own echo — `platform-telegram.rich-flatten`
+- Link-preview suppression — `platform-telegram.link-previews`
+- Notification modes (`important` / `all`) — `platform-telegram.notifications`
+- Typing indicator with per-chat cooldown — `platform-telegram.typing`
+- Reply-anchor mode (`reply_to_mode`) — `platform-telegram.reply-to-mode`
+- Thread / topic routing kwargs — `platform-telegram.thread-routing`
+- Stale-topic recovery on send — `platform-telegram.thread-not-found`
+- Telegram chat-id normalization (`@username` targets) — `platform-telegram.chat-id`
+- `get_chat_info()` — `platform-telegram.chat-info`
+- Update prompt buttons (`✓ Yes` / `✗ No`) — `platform-telegram.update-prompt`
+- Exec approval prompt (`✅ Allow Once` / `✅ Session` / `✅ Always` / `❌ Deny`) — `platform-telegram.exec-approval`
+- Exec approval tap handling — `platform-telegram.approval-callback`
+- Slash-command confirmation prompt (`✅ Approve Once` / `🔒 Always Approve` / `❌ Cancel`) — `platform-telegram.slash-confirm`
+- Clarify prompt with numbered buttons — `platform-telegram.clarify`
+- Clarify tap handling and `✏️ Other` capture — `platform-telegram.clarify-callback`
+- Expired-clarify notice — `platform-telegram.clarify-expired`
+- Interactive model picker (`/model` with no argument) — `platform-telegram.model-picker`
+- Provider keyboard with family folding and pagination — `platform-telegram.provider-keyboard`
+- Model keyboard with pagination — `platform-telegram.model-keyboard`
+- Model picker callback router — `platform-telegram.model-picker-callback`
+- Expensive-model confirmation (`Switch anyway`) — `platform-telegram.model-price-guard`
+- Generic choice picker (`/reasoning`, `/fast`) — `platform-telegram.choice-picker`
+- Choice picker tap handling — `platform-telegram.choice-picker-callback`
+- Gmail-triage action buttons (`gt:<verb>:<arg>`) — `platform-telegram.gmail-triage-callback`
+- Callback query router and authorization — `platform-telegram.callback-router`
+- Inline-button authorization (`_is_callback_user_authorized`) — `platform-telegram.callback-auth`
+- `send_voice()` — native voice bubbles and audio files — `platform-telegram.send-voice`
+- Outgoing audio duration probe — `platform-telegram.voice-duration`
+- `send_multiple_images()` — native albums (media groups) — `platform-telegram.media-group-send`
+- `send_image_file()` — local photo with document fallback — `platform-telegram.send-image-file`
+- `send_document()` — file attachments — `platform-telegram.send-document`
+- `send_video()` — `platform-telegram.send-video`
+- `send_image()` — remote URL photo with upload fallback — `platform-telegram.send-image-url`
+- `send_animation()` — inline-playing GIFs — `platform-telegram.send-animation`
+- Inbound media size guard and limits — `platform-telegram.media-size-guard`
+- Missing-media path error with Docker hint — `platform-telegram.missing-media-path`
+- Flood-control inline wait cap — `platform-telegram.flood-cap`
+- `MEDIA:` attachment delivery — supported extensions — `platform-telegram.media-tag`
+- Intake authorization prefilter — `platform-telegram.intake-auth`
+- Unauthorized-DM pairing passthrough — `platform-telegram.pairing-passthrough`
+- `require_mention` — group trigger gate — `platform-telegram.require-mention`
+- Bot-mention detection (entities first) — `platform-telegram.mention-detect`
+- Foreign bot-handle extraction — `platform-telegram.bot-handle-extract`
+- `exclusive_bot_mentions` — deterministic multi-bot routing — `platform-telegram.exclusive-mentions`
+- `mention_patterns` — regex wake words — `platform-telegram.mention-patterns`
+- `guest_mode` — @mention bypass for non-allowlisted groups — `platform-telegram.guest-mode`
+- `free_response_chats` — per-chat mention exemption — `platform-telegram.free-response-chats`
+- `free_response_topics` — per-topic mention exemption — `platform-telegram.free-response-topics`
+- `allowed_chats` — group response allowlist — `platform-telegram.allowed-chats`
+- `group_allowed_chats` / `group_allow_from` — group authorization allowlists — `platform-telegram.group-allowlists`
+- `allowed_topics` — forum topic allowlist — `platform-telegram.allowed-topics`
+- `ignored_threads` — hard topic mute — `platform-telegram.ignored-threads`
+- `observe_unmentioned_group_messages` — silent group context — `platform-telegram.observe-mode`
+- Observed-group attribution and channel prompt — `platform-telegram.observe-attribution`
+- `_should_process_message()` — the full group decision ladder — `platform-telegram.should-process`
+- `ignore_root_dm` — DM lobby for topic users — `platform-telegram.ignore-root-dm`
+- Own-message filter — `platform-telegram.own-message`
+- Trigger-text cleanup (`@botname` stripping) — `platform-telegram.clean-trigger`
+- Live bot-handle tracking from inbound messages — `platform-telegram.identity-observe`
+- Thread-id normalization (`_effective_message_thread_id`) — `platform-telegram.thread-normalize`
+- Channel posts and `effective_message` — `platform-telegram.channel-posts`
+- Text message handler — `platform-telegram.handle-text`
+- Command message handler — `platform-telegram.handle-command`
+- Location and venue pins — `platform-telegram.handle-location`
+- Text batching (Telegram client-side splits) — `platform-telegram.text-batching`
+- Photo burst batching — `platform-telegram.photo-batching`
+- Album (media group) debounce — `platform-telegram.media-group-inbound`
+- Inbound media handler (photos, voice, audio, video, documents) — `platform-telegram.handle-media`
+- Media download failure surfacing — `platform-telegram.media-failure`
+- Observed-group media caching — `platform-telegram.observed-media`
+- Replied-to media caching — `platform-telegram.replied-media`
+- Sticker understanding with vision + cache — `platform-telegram.stickers`
+- `_build_message_event()` — inbound event construction — `platform-telegram.build-event`
+- Per-channel and per-topic prompts — `platform-telegram.channel-prompts`
+- Message reactions as processing feedback — `platform-telegram.reactions`
+- Operator-curated Private Chat Topics (`extra.dm_topics`) — `platform-telegram.dm-topics-config`
+- `_create_dm_topic()` — createForumTopic in a DM — `platform-telegram.create-dm-topic`
+- `ensure_dm_topic()` / `create_handoff_thread()` — `platform-telegram.ensure-dm-topic`
+- `rename_dm_topic()` — `platform-telegram.rename-dm-topic`
+- `thread_id` write-back into `config.yaml` — `platform-telegram.persist-thread-id`
+- `_setup_dm_topics()` — startup reconciliation and seed message — `platform-telegram.setup-dm-topics`
+- Hot reload and discovery of DM topics — `platform-telegram.dm-topics-hotload`
+- Group forum topic skill binding (`extra.group_topics`) — `platform-telegram.group-topics`
+- Multi-session DM mode — `/topic` — `platform-telegram.topic-command`
+- `/topic help` text — `platform-telegram.topic-help`
+- Topic capability probe (`getMe` flags) — `platform-telegram.topic-capabilities`
+- BotFather Threads-Settings screenshot — `platform-telegram.topic-setup-image`
+- System topic creation and pinning — `platform-telegram.system-topic`
+- Topic lanes, root lobby and lobby reminder — `platform-telegram.topic-lane`
+- Topic ↔ session bindings — `platform-telegram.topic-bindings`
+- Lobby-shaped reply recovery (`_recover_telegram_topic_thread_id`) — `platform-telegram.topic-recovery`
+- Topic auto-rename from the session title — `platform-telegram.topic-auto-rename`
+- `/topic off` — `platform-telegram.topic-off`
+- `/topic` root status and restorable sessions — `platform-telegram.topic-status`
+- `/topic <session-id>` — restore a session into a topic — `platform-telegram.topic-restore`
+- DM-topic reply metadata for synthetic sends — `platform-telegram.dm-topic-metadata`
+- Home channel and cron topic override — `platform-telegram.home-channel`
+- YAML → env / extras bridge (`_apply_yaml_config`) — `platform-telegram.yaml-bridge`
+- Standalone (out-of-process) sender — `platform-telegram.standalone-send`
+- Connected check and adapter factory — `platform-telegram.connected-factory`
+- Telegram-safe command mentions in help text — `platform-telegram.command-mention-rewrite`
+- Streaming transport selection for Telegram — `platform-telegram.streaming-transport`
+- Group chat usage rules (documented) — `platform-telegram.group-usage-docs`
+- Running several Hermes bots in one group — `platform-telegram.multi-bot`
+- Troubleshooting: works in DMs but not groups — `platform-telegram.group-troubleshooting`
+- General troubleshooting table — `platform-telegram.troubleshooting-table`
+- Incoming voice → speech-to-text — `platform-telegram.stt-incoming`
+- Outgoing TTS voice bubbles — `platform-telegram.tts-outgoing`
+- Slash-command access control on Telegram — `platform-telegram.slash-access`
+- BotFather privacy policy requirement — `platform-telegram.privacy-policy`
+- Security guidance — `platform-telegram.security-docs`
+- Documented-but-unimplemented: pin incoming user message during a turn — `platform-telegram.pin-incoming-doc`
+- DM Topics vs multi-session mode — comparison — `platform-telegram.topics-comparison`
+- Downgrade behaviour for multi-session topics — `platform-telegram.topic-downgrade`
+- `/start` — platform ping, never a command — `platform-telegram.start`
+- DM pairing writes into `TELEGRAM_ALLOWED_USERS` — `platform-telegram.pairing-allowlist`
+- `TELEGRAM_ALLOW_BOTS` — admitting other bots — `platform-telegram.allow-bots`
+- Telegram display defaults (tool progress, heartbeats, streaming) — `platform-telegram.display-defaults`
+- Telegram settings on the dashboard Config page — `platform-telegram.dashboard-fields`
+- Telegram session-key knobs — `platform-telegram.session-keying`
+- Single-send routing for the rich path — `platform-telegram.single-send-routing`
+- Extra-value coercion helpers — `platform-telegram.extra-coercion`
+- Delayed-delivery drop guard — `platform-telegram.drop-guard`
+
+### 10 · Platform adapters A — Discord, Slack, WhatsApp, Matrix, Mattermost, Microsoft Teams, Google Chat, Email
+
+- Discord platform adapter — `platforms-a.discord`
+- Discord interactive setup wizard — `platforms-a.discord-setup`
+- Discord manifest credentials (`requires_env` / `optional_env`) — `platforms-a.discord-manifest-env`
+- Discord mention gating (require_mention / free-response / ignored / allowed channels) — `platforms-a.discord-mention-gating`
+- Discord auto-threading — `platforms-a.discord-auto-thread`
+- `/thread` — create a thread and start a session in it — `platforms-a.discord-slash-thread`
+- Discord native slash commands (built-in set) — `platforms-a.discord-slash-builtin`
+- `/skill` — run an installed skill via autocomplete — `platforms-a.discord-slash-skill`
+- Discord slash-command sync policy — `platforms-a.discord-command-sync-policy`
+- Discord slash-command access control (admin vs user tiers) — `platforms-a.discord-slash-access`
+- Discord unauthorized-slash admin alert — `platforms-a.discord-unauthorized-alert`
+- Discord slash-command visibility hiding — `platforms-a.discord-hide-slash`
+- Discord interactive model picker — `platforms-a.discord-model-picker`
+- Discord generic choice picker (`/reasoning`, `/fast`) — `platforms-a.discord-choice-picker`
+- Discord exec-approval buttons — `platforms-a.discord-exec-approval`
+- Discord approval mentions — `platforms-a.discord-approval-mentions`
+- Discord slash-confirmation buttons — `platforms-a.discord-slash-confirm`
+- Discord update prompt buttons — `platforms-a.discord-update-prompt`
+- Discord clarify prompt buttons — `platforms-a.discord-clarify`
+- Discord processing reactions (👀 / ✅ / ❌) — `platforms-a.discord-reactions`
+- Discord history backfill — `platforms-a.discord-history-backfill`
+- Discord missed-message backfill (reconnect recovery) — `platforms-a.discord-missed-backfill`
+- Discord gateway WebSocket liveness watchdog — `platforms-a.discord-ws-liveness`
+- Discord mention control (allowed mentions) — `platforms-a.discord-mention-control`
+- Discord role-based access control — `platforms-a.discord-role-auth`
+- Discord per-channel ephemeral prompts — `platforms-a.discord-channel-prompts`
+- Discord channel→skill bindings — `platforms-a.discord-channel-skills`
+- Discord home channel & `/sethome` — `platforms-a.discord-home-channel`
+- Discord standalone (out-of-process) sender — `platforms-a.discord-standalone-send`
+- Discord media sending (inline `MEDIA:` tags) — `platforms-a.discord-media-send`
+- Discord attachment ingestion (arbitrary file types) — `platforms-a.discord-attachments`
+- Discord forum-channel support — `platforms-a.discord-forum`
+- Discord voice messages (STT / TTS) — `platforms-a.discord-voice-messages`
+- Discord voice-channel presence (join / listen / speak) — `platforms-a.discord-voice-channel`
+- Discord voice audio effects (ambient bed + verbal acks) — `platforms-a.discord-voice-fx`
+- Discord platform events (edit / delete / thread create / thread update) — `platforms-a.discord-platform-events`
+- Discord text batching (streamed chunk smoothing) — `platforms-a.discord-text-batching`
+- Discord message editing & overflow splitting — `platforms-a.discord-edit-overflow`
+- Discord reasoning display style — `platforms-a.discord-reasoning-style`
+- Discord proxy support — `platforms-a.discord-proxy`
+- `discord` tool (agent-facing server participation) — `platforms-a.discord-tool`
+- `discord_admin` tool (agent-facing server management) — `platforms-a.discord-admin-tool`
+- Slack platform adapter — `platforms-a.slack`
+- Slack interactive setup wizard — `platforms-a.slack-setup`
+- Slack app manifest generation — `platforms-a.slack-manifest`
+- Slack OAuth scopes required by Hermes — `platforms-a.slack-scopes`
+- Slack bot event subscriptions — `platforms-a.slack-events`
+- Slack Messages tab (DM enablement) — `platforms-a.slack-messages-tab`
+- Slack native slash commands (whole command registry) — `platforms-a.slack-slash`
+- Slack `!command` bang prefix (commands inside threads) — `platforms-a.slack-bang-prefix`
+- Slack ephemeral slash replies — `platforms-a.slack-slash-ephemeral`
+- Slack exec-approval buttons — `platforms-a.slack-exec-approval`
+- Slack slash-confirm buttons — `platforms-a.slack-slash-confirm`
+- Slack clarify prompts (one-tap buttons) — `platforms-a.slack-clarify`
+- Slack feedback buttons (Good/Bad Response) — `platforms-a.slack-feedback-buttons`
+- Slack Block Kit rich rendering (`rich_blocks`) — `platforms-a.slack-rich-blocks`
+- Slack mrkdwn formatting & table alignment — `platforms-a.slack-mrkdwn`
+- Slack working-state status line (`typing_status_text`) — `platforms-a.slack-status-line`
+- Slack live per-tool status (`display.live_status`) — `platforms-a.slack-live-status`
+- Slack native streaming (live-typing replies) — `platforms-a.slack-native-streaming`
+- Slack native task cards (live tool progress) — `platforms-a.slack-native-task-cards`
+- Slack Agent view / suggested prompts — `platforms-a.slack-suggested-prompts`
+- Slack Agent/Assistant thread titles — `platforms-a.slack-thread-titles`
+- Slack Agent view context (`app_context_changed`) — `platforms-a.slack-agent-context`
+- Slack mention & trigger gating (six composable options) — `platforms-a.slack-mention-gating`
+- Slack channel allowlist (`allowed_channels`) — `platforms-a.slack-allowed-channels`
+- Slack ignored-channels blacklist — `platforms-a.slack-ignored-channels`
+- Slack DM disable (`disable_dms`) — `platforms-a.slack-disable-dms`
+- Slack `allow_bots` — accepting messages from other bots — `platforms-a.slack-allow-bots`
+- Slack peer-agent smoke check — `platforms-a.slack-peer-smoke`
+- Slack reaction triggers — `platforms-a.slack-reaction-triggers`
+- Slack lifecycle reactions (`:eyes:` / `:white_check_mark:`) — `platforms-a.slack-lifecycle-reactions`
+- Slack thread & reply behaviour — `platforms-a.slack-threading`
+- Slack link/media unfurl control — `platforms-a.slack-unfurl`
+- Slack multi-workspace support — `platforms-a.slack-multiworkspace`
+- Slack Socket Mode connection & watchdog — `platforms-a.slack-socket-watchdog`
+- Slack connect-time diagnostics — `platforms-a.slack-connect-diagnostics`
+- Slack voice messages (STT in / TTS out) — `platforms-a.slack-voice`
+- Slack file attachments & uploads — `platforms-a.slack-files`
+- Slack home channel & cron delivery targeting — `platforms-a.slack-home-channel`
+- Slack standalone (out-of-process) sender — `platforms-a.slack-standalone-send`
+- Slack `send_message` tool targets — `platforms-a.slack-send-message-targets`
+- Slack per-channel prompts — `platforms-a.slack-channel-prompts`
+- Slack bot-identity prompt — `platforms-a.slack-identity-prompt`
+- Slack per-channel skill bindings — `platforms-a.slack-channel-skills`
+- Slack session isolation (`group_sessions_per_user`) — `platforms-a.slack-session-isolation`
+- Slack unauthorized-user handling — `platforms-a.slack-unauthorized`
+- Slack interactive-click authorization — `platforms-a.slack-interactive-auth`
+- Slack plugin action & native handler registration — `platforms-a.slack-plugin-handlers`
+- Slack history rehydration & thread watermarks — `platforms-a.slack-thread-rehydration`
+- Slack troubleshooting matrix — `platforms-a.slack-troubleshooting`
+- Slack Codex reasoning-effort caution — `platforms-a.slack-codex-effort`
+- WhatsApp platform adapter (Baileys bridge) — `platforms-a.whatsapp`
+- WhatsApp two modes (`bot` vs `self-chat`) — `platforms-a.whatsapp-modes`
+- WhatsApp interactive setup wizard — `platforms-a.whatsapp-setup`
+- WhatsApp QR pairing / session persistence — `platforms-a.whatsapp-pairing`
+- WhatsApp bridge lifecycle & supervision — `platforms-a.whatsapp-bridge-lifecycle`
+- WhatsApp bridge media-path validation — `platforms-a.whatsapp-bridge-path-guard`
+- WhatsApp DM policy — `platforms-a.whatsapp-dm-policy`
+- WhatsApp group policy & group gating — `platforms-a.whatsapp-group-policy`
+- WhatsApp LID ↔ phone-number allowlist matching — `platforms-a.whatsapp-lid-matching`
+- WhatsApp broadcast/status/channel suppression — `platforms-a.whatsapp-broadcast-guard`
+- WhatsApp reply prefix (`⚕ *Hermes Agent*`) — `platforms-a.whatsapp-reply-prefix`
+- WhatsApp outbound text sanitization — `platforms-a.whatsapp-sanitize`
+- WhatsApp markdown → WhatsApp formatting — `platforms-a.whatsapp-markdown`
+- WhatsApp message chunking & streaming — `platforms-a.whatsapp-chunking`
+- WhatsApp text batching (debounce) — `platforms-a.whatsapp-batching`
+- WhatsApp native polls — `platforms-a.whatsapp-polls`
+- WhatsApp clarify-as-poll — `platforms-a.whatsapp-clarify-poll`
+- WhatsApp location pins — `platforms-a.whatsapp-location`
+- WhatsApp media send (`/send-media`) — `platforms-a.whatsapp-send-media`
+- WhatsApp inbound media handling & document text injection — `platforms-a.whatsapp-inbound-media`
+- WhatsApp voice messages (STT / TTS) — `platforms-a.whatsapp-voice`
+- WhatsApp read receipts (`send_read_receipts`) — `platforms-a.whatsapp-read-receipts`
+- WhatsApp typing indicator — `platforms-a.whatsapp-typing`
+- WhatsApp owner-message forwarding (`[owner reply]`) — `platforms-a.whatsapp-owner-messages`
+- WhatsApp native message metadata passthrough — `platforms-a.whatsapp-native-metadata`
+- WhatsApp chat info lookup — `platforms-a.whatsapp-chat-info`
+- WhatsApp home chat & cron delivery — `platforms-a.whatsapp-home-channel`
+- WhatsApp standalone (out-of-process) sender — `platforms-a.whatsapp-standalone-send`
+- WhatsApp unauthorized-DM behaviour — `platforms-a.whatsapp-unauthorized`
+- WhatsApp troubleshooting matrix — `platforms-a.whatsapp-troubleshooting`
+- Matrix platform adapter — `platforms-a.matrix`
+- Matrix capability matrix — `platforms-a.matrix-capabilities`
+- Matrix interactive setup wizard — `platforms-a.matrix-setup`
+- Matrix E2EE modes — `platforms-a.matrix-e2ee`
+- Matrix cross-signing verification (`MATRIX_RECOVERY_KEY`) — `platforms-a.matrix-cross-signing`
+- Matrix mention & threading configuration — `platforms-a.matrix-mention-threading`
+- Matrix session scope (`MATRIX_SESSION_SCOPE`) — `platforms-a.matrix-session-scope`
+- Matrix room identity & prompt context — `platforms-a.matrix-room-identity`
+- Matrix `!command` alias normalization — `platforms-a.matrix-bang-commands`
+- Matrix reaction-based exec approval — `platforms-a.matrix-exec-approval`
+- Matrix reaction-based model picker — `platforms-a.matrix-model-picker`
+- Matrix reaction-based choice picker (`/reasoning`, `/fast`) — `platforms-a.matrix-choice-picker`
+- Matrix processing-lifecycle reactions — `platforms-a.matrix-lifecycle-reactions`
+- Matrix markdown → HTML rendering & sanitizer — `platforms-a.matrix-html`
+- Matrix outbound mentions & `@room` guard — `platforms-a.matrix-mentions-out`
+- Matrix reply-fallback handling — `platforms-a.matrix-reply-fallback`
+- Matrix media handling & limits — `platforms-a.matrix-media`
+- Matrix native voice messages (MSC3245) — `platforms-a.matrix-voice`
+- Matrix text batching — `platforms-a.matrix-batching`
+- Matrix startup grace filter (clock-skew guard) — `platforms-a.matrix-startup-grace`
+- Matrix invite auto-join — `platforms-a.matrix-auto-join`
+- Matrix room allowlist (`allowed_rooms`) — `platforms-a.matrix-allowed-rooms`
+- Matrix bridge/appservice loop protection — `platforms-a.matrix-bridge-guard`
+- Matrix diagnostics (`get_diagnostics`) — `platforms-a.matrix-diagnostics`
+- Matrix presence, typing and read receipts — `platforms-a.matrix-presence`
+- Matrix message editing (`m.replace`) — `platforms-a.matrix-edit`
+- Matrix thinking / tool-activity panes — `platforms-a.matrix-thinking-panes`
+- Matrix history fetch & serialization — `platforms-a.matrix-history`
+- Matrix home room & `/sethome` — `platforms-a.matrix-home-room`
+- Matrix standalone (out-of-process) sender — `platforms-a.matrix-standalone-send`
+- Matrix proxy support (`MATRIX_PROXY`) — `platforms-a.matrix-proxy`
+- Matrix proxy mode (E2EE on macOS) — `platforms-a.matrix-proxy-mode`
+- Matrix commands surface — `platforms-a.matrix-commands`
+- Matrix Tools & controls (documented toolset) — `platforms-a.matrix-tools`
+- Matrix troubleshooting matrix — `platforms-a.matrix-troubleshooting`
+- Mattermost platform adapter — `platforms-a.mattermost`
+- Mattermost interactive setup wizard — `platforms-a.mattermost-setup`
+- Mattermost bot account creation (server-side setup) — `platforms-a.mattermost-bot-account`
+- Mattermost WebSocket event loop & reconnect — `platforms-a.mattermost-ws`
+- Mattermost inbound message handling — `platforms-a.mattermost-inbound`
+- Mattermost reply mode (`thread` vs `off`) — `platforms-a.mattermost-reply-mode`
+- Mattermost broken-thread-root fallback — `platforms-a.mattermost-thread-fallback`
+- Mattermost channel allowlist (`allowed_channels`) — `platforms-a.mattermost-allowed-channels`
+- Mattermost mention behaviour — `platforms-a.mattermost-mentions`
+- Mattermost outbound mention suppression — `platforms-a.mattermost-disable-mentions`
+- Mattermost file attachments (in and out) — `platforms-a.mattermost-files`
+- Mattermost multi-image batching (5 per post) — `platforms-a.mattermost-multi-image`
+- Mattermost typing indicator — `platforms-a.mattermost-typing`
+- Mattermost message editing — `platforms-a.mattermost-edit`
+- Mattermost markdown formatting — `platforms-a.mattermost-format`
+- Mattermost per-channel prompts — `platforms-a.mattermost-channel-prompts`
+- Mattermost home channel & cron delivery — `platforms-a.mattermost-home-channel`
+- Mattermost standalone (out-of-process) sender — `platforms-a.mattermost-standalone-send`
+- Mattermost troubleshooting matrix — `platforms-a.mattermost-troubleshooting`
+- Microsoft Teams platform adapter — `platforms-a.teams`
+- Teams lazy dependency install — `platforms-a.teams-lazy-deps`
+- Teams interactive setup wizard — `platforms-a.teams-setup`
+- Teams bot registration via the Teams CLI — `platforms-a.teams-cli-registration`
+- Teams Adaptive Card approval prompts — `platforms-a.teams-approval-cards`
+- Teams inbound message handling — `platforms-a.teams-inbound`
+- Teams attachment download & Bot Framework token — `platforms-a.teams-attachments`
+- Teams service-URL allowlist & conversation-ID validation — `platforms-a.teams-service-url-guard`
+- Teams send & threaded reply fallback — `platforms-a.teams-send`
+- Teams typing indicator & media attachments — `platforms-a.teams-typing-media`
+- Teams env-enablement seeding — `platforms-a.teams-env-enablement`
+- Teams standalone (out-of-process) sender — `platforms-a.teams-standalone-send`
+- Teams production deployment (reverse proxy) — `platforms-a.teams-production`
+- Teams troubleshooting matrix — `platforms-a.teams-troubleshooting`
+- Teams meeting pipeline plugin — `platforms-a.teams-pipeline`
+- `hermes teams-pipeline` operator CLI — `platforms-a.teams-pipeline-cli`
+- Teams meeting summary delivery (`TeamsSummaryWriter`) — `platforms-a.teams-summary-delivery`
+- Teams pipeline `validate` configuration snapshot — `platforms-a.teams-pipeline-validate`
+- Graph subscription lifecycle & 72-hour expiry — `platforms-a.teams-pipeline-subscriptions`
+- Graph webhook listener wiring (`msgraph_webhook`) — `platforms-a.teams-pipeline-webhook-config`
+- Google Chat platform adapter — `platforms-a.google-chat`
+- Google Chat model-facing platform hint — `platforms-a.google-chat-platform-hint`
+- Google Chat GCP setup (project, APIs, SA, Pub/Sub, IAM) — `platforms-a.google-chat-gcp-setup`
+- Google Chat interactive setup wizard — `platforms-a.google-chat-setup`
+- Google Chat inbound transports (Pub/Sub pull and HTTP events) — `platforms-a.google-chat-inbound`
+- Google Chat event-type routing — `platforms-a.google-chat-events`
+- Google Chat working-state marker ("Hermes is thinking…") — `platforms-a.google-chat-typing-marker`
+- Google Chat formatting & message splitting — `platforms-a.google-chat-format`
+- Google Chat threads & per-thread sessions — `platforms-a.google-chat-threads`
+- Google Chat clarify cards (Card v2 buttons) — `platforms-a.google-chat-clarify-card`
+- Google Chat `/setup-files` — per-user OAuth for native attachments — `platforms-a.google-chat-setup-files`
+- Google Chat attachment download SSRF guard — `platforms-a.google-chat-attachment-guard`
+- Google Chat outbound retry & rate-limit handling — `platforms-a.google-chat-retry`
+- Google Chat log redaction & debug envelope dump — `platforms-a.google-chat-redaction`
+- Google Chat home space, cron delivery & standalone sender — `platforms-a.google-chat-home-standalone`
+- Google Chat troubleshooting matrix — `platforms-a.google-chat-troubleshooting`
+- Email platform adapter — `platforms-a.email`
+- Email provider setup (Gmail / Outlook / other) — `platforms-a.email-provider-setup`
+- Email IMAP polling & seen-UID tracking — `platforms-a.email-polling`
+- Email sender authentication (SPF/DKIM/DMARC) — `platforms-a.email-sender-auth`
+- Email automated-sender suppression — `platforms-a.email-automated-senders`
+- Email access control & allowlist — `platforms-a.email-access-control`
+- Email body extraction & HTML stripping — `platforms-a.email-body`
+- Email attachment ingestion — `platforms-a.email-attachments-in`
+- Email reply threading — `platforms-a.email-threading`
+- Email SMTP connection & IPv4 fallback — `platforms-a.email-smtp`
+- Email outbound attachments — `platforms-a.email-attachments-out`
+- Email typing indicator (no-op) — `platforms-a.email-typing`
+- Email home address & standalone sender — `platforms-a.email-home-standalone`
+- Email troubleshooting matrix — `platforms-a.email-troubleshooting`
+
+### 11 · Platform adapters B — IRC, LINE, DingTalk, Feishu/Lark, WeCom, SimpleX, SMS, ntfy, Photon, Raft, Buzz, A2A, Home Assistant, Yuanbao
+
+- Platform plugin package layout — `platforms-b.contract-layout`
+- `ctx.register_platform(...)` — plugin entry point — `platforms-b.contract-register-platform`
+- `PlatformEntry` — the full adapter descriptor — `platforms-b.contract-platformentry`
+- `BasePlatformAdapter` — the abstract adapter — `platforms-b.contract-baseadapter`
+- `MessageEvent` — normalized inbound message — `platforms-b.contract-messageevent`
+- `MessageType` / `ProcessingOutcome` enums — `platforms-b.contract-messagetype`
+- `SendResult` and send-error classification — `platforms-b.contract-sendresult`
+- `ctx.register_platform_handler(platform, factory)` — native-client hook — `platforms-b.contract-platform-handler`
+- IRC gateway adapter — `platforms-b.irc-adapter`
+- IRC `platform_hint` (system-prompt guidance) — `platforms-b.irc-platform-hint`
+- IRC interactive setup (`hermes gateway setup` → IRC) — `platforms-b.irc-setup`
+- IRC env-enablement seed (`_env_enablement`) — `platforms-b.irc-env-enablement`
+- IRC standalone cron sender (`deliver=irc` out of process) — `platforms-b.irc-standalone-send`
+- IRC dependency/config probes (`check_requirements`, `validate_config`, `is_connected`) — `platforms-b.irc-probes`
+- LINE gateway adapter (Messaging API webhook) — `platforms-b.line-adapter`
+- LINE slow-LLM postback button ("Get answer") — `platforms-b.line-postback-button`
+- LINE markdown stripper (`strip_markdown_preserving_urls`) — `platforms-b.line-markdown-strip`
+- LINE bubble splitter (`split_for_line`) — `platforms-b.line-split`
+- LINE media serving endpoint (`/line/media/<token>/<filename>`) — `platforms-b.line-media-endpoint`
+- LINE outbound media (`send_image_file`, `send_voice`, `send_video`) — `platforms-b.line-media-send`
+- LINE typing / loading indicator — `platforms-b.line-loading`
+- LINE interactive setup (`hermes setup line`) — `platforms-b.line-setup`
+- LINE cron / standalone push sender — `platforms-b.line-standalone-send`
+- LINE probes and env-enablement — `platforms-b.line-probes`
+- LINE `platform_hint` — `platforms-b.line-platform-hint`
+- DingTalk gateway adapter (Stream Mode) — `platforms-b.dingtalk-adapter`
+- DingTalk group gating (require_mention / free-response / allowed_chats / wake-words) — `platforms-b.dingtalk-group-gating`
+- DingTalk AI Cards (streaming rich replies) — `platforms-b.dingtalk-ai-cards`
+- DingTalk 🤔Thinking → 🥳Done reactions — `platforms-b.dingtalk-emoji-reactions`
+- DingTalk QR-code setup (`hermes gateway setup` → DingTalk) — `platforms-b.dingtalk-setup`
+- DingTalk YAML→env bridge (`_apply_yaml_config`) — `platforms-b.dingtalk-yaml-bridge`
+- DingTalk standalone cron sender (`deliver=dingtalk`) — `platforms-b.dingtalk-standalone-send`
+- DingTalk dependency probes (`dingtalk_deps_present`, `ensure_dingtalk_deps`, `check_dingtalk_requirements`, `_is_connected`) — `platforms-b.dingtalk-probes`
+- DingTalk inbound media type mapping — `platforms-b.dingtalk-media-mapping`
+- Feishu / Lark gateway adapter — `platforms-b.feishu-adapter`
+- Feishu admission policy (`_admit`) — `platforms-b.feishu-admit`
+- Feishu per-group access rules (`group_rules`) — `platforms-b.feishu-group-rules`
+- Feishu @mention detection — `platforms-b.feishu-mentions`
+- Feishu burst batching (text + media) and per-chat serialization — `platforms-b.feishu-batching`
+- Feishu deduplication (message + card-action) — `platforms-b.feishu-dedup`
+- Feishu webhook mode (server, signature, rate limit, anomaly tracking) — `platforms-b.feishu-webhook`
+- Feishu WebSocket tuning — `platforms-b.feishu-ws-tuning`
+- Feishu interactive card actions (`/card` synthetic command) — `platforms-b.feishu-card-actions`
+- Feishu command-approval card (Allow Once / Session / Always / Deny) — `platforms-b.feishu-exec-approval`
+- Feishu update-prompt card ("⚕ Update Needs Your Input") — `platforms-b.feishu-update-prompt`
+- Feishu processing-status reactions (Typing / CrossMark) — `platforms-b.feishu-reactions`
+- Feishu document-comment intelligent reply (`drive.notice.comment_add_v1`) — `platforms-b.feishu-doc-comments`
+- Feishu comment access-control rules (3-tier) — `platforms-b.feishu-comment-rules`
+- `python -m gateway.platforms.feishu_comment_rules` CLI — `platforms-b.feishu-comment-rules-cli`
+- Feishu meeting-invitation events (`vc.bot.meeting_invited_v1`) — `platforms-b.feishu-meeting-invite`
+- Feishu scan-to-create onboarding (QR device flow) — `platforms-b.feishu-qr-register`
+- Feishu interactive setup (`hermes gateway setup` → Feishu / Lark) — `platforms-b.feishu-setup`
+- Feishu required app permissions and events — `platforms-b.feishu-permissions`
+- Feishu standalone cron sender (`deliver=feishu`) — `platforms-b.feishu-standalone-send`
+- `feishu_doc_read` tool — `platforms-b.tool-feishu-doc-read`
+- `feishu_drive_list_comments` tool — `platforms-b.tool-feishu-drive-list-comments`
+- `feishu_drive_list_comment_replies` tool — `platforms-b.tool-feishu-drive-list-replies`
+- `feishu_drive_reply_comment` tool — `platforms-b.tool-feishu-drive-reply-comment`
+- `feishu_drive_add_comment` tool — `platforms-b.tool-feishu-drive-add-comment`
+- `hermes-feishu` toolset — `platforms-b.toolset-hermes-feishu`
+- WeCom Smart Robot gateway adapter (`wecom`) — `platforms-b.wecom-adapter`
+- WeCom native streaming (`msgtype: stream`) and its keep-alive layers — `platforms-b.wecom-native-streaming`
+- WeCom per-chat send queue and token bucket — `platforms-b.wecom-rate-limit`
+- WeCom access policy (dm_policy / group_policy / groups) — `platforms-b.wecom-access-policy`
+- WeCom attachment/text merge window — `platforms-b.wecom-attachment-merge`
+- WeCom QR-scan setup (`qr_scan_for_bot_info`) — `platforms-b.wecom-qr-scan`
+- WeCom interactive setup (`hermes gateway setup` → WeCom) — `platforms-b.wecom-setup`
+- WeCom standalone cron sender (`deliver=wecom`) — `platforms-b.wecom-standalone-send`
+- WeCom Callback adapter (`wecom_callback`, self-built apps) — `platforms-b.wecom-callback-adapter`
+- WeCom callback crypto (`WXBizMsgCrypt`) — `platforms-b.wecom-crypto`
+- SimpleX Chat gateway adapter — `platforms-b.simplex-adapter`
+- SimpleX inbound message + attachment handling — `platforms-b.simplex-inbound`
+- SimpleX channel directory enumeration (`list_channels`) — `platforms-b.simplex-list-channels`
+- SimpleX cron / standalone sender — `platforms-b.simplex-standalone-send`
+- SimpleX interactive setup — `platforms-b.simplex-setup`
+- SimpleX DM pairing and authorization — `platforms-b.simplex-auth`
+- SimpleX text batching — `platforms-b.simplex-text-batching`
+- SMS (Twilio) gateway adapter — `platforms-b.sms-adapter`
+- Twilio webhook signature validation — `platforms-b.sms-signature`
+- SMS markdown stripping — `platforms-b.sms-markdown`
+- SMS standalone cron sender (`deliver=sms`) — `platforms-b.sms-standalone-send`
+- ntfy gateway adapter — `platforms-b.ntfy-adapter`
+- ntfy identity model and allowlist semantics — `platforms-b.ntfy-identity`
+- ntfy deduplication and echo suppression — `platforms-b.ntfy-dedup`
+- ntfy env-enablement seed — `platforms-b.ntfy-env-enablement`
+- ntfy standalone cron sender (`deliver=ntfy`) — `platforms-b.ntfy-standalone-send`
+- ntfy auth header builder (`_build_auth_header`) — `platforms-b.ntfy-auth-header`
+- ntfy self-hosting and markdown options — `platforms-b.ntfy-selfhost-markdown`
+- ntfy troubleshooting states — `platforms-b.ntfy-troubleshooting`
+- ntfy `platform_hint` — `platforms-b.ntfy-platform-hint`
+- Photon (iMessage) gateway adapter — `platforms-b.photon-adapter`
+- Photon Node sidecar (loopback protocol) — `platforms-b.photon-sidecar`
+- `hermes photon setup` — `platforms-b.photon-cli-setup`
+- `hermes photon status` — `platforms-b.photon-cli-status`
+- `hermes photon install-sidecar` — `platforms-b.photon-cli-install-sidecar`
+- `hermes photon telemetry [on|off]` — `platforms-b.photon-cli-telemetry`
+- Photon access auto-configuration (`_autoconfigure_access`) — `platforms-b.photon-autoconfig-access`
+- Photon sidecar directory resolution (immutable installs) — `platforms-b.photon-sidecar-paths`
+- Photon presence watchdog and sidecar health monitoring — `platforms-b.photon-watchdog`
+- Photon inbound attachments, voice, rich links and polls — `platforms-b.photon-media`
+- Photon reactions (tapbacks) and read receipts — `platforms-b.photon-reactions`
+- Photon group-chat mention gating — `platforms-b.photon-mention-gating`
+- Photon standalone / cron sending via the runtime record — `platforms-b.photon-standalone-send`
+- Photon `platform_hint` — `platforms-b.photon-platform-hint`
+- Raft gateway adapter (wake-channel bridge) — `platforms-b.raft-adapter`
+- Raft `POST /wake` endpoint — `platforms-b.raft-wake-endpoint`
+- Raft activity telemetry (`POST /activity`, `GET /activity/drain`, hooks) — `platforms-b.raft-activity`
+- Raft interactive setup — `platforms-b.raft-setup`
+- Raft `platform_hint` — `platforms-b.raft-platform-hint`
+- Buzz gateway adapter — `platforms-b.buzz-adapter`
+- Buzz inbound transports (WebSocket with poll fallback) — `platforms-b.buzz-transport`
+- Buzz Nostr signing (`nostr_auth.py`, NIP-42) — `platforms-b.buzz-nostr-auth`
+- Buzz credential resolution — `platforms-b.buzz-credentials`
+- Buzz mention gating and reaction-only users — `platforms-b.buzz-mention-gating`
+- Buzz reply threading (`reply_to_mode` / `reply_in_thread`) — `platforms-b.buzz-threading`
+- Buzz media handling (Blossom URLs, attachments, mention escaping) — `platforms-b.buzz-media`
+- Buzz YAML→env bridge and env enablement — `platforms-b.buzz-config-bridge`
+- Buzz interactive setup — `platforms-b.buzz-setup`
+- Buzz standalone cron sender (`deliver=buzz`) — `platforms-b.buzz-standalone-send`
+- Buzz `platform_hint` — `platforms-b.buzz-platform-hint`
+- A2A inbound platform adapter (be callable) — `platforms-b.a2a-adapter`
+- A2A Agent Card and skills advertisement — `platforms-b.a2a-agent-card`
+- A2A task lifecycle and JSON-RPC error codes — `platforms-b.a2a-task-lifecycle`
+- A2A push notifications (callbacks, HMAC signing, SSRF guard) — `platforms-b.a2a-push`
+- A2A authentication, trust and rate limiting — `platforms-b.a2a-auth`
+- A2A inbound prompt-injection framing and outbound redaction — `platforms-b.a2a-content-safety`
+- `a2a_discover` tool — `platforms-b.tool-a2a-discover`
+- `a2a_call` tool — `platforms-b.tool-a2a-call`
+- `a2a_list` tool — `platforms-b.tool-a2a-list`
+- `a2a_history` tool — `platforms-b.tool-a2a-history`
+- `a2a_orchestrate` tool — `platforms-b.tool-a2a-orchestrate`
+- A2A interactive setup — `platforms-b.a2a-setup`
+- A2A `provides_tools` manifest declaration — `platforms-b.a2a-provides-tools`
+- A2A `platform_hint` — `platforms-b.a2a-platform-hint`
+- Home Assistant gateway adapter — `platforms-b.homeassistant-adapter`
+- Home Assistant event filtering and cooldown — `platforms-b.homeassistant-filters`
+- Home Assistant state-change message formatting — `platforms-b.homeassistant-formatting`
+- Home Assistant standalone cron sender (`deliver=homeassistant`) — `platforms-b.homeassistant-standalone-send`
+- Home Assistant readiness probes — `platforms-b.homeassistant-probes`
+- Yuanbao gateway adapter — `platforms-b.yuanbao-adapter`
+- Yuanbao wire protocol (`yuanbao_proto.py`) — `platforms-b.yuanbao-proto`
+- Yuanbao authentication (`SignManager`, AUTH_BIND) — `platforms-b.yuanbao-auth`
+- Yuanbao access policy (DM / group) — `platforms-b.yuanbao-access-policy`
+- Yuanbao auto-sethome and `/sethome` — `platforms-b.yuanbao-home-channel`
+- Yuanbao inbound content pipeline (quotes, forwards, media anchors) — `platforms-b.yuanbao-inbound-pipeline`
+- Yuanbao outbound: chunking, reply heartbeat, slow-response notice — `platforms-b.yuanbao-outbound`
+- Yuanbao media upload (`yuanbao_media.py`, COS) — `platforms-b.yuanbao-media`
+- Yuanbao stickers (`yuanbao_sticker.py`, TIMFaceElem) — `platforms-b.yuanbao-stickers`
+- `yb_query_group_info` tool — `platforms-b.tool-yb-query-group-info`
+- `yb_query_group_members` tool — `platforms-b.tool-yb-query-group-members`
+- `yb_send_dm` tool — `platforms-b.tool-yb-send-dm`
+- `yb_search_sticker` tool — `platforms-b.tool-yb-search-sticker`
+- `yb_send_sticker` tool — `platforms-b.tool-yb-send-sticker`
+- Yuanbao chat commands — `platforms-b.yuanbao-commands`
+- `hermes-yuanbao` toolset — `platforms-b.toolset-hermes-yuanbao`
+- Per-platform display defaults (`display.platforms.<name>.*`) — `platforms-b.display-tiers`
+- `hermes tools enable a2a --platform <p>` (A2A toolset gating) — `platforms-b.a2a-toolset-enable`
+- `a2a_agents` peer configuration block — `platforms-b.a2a-agents-config`
+- `a2a` toolset (outbound client tools, config-gated) — `platforms-b.toolset-a2a`
+- `feishu_doc` toolset — `platforms-b.toolset-feishu-doc`
+- `feishu_drive` toolset — `platforms-b.toolset-feishu-drive`
+
+### 12 · Web dashboard shell, navigation, shared components, i18n
+
+- SPA entry document (`index.html`) — `web-shell.index-html`
+- React provider stack and router basename — `web-shell.provider-stack`
+- URL base path / reverse-proxy prefix — `web-shell.base-path`
+- Lazy route loading and `RouteFallback` — `web-shell.route-lazy`
+- Built-in route table — `web-shell.route-table`
+- Unknown-route fallback — `web-shell.unknown-route`
+- Persistent embedded-chat host — `web-shell.chat-persistent-host`
+- Profile-keyed route remount — `web-shell.profile-keyed-routes`
+- App layout frame — `web-shell.layout-frame`
+- Build pipeline and chunking (`vite.config.ts`) — `web-shell.build-config`
+- Global stylesheet and design tokens (`index.css`) — `web-shell.index-css`
+- Sidebar container (`#app-sidebar`) — `web-shell.sidebar`
+- Brand block "HERMES / AGENT" — `web-shell.brand-block`
+- Core navigation items — `web-shell.nav-core-items`
+- Nav item anatomy (active marker, hover wash, collapsed label fade) — `web-shell.nav-item-anatomy`
+- Collapsed-rail tooltip — `web-shell.sidebar-tooltip`
+- Sidebar collapse toggle — `web-shell.sidebar-collapse`
+- Plugin nav group ("Plugins" heading → KANBAN, ACHIEVEMENTS) — `web-shell.nav-plugin-group`
+- Analytics nav gating — `web-shell.nav-analytics-gate`
+- Mobile top bar — `web-shell.mobile-header`
+- Mobile navigation drawer and backdrop — `web-shell.mobile-drawer`
+- Profile switcher (sidebar) — `web-shell.profile-switcher`
+- Profile scope provider (`?profile=` synchronisation) — `web-shell.profile-provider`
+- Managing-profile banner — `web-shell.profile-scope-banner`
+- Memory / disk pressure banner — `web-shell.memory-pressure-banner`
+- System block heading — `web-shell.system-block`
+- Sidebar status strip (Gateway Status / Active Sessions) — `web-shell.status-strip`
+- Status poll (`useSidebarStatus`) — `web-shell.sidebar-status-poll`
+- Collapsed-rail gateway dot — `web-shell.gateway-dot`
+- "Restart Gateway" button + confirmation — `web-shell.restart-gateway`
+- "Update Hermes" button + confirmation — `web-shell.update-hermes`
+- System-action runner and toasts — `web-shell.system-actions-provider`
+- System-action button anatomy — `web-shell.system-action-button`
+- Theme + language picker row — `web-shell.picker-row`
+- Auth widget ("Logged in as …") — `web-shell.auth-widget`
+- Sidebar footer (version badge + Nous Research link) — `web-shell.sidebar-footer`
+- Page header (title + toolbar slots) — `web-shell.page-header`
+- Page-title resolution — `web-shell.page-title`
+- Theme picker — `web-shell.theme-switcher`
+- Font override section — `web-shell.font-picker`
+- Font catalog — `web-shell.font-catalog`
+- Theme engine (`ThemeProvider` / `applyTheme`) — `web-shell.theme-engine`
+- Built-in themes — `web-shell.builtin-themes`
+- User themes from YAML — `web-shell.user-themes`
+- Theme flash mitigation (bootstrap critical CSS) — `web-shell.theme-bootstrap-css`
+- Theme + font HTTP API — `web-shell.theme-api`
+- Language picker — `web-shell.language-switcher`
+- i18n provider and locale registry — `web-shell.i18n-provider`
+- Partial-locale merge (`defineLocale`) — `web-shell.i18n-define-locale`
+- RTL support — `web-shell.i18n-rtl`
+- i18n namespace `common` (45 keys) — `web-shell.i18n-ns-common`
+- i18n namespace `app` (43 keys) — `web-shell.i18n-ns-app`
+- i18n namespace `status` (36 keys) — `web-shell.i18n-ns-status`
+- i18n namespace `sessions` (42 keys) — `web-shell.i18n-ns-sessions`
+- i18n namespace `analytics` (23 keys) — `web-shell.i18n-ns-analytics`
+- i18n namespace `models` (9 keys) — `web-shell.i18n-ns-models`
+- i18n namespace `logs` (7 keys) — `web-shell.i18n-ns-logs`
+- i18n namespace `cron` (54 keys) — `web-shell.i18n-ns-cron`
+- i18n namespace `profiles` (58 keys) — `web-shell.i18n-ns-profiles`
+- i18n namespace `pluginsPage` (36 keys) — `web-shell.i18n-ns-pluginspage`
+- i18n namespace `skills` (20 keys) — `web-shell.i18n-ns-skills`
+- i18n namespace `config` (35 keys) — `web-shell.i18n-ns-config`
+- i18n namespace `env` (26 keys) — `web-shell.i18n-ns-env`
+- i18n namespace `oauth` (36 keys) — `web-shell.i18n-ns-oauth`
+- i18n namespace `language` (1 keys) — `web-shell.i18n-ns-language`
+- i18n namespace `theme` (8 keys) — `web-shell.i18n-ns-theme`
+- i18n namespace `achievements` (67 keys) — `web-shell.i18n-ns-achievements`
+- i18n namespace `kanban` (168 keys) — `web-shell.i18n-ns-kanban`
+- API client core (`fetchJSON`) — `web-shell.api-fetchjson`
+- Management-profile query injection — `web-shell.api-profile-injection`
+- WebSocket authentication (`getWsTicket`, `buildWsAuthParam`, `buildWsUrl`) — `web-shell.ws-auth`
+- `authedFetch` (non-JSON requests) — `web-shell.authed-fetch`
+- Stale-token reload guard — `web-shell.dashboard-auth-reload`
+- JSON-RPC gateway WebSocket client — `web-shell.gateway-client`
+- `dashboard-flags.ts` — embedded-chat flag — `web-shell.dashboard-flags`
+- `chat-activation.ts` — PTY activation latch — `web-shell.chat-activation`
+- `utils.ts` — `cn`, font helpers, relative time — `web-shell.lib-utils`
+- Remaining `lib/` modules (index) — `web-shell.lib-index`
+- Fuzzy picker scorer — `web-shell.fuzzy`
+- Clipboard helper — `web-shell.clipboard`
+- Shared modal shell classes — `web-shell.modal-shell`
+- `useModalBehavior` hook — `web-shell.use-modal-behavior`
+- API method index — `web-shell.api-method-index`
+- `ConfirmDialog` (dashboard-local) — `web-shell.cmp-confirm-dialog`
+- `DeleteConfirmDialog` — `web-shell.cmp-delete-confirm`
+- `ModelReloadConfirm` — `web-shell.cmp-model-reload-confirm`
+- `Markdown` — `web-shell.cmp-markdown`
+- `AutoField` (schema-driven config input) — `web-shell.cmp-autofield`
+- `ModelInfoCard` — `web-shell.cmp-model-info-card`
+- `PlatformsCard` — `web-shell.cmp-platforms-card`
+- `OAuthProvidersCard` — `web-shell.cmp-oauth-providers-card`
+- `OAuthLoginModal` — `web-shell.cmp-oauth-login-modal`
+- `HermesConsoleModal` — `web-shell.cmp-hermes-console`
+- `SkillEditorDialog` — `web-shell.cmp-skill-editor`
+- `ToolsetConfigDrawer` — `web-shell.cmp-toolset-drawer`
+- `ScheduleBuilder` — `web-shell.cmp-schedule-builder`
+- `AutomationBlueprints` — `web-shell.cmp-automation-blueprints`
+- `ChatSidebar` — `web-shell.cmp-chat-sidebar`
+- `ChatSessionList` — `web-shell.cmp-chat-session-list`
+- `ModelPickerDialog` — `web-shell.cmp-model-picker`
+- `ReasoningPicker` — `web-shell.cmp-reasoning-picker`
+- `SlashPopover` — `web-shell.cmp-slash-popover`
+- Design-system components imported from `@nous-research/ui` — `web-shell.ds-components`
+- Plugin manifest schema — `web-shell.plugin-manifest`
+- Plugin discovery and search order — `web-shell.plugin-discovery`
+- Plugin loader (`usePlugins`) — `web-shell.plugin-loader`
+- Plugin component registry — `web-shell.plugin-registry`
+- `PluginPage` renderer and its error copy — `web-shell.plugin-page`
+- Plugin slot registry and the 30 slot names — `web-shell.plugin-slots`
+- Plugin SDK exposed on `window` — `web-shell.plugin-sdk`
+- Plugin nav positioning and route override — `web-shell.plugin-nav-routing`
+- Plugin asset serving (`/dashboard-plugins/<name>/<file>`) — `web-shell.plugin-assets`
+- Plugin API runtime gate — `web-shell.plugin-api-gate`
+- Plugin sidebar visibility toggle — `web-shell.plugin-visibility`
+- Kanban plugin page — `web-shell.plugin-kanban`
+- Achievements plugin page — `web-shell.plugin-achievements`
+- `mount_spa` — static mount and SPA fallback — `web-shell.mount-spa`
+- `index.html` bootstrap injection — `web-shell.index-injection`
+- Headless backend mode (`hermes serve`) — `web-shell.headless-serve`
+- Loopback session-token auth — `web-shell.auth-loopback-token`
+- Auth-gate engagement rules — `web-shell.auth-gate-rules`
+- Host-header (DNS-rebinding) guard — `web-shell.host-header-guard`
+- Public (unauthenticated) API allow-list — `web-shell.public-api-paths`
+- Gated (cookie/OAuth) auth middleware — `web-shell.auth-gate-middleware`
+- Bearer token-auth seam (service callers) — `web-shell.token-auth-seam`
+- Password (bundled basic-auth) provider — `web-shell.auth-password`
+- Server-rendered `/login` page — `web-shell.login-page`
+- Native / desktop OAuth broker (RFC 8252) — `web-shell.auth-native`
+- SSH-owned backend credentials — `web-shell.auth-ssh`
+- `hermes dashboard` command and its flags — `web-shell.cli-dashboard`
+- Unified profile launch routing (`/?profile=`) — `web-shell.profile-routing`
+- Dashboard health counters and self-test — `web-shell.dashboard-health`
+- Static assets shipped with the SPA (`web/public/`) — `web-shell.static-assets`
+- Keyboard surface of the shell (and the absence of a command palette) — `web-shell.keyboard-surface`
+- Toasts — `web-shell.toasts`
+- Dialog and overlay z-index bands — `web-shell.z-bands`
+- `@hermes/shared` — the cross-surface client package — `web-shell.hermes-shared`
+- Web themes vs. CLI/TUI/desktop "skins" (two separate systems) — `web-shell.themes-vs-skins`
+- `web/README.md` — the developer contract — `web-shell.web-readme`
+
+### 13 · Web dashboard pages: Chat, Sessions, Files, Analytics, Models
+
+- Chat page (persistent embedded-terminal host) — `web-a.chat.page`
+- xterm.js terminal pane — `web-a.chat.terminal`
+- PTY WebSocket transport (`/api/pty`) — `web-a.chat.pty-websocket`
+- Keep-alive PTY attach token & registry — `web-a.chat.keepalive-attach`
+- PTY close-code handling and banners — `web-a.chat.close-codes-banners`
+- Automatic reconnect + "Reconnect now" overlay — `web-a.chat.reconnect`
+- "Session ended." overlay and "Start new session" — `web-a.chat.session-ended`
+- Resume a session in chat (`?resume=`) — `web-a.chat.resume`
+- Implicit active-session fallback (per-channel breadcrumb) — `web-a.chat.active-session-fallback`
+- "copy last response" floating button — `web-a.chat.copy-last-response`
+- Clipboard keyboard shortcuts (copy / paste / OSC 52) — `web-a.chat.clipboard-shortcuts`
+- Word-delete shortcuts (Ctrl+Backspace / Ctrl+Delete) — `web-a.chat.word-delete-shortcuts`
+- Image paste / drag-and-drop upload → `/image` — `web-a.chat.image-paste-drop`
+- `POST /api/chat/image-upload` — `web-a.chat.image-upload-api`
+- `?learn=<text>` seed → `/learn` command — `web-a.chat.learn-seed`
+- Mobile IME / replacement-input normalisation — `web-a.chat.mobile-input`
+- Soft-keyboard inset (mobile viewport) — `web-a.chat.keyboard-inset`
+- Mouse-report suppression & wheel scrolling — `web-a.chat.mouse-report-drop`
+- Desktop chat side panel (collapse / "panel") — `web-a.chat.side-panel`
+- Mobile "Model & tools" sheet — `web-a.chat.mobile-model-tools-sheet`
+- Chat sidebar — model card and connection badge — `web-a.chat.sidebar-model-card`
+- Chat sidebar — JSON-RPC sidecar (`/api/ws`) — `web-a.chat.sidebar-sidecar-ws`
+- Chat sidebar — events feed (`/api/pub` → `/api/events`) — `web-a.chat.sidebar-events-feed`
+- Chat sidebar — reasoning effort picker — `web-a.chat.sidebar-reasoning-picker`
+- Chat sidebar — notices (model / reasoning applied on next session) — `web-a.chat.sidebar-model-notice`
+- Chat sidebar — model picker (switch main model from chat) — `web-a.chat.sidebar-model-picker`
+- "Switch model?" reload confirmation — `web-a.chat.model-reload-confirm`
+- Chat session switcher (side panel "SESSIONS" list) — `web-a.chat.session-list`
+- `dashboard.new_session_requested` (TUI idle-exit hotkey → fresh chat) — `web-a.chat.new-session-request-event`
+- Live session title in the page header — `web-a.chat.session-title-header`
+- Profile-scoped chat — `web-a.chat.profile-scope`
+- Terminal theme colours — `web-a.chat.theme-terminal-colors`
+- Plugin slots on the Chat page — `web-a.chat.plugin-slots`
+- What runs inside the terminal (TUI child process contract) — `web-a.chat.tui-inside-terminal`
+- WebSocket auth & boundary gates (token / ticket / internal, host-origin, peer) — `web-a.chat.ws-auth`
+- "Session token unavailable" banner — `web-a.chat.token-missing-banner`
+- Embedded-chat feature flag — `web-a.chat.embedded-flag`
+- Windows: embedded chat unavailable banner — `web-a.chat.windows-unavailable`
+- Sessions page (overview + history of conversations) — `web-a.sessions.page`
+- Session store stats strip — `web-a.sessions.stats-strip`
+- Gateway / platform alerts — `web-a.sessions.alerts`
+- System action log panel (restart / update progress) — `web-a.sessions.system-action-log`
+- Category filter — Chats / Automation / All — `web-a.sessions.category-filter`
+- Source filter dropdown — `web-a.sessions.source-filter-menu`
+- View switch — Overview / History — `web-a.sessions.view-switch`
+- Full-text session search — `web-a.sessions.search`
+- "Delete empty (N)" button + confirmation — `web-a.sessions.delete-empty`
+- Import sessions (JSON / JSONL) — `web-a.sessions.import`
+- Pagination (compact + full) — `web-a.sessions.pagination`
+- Bulk select & delete — `web-a.sessions.bulk-select`
+- Session row (list item anatomy) — `web-a.sessions.row`
+- Row action — Resume in Chat — `web-a.sessions.row.resume-in-chat`
+- Row action — Rename (inline) — `web-a.sessions.row.rename`
+- Row action — Export session JSON — `web-a.sessions.row.export`
+- Row action — Delete session — `web-a.sessions.row.delete`
+- Expandable transcript (message bubbles) — `web-a.sessions.row.expand-transcript`
+- Markdown renderer (session transcripts) — `web-a.sessions.markdown-renderer`
+- "Prune old sessions" dialog — `web-a.sessions.prune-dialog`
+- Overview view — Recent Sessions card — `web-a.sessions.overview`
+- Connected Platforms card — `web-a.sessions.platforms-card`
+- Empty states — `web-a.sessions.empty-states`
+- Overview poll & cross-process refresh — `web-a.sessions.auto-refresh-poll`
+- `GET /api/sessions` (list) — `web-a.sessions.api.list`
+- `GET /api/sessions/{id}` and `/latest-descendant` — `web-a.sessions.api.detail-latest-descendant`
+- Session mutation & maintenance endpoints — `web-a.sessions.api.mutations`
+- Plugin slots on the Sessions page — `web-a.sessions.plugin-slots`
+- Files page (managed-file browser) — `web-a.files.page`
+- Header path badge — `web-a.files.header-badge`
+- "Refresh files" button — `web-a.files.refresh`
+- Path bar (`Path` input + `GO`) — `web-a.files.path-bar`
+- Read-only path line (locked deployments) — `web-a.files.path-readonly`
+- `UPLOAD` button — `web-a.files.upload-button`
+- `CREATE` button (new folder) — `web-a.files.create-button`
+- Drop zone ("DROP FILES HERE") — `web-a.files.dropzone`
+- Hidden multi-file input — `web-a.files.hidden-file-input`
+- File table header row — `web-a.files.table-header`
+- `..` parent-directory row — `web-a.files.parent-row`
+- File / directory row — `web-a.files.row`
+- Row action — Open directory — `web-a.files.row.open`
+- Row action — Download file — `web-a.files.row.download`
+- Row action — Delete — `web-a.files.row.delete`
+- "Create folder" dialog — `web-a.files.create-dialog`
+- Delete confirmation dialog — `web-a.files.delete-dialog`
+- Toasts — `web-a.files.toasts`
+- Loading / empty / error states — `web-a.files.states`
+- `GET /api/files` (list directory) — `web-a.files.api.list`
+- `GET /api/files/read` (base64 read) — `web-a.files.api.read`
+- `GET /api/files/download` (attachment stream) — `web-a.files.api.download`
+- `GET|HEAD /api/files/stream` (inline media, Range) — `web-a.files.api.stream`
+- `POST /api/files/upload` (legacy base64 upload) — `web-a.files.api.upload-json`
+- `POST /api/files/upload-stream` (chunked multipart upload) — `web-a.files.api.upload-stream`
+- `POST /api/files/mkdir` — `web-a.files.api.mkdir`
+- `DELETE /api/files` — `web-a.files.api.delete`
+- Managed-files root policy (locked vs. browsable) — `web-a.files.policy`
+- Sensitive-file exclusion (credential denylist) — `web-a.files.sensitive-guard`
+- Plugin slots on the Files page — `web-a.files.plugin-slots`
+- Analytics page (token & skill usage) — `web-a.analytics.page`
+- "Token analytics hidden" explanation card — `web-a.analytics.hidden-card`
+- Period selector — `7d` / `30d` / `90d` — `web-a.analytics.period`
+- Analytics refresh button — `web-a.analytics.refresh`
+- Totals card (`Stats`) — `web-a.analytics.totals`
+- "Daily Token Usage" stacked bar chart — `web-a.analytics.chart`
+- "Daily Breakdown" table — `web-a.analytics.daily-table`
+- "Per-Model Breakdown" table — `web-a.analytics.model-table`
+- "Top Skills" table — `web-a.analytics.skill-table`
+- Sortable column headers — `web-a.analytics.sorting`
+- Loading, error and empty states — `web-a.analytics.states`
+- `GET /api/analytics/usage` — `web-a.analytics.api.usage`
+- `by_task` and `tools` payload (fetched, never rendered here) — `web-a.analytics.unused-payload`
+- Plugin slots on the Analytics page — `web-a.analytics.plugin-slots`
+- Models page (model settings + per-model usage) — `web-a.models.page`
+- Period selector — `7D` / `30D` / `90D` — `web-a.models.period`
+- Models refresh button — `web-a.models.refresh`
+- "Model Settings" card — `web-a.models.settings-card`
+- "Main model" row + `CHANGE` — `web-a.models.main-row`
+- "Auxiliary tasks" row + `CONFIGURE` — `web-a.models.aux-row`
+- "Mixture of Agents" row + `CONFIGURE` — `web-a.models.moa-row`
+- Totals card (Models page) — `web-a.models.totals`
+- "Token & cost analytics are hidden…" note — `web-a.models.hidden-note`
+- Model card — `web-a.models.card`
+- Model card — 3-up stat row — `web-a.models.card.stats`
+- Model card — token bar — `web-a.models.card.tokenbar`
+- Model card — capability chips — `web-a.models.card.capabilities`
+- `Use as` menu (per card) — `web-a.models.use-as-menu`
+- "Expensive Model Warning" dialog — `web-a.models.expensive-confirm`
+- "Auxiliary Tasks" modal — `web-a.models.aux-modal`
+- The 11 auxiliary task slots — `web-a.models.aux-tasks`
+- "Reset auxiliary models" confirmation — `web-a.models.aux-reset`
+- "Configure Mixture of Agents presets" modal — `web-a.models.moa-modal`
+- MoA preset toolbar — `web-a.models.moa-presets`
+- MoA reference-model rows — `web-a.models.moa-references`
+- MoA aggregator row — `web-a.models.moa-aggregator`
+- MoA nested model picker — `web-a.models.moa-picker`
+- MoA `Save` / `Cancel` — `web-a.models.moa-save`
+- `ModelPickerDialog` (shared two-stage model picker) — `web-a.models.model-picker-dialog`
+- Model picker — provider column — `web-a.models.picker-providers`
+- Model picker — model column — `web-a.models.picker-models`
+- `ConfirmDialog` (dashboard-wide confirm primitive) — `web-a.shared.confirm-dialog`
+- `GET /api/analytics/models` — `web-a.models.api.analytics`
+- `GET /api/model/auxiliary` — `web-a.models.api.auxiliary`
+- `POST /api/model/set` — `web-a.models.api.model-set`
+- `GET /api/model/options` — `web-a.models.api.options`
+- `GET /api/model/moa` and `PUT /api/model/moa` — `web-a.models.api.moa`
+- Loading, error and empty states (Models page) — `web-a.models.states`
+- Assignment refresh on window focus — `web-a.models.focus-refresh`
+- Plugin slots on the Models page — `web-a.models.plugin-slots`
+- Orphan i18n strings in the `analytics` catalog — `web-a.analytics.orphan-strings`
+
+### 14 · Web dashboard (B): Logs, Cron, Skills, Plugins, MCP pages
+
+- Logs page — `web-b.logs-page`
+- Logs — `GET /api/logs` endpoint — `web-b.logs-api`
+- Cron page shell, view switch and header — `web-b.cron-page`
+- Scheduled Jobs list and job cards — `web-b.cron-jobs-list`
+- Pause / Resume job — `web-b.cron-pause-resume`
+- Trigger now — `web-b.cron-trigger-now`
+- Delete job (confirm dialog) — `web-b.cron-delete`
+- New Cron Job modal — `web-b.cron-create-modal`
+- Cron job form — basic fields — `web-b.cron-form-basic`
+- Schedule builder — `web-b.cron-schedule-builder`
+- Cron job form — Advanced fields — `web-b.cron-form-advanced`
+- Edit job modal — `web-b.cron-edit-modal`
+- Cron delivery targets endpoint — `web-b.cron-delivery-targets-api`
+- Automation Blueprints gallery — `web-b.cron-blueprints`
+- Cron run history endpoint (API-only in SPA) — `web-b.cron-runs-api`
+- Other cron API routes reachable from the page — `web-b.cron-api-misc`
+- Skills page shell, header and profile scoping — `web-b.skills-page`
+- Skills list, categories and search results — `web-b.skills-list`
+- Toggle skill on/off — `web-b.skills-toggle`
+- `GET /api/skills` (skill inventory) — `web-b.skills-api-list`
+- New skill editor dialog — `web-b.skills-new-skill`
+- Edit skill (SKILL.md) dialog — `web-b.skills-edit-skill`
+- Learn a skill dialog — `web-b.skills-learn`
+- Toolsets grid — `web-b.toolsets-grid`
+- Toolset configuration drawer — `web-b.toolset-config-drawer`
+- Toggle toolset — `web-b.toolset-toggle`
+- Browse hub view — `web-b.skills-hub-browser`
+- Hub result card — `web-b.skills-hub-result-card`
+- Hub skill detail dialog (preview + security scan) — `web-b.skills-hub-detail`
+- Install skill from hub / action log — `web-b.skills-hub-install`
+- Update all hub skills — `web-b.skills-hub-update-all`
+- Hub uninstall endpoint (API-only in SPA) — `web-b.skills-hub-uninstall-api`
+- Skills page catalog-only string (unused i18n key) — `web-b.skills-unused-strings`
+- Plugins page shell — `web-b.plugins-page`
+- Runtime provider plugins — Memory provider — `web-b.plugins-memory-provider`
+- Memory provider settings form fields — `web-b.plugins-memory-provider-fields`
+- Memory provider dependency setup hint — `web-b.plugins-memory-provider-setup`
+- Runtime provider plugins — Context engine — `web-b.plugins-context-engine`
+- Install plugin from GitHub / Git URL — `web-b.plugins-install`
+- Installed plugins list and row actions — `web-b.plugins-installed-list`
+- Dashboard-only extensions (orphans) — `web-b.plugins-orphans`
+- Plugins page catalog-only strings (unused i18n keys) — `web-b.plugins-unused-strings`
+- MCP page shell — `web-b.mcp-page`
+- Add MCP server modal — `web-b.mcp-add-server`
+- MCP server card and actions — `web-b.mcp-server-card`
+- Test MCP connection — `web-b.mcp-test`
+- Authenticate MCP server with OAuth — `web-b.mcp-oauth`
+- MCP catalog list — `web-b.mcp-catalog`
+- Install catalog entry (with credentials modal) — `web-b.mcp-catalog-install`
+- Replace whole MCP server map (API-only in SPA) — `web-b.mcp-replace-api`
+- Schedule description renderer (`describeSchedule`) and its string surface — `web-b.cron-schedule-describe`
+- Cron page catalog-only strings (unused i18n keys) — `web-b.cron-unused-strings`
+- Automation Blueprints — verbatim card copy — `web-b.cron-blueprints-copy`
+- Local skills inventory rendered by the page (53 rows) — `web-b.skills-local-inventory`
+- Browse hub — Featured skills landing (live) — `web-b.skills-hub-featured`
+- Skills page — remaining catalog-only strings — `web-b.skills-unused-strings-2`
+- Toolset configuration drawer — verbatim provider matrix (badges, tags, key prompts) — `web-b.toolset-provider-strings`
+- Memory provider settings — the eight live field schemas — `web-b.plugins-memory-provider-schemas`
+- Plugins page — remaining catalog-only string — `web-b.plugins-unused-strings-2`
+- DOM contract of the five pages — element ids, label bindings and the `Select` widget — `web-b.dom-id-index`
+- Toast and inline-error string index (five pages) — `web-b.toast-string-index`
+- ScheduleBuilder string map (`cron.scheduleModes.*` fully-qualified keys) — `web-b.cron-schedulemodes-keymap`
+- Automation blueprint deep-links and ready-to-paste slash commands — `web-b.cron-blueprint-deeplinks`
+- Cron payload/form normalisation library (`web/src/lib/cron-job.ts`) — `web-b.cron-job-payload-lib`
+- Cron job derived-display helpers (`CronPage.tsx` module scope) — `web-b.cron-display-helpers`
+- Cron "Trigger now" concurrency controller (`@hermes/shared`) — `web-b.cron-trigger-controller`
+- Schedule library — the ten pure functions behind the picker and the job line — `web-b.schedule-lib-functions`
+- Logs level classification and filter tables — `web-b.logs-classify-lib`
+- Skills page badge/tone/icon maps — `web-b.skills-badge-maps`
+- Plugins page memory-provider helper functions — `web-b.plugins-memory-helpers`
+- MCP "Add server" draft builder (`web/src/lib/mcp-server-create.ts`) — `web-b.mcp-draft-builder`
+- MCP dashboard OAuth client driver (`web/src/lib/mcp-dashboard-oauth.ts`) — `web-b.mcp-oauth-client-helper`
+- Client data contract — Cron page types (`web/src/lib/api.ts`) — `web-b.cron-client-types`
+- Client data contract — Skills page types (`web/src/lib/api.ts`) — `web-b.skills-client-types`
+- Client data contract — Plugins page types (`web/src/lib/api.ts`) — `web-b.plugins-client-types`
+- Client data contract — MCP page types (`web/src/lib/api.ts`) — `web-b.mcp-client-types`
+
+### 15 · Web dashboard — Channels, Webhooks, Pairing, Profiles, Config, Keys/Env, System, Docs, Login
+
+- Channels page — `web-c.channels.page`
+- Channels → page header "RESTART GATEWAY" — `web-c.channels.restart-header`
+- Channels → "Changes are saved. Restart the gateway for them to take effect." banner — `web-c.channels.restart-banner`
+- Channels → "The gateway is not running." banner — `web-c.channels.gateway-stopped-banner`
+- Channels → configured-count summary line — `web-c.channels.summary`
+- Channels → platform card anatomy — `web-c.channels.card`
+- Channels → connection-state badges — `web-c.channels.state-badges`
+- Channels → "Configure <platform>" modal — `web-c.channels.config-modal`
+- Channels → client-side field validation — `web-c.channels.field-validation`
+- Channels → Telegram onboarding panel ("Choose how to connect your Telegram bot") — `web-c.channels.telegram-panel`
+- Channels → Telegram QR pane ("Ready" / allowed-users editor) — `web-c.channels.telegram-qr`
+- Channels → WhatsApp onboarding panel ("Pair with QR") — `web-c.channels.whatsapp-panel`
+- Channels → Telegram card — `web-c.channels.telegram`
+- Channels → Discord card — `web-c.channels.discord`
+- Channels → Slack card — `web-c.channels.slack`
+- Channels → Mattermost card — `web-c.channels.mattermost`
+- Channels → Matrix card — `web-c.channels.matrix`
+- Channels → WhatsApp card — `web-c.channels.whatsapp`
+- Channels → Signal card — `web-c.channels.signal`
+- Channels → BlueBubbles (iMessage) card — `web-c.channels.bluebubbles`
+- Channels → Home Assistant card — `web-c.channels.homeassistant`
+- Channels → Email card — `web-c.channels.email`
+- Channels → SMS (Twilio) card — `web-c.channels.sms`
+- Channels → DingTalk card — `web-c.channels.dingtalk`
+- Channels → Feishu / Lark card — `web-c.channels.feishu`
+- Channels → Google Chat card — `web-c.channels.google-chat`
+- Channels → WeCom (group bot) card — `web-c.channels.wecom`
+- Channels → WeCom (app) card — `web-c.channels.wecom-callback`
+- Channels → Weixin / WeChat (Personal) card — `web-c.channels.weixin`
+- Channels → QQ Bot card — `web-c.channels.qqbot`
+- Channels → Yuanbao (元宝) card — `web-c.channels.yuanbao`
+- Channels → API server card — `web-c.channels.api-server`
+- Channels → Webhooks card — `web-c.channels.webhook`
+- Channels → A2A card — `web-c.channels.a2a`
+- Channels → Buzz card — `web-c.channels.buzz`
+- Channels → iMessage via Photon card — `web-c.channels.photon`
+- Channels → IRC card — `web-c.channels.irc`
+- Channels → LINE card — `web-c.channels.line`
+- Channels → Microsoft Graph Webhook card — `web-c.channels.msgraph-webhook`
+- Channels → Microsoft Teams card — `web-c.channels.teams`
+- Channels → ntfy card — `web-c.channels.ntfy`
+- Channels → Raft card — `web-c.channels.raft`
+- Channels → Relay (experimental) card — `web-c.channels.relay`
+- Channels → SimpleX Chat card — `web-c.channels.simplex`
+- Channels → WhatsApp Cloud API card — `web-c.channels.whatsapp-cloud`
+- Webhooks page — `web-c.webhooks.page`
+- Webhooks → "New subscription" (page-header button) — `web-c.webhooks.new-button`
+- Webhooks → "Webhook receiver disabled" card — `web-c.webhooks.enable-card`
+- Webhooks → restart banners — `web-c.webhooks.restart-banners`
+- Webhooks → "New subscription" modal — `web-c.webhooks.create-modal`
+- Webhooks → "Subscriptions (n)" list — `web-c.webhooks.list`
+- Pairing page — `web-c.pairing.page`
+- Pairing → "Clear pending" (page-header button) — `web-c.pairing.clear-pending`
+- Pairing → "Pending requests (n)" section — `web-c.pairing.pending`
+- Pairing → "Approved users (n)" section — `web-c.pairing.approved`
+- Profiles page — `web-c.profiles.page`
+- Profiles → "BUILD" (page-header button) — `web-c.profiles.build-button`
+- Profiles → "CREATE" / "New Profile" modal — `web-c.profiles.create-modal`
+- Profiles → active-profile banner — `web-c.profiles.active-banner`
+- Profiles → profile card — `web-c.profiles.card`
+- Profiles → card "⋯" actions menu — `web-c.profiles.actions-menu`
+- Profiles → "Set as active" — `web-c.profiles.set-active`
+- Profiles → "Change model" editor — `web-c.profiles.model-editor`
+- Profiles → "Edit description" editor (+ "Auto-generate") — `web-c.profiles.description-editor`
+- Profiles → "Edit SOUL.md" editor — `web-c.profiles.soul-editor`
+- Profiles → "Copy CLI command" — `web-c.profiles.copy-command`
+- Profiles → inline rename — `web-c.profiles.rename`
+- Profiles → delete profile — `web-c.profiles.delete`
+- Profile Builder page — `web-c.builder.page`
+- Profile Builder → step 1 "Identity" — `web-c.builder.step-identity`
+- Profile Builder → step 2 "Model" — `web-c.builder.step-model`
+- Profile Builder → step 3 "Skills" — `web-c.builder.step-skills`
+- Profile Builder → step 4 "MCPs" — `web-c.builder.step-mcp`
+- Profile Builder → step 5 "Review" — `web-c.builder.step-review`
+- Config page — `web-c.config.page`
+- Config → config-path header line — `web-c.config.path-line`
+- Config → search box — `web-c.config.search`
+- Config → "Export config as JSON" — `web-c.config.export`
+- Config → "Import config from JSON" — `web-c.config.import`
+- Config → "Reset <scope> to defaults" — `web-c.config.reset`
+- Config → "YAML" / "Form" mode toggle — `web-c.config.yaml-toggle`
+- Config → raw YAML editor — `web-c.config.yaml-editor`
+- Config → "SAVE" — `web-c.config.save`
+- Config → category rail ("Filters" / "Sections") — `web-c.config.category-rail`
+- Config → active-category field card — `web-c.config.category-card`
+- Config → "Search Results" card — `web-c.config.search-card`
+- Config → field widgets by schema type — `web-c.config.field-widgets`
+- Config → plugin slots — `web-c.config.plugin-slots`
+- Keys page — `web-c.env.page`
+- Keys → page intro line — `web-c.env.intro`
+- Keys → "Show Advanced" / "Hide Advanced" toggle — `web-c.env.advanced-toggle`
+- Keys → section jump navigation — `web-c.env.jump-nav`
+- Keys → "Provider Logins (OAuth)" card — `web-c.env.oauth-card`
+- Keys → OAuth providers, live roster — `web-c.env.oauth-providers`
+- Keys → OAuth login modal — `web-c.env.oauth-modal`
+- Keys → "LLM PROVIDERS" card — `web-c.env.providers-card`
+- Keys → provider group row (expanded) — `web-c.env.provider-group-row`
+- Keys → env var row (full form) — `web-c.env.var-row`
+- Keys → clear-key confirmation — `web-c.env.clear-confirm`
+- Keys → category cards ("KEYS", "GATEWAY", "CONFIG") — `web-c.env.category-cards`
+- Keys → "KEYS" card contents (tool keys) — `web-c.env.tools-keys`
+- Keys → "GATEWAY" card contents (cross-cutting messaging settings) — `web-c.env.gateway-keys`
+- Keys → "CONFIG" card contents (general settings) — `web-c.env.settings-keys`
+- Keys → "CUSTOM KEYS" card — `web-c.env.custom-keys`
+- Keys → plugin slots — `web-c.env.plugin-slots`
+- System page — `web-c.system.page`
+- System → live action log viewer — `web-c.system.action-log`
+- System → "Host" section — `web-c.system.host`
+- System → "Check for updates" / "Update now" — `web-c.system.update`
+- System → "Nous Portal" section — `web-c.system.portal`
+- System → "Skill curator" section — `web-c.system.curator`
+- System → "Gateway" section — `web-c.system.gateway`
+- System → "Memory" section — `web-c.system.memory`
+- System → "Credential pool" section — `web-c.system.credential-pool`
+- System → "Operations" quick actions — `web-c.system.operations`
+- System → "Open console" (Hermes Console modal) — `web-c.system.console`
+- System → "Full backup" (create + download) — `web-c.system.backup`
+- System → "Restore from backup upload" — `web-c.system.restore-upload`
+- System → "Restore from backups path" — `web-c.system.restore-path`
+- System → "Restore full Hermes backup?" confirmation — `web-c.system.restore-confirm`
+- System → "Share debug report" — `web-c.system.debug-share`
+- System → "Checkpoints" section — `web-c.system.checkpoints`
+- System → "Shell hooks" section — `web-c.system.hooks`
+- System → "New shell hook" modal — `web-c.system.new-hook`
+- Documentation page — `web-c.docs.page`
+- Documentation → "Open documentation in a new tab" — `web-c.docs.open-external`
+- Documentation → plugin slots — `web-c.docs.plugin-slots`
+- Sign-in page (`/login`) — `web-c.login.page`
+- Sign-in unavailable page — `web-c.login.unavailable`
+- Login → OAuth round trip (`/auth/login` → IDP → `/auth/callback`) — `web-c.login.oauth-roundtrip`
+- Login → username/password sign-in (`POST /auth/password-login`) — `web-c.login.password`
+- Login → sign out (`POST /auth/logout`) — `web-c.login.logout`
+- Login → provider list for the login bootstrap (`GET /api/auth/providers`) — `web-c.login.providers-api`
+- Login → session identity probe (`GET /api/auth/me`) — `web-c.login.me`
+- Login → WebSocket upgrade ticket (`POST /api/auth/ws-ticket`) — `web-c.login.ws-ticket`
+- Login → the auth gate (which routes are public) — `web-c.login.gate`
+- Login → loopback session-token mode — `web-c.login.loopback-token`
+- Login → native-app authorize (`GET /auth/native/authorize`) — `web-c.login.native-authorize`
+- Login → native-app token exchange (`POST /auth/native/token`) — `web-c.login.native-token`
+- Login → native-app refresh (`POST /auth/native/refresh`) — `web-c.login.native-refresh`
+- Web dashboard → unused i18n strings in this shard's pages — `web-c.misc.dead-strings`
+
+### 16 · Desktop app — Electron main process, backend lifecycle, remote/SSH backends, updates, deep links, SDK/plugins
+
+- Desktop app identity & packaging metadata — `desktop-main.package-identity`
+- `hermes` URL scheme registration (`protocols`) — `desktop-main.protocol-declaration`
+- macOS build target (DMG + zip, hardened runtime, entitlements, usage strings) — `desktop-main.build-mac`
+- Windows build target (NSIS + MSI) — `desktop-main.build-win`
+- Linux build targets (AppImage + deb + rpm) — `desktop-main.build-linux`
+- npm scripts — build, dev, dist, test, repro — `desktop-main.npm-scripts`
+- Dev sandboxing (`dev-sandbox.sh`, `HERMES_DESKTOP_USER_DATA_DIR`, `HERMES_DESKTOP_APP_NAME`) — `desktop-main.dev-sandbox`
+- `hermes desktop` launcher flags — `desktop-main.cli-desktop-flags`
+- macOS local code-signing identity (`hermes desktop --setup-tcc-identity`) — `desktop-main.tcc-identity`
+- Stable macOS TCC anchor for the uv-managed interpreter — `desktop-main.tcc-anchor-python`
+- Install-stamp resource (`install-stamp.json`) — `desktop-main.install-stamp`
+- Single-instance lock and second-instance routing — `desktop-main.single-instance`
+- Remote-display GPU fallback — `desktop-main.remote-display-gpu`
+- WSL GPU passthrough un-blocklisting — `desktop-main.wsl-gpu`
+- Linux keychain backend selection (`--password-store`) — `desktop-main.linux-password-store`
+- Windows Chromium-sandbox fallback and ACL repair — `desktop-main.windows-sandbox-fallback`
+- Renderer background-priority switch — `desktop-main.renderer-backgrounding`
+- Renderer debugging port (dev CDP) — `desktop-main.dev-cdp`
+- `desktop.log` — rotating main-process log — `desktop-main.desktop-log`
+- Main-process crash forensics — `desktop-main.crash-forensics`
+- Renderer crash / reload budget — `desktop-main.renderer-reload-budget`
+- Renderer bundle-missing guard — `desktop-main.renderer-bundle-guard`
+- Bundle-skew warning (new backend, old UI) — `desktop-main.bundle-skew`
+- Spellchecker language seeding — `desktop-main.spellchecker`
+- Quit confirmation while a turn is in flight — `desktop-main.quit-guard`
+- Ordered quit teardown — `desktop-main.before-quit-teardown`
+- Power resume + battery state broadcast — `desktop-main.power-events`
+- Keep computer awake — `desktop-main.keep-awake`
+- Stream-aware background throttling — `desktop-main.stream-throttle`
+- Cross-window one-shot de-duplication — `desktop-main.event-dedupe`
+- `HERMES_HOME` resolution — `desktop-main.hermes-home`
+- Backend resolution ladder — `desktop-main.backend-resolution`
+- `serve` vs legacy `dashboard --no-open` — `desktop-main.backend-subcommand`
+- Ephemeral-port ready announcement — `desktop-main.backend-ready-announce`
+- Backend output tail (crash forensics at spawn) — `desktop-main.backend-output-tail`
+- Backend ownership record + spawn nonce — `desktop-main.backend-ownership`
+- Cross-platform process start marker — `desktop-main.start-marker`
+- Claim policy: degrade, never kill a healthy backend — `desktop-main.claim-decision`
+- Orphan reap on boot — `desktop-main.orphan-reap`
+- Parent-watchdog environment for the backend child — `desktop-main.parent-watchdog-env`
+- Backend spawn environment — `desktop-main.backend-env`
+- Login-shell PATH merge — `desktop-main.login-shell-path`
+- Primary backend startup (`startHermes`) — `desktop-main.start-hermes`
+- Boot-failure classification and latching — `desktop-main.boot-failure-latch`
+- Backend connection generation state — `desktop-main.backend-connection-state`
+- Single-owner dial claim — `desktop-main.backend-dial-claim`
+- Per-profile backend pool — `desktop-main.backend-pool`
+- Pool LRU eviction — `desktop-main.pool-lru`
+- Pool idle reaper — `desktop-main.pool-idle-reaper`
+- Backend keepalive touch — `desktop-main.backend-touch`
+- Pool teardown helpers — `desktop-main.pool-teardown`
+- Platform-correct child kill — `desktop-main.stop-backend-child`
+- Windows pre-update release gate — `desktop-main.release-gate`
+- Readiness probe (`waitForHermes`) — `desktop-main.wait-for-hermes`
+- Served-token adoption / foreign-backend refusal — `desktop-main.dashboard-token-adopt`
+- WebSocket handshake probe — `desktop-main.ws-probe`
+- Active-runtime usability classification — `desktop-main.active-runtime-state`
+- Python / venv discovery — `desktop-main.python-discovery`
+- Working directory for the backend — `desktop-main.hermes-cwd`
+- Desktop profile pin (`active-profile.json`) — `desktop-main.active-profile`
+- Profile delete routing — `desktop-main.profile-delete-routing`
+- Profile rename routing — `desktop-main.profile-rename-routing`
+- Boot-progress channel — `desktop-main.boot-progress`
+- First-run setup choice gate — `desktop-main.first-run-setup-gate`
+- Bootstrap runner (staged installer) — `desktop-main.bootstrap-runner`
+- Bootstrap event snapshot + overlay state — `desktop-main.bootstrap-state`
+- Bootstrap controls: Reset / Repair / Continue locally / Cancel — `desktop-main.bootstrap-controls`
+- Runtime preparation (`ensureRuntime`) — `desktop-main.ensure-runtime`
+- Windows bootstrap recovery hand-off to Hermes Setup — `desktop-main.windows-bootstrap-handoff`
+- `state.db` pre-flight guard — `desktop-main.preflight-state-db`
+- Stale git-lock self-heal — `desktop-main.git-lock-heal`
+- `connections.json` — the v2 registry file — `desktop-main.registry-file`
+- Registry invariants: exactly one local, unique labels, primary — `desktop-main.registry-invariants`
+- Backend scope keys — `desktop-main.backend-scope-key`
+- `@profile-device` agent handles — `desktop-main.agent-handle`
+- Union agent roster — `desktop-main.agent-roster`
+- Registry CRUD IPC — `desktop-main.registry-ipc`
+- Connection save pipeline — `desktop-main.registry-save`
+- Connection **Test** (two-leg probe) — `desktop-main.registry-test`
+- Fleet update fan-out (**Update all instances**) — `desktop-main.update-all`
+- v1 → v2 migration and drift reconciliation — `desktop-main.registry-migration`
+- Window connection route registry — `desktop-main.window-connection-route`
+- Registry-scoped backend resolution IPC — `desktop-main.connection-for`
+- Plugin profile routes IPC — `desktop-main.plugin-profile-routes`
+- `connection.json` — the v1 connection config — `desktop-main.connection-config-file`
+- Remote URL normalization — `desktop-main.remote-url-normalize`
+- Gateway WebSocket URL construction — `desktop-main.gateway-ws-url`
+- Single-use OAuth WS tickets — `desktop-main.ws-ticket`
+- Extra remote gateway headers (access proxies) — `desktop-main.remote-headers`
+- Remote backend resolution — `desktop-main.resolve-remote-backend`
+- SSH connection manager (OpenSSH ControlMaster) — `desktop-main.ssh-connection`
+- SSH error classification and messages — `desktop-main.ssh-errors`
+- `~/.ssh/config` host suggestions — `desktop-main.ssh-config-hosts`
+- SSH host string parsing — `desktop-main.ssh-host-parse`
+- SSH bootstrap: reuse-or-spawn a remote `hermes serve` — `desktop-main.ssh-bootstrap`
+- SSH teardown — `desktop-main.ssh-teardown`
+- Remote liveness tracking and revalidation — `desktop-main.remote-liveness`
+- Managed SSH update transaction — `desktop-main.managed-ssh-update`
+- Managed-SSH crash recovery journal — `desktop-main.managed-ssh-recovery`
+- Hermes Cloud sign-in and agent discovery — `desktop-main.hermes-cloud`
+- Remote auth-mode probe — `desktop-main.remote-probe`
+- Connection apply (soft re-home) — `desktop-main.connection-apply`
+- Update check — `desktop-main.updates-check`
+- Update branch selection — `desktop-main.updates-branch`
+- Update apply — Windows hand-off — `desktop-main.updates-apply-windows`
+- Update apply — POSIX hand-off — `desktop-main.updates-apply-posix`
+- Update-in-progress marker and gate — `desktop-main.update-marker-gate`
+- Update hand-off result surfacing — `desktop-main.handoff-result`
+- Update progress channel — `desktop-main.updates-progress`
+- Version reporting and the About panel — `desktop-main.version-about`
+- Uninstall summary probe — `desktop-main.uninstall-summary`
+- Uninstall run (3 modes) — `desktop-main.uninstall-run`
+- Primary window — `desktop-main.main-window`
+- Window geometry persistence — `desktop-main.window-state`
+- Peer "instance" windows (New Window) — `desktop-main.instance-window`
+- Session pop-out windows — `desktop-main.session-window`
+- Chat window `webPreferences` contract — `desktop-main.chat-web-preferences`
+- Popped-out Browser windows — `desktop-main.browser-window`
+- Open session in the user's terminal — `desktop-main.open-in-terminal`
+- HUD mode window — `desktop-main.hud-window`
+- HUD windowing profile (per-compositor capabilities) — `desktop-main.hud-windowing`
+- HUD drag, snap and cursor feed — `desktop-main.hud-drag-snap`
+- HUD reset layout — `desktop-main.hud-reset-layout`
+- HUD game-overlay watch — `desktop-main.hud-game-overlay`
+- Hyprland overlay promotion — `desktop-main.hud-hyprland`
+- Quick Entry window — `desktop-main.quick-entry`
+- Quick Entry accelerator validation — `desktop-main.quick-entry-accelerator`
+- Pet overlay window — `desktop-main.pet-overlay`
+- Wake-word indicator window — `desktop-main.wake-indicator`
+- Link-title preview window — `desktop-main.link-title-window`
+- Application menu (macOS only) — `desktop-main.application-menu`
+- DevTools shortcut and the F12 block — `desktop-main.devtools-shortcut`
+- ⌘W / ⌘R interception — `desktop-main.preview-shortcut`
+- Zoom (UI scale) — `desktop-main.zoom`
+- Translucency / glass — `desktop-main.translucency`
+- Native theme + title-bar overlay — `desktop-main.native-theme`
+- Window state broadcast — `desktop-main.window-state-changed`
+- `hermes://` deep links — `desktop-main.deep-links`
+- Native notifications — `desktop-main.notifications`
+- Ambient-cue claim — `desktop-main.ambient-claim`
+- Dock / taskbar icon — `desktop-main.app-icon`
+- macOS Dock activate / window-all-closed — `desktop-main.dock-activate`
+- Find in page — `desktop-main.find-in-page`
+- Read the window below (HUD context) — `desktop-main.window-below`
+- Context menu bridge — `desktop-main.context-menu`
+- Download handling and media permissions — `desktop-main.downloads-permissions`
+- External link opening — `desktop-main.open-external`
+- YouTube embed referer shim — `desktop-main.embed-referer`
+- Filesystem IPC — `desktop-main.fs-ipc`
+- Path hardening for IPC — `desktop-main.path-hardening`
+- Data-URL read cap — `desktop-main.data-url-read-max`
+- File read / attach / write IPC — `desktop-main.file-io-ipc`
+- Gateway file download — `desktop-main.gateway-file-download`
+- Preview normalization, watching and reachability — `desktop-main.previews`
+- `hermes-media://` protocol — `desktop-main.media-protocol`
+- Link titles and favicons — `desktop-main.link-title-favicon`
+- Embedded terminal PTY host — `desktop-main.terminal-ipc`
+- Git worktree IPC — `desktop-main.git-worktrees`
+- Git review IPC — `desktop-main.git-review`
+- Workspace path sanitisation — `desktop-main.workspace-sanitize`
+- Git Bash discovery (Windows) — `desktop-main.find-git-bash`
+- Opt-in OS-keychain encryption for stored secrets — `desktop-main.secret-storage-policy`
+- Secret file permissions and atomic writes — `desktop-main.secret-files`
+- Per-connection OAuth cookie partitions — `desktop-main.oauth-partition`
+- Cookie-session liveness classification — `desktop-main.cookie-liveness`
+- Embedded OAuth login window — `desktop-main.oauth-login-window`
+- RFC 8252 native OAuth (system browser + loopback + PKCE) — `desktop-main.native-oauth`
+- MCP OAuth loopback callback (remote backends) — `desktop-main.mcp-oauth-callback`
+- Windows system CA trust — `desktop-main.windows-system-ca`
+- API transport (keep-alive agents + retries) — `desktop-main.api-transport`
+- Multipart upload body — `desktop-main.multipart-body`
+- WSL detection and Windows-binary rejection — `desktop-main.wsl-detection`
+- WSL path bridge (per profile) — `desktop-main.wsl-path-bridge`
+- WSL Windows-font wiring — `desktop-main.wsl-fonts`
+- WSL clipboard image bridge — `desktop-main.wsl-clipboard-image`
+- Windows venv `hermes.exe` shim unwrapping — `desktop-main.windows-hermes-path`
+- Hidden Windows child processes — `desktop-main.windows-child-options`
+- Windows user-environment registry read — `desktop-main.windows-user-env`
+- `hermes:api` — the main-process REST proxy — `desktop-main.hermes-api`
+- Cross-gateway session list merging — `desktop-main.session-merge`
+- JSON-RPC over WebSocket — the wire — `desktop-main.jsonrpc-wire`
+- Heartbeat and lossless reconnect replay — `desktop-main.jsonrpc-replay`
+- Gateway event vocabulary — `desktop-main.gateway-events`
+- RPC methods the desktop renderer calls — `desktop-main.rpc-methods-used`
+- Backend-exit and connection-applied pushes — `desktop-main.backend-exit-events`
+- `@hermes/plugin-sdk` — the plugin language — `desktop-main.plugin-sdk`
+- `host.state` — readonly app state — `desktop-main.sdk-host-state`
+- `host` action doors — `desktop-main.sdk-host-actions`
+- Contribution areas — `desktop-main.sdk-contribution-areas`
+- SDK design-language exports — `desktop-main.sdk-ui`
+- Runtime SDK injection and the import map — `desktop-main.sdk-runtime`
+- Disk plugin door — `desktop-main.plugin-disk-door`
+- Install a desktop plugin from Git — `desktop-main.plugin-install-git`
+- VS Code Marketplace theme import — `desktop-main.vscode-marketplace`
+- Theme engine and user themes — `desktop-main.theme-engine`
+- `window.hermesDesktop` — the preload capability bridge — `desktop-main.preload-bridge`
+- Desktop engineering invariants (`AGENTS.md`) — `desktop-main.agents-md`
+- Desktop design contract (`DESIGN.md`) — `desktop-main.design-md`
+- Test surface — vitest projects, node:test, Playwright e2e — `desktop-main.test-surface`
+- Build and diagnostic scripts — `desktop-main.build-scripts`
+- Install identity (`install_id`) — `desktop-main.install-identity`
+- Every `hermes:*` IPC channel — `desktop-main.ipc-channel-index`
+
+### 17 · Desktop app — HUD, command palette, command center, shell chrome, sidebars, overlays
+
+- Titlebar band (window chrome strip) — `desktop-a.titlebar-band`
+- Window controls cluster (left titlebar tools) — `desktop-a.titlebar-left-cluster`
+- Titlebar button — sidebar toggle — `desktop-a.titlebar-tool-sidebar`
+- Titlebar button — swap sidebar sides — `desktop-a.titlebar-tool-flip-panes`
+- Pane controls cluster (contributed pane tools) — `desktop-a.titlebar-pane-cluster`
+- App controls cluster (right titlebar tools) — `desktop-a.titlebar-app-cluster`
+- Titlebar button — layout editor (⌘-click resets) — `desktop-a.titlebar-tool-layout`
+- Titlebar button — HUD mode — `desktop-a.titlebar-tool-hud`
+- Titlebar button — mute/unmute haptics — `desktop-a.titlebar-tool-haptics`
+- Titlebar button — open settings — `desktop-a.titlebar-tool-settings`
+- Titlebar button — right sidebar toggle — `desktop-a.titlebar-tool-right-sidebar`
+- Titlebar unread-session badge — `desktop-a.titlebar-unread-badge`
+- Titlebar tool contribution contract — `desktop-a.titlebar-tool-contract`
+- Status bar — `desktop-a.statusbar`
+- Status bar item contract — `desktop-a.statusbar-item-contract`
+- Status bar item — Command Center — `desktop-a.statusbar-command-center`
+- Status bar item — gateway/profile switcher — `desktop-a.statusbar-gateway-switcher`
+- Status bar item — Gateway health — `desktop-a.statusbar-gateway-health`
+- Gateway menu panel — `desktop-a.gateway-menu-panel`
+- Status bar item — Workspace (cwd) — `desktop-a.statusbar-workspace-cwd`
+- Status bar item — Agents — `desktop-a.statusbar-agents`
+- Status bar item — Cron — `desktop-a.statusbar-cron`
+- Status bar item — Webhooks — `desktop-a.statusbar-webhooks`
+- Status bar item — turn timer ("Running") — `desktop-a.statusbar-running-timer`
+- Status bar item — context meter — `desktop-a.statusbar-context-usage`
+- Context Usage panel — `desktop-a.context-usage-panel`
+- Status bar item — session timer — `desktop-a.statusbar-session-timer`
+- Status bar item — Approvals (approval-mode menu) — `desktop-a.statusbar-approval-mode`
+- Status bar item — Terminal toggle — `desktop-a.statusbar-terminal`
+- Status bar item — client version / update pill — `desktop-a.statusbar-version-client`
+- Status bar item — backend version / update pill — `desktop-a.statusbar-version-backend`
+- Status bar right-click menu — "Show in status bar" — `desktop-a.statusbar-context-menu`
+- Status bar default hidden set — `desktop-a.statusbar-defaults`
+- Status snapshot polling — `desktop-a.status-snapshot-poll`
+- Model catalog menu — `desktop-a.model-catalog-menu`
+- Model edit submenu (Options / Thinking / Fast / Effort) — `desktop-a.model-edit-submenu`
+- Composer model menu panel (controller plus "Refresh models") — `desktop-a.model-menu-panel`
+- Edit models dialog (model visibility overlay) — `desktop-a.model-visibility-overlay`
+- Model picker dialog overlay (fallback picker) — `desktop-a.model-picker-overlay`
+- Command palette — `desktop-a.command-palette`
+- Palette ranking algorithm — `desktop-a.palette-ranking`
+- Palette group — "Go to" — `desktop-a.palette-group-goto`
+- Palette group — "Projects" — `desktop-a.palette-group-projects`
+- Palette group — "Commands" (contributed rows) — `desktop-a.palette-group-commands`
+- Palette group — "Command Center" — `desktop-a.palette-group-command-center`
+- Palette group — "Appearance" — `desktop-a.palette-group-appearance`
+- Palette group — "Settings" — `desktop-a.palette-group-settings`
+- Palette type-to-search groups — `desktop-a.palette-search-groups`
+- Palette — jump to a pasted session id — `desktop-a.palette-direct-session-id`
+- Palette — open a pasted folder path — `desktop-a.palette-direct-folder-path`
+- Palette group — "Branches" (git worktrees) — `desktop-a.palette-branch-group`
+- Palette sub-page — Change theme — `desktop-a.palette-page-theme`
+- Palette sub-page — Change color mode — `desktop-a.palette-page-color-mode`
+- Palette sub-page — Pets (petdex gallery) — `desktop-a.palette-page-pets`
+- Palette sub-page — Install theme (VS Code Marketplace) — `desktop-a.palette-page-install-theme`
+- Palette sub-page — Settings search — `desktop-a.palette-page-settings`
+- Palette modifier preview and session-open contract — `desktop-a.palette-modifier-preview`
+- Palette back navigation and highlight watcher — `desktop-a.palette-back-nav`
+- Floating HUD chrome (shared palette / switcher surface) — `desktop-a.floating-hud-chrome`
+- Command Center overlay — `desktop-a.command-center`
+- Command Center — Sessions section — `desktop-a.cc-sessions`
+- Command Center — System section — `desktop-a.cc-system`
+- Command Center — Usage section — `desktop-a.cc-usage`
+- Command Center — Maintenance section — `desktop-a.cc-maintenance`
+- Maintenance — Diagnostics ops — `desktop-a.cc-maintenance-ops`
+- Maintenance — Skill curator — `desktop-a.cc-maintenance-curator`
+- Maintenance — Memory data — `desktop-a.cc-maintenance-memory`
+- OverlayView (the full-screen modal card) — `desktop-a.overlay-view`
+- OverlaySplitLayout / OverlaySidebar / OverlayMain / OverlayNav — `desktop-a.overlay-split-layout`
+- Panel kit (Panel / PanelHeader / PanelList / PanelDetail / …) — `desktop-a.overlay-panel-kit`
+- Updates overlay — `desktop-a.updates-overlay`
+- Session picker overlay — `desktop-a.session-picker-overlay`
+- Session switcher HUD (Ctrl+Tab) — `desktop-a.session-switcher`
+- PageSearchShell (in-pane page header) — `desktop-a.page-search-shell`
+- MasterDetail layout (rail + detail, resizable seam) — `desktop-a.master-detail`
+- DetailPane (docked bottom pane) — `desktop-a.detail-pane`
+- OverlayIconButton — `desktop-a.overlay-icon-button`
+- HUD mode — `desktop-a.hud-mode`
+- HUD shell (Spotlight layout and band visibility) — `desktop-a.hud-shell`
+- HUD click-through (window mouse transparency) — `desktop-a.hud-click-through`
+- HUD native frost (glass) — `desktop-a.hud-glass`
+- HUD resize handles — `desktop-a.hud-resize`
+- HUD composer drag (press-and-hold to move) — `desktop-a.hud-composer-drag`
+- HUD game-overlay mode — `desktop-a.hud-game-overlay`
+- HUD to app-window handoff — `desktop-a.hud-handoff`
+- HUD thread focus retention — `desktop-a.hud-thread-focus`
+- HUD composer buttons — reset layout and exit — `desktop-a.hud-buttons`
+- HUD global "move to pointer" chord — `desktop-a.hud-snap-to-pointer`
+- App context menu — `desktop-a.app-context-menu`
+- Context menu — link section — `desktop-a.ctx-link-section`
+- Context menu — image section — `desktop-a.ctx-image-section`
+- Context menu — editable section (Cut / Copy / Paste / Select all) — `desktop-a.ctx-editable-section`
+- Context menu — spell-check suggestions — `desktop-a.ctx-spellcheck`
+- Context menu — selection copy — `desktop-a.ctx-selection`
+- Context menu — shell verbs (empty-target fallback) — `desktop-a.ctx-shell-section`
+- Context menu — in-app browser (guest) menu — `desktop-a.ctx-guest-section`
+- Context menu — terminal menu — `desktop-a.ctx-terminal-section`
+- Right sidebar pane — `desktop-a.right-sidebar-pane`
+- Project file tree — `desktop-a.file-tree`
+- File entry context menu — `desktop-a.file-entry-context-menu`
+- Inline rename editor — `desktop-a.inline-rename`
+- File delete confirmation — `desktop-a.file-delete-dialog`
+- Remote folder picker — `desktop-a.remote-folder-picker`
+- Review pane (source control) — `desktop-a.review-pane`
+- Review file tree rows — `desktop-a.review-file-tree`
+- Review ship bar (commit / push / PR) — `desktop-a.review-ship-bar`
+- Terminal pane chrome and tab rail — `desktop-a.terminal-rail`
+- Quick Entry window — `desktop-a.quick-entry`
+- Wake indicator window — `desktop-a.wake-indicator`
+- App routes and view classification — `desktop-a.app-routes`
+- Layout presets and the `apply_layout` tool — `desktop-a.layout-presets`
+- Layout picker (preset cards) — `desktop-a.layout-picker`
+- Desktop keyboard shortcuts (default bindings) — `desktop-a.keybinds`
+- Page layout constants — `desktop-a.layout-constants`
+- openSession — the single "open this session" door — `desktop-a.open-session`
+- Command-palette StatusRow — `desktop-a.palette-status-row`
+- Overlay translucency peek scoping — `desktop-a.overlay-peek-scope`
+- Sidebar panel label — `desktop-a.sidebar-panel-label`
+- GroupSetter contract (pane extension point) — `desktop-a.group-setter`
+- Unreferenced chrome strings (present in the catalog, not rendered in v2026.8.31) — `desktop-a.orphan-strings`
+
+### 18 · Desktop app — Chat, sessions, messaging, agents, artifacts, gateway, cron, webhooks, profiles, skills, starmap, learning, pets, hooks, contrib
+
+- Agents panel — `desktop-b.agents-panel`
+- Subagent status glyph — `desktop-b.agents-status-glyph`
+- Subagent stream line — `desktop-b.agents-stream-line`
+- Subagent file list — `desktop-b.agents-files`
+- Delegation group header — `desktop-b.agents-delegation-group`
+- Artifacts page — `desktop-b.artifacts-page`
+- Artifacts — column layout — `desktop-b.artifacts-columns`
+- Artifact image card — `desktop-b.artifacts-image-card`
+- Scheduled jobs panel — `desktop-b.cron-panel`
+- Cron job list row — `desktop-b.cron-list-row`
+- Cron job detail — metadata block — `desktop-b.cron-detail-meta`
+- Cron prompt block — `desktop-b.cron-detail-prompt`
+- Cron run history — `desktop-b.cron-run-history`
+- Cron editor dialog — create/edit — `desktop-b.cron-editor`
+- Cron delivery-target checkboxes (“Deliver to”) — `desktop-b.cron-deliver-checkboxes`
+- Cron blueprints (“Blueprints” / ready-made automations) — `desktop-b.cron-blueprints`
+- “Scheduled jobs need review” model-impact warning — `desktop-b.cron-model-impact`
+- Expensive/data-training model confirmation toast — `desktop-b.cron-model-confirm`
+- Webhooks panel — `desktop-b.webhooks-panel`
+- “Webhook receiver disabled” banner — `desktop-b.webhooks-disabled-banner`
+- “Restart gateway” banner — `desktop-b.webhooks-restart-banner`
+- New webhook subscription dialog — `desktop-b.webhooks-create`
+- Created-subscription result (URL + one-time secret) — `desktop-b.webhooks-created`
+- Webhook detail pane — `desktop-b.webhooks-detail`
+- Delete webhook confirmation — `desktop-b.webhooks-delete`
+- Messaging page — `desktop-b.messaging-page`
+- Platform list row — `desktop-b.messaging-platform-row`
+- Platform brand avatar — `desktop-b.messaging-platform-avatar`
+- Platform detail header (state + setup pills + hint) — `desktop-b.messaging-detail-header`
+- Platform enable/disable switch — `desktop-b.messaging-enable-switch`
+- Save credentials (“Save changes”) — `desktop-b.messaging-save`
+- Messaging credential field — `desktop-b.messaging-field`
+- “Get your credentials” intro + setup guide link — `desktop-b.messaging-intro`
+- Pending pairing requests — `desktop-b.messaging-pairing-pending`
+- Approved users + revoke — `desktop-b.messaging-pairing-approved`
+- Profiles panel — `desktop-b.profiles-panel`
+- Profile detail (model, skills, path, badges) — `desktop-b.profiles-detail`
+- SOUL.md editor — `desktop-b.profiles-soul-editor`
+- Create profile dialog — `desktop-b.profiles-create`
+- Rename profile dialog (and “Name this agent” for default) — `desktop-b.profiles-rename`
+- Delete profile dialog — `desktop-b.profiles-delete`
+- Capabilities page shell — `desktop-b.skills-page`
+- Capabilities profile-scope selector (“Configuring:”) — `desktop-b.skills-scope-selector`
+- Skills tab — installed skills list — `desktop-b.skills-list`
+- Bulk enable/disable (“All” master switch) — `desktop-b.skills-bulk-toggle`
+- “Disable unused” — `desktop-b.skills-disable-unused`
+- Skill detail pane — `desktop-b.skills-detail`
+- Skill editor (`<name>/SKILL.md`) — `desktop-b.skills-editor`
+- Archive skill confirmation — `desktop-b.skills-archive`
+- Tools tab — toolset list — `desktop-b.skills-toolsets-list`
+- Toolset detail pane — `desktop-b.skills-toolset-detail`
+- Embedded Skills Hub picker — `desktop-b.skills-hub-picker`
+- Skills Hub strings (standalone hub browser vocabulary) — `desktop-b.skills-hub-strings`
+- MCP tab — `desktop-b.mcp-tab`
+- MCP server row — `desktop-b.mcp-row`
+- MCP server config pane — `desktop-b.mcp-server-config`
+- MCP OAuth authentication flow — `desktop-b.mcp-oauth`
+- `mcp.json` document editor — `desktop-b.mcp-editor`
+- “New server” (+) button — `desktop-b.mcp-new-server`
+- MCP paste-anything import — `desktop-b.mcp-import`
+- Nous-approved MCP catalog — `desktop-b.mcp-catalog`
+- MCP logs pane — `desktop-b.mcp-logs`
+- MCP reload — `desktop-b.mcp-reload`
+- MCP empty state — `desktop-b.mcp-empty`
+- Memory Graph overlay — `desktop-b.starmap-overlay`
+- Star-map canvas (rendering + camera) — `desktop-b.starmap-canvas`
+- Star-map legend — `desktop-b.starmap-legend`
+- Timeline scrubber — `desktop-b.starmap-timeline`
+- Star-map node context menu — `desktop-b.starmap-node-menu`
+- Star-map node editor — `desktop-b.starmap-node-editor`
+- Star-map delete memory / archive skill — `desktop-b.starmap-node-delete`
+- Share / import map code — `desktop-b.starmap-share`
+- “Hatch a Pet” generation overlay — `desktop-b.pet-generate-overlay`
+- Pet concept prompt + generate button — `desktop-b.pet-prompt`
+- Pet example prompt chips — `desktop-b.pet-examples`
+- Pet image-backend picker — `desktop-b.pet-provider-picker`
+- Pet reference image — `desktop-b.pet-reference`
+- Pet draft grid — `desktop-b.pet-draft-grid`
+- Pet remix (with one-time confirmation) — `desktop-b.pet-remix`
+- Pet hatching view — `desktop-b.pet-hatching`
+- Pet hatch preview + adopt — `desktop-b.pet-preview-adopt`
+- “Add an image backend to generate” card — `desktop-b.pet-unavailable`
+- Floating pet overlay window — `desktop-b.pet-overlay-window`
+- `openSession()` — the single door for opening a chat — `desktop-b.open-session`
+- `useRefreshHotkey` — the bare `r` refresh key — `desktop-b.hook-refresh-hotkey`
+- `useRouteEnumParam` — tab state in the URL — `desktop-b.hook-route-enum-param`
+- `useOnProfileSwitch` — drop per-profile view state — `desktop-b.hook-on-profile-switch`
+- `useRouteOverlayActive` — yield the screen to a route overlay — `desktop-b.hook-route-overlay-active`
+- `useDebounced` — `desktop-b.hook-debounced`
+- Shared config-record cache (`useHermesConfigRecord`) — `desktop-b.hook-config-record`
+- Global keybind dispatcher (`useKeybinds`) — `desktop-b.hook-keybinds`
+- Gateway boot lifecycle (`useGatewayBoot`) — `desktop-b.gateway-boot`
+- Gateway request helper (`useGatewayRequest`) — `desktop-b.gateway-request`
+- Gateway HMR survivor — `desktop-b.gateway-hmr-survivor`
+- Contribution controller (`ContribController`) — `desktop-b.contrib-controller`
+- Wired-surface bridge (`WiredPane` / `ContribWiringContext`) — `desktop-b.contrib-wired-pane`
+- Wiring surfaces (sidebar / chat routes / terminal / statusbar) — `desktop-b.contrib-surfaces`
+- `latestChatActions` / `latestSidebarActions` — `desktop-b.contrib-latest-actions`
+- Logs pane — `desktop-b.contrib-logs-pane`
+- Files, Preview and Review panes — `desktop-b.contrib-data-panes`
+- Statusbar contributions — `desktop-b.contrib-statusbar`
+- MCP install deep-link confirmation (`hermes://mcp/install`) — `desktop-b.contrib-mcp-deeplink`
+- Desktop OS integrations (`useDesktopIntegrations`) — `desktop-b.contrib-desktop-integrations`
+- Quick Entry bridge — `desktop-b.contrib-quick-entry-bridge`
+- Pet overlay bridge — `desktop-b.contrib-pet-bridge`
+- Session-scoped RPC dispatcher — `desktop-b.contrib-session-rpc-dispatcher`
+- Background transcript sync — `desktop-b.contrib-background-sync`
+- Session tile delegate — `desktop-b.contrib-tile-delegate`
+- Composer (ChatBar) — `desktop-b.composer`
+- Composer keyboard map — `desktop-b.composer-keys`
+- Composer paste handling — `desktop-b.composer-paste`
+- Composer send / stop / steer / queue controls — `desktop-b.composer-controls`
+- Voice conversation pill — `desktop-b.composer-conversation-pill`
+- Dictation button — `desktop-b.composer-dictation`
+- “Read replies aloud” toggle — `desktop-b.composer-auto-speak`
+- Wake-word ear (“Hey Hermes”) — `desktop-b.composer-wake-word`
+- Composer “+” attach menu — `desktop-b.composer-context-menu`
+- Prompt snippets dialog — `desktop-b.composer-snippets`
+- Attachment pills — `desktop-b.composer-attachments`
+- “Attach a URL” dialog — `desktop-b.composer-url-dialog`
+- Composer quick-help drawer (`?`) — `desktop-b.composer-help-hint`
+- Completion popover (`@`, `/`, `:`) — `desktop-b.composer-trigger-popover`
+- Model pill — `desktop-b.composer-model-pill`
+- Micro-action pills — `desktop-b.composer-micro-actions`
+- Suggestion pills — `desktop-b.composer-suggestion-pills`
+- Voice menu (folded voice controls) — `desktop-b.composer-voice-menu`
+- Composer status stack — `desktop-b.composer-status-stack`
+- Queued-messages panel — `desktop-b.composer-queue-panel`
+- Composer placeholder — `desktop-b.composer-placeholder`
+- Composer pop-out (floating composer) — `desktop-b.composer-popout`
+- Composer drag-and-drop — `desktop-b.composer-drop`
+- Coding status row (working tree) — `desktop-b.composer-coding-row`
+- Chat sidebar — `desktop-b.sidebar`
+- Sidebar nav rail — `desktop-b.sidebar-nav`
+- Sidebar session search — `desktop-b.sidebar-search`
+- Pinned section — `desktop-b.sidebar-pinned`
+- Sessions section (recents / projects / worktrees) — `desktop-b.sidebar-sessions`
+- Session row — `desktop-b.sidebar-session-row`
+- Session actions menu — `desktop-b.sidebar-session-menu`
+- Rename session dialog — `desktop-b.sidebar-rename-session`
+- Delete session confirmation — `desktop-b.sidebar-delete-session`
+- Sidebar filter menu — `desktop-b.sidebar-filter-menu`
+- Projects (sidebar workspaces) — `desktop-b.sidebar-projects`
+- Project menu — `desktop-b.sidebar-project-menu`
+- Project dialog (create / rename / add folder) — `desktop-b.sidebar-project-dialog`
+- Worktree dialog (“New worktree” / “Convert a branch”) — `desktop-b.sidebar-worktree-dialog`
+- Sidebar cron-jobs section — `desktop-b.sidebar-cron-section`
+- Profile rail — `desktop-b.sidebar-profile-rail`
+- Profile remote-override dialog — `desktop-b.sidebar-profile-remote-override`
+- Preview pane — `desktop-b.preview-pane`
+- Preview browser bar — `desktop-b.preview-browser-bar`
+- Preview console — `desktop-b.preview-console`
+- Preview load-error and server restart — `desktop-b.preview-load-error`
+- Local file preview — `desktop-b.preview-file`
+- Artifact preview — `desktop-b.preview-artifact`
+- Artifact card (in the transcript) — `desktop-b.artifact-card`
+- Right sidebar (files + terminal host) — `desktop-b.right-sidebar`
+- Thread (transcript) surface — `desktop-b.thread`
+- Assistant message footer actions — `desktop-b.thread-assistant-actions`
+- Message reactions (tapbacks) — `desktop-b.thread-reactions`
+- Turn error card — `desktop-b.thread-error-card`
+- User message bubble + checkpoints — `desktop-b.thread-user-message`
+- Inline edit composer — `desktop-b.thread-edit-composer`
+- Tool call card — `desktop-b.thread-tool-card`
+- Delegate (subagent) tool card — `desktop-b.thread-delegate-card`
+- Approval card — `desktop-b.thread-approval`
+- Clarify card — `desktop-b.thread-clarify`
+- MCP setup consent card — `desktop-b.thread-mcp-consent`
+- Changed-files card — `desktop-b.thread-changed-files`
+- Thinking / reasoning blocks — `desktop-b.thread-thinking`
+- Markdown, code blocks and embeds — `desktop-b.thread-markdown`
+- Transcript context menus — `desktop-b.thread-context-menu`
+- Sudo / secret prompt overlays — `desktop-b.thread-prompt-overlays`
+
+### 19 · Desktop app — Settings (every panel, every field)
+
+- Settings overlay (the Settings page frame) — `desktop-settings.overlay`
+- Settings search pill (“Search”) — `desktop-settings.search-pill`
+- Type-to-search on the Settings surface — `desktop-settings.type-to-search`
+- Settings search catalog (palette entries for settings) — `desktop-settings.search-catalog`
+- Config deep-link highlight (`?field=`) — `desktop-settings.deep-link-field`
+- Generic deep-link highlight hook (`useDeepLinkHighlight`) — `desktop-settings.deep-link-hook`
+- Export config (nav footer) — `desktop-settings.export-config`
+- Import config (nav footer) — `desktop-settings.import-config`
+- Reset to defaults (nav footer) — `desktop-settings.reset-defaults`
+- Left nav — section list — `desktop-settings.nav`
+- Settings layout primitives (`SettingsContent`, `ListRow`, `ToggleRow`, `SectionHeading`, `SettingsSection`, `Pill`, `NavLink`, skeletons) — `desktop-settings.primitives`
+- Config section renderer (`ConfigSettings`) — `desktop-settings.config-renderer`
+- Destructive guard — clearing “Enabled Toolsets” — `desktop-settings.toolsets-wipe-guard`
+- “Applies to” profile scope chips — `desktop-settings.profile-scope`
+- Config field row (`ConfigField`) — `desktop-settings.config-field`
+- Enum option resolution (`enumOptionsFor`) — `desktop-settings.enum-options`
+- Voice field visibility rule — `desktop-settings.voice-visibility`
+- Searchable select control — `desktop-settings.searchable-select`
+- Free-input combobox control — `desktop-settings.combobox-input`
+- Model panel (`ModelSettings`) — `desktop-settings.model-panel`
+- Default model picker (Provider + Model + Apply) — `desktop-settings.model-main-picker`
+- Inline API-key activation for an unconfigured provider — `desktop-settings.model-inline-api-key`
+- Provider setup hand-off (`Set up <provider>`) — `desktop-settings.model-provider-setup`
+- Profile defaults — Reasoning effort — `desktop-settings.model-reasoning-default`
+- Profile defaults — Fast toggle — `desktop-settings.model-fast-default`
+- Auxiliary models — task list — `desktop-settings.model-auxiliary`
+- Auxiliary model inline editor — `desktop-settings.model-aux-editor`
+- Stale auxiliary warning banner — `desktop-settings.model-stale-aux`
+- Mixture of Agents (MoA) presets — `desktop-settings.model-moa`
+- Context Window (`model_context_length`) — `desktop-settings.field.model-context-length`
+- Fallback Models (`fallback_providers`) — `desktop-settings.field.fallback-providers`
+- Fallback models structured editor — `desktop-settings.fallback-models-field`
+- Max preview / image load size — `desktop-settings.attachment-size`
+- Personality (`display.personality`) — `desktop-settings.field.personality`
+- Timezone (`timezone`) — `desktop-settings.field.timezone`
+- Reasoning Blocks (`display.show_reasoning`) — `desktop-settings.field.show-reasoning`
+- Image Attachments (`agent.image_input_mode`) — `desktop-settings.field.image-input-mode`
+- Working Directory (`terminal.cwd`) — `desktop-settings.field.terminal-cwd`
+- Automatic Repository Discovery (`desktop.repo_scan_enabled`) — `desktop-settings.field.repo-scan-enabled`
+- Repository Discovery Roots (`desktop.repo_scan_roots`) — `desktop-settings.field.repo-scan-roots`
+- Excluded Repository Paths (`desktop.repo_scan_exclude_paths`) — `desktop-settings.field.repo-scan-exclude`
+- Code Execution Mode (`code_execution.mode`) — `desktop-settings.field.code-execution-mode`
+- Persistent Shell (`terminal.persistent_shell`) — `desktop-settings.field.persistent-shell`
+- Environment Passthrough (`terminal.env_passthrough`) — `desktop-settings.field.env-passthrough`
+- File Read Limit (`file_read_max_chars`) — `desktop-settings.field.file-read-max-chars`
+- Approval Mode (`approvals.mode`) — `desktop-settings.field.approvals-mode`
+- Approval Timeout (`approvals.timeout`) — `desktop-settings.field.approvals-timeout`
+- Confirm MCP Reloads (`approvals.mcp_reload_confirm`) — `desktop-settings.field.mcp-reload-confirm`
+- Command Allowlist (`command_allowlist`) — `desktop-settings.field.command-allowlist`
+- Redact Secrets (`security.redact_secrets`) — `desktop-settings.field.redact-secrets`
+- Allow Private URLs (`security.allow_private_urls`) — `desktop-settings.field.allow-private-urls`
+- File Checkpoints (`checkpoints.enabled`) — `desktop-settings.field.checkpoints-enabled`
+- Use My Real Browser Profile (`browser.use_real_profile`) — `desktop-settings.field.browser-real-profile`
+- Browser Private URLs (`browser.allow_private_urls`) — `desktop-settings.field.browser-private-urls`
+- Local Browser For Private URLs (`browser.auto_local_for_private_urls`) — `desktop-settings.field.auto-local-private-urls`
+- Persistent Memory (`memory.memory_enabled`) — `desktop-settings.field.memory-enabled`
+- User Profile (`memory.user_profile_enabled`) — `desktop-settings.field.user-profile-enabled`
+- Memory Budget (`memory.memory_char_limit`) — `desktop-settings.field.memory-char-limit`
+- Profile Budget (`memory.user_char_limit`) — `desktop-settings.field.user-char-limit`
+- Memory Provider (`memory.provider`) — `desktop-settings.field.memory-provider`
+- Context Engine (`context.engine`) — `desktop-settings.field.context-engine`
+- Auto-Compression (`compression.enabled`) — `desktop-settings.field.compression-enabled`
+- Compression Threshold (`compression.threshold`) — `desktop-settings.field.compression-threshold`
+- Compression Target (`compression.target_ratio`) — `desktop-settings.field.compression-target-ratio`
+- Protected Recent Messages (`compression.protect_last_n`) — `desktop-settings.field.compression-protect-last-n`
+- Text-To-Speech Provider (`tts.provider`) — `desktop-settings.field.tts-provider`
+- Speech To Text (`stt.enabled`) — `desktop-settings.field.stt-enabled`
+- Echo Transcripts (`stt.echo_transcripts`) — `desktop-settings.field.stt-echo-transcripts`
+- Speech-To-Text Provider (`stt.provider`) — `desktop-settings.field.stt-provider`
+- Read Responses Aloud (`voice.auto_tts`) — `desktop-settings.field.voice-auto-tts`
+- Edge Voice (`tts.edge.voice`) — `desktop-settings.field.tts-edge-voice`
+- OpenAI TTS Model (`tts.openai.model`) — `desktop-settings.field.tts-openai-model`
+- OpenAI Voice (`tts.openai.voice`) — `desktop-settings.field.tts-openai-voice`
+- ElevenLabs Voice (`tts.elevenlabs.voice_id`) — `desktop-settings.field.tts-elevenlabs-voice`
+- ElevenLabs Model (`tts.elevenlabs.model_id`) — `desktop-settings.field.tts-elevenlabs-model`
+- xAI (Grok) Voice (`tts.xai.voice_id`) — `desktop-settings.field.tts-xai-voice`
+- xAI Language (`tts.xai.language`) — `desktop-settings.field.tts-xai-language`
+- xAI Playback Speed (`tts.xai.speed`) — `desktop-settings.field.tts-xai-speed`
+- xAI Auto Speech Tags (`tts.xai.auto_speech_tags`) — `desktop-settings.field.tts-xai-auto-tags`
+- xAI Streaming Latency Optimization (`tts.xai.optimize_streaming_latency`) — `desktop-settings.field.tts-xai-latency`
+- xAI Sample Rate (`tts.xai.sample_rate`) — `desktop-settings.field.tts-xai-sample-rate`
+- xAI Bit Rate (`tts.xai.bit_rate`) — `desktop-settings.field.tts-xai-bit-rate`
+- MiniMax TTS Model (`tts.minimax.model`) — `desktop-settings.field.tts-minimax-model`
+- MiniMax Voice (`tts.minimax.voice_id`) — `desktop-settings.field.tts-minimax-voice`
+- Mistral TTS Model (`tts.mistral.model`) — `desktop-settings.field.tts-mistral-model`
+- Mistral Voice (`tts.mistral.voice_id`) — `desktop-settings.field.tts-mistral-voice`
+- Gemini TTS Model (`tts.gemini.model`) — `desktop-settings.field.tts-gemini-model`
+- Gemini Voice (`tts.gemini.voice`) — `desktop-settings.field.tts-gemini-voice`
+- NeuTTS Model (`tts.neutts.model`) — `desktop-settings.field.tts-neutts-model`
+- NeuTTS Device (`tts.neutts.device`) — `desktop-settings.field.tts-neutts-device`
+- KittenTTS Model (`tts.kittentts.model`) — `desktop-settings.field.tts-kittentts-model`
+- KittenTTS Voice (`tts.kittentts.voice`) — `desktop-settings.field.tts-kittentts-voice`
+- Piper Voice (`tts.piper.voice`) — `desktop-settings.field.tts-piper-voice`
+- DeepInfra TTS Model (`tts.deepinfra.model`) — `desktop-settings.field.tts-deepinfra-model`
+- DeepInfra Voice (`tts.deepinfra.voice`) — `desktop-settings.field.tts-deepinfra-voice`
+- Local Transcription Model (`stt.local.model`) — `desktop-settings.field.stt-local-model`
+- Transcription Language (`stt.local.language`) — `desktop-settings.field.stt-local-language`
+- OpenAI STT Model (`stt.openai.model`) — `desktop-settings.field.stt-openai-model`
+- Groq STT Model (`stt.groq.model`) — `desktop-settings.field.stt-groq-model`
+- Mistral STT Model (`stt.mistral.model`) — `desktop-settings.field.stt-mistral-model`
+- ElevenLabs STT Model (`stt.elevenlabs.model_id`) — `desktop-settings.field.stt-elevenlabs-model`
+- ElevenLabs Language (`stt.elevenlabs.language_code`) — `desktop-settings.field.stt-elevenlabs-language`
+- Tag Audio Events (`stt.elevenlabs.tag_audio_events`) — `desktop-settings.field.stt-elevenlabs-tag-events`
+- Speaker Diarization (`stt.elevenlabs.diarize`) — `desktop-settings.field.stt-elevenlabs-diarize`
+- Voice Shortcut (`voice.record_key`) — `desktop-settings.field.voice-record-key`
+- Max Recording Length (`voice.max_recording_seconds`) — `desktop-settings.field.voice-max-recording`
+- Client Direct (`voice.client_direct`) — `desktop-settings.field.voice-client-direct`
+
+### 20 · TUI (`ui-tui`) + `tui_gateway`
+
+- Launch the TUI — `tui.launch`
+- TUI bundle resolution: prebuilt vs. build-from-source — `tui.bundle-resolution`
+- Node heap sizing (cgroup-aware) — `tui.heap-sizing`
+- Update from inside the TUI (exit code 42) — `tui.exit-code-42`
+- Exit summary + active-session hand-off file — `tui.exit-summary`
+- Node entry guards and terminal hygiene — `tui.entry-guards`
+- Memory monitor and auto heap dump — `tui.memory-monitor`
+- Inline (non-alternate-screen) rendering — `tui.inline-mode`
+- Termux mode — `tui.termux-mode`
+- Dashboard-embedded TUI mode — `tui.dashboard-mode`
+- Auto-resume on launch — `tui.auto-resume`
+- Startup query / startup image — `tui.startup-query`
+- FPS overlay — `tui.fps-overlay`
+- Perf pane / frame logging — `tui.perf-pane`
+- Force truecolor — `tui.force-truecolor`
+- Hyperlink click → open in browser — `tui.hyperlink-click`
+- Ink render options — `tui.ink-render-options`
+- Hotkey — copy selection (macOS) — `tui.hotkey-cmd-c-mac`
+- Hotkey — `Ctrl+C` (clear draft / interrupt / exit) — `tui.hotkey-ctrl-c`
+- Hotkey — exit (`Cmd+D` / `Ctrl+D`) — `tui.hotkey-exit`
+- Hotkey — open `$EDITOR` (`Cmd/Ctrl+G`, `Alt+G`) — `tui.hotkey-editor`
+- Hotkey — redraw / repaint (`Cmd/Ctrl+L`) — `tui.hotkey-redraw`
+- Hotkey — paste text / image (`Cmd+V` / `Alt+V`, `/paste`) — `tui.hotkey-paste`
+- Hotkey — `Esc Esc` discard draft — `tui.hotkey-double-esc`
+- Hotkey — `Tab` apply completion — `tui.hotkey-tab`
+- Hotkey — `↑` / `↓` (completions / queue edit / history) — `tui.hotkey-arrows`
+- Hotkey — `Ctrl+X` (session switcher / delete queued / cut) — `tui.hotkey-ctrl-x`
+- Hotkey — `Ctrl+O` open model picker — `tui.hotkey-ctrl-o`
+- Hotkey — line/word editing chords — `tui.hotkey-editing`
+- Hotkey — newline vs. submit — `tui.hotkey-newline`
+- Hotkey — inline shell (`!<cmd>` and `{!<cmd>}`) — `tui.hotkey-shell`
+- Hotkey — `Shift+Tab` toggle YOLO — `tui.hotkey-shift-tab`
+- Hotkey — `Ctrl+B` voice push-to-talk — `tui.hotkey-voice`
+- Hotkey — `Cmd/Ctrl+K` flush one queued message — `tui.hotkey-dequeue`
+- Scrolling — wheel, acceleration and precision mode — `tui.scroll-wheel`
+- Mouse selection & drag — `tui.mouse-selection`
+- Mouse tracking presets — `tui.mouse-tracking`
+- App shell / layout tree — `tui.app-layout`
+- Transcript pane (virtualised history) — `tui.transcript`
+- Transcript scrollbar — `tui.scrollbar`
+- Sticky prompt tracker — `tui.sticky-prompt`
+- Status rule (status bar) — `tui.status-rule`
+- Busy indicator styles (`kaomoji` / `emoji` / `unicode` / `ascii`) — `tui.indicator-styles`
+- Verb ticker vocabulary — `tui.verbs`
+- Tool verbs map — `tui.tool-verbs`
+- Kaomoji face palette — `tui.faces`
+- Long-run charms — `tui.charms`
+- Good-vibes heart — `tui.good-vibes-heart`
+- Startup banner (logo + tagline) — `tui.banner`
+- Caduceus hero art — `tui.caduceus`
+- Session panel — `tui.session-panel`
+- Session panel — `Available Tools` section — `tui.panel-tools`
+- Session panel — `Available Skills` section — `tui.panel-skills`
+- Session panel — `System Prompt` section — `tui.panel-system-prompt`
+- Session panel — `MCP Servers` section — `tui.panel-mcp`
+- Session panel footer + update nag — `tui.panel-footer`
+- Accordion primitive — `tui.accordion`
+- Panel renderer (`transcript.panel`) — `tui.panel-renderer`
+- `?` quick-help popover — `tui.help-hint`
+- Composer (prompt input) — `tui.composer`
+- Composer placeholder rotation — `tui.placeholders`
+- Queued messages panel — `tui.queued-messages`
+- Background-task counter line — `tui.bg-tasks-line`
+- Session-not-ready hint — `tui.not-ready-hint`
+- Masked prompt (password / secret entry) — `tui.masked-prompt`
+- Ambient rails and docks — `tui.ambient`
+- Pet pane (Petdex mascot) — `tui.pet-pane`
+- Approval prompt — `tui.prompt-approval`
+- Clarify prompt — single question — `tui.prompt-clarify`
+- Clarify prompt — batch questions — `tui.prompt-clarify-batch`
+- Confirm prompt — `tui.prompt-confirm`
+- Sudo password prompt — `tui.prompt-sudo`
+- Secret entry prompt — `tui.prompt-secret`
+- Slash / argument completion menu — `tui.completions`
+- Pager overlay — `tui.pager`
+- Live session switcher — `tui.session-switcher`
+- Model picker — `tui.model-picker`
+- Pet picker (gallery) — `tui.pet-picker`
+- Skills hub — `tui.skills-hub`
+- Plugins hub — `tui.plugins-hub`
+- Billing overlay (`/topup`) — `tui.billing-overlay`
+- Billing amount validation — `tui.billing-validate`
+- Billing error copy — `tui.billing-errors`
+- Charge settlement polling — `tui.charge-settlement`
+- Subscription overlay (`/subscription`) — `tui.subscription-overlay`
+- Agents overlay (`/agents`, `/tasks`) — `tui.agents-overlay`
+- Journey overlay (`/journey`) — `tui.journey-overlay`
+- Widget slot (modal widget apps) — `tui.widget-slot`
+- Widget app contract — `tui.widget-sdk`
+- Ambient zones — `tui.widget-zones`
+- `/grid-test` widget app — `tui.app-grid-test`
+- `/dialog-test` widget app — `tui.app-dialog-test`
+- `/ticker` widget app — `tui.app-ticker`
+- `/weather` widget app — `tui.app-weather`
+- User widget apps (`$HERMES_HOME/tui-widgets/*.mjs`) — `tui.user-widgets`
+- `/widgets-reload` — `tui.slash-widgets-reload`
+- `/help` — `tui.slash-help`
+- `/quit`, `/exit` — `tui.slash-quit`
+- `/update` — `tui.slash-update`
+- `/mouse`, `/scroll` — `tui.slash-mouse`
+- `/clear`, `/new` — `tui.slash-clear`
+- `/redraw` — `tui.slash-redraw`
+- `/status` — `tui.slash-status`
+- `/title` — `tui.slash-title`
+- `/density` — `tui.slash-density`
+- `/details`, `/detail` — `tui.slash-details`
+- Detail-visibility defaults — `tui.details-defaults`
+- `/fortune` — `tui.slash-fortune`
+- Fortune text tables — `tui.fortunes`
+- `/copy` — `tui.slash-copy`
+- `/paste` — `tui.slash-paste`
+- `/prompt`, `/compose` — `tui.slash-prompt`
+- `/terminal-setup` — `tui.slash-terminal-setup`
+- `/logs` — `tui.slash-logs`
+- `/history` — `tui.slash-history`
+- `/save` — `tui.slash-save`
+- `/focus` — `tui.slash-focus`
+- `/statusbar`, `/sb` — `tui.slash-statusbar`
+- `/battery` — `tui.slash-battery`
+- `/queue`, `/q` — `tui.slash-queue`
+- `/steer` — `tui.slash-steer`
+- `/undo` — `tui.slash-undo`
+- `/retry` — `tui.slash-retry`
+- `/topup` — `tui.slash-topup`
+- `/subscription`, `/upgrade` — `tui.slash-subscription`
+- `/bg`, `/background` — `tui.slash-bg`
+- `/btw` — `tui.slash-btw`
+- `/model` — `tui.slash-model`
+- `/sessions`, `/switch`, `/session`, `/resume` — `tui.slash-sessions`
+- `/image` — `tui.slash-image`
+- `/personality` — `tui.slash-personality`
+- `/compress` — `tui.slash-compress`
+- `/branch`, `/fork` — `tui.slash-branch`
+- `/voice` — `tui.slash-voice`
+- `/pet` — `tui.slash-pet`
+- `/theme` — `tui.slash-theme`
+- `/skin` — `tui.slash-skin`
+- `/indicator` — `tui.slash-indicator`
+- `/yolo` — `tui.slash-yolo`
+- `/reasoning` — `tui.slash-reasoning`
+- `/fast` — `tui.slash-fast`
+- `/busy` — `tui.slash-busy`
+- `/verbose` — `tui.slash-verbose`
+- `/usage` — `tui.slash-usage`
+- `/stop` — `tui.slash-stop`
+- `/reload-mcp`, `/reload_mcp` — `tui.slash-reload-mcp`
+- `/reload` — `tui.slash-reload`
+- `/browser` — `tui.slash-browser`
+- `/rollback` — `tui.slash-rollback`
+- `/agents`, `/tasks` — `tui.slash-agents`
+- `/journey`, `/learning`, `/memory-graph` — `tui.slash-journey`
+- `/replay` — `tui.slash-replay`
+- `/replay-diff` — `tui.slash-replay-diff`
+- `/reload-skills`, `/reload_skills` — `tui.slash-reload-skills`
+- `/skills` — `tui.slash-skills`
+- `/plugins` — `tui.slash-plugins`
+- `/tools` — `tui.slash-tools`
+- `/wake` — `tui.slash-wake`
+- `/setup` — `tui.slash-setup`
+- "Setup Required" panel — `tui.setup-required`
+- `/heapdump` — `tui.slash-heapdump`
+- `/theme-info` — `tui.slash-theme-info`
+- `/mem` — `tui.slash-mem`
+- Slash dispatch and fallback chain — `tui.slash-dispatch`
+- Description-aware fuzzy scoring — `tui.slash-fuzzy`
+- Theme token model — `tui.theme-tokens`
+- Default brand tokens — `tui.brand`
+- Dark palette seeds — `tui.dark-seeds`
+- Light palette seeds — `tui.light-seeds`
+- Light-terminal detection — `tui.light-detection`
+- Apple Terminal ANSI-256 normalisation — `tui.ansi-normalisation`
+- Flash-free theme boot cache — `tui.theme-boot`
+- Skin loading (`fromSkin`) — `tui.skins`
+- Color primitives — `tui.color-lib`
+- Chart primitives — `tui.charts`
+- Shimmer / skeleton loaders — `tui.loaders`
+- Widget grid layout engine — `tui.widget-grid`
+- Overlay primitives — `tui.overlay-primitives`
+- Message line renderer — `tui.message-line`
+- Message timestamps — `tui.timestamps`
+- Block grouping and blank-line rhythm — `tui.block-layout`
+- Markdown renderer — `tui.markdown`
+- Inline markdown tokens — `tui.markdown-inline`
+- LaTeX math to Unicode — `tui.math-unicode`
+- Syntax highlighting — `tui.syntax`
+- Link resolution and titles — `tui.links`
+- Emoji presentation — `tui.emoji`
+- Incremental streaming markdown — `tui.streaming-markdown`
+- Live render budgets — `tui.render-budgets`
+- Thinking / reasoning panel — `tui.thinking`
+- Tool trail — `tui.tool-trail`
+- Live assistant streaming area — `tui.streaming-assistant`
+- Todo panel — `tui.todo-panel`
+- Subagent tree — `tui.subagent-tree`
+- Virtualised history — `tui.virtual-history`
+- Paste collapse — `tui.paste-collapse`
+- Gateway client (spawn + JSON-RPC over stdio) — `tui.gateway-client`
+- Gateway attach mode (WebSocket) — `tui.gateway-attach`
+- WebSocket heartbeat and reconnect — `tui.gateway-heartbeat`
+- Gateway event stream — `tui.gateway-events`
+- Event replay / resume-after-reconnect — `tui.event-replay`
+- Gateway transport abstraction — `tui.gateway-transport`
+- Sidecar event mirror — `tui.sidecar`
+- Long-handler thread pool — `tui.long-handlers`
+- Gateway shutdown grace — `tui.gateway-shutdown`
+- stdin EOF recovery — `tui.stdin-recovery`
+- Crash log and lifecycle breadcrumbs — `tui.crash-log`
+- Slash worker subprocess — `tui.slash-worker`
+- `tui_gateway/server.py` — core dispatch, config, wake word, voice — `tui.rpcgroup-server`
+- `config.set` — `tui.rpc-config-set`
+- `ping` — `tui.rpc-ping`
+- `wake.start` — `tui.rpc-wake-start`
+- `wake.stop` — `tui.rpc-wake-stop`
+- `wake.pause` — `tui.rpc-wake-pause`
+- `wake.resume` — `tui.rpc-wake-resume`
+- `wake.status` — `tui.rpc-wake-status`
+- `wake.feed` — `tui.rpc-wake-feed`
+- `voice.toggle` — `tui.rpc-voice-toggle`
+- `voice.record` — `tui.rpc-voice-record`
+- `voice.tts` — `tui.rpc-voice-tts`
+- `tui_gateway/methods_session.py` — sessions, billing, pets, delegation — `tui.rpcgroup-methods-session`
+- `session.create` — `tui.rpc-session-create`
+- `session.list` — `tui.rpc-session-list`
+- `session.most_recent` — `tui.rpc-session-most-recent`
+- `project.facts` — `tui.rpc-project-facts`
+- `verification.status` — `tui.rpc-verification-status`
+- `session.resume` — `tui.rpc-session-resume`
+- `session.cwd.set` — `tui.rpc-session-cwd-set`
+- `session.workspace.move` — `tui.rpc-session-workspace-move`
+- `session.active_list` — `tui.rpc-session-active-list`
+- `session.activate` — `tui.rpc-session-activate`
+- `session.delete` — `tui.rpc-session-delete`
+- `session.title` — `tui.rpc-session-title`
+- `session.set_hidden` — `tui.rpc-session-set-hidden`
+- `message.react` — `tui.rpc-message-react`
+- `llm.oneshot` — `tui.rpc-llm-oneshot`
+- `handoff.request` — `tui.rpc-handoff-request`
+- `handoff.state` — `tui.rpc-handoff-state`
+- `handoff.fail` — `tui.rpc-handoff-fail`
+- `session.usage` — `tui.rpc-session-usage`
+- `session.context_breakdown` — `tui.rpc-session-context-breakdown`
+- `pet.info` — `tui.rpc-pet-info`
+- `pet.info.meta` — `tui.rpc-pet-info-meta`
+- `pet.cells` — `tui.rpc-pet-cells`
+- `pet.gallery` — `tui.rpc-pet-gallery`
+- `pet.select` — `tui.rpc-pet-select`
+- `pet.remove` — `tui.rpc-pet-remove`
+- `pet.export` — `tui.rpc-pet-export`
+- `pet.rename` — `tui.rpc-pet-rename`
+- `pet.thumb` — `tui.rpc-pet-thumb`
+- `pet.disable` — `tui.rpc-pet-disable`
+- `pet.scale` — `tui.rpc-pet-scale`
+- `pet.cancel` — `tui.rpc-pet-cancel`
+- `pet.generate.status` — `tui.rpc-pet-generate-status`
+- `pet.generate` — `tui.rpc-pet-generate`
+- `pet.hatch` — `tui.rpc-pet-hatch`
+- `billing.state` — `tui.rpc-billing-state`
+- `usage.bars` — `tui.rpc-usage-bars`
+- `subscription.state` — `tui.rpc-subscription-state`
+- `subscription.preview` — `tui.rpc-subscription-preview`
+- `subscription.change` — `tui.rpc-subscription-change`
+- `subscription.resume` — `tui.rpc-subscription-resume`
+- `subscription.upgrade` — `tui.rpc-subscription-upgrade`
+- `billing.charge` — `tui.rpc-billing-charge`
+- `billing.charge_status` — `tui.rpc-billing-charge-status`
+- `billing.auto_reload` — `tui.rpc-billing-auto-reload`
+- `billing.step_up` — `tui.rpc-billing-step-up`
+- `session.status` — `tui.rpc-session-status`
+- `session.history` — `tui.rpc-session-history`
+- `session.undo` — `tui.rpc-session-undo`
+- `session.compress` — `tui.rpc-session-compress`
+- `session.save` — `tui.rpc-session-save`
+- `session.close` — `tui.rpc-session-close`
+- `session.branch` — `tui.rpc-session-branch`
+- `session.interrupt` — `tui.rpc-session-interrupt`
+- `delegation.status` — `tui.rpc-delegation-status`
+- `delegation.pause` — `tui.rpc-delegation-pause`
+- `subagent.interrupt` — `tui.rpc-subagent-interrupt`
+- `subagent.steer` — `tui.rpc-subagent-steer`
+- `spawn_tree.save` — `tui.rpc-spawn-tree-save`
+- `spawn_tree.list` — `tui.rpc-spawn-tree-list`
+- `spawn_tree.load` — `tui.rpc-spawn-tree-load`
+- `session.steer` — `tui.rpc-session-steer`
+- `session.redirect` — `tui.rpc-session-redirect`
+- `terminal.resize` — `tui.rpc-terminal-resize`
+- `session.events.since` — `tui.rpc-session-events-since`
+- `session.events.stats` — `tui.rpc-session-events-stats`
+- `tui_gateway/methods_prompt.py` — prompt submission, attachments, prompt responses — `tui.rpcgroup-methods-prompt`
+- `prompt.submit` — `tui.rpc-prompt-submit`
+- `clipboard.paste` — `tui.rpc-clipboard-paste`
+- `image.attach` — `tui.rpc-image-attach`
+- `image.attach_bytes` — `tui.rpc-image-attach-bytes`
+- `pdf.attach` — `tui.rpc-pdf-attach`
+- `file.attach` — `tui.rpc-file-attach`
+- `image.detach` — `tui.rpc-image-detach`
+- `input.detect_drop` — `tui.rpc-input-detect-drop`
+- `prompt.background` — `tui.rpc-prompt-background`
+- `prompt.btw` — `tui.rpc-prompt-btw`
+- `preview.restart` — `tui.rpc-preview-restart`
+- `clarify.respond` — `tui.rpc-clarify-respond`
+- `terminal.read.respond` — `tui.rpc-terminal-read-respond`
+- `preview.read.respond` — `tui.rpc-preview-read-respond`
+- `preview.act.respond` — `tui.rpc-preview-act-respond`
+- `window.read.respond` — `tui.rpc-window-read-respond`
+- `tour.respond` — `tui.rpc-tour-respond`
+- `mcp.setup.respond` — `tui.rpc-mcp-setup-respond`
+- `sudo.respond` — `tui.rpc-sudo-respond`
+- `secret.respond` — `tui.rpc-secret-respond`
+- `approval.pending` — `tui.rpc-approval-pending`
+- `approval.received` — `tui.rpc-approval-received`
+- `approval.respond` — `tui.rpc-approval-respond`
+- `tui_gateway/methods_tools.py` — tools, slash commands, MCP, plugins, skills, cron — `tui.rpcgroup-methods-tools`
+- `system.battery` — `tui.rpc-system-battery`
+- `process.stop` — `tui.rpc-process-stop`
+- `process.list` — `tui.rpc-process-list`
+- `process.kill` — `tui.rpc-process-kill`
+- `reload.mcp` — `tui.rpc-reload-mcp`
+- `reload.env` — `tui.rpc-reload-env`
+- `commands.catalog` — `tui.rpc-commands-catalog`
+- `cli.exec` — `tui.rpc-cli-exec`
+- `command.resolve` — `tui.rpc-command-resolve`
+- `command.dispatch` — `tui.rpc-command-dispatch`
+- `slash.exec` — `tui.rpc-slash-exec`
+- `insights.get` — `tui.rpc-insights-get`
+- `rollback.list` — `tui.rpc-rollback-list`
+- `rollback.restore` — `tui.rpc-rollback-restore`
+- `rollback.diff` — `tui.rpc-rollback-diff`
+- `browser.manage` — `tui.rpc-browser-manage`
+- `plugins.list` — `tui.rpc-plugins-list`
+- `config.show` — `tui.rpc-config-show`
+- `tools.list` — `tui.rpc-tools-list`
+- `tools.show` — `tui.rpc-tools-show`
+- `tools.configure` — `tui.rpc-tools-configure`
+- `toolsets.list` — `tui.rpc-toolsets-list`
+- `agents.list` — `tui.rpc-agents-list`
+- `cron.manage` — `tui.rpc-cron-manage`
+- `learning.frames` — `tui.rpc-learning-frames`
+- `learning.detail` — `tui.rpc-learning-detail`
+- `learning.delete` — `tui.rpc-learning-delete`
+- `learning.edit` — `tui.rpc-learning-edit`
+- `skills.manage` — `tui.rpc-skills-manage`
+- `mcp.catalog` — `tui.rpc-mcp-catalog`
+- `mcp.servers.list` — `tui.rpc-mcp-servers-list`
+- `mcp.servers.add` — `tui.rpc-mcp-servers-add`
+- `mcp.servers.set_api_key` — `tui.rpc-mcp-servers-set-api-key`
+- `mcp.servers.test` — `tui.rpc-mcp-servers-test`
+- `mcp.servers.remove` — `tui.rpc-mcp-servers-remove`
+- `mcp.servers.oauth.start` — `tui.rpc-mcp-servers-oauth-start`
+- `mcp.servers.oauth.poll` — `tui.rpc-mcp-servers-oauth-poll`
+- `mcp.servers.oauth.callback` — `tui.rpc-mcp-servers-oauth-callback`
+- `skills.reload` — `tui.rpc-skills-reload`
+- `plugins.manage` — `tui.rpc-plugins-manage`
+- `shell.exec` — `tui.rpc-shell-exec`
+- `tui_gateway/methods_config.py` — config reads, projects, setup, diagnostics — `tui.rpcgroup-methods-config`
+- `projects.discover_repos` — `tui.rpc-projects-discover-repos`
+- `projects.record_repos` — `tui.rpc-projects-record-repos`
+- `projects.tree` — `tui.rpc-projects-tree`
+- `projects.project_sessions` — `tui.rpc-projects-project-sessions`
+- `config.get` — `tui.rpc-config-get`
+- `setup.status` — `tui.rpc-setup-status`
+- `setup.runtime_check` — `tui.rpc-setup-runtime-check`
+- `diagnostics.share_nous` — `tui.rpc-diagnostics-share-nous`
+- `tui_gateway/methods_complete.py` — completions and model options — `tui.rpcgroup-methods-complete`
+- `paste.collapse` — `tui.rpc-paste-collapse`
+- `complete.path` — `tui.rpc-complete-path`
+- `complete.slash` — `tui.rpc-complete-slash`
+- `model.options` — `tui.rpc-model-options`
+- `model.save_key` — `tui.rpc-model-save-key`
+- `model.disconnect` — `tui.rpc-model-disconnect`
+- `tui_gateway/methods_profiles.py` — agent profiles — `tui.rpcgroup-methods-profiles`
+- `profiles.list` — `tui.rpc-profiles-list`
+- `profiles.create` — `tui.rpc-profiles-create`
+- `profiles.describe` — `tui.rpc-profiles-describe`
+- `profiles.configure` — `tui.rpc-profiles-configure`
+- `profiles.set_asset` — `tui.rpc-profiles-set-asset`
+- `profiles.get_asset` — `tui.rpc-profiles-get-asset`
+- `tui_gateway/methods_groups.py` — hosted rooms (groups) — `tui.rpcgroup-methods-groups`
+- `groups.capabilities` — `tui.rpc-groups-capabilities`
+- `groups.peer.invite` — `tui.rpc-groups-peer-invite`
+- `groups.peer.revoke` — `tui.rpc-groups-peer-revoke`
+- `groups.peer.register` — `tui.rpc-groups-peer-register`
+- `groups.list` — `tui.rpc-groups-list`
+- `groups.create` — `tui.rpc-groups-create`
+- `groups.state` — `tui.rpc-groups-state`
+- `groups.send` — `tui.rpc-groups-send`
+- `groups.rename` — `tui.rpc-groups-rename`
+- `groups.disband` — `tui.rpc-groups-disband`
+- `groups.stop` — `tui.rpc-groups-stop`
+- `groups.approve` — `tui.rpc-groups-approve`
+- `groups.retry` — `tui.rpc-groups-retry`
+- `groups.log` — `tui.rpc-groups-log`
+- `groups.replicate` — `tui.rpc-groups-replicate`
+- `groups.replica_state` — `tui.rpc-groups-replica-state`
+- `groups.promote` — `tui.rpc-groups-promote`
+- `groups.demote` — `tui.rpc-groups-demote`
+- `tui_gateway/methods_images.py` — image generation — `tui.rpcgroup-methods-images`
+- `image.generate` — `tui.rpc-image-generate`
+- `tui_gateway/methods_bot_relay.py` — cross-gateway bot relay — `tui.rpcgroup-methods-bot-relay`
+- `bot_relay.roster.sync` — `tui.rpc-bot-relay-roster-sync`
+- `bot_relay.outbox.drain` — `tui.rpc-bot-relay-outbox-drain`
+- `bot_relay.deliver` — `tui.rpc-bot-relay-deliver`
+- `bot_relay.reply` — `tui.rpc-bot-relay-reply`
+- `tui_gateway/methods_browser_control.py` — browser controller broker — `tui.rpcgroup-methods-browser-control`
+- `browser.controller.register` — `tui.rpc-browser-controller-register`
+- `browser.controller.result` — `tui.rpc-browser-controller-result`
+- `browser.controller.heartbeat` — `tui.rpc-browser-controller-heartbeat`
+- `browser.controller.detach` — `tui.rpc-browser-controller-detach`
+- `tui_gateway/server.py` — projects RPCs (`@_projects_method`) — `tui.rpcgroup-projects`
+- `projects.list` — `tui.rpc-projects-list`
+- `projects.get` — `tui.rpc-projects-get`
+- `projects.create` — `tui.rpc-projects-create`
+- `projects.update` — `tui.rpc-projects-update`
+- `projects.add_folder` — `tui.rpc-projects-add-folder`
+- `projects.remove_folder` — `tui.rpc-projects-remove-folder`
+- `projects.set_primary` — `tui.rpc-projects-set-primary`
+- `projects.archive` — `tui.rpc-projects-archive`
+- `projects.delete` — `tui.rpc-projects-delete`
+- `projects.set_active` — `tui.rpc-projects-set-active`
+- `projects.for_cwd` — `tui.rpc-projects-for-cwd`
+- Model picker — provider stage (step 1/2) — `tui.model-picker-provider`
+- Model picker — model stage (step 2/2) — `tui.model-picker-models`
+- Model picker — API key stage — `tui.model-picker-key`
+- Model picker — disconnect stage — `tui.model-picker-disconnect`
+- Skills Hub — category stage — `tui.skills-hub-category`
+- Skills Hub — skill list stage — `tui.skills-hub-list`
+- Skills Hub — skill detail stage — `tui.skills-hub-detail`
+- Plugins Hub — `tui.plugins-hub-rows`
+- Pet picker rows — `tui.pet-picker-rows`
+- Session switcher rows and hints — `tui.session-switcher-rows`
+- Agents overlay — list mode — `tui.agents-list`
+- Agents overlay — detail mode — `tui.agents-detail`
+- Agents overlay — replay diff view — `tui.agents-diff`
+- Journey overlay — timeline — `tui.journey-timeline`
+- Journey overlay — node detail — `tui.journey-detail`
+- Grid streams demo — `tui.grid-streams`
+- Grid test overlay rendering — `tui.grid-test-overlay`
+- Pet sprite renderers — `tui.pet-sprite`
+- UI state store — `tui.ui-store`
+- Overlay state store — `tui.overlay-store`
+- Turn store and turn controller — `tui.turn-controller`
+- Gateway event handler — `tui.event-handler`
+- Session lifecycle — `tui.session-lifecycle`
+- Submission pipeline — `tui.submission`
+- Composer state — `tui.composer-state`
+- Config sync — `tui.config-sync`
+- Main app hook — `tui.use-main-app`
+- Other app stores — `tui.small-stores`
+- Working directory + git branch label — `tui.cwd-branch`
+- Battery polling — `tui.battery-poll`
+- Graceful exit and terminal-mode reset — `tui.graceful-exit`
+- Clipboard and OSC 52 — `tui.clipboard`
+- Text and fuzzy utilities — `tui.text-utils`
+- Gateway entry point — `tui.gw-entry`
+- Gateway WebSocket server — `tui.gw-ws`
+- Event publisher — `tui.gw-event-publisher`
+- Hosted rooms (groups) — `tui.gw-hosted-rooms`
+- Compute host and host supervisor — `tui.gw-compute-host`
+- Project tree and git probe — `tui.gw-project-tree`
+- Synthetic turns and turn markers — `tui.gw-synthetic-turn`
+- Loop-noise suppression — `tui.gw-loop-noise`
+- MCP OAuth session store — `tui.gw-mcp-oauth`
+- Method context helper — `tui.gw-method-ctx`
+- Server-side render helper — `tui.gw-render`
+- `--tui` / `--cli` / `--dev` flags — `tui.cli-flags`
+- TUI bundle build (`npm run build`) — `tui.build-script`
+- Package scripts — `tui.npm-scripts`
+- Visual regression harness (`npm run visual`) — `tui.visual-harness`
+- Benchmarks and profiling scripts — `tui.bench-scripts`
+- Vendored Ink fork (`@hermes/ink`) — `tui.hermes-ink`
+- TUI test suite — `tui.tests`
+- `ui-tui/README.md` — known drift — `tui.readme-drift`
+- Gateway crash recovery budget — `tui.gateway-recovery`
+- Long-running tool charm timer — `tui.long-run-timer`
+- Completion debounce and trigger detection — `tui.completion-trigger`
+- Input history file — `tui.input-history`
+
+### 21 · Configuration keys A — General, Agent, Terminal, Display, Delegation, Memory, Compression, Security, Browser, Voice, Text-to-Speech, Speech-to-Text, Logging
+
+- Config page field model (applies to every key below) — `config-a.config-page-field-model`
+- Model — `config-a.model`
+- Model context length — `config-a.model_context_length`
+- Fallback providers — `config-a.fallback_providers`
+- Toolsets — `config-a.toolsets`
+- Max concurrent sessions — `config-a.max_concurrent_sessions`
+- Max live sessions — `config-a.max_live_sessions`
+- Session → Terminal continue — `config-a.session.terminal_continue`
+- Context file max chars — `config-a.context_file_max_chars`
+- File read max chars — `config-a.file_read_max_chars`
+- MCP discovery timeout / single-query discovery timeout — `config-a.mcp_discovery_timeout`
+- Prefill messages file — `config-a.prefill_messages_file`
+- Timezone — `config-a.timezone`
+- Command allowlist — `config-a.command_allowlist`
+- Hooks auto accept — `config-a.hooks_auto_accept`
+- Doctor → Live probe timeout — `config-a.doctor.live_probe_timeout`
+- Updates → Pre-update backup / Backup keep — `config-a.updates.pre_update_backup`
+- Updates → Non-interactive local changes — `config-a.updates.non_interactive_local_changes`
+- Updates → Auto switch parked branch / Parked branch strategy — `config-a.updates.auto_switch_parked_branch`
+- Updates → Refresh cua-driver — `config-a.updates.refresh_cua_driver`
+- Paste collapse thresholds — `config-a.paste_collapse_threshold`
+- Runtime → Nofile soft limit — `config-a.runtime.nofile_soft_limit`
+- Agent → Max turns — `config-a.agent.max_turns`
+- Agent → Run budget seconds — `config-a.agent.run_budget_seconds`
+- Agent → Gateway timeout — `config-a.agent.gateway_timeout`
+- Agent → Gateway turn lease timeout — `config-a.agent.gateway_turn_lease_timeout`
+- Agent → Agent cache → Max size / Idle TTL — `config-a.agent.agent_cache.max_size`
+- Agent → Agent cache → Memory high MB / Max evictions per pass / Protect recent — `config-a.agent.agent_cache.memory_high_mb`
+- Agent → Restart drain timeout — `config-a.agent.restart_drain_timeout`
+- Agent → Cron drain timeout — `config-a.agent.cron_drain_timeout`
+- Agent → Restart after turn timeout — `config-a.agent.restart_after_turn_timeout`
+- Agent → Build wait timeout — `config-a.agent.build_wait_timeout`
+- Agent → API max retries — `config-a.agent.api_max_retries`
+- Agent → Empty response guard — `config-a.agent.empty_response_guard`
+- Agent → Service tier — `config-a.agent.service_tier`
+- Agent → Tool use enforcement — `config-a.agent.tool_use_enforcement`
+- Agent → Execution guidance — `config-a.agent.execution_guidance`
+- Agent → Intent-ack continuation — `config-a.agent.intent_ack_continuation`
+- Agent → Stall guards — `config-a.agent.stall_guards`
+- Agent → Task completion guidance / Parallel tool call guidance — `config-a.agent.task_completion_guidance`
+- Agent → Environment probe / Bot mode protocol / Environment hint — `config-a.agent.environment_probe`
+- Agent → Coding context / Coding instructions — `config-a.agent.coding_context`
+- Agent → Verify guidance / Max verify nudges / Verify on stop — `config-a.agent.verify_on_stop`
+- Agent → Gateway timeout warning — `config-a.agent.gateway_timeout_warning`
+- Agent → Clarify timeout — `config-a.agent.clarify_timeout`
+- Agent → Gateway notify interval — `config-a.agent.gateway_notify_interval`
+- Agent → Session stall timeout — `config-a.agent.session_stall_timeout`
+- Agent → Reconnect attention after — `config-a.agent.reconnect_attention_after`
+- Agent → Gateway auto-continue freshness — `config-a.agent.gateway_auto_continue_freshness`
+- Agent → Gateway startup restore drain timeout / warmup timeout — `config-a.agent.gateway_startup_restore_drain_timeout`
+- Agent → Local stream stale timeout — `config-a.agent.local_stream_stale_timeout`
+- Agent → Image input mode — `config-a.agent.image_input_mode`
+- Agent → Disabled toolsets — `config-a.agent.disabled_toolsets`
+- Agent → Reasoning echo — `config-a.agent.reasoning_echo`
+- Checkpoints → Enabled / Max snapshots / Max total size / Max file size — `config-a.checkpoints.enabled`
+- Checkpoints → Auto prune / Retention days / Min interval hours — `config-a.checkpoints.auto_prune`
+- MCP → Auto reload on config change — `config-a.mcp.auto_reload_on_config_change`
+- Prompt caching → Cache TTL — `config-a.prompt_caching.cache_ttl`
+- Context → Engine — `config-a.context.engine`
+- Context → Memory trim — `config-a.context.memory_trim`
+- Goals → Max turns — `config-a.goals.max_turns`
+- Skills → External dirs / Project discovery / Trusted project dirs — `config-a.skills.external_dirs`
+- Skills → Template vars / Inline shell / Inline shell timeout — `config-a.skills.template_vars`
+- Skills → Guard agent-created / Tier-1 advisory / Write approval / Ledger — `config-a.skills.write_approval`
+- Plugins → Hook callback timeout — `config-a.plugins.hook_callback_timeout`
+- Cron → Allow agent scheduling / Preflight / Model drift guard — `config-a.cron.allow_agent_scheduling`
+- Cron → Model / Model provider / Provider — `config-a.cron.model`
+- Cron → Chronos (portal URL / callback URL / expected audience / NAS JWKS URL) — `config-a.cron.chronos`
+- Cron → Wrap response / Mirror delivery — `config-a.cron.wrap_response`
+- Cron → Max parallel jobs / Output retention — `config-a.cron.max_parallel_jobs`
+- Cron → Script timeout / Session DB timeout / Media send timeout — `config-a.cron.script_timeout_seconds`
+- Bot mode → Envelope TTL / Turn wait — `config-a.bot_mode.envelope_ttl_seconds`
+- Code execution → Mode / Kernel idle timeout / Max session kernels — `config-a.code_execution.mode`
+- Models.dev → URL — `config-a.models_dev.url`
+- Network → Force IPv4 — `config-a.network.force_ipv4`
+- Onboarding → Profile build — `config-a.onboarding.profile_build`
+- Computer use → CUA telemetry / Max image dimension / Capture-after mode — `config-a.computer_use.cua_telemetry`
+- Computer use → No overlay / Permission mode / Capability manifest / Allow unsigned driver — `config-a.computer_use.permission_mode`
+- Terminal → Backend — `config-a.terminal.backend`
+- Terminal → Modal mode — `config-a.terminal.modal_mode`
+- Terminal → Degraded mode — `config-a.terminal.degraded_mode`
+- Terminal → Cwd / Temp dir — `config-a.terminal.cwd`
+- Terminal → Font family — `config-a.terminal.font_family`
+- Terminal → Timeout — `config-a.terminal.timeout`
+- Terminal → Daemon term grace / One-shot completion wait — `config-a.terminal.daemon_term_grace_seconds`
+- Terminal → Env passthrough — `config-a.terminal.env_passthrough`
+- Terminal → Home mode — `config-a.terminal.home_mode`
+- Terminal → Shell init files / Auto source bashrc — `config-a.terminal.shell_init_files`
+- Terminal → Container images (docker / singularity / modal / daytona) — `config-a.terminal.docker_image`
+- Terminal → Docker forward env — `config-a.terminal.docker_forward_env`
+- Terminal → Vercel runtime — `config-a.terminal.vercel_runtime`
+- Terminal → Container CPU / Memory / Disk / Persistent — `config-a.terminal.container_cpu`
+- Terminal → Docker volumes / Mount cwd to workspace — `config-a.terminal.docker_volumes`
+- Terminal → Docker network / Extra args / Shm size — `config-a.terminal.docker_network`
+- Terminal → Docker run as host user / Shared container key — `config-a.terminal.docker_run_as_host_user`
+- Terminal → Persistent shell — `config-a.terminal.persistent_shell`
+- Display → Compact — `config-a.display.compact`
+- Display → Personality — `config-a.display.personality`
+- Display → Resume display / Resume recap tuning — `config-a.display.resume_display`
+- Display → Busy input mode / Busy steer ack — `config-a.display.busy_input_mode`
+- Display → CLI multiline shortcuts — `config-a.display.cli_multiline_shortcuts`
+- Display → Interface — `config-a.display.interface`
+- Display → TUI auto-resume recent / TUI agents nudge — `config-a.display.tui_auto_resume_recent`
+- Display → Bell on complete — `config-a.display.bell_on_complete`
+- Display → Show reasoning / Reasoning full — `config-a.display.show_reasoning`
+- Display → Memory notifications — `config-a.display.memory_notifications`
+- Display → Background process notifications — `config-a.display.background_process_notifications`
+- Display → Streaming — `config-a.display.streaming`
+- Display → Timestamps / Timestamp format — `config-a.display.timestamps`
+- Display → Final response markdown — `config-a.display.final_response_markdown`
+- Display → Persistent output / Max lines / Rebuild scrollback on redraw / Persist prompts — `config-a.display.persistent_output`
+- Display → Inline diffs / File mutation verifier / Turn completion explainer / Credits notices — `config-a.display.inline_diffs`
+- Display → Show cost / Battery — `config-a.display.show_cost`
+- Display → Focus view / Focus saved tool progress — `config-a.display.focus_view`
+- Display → Skin — `config-a.display.skin`
+- Display → Language — `config-a.display.language`
+- Display → TUI status indicator / CLI refresh interval — `config-a.display.tui_status_indicator`
+- Display → User message preview — `config-a.display.user_message_preview`
+- Display → Interim assistant messages / Show commentary — `config-a.display.interim_assistant_messages`
+- Display → Tool progress command / Tool preview length / Friendly tool labels — `config-a.display.tool_progress_command`
+- Display → Turn summary / Spinner token flow — `config-a.display.turn_summary`
+- Display → Tool progress grouping / Reasoning style / Ephemeral system TTL — `config-a.display.tool_progress_grouping`
+- Display → Platforms → streaming (telegram / discord / slack / wecom) — `config-a.display.platforms.streaming`
+- Display → Runtime footer (enabled / fields) — `config-a.display.runtime_footer`
+- Display → Status bar fields — `config-a.display.status_bar.fields`
+- Display → Copy shortcut — `config-a.display.copy_shortcut`
+- Display → Pet (enabled / slug / render mode / scale / unicode cols) — `config-a.display.pet`
+- Display → Dashboard theme — `config-a.dashboard.theme`
+- Display → Dashboard turn isolation (+ compute-host heartbeat / respawn max) — `config-a.dashboard.turn_isolation`
+- Display → Show token analytics — `config-a.dashboard.show_token_analytics`
+- Display → Dashboard trusted proxies — `config-a.dashboard.trusted_proxies`
+- Display → Dashboard WebSocket keepalive + orphan reaping — `config-a.dashboard.ws_keepalive`
+- Display → Dashboard OAuth gate (client id / portal URL) — `config-a.dashboard.oauth`
+- Display → Dashboard basic auth (username / password hash / password) — `config-a.dashboard.basic_auth.credentials`
+- Display → Dashboard basic-auth session signing (secret / TTL) — `config-a.dashboard.basic_auth.session`
+- Display → Dashboard drain auth (scope / minimum secret length) — `config-a.dashboard.drain_auth`
+- Display → Dashboard public URL — `config-a.dashboard.public_url`
+- Display → Human delay (mode / min ms / max ms) — `config-a.human_delay`
+- Delegation → Model / Provider — `config-a.delegation.model`
+- Delegation → Base URL / API key / API mode — `config-a.delegation.base_url`
+- Delegation → Inherit MCP toolsets — `config-a.delegation.inherit_mcp_toolsets`
+- Delegation → Max iterations — `config-a.delegation.max_iterations`
+- Delegation → Max summary chars — `config-a.delegation.max_summary_chars`
+- Delegation → Child timeout seconds — `config-a.delegation.child_timeout_seconds`
+- Delegation → Reasoning effort — `config-a.delegation.reasoning_effort`
+- Delegation → Max concurrent children — `config-a.delegation.max_concurrent_children`
+- Delegation → Max spawn depth / Orchestrator enabled — `config-a.delegation.max_spawn_depth`
+- Delegation → Subagent auto approve — `config-a.delegation.subagent_auto_approve`
+- Delegation → Surface child process notifications — `config-a.delegation.surface_child_process_notifications`
+- Memory → Memory enabled / User profile enabled — `config-a.memory.enabled_flags`
+- Memory → Write approval — `config-a.memory.write_approval`
+- Memory → Memory char limit / User char limit — `config-a.memory.char_limits`
+- Memory → Nudge interval — `config-a.memory.nudge_interval`
+- Memory → Provider — `config-a.memory.provider`
+- Compression → Enabled — `config-a.compression.enabled`
+- Compression → Checkpoint required — `config-a.compression.checkpoint_required`
+- Compression → Progress notices — `config-a.compression.progress_notices`
+- Compression → Threshold / Threshold tokens — `config-a.compression.threshold`
+- Compression → Target ratio / Tail mode — `config-a.compression.target_ratio`
+- Compression → Protect last N / Protect first N / Min tail user messages — `config-a.compression.protect_last_n`
+- Compression → Max attempts / Abort on summary failure — `config-a.compression.max_attempts`
+- Compression → Proactive prune (tokens / min result chars / min reclaim tokens) — `config-a.compression.proactive_prune`
+- Compression → Micro-compaction (enable / cadence / defrag threshold) — `config-a.compression.micro_compact`
+- Compression → Hygiene hard message limit — `config-a.compression.hygiene_hard_message_limit`
+- Compression → Hygiene timing (inactivity / total ceiling / turn hold / failure cooldown) — `config-a.compression.hygiene_timing`
+- Compression → Context timeout seconds / Context total ceiling seconds — `config-a.compression.context_timeout_seconds`
+- Compression → Codex gpt-5.5 autoraise (+ notice) — `config-a.compression.codex_gpt55_autoraise`
+- Compression → Codex app-server auto — `config-a.compression.codex_app_server_auto`
+- Compression → Codex responses native (+ compact threshold) — `config-a.compression.codex_responses_native`
+- Compression → In place — `config-a.compression.in_place`
+- Compression → Idle compact after seconds — `config-a.compression.idle_compact_after_seconds`
+- Security → Privacy → Redact PII — `config-a.privacy.redact_pii`
+- Security → Approvals → Mode — `config-a.approvals.mode`
+- Security → Approvals → Timeout — `config-a.approvals.timeout`
+- Security → Approvals → Cron / Single-query / Unattended mode — `config-a.approvals.noninteractive_modes`
+- Security → Approvals → Smart policy — `config-a.approvals.smart_policy`
+- Security → Approvals → Denial breaker threshold — `config-a.approvals.denial_breaker_threshold`
+- Security → Approvals → Deny — `config-a.approvals.deny`
+- Security → Approvals → MCP reload confirm — `config-a.approvals.mcp_reload_confirm`
+- Security → Approvals → Destructive slash confirm — `config-a.approvals.destructive_slash_confirm`
+- Security → Allow private URLs — `config-a.security.allow_private_urls`
+- Security → Redact secrets — `config-a.security.redact_secrets`
+- Security → Allow data-training tiers non-interactive — `config-a.security.allow_data_training_tiers_noninteractive`
+- Security → Approval transport / Transport fallback — `config-a.security.approval.transport`
+- Security → Protected instruction files (+ extra patterns) — `config-a.security.protected_instruction_files`
+- Security → Tirith scanner (enabled / path / timeout / fail-open) — `config-a.security.tirith`
+- Security → Website blocklist (enabled / domains / shared files) — `config-a.security.website_blocklist`
+- Security → Acked advisories — `config-a.security.acked_advisories`
+- Security → Allow lazy installs — `config-a.security.allow_lazy_installs`
+- Security → Telemetry → Shared metrics enabled — `config-a.telemetry.shared_metrics.enabled`
+- Security → Proxy (egress firewall enable / credential source / Docker enforcement) — `config-a.proxy.security_keys`
+- Browser → Backend — `config-a.browser.backend`
+- Browser → Engine — `config-a.browser.engine`
+- Browser → Inactivity timeout / Command timeout — `config-a.browser.timeouts`
+- Browser → Snapshot threshold — `config-a.browser.snapshot_threshold`
+- Browser → Record sessions — `config-a.browser.record_sessions`
+- Browser → Headed — `config-a.browser.headed`
+- Browser → Allow private URLs / Auto-local for private URLs — `config-a.browser.private_urls`
+- Browser → CDP URL — `config-a.browser.cdp_url`
+- Browser → Real profile (use / autoclose / pin) — `config-a.browser.real_profile`
+- Browser → Allow unsafe evaluate / Restrict evaluate — `config-a.browser.evaluate_guards`
+- Browser → Dialog policy / Dialog timeout — `config-a.browser.dialog_policy`
+- Browser → Camofox identity (managed persistence / user id / session key / adopt existing tab) — `config-a.browser.camofox.identity`
+- Browser → Camofox loopback rewriting (rewrite loopback URLs / host alias) — `config-a.browser.camofox.loopback`
+- Browser → Extension control (enabled / developer mode) — `config-a.browser.extension_control`
+- Voice → Record key — `config-a.voice.record_key`
+- Voice → Submit mode — `config-a.voice.submit_mode`
+- Voice → Max recording seconds — `config-a.voice.max_recording_seconds`
+- Voice → Auto TTS — `config-a.voice.auto_tts`
+- Voice → Client direct — `config-a.voice.client_direct`
+- Voice → Beep enabled / Beep volume / Thinking sound — `config-a.voice.sounds`
+- Voice → Silence threshold / Silence duration — `config-a.voice.silence`
+- Voice → Barge-in (enable / grace seconds / threshold multiplier) — `config-a.voice.barge_in`
+- Voice → Stop phrases — `config-a.voice.stop_phrases`
+- Text-to-Speech → Provider — `config-a.tts.provider`
+- Text-to-Speech → Edge voice — `config-a.tts.edge.voice`
+- Text-to-Speech → ElevenLabs voice id / model id — `config-a.tts.elevenlabs`
+- Text-to-Speech → OpenAI model / voice — `config-a.tts.openai`
+- Text-to-Speech → Gemini model / voice / audio tags / persona prompt file — `config-a.tts.gemini`
+- Text-to-Speech → xAI voice / language / speed / auto speech tags — `config-a.tts.xai.voice`
+- Text-to-Speech → xAI audio format (streaming latency / sample rate / bit rate) — `config-a.tts.xai.audio_format`
+- Text-to-Speech → Mistral model / voice id — `config-a.tts.mistral`
+- Text-to-Speech → MiniMax model / voice id — `config-a.tts.minimax`
+- Text-to-Speech → KittenTTS model / voice — `config-a.tts.kittentts`
+- Text-to-Speech → NeuTTS (reference audio / reference text / model / device) — `config-a.tts.neutts`
+- Text-to-Speech → Piper voice — `config-a.tts.piper.voice`
+- Text-to-Speech → DeepInfra model / voice — `config-a.tts.deepinfra`
+- Speech-to-Text → Enabled — `config-a.stt.enabled`
+- Speech-to-Text → Echo transcripts — `config-a.stt.echo_transcripts`
+- Speech-to-Text → Language (global) — `config-a.stt.language`
+- Speech-to-Text → Cloud silence trim (enable / threshold dB / keep ms) — `config-a.stt.cloud_trim`
+- Speech-to-Text → Local model / language / initial prompt — `config-a.stt.local.model`
+- Speech-to-Text → Local VAD (enable / min silence ms) — `config-a.stt.local.vad`
+- Speech-to-Text → Local hallucination filters (no-speech prob / logprob) — `config-a.stt.local.thresholds`
+- Speech-to-Text → Local unload after idle seconds — `config-a.stt.local.unload_after_idle_seconds`
+- Speech-to-Text → Groq model / language — `config-a.stt.groq`
+- Speech-to-Text → OpenAI model / language — `config-a.stt.openai`
+- Speech-to-Text → Mistral model / language — `config-a.stt.mistral`
+- Speech-to-Text → xAI language — `config-a.stt.xai.language`
+- Speech-to-Text → ElevenLabs Scribe (model / language code / audio events / diarize) — `config-a.stt.elevenlabs`
+- Speech-to-Text → DeepInfra model — `config-a.stt.deepinfra.model`
+- Logging → Level — `config-a.logging.level`
+- Logging → Max size MB / Backup count — `config-a.logging.rotation`
+
+### 22 · Configuration keys B — platform, auxiliary, gateway & ops sections, hidden keys, and the config.yaml machinery
+
+- Config file location and HERMES_HOME resolution — `config-b.core.hermes_home`
+- Effective config load pipeline (`load_config` / `load_config_readonly`) — `config-b.core.load_config`
+- `${VAR}` / `${env:VAR}` interpolation in config values — `config-b.core.env_interpolation`
+- Managed scope — administrator-pinned config and env (`/etc/hermes`) — `config-b.core.managed_scope`
+- Package-manager managed install lock (`HERMES_MANAGED`, `.managed`, `.container-mode`) — `config-b.core.managed_install_lock`
+- Corrupt config.yaml recovery (backup + last-known-good + refuse-write) — `config-b.core.corrupt_config_recovery`
+- Saving config (`save_config`: default-stripping, template preservation, commented sections) — `config-b.core.save_config`
+- Config schema versioning & migrations (`_config_version`, support floor, migration ladder) — `config-b.core.migrations`
+- Config structure validation & startup warnings — `config-b.core.structure_validation`
+- Dotted key-path syntax for `hermes config get/set/unset` — `config-b.core.key_path_syntax`
+- Value coercion & guards in `hermes config set` — `config-b.core.set_value_coercion`
+- Unknown-key validation & "did you mean" suggestions — `config-b.core.key_validation`
+- Env-shaped keys routed to `.env` by `hermes config set/get/unset` — `config-b.core.env_shaped_keys`
+- `.env` file reader/writer (`load_env`, `save_env_value`, `remove_env_value`, `reload_env`, `get_env_value`) — `config-b.core.dotenv_file`
+- Env-var write denylist (`_ENV_VAR_NAME_DENYLIST`) — `config-b.core.env_write_denylist`
+- Config schema generation for the dashboard/desktop (`CONFIG_SCHEMA`, categories, labels) — `config-b.core.schema_generation`
+- Web dashboard "Config" page for this shard's categories — `config-b.web.config_page`
+- Desktop app Settings → Config (schema-driven) — `config-b.desktop.config_settings`
+- Config REST endpoints — `config-b.api.config_endpoints`
+- `hermes config` (parent) — `config-b.cli.config`
+- `hermes config show` — `config-b.cli.config_show`
+- `hermes config edit` — `config-b.cli.config_edit`
+- `hermes config get <key> [--json]` — `config-b.cli.config_get`
+- `hermes config set [--force] <key> <value>` — `config-b.cli.config_set`
+- `hermes config unset <key>` — `config-b.cli.config_unset`
+- `hermes config path` / `hermes config env-path` — `config-b.cli.config_path`
+- `hermes config check` — `config-b.cli.config_check`
+- `hermes config migrate` — `config-b.cli.config_migrate`
+- Discord → Require Mention — `config-b.discord.require_mention`
+- Discord → Free Response Channels — `config-b.discord.free_response_channels`
+- Discord → Allowed Channels — `config-b.discord.allowed_channels`
+- Discord → Auto Thread — `config-b.discord.auto_thread`
+- Discord → Thread Require Mention — `config-b.discord.thread_require_mention`
+- Discord → Bots Require Inline Mention — `config-b.discord.bots_require_inline_mention`
+- Discord → History Backfill / History Backfill Limit — `config-b.discord.history_backfill`
+- Discord → Missed Message Backfill (5 keys) — `config-b.discord.missed_message_backfill`
+- Discord → Reactions — `config-b.discord.reactions`
+- Discord → WebSocket liveness probe (4 keys) — `config-b.discord.websocket_liveness`
+- Discord → Dm Role Auth Guild — `config-b.discord.dm_role_auth_guild`
+- Discord → Server Actions — `config-b.discord.server_actions`
+- Discord → Allow Any Attachment (deprecated no-op) — `config-b.discord.allow_any_attachment`
+- Discord → Max Attachment Bytes — `config-b.discord.max_attachment_bytes`
+- Discord → Approval Mentions — `config-b.discord.approval_mentions`
+- Discord → Voice channel timeouts (2 keys) — `config-b.discord.voice_timeouts`
+- Discord → Voice Fx (8 keys — the continuous voice mixer) — `config-b.discord.voice_fx`
+- Telegram → Reactions — `config-b.telegram.reactions`
+- Telegram → Allowed Chats — `config-b.telegram.allowed_chats`
+- Telegram → Extra → Rich Messages / Rich Drafts — `config-b.telegram.extra_rich`
+- Auxiliary task block — the shared field shape and resolution chain — `config-b.auxiliary.task_shape`
+- Auxiliary → Transient Retries — `config-b.auxiliary.transient_retries`
+- Auxiliary → Free Only — `config-b.auxiliary.free_only`
+- Auxiliary → Openrouter Model — `config-b.auxiliary.openrouter_model`
+- Auxiliary → Stream Only Base Urls — `config-b.auxiliary.stream_only_base_urls`
+- Auxiliary → Vision (7 keys) — `config-b.auxiliary.vision`
+- Auxiliary → Compression (7 keys) — `config-b.auxiliary.compression`
+- Auxiliary → Skills Hub (6 keys) — `config-b.auxiliary.skills_hub`
+- Auxiliary → Approval (6 keys) — `config-b.auxiliary.approval`
+- Auxiliary → Review (5 keys — the `/review` subagent) — `config-b.auxiliary.review`
+- Auxiliary → Mcp (6 keys) — `config-b.auxiliary.mcp`
+- Auxiliary → Title Generation (9 keys) — `config-b.auxiliary.title_generation`
+- Auxiliary → Memory Query Rewrite (5 keys) — `config-b.auxiliary.memory_query_rewrite`
+- Auxiliary → Tts Audio Tags (6 keys) — `config-b.auxiliary.tts_audio_tags`
+- Auxiliary → Triage Specifier (6 keys) — `config-b.auxiliary.triage_specifier`
+- Auxiliary → Kanban Decomposer (6 keys) — `config-b.auxiliary.kanban_decomposer`
+- Auxiliary → Profile Describer (6 keys) — `config-b.auxiliary.profile_describer`
+- Auxiliary → Goal Judge (6 keys) — `config-b.auxiliary.goal_judge`
+- Auxiliary → Curator (6 keys) — `config-b.auxiliary.curator`
+- Auxiliary → Monitor (6 keys) — `config-b.auxiliary.monitor`
+- Auxiliary → Background Review (8 keys) — `config-b.auxiliary.background_review`
+- Auxiliary → Moa Reference / Moa Aggregator (10 keys) — `config-b.auxiliary.moa_tasks`
+- Bedrock → Region — `config-b.bedrock.region`
+- Bedrock → Discovery → Enabled / Provider Filter / Refresh Interval — `config-b.bedrock.discovery`
+- Bedrock → Guardrail (4 keys) — `config-b.bedrock.guardrail`
+- Curator → Enabled — `config-b.curator.enabled`
+- Curator → Interval Hours / Min Idle Hours — `config-b.curator.cadence`
+- Curator → Stale After Days / Archive After Days — `config-b.curator.inactivity`
+- Curator → Consolidate — `config-b.curator.consolidate`
+- Curator → Prune Builtins — `config-b.curator.prune_builtins`
+- Curator → Archive Ttl Days — `config-b.curator.archive_ttl_days`
+- Curator → Backup → Enabled / Keep — `config-b.curator.backup`
+- Database → Journal Mode — `config-b.database.journal_mode`
+- Database → Wal Autocheckpoint / Journal Size Limit — `config-b.database.wal_sizing`
+- Desktop → Repo scan (3 keys) — `config-b.desktop.repo_scan`
+- Desktop → Electron Flags — `config-b.desktop.electron_flags`
+- Desktop → Ozone Platform Hint — `config-b.desktop.ozone_platform_hint`
+- Desktop → Disable Gpu — `config-b.desktop.disable_gpu`
+- Desktop → Password Store — `config-b.desktop.password_store`
+- Desktop → Macos Signing Identity — `config-b.desktop.macos_signing_identity`
+- Desktop → Auto Continue (3 keys) — `config-b.desktop.auto_continue`
+- Gateway → Multiplex Profile Allowlist — `config-b.gateway.multiplex_profile_allowlist`
+- Gateway → Signal Interrupt Grace Timeout — `config-b.gateway.signal_interrupt_grace_timeout`
+- Gateway → Delivery Ledger — `config-b.gateway.delivery_ledger`
+- Gateway → Platform Connect Timeout — `config-b.gateway.platform_connect_timeout`
+- Gateway → Loop watchdog (4 keys) — `config-b.gateway.loop_watchdog`
+- Gateway → Write Sessions Json — `config-b.gateway.write_sessions_json`
+- Gateway → Scale To Zero → Idle Timeout Minutes — `config-b.gateway.scale_to_zero`
+- Gateway → Restart Loop Guard (3 keys) — `config-b.gateway.restart_loop_guard`
+- Gateway → Respawn Storm (2 keys) — `config-b.gateway.respawn_storm`
+- Gateway → Message Timestamps → Enabled — `config-b.gateway.message_timestamps`
+- Gateway → Max Inbound Media Bytes — `config-b.gateway.max_inbound_media_bytes`
+- Gateway → Strict (media delivery posture) — `config-b.gateway.strict`
+- Gateway → Media Delivery Allow Dirs — `config-b.gateway.media_delivery_allow_dirs`
+- Gateway → Trust Recent Files / Trust Recent Files Seconds — `config-b.gateway.trust_recent_files`
+- Gateway → Api Server → Max Concurrent Runs — `config-b.gateway.api_server_max_concurrent_runs`
+- Kanban → Auto Subscribe On Create — `config-b.kanban.auto_subscribe_on_create`
+- Kanban → Dispatch In Gateway — `config-b.kanban.dispatch_in_gateway`
+- Kanban → Review Dispatch — `config-b.kanban.review_dispatch`
+- Kanban → Dispatch Interval Seconds — `config-b.kanban.dispatch_interval_seconds`
+- Kanban → Failure Limit — `config-b.kanban.failure_limit`
+- Kanban → Worker Log Rotate Bytes / Worker Log Backup Count — `config-b.kanban.worker_logs`
+- Kanban → Orchestrator Profile — `config-b.kanban.orchestrator_profile`
+- Kanban → Default Assignee — `config-b.kanban.default_assignee`
+- Kanban → Max In Progress — `config-b.kanban.max_in_progress`
+- Kanban → Max In Progress Per Profile — `config-b.kanban.max_in_progress_per_profile`
+- Kanban → Auto Decompose / Auto Decompose Per Tick — `config-b.kanban.auto_decompose`
+- Kanban → Dispatch Stale Timeout Seconds — `config-b.kanban.dispatch_stale_timeout_seconds`
+- Kanban → Reconcile Orphans — `config-b.kanban.reconcile_orphans`
+- Kanban → Done Sub Retention Days — `config-b.kanban.done_sub_retention_days`
+- Loops → Min Interval Seconds — `config-b.loops.min_interval_seconds`
+- Loops → Max Ticks — `config-b.loops.max_ticks`
+- Loops → Self Paced Floor Seconds / Self Paced Ceiling Seconds — `config-b.loops.self_paced_bounds`
+- Lsp → Enabled — `config-b.lsp.enabled`
+- Lsp → Wait Mode / Wait Timeout — `config-b.lsp.wait`
+- Lsp → Install Strategy — `config-b.lsp.install_strategy`
+- Lsp → Idle Timeout — `config-b.lsp.idle_timeout`
+- Matrix → Require Mention — `config-b.matrix.require_mention`
+- Matrix → Free Response Rooms — `config-b.matrix.free_response_rooms`
+- Matrix → Allowed Rooms — `config-b.matrix.allowed_rooms`
+- Mattermost → Require Mention — `config-b.mattermost.require_mention`
+- Mattermost → Free Response Channels — `config-b.mattermost.free_response_channels`
+- Mattermost → Allowed Channels — `config-b.mattermost.allowed_channels`
+- Moa → Default Preset / Active Preset — `config-b.moa.preset_selection`
+- Moa → Save Traces / Trace Dir — `config-b.moa.traces`
+- Moa → Privacy Filter — `config-b.moa.privacy_filter`
+- Moa → Presets → Default (5 schema fields + the hidden preset fields) — `config-b.moa.presets_default`
+- Model Catalog → Enabled / Url / Ttl Hours — `config-b.model_catalog`
+- Monitoring → Install Id — `config-b.monitoring.install_id`
+- Monitoring → Gateway Health Export (8 keys) — `config-b.monitoring.gateway_health_export`
+- Monitoring → Export → Otlp → Enabled / Endpoint — `config-b.monitoring.export_otlp`
+- Openrouter → Response Cache / Response Cache Ttl — `config-b.openrouter.response_cache`
+- Openrouter → Min Coding Score — `config-b.openrouter.min_coding_score`
+- Proxy → Tunnel Port — `config-b.proxy.tunnel_port`
+- Proxy → Auto Install — `config-b.proxy.auto_install`
+- Proxy → Allow Env Fallback — `config-b.proxy.allow_env_fallback`
+- Proxy → Upstream Deny Cidrs — `config-b.proxy.upstream_deny_cidrs`
+- Proxy → Extra Allowed Hosts — `config-b.proxy.extra_allowed_hosts`
+- Secrets → Bitwarden (9 keys) — `config-b.secrets.bitwarden`
+- Secrets → Onepassword (6 keys) — `config-b.secrets.onepassword`
+- Sessions → Auto Prune / Retention Days — `config-b.sessions.auto_prune`
+- Sessions → Auto Archive / Auto Archive Days — `config-b.sessions.auto_archive`
+- Sessions → Vacuum After Prune / Min Vacuum Interval Days — `config-b.sessions.vacuum`
+- Sessions → Min Interval Hours — `config-b.sessions.min_interval_hours`
+- Sessions → Write Json Snapshots — `config-b.sessions.write_json_snapshots`
+- Sessions → Fts Optimize Notice — `config-b.sessions.fts_optimize_notice`
+- Sessions → Cjk Fts — `config-b.sessions.cjk_fts`
+- Sessions → Search Slow Ms — `config-b.sessions.search_slow_ms`
+- Sessions → Max Resume Messages / Max Export Messages — `config-b.sessions.transcript_limits`
+- Slack → Require Mention — `config-b.slack.require_mention`
+- Slack → Free Response Channels — `config-b.slack.free_response_channels`
+- Slack → Allowed Channels — `config-b.slack.allowed_channels`
+- Slack → Require Mention Channels — `config-b.slack.require_mention_channels`
+- Slack → Ignore Other User Mentions — `config-b.slack.ignore_other_user_mentions`
+- Slack → Thread Require Mention — `config-b.slack.thread_require_mention`
+- Streaming → Enabled — `config-b.streaming.enabled`
+- Streaming → Transport — `config-b.streaming.transport`
+- Streaming → Edit Interval / Buffer Threshold — `config-b.streaming.pacing`
+- Streaming → Cursor — `config-b.streaming.cursor`
+- Streaming → Fresh Final After Seconds — `config-b.streaming.fresh_final_after_seconds`
+- Tool Loop Guardrails → Warnings Enabled / Hard Stop Enabled — `config-b.tool_loop_guardrails.switches`
+- Tool Loop Guardrails → Warn After (3 keys) / Hard Stop After (3 keys) — `config-b.tool_loop_guardrails.thresholds`
+- Tool Loop Guardrails → Loop Caps → Max Web Searches / Max Subagents — `config-b.tool_loop_guardrails.loop_caps`
+- Tool Output → Max Bytes / Max Lines / Max Line Length — `config-b.tool_output`
+- Tools → Tool Search (6 keys — tiered tool disclosure) — `config-b.tools.tool_search`
+- Vertex → Project Id / Region — `config-b.vertex`
+- Wake Word → Enabled — `config-b.wake_word.enabled`
+- Wake Word → Surface — `config-b.wake_word.surface`
+- Wake Word → Input Device — `config-b.wake_word.input_device`
+- Wake Word → Capture — `config-b.wake_word.capture`
+- Wake Word → Provider — `config-b.wake_word.provider`
+- Wake Word → Phrase — `config-b.wake_word.phrase`
+- Wake Word → Sensitivity / Confirmation Frames — `config-b.wake_word.thresholds`
+- Wake Word → Start New Session — `config-b.wake_word.start_new_session`
+- Wake Word → Profile Routing — `config-b.wake_word.profile_routing`
+- Wake Word → Openwakeword → Model / Inference Framework — `config-b.wake_word.openwakeword`
+- Wake Word → Sherpa → Model Dir — `config-b.wake_word.sherpa_model_dir`
+- Wake Word → Porcupine → Keyword — `config-b.wake_word.porcupine_keyword`
+- Web → Backend / Search Backend / Extract Backend — `config-b.web.backends`
+- Web → Extract Char Limit — `config-b.web.extract_char_limit`
+- Web → Keyless Fallback / Keyless Rescue — `config-b.web.keyless`
+- Web → Cache Enabled / Cache Ttl Minutes / Cache Exempt Hosts — `config-b.web.cache`
+- X Search → Model / Reasoning Effort / Timeout Seconds / Retries — `config-b.x_search`
+- Open dicts in this shard's categories (11 keys) — `config-b.hidden.shard_open_dicts`
+- Open dicts owned by sibling shards (17 auxiliary `extra_body` maps + 13 others) — `config-b.hidden.other_open_dicts`
+- `_config_version` (the one deliberately hidden scalar) — `config-b.hidden.config_version`
+- Top-level sections absent from DEFAULT_CONFIG — `config-b.hidden.absent_top_level`
+- Sub-keys of this shard's sections that DEFAULT_CONFIG does not declare — `config-b.hidden.absent_subkeys`
+
+### 23 · Environment Variables — every variable Hermes Agent v2026.8.31 reads
+
+- User env file `~/.hermes/.env` — `env-vars.dotenv-user`
+- `hermes config env-path` — `env-vars.cmd-config-env-path`
+- Project `.env` (development fallback) — `env-vars.dotenv-project`
+- `~/.hermes/.op.env` (1Password bootstrap file) — `env-vars.dotenv-op`
+- Managed-scope env `/etc/hermes/.env` — `env-vars.dotenv-managed`
+- `OPTIONAL_ENV_VARS` registry — `env-vars.optional-env-vars`
+- `_EXTRA_ENV_KEYS` (setup/provider-managed keys) — `env-vars.extra-env-keys`
+- Profile-managed env scrubbing (`_PROFILE_MANAGED_ENV_KEYS`) — `env-vars.profile-managed-scrub`
+- Credential value sanitization (`_CREDENTIAL_SUFFIXES`) — `env-vars.credential-sanitize`
+- `.env` encoding repair / atomic rewrite — `env-vars.dotenv-sanitize`
+- External secret sources — apply orchestrator — `env-vars.secret-sources-registry`
+- External secret source — Bitwarden Secrets Manager — `env-vars.secret-source-bitwarden`
+- External secret source — 1Password — `env-vars.secret-source-onepassword`
+- `${VAR}` / `${env:VAR}` expansion inside `config.yaml` — `env-vars.config-env-refs`
+- Env-writer name denylist — `env-vars.write-denylist`
+- Env write / read / reload API — `env-vars.env-write-api`
+- Precedence summary (shell vs `.env` vs project vs managed vs vault vs `config.yaml`) — `env-vars.precedence`
+- Per-profile secret scoping (`agent/secret_scope.py`) — `env-vars.secret-scope`
+- `OPENROUTER_API_KEY` — `env-vars.openrouter_api_key`
+- `OPENROUTER_BASE_URL` — `env-vars.openrouter_base_url`
+- `FIREWORKS_API_KEY` — `env-vars.fireworks_api_key`
+- `HERMES_OPENROUTER_CACHE` — `env-vars.hermes_openrouter_cache`
+- `HERMES_OPENROUTER_CACHE_TTL` — `env-vars.hermes_openrouter_cache_ttl`
+- `NOUS_BASE_URL` — `env-vars.nous_base_url`
+- `NOUS_INFERENCE_BASE_URL` — `env-vars.nous_inference_base_url`
+- `AI_GATEWAY_API_KEY` — `env-vars.ai_gateway_api_key`
+- `AI_GATEWAY_BASE_URL` — `env-vars.ai_gateway_base_url`
+- `OPENAI_API_KEY` — `env-vars.openai_api_key`
+- `OPENAI_BASE_URL` — `env-vars.openai_base_url`
+- `LM_API_KEY` — `env-vars.lm_api_key`
+- `LM_BASE_URL` — `env-vars.lm_base_url`
+- `COPILOT_GITHUB_TOKEN` — `env-vars.copilot_github_token`
+- `GH_TOKEN` — `env-vars.gh_token`
+- `GITHUB_TOKEN` — `env-vars.github_token`
+- `HERMES_COPILOT_ACP_COMMAND` — `env-vars.hermes_copilot_acp_command`
+- `COPILOT_CLI_PATH` — `env-vars.copilot_cli_path`
+- `HERMES_COPILOT_ACP_ARGS` — `env-vars.hermes_copilot_acp_args`
+- `COPILOT_ACP_BASE_URL` — `env-vars.copilot_acp_base_url`
+- `COPILOT_API_BASE_URL` — `env-vars.copilot_api_base_url`
+- `GLM_API_KEY` — `env-vars.glm_api_key`
+- `ZAI_API_KEY` — `env-vars.zai_api_key`
+- `Z_AI_API_KEY` — `env-vars.z_ai_api_key`
+- `GLM_BASE_URL` — `env-vars.glm_base_url`
+- `KIMI_API_KEY` — `env-vars.kimi_api_key`
+- `KIMI_CODING_API_KEY` — `env-vars.kimi_coding_api_key`
+- `KIMI_BASE_URL` — `env-vars.kimi_base_url`
+- `KIMI_CN_API_KEY` — `env-vars.kimi_cn_api_key`
+- `ARCEEAI_API_KEY` — `env-vars.arceeai_api_key`
+- `ARCEE_BASE_URL` — `env-vars.arcee_base_url`
+- `GMI_API_KEY` — `env-vars.gmi_api_key`
+- `GMI_BASE_URL` — `env-vars.gmi_base_url`
+- `ACTUAL_API_KEY` — `env-vars.actual_api_key`
+- `ACTUAL_BASE_URL` — `env-vars.actual_base_url`
+- `MINIMAX_API_KEY` — `env-vars.minimax_api_key`
+- `MINIMAX_BASE_URL` — `env-vars.minimax_base_url`
+- `MINIMAX_CN_API_KEY` — `env-vars.minimax_cn_api_key`
+- `MINIMAX_CN_BASE_URL` — `env-vars.minimax_cn_base_url`
+- `KILOCODE_API_KEY` — `env-vars.kilocode_api_key`
+- `KILOCODE_BASE_URL` — `env-vars.kilocode_base_url`
+- `XIAOMI_API_KEY` — `env-vars.xiaomi_api_key`
+- `XIAOMI_BASE_URL` — `env-vars.xiaomi_base_url`
+- `UPSTAGE_API_KEY` — `env-vars.upstage_api_key`
+- `UPSTAGE_BASE_URL` — `env-vars.upstage_base_url`
+- `TOKENHUB_API_KEY` — `env-vars.tokenhub_api_key`
+- `TOKENHUB_BASE_URL` — `env-vars.tokenhub_base_url`
+- `TOKENPLAN_API_KEY` — `env-vars.tokenplan_api_key`
+- `TOKENPLAN_BASE_URL` — `env-vars.tokenplan_base_url`
+- `AZURE_FOUNDRY_API_KEY` — `env-vars.azure_foundry_api_key`
+- `AZURE_FOUNDRY_BASE_URL` — `env-vars.azure_foundry_base_url`
+- `AZURE_ANTHROPIC_KEY` — `env-vars.azure_anthropic_key`
+- `AZURE_TENANT_ID` — `env-vars.azure_tenant_id`
+- `AZURE_CLIENT_ID` — `env-vars.azure_client_id`
+- `AZURE_CLIENT_SECRET` — `env-vars.azure_client_secret`
+- `AZURE_CLIENT_CERTIFICATE_PATH` — `env-vars.azure_client_certificate_path`
+- `AZURE_FEDERATED_TOKEN_FILE` — `env-vars.azure_federated_token_file`
+- `AZURE_AUTHORITY_HOST` — `env-vars.azure_authority_host`
+- `IDENTITY_ENDPOINT` — `env-vars.identity_endpoint`
+- `MSI_ENDPOINT` — `env-vars.msi_endpoint`
+- `HF_TOKEN` — `env-vars.hf_token`
+- `HF_BASE_URL` — `env-vars.hf_base_url`
+- `GOOGLE_API_KEY` — `env-vars.google_api_key`
+- `GEMINI_API_KEY` — `env-vars.gemini_api_key`
+- `GEMINI_BASE_URL` — `env-vars.gemini_base_url`
+- `VERTEX_CREDENTIALS_PATH` — `env-vars.vertex_credentials_path`
+- `ANTHROPIC_API_KEY` — `env-vars.anthropic_api_key`
+- `ANTHROPIC_BASE_URL` — `env-vars.anthropic_base_url`
+- `ANTHROPIC_TOKEN` — `env-vars.anthropic_token`
+- `DASHSCOPE_API_KEY` — `env-vars.dashscope_api_key`
+- `DASHSCOPE_BASE_URL` — `env-vars.dashscope_base_url`
+- `DASHSCOPE_CN_BASE_URL` — `env-vars.dashscope_cn_base_url`
+- `ALIBABA_CODING_PLAN_API_KEY` — `env-vars.alibaba_coding_plan_api_key`
+- `ALIBABA_CODING_PLAN_BASE_URL` — `env-vars.alibaba_coding_plan_base_url`
+- `ALIBABA_CODING_PLAN_CN_BASE_URL` — `env-vars.alibaba_coding_plan_cn_base_url`
+- `ALIBABA_TOKEN_PLAN_API_KEY` — `env-vars.alibaba_token_plan_api_key`
+- `ALIBABA_TOKEN_PLAN_BASE_URL` — `env-vars.alibaba_token_plan_base_url`
+- `ALIBABA_TOKEN_PLAN_CN_BASE_URL` — `env-vars.alibaba_token_plan_cn_base_url`
+- `DEEPSEEK_API_KEY` — `env-vars.deepseek_api_key`
+- `DEEPSEEK_BASE_URL` — `env-vars.deepseek_base_url`
+- `DEEPINFRA_API_KEY` — `env-vars.deepinfra_api_key`
+- `DEEPINFRA_BASE_URL` — `env-vars.deepinfra_base_url`
+- `NOVITA_API_KEY` — `env-vars.novita_api_key`
+- `NOVITA_BASE_URL` — `env-vars.novita_base_url`
+- `RAMP_ROUTER_API_KEY` — `env-vars.ramp_router_api_key`
+- `RAMP_ROUTER_BASE_URL` — `env-vars.ramp_router_base_url`
+- `NEBIUS_API_KEY` — `env-vars.nebius_api_key`
+- `NEBIUS_BASE_URL` — `env-vars.nebius_base_url`
+- `NVIDIA_API_KEY` — `env-vars.nvidia_api_key`
+- `NVIDIA_BASE_URL` — `env-vars.nvidia_base_url`
+- `STEPFUN_API_KEY` — `env-vars.stepfun_api_key`
+- `STEPFUN_BASE_URL` — `env-vars.stepfun_base_url`
+- `OLLAMA_API_KEY` — `env-vars.ollama_api_key`
+- `OLLAMA_BASE_URL` — `env-vars.ollama_base_url`
+- `XAI_API_KEY` — `env-vars.xai_api_key`
+- `XAI_BASE_URL` — `env-vars.xai_base_url`
+- `MISTRAL_API_KEY` — `env-vars.mistral_api_key`
+- `AWS_REGION` — `env-vars.aws_region`
+- `AWS_PROFILE` — `env-vars.aws_profile`
+- `BEDROCK_BASE_URL` — `env-vars.bedrock_base_url`
+- `HERMES_QWEN_BASE_URL` — `env-vars.hermes_qwen_base_url`
+- `OPENCODE_ZEN_API_KEY` — `env-vars.opencode_zen_api_key`
+- `OPENCODE_ZEN_BASE_URL` — `env-vars.opencode_zen_base_url`
+- `OPENCODE_GO_API_KEY` — `env-vars.opencode_go_api_key`
+- `OPENCODE_GO_BASE_URL` — `env-vars.opencode_go_base_url`
+- `CLAUDE_CODE_OAUTH_TOKEN` — `env-vars.claude_code_oauth_token`
+- `HERMES_MODEL` — `env-vars.hermes_model`
+- `VOICE_TOOLS_OPENAI_KEY` — `env-vars.voice_tools_openai_key`
+- `HERMES_LOCAL_STT_COMMAND` — `env-vars.hermes_local_stt_command`
+- `HERMES_LOCAL_STT_LANGUAGE` — `env-vars.hermes_local_stt_language`
+- `HERMES_HOME` — `env-vars.hermes_home`
+- `HERMES_GIT_BASH_PATH` — `env-vars.hermes_git_bash_path`
+- `HERMES_DISABLE_WINDOWS_UTF8` — `env-vars.hermes_disable_windows_utf8`
+- `HERMES_KANBAN_HOME` — `env-vars.hermes_kanban_home`
+- `HERMES_KANBAN_BOARD` — `env-vars.hermes_kanban_board`
+- `HERMES_KANBAN_DB` — `env-vars.hermes_kanban_db`
+- `HERMES_KANBAN_WORKSPACES_ROOT` — `env-vars.hermes_kanban_workspaces_root`
+- `HERMES_KANBAN_DISPATCH_IN_GATEWAY` — `env-vars.hermes_kanban_dispatch_in_gateway`
+- `HERMES_PORTAL_BASE_URL` — `env-vars.hermes_portal_base_url`
+- `HERMES_NOUS_MIN_KEY_TTL_SECONDS` — `env-vars.hermes_nous_min_key_ttl_seconds`
+- `HERMES_NOUS_TIMEOUT_SECONDS` — `env-vars.hermes_nous_timeout_seconds`
+- `HERMES_DUMP_REQUESTS` — `env-vars.hermes_dump_requests`
+- `HERMES_PREFILL_MESSAGES_FILE` — `env-vars.hermes_prefill_messages_file`
+- `HERMES_TIMEZONE` — `env-vars.hermes_timezone`
+- `PARALLEL_API_KEY` — `env-vars.parallel_api_key`
+- `FIRECRAWL_API_KEY` — `env-vars.firecrawl_api_key`
+- `FIRECRAWL_API_URL` — `env-vars.firecrawl_api_url`
+- `SEARXNG_URL` — `env-vars.searxng_url`
+- `EXA_API_KEY` — `env-vars.exa_api_key`
+- `BRAVE_SEARCH_API_KEY` — `env-vars.brave_search_api_key`
+- `BROWSERBASE_API_KEY` — `env-vars.browserbase_api_key`
+- `BROWSERBASE_PROJECT_ID` — `env-vars.browserbase_project_id`
+- `BROWSER_USE_API_KEY` — `env-vars.browser_use_api_key`
+- `FIRECRAWL_BROWSER_TTL` — `env-vars.firecrawl_browser_ttl`
+- `BROWSER_CDP_URL` — `env-vars.browser_cdp_url`
+- `CAMOFOX_URL` — `env-vars.camofox_url`
+- `CAMOFOX_API_KEY` — `env-vars.camofox_api_key`
+- `CAMOFOX_USER_ID` — `env-vars.camofox_user_id`
+- `CAMOFOX_SESSION_KEY` — `env-vars.camofox_session_key`
+- `CAMOFOX_ADOPT_EXISTING_TAB` — `env-vars.camofox_adopt_existing_tab`
+- `BROWSER_INACTIVITY_TIMEOUT` — `env-vars.browser_inactivity_timeout`
+- `AGENT_BROWSER_ARGS` — `env-vars.agent_browser_args`
+- `AGENT_BROWSER_ENGINE` — `env-vars.agent_browser_engine`
+- `FAL_KEY` — `env-vars.fal_key`
+- `KREA_API_KEY` — `env-vars.krea_api_key`
+- `GROQ_API_KEY` — `env-vars.groq_api_key`
+- `ELEVENLABS_API_KEY` — `env-vars.elevenlabs_api_key`
+- `PORCUPINE_ACCESS_KEY` — `env-vars.porcupine_access_key`
+- `STT_GROQ_MODEL` — `env-vars.stt_groq_model`
+- `GROQ_BASE_URL` — `env-vars.groq_base_url`
+- `STT_OPENAI_MODEL` — `env-vars.stt_openai_model`
+- `STT_OPENAI_BASE_URL` — `env-vars.stt_openai_base_url`
+- `HONCHO_API_KEY` — `env-vars.honcho_api_key`
+- `HONCHO_BASE_URL` — `env-vars.honcho_base_url`
+- `HINDSIGHT_API_KEY` — `env-vars.hindsight_api_key`
+- `HINDSIGHT_API_URL` — `env-vars.hindsight_api_url`
+- `HINDSIGHT_TIMEOUT` — `env-vars.hindsight_timeout`
+- `MEM0_API_KEY` — `env-vars.mem0_api_key`
+- `MEM0_MODE` — `env-vars.mem0_mode`
+- `MEM0_HOST` — `env-vars.mem0_host`
+- `MEM0_USER_ID` — `env-vars.mem0_user_id`
+- `MEM0_AGENT_ID` — `env-vars.mem0_agent_id`
+- `RETAINDB_API_KEY` — `env-vars.retaindb_api_key`
+- `RETAINDB_BASE_URL` — `env-vars.retaindb_base_url`
+- `OPENVIKING_API_KEY` — `env-vars.openviking_api_key`
+- `OPENVIKING_ENDPOINT` — `env-vars.openviking_endpoint`
+- `BRV_API_KEY` — `env-vars.brv_api_key`
+- `SUPERMEMORY_API_KEY` — `env-vars.supermemory_api_key`
+- `DAYTONA_API_KEY` — `env-vars.daytona_api_key`
+- `VERCEL_TOKEN` — `env-vars.vercel_token`
+- `VERCEL_PROJECT_ID` — `env-vars.vercel_project_id`
+- `VERCEL_TEAM_ID` — `env-vars.vercel_team_id`
+- `VERCEL_OIDC_TOKEN` — `env-vars.vercel_oidc_token`
+- `NOTION_API_KEY` — `env-vars.notion_api_key`
+- `LINEAR_API_KEY` — `env-vars.linear_api_key`
+- `AIRTABLE_API_KEY` — `env-vars.airtable_api_key`
+- `TENOR_API_KEY` — `env-vars.tenor_api_key`
+- `HERMES_LANGFUSE_PUBLIC_KEY` — `env-vars.hermes_langfuse_public_key`
+- `HERMES_LANGFUSE_SECRET_KEY` — `env-vars.hermes_langfuse_secret_key`
+- `HERMES_LANGFUSE_BASE_URL` — `env-vars.hermes_langfuse_base_url`
+- `HERMES_LANGFUSE_ENV` — `env-vars.hermes_langfuse_env`
+- `HERMES_LANGFUSE_RELEASE` — `env-vars.hermes_langfuse_release`
+- `HERMES_LANGFUSE_SAMPLE_RATE` — `env-vars.hermes_langfuse_sample_rate`
+- `HERMES_LANGFUSE_MAX_CHARS` — `env-vars.hermes_langfuse_max_chars`
+- `HERMES_LANGFUSE_DEBUG` — `env-vars.hermes_langfuse_debug`
+- `LANGFUSE_PUBLIC_KEY` — `env-vars.langfuse_public_key`
+- `LANGFUSE_SECRET_KEY` — `env-vars.langfuse_secret_key`
+- `LANGFUSE_BASE_URL` — `env-vars.langfuse_base_url`
+- `TOOL_GATEWAY_DOMAIN` — `env-vars.tool_gateway_domain`
+- `TOOL_GATEWAY_SCHEME` — `env-vars.tool_gateway_scheme`
+- `TOOL_GATEWAY_USER_TOKEN` — `env-vars.tool_gateway_user_token`
+- `FIRECRAWL_GATEWAY_URL` — `env-vars.firecrawl_gateway_url`
+- `TERMINAL_ENV` — `env-vars.terminal_env`
+- `HERMES_DOCKER_BINARY` — `env-vars.hermes_docker_binary`
+- `TERMINAL_DOCKER_IMAGE` — `env-vars.terminal_docker_image`
+- `TERMINAL_DOCKER_FORWARD_ENV` — `env-vars.terminal_docker_forward_env`
+- `TERMINAL_DOCKER_VOLUMES` — `env-vars.terminal_docker_volumes`
+- `TERMINAL_DOCKER_ENV` — `env-vars.terminal_docker_env`
+- `TERMINAL_DOCKER_EXTRA_ARGS` — `env-vars.terminal_docker_extra_args`
+- `TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE` — `env-vars.terminal_docker_mount_cwd_to_workspace`
+- `TERMINAL_SINGULARITY_IMAGE` — `env-vars.terminal_singularity_image`
+- `TERMINAL_MODAL_IMAGE` — `env-vars.terminal_modal_image`
+- `TERMINAL_DAYTONA_IMAGE` — `env-vars.terminal_daytona_image`
+- `TERMINAL_VERCEL_RUNTIME` — `env-vars.terminal_vercel_runtime`
+- `TERMINAL_TIMEOUT` — `env-vars.terminal_timeout`
+- `TERMINAL_LIFETIME_SECONDS` — `env-vars.terminal_lifetime_seconds`
+- `TERMINAL_CWD` — `env-vars.terminal_cwd`
+- `SUDO_PASSWORD` — `env-vars.sudo_password`
+- `TERMINAL_SSH_HOST` — `env-vars.terminal_ssh_host`
+- `TERMINAL_SSH_USER` — `env-vars.terminal_ssh_user`
+- `TERMINAL_SSH_PORT` — `env-vars.terminal_ssh_port`
+- `TERMINAL_SSH_KEY` — `env-vars.terminal_ssh_key`
+- `TERMINAL_SSH_PERSISTENT` — `env-vars.terminal_ssh_persistent`
+- `TERMINAL_CONTAINER_CPU` — `env-vars.terminal_container_cpu`
+- `TERMINAL_CONTAINER_MEMORY` — `env-vars.terminal_container_memory`
+- `TERMINAL_CONTAINER_DISK` — `env-vars.terminal_container_disk`
+- `TERMINAL_CONTAINER_PERSISTENT` — `env-vars.terminal_container_persistent`
+- `TERMINAL_SANDBOX_DIR` — `env-vars.terminal_sandbox_dir`
+- `TERMINAL_PERSISTENT_SHELL` — `env-vars.terminal_persistent_shell`
+- `TERMINAL_LOCAL_PERSISTENT` — `env-vars.terminal_local_persistent`
+- `HERMES_EGRESS_PROXY` — `env-vars.hermes_egress_proxy`
+- `HTTPS_PROXY` — `env-vars.https_proxy`
+- `HTTP_PROXY` — `env-vars.http_proxy`
+- `NO_PROXY` — `env-vars.no_proxy`
+- `REQUESTS_CA_BUNDLE` — `env-vars.requests_ca_bundle`
+- `SSL_CERT_FILE` — `env-vars.ssl_cert_file`
+- `CURL_CA_BUNDLE` — `env-vars.curl_ca_bundle`
+- `NODE_EXTRA_CA_CERTS` — `env-vars.node_extra_ca_certs`
+- `NODE_OPTIONS` — `env-vars.node_options`
+- `HERMES_IRON_PROXY_NONCE` — `env-vars.hermes_iron_proxy_nonce`
+- `TELEGRAM_BOT_TOKEN` — `env-vars.telegram_bot_token`
+- `TELEGRAM_ALLOWED_USERS` — `env-vars.telegram_allowed_users`
+- `TELEGRAM_ALLOW_ALL_USERS` — `env-vars.telegram_allow_all_users`
+- `TELEGRAM_GROUP_ALLOWED_USERS` — `env-vars.telegram_group_allowed_users`
+- `TELEGRAM_GROUP_ALLOWED_CHATS` — `env-vars.telegram_group_allowed_chats`
+- `TELEGRAM_HOME_CHANNEL` — `env-vars.telegram_home_channel`
+- `TELEGRAM_HOME_CHANNEL_NAME` — `env-vars.telegram_home_channel_name`
+- `TELEGRAM_CRON_THREAD_ID` — `env-vars.telegram_cron_thread_id`
+- `TELEGRAM_WEBHOOK_URL` — `env-vars.telegram_webhook_url`
+- `TELEGRAM_WEBHOOK_PORT` — `env-vars.telegram_webhook_port`
+- `TELEGRAM_WEBHOOK_SECRET` — `env-vars.telegram_webhook_secret`
+- `TELEGRAM_REACTIONS` — `env-vars.telegram_reactions`
+- `TELEGRAM_REQUIRE_MENTION` — `env-vars.telegram_require_mention`
+- `TELEGRAM_MENTION_PATTERNS` — `env-vars.telegram_mention_patterns`
+- `TELEGRAM_EXCLUSIVE_BOT_MENTIONS` — `env-vars.telegram_exclusive_bot_mentions`
+- `TELEGRAM_REPLY_TO_MODE` — `env-vars.telegram_reply_to_mode`
+- `TELEGRAM_IGNORED_THREADS` — `env-vars.telegram_ignored_threads`
+- `TELEGRAM_PROXY` — `env-vars.telegram_proxy`
+- `DISCORD_BOT_TOKEN` — `env-vars.discord_bot_token`
+- `DISCORD_ALLOWED_USERS` — `env-vars.discord_allowed_users`
+- `DISCORD_ALLOW_ALL_USERS` — `env-vars.discord_allow_all_users`
+- `DISCORD_ALLOWED_ROLES` — `env-vars.discord_allowed_roles`
+- `DISCORD_ALLOWED_CHANNELS` — `env-vars.discord_allowed_channels`
+- `DISCORD_PROXY` — `env-vars.discord_proxy`
+- `DISCORD_HOME_CHANNEL` — `env-vars.discord_home_channel`
+- `DISCORD_HOME_CHANNEL_NAME` — `env-vars.discord_home_channel_name`
+- `DISCORD_COMMAND_SYNC_POLICY` — `env-vars.discord_command_sync_policy`
+- `DISCORD_REQUIRE_MENTION` — `env-vars.discord_require_mention`
+- `DISCORD_FREE_RESPONSE_CHANNELS` — `env-vars.discord_free_response_channels`
+- `DISCORD_AUTO_THREAD` — `env-vars.discord_auto_thread`
+- `DISCORD_ALLOW_ANY_ATTACHMENT` — `env-vars.discord_allow_any_attachment`
+- `DISCORD_MAX_ATTACHMENT_BYTES` — `env-vars.discord_max_attachment_bytes`
+- `DISCORD_REACTIONS` — `env-vars.discord_reactions`
+- `DISCORD_IGNORED_CHANNELS` — `env-vars.discord_ignored_channels`
+- `DISCORD_NO_THREAD_CHANNELS` — `env-vars.discord_no_thread_channels`
+- `DISCORD_REPLY_TO_MODE` — `env-vars.discord_reply_to_mode`
+- `DISCORD_ALLOW_MENTION_EVERYONE` — `env-vars.discord_allow_mention_everyone`
+- `DISCORD_ALLOW_MENTION_ROLES` — `env-vars.discord_allow_mention_roles`
+- `DISCORD_ALLOW_MENTION_USERS` — `env-vars.discord_allow_mention_users`
+- `DISCORD_ALLOW_MENTION_REPLIED_USER` — `env-vars.discord_allow_mention_replied_user`
+- `SLACK_BOT_TOKEN` — `env-vars.slack_bot_token`
+- `SLACK_APP_TOKEN` — `env-vars.slack_app_token`
+- `SLACK_ALLOWED_USERS` — `env-vars.slack_allowed_users`
+- `SLACK_ALLOW_ALL_USERS` — `env-vars.slack_allow_all_users`
+- `SLACK_ALLOW_BOTS` — `env-vars.slack_allow_bots`
+- `SLACK_THREAD_REQUIRE_MENTION` — `env-vars.slack_thread_require_mention`
+- `SLACK_HOME_CHANNEL` — `env-vars.slack_home_channel`
+- `SLACK_HOME_CHANNEL_NAME` — `env-vars.slack_home_channel_name`
+- `GOOGLE_CHAT_PROJECT_ID` — `env-vars.google_chat_project_id`
+- `GOOGLE_CHAT_SUBSCRIPTION_NAME` — `env-vars.google_chat_subscription_name`
+- `GOOGLE_CHAT_SERVICE_ACCOUNT_JSON` — `env-vars.google_chat_service_account_json`
+- `GOOGLE_CHAT_ALLOWED_USERS` — `env-vars.google_chat_allowed_users`
+- `GOOGLE_CHAT_ALLOW_ALL_USERS` — `env-vars.google_chat_allow_all_users`
+- `GOOGLE_CHAT_HOME_CHANNEL` — `env-vars.google_chat_home_channel`
+- `GOOGLE_CHAT_HOME_CHANNEL_NAME` — `env-vars.google_chat_home_channel_name`
+- `GOOGLE_CHAT_MAX_MESSAGES` — `env-vars.google_chat_max_messages`
+- `GOOGLE_CHAT_MAX_BYTES` — `env-vars.google_chat_max_bytes`
+- `GOOGLE_CHAT_BOOTSTRAP_SPACES` — `env-vars.google_chat_bootstrap_spaces`
+- `GOOGLE_CHAT_DEBUG_RAW` — `env-vars.google_chat_debug_raw`
+- `GOOGLE_CHAT_HTTP_EVENTS_URL` — `env-vars.google_chat_http_events_url`
+- `GOOGLE_CHAT_HTTP_EVENTS_AUDIENCE` — `env-vars.google_chat_http_events_audience`
+- `GOOGLE_CHAT_HTTP_EVENTS_SERVICE_ACCOUNT_EMAIL` — `env-vars.google_chat_http_events_service_account_email`
+- `WHATSAPP_ENABLED` — `env-vars.whatsapp_enabled`
+- `WHATSAPP_MODE` — `env-vars.whatsapp_mode`
+- `WHATSAPP_ALLOWED_USERS` — `env-vars.whatsapp_allowed_users`
+- `WHATSAPP_ALLOW_ALL_USERS` — `env-vars.whatsapp_allow_all_users`
+- `WHATSAPP_HOME_CHANNEL` — `env-vars.whatsapp_home_channel`
+- `WHATSAPP_HOME_CHANNEL_NAME` — `env-vars.whatsapp_home_channel_name`
+- `WHATSAPP_DEBUG` — `env-vars.whatsapp_debug`
+- `WHATSAPP_CLOUD_PHONE_NUMBER_ID` — `env-vars.whatsapp_cloud_phone_number_id`
+- `WHATSAPP_CLOUD_ACCESS_TOKEN` — `env-vars.whatsapp_cloud_access_token`
+- `WHATSAPP_CLOUD_APP_SECRET` — `env-vars.whatsapp_cloud_app_secret`
+- `WHATSAPP_CLOUD_VERIFY_TOKEN` — `env-vars.whatsapp_cloud_verify_token`
+- `WHATSAPP_CLOUD_ALLOWED_USERS` — `env-vars.whatsapp_cloud_allowed_users`
+- `WHATSAPP_CLOUD_ALLOW_ALL_USERS` — `env-vars.whatsapp_cloud_allow_all_users`
+- `WHATSAPP_CLOUD_APP_ID` — `env-vars.whatsapp_cloud_app_id`
+- `WHATSAPP_CLOUD_WABA_ID` — `env-vars.whatsapp_cloud_waba_id`
+- `WHATSAPP_CLOUD_WEBHOOK_HOST` — `env-vars.whatsapp_cloud_webhook_host`
+- `WHATSAPP_CLOUD_WEBHOOK_PORT` — `env-vars.whatsapp_cloud_webhook_port`
+- `WHATSAPP_CLOUD_WEBHOOK_PATH` — `env-vars.whatsapp_cloud_webhook_path`
+- `WHATSAPP_CLOUD_API_VERSION` — `env-vars.whatsapp_cloud_api_version`
+- `WHATSAPP_CLOUD_HOME_CHANNEL` — `env-vars.whatsapp_cloud_home_channel`
+- `WHATSAPP_CLOUD_DM_POLICY` — `env-vars.whatsapp_cloud_dm_policy`
+- `WHATSAPP_CLOUD_ALLOW_FROM` — `env-vars.whatsapp_cloud_allow_from`
+- `WHATSAPP_CLOUD_GROUP_POLICY` — `env-vars.whatsapp_cloud_group_policy`
+- `WHATSAPP_CLOUD_GROUP_ALLOW_FROM` — `env-vars.whatsapp_cloud_group_allow_from`
+- `SIGNAL_HTTP_URL` — `env-vars.signal_http_url`
+- `SIGNAL_ACCOUNT` — `env-vars.signal_account`
+- `SIGNAL_ALLOWED_USERS` — `env-vars.signal_allowed_users`
+- `SIGNAL_GROUP_ALLOWED_USERS` — `env-vars.signal_group_allowed_users`
+- `SIGNAL_HOME_CHANNEL_NAME` — `env-vars.signal_home_channel_name`
+- `SIGNAL_IGNORE_STORIES` — `env-vars.signal_ignore_stories`
+- `SIGNAL_ALLOW_ALL_USERS` — `env-vars.signal_allow_all_users`
+- `TWILIO_ACCOUNT_SID` — `env-vars.twilio_account_sid`
+- `TWILIO_AUTH_TOKEN` — `env-vars.twilio_auth_token`
+- `TWILIO_PHONE_NUMBER` — `env-vars.twilio_phone_number`
+- `SMS_WEBHOOK_URL` — `env-vars.sms_webhook_url`
+- `SMS_WEBHOOK_PORT` — `env-vars.sms_webhook_port`
+- `SMS_WEBHOOK_HOST` — `env-vars.sms_webhook_host`
+- `SMS_INSECURE_NO_SIGNATURE` — `env-vars.sms_insecure_no_signature`
+- `SMS_ALLOWED_USERS` — `env-vars.sms_allowed_users`
+- `SMS_ALLOW_ALL_USERS` — `env-vars.sms_allow_all_users`
+- `SMS_HOME_CHANNEL` — `env-vars.sms_home_channel`
+- `SMS_HOME_CHANNEL_NAME` — `env-vars.sms_home_channel_name`
+- `EMAIL_ADDRESS` — `env-vars.email_address`
+- `EMAIL_PASSWORD` — `env-vars.email_password`
+- `EMAIL_IMAP_HOST` — `env-vars.email_imap_host`
+- `EMAIL_IMAP_PORT` — `env-vars.email_imap_port`
+- `EMAIL_SMTP_HOST` — `env-vars.email_smtp_host`
+- `EMAIL_SMTP_PORT` — `env-vars.email_smtp_port`
+- `EMAIL_ALLOWED_USERS` — `env-vars.email_allowed_users`
+- `EMAIL_HOME_ADDRESS` — `env-vars.email_home_address`
+- `EMAIL_HOME_ADDRESS_NAME` — `env-vars.email_home_address_name`
+- `EMAIL_POLL_INTERVAL` — `env-vars.email_poll_interval`
+- `EMAIL_ALLOW_ALL_USERS` — `env-vars.email_allow_all_users`
+- `DINGTALK_CLIENT_ID` — `env-vars.dingtalk_client_id`
+- `DINGTALK_CLIENT_SECRET` — `env-vars.dingtalk_client_secret`
+- `DINGTALK_ALLOWED_USERS` — `env-vars.dingtalk_allowed_users`
+- `DINGTALK_WEBHOOK_URL` — `env-vars.dingtalk_webhook_url`
+- `DINGTALK_HOME_CHANNEL` — `env-vars.dingtalk_home_channel`
+- `DINGTALK_HOME_CHANNEL_NAME` — `env-vars.dingtalk_home_channel_name`
+- `FEISHU_APP_ID` — `env-vars.feishu_app_id`
+- `FEISHU_APP_SECRET` — `env-vars.feishu_app_secret`
+- `FEISHU_DOMAIN` — `env-vars.feishu_domain`
+- `FEISHU_CONNECTION_MODE` — `env-vars.feishu_connection_mode`
+- `FEISHU_ENCRYPT_KEY` — `env-vars.feishu_encrypt_key`
+- `FEISHU_VERIFICATION_TOKEN` — `env-vars.feishu_verification_token`
+- `FEISHU_ALLOWED_USERS` — `env-vars.feishu_allowed_users`
+- `FEISHU_ALLOW_BOTS` — `env-vars.feishu_allow_bots`
+- `FEISHU_REQUIRE_MENTION` — `env-vars.feishu_require_mention`
+- `FEISHU_HOME_CHANNEL` — `env-vars.feishu_home_channel`
+- `FEISHU_HOME_CHANNEL_NAME` — `env-vars.feishu_home_channel_name`
+- `FEISHU_ALLOW_ALL_USERS` — `env-vars.feishu_allow_all_users`
+- `WECOM_BOT_ID` — `env-vars.wecom_bot_id`
+- `WECOM_SECRET` — `env-vars.wecom_secret`
+- `WECOM_WEBSOCKET_URL` — `env-vars.wecom_websocket_url`
+- `WECOM_ALLOWED_USERS` — `env-vars.wecom_allowed_users`
+- `WECOM_HOME_CHANNEL` — `env-vars.wecom_home_channel`
+- `WECOM_CALLBACK_CORP_ID` — `env-vars.wecom_callback_corp_id`
+- `WECOM_CALLBACK_CORP_SECRET` — `env-vars.wecom_callback_corp_secret`
+- `WECOM_CALLBACK_AGENT_ID` — `env-vars.wecom_callback_agent_id`
+- `WECOM_CALLBACK_TOKEN` — `env-vars.wecom_callback_token`
+- `WECOM_CALLBACK_ENCODING_AES_KEY` — `env-vars.wecom_callback_encoding_aes_key`
+- `WECOM_CALLBACK_HOST` — `env-vars.wecom_callback_host`
+- `WECOM_CALLBACK_PORT` — `env-vars.wecom_callback_port`
+- `WECOM_CALLBACK_ALLOWED_USERS` — `env-vars.wecom_callback_allowed_users`
+- `WECOM_CALLBACK_ALLOW_ALL_USERS` — `env-vars.wecom_callback_allow_all_users`
+- `WEIXIN_ACCOUNT_ID` — `env-vars.weixin_account_id`
+- `WEIXIN_TOKEN` — `env-vars.weixin_token`
+- `WEIXIN_BASE_URL` — `env-vars.weixin_base_url`
+- `WEIXIN_CDN_BASE_URL` — `env-vars.weixin_cdn_base_url`
+- `WEIXIN_DM_POLICY` — `env-vars.weixin_dm_policy`
+- `WEIXIN_GROUP_POLICY` — `env-vars.weixin_group_policy`
+- `WEIXIN_ALLOWED_USERS` — `env-vars.weixin_allowed_users`
+- `WEIXIN_GROUP_ALLOWED_USERS` — `env-vars.weixin_group_allowed_users`
+- `WEIXIN_HOME_CHANNEL` — `env-vars.weixin_home_channel`
+- `WEIXIN_HOME_CHANNEL_NAME` — `env-vars.weixin_home_channel_name`
+- `WEIXIN_ALLOW_ALL_USERS` — `env-vars.weixin_allow_all_users`
+- `BLUEBUBBLES_SERVER_URL` — `env-vars.bluebubbles_server_url`
+- `BLUEBUBBLES_PASSWORD` — `env-vars.bluebubbles_password`
+- `BLUEBUBBLES_WEBHOOK_HOST` — `env-vars.bluebubbles_webhook_host`
+- `BLUEBUBBLES_WEBHOOK_PORT` — `env-vars.bluebubbles_webhook_port`
+- `BLUEBUBBLES_HOME_CHANNEL` — `env-vars.bluebubbles_home_channel`
+- `BLUEBUBBLES_ALLOWED_USERS` — `env-vars.bluebubbles_allowed_users`
+- `BLUEBUBBLES_ALLOW_ALL_USERS` — `env-vars.bluebubbles_allow_all_users`
+- `QQ_APP_ID` — `env-vars.qq_app_id`
+- `QQ_CLIENT_SECRET` — `env-vars.qq_client_secret`
+- `QQ_STT_API_KEY` — `env-vars.qq_stt_api_key`
+- `QQ_STT_BASE_URL` — `env-vars.qq_stt_base_url`
+- `QQ_STT_MODEL` — `env-vars.qq_stt_model`
+- `QQ_ALLOWED_USERS` — `env-vars.qq_allowed_users`
+- `QQ_GROUP_ALLOWED_USERS` — `env-vars.qq_group_allowed_users`
+- `QQ_ALLOW_ALL_USERS` — `env-vars.qq_allow_all_users`
+- `QQBOT_HOME_CHANNEL` — `env-vars.qqbot_home_channel`
+- `QQBOT_HOME_CHANNEL_NAME` — `env-vars.qqbot_home_channel_name`
+- `QQ_PORTAL_HOST` — `env-vars.qq_portal_host`
+- `QQ_SANDBOX` — `env-vars.qq_sandbox`
+- `MATTERMOST_URL` — `env-vars.mattermost_url`
+- `MATTERMOST_TOKEN` — `env-vars.mattermost_token`
+- `MATTERMOST_ALLOWED_USERS` — `env-vars.mattermost_allowed_users`
+- `MATTERMOST_ALLOW_ALL_USERS` — `env-vars.mattermost_allow_all_users`
+- `MATTERMOST_ALLOWED_CHANNELS` — `env-vars.mattermost_allowed_channels`
+- `MATTERMOST_HOME_CHANNEL` — `env-vars.mattermost_home_channel`
+- `MATTERMOST_REQUIRE_MENTION` — `env-vars.mattermost_require_mention`
+- `MATTERMOST_FREE_RESPONSE_CHANNELS` — `env-vars.mattermost_free_response_channels`
+- `MATTERMOST_REPLY_MODE` — `env-vars.mattermost_reply_mode`
+- `MATRIX_HOMESERVER` — `env-vars.matrix_homeserver`
+- `MATRIX_ACCESS_TOKEN` — `env-vars.matrix_access_token`
+- `MATRIX_USER_ID` — `env-vars.matrix_user_id`
+- `MATRIX_PASSWORD` — `env-vars.matrix_password`
+- `MATRIX_ALLOWED_USERS` — `env-vars.matrix_allowed_users`
+- `MATRIX_ALLOW_ALL_USERS` — `env-vars.matrix_allow_all_users`
+- `MATRIX_HOME_CHANNEL` — `env-vars.matrix_home_channel`
+- `MATRIX_HOME_CHANNEL_NAME` — `env-vars.matrix_home_channel_name`
+- `MATRIX_ALLOWED_ROOMS` — `env-vars.matrix_allowed_rooms`
+- `MATRIX_HOME_ROOM` — `env-vars.matrix_home_room`
+- `MATRIX_ENCRYPTION` — `env-vars.matrix_encryption`
+- `MATRIX_E2EE_MODE` — `env-vars.matrix_e2ee_mode`
+- `MATRIX_DEVICE_ID` — `env-vars.matrix_device_id`
+- `MATRIX_REACTIONS` — `env-vars.matrix_reactions`
+- `MATRIX_REQUIRE_MENTION` — `env-vars.matrix_require_mention`
+- `MATRIX_FREE_RESPONSE_ROOMS` — `env-vars.matrix_free_response_rooms`
+- `MATRIX_IGNORE_USER_PATTERNS` — `env-vars.matrix_ignore_user_patterns`
+- `MATRIX_PROCESS_NOTICES` — `env-vars.matrix_process_notices`
+- `MATRIX_SESSION_SCOPE` — `env-vars.matrix_session_scope`
+- `MATRIX_TOOLS_ALLOW_REDACTION` — `env-vars.matrix_tools_allow_redaction`
+- `MATRIX_TOOLS_ALLOW_INVITES` — `env-vars.matrix_tools_allow_invites`
+- `MATRIX_TOOLS_ALLOW_ROOM_CREATE` — `env-vars.matrix_tools_allow_room_create`
+- `MATRIX_ALLOW_ROOM_MENTIONS` — `env-vars.matrix_allow_room_mentions`
+- `MATRIX_AUTO_THREAD` — `env-vars.matrix_auto_thread`
+- `MATRIX_DM_AUTO_THREAD` — `env-vars.matrix_dm_auto_thread`
+- `MATRIX_DM_MENTION_THREADS` — `env-vars.matrix_dm_mention_threads`
+- `MATRIX_APPROVAL_REQUIRE_SENDER` — `env-vars.matrix_approval_require_sender`
+- `MATRIX_APPROVAL_TIMEOUT_SECONDS` — `env-vars.matrix_approval_timeout_seconds`
+- `MATRIX_ALLOW_PUBLIC_ROOMS` — `env-vars.matrix_allow_public_rooms`
+- `MATRIX_MAX_MEDIA_BYTES` — `env-vars.matrix_max_media_bytes`
+- `MATRIX_RECOVERY_KEY` — `env-vars.matrix_recovery_key`
+- `MATRIX_RECOVERY_KEY_OUTPUT_FILE` — `env-vars.matrix_recovery_key_output_file`
+- `HASS_TOKEN` — `env-vars.hass_token`
+- `HASS_URL` — `env-vars.hass_url`
+- `WEBHOOK_ENABLED` — `env-vars.webhook_enabled`
+- `WEBHOOK_PORT` — `env-vars.webhook_port`
+- `WEBHOOK_SECRET` — `env-vars.webhook_secret`
+- `API_SERVER_ENABLED` — `env-vars.api_server_enabled`
+- `API_SERVER_KEY` — `env-vars.api_server_key`
+- `API_SERVER_CORS_ORIGINS` — `env-vars.api_server_cors_origins`
+- `API_SERVER_PORT` — `env-vars.api_server_port`
+- `API_SERVER_HOST` — `env-vars.api_server_host`
+- `API_SERVER_MODEL_NAME` — `env-vars.api_server_model_name`
+- `GATEWAY_PROXY_URL` — `env-vars.gateway_proxy_url`
+- `GATEWAY_PROXY_KEY` — `env-vars.gateway_proxy_key`
+- `MESSAGING_CWD` — `env-vars.messaging_cwd`
+- `GATEWAY_ALLOWED_USERS` — `env-vars.gateway_allowed_users`
+- `GATEWAY_ALLOW_ALL_USERS` — `env-vars.gateway_allow_all_users`
+- `HERMES_DASHBOARD_BASIC_AUTH_USERNAME` — `env-vars.hermes_dashboard_basic_auth_username`
+- `HERMES_DASHBOARD_BASIC_AUTH_PASSWORD` — `env-vars.hermes_dashboard_basic_auth_password`
+- `HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH` — `env-vars.hermes_dashboard_basic_auth_password_hash`
+- `HERMES_DASHBOARD_BASIC_AUTH_SECRET` — `env-vars.hermes_dashboard_basic_auth_secret`
+- `HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS` — `env-vars.hermes_dashboard_basic_auth_ttl_seconds`
+- `HERMES_DASHBOARD_OAUTH_CLIENT_ID` — `env-vars.hermes_dashboard_oauth_client_id`
+- `HERMES_DASHBOARD_PUBLIC_URL` — `env-vars.hermes_dashboard_public_url`
+- `HERMES_DASHBOARD_OIDC_ISSUER` — `env-vars.hermes_dashboard_oidc_issuer`
+- `HERMES_DASHBOARD_OIDC_CLIENT_ID` — `env-vars.hermes_dashboard_oidc_client_id`
+- `HERMES_DASHBOARD_OIDC_SCOPES` — `env-vars.hermes_dashboard_oidc_scopes`
+- `HERMES_DESKTOP_REMOTE_URL` — `env-vars.hermes_desktop_remote_url`
+- `HERMES_DESKTOP_HERMES` — `env-vars.hermes_desktop_hermes`
+- `HERMES_DESKTOP_HERMES_ROOT` — `env-vars.hermes_desktop_hermes_root`
+- `HERMES_DESKTOP_IGNORE_EXISTING` — `env-vars.hermes_desktop_ignore_existing`
+- `HERMES_DESKTOP_CWD` — `env-vars.hermes_desktop_cwd`
+- `HERMES_DESKTOP_PYTHON` — `env-vars.hermes_desktop_python`
+- `HERMES_DESKTOP_DEV_SERVER` — `env-vars.hermes_desktop_dev_server`
+- `HERMES_DESKTOP_CDP_PORT` — `env-vars.hermes_desktop_cdp_port`
+- `MSGRAPH_TENANT_ID` — `env-vars.msgraph_tenant_id`
+- `MSGRAPH_CLIENT_ID` — `env-vars.msgraph_client_id`
+- `MSGRAPH_CLIENT_SECRET` — `env-vars.msgraph_client_secret`
+- `MSGRAPH_SCOPE` — `env-vars.msgraph_scope`
+- `MSGRAPH_AUTHORITY_URL` — `env-vars.msgraph_authority_url`
+- `MSGRAPH_WEBHOOK_ENABLED` — `env-vars.msgraph_webhook_enabled`
+- `MSGRAPH_WEBHOOK_PORT` — `env-vars.msgraph_webhook_port`
+- `MSGRAPH_WEBHOOK_CLIENT_STATE` — `env-vars.msgraph_webhook_client_state`
+- `MSGRAPH_WEBHOOK_ACCEPTED_RESOURCES` — `env-vars.msgraph_webhook_accepted_resources`
+- `MSGRAPH_WEBHOOK_ALLOWED_SOURCE_CIDRS` — `env-vars.msgraph_webhook_allowed_source_cidrs`
+- `TEAMS_DELIVERY_MODE` — `env-vars.teams_delivery_mode`
+- `TEAMS_INCOMING_WEBHOOK_URL` — `env-vars.teams_incoming_webhook_url`
+- `TEAMS_GRAPH_ACCESS_TOKEN` — `env-vars.teams_graph_access_token`
+- `TEAMS_TEAM_ID` — `env-vars.teams_team_id`
+- `TEAMS_CHANNEL_ID` — `env-vars.teams_channel_id`
+- `TEAMS_CHAT_ID` — `env-vars.teams_chat_id`
+- `LINE_CHANNEL_ACCESS_TOKEN` — `env-vars.line_channel_access_token`
+- `LINE_CHANNEL_SECRET` — `env-vars.line_channel_secret`
+- `LINE_HOST` — `env-vars.line_host`
+- `LINE_PORT` — `env-vars.line_port`
+- `LINE_PUBLIC_URL` — `env-vars.line_public_url`
+- `LINE_ALLOWED_USERS` — `env-vars.line_allowed_users`
+- `LINE_ALLOWED_GROUPS` — `env-vars.line_allowed_groups`
+- `LINE_ALLOWED_ROOMS` — `env-vars.line_allowed_rooms`
+- `LINE_ALLOW_ALL_USERS` — `env-vars.line_allow_all_users`
+- `LINE_HOME_CHANNEL` — `env-vars.line_home_channel`
+- `LINE_SLOW_RESPONSE_THRESHOLD` — `env-vars.line_slow_response_threshold`
+- `LINE_PENDING_TEXT` — `env-vars.line_pending_text`
+- `LINE_BUTTON_LABEL` — `env-vars.line_button_label`
+- `LINE_DELIVERED_TEXT` — `env-vars.line_delivered_text`
+- `LINE_INTERRUPTED_TEXT` — `env-vars.line_interrupted_text`
+- `NTFY_TOPIC` — `env-vars.ntfy_topic`
+- `NTFY_SERVER_URL` — `env-vars.ntfy_server_url`
+- `NTFY_TOKEN` — `env-vars.ntfy_token`
+- `NTFY_PUBLISH_TOPIC` — `env-vars.ntfy_publish_topic`
+- `NTFY_MARKDOWN` — `env-vars.ntfy_markdown`
+- `NTFY_ALLOWED_USERS` — `env-vars.ntfy_allowed_users`
+- `NTFY_ALLOW_ALL_USERS` — `env-vars.ntfy_allow_all_users`
+- `NTFY_HOME_CHANNEL` — `env-vars.ntfy_home_channel`
+- `NTFY_HOME_CHANNEL_NAME` — `env-vars.ntfy_home_channel_name`
+- `IRC_SERVER` — `env-vars.irc_server`
+- `IRC_CHANNEL` — `env-vars.irc_channel`
+- `IRC_NICKNAME` — `env-vars.irc_nickname`
+- `IRC_PORT` — `env-vars.irc_port`
+- `IRC_USE_TLS` — `env-vars.irc_use_tls`
+- `IRC_SERVER_PASSWORD` — `env-vars.irc_server_password`
+- `IRC_NICKSERV_PASSWORD` — `env-vars.irc_nickserv_password`
+- `IRC_ALLOWED_USERS` — `env-vars.irc_allowed_users`
+- `IRC_ALLOW_ALL_USERS` — `env-vars.irc_allow_all_users`
+- `IRC_HOME_CHANNEL` — `env-vars.irc_home_channel`
+- `SIMPLEX_WS_URL` — `env-vars.simplex_ws_url`
+- `SIMPLEX_ALLOWED_USERS` — `env-vars.simplex_allowed_users`
+- `SIMPLEX_ALLOW_ALL_USERS` — `env-vars.simplex_allow_all_users`
+- `SIMPLEX_AUTO_ACCEPT` — `env-vars.simplex_auto_accept`
+- `SIMPLEX_GROUP_ALLOWED` — `env-vars.simplex_group_allowed`
+- `SIMPLEX_HOME_CHANNEL` — `env-vars.simplex_home_channel`
+- `SIMPLEX_HOME_CHANNEL_NAME` — `env-vars.simplex_home_channel_name`
+- `PHOTON_PROJECT_ID` — `env-vars.photon_project_id`
+- `PHOTON_PROJECT_SECRET` — `env-vars.photon_project_secret`
+- `PHOTON_ALLOWED_USERS` — `env-vars.photon_allowed_users`
+- `PHOTON_ALLOW_ALL_USERS` — `env-vars.photon_allow_all_users`
+- `PHOTON_REQUIRE_MENTION` — `env-vars.photon_require_mention`
+- `PHOTON_MENTION_PATTERNS` — `env-vars.photon_mention_patterns`
+- `PHOTON_HOME_CHANNEL` — `env-vars.photon_home_channel`
+- `PHOTON_HOME_CHANNEL_NAME` — `env-vars.photon_home_channel_name`
+- `PHOTON_MARKDOWN` — `env-vars.photon_markdown`
+- `PHOTON_REACTIONS` — `env-vars.photon_reactions`
+- `PHOTON_READ_RECEIPTS` — `env-vars.photon_read_receipts`
+- `PHOTON_TELEMETRY` — `env-vars.photon_telemetry`
+- `PHOTON_SIDECAR_PORT` — `env-vars.photon_sidecar_port`
+- `PHOTON_SIDECAR_AUTOSTART` — `env-vars.photon_sidecar_autostart`
+- `PHOTON_NODE_BIN` — `env-vars.photon_node_bin`
+- `PHOTON_DASHBOARD_HOST` — `env-vars.photon_dashboard_host`
+- `PHOTON_SPECTRUM_HOST` — `env-vars.photon_spectrum_host`
+- `BUZZ_RELAY_URL` — `env-vars.buzz_relay_url`
+- `BUZZ_PRIVATE_KEY` — `env-vars.buzz_private_key`
+- `BUZZ_CREDENTIALS_FILE` — `env-vars.buzz_credentials_file`
+- `BUZZ_CHANNELS` — `env-vars.buzz_channels`
+- `BUZZ_HOME_CHANNEL` — `env-vars.buzz_home_channel`
+- `BUZZ_ALLOWED_USERS` — `env-vars.buzz_allowed_users`
+- `BUZZ_ALLOW_ALL_USERS` — `env-vars.buzz_allow_all_users`
+- `BUZZ_TRANSPORT` — `env-vars.buzz_transport`
+- `BUZZ_POLL_INTERVAL` — `env-vars.buzz_poll_interval`
+- `BUZZ_AUTH_TAG` — `env-vars.buzz_auth_tag`
+- `BUZZ_CLI_PATH` — `env-vars.buzz_cli_path`
+- `TEAMS_CLIENT_ID` — `env-vars.teams_client_id`
+- `TEAMS_CLIENT_SECRET` — `env-vars.teams_client_secret`
+- `TEAMS_TENANT_ID` — `env-vars.teams_tenant_id`
+- `TEAMS_HOST` — `env-vars.teams_host`
+- `TEAMS_PORT` — `env-vars.teams_port`
+- `TEAMS_ALLOWED_USERS` — `env-vars.teams_allowed_users`
+- `TEAMS_ALLOW_ALL_USERS` — `env-vars.teams_allow_all_users`
+- `TEAMS_HOME_CHANNEL` — `env-vars.teams_home_channel`
+- `TEAMS_HOME_CHANNEL_NAME` — `env-vars.teams_home_channel_name`
+- `RAFT_PROFILE` — `env-vars.raft_profile`
+- `HERMES_TELEGRAM_TEXT_BATCH_DELAY_SECONDS` — `env-vars.hermes_telegram_text_batch_delay_seconds`
+- `HERMES_TELEGRAM_TEXT_BATCH_SPLIT_DELAY_SECONDS` — `env-vars.hermes_telegram_text_batch_split_delay_seconds`
+- `HERMES_SIMPLEX_TEXT_BATCH_DELAY` — `env-vars.hermes_simplex_text_batch_delay`
+- `HERMES_TELEGRAM_MEDIA_BATCH_DELAY_SECONDS` — `env-vars.hermes_telegram_media_batch_delay_seconds`
+- `HERMES_TELEGRAM_FOLLOWUP_GRACE_SECONDS` — `env-vars.hermes_telegram_followup_grace_seconds`
+- `HERMES_TELEGRAM_HTTP_CONNECT_TIMEOUT` — `env-vars.hermes_telegram_http_connect_timeout`
+- `HERMES_TELEGRAM_HTTP_READ_TIMEOUT` — `env-vars.hermes_telegram_http_read_timeout`
+- `HERMES_TELEGRAM_HTTP_WRITE_TIMEOUT` — `env-vars.hermes_telegram_http_write_timeout`
+- `HERMES_TELEGRAM_HTTP_POOL_TIMEOUT` — `env-vars.hermes_telegram_http_pool_timeout`
+- `HERMES_TELEGRAM_INIT_TIMEOUT` — `env-vars.hermes_telegram_init_timeout`
+- `HERMES_TELEGRAM_HTTP_POOL_SIZE` — `env-vars.hermes_telegram_http_pool_size`
+- `HERMES_TELEGRAM_DISABLE_FALLBACK_IPS` — `env-vars.hermes_telegram_disable_fallback_ips`
+- `HERMES_DISCORD_TEXT_BATCH_DELAY_SECONDS` — `env-vars.hermes_discord_text_batch_delay_seconds`
+- `HERMES_DISCORD_TEXT_BATCH_SPLIT_DELAY_SECONDS` — `env-vars.hermes_discord_text_batch_split_delay_seconds`
+- `HERMES_DISCORD_LIVENESS_INTERVAL_SECONDS` — `env-vars.hermes_discord_liveness_interval_seconds`
+- `HERMES_DISCORD_LIVENESS_FAILURE_THRESHOLD` — `env-vars.hermes_discord_liveness_failure_threshold`
+- `HERMES_MATRIX_TEXT_BATCH_DELAY_SECONDS` — `env-vars.hermes_matrix_text_batch_delay_seconds`
+- `HERMES_MATRIX_TEXT_BATCH_SPLIT_DELAY_SECONDS` — `env-vars.hermes_matrix_text_batch_split_delay_seconds`
+- `HERMES_FEISHU_TEXT_BATCH_DELAY_SECONDS` — `env-vars.hermes_feishu_text_batch_delay_seconds`
+- `HERMES_FEISHU_TEXT_BATCH_SPLIT_DELAY_SECONDS` — `env-vars.hermes_feishu_text_batch_split_delay_seconds`
+- `HERMES_FEISHU_TEXT_BATCH_MAX_CHARS` — `env-vars.hermes_feishu_text_batch_max_chars`
+- `HERMES_FEISHU_TEXT_BATCH_MAX_MESSAGES` — `env-vars.hermes_feishu_text_batch_max_messages`
+- `HERMES_FEISHU_MEDIA_BATCH_DELAY_SECONDS` — `env-vars.hermes_feishu_media_batch_delay_seconds`
+- `HERMES_FEISHU_DEDUP_CACHE_SIZE` — `env-vars.hermes_feishu_dedup_cache_size`
+- `HERMES_WECOM_TEXT_BATCH_DELAY_SECONDS` — `env-vars.hermes_wecom_text_batch_delay_seconds`
+- `HERMES_WECOM_TEXT_BATCH_SPLIT_DELAY_SECONDS` — `env-vars.hermes_wecom_text_batch_split_delay_seconds`
+- `HERMES_VISION_DOWNLOAD_TIMEOUT` — `env-vars.hermes_vision_download_timeout`
+- `HERMES_VISION_MAX_CONCURRENCY` — `env-vars.hermes_vision_max_concurrency`
+- `HERMES_RESTART_DRAIN_TIMEOUT` — `env-vars.hermes_restart_drain_timeout`
+- `HERMES_GATEWAY_PLATFORM_CONNECT_TIMEOUT` — `env-vars.hermes_gateway_platform_connect_timeout`
+- `HERMES_GATEWAY_BUSY_INPUT_MODE` — `env-vars.hermes_gateway_busy_input_mode`
+- `HERMES_GATEWAY_BUSY_ACK_ENABLED` — `env-vars.hermes_gateway_busy_ack_enabled`
+- `HERMES_GATEWAY_NO_SUPERVISE` — `env-vars.hermes_gateway_no_supervise`
+- `HERMES_GATEWAY_BOOTSTRAP_STATE` — `env-vars.hermes_gateway_bootstrap_state`
+- `GATEWAY_RELAY_URL` — `env-vars.gateway_relay_url`
+- `GATEWAY_RELAY_ID` — `env-vars.gateway_relay_id`
+- `GATEWAY_RELAY_SECRET` — `env-vars.gateway_relay_secret`
+- `GATEWAY_RELAY_DELIVERY_KEY` — `env-vars.gateway_relay_delivery_key`
+- `GATEWAY_RELAY_ENROLL_TOKEN` — `env-vars.gateway_relay_enroll_token`
+- `GATEWAY_RELAY_PLATFORM` — `env-vars.gateway_relay_platform`
+- `GATEWAY_RELAY_BOT_ID` — `env-vars.gateway_relay_bot_id`
+- `GATEWAY_RELAY_ENDPOINT` — `env-vars.gateway_relay_endpoint`
+- `GATEWAY_RELAY_ROUTE_KEYS` — `env-vars.gateway_relay_route_keys`
+- `HERMES_FILE_MUTATION_VERIFIER` — `env-vars.hermes_file_mutation_verifier`
+- `HERMES_CRON_TIMEOUT` — `env-vars.hermes_cron_timeout`
+- `HERMES_CRON_SCRIPT_TIMEOUT` — `env-vars.hermes_cron_script_timeout`
+- `HERMES_CRON_MEDIA_SEND_TIMEOUT` — `env-vars.hermes_cron_media_send_timeout`
+- `HERMES_CRON_MAX_PARALLEL` — `env-vars.hermes_cron_max_parallel`
+- `HERMES_NEMO_RELAY_PLUGINS_TOML` — `env-vars.hermes_nemo_relay_plugins_toml`
+- `HERMES_MAX_ITERATIONS` — `env-vars.hermes_max_iterations`
+- `HERMES_INFERENCE_MODEL` — `env-vars.hermes_inference_model`
+- `HERMES_YOLO_MODE` — `env-vars.hermes_yolo_mode`
+- `HERMES_ACCEPT_HOOKS` — `env-vars.hermes_accept_hooks`
+- `HERMES_IGNORE_USER_CONFIG` — `env-vars.hermes_ignore_user_config`
+- `HERMES_IGNORE_RULES` — `env-vars.hermes_ignore_rules`
+- `HERMES_SAFE_MODE` — `env-vars.hermes_safe_mode`
+- `HERMES_TOOL_PROGRESS` — `env-vars.hermes_tool_progress`
+- `HERMES_TOOL_PROGRESS_MODE` — `env-vars.hermes_tool_progress_mode`
+- `HERMES_HUMAN_DELAY_MODE` — `env-vars.hermes_human_delay_mode`
+- `HERMES_HUMAN_DELAY_MIN_MS` — `env-vars.hermes_human_delay_min_ms`
+- `HERMES_HUMAN_DELAY_MAX_MS` — `env-vars.hermes_human_delay_max_ms`
+- `HERMES_QUIET` — `env-vars.hermes_quiet`
+- `CODEX_HOME` — `env-vars.codex_home`
+- `HERMES_KANBAN_TASK` — `env-vars.hermes_kanban_task`
+- `HERMES_ACP_SKIP_CONFIGURED_MCP` — `env-vars.hermes_acp_skip_configured_mcp`
+- `HERMES_API_TIMEOUT` — `env-vars.hermes_api_timeout`
+- `HERMES_API_CALL_STALE_TIMEOUT` — `env-vars.hermes_api_call_stale_timeout`
+- `HERMES_STREAM_READ_TIMEOUT` — `env-vars.hermes_stream_read_timeout`
+- `HERMES_STREAM_STALE_TIMEOUT` — `env-vars.hermes_stream_stale_timeout`
+- `HERMES_LOCAL_STREAM_STALE_TIMEOUT` — `env-vars.hermes_local_stream_stale_timeout`
+- `HERMES_STREAM_RETRIES` — `env-vars.hermes_stream_retries`
+- `HERMES_STREAM_STALE_GIVEUP` — `env-vars.hermes_stream_stale_giveup`
+- `HERMES_AGENT_TIMEOUT` — `env-vars.hermes_agent_timeout`
+- `HERMES_GATEWAY_MAX_STARTS` — `env-vars.hermes_gateway_max_starts`
+- `HERMES_GATEWAY_START_WINDOW_S` — `env-vars.hermes_gateway_start_window_s`
+- `HERMES_AGENT_TIMEOUT_WARNING` — `env-vars.hermes_agent_timeout_warning`
+- `HERMES_AGENT_NOTIFY_INTERVAL` — `env-vars.hermes_agent_notify_interval`
+- `HERMES_CHECKPOINT_TIMEOUT` — `env-vars.hermes_checkpoint_timeout`
+- `HERMES_EXEC_ASK` — `env-vars.hermes_exec_ask`
+- `HERMES_ENABLE_PROJECT_PLUGINS` — `env-vars.hermes_enable_project_plugins`
+- `HERMES_PLUGINS_DEBUG` — `env-vars.hermes_plugins_debug`
+- `HERMES_BACKGROUND_NOTIFICATIONS` — `env-vars.hermes_background_notifications`
+- `HERMES_EPHEMERAL_SYSTEM_PROMPT` — `env-vars.hermes_ephemeral_system_prompt`
+- `HERMES_ALLOW_PRIVATE_URLS` — `env-vars.hermes_allow_private_urls`
+- `HERMES_REDACT_SECRETS` — `env-vars.hermes_redact_secrets`
+- `HERMES_WRITE_SAFE_ROOT` — `env-vars.hermes_write_safe_root`
+- `HERMES_DISABLE_LAZY_INSTALLS` — `env-vars.hermes_disable_lazy_installs`
+- `HERMES_DISABLE_FILE_STATE_GUARD` — `env-vars.hermes_disable_file_state_guard`
+- `HERMES_BUNDLED_SKILLS` — `env-vars.hermes_bundled_skills`
+- `HERMES_OPTIONAL_SKILLS` — `env-vars.hermes_optional_skills`
+- `HERMES_DEBUG_INTERRUPT` — `env-vars.hermes_debug_interrupt`
+- `HERMES_DUMP_REQUEST_STDOUT` — `env-vars.hermes_dump_request_stdout`
+- `HERMES_OAUTH_TRACE` — `env-vars.hermes_oauth_trace`
+- `HERMES_AGENT_HELP_GUIDANCE` — `env-vars.hermes_agent_help_guidance`
+- `HERMES_AGENT_LOGO` — `env-vars.hermes_agent_logo`
+- `DELEGATION_MAX_CONCURRENT_CHILDREN` — `env-vars.delegation_max_concurrent_children`
+- `HERMES_TUI` — `env-vars.hermes_tui`
+- `HERMES_TUI_DIR` — `env-vars.hermes_tui_dir`
+- `HERMES_TUI_RESUME` — `env-vars.hermes_tui_resume`
+- `HERMES_TUI_THEME` — `env-vars.hermes_tui_theme`
+- `SESSION_IDLE_MINUTES` — `env-vars.session_idle_minutes`
+- `SESSION_RESET_HOUR` — `env-vars.session_reset_hour`
+- `HERMES_SESSION_ID` — `env-vars.hermes_session_id`
+- `AI_AGENT` — `env-vars.ai_agent`
+- `HERMES_AGENT` — `env-vars.hermes_agent`
+- `AUXILIARY_VISION_PROVIDER` — `env-vars.auxiliary_vision_provider`
+- `AUXILIARY_VISION_MODEL` — `env-vars.auxiliary_vision_model`
+- `AUXILIARY_VISION_BASE_URL` — `env-vars.auxiliary_vision_base_url`
+- `AUXILIARY_VISION_API_KEY` — `env-vars.auxiliary_vision_api_key`
+- `HERMES_ACP_AUTH_METHOD` — `env-vars.hermes_acp_auth_method`
+- `HERMES_ACTION_ID` — `env-vars.hermes_action_id`
+- `HERMES_ALLOW_ROOT_GATEWAY` — `env-vars.hermes_allow_root_gateway`
+- `HERMES_AUTO_CONTINUE_FRESHNESS` — `env-vars.hermes_auto_continue_freshness`
+- `HERMES_BASE_URL` — `env-vars.hermes_base_url`
+- `HERMES_BIN` — `env-vars.hermes_bin`
+- `HERMES_BROWSER_CONTROL_PRINCIPAL` — `env-vars.hermes_browser_control_principal`
+- `HERMES_BROWSER_CONTROL_TRANSPORT_FAMILY` — `env-vars.hermes_browser_control_transport_family`
+- `HERMES_BUNDLED_LOCALES` — `env-vars.hermes_bundled_locales`
+- `HERMES_BUNDLED_PLUGINS` — `env-vars.hermes_bundled_plugins`
+- `HERMES_BUNDLES_DIR` — `env-vars.hermes_bundles_dir`
+- `HERMES_CA_BUNDLE` — `env-vars.hermes_ca_bundle`
+- `HERMES_CITATION_LEDGER` — `env-vars.hermes_citation_ledger`
+- `HERMES_CJK_FTS` — `env-vars.hermes_cjk_fts`
+- `HERMES_CODEX_BASE_URL` — `env-vars.hermes_codex_base_url`
+- `HERMES_CODEX_SDK_TRANSFORM` — `env-vars.hermes_codex_sdk_transform`
+- `HERMES_CODEX_TTFB_STRICT` — `env-vars.hermes_codex_ttfb_strict`
+- `HERMES_COMPUTE_HOST_CHILD` — `env-vars.hermes_compute_host_child`
+- `HERMES_COMPUTE_HOST_HEARTBEAT_SECS` — `env-vars.hermes_compute_host_heartbeat_secs`
+- `HERMES_CONTAINER` — `env-vars.hermes_container`
+- `HERMES_CRON_AUTO_DELIVER_CHAT_ID` — `env-vars.hermes_cron_auto_deliver_chat_id`
+- `HERMES_CRON_AUTO_DELIVER_PLATFORM` — `env-vars.hermes_cron_auto_deliver_platform`
+- `HERMES_CRON_AUTO_DELIVER_THREAD_ID` — `env-vars.hermes_cron_auto_deliver_thread_id`
+- `HERMES_CRON_DRAIN_TIMEOUT` — `env-vars.hermes_cron_drain_timeout`
+- `HERMES_CRON_INFLIGHT_MAX_MINUTES` — `env-vars.hermes_cron_inflight_max_minutes`
+- `HERMES_CRON_SESSION` — `env-vars.hermes_cron_session`
+- `HERMES_CRON_SESSION_DB_TIMEOUT` — `env-vars.hermes_cron_session_db_timeout`
+- `HERMES_CUA_DRIVER_CMD` — `env-vars.hermes_cua_driver_cmd`
+- `HERMES_DASHBOARD_DRAIN_SECRET` — `env-vars.hermes_dashboard_drain_secret`
+- `HERMES_DASHBOARD_PORTAL_URL` — `env-vars.hermes_dashboard_portal_url`
+- `HERMES_DASHBOARD_SESSION_TOKEN` — `env-vars.hermes_dashboard_session_token`
+- `HERMES_DASHBOARD_WS_HOST` — `env-vars.hermes_dashboard_ws_host`
+- `HERMES_DDGS_ALLOW_TEST_HOOKS` — `env-vars.hermes_ddgs_allow_test_hooks`
+- `HERMES_DEFER_AGENT_STARTUP` — `env-vars.hermes_defer_agent_startup`
+- `HERMES_DELEGATED_CHILD_CONTEXT` — `env-vars.hermes_delegated_child_context`
+- `HERMES_DESKTOP` — `env-vars.hermes_desktop`
+- `HERMES_DESKTOP_CHILD_PID` — `env-vars.hermes_desktop_child_pid`
+- `HERMES_DESKTOP_READY_FILE` — `env-vars.hermes_desktop_ready_file`
+- `HERMES_DESKTOP_TERMINAL` — `env-vars.hermes_desktop_terminal`
+- `HERMES_DEV` — `env-vars.hermes_dev`
+- `HERMES_DEV_BILLING_FIXTURE` — `env-vars.hermes_dev_billing_fixture`
+- `HERMES_DEV_CREDITS` — `env-vars.hermes_dev_credits`
+- `HERMES_DEV_CREDITS_FIXTURE` — `env-vars.hermes_dev_credits_fixture`
+- `HERMES_DEV_SUBSCRIPTION_FIXTURE` — `env-vars.hermes_dev_subscription_fixture`
+- `HERMES_DISABLE_FAST_CHAT_LAUNCH` — `env-vars.hermes_disable_fast_chat_launch`
+- `HERMES_E2E_BROWSER` — `env-vars.hermes_e2e_browser`
+- `HERMES_ENVIRONMENT_HINT` — `env-vars.hermes_environment_hint`
+- `HERMES_EXIT_WATCHDOG_S` — `env-vars.hermes_exit_watchdog_s`
+- `HERMES_FAST_STARTUP_BANNER` — `env-vars.hermes_fast_startup_banner`
+- `HERMES_FILTER_SILENCE_NARRATION` — `env-vars.hermes_filter_silence_narration`
+- `HERMES_FTS5_CJK_SO` — `env-vars.hermes_fts5_cjk_so`
+- `HERMES_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT` — `env-vars.hermes_gateway_adapter_disconnect_timeout`
+- `HERMES_GATEWAY_BUSY_STEER_ACK_ENABLED` — `env-vars.hermes_gateway_busy_steer_ack_enabled`
+- `HERMES_GATEWAY_BUSY_TEXT_MODE` — `env-vars.hermes_gateway_busy_text_mode`
+- `HERMES_GATEWAY_DETACHED` — `env-vars.hermes_gateway_detached`
+- `HERMES_GATEWAY_ELEVATED_HANDOFF` — `env-vars.hermes_gateway_elevated_handoff`
+- `HERMES_GATEWAY_EXIT_DIAG` — `env-vars.hermes_gateway_exit_diag`
+- `HERMES_GATEWAY_HEARTBEAT_REFRESH_S` — `env-vars.hermes_gateway_heartbeat_refresh_s`
+- `HERMES_GATEWAY_INSTALL_START_NOW` — `env-vars.hermes_gateway_install_start_now`
+- `HERMES_GATEWAY_INSTALL_START_ON_LOGIN` — `env-vars.hermes_gateway_install_start_on_login`
+- `HERMES_GATEWAY_LOCK_DIR` — `env-vars.hermes_gateway_lock_dir`
+- `HERMES_GID` — `env-vars.hermes_gid`
+- `HERMES_GWS_BIN` — `env-vars.hermes_gws_bin`
+- `HERMES_HOME_MODE` — `env-vars.hermes_home_mode`
+- `HERMES_HONCHO_HOST` — `env-vars.hermes_honcho_host`
+- `HERMES_INFERENCE_PROVIDER` — `env-vars.hermes_inference_provider`
+- `HERMES_ISO_CERTIFY_SYNTH_TURN` — `env-vars.hermes_iso_certify_synth_turn`
+- `HERMES_KANBAN_ATTACHMENTS_ROOT` — `env-vars.hermes_kanban_attachments_root`
+- `HERMES_KANBAN_BUSY_TIMEOUT_MS` — `env-vars.hermes_kanban_busy_timeout_ms`
+- `HERMES_KANBAN_CLAIM_LOCK` — `env-vars.hermes_kanban_claim_lock`
+- `HERMES_KANBAN_CLAIM_TTL_SECONDS` — `env-vars.hermes_kanban_claim_ttl_seconds`
+- `HERMES_KANBAN_CRASH_GRACE_SECONDS` — `env-vars.hermes_kanban_crash_grace_seconds`
+- `HERMES_KANBAN_GOAL_MODE` — `env-vars.hermes_kanban_goal_mode`
+- `HERMES_KANBAN_RUN_ID` — `env-vars.hermes_kanban_run_id`
+- `HERMES_KANBAN_STOP_NUDGE` — `env-vars.hermes_kanban_stop_nudge`
+- `HERMES_KERNEL_SPILL_DIR` — `env-vars.hermes_kernel_spill_dir`
+- `HERMES_LANGFUSE_CAPTURE` — `env-vars.hermes_langfuse_capture`
+- `HERMES_LANGUAGE` — `env-vars.hermes_language`
+- `HERMES_LAZY_INSTALL_TARGET` — `env-vars.hermes_lazy_install_target`
+- `HERMES_LIVE_TESTS` — `env-vars.hermes_live_tests`
+- `HERMES_MACHINE_ID` — `env-vars.hermes_machine_id`
+- `HERMES_MANAGED` — `env-vars.hermes_managed`
+- `HERMES_MANAGED_DIR` — `env-vars.hermes_managed_dir`
+- `HERMES_MAX_TOKENS` — `env-vars.hermes_max_tokens`
+- `HERMES_MEDIA_ALLOW_DIRS` — `env-vars.hermes_media_allow_dirs`
+- `HERMES_MEDIA_DELIVERY_STRICT` — `env-vars.hermes_media_delivery_strict`
+- `HERMES_MEDIA_TRUST_RECENT_FILES` — `env-vars.hermes_media_trust_recent_files`
+- `HERMES_MEET_AUTH_STATE` — `env-vars.hermes_meet_auth_state`
+- `HERMES_MEET_DURATION` — `env-vars.hermes_meet_duration`
+- `HERMES_MEET_GUEST_NAME` — `env-vars.hermes_meet_guest_name`
+- `HERMES_MEET_HEADED` — `env-vars.hermes_meet_headed`
+- `HERMES_MEET_LOBBY_TIMEOUT` — `env-vars.hermes_meet_lobby_timeout`
+- `HERMES_MEET_MODE` — `env-vars.hermes_meet_mode`
+- `HERMES_MEET_OUT_DIR` — `env-vars.hermes_meet_out_dir`
+- `HERMES_MEET_REALTIME_INSTRUCTIONS` — `env-vars.hermes_meet_realtime_instructions`
+- `HERMES_MEET_REALTIME_KEY` — `env-vars.hermes_meet_realtime_key`
+- `HERMES_MEET_REALTIME_MODEL` — `env-vars.hermes_meet_realtime_model`
+- `HERMES_MEET_REALTIME_VOICE` — `env-vars.hermes_meet_realtime_voice`
+- `HERMES_MEET_URL` — `env-vars.hermes_meet_url`
+- `HERMES_NIX_BUILD` — `env-vars.hermes_nix_build`
+- `HERMES_NODE` — `env-vars.hermes_node`
+- `HERMES_NODE_TARGET_MAJOR` — `env-vars.hermes_node_target_major`
+- `HERMES_NONINTERACTIVE` — `env-vars.hermes_noninteractive`
+- `HERMES_OPTIONAL_MCPS` — `env-vars.hermes_optional_mcps`
+- `HERMES_OSINT_CACHE` — `env-vars.hermes_osint_cache`
+- `HERMES_OSINT_UA` — `env-vars.hermes_osint_ua`
+- `HERMES_PARENT_NONCE` — `env-vars.hermes_parent_nonce`
+- `HERMES_PARENT_PID` — `env-vars.hermes_parent_pid`
+- `HERMES_PARENT_START_MARKER` — `env-vars.hermes_parent_start_marker`
+- `HERMES_PERF_LOG` — `env-vars.hermes_perf_log`
+- `HERMES_PERF_NODE` — `env-vars.hermes_perf_node`
+- `HERMES_PET_IMAGE_PROVIDER` — `env-vars.hermes_pet_image_provider`
+- `HERMES_PET_REFERENCE_MAX_BYTES` — `env-vars.hermes_pet_reference_max_bytes`
+- `HERMES_PLATFORM` — `env-vars.hermes_platform`
+- `HERMES_PLUGIN_PAYLOAD_MAX_CHARS` — `env-vars.hermes_plugin_payload_max_chars`
+- `HERMES_PROFILE` — `env-vars.hermes_profile`
+- `HERMES_PTY_TEST` — `env-vars.hermes_pty_test`
+- `HERMES_PYTHON_SRC_ROOT` — `env-vars.hermes_python_src_root`
+- `HERMES_REAL_HOME` — `env-vars.hermes_real_home`
+- `HERMES_RESTART_AFTER_TURN_TIMEOUT` — `env-vars.hermes_restart_after_turn_timeout`
+- `HERMES_REVISION` — `env-vars.hermes_revision`
+- `HERMES_ROOM_LINK_URL` — `env-vars.hermes_room_link_url`
+- `HERMES_RPC_DIR` — `env-vars.hermes_rpc_dir`
+- `HERMES_RPC_PERSISTENT` — `env-vars.hermes_rpc_persistent`
+- `HERMES_RPC_TOKEN` — `env-vars.hermes_rpc_token`
+- `HERMES_RUN_E2E` — `env-vars.hermes_run_e2e`
+- `HERMES_RUN_NETWORK_TESTS` — `env-vars.hermes_run_network_tests`
+- `HERMES_RUN_SLOW_PET_TESTS` — `env-vars.hermes_run_slow_pet_tests`
+- `HERMES_S6_SUPERVISED_CHILD` — `env-vars.hermes_s6_supervised_child`
+- `HERMES_SEARCH_SLOW_MS` — `env-vars.hermes_search_slow_ms`
+- `HERMES_SERVE_HEADLESS` — `env-vars.hermes_serve_headless`
+- `HERMES_SERVE_WATCHDOG_POLL_S` — `env-vars.hermes_serve_watchdog_poll_s`
+- `HERMES_SESSION_` — `env-vars.hermes_session_`
+- `HERMES_SESSION_CHAT_ID` — `env-vars.hermes_session_chat_id`
+- `HERMES_SESSION_CHAT_NAME` — `env-vars.hermes_session_chat_name`
+- `HERMES_SESSION_CHAT_TYPE` — `env-vars.hermes_session_chat_type`
+- `HERMES_SESSION_KEY` — `env-vars.hermes_session_key`
+- `HERMES_SESSION_MESSAGE_ID` — `env-vars.hermes_session_message_id`
+- `HERMES_SESSION_PLATFORM` — `env-vars.hermes_session_platform`
+- `HERMES_SESSION_PROFILE` — `env-vars.hermes_session_profile`
+- `HERMES_SESSION_SCOPE_ID` — `env-vars.hermes_session_scope_id`
+- `HERMES_SESSION_SOURCE` — `env-vars.hermes_session_source`
+- `HERMES_SESSION_STALL_TIMEOUT` — `env-vars.hermes_session_stall_timeout`
+- `HERMES_SESSION_THREAD_ID` — `env-vars.hermes_session_thread_id`
+- `HERMES_SESSION_USER_ID` — `env-vars.hermes_session_user_id`
+- `HERMES_SESSION_USER_ID_ALT` — `env-vars.hermes_session_user_id_alt`
+- `HERMES_SESSION_USER_NAME` — `env-vars.hermes_session_user_name`
+- `HERMES_SHARED_AUTH_DIR` — `env-vars.hermes_shared_auth_dir`
+- `HERMES_SIGTERM_GRACE` — `env-vars.hermes_sigterm_grace`
+- `HERMES_SINGLE_QUERY_SESSION` — `env-vars.hermes_single_query_session`
+- `HERMES_SKIP_CHMOD` — `env-vars.hermes_skip_chmod`
+- `HERMES_SKIP_NODE_BOOTSTRAP` — `env-vars.hermes_skip_node_bootstrap`
+- `HERMES_SKIP_SSL_GUARD` — `env-vars.hermes_skip_ssl_guard`
+- `HERMES_SPINNER_PAUSE` — `env-vars.hermes_spinner_pause`
+- `HERMES_STARTUP_RESTORE_DRAIN_TIMEOUT` — `env-vars.hermes_startup_restore_drain_timeout`
+- `HERMES_STARTUP_WARMUP_TIMEOUT` — `env-vars.hermes_startup_warmup_timeout`
+- `HERMES_SUPERVISED_CHILD` — `env-vars.hermes_supervised_child`
+- `HERMES_SYNC_BASE_URL` — `env-vars.hermes_sync_base_url`
+- `HERMES_SYNC_DEVICE_NAME` — `env-vars.hermes_sync_device_name`
+- `HERMES_TELEGRAM_NOTIFICATIONS` — `env-vars.hermes_telegram_notifications`
+- `HERMES_TENANT` — `env-vars.hermes_tenant`
+- `HERMES_TERMINAL_SECURITY_MODE` — `env-vars.hermes_terminal_security_mode`
+- `HERMES_TERMUX_DISABLE_FAST_CLI` — `env-vars.hermes_termux_disable_fast_cli`
+- `HERMES_TERMUX_FORCE_SKILLS_SYNC` — `env-vars.hermes_termux_force_skills_sync`
+- `HERMES_TERMUX_PREFETCH_UPDATES` — `env-vars.hermes_termux_prefetch_updates`
+- `HERMES_TEST_FILE_RETRIES` — `env-vars.hermes_test_file_retries`
+- `HERMES_TEST_FILE_TIMEOUT` — `env-vars.hermes_test_file_timeout`
+- `HERMES_TEST_IMAGE` — `env-vars.hermes_test_image`
+- `HERMES_TEST_ISOLATION` — `env-vars.hermes_test_isolation`
+- `HERMES_TEST_PATHS` — `env-vars.hermes_test_paths`
+- `HERMES_TEST_RUNTIME_KEY` — `env-vars.hermes_test_runtime_key`
+- `HERMES_TEST_SLICE` — `env-vars.hermes_test_slice`
+- `HERMES_TEST_WORKERS` — `env-vars.hermes_test_workers`
+- `HERMES_TUI_BACKGROUND` — `env-vars.hermes_tui_background`
+- `HERMES_TUI_CHECKPOINTS` — `env-vars.hermes_tui_checkpoints`
+- `HERMES_TUI_EXIT_FLUSH_BUDGET_S` — `env-vars.hermes_tui_exit_flush_budget_s`
+- `HERMES_TUI_FORCE_BUILD` — `env-vars.hermes_tui_force_build`
+- `HERMES_TUI_GATEWAY_NO_FLUSH` — `env-vars.hermes_tui_gateway_no_flush`
+- `HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S` — `env-vars.hermes_tui_gateway_shutdown_grace_s`
+- `HERMES_TUI_MAX_TURNS` — `env-vars.hermes_tui_max_turns`
+- `HERMES_TUI_NO_EARLY_DISABLE` — `env-vars.hermes_tui_no_early_disable`
+- `HERMES_TUI_PASS_SESSION_ID` — `env-vars.hermes_tui_pass_session_id`
+- `HERMES_TUI_PROVIDER` — `env-vars.hermes_tui_provider`
+- `HERMES_TUI_RPC_POOL_WORKERS` — `env-vars.hermes_tui_rpc_pool_workers`
+- `HERMES_TUI_SESSION_FLUSH_INTERVAL_S` — `env-vars.hermes_tui_session_flush_interval_s`
+- `HERMES_TUI_SESSION_TTL_S` — `env-vars.hermes_tui_session_ttl_s`
+- `HERMES_TUI_SIDECAR_URL` — `env-vars.hermes_tui_sidecar_url`
+- `HERMES_TUI_SKILLS` — `env-vars.hermes_tui_skills`
+- `HERMES_TUI_SLASH_TIMEOUT_S` — `env-vars.hermes_tui_slash_timeout_s`
+- `HERMES_TUI_TOOLSETS` — `env-vars.hermes_tui_toolsets`
+- `HERMES_TUI_TOOL_PROGRESS` — `env-vars.hermes_tui_tool_progress`
+- `HERMES_TUI_WS_ORPHAN_REAP_GRACE_S` — `env-vars.hermes_tui_ws_orphan_reap_grace_s`
+- `HERMES_TURN_COMPLETION_EXPLAINER` — `env-vars.hermes_turn_completion_explainer`
+- `HERMES_UID` — `env-vars.hermes_uid`
+- `HERMES_UI_SESSION_ID` — `env-vars.hermes_ui_session_id`
+- `HERMES_VERIFY_ON_STOP` — `env-vars.hermes_verify_on_stop`
+- `HERMES_VOICE` — `env-vars.hermes_voice`
+- `HERMES_VOICE_DEBUG` — `env-vars.hermes_voice_debug`
+- `HERMES_VOICE_TTS` — `env-vars.hermes_voice_tts`
+- `HERMES_WEB_DIST` — `env-vars.hermes_web_dist`
+- `HERMES_XAI_BASE_URL` — `env-vars.hermes_xai_base_url`
+- `A2A_ADVERTISED_TOOLSETS` — `env-vars.a2a_advertised_toolsets`
+- `A2A_AGENT_NAME` — `env-vars.a2a_agent_name`
+- `A2A_ALLOW_ALL_USERS` — `env-vars.a2a_allow_all_users`
+- `A2A_BEARER_TOKEN` — `env-vars.a2a_bearer_token`
+- `A2A_HOST` — `env-vars.a2a_host`
+- `A2A_MAX_PINGPONG_TURNS` — `env-vars.a2a_max_pingpong_turns`
+- `A2A_PEER_TOKENS` — `env-vars.a2a_peer_tokens`
+- `A2A_PORT` — `env-vars.a2a_port`
+- `A2A_PROVIDER_ORG` — `env-vars.a2a_provider_org`
+- `A2A_PROVIDER_URL` — `env-vars.a2a_provider_url`
+- `A2A_PUBLIC_URL` — `env-vars.a2a_public_url`
+- `A2A_PUSH_SECRET` — `env-vars.a2a_push_secret`
+- `A2A_RATE_LIMIT` — `env-vars.a2a_rate_limit`
+- `A2A_REPLY_TIMEOUT` — `env-vars.a2a_reply_timeout`
+- `A2A_TRUSTED_PEERS` — `env-vars.a2a_trusted_peers`
+- `API_BASE_URL` — `env-vars.api_base_url`
+- `API_TIMEOUT_SECONDS` — `env-vars.api_timeout_seconds`
+- `API_TOKEN` — `env-vars.api_token`
+- `AUXILIARY_APPROVAL_MODEL` — `env-vars.auxiliary_approval_model`
+- `AUXILIARY_APPROVAL_PROVIDER` — `env-vars.auxiliary_approval_provider`
+- `AUXILIARY_VIDEO_MODEL` — `env-vars.auxiliary_video_model`
+- `AWS_ACCESS_KEY_ID` — `env-vars.aws_access_key_id`
+- `AWS_BEARER_TOKEN_BEDROCK` — `env-vars.aws_bearer_token_bedrock`
+- `AWS_EC2_METADATA_DISABLED` — `env-vars.aws_ec2_metadata_disabled`
+- `AWS_SECRET_ACCESS_KEY` — `env-vars.aws_secret_access_key`
+- `BLUEBUBBLES_MENTION_PATTERNS` — `env-vars.bluebubbles_mention_patterns`
+- `BLUEBUBBLES_REQUIRE_MENTION` — `env-vars.bluebubbles_require_mention`
+- `BLUEBUBBLES_WEBHOOK_PATH` — `env-vars.bluebubbles_webhook_path`
+- `BROWSERBASE_ADVANCED_STEALTH` — `env-vars.browserbase_advanced_stealth`
+- `BROWSERBASE_KEEP_ALIVE` — `env-vars.browserbase_keep_alive`
+- `BROWSERBASE_PROXIES` — `env-vars.browserbase_proxies`
+- `BROWSERBASE_SESSION_TIMEOUT` — `env-vars.browserbase_session_timeout`
+- `BUBENCH_NOUS_BASE_URL` — `env-vars.bubench_nous_base_url`
+- `BUBENCH_NOUS_TOKEN` — `env-vars.bubench_nous_token`
+- `BUBENCH_ROOT` — `env-vars.bubench_root`
+- `BUBENCH_TASKS` — `env-vars.bubench_tasks`
+- `BUZZ_HOME_CHANNEL_NAME` — `env-vars.buzz_home_channel_name`
+- `BUZZ_MANAGED_AGENT` — `env-vars.buzz_managed_agent`
+- `BUZZ_REACTION_ONLY_USERS` — `env-vars.buzz_reaction_only_users`
+- `BUZZ_REPLY_IN_THREAD` — `env-vars.buzz_reply_in_thread`
+- `BUZZ_REPLY_TO_MODE` — `env-vars.buzz_reply_to_mode`
+- `BUZZ_REQUIRE_MENTION` — `env-vars.buzz_require_mention`
+- `BUZZ_TEST_STUB_KEY` — `env-vars.buzz_test_stub_key`
+- `CI` — `env-vars.ci`
+- `CI_RUN_ID` — `env-vars.ci_run_id`
+- `CI_TIMINGS_REPORT_URL` — `env-vars.ci_timings_report_url`
+- `COMMIT_MESSAGE` — `env-vars.commit_message`
+- `COMMIT_SHA` — `env-vars.commit_sha`
+- `COMMIT_URL` — `env-vars.commit_url`
+- `DINGTALK_ALLOWED_CHATS` — `env-vars.dingtalk_allowed_chats`
+- `DINGTALK_FREE_RESPONSE_CHATS` — `env-vars.dingtalk_free_response_chats`
+- `DINGTALK_MENTION_PATTERNS` — `env-vars.dingtalk_mention_patterns`
+- `DINGTALK_REGISTRATION_SOURCE` — `env-vars.dingtalk_registration_source`
+- `DINGTALK_REQUIRE_MENTION` — `env-vars.dingtalk_require_mention`
+- `DISCORD_ALLOW_BOTS` — `env-vars.discord_allow_bots`
+- `DISCORD_APPROVAL_MENTIONS` — `env-vars.discord_approval_mentions`
+- `DISCORD_BOTS_REQUIRE_INLINE_MENTION` — `env-vars.discord_bots_require_inline_mention`
+- `DISCORD_HIDE_SLASH_COMMANDS` — `env-vars.discord_hide_slash_commands`
+- `DISCORD_HISTORY_BACKFILL` — `env-vars.discord_history_backfill`
+- `DISCORD_HISTORY_BACKFILL_LIMIT` — `env-vars.discord_history_backfill_limit`
+- `DISCORD_MISSED_MESSAGE_BACKFILL` — `env-vars.discord_missed_message_backfill`
+- `DISCORD_MISSED_MESSAGE_BACKFILL_CHANNELS` — `env-vars.discord_missed_message_backfill_channels`
+- `DISCORD_MISSED_MESSAGE_BACKFILL_LIMIT` — `env-vars.discord_missed_message_backfill_limit`
+- `DISCORD_MISSED_MESSAGE_BACKFILL_MAX_DISPATCHES` — `env-vars.discord_missed_message_backfill_max_dispatches`
+- `DISCORD_MISSED_MESSAGE_BACKFILL_WINDOW_SECONDS` — `env-vars.discord_missed_message_backfill_window_seconds`
+- `DISCORD_THREAD_REQUIRE_MENTION` — `env-vars.discord_thread_require_mention`
+- `FEISHU_BOT_NAME` — `env-vars.feishu_bot_name`
+- `FEISHU_BOT_OPEN_ID` — `env-vars.feishu_bot_open_id`
+- `FEISHU_BOT_USER_ID` — `env-vars.feishu_bot_user_id`
+- `FEISHU_GROUP_POLICY` — `env-vars.feishu_group_policy`
+- `FEISHU_REACTIONS` — `env-vars.feishu_reactions`
+- `FEISHU_WEBHOOK_HOST` — `env-vars.feishu_webhook_host`
+- `FEISHU_WEBHOOK_PATH` — `env-vars.feishu_webhook_path`
+- `FEISHU_WEBHOOK_PORT` — `env-vars.feishu_webhook_port`
+- `GATEWAY_HEALTH_TIMEOUT` — `env-vars.gateway_health_timeout`
+- `GATEWAY_HEALTH_URL` — `env-vars.gateway_health_url`
+- `GATEWAY_MULTIPLEX_PROFILES` — `env-vars.gateway_multiplex_profiles`
+- `GATEWAY_RELAY_BOT_IDS` — `env-vars.gateway_relay_bot_ids`
+- `GATEWAY_RELAY_DISPLAY_NAME` — `env-vars.gateway_relay_display_name`
+- `GATEWAY_RELAY_IDP_CLIENT_ID` — `env-vars.gateway_relay_idp_client_id`
+- `GATEWAY_RELAY_IDP_CLIENT_SECRET` — `env-vars.gateway_relay_idp_client_secret`
+- `GATEWAY_RELAY_IDP_SCOPE` — `env-vars.gateway_relay_idp_scope`
+- `GATEWAY_RELAY_IDP_TOKEN_URL` — `env-vars.gateway_relay_idp_token_url`
+- `GATEWAY_RELAY_INSTANCE_ID` — `env-vars.gateway_relay_instance_id`
+- `GATEWAY_RELAY_PLATFORMS` — `env-vars.gateway_relay_platforms`
+- `GATEWAY_RELAY_WAKE_URL` — `env-vars.gateway_relay_wake_url`
+- `GITHUB_EVENT_PATH` — `env-vars.github_event_path`
+- `GITHUB_OUTPUT` — `env-vars.github_output`
+- `GITHUB_REPOSITORY` — `env-vars.github_repository`
+- `GITHUB_RUN_ID` — `env-vars.github_run_id`
+- `GITHUB_SERVER_URL` — `env-vars.github_server_url`
+- `GITHUB_SHA` — `env-vars.github_sha`
+- `GOOGLE_APPLICATION_CREDENTIALS` — `env-vars.google_application_credentials`
+- `GOOGLE_CHAT_SUBSCRIPTION` — `env-vars.google_chat_subscription`
+- `GOOGLE_CLOUD_PROJECT` — `env-vars.google_cloud_project`
+- `HINDSIGHT_API_LLM_BASE_URL` — `env-vars.hindsight_api_llm_base_url`
+- `HINDSIGHT_BANK_ID` — `env-vars.hindsight_bank_id`
+- `HINDSIGHT_BUDGET` — `env-vars.hindsight_budget`
+- `HINDSIGHT_IDLE_TIMEOUT` — `env-vars.hindsight_idle_timeout`
+- `HINDSIGHT_MODE` — `env-vars.hindsight_mode`
+- `HINDSIGHT_RETAIN_ASSISTANT_PREFIX` — `env-vars.hindsight_retain_assistant_prefix`
+- `HINDSIGHT_RETAIN_OBSERVATION_SCOPES` — `env-vars.hindsight_retain_observation_scopes`
+- `HINDSIGHT_RETAIN_SOURCE` — `env-vars.hindsight_retain_source`
+- `HINDSIGHT_RETAIN_TAGS` — `env-vars.hindsight_retain_tags`
+- `HINDSIGHT_RETAIN_USER_PREFIX` — `env-vars.hindsight_retain_user_prefix`
+- `HINDSIGHT_TEMPLATES_URL` — `env-vars.hindsight_templates_url`
+- `HONCHO_ENVIRONMENT` — `env-vars.honcho_environment`
+- `HONCHO_OAUTH_AUTHORIZE_URL` — `env-vars.honcho_oauth_authorize_url`
+- `HONCHO_OAUTH_CLIENT_ID` — `env-vars.honcho_oauth_client_id`
+- `HONCHO_OAUTH_DASHBOARD` — `env-vars.honcho_oauth_dashboard`
+- `HONCHO_OAUTH_DEVICE_AUTH_URL` — `env-vars.honcho_oauth_device_auth_url`
+- `HONCHO_OAUTH_SCOPE` — `env-vars.honcho_oauth_scope`
+- `HONCHO_OAUTH_TOKEN_URL` — `env-vars.honcho_oauth_token_url`
+- `HONCHO_TIMEOUT` — `env-vars.honcho_timeout`
+- `HONCHO_URL` — `env-vars.honcho_url`
+- `OPENVIKING_ACCOUNT` — `env-vars.openviking_account`
+- `OPENVIKING_AGENT` — `env-vars.openviking_agent`
+- `OPENVIKING_USER` — `env-vars.openviking_user`
+- `PHOTON_DASHBOARD_PROJECT_ID` — `env-vars.photon_dashboard_project_id`
+- `PHOTON_PROBE_INTERVAL_SECONDS` — `env-vars.photon_probe_interval_seconds`
+- `PHOTON_PROBE_MAX_FAILURES` — `env-vars.photon_probe_max_failures`
+- `PHOTON_PROBE_TIMEOUT_SECONDS` — `env-vars.photon_probe_timeout_seconds`
+- `PHOTON_SIDECAR_DIR` — `env-vars.photon_sidecar_dir`
+- `S6_CMD_ARG0` — `env-vars.s6_cmd_arg0`
+- `S6_PROFILE_GATEWAY_SCANDIR` — `env-vars.s6_profile_gateway_scandir`
+- `S6_VERSION` — `env-vars.s6_version`
+- `SEND_BOM_BOT_TOKEN` — `env-vars.send_bom_bot_token`
+- `SEND_BOM_SECOND` — `env-vars.send_bom_second`
+- `SEND_L1_NOTE` — `env-vars.send_l1_note`
+- `SEND_L1_TOKEN` — `env-vars.send_l1_token`
+- `SEND_OVR_TOKEN` — `env-vars.send_ovr_token`
+- `SEND_PLAIN_TOKEN` — `env-vars.send_plain_token`
+- `SLACK_ALLOWED_CHANNELS` — `env-vars.slack_allowed_channels`
+- `SLACK_DEDUP_TTL_SECONDS` — `env-vars.slack_dedup_ttl_seconds`
+- `SLACK_DISABLE_DMS` — `env-vars.slack_disable_dms`
+- `SLACK_FREE_RESPONSE_CHANNELS` — `env-vars.slack_free_response_channels`
+- `SLACK_IGNORED_CHANNELS` — `env-vars.slack_ignored_channels`
+- `SLACK_IGNORE_OTHER_USER_MENTIONS` — `env-vars.slack_ignore_other_user_mentions`
+- `SLACK_MENTION_PATTERNS` — `env-vars.slack_mention_patterns`
+- `SLACK_REACTIONS` — `env-vars.slack_reactions`
+- `SLACK_REACTION_TRIGGERS` — `env-vars.slack_reaction_triggers`
+- `SLACK_REACTION_TRIGGER_TARGET` — `env-vars.slack_reaction_trigger_target`
+- `SLACK_REQUIRE_MENTION` — `env-vars.slack_require_mention`
+- `SLACK_REQUIRE_MENTION_CHANNELS` — `env-vars.slack_require_mention_channels`
+- `SLACK_STRICT_MENTION` — `env-vars.slack_strict_mention`
+- `TELEGRAM_ALLOWED_CHATS` — `env-vars.telegram_allowed_chats`
+- `TELEGRAM_ALLOWED_TOPICS` — `env-vars.telegram_allowed_topics`
+- `TELEGRAM_ALLOW_BOTS` — `env-vars.telegram_allow_bots`
+- `TELEGRAM_FREE_RESPONSE_CHATS` — `env-vars.telegram_free_response_chats`
+- `TELEGRAM_FREE_RESPONSE_TOPICS` — `env-vars.telegram_free_response_topics`
+- `TELEGRAM_GUEST_MODE` — `env-vars.telegram_guest_mode`
+- `TELEGRAM_OBSERVE_UNMENTIONED_GROUP_MESSAGES` — `env-vars.telegram_observe_unmentioned_group_messages`
+- `TELEGRAM_ONBOARDING_URL` — `env-vars.telegram_onboarding_url`
+- `TELEGRAM_WEBHOOK_HOST` — `env-vars.telegram_webhook_host`
+- `TERMINAL_DEGRADED_MODE` — `env-vars.terminal_degraded_mode`
+- `TERMINAL_DOCKER_NETWORK` — `env-vars.terminal_docker_network`
+- `TERMINAL_DOCKER_RUN_AS_HOST_USER` — `env-vars.terminal_docker_run_as_host_user`
+- `TERMINAL_DOCKER_SHARED_CONTAINER_KEY` — `env-vars.terminal_docker_shared_container_key`
+- `TERMINAL_DOCKER_SHM_SIZE` — `env-vars.terminal_docker_shm_size`
+- `TERMINAL_HOME_MODE` — `env-vars.terminal_home_mode`
+- `TERMINAL_LOCAL_MEMORY_MAX_MB` — `env-vars.terminal_local_memory_max_mb`
+- `TERMINAL_MANAGED_MODAL_CANCEL_READ_TIMEOUT_SECONDS` — `env-vars.terminal_managed_modal_cancel_read_timeout_seconds`
+- `TERMINAL_MANAGED_MODAL_CONNECT_TIMEOUT_SECONDS` — `env-vars.terminal_managed_modal_connect_timeout_seconds`
+- `TERMINAL_MANAGED_MODAL_POLL_READ_TIMEOUT_SECONDS` — `env-vars.terminal_managed_modal_poll_read_timeout_seconds`
+- `TERMINAL_MODAL_MODE` — `env-vars.terminal_modal_mode`
+- `TERMINAL_SCRATCH_DIR` — `env-vars.terminal_scratch_dir`
+- `TERMINAL_TEMP_DIR` — `env-vars.terminal_temp_dir`
+- `TERMINAL_X` — `env-vars.terminal_x`
+- `TS_BENCH_MODES` — `env-vars.ts_bench_modes`
+- `TS_BENCH_REPS` — `env-vars.ts_bench_reps`
+- `TS_BENCH_SUMMARY` — `env-vars.ts_bench_summary`
+- `TS_UE_LISTING_MAX` — `env-vars.ts_ue_listing_max`
+- `TS_UE_MODEL` — `env-vars.ts_ue_model`
+- `TS_UE_MODES` — `env-vars.ts_ue_modes`
+- `TS_UE_SCALE` — `env-vars.ts_ue_scale`
+- `TS_UE_SUMMARY` — `env-vars.ts_ue_summary`
+- `WEIXIN_RATE_LIMIT_CIRCUIT_OPEN_SECONDS` — `env-vars.weixin_rate_limit_circuit_open_seconds`
+- `WEIXIN_RATE_LIMIT_CIRCUIT_THRESHOLD` — `env-vars.weixin_rate_limit_circuit_threshold`
+- `WEIXIN_RATE_LIMIT_CIRCUIT_WINDOW_SECONDS` — `env-vars.weixin_rate_limit_circuit_window_seconds`
+- `WEIXIN_SEND_CHUNK_DELAY_SECONDS` — `env-vars.weixin_send_chunk_delay_seconds`
+- `WEIXIN_SEND_CHUNK_RETRIES` — `env-vars.weixin_send_chunk_retries`
+- `WEIXIN_SEND_CHUNK_RETRY_DELAY_SECONDS` — `env-vars.weixin_send_chunk_retry_delay_seconds`
+- `WEIXIN_SPLIT_MULTILINE_MESSAGES` — `env-vars.weixin_split_multiline_messages`
+- `WHATSAPP_DM_POLICY` — `env-vars.whatsapp_dm_policy`
+- `WHATSAPP_FREE_RESPONSE_CHATS` — `env-vars.whatsapp_free_response_chats`
+- `WHATSAPP_GROUP_ALLOWED_USERS` — `env-vars.whatsapp_group_allowed_users`
+- `WHATSAPP_GROUP_POLICY` — `env-vars.whatsapp_group_policy`
+- `WHATSAPP_MENTION_PATTERNS` — `env-vars.whatsapp_mention_patterns`
+- `WHATSAPP_REQUIRE_MENTION` — `env-vars.whatsapp_require_mention`
+- `XDG_CACHE_HOME` — `env-vars.xdg_cache_home`
+- `XDG_CONFIG_DIRS` — `env-vars.xdg_config_dirs`
+- `XDG_CONFIG_HOME` — `env-vars.xdg_config_home`
+- `XDG_DATA_HOME` — `env-vars.xdg_data_home`
+- `XDG_RUNTIME_DIR` — `env-vars.xdg_runtime_dir`
+- `XDG_SESSION_TYPE` — `env-vars.xdg_session_type`
+- `XDG_STATE_HOME` — `env-vars.xdg_state_home`
+- `ABEVAL_HOME` — `env-vars.abeval_home`
+- `ABEVAL_ROOT` — `env-vars.abeval_root`
+- `ACME_KEY` — `env-vars.acme_key`
+- `AGENT_BROWSER_EXECUTABLE_PATH` — `env-vars.agent_browser_executable_path`
+- `AGENT_BROWSER_HEADED` — `env-vars.agent_browser_headed`
+- `ALLUSERSPROFILE` — `env-vars.allusersprofile`
+- `ALL_PROXY` — `env-vars.all_proxy`
+- `ALPHA_VANTAGE_KEY` — `env-vars.alpha_vantage_key`
+- `APPDATA` — `env-vars.appdata`
+- `APPLE_SIGNING_IDENTITY` — `env-vars.apple_signing_identity`
+- `APPTAINER_CACHEDIR` — `env-vars.apptainer_cachedir`
+- `AR` — `env-vars.ar`
+- `ASCII_KEY` — `env-vars.ascii_key`
+- `AZURE_OPENAI_API_KEY` — `env-vars.azure_openai_api_key`
+- `BAD` — `env-vars.bad`
+- `BAR` — `env-vars.bar`
+- `BENCH_CDP_URL` — `env-vars.bench_cdp_url`
+- `BH_AGENT_WORKSPACE` — `env-vars.bh_agent_workspace`
+- `BOUNDARY_FILE` — `env-vars.boundary_file`
+- `BROWSER` — `env-vars.browser`
+- `BU_NAME` — `env-vars.bu_name`
+- `BWS_ACCESS_TOKEN` — `env-vars.bws_access_token`
+- `BWS_SERVER_URL` — `env-vars.bws_server_url`
+- `CAMOFOX_LOOPBACK_HOST_ALIAS` — `env-vars.camofox_loopback_host_alias`
+- `CAMOFOX_REWRITE_LOOPBACK_URLS` — `env-vars.camofox_rewrite_loopback_urls`
+- `CANVAS_API_TOKEN` — `env-vars.canvas_api_token`
+- `CANVAS_BASE_URL` — `env-vars.canvas_base_url`
+- `CC` — `env-vars.cc`
+- `CFLAGS` — `env-vars.cflags`
+- `CJK_LABEL` — `env-vars.cjk_label`
+- `CMDTEST_API_KEY` — `env-vars.cmdtest_api_key`
+- `COLORFGBG` — `env-vars.colorfgbg`
+- `COLORTERM` — `env-vars.colorterm`
+- `COMFY_CLOUD_API_KEY` — `env-vars.comfy_cloud_api_key`
+- `COMP_CWORD` — `env-vars.comp_cword`
+- `COMP_WORDS` — `env-vars.comp_words`
+- `COPILOT_GH_HOST` — `env-vars.copilot_gh_host`
+- `COURTLISTENER_TOKEN` — `env-vars.courtlistener_token`
+- `CSC_LINK` — `env-vars.csc_link`
+- `CUA_DRIVER_RS_HOME` — `env-vars.cua_driver_rs_home`
+- `CUSTOM_API_KEY` — `env-vars.custom_api_key`
+- `CXX` — `env-vars.cxx`
+- `DEBUG` — `env-vars.debug`
+- `DEEPINFRA_IMAGE_MODEL` — `env-vars.deepinfra_image_model`
+- `DELAYED_WORKER_INDEX` — `env-vars.delayed_worker_index`
+- `DELEGATION_CHILD_TIMEOUT_SECONDS` — `env-vars.delegation_child_timeout_seconds`
+- `DISPLAY` — `env-vars.display`
+- `DIST_EXTRA_CONFIG` — `env-vars.dist_extra_config`
+- `E2E_MATRIX_HS` — `env-vars.e2e_matrix_hs`
+- `EDITOR` — `env-vars.editor`
+- `ELECTRON_CACHE` — `env-vars.electron_cache`
+- `ELECTRON_DISABLE_SANDBOX` — `env-vars.electron_disable_sandbox`
+- `ELEVENLABS_STT_BASE_URL` — `env-vars.elevenlabs_stt_base_url`
+- `EVENT_NAME` — `env-vars.event_name`
+- `EVM_RPC_URL` — `env-vars.evm_rpc_url`
+- `EVOLVER_MODEL` — `env-vars.evolver_model`
+- `EXAMPLE_API_KEY` — `env-vars.example_api_key`
+- `EXAMPLE_SEARCH_TOKEN` — `env-vars.example_search_token`
+- `FAL_IMAGE_MODEL` — `env-vars.fal_image_model`
+- `FAL_VIDEO_MODEL` — `env-vars.fal_video_model`
+- `FFMPEG_PATH` — `env-vars.ffmpeg_path`
+- `FIRST_KEY` — `env-vars.first_key`
+- `FOO` — `env-vars.foo`
+- `FORCE_COLOR` — `env-vars.force_color`
+- `GHOSTTY_BIN_DIR` — `env-vars.ghostty_bin_dir`
+- `GHOSTTY_RESOURCES_DIR` — `env-vars.ghostty_resources_dir`
+- `GH_SESSION_TOKEN` — `env-vars.gh_session_token`
+- `GIT_TERMINAL_PROMPT` — `env-vars.git_terminal_prompt`
+- `GNOME_KEYRING_CONTROL` — `env-vars.gnome_keyring_control`
+- `GO_FILE` — `env-vars.go_file`
+- `GREETING` — `env-vars.greeting`
+- `HOME` — `env-vars.home`
+- `HOMEASSISTANT_TOKEN` — `env-vars.homeassistant_token`
+- `HOMEDRIVE` — `env-vars.homedrive`
+- `HOMEPATH` — `env-vars.homepath`
+- `INVOCATION_ID` — `env-vars.invocation_id`
+- `IRC_HOME_CHANNEL_NAME` — `env-vars.irc_home_channel_name`
+- `ITERM_SESSION_ID` — `env-vars.iterm_session_id`
+- `JINA_API_KEY` — `env-vars.jina_api_key`
+- `JOURNAL_STREAM` — `env-vars.journal_stream`
+- `KDE_FULL_SESSION` — `env-vars.kde_full_session`
+- `KDE_SESSION_VERSION` — `env-vars.kde_session_version`
+- `KEENABLE_API_KEY` — `env-vars.keenable_api_key`
+- `KITTY_WINDOW_ID` — `env-vars.kitty_window_id`
+- `KREA_IMAGE_MODEL` — `env-vars.krea_image_model`
+- `KUBERNETES_SERVICE_HOST` — `env-vars.kubernetes_service_host`
+- `LANGFUSE_ENV` — `env-vars.langfuse_env`
+- `LANGFUSE_RELEASE` — `env-vars.langfuse_release`
+- `LATIN1_VALUE` — `env-vars.latin1_value`
+- `LAUNCHD_SOCKET` — `env-vars.launchd_socket`
+- `LESS` — `env-vars.less`
+- `LOCALAPPDATA` — `env-vars.localappdata`
+- `LOGNAME` — `env-vars.logname`
+- `MATRIX_MAX_MESSAGE_LENGTH` — `env-vars.matrix_max_message_length`
+- `MATRIX_ROOM_IDENTITY_TTL_SECONDS` — `env-vars.matrix_room_identity_ttl_seconds`
+- `META_BASE_URL` — `env-vars.meta_base_url`
+- `MIGRATION_JSON_OUTPUT` — `env-vars.migration_json_output`
+- `MINIMAX_PORTAL_BASE_URL` — `env-vars.minimax_portal_base_url`
+- `MOCK_LSP_PUSH_DELAY` — `env-vars.mock_lsp_push_delay`
+- `MOCK_LSP_SCRIPT` — `env-vars.mock_lsp_script`
+- `MODAL_TOKEN_ID` — `env-vars.modal_token_id`
+- `MODAL_TOKEN_SECRET` — `env-vars.modal_token_secret`
+- `MSGRAPH_WEBHOOK_STORE_PATH` — `env-vars.msgraph_webhook_store_path`
+- `MYAPP_CONFIG_DIR` — `env-vars.myapp_config_dir`
+- `MY_BSM_KEY` — `env-vars.my_bsm_key`
+- `MY_SHELL_ONLY_VAR` — `env-vars.my_shell_only_var`
+- `NOTIFY_SOCKET` — `env-vars.notify_socket`
+- `NOUS_PORTAL_BASE_URL` — `env-vars.nous_portal_base_url`
+- `NO_COLOR` — `env-vars.no_color`
+- `OLLAMA_HOST` — `env-vars.ollama_host`
+- `OMO_AST_GREP_SG_PATH` — `env-vars.omo_ast_grep_sg_path`
+- `OPENAI_IMAGE_MODEL` — `env-vars.openai_image_model`
+- `OPENAI_ORG_ID` — `env-vars.openai_org_id`
+- `OPENCORPORATES_API_TOKEN` — `env-vars.opencorporates_api_token`
+- `OP_SERVICE_ACCOUNT_TOKEN` — `env-vars.op_service_account_token`
+- `OSV_CHECK_CACHE_TTL` — `env-vars.osv_check_cache_ttl`
+- `OSV_ENDPOINT` — `env-vars.osv_endpoint`
+- `OTHER` — `env-vars.other`
+- `OVERRIDE_PROBE` — `env-vars.override_probe`
+- `PAGER` — `env-vars.pager`
+- `PARALLEL_SEARCH_MODE` — `env-vars.parallel_search_mode`
+- `PATH` — `env-vars.path`
+- `PATHEXT` — `env-vars.pathext`
+- `PDD_AGE_IDENTITY` — `env-vars.pdd_age_identity`
+- `PDD_DATA_DIR` — `env-vars.pdd_data_dir`
+- `PINECONE_API_KEY` — `env-vars.pinecone_api_key`
+- `PIPEWIRE_REMOTE` — `env-vars.pipewire_remote`
+- `PLAYWRIGHT_BROWSERS_PATH` — `env-vars.playwright_browsers_path`
+- `PREFIX` — `env-vars.prefix`
+- `PROCESSOR_ARCHITECTURE` — `env-vars.processor_architecture`
+- `PROCESSOR_ARCHITEW6432` — `env-vars.processor_architew6432`
+- `PROGRAMDATA` — `env-vars.programdata`
+- `PROGRAMFILES` — `env-vars.programfiles`
+- `PROMPT_TOOLKIT_NO_CPR` — `env-vars.prompt_toolkit_no_cpr`
+- `PR_NUMBER` — `env-vars.pr_number`
+- `PSES_BUNDLE_PATH` — `env-vars.pses_bundle_path`
+- `PUBLIC` — `env-vars.public`
+- `PULSE_RUNTIME_PATH` — `env-vars.pulse_runtime_path`
+- `PULSE_SERVER` — `env-vars.pulse_server`
+- `PWD` — `env-vars.pwd`
+- `PYTEST_CURRENT_TEST` — `env-vars.pytest_current_test`
+- `PYTEST_VERSION` — `env-vars.pytest_version`
+- `PYTHONDONTWRITEBYTECODE` — `env-vars.pythondontwritebytecode`
+- `PYTHONIOENCODING` — `env-vars.pythonioencoding`
+- `PYTHONPATH` — `env-vars.pythonpath`
+- `PYTHONUTF8` — `env-vars.pythonutf8`
+- `QQ_HOME_CHANNEL` — `env-vars.qq_home_channel`
+- `REPO` — `env-vars.repo`
+- `RETAINDB_PROJECT` — `env-vars.retaindb_project`
+- `RUN_URL` — `env-vars.run_url`
+- `SECOND_KEY` — `env-vars.second_key`
+- `SECURITY_GUIDANCE_BLOCK` — `env-vars.security_guidance_block`
+- `SECURITY_GUIDANCE_DISABLE` — `env-vars.security_guidance_disable`
+- `SEC_USER_AGENT` — `env-vars.sec_user_agent`
+- `SENATE_LDA_TOKEN` — `env-vars.senate_lda_token`
+- `SHELL` — `env-vars.shell`
+- `SIGNAL_REACTIONS` — `env-vars.signal_reactions`
+- `SIGNAL_REQUIRE_MENTION` — `env-vars.signal_require_mention`
+- `SOME_CONFIG` — `env-vars.some_config`
+- `SOME_TOKEN` — `env-vars.some_token`
+- `SQLITE_MAX_ROWS` — `env-vars.sqlite_max_rows`
+- `SQLITE_PATH` — `env-vars.sqlite_path`
+- `SSH_CLIENT` — `env-vars.ssh_client`
+- `SSH_TTY` — `env-vars.ssh_tty`
+- `SSL_CERT_DIR` — `env-vars.ssl_cert_dir`
+- `STT_ELEVENLABS_MODEL` — `env-vars.stt_elevenlabs_model`
+- `STT_MISTRAL_MODEL` — `env-vars.stt_mistral_model`
+- `STY` — `env-vars.sty`
+- `SUDO_USER` — `env-vars.sudo_user`
+- `SUPERMEMORY_BASE_URL` — `env-vars.supermemory_base_url`
+- `SUPERMEMORY_CONTAINER_TAG` — `env-vars.supermemory_container_tag`
+- `SYSTEMROOT` — `env-vars.systemroot`
+- `TEAMS_SERVICE_URL` — `env-vars.teams_service_url`
+- `TERM` — `env-vars.term`
+- `TERMUX_VERSION` — `env-vars.termux_version`
+- `TERM_PROGRAM` — `env-vars.term_program`
+- `TEST_RELOAD_VAR` — `env-vars.test_reload_var`
+- `TIRITH_BIN` — `env-vars.tirith_bin`
+- `TMPDIR` — `env-vars.tmpdir`
+- `TMUX` — `env-vars.tmux`
+- `TZ` — `env-vars.tz`
+- `USDA_API_KEY` — `env-vars.usda_api_key`
+- `USER` — `env-vars.user`
+- `USERDOMAIN` — `env-vars.userdomain`
+- `USERNAME` — `env-vars.username`
+- `USERPROFILE` — `env-vars.userprofile`
+- `VIRTUAL_ENV` — `env-vars.virtual_env`
+- `VISUAL` — `env-vars.visual`
+- `WATCHDOG_USEC` — `env-vars.watchdog_usec`
+- `WATCHER_STATE_DIR` — `env-vars.watcher_state_dir`
+- `WATCH_WORKFLOWS` — `env-vars.watch_workflows`
+- `WAYLAND_DISPLAY` — `env-vars.wayland_display`
+- `WEZTERM_PANE` — `env-vars.wezterm_pane`
+- `WINDIR` — `env-vars.windir`
+- `WSL_DISTRO_NAME` — `env-vars.wsl_distro_name`
+- `WSP_TEST_UNSET_KEY` — `env-vars.wsp_test_unset_key`
+- `WSS_PROXY` — `env-vars.wss_proxy`
+- `WT_SESSION` — `env-vars.wt_session`
+- `XAI_IMAGE_MODEL` — `env-vars.xai_image_model`
+- `XAI_STT_BASE_URL` — `env-vars.xai_stt_base_url`
+- `YUANBAO_HOME_CHANNEL` — `env-vars.yuanbao_home_channel`
+- `ANDROID_DATA` — `env-vars.android_data`
+- `ANDROID_ROOT` — `env-vars.android_root`
+- `ANSI_COLORS_DISABLED` — `env-vars.ansi_colors_disabled`
+- `APPVEYOR` — `env-vars.appveyor`
+- `ARFLAGS` — `env-vars.arflags`
+- `AZURE_OPENAI_AD_TOKEN` — `env-vars.azure_openai_ad_token`
+- `AZURE_OPENAI_ENDPOINT` — `env-vars.azure_openai_endpoint`
+- `CFFI_TMPDIR` — `env-vars.cffi_tmpdir`
+- `CXXFLAGS` — `env-vars.cxxflags`
+- `DATABRICKS_RUNTIME_VERSION` — `env-vars.databricks_runtime_version`
+- `DEFER_PYDANTIC_BUILD` — `env-vars.defer_pydantic_build`
+- `DISTUTILS_DEBUG` — `env-vars.distutils_debug`
+- `DISTUTILS_USE_SDK` — `env-vars.distutils_use_sdk`
+- `DOWNLOAD_PATH` — `env-vars.download_path`
+- `ENSUREPIP_OPTIONS` — `env-vars.ensurepip_options`
+- `FASTAPI_ENV` — `env-vars.fastapi_env`
+- `FORWARDED_ALLOW_IPS` — `env-vars.forwarded_allow_ips`
+- `JSONSCHEMA_DEBUG_CODE_GENERATION` — `env-vars.jsonschema_debug_code_generation`
+- `LDCXXSHARED` — `env-vars.ldcxxshared`
+- `LDSHARED` — `env-vars.ldshared`
+- `MACOSX_DEPLOYMENT_TARGET` — `env-vars.macosx_deployment_target`
+- `MSGPACK_PUREPYTHON` — `env-vars.msgpack_purepython`
+- `NETRC` — `env-vars.netrc`
+- `NETWORK_REQUIRED` — `env-vars.network_required`
+- `NO_NETWORK` — `env-vars.no_network`
+- `OPENAI_API_TYPE` — `env-vars.openai_api_type`
+- `OPENAI_API_VERSION` — `env-vars.openai_api_version`
+- `OPENAI_LOG` — `env-vars.openai_log`
+- `OPENAI_PROJECT_ID` — `env-vars.openai_project_id`
+- `OPENAI_WEBHOOK_SECRET` — `env-vars.openai_webhook_secret`
+- `PIP_BUILD_TRACKER` — `env-vars.pip_build_tracker`
+- `PIP_CONFIG_FILE` — `env-vars.pip_config_file`
+- `PIP_EXISTS_ACTION` — `env-vars.pip_exists_action`
+- `PIP_NO_COLOR` — `env-vars.pip_no_color`
+- `PIP_NO_INPUT` — `env-vars.pip_no_input`
+- `PIP_NO_PARTIAL_CLONE_FOR_BROKEN_GIT_SERVER` — `env-vars.pip_no_partial_clone_for_broken_git_server`
+- `PIP_USER_AGENT_USER_DATA` — `env-vars.pip_user_agent_user_data`
+- `PRE_BUILT_SETUPTOOLS_SDIST` — `env-vars.pre_built_setuptools_sdist`
+- `PRE_BUILT_SETUPTOOLS_WHEEL` — `env-vars.pre_built_setuptools_wheel`
+- `PROMPT_TOOLKIT_BELL` — `env-vars.prompt_toolkit_bell`
+- `PROMPT_TOOLKIT_COLOR_DEPTH` — `env-vars.prompt_toolkit_color_depth`
+- `PSUTIL_DEBUG` — `env-vars.psutil_debug`
+- `PYDANTIC_DISABLE_PLUGINS` — `env-vars.pydantic_disable_plugins`
+- `PYDANTIC_PRIVATE_ALLOW_UNHANDLED_SCHEMA_TYPES` — `env-vars.pydantic_private_allow_unhandled_schema_types`
+- `PYTEST_XDIST_WORKER` — `env-vars.pytest_xdist_worker`
+- `PYTHON_EGG_CACHE` — `env-vars.python_egg_cache`
+- `PYTZ_SKIPEXISTSCHECK` — `env-vars.pytz_skipexistscheck`
+- `PYTZ_TZDATADIR` — `env-vars.pytz_tzdatadir`
+- `RUAMEL_DEBUG` — `env-vars.ruamel_debug`
+- `SETUPTOOLS_ENFORCE_DEPRECATION` — `env-vars.setuptools_enforce_deprecation`
+- `SETUPTOOLS_EXT_SUFFIX` — `env-vars.setuptools_ext_suffix`
+- `SETUPTOOLS_LAUNCHER` — `env-vars.setuptools_launcher`
+- `SETUPTOOLS_SYS_PATH_TECHNIQUE` — `env-vars.setuptools_sys_path_technique`
+- `SETUPTOOLS_USE_DISTUTILS` — `env-vars.setuptools_use_distutils`
+- `SOURCE_DATE_EPOCH` — `env-vars.source_date_epoch`
+- `SPHINX_BUILD` — `env-vars.sphinx_build`
+- `SSLKEYLOGFILE` — `env-vars.sslkeylogfile`
+- `TIMEOUT_BACKEND_TEST` — `env-vars.timeout_backend_test`
+- `UNICODE_VERSION` — `env-vars.unicode_version`
+- `UNIXCONFDIR` — `env-vars.unixconfdir`
+- `UNIXUSRLIBDIR` — `env-vars.unixusrlibdir`
+- `VALIDATE_PYPROJECT_NO_NETWORK` — `env-vars.validate_pyproject_no_network`
+- `VSCMD_ARG_TGT_ARCH` — `env-vars.vscmd_arg_tgt_arch`
+- `WATCHFILES_CHANGES` — `env-vars.watchfiles_changes`
+- `WATCHFILES_DEBUG` — `env-vars.watchfiles_debug`
+- `WATCHFILES_FORCE_POLLING` — `env-vars.watchfiles_force_polling`
+- `WATCHFILES_IGNORE_PERMISSION_DENIED` — `env-vars.watchfiles_ignore_permission_denied`
+- `WATCHFILES_POLL_DELAY_MS` — `env-vars.watchfiles_poll_delay_ms`
+- `WEBSOCKETS_BACKOFF_FACTOR` — `env-vars.websockets_backoff_factor`
+- `WEBSOCKETS_BACKOFF_INITIAL_DELAY` — `env-vars.websockets_backoff_initial_delay`
+- `WEBSOCKETS_BACKOFF_MAX_DELAY` — `env-vars.websockets_backoff_max_delay`
+- `WEBSOCKETS_BACKOFF_MIN_DELAY` — `env-vars.websockets_backoff_min_delay`
+- `WEBSOCKETS_MAX_BODY_SIZE` — `env-vars.websockets_max_body_size`
+- `WEBSOCKETS_MAX_LINE_LENGTH` — `env-vars.websockets_max_line_length`
+- `WEBSOCKETS_MAX_LOG_SIZE` — `env-vars.websockets_max_log_size`
+- `WEBSOCKETS_MAX_NUM_HEADERS` — `env-vars.websockets_max_num_headers`
+- `WEBSOCKETS_MAX_REDIRECTS` — `env-vars.websockets_max_redirects`
+- `XDG_DATA_DIRS` — `env-vars.xdg_data_dirs`
+- `XDG_DESKTOP_DIR` — `env-vars.xdg_desktop_dir`
+- `XDG_DOCUMENTS_DIR` — `env-vars.xdg_documents_dir`
+- `XDG_DOWNLOAD_DIR` — `env-vars.xdg_download_dir`
+- `XDG_MUSIC_DIR` — `env-vars.xdg_music_dir`
+- `XDG_PICTURES_DIR` — `env-vars.xdg_pictures_dir`
+- `XDG_PROJECTS_DIR` — `env-vars.xdg_projects_dir`
+- `XDG_PUBLICSHARE_DIR` — `env-vars.xdg_publicshare_dir`
+- `XDG_TEMPLATES_DIR` — `env-vars.xdg_templates_dir`
+- `XDG_VIDEOS_DIR` — `env-vars.xdg_videos_dir`
+- `YAMLDEBUG` — `env-vars.yamldebug`
+
+### 24 · Tools (83) and Toolsets (59)
+
+- Tool registry (`registry.register`) — `tools.registry-register`
+- Tool deregistration and restore — `tools.registry-deregister`
+- Plugin tool-override policy — `tools.registry-plugin-override-policy`
+- Toolset aliases — `tools.registry-toolset-alias`
+- Availability checks + TTL cache (`check_fn`) — `tools.registry-check-fn-cache`
+- Schema assembly (`get_definitions`) and dynamic schemas — `tools.registry-get-definitions`
+- Tool dispatch and result contract — `tools.registry-dispatch`
+- Per-tool / per-turn result budget — `tools.registry-result-budget`
+- Tool-output truncation limits — `tools.registry-output-limits`
+- Tool-call loop guardrails — `tools.guardrails-loop`
+- Tool result classification (side-effect / mutation) — `tools.result-classification`
+- Per-platform toolset scope restrictions — `tools.toolset-scope`
+- Toolset resolution (`resolve_toolset`) — `tools.toolset-resolve`
+- annotate_preview — `tools.tool-annotate-preview`
+- apply_layout — `tools.tool-apply-layout`
+- browser_back — `tools.tool-browser-back`
+- browser_cdp — `tools.tool-browser-cdp`
+- browser_click — `tools.tool-browser-click`
+- browser_console — `tools.tool-browser-console`
+- browser_dialog — `tools.tool-browser-dialog`
+- browser_exec — `tools.tool-browser-exec`
+- browser_get_images — `tools.tool-browser-get-images`
+- browser_navigate — `tools.tool-browser-navigate`
+- browser_press — `tools.tool-browser-press`
+- browser_scroll — `tools.tool-browser-scroll`
+- browser_snapshot — `tools.tool-browser-snapshot`
+- browser_type — `tools.tool-browser-type`
+- browser_vision — `tools.tool-browser-vision`
+- clarify — `tools.tool-clarify`
+- close_terminal — `tools.tool-close-terminal`
+- computer_use — `tools.tool-computer-use`
+- cronjob — `tools.tool-cronjob`
+- delegate_task — `tools.tool-delegate-task`
+- desktop_preview — `tools.tool-desktop-preview`
+- desktop_project — `tools.tool-desktop-project`
+- discord — `tools.tool-discord`
+- discord_admin — `tools.tool-discord-admin`
+- drive_preview — `tools.tool-drive-preview`
+- execute_code — `tools.tool-execute-code`
+- feishu_doc_read — `tools.tool-feishu-doc-read`
+- feishu_drive_add_comment — `tools.tool-feishu-drive-add-comment`
+- feishu_drive_list_comment_replies — `tools.tool-feishu-drive-list-comment-replies`
+- feishu_drive_list_comments — `tools.tool-feishu-drive-list-comments`
+- feishu_drive_reply_comment — `tools.tool-feishu-drive-reply-comment`
+- focus_pane — `tools.tool-focus-pane`
+- ha_call_service — `tools.tool-ha-call-service`
+- ha_get_state — `tools.tool-ha-get-state`
+- ha_list_entities — `tools.tool-ha-list-entities`
+- ha_list_services — `tools.tool-ha-list-services`
+- image_generate — `tools.tool-image-generate`
+- Kanban tools — shared gating and board resolution — `tools.kanban-shared`
+- kanban_attach — `tools.tool-kanban-attach`
+- kanban_attach_url — `tools.tool-kanban-attach-url`
+- kanban_attachments — `tools.tool-kanban-attachments`
+- kanban_block — `tools.tool-kanban-block`
+- kanban_comment — `tools.tool-kanban-comment`
+- kanban_complete — `tools.tool-kanban-complete`
+- kanban_create — `tools.tool-kanban-create`
+- kanban_heartbeat — `tools.tool-kanban-heartbeat`
+- kanban_link — `tools.tool-kanban-link`
+- kanban_list — `tools.tool-kanban-list`
+- kanban_request_changes — `tools.tool-kanban-request-changes`
+- kanban_request_review — `tools.tool-kanban-request-review`
+- kanban_show — `tools.tool-kanban-show`
+- kanban_unblock — `tools.tool-kanban-unblock`
+- memory — `tools.tool-memory`
+- patch — `tools.tool-patch`
+- process — `tools.tool-process`
+- react_to_message — `tools.tool-react-to-message`
+- read_file — `tools.tool-read-file`
+- read_terminal — `tools.tool-read-terminal`
+- read_window_below — `tools.tool-read-window-below`
+- search_files — `tools.tool-search-files`
+- write_file — `tools.tool-write-file`
+- session_search — `tools.tool-session-search`
+- setup_mcp — `tools.tool-setup-mcp`
+- skill_manage — `tools.tool-skill-manage`
+- skill_view — `tools.tool-skill-view`
+- skills_list — `tools.tool-skills-list`
+- terminal — `tools.tool-terminal`
+- text_to_speech — `tools.tool-text-to-speech`
+- tip — `tools.tool-tip`
+- todo — `tools.tool-todo`
+- tour — `tools.tool-tour`
+- video_analyze — `tools.tool-video-analyze`
+- video_generate — `tools.tool-video-generate`
+- vision_analyze — `tools.tool-vision-analyze`
+- web_extract — `tools.tool-web-extract`
+- web_search — `tools.tool-web-search`
+- x_search — `tools.tool-x-search`
+- xai_video_edit — `tools.tool-xai-video-edit`
+- xai_video_extend — `tools.tool-xai-video-extend`
+- yb_query_group_info — `tools.tool-yb-query-group-info`
+- yb_query_group_members — `tools.tool-yb-query-group-members`
+- yb_search_sticker — `tools.tool-yb-search-sticker`
+- yb_send_dm — `tools.tool-yb-send-dm`
+- yb_send_sticker — `tools.tool-yb-send-sticker`
+- Toolset `web` — `tools.toolset-web`
+- Toolset `search` — `tools.toolset-search`
+- Toolset `x_search` — `tools.toolset-x-search`
+- Toolset `vision` — `tools.toolset-vision`
+- Toolset `video` — `tools.toolset-video`
+- Toolset `image_gen` — `tools.toolset-image-gen`
+- Toolset `video_gen` — `tools.toolset-video-gen`
+- Toolset `computer_use` — `tools.toolset-computer-use`
+- Toolset `terminal` — `tools.toolset-terminal`
+- Toolset `skills` — `tools.toolset-skills`
+- Toolset `browser` — `tools.toolset-browser`
+- Toolset `browser-cdp` (registry-only) — `tools.toolset-browser-cdp`
+- Toolset `browser-use` (registry-only) — `tools.toolset-browser-use`
+- Toolset `cronjob` — `tools.toolset-cronjob`
+- Toolset `file` — `tools.toolset-file`
+- Toolset `tts` — `tools.toolset-tts`
+- Toolset `todo` — `tools.toolset-todo`
+- Toolset `memory` — `tools.toolset-memory`
+- Toolset `context_engine` — `tools.toolset-context-engine`
+- Toolset `session_search` — `tools.toolset-session-search`
+- Toolset `project` — `tools.toolset-project`
+- Toolset `bot_room` — `tools.toolset-bot-room`
+- Toolset `desktop_ui` — `tools.toolset-desktop-ui`
+- Toolset `clarify` — `tools.toolset-clarify`
+- Toolset `code_execution` — `tools.toolset-code-execution`
+- Toolset `delegation` — `tools.toolset-delegation`
+- Toolset `homeassistant` — `tools.toolset-homeassistant`
+- Toolset `kanban` — `tools.toolset-kanban`
+- Toolset `discord` — `tools.toolset-discord`
+- Toolset `discord_admin` — `tools.toolset-discord-admin`
+- Toolset `yuanbao` — `tools.toolset-yuanbao`
+- Toolset `feishu_doc` — `tools.toolset-feishu-doc`
+- Toolset `feishu_drive` — `tools.toolset-feishu-drive`
+- Toolset `spotify` — `tools.toolset-spotify`
+- Toolset `debugging` — `tools.toolset-debugging`
+- Toolset `safe` — `tools.toolset-safe`
+- Toolset `coding` — `tools.toolset-coding`
+- `_HERMES_CORE_TOOLS` — the shared platform tool list — `tools.toolset-core-list`
+- Toolset `hermes-acp` — `tools.toolset-hermes-acp`
+- Toolset `hermes-api-server` — `tools.toolset-hermes-api-server`
+- Toolset `hermes-cli` — `tools.toolset-hermes-cli`
+- Toolset `hermes-cron` — `tools.toolset-hermes-cron`
+- Toolset `hermes-telegram` — `tools.toolset-hermes-telegram`
+- Toolset `hermes-discord` — `tools.toolset-hermes-discord`
+- Toolset `hermes-whatsapp` — `tools.toolset-hermes-whatsapp`
+- Toolset `hermes-slack` — `tools.toolset-hermes-slack`
+- Toolset `hermes-signal` — `tools.toolset-hermes-signal`
+- Toolset `hermes-bluebubbles` — `tools.toolset-hermes-bluebubbles`
+- Toolset `hermes-homeassistant` — `tools.toolset-hermes-homeassistant`
+- Toolset `hermes-email` — `tools.toolset-hermes-email`
+- Toolset `hermes-mattermost` — `tools.toolset-hermes-mattermost`
+- Toolset `hermes-matrix` — `tools.toolset-hermes-matrix`
+- Toolset `hermes-dingtalk` — `tools.toolset-hermes-dingtalk`
+- Toolset `hermes-feishu` — `tools.toolset-hermes-feishu`
+- Toolset `hermes-weixin` — `tools.toolset-hermes-weixin`
+- Toolset `hermes-qqbot` — `tools.toolset-hermes-qqbot`
+- Toolset `hermes-wecom` — `tools.toolset-hermes-wecom`
+- Toolset `hermes-wecom-callback` — `tools.toolset-hermes-wecom-callback`
+- Toolset `hermes-yuanbao` — `tools.toolset-hermes-yuanbao`
+- Toolset `hermes-sms` — `tools.toolset-hermes-sms`
+- Toolset `hermes-webhook` — `tools.toolset-hermes-webhook`
+- Toolset `hermes-gateway` — `tools.toolset-hermes-gateway`
+- Doc discrepancy: `project` toolset lists three removed tools — `tools.docdiff-project-tools`
+- Doc discrepancy: `desktop_ui` table lists removed tools and omits four live ones — `tools.docdiff-desktop-ui-tools`
+- Doc discrepancy: `browser_cdp` / `browser_dialog` toolset attribution — `tools.docdiff-browser-cdp-toolset`
+- Doc discrepancy: `browser_exec` missing from the browser table — `tools.docdiff-browser-exec-missing`
+- Doc discrepancy: `discord` / `discord_admin` action lists — `tools.docdiff-discord-actions`
+- Doc discrepancy: `terminal` parameter named `notify_on_complete` — `tools.docdiff-terminal-notify`
+- Doc discrepancy: `clarify` question `id` field — `tools.docdiff-clarify-id`
+- Doc discrepancy: `spotify` toolset in the static table with no built-in tools — `tools.docdiff-spotify`
+- Doc/code discrepancy: `yuanbao` static toolset vs `hermes-yuanbao` registry toolset — `tools.docdiff-yuanbao-toolset`
+- Doc discrepancy: `hermes-cli` documented as including `send_message`-class messaging — `tools.docdiff-send-message`
+- Documented environment requirements for `web_search` / `web_extract` — `tools.docdiff-web-env`
+
+### 25 · Built-in Skills (58) and the Skills System
+
+- Skills directory and resolution order — `skills-core.skills-dir`
+- SKILL.md file format (frontmatter contract) — `skills-core.skill-md-format`
+- Platform gating (`platforms:`) — `skills-core.platform-gating`
+- Environment relevance gating (`environments:`) — `skills-core.environment-gating`
+- Gateway-channel gating (`metadata.hermes.session_platforms`) — `skills-core.session-platform-gating`
+- Conditional activation (`requires_*` / `fallback_for_*`) — `skills-core.conditional-activation`
+- Skills index in the system prompt (`<available_skills>`) — `skills-core.prompt-index`
+- Skill prompt snapshot cache — `skills-core.prompt-snapshot`
+- Category descriptions (`DESCRIPTION.md`) — `skills-core.category-description`
+- `skills_list` tool — `skills-core.tool-skills-list`
+- `skill_view` tool — `skills-core.tool-skill-view`
+- `skill_view` repeat-load dedup — `skills-core.skill-view-dedup`
+- `skill_manage` tool — `skills-core.tool-skill-manage`
+- `skill_manage` atomic batch — `skills-core.skill-manage-batch`
+- Skill write-approval gate (`skills.write_approval`) — `skills-core.write-approval`
+- Skill preprocessing: template vars and inline shell — `skills-core.skill-preprocessing`
+- Skill-declared config settings (`metadata.hermes.config`) — `skills-core.skill-config-vars`
+- Secure setup on load (required env vars + credential files) — `skills-core.skill-setup`
+- Disabled skills (`skills.disabled` / `skills.platform_disabled`) — `skills-core.disabled-skills`
+- Project-local skills and the trust gate — `skills-core.project-skills`
+- Project-skill scan-time quarantine — `skills-core.project-quarantine`
+- External skill directories (`skills.external_dirs`) — `skills-core.external-dirs`
+- Plugin-namespaced skills (`plugin:skill`) — `skills-core.plugin-skills`
+- Org-shared skills (`_org/` mirror) — `skills-core.org-skills`
+- Skill-defined slash commands (`/<skill-name>`) — `skills-core.skill-slash-commands`
+- Stacked slash-skill invocations — `skills-core.stacked-skills`
+- Session-wide skill preloading (`-s` / `--skills`) — `skills-core.preloaded-skills`
+- Skill-invocation scaffolding markers and title recovery — `skills-core.skill-scaffolding`
+- `hermes sessions retitle-skills` — `skills-core.retitle-skills`
+- Skill bundles — `skills-core.bundles`
+- Bundled-skill seeding and the sync manifest — `skills-core.bundled-seeding`
+- Bundled-skill modification tracking: `list-modified`, `diff`, `reset` — `skills-core.bundled-modified`
+- Bundled-skill opt-out / opt-in (`.no-bundled-skills`) — `skills-core.bundled-opt-out`
+- `hermes skills repair-official` — `skills-core.repair-official`
+- Skills Hub — sources and the source router — `skills-core.hub-sources`
+- Skills Hub — install pipeline (quarantine → scan → install → lock) — `skills-core.hub-install`
+- Skills Guard — the security scanner — `skills-core.skills-guard`
+- Advisory NVIDIA SkillEvaluator Tier 1 scan — `skills-core.tier1-advisory`
+- `hermes skills audit --deep` (AST diagnostic) — `skills-core.ast-audit`
+- Skill taps (custom GitHub sources) — `skills-core.taps`
+- `hermes skills publish` — `skills-core.publish`
+- `hermes skills snapshot export|import` — `skills-core.snapshot`
+- Hub update lifecycle: `check`, `update`, `audit`, `uninstall` — `skills-core.hub-lifecycle`
+- Skill usage telemetry (`.usage.json`) — `skills-core.skill-usage`
+- Per-mutation skill audit ledger — `skills-core.skill-ledger`
+- Curator snapshots and whole-tree rollback — `skills-core.curator-backup`
+- Curator — the background skill maintainer — `skills-core.curator`
+- Curator automatic state transitions — `skills-core.curator-transitions`
+- Curator LLM consolidation pass (review prompt) — `skills-core.curator-review`
+- Curator run reports — `skills-core.curator-reports`
+- `hermes curator` subcommands — `skills-core.curator-cli`
+- Cross-device skill sync (`hermes sync`) — `skills-core.sync`
+- `reload_skills()` / `/reload-skills` — `skills-core.reload-skills`
+- Skills scan cache and invalidation — `skills-core.skills-cache`
+- Skill linter (`tools/skill_linter.py`) — `skills-core.skill-linter`
+- Skill write-origin provenance — `skills-core.write-origin`
+- Prompt-injection warnings on skill load — `skills-core.injection-warnings`
+- apple-notes — `skills-core.skill-apple-notes`
+- apple-reminders — `skills-core.skill-apple-reminders`
+- findmy — `skills-core.skill-findmy`
+- imessage — `skills-core.skill-imessage`
+- claude-code — `skills-core.skill-claude-code`
+- codex — `skills-core.skill-codex`
+- computer-use — `skills-core.skill-computer-use`
+- hermes-agent — `skills-core.skill-hermes-agent`
+- opencode — `skills-core.skill-opencode`
+- architecture-diagram — `skills-core.skill-architecture-diagram`
+- ascii-video — `skills-core.skill-ascii-video`
+- baoyu-infographic — `skills-core.skill-baoyu-infographic`
+- claude-design — `skills-core.skill-claude-design`
+- design-md — `skills-core.skill-design-md`
+- humanizer — `skills-core.skill-humanizer`
+- manim-video — `skills-core.skill-manim-video`
+- p5js — `skills-core.skill-p5js`
+- popular-web-designs — `skills-core.skill-popular-web-designs`
+- songwriting-and-ai-music — `skills-core.skill-songwriting`
+- sdlc-review — `skills-core.skill-sdlc-review`
+- email-inbox-triage — `skills-core.skill-email-inbox-triage`
+- himalaya — `skills-core.skill-himalaya`
+- gif-search — `skills-core.skill-gif-search`
+- songsee — `skills-core.skill-songsee`
+- youtube-content — `skills-core.skill-youtube-content`
+- obsidian — `skills-core.skill-obsidian`
+- airtable — `skills-core.skill-airtable`
+- box — `skills-core.skill-box`
+- document-to-action-items — `skills-core.skill-document-to-action-items`
+- docx — `skills-core.skill-docx`
+- google-workspace — `skills-core.skill-google-workspace`
+- maps — `skills-core.skill-maps`
+- meeting-action-items — `skills-core.skill-meeting-action-items`
+- notion — `skills-core.skill-notion`
+- pdf — `skills-core.skill-pdf`
+- powerpoint — `skills-core.skill-powerpoint`
+- product-price-monitor — `skills-core.skill-product-price-monitor`
+- teams-meeting-pipeline — `skills-core.skill-teams-meeting-pipeline`
+- weekly-review-planning — `skills-core.skill-weekly-review-planning`
+- xlsx — `skills-core.skill-xlsx`
+- arxiv — `skills-core.skill-arxiv`
+- competitor-news-monitor — `skills-core.skill-competitor-news-monitor`
+- grounded-citations — `skills-core.skill-grounded-citations`
+- llm-wiki — `skills-core.skill-llm-wiki`
+- xurl — `skills-core.skill-xurl`
+- codebase-inspection — `skills-core.skill-codebase-inspection`
+- dogfood — `skills-core.skill-dogfood`
+- github — `skills-core.skill-github`
+- hermes-agent-skill-authoring — `skills-core.skill-hermes-agent-skill-authoring`
+- inspecting-hermes-desktop-dom — `skills-core.skill-inspecting-hermes-desktop-dom`
+- node-inspect-debugger — `skills-core.skill-node-inspect-debugger`
+- python-debugpy — `skills-core.skill-python-debugpy`
+- requesting-code-review — `skills-core.skill-requesting-code-review`
+- simplify-code — `skills-core.skill-simplify-code`
+- spike — `skills-core.skill-spike`
+- systematic-debugging — `skills-core.skill-systematic-debugging`
+- test-driven-development — `skills-core.skill-test-driven-development`
+- blocked-page-recovery — `skills-core.skill-blocked-page-recovery`
+- `hermes skills config` — interactive enable/disable UI — `skills-core.skills-config-ui`
+- Agent-created skill scanning (`skills.guard_agent_created`) — `skills-core.guard-agent-created`
+- Cross-profile "skill not found" resolution — `skills-core.cross-profile-lookup`
+
+### 26 · Optional Skills, Optional MCPs, Plugin Packs & the Plugin Ecosystem
+
+- Optional skills catalog (`optional-skills/`) — `optional.skills-catalog`
+- Install an optional skill — `optional.skills-install`
+- MCP catalog (`optional-mcps/`) — Nous-approved server manifests — `optional.mcp-catalog`
+- MCP catalog install flow — `optional.mcp-install-flow`
+- MCP tool selection — probe + curses checklist, include/exclude modes — `optional.mcp-tool-selection`
+- MCP composer suggestions ("brand pills") — `optional.mcp-suggest`
+- Community plugin index — `optional.plugin-index`
+- Seeded community plugin index entries — `optional.plugin-index-seed`
+- Plugin packs — `hermes plugins pack` — `optional.plugin-packs`
+- Plugin capability consent — `optional.plugin-capabilities`
+- Plugin lifecycle commands (index-aware) — `optional.plugins-lifecycle`
+- Bundled plugin manifest (`plugin.yaml`) for first-party plugins — `optional.plugin-manifest`
+- Dashboard plugin manifest (`manifest.json`) — `optional.dashboard-plugin-manifest`
+- Per-plugin persistent storage convention — `optional.plugin-storage`
+- Plugin concurrency helpers — `optional.plugin-utils`
+- Context engine plugin slot — `optional.plugin-context-engine`
+- Browser backend: Browser Use — `optional.plugin-browser-browser-use`
+- Browser backend: Browserbase — `optional.plugin-browser-browserbase`
+- Browser backend: Firecrawl — `optional.plugin-browser-firecrawl`
+- Cron provider: Chronos (NAS-mediated managed cron) — `optional.plugin-cron-chronos`
+- Dashboard auth provider: basic (username/password) — `optional.plugin-dashboard-auth-basic`
+- Dashboard auth provider: drain (shared bearer secret) — `optional.plugin-dashboard-auth-drain`
+- Dashboard auth provider: Nous Portal OAuth — `optional.plugin-dashboard-auth-nous`
+- Dashboard auth provider: generic self-hosted OIDC — `optional.plugin-dashboard-auth-self-hosted`
+- disk-cleanup — `optional.plugin-disk-cleanup`
+- google_meet — `optional.plugin-google-meet`
+- hermes-achievements (dashboard plugin) — `optional.plugin-achievements`
+- kanban (dashboard plugin + dispatcher) — `optional.plugin-kanban`
+- Memory provider: ByteRover — `optional.plugin-memory-byterover`
+- Memory provider: Hindsight — `optional.plugin-memory-hindsight`
+- Memory provider: Holographic (local SQLite) — `optional.plugin-memory-holographic`
+- Memory provider: Honcho — `optional.plugin-memory-honcho`
+- Memory provider: Mem0 — `optional.plugin-memory-mem0`
+- Memory provider: OpenViking — `optional.plugin-memory-openviking`
+- Memory provider: RetainDB — `optional.plugin-memory-retaindb`
+- Memory provider: Supermemory — `optional.plugin-memory-supermemory`
+- Declarative memory-provider config schema — `optional.plugin-memory-config-schema`
+- Memory query rewriting — `optional.plugin-memory-query-rewrite`
+- observability/langfuse — `optional.plugin-observability-langfuse`
+- security-guidance — `optional.plugin-security-guidance`
+- spotify — `optional.plugin-spotify`
+- teams_pipeline (Microsoft Teams meeting pipeline) — `optional.plugin-teams-pipeline`
+- Image generation backend: DeepInfra — `optional.plugin-image-gen-deepinfra`
+- Image generation backend: FAL — `optional.plugin-image-gen-fal`
+- Image generation backend: Krea — `optional.plugin-image-gen-krea`
+- Image generation backend: OpenAI — `optional.plugin-image-gen-openai`
+- Image generation backend: OpenAI via ChatGPT/Codex OAuth — `optional.plugin-image-gen-openai-codex`
+- Image generation backend: OpenRouter — `optional.plugin-image-gen-openrouter`
+- Image generation backend: xAI — `optional.plugin-image-gen-xai`
+- Video generation backend: DeepInfra — `optional.plugin-video-gen-deepinfra`
+- Video generation backend: FAL — `optional.plugin-video-gen-fal`
+- Video generation backend: xAI — `optional.plugin-video-gen-xai`
+- Web provider: Brave Search (free tier) — `optional.plugin-web-brave-free`
+- Web provider: DuckDuckGo (ddgs) — `optional.plugin-web-ddgs`
+- Web provider: Exa — `optional.plugin-web-exa`
+- Web provider: Firecrawl — `optional.plugin-web-firecrawl`
+- Web provider: Keenable — `optional.plugin-web-keenable`
+- Web provider: Parallel.ai — `optional.plugin-web-parallel`
+- Web provider: SearXNG — `optional.plugin-web-searxng`
+- Web provider: xAI web search — `optional.plugin-web-xai`
+- MCP catalog: Airtable — `optional.mcp-airtable`
+- MCP catalog: Algolia — `optional.mcp-algolia`
+- MCP catalog: AllTrails — `optional.mcp-alltrails`
+- MCP catalog: Amplitude — `optional.mcp-amplitude`
+- MCP catalog: Asana — `optional.mcp-asana`
+- MCP catalog: Atlassian (Jira + Confluence) — `optional.mcp-atlassian`
+- MCP catalog: Attio — `optional.mcp-attio`
+- MCP catalog: AWS Knowledge — `optional.mcp-aws-knowledge`
+- MCP catalog: Better Stack — `optional.mcp-betterstack`
+- MCP catalog: Buildkite — `optional.mcp-buildkite`
+- MCP catalog: Calendly — `optional.mcp-calendly`
+- MCP catalog: Canva — `optional.mcp-canva`
+- MCP catalog: CircleCI — `optional.mcp-circleci`
+- MCP catalog: ClickUp — `optional.mcp-clickup`
+- MCP catalog: Close CRM — `optional.mcp-close`
+- MCP catalog: Cloudflare — `optional.mcp-cloudflare`
+- MCP catalog: Cloudinary — `optional.mcp-cloudinary`
+- MCP catalog: Comfy Cloud — `optional.mcp-comfy-cloud`
+- MCP catalog: Context7 — `optional.mcp-context7`
+- MCP catalog: Craft — `optional.mcp-craft`
+- MCP catalog: Datadog — `optional.mcp-datadog`
+- MCP catalog: DeepWiki — `optional.mcp-deepwiki`
+- MCP catalog: Dropbox — `optional.mcp-dropbox`
+- MCP catalog: Figma — `optional.mcp-figma`
+- MCP catalog: Fireflies — `optional.mcp-fireflies`
+- MCP catalog: Gamma — `optional.mcp-gamma`
+- MCP catalog: GitLab — `optional.mcp-gitlab`
+- MCP catalog: Globalping — `optional.mcp-globalping`
+- MCP catalog: Grafana Cloud — `optional.mcp-grafana`
+- MCP catalog: Hugging Face — `optional.mcp-hugging_face`
+- MCP catalog: Indeed — `optional.mcp-indeed`
+- MCP catalog: Intercom — `optional.mcp-intercom`
+- MCP catalog: Kiwi.com — `optional.mcp-kiwi`
+- MCP catalog: Klaviyo — `optional.mcp-klaviyo`
+- MCP catalog: Linear — `optional.mcp-linear`
+- MCP catalog: Microsoft Learn — `optional.mcp-microsoft-learn`
+- MCP catalog: Miro — `optional.mcp-miro`
+- MCP catalog: Mixpanel — `optional.mcp-mixpanel`
+- MCP catalog: monday.com — `optional.mcp-monday`
+- MCP catalog: MotherDuck — `optional.mcp-motherduck`
+- MCP catalog: n8n — `optional.mcp-n8n`
+- MCP catalog: Neon — `optional.mcp-neon`
+- MCP catalog: Netlify — `optional.mcp-netlify`
+- MCP catalog: Notion — `optional.mcp-notion`
+- MCP catalog: PayPal — `optional.mcp-paypal`
+- MCP catalog: Plaid — `optional.mcp-plaid`
+- MCP catalog: Postman — `optional.mcp-postman`
+- MCP catalog: Prisma Postgres — `optional.mcp-prisma-postgres`
+- MCP catalog: Railway — `optional.mcp-railway`
+- MCP catalog: Robinhood — `optional.mcp-robinhood`
+- MCP catalog: Semgrep — `optional.mcp-semgrep`
+- MCP catalog: Sentry — `optional.mcp-sentry`
+- MCP catalog: Square — `optional.mcp-square`
+- MCP catalog: Strava — `optional.mcp-strava`
+- MCP catalog: Stripe — `optional.mcp-stripe`
+- MCP catalog: Supabase — `optional.mcp-supabase`
+- MCP catalog: Todoist — `optional.mcp-todoist`
+- MCP catalog: trivago — `optional.mcp-trivago`
+- MCP catalog: Twelve Data — `optional.mcp-twelve-data`
+- MCP catalog: Twilio Docs — `optional.mcp-twilio-docs`
+- MCP catalog: Unreal Engine — `optional.mcp-unreal-engine`
+- MCP catalog: Vercel — `optional.mcp-vercel`
+- MCP catalog: Webflow — `optional.mcp-webflow`
+- MCP catalog: Wolfram|Alpha — `optional.mcp-wolfram`
+- MCP catalog: WordPress.com — `optional.mcp-wordpress-com`
+- Skill: agent-merge-conflict-arbiter — `optional.skill-agent-merge-conflict-arbiter`
+- Skill: antigravity-cli — `optional.skill-antigravity-cli`
+- Skill: blackbox — `optional.skill-blackbox`
+- Skill: grok — `optional.skill-grok`
+- Skill: honcho — `optional.skill-honcho`
+- Skill: openhands — `optional.skill-openhands`
+- Skill: evm — `optional.skill-evm`
+- Skill: hyperliquid — `optional.skill-hyperliquid`
+- Skill: solana — `optional.skill-solana`
+- Skill: one-three-one-rule — `optional.skill-one-three-one-rule`
+- Skill: ascii-art — `optional.skill-ascii-art`
+- Skill: audiocraft-audio-generation — `optional.skill-audiocraft-audio-generation`
+- Skill: baoyu-article-illustrator — `optional.skill-baoyu-article-illustrator`
+- Skill: baoyu-comic — `optional.skill-baoyu-comic`
+- Skill: comfyui — `optional.skill-comfyui`
+- Skill: concept-diagrams — `optional.skill-concept-diagrams`
+- Skill: creative-ideation — `optional.skill-creative-ideation`
+- Skill: draw-your-font — `optional.skill-draw-your-font`
+- Skill: excalidraw — `optional.skill-excalidraw`
+- Skill: heartmula — `optional.skill-heartmula`
+- Skill: hyperframes — `optional.skill-hyperframes`
+- Skill: impeccable — `optional.skill-impeccable`
+- Skill: kanban-video-orchestrator — `optional.skill-kanban-video-orchestrator`
+- Skill: meme-generation — `optional.skill-meme-generation`
+- Skill: pixel-art — `optional.skill-pixel-art`
+- Skill: pretext — `optional.skill-pretext`
+- Skill: simple-english — `optional.skill-simple-english`
+- Skill: sketch — `optional.skill-sketch`
+- Skill: social-media-content-calendar — `optional.skill-social-media-content-calendar`
+- Skill: tldraw-offline — `optional.skill-tldraw-offline`
+- Skill: touchdesigner-mcp — `optional.skill-touchdesigner-mcp`
+- Skill: unreal-mcp — `optional.skill-unreal-mcp`
+- Skill: jupyter-notebook — `optional.skill-jupyter-notebook`
+- Skill: actual-setup — `optional.skill-actual-setup`
+- Skill: docker-management — `optional.skill-docker-management`
+- Skill: hermes-s6-container-supervision — `optional.skill-hermes-s6-container-supervision`
+- Skill: inference-sh-cli — `optional.skill-inference-sh-cli`
+- Skill: pinggy-tunnel — `optional.skill-pinggy-tunnel`
+- Skill: setup-wizard-generator — `optional.skill-setup-wizard-generator`
+- Skill: watchers — `optional.skill-watchers`
+- Skill: adversarial-ux-test — `optional.skill-adversarial-ux-test`
+- Skill: agentmail — `optional.skill-agentmail`
+- Skill: 3-statement-model — `optional.skill-3-statement-model`
+- Skill: comps-analysis — `optional.skill-comps-analysis`
+- Skill: dcf-model — `optional.skill-dcf-model`
+- Skill: excel-author — `optional.skill-excel-author`
+- Skill: lbo-model — `optional.skill-lbo-model`
+- Skill: merger-model — `optional.skill-merger-model`
+- Skill: polymarket — `optional.skill-polymarket`
+- Skill: pptx-author — `optional.skill-pptx-author`
+- Skill: stocks — `optional.skill-stocks`
+- Skill: minecraft-modpack-server — `optional.skill-minecraft-modpack-server`
+- Skill: pokemon-player — `optional.skill-pokemon-player`
+- Skill: fitness-nutrition — `optional.skill-fitness-nutrition`
+- Skill: neuroskill-bci — `optional.skill-neuroskill-bci`
+- Skill: fastmcp — `optional.skill-fastmcp`
+- Skill: mcp-oauth-remote-gateway — `optional.skill-mcp-oauth-remote-gateway`
+- Skill: mcporter — `optional.skill-mcporter`
+- Skill: openclaw-migration — `optional.skill-openclaw-migration`
+- Skill: accelerate — `optional.skill-accelerate`
+- Skill: chroma — `optional.skill-chroma`
+- Skill: clip — `optional.skill-clip`
+- Skill: evaluating-llms-harness — `optional.skill-evaluating-llms-harness`
+- Skill: weights-and-biases — `optional.skill-weights-and-biases`
+- Skill: faiss — `optional.skill-faiss`
+- Skill: flash-attention — `optional.skill-flash-attention`
+- Skill: guidance — `optional.skill-guidance`
+- Skill: huggingface-tokenizers — `optional.skill-huggingface-tokenizers`
+- Skill: llama-cpp — `optional.skill-llama-cpp`
+- Skill: outlines — `optional.skill-outlines`
+- Skill: serving-llms-vllm — `optional.skill-serving-llms-vllm`
+- Skill: instructor — `optional.skill-instructor`
+- Skill: lambda-labs — `optional.skill-lambda-labs`
+- Skill: llava — `optional.skill-llava`
+- Skill: modal — `optional.skill-modal`
+- Skill: huggingface-hub — `optional.skill-huggingface-hub`
+- Skill: segment-anything-model — `optional.skill-segment-anything-model`
+- Skill: nemo-curator — `optional.skill-nemo-curator`
+- Skill: obliteratus — `optional.skill-obliteratus`
+- Skill: peft — `optional.skill-peft`
+- Skill: pinecone — `optional.skill-pinecone`
+- Skill: pytorch-fsdp — `optional.skill-pytorch-fsdp`
+- Skill: pytorch-lightning — `optional.skill-pytorch-lightning`
+- Skill: qdrant — `optional.skill-qdrant`
+- Skill: dspy — `optional.skill-dspy`
+- Skill: saelens — `optional.skill-saelens`
+- Skill: simpo — `optional.skill-simpo`
+- Skill: slime — `optional.skill-slime`
+- Skill: stable-diffusion — `optional.skill-stable-diffusion`
+- Skill: tensorrt-llm — `optional.skill-tensorrt-llm`
+- Skill: torchtitan — `optional.skill-torchtitan`
+- Skill: axolotl — `optional.skill-axolotl`
+- Skill: trl-fine-tuning — `optional.skill-trl-fine-tuning`
+- Skill: unsloth — `optional.skill-unsloth`
+- Skill: whisper — `optional.skill-whisper`
+- Skill: mpp-agent — `optional.skill-mpp-agent`
+- Skill: stripe-link-cli — `optional.skill-stripe-link-cli`
+- Skill: stripe-projects — `optional.skill-stripe-projects`
+- Skill: canvas — `optional.skill-canvas`
+- Skill: decision-questionnaire — `optional.skill-decision-questionnaire`
+- Skill: here-now — `optional.skill-here-now`
+- Skill: memento-flashcards — `optional.skill-memento-flashcards`
+- Skill: shop — `optional.skill-shop`
+- Skill: shopify — `optional.skill-shopify`
+- Skill: siyuan — `optional.skill-siyuan`
+- Skill: telephony — `optional.skill-telephony`
+- Skill: bioinformatics — `optional.skill-bioinformatics`
+- Skill: blogwatcher — `optional.skill-blogwatcher`
+- Skill: darwinian-evolver — `optional.skill-darwinian-evolver`
+- Skill: domain-intel — `optional.skill-domain-intel`
+- Skill: drug-discovery — `optional.skill-drug-discovery`
+- Skill: duckduckgo-search — `optional.skill-duckduckgo-search`
+- Skill: gitnexus-explorer — `optional.skill-gitnexus-explorer`
+- Skill: osint-investigation — `optional.skill-osint-investigation`
+- Skill: parallel-cli — `optional.skill-parallel-cli`
+- Skill: pinecone-research — `optional.skill-pinecone-research`
+- Skill: qmd — `optional.skill-qmd`
+- Skill: research-paper-writing — `optional.skill-research-paper-writing`
+
+### 27 · Model Providers, Model Catalog, Routing, Credentials & Billing
+
+- Provider profile registry (`providers/`) — `providers.registry`
+- `ProviderProfile` dataclass — `providers.profile-dataclass`
+- Bundled provider plugin layout & manifest — `providers.plugin-layout`
+- Pip-installed provider plugins (entry point `hermes_agent.plugins`) — `providers.entrypoint-plugins`
+- Provider identity resolution (`hermes_cli/providers.py`) — `providers.identity-resolution`
+- Host-mandated API mode — `providers.host-mandated-api-mode`
+- Aggregator vs flat-namespace reseller classification — `providers.aggregator-classification`
+- Canonical reasoning-effort ladder & clamp — `providers.reasoning-effort-ladder`
+- Actual Computer — `providers.actual`
+- Vercel AI Gateway — `providers.ai-gateway`
+- Alibaba Cloud DashScope (international) — `providers.alibaba`
+- Alibaba Cloud DashScope (China) — `providers.alibaba-cn`
+- Alibaba Cloud (Coding Plan) — `providers.alibaba-coding-plan`
+- Alibaba Cloud (Coding Plan, China) — `providers.alibaba-coding-plan-cn`
+- Alibaba Cloud (Token Plan) — `providers.alibaba-token-plan`
+- Alibaba Cloud (Token Plan, China) — `providers.alibaba-token-plan-cn`
+- Anthropic (Claude) — `providers.anthropic`
+- Arcee AI — `providers.arcee`
+- Azure Foundry (Microsoft Foundry) — `providers.azure-foundry`
+- AWS Bedrock — `providers.bedrock`
+- CommandCode — `providers.commandcode`
+- CommandCode (Anthropic) — `providers.commandcode-anthropic`
+- GitHub Copilot / GitHub Models — `providers.copilot`
+- GitHub Copilot ACP — `providers.copilot-acp`
+- Custom / Ollama / local OpenAI-compatible endpoint — `providers.custom`
+- DeepInfra — `providers.deepinfra`
+- DeepSeek — `providers.deepseek`
+- Fireworks AI — `providers.fireworks`
+- Google Gemini (AI Studio) — `providers.gemini`
+- GMI Cloud — `providers.gmi`
+- HuggingFace Inference — `providers.huggingface`
+- Kilo Code — `providers.kilocode`
+- Moonshot Kimi Coding (global) — `providers.kimi-coding`
+- Moonshot Kimi Coding (China) — `providers.kimi-coding-cn`
+- Meta Model API (Muse Spark) — `providers.meta-ai`
+- MiniMax (international) — `providers.minimax`
+- MiniMax (China) — `providers.minimax-cn`
+- MiniMax (OAuth) — `providers.minimax-oauth`
+- Nebius Token Factory — `providers.nebius-token-factory`
+- Nous Research Portal — `providers.nous`
+- NovitaAI — `providers.novita`
+- NVIDIA NIM — `providers.nvidia`
+- Ollama Cloud — `providers.ollama-cloud`
+- OpenAI Codex (ChatGPT / Codex subscription) — `providers.openai-codex`
+- OpenCode Free (keyless) — `providers.opencode-free`
+- OpenCode Go — `providers.opencode-go`
+- OpenCode Zen — `providers.opencode-zen`
+- OpenRouter — `providers.openrouter`
+- Qwen Portal (OAuth) — `providers.qwen-oauth`
+- Ramp Router (router.com) — `providers.router`
+- StepFun Step Plan — `providers.stepfun`
+- Upstage Solar — `providers.upstage`
+- Google Vertex AI — `providers.vertex`
+- xAI (Grok) — `providers.xai`
+- Xiaomi MiMo — `providers.xiaomi`
+- Z.AI (GLM) — `providers.zai`
+- Providers reachable only through overlays / auth registry (no plugin directory) — `providers.overlay-only`
+- Anthropic Messages adapter — `providers.anthropic-adapter`
+- Anthropic endpoint-family predicates — `providers.anthropic-endpoints`
+- Anthropic credential sources, OAuth & refresh — `providers.anthropic-credentials`
+- Anthropic message conversion — `providers.anthropic-message-convert`
+- Codex identity headers — `providers.codex-headers`
+- Codex Responses adapter & runtime — `providers.codex-responses`
+- Provider projection (agent-as-provider) — `providers.provider-projection`
+- AWS Bedrock adapter — `providers.bedrock-adapter`
+- Vertex AI adapter — `providers.vertex-adapter`
+- Microsoft Entra ID adapter (Azure Foundry keyless auth) — `providers.azure-identity-adapter`
+- Gemini native adapter — `providers.gemini-native-adapter`
+- Copilot ACP client — `providers.copilot-acp-client`
+- Remote model catalog manifest — `providers.model-catalog-manifest`
+- models.dev registry integration — `providers.models-dev`
+- Model context-length resolution & static fallback table — `providers.model-context-resolution`
+- Grok reasoning-effort capability table — `providers.grok-effort-capability`
+- Usage normalisation & cost estimation — `providers.usage-pricing`
+- Credential pool (multi-credential same-provider failover) — `providers.credential-pool`
+- Credential-source removal contract — `providers.credential-sources`
+- Credential-pool disk-boundary sanitisation — `providers.credential-persistence`
+- Rate-limit header tracking — `providers.rate-limit-tracker`
+- Nous cross-session rate-limit guard — `providers.nous-rate-guard`
+- Nous credits tracking & notices — `providers.credits-tracker`
+- Billing recovery links — `providers.billing-links`
+- Nous billing API client — `providers.nous-billing-client`
+- Billing state model (`GET /api/billing/state`) — `providers.billing-view`
+- Subscription state model (`GET /api/billing/subscription`) — `providers.subscription-view`
+- Dollar usage bars (`agent/billing_usage.py`) — `providers.billing-usage`
+- `/topup` — CLI top-up flow — `providers.slash-topup`
+- `/topup` → Auto-reload — `providers.topup-auto-reload`
+- `/topup` → Monthly limit — `providers.topup-monthly-limit`
+- `/subscription` — plan overview and change — `providers.slash-subscription`
+- `/usage` — credits, rate limits and account usage — `providers.slash-usage`
+- `hermes insights` — historical usage, cost and tool analytics — `providers.cli-insights`
+- `hermes fallback` — fallback provider chain manager — `providers.cli-fallback`
+- Fallback chain semantics (runtime) — `providers.fallback-semantics`
+- `/moa <prompt>` — one-shot Mixture-of-Agents turn — `providers.slash-moa`
+- MoA privacy filter — `providers.moa-privacy-filter`
+- MoA turn traces — `providers.moa-trace`
+- `hermes moa` — MoA preset CLI — `providers.cli-moa`
+- `hermes proxy` — credential-attaching local proxy — `providers.cli-proxy`
+- Proxy upstream adapters — `providers.proxy-adapters`
+- `hermes model` — interactive provider + model picker — `providers.cli-model`
+- Canonical provider list (picker rows) — `providers.canonical-provider-list`
+- Provider display groups — `providers.provider-groups`
+- `hermes setup model` — model section of the setup wizard — `providers.setup-model`
+- Provider auth registry (`hermes_cli/auth.py`) — `providers.auth-registry`
+- `hermes auth` — credential management — `providers.cli-auth`
+- `hermes login` (deprecated) and `hermes logout` — `providers.cli-login-logout`
+- `hermes portal` — Nous Portal onboarding & discovery — `providers.cli-portal`
+- Nous Tool Gateway catalog — `providers.tool-gateway-catalog`
+- Per-provider model-name normalisation — `providers.model-normalize`
+- Picker-only model search aliases — `providers.model-search-aliases`
+- Expensive-model confirmation guard — `providers.model-cost-guard`
+- Data-training-tier confirmation guard — `providers.model-data-policy-guard`
+- Unified selection-guard registry — `providers.model-selection-guards`
+- `--usage-file PATH` — machine-readable spend report — `providers.flag-usage-file`
+- `-m/--model`, `--provider`, `--reasoning` per-run overrides — `providers.flags-model-overrides`
+- `GET /api/model/options` — provider + model picker payload — `providers.api-model-options`
+- `GET /api/model/info` — active model resolution — `providers.api-model-info`
+- `GET /api/model/recommended-default` — silent default — `providers.api-model-recommended-default`
+- `POST /api/model/set` — apply a model selection — `providers.api-model-set`
+- `GET /api/model/auxiliary` — auxiliary task model routing — `providers.api-model-auxiliary`
+- `GET /api/model/moa` and `PUT /api/model/moa` — MoA preset API — `providers.api-model-moa`
+- `GET /api/providers/oauth` and the OAuth session routes — `providers.api-providers-oauth`
+- `GET /api/credentials/pool` and `DELETE /api/credentials/pool/{provider}/{index}` — `providers.api-credentials-pool`
+- `/api/providers/custom-endpoints` family — `providers.api-custom-endpoints`
+- `GET /api/portal` — Portal + Tool Gateway state — `providers.api-portal`
+- `GET /api/analytics/usage` and `GET /api/analytics/models` — `providers.api-analytics`
+- Runtime provider resolution — `providers.runtime-provider`
+- Codex model discovery — `providers.codex-models`
+- `/model` gateway slash command (model/provider switch) — `providers.gateway-slash-model`
+- `/usage` gateway output (cost and rate limits) — `providers.gateway-slash-usage`
+- Desktop model picker overlay — `providers.desktop-model-picker`
+- Desktop billing block (out-of-credits banner) — `providers.desktop-billing-block`
+- Web dashboard OAuth provider panel — `providers.web-oauth-panel`
+- Web dashboard model analytics strings — `providers.web-model-analytics`
+- Nous Portal request tags & ambient conversation context — `providers.portal-tags`
+- Nous auth keepalive — `providers.nous-auth-keepalive`
+- `hermes dashboard register` — register a self-hosted dashboard with Nous Portal — `providers.dashboard-register`
+
+### 28 · Agent Core A — conversation loop, prompts, context management, guards, reasoning
+
+- System prompt — three-tier assembly — `agent-core-a.system-prompt-tiers`
+- `DEFAULT_AGENT_IDENTITY` — fallback identity — `agent-core-a.default-identity`
+- SOUL.md identity file — `agent-core-a.soul-md`
+- Context-file discovery — `.hermes.md` / `AGENTS.md` / `CLAUDE.md` / `.cursorrules` — `agent-core-a.context-files`
+- Context-file size cap and head/tail truncation — `agent-core-a.context-file-cap`
+- Context-file prompt-injection scan — `agent-core-a.context-threat-scan`
+- `--ignore-rules` / `--safe-mode` — `agent-core-a.ignore-rules`
+- Skills index injection (`## Skills` block) — `agent-core-a.skills-index`
+- Skills index cache invalidation helper — `agent-core-a.skills-cache-clear`
+- `build_environment_hints()` — host / backend awareness — `agent-core-a.environment-hints`
+- `_WINDOWS_BASH_SHELL_HINT` — Windows shell reality block — `agent-core-a.windows-bash-hint`
+- `PLATFORM_HINTS` — per-surface rendering brief — `agent-core-a.platform-hints`
+- `platform_hints.<platform>` config override — `agent-core-a.platform-hint-override`
+- Active-Hermes-profile hint — `agent-core-a.profile-hint`
+- Bot Mode teammate protocol + capability epoch — `agent-core-a.bot-mode-protocol`
+- Conversation-start / date / session / model / provider / platform line — `agent-core-a.timestamp-line`
+- Plugin system-prompt sections (`after_memory` anchor) — `agent-core-a.plugin-prompt-sections`
+- `invalidate_system_prompt()` — `agent-core-a.invalidate-prompt`
+- `reconstruct_static_prefix()` — cache-block recovery — `agent-core-a.reconstruct-static-prefix`
+- `format_tools_for_system_message()` — `agent-core-a.format-tools-trajectory`
+- `HERMES_AGENT_HELP_GUIDANCE` / `..._NO_SKILLS` — self-help pointer — `agent-core-a.help-guidance`
+- `MEMORY_GUIDANCE` / `USER_PROFILE_GUIDANCE` — `agent-core-a.memory-guidance`
+- `SESSION_SEARCH_GUIDANCE` — `agent-core-a.session-search-guidance`
+- `SKILLS_GUIDANCE` + `[SKILL_PRUNED]` safety rule — `agent-core-a.skills-guidance`
+- `KANBAN_GUIDANCE` — kanban worker/orchestrator protocol — `agent-core-a.kanban-guidance`
+- `TOOL_USE_ENFORCEMENT_GUIDANCE` + `agent.tool_use_enforcement` — `agent-core-a.tool-use-enforcement`
+- `GOOGLE_MODEL_OPERATIONAL_GUIDANCE` — `agent-core-a.google-guidance`
+- `OPENAI_MODEL_EXECUTION_GUIDANCE` / `execution_guidance_text()` + `agent.execution_guidance` — `agent-core-a.execution-guidance`
+- `TASK_COMPLETION_GUIDANCE` + `agent.task_completion_guidance` — `agent-core-a.task-completion-guidance`
+- `PARALLEL_TOOL_CALL_GUIDANCE` + `agent.parallel_tool_call_guidance` — `agent-core-a.parallel-tool-guidance`
+- `STEER_CHANNEL_NOTE` and the out-of-band steer marker — `agent-core-a.steer-marker`
+- `hud_surface_note()` — desktop HUD per-turn note — `agent-core-a.hud-surface-note`
+- `DEVELOPER_ROLE_MODELS` — system→developer role swap — `agent-core-a.developer-role`
+- Alibaba model-identity workaround — `agent-core-a.alibaba-identity`
+- Local Python toolchain probe line + `agent.environment_probe` — `agent-core-a.environment-probe`
+- `init_agent()` — the AIAgent constructor body — `agent-core-a.init-agent`
+- Context-window minimum (`MINIMUM_CONTEXT_LENGTH`) — `agent-core-a.min-context`
+- `compression.*` configuration surface — `agent-core-a.compression-config`
+- Codex gpt-5.x compaction-threshold autoraise + one-time notice — `agent-core-a.codex-autoraise`
+- `context.engine` — pluggable context engine — `agent-core-a.context-engine`
+- Ollama `num_ctx` detection and compressor clamp — `agent-core-a.ollama-num-ctx`
+- Prompt-caching TTL and disable switch — `agent-core-a.cache-ttl`
+- `agent.api_max_retries` — `agent-core-a.api-max-retries`
+- `agent.run_budget_seconds` — wall-clock run budget — `agent-core-a.run-budget`
+- Iteration-budget exhaustion protocol — `agent-core-a.iteration-budget-protocol`
+- `display.show_commentary` — `agent-core-a.show-commentary`
+- `model.lmstudio_load_mode` — `agent-core-a.lmstudio-load-mode`
+- `agent.stall_guards` — anti-stall runtime guards — `agent-core-a.stall-guards`
+- `agent.intent_ack_continuation` — `agent-core-a.intent-ack-continuation`
+- `agent.empty_response_guard` — deterministic-empty + cost-aware retry budget — `agent-core-a.empty-response-guard`
+- `tool_loop_guardrails` configuration — `agent-core-a.tool-loop-guardrails`
+- Built-in memory store wiring (`MEMORY.md` / `USER.md`) — `agent-core-a.memory-store-init`
+- `skills.creation_nudge_interval` — `agent-core-a.skill-nudge-interval`
+- Activity tracking (`_last_activity_ts` / `_last_activity_desc` / provenance) — `agent-core-a.activity-tracking`
+- `_skip_mcp_refresh` / `_tool_snapshot_generation` — `agent-core-a.tool-snapshot-generation`
+- `run_conversation()` — one user turn — `agent-core-a.run-conversation`
+- Turn exit reasons (`_turn_exit_reason`) — `agent-core-a.turn-exit-reasons`
+- Pre-API compression gate (mid-turn preflight) — `agent-core-a.pre-api-compression`
+- Post-compaction reference-handoff guard — `agent-core-a.handoff-guard`
+- Wall-clock run-budget wrap-up notice — `agent-core-a.run-budget-wrapup`
+- Mid-turn `/steer` drain — `agent-core-a.steer-drain`
+- Mid-turn user redirect (`_apply_active_turn_redirect`) — `agent-core-a.turn-redirect`
+- `finish_reason == "length"` continuation chain — `agent-core-a.length-continuation`
+- Thinking-budget-exhaustion guard — `agent-core-a.thinking-exhausted`
+- Repetition-loop guard (`agent/repetition_guard.py`) — `agent-core-a.repetition-guard`
+- Post-tool empty-response recovery and fallback — `agent-core-a.empty-response-recovery`
+- Continuation nudges for Codex/Responses turns — `agent-core-a.codex-nudges`
+- Content-policy refusal handling — `agent-core-a.content-policy`
+- Nous Portal rate-limit pre-call guard — `agent-core-a.nous-rate-guard`
+- Anti-thrash compression-budget rearm — `agent-core-a.compression-rearm`
+- Tool-call argument canonicalization memo — `agent-core-a.canon-args-cache`
+- Ollama runtime context-too-small early exit — `agent-core-a.ollama-context-error`
+- Detached review-fork input budget — `agent-core-a.review-input-budget`
+- Outer-loop error classifier and cap — `agent-core-a.outer-error-cap`
+- Interrupt while waiting for the model — `agent-core-a.interrupt-waiting`
+- `build_turn_context()` — the turn prologue — `agent-core-a.build-turn-context`
+- Per-turn retry-counter reset list — `agent-core-a.turn-counter-resets`
+- Stale-connection cleanup notice — `agent-core-a.stale-connection-cleanup`
+- `api_content` sidecar — "persist what you send" — `agent-core-a.api-content-sidecar`
+- Gateway per-turn "must-deliver" notes — `agent-core-a.gateway-turn-notes`
+- Turn-start session auto-titling — `agent-core-a.auto-title-at-turn-start`
+- System-prompt restore from the session DB — `agent-core-a.prompt-restore`
+- Stored-prompt runtime-identity check — `agent-core-a.stored-prompt-runtime-check`
+- Bot Chat capability-epoch prompt refresh — `agent-core-a.bot-capability-epoch`
+- Idle-triggered compaction — `agent-core-a.idle-compaction`
+- Preflight (turn-start) compression gate — `agent-core-a.preflight-compression`
+- `PreflightCompressionTimedOut` — fail-closed on compaction timeout — `agent-core-a.preflight-timeout`
+- `compression_made_progress()` — material-progress predicate — `agent-core-a.compression-progress`
+- `reanchor_current_turn_user_idx()` — `agent-core-a.reanchor-user-idx`
+- `_agent_stale_thinking_on_wire()` — token-charging policy — `agent-core-a.stale-thinking-charge`
+- `finalize_turn()` — post-loop finalization — `agent-core-a.finalize-turn`
+- Turn result dict — `agent-core-a.turn-result-dict`
+- Reasoning extraction for the current turn only — `agent-core-a.last-reasoning`
+- Surrogate scrub at the conversation-loop boundary — `agent-core-a.surrogate-scrub`
+- Turn-exit diagnostic log line — `agent-core-a.turn-exit-log`
+- File-mutation verifier footer — `agent-core-a.file-mutation-footer`
+- Turn-completion explainer — `agent-core-a.turn-completion-explainer`
+- Post-turn micro-compaction — `agent-core-a.micro-compaction`
+- `TurnSummaryCollector` / `format_turn_summary()` — per-turn accounting line — `agent-core-a.turn-summary-line`
+- `format_token_flow()` — live spinner token readout — `agent-core-a.token-flow`
+- `ContextCompressor` — the built-in context engine — `agent-core-a.context-compressor`
+- Compaction summary prefix (`SUMMARY_PREFIX`) — `agent-core-a.summary-prefix`
+- Summary metadata keys and markers — `agent-core-a.summary-metadata-keys`
+- Persistence-marker invariant (`_strip_persistence_markers` / `stamp_db_persisted_markers`) — `agent-core-a.persistence-markers`
+- `_prune_stale_reasoning_replay()` — Codex reasoning-item prune — `agent-core-a.stale-reasoning-prune`
+- Compaction status lines (routine set) — `agent-core-a.compaction-status-lines`
+- Context-overflow-blocked warning — `agent-core-a.overflow-blocked-warning`
+- Compression timeouts, executor and cooldowns — `agent-core-a.compression-timeouts`
+- Pruned-skill reload notice — `agent-core-a.pruned-skill-reload-notice`
+- Skill pruning markers (`[SKILL_PRUNED: …]`) — `agent-core-a.skill-pruned-markers`
+- Lean tail retention (`compression.tail_mode`) — `agent-core-a.lean-tail`
+- Structured summary template — `agent-core-a.summary-template`
+- Deterministic fallback summary — `agent-core-a.fallback-summary`
+- Manual `/compress` feedback — `agent-core-a.manual-compress-feedback`
+- Native server-side compaction (OpenAI Responses `context_management`) — `agent-core-a.native-compaction`
+- `compaction_display.project_compaction_message_for_display()` — `agent-core-a.compaction-display`
+- `/context` breakdown — `agent-core-a.context-breakdown`
+- `/context` glyph grid and tables — `agent-core-a.context-grid`
+- `@` context references — parsing and expansion — `agent-core-a.context-references`
+- Anthropic prompt-cache plan — `agent-core-a.prompt-cache-plan`
+- Cache-TTL clamping (`effective_cache_ttl`) — `agent-core-a.cache-ttl-clamp`
+- Builder-declared cache boundary (`prompt_cache_boundary`) — `agent-core-a.prompt-cache-boundary`
+- Rotation-stable prompt-cache scope — `agent-core-a.prompt-cache-scope`
+- `FailoverReason` — the failure taxonomy — `agent-core-a.failover-reason`
+- `ClassifiedError` — classification result — `agent-core-a.classified-error`
+- `classify_api_error()` — the classification pipeline — `agent-core-a.classify-api-error`
+- Classifier pattern tables — `agent-core-a.classifier-patterns`
+- `error_surface` — structured error descriptor for UI clients — `agent-core-a.error-surface`
+- `agent/errors.py` — module exception types — `agent-core-a.error-types`
+- `TurnRetryState` — per-attempt recovery bookkeeping — `agent-core-a.turn-retry-state`
+- `retry_utils` — jittered backoff and Retry-After parsing — `agent-core-a.retry-utils`
+- Thinking-timeout detection and guidance — `agent-core-a.thinking-timeout`
+- Reasoning stale-timeout floors — `agent-core-a.reasoning-timeouts`
+- Reasoning-effort ladder and clamping — `agent-core-a.reasoning-effort`
+- LM Studio reasoning-effort resolution — `agent-core-a.lmstudio-reasoning`
+- Reasoning-summary boundary repair — `agent-core-a.reasoning-summaries`
+- `KawaiiSpinner` — CLI activity spinner — `agent-core-a.kawaii-spinner`
+- Friendly tool labels (`display.friendly_tool_labels`) — `agent-core-a.friendly-tool-labels`
+- Tool emoji resolution — `agent-core-a.tool-emoji`
+- Tool-call preview building — `agent-core-a.tool-preview`
+- Inline edit diffs — `agent-core-a.inline-diff`
+- Tool-failure detection for display — `agent-core-a.tool-failure-display`
+- CJK-aware markdown table realignment — `agent-core-a.markdown-tables`
+- Stream diagnostics — `agent-core-a.stream-diag`
+- Single-writer stream fence helpers — `agent-core-a.stream-single-writer`
+- Thread-scoped stdout/stderr silencing — `agent-core-a.thread-scoped-output`
+- `agent.i18n` — static-string translation — `agent-core-a.i18n`
+- `StreamingThinkScrubber` — per-delta reasoning suppression — `agent-core-a.think-scrubber`
+- `/btw` side questions — `agent-core-a.side-question`
+- `run_oneshot()` — stateless helper LLM calls — `agent-core-a.oneshot`
+- Session auto-titling — two stages — `agent-core-a.auto-titling`
+- Title prompt — `agent-core-a.title-prompt`
+- `agent.coding_context` — coding posture modes — `agent-core-a.coding-context-mode`
+- `CODING_AGENT_GUIDANCE` — the coding operating brief — `agent-core-a.coding-brief`
+- Per-model edit-format steering — `agent-core-a.edit-format-guidance`
+- `ContextProfile` / `RuntimeMode` — the posture seam — `agent-core-a.runtime-mode`
+- Coding workspace snapshot block — `agent-core-a.workspace-snapshot`
+- Project facts / verify loop detection — `agent-core-a.project-facts`
+- Progressive subdirectory hints — `agent-core-a.subdirectory-hints`
+- First-touch onboarding hints — `agent-core-a.onboarding-hints`
+- First-message profile-build offer — `agent-core-a.profile-build`
+- Unified deadline layer — `agent-core-a.deadline`
+- Process bootstrap — safe stdio, lazy SDK, proxy, Happy Eyeballs — `agent-core-a.process-bootstrap`
+- `preload_jiter_native_extension()` — `agent-core-a.jiter-preload`
+- `safe_schedule_threadsafe()` / `consume_detached_task_result()` — `agent-core-a.async-utils`
+- `request_hard_interrupt()` — interrupt ABI compatibility — `agent-core-a.interrupt-compat`
+- `read_streaming_error_body()` — bounded error-body reads — `agent-core-a.bounded-response`
+- Message metadata stamping — `agent-core-a.message-metadata`
+- `flatten_message_text()` — content-shape normalizer — `agent-core-a.message-content`
+- Transcript repair and in-place row reconciliation — `agent-core-a.transcript-repair`
+- Trajectory saving — `agent-core-a.trajectory`
+- `/plan` prompt builder — `agent-core-a.plan-prompt`
+- Battery read-out — `agent-core-a.battery`
+- `runtime_cwd` — the single source of truth for the agent's directory — `agent-core-a.runtime-cwd`
+- Runtime-helper module surface — `agent-core-a.runtime-helpers-index`
+- Concurrent-turn tripwire (`note_turn_start` / `note_turn_persisted`) — `agent-core-a.turn-tripwire`
+- `strip_think_blocks()` — inline reasoning and tool-XML removal — `agent-core-a.strip-think-blocks`
+- Intent-ack continuation detection — `agent-core-a.intent-ack-detection`
+- `apply_pending_steer_to_tool_results()` — `agent-core-a.post-batch-steer`
+- Prompt-cache policy resolution helpers — `agent-core-a.cache-policy-helpers`
+- Billing / entitlement terminal result — `agent-core-a.billing-failure`
+- Session-persistence failure abort — `agent-core-a.persistence-failure`
+- Tool-guardrail controlled halt — `agent-core-a.guardrail-halt`
+- `_system_prompt_for_hooks()` — provider-shape-agnostic prompt read-back — `agent-core-a.system-prompt-for-hooks`
+- `compress_context()` — the compaction orchestrator — `agent-core-a.compress-context`
+- Compression lock, lease and rotation recovery — `agent-core-a.compression-lock`
+- `resolve_context_compression_timeouts()` — `agent-core-a.compression-timeout-resolver`
+- Compression fallback route (`resolve_compression_fallback_route`) — `agent-core-a.compression-fallback-route`
+- `conversation_history_after_compression()` — flush-baseline rebaselining — `agent-core-a.flush-baseline`
+- Auxiliary compression-model feasibility warning — `agent-core-a.compression-feasibility`
+- Codex app-server compaction path — `agent-core-a.codex-app-server-compaction`
+- Image shrink recovery (`try_shrink_image_parts_in_messages`) — `agent-core-a.image-shrink`
+- Synthetic user-turn recognition — `agent-core-a.synthetic-user-turns`
+- Summary user-attribution validator — `agent-core-a.summary-user-provenance`
+- Ephemeral system prompt (`agent.system_prompt` / `HERMES_EPHEMERAL_SYSTEM_PROMPT`) — `agent-core-a.ephemeral-system-prompt`
+- Personality overlay (`display.personality`) — `agent-core-a.personality`
+- `agent.*` verification and misc runtime keys — `agent-core-a.agent-config-misc`
+- Display keys that govern the loop's own output — `agent-core-a.display-config-loop`
+- `compression.progress_notices` and hygiene keys — `agent-core-a.compression-hygiene-config`
+- `context.memory_trim.*` — `agent-core-a.memory-trim-config`
+- `tool_loop_guardrails.*` thresholds — `agent-core-a.guardrail-config`
+
+### 29 · Agent core B — delegation, background review, verification, learning, e-stop, hooks, webhooks, safety
+
+- `delegate_task` tool — spawn subagents in isolated contexts — `agent-core-b.delegate-task`
+- `delegate_task` dynamic top-level description — `agent-core-b.delegate-description`
+- Child agent construction — isolation contract — `agent-core-b.child-agent-build`
+- Child system prompt (`_build_child_system_prompt`) — `agent-core-b.child-system-prompt`
+- Child toolset inheritance and the blocked-tools list — `agent-core-b.child-toolsets`
+- Delegation depth, roles and the orchestrator kill switch — `agent-core-b.delegate-depth-role`
+- Concurrency cap `delegation.max_concurrent_children` — `agent-core-b.max-concurrent-children`
+- Deprecated `delegation.max_async_children` — `agent-core-b.max-async-children-deprecated`
+- Child wall-clock timeout `delegation.child_timeout_seconds` — `agent-core-b.child-timeout`
+- Heartbeat + staleness monitor for synchronous children — `agent-core-b.child-heartbeat`
+- Subagent timeout diagnostic dump — `agent-core-b.timeout-diagnostic`
+- Summary budget, truncation and spill — `agent-core-b.summary-budget`
+- Result entry contract (`status` / `exit_reason` / `truncated`) — `agent-core-b.result-contract`
+- `tool_trace` — per-child tool call ledger — `agent-core-b.tool-trace`
+- Live subagent registry + `action='list'` — `agent-core-b.subagent-registry`
+- `action='steer'` — live course correction — `agent-core-b.subagent-steer`
+- `action='stop'` — interrupt one child — `agent-core-b.subagent-stop`
+- Global spawn pause (`delegation.pause` RPC / TUI `p`) — `agent-core-b.spawn-pause`
+- Subagent approval callback (`delegation.subagent_auto_approve`) — `agent-core-b.subagent-approval`
+- Delegated-child context isolation (`agent/delegation_context.py`) — `agent-core-b.delegation-context`
+- `output_schema` — machine-validated child answers — `agent-core-b.output-schema`
+- Live subagent transcripts (`cache/delegation/live/`) — `agent-core-b.live-transcripts`
+- Opt-in git worktree isolation (`delegation.worktree_isolation`) — `agent-core-b.worktree-isolation`
+- Background (async) delegation registry — `agent-core-b.async-delegation`
+- Stale-delegation monitor for background units — `agent-core-b.async-stall-monitor`
+- Cross-agent stale-file reminder — `agent-core-b.stale-file-reminder`
+- Per-branch observability payload (`subagent.complete`) — `agent-core-b.subagent-complete-event`
+- Parent console tree + spinner rendering of delegation — `agent-core-b.delegate-console`
+- `DelegateEvent` progress event taxonomy — `agent-core-b.delegate-events`
+- Subagent identity kwargs on every relayed event — `agent-core-b.subagent-identity-kwargs`
+- Delegation credential resolution (`delegation.provider` / `base_url`) — `agent-core-b.delegation-credentials`
+- Batch quality gate (`_validate_batch_tasks`) — `agent-core-b.batch-quality-gate`
+- `check_delegate_requirements` availability gate — `agent-core-b.delegate-check-fn`
+- Plugin subagent lifecycle API (`PluginContext.subagent_lifecycle`) — `agent-core-b.subagent-lifecycle-api`
+- Background memory/skill review (post-turn fork) — `agent-core-b.background-review`
+- `build_cache_parity_fork()` — warm-prefix agent fork — `agent-core-b.cache-parity-fork`
+- Review-fork model routing + digest replay — `agent-core-b.review-routing`
+- Review prompt — memory-only (`_MEMORY_REVIEW_PROMPT`) — `agent-core-b.memory-review-prompt`
+- Review prompt — skills-only (`_SKILL_REVIEW_PROMPT`) — `agent-core-b.skill-review-prompt`
+- Review prompt — combined (`_COMBINED_REVIEW_PROMPT`) — `agent-core-b.combined-review-prompt`
+- `/refine` focus block — `agent-core-b.refine-focus`
+- Background-review tool whitelist — `agent-core-b.review-whitelist`
+- Review action summary (`summarize_background_review_actions`) — `agent-core-b.review-action-summary`
+- Review-result classification and completion log — `agent-core-b.review-classification`
+- Review usage attribution to the parent session — `agent-core-b.review-usage-attribution`
+- Review cancellation for a live turn — `agent-core-b.review-cancellation`
+- `/review` engine — independent reviewer subagent — `agent-core-b.review-engine`
+- Reviewer goal + context text — `agent-core-b.review-task-text`
+- `hermes verify` — detect + run a project verification pass — `agent-core-b.hermes-verify`
+- Verify recipe detection (`detect_recipe`) — `agent-core-b.verify-recipes`
+- `.hermes/environment.json` verify manifest — `agent-core-b.verify-manifest`
+- Verification evidence ledger — `agent-core-b.verification-evidence`
+- Verify-on-stop nudge — `agent-core-b.verify-on-stop`
+- `pre_verify` hook gate and coding guidance — `agent-core-b.pre-verify-hook`
+- `hermes pause` — engage the global emergency stop — `agent-core-b.hermes-pause`
+- `hermes resume` — lift the emergency stop — `agent-core-b.hermes-resume`
+- ESTOP detection semantics (`is_engaged` / `get_state` / `check_paused`) — `agent-core-b.estop-detection`
+- Kanban worker stop guard — `agent-core-b.kanban-stop-nudge`
+- Shell-script hooks (`hooks:` in config.yaml) — `agent-core-b.shell-hooks`
+- Shell-hook wire protocol (stdin / stdout / exit codes) — `agent-core-b.shell-hook-wire`
+- Hook failure semantics — fail open vs `fail_closed` — `agent-core-b.hook-fail-closed`
+- First-use consent allowlist (`~/.hermes/shell-hooks-allowlist.json`) — `agent-core-b.hook-allowlist`
+- `hermes hooks list` / `ls` — `agent-core-b.hooks-list`
+- `hermes hooks test <event>` — `agent-core-b.hooks-test`
+- `hermes hooks revoke` / `remove` / `rm` — `agent-core-b.hooks-revoke`
+- `hermes hooks doctor` — `agent-core-b.hooks-doctor`
+- Hook event catalogue (`VALID_HOOKS`) — `agent-core-b.hook-events`
+- Per-event `extra` payload keys — `agent-core-b.hook-extra-keys`
+- Outbound webhooks (`hooks.outbound`) — `agent-core-b.outbound-webhooks`
+- Outbound delivery, retries and redirect policy — `agent-core-b.outbound-delivery`
+- Reaction detection (`vibe`) — `agent-core-b.reactions`
+- Secret redaction engine (`redact_sensitive_text`) — `agent-core-b.redact-engine`
+- Vendor prefix catalogue (`_PREFIX_PATTERNS`) — `agent-core-b.redact-prefixes`
+- Masking helpers (`mask_secret`, `_mask_token`, non-reusable sentinel) — `agent-core-b.mask-helpers`
+- Terminal-output redaction policy — `agent-core-b.redact-terminal`
+- Plugin-registered redaction patterns — `agent-core-b.redact-plugin-patterns`
+- `RedactingFormatter` — redaction on every log record — `agent-core-b.redacting-formatter`
+- Sensitive query-parameter and body-key catalogues — `agent-core-b.redact-param-catalogues`
+- File write denylist (`is_write_denied` / `get_write_denied_error`) — `agent-core-b.write-denylist`
+- Approval-gated write paths (`~/.ssh/config`) — `agent-core-b.write-approval-paths`
+- File read denylist (`get_read_block_error`) — `agent-core-b.read-denylist`
+- Cross-profile write classifier (guard retired) — `agent-core-b.cross-profile-guard`
+- Sandbox-mirror write guard — `agent-core-b.sandbox-mirror-guard`
+- Container-mirror write guard — `agent-core-b.container-mirror-guard`
+- Profile-scoped secret resolution (`get_secret`) — `agent-core-b.secret-scope`
+- `.env` parsing for scopes (`load_env_file` / `build_profile_secret_scope`) — `agent-core-b.env-scope-parse`
+- Surrogate sanitisation — `agent-core-b.surrogate-sanitization`
+- Tool-call argument repair — `agent-core-b.tool-arg-repair`
+- Interrupted tool-sequence closing — `agent-core-b.close-interrupted-tools`
+- Non-ASCII stripping (ASCII-only hosts) — `agent-core-b.non-ascii-strip`
+- Image-content recovery (`_strip_images_from_messages`) — `agent-core-b.image-strip`
+- `serialized_messages_bytes` — byte-accurate 413 recovery — `agent-core-b.serialized-bytes`
+- Tool-call id normalisation and deduplication — `agent-core-b.tool-call-ids`
+- Reasoning-echo policy — `agent-core-b.reasoning-echo`
+- Tool-loop guardrails (`tool_loop_guardrails`) — `agent-core-b.tool-loop-guardrails`
+- Per-turn runaway-loop caps (`loop_caps`) — `agent-core-b.loop-caps`
+- Identical-call stall guard and result-reference stubs — `agent-core-b.identical-call-guard`
+- Tool-failure recovery hints — `agent-core-b.tool-failure-hints`
+- Tool-failure classification fallback — `agent-core-b.classify-tool-failure`
+- Untrusted tool-result wrapping — `agent-core-b.untrusted-wrap`
+- Upstream-elision notice — `agent-core-b.upstream-elision`
+- Tool-output risk metadata — `agent-core-b.tool-output-risk`
+- Parallel tool-batch planning — `agent-core-b.parallel-batch-planning`
+- Concurrent tool execution — `agent-core-b.concurrent-tool-execution`
+- Session activity contract — `agent-core-b.session-activity`
+- Replay-history sanitisation — `agent-core-b.replay-cleanup`
+- Stale dangerous-confirmation expiry — `agent-core-b.stale-confirmation-expiry`
+- Trace upload to Hugging Face — `agent-core-b.trace-upload`
+- `/learn` prompt builder — `agent-core-b.learn-prompt`
+- Skill-authoring standards embedded in `/learn` — `agent-core-b.learn-authoring-standards`
+- Knowledge-base skill layout — `agent-core-b.knowledge-skill-standards`
+- Learning (journey) graph — `agent-core-b.learning-graph`
+- `hermes journey` (a.k.a. `hermes learning`) — terminal timeline — `agent-core-b.hermes-journey`
+- Journey render constants and palette — `agent-core-b.journey-render-constants`
+- Journey node mutations (`hermes journey delete|edit`) — `agent-core-b.journey-mutations`
+- `hermes insights` — session usage analytics — `agent-core-b.hermes-insights`
+- Monitoring emitter (in-process event bus) — `agent-core-b.monitoring-emitter`
+- Monitoring event shapes — `agent-core-b.monitoring-events`
+- Monitoring egress redaction — `agent-core-b.monitoring-redaction`
+- Install id (`monitoring.install_id`) — `agent-core-b.monitoring-install-id`
+- Gateway health snapshot and metrics — `agent-core-b.gateway-health-snapshot`
+- Gateway health export runtime (`monitoring.gateway_health_export`) — `agent-core-b.gateway-health-export`
+- OTLP trace streamer — `agent-core-b.otlp-exporter`
+- MoA runtime (`/moa`, `provider: moa`) — `agent-core-b.moa-loop`
+- MoA reference system prompt — `agent-core-b.moa-reference-prompt`
+- MoA privacy filter (`moa.privacy_filter`) — `agent-core-b.moa-privacy-filter`
+- MoA turn traces (`moa.save_traces`) — `agent-core-b.moa-traces`
+- MoA prompt-cache-safe guidance attachment — `agent-core-b.moa-guidance-attach`
+- Auxiliary LLM client (`agent/auxiliary_client.py`) — `agent-core-b.auxiliary-client`
+- Auxiliary usage accounting — `agent-core-b.aux-accounting`
+- NeMo Relay runtime (profile-scoped instrumentation) — `agent-core-b.relay-runtime`
+- Relay LLM execution and managed streams — `agent-core-b.relay-llm`
+- Plugin LLM facade (`ctx.llm`) — `agent-core-b.plugin-llm`
+- Plugin streaming observer hooks — `agent-core-b.plugin-stream-hooks`
+- Petdex pet engine — `agent-core-b.pet-engine`
+- Pet state derivation — `agent-core-b.pet-state`
+- Provider transport registry — `agent-core-b.transport-registry`
+- Normalized response types — `agent-core-b.transport-types`
+- Durable delegation recovery after a crash — `agent-core-b.delegation-recovery`
+- Delegation delivery claims — `agent-core-b.delegation-delivery-claims`
+- Delegation status listing and session-scoped interrupt — `agent-core-b.delegation-status-listing`
+- Relay-managed tool execution — `agent-core-b.relay-tools`
+- Anthropic Messages transport — `agent-core-b.transport-anthropic`
+- Chat Completions transport — `agent-core-b.transport-chat-completions`
+- Codex Responses transport — `agent-core-b.transport-codex`
+- Bedrock Converse transport — `agent-core-b.transport-bedrock`
+- Codex app-server runtime — `agent-core-b.codex-app-server`
+- Codex event projection into Hermes messages — `agent-core-b.codex-event-projector`
+- Hermes-tools-as-MCP server — `agent-core-b.hermes-tools-mcp-server`
+- Pet terminal-graphics mode resolution — `agent-core-b.pet-render-modes`
+- Tool-result persistence budget — `agent-core-b.tool-result-budget`
+- Concurrent-tool authorization gate — `agent-core-b.authorization-gate`
+- In-flight tool activity heartbeat — `agent-core-b.tool-activity-heartbeat`
+- Tool-search scope enforcement on unwrap — `agent-core-b.tool-search-scope`
+- Cancelled and timed-out tool results — `agent-core-b.cancelled-tool-results`
+- Relay session coordinator — `agent-core-b.relay-session-coordinator`
+- Compression fast lane certification — `agent-core-b.compression-fast-lane`
+
+### 30 · Memory, Sessions, Checkpoints & Context Engine
+
+- Built-in curated memory (MEMORY.md + USER.md) — `memory.builtin-stores`
+- `memory` tool — `memory.tool-memory`
+- Memory external-drift guard (`.bak.<ts>` snapshots) — `memory.drift-guard`
+- Memory system-prompt threat sanitization — `memory.snapshot-sanitizer`
+- Memory write approval gate (`memory.write_approval`) — `memory.write-approval`
+- `load_on_disk_store()` — agent-less memory access — `memory.load-on-disk-store`
+- `MemoryManager` — provider orchestration — `memory.manager`
+- Memory prefetch (pre-turn recall) — `memory.prefetch`
+- `<memory-context>` fencing and sanitization — `memory.context-fence`
+- `StreamingContextScrubber` — split-fence leak guard — `memory.streaming-scrubber`
+- Deterministic recall indicator (`describe_recall`) — `memory.recall-indicator`
+- Post-turn memory sync (`sync_all`) — `memory.sync-all`
+- `queue_prefetch_all` — next-turn warm-up — `memory.queue-prefetch`
+- Session-boundary commit (`commit_session_boundary_async`) — `memory.session-boundary-commit`
+- `on_session_switch` fan-out — `memory.session-switch`
+- Pre-compress hook + checkpoint API v2 — `memory.pre-compress-checkpoint`
+- Mirroring built-in memory writes to providers (`notify_memory_tool_write`) — `memory.mirror-writes`
+- Provider tool injection into the agent surface — `memory.provider-tool-injection`
+- `MemoryProvider` ABC — the plugin contract — `memory.provider-abc`
+- `is_trivial_prompt()` — shared recall gate — `memory.trivial-prompt`
+- Memory shutdown drain — `memory.shutdown-drain`
+- `flush_pending()` — memory write barrier — `memory.flush-pending`
+- `hermes memory` (command group) — `memory.cli-memory`
+- `hermes memory setup [provider]` — `memory.cli-memory-setup`
+- `hermes memory status` — `memory.cli-memory-status`
+- `hermes memory off` — `memory.cli-memory-off`
+- `hermes memory reset` — `memory.cli-memory-reset`
+- Memory provider discovery (four sources, bundled-wins) — `memory.provider-discovery`
+- `_ProviderCollector` — memory-provider plugin context — `memory.provider-collector`
+- Memory-provider CLI subcommands (`discover_plugin_cli_commands`) — `memory.provider-cli-commands`
+- Memory provider OAuth connect API — `memory.provider-oauth-api`
+- Declarative provider config schema (`config_schema.py`) — `memory.provider-config-schema`
+- Memory query rewrite auxiliary task — `memory.query-rewrite`
+- Memory provider: Honcho — `memory.provider-honcho`
+- Memory provider: Hindsight — `memory.provider-hindsight`
+- Memory provider: Mem0 — `memory.provider-mem0`
+- Memory provider: Holographic (local SQLite fact store) — `memory.provider-holographic`
+- Memory provider: OpenViking — `memory.provider-openviking`
+- Memory provider: RetainDB — `memory.provider-retaindb`
+- Memory provider: ByteRover — `memory.provider-byterover`
+- Memory provider: Supermemory — `memory.provider-supermemory`
+- `ContextEngine` ABC — pluggable context management — `memory.context-engine-abc`
+- Memory-context sanitization for the compression boundary — `memory.context-engine-sanitize`
+- Automatic-compaction status suppression — `memory.compaction-status`
+- Context-engine plugin discovery + loading — `memory.context-engine-plugins`
+- `hermes journey` — learning timeline — `memory.cli-journey`
+- `hermes journey list` — `memory.cli-journey-list`
+- `hermes journey delete <node>` — `memory.cli-journey-delete`
+- `hermes journey edit <node>` — `memory.cli-journey-edit`
+- SQLite session store (`state.db`) — schema — `memory.session-db-schema`
+- FTS5 search index (v23 external-content layout) — `memory.session-fts5`
+- `hermes sessions list` — `memory.cli-sessions-list`
+- `hermes sessions export` — `memory.cli-sessions-export`
+- `hermes sessions import` — `memory.cli-sessions-import`
+- `hermes sessions delete` — `memory.cli-sessions-delete`
+- `hermes sessions prune` — `memory.cli-sessions-prune`
+- `hermes sessions archive` — `memory.cli-sessions-archive`
+- `hermes sessions rename` — `memory.cli-sessions-rename`
+- `hermes sessions pin` / `unpin` / `pinned` — `memory.cli-sessions-pin`
+- `hermes sessions retitle-skills` — `memory.cli-sessions-retitle-skills`
+- `hermes sessions browse` — `memory.cli-sessions-browse`
+- `hermes sessions optimize` — `memory.cli-sessions-optimize`
+- `hermes sessions optimize-storage` — `memory.cli-sessions-optimize-storage`
+- `hermes sessions clean-markers` — `memory.cli-sessions-clean-markers`
+- `hermes sessions repair` — `memory.cli-sessions-repair`
+- `hermes sessions recover` — `memory.cli-sessions-recover`
+- `hermes sessions repair-routing` — `memory.cli-sessions-repair-routing`
+- `hermes sessions stats` — `memory.cli-sessions-stats`
+- Session auto-prune / auto-archive sweeps — `memory.session-auto-sweeps`
+- `session_search` tool — `memory.tool-session-search`
+- Filesystem checkpoints (shadow git store) — `memory.checkpoints-store`
+- `/rollback` — restore from a checkpoint — `memory.rollback`
+- `hermes checkpoints` / `status` / `list` — `memory.cli-checkpoints-status`
+- `hermes checkpoints prune` — `memory.cli-checkpoints-prune`
+- `hermes checkpoints clear` — `memory.cli-checkpoints-clear`
+- `hermes checkpoints clear-legacy` — `memory.cli-checkpoints-clear-legacy`
+- Session resume, `--continue`, and per-terminal breadcrumbs — `memory.session-resume`
+- Conversation recap on resume — `memory.resume-recap`
+- `/recap` — in-session activity summary — `memory.session-recap`
+- Active-session liveness registry — `memory.active-sessions`
+- Context-switch guard (model switch → compression warning) — `memory.context-switch-guard`
+- Session lost-and-found (page-level salvage) — `memory.session-lost-and-found`
+- Document extraction into the transcript (`read_file`) — `memory.document-extraction`
+- What counts toward context (media vs text) — `memory.context-accounting`
+- Session auto-titling (two-stage) — `memory.session-auto-title`
+- Session title lineage on compression — `memory.title-lineage`
+- Session sources taxonomy — `memory.session-sources`
+- Gateway session keying — `memory.gateway-session-keys`
+- Gateway session reset policies and restart continuity — `memory.session-reset-policies`
+- Session storage locations — `memory.session-storage-locations`
+- Background review memory notifications (`display.memory_notifications`) — `memory.review-notifications`
+- Background review fork (`auxiliary.background_review`) — `memory.background-review`
+- Heap trimming for long-lived processes (`context.memory_trim`) — `memory.mem-trim`
+- `GET /api/memory` — memory status — `memory.api-memory-status`
+- `PUT /api/memory/provider` — switch active provider — `memory.api-memory-provider`
+- `POST /api/memory/reset` — erase built-in memory — `memory.api-memory-reset`
+- `GET/PUT /api/memory/providers/{name}/config` + `POST .../setup` — `memory.api-provider-config`
+- `GET /api/learning/graph` and `/api/learning/node` — `memory.api-learning`
+- `GET /api/ops/checkpoints` and `POST /api/ops/checkpoints/prune` — `memory.api-checkpoints`
+- `hermes honcho` — active-provider CLI — `memory.cli-honcho`
+- Honcho OAuth / device-code connect — `memory.honcho-oauth`
+- `hermes sessions` (command group) — `memory.cli-sessions`
+- Honcho observation model (directional vs unified) — `memory.honcho-observation`
+- Memory provider: Memori (pip-installed) — `memory.provider-memori`
+- Provider comparison and profile isolation — `memory.provider-comparison`
+
+### 31 · Automation — cron, loops, heartbeat, goals, kanban, projects, worktrees, hosted rooms, runs API, peers, webhooks, send
+
+- `hermes cron` (command group) — `automation.cli-cron-group`
+- `hermes cron list` — `automation.cli-cron-list`
+- `hermes cron create` (alias `add`) — `automation.cli-cron-create`
+- `hermes cron edit` — `automation.cli-cron-edit`
+- `hermes cron pause` — `automation.cli-cron-pause`
+- `hermes cron resume` — `automation.cli-cron-resume`
+- `hermes cron run` — `automation.cli-cron-run`
+- `hermes cron remove` (aliases `rm`, `delete`) — `automation.cli-cron-remove`
+- `hermes cron status` — `automation.cli-cron-status`
+- `hermes cron runs` (alias `history`) — `automation.cli-cron-runs`
+- `hermes cron incidents` — `automation.cli-cron-incidents`
+- `hermes cron notepad` — `automation.cli-cron-notepad`
+- `hermes cron doctor` — `automation.cli-cron-doctor`
+- `hermes cron tick` — `automation.cli-cron-tick`
+- Cron job record (jobs.json schema) — `automation.cron-job-record`
+- Schedule syntax (`parse_schedule`) — `automation.cron-schedule-syntax`
+- `repeat` normalization — `automation.cron-repeat`
+- Delivery targets (`deliver`) — `automation.cron-delivery`
+- Bot Chat delivery (`bot-chat[:profile]`) — `automation.cron-botchat-delivery`
+- `--no-agent` script jobs (watchdog mode) — `automation.cron-no-agent`
+- Script-as-context mode (default `--script`) — `automation.cron-script-context`
+- Wake gate (`{"wakeAgent": false}`) — `automation.cron-wake-gate`
+- Monitor mode (`--monitor-script` / `--monitor-url`) — `automation.cron-monitor-mode`
+- Run-to-run continuity (`--continuity`) and `context_from` chaining — `automation.cron-continuity`
+- Cron prompt assembly and the cron hint — `automation.cron-prompt-assembly`
+- `[SILENT]` suppression — `automation.cron-silent`
+- Prompt-injection scanner (two-tier) — `automation.cron-injection-scan`
+- Credential-exfiltration guard (`provider` + `base_url`) — `automation.cron-credential-guard`
+- Gateway-lifecycle guard — `automation.cron-lifecycle-guard`
+- Preflight checks and auto-pause — `automation.cron-preflight`
+- Model/provider drift guard — `automation.cron-drift-guard`
+- In-flight guard and stale-claim sweep — `automation.cron-inflight-guard`
+- Inactivity watchdog and interruption bookkeeping — `automation.cron-inactivity-watchdog`
+- Cron output store and retention — `automation.cron-output-store`
+- Scheduler provider interface (`cron.provider`) — `automation.cron-scheduler-provider`
+- Automation blueprints — `automation.blueprints`
+- Automation blueprint slots (per-blueprint field reference) — `automation.blueprint-slots`
+- Cron suggestions (`/suggestions`) — `automation.cron-suggestions`
+- Starter automation catalog (`cron/suggestion_catalog.py`) — `automation.cron-suggestion-catalog`
+- `/loop` — recurring in-session wakeups — `automation.loop`
+- `/loop` self-paced mode and change-digest backoff — `automation.loop-self-paced`
+- `/loop` stop conditions — `automation.loop-stop-conditions`
+- Wakeup prompt templates (`/loop`) — `automation.loop-wakeup-prompt`
+- `/heartbeat` — recurring re-entry into this session — `automation.heartbeat`
+- `/goal` — persistent session goals (Ralph loop) — `automation.goal`
+- `/goal` completion contracts — `automation.goal-contract`
+- `/subgoal` — mid-loop acceptance criteria — `automation.subgoal`
+- `/goal` quality gates — `automation.goal-gates`
+- `/goal` wait barriers (parking on async work) — `automation.goal-wait`
+- `/goal` judge — `automation.goal-judge`
+- `/refine` — run the self-improvement review now — `automation.refine`
+- `hermes kanban` (command group) — `automation.kanban-group`
+- Kanban task states — `automation.kanban-states`
+- Kanban task record (`tasks` table) — `automation.kanban-task-record`
+- Kanban runs (`task_runs`) and attempt history — `automation.kanban-runs`
+- Kanban events (`task_events`) — `automation.kanban-events`
+- `hermes kanban init` — `automation.kanban-init`
+- `hermes kanban boards` — `automation.kanban-boards`
+- `hermes kanban boards export` / `import` (board transfer) — `automation.kanban-transfer`
+- `hermes kanban create` — `automation.kanban-create`
+- `hermes kanban list` (alias `ls`) — `automation.kanban-list`
+- `hermes kanban show` — `automation.kanban-show`
+- `hermes kanban assign` / `reassign` / `set-model` — `automation.kanban-assign`
+- `hermes kanban reclaim` — `automation.kanban-reclaim`
+- `hermes kanban claim` — `automation.kanban-claim`
+- `hermes kanban heartbeat` — `automation.kanban-heartbeat`
+- `hermes kanban complete` / `edit` — `automation.kanban-complete`
+- `hermes kanban block` / `schedule` / `unblock` — `automation.kanban-block`
+- `hermes kanban promote` — `automation.kanban-promote`
+- `hermes kanban link` / `unlink` — `automation.kanban-link`
+- `hermes kanban comment` — `automation.kanban-comment`
+- `hermes kanban attach` / `attachments` / `attach-rm` — `automation.kanban-attachments`
+- Kanban review flow (`request-review`, `request-changes`, `reopen-review`) — `automation.kanban-review`
+- `hermes kanban dispatch` — `automation.kanban-dispatch`
+- `hermes kanban daemon` (deprecated) — `automation.kanban-daemon`
+- `hermes kanban swarm` — `automation.kanban-swarm`
+- `hermes kanban specify` — `automation.kanban-specify`
+- `hermes kanban decompose` — `automation.kanban-decompose`
+- `hermes kanban context` — `automation.kanban-worker-context`
+- `hermes kanban notify-subscribe` / `notify-list` / `notify-unsubscribe` — `automation.kanban-notify`
+- `hermes kanban tail` / `watch` / `log` / `stats` / `assignees` / `diagnostics` — `automation.kanban-observability`
+- `hermes kanban gc` / `repair` / `archive` — `automation.kanban-maintenance`
+- Kanban goal-mode cards (`--goal`) — `automation.kanban-goal-mode`
+- `hermes project` (command group) — `automation.project-group`
+- Project store schema — `automation.project-schema`
+- `hermes project create` — `automation.project-create`
+- `hermes project list` / `show` / `use` / `rename` / `archive` / `restore` — `automation.project-lifecycle`
+- `hermes project add-folder` / `remove-folder` / `set-primary` — `automation.project-folders`
+- `hermes project bind-board` — `automation.project-bind-board`
+- `hermes -w` / `--worktree` — isolated worktree sessions — `automation.worktree-flag`
+- `/worktree` (in-session) — `automation.worktree-slash`
+- `hermes worktree` (command group) — `automation.worktree-group`
+- `hermes worktree list` (aliases `ls`, `audit`) — `automation.worktree-list`
+- `hermes worktree prune` — `automation.worktree-prune`
+- Automatic worktree maintenance during cron ticks — `automation.worktree-cron-maintenance`
+- Hosted room — identity and event log — `automation.hosted-room-core`
+- Room replicas and authority takeover — `automation.hosted-room-replicas`
+- Room links (cross-gateway member routes) — `automation.hosted-room-links`
+- Room peer grants and admission — `automation.hosted-room-peer`
+- Room execution policy — `automation.hosted-room-execution-policy`
+- Room policy checkpoint — `automation.hosted-room-policy-checkpoint`
+- Room discussions (deterministic turn planner) — `automation.hosted-room-discussion`
+- Room driver (lease + task state machine) — `automation.hosted-room-driver`
+- Hosted-room service and peer transports (TUI gateway) — `automation.hosted-room-service`
+- API server platform (aiohttp listener) — `automation.api-server`
+- `POST /v1/runs` — `automation.api-runs-create`
+- `Idempotency-Key` on `POST /v1/runs` — `automation.api-runs-idempotency`
+- `GET /v1/runs/{run_id}` — `automation.api-runs-status`
+- `GET /v1/runs/{run_id}/events` (SSE) — `automation.api-runs-events`
+- `POST /v1/runs/{run_id}/stop` — `automation.api-runs-stop`
+- `POST /v1/runs/{run_id}/steer` — `automation.api-runs-steer`
+- `POST /v1/runs/{run_id}/approval` — `automation.api-runs-approval`
+- `POST /v1/chat/completions` (OpenAI compat) — `automation.api-chat-completions`
+- `POST /v1/responses` and the response store — `automation.api-responses`
+- `GET /v1/models` and `GET /api/model/options` — `automation.api-models`
+- Per-request model selection and `model_routes` — `automation.api-model-routing`
+- `GET /v1/capabilities` — `automation.api-capabilities`
+- `GET /health` and `GET /health/detailed` — `automation.api-health`
+- `/api/sessions/*` (session control over REST) — `automation.api-sessions`
+- `X-Hermes-Session-Id` and `X-Hermes-Session-Key` headers — `automation.api-session-headers`
+- `/api/jobs/*` (cron jobs over REST) — `automation.api-jobs`
+- `POST /api/cron/fire` (Chronos webhook) — `automation.api-cron-fire`
+- `POST /api/platforms/{platform}/events` — `automation.api-platform-events`
+- `/v1/skills` and `/v1/toolsets` discovery — `automation.api-discovery`
+- `/v1/artifacts/upload` and `/v1/artifacts/download/{artifact_id}` — `automation.api-artifacts`
+- `/v1/browser-control/register` and `/v1/browser-control/ws` — `automation.api-browser-control`
+- `/v1/room-members/*` (RoomLink grants) — `automation.api-room-members`
+- Room run dispatch — `automation.api-room-dispatch`
+- `hermes peer` (command group) — `automation.peer-group`
+- `hermes peer add` (alias `set`) — `automation.peer-add`
+- `hermes peer list` (alias `ls`) / `hermes peer remove` (alias `rm`) — `automation.peer-list-remove`
+- `hermes peer dm` — `automation.peer-dm`
+- `hermes peer run` / `status` / `stop` — `automation.peer-run`
+- `hermes webhook` (command group) — `automation.webhook-group`
+- `hermes webhook subscribe` (alias `add`) — `automation.webhook-subscribe`
+- `hermes webhook list` (alias `ls`) — `automation.webhook-list`
+- `hermes webhook remove` (alias `rm`) — `automation.webhook-remove`
+- `hermes webhook test` — `automation.webhook-test`
+- `hermes send` — `automation.send`
+- Chronos cron provider plugin — `automation.chronos-provider`
+- Kanban dashboard plugin — `automation.kanban-dashboard-plugin`
+- Standalone kanban dispatcher systemd unit (deprecated) — `automation.kanban-systemd`
+- `cron/scripts/classify_items.py` (urgency classifier) — `automation.classify-items`
+- Kanban worker lanes — `automation.kanban-worker-lanes`
+- Kanban workspaces — `automation.kanban-workspaces`
+- Kanban diagnostics engine — `automation.kanban-diagnostics-engine`
+- Gateway cron trigger — `automation.gateway-cron-ticker`
+- `/loop` idle wakeup watcher (gateway) — `automation.loop-wakeup-watcher`
+- Kanban worker stop-guard (turn-end nudge) — `automation.kanban-stop-nudge`
+- Cron delivery mirroring (`cron.mirror_delivery` / `attach_to_session`) — `automation.cron-mirror-delivery`
+- Cron toolset resolution — `automation.cron-toolsets`
+- `cron.allow_agent_scheduling` — `automation.cron-allow-agent-scheduling`
+- Cron reasoning-effort resolution — `automation.cron-reasoning`
+
+### 32 · Security — approvals, yolo/safe mode, egress firewall, secrets, pairing, managed scope, audits, dashboard auth, TLS
+
+- Dangerous-command approval system (overview) — `security.approval-system`
+- Hardline blocklist (unconditional floor) — `security.hardline-blocklist`
+- `approvals.deny` — user hardline rules — `security.approvals-deny`
+- Dangerous-pattern catalogue (99 rules) — `security.dangerous-patterns`
+- Command normalization & de-obfuscation pipeline — `security.detection-normalization`
+- `sudo -S` stdin-password guard — `security.sudo-stdin-guard`
+- `approvals.mode` — manual / smart / off — `security.approvals-mode`
+- Smart approvals — auxiliary-LLM guardian — `security.smart-approvals`
+- Smart-approval consecutive-denial circuit breaker — `security.denial-breaker`
+- CLI approval prompt panel — `security.cli-approval-prompt`
+- Gateway/chat approval round-trip — `security.gateway-approval-roundtrip`
+- Human-wait accounting window — `security.human-wait-window`
+- `command_allowlist` — permanent approvals — `security.command-allowlist`
+- `hermes approvals` (parent command) — `security.cli-approvals`
+- `hermes approvals suggest` — `security.cli-approvals-suggest`
+- `hermes approvals test` — `security.cli-approvals-test`
+- `/approvals` slash command — `security.slash-approvals`
+- `/yolo` slash command — `security.slash-yolo`
+- `/approve` slash command — `security.slash-approve`
+- `/deny` slash command — `security.slash-deny`
+- Slash-command access policy (admin vs user) — `security.slash-access-policy`
+- `memory.write_approval` / `skills.write_approval` gates — `security.write-approval-gate`
+- `--yolo` flag (process-scoped bypass) — `security.flag-yolo`
+- `/yolo` in the classic CLI REPL — `security.cli-slash-yolo`
+- `--safe-mode` flag — `security.flag-safe-mode`
+- `hermes -z` / oneshot auto-bypass — `security.oneshot-yolo`
+- iron-proxy egress firewall (overview) — `security.iron-proxy`
+- Proxy-token credential substitution — `security.proxy-token-swap`
+- Egress allowlist and SSRF deny list — `security.egress-allowlist`
+- Generated `proxy.yaml` schema — `security.proxy-yaml`
+- Proxy listener bind policy — `security.proxy-bind-policy`
+- Proxy subprocess environment hardening — `security.proxy-subprocess-env`
+- `hermes egress` (parent command) — `security.cli-egress`
+- `hermes egress install` — `security.cli-egress-install`
+- `hermes egress setup` — `security.cli-egress-setup`
+- `hermes egress start` — `security.cli-egress-start`
+- `hermes egress stop` — `security.cli-egress-stop`
+- `hermes egress restart` — `security.cli-egress-restart`
+- `hermes egress reload` — `security.cli-egress-reload`
+- `hermes egress status` — `security.cli-egress-status`
+- `hermes egress disable` — `security.cli-egress-disable`
+- `hermes egress config` — `security.cli-egress-config`
+- Docker sandbox egress enforcement — `security.docker-egress-enforce`
+- External secret sources (overview + registry) — `security.secret-sources`
+- `hermes secrets` (parent command) — `security.cli-secrets`
+- `hermes secrets bitwarden setup` — `security.cli-bw-setup`
+- `hermes secrets bitwarden status` — `security.cli-bw-status`
+- `hermes secrets bitwarden token` — `security.cli-bw-token`
+- `hermes secrets bitwarden sync` — `security.cli-bw-sync`
+- `hermes secrets bitwarden disable` — `security.cli-bw-disable`
+- `hermes secrets bitwarden install` — `security.cli-bw-install`
+- `hermes secrets onepassword setup` — `security.cli-op-setup`
+- `hermes secrets onepassword status` — `security.cli-op-status`
+- `hermes secrets onepassword token` — `security.cli-op-token`
+- `hermes secrets onepassword set` — `security.cli-op-set`
+- `hermes secrets onepassword remove` — `security.cli-op-remove`
+- `hermes secrets onepassword sync` — `security.cli-op-sync`
+- `hermes secrets onepassword disable` — `security.cli-op-disable`
+- `command` secret source — `security.secret-source-command`
+- Masked secret prompt — `security.masked-secret-prompt`
+- Secret redaction engine — `security.redaction-engine`
+- Terminal-output redaction policy — `security.terminal-redaction`
+- Profile-scoped secret resolution (`get_secret`) — `security.secret-scope`
+- DM pairing system (overview) — `security.pairing-system`
+- Pairing code generation — `security.pairing-generate`
+- Pairing code approval + brute-force lockout — `security.pairing-approve-lockout`
+- `hermes pairing list` — `security.cli-pairing-list`
+- `hermes pairing approve` — `security.cli-pairing-approve`
+- `hermes pairing revoke` — `security.cli-pairing-revoke`
+- `hermes pairing clear-pending` — `security.cli-pairing-clear`
+- `unauthorized_dm_behavior` resolution — `security.unauthorized-dm-behavior`
+- Managed scope (administrator-pinned config + env) — `security.managed-scope`
+- Managed-scope write refusals — `security.managed-write-refusal`
+- Package-manager managed install lock (`HERMES_MANAGED`) — `security.hermes-managed-lock`
+- Env-var writer denylist — `security.env-writer-denylist`
+- `hermes security` (parent command) — `security.cli-security`
+- `hermes security audit` — `security.cli-security-audit`
+- Security advisory catalog + startup banner — `security.advisories`
+- Startup security posture audit — `security.startup-posture-audit`
+- MCP server entry security screening — `security.mcp-entry-screening`
+- Archive safety (export/import) — `security.archive-safe`
+- TLS CA bundle guard — `security.ssl-guard`
+- Per-provider TLS verify resolution — `security.ssl-verify`
+- Credential-safe urllib opener — `security.urllib-security`
+- Toolset platform scope — `security.toolset-scope`
+- Dashboard auth modes (loopback token vs gated) — `security.dashboard-auth-modes`
+- Legacy session-token auth (loopback) — `security.session-token-auth`
+- Public API path allowlist — `security.public-api-paths`
+- Auth-gate public prefixes — `security.gate-public-prefixes`
+- Gated auth middleware (cookie session gate) — `security.gated-auth-middleware`
+- Open-redirect protection on `next=` — `security.next-param-validation`
+- Auto-SSO redirect with loop guard — `security.auto-sso`
+- Session cookies and cookie-prefix hardening — `security.session-cookies`
+- Dashboard auth provider framework — `security.dashboard-auth-providers`
+- Nous Portal OAuth provider — `security.provider-nous`
+- Bundled password provider (`basic`) — `security.provider-basic`
+- Self-hosted OIDC provider — `security.provider-self-hosted-oidc`
+- Drain bearer-secret token provider — `security.provider-drain`
+- Non-interactive token-auth seam — `security.token-auth-seam`
+- WebSocket auth tickets — `security.ws-tickets`
+- Internal WebSocket credential — `security.ws-internal-credential`
+- Host-header (DNS-rebinding) guard — `security.host-header-guard`
+- WebSocket Host/Origin guard — `security.ws-origin-guard`
+- Localhost-only CORS policy — `security.cors-policy`
+- Password-login rate limiting — `security.password-rate-limit`
+- RFC 8252 native-app login broker — `security.native-app-flow`
+- Dashboard auth audit log — `security.dashboard-auth-audit`
+- `hermes dashboard register` — `security.cli-dashboard-register`
+- Login page — `security.login-page`
+- Plugin API runtime gate — `security.plugin-api-runtime-gate`
+- Write denylist (credential and system files) — `security.write-denylist`
+- `HERMES_WRITE_SAFE_ROOT` confinement — `security.write-safe-root`
+- Read denylist (credential and injection carriers) — `security.read-denylist`
+- Protected agent-instruction files (always-ask) — `security.protected-instruction-files`
+- Website blocklist — `security.website-blocklist`
+- Private-URL / SSRF blocking — `security.allow-private-urls`
+- `security-guidance` plugin (dangerous-code warnings) — `security.security-guidance-plugin`
+- Tool-loop guardrails and per-turn caps — `security.tool-loop-guardrails`
+- Monitoring-export redaction — `security.monitoring-redaction`
+- Tirith pre-exec content scanner — `security.tirith`
+- `approvals.mcp_reload_confirm` — `security.mcp-reload-confirm`
+- `approvals.destructive_slash_confirm` — `security.destructive-slash-confirm`
+- `delegation.subagent_auto_approve` — `security.subagent-auto-approve`
+- `privacy.redact_pii` — `security.privacy-redact-pii`
+- `security.allow_data_training_tiers_noninteractive` — `security.data-training-ack`
+- `security.allow_lazy_installs` — `security.allow-lazy-installs`
+- `discord.approval_mentions` and `discord.dm_role_auth_guild` — `security.discord-approval-config`
+- `gateway.multiplex_profile_allowlist` — `security.multiplex-profile-allowlist`
+- Gateway user-authorization order — `security.gateway-authz-order`
+- Container-backend guard skip — `security.container-guard-skip`
+- MCP subprocess credential filtering — `security.mcp-env-filtering`
+- Context-file prompt-injection scanner — `security.context-file-injection-scan`
+- Documented eight-layer security model — `security.model-overview`
+- Shell-hook first-use consent — `security.shell-hook-consent`
+- Bitwarden encrypted last-good cache — `security.bws-encrypted-cache`
+- Shared secret-source disk cache substrate — `security.secret-cache-substrate`
+- `dashboard.trusted_proxies` — `security.trusted-proxies`
+- Startup guidance when the gate has no provider — `security.gate-no-provider-hint`
+- Config page — Security category — `security.config-page-security-category`
+
+### 33 · Media & Environment Stack — browser, computer use, vision, image/video generation, TTS/STT, wake word, voice mode, document extraction, code-execution kernels, desktop UI tools
+
+- Browser toolset (`browser`) — the ten built-in browser tools — `media.browser-toolset`
+- Browser backend selection (`browser.backend`) — `media.browser-backend-select`
+- Browser cloud-provider selection (`browser.cloud_provider`) — `media.browser-cloud-provider`
+- `BrowserProvider` ABC — cloud-browser plugin contract — `media.browser-provider-abc`
+- Browser provider: Browser Use (cloud) — `media.browser-provider-browser-use`
+- Browser provider: Browserbase (cloud) — `media.browser-provider-browserbase`
+- Browser provider: Firecrawl (cloud) — `media.browser-provider-firecrawl`
+- Camofox local anti-detection browser — `media.browser-camofox`
+- Lightpanda local engine — `media.browser-lightpanda`
+- Real-profile browsing (`browser.use_real_profile`) — `media.browser-real-profile`
+- `hermes browser` — real-profile browsing helpers — `media.cli-browser`
+- `hermes browser close-profile` — free a locked browser profile — `media.cli-browser-close-profile`
+- Hybrid routing: local sidecar for private/LAN URLs — `media.browser-auto-local-private`
+- `/browser connect` — attach to a live Chromium-family browser over CDP — `media.slash-browser-connect`
+- `/browser disconnect` — `media.slash-browser-disconnect`
+- `/browser status` — `media.slash-browser-status`
+- `/browser` usage banner — `media.slash-browser-usage`
+- `agent-browser` CLI resolution & npx fallback — `media.browser-agent-browser-cli`
+- Credential-scrubbed browser subprocess environment — `media.browser-env-scrub`
+- Chromium sandbox-bypass auto-injection — `media.browser-sandbox-args`
+- Browser command timeouts (`browser.command_timeout`) — `media.browser-command-timeout`
+- Snapshot truncation & spill-to-disk (`browser.snapshot_threshold`) — `media.browser-snapshot-threshold`
+- Browser session lifecycle, inactivity reaping & orphan sweep — `media.browser-session-lifecycle`
+- Suspect-session recycling after a command timeout — `media.browser-suspect-session`
+- Browser JS evaluation policy (`browser.restrict_evaluate` / `allow_unsafe_evaluate`) — `media.browser-eval-policy`
+- Browser eval SSRF guard — `media.browser-eval-ssrf`
+- Browser output redaction — `media.browser-redaction`
+- Session recording (`browser.record_sessions`) — `media.browser-recording`
+- Headed mode (`browser.headed` / `AGENT_BROWSER_HEADED`) — `media.browser-headed`
+- Screenshot storage & cleanup — `media.browser-screenshots`
+- CDP supervisor — persistent dialog + frame detection — `media.browser-cdp-supervisor`
+- `browser_cdp` — raw Chrome DevTools Protocol passthrough — `media.tool-browser-cdp`
+- `browser_dialog` — answer a blocking native JS dialog — `media.tool-browser-dialog`
+- Browser extension control (`browser.extension_control.*`) — `media.browser-extension-control`
+- Browser-control broker API (`/v1/browser-control`) — `media.api-browser-control`
+- `browser_exec` — Browser Use CLI 3.0 driver — `media.tool-browser-exec`
+- `computer_use` toolset — background-first desktop control — `media.computer-use-toolset`
+- `computer_use` tool — actions, targeting and verdicts — `media.tool-computer-use`
+- Computer-use approval gating & blocked actions — `media.computer-use-approvals`
+- Permission modes & the private cua-driver daemon — `media.computer-use-permission-modes`
+- cua-driver binary resolution, contract check & update nudge — `media.computer-use-driver-resolution`
+- CuaDriver.app signature validation (macOS) — `media.computer-use-signature`
+- Computer-use capture routing to auxiliary vision — `media.computer-use-vision-routing`
+- Screenshot-overlay auto-disable (`computer_use.no_overlay`) — `media.computer-use-no-overlay`
+- cua-driver telemetry opt-out — `media.computer-use-telemetry`
+- Whole-screen vs desktop-shell capture targeting — `media.computer-use-screen-targets`
+- `hermes computer-use` — driver management CLI — `media.cli-computer-use`
+- `hermes computer-use install` — `media.cli-computer-use-install`
+- `hermes computer-use status` — `media.cli-computer-use-status`
+- `hermes computer-use doctor` — `media.cli-computer-use-doctor`
+- `hermes computer-use permissions` (macOS TCC) — `media.cli-computer-use-permissions`
+- `vision_analyze` — load an image into the conversation — `media.tool-vision-analyze`
+- Vision image ingestion: SSRF, size caps and decode validation — `media.vision-ingest-guards`
+- Vision image normalisation (SVG rasterisation & media-type coercion) — `media.vision-normalize`
+- Vision embed sizing & reactive shrink-on-reject — `media.vision-sizing`
+- Vision CPU-burst concurrency cap — `media.vision-cpu-cap`
+- Image input mode (`agent.image_input_mode`) — `media.image-input-mode`
+- Inline image reference extraction — `media.image-ref-extraction`
+- Image MIME sniffing & PNG transcode for native attach — `media.image-mime-transcode`
+- Multimodal-tool-result capability table — `media.vision-tool-result-support`
+- `video_analyze` — send a video to a video-capable model — `media.tool-video-analyze`
+- `tools/image_source.py` — unified image/video source resolver — `media.image-source-resolver`
+- `image_generate` — unified text-to-image + image editing — `media.tool-image-generate`
+- FAL in-tree image model catalog (21 models) — `media.image-fal-catalog`
+- FAL Clarity Upscaler chain — `media.image-upscaler`
+- Managed FAL gateway (Nous Subscription) for image generation — `media.image-managed-fal`
+- Image-gen provider resolution & the "no backend" message — `media.image-provider-resolution`
+- Image provider: FAL.ai — `media.image-provider-fal`
+- Image provider: OpenAI (gpt-image-2) — `media.image-provider-openai`
+- Image provider: OpenAI via Codex OAuth — `media.image-provider-openai-codex`
+- Image provider: Krea — `media.image-provider-krea`
+- Image provider: OpenRouter (+ Nous Portal) — `media.image-provider-openrouter`
+- Image provider: xAI Grok Imagine — `media.image-provider-xai`
+- Image provider: DeepInfra — `media.image-provider-deepinfra`
+- `hermes_cli/image_provenance.py` — generated-image provenance — `media.image-provenance`
+- Source-image confinement under non-local terminal backends — `media.image-source-confinement`
+- `video_generate` — unified text-to-video / image-to-video — `media.tool-video-generate`
+- `VideoGenProvider` ABC & registry — `media.video-provider-abc`
+- Video provider: FAL — `media.video-provider-fal`
+- Video provider: xAI Grok Imagine Video — `media.video-provider-xai`
+- Video provider: DeepInfra — `media.video-provider-deepinfra`
+- `xai_video_edit` — edit an existing xAI Imagine video — `media.tool-xai-video-edit`
+- `xai_video_extend` — extend an existing xAI Imagine video — `media.tool-xai-video-extend`
+- `text_to_speech` tool — `media.tool-text-to-speech`
+- Built-in TTS providers (11) and the resolution order — `media.tts-builtins`
+- TTS provider: Edge TTS (default, free) — `media.tts-edge`
+- TTS provider: ElevenLabs — `media.tts-elevenlabs`
+- TTS provider: OpenAI (and OpenAI-compatible endpoints) — `media.tts-openai`
+- TTS provider: MiniMax (global / China regions) — `media.tts-minimax`
+- TTS provider: Mistral Voxtral — `media.tts-mistral`
+- TTS provider: Google Gemini TTS (with persona prompts & audio tags) — `media.tts-gemini`
+- TTS provider: xAI Grok TTS — `media.tts-xai`
+- TTS provider: DeepInfra — `media.tts-deepinfra`
+- TTS provider: NeuTTS (local) — `media.tts-neutts`
+- TTS provider: KittenTTS (local) — `media.tts-kittentts`
+- TTS provider: Piper (local, 44 languages) — `media.tts-piper`
+- Custom TTS command providers (`tts.providers.<name>`) — `media.tts-command-providers`
+- Python TTS plugin providers (`register_tts_provider`) — `media.tts-plugin-providers`
+- TTS text normalisation for speech — `media.tts-text-normalize`
+- TTS long-form chunking and platform packing — `media.tts-chunking-packing`
+- Audio container repair, Opus conversion and concatenation — `media.tts-audio-container`
+- TTS response body limits — `media.tts-response-limits`
+- Streaming TTS to the speaker (`stream_tts_to_speaker`) — `media.tts-streaming`
+- `hermes setup tts` — TTS setup wizard section — `media.cli-setup-tts`
+- Voice-message transcription pipeline (`transcribe_audio`) — `media.stt-pipeline`
+- STT provider resolution & auto-detect — `media.stt-provider-resolution`
+- STT backend: local faster-whisper — `media.stt-local`
+- STT backend: `local_command` and `HERMES_LOCAL_STT_COMMAND` — `media.stt-local-command`
+- STT backend: Groq Whisper — `media.stt-groq`
+- STT backend: OpenAI Whisper — `media.stt-openai`
+- STT backend: Mistral Voxtral Transcribe — `media.stt-mistral`
+- STT backend: xAI Grok STT — `media.stt-xai`
+- STT backend: ElevenLabs Scribe — `media.stt-elevenlabs`
+- STT backend: DeepInfra — `media.stt-deepinfra`
+- STT command providers (`stt.providers.<name>`) — `media.stt-command-providers`
+- `TranscriptionProvider` ABC & registry — `media.stt-plugin-providers`
+- Whisper prompt-length cap — `media.stt-prompt-cap`
+- Cloud STT silence trimming — `media.stt-cloud-trim`
+- Voice mode — push-to-talk and continuous voice chat — `media.voice-mode`
+- Voice record-key binding & normalisation — `media.voice-record-key`
+- Voice audio cues — beeps and thinking sound — `media.voice-audio-cues`
+- Whisper hallucination filter — `media.voice-hallucination-filter`
+- Voice stop phrases — `media.voice-stop-phrases`
+- Barge-in and TTS self-capture suppression — `media.voice-barge-in`
+- Silence-based auto-stop (VAD) — `media.voice-silence-vad`
+- Audio-environment detection & install hints — `media.voice-audio-env`
+- `voice_client_config.py` — client-side voice contract — `media.voice-client-config`
+- Wake word — "Hey Hermes" hands-free trigger — `media.wake-word`
+- Wake engine: openWakeWord (default, bundled model) — `media.wake-openwakeword`
+- Wake engine: sherpa-onnx keyword spotting (open vocabulary) — `media.wake-sherpa`
+- Wake engine: Picovoice Porcupine (premium) — `media.wake-porcupine`
+- Wake-word capture mode (local vs client) — `media.wake-capture-mode`
+- Wake-word profile routing (multi-profile phrase enrollment) — `media.wake-profile-routing`
+- `execute_code` — programmatic tool calling — `media.tool-execute-code`
+- `execute_code` sandbox tool allowlist (7 tools) — `media.execute-code-tool-allowlist`
+- `execute_code` child-environment scrubbing — `media.execute-code-env-scrub`
+- Execution mode (`code_execution.mode`) — `media.execute-code-mode`
+- Session kernels (`tools/code_kernel.py`) — `media.code-session-kernel`
+- Remote kernels (`tools/code_kernel_remote.py`) — `media.code-remote-kernel`
+- Interpreter shutdown & process-group kill — `media.code-interpreter-shutdown`
+- Terminal backend selection (`terminal.backend` / `TERMINAL_ENV`) — `media.terminal-backend-select`
+- `BaseEnvironment` — the shared shell contract — `media.terminal-base-env`
+- `TerminalEnvironmentProvider` ABC — pluggable sandbox backends — `media.terminal-provider-abc`
+- Terminal backend: `local` — `media.terminal-local`
+- Terminal backend: `docker` — `media.terminal-docker`
+- Terminal backend: `singularity` (Apptainer) — `media.terminal-singularity`
+- Terminal backend: `ssh` — `media.terminal-ssh`
+- Terminal backend: `modal` (direct SDK) — `media.terminal-modal`
+- Terminal backend: `managed_modal` and `terminal.modal_mode` — `media.terminal-managed-modal`
+- Terminal backend: `daytona` — `media.terminal-daytona`
+- Terminal backend: `vercel_sandbox` — `media.terminal-vercel`
+- Remote file sync (`FileSyncManager`) — `media.terminal-file-sync`
+- `desktop_ui` bridge — how desktop-only tools reach the renderer — `media.desktop-ui-bridge`
+- `desktop_preview` — the preview pane — `media.tool-desktop-preview`
+- `drive_preview` — drive the page in the preview pane — `media.tool-drive-preview`
+- `annotate_preview` — lasting marks on the preview page — `media.tool-annotate-preview`
+- `focus_pane` — reveal a desktop pane — `media.tool-focus-pane`
+- `apply_layout` — apply a workspace layout preset — `media.tool-apply-layout`
+- `read_terminal` — read the in-app terminal pane — `media.tool-read-terminal`
+- `close_terminal` — drop a background-process terminal tab — `media.tool-close-terminal`
+- `read_window_below` — identify the app window behind Hermes — `media.tool-read-window-below`
+- `tour` — guided tour with spotlight + popovers — `media.tool-tour`
+- `tip` — a single arrow bubble pointing at one thing — `media.tool-tip`
+- `setup_mcp` — inline MCP consent card — `media.tool-setup-mcp`
+- `react_to_message` — emoji tapback in the desktop chat — `media.tool-react-to-message`
+- `desktop_project` — desktop project management — `media.tool-desktop-project`
+- Document extraction for `read_file` (`tools/read_extract.py`) — `media.document-extraction`
+- Scanned-PDF coverage detection & OCR nudge — `media.pdf-coverage`
+- `web_extract` — page and PDF content extraction — `media.tool-web-extract`
+- `web_search` — search the web — `media.tool-web-search`
+- Web provider resolution, keyless tier and rescue — `media.web-provider-resolution`
+- `WebSearchProvider` ABC & response contract — `media.web-provider-abc`
+- Web provider: Firecrawl (search + extract) — `media.web-provider-firecrawl`
+- Web provider: Parallel.ai — `media.web-provider-parallel`
+- Web provider: Exa — `media.web-provider-exa`
+- Web provider: SearXNG (self-hosted) — `media.web-provider-searxng`
+- Web provider: Brave Search (free tier) — `media.web-provider-brave-free`
+- Web provider: DDGS (DuckDuckGo, no key) — `media.web-provider-ddgs`
+- Web provider: Keenable — `media.web-provider-keenable`
+- Web provider: xAI Web Search — `media.web-provider-xai`
+- Keyless MCP ring (`plugins/web/keyless_mcp.py`) — `media.web-keyless-ring`
+- Web result cache — `media.web-result-cache`
+- Website policy & URL safety guards — `media.url-safety`
+- `audio_container.py` — container sniffing for delivered audio — `media.audio-container`
+- Inbound media size cap & delivery allowlist — `media.gateway-media-limits`
+- `browser_navigate` — `media.tool-browser-navigate`
+- `browser_snapshot` — `media.tool-browser-snapshot`
+- `browser_click` — `media.tool-browser-click`
+- `browser_type` — `media.tool-browser-type`
+- `browser_scroll` — `media.tool-browser-scroll`
+- `browser_back` — `media.tool-browser-back`
+- `browser_press` — `media.tool-browser-press`
+- `browser_get_images` — `media.tool-browser-get-images`
+- `browser_vision` — `media.tool-browser-vision`
+- `browser_console` — `media.tool-browser-console`
+- `hermes tools` → **Browser Automation** picker — `media.picker-browser`
+- `hermes tools` → **Text-to-Speech** picker — `media.picker-tts`
+- `hermes tools` → **Speech-to-Text** picker — `media.picker-stt`
+- `hermes tools` → **Image Generation** / **Video Generation** pickers — `media.picker-image-video`
+- `hermes tools` → **Computer Use** picker — `media.picker-computer-use`
+- `hermes tools` → **Web Search & Extract** picker — `media.picker-web`
+- `hermes tools post-setup KEY` — media dependency install hooks — `media.cli-tools-post-setup`
+- `GET /api/tools/computer-use/status` — `media.api-computer-use-status`
+- `POST /api/tools/computer-use/permissions/grant` — `media.api-computer-use-grant`
+- `GET /api/tools/terminal/backends` and `PUT /api/tools/terminal/backend` — `media.api-terminal-backends`
+- `GET /api/audio/voice-config` — `media.api-audio-voice-config`
+- `GET /api/audio/elevenlabs/voices` — `media.api-elevenlabs-voices`
+- `POST /api/audio/speak` and `WEBSOCKET /api/audio/speak-stream` — `media.api-audio-speak`
+- `POST /api/audio/transcribe` — `media.api-audio-transcribe`
+- `GET /api/media` and `POST /api/chat/image-upload` — `media.api-media-serve`
+- Environment probe & hint (`agent.environment_probe` / `agent.environment_hint`) — `media.agent-environment-probe`
+- Persistent CDP override (`browser.cdp_url` / `BROWSER_CDP_URL`) — `media.browser-cdp-url`
+- Browser-control endpoints `/v1/browser-control/register` and `/v1/browser-control/ws` — `media.api-browser-control-endpoints`
+- `hermes setup terminal` — terminal-backend wizard section — `media.cli-setup-terminal`
+- `computer_use_tool.py` — registration shim — `media.computer-use-registration-shim`
+- `fal_common.py` — shared FAL SDK plumbing — `media.fal-common`
+
+### 34 · Protocol surfaces — ACP, MCP, OpenAI-compatible API, A2A, LSP, proxy, plugin/hook developer API
+
+- Start Hermes in ACP mode — `acp-mcp-dev.hermes-acp`
+- ACP `initialize` handshake and advertised agent capabilities — `acp-mcp-dev.acp-initialize`
+- ACP authentication methods — `acp-mcp-dev.acp-authenticate`
+- ACP `session/new` — `acp-mcp-dev.acp-session-new`
+- ACP `session/load` (with in-call history replay) — `acp-mcp-dev.acp-session-load`
+- ACP `session/resume` — `acp-mcp-dev.acp-session-resume`
+- ACP `session/fork` — `acp-mcp-dev.acp-session-fork`
+- ACP `session/list` with cursor pagination — `acp-mcp-dev.acp-session-list`
+- ACP `session/cancel` — `acp-mcp-dev.acp-session-cancel`
+- ACP `session/prompt` (the core turn) — `acp-mcp-dev.acp-prompt`
+- ACP slash-command advertisement (`available_commands_update`) — `acp-mcp-dev.acp-available-commands`
+- ACP slash-command dispatch — `acp-mcp-dev.acp-slash-dispatch`
+- ACP `/help` — `acp-mcp-dev.acp-cmd-help`
+- ACP `/model` — `acp-mcp-dev.acp-cmd-model`
+- ACP `/tools` — `acp-mcp-dev.acp-cmd-tools`
+- ACP `/context` — `acp-mcp-dev.acp-cmd-context`
+- ACP `/reset` — `acp-mcp-dev.acp-cmd-reset`
+- ACP `/compress` — `acp-mcp-dev.acp-cmd-compress`
+- ACP `/steer` — `acp-mcp-dev.acp-cmd-steer`
+- ACP `/queue` — `acp-mcp-dev.acp-cmd-queue`
+- ACP `/version` — `acp-mcp-dev.acp-cmd-version`
+- ACP `session/set_model` — `acp-mcp-dev.acp-set-session-model`
+- ACP model inventory advertised to the editor — `acp-mcp-dev.acp-model-state`
+- ACP session modes (edit-approval policy) — `acp-mcp-dev.acp-session-modes`
+- ACP `session/set_mode` — `acp-mcp-dev.acp-set-session-mode`
+- ACP `session/set_config_option` — `acp-mcp-dev.acp-set-config-option`
+- ACP tool-call rendering (kinds, titles, locations) — `acp-mcp-dev.acp-tool-rendering`
+- ACP duplicate/parallel tool-call correlation (FIFO per tool name) — `acp-mcp-dev.acp-toolcall-fifo`
+- ACP plan panel from the `todo` tool — `acp-mcp-dev.acp-plan-updates`
+- ACP permission bridge for dangerous commands — `acp-mcp-dev.acp-permission-bridge`
+- ACP pre-execution edit approval (diff preview) — `acp-mcp-dev.acp-edit-approval`
+- ACP session provenance `_meta` — `acp-mcp-dev.acp-provenance`
+- ACP compaction-summary `_meta` markers — `acp-mcp-dev.acp-compaction-meta`
+- ACP history replay — `acp-mcp-dev.acp-history-replay`
+- ACP usage and session-info updates — `acp-mcp-dev.acp-usage-update`
+- ACP per-session MCP servers + late refresh — `acp-mcp-dev.acp-session-mcp`
+- ACP session persistence into `state.db` — `acp-mcp-dev.acp-session-persistence`
+- ACP working-directory binding and WSL translation — `acp-mcp-dev.acp-cwd`
+- `hermes-acp` toolset — `acp-mcp-dev.acp-toolset`
+- ACP benign liveness-probe log filter — `acp-mcp-dev.acp-probe-filter`
+- ACP ↔ OpenAI tool bridge (`agent/acp_openai_bridge.py`) — `acp-mcp-dev.acp-openai-bridge`
+- GitHub Copilot ACP client (Hermes as an ACP *client*) — `acp-mcp-dev.copilot-acp-client`
+- `hermes mcp` — MCP command group — `acp-mcp-dev.mcp-root`
+- `hermes mcp add` — discovery-first install — `acp-mcp-dev.mcp-add`
+- `hermes mcp remove` (alias `rm`) — `acp-mcp-dev.mcp-remove`
+- `hermes mcp list` (alias `ls`) — `acp-mcp-dev.mcp-list`
+- `hermes mcp test` — `acp-mcp-dev.mcp-test`
+- `hermes mcp configure` (alias `config`) — `acp-mcp-dev.mcp-configure`
+- `hermes mcp login` — `acp-mcp-dev.mcp-login`
+- `hermes mcp reauth` — `acp-mcp-dev.mcp-reauth`
+- `hermes mcp picker` (and bare `hermes mcp`) — `acp-mcp-dev.mcp-picker`
+- `hermes mcp catalog` — `acp-mcp-dev.mcp-catalog`
+- `hermes mcp install` — `acp-mcp-dev.mcp-install`
+- `mcp_servers` root config shape — `acp-mcp-dev.mcp-config-root`
+- MCP server key: `command` — `acp-mcp-dev.mcp-key-command`
+- MCP server key: `args` — `acp-mcp-dev.mcp-key-args`
+- MCP server key: `env` — `acp-mcp-dev.mcp-key-env`
+- MCP server key: `url` — `acp-mcp-dev.mcp-key-url`
+- MCP server key: `headers` — `acp-mcp-dev.mcp-key-headers`
+- MCP server key: `identity_header` — `acp-mcp-dev.mcp-key-identity-header`
+- MCP server key: `ssl_verify` — `acp-mcp-dev.mcp-key-ssl-verify`
+- MCP server key: `client_cert` / `client_key` (mTLS) — `acp-mcp-dev.mcp-key-client-cert`
+- MCP server key: `enabled` — `acp-mcp-dev.mcp-key-enabled`
+- MCP server key: `timeout` — `acp-mcp-dev.mcp-key-timeout`
+- MCP server key: `connect_timeout` — `acp-mcp-dev.mcp-key-connect-timeout`
+- MCP server key: `protocol` (era negotiation) — `acp-mcp-dev.mcp-key-protocol`
+- MCP server key: `supports_parallel_tool_calls` — `acp-mcp-dev.mcp-key-parallel`
+- MCP server key: `skip_preflight` — `acp-mcp-dev.mcp-key-skip-preflight`
+- MCP server key: `transport` — `acp-mcp-dev.mcp-key-transport`
+- MCP server key: `keepalive_interval` — `acp-mcp-dev.mcp-key-keepalive`
+- MCP server keys: `idle_timeout_seconds` / `max_lifetime_seconds` (stdio recycling) — `acp-mcp-dev.mcp-key-lifecycle`
+- MCP `tools.include` / `tools.exclude` filtering — `acp-mcp-dev.mcp-key-tools-filter`
+- MCP `tools.resources` / `tools.prompts` utility-tool policy — `acp-mcp-dev.mcp-key-utility-policy`
+- MCP utility tool: `mcp__<server>__list_resources` — `acp-mcp-dev.mcp-tool-list-resources`
+- MCP utility tool: `mcp__<server>__read_resource` — `acp-mcp-dev.mcp-tool-read-resource`
+- MCP utility tool: `mcp__<server>__list_prompts` — `acp-mcp-dev.mcp-tool-list-prompts`
+- MCP utility tool: `mcp__<server>__get_prompt` — `acp-mcp-dev.mcp-tool-get-prompt`
+- MCP tool naming and sanitization — `acp-mcp-dev.mcp-tool-naming`
+- MCP `auth: oauth` — OAuth 2.1 with PKCE — `acp-mcp-dev.mcp-oauth`
+- MCP OAuth client identification — CIMD vs DCR — `acp-mcp-dev.mcp-oauth-cimd`
+- MCP OAuth pinned callback ports 27890–27894 — `acp-mcp-dev.mcp-oauth-ports`
+- MCP `oauth:` per-server sub-keys — `acp-mcp-dev.mcp-key-oauth-block`
+- MCP dashboard-mediated OAuth callback bridge — `acp-mcp-dev.mcp-dashboard-oauth`
+- MCP `sampling:` — server-initiated LLM requests — `acp-mcp-dev.mcp-key-sampling`
+- MCP `elicitation:` — server-initiated user input — `acp-mcp-dev.mcp-key-elicitation`
+- MCP `trust:` — untrusted-server write gating — `acp-mcp-dev.mcp-key-trust`
+- MCP `${VAR}` / `${env:VAR}` and context-variable interpolation — `acp-mcp-dev.mcp-interpolation`
+- MCP `hermes://mcp/install` deep link ("Add to Hermes") — `acp-mcp-dev.mcp-deeplink`
+- MCP server security validator — `acp-mcp-dev.mcp-security-validator`
+- MCP tool-description prompt-injection scanner — `acp-mcp-dev.mcp-injection-scan`
+- MCP result size caps and truncation — `acp-mcp-dev.mcp-result-caps`
+- MCP stdio subprocess stderr redirection — `acp-mcp-dev.mcp-stderr-log`
+- MCP stdio parent-death watchdog — `acp-mcp-dev.mcp-stdio-watchdog`
+- MCP schema cache (lazy startup) — `acp-mcp-dev.mcp-schema-cache`
+- MCP background discovery and bounded waits — `acp-mcp-dev.mcp-startup`
+- MCP reconnection, backoff, parking and circuit breaker — `acp-mcp-dev.mcp-reconnect`
+- MCP orphan reaper and loop shutdown — `acp-mcp-dev.mcp-shutdown`
+- MCP discovery lock (multi-process) — `acp-mcp-dev.mcp-discovery-lock`
+- MCP status and introspection API — `acp-mcp-dev.mcp-status-api`
+- `hermes mcp serve` — Hermes as an MCP server (messaging bridge) — `acp-mcp-dev.mcp-serve`
+- `hermes mcp serve` tool: `conversations_list` — `acp-mcp-dev.mcpserve-conversations-list`
+- `hermes mcp serve` tool: `conversation_get` — `acp-mcp-dev.mcpserve-conversation-get`
+- `hermes mcp serve` tool: `messages_read` — `acp-mcp-dev.mcpserve-messages-read`
+- `hermes mcp serve` tool: `attachments_fetch` — `acp-mcp-dev.mcpserve-attachments-fetch`
+- `hermes mcp serve` tool: `events_poll` — `acp-mcp-dev.mcpserve-events-poll`
+- `hermes mcp serve` tool: `events_wait` — `acp-mcp-dev.mcpserve-events-wait`
+- `hermes mcp serve` tool: `messages_send` — `acp-mcp-dev.mcpserve-messages-send`
+- `hermes mcp serve` tool: `channels_list` — `acp-mcp-dev.mcpserve-channels-list`
+- `hermes mcp serve` tool: `permissions_list_open` — `acp-mcp-dev.mcpserve-permissions-list`
+- `hermes mcp serve` tool: `permissions_respond` — `acp-mcp-dev.mcpserve-permissions-respond`
+- `hermes mcp serve` EventBridge — `acp-mcp-dev.mcpserve-event-bridge`
+- `hermes-tools` MCP server for the Codex runtime — `acp-mcp-dev.hermes-tools-mcp`
+- `POST /v1/chat/completions` — OpenAI Chat Completions — `acp-mcp-dev.api-chat-completions`
+- `POST /v1/responses` — OpenAI Responses API — `acp-mcp-dev.api-responses`
+- `GET /v1/responses/{response_id}` — `acp-mcp-dev.api-get-response`
+- `DELETE /v1/responses/{response_id}` — `acp-mcp-dev.api-delete-response`
+- `GET /v1/models` — `acp-mcp-dev.api-models`
+- `GET /api/model/options` — Hermes provider/model inventory — `acp-mcp-dev.api-model-options`
+
+### 35 · Feature Docs Cross-Check — `website/docs/user-guide/features/*`
+
+- Features sidebar category — `docs-features.category-json`
+- Features Overview page — `docs-features.overview-page`
+- Document Extraction (read_file auto-conversion) — `docs-features.document-extraction`
+- Scanned-PDF coverage warning — `docs-features.pdf-coverage-warning`
+- Session Heartbeats (`/heartbeat`) — `docs-features.heartbeat`
+- Heartbeat vs cron comparison — `docs-features.heartbeat-vs-cron`
+- Recurring Loops (`/loop`) — `docs-features.loop`
+- Loop cadence mode — fixed interval — `docs-features.loop-fixed-interval`
+- Loop cadence mode — self-paced (exponential backoff) — `docs-features.loop-self-paced`
+- Loop stop conditions — `docs-features.loop-stop-conditions`
+- `/loop` vs `/goal` vs cron comparison — `docs-features.loop-vs-goal-vs-cron`
+- When to use `/loop` (use-case list) — `docs-features.loop-use-cases`
+- Context References (`@` inline expansion) — `docs-features.context-references`
+- `@file:` line ranges — `docs-features.ctxref-line-ranges`
+- `@` tab completion in the CLI — `docs-features.ctxref-tab-completion`
+- Context reference size limits — `docs-features.ctxref-size-limits`
+- Sensitive path blocking for `@file:` — `docs-features.ctxref-sensitive-paths`
+- Path traversal protection — `docs-features.ctxref-path-traversal`
+- Binary file detection — `docs-features.ctxref-binary-detection`
+- Platform availability of `@` references — `docs-features.ctxref-platform-availability`
+- Interaction with context compression — `docs-features.ctxref-compression`
+- Context reference error handling — `docs-features.ctxref-errors`
+- Common `@`-reference patterns — `docs-features.ctxref-patterns`
+- Deliverable Mode — `docs-features.deliverable-mode`
+- Deliverable Mode supported extensions table — `docs-features.deliverable-extensions`
+- Encouraging the agent to produce artifacts — `docs-features.deliverable-nudges`
+- Kanban artifacts on completion notifications — `docs-features.deliverable-kanban-artifacts`
+- MCP connector table (deliverable-mode page) — `docs-features.deliverable-mcp-table`
+- Comparison to Perplexity Computer in Slack — `docs-features.deliverable-perplexity-comparison`
+- Kanban worker lane (contract) — `docs-features.kanban-lane-contract`
+- Lane requirement 1 — assignee string — `docs-features.kanban-lane-assignee`
+- Lane requirement 2 — spawn mechanism and worker env vars — `docs-features.kanban-lane-spawn-env`
+- Lane requirement 3 — lifecycle terminator — `docs-features.kanban-lane-terminator`
+- Review handoff models (same-card / downstream card / human-only) — `docs-features.kanban-lane-review-models`
+- Kanban lane logs and audit trail — `docs-features.kanban-lane-logs`
+- Existing lane shape — Hermes profile lane (default) — `docs-features.kanban-lane-profile`
+- Existing lane shape — Orchestrator profile lane — `docs-features.kanban-lane-orchestrator`
+- Adding an external CLI worker lane (not a paved path) — `docs-features.kanban-lane-external-cli`
+- Dispatcher failure modes handled for lane authors — `docs-features.kanban-lane-failure-modes`
+- `x_search` tool — `docs-features.x-search-tool`
+- `x_search` vs `xurl` decision table — `docs-features.x-search-vs-xurl`
+- `x_search` authentication (OAuth vs API key) — `docs-features.x-search-auth`
+- Enabling / disabling `x_search` in `hermes tools` — `docs-features.x-search-enable`
+- `x_search` date validation — `docs-features.x-search-date-validation`
+- `x_search` troubleshooting matrix — `docs-features.x-search-troubleshooting`
+- `x_search` See Also links — `docs-features.x-search-see-also`
+- Provider Routing — `docs-features.provider-routing`
+- `provider_routing.sort` — `docs-features.provider-routing-sort`
+- `provider_routing.only` (whitelist) — `docs-features.provider-routing-only`
+- `provider_routing.ignore` (blacklist) — `docs-features.provider-routing-ignore`
+- `provider_routing.order` (priority order) — `docs-features.provider-routing-order`
+- `provider_routing.require_parameters` — `docs-features.provider-routing-require-parameters`
+- `provider_routing.data_collection` — `docs-features.provider-routing-data-collection`
+- Provider-routing practical examples — `docs-features.provider-routing-examples`
+- Provider-routing default behavior + routing vs fallback — `docs-features.provider-routing-defaults`
+- Subscription Proxy (`hermes proxy`) — `docs-features.subscription-proxy`
+- Proxy vs API server comparison — `docs-features.proxy-vs-api-server`
+- Proxy providers (`nous`, `xai`) and the `UpstreamAdapter` interface — `docs-features.proxy-providers`
+- Proxy allowed-path allow-list — `docs-features.proxy-allowed-paths`
+- Proxy recipe — OpenViking via Portal — `docs-features.proxy-openviking`
+- Proxy recipe — Karakeep / any OpenAI-compatible client — `docs-features.proxy-karakeep`
+- Proxy LAN exposure and rate limits — `docs-features.proxy-lan-and-limits`
+- Tool Search (progressive tool disclosure) — `docs-features.tool-search`
+- Tool Search tiered disclosure (tiers 0/1/2) — `docs-features.tool-search-tiers`
+- Tool Search configuration keys — `docs-features.tool-search-config`
+- Why the tool listing exists — `docs-features.tool-search-listing-rationale`
+- When NOT to use Tool Search — `docs-features.tool-search-when-not`
+- Tool Search inherent trade-offs — `docs-features.tool-search-tradeoffs`
+- Tool Search implementation details — `docs-features.tool-search-implementation`
+- Tool Search See-also — `docs-features.tool-search-see-also`
+- Vision & Image Paste — `docs-features.vision-paste`
+- `/paste` command — `docs-features.vision-paste-command`
+- `Ctrl+V` / `Cmd+V` layered paste — `docs-features.vision-ctrl-v`
+- `/terminal-setup` for VS Code / Cursor / Windsurf — `docs-features.vision-terminal-setup`
+- Vision platform compatibility matrix — `docs-features.vision-platform-matrix`
+- Vision platform setup — macOS / X11 / Wayland / WSL2 — `docs-features.vision-platform-setup`
+- Vision over SSH — limits and workarounds — `docs-features.vision-ssh`
+- Why terminals can't paste images (explainer) — `docs-features.vision-why-terminals`
+- Vision content-block format / supported models — `docs-features.vision-content-format`
+- Image routing (vision-capable vs text-only models) — `docs-features.vision-routing`
+- `vision_analyze` dual behavior — `docs-features.vision-analyze-dual`
+- Nous Tool Gateway — `docs-features.tool-gateway`
+- Tool Gateway — what's included (4 tool categories) — `docs-features.tool-gateway-included`
+- Tool Gateway "Why it's here" value props — `docs-features.tool-gateway-why`
+- Tool Gateway eligibility and free tool pool — `docs-features.tool-gateway-eligibility`
+- Tool Gateway enablement checklist behavior — `docs-features.tool-gateway-checklist`
+- Tool Gateway mix-and-match — `docs-features.tool-gateway-mix`
+- Tool Gateway image-model IDs — `docs-features.tool-gateway-image-models`
+- Tool Gateway selection keys (config reference) — `docs-features.tool-gateway-selection-keys`
+- Switching back to your own keys — `docs-features.tool-gateway-byok`
+- Legacy `use_gateway` flag (deprecated) — `docs-features.tool-gateway-use-gateway-legacy`
+- Self-hosted gateway env overrides — `docs-features.tool-gateway-selfhosted`
+- Tool Gateway FAQ — `docs-features.tool-gateway-faq`
+- Tools & Toolsets (overview page) — `docs-features.tools-overview`
+- Using toolsets (`--toolsets`, `hermes tools`) — `docs-features.tools-using-toolsets`
+- Tool result annotations — signal deaths — `docs-features.tools-signal-annotations`
+- Tool result annotations — UTF-16 transcoding — `docs-features.tools-utf16`
+- Terminal backends table — `docs-features.tools-terminal-backends`
+- Shell startup files and non-interactive commands — `docs-features.tools-shell-init`
+- Docker terminal backend (persistent container) — `docs-features.tools-docker-backend`
+- SSH terminal backend — `docs-features.tools-ssh-backend`
+- Singularity/Apptainer terminal backend — `docs-features.tools-singularity-backend`
+- Modal terminal backend — `docs-features.tools-modal-backend`
+- Vercel Sandbox terminal backend — `docs-features.tools-vercel-backend`
+- Container resource keys — `docs-features.tools-container-resources`
+- Container security hardening — `docs-features.tools-container-security`
+- Background process management (`process` tool) — `docs-features.tools-background-processes`
+- Sudo support — `docs-features.tools-sudo`
+- Batch Processing (`batch_runner.py`) — `docs-features.batch-processing`
+- Batch dataset format — `docs-features.batch-dataset-format`
+- Batch configuration options (core flags) — `docs-features.batch-config-flags`
+- Batch provider-routing flags — `docs-features.batch-provider-routing-flags`
+- Batch reasoning-control flags — `docs-features.batch-reasoning-flags`
+- Batch advanced flags — `docs-features.batch-advanced-flags`
+- Toolset distributions (sampling) — `docs-features.batch-distributions`
+- Batch output format and directory layout — `docs-features.batch-output-format`
+- Trajectory JSON schema — `docs-features.batch-trajectory-format`
+- Batch checkpointing and content-based resume — `docs-features.batch-checkpointing`
+- Batch quality filtering — `docs-features.batch-quality-filtering`
+- Batch statistics output — `docs-features.batch-statistics`
+- Batch use cases (training data / evaluation / per-prompt images) — `docs-features.batch-use-cases`
+- Pets (animated mascot) — `docs-features.pets`
+- Pet activity→state mapping — `docs-features.pets-state-mapping`
+- Pet terminal rendering (graphics protocols + half-block fallback) — `docs-features.pets-rendering`
+- `hermes pets` command family — `docs-features.pets-cli`
+- `/pet` slash command — `docs-features.pets-slash`
+- Pet generation (`/hatch`) — `docs-features.pets-hatch`
+- Pets in the desktop app (Cmd+K, Settings → Appearance) — `docs-features.pets-desktop`
+- Pet roaming (desktop) — `docs-features.pets-roaming`
+- Pet Alt+wheel resizing — `docs-features.pets-alt-wheel`
+- Pet vibe reactions — `docs-features.pets-vibe-reactions`
+- Pet pop-out overlay (desktop) — `docs-features.pets-popout`
+- Pet configuration keys — `docs-features.pets-config`
+- `hermes pets doctor` + troubleshooting — `docs-features.pets-doctor`
+- Pets — See also (`hermes-agent` skill) — `docs-features.pets-see-also`
+- Skins & Themes (`/skin`) — `docs-features.skins`
+- Built-in skins (9) — `docs-features.skins-builtin`
+- Skin `colors:` keys (22) — `docs-features.skins-colors`
+- Skin `spinner:` keys (4) — `docs-features.skins-spinner`
+- Skin `branding:` keys (6) — `docs-features.skins-branding`
+- Skin top-level keys (`tool_prefix`, `tool_emojis`, `banner_logo`, `banner_hero`) — `docs-features.skins-toplevel`
+- Custom skins (`~/.hermes/skins/*.yaml`) — `docs-features.skins-custom`
+- Hermes Mod — visual skin editor (third party) — `docs-features.skins-hermes-mod`
+- Skin operational notes — `docs-features.skins-operational-notes`
+- `SOUL.md` (primary agent identity) — `docs-features.soul-md`
+- Why SOUL.md loads only from HERMES_HOME — `docs-features.soul-home-only`
+- Good SOUL.md content + example — `docs-features.soul-example`
+- SOUL.md vs AGENTS.md — `docs-features.soul-vs-agents`
+- SOUL.md vs `/personality` — `docs-features.soul-vs-personality`
+- Built-in personalities (14) — `docs-features.personalities-builtin`
+- Switching personalities (`/personality`) — `docs-features.personality-switching`
+- Custom personalities (`agent.personalities`) — `docs-features.personality-custom`
+- Resetting the personality (`/personality none|default|neutral`) — `docs-features.personality-reset`
+- Personality prompt-stack position — `docs-features.personality-prompt-stack`
+- Recommended personality workflow + CLI-appearance separation — `docs-features.personality-workflow`
+- Persistent Goals (`/goal`) — `docs-features.goal`
+- When to use `/goal` — `docs-features.goal-when-to-use`
+- Goals vs Kanban boundary — `docs-features.goal-vs-kanban`
+- Goal completion contracts — `docs-features.goal-contracts`
+- `/subgoal` (mid-goal criteria) — `docs-features.subgoal`
+- Goal quality gates (`/goal gate`) — `docs-features.goal-gates`
+- Goal wait barriers (automatic + manual) — `docs-features.goal-wait`
+- Goal judge (verdict protocol) — `docs-features.goal-judge`
+- Goal fail-open semantics — `docs-features.goal-fail-open`
+- Goal turn budget (`goals.max_turns`) — `docs-features.goal-turn-budget`
+- Goal preemption, mid-run safety, persistence, prompt cache — `docs-features.goal-invariants`
+- Choosing the goal judge model — `docs-features.goal-judge-model`
+- Goal example walkthrough — `docs-features.goal-walkthrough`
+- When the goal judge gets it wrong — `docs-features.goal-judge-failures`
+- Goal attribution (Ralph loop / Codex CLI) — `docs-features.goal-attribution`
+- Context Files (auto-discovery) — `docs-features.context-files`
+- AGENTS.md directory chain (git root → cwd) — `docs-features.context-agents-chain`
+- Progressive subdirectory discovery — `docs-features.context-progressive-discovery`
+- Startup context-file load pipeline — `docs-features.context-startup-pipeline`
+- Context-file prompt-injection scanner — `docs-features.context-injection-scanner`
+- Context-file size limits and truncation — `docs-features.context-size-limits`
+- Context-file best practices — `docs-features.context-best-practices`
+- `.cursorrules` / `.cursor/rules/*.mdc` compatibility — `docs-features.context-cursorrules`
+- `execute_code` (programmatic tool calling) — `docs-features.execute-code`
+- When the agent reaches for `execute_code` — `docs-features.execute-code-when`
+- `execute_code` practical examples (4) — `docs-features.execute-code-examples`
+- `code_execution.mode` (`project` vs `strict`) — `docs-features.execute-code-mode`
+- `execute_code` resource limits — `docs-features.execute-code-limits`
+- `execute_code` RPC mechanics — `docs-features.execute-code-rpc`
+- `execute_code` error handling — `docs-features.execute-code-errors`
+- `execute_code` security model (env scrubbing) — `docs-features.execute-code-security`
+- Skill environment-variable passthrough — `docs-features.execute-code-skill-env`
+- `HERMES_*` variables in the child (hardening + workaround) — `docs-features.execute-code-hermes-env`
+- `execute_code` vs `terminal` decision table — `docs-features.execute-code-vs-terminal`
+- `execute_code` platform support — `docs-features.execute-code-platforms`
+- Credential Pools — `docs-features.credential-pools`
+- `hermes auth` CLI commands — `docs-features.credential-pools-cli`
+- `hermes auth` interactive wizard — `docs-features.credential-pools-wizard`
+- Credential rotation strategies (4) — `docs-features.credential-pool-strategies`
+- Credential pool error recovery matrix — `docs-features.credential-pool-errors`
+- Custom endpoint pools (`custom:` prefix) — `docs-features.credential-pool-custom-endpoints`
+- Credential auto-discovery sources — `docs-features.credential-pool-autodiscovery`
+- Credential pool sharing with subagents — `docs-features.credential-pool-delegation`
+- Credential pool thread safety and storage schema — `docs-features.credential-pool-storage`
+- LSP semantic diagnostics — `docs-features.lsp`
+- LSP git-workspace gating and layering — `docs-features.lsp-gating`
+- LSP supported languages (27 servers) — `docs-features.lsp-languages`
+- PowerShell LSP setup — `docs-features.lsp-powershell`
+- `hermes lsp` CLI — `docs-features.lsp-cli`
+- LSP configuration keys — `docs-features.lsp-config`
+- LSP installation locations — `docs-features.lsp-install-locations`
+- LSP performance characteristics — `docs-features.lsp-performance`
+- Disabling LSP (globally or per language) — `docs-features.lsp-disabling`
+- LSP troubleshooting — `docs-features.lsp-troubleshooting`
+- Image Generation (`image_generate`) — `docs-features.image-generation`
+- Supported image models (11) — `docs-features.image-models`
+- Image generation setup and provider selection — `docs-features.image-setup`
+- OpenRouter image catalog — `docs-features.image-openrouter`
+- GPT-Image quality pinning — `docs-features.image-gpt-quality`
+- Image-to-image / editing — `docs-features.image-editing`
+- Image aspect ratios — `docs-features.image-aspect-ratios`
+- Image upscaling (`upscale`) — `docs-features.image-upscaling`
+- Image generation debugging — `docs-features.image-debugging`
+- Image platform delivery matrix — `docs-features.image-platform-delivery`
+- Image generation limitations — `docs-features.image-limitations`
+- Mixture of Agents (MoA virtual provider) — `docs-features.moa`
+- Selecting a MoA preset as your model — `docs-features.moa-selection`
+- `/moa` one-shot slash command — `docs-features.moa-slash`
+- MoA preset configuration — `docs-features.moa-presets`
+- `reference_max_tokens` (advisor speed) — `docs-features.moa-reference-max-tokens`
+- `fanout` (advisor cadence) — `docs-features.moa-fanout`
+- MoA privacy filter — `docs-features.moa-privacy-filter`
+- MoA per-slot reasoning effort — `docs-features.moa-reasoning-effort`
+- `hermes moa` terminal preset management — `docs-features.moa-cli`
+- MoA benchmarks — `docs-features.moa-benchmarks`
+- MoA and prompt caching — `docs-features.moa-prompt-caching`
+- MoA notes and constraints — `docs-features.moa-notes`
+- Honcho memory provider — `docs-features.honcho`
+- Honcho vs built-in memory capability matrix — `docs-features.honcho-comparison`
+- Honcho two-layer context injection — `docs-features.honcho-two-layer`
+- Honcho cold/warm prompt selection — `docs-features.honcho-cold-warm`
+- Honcho three cadence/depth knobs — `docs-features.honcho-knobs`
+- Honcho dialectic depth (multi-pass) — `docs-features.honcho-depth`
+- Honcho session-start prewarm — `docs-features.honcho-prewarm`
+- Honcho query-adaptive reasoning level — `docs-features.honcho-adaptive-reasoning`
+- Honcho self-hosted server with authentication — `docs-features.honcho-selfhosted`
+- Honcho full config reference (17 keys) — `docs-features.honcho-config`
+- Honcho recall modes (`hybrid` / `context` / `tools`) — `docs-features.honcho-recall-modes`
+- Honcho gateway identity mapping — `docs-features.honcho-identity-mapping`
+- Honcho observation modes (directional / unified) — `docs-features.honcho-observation`
+- Honcho tools (5) — `docs-features.honcho-tools`
+- `hermes honcho` CLI (15 sub-commands) — `docs-features.honcho-cli`
+- Migrating from standalone `hermes honcho` — `docs-features.honcho-migration`
+- Spotify integration — `docs-features.spotify`
+- Spotify setup — one-shot via `hermes tools` — `docs-features.spotify-setup-oneshot`
+- Spotify setup — two-step flow — `docs-features.spotify-setup-twostep`
+- Creating the Spotify developer app — `docs-features.spotify-app-creation`
+- Spotify OAuth over SSH / headless — `docs-features.spotify-ssh`
+- `spotify_playback` tool — `docs-features.spotify-playback`
+- `spotify_devices` tool — `docs-features.spotify-devices`
+- Home Assistant-managed speakers via Spotify Connect — `docs-features.spotify-home-assistant`
+- `spotify_queue` tool — `docs-features.spotify-queue`
+- `spotify_search` tool — `docs-features.spotify-search`
+- `spotify_playlists` tool — `docs-features.spotify-playlists`
+- `spotify_albums` tool — `docs-features.spotify-albums`
+- `spotify_library` tool — `docs-features.spotify-library`
+- Spotify Free vs Premium feature matrix — `docs-features.spotify-free-premium`
+- Spotify + cron scheduling recipes — `docs-features.spotify-cron`
+- Spotify sign-out and revocation — `docs-features.spotify-signout`
+- Spotify verification and token refresh — `docs-features.spotify-verify`
+- Spotify troubleshooting (7 cases) — `docs-features.spotify-troubleshooting`
+- Spotify advanced — custom scopes — `docs-features.spotify-scopes`
+- Spotify advanced — custom client ID / redirect URI — `docs-features.spotify-custom-client`
+- Spotify storage layout — `docs-features.spotify-storage`
+- Wake Word ("Hey Hermes") — `docs-features.wake-word`
+- Wake word remote-desktop client capture — `docs-features.wake-client-capture`
+- Wake word engines (3) — `docs-features.wake-engines`
+- Wake word configuration keys — `docs-features.wake-config`
+- Reducing wake-word false triggers — `docs-features.wake-false-triggers`
+- Wake word surfaces and listener ownership — `docs-features.wake-surfaces`
+- Wake phrase option A — sherpa (open vocabulary) — `docs-features.wake-sherpa`
+- Wake word profile routing (desktop) — `docs-features.wake-profile-routing`
+- Wake phrase option B — openWakeWord custom model — `docs-features.wake-openwakeword-custom`
+- Wake phrase option C — Porcupine — `docs-features.wake-porcupine`
+- Wake word requirements — `docs-features.wake-requirements`
+- Wake word macOS / Windows mic troubleshooting — `docs-features.wake-troubleshooting`
+- Wake word notes and limits — `docs-features.wake-limits`
+- ACP server mode (`hermes acp`) — `docs-features.acp`
+- `hermes-acp` toolset — `docs-features.acp-toolset`
+- ACP installation (`[acp]` extra) — `docs-features.acp-install`
+- ACP browser bootstrap (`--setup-browser`) — `docs-features.acp-browser-setup`
+- ACP host — Buzz channels relay bridge — `docs-features.acp-buzz-relay`
+- ACP host — VS Code — `docs-features.acp-vscode`
+- ACP host — Zed — `docs-features.acp-zed`
+- ACP host — JetBrains — `docs-features.acp-jetbrains`
+- ACP host — Buzz Desktop preset runtime — `docs-features.acp-buzz-desktop`
+- Buzz Desktop model picker over ACP — `docs-features.acp-buzz-model-picker`
+- Buzz agents: keep owner-only (security warning) — `docs-features.acp-buzz-owner-only`
+- ACP configuration and credentials — `docs-features.acp-config`
+- `HERMES_ACP_SKIP_CONFIGURED_MCP` host variable — `docs-features.acp-skip-mcp`
+- ACP session behavior and working directory — `docs-features.acp-sessions`
+- ACP approvals and session-scoped auto-approval — `docs-features.acp-approvals`
+- ACP troubleshooting — `docs-features.acp-troubleshooting`
+- Curator (background skill maintenance) — `docs-features.curator`
+- Curator trigger conditions and two-phase run — `docs-features.curator-run`
+- Curator configuration keys — `docs-features.curator-config`
+- Curator auxiliary model routing (`auxiliary.curator`) — `docs-features.curator-aux-model`
+- `hermes curator` CLI (23 commands) — `docs-features.curator-cli`
+- Curator backups and whole-run rollback — `docs-features.curator-backups`
+- Curator audit ledger and single-edit rollback — `docs-features.curator-ledger`
+- Curator archive TTL purge — `docs-features.curator-purge`
+- What "agent-created" means (curator jurisdiction) — `docs-features.curator-agent-created`
+- Adopting unmanaged skills (`hermes curator adopt`) — `docs-features.curator-adopt`
+- Pinning a skill (`hermes curator pin`) — `docs-features.curator-pin`
+- Curator usage telemetry (`.usage.json`) — `docs-features.curator-telemetry`
+- Curator per-run reports — `docs-features.curator-reports`
+- Curator rename map in the run summary — `docs-features.curator-rename-map`
+- Restoring an archived skill — `docs-features.curator-restore`
+- Disabling the curator per environment — `docs-features.curator-disable`
+- Persistent Memory (MEMORY.md + USER.md) — `docs-features.memory`
+- Memory system-prompt rendering (frozen snapshot) — `docs-features.memory-prompt-format`
+- `memory` tool actions and substring matching — `docs-features.memory-tool`
+- Memory targets: `memory` vs `user` — `docs-features.memory-targets`
+- What to save vs skip — `docs-features.memory-save-skip`
+- Memory capacity management and full-memory error — `docs-features.memory-capacity`
+- Memory duplicate prevention and security scanning — `docs-features.memory-safety`
+- Session search (`session_search`) — `docs-features.memory-session-search`
+- `session_search` vs memory comparison — `docs-features.memory-vs-session-search`
+- Learning Journey (`/journey`) — `docs-features.journey`
+- Memory configuration keys — `docs-features.memory-config`
+- Memory write approval (`memory.write_approval`) — `docs-features.memory-write-approval`
+- Background review notifications (`display.memory_notifications`) — `docs-features.memory-notifications`
+- Background review model (`auxiliary.background_review`) — `docs-features.background-review-model`
+- Disabling automatic background reviews (`enabled`) — `docs-features.background-review-enabled`
+- Background review `extra_tools` allowlist — `docs-features.background-review-extra-tools`
+- Skill write approval (`skills.write_approval`) — `docs-features.skills-write-approval-memorypage`
+- External memory providers (summary on the memory page) — `docs-features.memory-external-providers`
+- Three layers of provider resilience — `docs-features.fallback-layers`
+- Primary model fallback (`fallback_providers`) — `docs-features.fallback-primary`
+- Fallback supported providers (44-row table) — `docs-features.fallback-provider-table`
+- Custom endpoint fallback — `docs-features.fallback-custom-endpoint`
+- Fallback trigger conditions — `docs-features.fallback-triggers`
+- Fallback is per-turn and reset-aware — `docs-features.fallback-per-turn`
+- Fallback examples (4) — `docs-features.fallback-examples`
+- Where fallback works (5 contexts) — `docs-features.fallback-contexts`
+- Auxiliary tasks with independent provider resolution (8) — `docs-features.aux-tasks`
+- Auxiliary auto-detection chain — `docs-features.aux-auto-chain`
+- Configuring auxiliary providers — `docs-features.aux-config`
+- Provider options for auxiliary tasks (6) — `docs-features.aux-provider-options`
+- Auxiliary direct endpoint override (`base_url`) — `docs-features.aux-base-url`
+- Auxiliary capacity-error fallback ladder — `docs-features.aux-capacity-fallback`
+- Per-task `fallback_chain` (with per-entry timeout) — `docs-features.aux-fallback-chain`
+- Provider quota phrases that trigger aux fallback — `docs-features.aux-quota-phrases`
+- Context compression fallback — `docs-features.compression-fallback`
+- Delegation provider override — `docs-features.delegation-provider-override-fallbackpage`
+- Cron job provider override — `docs-features.cron-provider-override-fallbackpage`
+- Fallback summary matrix (12 rows) — `docs-features.fallback-summary`
+- `web_search` and `web_extract` tools — `docs-features.web-tools`
+- Web backends table (8 providers) — `docs-features.web-backends`
+- Keyless free-tier ring — `docs-features.web-keyless-ring`
+- Free vs paid tier pinning (`web.provider_tier`) — `docs-features.web-provider-tier`
+- `web_extract` truncation budget — `docs-features.web-extract-truncation`
+- Web result caching — `docs-features.web-caching`
+- Firecrawl backend (default) — `docs-features.web-firecrawl`
+- SearXNG backend (self-hosted setup) — `docs-features.web-searxng`
+- Exa / Parallel backends — `docs-features.web-exa-parallel`
+- xAI (Grok) web-search backend — `docs-features.web-xai`
+- Web backend configuration and priority — `docs-features.web-config-priority`
+- Web auto-detection table — `docs-features.web-autodetection`
+- One-shot keyless rescue (`web.keyless_rescue`) — `docs-features.web-keyless-rescue`
+- Verifying the web setup — `docs-features.web-verify`
+- Web search troubleshooting — `docs-features.web-troubleshooting`
+- Optional skill: `searxng-search` — `docs-features.web-searxng-skill`
+- `delegate_task` (subagent delegation) — `docs-features.delegate-task`
+- Subagent context isolation — `docs-features.delegate-context`
+- Delegation practical examples (3) — `docs-features.delegate-examples`
+- Batch mode details — `docs-features.delegate-batch`
+- Durable background completions — `docs-features.delegate-durable-completions`
+- Child background-process notifications — `docs-features.delegate-child-notifications`
+- Delegation model / provider override — `docs-features.delegate-model-override`
+- `/review` command — `docs-features.review-command`
+- Inherited tool access and subagent tool blocks — `docs-features.delegate-tool-access`
+- Subagent max iterations — `docs-features.delegate-max-iterations`
+- Subagent child timeout (opt-in) — `docs-features.delegate-child-timeout`
+- Subagent failure visibility — `docs-features.delegate-failure-visibility`
+- Background subagent stall detection — `docs-features.delegate-stall-monitor`
+- `/agents` subagent monitor — `docs-features.agents-command`
+- Steering a running subagent — `docs-features.delegate-steering`
+- Live subagent transcripts — `docs-features.delegate-live-transcripts`
+- Depth limit and nested orchestration — `docs-features.delegate-depth`
+- Delegation lifetime and durability — `docs-features.delegate-durability`
+- Delegation key properties — `docs-features.delegate-key-properties`
+- Worktree isolation for subagents — `docs-features.delegate-worktree-isolation`
+- `delegate_task` vs `execute_code` — `docs-features.delegate-vs-execute-code`
+- Delegation configuration keys — `docs-features.delegate-config`
+- Codex app-server runtime — `docs-features.codex-runtime`
+- Codex built-in toolset (5 tools) — `docs-features.codex-builtin-tools`
+- Native Codex plugin migration — `docs-features.codex-plugin-migration`
+- Hermes tool callback MCP server — `docs-features.codex-tool-callback`
+- `/goal`, kanban and cron on the codex runtime — `docs-features.codex-workflow-features`
+- Codex runtime trade-off matrix — `docs-features.codex-tradeoffs`
+- Codex runtime live display bridging — `docs-features.codex-live-display`
+- Codex runtime prerequisites — `docs-features.codex-prereqs`
+- `/codex-runtime` command — `docs-features.codex-runtime-command`
+- Self-improvement loop on the codex runtime — `docs-features.codex-self-improvement`
+- Codex approvals in Hermes UI — `docs-features.codex-approvals`
+- Codex permission profiles — `docs-features.codex-permissions`
+- ChatGPT-subscription aux-task cost warning — `docs-features.codex-aux-cost`
+- Editing `~/.codex/config.toml` safely (managed block) — `docs-features.codex-config-markers`
+- Multi-profile Codex isolation (`CODEX_HOME`) — `docs-features.codex-multi-profile`
+- `HOME` passthrough to the codex subprocess — `docs-features.codex-home-passthrough`
+- MCP server migration to Codex TOML — `docs-features.codex-mcp-migration`
+- Codex runtime limitations (beta) — `docs-features.codex-limitations`
+- Bundled plugin discovery — `docs-features.builtin-plugins-discovery`
+- Bundled plugins are opt-in — `docs-features.builtin-plugins-optin`
+- Shipped bundled plugins (11) — `docs-features.builtin-plugins-list`
+- `disk-cleanup` bundled plugin — `docs-features.plugin-disk-cleanup`
+- `security-guidance` bundled plugin — `docs-features.plugin-security-guidance`
+- `observability/langfuse` bundled plugin — `docs-features.plugin-langfuse`
+- NeMo Relay native integration (migration note) — `docs-features.plugin-nemo-relay`
+- `google_meet` bundled plugin — `docs-features.plugin-google-meet`
+- `hermes-achievements` dashboard plugin — `docs-features.plugin-achievements`
+- Adding a bundled plugin (criteria) — `docs-features.builtin-plugins-adding`
+- Kanban tutorial setup — `docs-features.kanban-tutorial-setup`
+- Kanban board columns (6) and top bar — `docs-features.kanban-tutorial-board`
+- Tutorial Story 1 — solo dev with parent→child dependencies — `docs-features.kanban-tutorial-story1`
+- Tutorial Story 2 — fleet farming — `docs-features.kanban-tutorial-story2`
+- Tutorial Story 3 — role pipeline with retry — `docs-features.kanban-tutorial-story3`
+- Tutorial Story 4 — circuit breaker and crash recovery — `docs-features.kanban-tutorial-story4`
+- Structured handoff (`summary` + `metadata`) — `docs-features.kanban-tutorial-handoff`
+- Follow-up on a done card (parent link) — `docs-features.kanban-tutorial-followup`
+- Inspecting an in-flight task + next steps — `docs-features.kanban-tutorial-inflight`
+- Voice Mode overview — `docs-features.voice-mode`
+- Voice mode requirements (packages + system deps) — `docs-features.voice-requirements`
+- CLI voice mode (`/voice`) — `docs-features.voice-cli`
+- Voice silence detection (VAD) — `docs-features.voice-silence-detection`
+- Ending a voice chat by voice (`voice.stop_phrases`) — `docs-features.voice-stop-phrases`
+- Streaming TTS — `docs-features.voice-streaming-tts`
+- Desktop remote client-direct voice — `docs-features.voice-client-direct`
+- Voice barge-in — `docs-features.voice-barge-in`
+- Whisper hallucination filter — `docs-features.voice-hallucination-filter`
+- Gateway voice reply (Telegram & Discord) — `docs-features.voice-gateway-reply`
+- Discord voice channels — `docs-features.voice-discord-vc`
+- Voice configuration reference (`config.yaml`) — `docs-features.voice-config`
+- Voice environment variables — `docs-features.voice-env`
+- STT provider comparison + priority — `docs-features.voice-stt-providers`
+- TTS provider comparison (voice-mode page) — `docs-features.voice-tts-providers`
+- Voice mode troubleshooting — `docs-features.voice-troubleshooting`
+- Computer Use (`computer_use` toolset) — `docs-features.computer-use`
+- Enabling Computer Use / installing cua-driver — `docs-features.computer-use-install`
+- Computer-use permission modes — `docs-features.computer-use-permissions`
+- Bounded mode and capability manifest — `docs-features.computer-use-bounded`
+- `hermes computer-use doctor` — `docs-features.computer-use-doctor`
+- Agent cursor overlay and sessions — `docs-features.computer-use-cursor`
+- cua-driver skill pack — `docs-features.computer-use-skill-pack`
+- Computer-use worked example — `docs-features.computer-use-example`
+- Receiving the actual screenshot — `docs-features.computer-use-screenshots`
+- Computer-use provider compatibility — `docs-features.computer-use-providers`
+- Computer-use safety guardrails — `docs-features.computer-use-safety`
+- Computer-use token efficiency — `docs-features.computer-use-tokens`
+- Computer-use limitations — `docs-features.computer-use-limitations`
+- Computer-use configuration and telemetry — `docs-features.computer-use-config`
+- Testing against a local cua-driver build — `docs-features.computer-use-local-build`
+- Computer-use troubleshooting — `docs-features.computer-use-troubleshooting`
+- External memory providers (system) — `docs-features.memory-providers`
+- Provider — Honcho (on the providers page) — `docs-features.provider-honcho`
+- Honcho multi-profile peers (`--clone`, `hermes honcho sync`) — `docs-features.honcho-profiles`
+- Provider — OpenViking — `docs-features.provider-openviking`
+- Provider — Mem0 (3 connection modes) — `docs-features.provider-mem0`
+- Provider — Hindsight — `docs-features.provider-hindsight`
+- Provider — Holographic — `docs-features.provider-holographic`
+- Provider — RetainDB — `docs-features.provider-retaindb`
+- Provider — ByteRover — `docs-features.provider-byterover`
+- Provider — Supermemory — `docs-features.provider-supermemory`
+- Provider — Memori — `docs-features.provider-memori`
+- Memory provider comparison table — `docs-features.memory-provider-comparison`
+- Memory provider profile isolation — `docs-features.memory-provider-isolation`
+- Text-to-Speech providers (11) — `docs-features.tts-providers`
+- TTS platform delivery — `docs-features.tts-delivery`
+- TTS configuration block (all provider sub-keys) — `docs-features.tts-config`
+- Gemini persona prompts — `docs-features.tts-gemini-persona`
+- Audio tags (Gemini, xAI) — `docs-features.tts-audio-tags`
+- TTS input length limits — `docs-features.tts-length-limits`
+- Telegram voice bubbles & ffmpeg — `docs-features.tts-telegram-ffmpeg`
+- xAI custom voices (cloning) — `docs-features.tts-xai-voices`
+- Piper local TTS (44 languages) — `docs-features.tts-piper`
+- TTS custom command providers — `docs-features.tts-command-providers`
+- Doubao / seed-tts-2.0 command-provider example — `docs-features.tts-doubao`
+- TTS Python plugin providers — `docs-features.tts-python-plugins`
+- Voice message transcription (STT) — `docs-features.stt`
+- STT fallback behavior — `docs-features.stt-fallback`
+- STT custom command providers — `docs-features.stt-command-providers`
+- Doubao / Volcengine ASR example — `docs-features.stt-doubao`
+- STT Python plugin providers — `docs-features.stt-python-plugins`
+- API server (OpenAI-compatible endpoint) — `docs-features.api-server`
+- `POST /v1/chat/completions` — `docs-features.api-chat-completions`
+- `POST /v1/responses` and response storage — `docs-features.api-responses`
+- `GET /v1/models` and `GET /api/model/options` — `docs-features.api-models`
+- `GET /v1/capabilities` — `docs-features.api-capabilities`
+- Browser-extension control protocol — `docs-features.api-browser-extension`
+- Per-request model selection — `docs-features.api-per-request-model`
+- Health endpoints — `docs-features.api-health`
+- Runs API (`/v1/runs`) — `docs-features.api-runs`
+- Jobs API (`/api/jobs`) — `docs-features.api-jobs`
+- Sessions API (`/api/sessions`) — `docs-features.api-sessions`
+- Skills and toolsets discovery (`/v1/skills`, `/v1/toolsets`) — `docs-features.api-discovery`
+- `X-Hermes-Session-Key` memory scoping header — `docs-features.api-session-key`
+- API server system-prompt layering — `docs-features.api-system-prompt`
+- API server authentication + multi-profile routing — `docs-features.api-auth`
+- API server configuration (env + config.yaml) — `docs-features.api-config`
+- Concurrent-run cap, security headers, CORS — `docs-features.api-limits-cors`
+- Compatible frontends — `docs-features.api-frontends`
+- Multi-user setup with profiles (API server) — `docs-features.api-multiuser`
+- API server limitations and proxy mode — `docs-features.api-limits-proxy`
+- Plugin system overview — `docs-features.plugins`
+- Plugin capability API (`ctx.*`) — `docs-features.plugins-ctx-api`
+- Plugin discovery sources and sub-categories — `docs-features.plugins-discovery`
+- Plugins are opt-in (allow-list + deny-list) — `docs-features.plugins-optin`
+- Approval transports (`ctx.register_approval_transport`) — `docs-features.plugins-approval-transports`
+- Available plugin hooks (26) — `docs-features.plugins-hooks-list`
+- Plugin types (4) and pluggable-interface map — `docs-features.plugins-types`
+- NixOS declarative plugins — `docs-features.plugins-nixos`
+- `hermes plugins` CLI — `docs-features.plugins-cli`
+- One-click install links (`hermes://`) — `docs-features.plugins-deeplinks`
+- Plugin capabilities and consent — `docs-features.plugins-capabilities`
+- Platform actions (`ctx.platform_actions`) — `docs-features.plugins-platform-actions`
+- Community plugin index (`hermes plugins search`) — `docs-features.plugins-index`
+- Plugin packs (`hermes-pack.yaml`) — `docs-features.plugins-packs`
+- Install-time security scanning — `docs-features.plugins-security-scan`
+- `hermes plugins` interactive UI — `docs-features.plugins-interactive-ui`
+- `ctx.inject_message()` — `docs-features.plugins-inject-message`
+- `ctx.call_mcp()` from plugins — `docs-features.plugins-call-mcp`
+- Browser Automation toolset (overview) — `docs-features.browser-overview`
+- Nous Subscription browser (Tool Gateway path) — `docs-features.browser-nous-subscription`
+- Browser Use cloud mode — `docs-features.browser-browseruse-cloud`
+- Browserbase cloud mode — `docs-features.browser-browserbase`
+- Browser Use mode / `browser_exec` driver (default) — `docs-features.browser-use-mode`
+- Firecrawl cloud mode — `docs-features.browser-firecrawl`
+- Hybrid routing: cloud for public URLs, local for LAN/localhost — `docs-features.browser-hybrid-routing`
+- Real profile browsing (use your own logins) — `docs-features.browser-real-profile`
+- `hermes browser close-profile` (real-profile unlock) — `docs-features.browser-close-profile`
+- Camofox local mode — `docs-features.browser-camofox`
+- Camofox Docker loopback rewriting — `docs-features.browser-camofox-loopback`
+- Camofox persistent browser sessions — `docs-features.browser-camofox-persistence`
+- Externally managed Camofox sessions (tab adoption) — `docs-features.browser-camofox-external`
+- Camofox VNC live view — `docs-features.browser-camofox-vnc`
+- Lightpanda local engine — `docs-features.browser-lightpanda`
+- `/browser connect` — local Chromium-family browser via CDP — `docs-features.browser-connect`
+- Documented manual CDP launch commands — `docs-features.browser-cdp-launch-recipes`
+- WSL2 + Windows Chrome guidance (prefer MCP) — `docs-features.browser-wsl2-guidance`
+- Local browser mode (`agent-browser`) — `docs-features.browser-local-mode`
+- `AGENT_BROWSER_ARGS` — extra Chromium launch flags — `docs-features.browser-agent-browser-args`
+- `browser_navigate` — `docs-features.browser-tool-navigate`
+- `browser_snapshot` — `docs-features.browser-tool-snapshot`
+- `browser_click` — `docs-features.browser-tool-click`
+- `browser_type` — `docs-features.browser-tool-type`
+- `browser_scroll` — `docs-features.browser-tool-scroll`
+- `browser_press` — `docs-features.browser-tool-press`
+- `browser_back` — `docs-features.browser-tool-back`
+- `browser_get_images` — `docs-features.browser-tool-get-images`
+- `browser_vision` — `docs-features.browser-tool-vision`
+- `browser_console` (console read + JS evaluation) — `docs-features.browser-tool-console`
+- `browser_cdp` — raw Chrome DevTools Protocol passthrough — `docs-features.browser-tool-cdp`
+- `browser_dialog` — native JS dialog handling — `docs-features.browser-tool-dialog`
+- Frame tree in snapshots (OOPIF visibility) — `docs-features.browser-frame-tree`
+- Session recording (WebM) — `docs-features.browser-session-recording`
+- Headed mode (visible browser window) — `docs-features.browser-headed-mode`
+- Stealth features (Browserbase) — `docs-features.browser-stealth`
+- Session management & cleanup — `docs-features.browser-session-management`
+- Documented practical examples (form filling, dynamic content) — `docs-features.browser-examples`
+- Browser extension controller lane (undocumented) — `docs-features.browser-extension-control`
+- Dashboard extension model (three layers) — `docs-features.dash-ext-overview`
+- Dashboard theme files (`~/.hermes/dashboard-themes/`) — `docs-features.dash-theme-files`
+- Theme quick start (two-color theme) — `docs-features.dash-theme-quickstart`
+- Theme `palette` (3-layer) — `docs-features.dash-theme-palette`
+- Theme `typography` — `docs-features.dash-theme-typography`
+- Dashboard font picker (UI override) — `docs-features.dash-theme-font-picker`
+- Theme `layout` (radius + density) — `docs-features.dash-theme-layout`
+- Theme `layoutVariant` (standard / cockpit / tiled) — `docs-features.dash-theme-layout-variant`
+- Theme `assets` (images as CSS vars) — `docs-features.dash-theme-assets`
+- Theme `componentStyles` (component chrome overrides) — `docs-features.dash-theme-component-styles`
+- Theme `colorOverrides` — `docs-features.dash-theme-color-overrides`
+- Theme `customCSS` (raw CSS escape hatch) — `docs-features.dash-theme-custom-css`
+- Built-in dashboard themes — `docs-features.dash-builtin-themes`
+- Full theme YAML reference (`ocean.yaml`) — `docs-features.dash-theme-full-reference`
+- Dashboard plugin quick start — `docs-features.dash-plugin-quickstart`
+- Plugin directory layout — `docs-features.dash-plugin-layout`
+- Plugin `manifest.json` reference — `docs-features.dash-plugin-manifest`
+- Plugin icon map (Lucide names) — `docs-features.dash-plugin-icons`
+- The Plugin SDK (`window.__HERMES_PLUGIN_SDK__`) — `docs-features.dash-plugin-sdk`
+- Shell slots (`registerSlot`) — `docs-features.dash-shell-slots`
+- Page-scoped slots (augmenting built-in pages) — `docs-features.dash-page-slots`
+- Replacing built-in pages (`tab.override`) — `docs-features.dash-tab-override`
+- Slot-only plugins (`tab.hidden`) — `docs-features.dash-tab-hidden`
+- Plugin backend API routes (`plugin_api.py`) — `docs-features.dash-plugin-backend`
+- Per-plugin custom CSS — `docs-features.dash-plugin-css`
+- Plugin discovery order & rescan — `docs-features.dash-plugin-discovery`
+- Plugin load lifecycle — `docs-features.dash-plugin-lifecycle`
+- Combined theme + plugin demo (`strike-freedom-cockpit`) — `docs-features.dash-demo-plugin`
+- Dashboard theme & plugin API endpoints — `docs-features.dash-ext-api`
+- Extending-the-dashboard troubleshooting guide — `docs-features.dash-ext-troubleshooting`
+- MCP client support (overview) — `docs-features.mcp-overview`
+- `hermes mcp` command group — `docs-features.mcp-cli`
+- `hermes mcp add` (discovery-first install) — `docs-features.mcp-add`
+- MCP catalog — one-click install for Nous-approved MCPs — `docs-features.mcp-catalog`
+- MCP catalog trust model — `docs-features.mcp-catalog-trust`
+- MCP tool selection at install time — `docs-features.mcp-tool-selection`
+- `hermes mcp configure` (update tool selection later) — `docs-features.mcp-configure`
+- MCP manifest version compatibility — `docs-features.mcp-manifest-version`
+- Runtime `${ENV_VAR}` and context-variable substitution — `docs-features.mcp-env-substitution`
+- Catalog `suggest:` metadata (Desktop composer pills) — `docs-features.mcp-suggest`
+- Stdio MCP servers — `docs-features.mcp-stdio`
+- HTTP MCP servers — `docs-features.mcp-http`
+- OAuth-authenticated HTTP MCP servers (`auth: oauth`) — `docs-features.mcp-oauth`
+- MCP OAuth on remote / headless hosts — `docs-features.mcp-oauth-remote`
+- MCP OAuth pitfall — providers without automatic registration — `docs-features.mcp-oauth-no-dcr`
+- mTLS / client certificates for MCP — `docs-features.mcp-mtls`
+- Per-user identity header (`identity_header`) — `docs-features.mcp-identity-header`
+- MCP config reference — common keys — `docs-features.mcp-config-keys`
+- Recycling memory-heavy stdio MCP servers — `docs-features.mcp-recycling`
+- MCP presets (`--preset`) — `docs-features.mcp-presets`
+- MCP tool name prefixing — `docs-features.mcp-tool-prefix`
+- MCP tool-result sanitization (Unicode TAG stripping) — `docs-features.mcp-tag-stripping`
+- MCP `_meta` passthrough with reserved-key filtering — `docs-features.mcp-meta`
+- MCP utility tools (resources & prompts wrappers) — `docs-features.mcp-utility-tools`
+- MCP per-server tool filtering (`tools.include` / `tools.exclude`) — `docs-features.mcp-tool-filtering`
+- MCP filter glob patterns — `docs-features.mcp-globs`
+- MCP runtime behaviour — discovery, dynamic tool discovery, reload, toolsets — `docs-features.mcp-runtime`
+- MCP stdio environment filtering — `docs-features.mcp-stdio-env-filtering`
+- MCP parallel tool calls (`supports_parallel_tool_calls`) — `docs-features.mcp-parallel`
+- MCP sampling support (`sampling/createMessage`) — `docs-features.mcp-sampling`
+- MCP elicitation support (`elicitation/create`) — `docs-features.mcp-elicitation`
+- Running Hermes as an MCP server (`hermes mcp serve`) — `docs-features.mcp-serve`
+- `hermes mcp serve` tool surface (10 tools) — `docs-features.mcp-serve-tools`
+- `hermes mcp serve` event system — `docs-features.mcp-serve-events`
+- `hermes mcp serve` current limits — `docs-features.mcp-serve-limits`
+- MCP troubleshooting guide — `docs-features.mcp-troubleshooting`
+- MCP example use cases — `docs-features.mcp-examples`
+- Skills system (overview) — `docs-features.skills-overview`
+- Blank-slate profiles (`--no-skills`, `hermes skills opt-out`) — `docs-features.skills-blank-slate`
+- Skills as slash commands — `docs-features.skills-slash`
+- Stacking multiple skills in one command — `docs-features.skills-stacking`
+- `/plan` built-in command — `docs-features.skills-plan`
+- `/learn` — author a skill from sources — `docs-features.skills-learn`
+- `/learn` knowledge-base skills for large sources — `docs-features.skills-learn-kb`
+- Progressive disclosure (3 levels) — `docs-features.skills-progressive-disclosure`
+- `SKILL.md` format & frontmatter — `docs-features.skills-skillmd-format`
+- Platform-specific skills (`platforms:`) — `docs-features.skills-platforms`
+- Skill media delivery and `[[as_document]]` / `[[audio_as_voice]]` — `docs-features.skills-media-directives`
+- Conditional activation (fallback skills) — `docs-features.skills-conditional-activation`
+- Secure setup on load (`required_environment_variables`) — `docs-features.skills-secure-setup`
+- Skill config settings (`metadata.hermes.config`) — `docs-features.skills-config-settings`
+- Skill directory structure — `docs-features.skills-directory-structure`
+- Advisory NVIDIA SkillEvaluator Tier 1 scan — `docs-features.skills-tier1-advisory`
+- External skill directories (`skills.external_dirs`) — `docs-features.skills-external-dirs`
+- Project-local skills — `docs-features.skills-project-local`
+- Project-skill trust (`hermes skills trust` / `untrust`) — `docs-features.skills-project-trust`
+- Project-skill scan-time quarantine — `docs-features.skills-project-quarantine`
+- Skill bundles — `docs-features.skills-bundles`
+- Agent-managed skills (`skill_manage` tool) — `docs-features.skills-skill-manage`
+- Gating agent skill writes (`skills.write_approval`) — `docs-features.skills-write-approval`
+- `skills.guard_agent_created` (content scanner on agent writes) — `docs-features.skills-guard-agent-created`
+- Skills Hub (`hermes skills`) — `docs-features.skills-hub`
+- Skills Hub sources — `docs-features.skills-hub-sources`
+- Direct URL skill installs (`url` source) — `docs-features.skills-url-install`
+- Skill security scanning, `--force`, and trust levels — `docs-features.skills-trust-levels`
+- Skill update lifecycle (`check` / `update`) — `docs-features.skills-update-lifecycle`
+- Publishing a custom skill tap — `docs-features.skills-taps`
+- Tap category groupings (`skills.sh.json`) — `docs-features.skills-tap-groupings`
+- Bundled skill updates & `hermes skills reset` — `docs-features.skills-reset`
+- `/skills` slash commands — `docs-features.skills-slash-hub`
+- Scheduled tasks (cron) overview — `docs-features.cron-overview`
+- Cron model resolution & drift guard — `docs-features.cron-model-resolution`
+- Per-job reasoning effort — `docs-features.cron-reasoning-effort`
+- Creating cron jobs (`/cron add`, `hermes cron create`, natural language) — `docs-features.cron-create`
+- Pre-dispatch configuration validation (`cron.preflight`) — `docs-features.cron-preflight`
+- Skill-backed cron jobs — `docs-features.cron-skills`
+- Running a cron job inside a project directory (`workdir`) — `docs-features.cron-workdir`
+- Editing cron jobs & skill-list flags — `docs-features.cron-edit`
+- Cron lifecycle actions & name-based lookup — `docs-features.cron-lifecycle`
+- Agent-managed scheduling (`cron.allow_agent_scheduling`) — `docs-features.cron-agent-scheduling`
+- Gateway scheduler tick — `docs-features.cron-scheduler`
+- Cron execution history (`hermes cron runs`) — `docs-features.cron-execution-history`
+- Repeated-failure review nudge (`cron.failure_nudge_threshold`) — `docs-features.cron-failure-nudge`
+- Cron failure incidents (`hermes cron incidents`) — `docs-features.cron-incidents`
+- `hermes cron doctor` (fleet health check) — `docs-features.cron-doctor`
+- Cron delivery targets — `docs-features.cron-delivery-targets`
+- Bot Chat delivery (`bot-chat`) — `docs-features.cron-bot-chat`
+- Routing intent `all` — `docs-features.cron-deliver-all`
+- Telegram cron topic (`TELEGRAM_CRON_THREAD_ID`) — `docs-features.cron-telegram-topic`
+- Cron response wrapping (`cron.wrap_response`) — `docs-features.cron-wrap-response`
+- Continuable cron deliveries (`cron.mirror_delivery` / `attach_to_session`) — `docs-features.cron-continuable`
+- Slack flat in-channel continuation (`slack.cron_continuable_surface`) — `docs-features.cron-slack-in-channel`
+- `[SILENT]` suppression — `docs-features.cron-silent`
+- Cron script timeout (`cron.script_timeout_seconds`) — `docs-features.cron-script-timeout`
+- Cron cleanup timeout (`cron.cleanup_timeout_seconds`) — `docs-features.cron-cleanup-timeout`
+- Cron media send timeout (`cron.media_send_timeout_seconds`) — `docs-features.cron-media-timeout`
+- No-agent mode (script-only jobs) — `docs-features.cron-no-agent`
+- Monitor mode (`--monitor-script` / `--monitor-url`) — `docs-features.cron-monitor-mode`
+- Cron job notepad (`hermes cron notepad`) — `docs-features.cron-notepad`
+- Chaining cron jobs (`context_from`) — `docs-features.cron-context-from`
+- Cron continuity (`continuity=true`) — `docs-features.cron-continuity`
+- Cron provider recovery — `docs-features.cron-provider-recovery`
+- Missed scheduled fires (`last_fire_error`) — `docs-features.cron-last-fire-error`
+- Misfire catch-up (`cron.misfire_grace_minutes`) — `docs-features.cron-misfire-catchup`
+- Cron schedule formats — `docs-features.cron-schedule-formats`
+- Cron repeat behaviour (`repeat`) — `docs-features.cron-repeat`
+- `cronjob` tool actions — `docs-features.cron-tool-actions`
+- Asynchronous manual cron runs — `docs-features.cron-async-run`
+- Toolsets available to cron jobs (`enabled_toolsets`) — `docs-features.cron-toolsets`
+- `wakeAgent` pre-run gate — `docs-features.cron-wakeagent`
+- `wakeAgent` recipes (file / flag / SQL gates) — `docs-features.cron-wakeagent-recipes`
+- Cron job storage — `docs-features.cron-storage`
+- Self-contained cron prompts — `docs-features.cron-self-contained-prompts`
+- Cron prompt security scanning — `docs-features.cron-security`
+- Kanban board (overview) — `docs-features.kanban-overview`
+- Two surfaces: tools for the model, CLI for humans — `docs-features.kanban-two-surfaces`
+- Kanban vs `delegate_task` — `docs-features.kanban-vs-delegate`
+- Kanban core concepts (board, task, link, comment, workspace, dispatcher, tenant) — `docs-features.kanban-core-concepts`
+- Kanban workspace kinds (`scratch` / `dir:` / `worktree`) — `docs-features.kanban-workspaces`
+- Kanban boards (multi-project isolation) — `docs-features.kanban-boards`
+- Kanban boards in the dashboard — `docs-features.kanban-boards-dashboard`
+- Kanban file attachments — `docs-features.kanban-attachments`
+- Kanban quick start & gateway-embedded dispatcher — `docs-features.kanban-dispatcher`
+- Idempotent kanban create — `docs-features.kanban-idempotency`
+- Bulk kanban CLI verbs — `docs-features.kanban-bulk-verbs`
+- Unblock routing & the unblock-loop breaker — `docs-features.kanban-unblock-loop`
+- `kanban_*` worker tool surface — `docs-features.kanban-tools`
+- Why kanban tools instead of shelling to the CLI — `docs-features.kanban-why-tools`
+- Recommended kanban handoff metadata — `docs-features.kanban-handoff-metadata`
+- Kanban worker lifecycle (`KANBAN_GUIDANCE`) — `docs-features.kanban-worker-lifecycle`
+- Kanban protocol-violation guard (stop nudges + bounded retry) — `docs-features.kanban-protocol-violation`
+- Pinning extra skills to a kanban task — `docs-features.kanban-task-skills`
+- Per-task model override (`hermes kanban set-model`) — `docs-features.kanban-model-override`
+- Kanban cost strategy: frontier orchestrator, inexpensive workers — `docs-features.kanban-cost-strategy`
+- Kanban lifecycle plugin hooks — `docs-features.kanban-hooks`
+- Goal-mode kanban cards (`--goal`) — `docs-features.kanban-goal-mode`
+- Kanban orchestrator behaviour — `docs-features.kanban-orchestrator`
+- Kanban dashboard plugin — `docs-features.kanban-dashboard`
+- Kanban task drawer — `docs-features.kanban-drawer`
+- Kanban auto vs manual orchestration (Triage decomposer) — `docs-features.kanban-decomposer`
+- Kanban dashboard REST surface — `docs-features.kanban-rest`
+- Kanban worker visibility endpoints — `docs-features.kanban-worker-endpoints`
+- Kanban dashboard config (`dashboard.kanban`) — `docs-features.kanban-dashboard-config`
+- Kanban security model — `docs-features.kanban-security`
+- Kanban live updates (`task_events` WebSocket) — `docs-features.kanban-live-updates`
+- Kanban CLI command reference — `docs-features.kanban-cli`
+- Kanban concurrency & promotion config — `docs-features.kanban-concurrency-config`
+- Scheduled task starts (`scheduled_at`) — `docs-features.kanban-scheduled-at`
+- Kanban respawn guard — `docs-features.kanban-respawn-guard`
+- Kanban Swarm topology helper (`hermes kanban swarm`) — `docs-features.kanban-swarm`
+- `/kanban` slash command — `docs-features.kanban-slash`
+- `/kanban` bypasses the running-agent guard — `docs-features.kanban-midrun`
+- Auto-subscribe on `/kanban create` (gateway) — `docs-features.kanban-autosubscribe`
+- Kanban notification subscriptions & delivery modes — `docs-features.kanban-notify`
+- Multi-profile kanban delivery ownership — `docs-features.kanban-multi-gateway`
+- Kanban runs (one row per attempt) — `docs-features.kanban-runs`
+- Kanban forward-compatibility columns — `docs-features.kanban-forward-compat`
+- Kanban event reference — `docs-features.kanban-events`
+- Kanban collaboration patterns (P1–P9) — `docs-features.kanban-patterns`
+- Parent links as context handoff — `docs-features.kanban-parent-handoff`
+- Reconciling colliding worker branches — `docs-features.kanban-reconciliation`
+- Collision hotspots in parallel campaigns — `docs-features.kanban-hotspots`
+- Kanban multi-tenant usage — `docs-features.kanban-tenants`
+- Kanban desktop notifications — `docs-features.kanban-desktop-notifications`
+- Kanban out-of-scope: single-host by design — `docs-features.kanban-single-host`
+- `hermes dashboard` (web dashboard) — `docs-features.dash-launch`
+- Dashboard multi-profile management — `docs-features.dash-profiles`
+- Dashboard prerequisites (`web` / `pty` extras) — `docs-features.dash-prereqs`
+- Dashboard Status page — `docs-features.dash-page-status`
+- Dashboard resource-pressure banner — `docs-features.dash-resource-banner`
+- Dashboard Chat tab (embedded TUI over PTY) — `docs-features.dash-page-chat`
+- Connecting Hermes Desktop to a remote dashboard backend — `docs-features.dash-remote-backend`
+- Dashboard Config page — `docs-features.dash-page-config`
+- Dashboard API Keys page — `docs-features.dash-page-apikeys`
+- Dashboard Sessions page — `docs-features.dash-page-sessions`
+- Dashboard Logs page — `docs-features.dash-page-logs`
+- Dashboard Analytics page — `docs-features.dash-page-analytics`
+- Dashboard Cron page — `docs-features.dash-page-cron`
+- Dashboard Profiles page — `docs-features.dash-page-profiles`
+- Dashboard Skills page — `docs-features.dash-page-skills`
+- Dashboard MCP page — `docs-features.dash-page-mcp`
+- Dashboard Webhooks page — `docs-features.dash-page-webhooks`
+- Dashboard Pairing page — `docs-features.dash-page-pairing`
+- Dashboard Channels page — `docs-features.dash-page-channels`
+- Dashboard System page — `docs-features.dash-page-system`
+- `/reload` slash command (re-read `.env`) — `docs-features.dash-reload`
+- Dashboard profile-scoped endpoints (`?profile=`) — `docs-features.dash-api-profile-scope`
+- `GET /api/status` resource blocks — `docs-features.dash-api-status`
+- Dashboard auth gate (gated mode) — `docs-features.dash-auth-gate`
+- Dashboard fail-closed auth semantics — `docs-features.dash-fail-closed`
+- Nous Portal dashboard auth provider — `docs-features.dash-auth-nous`
+- Username/password dashboard auth provider (`basic`) — `docs-features.dash-auth-basic`
+- Writing your own password provider — `docs-features.dash-auth-custom-password`
+- Self-hosted OIDC dashboard auth provider — `docs-features.dash-auth-oidc`
+- Worked example: Keycloak OIDC — `docs-features.dash-auth-keycloak`
+- Dashboard public URL override & trusted proxies — `docs-features.dash-public-url`
+- Dashboard OAuth flow, cookies, logout, audit log — `docs-features.dash-oauth-flow`
+- Custom dashboard auth providers — `docs-features.dash-auth-custom`
+- Non-interactive bearer-token dashboard auth (drain provider) — `docs-features.dash-auth-token`
+- Dashboard CORS policy — `docs-features.dash-cors`
+- Dashboard frontend development & auto-build — `docs-features.dash-dev`
+- Dashboard themes & plugins (summary) — `docs-features.dash-themes-summary`
+- Four hook systems (overview) — `docs-features.hooks-overview`
+- Gateway event hooks (`HOOK.yaml` + `handler.py`) — `docs-features.hooks-gateway`
+- Gateway hook event catalog — `docs-features.hooks-gateway-events`
+- Gateway hook examples (alert, logger, webhook) — `docs-features.hooks-gateway-examples`
+- BOOT.md startup-checklist tutorial — `docs-features.hooks-bootmd`
+- Plugin hooks (`ctx.register_hook`) — `docs-features.hooks-plugin`
+- Cache-safe plugin system-prompt sections — `docs-features.hooks-prompt-sections`
+- Plugin-hook catalog (37 events) — `docs-features.hooks-catalog`
+- Streaming output hooks — `docs-features.hooks-streaming`
+- `pre_verify` hook contract — `docs-features.hooks-pre-verify`
+- `transform_api_error_classification` hook contract — `docs-features.hooks-error-classification`
+- Shell hooks — `docs-features.hooks-shell`
+- Shell-hook configuration schema — `docs-features.hooks-shell-schema`
+- Shell-hook JSON wire protocol — `docs-features.hooks-shell-protocol`
+- Shell-hook exit code 2 = block — `docs-features.hooks-exit-2`
+- Shell-hook fail-open vs fail-closed — `docs-features.hooks-fail-closed`
+- Shell-hook worked examples — `docs-features.hooks-shell-examples`
+- Shell-hook consent model & allowlist — `docs-features.hooks-consent`
+- `hermes hooks` CLI — `docs-features.hooks-cli`
+- Shell-hook security model — `docs-features.hooks-shell-security`
+- Outbound webhooks — `docs-features.hooks-outbound`
+- Outbound webhook wire format & signature — `docs-features.hooks-outbound-wire`
+- Outbound webhook delivery semantics — `docs-features.hooks-outbound-delivery`
+
+### 36 · Remaining Documentation Cross-Check — Getting Started, Guides, Integrations, Developer Guide, User-Guide Top Level, Reference Misc
+
+- Hermes Agent Quickstart page — `docs-rest.quickstart`
+- Quickstart "The fastest path" goal router — `docs-rest.quickstart-fastest-path`
+- `hermes setup` three setup modes (Quick Setup / Full Setup / Blank Slate) — `docs-rest.setup-modes`
+- Quickstart provider catalog (43 providers) — `docs-rest.quickstart-provider-table`
+- Minimum context requirement: 64K tokens — `docs-rest.min-context-64k`
+- Settings storage split: `.env` vs `config.yaml` — `docs-rest.settings-storage-split`
+- First chat verification (`hermes` vs `hermes --tui`) — `docs-rest.quickstart-first-chat`
+- Session-resume verification (`hermes --continue` / `-c`) — `docs-rest.quickstart-verify-sessions`
+- Quickstart slash-command sampler — `docs-rest.quickstart-slash-sampler`
+- Multi-line input key bindings — `docs-rest.multiline-input`
+- Interrupting the agent mid-task — `docs-rest.quickstart-interrupt`
+- Quickstart "Add the Next Layer" checklist — `docs-rest.quickstart-next-layer`
+- Quickstart "Common Failure Modes" table — `docs-rest.quickstart-failure-modes`
+- Quickstart "Recovery Toolkit" ordered sequence — `docs-rest.quickstart-recovery-toolkit`
+- Quickstart "Quick Reference" command table — `docs-rest.quickstart-quick-reference`
+- Installation page (installers for every platform) — `docs-rest.installation`
+- Install layout: per-user vs root-mode (FHS) — `docs-rest.install-layout`
+- Installer prerequisites and bundled toolchain — `docs-rest.install-prereqs`
+- Non-sudo / system-service-user installs — `docs-rest.install-nonsudo`
+- Install method auto-detection — `docs-rest.install-method-autodetect`
+- Platform Support tiers (Tier 1 / Tier 2 / Unsupported) — `docs-rest.platform-support`
+- Learning Path page (level + use-case routing) — `docs-rest.learning-path`
+- `hermes update` — the update pipeline (5 steps) — `docs-rest.update-pipeline`
+- `hermes update --branch NAME` (non-default branch updates) — `docs-rest.update-branch`
+- Parked-branch handling and `updates.parked_branch_strategy` — `docs-rest.update-parked-branch`
+- `updates.non_interactive_local_changes` (stash vs discard) — `docs-rest.update-noninteractive-local-changes`
+- `hermes update --check` (preview only) — `docs-rest.update-check`
+- `hermes update --plan` (fleet preview) — `docs-rest.update-plan`
+- Update receipts and the fleet version check — `docs-rest.update-receipts`
+- `hermes update --backup` / `updates.pre_update_backup` — `docs-rest.update-backup`
+- Windows update guards (`--force`, `--force-venv`, transactional venv) — `docs-rest.update-windows-guards`
+- Update survives terminal disconnect (SIGHUP + update.log) — `docs-rest.update-sighup`
+- Recommended post-update validation — `docs-rest.update-post-validation`
+- Updating from messaging platforms (`/update`) — `docs-rest.update-from-messaging`
+- Manual update and rollback procedures — `docs-rest.update-manual-rollback`
+- Image-managed installs: the provenance marker — `docs-rest.update-image-provenance`
+- Note for Nix users on updating — `docs-rest.update-nix-note`
+- `hermes uninstall` and manual uninstall — `docs-rest.uninstall`
+- Android / Termux install (Tier 2) — `docs-rest.termux`
+- Community-maintained Termux APT package (`pkg install hermes-agent`) — `docs-rest.termux-apt`
+- Nix flake quick start (`nix run` / `nix profile install`) — `docs-rest.nix-quickstart`
+- NixOS module (`services.hermes-agent`) — native mode — `docs-rest.nixos-module`
+- Nix container mode and container-aware CLI routing — `docs-rest.nix-container-mode`
+- Nix declarative settings (`settings`, `configFile`) and the config merge — `docs-rest.nix-settings`
+- Nix secrets management (sops-nix, agenix, `authFile`) — `docs-rest.nix-secrets`
+- Nix documents: `documents` vs `hermesHomeFiles` — `docs-rest.nix-documents`
+- Nix `mcpServers` declarative MCP configuration — `docs-rest.nix-mcp-servers`
+- Nix "Managed Mode" CLI guards (`HERMES_MANAGED`, `.managed`) — `docs-rest.nix-managed-mode`
+- Nix Home Manager module (`services.hermes-agent`, `programs.hermes-agent`) — `docs-rest.nix-home-manager`
+- Nix `backend.mode` (running `hermes serve` / `hermes dashboard`) — `docs-rest.nix-backend-mode`
+- Nix plugin options (`extraPlugins`, `extraPythonPackages`, `extraDependencyGroups`, `extraPackages`, overlay) — `docs-rest.nix-plugins`
+- Nix dev shell, direnv, and flake checks — `docs-rest.nix-dev-checks`
+- Nix options reference and directory layouts — `docs-rest.nix-options-reference`
+- Integrations overview page — `docs-rest.integrations-index`
+- Web search backend matrix — `docs-rest.integrations-web-search-backends`
+- Voice & TTS provider matrix — `docs-rest.integrations-voice-tts`
+- Quick connect links for messaging platforms — `docs-rest.integrations-quick-connect`
+- Nous Portal integration page — `docs-rest.nous-portal`
+- Nous Tool Gateway backends (five partners) — `docs-rest.portal-tool-gateway-backends`
+- "A note on Hermes 4" — model-choice guidance — `docs-rest.portal-hermes4-note`
+- `hermes portal` command family — `docs-rest.portal-cli`
+- Portal token handling and refresh-token quarantine — `docs-rest.portal-token-handling`
+- Buzz integration — three connection paths — `docs-rest.buzz-integration`
+- AI Providers page (`integrations/providers.md`) — `docs-rest.integrations-providers`
+- `hermes model` vs `/model` — two model commands — `docs-rest.providers-two-model-commands`
+- Subscription-plan semantics table — `docs-rest.providers-subscription-plans`
+- Custom / self-hosted endpoint general setup — `docs-rest.providers-custom-endpoint`
+- Ollama local setup and the context-length trap — `docs-rest.providers-ollama`
+- vLLM setup (tool-call parsers, context, reasoning parsers) — `docs-rest.providers-vllm`
+- SGLang setup — `docs-rest.providers-sglang`
+- llama.cpp / llama-server setup — `docs-rest.providers-llamacpp`
+- LM Studio setup and load modes — `docs-rest.providers-lmstudio`
+- WSL2 networking for Windows-hosted model servers — `docs-rest.providers-wsl2-networking`
+- Troubleshooting local model servers — `docs-rest.providers-local-troubleshooting`
+- LiteLLM Proxy as a multi-provider gateway — `docs-rest.providers-litellm`
+- ClawRouter cost-optimized routing — `docs-rest.providers-clawrouter`
+- "Other Compatible Providers" base-URL table — `docs-rest.providers-other-compatible`
+- Context-length detection chain (9 sources) — `docs-rest.providers-context-length-detection`
+- Named custom providers (`providers:` dict) — `docs-rest.providers-named-custom`
+- `key_cmd` — command-minted provider credentials — `docs-rest.providers-key-cmd`
+- `extra_body` / `extra_headers` per custom provider — `docs-rest.providers-extra-body`
+- Cookbook: Together AI, Groq, Perplexity — `docs-rest.providers-cookbook`
+- "Choosing the Right Setup" decision table — `docs-rest.providers-choosing`
+- Optional API keys table — `docs-rest.providers-optional-api-keys`
+- Self-hosting Firecrawl — `docs-rest.providers-self-host-firecrawl`
+- OpenRouter provider routing (`provider_routing`) — `docs-rest.providers-openrouter-routing`
+- OpenRouter Pareto Code Router (`min_coding_score`) — `docs-rest.providers-openrouter-pareto`
+- Fallback provider chain (`fallback_providers`) — `docs-rest.providers-fallback-chain`
+- Architecture overview (system map) — `docs-rest.dev-architecture`
+- Agent loop internals (`AIAgent`) — `docs-rest.dev-agent-loop`
+- Tools runtime — registry, discovery, dispatch — `docs-rest.dev-tools-runtime`
+- `DANGEROUS_PATTERNS` approval flow — `docs-rest.dev-dangerous-patterns`
+- Adding a built-in tool — `docs-rest.dev-adding-tools`
+- Extending the CLI — five wrapper hooks — `docs-rest.dev-extending-cli`
+- Prompt assembly — three cached tiers + ephemeral layers — `docs-rest.dev-prompt-assembly`
+- Provider runtime resolution — `docs-rest.dev-provider-runtime`
+- Auxiliary model routing — `docs-rest.dev-auxiliary-routing`
+- Fallback activation internals (`_try_activate_fallback`) — `docs-rest.dev-fallback-internals`
+- Session storage — `state.db` schema, FTS5, lineage — `docs-rest.dev-session-storage`
+- Gateway internals — boot, guards, routing, delivery — `docs-rest.dev-gateway-internals`
+- Gateway relay connector platform — `docs-rest.dev-gateway-relay`
+- ACP internals — stdio JSON-RPC agent server — `docs-rest.dev-acp-internals`
+- Cron internals — storage, scheduling, delivery — `docs-rest.dev-cron-internals`
+- Pluggable cron trigger and managed Chronos scheduler — `docs-rest.dev-cron-scheduler-provider`
+- Trajectory format (ShareGPT JSONL) — `docs-rest.dev-trajectory-format`
+- "Build a Hermes Plugin" — the general plugin surface — `docs-rest.dev-plugins-guide`
+- `hermes plugins doctor` — plugin validation — `docs-rest.dev-plugins-doctor`
+- Plugin manifest — v1, v2 fields, and capabilities — `docs-rest.dev-plugin-manifest`
+- Native plugin compatibility contract and deprecation policy — `docs-rest.dev-plugin-compat-contract`
+- Portable Agent Plugins v1 packages — `docs-rest.dev-portable-plugins`
+- Plugin config, state, and durable storage — `docs-rest.dev-plugin-storage`
+- Plugin skills, env gating, lazy deps and lazy singletons — `docs-rest.dev-plugin-extras`
+- Overriding a built-in tool from a plugin — `docs-rest.dev-plugin-tool-override`
+- Plugin hook reference (16 hooks) — `docs-rest.dev-plugin-hooks`
+- `pre_llm_call` context injection and oversized-context spill — `docs-rest.dev-pre-llm-injection`
+- Plugin middleware (`tool_request`, `llm_request`, `tool_execution`, `llm_execution`) — `docs-rest.dev-plugin-middleware`
+- Plugin CLI commands, slash commands and `dispatch_tool` — `docs-rest.dev-plugin-commands`
+- Native platform handlers and Slack action handlers — `docs-rest.dev-plugin-platform-handlers`
+- Specialized plugin types (5 categories) and non-Python extension surfaces — `docs-rest.dev-plugin-specialized`
+- Distributing plugins (pip entry points, NixOS) — `docs-rest.dev-plugin-distribution`
+- Model Provider Plugins — `docs-rest.dev-model-provider-plugin`
+- Adding a first-class (core) provider — `docs-rest.dev-adding-providers`
+- Context Engine Plugins — `docs-rest.dev-context-engine-plugin`
+- Memory Provider Plugins — `docs-rest.dev-memory-provider-plugin`
+- Image Generation Provider Plugins — `docs-rest.dev-image-gen-plugin`
+- Video Generation Provider Plugins — `docs-rest.dev-video-gen-plugin`
+- Web Search Provider Plugins — `docs-rest.dev-web-search-plugin`
+- Browser Provider Plugins — `docs-rest.dev-browser-provider-plugin`
+- Secret Source Plugins — `docs-rest.dev-secret-source-plugin`
+- Terminal Environment Provider Plugins — `docs-rest.dev-terminal-env-plugin`
+- Public Subagent Lifecycle API — `docs-rest.dev-subagent-lifecycle-api`
+- Codebase Ownership Map — `docs-rest.dev-codebase-ownership`
+- Contributing guide (dev setup, style, security, PR process) — `docs-rest.dev-contributing`
+- Repo-local review checklists (`.agents/checks/*.md`) — `docs-rest.dev-agents-checks`
+- Programmatic integration — three protocols — `docs-rest.dev-programmatic-integration`
+- TUI gateway JSON-RPC — method catalog and rewind protocol — `docs-rest.dev-tui-gateway-rpc`
+- `htui` / `hgui` — TUI & Desktop from git worktrees — `docs-rest.dev-worktree-ui`
+- Browser CDP Supervisor — `docs-rest.dev-browser-supervisor`
+- Egress proxy internals (iron-proxy) — `docs-rest.dev-egress-internals`
+- Context compression — dual system, config, and 4-phase algorithm — `docs-rest.dev-compression`
+- Anthropic prompt caching (`system_and_3`) — `docs-rest.dev-prompt-caching`
+- Plugin LLM access (`ctx.llm`) — `docs-rest.dev-plugin-llm-access`
+- Creating Skills — SKILL.md format and frontmatter — `docs-rest.dev-creating-skills`
+- Blueprints and Suggested Cron Jobs — `docs-rest.dev-blueprints-suggestions`
+- Publishing skills and the security scanner — `docs-rest.dev-skill-publishing-security`
+- Adding a Platform Adapter — plugin path — `docs-rest.dev-platform-adapter-plugin`
+- Platform-specific slow-LLM UX (typing-loop and send overrides) — `docs-rest.dev-platform-slow-llm-ux`
+- Adding a built-in platform — 11-step checklist and parity audit — `docs-rest.dev-platform-builtin-checklist`
+- Desktop Plugin SDK (`@hermes/plugin-sdk`) — `docs-rest.dev-desktop-plugin-sdk`
+- Unified plugin package and `hermes://` install links — `docs-rest.dev-unified-package-install-link`
+- Give Your Agent Its Own Email Address — `docs-rest.guide-agent-email-address`
+- Automate Anything with Cron — five patterns — `docs-rest.guide-automate-with-cron`
+- Script-Only Cron Jobs (no-agent mode) — `docs-rest.guide-cron-script-only`
+- Cron Troubleshooting — `docs-rest.guide-cron-troubleshooting`
+- AWS Bedrock setup guide — `docs-rest.guide-aws-bedrock`
+- Microsoft Foundry / Azure Foundry setup guide — `docs-rest.guide-azure-foundry`
+- Google Gemini (AI Studio) setup guide — `docs-rest.guide-google-gemini`
+- Google Vertex AI setup guide — `docs-rest.guide-google-vertex`
+- MiniMax OAuth setup guide — `docs-rest.guide-minimax-oauth`
+- xAI Grok OAuth (SuperGrok / X Premium+) setup guide — `docs-rest.guide-xai-grok-oauth`
+- Run Local LLMs on Mac (llama.cpp vs MLX/omlx) — `docs-rest.guide-local-llm-on-mac`
+- Run Hermes Locally with Ollama — Zero API Cost — `docs-rest.guide-local-ollama-setup`
+- Run Nemotron 3 Ultra free in Hermes Agent — `docs-rest.guide-nemotron-free`
+- Run Hermes Agent with Nous Portal (full walkthrough) — `docs-rest.guide-run-with-nous-portal`
+- Manage Hermes Cloud with MCP — `docs-rest.guide-manage-hermes-cloud-mcp`
+- Tutorial: Build a Daily Briefing Bot — `docs-rest.guide-daily-briefing-bot`
+- Set Up a Team Telegram Assistant — `docs-rest.guide-team-telegram-assistant`
+- Tutorial: Build a GitHub PR Review Agent — `docs-rest.guide-github-pr-review-agent`
+- Automated GitHub PR Comments with Webhooks — `docs-rest.guide-webhook-github-pr-review`
+- Operate the Teams Meeting Pipeline — `docs-rest.guide-teams-meeting-pipeline`
+- Automation Blueprints catalogue — `docs-rest.guide-automation-blueprints`
+- Delegation & Parallel Work patterns — `docs-rest.guide-delegation-patterns`
+- Desktop Native Sign-In (RFC 8252) — `docs-rest.guide-desktop-native-signin`
+- OAuth over SSH / Remote Hosts — `docs-rest.guide-oauth-over-ssh`
+- Register a Microsoft Graph Application — `docs-rest.guide-msgraph-app-registration`
+- Migrate from OpenClaw — `docs-rest.guide-migrate-from-openclaw`
+- Pipe Script Output to Messaging Platforms (`hermes send`) — `docs-rest.guide-pipe-script-output`
+- Using Hermes as a Python Library — `docs-rest.guide-python-library`
+- Running Hermes on a Personal or Work Machine — `docs-rest.guide-secure-work-machine`
+- Tips & Best Practices — `docs-rest.guide-tips`
+- Troubleshooting: "My Agent Feels Dumber" — `docs-rest.guide-troubleshooting-agent-quality`
+- Use MCP with Hermes — `docs-rest.guide-use-mcp-with-hermes`
+- Use SOUL.md with Hermes — `docs-rest.guide-use-soul`
+- Use Voice Mode with Hermes — `docs-rest.guide-use-voice-mode`
+- Working with Skills — `docs-rest.guide-work-with-skills`
+- Which File Does What? — `docs-rest.ug-which-file-does-what`
+- Import from Other Agents (`hermes import-agent`) — `docs-rest.ug-import-from-other-agents`
+- Managed Scope (`/etc/hermes`) — `docs-rest.ug-managed-scope`
+- Git Worktrees with Hermes — `docs-rest.ug-git-worktrees`
+- Checkpoints and `/rollback` — `docs-rest.ug-checkpoints-rollback`
+- CLI Interface page — `docs-rest.ug-cli`
+- TUI page — `docs-rest.ug-tui`
+- Profiles: Running Multiple Agents — `docs-rest.ug-profiles`
+- Sessions page — `docs-rest.ug-sessions`
+- Bot Mode — `docs-rest.ug-bot-mode`
+- Hermes Desktop page — `docs-rest.ug-desktop`
+- Hermes Docker Setup — `docs-rest.ug-docker`
+- Windows (Native) Guide — `docs-rest.ug-windows-native`
+- Windows (WSL2) Guide — `docs-rest.ug-windows-wsl-quickstart`
+- Profile Distributions: Share a Whole Agent — `docs-rest.ug-profile-distributions`
+- Connecting Desktop to Many Hermes Instances — `docs-rest.ug-multi-connection-desktop`
+- Running Many Gateways at Once — `docs-rest.ug-multi-profile-gateways`
+- Configuring Models (dashboard Models page) — `docs-rest.ug-configuring-models`
+- Configuration page (user-guide/configuration.md) — `docs-rest.ug-configuration`
+- FAQ & Troubleshooting — `docs-rest.ref-faq`
+- CLI Symbols Glossary — `docs-rest.ref-cli-symbols`
+- Docs home page (`index.mdx`) — `docs-rest.site-index`
+- User Stories & Use Cases page — `docs-rest.site-user-stories`
+
+### 37 · Delta v2026.8.27 → v2026.8.31 — everything that changed
+
+- Gateway-hosted Group Chat rooms (durable room identity + append-only log) — `delta-27-31.hosted-rooms-store`
+- Same-gateway Group Chat driver (lease + task state machine) — `delta-27-31.hosted-room-driver`
+- Deterministic Group Chat Discussion policy — `delta-27-31.hosted-room-discussion`
+- Bounded policy checkpoint for busy rooms — `delta-27-31.hosted-room-policy-checkpoint`
+- Group Chat log replication + fenced authority takeover — `delta-27-31.hosted-room-replicas`
+- RoomLink — cross-gateway Group Chat members — `delta-27-31.hosted-room-peer`
+- RoomLink execution policy (target-issued tool authority) — `delta-27-31.hosted-room-execution-policy`
+- Stored RoomLink routes — `delta-27-31.hosted-room-links`
+- `groups.*` JSON-RPC surface on the TUI/Desktop gateway — `delta-27-31.groups-rpc`
+- RoomLink HTTP endpoints on the API-server platform — `delta-27-31.roomlink-http-endpoints`
+- Hidden per-member session for a RoomLink turn — `delta-27-31.room-dispatch-session`
+- Durable idempotency for `POST /v1/runs` — `delta-27-31.run-idempotency`
+- `/v1/runs` accepts room-grant auth and room dispatch — `delta-27-31.runs-room-auth`
+- Session-persistent Python kernels for `execute_code` (local) — `delta-27-31.code-kernel`
+- Session-persistent kernels for REMOTE terminal backends — `delta-27-31.code-kernel-remote`
+- `execute_code` stdout spillover — `delta-27-31.execute-code-spill`
+- Lightpanda engine for Browser Use mode — `delta-27-31.browser-lightpanda`
+- `desktop_preview` — one tool for the preview pane — `delta-27-31.desktop-preview-tool`
+- `desktop_project` — one tool for Desktop Projects — `delta-27-31.desktop-project-tool`
+- `tip` tool — point at one thing in the desktop GUI — `delta-27-31.tip-tool`
+- `tour` tool schema diet + `tip` added to the toolset — `delta-27-31.tour-diet`
+- `skill_manage` becomes an atomic `operations[]` batch — `delta-27-31.skill-manage-operations`
+- `todo` gains nested subtasks — `delta-27-31.todo-subtasks`
+- A2A client tools are config-gated — `delta-27-31.a2a-gate`
+- Session temp root moves off tmpfs `/tmp` — `delta-27-31.terminal-temp-dir`
+- Collision-safe sandbox directory names — `delta-27-31.env-path-utils`
+- `/plan` graduates to a built-in command on every surface — `delta-27-31.plan-command`
+- `/btw` — context-aware side questions — `delta-27-31.btw-side-question`
+- `/bg` and `/btw` are first-class commands; `/background` retired — `delta-27-31.bg-btw-promotion`
+- Default identity prompt rewritten as a behavior spec — `delta-27-31.default-identity-prompt`
+- Two-line conversation clock in the system prompt — `delta-27-31.conversation-clock`
+- System prompt always rebuilds at the compaction commit boundary — `delta-27-31.compaction-prompt-rebuild`
+- Dynamic tool schemas rebuild at the compaction commit boundary — `delta-27-31.compaction-tool-refresh`
+- Context size anchors on provider-reported usage — `delta-27-31.context-usage-anchor`
+- Configurable extra tools for background review — `delta-27-31.background-review-extra-tools`
+- Compression hygiene: bounded hold on an arriving turn — `delta-27-31.hygiene-turn-hold`
+- Server-side Codex compaction threshold follows the local trigger — `delta-27-31.codex-compact-threshold`
+- Guarded fast lane for compression output length — `delta-27-31.aux-compression-max-output`
+- Approval policy for unattended programmatic platforms — `delta-27-31.approvals-unattended-mode`
+- Gateway boot warm-up gate — `delta-27-31.gateway-startup-warmup`
+- Telegram turn-lease timeout lowered to 5 s — `delta-27-31.gateway-turn-lease-timeout`
+- Bounded SIGTERM interrupt grace on the gateway — `delta-27-31.signal-interrupt-grace`
+- Transcript repair helpers extracted — `delta-27-31.transcript-repair`
+- Anthropic adapter split into credentials / endpoints / message-convert — `delta-27-31.anthropic-module-split`
+- Codex request-identity headers as a leaf module — `delta-27-31.codex-headers`
+- Ramp Router (`router.com`) provider plugin — `delta-27-31.provider-router`
+- Nebius Token Factory provider plugin — `delta-27-31.provider-nebius-token-factory`
+- Region-split Alibaba / DashScope profiles + Token Plan tier — `delta-27-31.provider-alibaba-split`
+- Tencent TokenPlan provider + `tencent/hy4-preview` — `delta-27-31.provider-tencent-tokenplan`
+- `ProviderProfile.supported_reasoning_efforts()` hook — `delta-27-31.provider-reasoning-hook`
+- `delegation.request_overrides` — per-child API settings — `delta-27-31.delegation-request-overrides`
+- `model_not_found` notice in delegation batch reports — `delta-27-31.delegation-model-not-found`
+- `qwen3.8-flash` and refreshed Qwen/GLM/DeepSeek catalog entries — `delta-27-31.models-catalog-additions`
+- Telegram inline command picker (`@botname <query>`) — `delta-27-31.telegram-inline-picker`
+- Telegram command-menu priority modes — `delta-27-31.telegram-menu-priority`
+- Plugins can register native platform handlers on every gateway platform — `delta-27-31.plugin-platform-handlers`
+- WeCom native reply streaming — `delta-27-31.wecom-streaming`
+- Photon (iMessage) read receipts — `delta-27-31.photon-read-receipts`
+- Buzz: `edit_message` / `delete_message` so replies can stream — `delta-27-31.buzz-edit-delete`
+- Buzz thread topology: `reply_in_thread` opt-out + NIP-10 root anchoring — `delta-27-31.buzz-thread-topology`
+- Relay `delete_message` over the additive delete op — `delta-27-31.relay-delete-message`
+- Discord: `/plan` in the native slash picker — `delta-27-31.discord-plan-slash`
+- `hermes cron doctor` — read-only cron health check — `delta-27-31.cron-doctor`
+- `hermes kanban boards export` / `import` — move a whole board — `delta-27-31.kanban-board-transfer`
+- Safe tar.gz primitives (`archive_safe`) — `delta-27-31.archive-safe`
+- `hermes chat -q` seeds a live interactive session — `delta-27-31.chat-q-seeds-interactive`
+- Status bar: cache-hit %, latency, tokens/s, and per-field visibility — `delta-27-31.status-bar-fields`
+- `/loop` first wakeup fires immediately — `delta-27-31.loop-first-wakeup`
+- `hermes config set|unset` handles literal dots in key names — `delta-27-31.config-literal-dots`
+- Stable per-install identity (`install_id`) — `delta-27-31.install-identity`
+- macOS TCC anchor for the uv-managed interpreter — `delta-27-31.macos-tcc-anchor`
+- Toolset platform scope rules — `delta-27-31.toolset-scope`
+- Worktree disk reclamation for pushed PR lanes + cron-tick pruning — `delta-27-31.worktree-reclaim`
+- `dashboard.trusted_proxies` — `delta-27-31.dashboard-trusted-proxies`
+- In-App Tips (idle rotation + agent-raised bubbles) — `delta-27-31.desktop-tips`
+- Guided Tours switch — `delta-27-31.desktop-tours-switch`
+- Durable `data-tour` handles on the app's main surfaces — `delta-27-31.desktop-tour-handles`
+- Real-profile browsing toggle in Capabilities → Tools → Browser — `delta-27-31.desktop-real-profile-toggle`
+- `browser.real_profile_pin` — pin which browser profile is snapshotted — `delta-27-31.browser-real-profile-pin`
+- Brave Origin support for real-profile browsing — `delta-27-31.brave-origin-browser`
+- Board switcher: Export, Import, Rename and Delete — `delta-27-31.desktop-board-switcher-menu`
+- PluginOs native save/open file pickers — `delta-27-31.plugin-os-file-pickers`
+- Download button on preview file cards — `delta-27-31.desktop-preview-download`
+- MCP OAuth completes against remote backends (client-side callback relay) — `delta-27-31.desktop-mcp-oauth-relay`
+- HUD composer drag geometry — `delta-27-31.desktop-hud-drag`
+- Bot Mode rebuilt as a typed plugin on the app's design system — `delta-27-31.bot-mode-rebuild`
+- Group Chats run without the Desktop app, survive an authority gateway dying — `delta-27-31.bot-mode-hosted-groups`
+- A bot's empty chat gets its own face and name — `delta-27-31.desktop-chat-empty-slot`
+- Accent variant on the popover primitive — `delta-27-31.desktop-popover-accent`
+- Menu labels are bare verbs in sentence case — `delta-27-31.desktop-menu-sentence-case`
+- Desktop slash metadata on the command registry — `delta-27-31.command-desktop-metadata`
+- `/busy` becomes available beyond the CLI — `delta-27-31.busy-command-scope`
+- TUI todo panel renders nested subtasks — `delta-27-31.tui-todo-tree`
+- `prompt.btw` JSON-RPC method — `delta-27-31.rpc-prompt-btw`
+- `mcp.servers.oauth.callback` JSON-RPC method — `delta-27-31.rpc-mcp-oauth-callback`
+- Deleting an environment variable reconciles Keys-page state correctly — `delta-27-31.web-env-delete-state`
+- Provider OAuth routes follow the selected management profile — `delta-27-31.web-oauth-profile-scope`
+- Skills reorganized: `skills/` (bundled) vs `optional-skills/` — `delta-27-31.skills-reorg`
+- Bundled skill: `github` (six skills consolidated) — `delta-27-31.skill-github`
+- Optional skill: `impeccable` — `delta-27-31.skill-impeccable`
+- Optional skill: `setup-wizard-generator` — `delta-27-31.skill-setup-wizard-generator`
+- Optional skill: `decision-questionnaire` — `delta-27-31.skill-decision-questionnaire`
+- Optional skill: `grill-me` (adversarial plan interview) — `delta-27-31.skill-grill-me`
+- Optional skill: `publish-site` — `delta-27-31.skill-publish-site`
+- Optional skill: AgentMail rewritten CLI-first — `delta-27-31.skill-agentmail-rewrite`
+- New bundled-skill docs pages — `delta-27-31.skill-docs-pages`
+- Mem0 OSS mode gets a direct-OpenAI LLM adapter — `delta-27-31.mem0-openai-llm`
+- OpenViking uses user memory by default (peer becomes optional) — `delta-27-31.openviking-user-memory`
+- `state.db` corruption containment and FTS recovery — `delta-27-31.state-db-recovery`
+- ESTOP honors the canonical `~/.hermes/ESTOP` from profile gateways — `delta-27-31.estop-canonical`
+- Per-profile gateway isolation for PID checks and credentials — `delta-27-31.gateway-profile-isolation`
+- Windows update self-heal for the Git trampoline — `delta-27-31.windows-git-trampoline`
+- Partial-update import hint on chat startup — `delta-27-31.partial-update-hint`
+- Repo `SOUL.md` — `delta-27-31.repo-soul-md`
+- Docs added in this range — `delta-27-31.docs-added`
+- Tavily web-search backend removed — `delta-27-31.removed-tavily`
+- `/background` command removed — `delta-27-31.removed-background-command`
+- `open_preview`, `close_preview`, `read_preview` removed — `delta-27-31.removed-preview-tools`
+- `project_list`, `project_create`, `project_switch` removed — `delta-27-31.removed-project-tools`
+- `code_execution.kernel_mode` retired — `delta-27-31.removed-kernel-mode`
+- `computer_use.grant_existing_profile` removed — `delta-27-31.removed-grant-existing-profile`
+- `/loop --start-now` folded into the default — `delta-27-31.removed-loop-start-now`
+- Skills deleted from the bundle — `delta-27-31.removed-skills`
+- `delegate_task`: tasks-only interface, depth-derived role — `delta-27-31.delegate-task-diet`
+- `patch`: V4A mode gated to OpenAI-family mains — `delta-27-31.patch-v4a-gate`
+- `write_file` / `patch`: `cross_profile` parameter retired — `delta-27-31.cross-profile-retired`
+- `read_file`: schema diet, bundled anydoc, typed OCR error — `delta-27-31.read-file-diet`
+- `image_generate` / `video_generate`: capability-gated dynamic schemas — `delta-27-31.media-gen-dynamic-schema`
+- `vision_analyze` diet + explicit aux-vision routing — `delta-27-31.vision-analyze-diet`
+- Desktop tool suite diet — `delta-27-31.desktop-ui-diet`
+- Hosted room service, peer HTTP client and server RPC — `delta-27-31.hosted-room-runtime`
+- `/btw` + `/bg` strings shipped in all 17 gateway locales — `delta-27-31.locales-btw-bg`
+- Desktop heals a session bound to a runtime the gateway no longer holds — `delta-27-31.desktop-runtime-gone`
+- Bounded auto-restart for no-mux SSH tunnel flaps — `delta-27-31.desktop-ssh-tunnel-restart`
+- Codex compression summary streams fail over in 60 s — `delta-27-31.codex-summary-failover`
+
+### 38 · Gap-fill (round 0, area "desktop-a") — boot-failure recovery overlay, toast/notification stack, Send diagnostics
+
+- Boot-failure recovery overlay — `gapfill-desktop-a-r0.boot-failure-overlay`
+- Boot-failure overlay — embedded "Gateway settings" recovery view — `gapfill-desktop-a-r0.boot-failure-connect-view`
+- Boot-failure overlay — recent-logs disclosure — `gapfill-desktop-a-r0.boot-failure-recent-logs`
+- Boot-failure overlay — remote reauth ("Sign out & sign in") — `gapfill-desktop-a-r0.boot-failure-reauth`
+- Remote sign-in outcome toasts (shared by three surfaces) — `gapfill-desktop-a-r0.signin-outcome-toasts`
+- Remote auth provider label fallback ("your identity provider") — `gapfill-desktop-a-r0.identity-provider-fallback`
+- Toast / notification stack — `gapfill-desktop-a-r0.notification-stack`
+- Toast Details disclosure and "Copy detail" — `gapfill-desktop-a-r0.notification-detail`
+- Error-summarizer table (friendly toast summaries) — `gapfill-desktop-a-r0.error-summaries`
+- Disk-full detection and toast (ENOSPC / SQLITE_FULL) — `gapfill-desktop-a-r0.disk-full`
+- Send diagnostics to Nous (consent + upload dialog) — `gapfill-desktop-a-r0.send-diagnostics-dialog`
+- First-run "connect to an existing gateway" form (FirstRunRemoteForm) — `gapfill-desktop-a-r0.first-run-remote-form`
+- Desktop first-run install overlay — progress screen — `gapfill-desktop-a-r0.install-overlay-progress`
+- Install overlay — installer output disclosure — `gapfill-desktop-a-r0.install-overlay-log`
+- Install overlay — failure footer (transcript path, copy, reload) — `gapfill-desktop-a-r0.install-overlay-failed-footer`
+- Provider onboarding wizard — overlay shell and header — `gapfill-desktop-a-r0.onboarding-overlay`
+- Onboarding provider picker — `gapfill-desktop-a-r0.onboarding-picker`
+- Onboarding provider rows — pitches and flow subtitles — `gapfill-desktop-a-r0.onboarding-provider-rows`
+- Onboarding API-key form and catalog — `gapfill-desktop-a-r0.onboarding-apikey-form`
+- Onboarding sign-in flow (manual OAuth / device code / external CLI) — `gapfill-desktop-a-r0.onboarding-signin-flow`
+- Dormant onboarding string — "Re-open sign-in page" — `gapfill-desktop-a-r0.onboarding-orphan-reopen-signin`
+- Zone tab-strip show/hide (context menu + keybind) — `gapfill-desktop-a-r0.zone-tabstrip-toggle`
+- Pane dropped because its plugin was disabled — `gapfill-desktop-a-r0.zone-plugin-disabled-toast`
+- Layout edit palette ("Layouts" card) — `gapfill-desktop-a-r0.layout-edit-palette`
+- Zone editor (FancyZones grid editor) — `gapfill-desktop-a-r0.zone-editor`
+- App crash screen (React error boundary) — `gapfill-desktop-a-r0.error-boundary`
+- SearchField — "Clear search" button — `gapfill-desktop-a-r0.search-field`
+
+### 39 · Gap-fill — Desktop app: profile remote-override store, session status/unread, sidebar grouping, projects & worktrees, orphan profile strings
+
+- Per-profile remote-override store (`store/profile-remote-override`) — `gapfill-desktop-b-0-r0.remote-override-store`
+- Session status dot (`SessionStatusDot`) — `gapfill-desktop-b-0-r0.session-status-dot`
+- Mark as unread / Mark as read (persisted read-state watermark) — `gapfill-desktop-b-0-r0.session-unread-toggle`
+- Sidebar header toggle — projects list ⇄ session list — `gapfill-desktop-b-0-r0.sidebar-group-toggle`
+- Project idea templates (“Shuffle templates” pills) — `gapfill-desktop-b-0-r0.project-idea-templates`
+- Base branch picker (“branch off …”) — `gapfill-desktop-b-0-r0.base-branch-picker`
+- Remove worktree (project lane) — `gapfill-desktop-b-0-r0.worktree-remove`
+- Move a session to another project — `gapfill-desktop-b-0-r0.move-session-to-project`
+- “Clone from default” option (create-profile dialog) — `gapfill-desktop-b-0-r0.profiles-clone-from-default`
+- “Copy setup” — profile setup/wrapper command — `gapfill-desktop-b-0-r0.profiles-copy-setup`
+
+### 40 · Gap-fill — Desktop app: session/prompt action feedback, image + export flows, shared UI primitives (round 0, area desktop-b-1)
+
+- Session date-group dividers — "Earlier today" / "Earlier this week" / "Earlier this month" — `gapfill-desktop-b-1-r0.date-dividers-pointer`
+- Shared Pagination primitive (Prev / page numbers / Next) — `gapfill-desktop-b-1-r0.shared-pagination`
+- Shared Sidebar primitive — mobile/narrow sheet — `gapfill-desktop-b-1-r0.ui-sidebar-sheet`
+- "Close running tab?" confirmation — `gapfill-desktop-b-1-r0.tile-close-confirm`
+- Voice recording — "Could not read recorded audio" — `gapfill-desktop-b-1-r0.voice-audio-read`
+- "Session unavailable" / "Could not create a new session" — `gapfill-desktop-b-1-r0.session-unavailable`
+- Bare `/` submission — "empty slash command" — `gapfill-desktop-b-1-r0.empty-slash-command`
+- `/help` desktop command catalog — "Desktop commands" group — `gapfill-desktop-b-1-r0.desktop-commands-catalog`
+- `/yolo` (desktop) — auto-approve for this chat — `gapfill-desktop-b-1-r0.slash-yolo`
+- `/profile` (desktop) — choose the profile new chats open in — `gapfill-desktop-b-1-r0.slash-profile`
+- "Stop failed" — interrupt the running turn — `gapfill-desktop-b-1-r0.stop-failed`
+- "Regenerate failed" — rewind and re-run a turn — `gapfill-desktop-b-1-r0.regenerate-failed`
+- Read-only transcript — sending is blocked — `gapfill-desktop-b-1-r0.read-only-send-blocked`
+- "Couldn't load this session" — stranded-session recovery state — `gapfill-desktop-b-1-r0.resume-stranded`
+- Branch / fork this chat — warnings and failures — `gapfill-desktop-b-1-r0.branch-session`
+- Change working directory — failure and "staged" fallback — `gapfill-desktop-b-1-r0.cwd-change`
+- "Model switch failed" — `gapfill-desktop-b-1-r0.model-switch-failed`
+- Export session (transcript to JSON) — `gapfill-desktop-b-1-r0.session-export`
+- Image save button — "Download image" / "Saving image" — `gapfill-desktop-b-1-r0.image-save-button`
+- Composer image attach (paste / drop / pick) — failures — `gapfill-desktop-b-1-r0.composer-image-attach`
+- `/handoff` (desktop) — hand this chat to a messaging platform — `gapfill-desktop-b-1-r0.slash-handoff`
+
+### 41 · Gap-fill — Desktop app (area desktop-b, round 0)
+
+- Composer microphone recorder (`useMicRecorder`) — `gapfill-desktop-b-r0.mic-recorder`
+- Composer push-to-talk recorder (`useVoiceRecorder`) — `gapfill-desktop-b-r0.voice-recorder`
+- Composer voice conversation loop (`useVoiceConversation`) — `gapfill-desktop-b-r0.voice-conversation`
+- Native OS notification — “Input needed” — `gapfill-desktop-b-r0.native-input-notification`
+- Profile export bundle (“Export…” → “Export profile…”) — `gapfill-desktop-b-r0.profile-export-flow`
+- Profile import bundle (“Import profile…”) — `gapfill-desktop-b-r0.profile-import-flow`
+
+### 42 · Gap-fill — Desktop self-update: version-skew toasts and the Settings → About updates card
+
+- Update-ready toast ("Update ready" / "See what's new") — `gapfill-desktop-main.update-ready-toast`
+- Backend-out-of-date (contract skew) toast — `gapfill-desktop-main.backend-contract-skew-toast`
+- Unsupported install method toast — `gapfill-desktop-main.install-method-unsupported-toast`
+- Settings → About → Updates card — `gapfill-desktop-main.about-updates-card`
+- First-run setup choice screen ("Set up Hermes Desktop") — `gapfill-desktop-main.install-overlay-setup-choice`
+- "Local installation could not start." inline error — `gapfill-desktop-main.install-local-start-unavailable`
+- Manual-install screen ("Hermes needs a one-time install") — `gapfill-desktop-main.install-overlay-unsupported-platform`
+- First-run remote-gateway form ("Connect to existing Hermes") — `gapfill-desktop-main.first-run-remote-form`
+- Staged install progress screen ("Setting up Hermes Agent") — `gapfill-desktop-main.install-overlay-progress`
+- "Update everything" fan-out result toasts — `gapfill-desktop-main.update-everything-toasts`
+
+### 43 · Gap-fill — Hermes Desktop Settings: Language, Appearance rows, Notifications, Plugins (round 0, area `desktop-settings-0`)
+
+- Language switcher (globe button + language list) — `gapfill-desktop-settings-0-r0.language-switcher`
+- Settings → Appearance → "Language" row — `gapfill-desktop-settings-0-r0.appearance-language-row`
+- Settings → Appearance → "Tool Call Display" — `gapfill-desktop-settings-0-r0.appearance-tool-view`
+- Settings → Appearance → "Collapse thinking by default" — `gapfill-desktop-settings-0-r0.appearance-reasoning-collapsed`
+- Settings → Appearance → "Session List Density" — `gapfill-desktop-settings-0-r0.appearance-session-density`
+- Settings → Appearance → "Tab Strip" — `gapfill-desktop-settings-0-r0.appearance-tab-strip`
+- Settings → Appearance → "Terminal Font" — `gapfill-desktop-settings-0-r0.appearance-terminal-font`
+- Settings → Appearance → "Window Translucency" — `gapfill-desktop-settings-0-r0.appearance-translucency`
+- Settings → Notifications (page + master switch) — `gapfill-desktop-settings-0-r0.notifications-panel`
+- Settings → Notifications — per-kind toggles — `gapfill-desktop-settings-0-r0.notifications-kinds`
+- Settings → Notifications — "Send test notification" — `gapfill-desktop-settings-0-r0.notifications-test`
+- Settings → Notifications → "Completion Sound" — `gapfill-desktop-settings-0-r0.notifications-completion-sound`
+- Settings → Plugins → "Desktop plugins" — `gapfill-desktop-settings-0-r0.plugins-desktop-section`
+- Settings → Plugins → "Agent plugins" — `gapfill-desktop-settings-0-r0.plugins-agent-section`
+- "Install plugin" modal (install-from-repo flow) — `gapfill-desktop-settings-0-r0.plugin-install-modal`
+- Settings per-tab search placeholder catalog (`settings.searchPlaceholder.*`) — `gapfill-desktop-settings-0-r0.settings-search-placeholder-catalog`
+
+### 44 · Gap-fill — Hermes Desktop Settings → Gateways: connection modes, Hermes Cloud, connections registry, managed updates (round 0, area `desktop-settings-2`)
+
+- Settings → Gateways page (`GatewaySettings`) — `gapfill-desktop-settings-2-r0.gateway-page`
+- Environment-override banner — `gapfill-desktop-settings-2-r0.gateway-env-override`
+- Connection mode cards (Local / Hermes Cloud / Remote gateway / Connect via SSH) — `gapfill-desktop-settings-2-r0.gateway-mode-cards`
+- Hermes Cloud sign-in row — `gapfill-desktop-settings-2-r0.gateway-cloud-signin`
+- Hermes Cloud organization picker — `gapfill-desktop-settings-2-r0.gateway-cloud-orgs`
+- Hermes Cloud agent list (discover + connect) — `gapfill-desktop-settings-2-r0.gateway-cloud-agents`
+- Remote URL field — `gapfill-desktop-settings-2-r0.gateway-remote-url`
+- Remote auth-mode probe (probing / probe error) — `gapfill-desktop-settings-2-r0.gateway-auth-probe`
+- Remote authentication row (OAuth / username-and-password sign-in) — `gapfill-desktop-settings-2-r0.gateway-remote-auth-row`
+- Session-token row — `gapfill-desktop-settings-2-r0.gateway-token-row`
+- Plain-text token opt-in and "stored in plain text" warning — `gapfill-desktop-settings-2-r0.gateway-plaintext-token`
+- "Encrypt saved secrets with the OS keychain" toggle — `gapfill-desktop-settings-2-r0.gateway-keychain`
+- SSH transport fields (Host / User / Port / Identity file / Hermes path) and Test SSH — `gapfill-desktop-settings-2-r0.gateway-ssh-fields`
+- "Test remote" button — `gapfill-desktop-settings-2-r0.gateway-test-remote`
+- "Save for next restart" / "Save and reconnect" — `gapfill-desktop-settings-2-r0.gateway-save-actions`
+- Diagnostics → "Open logs" — `gapfill-desktop-settings-2-r0.gateway-diagnostics`
+- "Registered gateways" section (connections registry) — `gapfill-desktop-settings-2-r0.connections-section`
+- Connection row (pills, Test, Make primary, Edit, Remove) — `gapfill-desktop-settings-2-r0.connections-row`
+- "Remove this connection?" confirmation — `gapfill-desktop-settings-2-r0.connections-remove`
+- Connection editor (kind, name, URL, auth, SSH host) — `gapfill-desktop-settings-2-r0.connections-editor`
+- Extra gateway headers editor — `gapfill-desktop-settings-2-r0.connections-headers`
+- Duplicate-connection rules and inline rejection — `gapfill-desktop-settings-2-r0.connections-duplicates`
+- "Add connection" and "Update all instances" — `gapfill-desktop-settings-2-r0.connections-add-updateall`
+- Launch-mode toggle ("At startup, return to Sessions on the last-used gateway") — `gapfill-desktop-settings-2-r0.connections-launch-mode`
+- "Managed updates" section — `gapfill-desktop-settings-2-r0.managed-updates-section`
+- Per-connection "Update" button and its states — `gapfill-desktop-settings-2-r0.managed-update-run`
+- Managed-update receipt and per-profile restore lines — `gapfill-desktop-settings-2-r0.managed-update-receipt`
+
+### 45 · Gap-fill: Gateway core — kanban wake-notification message composer
+
+- Kanban wake notification — base message body — `gapfill-gw-core-r0.kanban-wake-message`
+- Kanban wake notification — review/request-changes detail block — `gapfill-gw-core-r0.kanban-wake-review-detail`
+- Kanban wake notification — standing anti-re-decomposition guidance — `gapfill-gw-core-r0.kanban-wake-guidance`
+
+### 46 · Gap-fill (round 0, area web-a): Files page row identity, accessible-name templates and the default browsable root
+
+- Files row accessible-name templates (`Open <name>` / `Download <name>` / `Delete <name>` / `<name>`) — `gapfill-web-a-r0.files.row-aria-templates`
+- Default browsable root = the dashboard user's home directory (unlocked) — `gapfill-web-a-r0.files.default-root-home`
+
+### 47 · Gap-fill: Web dashboard "Keys" page — composed accessible names (round 0, area web-c)
+
+- Keys → LLM Providers → provider-group accordion header (composed accessible name) — `gapfill-web-c-r0.env.provider-group-header`
+- Keys → Provider Logins (OAuth) → per-provider docs link (`Open <name> docs`) — `gapfill-web-c-r0.env.oauth-docs-link`
+
