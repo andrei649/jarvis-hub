@@ -628,6 +628,9 @@ class PermissionLedger:
         try:
             return self._secrets().get(self._secret_name(grant.id))
         except Exception:
+            # The message names the token; the only value interpolated is the grant
+            # id. The secret itself never leaves the SecretStore.
+            # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
             logger.warning("permission restore token unreadable for %s", grant_id)
             return None
 
@@ -784,6 +787,9 @@ class PermissionLedger:
                 self._secrets().set(self._secret_name(grant.id), token)
                 out["restore_token_stored"] = True
             except Exception:
+                # `token` is in scope here and is deliberately NOT logged: only the
+                # grant id is interpolated, so a failed store cannot leak the secret.
+                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
                 logger.warning("os_input restore token could not be stored for %s", grant.id)
                 out["restore_token_stored"] = False
         return out
@@ -817,6 +823,8 @@ class PermissionLedger:
             try:
                 self._secrets().delete(self._secret_name(grant.id))
             except Exception:
+                # Grant id only; the secret is addressed by name, never rendered.
+                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
                 logger.warning("os_input restore token could not be deleted for %s", grant.id)
         return updated
 
