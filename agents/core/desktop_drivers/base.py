@@ -42,8 +42,30 @@ from agents.core.host_probe import REFUSAL_REASONS
 logger = logging.getLogger("jarvis.desktop_drivers")
 
 OBSERVE_ACTIONS = frozenset({"observe", "read", "locate", "screenshot"})
-MUTATE_ACTIONS = frozenset({"click", "type"})
+# ``key``, ``scroll`` and ``focus`` are what turn "can click a named button" into
+# "can actually use the machine": without a key press there is no saving a file
+# or submitting a form, and without scrolling the accessibility snapshot only
+# ever sees what already happens to be on screen.
+#
+# ``key`` is the one mutation with no named element, which is exactly why it is
+# the most constrained: the chord must come from the allowlist in ``keys.py`` and
+# a chord that closes, quits, hides or switches apps is refused by policy, since
+# each of those makes every later step act on something the plan never observed.
+#
+# ``focus`` is a mutation even though nothing visibly happens: it changes where
+# the next keystroke lands, and a gate that treated it as reading would be a gate
+# on the wrong half of "focus this field, then type the password".
+MUTATE_ACTIONS = frozenset({"click", "type", "key", "scroll", "focus"})
 SUPPORTED_ACTIONS = OBSERVE_ACTIONS | MUTATE_ACTIONS
+
+# Actions that act on the frontmost window rather than on a named element.
+UNTARGETED_ACTIONS = frozenset({"key"})
+
+# Scrolling is bounded in both directions. "Scroll to the bottom" of an infinite
+# feed is a loop with a budget attached, so the amount is always a finite number
+# of notches and the cap is here rather than per adapter.
+MAX_SCROLL_NOTCHES = 20
+SCROLL_DIRECTIONS = frozenset({"up", "down", "left", "right"})
 
 # Bounds. Deliberately on the base class: an adapter that forgot to check would
 # otherwise be the one place a screenshot or a paste could grow without limit.
@@ -237,6 +259,8 @@ class AccessibilityDriver:
     # ── acting ───────────────────────────────────────────────────────────
 
     async def _do_mutate(self, action: str, args: Mapping[str, Any]) -> dict[str, Any]:
+        if action == "key":
+            return await self._do_key(args)
         name = str(args.get("name") or "").strip()
         if not name:
             return {"ok": False, "reason": "named_element_required"}
@@ -251,6 +275,22 @@ class AccessibilityDriver:
                 return {"ok": False, "reason": "text_too_large"}
             text = raw
 
+        direction = ""
+        notches = 0
+        if action == "scroll":
+            direction = str(args.get("direction") or "").strip().lower()
+            if direction not in SCROLL_DIRECTIONS:
+                return {"ok": False, "reason": "scroll_direction_required"}
+            raw_notches = args.get("notches", 3)
+            if isinstance(raw_notches, bool) or not isinstance(raw_notches, int):
+                return {"ok": False, "reason": "scroll_notches_invalid"}
+            if raw_notches < 1 or raw_notches > MAX_SCROLL_NOTCHES:
+                # Refused rather than clamped: a step that asked for 500 notches
+                # meant something different from one that asked for 20, and
+                # silently doing the smaller thing hides that the plan was wrong.
+                return {"ok": False, "reason": "scroll_notches_out_of_range"}
+            notches = int(raw_notches)
+
         # Re-snapshot immediately before acting. A handle from an earlier turn may
         # now point at a different control, so a stale match must not be reused.
         snapshot, _truncated = await self._snapshot()
@@ -262,10 +302,37 @@ class AccessibilityDriver:
             return {"ok": False, "reason": "element_disabled"}
         if action == "click":
             await maybe_await(self._click(handle))
+        elif action == "focus":
+            await maybe_await(self._focus(handle))
+        elif action == "scroll":
+            await maybe_await(self._scroll(handle, direction, notches))
         else:
             await maybe_await(self._type(handle, text))
-        return {"ok": True, "action": action, "platform": self.platform,
-                "element": row.get("name", "")}
+        result = {"ok": True, "action": action, "platform": self.platform,
+                  "element": row.get("name", "")}
+        if action == "scroll":
+            result["direction"] = direction
+            result["notches"] = notches
+        return result
+
+    async def _do_key(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        """Press one allowlisted chord on the frontmost window.
+
+        Deliberately has no element target and therefore no re-snapshot: there is
+        nothing to match against. That is what makes the allowlist the whole of
+        the safety story here, and why it refuses rather than falls back. There is
+        no keycode path: a card that says "press Cmd+S" has a bounded set of
+        meanings, and one that says "send keycode 0x1F" has none a person can check.
+        """
+        from agents.core.desktop_drivers.keys import KeyRefused, canonical_chord
+
+        try:
+            chord = canonical_chord(args.get("chord") or args.get("key") or "")
+        except KeyRefused as exc:
+            return {"ok": False, "reason": exc.reason, "action": "key",
+                    "detail": exc.detail[:200]}
+        await maybe_await(self._key(chord))
+        return {"ok": True, "action": "key", "platform": self.platform, "chord": chord}
 
     # ── seams an adapter implements ──────────────────────────────────────
 
@@ -280,6 +347,25 @@ class AccessibilityDriver:
 
     def _screenshot(self) -> Any:  # pragma: no cover - abstract
         raise DriverUnavailable("wayland_capture_unavailable")
+
+    # These three default to "this adapter cannot" rather than being abstract: an
+    # existing adapter keeps working unchanged and reports honestly on the actions
+    # it has not implemented, instead of every adapter breaking the day the
+    # vocabulary grew.
+    #
+    # DriverError, not DriverUnavailable: "this adapter has not implemented
+    # scroll" is a fact about the adapter, while DriverUnavailable's vocabulary is
+    # the host probe's — reasons a person can act on by changing their machine.
+    # Borrowing that vocabulary here would tell the owner their host cannot do
+    # something when the truth is that nobody wrote the code.
+    def _key(self, chord: str) -> Any:
+        raise DriverError("desktop_key_unsupported")
+
+    def _scroll(self, handle: Any, direction: str, notches: int) -> Any:
+        raise DriverError("desktop_scroll_unsupported")
+
+    def _focus(self, handle: Any) -> Any:
+        raise DriverError("desktop_focus_unsupported")
 
 
 class UnavailableDriver:
@@ -343,7 +429,10 @@ __all__ = [
     "MAX_SCREENSHOT_BYTES",
     "MAX_TYPE_CHARS",
     "MUTATE_ACTIONS",
+    "MAX_SCROLL_NOTCHES",
     "OBSERVE_ACTIONS",
+    "SCROLL_DIRECTIONS",
+    "UNTARGETED_ACTIONS",
     "SUPPORTED_ACTIONS",
     "AccessibilityDriver",
     "DriverError",

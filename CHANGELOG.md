@@ -170,6 +170,28 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **The operator can use a keyboard.** It could click a named button and set a field's text,
+  which is not enough to do work: there is no saving a file, submitting a form or moving
+  between fields without a key press, and no reading past the fold without scrolling. `key`,
+  `scroll` and `focus` join the driver vocabulary on all three platforms (AX/CGEvent on macOS,
+  AT-SPI on Linux; the Wayland refusals are unchanged, so a chord cannot become the one way to
+  sidestep the consent check every other mutation passes). **`key` is the only mutation with no
+  named element** — `Cmd+S` acts on whatever is frontmost, so the owner reading the card cannot
+  see from the step what it will touch — and everything about its design follows from that: a
+  finite **allowlist** in `desktop_drivers/keys.py`, **no keycode passthrough of any kind**, and
+  chords that quit / close / hide / minimise / switch apps or open the system launcher refused
+  **by policy with a reason**, because each makes every later step act on something the plan
+  never observed ("unsupported" invites someone to add support; a reason can be argued with).
+  `focus` is classified as a *mutation* although nothing visibly happens — it decides where the
+  next keystroke lands, and gating it as a read would gate the wrong half of "focus this field,
+  then type the password". Scrolling is bounded to 20 notches and an out-of-range amount is
+  **refused, not clamped**: a step that asked for 500 meant something different from one that
+  asked for 20. Two bugs found by the tests: the policy refusal table was keyed by its *human*
+  spelling and looked up against the canonical one, so `ctrl+alt+delete` and `cmd+alt+escape`
+  would have been pressed — exactly the synonym-shaped hole the canonicaliser exists to close,
+  now normalised at import with a guard that fails there rather than at 3am; and the new seams
+  first borrowed the host-probe's closed refusal vocabulary, which would have told the owner
+  their *machine* could not scroll when the truth was that nobody had written the code. 74 pytest.
 - **Company mode stopped being nine parts that never met.** A ledger, a planner, a supervisor,
   two graders, a reconciler and a scheduler all existed and were all tested, and no night of work
   could ever happen because nothing built them into a loop — the specific kind of dishonesty where

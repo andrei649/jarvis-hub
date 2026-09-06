@@ -27,6 +27,7 @@ Everything imports lazily; on a headless runner every seam refuses cleanly.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -83,6 +84,46 @@ def wayland_input_route(
         return "libei"
     except ImportError:
         return ""
+
+
+# X11 keysyms for every key ``keys.ALLOWED_KEYS`` can name. Letters and digits
+# are their ASCII codepoints; the named keys come from ``keysymdef.h``.
+_X_KEYSYMS: dict[str, int] = {
+    **{c: ord(c) for c in "abcdefghijklmnopqrstuvwxyz"},
+    **{d: ord(d) for d in "0123456789"},
+    "return": 0xFF0D, "enter": 0xFF0D, "tab": 0xFF09, "escape": 0xFF1B,
+    "space": 0x0020, "backspace": 0xFF08, "delete": 0xFFFF,
+    "left": 0xFF51, "up": 0xFF52, "right": 0xFF53, "down": 0xFF54,
+    "home": 0xFF50, "end": 0xFF57, "pageup": 0xFF55, "pagedown": 0xFF56,
+    "f1": 0xFFBE, "f2": 0xFFBF, "f3": 0xFFC0, "f4": 0xFFC1, "f5": 0xFFC2,
+    "f6": 0xFFC3, "f7": 0xFFC4, "f8": 0xFFC5, "f9": 0xFFC6, "f10": 0xFFC7,
+    "f11": 0xFFC8, "f12": 0xFFC9,
+}
+
+# The canonical modifiers, as keysyms to hold down. ``cmd`` is Super on Linux —
+# the same physical key the canonicaliser folds cmd/meta/super/win onto.
+_X_MODIFIER_KEYSYMS: dict[str, int] = {
+    "ctrl": 0xFFE3, "shift": 0xFFE1, "alt": 0xFFE9, "cmd": 0xFFEB,
+}
+
+# AT-SPI ScrollType names, resolved late so the table is readable without pyatspi.
+_ATSPI_SCROLL: dict[str, str] = {
+    "up": "SCROLL_TOP_EDGE", "down": "SCROLL_BOTTOM_EDGE",
+    "left": "SCROLL_LEFT_EDGE", "right": "SCROLL_RIGHT_EDGE",
+}
+
+
+def _component_iface(handle: Any) -> Any:
+    """The Component interface, or None. Spelling varies by AT-SPI version, and
+    the wrong spelling is an absent method rather than an error."""
+    for name in ("queryComponent", "get_component_iface"):
+        getter = getattr(handle, name, None)
+        if callable(getter):
+            try:
+                return getter()
+            except Exception:  # nosec B112 - the wrong spelling for this AT-SPI version is an absent method, not an error
+                continue
+    return None
 
 
 class LinuxDesktopDriver(AccessibilityDriver):
@@ -199,6 +240,94 @@ class LinuxDesktopDriver(AccessibilityDriver):
             raise
         except Exception as exc:
             raise DriverError("type_failed") from exc
+
+    def _focus(self, handle: Any) -> None:
+        """Grab focus through AT-SPI's Component interface.
+
+        Focusing is not clicking: on a control that acts on press, a click to
+        focus also does the thing. This changes only where the next keystroke
+        lands, which is what "focus this field, then type" actually means.
+        """
+        self._require_input_route()
+        component = _component_iface(handle)
+        if component is None:
+            raise DriverError("element_not_focusable")
+        try:
+            if not bool(component.grab_focus()):
+                raise DriverError("focus_failed")
+        except DriverError:
+            raise
+        except Exception as exc:
+            raise DriverError("focus_failed") from exc
+
+    def _key(self, chord: str) -> None:
+        """Press one allowlisted chord through AT-SPI's own key synthesis.
+
+        Deliberately AT-SPI and not uinput/ydotool: those work, and that is the
+        problem — they bypass the compositor's consent model, which is the same
+        reason they are refused as an input route. Under Wayland this still
+        requires a consent-based route to exist, so a chord cannot become the one
+        way to sidestep the check every other mutation passes.
+
+        This is the only mutation with no element to re-verify against, so the
+        allowlist in ``keys.py`` is the whole check — and it has already run.
+        """
+        self._require_input_route()
+        try:
+            import pyatspi  # type: ignore[import-not-found]
+        except ImportError as exc:  # pragma: no cover - host-only
+            raise DriverUnavailable("desktop_dependency_unavailable") from exc
+
+        from agents.core.desktop_drivers.keys import parse_chord
+
+        mods, base = parse_chord(chord)
+        keysym = _X_KEYSYMS.get(base)
+        if keysym is None:
+            # Parsed but unmapped: refused rather than approximated, because
+            # pressing a different key than the card named is worse than none.
+            raise DriverError("key_not_mapped")
+        sequence = [_X_MODIFIER_KEYSYMS[m] for m in mods if m in _X_MODIFIER_KEYSYMS]
+        try:
+            for sym in sequence:
+                pyatspi.Registry.generateKeyboardEvent(sym, None, pyatspi.KEY_PRESS)
+            pyatspi.Registry.generateKeyboardEvent(keysym, None, pyatspi.KEY_PRESSRELEASE)
+            for sym in reversed(sequence):
+                # Released in reverse, and in a finally-shaped order, because a
+                # modifier left down outlives this step and changes every key the
+                # owner presses afterwards.
+                pyatspi.Registry.generateKeyboardEvent(sym, None, pyatspi.KEY_RELEASE)
+        except Exception as exc:
+            for sym in reversed(sequence):
+                # Best-effort release: the original failure is the one worth
+                # reporting, but a modifier left down would change every key the
+                # owner presses after this step.
+                with contextlib.suppress(Exception):
+                    pyatspi.Registry.generateKeyboardEvent(sym, None, pyatspi.KEY_RELEASE)
+            raise DriverError("key_failed") from exc
+
+    def _scroll(self, handle: Any, direction: str, notches: int) -> None:
+        """Scroll a named element through AT-SPI, one bounded step at a time."""
+        self._require_input_route()
+        component = _component_iface(handle)
+        if component is None:
+            raise DriverError("element_not_scrollable")
+        scroll_type = _ATSPI_SCROLL.get(direction)
+        if scroll_type is None:
+            raise DriverError("scroll_direction_unsupported")
+        try:
+            import pyatspi  # type: ignore[import-not-found]
+
+            target = getattr(pyatspi, scroll_type, None)
+            if target is None:
+                raise DriverError("scroll_unsupported_by_atspi")
+            for _ in range(int(notches)):
+                component.scrollTo(target)
+        except DriverError:
+            raise
+        except ImportError as exc:  # pragma: no cover - host-only
+            raise DriverUnavailable("desktop_dependency_unavailable") from exc
+        except Exception as exc:
+            raise DriverError("scroll_failed") from exc
 
     def _require_input_route(self) -> None:
         route = self.input_route()

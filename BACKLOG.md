@@ -203,6 +203,22 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+- [x] ✅ **OP-DESKTOP-KEYS — the operator can use a keyboard.** `key` / `scroll` / `focus` on all three
+  platforms + `agents/core/desktop_drivers/keys.py`. Click-a-named-button and set-a-field is not enough
+  to do work: no key press means no saving a file, submitting a form or moving between fields; no scroll
+  means the accessibility snapshot only ever sees what is already on screen. **`key` is the only mutation
+  with no named element** (`Cmd+S` acts on whatever is frontmost, so the card cannot show what it will
+  touch), so: a **finite allowlist**, **no keycode passthrough**, and quit/close/hide/minimise/app-switch
+  chords refused **by policy with a reason** — each makes every later step act on something the plan never
+  observed. `focus` is a **mutation** despite being invisible: it decides where the next keystroke lands.
+  Scroll bounded to 20 notches, out-of-range **refused not clamped**. Wayland's consent-route check still
+  applies to every one, so a chord is not a way around it. Two bugs the tests caught: the refusal table was
+  keyed by its *human* spelling and looked up canonically, so `ctrl+alt+delete` would have been **pressed**
+  (the exact synonym-shaped hole the canonicaliser exists to close — normalised at import now, with a guard
+  that fails at import); and the new seams borrowed the host-probe's closed vocabulary, which would have
+  told the owner their machine could not scroll when nobody had written the code. 74 pytest; both bugs
+  red-proven.
+
 - [x] ✅ **CO-RUNTIME — company mode actually runs a night.** `agents/core/autonomy/company_runtime.py`
   + `SchedulerService.schedule_company_mode` + `GoalDraft.plan`. Everything else in the chain was a
   *component*: a ledger, a planner, a supervisor, graders, a reconciler, a scheduler — nine parts that
