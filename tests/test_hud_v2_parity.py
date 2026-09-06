@@ -119,6 +119,10 @@ RULES = [
     ("/api/presence", "autonomy"),  # H34.2 owner desk-presence → away-notify control
     ("/api/actions", "autonomy"),
     ("/api/missions", "autonomy"),  # Mission Workspaces (0.32) — long-horizon workspaces
+    # E5.0 company mode: one owner-approved goal worked across turns and reboots —
+    # Console → Autonomy & Agents (CompanyRoomPanel), beside the decision inbox whose
+    # approvals every run depends on.
+    ("/api/company/", "autonomy"),
     ("/api/reflection", "autonomy"),
     ("/api/schedule/parse", "autonomy"),
     ("/api/transcripts", "autonomy"),

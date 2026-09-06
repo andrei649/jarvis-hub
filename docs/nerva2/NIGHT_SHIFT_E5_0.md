@@ -98,6 +98,10 @@ that is structurally true rather than a promise:
 - `tests/test_work_verifier.py` — 14 cases
 - `tests/test_work_judge.py` — 17 cases
 - `tests/test_company_supervisor.py` — 21 cases
+- `tests/test_company_planner.py` — 23 cases
+- `tests/test_company_report.py` — 19 cases
+- `tests/test_company_routes.py` — 16 cases
+- `frontend/src/panels/company-room.test.tsx` — 9 cases
 
 All hermetic: in-memory SQLite, injected clocks, hand-written planners and
 probes. No test sleeps, opens a socket, or touches the data root.
@@ -110,12 +114,36 @@ and from a future opt-in. Turning the flag on still changes nothing about who ma
 authorise an effect: the queue and the Action Kernel are unchanged, and a company
 run's actions land in the same decision inbox as everything else.
 
+## The reachable half
+
+Landed in the same PR, after the four components above:
+
+- `agents/core/autonomy/company_planner.py` — the only place a model proposes, and
+  therefore where the clamps are. Scope is enforced at **proposal** time so a run
+  never spends a step on work the judge would reject; a repeat of work already
+  taken is refused (the fingerprint normalises casing and whitespace, so it cannot
+  be dodged); a proposer that crashes, times out or answers junk proposes
+  *nothing*, which the supervisor reads as "out of ideas" and grades on; and with
+  no step budget left it stops proposing rather than feeding the ledger refusals.
+  `ChecklistPlanner` derives its position from the ledger, so a restart resumes
+  instead of replaying the list. A hand-written checklist is clamped exactly like
+  a model. 23 tests.
+- `agents/core/autonomy/company_report.py` — the brief. Headline is the verdict,
+  not the effort; an unauthorised step leads its run *and* the whole brief; a
+  blocked run says what it waits for; "nothing ran" and "company mode is off" are
+  different sentences. Pure, payload-free. 19 tests.
+- `agents/core/routers/company.py` + `frontend/src/panels/company-room.tsx` —
+  three user-guarded routes and one Console panel. **No start route and no start
+  button**, asserted by a test: opening a run needs an owner-approved goal decided
+  in the inbox, and a start control here would be a second, weaker approval path
+  for the most powerful thing in the product. Stop is offered, because narrowing
+  never needs approval. 16 pytest + 9 vitest.
+
 ## What is deliberately NOT in this slice
 
-- **The planner.** `plan_next` is injected. A real planner is its own slice with
-  its own review; wiring a model into the loop before the loop's refusals were
-  proven would have been the wrong order.
-- **Routes and HUD.** No HTTP surface is added here, so nothing is reachable
-  from outside the process yet.
+- **A real proposer.** `ModelPlanner` takes an injected call; wiring a live model
+  into it is a separate slice, and the clamps above are what make that safe to do
+  later rather than now.
 - **Scheduled continuity.** Waking a run on a schedule is a separate slice; this
   one is tick-driven by its caller.
+- **Anything that opens a run from a UI.** By design, as above.

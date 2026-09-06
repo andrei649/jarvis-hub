@@ -29,6 +29,7 @@ import { SkillsImportPanel } from './panels/skills-import';
 import { TodayReceiptPanel } from './panels/today-receipt';
 import { ModelSetupPanel } from './panels/model-setup';
 import { HostReadinessPanel } from './panels/host-readiness';
+import { CompanyRoomPanel } from './panels/company-room';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
 import { PermissionsPanel } from './panels/permissions';
 
@@ -4559,7 +4560,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Interop', [OsintPanel, MarketplaceAdminPanel, SkillsImportPanel, WritebackDigestPanel, A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, CodeIntelPanel, CoachPanel, ReviewQualityPanel, AgentsArenaPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, CognitionPanel, SwarmPanel, SubAgentsPanel, SystemMapPanel]],
   ['Build', [HostReadinessPanel, CreativePanel, DesktopAllowlistPanel, WorkflowTracesPanel, WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],
-  ['Autonomy & Agents', [AutonomyControlPanel, MissionCanvasPanel, DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
+  ['Autonomy & Agents', [CompanyRoomPanel, AutonomyControlPanel, MissionCanvasPanel, DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [LlmRoutingPanel, SupportVoicePanel, BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, VlmDescribePanel, AuthProfilesPanel, SystemProfilePanel]],
 ];
 

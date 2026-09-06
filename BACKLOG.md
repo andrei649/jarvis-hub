@@ -111,6 +111,22 @@
   ledger refusals. Two proposers: `ChecklistPlanner` (deterministic, position derived from the ledger
   so it resumes correctly after a reboot) and `ModelPlanner` (an injected LLM behind the same
   clamps — a hand-written checklist gets clamped exactly like a model). 23 tests.
+- [x] ✅ **CO-RUN-6 — the morning brief.** `agents/core/autonomy/company_report.py` is where a
+  long-running agent would normally get to flatter itself, so the unflattering facts are the ones it
+  cannot drop: the headline is the **verdict, not the effort** (forty steps and no verdict reads as
+  unfinished, never as "40 steps completed"); an unauthorised step is the first thing said about a
+  run *and* leads the whole brief, above any success; a blocked run says "waiting on your approval"
+  rather than "in progress"; an exhausted one names its limit in plain words; and no runs at all
+  reads as "nothing ran", which is a different sentence from "company mode is off". Payload-free by
+  construction — summaries and task ids only. 19 tests.
+- [x] ✅ **CO-RUN-7 — routes + Console panel.** `GET /api/company/runs`,
+  `GET /api/company/runs/{id}`, `POST /api/company/runs/{id}/stop` (all user-guarded) and the
+  `CompanyRoomPanel` under Autonomy & Agents. **There is deliberately no route or button that
+  starts a run** — opening one needs an owner-approved goal decided in the decision inbox, and a
+  start control here would be a second, weaker approval path for the most powerful thing in the
+  product; a test asserts the absence. Stop is offered because narrowing never needs approval, the
+  same shape as revoking a permission. The panel renders the backend's headline verbatim and shows
+  a step with no task id as "no approved task" in red. 16 pytest + 9 vitest.
 
 **Activation — the first ten minutes**
 

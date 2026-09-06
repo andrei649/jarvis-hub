@@ -111,6 +111,16 @@ default: every new capability is off behind its own flag.
   only once the modules shipped. Separately, the import dry-run guard compared a WAL database
   byte-for-byte, which a checkpoint breaks under load; it now compares rows, with a test proving a
   written row is still caught.
+- **Company mode is reachable, and its planner is clamped.** The planner is the one place a
+  model proposes rather than refuses, so scope is enforced at *proposal* time (a run never spends
+  a step on work the judge would reject), a repeat of work already done is refused, and a
+  proposer that crashes or answers junk proposes nothing — read as "out of ideas", not
+  "finished". The morning brief makes the unflattering facts the hardest to drop: the headline is
+  the verdict rather than the effort, an unauthorised step leads both its run and the whole brief,
+  and "nothing ran" never renders like "company mode is off". Three user-guarded routes and a
+  Console panel expose it — with **no way to start a run**, because a goal is approved in the
+  decision inbox like everything else, and a start button here would be a second, weaker approval
+  path. Stop is offered, since narrowing needs no approval.
 - `permissions.db` and `work_runs.db` join the purge and export sets.
 
 ## [1.0.0] — 2026-09-02
