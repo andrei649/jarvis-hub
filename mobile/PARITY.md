@@ -56,6 +56,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | House Brain (H30.5, default-off) | `GET /api/house/state`, `POST /api/house/control/{light,climate,security}`, admin-only `/api/house/security/{task_id}/{challenge,confirm}` | ✅ | ✅ | H30.5 |
 | Camera Intelligence (H31.5, default-off, metadata-only) | `GET /api/cameras/{status,events}`, `POST /api/cameras/search`, admin-only `POST /api/cameras/onvif/discover` | ✅ | ✅ | H31.5 |
 | Governed Capability Acquisition (H32.6, default-off) | user `GET /api/acquisition/{status,events}`; admin-only revoke, rollback, ledger export/purge | ✅ | ✅ | H32.6 |
+| Permission ledger (consent grants + revoke) | `GET /api/permissions`, `POST /api/permissions/{grant_id}/revoke` | ✅ | ⬜ | |
 | Ambient Watch (H33.6, default-off, redacted) | user `GET /api/ambient/monitors`; admin-only monitor create/update/delete | ✅ | ✅ | H33.6 |
 | Self-Improvement dashboard (admin-only diagnostic aggregation) | admin-only `GET /api/self-improvement/status`, `POST /api/self-improvement/enable` | ✅ | ➖ | — |
 | Mission Control (H34.1 — swarm cockpit page + read feed) | `GET /mission-control`, `GET /api/swarm/summary` | ✅ | ➖ | — |
@@ -63,6 +64,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Owner desk presence (H34.2 — away-notify) | user `GET /api/presence/owner`; admin `POST /api/presence/owner` | ✅ | ➖ | — |
 | Governed browser policy / plan preview | `POST /api/browser/check`, `POST /api/browser/plan/preview` | ✅ | ➖ | — |
 | Windows server-host desktop Operator | `POST /api/desktop/preview`, `POST /api/desktop/run` | ✅ | ➖ | — |
+| Host capability probe (what this host can honestly offer the operator, and why not) | `GET /api/host/probe` | ⬜ route shipped, no HUD panel yet | ➖ hub-host capability (the probe describes the hub box, not a phone) | — |
 | Voice orb (particle sphere bound to the voice state machine) | — (client-side, reads the existing `POST /api/voice/stt` + `POST /tts` loop) | ✅ | 🟡 contract ported | H18.24 — the **state→visual contract** (`orbVisual`) is ported to `mobile/src/voice/orbVisual.ts` and proven identical to the browser's against 80 shared vectors (`tests/_fixtures/orb_visual_vectors.json`, asserted by both suites). The **particle renderer** is not ported: RN has no canvas, so it needs a graphics dependency (react-native-svg / Skia) plus on-device validation. Native also cannot yet reach `listening`/`transcribing` — there is no mobile mic-capture pipeline, only TTS playback (H18.5). |
 | Briefing wall (neural field + stat board + hold-to-talk) | — (client-side, composed from `/api/agents`, `/tasks`, `/api/trust/status`, `/api/analytics/locality`) | ✅ (responsive: portrait layout under 820px) | 🟡 contract ported | H18.25 — the **state contract** (`wallState`: the word + tone the wall announces) is ported to `mobile/src/voice/wallState.ts` and proven identical to the browser's against **500 shared vectors** (`tests/_fixtures/wall_state_vectors.json`, asserted by both suites). The **neural-field canvas + stat board chrome** is not ported (RN has no canvas → graphics dependency + device validation), and **hold-to-talk cannot exist yet**: there is no mobile mic-capture pipeline at all, only TTS playback (H18.5). |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
@@ -70,6 +72,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Ambient Capture (opt-in surfaces, each record deletable) | `GET /api/capture`, `GET /api/capture/status`, `POST /api/capture/clear`, `DELETE /api/capture/{rec_id}` | ✅ | ⬜ | |
 | Encrypted personal vault | `GET/POST /api/vault`, `GET/DELETE /api/vault/{vault_id}` | ✅ | ⬜ | |
 | Memory search + data-space admin | `GET /api/memory/search`; admin `GET/POST /api/memory/spaces`, `POST /api/memory/spaces/{assign,unassign}`, `DELETE /api/memory/spaces/{name}` | ✅ | ⬜ | |
+| Memory consolidation (preview existing → plan → dry-run/apply) | `GET /api/memory/consolidate/preview`, `POST /api/memory/consolidate`, `POST /api/memory/consolidate/apply` | ✅ | ⬜ | |
 | Write legs on surfaces mobile already reads (notes, KG, memory decay) | `PUT /api/notes`, `POST /api/notes/rewrite`, `DELETE /api/kg/entities/{name}`, `POST /api/memory/decay/forget` | ✅ | ⬜ | |
 | Block-tree note docs (DRA-53 `notes_store`, `NOTE DOCS` HUD panel — owner confirmed keep 2026-09-01) | user `GET/POST /api/notes/docs`, `GET/DELETE /api/notes/docs/{doc_id}`, `POST /api/notes/docs/{doc_id}/blocks` | ✅ | ⬜ | |
 | Block-tree note blocks (edit / delete one block in a doc) | user `PATCH /api/notes/blocks/{block_id}`, `DELETE /api/notes/blocks/{block_id}` | ✅ | ⬜ | |
@@ -86,6 +89,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | World signals routing feed | `GET /api/signals/routed`, `GET /api/signals/agent/{agent_id}` | ✅ | ⬜ | |
 | Market watchlist (owner-saved rows; no quotes, no trading) | `GET/POST /api/market/watchlist/saved`, `DELETE /api/market/watchlist/saved/{symbol}` | ✅ | ⬜ | |
 | Onboarding wizard + funnel steps | `GET /api/onboarding/wizard`, `POST /api/onboarding/funnel` | ✅ | ⬜ | |
+| Model setup — hardware tier → governed Ollama pull | `GET /api/onboarding/model-plan`, `POST /api/onboarding/model-pull` | ✅ | ⬜ | |
 | Feedback · NPS (submit + admin summary) | `POST /api/feedback`; admin `GET /api/feedback/summary` | ✅ | ⬜ | |
 | Kernel + north-star metric boards | `GET /api/metrics/kernel`, `GET /api/metrics/north-star` (both open) | ✅ | ⬜ | |
 | Reasoning traces list | `GET /api/traces` | ✅ | ⬜ | |
@@ -96,12 +100,15 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Publish readiness (creative checklist + package) | `POST /api/creative/publish/checklist`, `POST /api/creative/publish/package` | ✅ | ⬜ | |
 | Missions board (long-horizon governed workspaces) | `GET /api/missions`, `POST /api/missions/{mission_id}/{start,pause,resume,complete,cancel}` | ✅ | ⬜ | |
 | Today board (daily digest) | `GET /api/dashboard/today` | ✅ | ⬜ | |
+| Day report (redacted, shareable) | `GET /api/report/today`, `POST /api/report/today/export` | ✅ | ⬜ | |
+| Proof-of-Action receipt | `GET /api/report/receipt/{audit_id}` | ✅ | ⬜ | |
 | Natural-language schedule parser | `POST /api/schedule/parse` | ✅ | ⬜ | |
 | Bench-agent learning + promotion | `GET /learning`; admin `POST /learning/promote`, `POST /api/learning/propose` | ✅ | ⬜ | |
 | Heartbeats (per-agent run/start/stop) | `GET /heartbeat/status` (open); admin `POST /heartbeat/{agent_id}/{run,start,stop}` | ✅ | ➖ admin ceremony run from the owner HUD (triage 2026-09-01) | — |
 | Transcript → tasks ingest | `POST /api/transcripts/ingest` | ✅ | ⬜ | |
 | Escalation (ask-tier fan-out) | `GET /api/autonomy/escalation/targets` (open); admin `POST /api/autonomy/escalate` | ✅ | ➖ admin ceremony run from the owner HUD; the phone is the escalation *target*, not the fan-out control (triage 2026-09-01) | — |
 | Agent dossier (soul + run history) | `GET /api/agents/{agent_id}/soul`, `GET /api/agents/{agent_id}/history` | ✅ | ⬜ | |
+| Sub-agent steer + stop (H20.6) | `POST /api/subagents/{spawn_id}/steer`, `POST /api/subagents/{spawn_id}/stop` | ⬜ routes shipped, no HUD control yet — the Console SUB-AGENTS panel lists and spawns only | ⬜ | |
 | Local models + cloud auth profiles + VLM status | user `GET /api/vlm/status`; admin `POST /api/llm/{load,unload}`, `GET /api/llm/auth-profiles`, `GET /api/models/info`, `GET /api/models/local`, `POST /api/models/local/switch` | ✅ | ➖ hub-host capability (model lifecycle lives on the hub's GPU box; triage 2026-09-01) | — |
 | System profile (read-only; selected via `JARVIS_SYSTEM_PROFILE`) | `GET /api/system/profiles` | ✅ | ⬜ | |
 | Sentence-streamed TTS | `POST /tts/stream` | ✅ | ⬜ | |

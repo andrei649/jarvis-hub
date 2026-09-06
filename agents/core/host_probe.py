@@ -316,7 +316,7 @@ def portal_remote_desktop_version(
                 timeout=_PORTAL_PROBE_TIMEOUT_S,
                 check=False,
             )
-        except Exception:
+        except Exception:  # nosec B112 - a probe that cannot run is an absent tool, not an error: skip to the next candidate
             continue
         if getattr(proc, "returncode", 1) != 0:
             continue

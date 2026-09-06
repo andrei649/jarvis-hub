@@ -58,7 +58,7 @@ from agents.core.mcp.server import open_stdio_streams, run_stdio_loop  # noqa: E
 
 DEFAULT_HUB_URL = "http://127.0.0.1:8080"
 DEFAULT_RPC_PATH = "/api/mcp/server/rpc"
-DEFAULT_TOKEN_ENV = "JARVIS_USER_TOKEN"
+DEFAULT_TOKEN_ENV = "JARVIS_USER_TOKEN"  # nosec B105 - the NAME of the env var to read, never a token value
 HUB_URL_ENV = "NERVA_HUB_URL"
 
 logger = logging.getLogger("nerva.mcp.stdio")

@@ -207,7 +207,7 @@ def existing_from_hits(hits) -> list[dict]:
                 "source": sources[0] if sources else "memory",
                 "persistable": "vector" in sources,
             })
-        except Exception:
+        except Exception:  # nosec B112 - one malformed recall hit is skipped, never fatal: recall must not hard-fail
             continue
     return rows
 

@@ -177,7 +177,7 @@ def _recursive_root_removal(tokens: Sequence[str]) -> bool:
         return False
     recursive = False
     for token in lowered[head + 1:]:
-        if token == "--recursive" or (
+        if token == "--recursive" or (  # nosec B105 - a CLI flag in the rm -rf detector, not a secret
             token.startswith("-") and not token.startswith("--") and "r" in token
         ):
             recursive = True

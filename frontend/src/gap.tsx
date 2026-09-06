@@ -26,6 +26,10 @@ import { SupportVoicePanel } from './panels/support-voice';
 import { AgentsArenaPanel } from './panels/agents-arena';
 import { MissionCanvasPanel } from './panels/mission-canvas';
 import { SkillsImportPanel } from './panels/skills-import';
+import { TodayReceiptPanel } from './panels/today-receipt';
+import { ModelSetupPanel } from './panels/model-setup';
+import { MemoryConsolidatePanel } from './panels/memory-consolidate';
+import { PermissionsPanel } from './panels/permissions';
 
 import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, inpS, taS, Json } from './panel-kit';
 
@@ -4480,10 +4484,10 @@ export function FirstRunGate({ onClose }) {
 }
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
-  ['Start', [CommandCenterPanel]],
+  ['Start', [CommandCenterPanel, TodayReceiptPanel, ModelSetupPanel]],
   ['Home', [PresenceInboxPanel, AmbientWatchPanel, HousePanel, CameraPanel]],
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, NoteDocsPanel, VaultPanel, KgPanel, MemoryWritePanel, MemoryHygienePanel, MemoryEvalPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
-  ['Trust', [SecuritySkillsMapPanel, PaymentsPanel, SignalGovernancePanel, TrustOpsPanel, KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, NoteDocsPanel, VaultPanel, KgPanel, MemoryWritePanel, MemoryHygienePanel, MemoryConsolidatePanel, MemoryEvalPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
+  ['Trust', [SecuritySkillsMapPanel, PaymentsPanel, SignalGovernancePanel, TrustOpsPanel, KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel, PermissionsPanel]],
   ['Interop', [OsintPanel, MarketplaceAdminPanel, SkillsImportPanel, WritebackDigestPanel, A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, CodeIntelPanel, CoachPanel, ReviewQualityPanel, AgentsArenaPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, CognitionPanel, SwarmPanel, SubAgentsPanel, SystemMapPanel]],
   ['Build', [CreativePanel, DesktopAllowlistPanel, WorkflowTracesPanel, WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],

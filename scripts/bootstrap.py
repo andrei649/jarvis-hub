@@ -38,7 +38,7 @@ import json
 import os
 import platform
 import shutil
-import subprocess
+import subprocess  # nosec B404 - fixed argv only, no shell; the installer runs pip and the smoke test
 import sys
 import urllib.error
 import urllib.request
@@ -172,7 +172,7 @@ def detect_runtimes(opener=urllib.request.urlopen, timeout: float = 1.5,
                 close = getattr(resp, "close", None)
                 if close:
                     close()
-            except Exception:  # pragma: no cover - best effort
+            except Exception:  # nosec B110 - pragma: no cover; closing a probe response is best effort, a failure here says nothing about reachability
                 pass
             if int(status) == 200:
                 row["reachable"] = True

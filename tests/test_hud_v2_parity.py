@@ -66,6 +66,9 @@ RULES = [
     ("/agents", "agents"),
     ("/dashboard", "cockpit"),
     ("/api/dashboard", "cockpit"),  # P1 G1 unified "Today in Jarvis" feed (home narrative)
+    # AD day report: the redacted, shareable projection of one day plus Proof-of-Action
+    # receipts — Console → Start (TodayReceiptPanel), the cockpit's own narrative tier.
+    ("/api/report/", "cockpit"),
     ("/ticker", "cockpit"),
     ("/tasks", "cockpit"),
     ("/api/cognition", "cockpit"),
@@ -101,6 +104,10 @@ RULES = [
     ("/security", "trust"),
     ("/api/secrets/", "trust"),
     ("/api/capabilities", "trust"),  # H27.8 capability registry → ReadinessPanel
+    # op-permission-ledger: the consent ledger (what Nerva may touch, and the revoke that
+    # narrows it) — Console → Trust (PermissionsPanel). Before /api/payments; no broader
+    # /api/perm* prefix exists.
+    ("/api/permissions", "trust"),
     ("/api/payments", "trust"),
     # autonomy
     ("/autonomy/", "autonomy"),
@@ -124,6 +131,10 @@ RULES = [
     ("/api/vlm", "build"),  # vision-language model adapter (H13.1)
     ("/api/screen/", "build"),  # T-0.25 ScreenReflex — Build/OperatorPanel neighbour, loopback-VLM only
     ("/api/desktop", "build"),  # governed desktop operator (H15.3)
+    # op-host-probe: read-only "what can this host honestly offer the operator, and why
+    # not" probe — the desktop operator's own honesty surface, so it lives beside it.
+    # Distinct from ("/api/house", "home") below: neither prefix matches the other.
+    ("/api/host/", "build"),
     ("/api/operator", "build"),  # H28.2 action-hierarchy selection (DRA-22/DRA-42)
     ("/api/media", "build"),  # governed generation + live Media Director panel (H12.24/H29)
     ("/api/house", "home"),  # H30 House Brain state + governed proposals/owner ceremony
@@ -518,7 +529,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/desktop/plan",
     "/api/llm/openrouter",
     "/api/media/generate",
-    "/api/memory/consolidate",
     # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). It is a legacy ALIAS, not a gap:
     # analytics.py:208-221 and analytics.py:224-235 return the identical `snapshot(orch)`,
     # and /api/capabilities' own docstring says it "extends the legacy metrics surface
