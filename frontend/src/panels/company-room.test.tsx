@@ -11,11 +11,15 @@
    · a step with no task id says "no approved task" in red, not a blank cell;
    · "company mode is off" and "no run has been opened" render as different sentences;
    · there is NO start control — only stop, which needs no approval;
-   · a refused stop reaches the screen instead of reading as success. */
+   · a refused stop reaches the screen instead of reading as success;
+   · an outstanding ask says HOW LONG it has waited, because "3 waiting" and "3 waiting,
+     the oldest since 11pm" call for different responses;
+   · an ask with no durable task is flagged red — no decision can ever answer it, so it
+     would otherwise sit in the list looking like ordinary patience. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { CompanyRoomPanel } from './company-room';
+import { CompanyRoomPanel, waitedFor } from './company-room';
 
 const RUN = {
   run_id: 'run-1',
@@ -195,5 +199,70 @@ describe('CompanyRoomPanel — the night shift, reported without flattery', () =
     fireEvent.click(screen.getByTitle(/stop this run/));
     // apiPost rejects on the 409 — this only renders because stop() passes an onErr
     await waitFor(() => expect(screen.getByText(/refused · run_stopped/)).toBeTruthy());
+  });
+
+  /* ── what each blocked run is actually waiting on ────────────────────── */
+
+  const WAITING = {
+    ok: true,
+    enabled: true,
+    count: 2,
+    oldest_seconds: 46_800,
+    waiting: [
+      {
+        run_id: 'run-1', step_seq: 4, kind: 'writeback', summary: 'update the quarterly doc',
+        task_id: 12, waiting_seconds: 46_800, answerable: true,
+      },
+      {
+        run_id: 'run-1', step_seq: 5, kind: 'social.post', summary: 'post the summary',
+        task_id: null, waiting_seconds: 120, answerable: false,
+      },
+    ],
+  };
+
+  it('says how long each ask has been waiting, not just how many there are', async () => {
+    mockFetch({
+      '/api/company/waiting': ok(WAITING),
+      '/api/company/runs': ok({
+        ...BRIEF, needs_you: ['run-1'],
+        runs: [{ ...RUN, status: 'blocked', headline: 'waiting on your approval' }],
+      }),
+    });
+    render(<CompanyRoomPanel />);
+    await waitFor(() => expect(screen.getByText('update the quarterly doc')).toBeTruthy());
+    expect(screen.getByText('13h')).toBeTruthy();   // 46_800s, rounded up
+    expect(screen.getByText('task 12')).toBeTruthy();
+  });
+
+  it('flags an ask no decision can ever answer', async () => {
+    mockFetch({
+      '/api/company/waiting': ok(WAITING),
+      '/api/company/runs': ok({
+        ...BRIEF, needs_you: ['run-1'],
+        runs: [{ ...RUN, status: 'blocked', headline: 'waiting on your approval' }],
+      }),
+    });
+    render(<CompanyRoomPanel />);
+    await waitFor(() => expect(screen.getByText('no task to decide')).toBeTruthy());
+  });
+
+  it('renders nothing extra when nothing is outstanding', async () => {
+    mockFetch({
+      '/api/company/waiting': ok({ ok: true, enabled: true, count: 0, waiting: [], oldest_seconds: 0 }),
+      '/api/company/runs': ok(BRIEF),
+    });
+    render(<CompanyRoomPanel />);
+    await waitFor(() => expect(screen.getByText('in progress')).toBeTruthy());
+    expect(screen.queryByText('WAITING ON YOU')).toBeNull();
+  });
+
+  it('rounds an elapsed wait UP, because under-reporting it lets it be ignored', () => {
+    expect(waitedFor(0)).toBe('0s');
+    expect(waitedFor(1)).toBe('1s');
+    expect(waitedFor(61)).toBe('2m');
+    expect(waitedFor(3_601)).toBe('2h');
+    expect(waitedFor(86_401)).toBe('2d');
+    expect(waitedFor(-5)).toBe('0s');
+    expect(waitedFor(undefined)).toBe('0s');
   });
 });

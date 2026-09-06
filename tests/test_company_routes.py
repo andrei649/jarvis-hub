@@ -80,8 +80,12 @@ def test_there_is_no_route_that_starts_a_run():
     assert paths == {
         ("GET", "/api/company/runs"),
         ("GET", "/api/company/runs/{run_id}"),
+        ("GET", "/api/company/waiting"),
         ("POST", "/api/company/runs/{run_id}/stop"),
     }
+    # Exactly one write, and it is the narrowing one. Pinned as a count so a
+    # future POST cannot be added here without this test being re-read.
+    assert [p for m, p in paths if m == "POST"] == ["/api/company/runs/{run_id}/stop"]
 
 
 def test_every_route_is_user_guarded():
@@ -105,6 +109,7 @@ def test_every_route_is_user_guarded():
     assert guarded == {
         "/api/company/runs": {"user_guard"},
         "/api/company/runs/{run_id}": {"user_guard"},
+        "/api/company/waiting": {"user_guard"},
         "/api/company/runs/{run_id}/stop": {"user_guard"},
     }
 
@@ -242,3 +247,65 @@ def test_stopping_an_unknown_run_is_a_404(client):
     r = client.post("/api/company/runs/nope/stop")
     assert r.status_code == 404
     assert r.json()["reason"] == "unknown_run"
+
+
+# ── what a run is waiting on ─────────────────────────────────────────────────
+
+def test_waiting_lists_the_outstanding_asks_with_how_long(client, ledger, monkeypatch):
+    """"Waiting on you since 11pm" is the fact a morning report exists to carry;
+    a count alone leaves the reader to work out the urgency."""
+    async def _get():
+        return ledger
+
+    monkeypatch.setattr(company_routes, "_get_ledger", _get)
+    run = ledger.open_run(_goal())
+    ledger.record_step(
+        run.id, kind="writeback", summary="update the doc", outcome="queued", task_id=11
+    )
+    payload = client.get("/api/company/waiting").json()
+    assert payload["count"] == 1
+    row = payload["waiting"][0]
+    assert row["run_id"] == run.id
+    assert row["task_id"] == 11
+    assert row["kind"] == "writeback"
+    assert row["answerable"] is True
+    assert row["waiting_seconds"] >= 0.0
+
+
+def test_waiting_flags_an_ask_no_decision_can_answer(client, ledger, monkeypatch):
+    """A queued step with no durable task is unanswerable; without this flag it
+    stays invisible until a sweep records it as lost."""
+    async def _get():
+        return ledger
+
+    monkeypatch.setattr(company_routes, "_get_ledger", _get)
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="writeback", summary="x", outcome="queued")
+    row = client.get("/api/company/waiting").json()["waiting"][0]
+    assert row["answerable"] is False
+
+
+def test_waiting_is_empty_when_nothing_is_outstanding(client, ledger, monkeypatch):
+    async def _get():
+        return ledger
+
+    monkeypatch.setattr(company_routes, "_get_ledger", _get)
+    payload = client.get("/api/company/waiting").json()
+    assert payload == {
+        "ok": True, "enabled": True, "waiting": [], "count": 0, "oldest_seconds": 0.0
+    }
+
+
+def test_waiting_never_answers_an_ask(client, ledger, monkeypatch):
+    """Reading must not resolve. A read route that quietly approved things would
+    be a second approval path for the most powerful thing in the product."""
+    async def _get():
+        return ledger
+
+    monkeypatch.setattr(company_routes, "_get_ledger", _get)
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="writeback", summary="x", outcome="queued", task_id=11)
+    for _ in range(3):
+        client.get("/api/company/waiting")
+    assert len(ledger.outstanding_asks(run.id)) == 1
+    assert ledger.get(run.id).status == "blocked"

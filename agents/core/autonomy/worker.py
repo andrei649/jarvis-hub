@@ -195,6 +195,10 @@ class AutonomyWorker:
         self.running_ttl_seconds = float(running_ttl_seconds)
         # Strong refs to fire-and-forget push tasks so they aren't GC'd mid-flight.
         self._bg_tasks: set = set()
+        # E5.0 — the work-run ledger, when company mode has one. A seam rather
+        # than a constructor argument: the worker predates company mode and must
+        # keep working with no ledger at all, which is also the default.
+        self.work_run_ledger = None
         self._mediation_kernel = kernel
         self._mediation_signer = mediation_signer or DetachedHMACSigner(None)
         self._mediation_clock_ms = mediation_clock_ms or (lambda: int(time.time() * 1000))
@@ -1146,7 +1150,32 @@ class AutonomyWorker:
             record_first_action(task)
         except Exception:
             logger.debug("activation record skipped", exc_info=True)
+        # E5.0 — a company-mode run blocked on this task learns the answer now,
+        # rather than on the scheduler's next sweep. Reconciling reads the task's
+        # own record, so this hook cannot smuggle in a decision the queue did not
+        # make; and like the metric above, it can never fail a decision that has
+        # already landed.
+        self._reconcile_waiting_run(task)
         return task
+
+    def _reconcile_waiting_run(self, task: Task) -> None:
+        """Tell a blocked work run that its ask has been answered. Best effort."""
+        ledger = self.work_run_ledger
+        if ledger is None:
+            return
+        try:
+            from agents.core.env_config import env_flag
+
+            from .pending_requests import FLAG, PendingRequests
+
+            if not env_flag(FLAG):
+                return
+            run_id = ledger.run_waiting_on(getattr(task, "id", 0))
+            if not run_id:
+                return
+            PendingRequests(ledger, read_task=self.queue.get).reconcile(run_id)
+        except Exception:
+            logger.debug("work-run reconcile skipped", exc_info=True)
 
     # ── audit ─────────────────────────────────────────────────────
     def _audit(self, event: str, task: Task, detail: str) -> None:

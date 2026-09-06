@@ -86,6 +86,7 @@
   "GET /api/cognition/stream": "cognition_stream_api_cognition_stream_get",
   "GET /api/company/runs": "company_runs_api_company_runs_get",
   "GET /api/company/runs/{run_id}": "company_run_api_company_runs__run_id__get",
+  "GET /api/company/waiting": "company_waiting_api_company_waiting_get",
   "GET /api/cost": "cost_breakdown_api_cost_get",
   "GET /api/dashboard/today": "dashboard_today_api_dashboard_today_get",
   "GET /api/design-manifest": "design_manifest_api_design_manifest_get",

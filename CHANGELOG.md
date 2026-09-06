@@ -170,6 +170,27 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **The night shift can hear you say yes.** A company-mode run that needs something
+  privileged queues a durable task and blocks — and until now that was where the story ended:
+  the task got approved in the morning and the run stayed blocked forever, because nothing
+  ever told it. `agents/core/autonomy/pending_requests.py` is the half that reads the answer.
+  It deliberately keeps **no pending-request table**: the ledger already holds the fact — a
+  queued step carrying its durable task id — and a second copy of one fact drifts into a run
+  blocked on an ask nobody can find, or an ask reconciled twice. The rules are each against a
+  specific way of faking an approval: **silence is never a yes** (an undecided task leaves the
+  run blocked, and no amount of waiting changes that); the decision is **re-read from the task
+  every time**, never cached; a **vanished task is not an approval** but a `lost` ask recorded
+  as a failed step, so the repeat-failure rule can end a run whose asks keep evaporating; a
+  rejection **is** an answer, so the run moves on to something else; reconciling is idempotent,
+  because a decision that applies twice unblocks a run twice; and a stop outranks an answer.
+  **Who decided is recorded and shown**: a run may legitimately be unblocked by a policy
+  auto-approval, which is exactly why the brief has to be able to say "5 of 9 were auto-approved"
+  rather than implying the owner reviewed nine things. A decision reconciles the waiting run
+  **the moment it lands** (an `AutonomyWorker` hook, flag-gated and unable to fail the decision),
+  and the scheduler reconciles before it lists runs so an overnight approval is eligible in that
+  same pass. New read-only `GET /api/company/waiting` says what each run is waiting on and for
+  how long — it never answers an ask, for the same reason there is no route that starts a run.
+  58 pytest + 4 vitest.
 - **Pairing became a tap.** Copying a code between two devices is where onboarding loses people, so
   the owner can now mint a single-use Telegram deeplink from the HUD and tap it on their phone. The
   convenience is only acceptable because the token behaves like a credential and is built that way:

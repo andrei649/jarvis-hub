@@ -357,3 +357,96 @@ async def test_the_scheduler_drives_a_real_supervisor_to_a_blocked_run(ledger, c
     clock.advance(301)
     second = await runtime.sweep()
     assert second.skipped == {run.id: "blocked"}
+
+
+# ── reading the answers before deciding what to wake ─────────────────────────
+
+async def test_the_sweep_reconciles_before_it_lists_the_runs():
+    """A run whose ask was answered overnight must be eligible in THIS pass, not
+    a whole interval later: reconciling after the listing would mean every
+    approval costs an extra interval of dead time."""
+    order: list[str] = []
+
+    class _Ledger:
+        def list_runs(self, **_kw):
+            order.append("list")
+            return []
+
+    runtime = ScheduleRuntime(
+        _Ledger(),
+        tick=lambda _rid: None,
+        reconcile=lambda: order.append("reconcile"),
+        config=ScheduleConfig(enabled=True),
+    )
+    await runtime.sweep()
+    assert order == ["reconcile", "list"]
+
+
+async def test_a_failing_reconciler_does_not_cost_the_sweep():
+    """The runs it could not unblock stay blocked — which is where they were."""
+    ticked: list[str] = []
+
+    class _Run:
+        id = "r1"
+        status = "working"
+
+    class _Ledger:
+        def list_runs(self, **_kw):
+            return [_Run()]
+
+        def budget_state(self, _rid):
+            return {"exceeded": ""}
+
+    def _boom():
+        raise RuntimeError("queue is down")
+
+    runtime = ScheduleRuntime(
+        _Ledger(),
+        tick=lambda rid: ticked.append(rid),
+        reconcile=_boom,
+        config=ScheduleConfig(enabled=True),
+    )
+    result = await runtime.sweep()
+    assert ticked == ["r1"]
+    assert result.ticked == ("r1",)
+
+
+async def test_a_disabled_scheduler_does_not_even_reconcile():
+    """Default-off means off. Reading a queue is cheap, but a component that is
+    switched off doing anything at all is how "default-off" stops being true."""
+    calls: list[str] = []
+
+    class _Ledger:
+        def list_runs(self, **_kw):
+            return []
+
+    runtime = ScheduleRuntime(
+        _Ledger(),
+        tick=lambda _rid: None,
+        reconcile=lambda: calls.append("reconcile"),
+        config=ScheduleConfig(enabled=False),
+    )
+    await runtime.sweep()
+    assert calls == []
+
+
+async def test_a_scheduler_with_no_reconciler_behaves_exactly_as_before():
+    ticked: list[str] = []
+
+    class _Run:
+        id = "r1"
+        status = "working"
+
+    class _Ledger:
+        def list_runs(self, **_kw):
+            return [_Run()]
+
+        def budget_state(self, _rid):
+            return {"exceeded": ""}
+
+    runtime = ScheduleRuntime(
+        _Ledger(), tick=lambda rid: ticked.append(rid),
+        config=ScheduleConfig(enabled=True),
+    )
+    await runtime.sweep()
+    assert ticked == ["r1"]

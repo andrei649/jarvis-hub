@@ -86,6 +86,7 @@
   "GET /api/cognition/stream",
   "GET /api/company/runs",
   "GET /api/company/runs/{run_id}",
+  "GET /api/company/waiting",
   "GET /api/cost",
   "GET /api/dashboard/today",
   "GET /api/design-manifest",

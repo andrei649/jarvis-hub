@@ -1001,6 +1001,14 @@ class AutonomyCoordinator:
             logger.warning("work-run ledger unavailable; company mode stays inert",
                            exc_info=True)
 
+        # E5.0 — the worker reconciles a blocked run the moment its ask is decided.
+        # Bound as a seam rather than a constructor argument so a worker built
+        # without company mode keeps working exactly as it did; the hook itself
+        # still checks the flag before doing anything.
+        _autonomy_worker = getattr(self._orch, "autonomy", None)
+        if _autonomy_worker is not None and hasattr(_autonomy_worker, "work_run_ledger"):
+            _autonomy_worker.work_run_ledger = getattr(self._orch, "work_runs", None)
+
         # E5.0 company mode — an approved goal becomes a work run here and only
         # here. Like permission.grant, the mint runs out of the owner's own
         # decision: goal_contract refuses any task a human did not accept, and the

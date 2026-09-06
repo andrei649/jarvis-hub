@@ -138,12 +138,18 @@ class ScheduleRuntime:
         ledger: Any,
         *,
         tick: Callable[[str], Any],
+        reconcile: Callable[[], Any] | None = None,
         config: ScheduleConfig | None = None,
         clock: Callable[[], float] = time.time,
         local_hour: Callable[[], int] | None = None,
     ) -> None:
         self._ledger = ledger
         self._tick = tick
+        # Reading the answers to outstanding asks. Optional so a scheduler built
+        # without one behaves exactly as before; wired, it runs BEFORE the runs are
+        # listed, so a run whose ask was answered overnight is eligible in this
+        # same pass rather than waiting a whole interval to notice.
+        self._reconcile = reconcile
         self.config = config or ScheduleConfig()
         self._clock = clock
         self._local_hour = local_hour or (lambda: time.localtime().tm_hour)
@@ -195,6 +201,16 @@ class ScheduleRuntime:
         now = float(self._clock())
         if not self.config.enabled:
             return SweepResult((), now)
+
+        # Reconciling is not poking: a blocked run is waiting on the owner, and
+        # reading the answer they already gave is the opposite of nagging them.
+        # A reconciler that fails must not cost the sweep — the runs it could not
+        # unblock simply stay blocked, which is where they already were.
+        if self._reconcile is not None:
+            try:
+                self._reconcile()
+            except Exception:
+                logger.warning("scheduler could not reconcile pending asks", exc_info=True)
 
         try:
             runs = self._ledger.list_runs(active_only=True, limit=100)

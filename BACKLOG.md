@@ -203,6 +203,23 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+- [x] ✅ **CO-HITL — a run that asked can hear the answer.**
+  `agents/core/autonomy/pending_requests.py` + `WorkRunLedger.{outstanding_asks,resolve_step,run_waiting_on}`
+  + read-only `GET /api/company/waiting`. Before this, the chain queued a durable task, blocked,
+  and never learned the decision — the run stayed blocked forever. **There is deliberately no
+  pending-request table**: the queued step and its task id already ARE the ask, and a second copy
+  of one fact drifts. Rules, each against a way of faking an approval: **silence is never a yes**
+  (undecided ⇒ still blocked, forever if need be); the decision is **re-read from the task** each
+  time, never cached; a **vanished task is `lost`, not approved** (recorded as a *failed* step so
+  the repeat-failure rule can end a run whose asks evaporate); a rejection **is** an answer; the
+  resolution **rewrites the queued step in place** so one action is never charged two steps of
+  budget; reconciling is idempotent; a **stop outranks an answer**. **Who decided is recorded** —
+  a policy auto-approval legitimately unblocks a run, which is why `machine_share` exists so a
+  brief can say "5 of 9 were auto-approved" instead of implying nine owner reviews. Wired twice:
+  an `AutonomyWorker` hook reconciles **the moment a decision lands** (flag-gated, cannot fail the
+  decision) and `ScheduleRuntime` reconciles **before** it lists runs. 58 pytest + 4 vitest;
+  default-off and the "lost ≠ approved" rules red-proven.
+
 **Activation — the first ten minutes (S8 / GAP-0)**
 
 - [x] ✅ **AD-ACT — time to first governed action, measured honestly.**

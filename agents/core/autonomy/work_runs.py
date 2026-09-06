@@ -133,6 +133,17 @@ class WorkRunError(RuntimeError):
         super().__init__(self.reason)
 
 
+def _load(raw: Any) -> dict[str, Any]:
+    """A stored JSON object, or an empty one. A corrupt detail blob must not make
+    a step unreadable: the outcome is the fact that matters, and losing the whole
+    row to a bad blob would lose it."""
+    try:
+        value = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
 def _canonical(payload: Mapping[str, Any]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
@@ -466,15 +477,16 @@ class WorkRunLedger:
             rows = self._conn.execute(
                 "SELECT * FROM steps WHERE run_id = ? ORDER BY seq LIMIT ?", (run_id, limit)
             ).fetchall()
-        return [
-            Step(
-                seq=row["seq"], run_id=row["run_id"], kind=row["kind"], summary=row["summary"],
-                outcome=row["outcome"], task_id=row["task_id"],
-                interrupted=bool(row["interrupted"]), at=row["at"],
-                detail=json.loads(row["detail"] or "{}"),
-            )
-            for row in rows
-        ]
+        return [self._row_to_step(row) for row in rows]
+
+    @staticmethod
+    def _row_to_step(row: sqlite3.Row) -> Step:
+        return Step(
+            seq=row["seq"], run_id=row["run_id"], kind=row["kind"], summary=row["summary"],
+            outcome=row["outcome"], task_id=row["task_id"],
+            interrupted=bool(row["interrupted"]), at=row["at"],
+            detail=_load(row["detail"]),
+        )
 
     def verdicts(self, run_id: str) -> list[Verdict]:
         with self._lock:
@@ -614,6 +626,88 @@ class WorkRunLedger:
             seq=seq, run_id=run_id, kind=kind, summary=summary, outcome=outcome,
             task_id=task_id, interrupted=interrupted, at=now, detail=dict(detail or {}),
         )
+
+    def outstanding_asks(self, run_id: str, *, limit: int = 100) -> list[Step]:
+        """The steps still waiting on a decision, oldest first.
+
+        This *is* the durable ask list. A separate table of pending requests would
+        be a second copy of a fact the ledger already holds — the queued step and
+        its durable task id — and two copies of one fact drift, which here would
+        mean a run blocked on an ask nobody can find, or an ask reconciled twice.
+        """
+        limit = max(1, min(int(limit), 1000))
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steps WHERE run_id = ? AND outcome = 'queued' "
+                "ORDER BY seq LIMIT ?",
+                (run_id, limit),
+            ).fetchall()
+        return [self._row_to_step(row) for row in rows]
+
+    def run_waiting_on(self, task_id: int) -> str | None:
+        """The run blocked on this durable task, if any.
+
+        Lets a decision reconcile the moment it is made rather than on the next
+        sweep: the difference between "Nerva carried on the instant you tapped
+        approve" and "some time in the next twenty minutes".
+        """
+        if not isinstance(task_id, int) or isinstance(task_id, bool) or task_id <= 0:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT run_id FROM steps WHERE task_id = ? AND outcome = 'queued' "
+                "ORDER BY seq LIMIT 1",
+                (int(task_id),),
+            ).fetchone()
+        return row["run_id"] if row is not None else None
+
+    def resolve_step(
+        self,
+        run_id: str,
+        seq: int,
+        *,
+        outcome: str,
+        detail: Mapping[str, Any] | None = None,
+    ) -> Step:
+        """Close an outstanding ask by rewriting the queued step in place.
+
+        Deliberately NOT a new step: the budget was spent when the action was
+        arranged, and appending a second row would charge one action twice and
+        report a run as busier than it was. The step keeps its ``seq``, so the
+        ledger still reads as one row per thing the run did.
+
+        Only a ``queued`` step can be resolved, and only once — a decision that
+        can be applied twice is a decision that can resume a run twice. The
+        resolution never moves the run itself; :meth:`resume` does that, so the
+        caller cannot accidentally unblock a run that has since been stopped.
+        """
+        if outcome not in STEP_OUTCOMES or outcome == "queued":
+            raise WorkRunError("bad_resolution")
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM steps WHERE run_id = ? AND seq = ?", (run_id, int(seq))
+            ).fetchone()
+            if row is None:
+                raise WorkRunError("unknown_step")
+            if row["outcome"] != "queued":
+                # Already answered. Re-applying would let one decision spend a
+                # second resume, which is exactly the double-unblock this guards.
+                raise WorkRunError("step_not_outstanding")
+            merged = dict(_load(row["detail"]))
+            merged.update(dict(detail or {}))
+            now = self._now()
+            self._conn.execute(
+                "UPDATE steps SET outcome = ?, detail = ?, at = ? WHERE run_id = ? AND seq = ?",
+                (outcome, _canonical(merged), now, run_id, int(seq)),
+            )
+            self._conn.execute(
+                "UPDATE runs SET updated_at = ? WHERE id = ?", (now, run_id)
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM steps WHERE run_id = ? AND seq = ?", (run_id, int(seq))
+            ).fetchone()
+        return self._row_to_step(row)
 
     def resume(self, run_id: str) -> WorkRun:
         """Move a blocked run back to working — after its outstanding ask resolved."""

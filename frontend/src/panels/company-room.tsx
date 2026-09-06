@@ -13,7 +13,11 @@
    · a run that took a step with no approved task behind it renders red, above its own
      achievements, and those runs are also called out at the top of the card;
    · "waiting on your approval" is shown as its own state with a pointer to the inbox,
-     because "in progress" is not actionable;
+     because "in progress" is not actionable — and each outstanding ask is listed with
+     HOW LONG it has been waiting (GET /api/company/waiting), because "3 waiting" and
+     "3 waiting, the oldest since 11pm last night" call for different responses;
+   · an ask with no durable task behind it is flagged red: no decision can ever answer
+     it, so it would otherwise sit in the list looking like ordinary patience;
    · an empty card prints the backend's own `reason` — "company mode is off" and "no run
      has been opened" are different facts and must never look the same.
 
@@ -29,6 +33,7 @@ import { apiGet } from '../api/client';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, act } from '../panel-kit';
 
 const RUNS_PATH = '/api/company/runs';
+const WAITING_PATH = '/api/company/waiting';
 
 const EM = '—';
 
@@ -55,6 +60,18 @@ const STATUS_COLOR: Record<string, string> = {
 
 const LIVE_STATES = new Set(['planning', 'working', 'blocked', 'stopping']);
 
+/* Elapsed, in the coarsest unit that is still honest. "2d" and "49h" say the same
+   thing; "2d" is the one a person reads at a glance. Never rounds down to "just now":
+   an ask that has been waiting rounds UP, because under-reporting the wait is the
+   direction that lets it be ignored. */
+export const waitedFor = (seconds: number): string => {
+  const s = Math.max(0, Number(seconds) || 0);
+  if (s < 60) return `${Math.ceil(s)}s`;
+  if (s < 3600) return `${Math.ceil(s / 60)}m`;
+  if (s < 86400) return `${Math.ceil(s / 3600)}h`;
+  return `${Math.ceil(s / 86400)}d`;
+};
+
 const refusalText = (err: any) => {
   const reason = err?.body?.reason || err?.body?.error;
   return reason ? `refused · ${String(reason)}` : `refused · ${err?.status || 'error'}`;
@@ -62,6 +79,8 @@ const refusalText = (err: any) => {
 
 export function CompanyRoomPanel() {
   const { d, e, loading, reload } = useApi(RUNS_PATH);
+  const waitingApi = useApi(WAITING_PATH);
+  const waiting = arr(waitingApi.d, 'waiting');
   const raw: any = d;
   const runs = arr(raw, 'runs');
   const enabled = !!(raw && raw.enabled);
@@ -119,6 +138,26 @@ export function CompanyRoomPanel() {
                 {needsYou.length} run(s) waiting on your approval — decide them in the inbox
               </span>
             </Row>
+          )}
+
+          {/* What each of those runs is actually waiting on, oldest first. A count
+              alone leaves the reader to work out the urgency. */}
+          {waiting.length > 0 && (
+            <>
+              <Head k="WAITING ON YOU" />
+              {waiting.map((ask: any) => (
+                <Row key={`${ask.run_id}:${ask.step_seq}`}>
+                  <span style={{ fontSize: 11 }}>{ask.summary || ask.kind || EM}</span>
+                  <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+                    <Tag c="var(--amber)">{waitedFor(ask.waiting_seconds)}</Tag>
+                    {/* No durable task means no decision can ever answer this ask. */}
+                    <Tag c={ask.answerable ? 'var(--ink-3)' : 'var(--red)'}>
+                      {ask.answerable ? `task ${ask.task_id}` : 'no task to decide'}
+                    </Tag>
+                  </span>
+                </Row>
+              ))}
+            </>
           )}
 
           {runs.map((run: any) => {

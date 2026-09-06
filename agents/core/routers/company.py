@@ -1,10 +1,14 @@
 """Company-mode routes — read the work runs, stop one.
 
-Three user-guarded routes, and deliberately no fourth:
+Four user-guarded routes, three of them read-only:
 
 * ``GET /api/company/runs`` — the brief: every run, its honest headline, what is
   waiting on the owner and which runs took unauthorised steps.
 * ``GET /api/company/runs/{run_id}`` — one run in full: steps, budget, verdicts.
+* ``GET /api/company/waiting`` — every outstanding ask, and how long it has been
+  outstanding. Read-only on purpose: this route says what is waiting, it never
+  answers it. Deciding happens in the decision inbox, where every other
+  privileged act is decided, and reconciling happens on the scheduler's sweep.
 * ``POST /api/company/runs/{run_id}/stop`` — stop a run. **Narrowing only.**
 
 There is no route that *starts* a run, and that omission is the point. Opening a
@@ -101,6 +105,53 @@ async def company_run(run_id: str):
         status = 404 if exc.reason == "unknown_run" else 409
         return nocache_json({"ok": False, "reason": exc.reason}, status_code=status)
     return nocache_json({"ok": True, "enabled": _enabled(), **snapshot})
+
+
+@router.get("/api/company/waiting", dependencies=[Depends(user_guard)])
+async def company_waiting(limit: int = 50):
+    """What every open run is waiting on, and for how long.
+
+    Ledger-only: the durable task ids are reported so the HUD can link to the
+    decision cards, but nothing here reads or changes a task. A read route that
+    quietly resolved asks would be a second approval path for the most powerful
+    thing in the product — the same reason there is no route that starts a run.
+    """
+    ledger = await _get_ledger()
+
+    def _read() -> dict:
+        import time as _time
+
+        now = _time.time()
+        waiting = []
+        for run in ledger.list_runs(active_only=True, limit=limit):
+            for step in ledger.outstanding_asks(run.id):
+                waiting.append(
+                    {
+                        "run_id": run.id,
+                        "goal_id": run.goal_id,
+                        "title": run.title,
+                        "step_seq": step.seq,
+                        "kind": step.kind,
+                        "summary": step.summary,
+                        "task_id": step.task_id,
+                        "asked_at": step.at,
+                        "waiting_seconds": max(0.0, now - float(step.at or now)),
+                        # A queued step with no durable task can never be answered
+                        # by a decision; flagging it here is how it stops being
+                        # invisible until the sweep records it as lost.
+                        "answerable": bool(step.task_id),
+                    }
+                )
+        waiting.sort(key=lambda item: item["waiting_seconds"], reverse=True)
+        return {
+            "ok": True,
+            "enabled": _enabled(),
+            "waiting": waiting,
+            "count": len(waiting),
+            "oldest_seconds": waiting[0]["waiting_seconds"] if waiting else 0.0,
+        }
+
+    return nocache_json(await asyncio.to_thread(_read))
 
 
 @router.post("/api/company/runs/{run_id}/stop", dependencies=[Depends(user_guard)])
