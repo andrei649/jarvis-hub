@@ -55,7 +55,16 @@ EXPORT_DBS: tuple[str, ...] = (
 # the same owner content. (notes.db above is the block-tree document store; it
 # stopped being test-only when DRA-53 put it behind /api/notes/docs, and it was
 # already on EXPORT_DBS, so no allowlist change was needed for that adoption.)
-EXPORT_JSON: tuple[str, ...] = ("notes.json", "canvas.json")
+EXPORT_JSON: tuple[str, ...] = (
+    "notes.json",
+    "canvas.json",
+    # E4.1 — the identity manifest and its full version history. Not owner
+    # content in the usual sense: it is what Nerva says IT is. It is exported
+    # anyway because its `roles` and `commitments` are promises made TO the
+    # owner, and an export that omitted the commitments would omit the half of
+    # the record that is actually about them.
+    "identity/manifest.json",
+)
 
 # Raw Howard imports and every derived archive artifact. These are directories,
 # not a file allowlist: a new artifact below either root is exported by default.

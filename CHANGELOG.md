@@ -170,6 +170,31 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **Nerva's own identity became a governed record (E4.1 / #1008).** Every other governed thing
+  here is a *capability* — something Nerva may or may not do to the world. This is the one record
+  about Nerva itself: name, purpose, values, stance on truthfulness, boundaries, traits, the roles
+  it holds toward the people it works with, and the commitments it has made. It needs governance
+  for a reason unrelated to capability: **a system that can silently rewrite what it says its
+  boundaries are has no boundaries — it has a *current opinion* about them**, and an opinion is not
+  something anyone can rely on. So `agents/core/identity_manifest.py` exists to make one sentence
+  true, E4.1 criterion 10: *no identity change becomes authoritative without a versioned proposal
+  and a human decision* — and that sentence ships as an executable test. `propose_change` writes an
+  ASK task into the same decision inbox as everything else and **changes nothing**; `apply_change`
+  refuses a machine decider (same `MACHINE_DECIDERS` set, spelled the same way, as the permission
+  ledger / goal contract / activation metric), refuses anything but a human accept or edit, refuses
+  a payload whose fingerprint no longer matches what it carries, and refuses a proposal built on a
+  superseded version. Versions are append-only, hash-chained and HMAC-signed — a chain does not
+  *prevent* an edit, it makes one **visible**, which is the guarantee that can actually be kept, and
+  `verify()` reports separately whether the store is signed at all because "verified" from an
+  unsigned store claims more than the data supports. **Rollback is a new version, never a
+  deletion**: deleting the versions rolled past would erase the fact that they were ever adopted,
+  which is exactly what someone quietly rewriting an identity would want. The one-time SOUL import
+  is idempotent and **records its own limitations** — an unmapped key, an unreadable line, a
+  required field the source lacked (which becomes an explicit `(not imported: …)` placeholder),
+  because a manifest that invented a purpose is worse than one admitting it has none yet. A forget
+  erases it; an export includes it, since its commitments are promises made *to* the owner.
+  Deliberately route-free: a surface for editing an identity would be a second path to the thing
+  that must only ever have one. 55 pytest, `docs/nerva2/IDENTITY_E4_1.md`.
 - **Three ways to install it, and a channel that cannot lie.** Package managers are the
   cheapest distribution there is — `brew install --cask nerva` is a different product from
   "clone the repo and read INSTALL.md", off the same build. Every tagged release now generates

@@ -203,6 +203,22 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+- [ ] 🔨 **B3 / #731 — Identity Manifest (#1008), E4.1.** `agents/core/identity_manifest.py` +
+  `docs/nerva2/IDENTITY_E4_1.md`. The one governed record about **Nerva itself** rather than about a
+  capability. The argument for governing it: *a system that can silently rewrite what it says its
+  boundaries are has no boundaries — it has a current opinion about them.* So the module exists to
+  make **criterion 10** true — *no identity change becomes authoritative without a versioned proposal
+  and a human decision* — and that sentence ships as one executable test. `propose_change` enqueues
+  ASK and **changes nothing**; `apply_change` refuses a machine decider, anything but a human
+  accept/edit, a payload edited after the card (fingerprint), and a proposal built on a superseded
+  version. Versions append-only, hash-chained, HMAC-signed; `verify()` reports *separately* whether
+  the store is signed, because "verified" unsigned claims more than the data supports. **Rollback is
+  a new version, never a deletion.** The SOUL import is idempotent and **records its own
+  limitations**. Forget erases it; export includes it. **Route-free on purpose.** 55 pytest; the four
+  criterion-10 guards red-proven.
+  **🔨 not ✅:** delivered, not *program-accepted* — the E4 gate needs an attestation from a reviewer
+  distinct from the builder, which is `proof-track-reviews`, not this slice.
+
 - [ ] 🔨 **REL-CHANNELS — package managers, the free distribution.**
   `scripts/gen_package_manifests.py` + `Dockerfile` + the `image` job and channel outputs in
   `release.yml`. Every tagged release generates a Homebrew cask, the three winget documents and
