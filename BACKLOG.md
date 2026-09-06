@@ -203,6 +203,22 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+- [x] ✅ **CO-COMPACT — a 24/7 run stops dying after twenty screenshots.**
+  `ContextCompressor.compact` + `CompactionPolicy` + `memory.compaction_{soft,hard,protect_last}`.
+  The compressor had a budget but **no policy** — nothing deciding *when* to act or *what to give up
+  first* — so a long run on a local 32–128k window got truncated by the provider, and a provider
+  truncates the **tail**. Two tiers over the model's **own** window: soft (0.6) drops images, hard
+  (0.85) summarises. **Images first** (a screenshot is worth thousands of tokens and almost nothing
+  after its turn; the text that described it survives), with a visible placeholder so a dropped image
+  is distinguishable from one that never existed. **Head and tail never summarised.** **Below soft,
+  byte-identical** — not "usually a no-op". Per-family windows with a **conservative** default,
+  because guessing high means the provider truncates instead of us. `nerva.context-compaction.v1`
+  lineage row per compaction; a failing sink never fails the compaction. Two seams found and closed:
+  the window would have made the shipped `memory.compression_max_tokens` **inert** (tighter bound
+  wins now), and `compact`/`compress` disagreed on the budget so a window-driven compaction did
+  nothing (it targets the **soft** threshold, not the window's edge). 44 pytest; four rules
+  red-proven, and one tautological test caught and replaced with the behavioural claim.
+
 - [x] ✅ **OP-DESKTOP-KEYS — the operator can use a keyboard.** `key` / `scroll` / `focus` on all three
   platforms + `agents/core/desktop_drivers/keys.py`. Click-a-named-button and set-a-field is not enough
   to do work: no key press means no saving a file, submitting a form or moving between fields; no scroll

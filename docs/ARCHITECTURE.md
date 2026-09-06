@@ -114,6 +114,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 |------|---------|-------------|
 | `agents/core/memory/manager.py` | Memory orchestration | `MemoryManager`, `embed`, `remember`, `recall`, `hybrid_search`, `add_turn` |
 | `agents/core/memory/conversation.py` | Session history (JSONL, disk) | `ConversationMemory`, `Turn`, `add_turn`, `get_context` |
+| `agents/core/context_compressor.py` | Hot-path context compression **+ the compaction policy**: two tiers over the model's OWN window (soft 0.6 drops images, hard 0.85 summarises), head and tail never summarised, below soft byte-identical, images counted in the budget and given up first with a visible placeholder, a conservative default window (guessing high means the *provider* truncates — and it truncates the tail), a `nerva.context-compaction.v1` lineage row per compaction, and the tighter of the window and `memory.compression_max_tokens` winning so a shipped setting stays live | `compact`, `compress`, `CompactionPolicy`, `window_for`, `lineage_row`, `MODEL_WINDOWS` |
 | `agents/core/memory/store.py` | In-memory vector store | `InMemoryVectorStore`, `VectorStore`, `VectorRecord` |
 | `agents/core/memory/qdrant_store.py` | Qdrant vector store | `QdrantVectorStore` |
 | `agents/core/memory/graph.py` | Knowledge graph | `KnowledgeGraph`, `InMemoryGraph`, `Neo4jGraph` |

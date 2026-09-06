@@ -170,6 +170,26 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **A 24/7 run stops dying after twenty screenshots.** The context compressor had a token budget
+  but no *policy* — nothing that decided when to act or what to give up first — so a long run on a
+  local 32–128k window ran out of room and got truncated by the provider, which truncates the
+  **tail**: the half that says what is happening now. `ContextCompressor.compact` adds two tiers
+  over the model's own window: at **soft** (0.6) images are dropped, at **hard** (0.85) the older
+  turns are summarised. Images go first because a screenshot is worth thousands of tokens and
+  almost nothing after the turn it was taken in — the text describing what was seen survives it —
+  and a dropped image leaves a visible placeholder, since a turn with no image and no note cannot
+  be told apart from one that never had one. The **head is never summarised** (it is the session's
+  original ask, and losing it is how a run drifts into doing something adjacent to what was
+  requested) and neither is the tail. **Below soft the transcript comes back byte-identical**, not
+  "a cheap pass that usually no-ops". Windows are per model family with a *conservative* default,
+  because guessing high means the provider truncates instead of us. Every compaction emits a
+  `nerva.context-compaction.v1` lineage row (`parent_session_id`, `summary_sha256`) — a summary with
+  no provenance is a claim about a conversation nobody can check — and a failing sink never fails a
+  compaction. Two seams found while wiring it: the model window would have made the shipped
+  `memory.compression_max_tokens` setting silently **inert** (the tighter of the two bounds wins
+  now, so a window can only compact sooner, never later), and `compact` and `compress` disagreed on
+  the budget so a window-driven compaction did nothing (compaction targets the **soft** threshold,
+  not the edge of the window — compacting to the edge leaves the next turn back over it). 44 pytest.
 - **The operator can use a keyboard.** It could click a named button and set a field's text,
   which is not enough to do work: there is no saving a file, submitting a form or moving
   between fields without a key press, and no reading past the fold without scrolling. `key`,

@@ -155,6 +155,16 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="memory",  key="compression_max_tokens", value=2000,            label="Context compression budget (tokens)", kind="number"),
     dict(category="memory",  key="compression_summarizer", value=False,           label="LLM summarizer for evicted context (strict-local only)", kind="toggle"),
     dict(category="memory",  key="compression_keep_first", value=0,               label="Protect first N turns from compression", kind="number"),
+    # Two-tier compaction. Fractions of the MODEL's own window rather than a
+    # token count, because 32k and 200k are different products and one number
+    # would be wrong for both. Only consulted on the compaction path
+    # (ContextCompressor.compact); the older token-budget path is unchanged.
+    dict(category="memory",  key="compaction_soft",  value=0.6,                   label="Compaction: drop images above this fraction of the model window", kind="slider"),
+    dict(category="memory",  key="compaction_hard",  value=0.85,                  label="Compaction: summarize older turns above this fraction", kind="slider"),
+    # 4 is the value the hot path has always used (ContextCompressor.keep_recent).
+    # Named here rather than borrowed from memory.context_window, which answers a
+    # different question — how many turns to FETCH, not how many to protect.
+    dict(category="memory",  key="compaction_protect_last", value=4,               label="Compaction: protect the last N turns from summarization", kind="number"),
     dict(category="memory",  key="compression_summary_max_tokens", value=256,     label="Compression summary budget (tokens)", kind="number"),
     dict(category="memory",  key="persist",          value=True,                  label="Persist to disk",    kind="toggle"),
     # O26-P0.3 (F2): long-term recall was read via get_setting but never seeded,

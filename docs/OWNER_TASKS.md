@@ -395,8 +395,10 @@ built on your Windows box:
       `--host-resolver-rules=MAP <host> <ip>, MAP * ~NOTFOUND`; (b) a redirect to an off-list host
       lands in `driver.blocked_requests` with a named reason; (c) `observe_snapshot()` returns
       elements with `rect` populated on Playwright ≥ 1.60 (`boxes=True`) or `rect=None` on older
-      runtimes — either is correct, we just need to know which. *Also blocked on* the
-      `GovernedBrowser.run_step` navigate edit (I1).
+      runtimes — either is correct, we just need to know which. *No longer blocked:* the
+      `GovernedBrowser.run_step` navigate edit landed, so with `JARVIS_PLAYWRIGHT_HOST=1` an
+      allowlisted navigation now reaches the driver instead of refusing
+      `browser transport not configured`.
 
 - [ ] **P3 — Visual grounding with a real grounder** *(unblocks `OP-VISUAL`)*
       Each preset's coordinate convention comes from published model notes. Only a real screenshot
@@ -483,6 +485,32 @@ built on your Windows box:
       *And a small follow-up nobody owns yet:* `UPDATE.bat` still installs from the loose
       `requirements-beta.txt` and runs the full pytest suite; replacing its steps 3–4 with
       `!PY! scripts\\bootstrap.py --skip-smoke` reuses the venv and installs from the hash lock.
+
+- [ ] **P9 — The operator's keyboard, on each machine you own** *(unblocks the live half of
+      `OP-DESKTOP-KEYS` and `op-windows-backend`)*
+      `key`, `scroll` and `focus` are pinned against documentation and a fake adapter. The chord
+      allowlist and every refusal are settled by the hermetic suite; what it cannot settle is
+      whether a chord *arrives* — the keycode tables, `{VK_LWIN down}`, AT-SPI's
+      `generateKeyboardEvent` and CGEvent flags are all things a machine has to confirm.
+      ```bash
+      export JARVIS_DESKTOP_HOST=1 JARVIS_DESKTOP_ISOLATED=1 JARVIS_ACTION_KERNEL=1
+      export JARVIS_UNIFIED_ACTION_API=1
+      # restart the hub, open a scratch text editor, and approve these desktop_step tasks:
+      #   {"action": "focus",  "args": {"name": "<the text area's accessible name>"}}
+      #   {"action": "key",    "args": {"chord": "ctrl+a"}}       # cmd+a on macOS
+      #   {"action": "scroll", "args": {"name": "<a scrollable list>", "direction": "down"}}
+      ```
+      **Confirm four things:** (a) the chord actually took effect in the editor — not that the call
+      returned `ok`, which it will even if nothing arrived; (b) **no modifier is left held** —
+      immediately type a letter afterwards and check it is lowercase and unmodified, because a stuck
+      modifier is the failure mode that outlives the step and quietly corrupts everything the owner
+      types next; (c) `{"chord": "cmd+q"}` (or `alt+f4`) comes back `chord_refused_by_policy` and
+      your app is **still open**; (d) `{"direction": "down", "notches": 500}` comes back
+      `scroll_notches_out_of_range` and nothing scrolled. Do this on **each** OS you have — the
+      three keycode tables are independent, and a wrong entry sends a different key than the card
+      named, which is the one failure worse than sending none.
+      *Report back:* which OS, and for (a) exactly which chords arrived. If a chord silently does
+      nothing, that is a mapping bug worth a row, not something to work around.
 
 - [ ] **P8 — The 72h soak, and the two chaos rows a simulation cannot close**
       *(unblocks the remaining half of `T-0.63`)*
