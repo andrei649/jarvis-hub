@@ -180,3 +180,98 @@ def test_hardware_route_shape(monkeypatch):
             assert body["score"]["components"]["gpu"] in ("measured", "not_measured")
     finally:
         web.USER_TOKEN = old
+
+
+# ── model-setup slice: the probe is no longer NVIDIA-only ────────────────────
+# Each probe runs a fixed argv through `hardware._run_argv` (no shell); tests
+# swap that one seam and `shutil.which`/`platform` — nothing here spawns anything.
+
+def _argv_fake(table):
+    """`_run_argv` stand-in: argv[0] → (returncode, stdout); records every call."""
+    calls = []
+
+    def run(argv, timeout=5.0):
+        calls.append(list(argv))
+        code, out = table[argv[0]]
+        return code, out
+    run.calls = calls
+    return run
+
+
+def test_apple_silicon_probe_counts_unified_memory_as_a_gpu_budget(monkeypatch):
+    monkeypatch.setattr(hardware.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(hardware.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(shutil, "which", lambda n: "/usr/sbin/sysctl" if n == "sysctl" else None)
+    run = _argv_fake({"sysctl": (0, "34359738368\n")})          # 32 GiB
+    monkeypatch.setattr(hardware, "_run_argv", run)
+    gpu = hardware.detect_gpu(probes=hardware.DEFAULT_GPU_PROBES)
+    assert run.calls == [["sysctl", "-n", "hw.memsize"]]         # argv, no shell
+    assert gpu["kind"] == "apple" and gpu["measured"] is True
+    assert gpu["unified_memory_total_mb"] == 32768
+    assert gpu["vram_total_mb"] == int(32768 * hardware.APPLE_UNIFIED_GPU_FRACTION)
+    assert "assumed" in gpu["note"]
+    # an injected probe run never touches the process-wide cache
+    assert hardware._gpu_cache == _A_REAL_CARD
+
+
+def test_apple_probe_is_not_applicable_off_darwin_arm64(monkeypatch):
+    monkeypatch.setattr(hardware.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(hardware.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(shutil, "which", lambda n: "/usr/sbin/sysctl")
+    run = _argv_fake({"sysctl": (0, "34359738368\n")})
+    monkeypatch.setattr(hardware, "_run_argv", run)
+    assert hardware._probe_apple() is None
+    assert run.calls == []
+    monkeypatch.setattr(hardware.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(hardware.platform, "machine", lambda: "x86_64")
+    assert hardware._probe_apple() is None
+
+
+def test_amd_probe_parses_rocm_smi_csv_bytes_to_mb(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda n: "/opt/rocm/bin/rocm-smi" if n == "rocm-smi" else None)
+    csv = ("device,VRAM Total Memory (B),VRAM Total Used Memory (B)\n"
+           "card0,17163091968,536870912\n")
+    run = _argv_fake({"rocm-smi": (0, csv)})
+    monkeypatch.setattr(hardware, "_run_argv", run)
+    gpu = hardware.detect_gpu(probes=hardware.DEFAULT_GPU_PROBES)
+    assert run.calls == [["rocm-smi", "--showmeminfo", "vram", "--csv"]]
+    assert gpu["kind"] == "amd" and gpu["measured"] is True
+    assert gpu["vram_total_mb"] == 16368 and gpu["vram_used_mb"] == 512
+    assert hardware._parse_rocm_csv("garbage") is None
+    assert hardware._parse_rocm_csv("device,VRAM Total Memory (B)\ncard0,0\n") is None
+
+
+def test_probe_order_is_nvidia_then_apple_then_amd_and_errors_are_unknown(monkeypatch):
+    monkeypatch.setattr(hardware.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(shutil, "which", lambda n: f"/usr/bin/{n}" if n in ("nvidia-smi", "rocm-smi") else None)
+    run = _argv_fake({
+        "nvidia-smi": (0, "RTX 4090, 1024, 24564, 3\n"),
+        "rocm-smi": (0, "device,VRAM Total Memory (B),VRAM Total Used Memory (B)\ncard0,17163091968,0\n"),
+    })
+    monkeypatch.setattr(hardware, "_run_argv", run)
+    gpu = hardware.detect_gpu(probes=hardware.DEFAULT_GPU_PROBES)
+    assert gpu["kind"] == "nvidia" and gpu["name"] == "RTX 4090" and gpu["vram_total_mb"] == 24564
+    assert [c[0] for c in run.calls] == ["nvidia-smi"]        # first applicable probe wins
+
+    # a present-but-broken binary is "unknown", never "none" and never a number
+    def boom(argv, timeout=5.0):
+        raise OSError("driver wedged")
+    monkeypatch.setattr(hardware, "_run_argv", boom)
+    gpu = hardware.detect_gpu(probes=(hardware._probe_amd,))
+    assert gpu["name"] == "unknown" and gpu["kind"] == "unknown"
+    assert gpu["measured"] is False and gpu["vram_total_mb"] is None
+
+    # no applicable probe at all → "none", and a probe that raises is skipped
+    def raises():
+        raise RuntimeError("probe bug")
+    gpu = hardware.detect_gpu(probes=(raises, lambda: None))
+    assert gpu == hardware._unprobed_gpu("none")
+    assert gpu["kind"] == "none"
+
+
+def test_amd_and_apple_cards_feed_the_score_like_nvidia():
+    amd = {"name": "AMD GPU (rocm-smi)", "kind": "amd", "vram_total_mb": 16368,
+           "vram_used_mb": 512, "load_pct": None, "measured": True}
+    scored = hardware.score_hardware({"gpu": amd, "cpu_threads": 16, "ram_total_gb": 64.0})
+    assert scored["components"]["gpu"] == "measured"
+    assert hardware.recommended_profile({"gpu": amd, "cpu_threads": 16, "ram_total_gb": 64.0}) == "balanced"

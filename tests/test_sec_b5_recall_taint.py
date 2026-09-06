@@ -15,6 +15,11 @@ specific untrusted origin, and a *clean* recall turn is left alone (no false esc
 What stays deliberately deferred (unchanged by this slice): taint cannot be traced
 *through* the model — it launders content — so what propagates is the coarse fact that the
 turn read untrusted memory, not per-sentence provenance. See ``security/recall_taint.py``.
+
+Leg (c), memory-hygiene leg 6: the HTTP recall routes (``routers/memory_kg.py``) now scope
+the mark by design — bind-on-entry / reset-on-exit of the whole handler — instead of relying
+on asyncio's per-Task context copy. The regression awaits the handler *directly* (no Task
+boundary), so a dropped reset leaks the mark into the caller's context and fails the test.
 """
 
 from __future__ import annotations
@@ -180,4 +185,55 @@ def test_search_memory_tool_marks_the_turn_for_an_injection_flagged_hit():
 def test_search_memory_tool_leaves_a_clean_turn_trusted():
     tool = MemorySearchTool(lambda q, k: [{"text": "Cosmina", "score": 3}])
     tool.search("daughter?")
+    assert current_action_origin() == DEFAULT_ACTION_ORIGIN
+
+
+# ── leg (c): the HTTP recall route scopes its mark by design ──────────────────
+class _FakeManager:
+    """The two MemoryManager calls the search route makes."""
+
+    def __init__(self, hits):
+        self._hits = hits
+
+    async def embed(self, text):
+        return [0.1]
+
+    async def hybrid_search(self, embedding=None, keyword=None, top_k=10):
+        return list(self._hits)
+
+
+def _route_orch(hits):
+    return SimpleNamespace(memory=_FakeManager(hits), consolidation=None)
+
+
+async def test_http_search_route_marks_inside_and_restores_on_exit(monkeypatch):
+    import json
+
+    from agents.core.routers import memory_kg
+
+    monkeypatch.setattr(memory_kg, "get_orch", lambda: _route_orch([FusedHit(
+        id="ev-1", score=1.0, sources=["graph"],
+        payload={"properties": {"text": "dark vessel in the strait",
+                                "tainted": True, "taint_source": "worldview"}},
+    )]))
+    assert current_action_origin() == DEFAULT_ACTION_ORIGIN
+
+    body = json.loads((await memory_kg.memory_search(q="strait")).body)   # direct: no Task
+
+    assert body["tainted"] is True
+    assert body["action_origin"] == TAINTED_RECALL_ORIGIN   # in force while the handler ran…
+    assert current_action_origin() == DEFAULT_ACTION_ORIGIN  # …and gone when it returned
+
+
+async def test_http_search_route_keeps_a_clean_turn_clean(monkeypatch):
+    import json
+
+    from agents.core.routers import memory_kg
+
+    monkeypatch.setattr(memory_kg, "get_orch", lambda: _route_orch([FusedHit(
+        id="mem-1", score=1.0, sources=["vector"],
+        payload={"metadata": {"text": "she prefers dark roast coffee"}},
+    )]))
+    body = json.loads((await memory_kg.memory_search(q="coffee")).body)
+    assert body["tainted"] is False and body["action_origin"] == DEFAULT_ACTION_ORIGIN
     assert current_action_origin() == DEFAULT_ACTION_ORIGIN

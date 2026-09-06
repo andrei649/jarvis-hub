@@ -2,9 +2,11 @@
 
 Pins the transport's safety order: the audit-chained authorize decision comes
 before any process can exist; DENY and APPROVAL_REQUIRED never spawn; a
-docker-target command never silently lands on the host; local/ssh refuse with
-explicit not-implemented reasons; and the whole surface stays default-off
-behind JARVIS_TERMINAL_TARGETS at the ToolRPC layer.
+docker-target command never silently lands on the host; local (flag off) and
+ssh refuse with explicit not-implemented reasons; the hardline denylist screens
+every backend before authorize; and the whole surface stays default-off behind
+JARVIS_TERMINAL_TARGETS at the ToolRPC layer. The local-host transport itself
+is pinned in tests/test_local_transport.py.
 """
 
 import pytest
@@ -120,9 +122,12 @@ async def test_docker_target_never_degrades_onto_the_host():
 
 
 @pytest.mark.asyncio
-async def test_local_and_ssh_refuse_with_explicit_not_implemented():
+async def test_local_and_ssh_refuse_with_explicit_not_implemented(monkeypatch):
     # Enabled variants of the disabled inventory targets, to reach the backend
     # dispatch: the refusal must be an honest not-implemented, not a crash.
+    # With JARVIS_TERMINAL_LOCAL_HOST unset the local refusal is byte-identical
+    # to the pre-transport behaviour.
+    monkeypatch.delenv("JARVIS_TERMINAL_LOCAL_HOST", raising=False)
     registry = TargetRegistry(
         (
             TerminalTarget(
@@ -151,6 +156,25 @@ async def test_local_and_ssh_refuse_with_explicit_not_implemented():
     assert local["reason"] == "local_transport_not_implemented"
     assert ssh["reason"] == "ssh_transport_not_implemented"
     assert sandbox.commands == []
+
+
+@pytest.mark.asyncio
+async def test_hardline_denies_before_policy_on_every_backend():
+    # A catastrophic command never reaches authorize: no audit entry, no spawn,
+    # on the container target as much as on the host.
+    sandbox = _FakeSandbox()
+    registry = _registry()
+    runner = GovernedTargetRunner(registry, sandbox)
+    result = await runner.run(
+        target="isolated-sandbox", agent="jarvis", command="rm -rf / --no-preserve-root"
+    )
+    assert result == {
+        "ok": False,
+        "reason": "hardline_denied:recursive_root_removal",
+        "target": "isolated-sandbox",
+    }
+    assert sandbox.commands == []
+    assert registry.audit.entries == []
 
 
 @pytest.mark.asyncio

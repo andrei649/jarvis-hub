@@ -17,6 +17,11 @@ the live host-side rail built from the pure `build_social_request`).
 
 Pure-Python and offline-testable; the enqueue sink, secret broker, and live
 client are all injected.
+
+Live rail (default-off): ``JARVIS_SOCIAL_LIVE=1`` constructs the broker with
+:class:`HttpSocialClient` (transport injectable). Unset → Null client, byte-
+identical to before. A live client with no resolvable credential refuses with
+``credential_not_configured`` instead of posting unauthenticated.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ from urllib.parse import urlparse
 
 from .automation_contracts import ContractTemplate, predicate
 from .autonomy.dry_run import preview_task
+from .env_config import env_flag
 from .security.secret_broker import SecretBroker
 
 logger = logging.getLogger("jarvis.social")
@@ -42,6 +48,15 @@ def _assert_allowed_host(url: str, allowed=_ALLOWED_HOSTS) -> str:
     if host not in allowed:
         raise ValueError(f"social host not allowed: {host!r}")
     return host
+
+# Live rail flag (default-off). Read at call time, never cached (env_config rule).
+LIVE_FLAG = "JARVIS_SOCIAL_LIVE"
+
+
+def live_rail_enabled() -> bool:
+    """True only when the owner explicitly set ``JARVIS_SOCIAL_LIVE``."""
+    return env_flag(LIVE_FLAG)
+
 
 # Social writes reach people publicly/directly — external tier, always ASK.
 _RISK_TIER = 2
@@ -244,13 +259,18 @@ class SocialBroker:
 
     def __init__(self, enqueue: Optional[Callable] = None, agent: str = "pepper",
                  secret_broker=None, client=None, audit=None, kernel=None,
-                 postiz_resolver: Optional[Callable] = None) -> None:
+                 postiz_resolver: Optional[Callable] = None, http=None) -> None:
         self._enqueue = enqueue
         self.agent = agent
         self._secrets = secret_broker
         # An explicitly injected client (tests, custom rails) is never replaced;
         # only the default NullSocialClient may lazily upgrade to the live rail.
         self._client_injected = client is not None
+        # Live rail behind the flag: JARVIS_SOCIAL_LIVE=1 → the HTTP client
+        # (transport injectable via ``http``). Unset → Null client, byte-identical.
+        self.live = client is None and live_rail_enabled()
+        if client is None and self.live:
+            client = HttpSocialClient(http=http)
         self._client = client or NullSocialClient()
         self._audit = audit
         self._kernel = kernel   # ORIZONT-24 K1: bound kernel.authorize (default-off)
@@ -361,6 +381,14 @@ class SocialBroker:
         if platform == "postiz":
             return await self._execute_postiz(fields)
         credentials = self._resolve_credentials(payload)
+        if isinstance(self._client, HttpSocialClient) and not credentials.get("token"):
+            # Live rail armed but no owner credential: refuse with the exact
+            # missing secret rather than posting unauthenticated.
+            cred_name = _CREDENTIAL.get(platform, "credential")
+            self._record("social.refuse", "credential_not_configured", target=platform)
+            return {"status": "failed", "reason": "credential_not_configured",
+                    "platform": platform, "action": action,
+                    "needs": [f"secret:{cred_name}"]}
         # Live-vs-Plumbing: the moment an approved task resolves a REAL owner
         # credential, the default Null client upgrades to the live HTTP rail —
         # no restart needed, still strictly behind the approval funnel (this

@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from itertools import islice
 from urllib.parse import quote, urlparse
 
+from .security.secret_broker import SecretBroker
+
 CONNECTOR_HOSTS = frozenset({
     "api.linear.app", "app.asana.com", "api.trello.com", "api.todoist.com",
     "api.clickup.com", "sheets.googleapis.com", "graph.microsoft.com",
@@ -85,6 +87,11 @@ class ConnectorAction:
     label: str = ""
 
 
+def sanitize_fields(spec: ConnectorAction, fields: dict) -> dict:
+    """Public form of the draft sanitizer (used by the write-back broker)."""
+    return _sanitize_fields(spec, fields if isinstance(fields, dict) else {})
+
+
 CATALOG: dict[tuple[str, str], ConnectorAction] = {}
 
 
@@ -102,6 +109,57 @@ _reg("gsheets", "append_row", ("spreadsheet_id", "range", "values"), (), "Sheets
 _reg("m365", "create_draft", ("subject", "body", "to"), (), "Outlook: create mail draft")
 
 
+# ── credentials (SecretBroker handles; values only at execute time) ──────────
+
+def credential_names(target: str) -> dict[str, str]:
+    """Which SecretBroker names a connector needs, keyed by the credential slot.
+
+    Every connector needs ``token`` → ``<target>_token``; Trello additionally
+    needs ``api_key`` → ``trello_api_key``. Unknown targets → empty dict.
+    """
+    target = str(target or "").lower()
+    if not any(t == target for (t, _a) in CATALOG):
+        return {}
+    names = {"token": f"{target}_token"}
+    if target == "trello":
+        names["api_key"] = "trello_api_key"
+    return names
+
+
+def credential_refs(target: str) -> dict[str, str]:
+    """The ``{{secret:...}}`` handles a draft carries — never a value."""
+    return {slot: SecretBroker.reference(name)
+            for slot, name in credential_names(target).items()}
+
+
+def resolve_credentials(target: str, secret_broker) -> dict[str, str]:
+    """Resolve a connector's credentials through the SecretBroker at execute time.
+
+    Called only from an approved executor step (``approved=True`` is the
+    broker's just-in-time injection contract). Missing/blocked secrets resolve
+    to ``""`` — the caller decides whether to refuse or defer; nothing is
+    fabricated and nothing is logged.
+    """
+    out: dict[str, str] = {}
+    for slot, ref in credential_refs(target).items():
+        value = ""
+        if secret_broker is not None:
+            try:
+                res = secret_broker.inject(ref, approved=True)
+            except Exception:
+                res = {"blocked": [ref]}
+            if not res.get("blocked"):
+                value = str(res.get("text") or "")
+        out[slot] = value
+    return out
+
+
+def missing_required(spec: ConnectorAction, fields: dict) -> list[str]:
+    """Required keys of *spec* that are absent or empty in *fields* (public helper)."""
+    f = fields if isinstance(fields, dict) else {}
+    return [key for key in spec.required if not _required_present(spec, key, f.get(key))]
+
+
 def validate_draft(target: str, action: str, fields: dict) -> dict:
     """Validate a connector draft against the catalog. Returns ``{ok, reason?, spec?}``.
 
@@ -111,11 +169,7 @@ def validate_draft(target: str, action: str, fields: dict) -> dict:
     spec = CATALOG.get((str(target), str(action)))
     if spec is None:
         return {"ok": False, "reason": f"unknown connector action: {target}.{action}"}
-    f = fields if isinstance(fields, dict) else {}
-    missing = [
-        key for key in spec.required
-        if not _required_present(spec, key, f.get(key))
-    ]
+    missing = missing_required(spec, fields)
     if missing:
         return {"ok": False, "reason": f"missing required field(s): {', '.join(missing)}"}
     return {"ok": True, "spec": spec}
@@ -132,10 +186,8 @@ def draft_task_payload(target: str, action: str, fields: dict,
     v = validate_draft(target, action, fields)
     if not v["ok"]:
         return {"ok": False, "reason": v["reason"]}
-    credential_refs = {"token": f"{{{{secret:{target}_token}}}}"}
-    if target == "trello":
-        credential_refs["api_key"] = "{{secret:trello_api_key}}"
-    expected_ref = credential_refs["token"]
+    refs = credential_refs(target)
+    expected_ref = refs["token"]
     if secret_handle is not None and secret_handle != expected_ref:
         return {"ok": False, "reason": "invalid credential reference"}
     return {
@@ -145,7 +197,7 @@ def draft_task_payload(target: str, action: str, fields: dict,
         "action": action,
         "fields": _sanitize_fields(v["spec"], fields),
         "credential_ref": expected_ref,
-        "credential_refs": credential_refs,
+        "credential_refs": refs,
         "label": v["spec"].label,
         "risk_tier": 2,
         "autonomy_level": "ask",

@@ -382,7 +382,7 @@ For every row: the kill is issued **while the operation is in flight**. Restore 
 | CHA-010 | Breaker opens and recovers | Repeat CHA-009 three times, then restore the network and re-read `GET /api/resilience` (open) | A breaker opens, then closes after recovery | MAJOR if it never closes | ✅tests/test_resilience.py |
 | CHA-011 | DB locked by another process | Open the autonomy DB in `sqlite3` and hold `BEGIN EXCLUSIVE`, then approve a task | A bounded wait then an honest error (the stores open with a timeout); the process does not hang forever | MAJOR on an indefinite hang; **BLOCKER** if the task is silently dropped | ⚠️tests/test_autonomy_queue.py |
 | CHA-012 | Attention ledger unreadable | Make the ledger file unreadable, then trigger a proactive delivery | `AttentionLedger` degrades to `attention_ledger_unavailable` and **refuses** the reservation (`agents/core/ambient/policy.py:225-231,299`) — fail closed | **BLOCKER** if a broken ledger means unlimited interrupts | ✅tests/test_h33_attention_policy.py |
-| CHA-013 | Disk full during a write 🖥 | Fill the data volume (a large sparse file), then approve a task and send a chat turn | Honest write error surfaced; on cleanup the DBs still open and the audit chain still verifies | **BLOCKER** if a DB is corrupted beyond reopening | ❌ |
+| CHA-013 | Disk full during a write 🖥 | Fill the data volume (a large sparse file), then approve a task and send a chat turn | Honest write error surfaced; on cleanup the DBs still open and the audit chain still verifies | **BLOCKER** if a DB is corrupted beyond reopening | ⚠️tests/chaos/test_fault_injection.py (in-process `disk_full` simulation — §13.16b CHA-093; the real volume fill stays manual) |
 | CHA-014 | Data root removed at runtime | Rename the data root while the server runs, do one write, then restore it | Errors are honest; after restore + restart everything reopens | MAJOR | ❌ |
 | CHA-015 | Model swapped underneath | With chat idle, unload the model and load a different one in LM Studio; ask "what model are you running?" | The **resident** model is named; the badge, `/status` `loaded_model` and the spoken answer agree (run-1 R4) | **BLOCKER** if the chat answer names the stale configured default | ✅tests/test_llm_control_status_model.py |
 
@@ -504,6 +504,44 @@ realistic literal trips push protection.
 | CHA-075 | SQL-ish and template-ish payloads | Use `'; DROP TABLE security_events; --` and `{{secret:ADMIN}}` / `${env:PATH}` as a room name, task title and memory fact | Stored as literal text; the DB is intact (`GET /api/security/audit/verify` still `valid:true`); no template is interpolated and no secret resolves | **BLOCKER** if a secret handle resolves in stored text | ✅tests/test_h15_4_secret_broker.py |
 | CHA-076 | Planted secret in a prompt | Paste `sk-ant-QAFAKE0000000000` into chat | Guardrails redact or block per mode; the value never appears in the log; `GET /api/secrets/broker` (admin) does **not** gain an entry, and the reply must not claim it was "logged in your secure credentials" | **BLOCKER** for a false storage claim (run 1's fourth fabrication instance) | ✅tests/test_h10_4_guardrail_node.py |
 | CHA-077 | Huge header / weird method | Send a 64 KB header and a `TRACE` request | Bounded rejection; no stack trace; server stays up | MINOR | ⚠️tests/test_route_auth_matrix.py |
+
+---
+
+## 13.16b CHA · Fault-injection harness (in-process, tests only) — CHA-090…097
+
+> **What this is.** The AI-buildable half of Burn-In (backlog T-0.63). `agents/core/observability/fault_injection.py`
+> injects four reversible faults *inside the Python process* so the code paths that CHA-001…015 and
+> CHA-041…047 exercise by hand can run in the test lane without hardware: `llm_down` (every `httpx`
+> send to the target host raises `ConnectError`), `db_corrupt` (the SQLite header of one store under the
+> data root is overwritten and restored on exit), `disk_full` (`open()` in a write mode and SQLite writes
+> under the data root raise `ENOSPC` / `database or disk is full`) and `clock_skew` (`time.time` is
+> offset). Each fault is a `with inject(FaultPlan(...)) as handle:` block that restores everything in
+> `finally`, expires on its own after `duration_s`, records every interception on `handle.events`, and
+> refuses by a named reason when it must not arm.
+>
+> **What this is not.** A soak. Nothing here fills a real volume, kills a real process or moves the OS
+> clock; the module's `FAULT_SCOPE` table names what each fault does *and does not* intercept
+> (connections opened before the fault, `os.write`, `datetime.now`, names bound at import). A green
+> row below downgrades the matching manual case from ❌ to ⚠️ — never to ✅. The 72h lane stays owner.
+>
+> **Posture.** Default **off**: `JARVIS_FAULT_INJECT` must spell on (`1/true/yes/on`; a typo stays off),
+> and `JARVIS_HARDENED=1` refuses unconditionally — `boot_problem()` hands the boot guard a fail-closed
+> sentence for the armed-and-hardened combination. Path faults are refused outside the data root
+> (`fault_target_outside_data_root`), so with `JARVIS_HOME` pointed at a scratch dir they cannot touch
+> the real box. No new dependency; no subprocess; no socket.
+
+| ID | Check | Do | Expect | Fail | Auto |
+|----|-------|----|--------|------|------|
+| CHA-090 | Harness is off by default | Unset `JARVIS_FAULT_INJECT`; `python -c "from agents.core.observability.fault_injection import *; print(refusal_reason())"` | `fault_injection_disabled`; `inject()` raises `FaultInjectionRefused` with that `.reason`; `active_faults()` is `[]` | **BLOCKER** if a fault arms with the flag unset | ✅tests/chaos/test_fault_injection.py |
+| CHA-091 | Hardened box never injects | `JARVIS_FAULT_INJECT=1 JARVIS_HARDENED=1`, same probe | `fault_injection_refused:hardened`; `boot_problem()` returns the refusal sentence for `boot_guards` | **BLOCKER** if hardened + armed boots or arms | ✅tests/chaos/test_fault_injection.py |
+| CHA-092 | `llm_down` degrades the backend honestly | `JARVIS_FAULT_INJECT=1`; in a test, `with inject(FaultPlan(kind="llm_down"))`: call `LMStudioBackend.generate` against a `MockTransport` that would answer | The clean degraded reply from `llm/base.py` (`⚠️ I can't reach the local LM Studio model…`), `is_degraded_reply()` true, the raw `fault_injection:llm_down` text never in the reply; a `nowhere.invalid` target leaves `localhost` alone; after the block the mock answers again and `httpx.*.send` are the originals | **BLOCKER** if the exception reaches the caller or the patch outlives the block | ✅tests/chaos/test_fault_injection.py |
+| CHA-093 | `disk_full` refuses writes, keeps reads, never crashes | `with inject(FaultPlan(kind="disk_full"))`: `Path.write_text` under the data root; `open(..., "a")`; `sqlite3.connect(<data root>/x.db)` then `CREATE`/`INSERT`/`commit`; construct an `AuditLogger` on a new path | `OSError` with `errno.ENOSPC`; `sqlite3.OperationalError("database or disk is full")` on the write statements and on the pending commit, `SELECT 1` still answers; the late `AuditLogger` fails at its DDL with the same honest error, not a half-built DB; a file *outside* the data root still writes; after the block writes succeed and `builtins.open` / `io.open` / `sqlite3.connect` are the originals | **BLOCKER** on a traceback that escapes as anything but the named error, or on a leaked patch | ✅tests/chaos/test_fault_injection.py |
+| CHA-094 | `db_corrupt` kills one store, the audit chain survives | Seed `notes.db` (WAL) under the data root; `AuditLogger` with 3 rows; `with inject(FaultPlan(kind="db_corrupt", target="notes.db"))` | The file no longer starts with `SQLite format 3\0`; a `.fault-backup` sits beside it; a fresh connection raises `sqlite3.DatabaseError`; `audit.log()` still works and `verify_chain()` is `(True, None)` during and after; on exit the bytes are restored byte-for-byte, the backup is gone, the 3 rows read back | **BLOCKER** if the audit chain breaks or the store does not come back | ✅tests/chaos/test_fault_injection.py |
+| CHA-095 | Path faults are fenced to the data root | `db_corrupt` with an absolute path outside `JARVIS_HOME`, with `../escape.db`, and with a file that does not exist; `disk_full` with `target="/"` | `fault_target_outside_data_root` / `fault_target_missing`; the outside file is untouched; nothing armed | **BLOCKER** if a byte outside the data root changes | ✅tests/chaos/test_fault_injection.py |
+| CHA-096 | `clock_skew` moves `time.time`, not the harness | `with inject(FaultPlan(kind="clock_skew", skew_s=-21600))` (a 6-hour rollback); read `time.time()`, `handle.clock()`, `handle.remaining_s`; build an `AttentionLedger(clock=handle.clock)` with `+2 days` | `time.time()` is 6 h in the past, the handle still expires on the monotonic clock; the skewed ledger's `window_id` is a later owner-local day than a real-clock ledger's; after the block `time.time` is the original | MAJOR if the skew survives the block; **BLOCKER** if the harness's own expiry follows the skewed clock | ✅tests/chaos/test_fault_injection.py |
+| CHA-097 | Faults compose, expire, and are auditable | Arm `llm_down` twice; nest `clock_skew` inside `llm_down`; nest `db_corrupt` inside `disk_full`; fast-forward `_monotonic` past `duration_s`; record 207 events | Second `llm_down` → `fault_already_active`; `active_faults()` lists both kinds with the plan fingerprint (SHA-256 of the canonical plan JSON); the `db_corrupt` restore still writes inside the `disk_full` window (it uses the real `open`); an expired handle passes traffic through while `snapshot()["active"]` is `false`; the event ring caps at 200 with `dropped_events` counting the rest | MAJOR | ✅tests/chaos/test_fault_injection.py |
+
+Run: `JARVIS_TESTING=1 python -m pytest tests/chaos/test_fault_injection.py -q` (31 cases, offline, ~3 s).
 
 ---
 
@@ -636,14 +674,15 @@ a journey uniquely exposes:
 | 13.8 JRN-7 upgrade | 13 | ⏱ 🖥 | 6 of 13 | Backup is mandatory; rollback is the real test |
 | 13.9 JRN-8 soak | 15 | ⏱ | 12 of 15 | `scripts/soak_report.py` does the collection; you do the judging |
 | 13.10 Pivotal expanded cases | 5 | 🤖 👁 ⏱ 🔑 | 5 of 5 | The five that decide whether the run passes |
-| 13.11 CHA dependency kills | 15 | 🔑 🤖 🖥 | 11 of 15 | Kill **mid-operation**, never while idle |
+| 13.11 CHA dependency kills | 15 | 🔑 🤖 🖥 | 12 of 15 | Kill **mid-operation**, never while idle; CHA-013 has an in-process analogue in §13.16b |
 | 13.12 CHA server kills | 6 | ⏱ 🖥 | 5 of 6 | The most important chaos family — governance must survive |
 | 13.13 CHA concurrency | 11 | 👁 | 8 of 11 | Two tabs, two clients, one queue |
 | 13.14 CHA time & clocks | 7 | ⏱ 🖥 | 6 of 7 | Needs OS clock changes — do it last |
 | 13.15 CHA resource | 10 | 🖥 | 7 of 10 | Watch RSS and disk; restore afterwards |
 | 13.16 CHA hostile input | 18 | 🔑 | 16 of 18 | Every ingress, same expected outcome |
+| 13.16b CHA fault-injection harness | 8 | — | 8 of 8 | Test-lane only (`JARVIS_FAULT_INJECT`); simulated faults, never a soak result |
 | 13.17 Restore the box | 9 | — | 6 of 9 | Not optional — run after every chaos block |
-| **Total** | **204** | — | **158 partially or fully auto-covered** | 8 journeys · 5 expanded pivots · 76 chaos cases |
+| **Total** | **212** | — | **167 partially or fully auto-covered** | 8 journeys · 5 expanded pivots · 84 chaos cases |
 
 ## Open gaps found while writing
 
@@ -680,10 +719,13 @@ Observations only — nothing here was changed, and none of it should be written
 7. **No test exists for the reject-click list refresh (run-1 R8).** I found no frontend test pinning
    that the Console pending list re-renders after a decision, which is consistent with the finding
    never having been fixed. JRN-032 is therefore an `Auto: ❌` case, deliberately.
-8. **Chaos cases CHA-013 (disk full), CHA-014 (data root removed), CHA-052 (100 MB ingest) and
-   CHA-058 (IP-table exhaustion) have no offline analogue** and I could not verify the expected
-   behaviour from the source — the expectations written there are *requirements*, not observations.
-   Treat a deviation as a finding to investigate, not automatically as a bug.
+8. **Chaos cases CHA-014 (data root removed), CHA-052 (100 MB ingest) and CHA-058 (IP-table
+   exhaustion) have no offline analogue** and I could not verify the expected behaviour from the
+   source — the expectations written there are *requirements*, not observations. Treat a deviation
+   as a finding to investigate, not automatically as a bug. CHA-013 (disk full) now has an
+   *in-process* analogue (§13.16b CHA-093, `tests/chaos/test_fault_injection.py`) that proves the
+   honest-refusal property for `open()` and SQLite writes issued during the window; it does not
+   fill a volume, so the manual row stays ⚠️.
 9. **`scripts/soak_report.py` defaults to writing into `docs/research/`** (`DEFAULT_OUTPUT_DIR`),
    i.e. inside the git checkout. JRN-8 tells the tester to pass `--output-dir`; if they don't, a soak
    leaves two dated files in a tracked docs directory.

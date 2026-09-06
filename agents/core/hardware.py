@@ -20,16 +20,31 @@ claims (the same discipline as observability/benchmark.py's MeasurementStatus).
 
 `recommended_profile()` is advisory only. It never writes JARVIS_SYSTEM_PROFILE —
 profile selection stays env-driven and read-only, per routers/system_profiles.py.
+
+GPU PROBES (model-setup slice) — `detect_gpu` is no longer NVIDIA-only. It walks an
+ordered tuple of probes, each a zero-arg callable returning a GPU dict or ``None``
+("not applicable on this box"): nvidia-smi, then Apple Silicon (unified memory via
+``sysctl -n hw.memsize``, argv only), then AMD (``rocm-smi --showmeminfo vram --csv``).
+Every probe runs a fixed argv through `_run_argv` (no shell) and is injectable — a
+test passes ``probes=(...)`` or patches `_run_argv`; nothing here fabricates a card.
+The returned dict now carries ``kind`` (``nvidia|apple|amd|none|unknown``) so the
+model recommender can say *why* it counted unified memory as VRAM.
 """
 
 from __future__ import annotations
 
 import contextlib
 import logging
+import platform
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 logger = logging.getLogger("jarvis.hardware")
+
+# Apple Silicon has no discrete VRAM: the GPU draws on unified memory, and Metal's
+# default working-set ceiling is roughly three quarters of RAM. This is an ASSUMED
+# fraction (it is reported as such in the probe's ``note``), not a measurement.
+APPLE_UNIFIED_GPU_FRACTION = 0.75
 
 # Reference points for the 0..100 spec score. Reaching a reference maxes that
 # component's weight; they are coarse rungs, not measured limits.
@@ -43,46 +58,157 @@ _gpu_cache: dict | None = None
 
 
 def _unprobed_gpu(name: str = "none") -> dict:
-    return {"name": name, "vram_total_mb": None, "vram_used_mb": None,
-            "load_pct": None, "measured": False}
+    return {"name": name, "kind": name if name in ("none", "unknown") else "unknown",
+            "vram_total_mb": None, "vram_used_mb": None, "load_pct": None, "measured": False}
 
 
-def detect_gpu(force: bool = False) -> dict:
-    """Probe the NVIDIA GPU via nvidia-smi. Values in **MB**; never fabricates.
+def _run_argv(argv: list[str], timeout: float = 5.0) -> tuple[int, str]:
+    """Run a fixed argv (never a shell) and return ``(returncode, stdout)``.
 
-    ``name`` is ``"none"`` when the binary is absent (or reports nothing) and
-    ``"unknown"`` when it is present but the probe errors — the same honest
-    degradation `_sys_info()` has always used. Cached after the first call so the
-    boot path pays the subprocess cost at most once per process; ``force=True``
-    refreshes (the readiness screen wants live used/load numbers).
+    The single subprocess seam for every probe below — tests patch this one
+    name instead of faking ``subprocess`` itself.
+    """
+    import subprocess  # nosec B404 - fixed argv, no shell
+
+    r = subprocess.run(  # nosec B603 - fixed argv, no shell
+        list(argv), capture_output=True, text=True, timeout=timeout,
+    )
+    return r.returncode, r.stdout or ""
+
+
+def _probe_nvidia() -> dict | None:
+    """nvidia-smi → MB. ``None`` when the binary is absent; ``unknown`` when it errors."""
+    if shutil.which("nvidia-smi") is None:
+        return None
+    out = _unprobed_gpu("unknown")
+    with contextlib.suppress(Exception):
+        code, stdout = _run_argv(
+            ["nvidia-smi", "--query-gpu=name,memory.used,memory.total,utilization.gpu",
+             "--format=csv,noheader,nounits"])
+        if code == 0 and stdout.strip():
+            parts = [p.strip() for p in stdout.strip().splitlines()[0].split(",")]
+            if len(parts) == 4:
+                out = {
+                    "name": parts[0] or "unknown",
+                    "kind": "nvidia",
+                    "vram_used_mb": int(float(parts[1])),
+                    "vram_total_mb": int(float(parts[2])),
+                    "load_pct": int(float(parts[3])),
+                    "measured": True,
+                }
+        else:
+            return None
+    return out
+
+
+def _probe_apple() -> dict | None:
+    """Apple Silicon: unified memory via ``sysctl -n hw.memsize`` (argv, no shell).
+
+    Only applicable on Darwin/arm64 with ``sysctl`` on PATH. The usable GPU budget
+    is ``APPLE_UNIFIED_GPU_FRACTION`` of RAM — an assumption, named in ``note``.
+    """
+    if platform.system() != "Darwin" or platform.machine() not in ("arm64", "aarch64"):
+        return None
+    if shutil.which("sysctl") is None:
+        return None
+    out = _unprobed_gpu("unknown")
+    with contextlib.suppress(Exception):
+        code, stdout = _run_argv(["sysctl", "-n", "hw.memsize"])
+        if code == 0 and stdout.strip():
+            total_mb = int(int(stdout.strip().split()[0]) / (1024 * 1024))
+            if total_mb > 0:
+                out = {
+                    "name": "Apple Silicon (unified memory)",
+                    "kind": "apple",
+                    "vram_used_mb": None,
+                    "vram_total_mb": int(total_mb * APPLE_UNIFIED_GPU_FRACTION),
+                    "unified_memory_total_mb": total_mb,
+                    "load_pct": None,
+                    "measured": True,
+                    "note": (f"unified memory: GPU budget assumed at "
+                             f"{int(APPLE_UNIFIED_GPU_FRACTION * 100)}% of {total_mb} MB RAM"),
+                }
+    return out
+
+
+def _probe_amd() -> dict | None:
+    """AMD via ``rocm-smi --showmeminfo vram --csv`` (argv, no shell). Bytes → MB."""
+    if shutil.which("rocm-smi") is None:
+        return None
+    out = _unprobed_gpu("unknown")
+    with contextlib.suppress(Exception):
+        code, stdout = _run_argv(["rocm-smi", "--showmeminfo", "vram", "--csv"])
+        if code == 0 and stdout.strip():
+            parsed = _parse_rocm_csv(stdout)
+            if parsed is not None:
+                total_b, used_b = parsed
+                out = {
+                    "name": "AMD GPU (rocm-smi)",
+                    "kind": "amd",
+                    "vram_used_mb": None if used_b is None else int(used_b / (1024 * 1024)),
+                    "vram_total_mb": int(total_b / (1024 * 1024)),
+                    "load_pct": None,
+                    "measured": True,
+                }
+    return out
+
+
+def _parse_rocm_csv(text: str) -> tuple[int, int | None] | None:
+    """First device row of rocm-smi's CSV: ``(total_bytes, used_bytes|None)``."""
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+    if len(lines) < 2:
+        return None
+    header = [h.strip().lower() for h in lines[0].split(",")]
+    total_idx = next((i for i, h in enumerate(header)
+                      if "total" in h and "used" not in h and "vram" in h), None)
+    used_idx = next((i for i, h in enumerate(header) if "used" in h and "vram" in h), None)
+    if total_idx is None:
+        return None
+    row = [c.strip() for c in lines[1].split(",")]
+    if total_idx >= len(row):
+        return None
+    total = int(float(row[total_idx]))
+    if total <= 0:
+        return None
+    used = None
+    if used_idx is not None and used_idx < len(row):
+        with contextlib.suppress(ValueError):
+            used = int(float(row[used_idx]))
+    return total, used
+
+
+DEFAULT_GPU_PROBES: tuple[Callable[[], dict | None], ...] = (
+    _probe_nvidia, _probe_apple, _probe_amd,
+)
+
+
+def detect_gpu(force: bool = False,
+               probes: Sequence[Callable[[], dict | None]] | None = None) -> dict:
+    """Probe the GPU (NVIDIA → Apple Silicon → AMD). Values in **MB**; never fabricates.
+
+    ``name`` is ``"none"`` when no probe applies to this box (no binary, wrong OS)
+    and ``"unknown"`` when a probe's binary is present but the probe errors — the
+    same honest degradation `_sys_info()` has always used. Cached after the first
+    call so the boot path pays the subprocess cost at most once per process;
+    ``force=True`` refreshes (the readiness screen wants live used/load numbers).
+    ``probes`` injects the probe order (tests); an injected probe list is never
+    cached, so a fake card cannot outlive its test.
     """
     global _gpu_cache
-    if _gpu_cache is not None and not force:
+    if probes is None and _gpu_cache is not None and not force:
         return dict(_gpu_cache)
-    if shutil.which("nvidia-smi") is None:
-        out = _unprobed_gpu("none")
-    else:
-        out = _unprobed_gpu("unknown")
-        with contextlib.suppress(Exception):
-            import subprocess  # nosec B404 - fixed argv, no shell
-            r = subprocess.run(  # nosec B603 - fixed argv, no shell
-                ["nvidia-smi", "--query-gpu=name,memory.used,memory.total,utilization.gpu",
-                 "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if r.returncode == 0 and r.stdout.strip():
-                parts = [p.strip() for p in r.stdout.strip().splitlines()[0].split(",")]
-                if len(parts) == 4:
-                    out = {
-                        "name": parts[0] or "unknown",
-                        "vram_used_mb": int(float(parts[1])),
-                        "vram_total_mb": int(float(parts[2])),
-                        "load_pct": int(float(parts[3])),
-                        "measured": True,
-                    }
-            else:
-                out = _unprobed_gpu("none")
-    _gpu_cache = dict(out)
+    out = _unprobed_gpu("none")
+    for probe in (DEFAULT_GPU_PROBES if probes is None else probes):
+        try:
+            found = probe()
+        except Exception:
+            logger.debug("gpu probe %r failed", probe, exc_info=True)
+            found = None
+        if found is not None:
+            out = dict(found)
+            break
+    if probes is None:
+        _gpu_cache = dict(out)
     return dict(out)
 
 

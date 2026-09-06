@@ -23,6 +23,7 @@ domain and are moved here verbatim (they now resolve the orchestrator through
 """
 
 import asyncio
+import contextlib
 import logging
 import time
 from typing import Optional
@@ -30,9 +31,16 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
 
+from agents.core.action_origin import bind_action_origin, current_action_origin, reset_action_origin
 from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
+from agents.core.memory.consolidation import (
+    ADD, DELETE, UPDATE, ListStore, existing_from_hits, validate_plan,
+)
 from agents.core.routers._deps import user_guard
 from agents.core.routers._component import require_component
+from agents.core.security import quarantine, taint
+from agents.core.security.rag_guard import REDACTION, provenance_from_hit
+from agents.core.security.recall_taint import mark_turn_recall_tainted
 
 from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
@@ -125,6 +133,113 @@ def _kg_kernel_denial(orch, payload: dict, token_id: Optional[str] = None, scope
     return decision.reason if decision.verdict is Verdict.DENY else None
 
 
+# ── SEC-B5 / CDX-7: the HTTP recall routes as a designed ingress ──────────────
+
+@contextlib.asynccontextmanager
+async def _recall_scope():
+    """SEC-B5: bind-on-entry / reset-on-exit around an HTTP recall handler.
+
+    The three recall routes (``/api/memory/search``, ``/api/memory/recall``,
+    ``/api/memory/search-tool``) raise the turn's ``action_origin`` to
+    ``recall:untrusted`` when they hand back untrusted or injection-flagged
+    memory. They have no turn of their own; until now the mark was bounded only
+    *incidentally* by asyncio's per-Task context copy (BACKLOG SEC-B5). This
+    scopes it by design: the pre-request origin is snapshotted on entry and
+    restored on exit — of the **whole handler**, in a ``finally``.
+
+    Polarity, stated because a narrower reset was reviewed and withdrawn as
+    fail-open: the reset runs only after the response is fully built, so nothing
+    a handler does after the recall (today: nothing; tomorrow: an act) ever sees a
+    scrubbed origin. Within the scope the mark is in force and is *reported* in
+    the response (``tainted`` / ``action_origin``), so the escalation the kernel
+    would apply is inspectable rather than silent. A direct (non-Task) caller —
+    a test, an in-process consumer — no longer leaks the mark into its context.
+    """
+    token = bind_action_origin(current_action_origin())
+    try:
+        yield
+    finally:
+        reset_action_origin(token)
+
+
+def _redact_payload_text(payload: dict) -> dict:
+    """Return a copy of a fused-hit payload with every text-bearing field redacted."""
+    out = dict(payload or {})
+    for k in ("text", "name"):
+        if out.get(k):
+            out[k] = REDACTION
+    for bucket in ("metadata", "properties"):
+        md = out.get(bucket)
+        if isinstance(md, dict) and md.get("text"):
+            md = dict(md)
+            md["text"] = REDACTION
+            out[bucket] = md
+    return out
+
+
+def _guard_hit(hit) -> dict:
+    """CDX-7 on the HTTP recall path: one fused hit → one scanned, provenance-tagged row.
+
+    ``rag_guard.wrap_memory`` fences memory for a *prompt*; these routes answer
+    JSON to the HUD, so the same three moves are applied to the row instead of a
+    block: the injection scanner runs over the snippet and a flagged hit is
+    **redacted** (score and provenance kept, text replaced, ``injection_flagged``
+    set), the honest ``source`` provenance rides along, and ``tainted`` says
+    whether the hit came from an untrusted source or was flagged. Never raises.
+    """
+    try:
+        snippet = provenance_from_hit(hit)
+        payload = getattr(hit, "payload", None)
+        if payload is None and isinstance(hit, dict):
+            payload = hit.get("payload", {})
+        payload = dict(payload or {})
+        md = payload.get("metadata") or payload.get("properties") or {}
+        flags = quarantine.detect_injection(snippet.text) if snippet.text else []
+        untrusted = taint.is_untrusted_source(snippet.source) or taint.is_tainted(md)
+        row = {
+            "id": getattr(hit, "id", None) if not isinstance(hit, dict) else hit.get("id"),
+            "score": round(float(getattr(hit, "score", 0.0) if not isinstance(hit, dict)
+                                 else hit.get("score", 0.0) or 0.0), 4),
+            "sources": list(getattr(hit, "sources", None) or
+                            (hit.get("sources") if isinstance(hit, dict) else None) or []),
+            "source": snippet.source,
+            "payload": _redact_payload_text(payload) if flags else payload,
+            "tainted": bool(flags) or untrusted,
+        }
+        if flags:
+            row["injection_flagged"] = True
+            row["flags"] = flags
+        return row
+    except Exception:
+        logger.warning("recall hit guard failed; row dropped", exc_info=True)
+        return {"id": None, "score": 0.0, "sources": [], "source": "memory",
+                "payload": {}, "tainted": True, "dropped": True}
+
+
+def _guard_store_row(row: dict) -> dict:
+    """CDX-7 for ``/api/memory/recall`` rows (``MemoryStore``: key/value/category).
+
+    These are the user's own stored facts, so the source is trusted by default;
+    only an injection-flagged value taints (and is redacted)."""
+    out = dict(row or {})
+    value = out.get("value")
+    flags = quarantine.detect_injection(value) if isinstance(value, str) and value else []
+    out["tainted"] = bool(flags)
+    if flags:
+        out["value"] = REDACTION
+        out["injection_flagged"] = True
+        out["flags"] = flags
+    return out
+
+
+def _mark_if_tainted(rows) -> bool:
+    """Raise the scoped origin when any guarded row is tainted; return the verdict."""
+    tainted = any(bool(r.get("tainted")) for r in rows if isinstance(r, dict))
+    if tainted:
+        mark_turn_recall_tainted()
+    return tainted
+
+
 # ── H14.3 Sleep-time memory consolidation ─────────────────────────────────────
 
 @router.post("/api/memory/consolidate", dependencies=[Depends(user_guard)])
@@ -153,35 +268,178 @@ async def memory_consolidate(req: Request):
     return nocache_json({"plan": plan, "summary": summary})
 
 
+async def _fused_recall(memory, q: str, top_k: int):
+    """Embed *q* (when the manager can) and run fused recall; the vector arm
+    degrades to keyword/graph-only when embedding fails or is absent."""
+    embedding = await memory.embed(q) if q and hasattr(memory, "embed") else None
+    return await memory.hybrid_search(embedding=embedding, keyword=q or None, top_k=top_k)
+
+
+@router.get("/api/memory/consolidate/preview", dependencies=[Depends(user_guard)])
+async def memory_consolidate_preview(q: str = "", top_k: int = Query(20, ge=1, le=50)):
+    """DRA-27: the ``existing`` memories a consolidation plan should run against.
+
+    Answers the design question that kept ``/api/memory/consolidate`` unwired:
+    where ``existing`` comes from. It is fused recall over the live store, adapted
+    to the planner's ``{id, key, text}`` shape (``existing_from_hits``), scanned
+    like every other recall (CDX-7) and taint-scoped like one (SEC-B5).
+    ``available:false`` with a ``reason`` when there is no memory manager — an
+    empty list under a green chip would be the degenerate planner in disguise.
+    """
+    orch = get_orch()
+    memory = getattr(orch, "memory", None) if orch else None
+    if memory is None or not hasattr(memory, "hybrid_search"):
+        return nocache_json({"available": False, "reason": "memory_unavailable",
+                             "existing": [], "total": 0, "query": q, "tainted": False})
+    async with _recall_scope():
+        try:
+            hits = await _fused_recall(memory, q, top_k)
+        except Exception as e:
+            return error_json(e, 200, "memory recall failed", extra={
+                "available": True, "existing": [], "total": 0, "query": q, "tainted": False})
+        guarded = [_guard_hit(h) for h in hits]
+        tainted = _mark_if_tainted(guarded)
+        existing = []
+        for row, hit in zip(guarded, hits, strict=False):
+            adapted = existing_from_hits([hit])
+            if not adapted:
+                continue
+            entry = adapted[0]
+            if row.get("injection_flagged"):
+                entry["text"] = REDACTION
+                entry["injection_flagged"] = True
+            entry["tainted"] = bool(row.get("tainted"))
+            existing.append(entry)
+        return nocache_json({"available": True, "existing": existing, "total": len(existing),
+                             "query": q, "tainted": tainted,
+                             "action_origin": current_action_origin()})
+
+
+async def _vector_remove(memory, record_id: str) -> bool:
+    """Remove one vector record through the manager's lock (off-loop: Qdrant is httpx)."""
+    vectors = getattr(memory, "vectors", None)
+    if vectors is None or not hasattr(vectors, "remove"):
+        return False
+    lock = getattr(memory, "_lock", None)
+    if isinstance(lock, asyncio.Lock):
+        async with lock:
+            await asyncio.to_thread(vectors.remove, record_id)
+    else:
+        await asyncio.to_thread(vectors.remove, record_id)
+    return True
+
+
+async def _persist_consolidation(memory, plan: list[dict], existing: list[dict]) -> dict:
+    """Write an applied plan back to the live vector store, honestly.
+
+    ADD → ``remember``; UPDATE → remove + ``remember`` under the same id (a plain
+    re-add would leave the stale vector behind); DELETE → remove. Rows the preview
+    marked non-persistable (graph-only) are *skipped with a reason*, as is an ADD
+    the manager could not embed — never counted as persisted.
+    """
+    persisted = {ADD: 0, UPDATE: 0, DELETE: 0}
+    skipped: list[dict] = []
+    by_id = {str(e.get("id")): e for e in existing if isinstance(e, dict) and e.get("id")}
+    if memory is None or not hasattr(memory, "remember"):
+        return {"persisted": persisted, "skipped": [{"reason": "memory_unavailable"}],
+                "persistence": "memory_unavailable"}
+    for idx, op in enumerate(plan):
+        kind = op.get("op")
+        target = str(op.get("target_id") or "")
+        meta = {"key": op.get("key"), "source": "consolidation"}
+        try:
+            if kind == ADD:
+                rid = await memory.remember(op.get("text", ""), metadata=meta)
+                if rid is None:
+                    skipped.append({"index": idx, "op": kind, "reason": "no_embedding"})
+                else:
+                    persisted[ADD] += 1
+            elif kind in (UPDATE, DELETE):
+                if not by_id.get(target, {}).get("persistable", False):
+                    skipped.append({"index": idx, "op": kind, "reason": "not_vector_backed"})
+                    continue
+                if not await _vector_remove(memory, target):
+                    skipped.append({"index": idx, "op": kind, "reason": "no_vector_store"})
+                    continue
+                if kind == DELETE:
+                    persisted[DELETE] += 1
+                    continue
+                rid = await memory.remember(op.get("text", ""), record_id=target, metadata=meta)
+                if rid is None:
+                    skipped.append({"index": idx, "op": kind, "reason": "no_embedding"})
+                else:
+                    persisted[UPDATE] += 1
+        except Exception:
+            logger.warning("consolidation persist op %s failed", idx, exc_info=True)
+            skipped.append({"index": idx, "op": kind, "reason": "store_error"})
+    return {"persisted": persisted, "skipped": skipped, "persistence": "vector_store"}
+
+
+@router.post("/api/memory/consolidate/apply", dependencies=[Depends(user_guard)])
+async def memory_consolidate_apply(req: Request):
+    """DRA-27: apply (or dry-run) a consolidation plan. Body ``{plan, existing, dry_run?}``.
+
+    Refuses a degenerate call with **422** and a machine-readable ``reason``:
+    ``existing: []`` (a plan against nothing), a missing/empty plan, an unknown
+    op, an UPDATE/DELETE whose target is not in ``existing``, an ADD/UPDATE with
+    no text. The plan is applied to a ``ListStore`` snapshot of ``existing`` (the
+    merged result comes back for inspection) and, unless ``dry_run``, written to
+    the live vector store with a per-op ``persisted`` / ``skipped`` report.
+    """
+    orch, eng, err = require_component("consolidation", "consolidation not available")
+    if err is not None:
+        return err
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    plan = body.get("plan")
+    existing = body.get("existing")
+    dry_run = bool(body.get("dry_run", False))
+    reasons = validate_plan(plan, existing)
+    if reasons:
+        return JSONResponse({"error": "plan not admissible", "reason": reasons[0],
+                             "reasons": reasons}, status_code=422)
+    store = ListStore(existing)
+    report = await _kg_call(eng.apply_report, plan, store, dry_run=dry_run)
+    out = {"ok": not report["errors"], "dry_run": dry_run, "counts": report["counts"],
+           "errors": report["errors"], "memories": store.memories}
+    if dry_run:
+        out.update({"persisted": {ADD: 0, UPDATE: 0, DELETE: 0}, "skipped": [],
+                    "persistence": "dry_run"})
+    else:
+        out.update(await _persist_consolidation(getattr(orch, "memory", None), plan, existing))
+    return nocache_json(out)
+
+
 @router.get("/api/memory/search", dependencies=[Depends(user_guard)])
 async def memory_search(q: str = "", top_k: int = 10):
-    """Fused recall via RRF: vector similarity + knowledge-graph (H5.14 Task 4)."""
+    """Fused recall via RRF: vector similarity + knowledge-graph (H5.14 Task 4).
+
+    CDX-7: every hit is scanned and a flagged one redacted; SEC-B5: an untrusted
+    or flagged hit raises the scoped ``action_origin`` and the response says so.
+    """
     orch = get_orch()
     top_k = max(1, min(top_k, 50))
     if not orch or not orch.memory:
-        return nocache_json({"results": [], "query": q, "total": 0})
-    try:
-        # Real semantic recall: embed the query so the vector arm of fused recall
-        # actually contributes (degrades to keyword/graph-only if embedding fails).
-        embedding = await orch.memory.embed(q) if q and hasattr(orch.memory, "embed") else None
-        hits = await orch.memory.hybrid_search(
-            embedding=embedding, keyword=q or None, top_k=top_k
-        )
+        return nocache_json({"results": [], "query": q, "total": 0, "tainted": False})
+    async with _recall_scope():
+        try:
+            hits = await _fused_recall(orch.memory, q, top_k)
+        except Exception as e:
+            return error_json(e, 200, "memory search failed",
+                              extra={"results": [], "query": q, "total": 0, "tainted": False})
+        results = [_guard_hit(h) for h in hits]
+        tainted = _mark_if_tainted(results)
         return nocache_json({
-            "results": [
-                {
-                    "id": h.id,
-                    "score": round(h.score, 4),
-                    "sources": h.sources,
-                    "payload": h.payload,
-                }
-                for h in hits
-            ],
+            "results": results,
             "query": q,
-            "total": len(hits),
+            "total": len(results),
+            "tainted": tainted,
+            "redacted": sum(1 for r in results if r.get("injection_flagged")),
+            "action_origin": current_action_origin(),
         })
-    except Exception as e:
-        return error_json(e, 200, "memory search failed", extra={"results": [], "query": q, "total": 0})
 
 
 @router.get("/api/memory/entities", dependencies=[Depends(user_guard)])
@@ -244,9 +502,27 @@ async def memory_search_tool(req: Request):
     except (TypeError, ValueError):
         top_k = 5
     tool = MemorySearchTool(_structured_recall)
-    # _structured_recall hits the graph (a blocking neo4j call on the neo4j
-    # backend) — run the whole sync tool call in a worker thread.
-    return nocache_json(await _kg_call(tool.search, query, top_k))
+    # SEC-B5: the tool marks the origin itself when a hit is tainted; the scope
+    # bounds that mark to this handler by design (see _recall_scope).
+    async with _recall_scope():
+        # _structured_recall hits the graph (a blocking neo4j call on the neo4j
+        # backend) — run the whole sync tool call in a worker thread. The mark is
+        # raised inside the worker; to_thread copies the context *into* the worker,
+        # so it would not reach this handler — re-derive it here from the hits.
+        result = await _kg_call(tool.search, query, top_k)
+        hits = result.get("hits") or []
+        tainted = any(_hit_is_tainted(h) for h in hits)
+        if tainted:
+            mark_turn_recall_tainted()
+        result["tainted"] = tainted
+        result["action_origin"] = current_action_origin()
+        return nocache_json(result)
+
+
+def _hit_is_tainted(hit) -> bool:
+    """The search-tool's own taint verdict for one flat hit (``rag_tool._hit_tainted``)."""
+    from agents.core.memory.rag_tool import _hit_tainted
+    return _hit_tainted(hit)
 
 
 # ── H14.4 Decay-based forgetting (ACT-R activation + dependency-aware delete) ──
@@ -566,10 +842,18 @@ async def memory_remember(req: Request):
 
 @router.get("/api/memory/recall", dependencies=[Depends(user_guard)])
 async def recall_memory(q: str = ""):
-    """Search memory store by query string."""
+    """Search the structured memory store by query string.
+
+    CDX-7: an injection-flagged value is redacted; SEC-B5: such a row raises the
+    scoped ``action_origin`` and the response reports it.
+    """
     from agents.core.memory.store import MemoryStore
-    store = MemoryStore()
     if not q:
-        return {"results": []}
-    results = await store.search(q, limit=20)
-    return {"results": results, "query": q}
+        return {"results": [], "tainted": False}
+    async with _recall_scope():
+        store = await asyncio.to_thread(MemoryStore)  # opens SQLite (WAL) — off-loop
+        rows = await store.search(q, limit=20)
+        results = [_guard_store_row(r) for r in rows]
+        tainted = _mark_if_tainted(results)
+        return {"results": results, "query": q, "tainted": tainted,
+                "action_origin": current_action_origin()}
