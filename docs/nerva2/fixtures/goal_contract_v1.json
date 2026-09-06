@@ -1,0 +1,49 @@
+{
+  "_comment": "A worked nerva.goal-contract.v1 draft \u2014 exactly what a decision card carries when Nerva asks to be allowed a night of work. Every field is required by GoalDraft: an approval that named none of them would be an approval of nothing in particular. Note 'reads-well' declares no probe_ref: it grades as unverifiable rather than being dropped, so an unprobed criterion can never quietly become a pass. The fingerprint is over this exact payload \u2014 an edit between the card and the execution cannot ride the approval given for it.",
+  "example": {
+    "schema": "nerva.goal-contract.v1",
+    "kind": "goal.approve",
+    "title": "Prepare the Q3 board brief",
+    "scope_kinds": [
+      "research",
+      "write",
+      "file.write"
+    ],
+    "unrestricted": false,
+    "budget": {
+      "max_steps": 40,
+      "max_seconds": 21600.0,
+      "max_interrupts": 1
+    },
+    "deadline_at": 1790000000.0,
+    "stop_conditions": [
+      "the source financials change after the draft is started",
+      "a required data source is unreachable for more than an hour"
+    ],
+    "checks": [
+      {
+        "id": "brief-exists",
+        "describe": "a brief file exists under the reports directory for this quarter",
+        "probe_ref": "probes.reports:brief_exists",
+        "required": true
+      },
+      {
+        "id": "figures-match",
+        "describe": "every figure in the brief matches the source ledger",
+        "probe_ref": "probes.reports:figures_match",
+        "required": true
+      },
+      {
+        "id": "reads-well",
+        "describe": "the brief is under two pages and free of placeholders",
+        "probe_ref": "",
+        "required": false
+      }
+    ],
+    "deliverable": "one brief under <data root>/reports, two pages or fewer",
+    "requested_by": "owner",
+    "risk_tier": 2,
+    "reversible": true,
+    "fingerprint": "a791fad3b16673e24defae44be0aa6c9d6366ba6f92d24788c87b78635ccb537"
+  }
+}

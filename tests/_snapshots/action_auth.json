@@ -5,6 +5,7 @@
  "channel.reply": "kernel",
  "desktop.step": "kernel",
  "file.write": "kernel",
+ "goal.approve": "kernel",
  "host.control": "kernel",
  "house.control": "kernel",
  "house.recovery": "kernel",

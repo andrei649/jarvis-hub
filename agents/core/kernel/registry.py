@@ -114,6 +114,12 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Writing the redacted day report to disk leaves the process, so the export
     # crosses the kernel before the file is created; a QUEUE refuses it outright.
     "report.export": Mediation.KERNEL,
+    # E5.0 company mode — approving a goal authorises a night of work, which is
+    # capability growth in the same sense as widening a permission. Each step the
+    # run later takes crosses the kernel again on its own; this hop is about the
+    # decision to spend the night at all, and a DENY refuses it before the
+    # decision inbox ever sees the card.
+    "goal.approve": Mediation.KERNEL,
 }
 
 

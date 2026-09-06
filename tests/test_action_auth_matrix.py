@@ -705,6 +705,21 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         # Default-off is the pre-kernel path, not a refusal: the export still
         # writes with the flag unset (the outer test proves the spy stayed idle).
         assert exporter.export(report, "json")["ok"] is True
+    elif kind == "goal.approve":
+        # E5.0: proposing a goal for approval crosses the kernel before the card
+        # can reach the decision inbox. A DENY refuses the night's work outright.
+        from agents.core.autonomy.goal_contract import GoalDraft, SuccessCheck, propose
+        from agents.core.autonomy.work_runs import Budget
+
+        draft = GoalDraft(
+            title="Prepare the quarterly brief",
+            scope_kinds=("research",),
+            budget=Budget(max_steps=5),
+            deadline_at=1e12,
+            stop_conditions=("the source data goes stale",),
+            checks=(SuccessCheck(id="brief", describe="the brief exists"),),
+        )
+        propose(draft, lambda **kwargs: 1, authorizer=spy, now=0.0)
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 

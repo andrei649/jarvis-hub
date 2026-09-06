@@ -988,6 +988,46 @@ class AutonomyCoordinator:
         if ledger is not None:
             executor.register("permission.grant", ledger.apply_grant)
 
+        # The work-run ledger. Bound whatever the flag says, because reading past
+        # runs is honest with company mode off — what it must never do is open one,
+        # and only an owner-approved goal.approve task can do that.
+        from .autonomy.work_runs import WorkRunLedger
+
+        try:
+            bind_external_orchestrator_attribute(
+                self._orch, "work_runs", WorkRunLedger()
+            )
+        except Exception:
+            logger.warning("work-run ledger unavailable; company mode stays inert",
+                           exc_info=True)
+
+        # E5.0 company mode — an approved goal becomes a work run here and only
+        # here. Like permission.grant, the mint runs out of the owner's own
+        # decision: goal_contract refuses any task a human did not accept, and the
+        # ledger refuses a goal with no approval ref, so there is no path from a
+        # policy auto-decision to a night of autonomous work.
+        async def _open_approved_goal(task):
+            from .autonomy.goal_contract import GoalContractError, approve_from_task
+            from .autonomy.work_runs import WorkRunError, WorkRunLedger
+
+            try:
+                goal = approve_from_task(task)
+            except GoalContractError as exc:
+                return {"status": "refused", "reason": exc.reason}
+            runs = getattr(self._orch, "work_runs", None)
+            if not isinstance(runs, WorkRunLedger):
+                return {"status": "refused", "reason": "work_run_ledger_unavailable"}
+            try:
+                run = await asyncio.to_thread(
+                    runs.open_run, goal, budget=goal.budget, deadline_at=goal.deadline_at
+                )
+            except WorkRunError as exc:
+                return {"status": "refused", "reason": exc.reason}
+            return {"status": "ok", "kind": "goal.approve", "run_id": run.id,
+                    "goal_id": goal.goal_id}
+
+        executor.register("goal.approve", _open_approved_goal)
+
         acquisition = getattr(self._orch, "acquisition", None)
         if acquisition is not None:
             from .acquisition.promotion import make_skill_install_kernel_gate

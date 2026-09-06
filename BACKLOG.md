@@ -137,6 +137,20 @@
   continue, only owner interruptions defer; and a failed tick is reported but never retried here,
   since a second retry loop would multiply the supervisor's failure budget behind its back. Sweeps
   are stateless and idempotent, so a restart resumes correctly. 22 tests.
+- [x] ✅ **CO-RUN-9 — the goal contract (the front door).** `agents/core/autonomy/goal_contract.py`.
+  Everything else in the chain refuses; this is the one path that grants, so its job is to make an
+  approval mean something *specific*. A `GoalDraft` cannot omit title, scope, budget, deadline, stop
+  conditions or success checks — an owner accepting "sort out the quarterly stuff" has agreed to
+  nothing later steps can be held against. An unlimited scope must be **declared**
+  (`unrestricted=True`), never defaulted into by an empty list. A goal with no success check is
+  refused *up front*, because the verifier would refuse to pass it at 4am otherwise. `propose`
+  crosses the kernel (new kind `goal.approve`, 21 → 27 kinds) and enqueues at EXTERNAL/ASK;
+  `approve_from_task` mints the goal only from a **human** accept/edit, and a payload fingerprint
+  stops an edit between the card and the execution riding an approval given for a different goal.
+  The declared checks become the verifier's checks and the scope becomes the judge's terms — a
+  check whose probe is missing is kept as `unverifiable`, never dropped. Worked example:
+  [`docs/nerva2/fixtures/goal_contract_v1.json`](docs/nerva2/fixtures/goal_contract_v1.json)
+  (validated by a test, so it cannot go stale). 41 tests.
 
 **Operator hands — the other two platforms**
 

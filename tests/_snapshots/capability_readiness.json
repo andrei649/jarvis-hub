@@ -5,6 +5,7 @@
   "action:channel.reply": "wired",
   "action:desktop.step": "wired",
   "action:file.write": "wired",
+  "action:goal.approve": "wired",
   "action:host.control": "wired",
   "action:house.control": "wired",
   "action:house.recovery": "wired",

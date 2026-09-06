@@ -470,6 +470,22 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.day_report:DayReportExporter.export",
         contract_ref="agents.core.day_report:EXPORT_CONTRACT",
     ),
+    "goal.approve": _action(
+        "goal.approve",
+        "Ask the owner to approve one bounded goal for a company-mode work run.",
+        required=("title", "scope_kinds", "budget", "deadline_at", "stop_conditions", "checks"),
+        risk="sensitive",
+        supports=("propose",),
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Stop the run the goal opened; the goal itself becomes inert.",
+            automatic=False,
+            handler_ref="agents.core.autonomy.work_runs:WorkRunLedger.request_stop",
+            limitations="Steps the run already took are not undone by stopping it; each had its own rollback.",
+        ),
+        implementation="agents.core.autonomy.goal_contract:propose",
+        contract_ref="agents.core.autonomy.goal_contract:SCHEMA",
+    ),
 }
 
 

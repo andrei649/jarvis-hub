@@ -141,6 +141,15 @@ default: every new capability is off behind its own flag.
   Wayland input through `uinput`/`ydotool` is refused *by policy* (it works, and that is the problem:
   it bypasses the compositor's consent model), and Wayland capture refuses X11 grabbers outright
   because under Xwayland they return black frames rather than errors.
+- **Company mode got its front door.** Everything else in the chain refuses; the goal contract is
+  the one path that grants, so its job is to make an approval mean something specific. A draft must
+  name its title, scope, budget, deadline, stop conditions and — crucially — *how anyone would know
+  it was done*; an unlimited scope has to be declared rather than defaulted into by an empty field,
+  and a goal with no success check is refused up front rather than at 4am when the verifier
+  (correctly) will not pass it. Proposing crosses the kernel as the new `goal.approve` kind and
+  lands in the decision inbox; the approved goal is minted only from a **human** accept or edit, and
+  a payload fingerprint stops an edit between the card and the execution riding an approval that was
+  given for a different goal.
 - `permissions.db` and `work_runs.db` join the purge and export sets.
 
 ## [1.0.0] — 2026-09-02
