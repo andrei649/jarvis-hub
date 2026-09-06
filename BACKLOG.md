@@ -217,7 +217,13 @@
   (the exact synonym-shaped hole the canonicaliser exists to close — normalised at import now, with a guard
   that fails at import); and the new seams borrowed the host-probe's closed vocabulary, which would have
   told the owner their machine could not scroll when nobody had written the code. 74 pytest; both bugs
-  red-proven.
+  red-proven. **Windows parity closed in the same slice** (`op-windows-backend`): the same three
+  actions, the same `keys.py` allowlist, the same bounds, and a **parity test pinning all three
+  vocabularies together** with `launch` named as the one deliberate Windows-only exception. Its
+  pywinauto `{VK_LWIN}` translation was wrong and fixed before shipping — that spelling taps the Win
+  key rather than holding it, so the chord sent would not have been the chord on the card. 87 pytest.
+  **Runtime proof on real Windows and macOS hardware remains an owner gate** (`docs/OWNER_TASKS.md`):
+  everything here is hermetic.
 
 - [x] ✅ **CO-RUNTIME — company mode actually runs a night.** `agents/core/autonomy/company_runtime.py`
   + `SchedulerService.schedule_company_mode` + `GoalDraft.plan`. Everything else in the chain was a

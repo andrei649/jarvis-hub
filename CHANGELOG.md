@@ -191,7 +191,13 @@ default: every new capability is off behind its own flag.
   would have been pressed — exactly the synonym-shaped hole the canonicaliser exists to close,
   now normalised at import with a guard that fails there rather than at 3am; and the new seams
   first borrowed the host-probe's closed refusal vocabulary, which would have told the owner
-  their *machine* could not scroll when the truth was that nobody had written the code. 74 pytest.
+  their *machine* could not scroll when the truth was that nobody had written the code.
+  **Windows got the same three actions and the same allowlist** — a chord refused on one platform and
+  pressed on another would make the policy a per-platform accident rather than a decision — and a
+  parity test now pins the three vocabularies together, with `launch` named as the one deliberate
+  Windows-only exception so a second asymmetry cannot appear unnoticed. Its `{VK_LWIN}` translation was
+  corrected before shipping: that spelling presses *and releases* the Win key, so a naive modifier
+  prefix would have tapped Win and then sent a different chord than the card named. 87 pytest.
 - **Company mode stopped being nine parts that never met.** A ledger, a planner, a supervisor,
   two graders, a reconciler and a scheduler all existed and were all tested, and no night of work
   could ever happen because nothing built them into a loop — the specific kind of dishonesty where

@@ -397,3 +397,112 @@ def test_the_linux_scroll_table_covers_every_direction():
     from agents.core.desktop_drivers.linux import _ATSPI_SCROLL
 
     assert set(_ATSPI_SCROLL) == set(SCROLL_DIRECTIONS)
+
+
+# ── all three platforms answer to the same vocabulary ────────────────────────
+
+def test_windows_accepts_the_same_mutations_as_the_cross_platform_base():
+    """A plan that works on macOS and silently does nothing on Windows is worse
+    than one that refuses on both, because only the owner finds out."""
+    from agents.core.desktop_host import _MUTATE_ACTIONS as WINDOWS_MUTATIONS
+
+    missing = MUTATE_ACTIONS - WINDOWS_MUTATIONS
+    assert not missing, f"Windows cannot do: {sorted(missing)}"
+
+
+def test_windows_observations_match_too():
+    from agents.core.desktop_host import _OBSERVE_ACTIONS as WINDOWS_OBSERVE
+
+    assert WINDOWS_OBSERVE == OBSERVE_ACTIONS
+
+
+def test_the_one_windows_only_action_is_named_deliberately():
+    """`launch` has no cross-platform twin yet. Pinned so it stays a decision
+    rather than becoming an unnoticed second asymmetry."""
+    from agents.core.desktop_host import _MUTATE_ACTIONS as WINDOWS_MUTATIONS
+
+    assert sorted(WINDOWS_MUTATIONS - MUTATE_ACTIONS) == ["launch"]
+
+
+def test_windows_shares_the_one_chord_allowlist():
+    """A chord refused on one platform and pressed on another would make the
+    policy a per-platform accident instead of a decision."""
+    from agents.core.desktop_host import _PYWINAUTO_KEYS, _pywinauto_chord
+
+    for key in sorted(ALLOWED_KEYS):
+        assert _pywinauto_chord(key)  # every allowlisted key translates
+    assert set(_PYWINAUTO_KEYS) >= (ALLOWED_KEYS - set("abcdefghijklmnopqrstuvwxyz0123456789"))
+
+
+def test_windows_bounds_match_the_cross_platform_ones():
+    from agents.core.desktop_host import _MAX_SCROLL_NOTCHES, _SCROLL_DIRECTIONS
+
+    assert _MAX_SCROLL_NOTCHES == MAX_SCROLL_NOTCHES
+    assert _SCROLL_DIRECTIONS == SCROLL_DIRECTIONS
+
+
+@pytest.mark.parametrize(
+    ("chord", "expected"),
+    [
+        ("ctrl+c", "^c"),
+        ("alt+f5", "%{F5}"),
+        ("ctrl+shift+p", "^+p"),
+        ("enter", "{ENTER}"),
+        ("a", "a"),
+    ],
+)
+def test_a_chord_translates_to_pywinauto_syntax(chord, expected):
+    from agents.core.desktop_host import _pywinauto_chord
+
+    assert _pywinauto_chord(chord) == expected
+
+
+def test_the_win_key_is_held_and_released_rather_than_tapped():
+    """`{VK_LWIN}` on its own presses AND releases, so a naive prefix would tap
+    Win and then send the rest without it — a different chord than the card named."""
+    from agents.core.desktop_host import _pywinauto_chord
+
+    assert _pywinauto_chord("cmd+s") == "{VK_LWIN down}s{VK_LWIN up}"
+    assert _pywinauto_chord("cmd+shift+s") == "{VK_LWIN down}+s{VK_LWIN up}"
+
+
+def test_windows_refuses_a_policy_chord_before_reaching_a_backend():
+    import asyncio
+
+    from agents.core.desktop_host import WindowsDesktopDriver
+
+    class _Backend:
+        def __init__(self):
+            self.pressed = []
+
+        def accessibility_elements(self):
+            return []
+
+        def key(self, chord):
+            self.pressed.append(chord)
+
+    backend = _Backend()
+    driver = WindowsDesktopDriver(
+        host_enabled=True, isolated=True, backend_factory=lambda: backend
+    )
+    result = asyncio.run(driver.perform("key", {"chord": "cmd+q"}))
+    assert result["reason"] == "chord_refused_by_policy"
+    assert backend.pressed == []
+
+
+def test_windows_reports_a_backend_gap_as_a_backend_gap():
+    import asyncio
+
+    from agents.core.desktop_host import WindowsDesktopDriver
+    from agents.core.host_probe import REFUSAL_REASONS
+
+    class _Old:
+        def accessibility_elements(self):
+            return []
+
+    driver = WindowsDesktopDriver(
+        host_enabled=True, isolated=True, backend_factory=_Old
+    )
+    result = asyncio.run(driver.perform("key", {"chord": "ctrl+s"}))
+    assert result["reason"] == "desktop_key_unsupported"
+    assert result["reason"] not in REFUSAL_REASONS
