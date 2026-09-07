@@ -8,12 +8,14 @@ import json
 import logging
 import math
 import re
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from contextlib import suppress
 from functools import partial
 from typing import Any
 
+from .context_compressor import window_for
 from .iteration_budget import IterationBudget
+from .llm.tokenizer import estimate_messages
 from .llm.tool_protocol import MAX_PARSED_TOOL_CALLS, ToolCall, ToolSpec
 from .tool_rpc import ToolRPCServer
 
@@ -21,9 +23,58 @@ logger = logging.getLogger("jarvis.agent_runtime")
 
 ToolEventSink = Callable[[dict[str, Any]], Any]
 GapSink = Callable[[dict[str, str]], Any]
+# (agent_id, tool metadata rows) -> (rows to offer, a decision object with surface /
+# principal / withheld for the event feed). See agents/core/tool_profiles.py.
+ToolProfileHook = Callable[[str, list[dict[str, Any]]], tuple[Any, Any]]
 
 _APPROVAL_REPLY = "I paused the tool loop because this action requires approval."
 _DEADLINE_REPLY = "I stopped the tool loop because it reached the safety deadline."
+_CONTEXT_REPLY = "I stopped the tool loop because its context exceeded the safety budget."
+_REPEAT_REPLY = "I stopped the tool loop because it kept repeating the same tool call."
+# Hermes absorption 3a — a model that calls the same tool with the same arguments again and
+# again is looping, not working; the iteration limit would end it eventually, but only after
+# burning every turn and telling the model nothing. The third identical call is refused with
+# the reason (the model can change course); a fourth ends the turn with a named reply.
+_DEFAULT_REPEAT_LIMIT = 3
+_REPEATED_NOTICE = (
+    "This exact call (same tool, same arguments) was already made {repeats} times this turn "
+    "and was not run again: repeating it will not produce a different answer. Change the "
+    "arguments, use another tool, or answer with what you have."
+)
+# The same tool failing again and again with different arguments is the other loop: the
+# model keeps guessing at a path or a query that will not resolve. Five consecutive
+# failures of one tool end the turn with a named reply; a success resets the streak.
+_FAILURE_REPLY = "I stopped the tool loop because the same tool kept failing."
+_DEFAULT_FAILURE_LIMIT = 5
+# Hermes absorption 4f — two more guardrails from the same family. A per-tool cap ends a
+# turn that leans on one tool without end (0 = off, set from llm.tool_loop_per_tool_cap);
+# and a successful result byte-identical to one already in the transcript is replaced by a
+# reference stub, so the model is told "same as call N" instead of paying for the payload
+# twice. Error results are never stubbed: each fresh failure is seen verbatim.
+_DEFAULT_DUPLICATE_STUB_BYTES = 512
+_CAP_NOTICE = (
+    "This tool was already called {calls} times this turn, which is its limit ({limit}); "
+    "use another tool or answer with what you have."
+)
+_DUPLICATE_NOTICE = (
+    "This result is byte-identical to the result of call {call_id} earlier this turn and "
+    "was not repeated; refer to that result."
+)
+# Hermes absorption 3b — the profile (agent × surface × principal) decides what is offered
+# before the model sees a tool list; a turn the profile leaves with nothing never enters the
+# loop (``can_run`` says no and the agent answers on the plain path).
+_NO_TOOLS_REPLY = "I can't use tools on this surface."
+_EVENT_WITHHELD_NAMES = 32
+# Hermes absorption 0.3 — in-turn compaction. The loop appends an assistant message and one
+# tool result per call for up to 32 iterations and never measured the growing list; at the
+# end the work was lost to a context overflow nobody had counted. The budget defaults to a
+# fraction of the model's window minus the output reserve, older tool results are folded
+# into bounded envelopes first, and a transcript that still does not fit stops the loop with
+# a named reason instead of a provider error.
+_MIN_CONTEXT_BUDGET = 2_048
+_CONTEXT_WINDOW_FRACTION = 0.75
+_COMPACTED_NOTICE = "TOOL RESULT COMPACTED"
+_TRUNCATED_NOTICE = "TOOL RESULT TRUNCATED"
 _DEFAULT_ITERATIONS = 8
 _MAX_ITERATIONS = 32
 _MAX_TOOL_CALLS_PER_TURN = MAX_PARSED_TOOL_CALLS - 1
@@ -69,8 +120,26 @@ class AgentToolRuntime:
         tool_timeout_seconds: float = 30.0,
         max_wall_seconds: float = 120.0,
         gap_callback: GapSink | None = None,
+        context_budget_tokens: Callable[[], int] = lambda: 0,
+        compaction_keep_recent: int = 2,
+        compacted_result_bytes: int = 512,
+        repeat_limit: int = _DEFAULT_REPEAT_LIMIT,
+        failure_limit: int = _DEFAULT_FAILURE_LIMIT,
+        tool_profile: ToolProfileHook | None = None,
+        per_tool_limit: int | Callable[[], int] = 0,
+        duplicate_stub_bytes: int = _DEFAULT_DUPLICATE_STUB_BYTES,
     ) -> None:
         self._server = server
+        self._tool_profile = tool_profile
+        self._repeat_limit = _safe_int(repeat_limit, default=_DEFAULT_REPEAT_LIMIT, minimum=0)
+        self._failure_limit = _safe_int(failure_limit, default=_DEFAULT_FAILURE_LIMIT, minimum=0)
+        self._per_tool_limit = per_tool_limit
+        self._duplicate_stub_bytes = _safe_int(
+            duplicate_stub_bytes, default=_DEFAULT_DUPLICATE_STUB_BYTES, minimum=64,
+        )
+        self._context_budget_tokens = context_budget_tokens
+        self._compaction_keep_recent = _safe_int(compaction_keep_recent, default=2, minimum=0)
+        self._compacted_result_bytes = _safe_int(compacted_result_bytes, default=512, minimum=64)
         self._enabled = enabled
         self._registry_enabled = registry_enabled
         self._capability_snapshot = capability_snapshot
@@ -87,19 +156,39 @@ class AgentToolRuntime:
         self._blocked_event_sinks: dict[int, asyncio.Task[Any]] = {}
         self._event_lock = asyncio.Lock()
 
-    def can_run(self, backend: Any) -> bool:
-        """Fail closed unless the setting, backend, and allowlist are all live."""
+    def can_run(self, backend: Any, agent_id: str | None = None) -> bool:
+        """Fail closed unless the setting, backend, and allowlist are all live — and, when
+        the caller names the agent, unless this turn's profile offers it at least one tool."""
         try:
             self._prune_stragglers()
-            return bool(
+            live = bool(
                 not self._stragglers
                 and self._enabled()
                 and getattr(backend, "supports_tools", False)
                 and self._server.tools()
             )
+            if not live:
+                return False
+            if agent_id is None or self._tool_profile is None:
+                return True
+            offered, _decision = self._profiled(agent_id, self._server.tools())
+            return bool(offered)
         except Exception:
             logger.warning("agent tool runtime capability check failed closed")
             return False
+
+    def _profiled(
+        self, agent_id: str, metadata: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], Any]:
+        """Apply the turn's tool profile; a resolver failure offers nothing."""
+        if self._tool_profile is None:
+            return metadata, None
+        try:
+            offered, decision = self._tool_profile(agent_id, metadata)
+        except Exception:
+            logger.warning("tool profile resolution failed closed", exc_info=True)
+            return [], None
+        return [dict(tool) for tool in offered], decision
 
     async def run(
         self,
@@ -160,6 +249,24 @@ class AgentToolRuntime:
                         }
                     )
                 return _NO_CAPABILITY_REPLY
+        metadata, decision = self._profiled(agent_id, metadata)
+        if decision is not None:
+            await self._emit(
+                event_sink,
+                {
+                    "event": "tool_profile",
+                    "agent_id": _bounded_identity(agent_id),
+                    "surface": _bounded_identity(getattr(decision, "surface", "")),
+                    "principal": _bounded_identity(getattr(decision, "principal", "")),
+                    "offered": len(metadata),
+                    "withheld": [
+                        _bounded_identity(name)
+                        for name in tuple(getattr(decision, "withheld", ()))[:_EVENT_WITHHELD_NAMES]
+                    ],
+                },
+            )
+        if not metadata:
+            return _NO_TOOLS_REPLY
         tools = [
             ToolSpec(
                 name=tool["name"],
@@ -175,8 +282,22 @@ class AgentToolRuntime:
         ]
         limit = self._iteration_limit()
         budget = IterationBudget(limit)
+        compacted: set[int] = set()
+        seen_calls: dict[tuple[str, str], int] = {}
+        failure_streaks: dict[str, int] = {}
+        tool_counts: dict[str, int] = {}
+        seen_results: dict[str, str] = {}
 
         while budget.consume():
+            if len(messages) > 2 and not await self._compact_context(
+                messages,
+                compacted,
+                model=model,
+                max_tokens=max_tokens,
+                agent_id=agent_id,
+                event_sink=event_sink,
+            ):
+                return _CONTEXT_REPLY
             turn = await backend.generate_tool_turn(
                 model=model,
                 messages=messages,
@@ -191,6 +312,18 @@ class AgentToolRuntime:
             # fan-out plus one representative overflow call so both scheduling
             # and the next-turn context stay O(configured cap), not O(provider N).
             bounded_calls = turn.tool_calls[: self._max_tool_calls_per_turn + 1]
+            repeated, looping = self._note_repeats(bounded_calls, seen_calls)
+            if looping is not None:
+                await self._emit(
+                    event_sink,
+                    {
+                        **self._event(looping, agent_id, "tool_loop_repeated", "repeated_call"),
+                        "repeats": seen_calls[_call_key(looping)],
+                        "limit": self._repeat_limit,
+                    },
+                )
+                return _REPEAT_REPLY
+            capped = self._note_tool_counts(bounded_calls, tool_counts)
             messages.append(
                 {
                     "role": "assistant",
@@ -203,8 +336,13 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 gated_tools=gated_tools,
                 event_sink=event_sink,
+                repeated=repeated,
+                capped=capped,
             )
-            for call, (_result, content) in zip(bounded_calls, observations, strict=True):
+            for call, (result, content) in zip(bounded_calls, observations, strict=True):
+                content = await self._dedupe_result(
+                    call, result, content, seen_results, agent_id=agent_id, event_sink=event_sink,
+                )
                 messages.append(
                     {
                         "role": "tool",
@@ -214,6 +352,20 @@ class AgentToolRuntime:
                 )
             if any(result.get("reason") == "approval_required" for result, _ in observations):
                 return _APPROVAL_REPLY
+            failing = self._note_failures(bounded_calls, observations, failure_streaks)
+            if failing is not None:
+                call, result = failing
+                await self._emit(
+                    event_sink,
+                    {
+                        **self._event(
+                            call, agent_id, "tool_loop_failing", _failure_reason(result),
+                        ),
+                        "failures": failure_streaks[call.name],
+                        "limit": self._failure_limit,
+                    },
+                )
+                return _FAILURE_REPLY
 
         await self._emit(
             event_sink,
@@ -229,6 +381,202 @@ class AgentToolRuntime:
             "the safety limit."
         )
 
+    def _context_budget(self, model: str, max_tokens: int) -> int:
+        """Tokens the transcript may occupy before the next model turn."""
+        try:
+            configured = _safe_int(self._context_budget_tokens(), default=0, minimum=0)
+        except Exception:
+            logger.warning("tool loop context budget setting failed closed to auto")
+            configured = 0
+        if configured > 0:
+            return max(_MIN_CONTEXT_BUDGET, configured)
+        reserve = max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else 0
+        return max(_MIN_CONTEXT_BUDGET, int(window_for(model) * _CONTEXT_WINDOW_FRACTION) - reserve)
+
+    async def _compact_context(
+        self,
+        messages: list[dict[str, Any]],
+        compacted: set[int],
+        *,
+        model: str,
+        max_tokens: int,
+        agent_id: str,
+        event_sink: ToolEventSink | None,
+    ) -> bool:
+        """Fold older tool results into bounded envelopes until the transcript fits.
+
+        Messages are never dropped or reordered — every ``tool`` result keeps answering the
+        assistant call that made it, which is what every provider validates — only their
+        content shrinks. The most recent ``compaction_keep_recent`` iterations are folded last.
+        Returns False when the transcript still exceeds the budget with everything folded.
+        """
+        budget = self._context_budget(model, max_tokens)
+        before = estimate_messages(messages)
+        if before <= budget:
+            return True
+        assistant_positions = [
+            index for index, message in enumerate(messages) if message.get("role") == "assistant"
+        ]
+        keep = self._compaction_keep_recent
+        protected_from = (
+            assistant_positions[-keep]
+            if keep and len(assistant_positions) >= keep
+            else len(messages)
+        )
+        candidates = [
+            index
+            for index, message in enumerate(messages)
+            if message.get("role") == "tool" and index not in compacted
+        ]
+        used = before
+        folded = 0
+        for positions in (
+            [index for index in candidates if index < protected_from],
+            [index for index in candidates if index >= protected_from],
+        ):
+            for index in positions:
+                if used <= budget:
+                    break
+                compacted.add(index)
+                message = messages[index]
+                content = message.get("content")
+                encoded = content if isinstance(content, str) else json.dumps(content, default=str)
+                if len(encoded.encode("utf-8")) <= self._compacted_result_bytes:
+                    continue
+                messages[index] = {**message, "content": self._compacted_content(encoded)}
+                folded += 1
+                used = estimate_messages(messages)
+        exhausted = used > budget
+        await self._emit(
+            event_sink,
+            {
+                "event": "tool_context_compacted",
+                "agent_id": _bounded_identity(agent_id),
+                "status": "exhausted" if exhausted else "compacted",
+                "compacted": folded,
+                "tokens_before": before,
+                "tokens_after": used,
+                "budget": budget,
+            },
+        )
+        return not exhausted
+
+    def _compacted_content(self, encoded: str) -> str:
+        try:
+            parsed = json.loads(encoded)
+        except ValueError:
+            parsed = None
+        result = parsed if isinstance(parsed, dict) else {}
+        tool = result.get("tool")
+        return _bounded_result_envelope(
+            encoded,
+            tool_name=tool if isinstance(tool, str) else "",
+            ok=result.get("ok") is True,
+            reason=result.get("reason"),
+            max_bytes=self._compacted_result_bytes,
+            notice=_COMPACTED_NOTICE,
+        )
+
+    def _note_repeats(
+        self,
+        calls: tuple[ToolCall, ...],
+        seen: dict[tuple[str, str], int],
+    ) -> tuple[dict[str, int], ToolCall | None]:
+        """Count identical (tool, arguments) calls across the turn.
+
+        Returns the calls that just reached the limit (refused with a notice, keyed by
+        call id) and the first call past it, which ends the loop. ``repeat_limit=0``
+        disables the detector.
+        """
+        limit = self._repeat_limit
+        repeated: dict[str, int] = {}
+        if limit <= 0:
+            return repeated, None
+        for call in calls:
+            key = _call_key(call)
+            count = seen.get(key, 0) + 1
+            seen[key] = count
+            if count > limit:
+                return repeated, call
+            if count == limit:
+                repeated[call.id] = count
+        return repeated, None
+
+    def _per_tool_cap(self) -> int:
+        limit = self._per_tool_limit
+        if callable(limit):
+            try:
+                limit = limit()
+            except Exception:
+                logger.warning("per-tool cap setting failed closed to off")
+                return 0
+        return _safe_int(limit, default=0, minimum=0)
+
+    def _note_tool_counts(
+        self, calls: tuple[ToolCall, ...], counts: dict[str, int],
+    ) -> dict[str, int]:
+        """Count calls per tool across the turn; the ids past the cap are refused."""
+        limit = self._per_tool_cap()
+        capped: dict[str, int] = {}
+        for call in calls:
+            count = counts.get(call.name, 0) + 1
+            counts[call.name] = count
+            if limit > 0 and count > limit:
+                capped[call.id] = count
+        return capped
+
+    async def _dedupe_result(
+        self,
+        call: ToolCall,
+        result: Mapping[str, Any],
+        content: str,
+        seen: dict[str, str],
+        *,
+        agent_id: str,
+        event_sink: ToolEventSink | None,
+    ) -> str:
+        """A successful result already in the transcript becomes a reference stub."""
+        if _is_failed_result(result) or len(content.encode("utf-8")) < self._duplicate_stub_bytes:
+            return content
+        prior = seen.get(content)
+        if prior is None:
+            seen[content] = call.id
+            return content
+        await self._emit(
+            event_sink,
+            {
+                **self._event(call, agent_id, "tool_result_deduplicated", "same_as"),
+                "same_as": _bounded_identity(prior),
+            },
+        )
+        return json.dumps(
+            {
+                "ok": True,
+                "tool": call.name,
+                "same_as": prior,
+                "notice": _DUPLICATE_NOTICE.format(call_id=prior),
+            },
+            ensure_ascii=False,
+        )
+
+    def _note_failures(
+        self,
+        calls: tuple[ToolCall, ...],
+        observations: list[tuple[dict[str, Any], str]],
+        streaks: dict[str, int],
+    ) -> tuple[ToolCall, dict[str, Any]] | None:
+        """Track consecutive failures per tool across the turn; the call that reaches the
+        limit ends the loop. ``failure_limit=0`` disables the breaker."""
+        limit = self._failure_limit
+        for call, (result, _content) in zip(calls, observations, strict=True):
+            if not _is_failed_result(result):
+                streaks[call.name] = 0
+                continue
+            streaks[call.name] = streaks.get(call.name, 0) + 1
+            if limit > 0 and streaks[call.name] >= limit:
+                return call, result
+        return None
+
     async def _execute_turn_calls(
         self,
         calls: tuple[ToolCall, ...],
@@ -236,7 +584,11 @@ class AgentToolRuntime:
         agent_id: str,
         gated_tools: dict[str, bool],
         event_sink: ToolEventSink | None,
+        repeated: Mapping[str, int] | None = None,
+        capped: Mapping[str, int] | None = None,
     ) -> list[tuple[dict[str, Any], str]]:
+        repeated = repeated or {}
+        capped = capped or {}
         for call in calls:
             await self._emit(
                 event_sink,
@@ -255,6 +607,8 @@ class AgentToolRuntime:
                 approval_state=approval_state,
                 agent_id=agent_id,
                 event_sink=event_sink,
+                repeats=repeated.get(call.id, 0),
+                capped_at=capped.get(call.id, 0),
             )
             for index, call in enumerate(calls)
         ]
@@ -348,6 +702,8 @@ class AgentToolRuntime:
         approval_state: dict[str, bool],
         agent_id: str,
         event_sink: ToolEventSink | None,
+        repeats: int = 0,
+        capped_at: int = 0,
     ) -> tuple[dict[str, Any], str]:
         if overflow:
             return await self._local_failure(
@@ -369,6 +725,27 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 reason="bad_tool_arguments",
                 event_sink=event_sink,
+            )
+        if repeats:
+            return await self._local_failure(
+                call,
+                agent_id=agent_id,
+                reason="repeated_call",
+                event_sink=event_sink,
+                extra={"repeats": repeats, "notice": _REPEATED_NOTICE.format(repeats=repeats)},
+            )
+        if capped_at:
+            limit = self._per_tool_cap()
+            return await self._local_failure(
+                call,
+                agent_id=agent_id,
+                reason="tool_cap_reached",
+                event_sink=event_sink,
+                extra={
+                    "calls": capped_at,
+                    "limit": limit,
+                    "notice": _CAP_NOTICE.format(calls=capped_at - 1, limit=limit),
+                },
             )
 
         if gated:
@@ -439,8 +816,9 @@ class AgentToolRuntime:
         agent_id: str,
         reason: str,
         event_sink: ToolEventSink | None,
+        extra: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], str]:
-        result = {"ok": False, "reason": reason, "tool": call.name}
+        result = {"ok": False, "reason": reason, "tool": call.name, **(extra or {})}
         prepared, content = self._prepare_result(result, call.name)
         await self._emit_result(event_sink, call, agent_id, prepared)
         return prepared, content
@@ -575,6 +953,39 @@ class AgentToolRuntime:
             task.exception()
 
 
+def _is_failed_result(result: Mapping[str, Any]) -> bool:
+    """A refusal by the server (``ok`` not true) or by the handler itself — an inline tool's
+    own ``{"ok": false, "reason": ...}`` arrives wrapped under ``result``."""
+    if result.get("ok") is not True:
+        return True
+    inner = result.get("result")
+    return isinstance(inner, dict) and inner.get("ok") is False
+
+
+def _failure_reason(result: Mapping[str, Any]) -> str:
+    """The named reason of a failed result — the server's, or the handler's own."""
+    reason = result.get("reason")
+    if not isinstance(reason, str):
+        inner = result.get("result")
+        reason = inner.get("reason") if isinstance(inner, dict) else None
+    return reason if isinstance(reason, str) and reason else "failed"
+
+
+def _call_key(call: ToolCall) -> tuple[str, str]:
+    """Identity of a call for the repeat detector: the tool plus its arguments in
+    canonical JSON (key order does not make a different call)."""
+    if isinstance(call.arguments, dict):
+        try:
+            encoded = json.dumps(
+                call.arguments, sort_keys=True, default=str, separators=(",", ":"),
+            )
+        except (TypeError, ValueError):
+            encoded = str(call.raw_arguments)
+    else:
+        encoded = str(call.raw_arguments)
+    return (str(call.name), encoded)
+
+
 def _non_json(tool_name: str) -> dict[str, Any]:
     return {"ok": False, "reason": "non_json_result", "tool": _bounded_identity(tool_name)}
 
@@ -586,6 +997,7 @@ def _bounded_result_envelope(
     ok: bool,
     reason: Any,
     max_bytes: int,
+    notice: str = _TRUNCATED_NOTICE,
 ) -> str:
     """Return a complete JSON truncation envelope within ``max_bytes``."""
     raw = encoded.encode("utf-8")
@@ -593,7 +1005,7 @@ def _bounded_result_envelope(
         "ok": ok,
         "tool": _bounded_identity(tool_name),
         "truncated": True,
-        "notice": "TOOL RESULT TRUNCATED",
+        "notice": notice,
         "original_bytes": len(raw),
     }
     if not ok and isinstance(reason, str):
@@ -722,4 +1134,4 @@ def _is_explicit_capability_goal(prompt: Any) -> bool:
     return bool(_CAPABILITY_TERM_RE.search(candidate) and _CAPABILITY_ACTION_RE.search(candidate))
 
 
-__all__ = ["AgentToolRuntime", "GapSink", "ToolEventSink"]
+__all__ = ["AgentToolRuntime", "GapSink", "ToolEventSink", "ToolProfileHook"]

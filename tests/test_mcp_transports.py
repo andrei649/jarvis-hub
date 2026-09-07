@@ -120,8 +120,10 @@ def _http_server(name: str, hub: FakeMCPHub, url: str = _LOOPBACK, headers=None,
     def factory(url, headers, *, name):
         return StreamableHttpTransport(url, headers, name=name, transport_factory=hub.factory,
                                        resolver=resolver)
+    # These tests exercise the transport, not the trust tier (Hermes absorption 4b): the
+    # fake hub's tools carry no readOnlyHint, so the server is built with full trust.
     return MCPServer(name, transport="streamable-http", url=url, headers=headers,
-                     http_transport_factory=factory)
+                     http_transport_factory=factory, trust="full")
 
 
 class CollectingWriter:

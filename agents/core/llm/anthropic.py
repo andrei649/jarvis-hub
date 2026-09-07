@@ -4,7 +4,7 @@ Uses Anthropic Messages API directly via httpx (no SDK dependency).
 """
 
 import json
-from typing import Callable
+from typing import Any, Callable
 
 import httpx
 
@@ -12,12 +12,25 @@ from .auth_rotation import is_rotatable_status
 from .base import LLMBackend, _emit, cloud_cap
 from .egress import llm_async_client
 from .model_config import DEFAULT_CLAUDE_MODEL
+from .tool_dialects import (
+    ANTHROPIC_FINISH_REASONS,
+    anthropic_messages,
+    anthropic_text,
+    anthropic_tool_calls,
+    anthropic_tools,
+    normalize_finish_reason,
+)
+from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
 
 
 class ClaudeBackend(LLMBackend):
+    # Tool calls travel as tool_use / tool_result blocks; the translation lives in
+    # tool_dialects (Hermes absorption, wave 0.1).
+    supports_tools = True
+
     def __init__(self, api_key: str, model: str = DEFAULT_CLAUDE_MODEL, auth_pool=None):
         self.api_key = api_key
         self.model = model
@@ -42,19 +55,11 @@ class ClaudeBackend(LLMBackend):
     def _build_messages(self, prompt: str, system: str = "") -> list[dict]:
         return [{"role": "user", "content": prompt}]
 
-    async def generate(
-        self, model: str, prompt: str, system: str = "",
-        max_tokens: int = 1024, temperature: float = 0.7
-    ) -> str:
-        model = model or self.model
-        payload = {
-            "model": model,
-            "max_tokens": cloud_cap(max_tokens),
-            "temperature": temperature,
-            "system": system,
-            "messages": self._build_messages(prompt, system),
-        }
-        # Try each healthy auth profile once; fail over on rotatable errors (H12.20).
+    async def _post_messages(self, payload: dict) -> tuple[dict | None, str]:
+        """POST /messages once per healthy auth profile, failing over on rotatable errors (H12.20).
+
+        Returns ``(data, "")`` on success or ``(None, error_text)``; never raises.
+        """
         attempts = self.auth_pool.size if self.auth_pool else 1
         last_err = ""
         for _ in range(max(1, attempts)):
@@ -67,25 +72,71 @@ class ClaudeBackend(LLMBackend):
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                if self.auth_pool is not None:
-                    self.auth_pool.report_success(key)
-                if data.get("content"):
-                    return self._finalize_cloud("".join(
-                        block.get("text", "")
-                        for block in data["content"]
-                        if block.get("type") == "text"
-                    ))
-                return ""
+                if not isinstance(data, dict):
+                    raise ValueError("response body is not an object")
             except httpx.HTTPStatusError as e:
                 last_err = str(e)
                 status = e.response.status_code
                 if self.auth_pool is not None and is_rotatable_status(status) and self.auth_pool.size > 1:
                     self.auth_pool.report_failure(key)
                     continue   # fail over to the next key
-                return f"[Claude API error: {e}]"
+                return None, f"[Claude API error: {e}]"
             except Exception as e:
-                return f"[Claude API error: {e}]"
-        return f"[Claude API error: all auth profiles exhausted: {last_err}]"
+                return None, f"[Claude API error: {e}]"
+            if self.auth_pool is not None:
+                self.auth_pool.report_success(key)
+            return data, ""
+        return None, f"[Claude API error: all auth profiles exhausted: {last_err}]"
+
+    async def generate(
+        self, model: str, prompt: str, system: str = "",
+        max_tokens: int = 1024, temperature: float = 0.7
+    ) -> str:
+        model = model or self.model
+        payload = {
+            "model": model,
+            "max_tokens": cloud_cap(max_tokens),
+            "temperature": temperature,
+            "system": system,
+            "messages": self._build_messages(prompt, system),
+        }
+        data, error = await self._post_messages(payload)
+        if data is None:
+            return error
+        if data.get("content"):
+            return self._finalize_cloud(anthropic_text(data["content"]))
+        return ""
+
+    async def generate_tool_turn(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSpec],
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+    ) -> ToolTurn:
+        """One tool-enabled turn; every tool_use block crosses `parse_openai_tool_calls`."""
+        system, converted = anthropic_messages(messages)
+        payload: dict[str, Any] = {
+            "model": model or self.model,
+            "max_tokens": cloud_cap(max_tokens),
+            "temperature": temperature,
+            "messages": converted,
+        }
+        if system:
+            payload["system"] = system
+        if tools:
+            payload["tools"] = anthropic_tools(tools)
+            payload["tool_choice"] = {"type": "auto"}
+        data, error = await self._post_messages(payload)
+        if data is None:
+            return ToolTurn(content=error)
+        blocks = data.get("content") or []
+        return ToolTurn(
+            content=self._finalize_cloud(anthropic_text(blocks)),
+            tool_calls=parse_openai_tool_calls(anthropic_tool_calls(blocks)),
+            finish_reason=normalize_finish_reason(ANTHROPIC_FINISH_REASONS, data.get("stop_reason")),
+        )
 
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",

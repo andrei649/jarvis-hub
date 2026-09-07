@@ -134,6 +134,12 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="hybrid_flash_max", value=1000000,                label="Cloud Flash routing threshold — above N input tokens escalates to Pro (0 = unlimited)", kind="number"),
     dict(category="llm",     key="tool_loop_enabled", value=False,                  label="Agent tool loop (experimental)", kind="toggle"),
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),
+    dict(category="llm",     key="tool_loop_context_tokens", value=0,               label="Agent tool-loop context budget (tokens; 0 = 75% of the model window)", kind="number"),
+    dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap)", kind="number"),
+    dict(category="llm",     key="skills_in_prompt", value=True,                    label="List skill commands in the model prompt", kind="toggle"),
+    dict(category="llm",     key="guest_tools", value=["echo", "time"],              label="Tools offered to a guest on an inbound channel (never a gated one)", kind="tags"),
+    dict(category="llm",     key="inbound_actuation", value=False,                  label="Offer gated (approval-bound) tools to the owner on inbound channels", kind="toggle"),
+    dict(category="llm",     key="internal_actuation", value=False,                 label="Offer gated (approval-bound) tools to unattended turns (heartbeats, jobs)", kind="toggle"),
     dict(category="llm",     key="model_pull_max_gb", value=20,                    label="Local model pull size cap (GB) — a governed Ollama pull whose layers exceed it is refused", kind="number"),
     # voice
     dict(category="voice",   key="stt_model_size",   value="medium",              label="STT model size",     kind="select",  opts=["tiny","base","small","medium","large"]),
@@ -198,6 +204,7 @@ DEFAULTS: list[dict[str, Any]] = [
     # channels
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
+    dict(category="channels",key="streaming_replies", value=True,                 label="Write chat replies in place as they are produced (channels that can edit a message)", kind="toggle"),
     # plugins (one per plugin, enabled toggle)
     dict(category="plugins", key="weather",          value=True,                  label="Weather",            kind="toggle"),
     dict(category="plugins", key="news",             value=True,                  label="News",               kind="toggle"),

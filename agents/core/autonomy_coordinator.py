@@ -341,6 +341,7 @@ class AutonomyCoordinator:
         import time as _t
 
         from .agent_runtime import AgentToolRuntime
+        from .tool_profiles import ToolProfileResolver
         from .acquisition.runtime import AcquisitionRuntime
         from .desktop_operator import DesktopProposalError, validate_desktop_run_args
         from .observability import capability_registry
@@ -684,7 +685,13 @@ class AutonomyCoordinator:
             },
             capability_id="tool:time",
         )
-        # 1.1.0 operator wave — governed file read/list/write/delete. Default-off:
+        # Hermes absorption 3a — the model may search what was actually said. Read-only,
+        # inside the data root, bounded, and every hit is scanned for injection before it
+        # reaches the model. Who may ask is the tool profile's decision (3b), not the tool's.
+        from .memory.session_search import register_session_search
+
+        register_session_search(server)
+        # 1.1.0 operator wave — governed file read/list/search/write/delete. Default-off:
         # register_file_tools returns [] and touches nothing unless JARVIS_FILE_TOOLS
         # is set. The two mutating tools are gated, so they can only run from an
         # owner-approved durable task, and each write crosses the Action Kernel with
@@ -704,6 +711,20 @@ class AutonomyCoordinator:
         )
         bind_external_orchestrator_attribute(self._orch, "acquisition", acquisition)
 
+        # Hermes absorption 3b — least privilege at the moment of offering: the profile
+        # (agent × surface × principal) decides which registered tools this turn's model
+        # even sees. Principal and origin are read per call, so a Telegram guest's turn and
+        # the owner's HUD turn resolve differently on the same runtime.
+        def _turn_principal():
+            from .orchestrator import current_principal
+
+            return current_principal()
+
+        def _agent_tool_patterns(agent_id):
+            config = getattr(self._orch, "config", None)
+            agents = getattr(config, "agents", None) or {}
+            return getattr(agents.get(agent_id), "tools", None)
+
         runtime = AgentToolRuntime(
             server,
             enabled=lambda: _get_setting("llm.tool_loop_enabled", False) is True,
@@ -711,6 +732,13 @@ class AutonomyCoordinator:
             capability_snapshot=lambda: capability_registry.snapshot(self._orch),
             max_iterations=lambda: _get_setting("llm.tool_loop_max_iterations", 8),
             gap_callback=acquisition.capture_gap,
+            context_budget_tokens=lambda: _get_setting("llm.tool_loop_context_tokens", 0),
+            per_tool_limit=lambda: _get_setting("llm.tool_loop_per_tool_cap", 0),
+            tool_profile=ToolProfileResolver(
+                settings=_get_setting,
+                agent_patterns=_agent_tool_patterns,
+                principal=_turn_principal,
+            ),
         )
         bind_external_orchestrator_attribute(self._orch, "tool_rpc", server)
         bind_external_orchestrator_attribute(self._orch, "agent_tool_runtime", runtime)

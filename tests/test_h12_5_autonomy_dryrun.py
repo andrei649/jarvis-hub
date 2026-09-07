@@ -105,3 +105,22 @@ def test_preview_endpoint():
         body = r.json()
         assert body["irreversible"] is True and body["requires_approval"] is True
         assert body["would_execute"] is False
+
+
+def test_preview_read_only_tier_is_not_money_grade():
+    """A READ_ONLY tier is ``0`` — falsy. ``int(t.get("risk_tier", 3) or 3)`` turned it into
+    3, so every declared read previewed as money-grade and approval-required, the inverse of
+    the GOV-038 intent. Only an absent or unparseable tier falls back to 3 now."""
+    read = preview_task({"kind": "tech_scout.finding", "title": "a finding", "payload": {}, "risk_tier": 0})
+    assert read["risk_tier"] == 0
+    assert read["requires_approval"] is False
+    assert read["would_execute"] is True
+
+    absent = preview_task({"kind": "analyze", "title": "no tier", "payload": {}})
+    assert absent["risk_tier"] == 3 and absent["requires_approval"] is True
+    garbage = preview_task({"kind": "analyze", "title": "bad tier", "payload": {}, "risk_tier": "high"})
+    assert garbage["risk_tier"] == 3
+    out_of_range = preview_task({"kind": "analyze", "title": "bad tier", "payload": {}, "risk_tier": 9})
+    assert out_of_range["risk_tier"] == 3
+    boolean = preview_task({"kind": "analyze", "title": "bad tier", "payload": {}, "risk_tier": True})
+    assert boolean["risk_tier"] == 3

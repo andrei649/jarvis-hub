@@ -61,6 +61,11 @@ def looks_like_session_snapshot(path: Path) -> bool:
             data = json.load(fh)
     except (OSError, ValueError):
         return False
+    return is_session_snapshot_payload(data)
+
+
+def is_session_snapshot_payload(data: object) -> bool:
+    """The payload half of the rule, for a caller that has already parsed the file."""
     return (
         isinstance(data, dict)
         and bool(data.get("session_id"))

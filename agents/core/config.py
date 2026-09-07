@@ -51,6 +51,13 @@ class AgentConfig:
 
         # Plugin permissions this agent needs
         self.plugins: list[str] = data.get("plugins", [])
+        # Hermes absorption 3b — optional least-privilege list of tool names / glob patterns
+        # the model loop may offer this agent. Absent (None) = whatever the surface posture
+        # allows; present = that posture narrowed to these names (never widened).
+        raw_tools = data.get("tools")
+        self.tools: list[str] | None = (
+            [str(item) for item in raw_tools] if isinstance(raw_tools, list) else None
+        )
 
 
 class JarvisConfig:

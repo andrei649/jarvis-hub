@@ -26,7 +26,7 @@ _SAFE_CONTRACT_TOKEN = re.compile(r"^[A-Za-z0-9_.:/@\-]{1,200}$")
 # direct-send posture predates Safe Comms. Email is excluded: inbound email is
 # untrusted input and may only reach SMTP through the governed channel-reply
 # executor below.
-_SUPPORTED_SEND_CHANNELS = frozenset({"telegram", "web", "voice"})
+_SUPPORTED_SEND_CHANNELS = frozenset({"telegram", "web", "voice", "ntfy"})
 _SUPPORTED_REPLY_CHANNELS = frozenset({"telegram", "web", "email"})
 
 
@@ -140,6 +140,9 @@ class ChannelManager:
             return bool(await ch.send(response, **kwargs))
         elif channel == "voice":
             return bool(await ch.send(response))
+        elif channel == "ntfy":
+            # Outbound-only push (Hermes absorption 4g): title / priority ride in kwargs.
+            return bool(await ch.send(response, **kwargs))
         return False
 
     async def send_channel_reply(self, channel: str, response, **kwargs) -> bool:

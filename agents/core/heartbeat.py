@@ -211,14 +211,21 @@ class HeartbeatScheduler:
                             f"Cron: {cron_expr}"
                         )
                     jitter = random.randint(JITTER_MIN, JITTER_MAX)
+                    # cron counts Sunday as 0; APScheduler counts Monday as 0. Passing the
+                    # field straight through fired every weekday heartbeat a day late
+                    # (found while building the owner's jobs — BACKLOG HA-2c). The jobs
+                    # engine owns the one translation.
+                    from .autonomy.jobs import cron_kwargs
+
+                    try:
+                        cron_fields = cron_kwargs(" ".join(parts))
+                    except ValueError as exc:
+                        logger.warning(f"Heartbeat {agent_id}: unusable cron '{cron_expr}': {exc}")
+                        continue
                     self.scheduler.add_job(
                         self._run_heartbeat,
                         "cron",
-                        minute=parts[0],
-                        hour=parts[1],
-                        day=parts[2],
-                        month=parts[3],
-                        day_of_week=parts[4],
+                        **cron_fields,
                         args=[agent_id, orchestrator],
                         id=f"heartbeat-{agent_id}",
                         replace_existing=True,

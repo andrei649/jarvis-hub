@@ -10,8 +10,13 @@ import logging
 from typing import Optional
 
 from .base import ChannelAdapter
+from .descriptor import DIALECT_SLACK_MRKDWN, ChannelDescriptor
+from .render import render_outbound
 
 logger = logging.getLogger("jarvis.channels.slack")
+
+#: Slack's cap on the ``text`` of one chat.postMessage.
+SLACK_MAX_MESSAGE_LENGTH = 40_000
 
 try:
     from slack_sdk import WebClient
@@ -22,6 +27,14 @@ except ImportError:
 
 
 class SlackChannel(ChannelAdapter):
+    descriptor = ChannelDescriptor(
+        dialect=DIALECT_SLACK_MRKDWN,
+        max_message_length=SLACK_MAX_MESSAGE_LENGTH,
+        supports_edit=True,
+        supports_media=True,
+        supports_threads=True,
+    )
+
     def __init__(self, token: str = "", handler=None):
         super().__init__("slack", handler)
         self.token = token
@@ -49,11 +62,14 @@ class SlackChannel(ChannelAdapter):
             logger.warning("No Slack channel specified")
             return False
         try:
+            # Rendered to mrkdwn and chunked on the source (Hermes absorption 4d).
             # slack_sdk.WebClient is the blocking (urllib) client; run it in an
             # executor so a slow/unreachable Slack API can't freeze the event loop.
-            await asyncio.get_running_loop().run_in_executor(
-                None, lambda: self._client.chat_postMessage(channel=channel, text=message)
-            )
+            loop = asyncio.get_running_loop()
+            for piece in render_outbound(str(message or ""), self.descriptor):
+                await loop.run_in_executor(
+                    None, lambda text=piece: self._client.chat_postMessage(channel=channel, text=text)
+                )
             return True
         except Exception as e:
             logger.error(f"Slack send error: {e}")

@@ -58,7 +58,10 @@ class Gateway:
         if channel not in self._channels:
             self.register_channel(channel)
 
-        if not self._check_rate_limit(channel):
+        # An observed group message (Hermes absorption 0.4) is recorded, never answered,
+        # so it neither spends the reply rate budget nor earns a reply of any kind.
+        observe_only = bool(kwargs.get("observe_only"))
+        if not observe_only and not self._check_rate_limit(channel):
             logger.warning("Gateway: rate limit exceeded for channel '%s'", log_safe(channel))
             return "Rate limit exceeded. Please wait before sending another message."
 
@@ -89,7 +92,7 @@ class Gateway:
             if not decision.get("allowed", True):
                 logger.info("Gateway: held unpaired sender on '%s' (status=%s)",
                             log_safe(channel), decision.get('status'))
-                return decision.get("message") or None
+                return None if observe_only else (decision.get("message") or None)
 
         self._channels[channel]["message_count"] += 1
         self._channels[channel]["last_activity"] = time.time()

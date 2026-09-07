@@ -89,7 +89,7 @@ class RecordingToolRuntime:
     def __init__(self):
         self.backends = []
 
-    def can_run(self, backend) -> bool:
+    def can_run(self, backend, agent_id=None) -> bool:
         return backend.supports_tools
 
     async def run(self, **kwargs) -> str:

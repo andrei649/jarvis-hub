@@ -17,7 +17,9 @@ def test_config_loads():
     cfg = JarvisConfig()
     assert cfg.agents, "No agents loaded from YAML"
     assert "jarvis" in cfg.agents, "jarvis agent missing"
-    assert cfg.general, "general section missing"
+    # The `general:` block was removed 2026-09-07 (nothing read it — Hermes absorption
+    # 0.6); the attribute stays a dict so older callers degrade to defaults.
+    assert cfg.general == {}
 
 
 def test_all_agents_have_channel():

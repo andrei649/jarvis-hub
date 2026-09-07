@@ -17,6 +17,7 @@ inheriting a credential would otherwise break silently.
 """
 
 import asyncio
+import fnmatch
 import json
 import logging
 import os
@@ -45,6 +46,7 @@ from agents.core.mcp.http_transport import (
     transport_allowed,
     validate_mcp_url,
 )
+from agents.core.security.quarantine import strip_invisible_deep
 
 logger = logging.getLogger("jarvis.mcp")
 
@@ -53,6 +55,43 @@ _SHELL_METACHARS = frozenset(";&|<>`\n\r")
 
 #: Owner flag: spawn stdio MCP servers with the allow-listed env baseline only.
 STDIO_ENV_BASELINE_FLAG = "JARVIS_MCP_STDIO_ENV_BASELINE"
+
+#: Trust tiers (Hermes absorption 4b). A server is *read-only* unless the owner says
+#: otherwise: only a tool whose ``annotations.readOnlyHint`` is true may be called on it;
+#: an unannotated, unlisted or mutating tool is refused by name before any request leaves.
+#: ``full`` lets every tool through to the contract and kernel checks that already govern
+#: it. The hint is the server's own claim, so it can only ever *narrow* what a tier allows.
+TRUST_READ_ONLY = "read-only"
+TRUST_FULL = "full"
+TRUST_TIERS: tuple[str, ...] = (TRUST_READ_ONLY, TRUST_FULL)
+_TRUST_ALIASES = {
+    "read-only": TRUST_READ_ONLY, "readonly": TRUST_READ_ONLY, "read_only": TRUST_READ_ONLY,
+    "ro": TRUST_READ_ONLY,
+    "full": TRUST_FULL, "read-write": TRUST_FULL, "rw": TRUST_FULL,
+}
+
+
+def normalize_trust(raw: object) -> str | None:
+    """Canonical trust tier for *raw*, or None when it names no tier."""
+    return _TRUST_ALIASES.get(str(raw or "").strip().lower())
+
+
+MAX_TOOL_PATTERNS = 64
+MAX_TOOL_PATTERN_CHARS = 128
+
+
+def _clean_tool_patterns(raw: object) -> list[str] | None:
+    """A bounded list of non-empty string patterns; None stays None (no filter); anything
+    else that is not a list narrows to nothing rather than to everything."""
+    if raw is None:
+        return None
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out = [
+        item.strip() for item in raw
+        if isinstance(item, str) and item.strip() and len(item) <= MAX_TOOL_PATTERN_CHARS
+    ]
+    return out[:MAX_TOOL_PATTERNS]
 
 #: Variables a stdio MCP subprocess may inherit under the baseline: process
 #: plumbing (path, home, locale, temp, terminal), platform essentials
@@ -168,11 +207,30 @@ def active_tool_call_contract() -> ContractTemplate:
 
 
 class MCPTool:
-    def __init__(self, name: str, description: str, input_schema: dict, server: str):
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        input_schema: dict,
+        server: str,
+        annotations: dict | None = None,
+    ):
         self.name = name
         self.description = description
         self.input_schema = input_schema
         self.server = server
+        #: The server's own claims about the tool (``readOnlyHint``, ``destructiveHint``, …).
+        self.annotations: dict = dict(annotations) if isinstance(annotations, dict) else {}
+
+    @property
+    def read_only(self) -> bool:
+        """True only when the server declared ``readOnlyHint: true`` — never assumed."""
+        return self.annotations.get("readOnlyHint") is True
+
+    @property
+    def qualified_name(self) -> str:
+        """``server/tool`` — the name that stays unambiguous across servers."""
+        return f"{self.server}/{self.name}"
 
 
 class MCPServer:
@@ -187,14 +245,28 @@ class MCPServer:
         env: dict[str, str] | None = None,
         headers: dict[str, str] | None = None,
         http_transport_factory: Callable[..., StreamableHttpTransport] | None = None,
+        trust: str = TRUST_READ_ONLY,
+        tools_allow: list[str] | None = None,
+        tools_deny: list[str] | None = None,
     ):
         """
         ``transport`` is normalised (``"HTTP"`` → ``streamable-http``); an unknown
         spelling is kept verbatim so ``connect()``/the contract refuse it by name.
         ``headers`` (HTTP only, e.g. a bearer token) live in memory — ``to_config``
         never persists them. ``http_transport_factory(url, headers, name=)`` is the
-        test seam for the Streamable HTTP transport.
+        test seam for the Streamable HTTP transport. ``trust`` is the owner's tier for
+        this server (:data:`TRUST_TIERS`; default read-only, fail closed).
         """
+        normalized_trust = normalize_trust(trust)
+        if normalized_trust is None:
+            raise ValueError(f"unknown MCP trust tier: {trust!r}")
+        self.trust = normalized_trust
+        # Hermes absorption 4c — attaching a server is not attaching every one of its
+        # tools: glob patterns on the tool name; ``tools_allow`` None = all, a deny always
+        # wins. Applied at tools/list (hidden tools are never offered) and again at call
+        # time, so a name the model or a caller remembers cannot go around the filter.
+        self.tools_allow: list[str] | None = _clean_tool_patterns(tools_allow)
+        self.tools_deny: list[str] = _clean_tool_patterns(tools_deny) or []
         self.name = name
         self.transport = normalize_transport(transport)
         self.command = command
@@ -330,18 +402,40 @@ class MCPServer:
     async def _list_tools(self):
         resp = await self._send({"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 2})
         if resp and "result" in resp:
+            hidden = 0
             for t in resp["result"].get("tools", []):
-                self.tools.append(MCPTool(
+                tool = MCPTool(
                     name=t.get("name", "unknown"),
                     description=t.get("description", ""),
                     input_schema=t.get("inputSchema", {}),
                     server=self.name,
-                ))
+                    annotations=t.get("annotations"),
+                )
+                if not self.tool_visible(tool.name):
+                    hidden += 1
+                    continue
+                self.tools.append(tool)
+            if hidden:
+                logger.info("MCP server %s: %d tool(s) hidden by the owner's filter", self.name, hidden)
+
+    def tool_visible(self, name: str) -> bool:
+        """Does the owner's include / exclude filter let *name* through?"""
+        text = str(name or "")
+        if any(fnmatch.fnmatchcase(text, pattern) for pattern in self.tools_deny):
+            return False
+        if self.tools_allow is None:
+            return True
+        return any(fnmatch.fnmatchcase(text, pattern) for pattern in self.tools_allow)
 
     async def call_tool(self, name: str, arguments: dict = None) -> Any:
         arguments = arguments or {}
         if not isinstance(arguments, dict):
             return {"error": "bad_args", "tool": name, "server": self.name}
+        if not self.tool_visible(name):
+            return {"error": "tool_filtered", "tool": name, "server": self.name}
+        denied = self._trust_denial(name)
+        if denied is not None:
+            return denied
         blocked = self._tool_call_blocked(name, arguments)
         if blocked is not None:
             return blocked
@@ -352,8 +446,25 @@ class MCPServer:
             "id": 3,
         })
         if resp and "result" in resp:
-            return resp["result"]
+            # A remote server's text is untrusted: invisible TAG characters can carry an
+            # instruction the owner never sees (Hermes absorption 4a).
+            return strip_invisible_deep(resp["result"])
         return resp
+
+    def _trust_denial(self, name: str) -> dict | None:
+        """On a read-only server only a tool the server itself marked read-only may run."""
+        if self.trust == TRUST_FULL:
+            return None
+        tool = next((t for t in self.tools if t.name == name), None)
+        if tool is not None and tool.read_only:
+            return None
+        return {
+            "error": "trust_denied",
+            "tool": name,
+            "server": self.name,
+            "trust": self.trust,
+            "reason": "unlisted_tool" if tool is None else "readOnlyHint_required",
+        }
 
     def _tool_call_blocked(self, name: str, arguments: dict) -> dict | None:
         arg_keys = list(arguments.keys())
@@ -452,19 +563,51 @@ class MCPManager:
             tools.extend(srv.tools)
         return tools
 
-    def find_tool(self, name: str) -> MCPTool:
-        for srv in self.servers.values():
-            for t in srv.tools:
-                if t.name == name:
-                    return t
+    def _resolve(self, name: str, server: str | None) -> tuple[MCPServer | None, str, dict | None]:
+        """``(server, bare tool name, error)`` for *name*.
+
+        A ``server/tool`` name, or an explicit ``server=``, pins the server. A bare name is
+        accepted only when exactly one server offers it: dispatch used to pick whichever
+        server came first in dict order, so adding a second server could silently redirect
+        an existing call (Hermes absorption 4a).
+        """
+        bare = str(name or "")
+        if server is None and "/" in bare:
+            prefix, _, rest = bare.partition("/")
+            if prefix in self.servers and rest:
+                server, bare = prefix, rest
+        if server is not None:
+            srv = self.servers.get(server)
+            if srv is None:
+                return None, bare, {"error": "server_not_found", "tool": bare, "server": server}
+            if not any(t.name == bare for t in srv.tools):
+                return None, bare, {"error": f"Tool '{bare}' not found", "server": server}
+            return srv, bare, None
+        offering = [srv for srv in self.servers.values() if any(t.name == bare for t in srv.tools)]
+        if not offering:
+            return None, bare, {"error": f"Tool '{bare}' not found"}
+        if len(offering) > 1:
+            return None, bare, {
+                "error": "ambiguous_tool",
+                "tool": bare,
+                "servers": [srv.name for srv in offering],
+            }
+        return offering[0], bare, None
+
+    def find_tool(self, name: str, *, server: str | None = None) -> MCPTool:
+        srv, bare, error = self._resolve(name, server)
+        if error is not None or srv is None:
+            return None
+        for t in srv.tools:
+            if t.name == bare:
+                return t
         return None
 
-    async def call_tool(self, name: str, arguments: dict = None) -> Any:
-        for srv in self.servers.values():
-            for t in srv.tools:
-                if t.name == name:
-                    return await srv.call_tool(name, arguments)
-        return {"error": f"Tool '{name}' not found"}
+    async def call_tool(self, name: str, arguments: dict = None, *, server: str | None = None) -> Any:
+        srv, bare, error = self._resolve(name, server)
+        if error is not None or srv is None:
+            return error
+        return await srv.call_tool(bare, arguments)
 
     async def close_all(self):
         for srv in self.servers.values():
@@ -479,6 +622,9 @@ class MCPManager:
                 "command": srv.command,
                 "url": srv.url,
                 "cwd": srv.cwd,
+                "trust": srv.trust,
+                "tools_allow": srv.tools_allow,
+                "tools_deny": srv.tools_deny,
             }
             for srv in self.servers.values()
         ]
@@ -488,6 +634,25 @@ class MCPManager:
         self.servers.clear()
         for cfg in configs:
             headers = cfg.get("headers")
+            raw_trust = cfg.get("trust")
+            trust = normalize_trust(raw_trust)
+            if trust is None:
+                if raw_trust is None:
+                    # A config saved before trust tiers existed: keep it working as it
+                    # did (every tool reachable) and say so, rather than break the
+                    # owner's setup on upgrade. New servers default to read-only.
+                    trust = TRUST_FULL
+                    logger.warning(
+                        "MCP server %s has no trust tier in its saved config; treated as "
+                        "full for compatibility — set it to read-only or full explicitly",
+                        cfg.get("name"),
+                    )
+                else:
+                    trust = TRUST_READ_ONLY
+                    logger.warning(
+                        "MCP server %s: unknown trust tier %r; treated as read-only",
+                        cfg.get("name"), raw_trust,
+                    )
             srv = MCPServer(
                 name=cfg["name"],
                 transport=cfg.get("transport", "stdio"),
@@ -495,5 +660,8 @@ class MCPManager:
                 url=cfg.get("url"),
                 cwd=cfg.get("cwd"),
                 headers=headers if isinstance(headers, dict) else None,
+                trust=trust,
+                tools_allow=cfg.get("tools_allow"),
+                tools_deny=cfg.get("tools_deny"),
             )
             self.servers[srv.name] = srv

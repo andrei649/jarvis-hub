@@ -525,7 +525,8 @@ H23.23 decision, and it touches none of the deferred work.
 
 **Reuse as-is (config, not engineering):** CDX-12 hardened profile (`JARVIS_HARDENED=1`) · CDX-11
 plugin least-privilege (grant nothing) · in-memory graph + vector fallbacks (no Neo4j, no Qdrant) ·
-existing OpenAI-compatible cloud routing in `hybrid_router.py` + the `cloud_llm_agents` allowlist.
+existing OpenAI-compatible cloud routing in `hybrid_router.py` (the `cloud_llm_agents` allowlist
+this note also named was found to have no reader and was removed 2026-09-07 — HA-0.6).
 
 **The one real code gap — ✅ CLOSED:** `agents/core/memory/seed_graph.py` `SEED_FACTS` hardcodes
 Andrei/Alexandra/Max/Raiffeisen/Cosmina de Sus/BMW E93 and `MemoryManager.__init__` seeded them
@@ -1166,6 +1167,283 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
 ---
 
 ## 🥊 Nerva vs Hermes Agent — honest gap analysis (2026-07-25)
+
+### Hermes absorption — 2026-09-07 (PR #1042, branch `claude/repo-architecture-analysis-n90bwm`)
+
+> **Owner directive 2026-09-07:** *"vreau ca tot să fie în nerva — ce avem superior, păstrăm; ce nu
+> avem, copiem; ce e sub hermes, facem update."* The whole `v2026.8.31` inventory (8,199 entries) was
+> reduced to **697 capability decisions** — 114 keep / 258 update / 218 copy / 107 skip — in
+> [`docs/research/2026-09-07-hermes-absorption-ledger.json`](docs/research/2026-09-07-hermes-absorption-ledger.json);
+> the wave plan is [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md). One rule governs every
+> copy: **a privileged effect lands behind the Action Kernel, never beside it.** Wave 0 is not
+> Hermes parity — it is the set of things Nerva *believed* it did and did not.
+
+- [x] ✅ **HA-0.1 — tools are alive on every backend that actually runs.** `supports_tools = True`
+  existed exactly once (`LMStudioBackend`), and `AgentToolRuntime.can_run()` fails closed on it — so
+  the moment an agent routed to Claude, Gemini, OpenRouter or even local Ollama, the model silently
+  lost every governed tool and became a chat model. New `agents/core/llm/tool_dialects.py` translates
+  the runtime's one OpenAI-shaped dialect into each provider's own and back (Messages-API
+  `tool_use`/`tool_result` blocks; Gemini `functionDeclarations` on the OpenAPI subset it accepts,
+  `functionCall`/`functionResponse` parts with thought signatures carried across turns; Ollama
+  `/api/chat` object arguments and `tool_name`), and every provider call still crosses
+  `parse_openai_tool_calls`, the single fail-closed boundary, before the kernel sees it. `VLMBackend`
+  stays `False` on purpose. Tests: `tests/test_cloud_tool_turns.py` (39; request shape, parsing,
+  malformed calls fail closed, failure returns a degraded turn, auth-pool failover, an end-to-end
+  governed loop over Ollama). **Not proven against a live Claude, Gemini, OpenRouter or Ollama
+  server** — the dialects are built from each provider's documented contract, not a captured
+  exchange → [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P15**.
+- [x] ✅ **HA-0.2 — the model is told which skills exist.** `Agent.build_prompt` rendered an
+  "Available skills" block from `context["skills"]` since the beginning and nothing set the key.
+  `SkillLoader.prompt_catalog(agent_id)` is the producer (bounded to 20 rows × 120 chars, only
+  skills the loader would actually execute — quarantined/sandboxed ones are never advertised,
+  agent-scoped ones only to their agents) and `Orchestrator._prompt_context` wires it without
+  mutating the shared intent context; `llm.skills_in_prompt` (default on) turns it off. Tests:
+  `tests/test_skills_in_prompt.py` (10).
+- [x] ✅ **HA-0.3 — the tool loop measures the transcript it grows.** Every turn after the first
+  checks `estimate_messages` against a budget (`llm.tool_loop_context_tokens`; 0 = 75 % of the
+  model's window from `context_compressor.window_for` minus the output reserve, floor 2,048).
+  Older tool results fold into ≤512-byte envelopes (`TOOL RESULT COMPACTED`, head/tail preview)
+  — never dropped, never reordered, so every result still answers the call that made it — the
+  most recent 2 iterations fold last, and a transcript that still does not fit stops the loop
+  with a named reply and a `tool_context_compacted{status=exhausted}` event instead of a
+  provider overflow. The 75 % fraction is a judgment, not a measurement. Tests:
+  `tests/test_tool_loop_compaction.py` (5).
+- [x] ✅ **HA-0.4 — being in a room is not being addressed.** `channels/group_policy.py`
+  (`GroupPolicy`, `gate_message`) is applied by the Telegram poll loop after the user allowlist:
+  DMs pass; in a group/supergroup/channel the bot answers only an `@mention`, a `/cmd@bot`, a
+  reply to itself or a `text_mention` of itself (the mention is stripped before the model sees
+  it), `TELEGRAM_ALLOWED_CHAT_IDS` restricts rooms (or one `chat:thread` topic),
+  `TELEGRAM_GROUP_REQUIRE_MENTION=0` relaxes the requirement per owner, `TELEGRAM_GROUP_OBSERVE=1`
+  records unaddressed messages as context without answering — an observed message takes no
+  turn lease, spends no reply rate budget and never earns a pairing reply. Unknown chat types
+  and a bot that could not learn its own identity (getMe failed) fail closed. Tests:
+  `tests/test_telegram_group_gate.py` (21). **Not proven in a live Telegram group** →
+  [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P16**.
+- [x] ✅ **HA-0.5 — one turn at a time per session.** `Orchestrator.turn_lease(session_key)`:
+  `channel_handler` and the two direct web chat endpoints take the session's lease before a
+  turn; a second message on the same session waits its turn, a message on another session does
+  not wait, a wait past 180 s is answered `TURN_BUSY_REPLY` rather than started, the lease is
+  re-entrant within a turn's async context (a workflow step calling back in inherits it, a
+  foreign context does not), and the table is bounded. Tests: `tests/test_turn_lease.py` (8).
+- [x] ✅ **HA-0.6 — the registry carries no config that nothing reads.** The whole `general:`
+  block (not just `cloud_llm_agents`: timezone, wake words, LLM backend/endpoints, plugin mode,
+  WhatsApp bridge) and the `rules:` block were copied into `JarvisConfig` and never consulted;
+  `rules.promotion_criteria` even disagreed with the real knob (`bench.<id>.threshold`). Both are
+  gone — each concept's real home is named in the file's header comment — `NERVA.md`'s setup
+  step now describes the routing that exists (`hybrid_router.py` + per-agent `llm_policy`), and
+  `tests/test_agents_yaml_dead_config.py` (4) keeps every top-level key consumed.
+- [x] ✅ **HA-1A — the `nerva` command.** `agents/cli/` (`python scripts/nerva.py …` or
+  `python -m agents.cli …`): `doctor` · `status` · `config list|get|set|check` · `approvals
+  list|accept|reject|defer|edit` · `kernel explain` · `logs` · `estop status|engage|resume` ·
+  `sessions` · `chat` · `completion bash|zsh`. Online verbs speak to the running hub over the
+  same admin/user-guarded routes the HUD uses (`x-admin-token` / `x-user-token` from
+  `JARVIS_ADMIN_TOKEN` / `JARVIS_USER_TOKEN`, hub at `NERVA_HUB_URL` or `JARVIS_HOST:JARVIS_PORT`),
+  so a verb can do exactly what the HUD can do and nothing more; offline verbs read the same data
+  root (`doctor`, `config` on `settings_db` with schema validation and secret masking, `logs`,
+  `kernel explain`). Exit codes name the failure (3 no hub, 4 credential needed). `kernel explain`
+  is the read-only simulator the plan asked for: it replays the real gates — e-stop sentinel,
+  mediation registry, policy tier, irreversibility, autonomy mode, approval floor — from this
+  box's data root and says plainly that the running hub's live policy can only tighten it. Fixing
+  it surfaced a real defect: `preview_task` read `int(t.get("risk_tier", 3) or 3)`, so a
+  READ_ONLY tier of 0 previewed as money-grade and approval-required (regression test in
+  `tests/test_h12_5_autonomy_dryrun.py`). Tests: `tests/test_nerva_cli.py` (27). **Not proven
+  against a running hub** → [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P17**. Deferred from
+  the ledger row on purpose: `nerva send <channel>` needs a send route that does not exist, and
+  adding one trips four snapshot gates plus the HUD caller gate — it lands with the HUD wiring.
+- [x] ✅ **HA-1B — the chat slash-command plane.** `agents/core/commands.py`: one registry with
+  access tiers, dispatched by the orchestrator before skills and the model on every
+  conversational surface — `/help`, `/status`, `/sessions` (user), `/pause`, `/stop`, `/resume`
+  (owner). The turn carries a principal: Telegram's owner allowlist or owner chat, or an admin
+  token on the web door; a guest asking for an owner command is told so, never silently ignored
+  and never obeyed. `/stop` is honest that in-flight work finishes (Nerva has no kill for a
+  running step yet). Unknown `/foo` gets a hint, not the model. Tests:
+  `tests/test_slash_commands.py` (12). Follow-up: `GET /api/commands` + quickbar listing (a new
+  route needs a HUD caller in the same change).
+- [x] ✅ **HA-2a — owner-scheduled jobs, the engine.** Nerva parsed "every weekday at 7" into
+  cron (`nl_schedule.py`) and threw the result away — its only caller was a preview route.
+  `agents/core/autonomy/jobs.py`: a `JobStore` (SQLite + WAL, 50 jobs, 200 runs each, every
+  text capped) and a `JobRunner` on the existing APScheduler; four actions — `remind` (a fixed
+  message, no model), `ask` (a prompt to one agent through `Orchestrator.process`, with a
+  **notepad** the job keeps between runs so a daily job reports what changed), `brief` (the
+  morning brief / evening retro on the owner's own time), `task` (enqueued through the autonomy
+  queue with `origin=job:<id>`, where the policy decides act / notify / ask exactly as for any
+  other task — a job can never go around the queue). Every attempt is a recorded run; three
+  consecutive failures pause the job itself and raise **one** incident (`E_JOB_PAUSED` in
+  `problems.jsonl`) instead of paging at 03:00 forever; the e-stop pauses every job; frequency
+  floor once per five minutes; cron day-of-week is translated to APScheduler's Monday-based
+  names (the heartbeat scheduler passes cron's Sunday-based field straight through — a latent
+  off-by-one-day for every weekday heartbeat, noted below as a follow-up). Five blueprints
+  (`morning_brief`, `evening_retro`, `reminder`, `ask_agent`, `inbox_watch`). Surface: admin
+  routes under `/api/jobs` (list · blueprints · create · get · runs · pause · resume · run ·
+  delete; snapshots reseeded), `nerva jobs list|blueprints|create|pause|resume|run|delete|runs`,
+  and in chat `/jobs` (anyone) and `/remind <when> | <message>` (owner). Tests:
+  `tests/test_owner_jobs.py` (22), `tests/test_jobs_routes.py` (4), plus CLI and chat rows.
+  **Not proven on a running hub** (a real APScheduler firing at the wall-clock time, a real
+  Telegram delivery) → [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P18**.
+- [x] ✅ **HA-2b — the HUD Jobs panel.** `frontend/src/panels/jobs.tsx` under Autonomy & Agents,
+  next to the NL-scheduling preview: lists every job with state, schedule and last outcome,
+  warns in amber when the scheduler is not running (a job list under a green chip while nothing
+  can fire would be a lie about the future), shows a self-paused job's `paused_reason` verbatim,
+  arms a blueprint with the owner's parameters, runs / pauses / resumes / deletes through the
+  admin routes with the backend's own refusal words, and lists a job's attempts. The seven
+  `/api/jobs` routes left the parity gate's punch list (10 again) and the bundle was rebuilt.
+  Tests: `frontend/src/panels/jobs.test.tsx` (4).
+- [x] ✅ **HA-2c — the weekday heartbeat fires on the weekday.** `HeartbeatScheduler.start`
+  passed cron's day-of-week (0 = Sunday) straight to APScheduler (0 = Monday), so every
+  `cron:` heartbeat with a weekday field fired one day late; it now goes through
+  `jobs.cron_kwargs`, the one translation, and a cron the translator refuses (a day-of-week
+  digit outside 0–7 used to be an `IndexError`) skips that heartbeat with a warning instead
+  of taking the scheduler down. Tests: `tests/test_heartbeat_cron_dow.py` (2). The other
+  half of the finding — quiet hours and the interrupt budget for job deliveries — is HA-4e.
+- [x] ✅ **HA-3a — the model's hands.** `file_search` (`agents/core/file_tools.py`, same
+  `JARVIS_FILE_TOOLS` flag): a literal content search with exactly `file_read`'s containment —
+  the roots, no symlink followed, secret-looking names skipped and counted, binaries and
+  over-cap files skipped — and every bound reported (`truncated` + `stopped_by`: matches,
+  matches per file, files, seconds). No regex and no ripgrep on purpose: Python's `re` has no
+  time bound, so one pathological pattern from the model would pin the host CPU and block the
+  loop, and `rg` would make the tool depend on a binary a fresh Windows/macOS install lacks.
+  `session_search` (`agents/core/memory/session_search.py`, registered beside `echo`/`time`):
+  keywords (all in one turn) over the session snapshots in the data root, most relevant then
+  newest first, bounded snippets; a turn the injection scanner flags is redacted as
+  `search_memory` redacts a hit and raises the turn's recall taint, so an action proposed after
+  reading it is queued, never auto-run. In the loop (`agent_runtime.py`): the third identical
+  call (same tool, same arguments) is refused with the reason, a fourth ends the turn with a
+  named reply and a `tool_loop_repeated` event; the fifth consecutive failure of one tool ends
+  it likewise (`tool_loop_failing`). Tests: `tests/test_file_search.py` (14),
+  `tests/test_session_search.py` (11), `tests/test_tool_loop_repeats.py` (9). **Not proven with
+  a live model choosing the tools** → [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P19**.
+  Named and not done: document-format extraction for `file_read`; duplicate-result stubs and
+  per-tool caps in the loop; automation demotion, lineage dedupe and admission records for
+  transcript hits; session-persistent code kernels and `image_generate` (both need backends
+  that do not exist yet).
+- [x] ✅ **HA-3b — tool profiles: least privilege at the moment of offering.** Every agent on
+  every surface was offered the whole allowlist — a Telegram guest's turn, a heartbeat's turn
+  and the owner's HUD turn saw the same list, `desktop_run` included; mediation happened only
+  at execution, and a guest could still make the model propose a gated action that lands as a
+  card in the owner's inbox. `agents/core/tool_profiles.py` resolves a profile before the
+  tools are offered, keyed by agent × surface × principal: the surface from the channel the
+  turn's principal was bound with (`web`/`voice` → operator; any external channel, or an
+  `inbound` action origin → inbound; no principal → internal), the principal from it (owner /
+  guest / system). Default postures: the owner at the HUD gets everything; a guest at the HUD
+  or the voice loop, the owner on an inbound channel, and every unattended turn get the
+  ungated tools only (`llm.inbound_actuation` / `llm.internal_actuation` widen the last two
+  to the gated ones, each proposal still approval-bound); a guest on an inbound channel gets
+  `llm.guest_tools` (default `echo`, `time`) and never a gated tool. A per-agent `tools:`
+  list in `agents.yaml` (names or globs) narrows the posture and never widens it. A call to a
+  withheld tool is `tool_not_allowed` before it reaches the server; `can_run` says no when a
+  turn is offered nothing, so the agent answers on the plain path; a `tool_profile` event
+  names the surface, the principal and what was withheld. The resolved sets over the live
+  registry are pinned in `tests/_snapshots/tool_profiles.json` the way `route_auth.json` pins
+  route guards, with a test that no posture but operator/owner offers actuation by default.
+  Fails closed: an unreadable setting, an unknown surface or a resolver error offers nothing.
+  Tests: `tests/test_tool_profiles.py` (26). Proven against the coordinator's real
+  registry; **not proven with a live guest on a live channel** → P19.
+- [x] ✅ **HA-4a — a channel says what it can show; Telegram replies that arrive.** The channel
+  contract was a four-method ABC with no capability information; Telegram was sent the model's
+  Markdown verbatim with `parse_mode=Markdown`, so an odd `*`, an unclosed fence or a reply over
+  4,096 characters was an HTTP 400, `send()` returned False and the owner saw nothing — the
+  failure was a log line. `channels/descriptor.py` (`ChannelDescriptor`: dialect, message cap,
+  edit / media / threads; the base adapter declares the honest minimum, Telegram declares
+  `telegram_html` × 4096) and `channels/render.py` (one renderer registry keyed by dialect with
+  one shared plain-text stripper; only *balanced* markers become markup, text is escaped before
+  any tag, chunking happens on the source at paragraph then line boundaries and never inside a
+  fenced block — a fence that spans chunks is closed and reopened — so every chunk renders as
+  valid markup on its own). `TelegramChannel.send` chunks, renders to HTML, and resends a chunk
+  Telegram still rejects (400) as plain text: the words always arrive, the formatting is best
+  effort; True only when every chunk was delivered in order. Decision cards are untouched.
+  Slack / Discord still send raw text (their dialects are the next renderers). Also in this
+  wave, two MCP client bugs with a security edge: `MCPManager.call_tool` dispatched a bare tool
+  name to whichever server came first in dict order, so a second server could silently redirect
+  an existing call — a name two servers offer is now refused as `ambiguous_tool` unless pinned
+  (`server/tool` or `server=`); and Unicode TAG characters (U+E0000–U+E007F, invisible on
+  screen, readable by the model) are stripped from every ToolRPC result and every MCP call
+  result (`quarantine.strip_invisible_deep`). Tests: `tests/test_channel_render.py` (15),
+  `tests/test_mcp_hardening.py` (6). **Not proven against a real Telegram bot** → P20.
+- [x] ✅ **HA-4b — MCP trust tiers, `readOnlyHint` fail-closed.** Every tool an MCP server listed
+  could be called. `MCPServer.trust` is now `read-only` (default for every server added from
+  now on) or `full`: on a read-only server only a tool the server itself marked
+  `annotations.readOnlyHint: true` may run — an unannotated, unlisted or mutating tool is
+  refused as `trust_denied` (with `readOnlyHint_required` / `unlisted_tool`) before any request
+  leaves the box; a string `"true"` is not a claim. The hint is the server's own word, so it can
+  only narrow a tier, never widen it; `full` hands every call to the contract and kernel checks
+  that already govern it. Annotations are captured from `tools/list` and shown per tool in
+  `GET /api/admin/mcp` (`read_only`), the tier is persisted with the server config and taken by
+  `POST /api/admin/mcp` (`trust`, validated: an unknown tier is a 400 before anything is
+  written). A config saved before tiers existed loads as `full` **with a warning** rather than
+  breaking the owner's setup on upgrade; an unknown saved spelling loads as read-only. Nerva's
+  own WorldView writer is pinned to `full` — its calls already cross the plugin gate and the
+  kernel. `schema.gen.ts` regenerated. Tests: `tests/test_mcp_trust.py` (10). **Not proven
+  against a real MCP server** → P21. Named and not done: per-server tool include / exclude,
+  `destructiveHint`-aware approval tiers, a vetted default-disabled catalogue.
+- [x] ✅ **HA-4c — a chat reply written in place; attaching a server is not attaching every
+  tool.** On a chat surface a long silence and a crash look the same. `TelegramDraft`
+  (`channels/telegram.py`): the first token sends the message, later tokens edit it under
+  Telegram's edit budget (one edit per 1.2 s, only when the visible text changed, a cursor
+  mark while it grows), `finish()` renders the final text exactly as `send()` would — the
+  first chunk settles in the edited message, overflow follows as new messages; every step is
+  best effort and never raises into the turn (a failed edit is a skipped frame, a failed final
+  edit becomes a fresh send, rejected markup is retried as plain). `Orchestrator.channel_handler`
+  opens a draft only on a channel whose descriptor says it can edit, only when the router
+  would deliver to that source, and never for an observed message; the draft sends nothing
+  until the first token, so a silent turn leaves no placeholder; `channels.streaming_replies`
+  (default on) turns it off. MCP: `tools_allow` / `tools_deny` glob patterns per server —
+  applied at `tools/list` (a hidden tool is never offered) and again at call time
+  (`tool_filtered`), a deny always wins, a malformed filter narrows to nothing; persisted with
+  the config, taken and validated by `POST /api/admin/mcp`, shown in the list;
+  `schema.gen.ts` regenerated. Tests: `tests/test_telegram_streaming.py` (10),
+  `tests/test_mcp_tool_filters.py` (4). **Not proven on a real Telegram** → P22.
+- [x] ✅ **HA-4d — Slack and Discord get text they can display.** `to_slack_mrkdwn` (balanced
+  markers only — `*bold*`, `_italic_`, `<url|text>`, headings bold, `&amp; &lt; &gt;` escaped in
+  prose and code alike, fences kept) and the identity `markdown` renderer for Discord, which
+  renders Markdown itself; `SlackChannel` declares `slack_mrkdwn` × 40,000 and `DiscordChannel`
+  `markdown` × 2,000, and both send rendered, chunked text in order (the Discord reply path
+  too). Tests: `tests/test_channel_render_slack_discord.py` (5). Not proven on a real Slack or
+  Discord — the P20 procedure applies to whichever the owner uses.
+- [x] ✅ **HA-4e — a job does not wake the owner.** A job delivered straight to Telegram at
+  whatever hour it fired. Now a message that would land in the owner's night (the ambient
+  quiet-hours window, `ambient.quiet_hours_start` / `_end`, default 22–07) is **held** in the
+  jobs store (`job_held`, the newest 20 per job) and delivered by a flush pass that runs every
+  five minutes on the same scheduler once the night ends — in order, the first refusal stops
+  the pass so nothing is lost or reordered, every delivery from hold is a recorded run naming
+  when it was held. An action marked `urgent: true` may still go at night, but it spends the
+  same daily interrupt budget every other night-time push spends (`autonomy.interrupt_budget`,
+  MOONSHOT §5) and waits when there is none left — or none at all. Daytime delivery is
+  unchanged and costs no budget. `GET /api/jobs` and `nerva jobs list` show what is held and
+  whether it is quiet hours now (the HUD panel does not yet). Tests:
+  `tests/test_job_quiet_hours.py` (9). Not proven on a wall clock — P18 gained the night case.
+- [x] ✅ **HA-4f — two more guardrails in the tool loop.** A per-tool cap: a tool called past
+  `llm.tool_loop_per_tool_cap` times in one turn (0 = off, the default) is refused as
+  `tool_cap_reached` with a notice that names the limit; and duplicate-result stubs: a
+  successful result byte-identical to one already in the transcript (≥ 512 bytes) is replaced
+  by a reference stub — "same as call N" — so the model does not pay for the payload twice,
+  with a `tool_result_deduplicated` event; error results are never stubbed, each fresh failure
+  is seen verbatim. Tests: `tests/test_tool_loop_guardrails.py` (4). The named remainder of the
+  loop-guardrail row is now delivered (3a: identical calls, failure streaks; 4f: caps, stubs).
+- [x] ✅ **HA-4g — a push to the owner's phone with no bot and no account.**
+  `channels/ntfy.py`: one HTTP POST to an ntfy server the owner names (`NTFY_URL` has no
+  default — self-hosted keeps it on the LAN), topic `NTFY_TOPIC`, optional bearer `NTFY_TOKEN`,
+  title `NTFY_TITLE`; the plain-text rendering, chunked at ntfy's 4,096 cap, title and
+  priority (1–5, clamped) as headers. **Outbound only, on purpose:** on ntfy the topic is the
+  identity, so nothing that arrives on one can become a turn, a command or a pairing, and the
+  topic is never logged. Wired by `web.py` when both variables are set (a malformed value is
+  refused with a warning, never half-wired), allowed on the manager's `channel.send` contract,
+  reached by the escalation router and by jobs (`"channel": "ntfy"`) like any registered
+  adapter. Tests: `tests/test_ntfy_channel.py` (8). **Not proven against a real ntfy server**
+  → P23.
+- [x] ✅ **HA-4h — `file_read` reads a document.** A `.pdf` / `.docx` inside the roots used to
+  come back as a page of replacement characters. It is now returned as its extracted text
+  through the same optional parsers the local-docs indexer uses (`pypdf`, `python-docx`),
+  bounded by the same byte cap, with `extracted` / `format` / `truncated` in the result; without
+  the parser the refusal names it (`parser_missing`, which package), a file the parser cannot
+  read is `extraction_failed`, and `raw: true` still returns the bytes. Neither parser is a
+  declared dependency — that stays the owner's call (P19 says how to check). Tests:
+  `tests/test_file_read_documents.py` (5). Named and not done: `file_search` over document
+  text (it would read every document in full on every search).
+- [ ] **HA-4i** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
+  now say they can), HUD mode on desktop, the plugin SDK, `nerva send` + `GET /api/commands`,
+  session-persistent code kernels and `image_generate` (both need backends that do not exist
+  yet) — sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the
 verified/partial/aspirational split in `NERVA_VISION.md` now matches what actually ships, so the

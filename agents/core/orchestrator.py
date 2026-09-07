@@ -14,7 +14,7 @@ import os
 import re
 import time
 import uuid
-from contextlib import nullcontext
+from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -40,6 +40,7 @@ from .action_origin import (
     reset_action_origin,
 )
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
+from .commands import Principal, build_default_registry
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
@@ -200,6 +201,35 @@ def skill_history_enabled() -> bool:
 # checkpoint restore, autonomy, status reads) so `self.session_id` falls back to
 # the shared instance default in those paths, preserving prior behavior.
 _SESSION_UNSET = object()
+# Hermes absorption 0.5 — one turn at a time per session. A second message on the same
+# session used to start a concurrent turn on the same transcript; now it waits for the
+# lease, and after the wait bound it is answered "busy" rather than started.
+_TURN_LEASE_MAX_WAIT_SECONDS = 180.0
+_TURN_LEASE_TABLE_LIMIT = 1024
+TURN_BUSY_REPLY = (
+    "I'm still working on your previous message — send that again in a moment."
+)
+_held_turn_leases: contextvars.ContextVar = contextvars.ContextVar(
+    "nerva_held_turn_leases", default=frozenset()
+)
+# Hermes absorption, wave 1 — who is speaking in this turn (channel, sender, owner?),
+# established by the channel or the web endpoint and read by the slash-command plane.
+_turn_principal: contextvars.ContextVar = contextvars.ContextVar(
+    "nerva_turn_principal", default=None
+)
+
+
+def bind_turn_principal(principal: Principal):
+    return _turn_principal.set(principal)
+
+
+def reset_turn_principal(token) -> None:
+    _turn_principal.reset(token)
+
+
+def current_principal() -> Principal:
+    """The principal bound to this turn; nobody in particular when none was bound."""
+    return _turn_principal.get() or Principal()
 _active_session: contextvars.ContextVar = contextvars.ContextVar(
     "jarvis_active_session", default=_SESSION_UNSET
 )
@@ -351,6 +381,19 @@ class Orchestrator:
             max_memory_mb=int(_gv("security", "sandbox_memory", 256)),
         )
         self.heartbeat_scheduler = HeartbeatScheduler(agents_dir=str(Path(__file__).resolve().parent.parent.parent / "agents"))
+        # Owner-scheduled jobs (Hermes absorption, wave 2). The runner rides the heartbeat
+        # scheduler, which starts in start_channels; jobs are registered there too.
+        try:
+            from .autonomy.jobs import JobRunner, JobStore
+
+            self.jobs = JobRunner(
+                JobStore(),
+                orch=self,
+                scheduler=lambda: getattr(self.heartbeat_scheduler, "scheduler", None),
+            )
+        except Exception:
+            logger.warning("owner jobs store unavailable — jobs disabled", exc_info=True)
+            self.jobs = None
         self._scheduler = SchedulerService(self)  # CLN-2: owns the cron/interval job wiring
         self._autonomy = AutonomyCoordinator(self)  # CLN-2: owns autonomy wiring + worker loop
         self.security: Optional[GuardrailsEngine] = None
@@ -413,6 +456,9 @@ class Orchestrator:
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
         self._channel_sessions: dict[str, str] = {}
+        self._turn_leases: dict[str, asyncio.Lock] = {}
+        self._turn_lease_max_wait: float = _TURN_LEASE_MAX_WAIT_SECONDS
+        self.commands = build_default_registry()
         self._last_channel: str = "unknown"
         self._settings_watcher_task: Optional[asyncio.Task] = None
         # ── Autonomy / Proactive Cortex (H6.1–H6.6) ──
@@ -1109,7 +1155,12 @@ class Orchestrator:
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
         action_origin = kwargs.pop("origin", origin_for_channel(channel))
         kwargs.pop("_inbound_meta", None)
+        # Hermes absorption 0.4: an observed group message becomes context, never an answer.
+        observe_only = bool(kwargs.pop("observe_only", False))
         origin_token = bind_action_origin(action_origin)
+        principal_token = bind_turn_principal(
+            self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"))
+        )
         # DRA-08: one description of *who is talking to us*, built from the
         # identity metadata the adapters already put on the wire (telegram
         # chat_id/sender, email sender, slack_channel, matrix room_id, teams
@@ -1135,6 +1186,11 @@ class Orchestrator:
             # isolation (H1.2) generalised to email and the webhook channels.
             # A turn with no identity at all (voice; web through the gateway with no
             # client_id) has nothing to isolate *by*, so it stays on the shared session.
+            # Hermes absorption 4c: on a channel that can edit a sent message the reply is
+            # written in place as it is produced. The draft exists only when the router
+            # would deliver to this source at all, and it sends nothing until the first
+            # token, so a silent turn leaves no placeholder behind.
+            draft = None if observe_only else self._begin_channel_draft(channel, source, kwargs)
             cross_channel = self.get_setting("memory.cross_channel_sessions", False)
             if not cross_channel and (source.thread_id or source.sender or source.client_id):
                 key = build_session_key(source)
@@ -1163,11 +1219,21 @@ class Orchestrator:
                 # `_resolve_session` inside handle_input keeps the value we set here.
                 token = _active_session.set(self._channel_sessions[key])
                 try:
-                    response = await self.handle_input(text, channel)
+                    response = await self._channel_turn(
+                        text, channel, observe_only=observe_only, draft=draft
+                    )
                 finally:
                     _active_session.reset(token)
             else:
-                response = await self.handle_input(text, channel)
+                response = await self._channel_turn(
+                    text, channel, observe_only=observe_only, draft=draft
+                )
+            if observe_only:
+                return None
+            if draft is not None and draft.started:
+                # The words are already on the channel; the final edit settles them.
+                await draft.finish(response)
+                return response
 
             # DRA-08: whether to reply is the router's call (empty/silent/local-only
             # turns are dropped here instead of being pushed at the transport).
@@ -1178,7 +1244,134 @@ class Orchestrator:
                 await self.channel_manager.send(decision.target.channel, response, **kwargs)
             return response
         finally:
+            reset_turn_principal(principal_token)
             reset_action_origin(origin_token)
+
+    def _channel_principal(self, channel: str, sender, chat_id) -> Principal:
+        """The owner test for a channel turn: Telegram's owner allowlist or owner chat; else nobody."""
+        sender_text = None if sender is None else str(sender)
+        admin = False
+        if channel == "telegram":
+            adapter = (getattr(self, "channels", None) or {}).get("telegram")
+            allowed = {str(uid) for uid in (getattr(adapter, "allowed_users", None) or [])}
+            owner_chat = str(self.get_setting("autonomy.owner_chat_id", "") or "").strip()
+            admin = bool(
+                (sender_text is not None and sender_text in allowed)
+                or (owner_chat and chat_id is not None and str(chat_id) == owner_chat)
+            )
+        return Principal(channel=channel, sender=sender_text, admin=admin)
+
+    async def _dispatch_command(self, text: str):
+        """Answer a slash command from the registry, or None when *text* is not one."""
+        registry = getattr(self, "commands", None)
+        if registry is None:
+            return None
+        try:
+            return await registry.dispatch(text, orch=self, principal=current_principal())
+        except Exception:
+            logger.warning("slash command dispatch failed closed", exc_info=True)
+            return None
+
+    async def _channel_turn(
+        self, text: str, channel: str, *, observe_only: bool, draft=None,
+    ) -> Optional[str]:
+        """One inbound channel message → one turn, under the session's lease."""
+        if observe_only:
+            await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+            return None
+        async with self.turn_lease() as acquired:
+            if not acquired:
+                return TURN_BUSY_REPLY
+            if draft is not None:
+                return await self.handle_input_stream(text, channel, on_token=draft.push)
+            return await self.handle_input(text, channel)
+
+    def _begin_channel_draft(self, channel: str, source, kwargs: dict):
+        """A streaming draft for this turn, or None when the channel cannot edit, the
+        owner turned streaming off, or the router would not deliver to this source."""
+        try:
+            if self.get_setting("channels.streaming_replies", True) is not True:
+                return None
+            adapter = self.channels.get(channel)
+        except Exception:
+            return None
+        begin = getattr(adapter, "begin_stream", None)
+        descriptor = getattr(adapter, "descriptor", None)
+        if begin is None or not getattr(descriptor, "supports_edit", False):
+            return None
+        try:
+            if not self._delivery_router.resolve(source, text="probe").send:
+                return None
+            return begin(chat_id=kwargs.get("chat_id"))
+        except Exception:
+            logger.debug("channel draft unavailable; replying whole", exc_info=True)
+            return None
+
+    def _lease_key(self, session_key: Optional[str]) -> str:
+        """Mirror `_resolve_session`'s order so the lease names the session the turn will use."""
+        if session_key is not None:
+            return str(session_key)
+        existing = _active_session.get()
+        if existing is not _SESSION_UNSET and existing is not None:
+            return str(existing)
+        return str(getattr(self, "_session_id_default", None))
+
+    @asynccontextmanager
+    async def turn_lease(self, session_key: Optional[str] = None):
+        """One turn at a time per session (Hermes absorption 0.5).
+
+        Yields True once this async context holds the session's lease and False when
+        another turn held it past the wait bound — the caller answers `TURN_BUSY_REPLY`
+        instead of starting a second turn on the same transcript. Re-entrant within one
+        turn's context: a workflow step that calls back into the orchestrator inherits the
+        lease rather than deadlocking on it. Never raises.
+        """
+        key = self._lease_key(session_key)
+        held = _held_turn_leases.get()
+        if key in held:
+            yield True
+            return
+        # Tolerate a bare instance (test doubles build the orchestrator without __init__).
+        table = self.__dict__.setdefault("_turn_leases", {})
+        max_wait = getattr(self, "_turn_lease_max_wait", _TURN_LEASE_MAX_WAIT_SECONDS)
+        lock = table.get(key)
+        if lock is None:
+            if len(table) >= _TURN_LEASE_TABLE_LIMIT:
+                for stale_key, stale in list(table.items()):
+                    if not stale.locked():
+                        del table[stale_key]
+            lock = asyncio.Lock()
+            table[key] = lock
+        try:
+            await asyncio.wait_for(lock.acquire(), timeout=max_wait)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "turn lease not acquired within %.0fs — answering busy instead of starting "
+                "a concurrent turn on the same session",
+                max_wait,
+            )
+            yield False
+            return
+        token = _held_turn_leases.set(held | {key})
+        try:
+            yield True
+        finally:
+            _held_turn_leases.reset(token)
+            lock.release()
+
+    @staticmethod
+    def _command_cognition(outcome) -> dict:
+        return {
+            "scoring": [],
+            "decision": {
+                "source": "command",
+                "confidence": 1.0,
+                "agents_selected": ["commands"],
+                "alternatives": [],
+                "timing": {"classify": 0, "route": 0, "total": 0},
+            },
+            "trace": [{"step": "slash_command", "duration_ms": 0, "result": f"/{outcome.name}:{outcome.status}"}],
+        }
 
     def _resolve_session(self, session_id: Optional[str]) -> str:
         """BUG-5: bind the active session into the per-request async context.
@@ -1263,6 +1456,12 @@ class Orchestrator:
         self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+
+        outcome = await self._dispatch_command(text)
+        if outcome is not None:
+            await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
+            self.last_cognition = self._command_cognition(outcome)
+            return outcome.reply
 
         skill_cmd = self.skills.parse_command(text)
         if skill_cmd:
@@ -1413,6 +1612,16 @@ class Orchestrator:
         self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+
+        outcome = await self._dispatch_command(text)
+        if outcome is not None:
+            await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
+            if on_token:
+                emitted = on_token(outcome.reply)
+                if inspect.isawaitable(emitted):
+                    await emitted
+            self.last_cognition = self._command_cognition(outcome)
+            return outcome.reply
 
         skill_cmd = self.skills.parse_command(text)
         if skill_cmd:
@@ -2036,9 +2245,31 @@ class Orchestrator:
     def _build_agent_prompt(self, agent, text: str, context: dict) -> str:
         build_prompt = getattr(agent, "build_prompt", None)
         if callable(build_prompt):
-            return build_prompt(text, context)
+            return build_prompt(text, self._prompt_context(agent, context))
         name = getattr(agent, "name", "agent")
         return f"User said: {text}\nRespond as {name}."
+
+    def _prompt_context(self, agent, context: dict) -> dict:
+        """The per-agent prompt context: the intent context plus the skills the model may name.
+
+        Hermes absorption 0.2. ``Agent.build_prompt`` has rendered ``context["skills"]`` since
+        the beginning and nothing set it. The intent context is shared by every agent in the
+        turn and recorded in the cognition trace, so it is copied, never mutated.
+        """
+        merged = dict(context or {})
+        if "skills" in merged or not self.get_setting("llm.skills_in_prompt", True):
+            return merged
+        catalog = getattr(getattr(self, "skills", None), "prompt_catalog", None)
+        if not callable(catalog):
+            return merged
+        try:
+            rows = catalog(getattr(agent, "id", None))
+        except Exception:
+            logger.warning("skills catalog for the prompt failed closed", exc_info=True)
+            return merged
+        if rows:
+            merged["skills"] = rows
+        return merged
 
     def _agent_default_model(self, agent_id: str, agent) -> str:
         default_model = getattr(agent, "default_model", None)

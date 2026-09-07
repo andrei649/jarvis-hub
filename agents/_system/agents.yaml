@@ -10,16 +10,20 @@ jarvis:
   created: 2026-05-11
   updated: 2026-05-27
 
-general:
-  timezone: Europe/Bucharest
-  wake_words: ["jarvis", "hub"]
-  llm_backend: auto  # "auto" = try LM Studio first, fallback Ollama
-  llm_endpoints:
-    lm_studio: http://localhost:1234
-    ollama: http://localhost:11434
-  cloud_llm_plugin: on-demand
-  cloud_llm_agents: [jarvis, athena, stark, vision, veronica]
-  frigga_whatsapp_bridge: local
+# There is deliberately no `general:` block. One existed until 2026-09-07 (timezone, wake
+# words, LLM backend and endpoints, a cloud-LLM plugin mode, a `cloud_llm_agents` allowlist,
+# a WhatsApp bridge mode) and no line of code read any of it — `JarvisConfig.general` was
+# assigned and never consulted, so every reader, human or agent, was told this file
+# controlled things it did not (Hermes absorption 0.6). Where those concepts actually live:
+#   - timezone, wake words, LLM backend and endpoints → runtime settings
+#     (`agents/core/settings_db.py` DEFAULTS, editable in /admin);
+#   - which agents may use a cloud model → `LOCAL_ONLY_AGENTS` / `CLOUD_ONLY_AGENTS` /
+#     `CLAUDE_AGENTS` in `agents/core/llm/hybrid_router.py`, then the per-agent `llm_policy`
+#     key below; cloud credentials are ANTHROPIC_API_KEY / GEMINI_API_KEY in the environment.
+# `tests/test_agents_yaml_dead_config.py` keeps this file free of unread keys.
+# Optional per-agent `tools:` — names or glob patterns the model loop may offer that agent
+# (e.g. `tools: [file_*, session_search]`); it narrows the surface posture and never widens
+# it (`agents/core/tool_profiles.py`). Absent = whatever the posture allows.
 
 agents:
   jarvis:
@@ -280,16 +284,14 @@ bench:
     archetype: Family (Frigga overflow)
     trigger: "Frigga >50% capacity on family logistics"
 
-# Extensibility rules
-rules:
-  universe: "Marvel + Greek/Norse mythology + occasional pop ref"
-  single_responsibility: true
-  promotion_criteria:
-    min_monthly_uses: 20
-    distinct_tone_required: true
-    dedicated_channel_required: true
-  demotion_criteria:
-    max_monthly_uses: 5
-    consecutive_months_below: 2
-  cardinality_cap: 18
-  exceeding_behaviour: "requires architecture review before exceeding 18"
+# Extensibility rules — a review discipline, stated here so it travels with the roster.
+# These were a `rules:` block until 2026-09-07; no code read it, and `promotion_criteria`
+# quietly disagreed with the knob that is real (`bench.<id>.threshold`, read by
+# `JarvisConfig.get_promotion_rules`). Same defect class as the removed `general:` block
+# (Hermes absorption 0.6): config nothing reads teaches readers a control that does not exist.
+#   universe: Marvel + Greek/Norse mythology + occasional pop ref (each agent's SOUL.md)
+#   single responsibility: one agent, one job — a bench entry that would overlap a live
+#     agent is not promoted (see the `bench` notes above)
+#   promotion: ≥ 20 monthly uses (`bench.<id>.threshold`), a distinct tone, a dedicated channel
+#   demotion: ≤ 5 monthly uses for 2 consecutive months
+#   cardinality cap: 18 live agents; exceeding it requires an architecture review first

@@ -119,6 +119,7 @@ RULES = [
     ("/api/presence", "autonomy"),  # H34.2 owner desk-presence → away-notify control
     ("/api/actions", "autonomy"),
     ("/api/missions", "autonomy"),  # Mission Workspaces (0.32) — long-horizon workspaces
+    ("/api/jobs", "autonomy"),  # owner-scheduled jobs (Hermes absorption, wave 2)
     # E5.0 company mode: one owner-approved goal worked across turns and reboots —
     # Console → Autonomy & Agents (CompanyRoomPanel), beside the decision inbox whose
     # approvals every run depends on.

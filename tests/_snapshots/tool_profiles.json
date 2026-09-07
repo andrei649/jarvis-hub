@@ -1,0 +1,68 @@
+{
+  "registry": [
+    "desktop_plan",
+    "desktop_run",
+    "echo",
+    "file_delete",
+    "file_list",
+    "file_read",
+    "file_search",
+    "file_write",
+    "operator_plan",
+    "osint_enrich",
+    "session_search",
+    "terminal_run",
+    "time"
+  ],
+  "postures": {
+    "operator/owner": [
+      "desktop_plan",
+      "desktop_run",
+      "echo",
+      "file_delete",
+      "file_list",
+      "file_read",
+      "file_search",
+      "file_write",
+      "operator_plan",
+      "osint_enrich",
+      "session_search",
+      "terminal_run",
+      "time"
+    ],
+    "operator/guest": [
+      "desktop_plan",
+      "echo",
+      "file_list",
+      "file_read",
+      "file_search",
+      "operator_plan",
+      "session_search",
+      "time"
+    ],
+    "inbound/owner": [
+      "desktop_plan",
+      "echo",
+      "file_list",
+      "file_read",
+      "file_search",
+      "operator_plan",
+      "session_search",
+      "time"
+    ],
+    "inbound/guest": [
+      "echo",
+      "time"
+    ],
+    "internal/system": [
+      "desktop_plan",
+      "echo",
+      "file_list",
+      "file_read",
+      "file_search",
+      "operator_plan",
+      "session_search",
+      "time"
+    ]
+  }
+}

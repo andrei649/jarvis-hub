@@ -1059,3 +1059,54 @@ def register(skill):
 
     def get_skills_for_agent(self, agent_id: str) -> list[Skill]:
         return [s for s in self.skills.values() if agent_id in s.agents or "all" in s.agents]
+
+    def prompt_catalog(
+        self,
+        agent_id: Optional[str] = None,
+        *,
+        limit: int = 20,
+        description_chars: int = 120,
+    ) -> list[dict]:
+        """Bounded, model-facing rows of the commands this loader would actually honour.
+
+        Hermes absorption 0.2: ``Agent.build_prompt`` has rendered an "Available skills"
+        block from ``context["skills"]`` since the beginning, and nothing ever set the key —
+        skills were imported, signed and pinned, and invisible to the model. This is the
+        producer.
+
+        Quarantined and sandboxed skills are left out: their commands cannot run in-process,
+        so advertising them would teach the model a command that refuses. A skill that
+        declares agents is shown only to those agents (or to all with ``all``); one that
+        declares none is general. Descriptions are one line and capped, and the whole
+        catalog is capped, because every row is paid for on every turn.
+        """
+        rows: list[dict] = []
+        cap = max(0, int(limit))
+        chars = max(0, int(description_chars))
+        for name in sorted(self.skills):
+            skill = self.skills[name]
+            if skill.sandboxed:
+                continue
+            declared = [a for a in skill.agents if isinstance(a, str) and a.strip()]
+            if agent_id and declared and agent_id not in declared and "all" not in declared:
+                continue
+            for meta in skill.commands_meta:
+                if not isinstance(meta, dict):
+                    continue
+                command = meta.get("command")
+                if not isinstance(command, str) or not re.fullmatch(r"\w+", command):
+                    continue
+                args = meta.get("args") if isinstance(meta.get("args"), str) else ""
+                description = meta.get("description")
+                if not isinstance(description, str) or not description.strip():
+                    description = skill.description
+                rows.append(
+                    {
+                        "skill": skill.name,
+                        "command": f"{command} <{args}>" if args else command,
+                        "description": " ".join(str(description).split())[:chars],
+                    }
+                )
+                if len(rows) >= cap:
+                    return rows
+        return rows

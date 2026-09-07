@@ -375,7 +375,16 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. If you flip a row to ✅ and its proof still depends on something only you can run, it
+> hardware. **P15**–**P23** (2026-09-07) are the first packets from the Hermes absorption: the
+> tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
+> to a real one; the Telegram group gate, never exercised in a real group; the `nerva`
+> command plus the chat slash commands, never pointed at a running hub; the owner's
+> scheduled jobs, never fired on a wall clock; the model's hands (`file_search`,
+> `session_search`, the loop breakers), never driven by a model choosing to use them; the
+> Telegram renderer and the reply that grows in place, never shown to the real API; the MCP
+> trust tier, never held against a real server's annotations; and the ntfy push, never sent
+> to a real server.
+> If you flip a row to ✅ and its proof still depends on something only you can run, it
 > belongs here — that rule is written into
 > [`docs/prompts/BACKLOG_DRIVER.md`](prompts/BACKLOG_DRIVER.md) so an unattended session applies it.
 >
@@ -623,6 +632,153 @@ built on your Windows box:
       [`docs/nerva2/attestations/`](nerva2/attestations/)). Nothing about production use closes
       them; only a review does. They are listed here so the count of ✅ rows with an outstanding
       obligation is honest, not to imply you must run something.
+
+- [ ] **P15 — Tools on a cloud model, once per provider** *(covers `HA-0.1`, the first wave of the
+      Hermes absorption)*
+      Until 2026-09-07 an agent routed to Claude, Gemini, OpenRouter or local Ollama had no tools at
+      all; the four backends now translate the tool loop into each provider's dialect, but every
+      translation was built from the provider's documented contract and exercised only against fakes —
+      no request in `tests/test_cloud_tool_turns.py` ever left the container. Set
+      `llm.tool_loop_enabled` to true, keep at least one governed tool registered (the default
+      `echo`/file tools suffice), then for **each** provider you hold a key for, ask an agent that
+      routes there (`athena` is cloud-only; `/model <id>` hot-swaps OpenRouter; a `LOCAL_ONLY_AGENTS`
+      member on an Ollama-only box covers Ollama) to *use a tool* — "list the files in the workspace
+      root" is enough. Confirm three things per provider: `tool_requested` → `tool_result` events
+      appear in the audit chain for that turn; the model's second turn *sees* the result (it quotes
+      it, not guesses); and a malformed call, if you can provoke one, ends as `bad_tool_arguments`
+      rather than an exception in the log. Two provider-specific checks: on Gemini a thinking model
+      must complete a two-step tool exchange without a 400 about a missing thought signature (the
+      signature is remembered per call id and echoed — this is the part most likely to drift with
+      their API); on Claude, parallel tool calls must come back as one user turn of `tool_result`
+      blocks (the API rejects them split). If a provider 400s on the request shape, the failing field
+      is the finding — file it against `agents/core/llm/tool_dialects.py`, do not disable the loop.
+
+- [ ] **P16 — The bot in a real group** *(covers `HA-0.4`)*
+      Every group-gating decision was exercised against a fake Telegram transport; no real
+      supergroup has ever carried a message through it. Add the bot to a group you control with
+      privacy mode **off** (so it sees unaddressed messages at all), leave the env defaults
+      (`TELEGRAM_GROUP_REQUIRE_MENTION=1`, `TELEGRAM_GROUP_OBSERVE=0`), and check five things:
+      a plain message from an allowed member gets **no** reply; `@<bot> status` gets one, and the
+      transcript shows `status`, not the mention; a reply to one of the bot's own messages gets
+      one; `/status@<bot>` works; and with `TELEGRAM_ALLOWED_CHAT_IDS` set to a *different* chat
+      id, even an @mention in this group is ignored. Then set `TELEGRAM_GROUP_OBSERVE=1`, restart,
+      send three unaddressed messages and one @mention: the three appear in the session
+      transcript as user turns with no bot reply, the mention is answered, and the gateway's
+      rate counter for `telegram` moved by one, not four. If the bot answers an unaddressed
+      message, check the hub log for the getMe warning first — without its own username it
+      cannot recognise a mention, and the fail-closed path is to drop, never to answer.
+
+- [ ] **P17 — The `nerva` command against a running hub, and a slash command on a live channel**
+      *(covers `HA-1A`, `HA-1B`)*
+      Every online verb was exercised against a recording fake; no request has reached a real
+      hub. With the hub up on the box: `python scripts/nerva.py status` (no token) must print
+      version, backend and channels; `python scripts/nerva.py approvals list` without
+      `JARVIS_ADMIN_TOKEN` must exit 4 and name the token, and with it must list the same items the
+      HUD's Decision Inbox shows; `estop engage` then `estop status` then `estop resume` must
+      round-trip and the HUD's e-stop chip must follow; `config set llm.skills_in_prompt off`
+      must show in /admin within 30 s without a restart; `kernel explain payment --payload
+      '{"amount": 120}'` must say QUEUE. Then, on Telegram from the owner account: `/status`
+      answers, `/pause` engages the e-stop (the HUD chip turns red), `/resume` lifts it, and from
+      a non-owner account `/pause` is refused in words and the e-stop does not move. If a verb
+      400s or 422s, the request shape is the finding — file it against `agents/cli/nerva.py`.
+
+- [ ] **P18 — A job that fires on the wall clock** *(covers `HA-2a`)*
+      Every firing in the tests is forced (`run` now) against a fake scheduler and a fake
+      Telegram; no job has fired at its own time on a running hub. With the hub up and
+      `autonomy.owner_chat_id` set: `nerva jobs create --blueprint reminder --param
+      "message=this is the job" --when "every 5 minutes"` (the floor), then wait — within six
+      minutes the message must arrive on Telegram, `nerva jobs runs <id>` must show an `ok` run
+      with "delivered to telegram", and `nerva jobs list` must say the scheduler is alive.
+      Then `nerva estop engage`: the next firing must be recorded as `skipped` ("emergency stop
+      engaged") and nothing must arrive; `nerva estop resume` and the one after must arrive
+      again. Then arm `--blueprint ask_agent --param "prompt=say the time and one word"
+      --param agent=friday --when "every 5 minutes"`: the second run's reply should reference
+      the first (the notepad is in the prompt). Finally break delivery on purpose (`nerva config
+      set autonomy.owner_chat_id ""`, restart): after three firings the job must show
+      `paused_reason` starting with "3 consecutive failures", `problems.jsonl` must carry one
+      `E_JOB_PAUSED` line, not three, and `nerva jobs resume <id>` must put it back. Delete the
+      test jobs afterwards. If a weekday job fires on the wrong day, that is the cron→APScheduler
+      day-of-week translation — file it against `jobs.cron_kwargs`. Then the night (`HA-4e`):
+      arm a reminder for a time inside your quiet hours (`ambient.quiet_hours_start` / `_end`,
+      default 22–07) — nothing must arrive at that hour, `nerva jobs list` must say "1 held for
+      quiet hours", and within five minutes after the window ends the message must arrive with a
+      run that says "from hold (held since …)". Arm the same reminder with `"urgent": true` in
+      the action: it must arrive at night and `GET /api/autonomy/status` must show one less
+      interrupt in the day's budget; with the budget at zero it must be held like the rest.
+
+- [ ] **P19 — The model's hands on a live loop** *(covers `HA-3a`)*
+      `file_search`, `session_search` and the two loop breakers are proven against fakes and
+      scripted backends, never against a model choosing to call them. With the tool loop on
+      (`llm.tool_loop_enabled`), `JARVIS_FILE_TOOLS=1` and a workspace under `JARVIS_FILE_ROOTS`
+      holding a few real documents: first drop a `.env` into the workspace containing a phrase
+      you know is in exactly one other file, then ask in chat "which file mentions <that
+      phrase>". The tool feed must show one `file_search` call, the answer must name that file
+      and line, and the `.env` must not appear anywhere. Then "what did I tell you about <a
+      thing from an older conversation>": one `session_search` call, and the reply must quote
+      the earlier turn's words. Then ask for something the workspace does not contain and
+      watch the feed on a local model: the third identical search must come back
+      `repeated_call` with the notice, and if the model keeps going the turn must end with
+      "kept repeating the same tool call", not with the 8-turn safety limit. If the model never
+      picks the tools at all, that is a prompt-catalogue finding (`HA-0.2`), not a tool one.
+      Windows: the search skips symlinks and secret names by the same rules but only Linux ran
+      the tests — confirm once on a real workspace there. Put a PDF in the workspace and ask
+      "what does <its name> say" (`HA-4h`): without `pypdf` installed the model must report
+      that the parser is missing, never a page of replacement characters; with
+      `pip install pypdf` it must quote the document's text. Last, the profile (`HA-3b`): from a
+      Telegram account that is *not* on the owner allowlist, ask the same "which file mentions
+      …" question — the tool feed must show a `tool_profile` event with `inbound / guest` and
+      `file_search` among the withheld names, and the reply must not contain the file's words;
+      the same question from the owner's Telegram account must search.
+
+- [ ] **P20 — A long, badly formatted reply on a real Telegram** *(covers `HA-4a`)*
+      The renderer and the chunker are proven against Telegram's documented HTML subset and a
+      fake client, never against the real API. From the owner's account ask for something long
+      and formatted — "write me a 6,000-character guide with headings, a code block and a
+      table" — and for something deliberately broken — "reply with exactly: 3 * 4 = 12 and
+      **unclosed". The first must arrive as two or more messages in order, headings bold, the
+      code block monospaced, nothing cut mid-code; the second must arrive with the literal
+      asterisks and nothing missing. If a message shows raw `<b>` tags, Telegram rejected the
+      HTML and the plain-text fallback did not fire — file it against
+      `TelegramChannel._send_chunk`; if a message is missing, the chunker dropped it — file it
+      against `channels/render.py`. If you use Slack or Discord, the same two asks apply
+      there (`HA-4d`): Slack must show `*bold*` as bold and `<url|text>` as a link, Discord
+      must split a long reply at 2,000 characters without cutting a code block.
+
+- [ ] **P21 — A real MCP server on a read-only tier** *(covers `HA-4b`)*
+      The tier is proven against a scripted `tools/list`, never against a real server's
+      annotations. Add a stdio server that has both kinds of tool — the reference filesystem
+      server is the usual one — with `POST /api/admin/mcp` and no `trust` field, connect it, and
+      read `GET /api/admin/mcp`: the row must say `trust: read-only` and each tool must carry a
+      `read_only` flag that matches what the server advertises. Then call a read tool and a
+      write tool through whatever consumes `orch.mcp` on your box: the read must answer, the
+      write must come back `trust_denied` / `readOnlyHint_required` and nothing must change on
+      disk. If a write tool shows `read_only: true`, the server's annotations are wrong, not
+      Nerva's — the tier trusts the hint only in the narrowing direction, so that is a finding
+      to file upstream. Restart the hub once: a server saved *before* this release must log
+      "no trust tier … treated as full" exactly once and keep working.
+
+- [ ] **P22 — A reply that grows in place on a real Telegram** *(covers `HA-4c`)*
+      The draft is proven against a fake client and a fake clock. From the owner's account
+      ask for something that takes the model twenty seconds or more: one message must appear
+      within a second or two and grow in place with a `▍` cursor, never faster than about one
+      edit a second, then settle into the finished reply with formatting and no cursor; if it
+      is long, the rest must follow as separate messages in order. Then ask again with
+      `channels.streaming_replies` off (`nerva config set channels.streaming_replies false`):
+      the reply must arrive whole, once. If Telegram answers 429 during the stream, the frames
+      are skipped and the final text still lands — if it does not, file it against
+      `TelegramDraft.finish`. A placeholder that appears for a turn that answers nothing is a
+      finding against `Orchestrator._begin_channel_draft`.
+
+- [ ] **P23 — A buzz on the phone through a real ntfy server** *(covers `HA-4g`)*
+      The channel is proven against a fake client. Install the ntfy app, subscribe to a topic
+      you make up (treat it like a password), set `NTFY_URL` (your own server, or
+      `https://ntfy.sh`) and `NTFY_TOPIC`, restart: the log must say "ntfy channel wired" and
+      never print the topic. Arm `nerva jobs create --blueprint reminder --param
+      "message=hello from nerva" --when "every 5 minutes"` with `"channel": "ntfy"` in the
+      action: the phone must buzz within six minutes with the title `Nerva`. Then trigger an
+      escalation (a task that needs you while the HUD is closed): it must arrive on the phone
+      too. A message with `**bold**` must arrive as plain words. If the server needs a token,
+      set `NTFY_TOKEN` and repeat; a 403 in the log with the token set is a server finding.
 
 ## Parking lot (decisions, no rush)
 

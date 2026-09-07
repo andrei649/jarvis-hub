@@ -62,8 +62,9 @@ all.
   fully in-process, which keeps hosting cheap and removes two stateful dependencies from a box that
   gets thrown away anyway.
 - **Cloud LLM routing already exists** — `hybrid_router.py` supports any OpenAI-compatible endpoint,
-  `agents.yaml` already has a `cloud_llm_agents` allowlist (`jarvis, athena, stark, vision,
-  veronica`) and `LOCAL_ONLY_AGENTS = {frigga, ultron, howard, hestia}` hardcoded with no cloud
+  `agents.yaml` had a `cloud_llm_agents` allowlist (`jarvis, athena, stark, vision,
+  veronica`) — *addendum 2026-09-07: nothing read it; removed (HA-0.6), routing is the code below* —
+  and `LOCAL_ONLY_AGENTS = {frigga, ultron, howard, hestia}` hardcoded with no cloud
   fallback. Plugging in a free-tier provider (OpenRouter/Groq/Gemini — verify current limits at
   implementation time, they move) is a config change, not new engineering. The four local-only
   agents simply won't run without a local model — which is correct here, since a
@@ -167,7 +168,7 @@ claim holds:
 | `hardened.py` exists, `JARVIS_HARDENED` opt-in, forces strict egress + audit key | ✅ `agents/core/security/hardened.py:30-87` |
 | `SEED_FACTS` hardcodes personal data, seeded unconditionally on empty graph | ✅ `seed_graph.py:10`, called at `memory/manager.py:45` — was **unconditional** when written; gated by `NERVA_PUBLIC_PROFILE` since 2026-08-26 |
 | `LOCAL_ONLY_AGENTS = {frigga, ultron, howard, hestia}` | ✅ `llm/hybrid_router.py:93` |
-| `cloud_llm_agents: [jarvis, athena, stark, vision, veronica]` | ✅ `agents/_system/agents.yaml:21` |
+| `cloud_llm_agents: [jarvis, athena, stark, vision, veronica]` | ✅ was at `agents/_system/agents.yaml:21` when written; **found unread and removed 2026-09-07 (HA-0.6)** — the effective routing is `hybrid_router.py` + per-agent `llm_policy` |
 | `NERVA_PUBLIC_PROFILE` is a *new* flag | ✅ zero occurrences in tree when this spec was written; **implemented 2026-08-26** in `seed_graph.py`; malformed-value boot guard added (DRA-07/DRA-14) in `boot_guards.assert_parseable_posture_flags` |
 | CDX-12 / CDX-11 already listed as owner calls | ✅ `docs/OWNER_TASKS.md` → Parking lot, the *CDX-12 hardened profile* and *CDX-11 plugin grants* items (line numbers drift; CDX-12 posture + the public-box grants decided 2026-09-01) |
 

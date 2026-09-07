@@ -44,8 +44,20 @@ class SchedulerService:
         self.schedule_llm_backend_refresh()
         self.schedule_company_mode()
         self.schedule_backups()
+        self.schedule_owner_jobs()
 
     # ── scheduling (registration) ─────────────────────────────────
+    def schedule_owner_jobs(self):
+        """Put the owner's own jobs on the scheduler (Hermes absorption, wave 2)."""
+        runner = getattr(self._orch, "jobs", None)
+        if runner is None:
+            return
+        try:
+            registered = runner.register_all()
+            logger.info("Owner jobs registered: %d", registered)
+        except Exception as e:
+            logger.warning(f"Failed to register owner jobs: {e}")
+
     def schedule_daily_digests(self):
         """Cron the morning brief (07:00) and evening retro (20:00) — H6.4."""
         sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)

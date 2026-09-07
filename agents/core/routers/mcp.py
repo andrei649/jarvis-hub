@@ -62,10 +62,33 @@ async def admin_mcp_list():
             "command": srv.command,
             "url": srv.url,
             "connected": srv._proc is not None and srv._proc.returncode is None,
+            # Hermes absorption 4b — the owner's trust tier for this server and, per tool,
+            # whether the server itself declared it read-only (the only claim a read-only
+            # tier honours).
+            "trust": _trust_of(srv),
+            "tools_allow": _patterns_of(srv, "tools_allow"),
+            "tools_deny": _patterns_of(srv, "tools_deny"),
             "tools_count": len(srv.tools),
-            "tools": [{"name": t.name, "description": t.description} for t in srv.tools],
+            "tools": [
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "read_only": getattr(t, "read_only", None) is True,
+                }
+                for t in srv.tools
+            ],
         })
     return {"servers": servers, "total": len(servers)}
+
+
+def _trust_of(srv) -> Optional[str]:
+    trust = getattr(srv, "trust", None)
+    return trust if isinstance(trust, str) else None
+
+
+def _patterns_of(srv, attr: str) -> Optional[list]:
+    value = getattr(srv, attr, None)
+    return list(value) if isinstance(value, (list, tuple)) else None
 
 
 class MCPServerConfig(BaseModel):
@@ -73,6 +96,13 @@ class MCPServerConfig(BaseModel):
     transport: str = "stdio"
     command: Optional[str] = None
     url: Optional[str] = None
+    #: Trust tier: ``read-only`` (default — only tools the server marks ``readOnlyHint``
+    #: may be called) or ``full``.
+    trust: str = "read-only"
+    #: Glob patterns on tool names: ``tools_allow`` (None = every tool) and ``tools_deny``
+    #: (a deny always wins). Attaching a server is not attaching every one of its tools.
+    tools_allow: Optional[list[str]] = None
+    tools_deny: Optional[list[str]] = None
 
 
 @router.post("/api/admin/mcp", dependencies=[Depends(admin_guard)])
@@ -81,7 +111,7 @@ async def admin_mcp_add(req: MCPServerConfig):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    from core.mcp.client import MCPServer
+    from core.mcp.client import TRUST_TIERS, MCPServer, normalize_trust
     # stdio is the only transport MCPServer.connect() actually speaks. Accepting
     # an "sse" config used to register + persist a server that could never
     # connect, so the admin list showed a permanently dead row. Reject it here,
@@ -92,6 +122,18 @@ async def admin_mcp_add(req: MCPServerConfig):
             {"error": "unsupported_transport", "transport": req.transport, "supported": ["stdio"]},
             status_code=400,
         )
+    trust = normalize_trust(getattr(req, "trust", "read-only"))
+    if trust is None:
+        return JSONResponse(
+            {"error": "invalid_trust", "trust": req.trust, "supported": list(TRUST_TIERS)},
+            status_code=400,
+        )
+    for field in ("tools_allow", "tools_deny"):
+        patterns = getattr(req, field, None)
+        if patterns is not None and (
+            not isinstance(patterns, list) or not all(isinstance(p, str) and p.strip() for p in patterns)
+        ):
+            return JSONResponse({"error": "invalid_tool_filter", "field": field}, status_code=400)
     if req.name in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{req.name}' already exists"}, status_code=409)
     srv = MCPServer(
@@ -103,6 +145,9 @@ async def admin_mcp_add(req: MCPServerConfig):
         transport=transport,
         command=req.command,
         url=req.url,
+        trust=trust,
+        tools_allow=getattr(req, "tools_allow", None),
+        tools_deny=getattr(req, "tools_deny", None),
     )
     orch.mcp.servers[srv.name] = srv
     # Persist to settings DB
