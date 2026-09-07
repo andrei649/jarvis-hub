@@ -170,6 +170,24 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **The backups now happen.** `create_backup` has existed for a long time and nothing ever
+  called it on a schedule, and nothing ever pruned the directory it writes to — and those were
+  one gap, not two: an automatic backup with no prune writes a full copy of the data root every
+  night forever, turning a safety feature into the thing that fills the owner's disk. So
+  `prune_backups` and a nightly `backup-nightly` job land together. It is **on by default**,
+  unlike every other scheduled capability here, because the failure directions are opposite:
+  `schedule_retention` *deletes*, so a wrong default loses data, while a backup *preserves*, so a
+  wrong default costs disk — and the prune bounds that at seven archives, a week of dailies. The
+  copy never leaves the machine. `backup_health()` exists because **a backup nobody verified is a
+  belief, not a backup**: it reports the **age** of the newest archive rather than whether the
+  directory has files in it, since one failing quietly for a month is worse than none at all —
+  the owner *believes* they have one — and ten stale archives are not ten reasons to relax. "No
+  backup has ever been made" and "the newest is 40 days old" are different findings, and neither
+  is an empty list. Encryption follows whatever the owner configured and is **reported**, because
+  an unencrypted local archive of the entire data root is a fact they should see rather than
+  infer — and with no archives it reads `null`, not `false`, since "your backups are unencrypted"
+  is a different and more alarming claim than "there are no backups". A prune failure never fails
+  the backup that just succeeded. 22 pytest.
 - **The quickbar parser became reachable — and stayed a preview.** `agents/core/quickbar.py`
   has shipped a complete, pure command service since 0.64 with **no route and no consumer**:
   a parser nobody could reach, which is code that looks alive and is not. It now has

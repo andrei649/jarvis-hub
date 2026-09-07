@@ -165,6 +165,12 @@ DEFAULTS: list[dict[str, Any]] = [
     # Named here rather than borrowed from memory.context_window, which answers a
     # different question — how many turns to FETCH, not how many to protect.
     dict(category="memory",  key="compaction_protect_last", value=4,               label="Compaction: protect the last N turns from summarization", kind="number"),
+    # H12.15 — one local backup a night, pruned to a week. ON by default, unlike
+    # every other scheduled capability, because the failure directions differ:
+    # retention DELETES (a wrong default loses data) while a backup PRESERVES (a
+    # wrong default costs disk, and the prune bounds that).
+    dict(category="memory",  key="backup_auto_enabled", value=True,                label="Nightly local backup", kind="toggle"),
+    dict(category="memory",  key="backup_keep",     value=7,                     label="Backups to keep", kind="number"),
     dict(category="memory",  key="compression_summary_max_tokens", value=256,     label="Compression summary budget (tokens)", kind="number"),
     dict(category="memory",  key="persist",          value=True,                  label="Persist to disk",    kind="toggle"),
     # O26-P0.3 (F2): long-term recall was read via get_setting but never seeded,

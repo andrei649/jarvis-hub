@@ -33,6 +33,7 @@ import shutil
 import sqlite3
 import tarfile
 import tempfile
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -190,6 +191,96 @@ def prune_pre_forget_archives(keep: Optional[int] = None,
         except OSError:
             logger.warning("could not prune stale pre-forget archive %s", stale.name)
     return removed
+
+
+# ── retention ─────────────────────────────────────────────────────
+
+# How many ordinary backups to keep. Seven is a week of daily snapshots: long
+# enough to notice a corruption that happened while you were away, short enough
+# that a full copy of the data root does not fill a laptop. Deliberately NOT the
+# pre-forget default of 1 — that archive exists to undo one deletion, and keeping
+# more of it would retain more copies of data someone asked to have deleted.
+BACKUP_KEEP_DEFAULT = 7
+
+
+def prune_backups(keep: Optional[int] = None,
+                  out_dir: Optional[str] = None) -> list[str]:
+    """Keep only the newest *keep* ordinary backups; return what was removed.
+
+    Without this, an automatic backup writes a full copy of the data root every
+    night and never stops — which turns a safety feature into the thing that
+    fills the owner's disk. ``keep=0`` removes everything, and is a real request
+    rather than a guard to defend against: someone turning backups off entirely
+    may well want the archives gone too.
+    """
+    if keep is None:
+        keep = BACKUP_KEEP_DEFAULT
+    keep = max(0, int(keep))
+    out = Path(out_dir) if out_dir else default_backup_dir()
+    if not out.is_dir():
+        return []
+    archives = sorted(_iter_archives(out), key=lambda p: p.stat().st_mtime, reverse=True)
+    removed: list[str] = []
+    for stale in archives[keep:]:
+        try:
+            stale.unlink()
+            removed.append(stale.name)
+        except OSError:
+            # A file we cannot remove is reported by its absence from `removed`
+            # rather than raising: a prune that failed must not fail the backup
+            # that just succeeded.
+            logger.warning("could not prune stale backup %s", stale.name)
+    return removed
+
+
+def backup_health(out_dir: Optional[str] = None,
+                  *, now: Optional[float] = None) -> dict:
+    """Whether there is actually a recent backup — not whether one was attempted.
+
+    A backup that has been failing quietly for a month is worse than none at all,
+    because the owner believes they have one. So this reports the AGE of the
+    newest archive and says plainly when there is nothing: "no backup has ever
+    been made" and "the last backup is 40 days old" are different findings, and
+    neither is an empty list.
+
+    ``encrypted`` is reported per archive because an unencrypted local archive of
+    the entire data root is a fact the owner should be able to see, not infer.
+    """
+    moment = time.time() if now is None else float(now)
+    rows = list_backups(out_dir)
+    total_bytes = sum(int(r.get("bytes") or 0) for r in rows)
+    if not rows:
+        return {
+            "ok": False,
+            "count": 0,
+            "total_bytes": 0,
+            "reason": "no backup has ever been made",
+            "age_seconds": None,
+            "newest": None,
+            "all_encrypted": None,
+        }
+    newest = rows[0]
+    try:
+        stamp = datetime.fromisoformat(str(newest["modified_at"])).timestamp()
+    except (TypeError, ValueError):
+        stamp = moment
+    age = max(0.0, moment - stamp)
+    return {
+        # "ok" is about recency, not about whether the directory has files in it.
+        "ok": age <= _STALE_AFTER_SECONDS,
+        "count": len(rows),
+        "total_bytes": total_bytes,
+        "reason": "" if age <= _STALE_AFTER_SECONDS else f"the newest backup is {int(age // 86_400)} day(s) old",
+        "age_seconds": age,
+        "newest": newest["name"],
+        # None would be ambiguous with "no archives"; with archives present this is
+        # a real yes/no about every one of them.
+        "all_encrypted": all(bool(r.get("encrypted")) for r in rows),
+    }
+
+
+# Two days: one missed nightly run is a hiccup, two is a pattern worth surfacing.
+_STALE_AFTER_SECONDS = 2 * 86_400.0
 
 
 # ── create ────────────────────────────────────────────────────────

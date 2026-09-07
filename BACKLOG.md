@@ -203,6 +203,19 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+- [x] ✅ **H12.15 — the automatic backup, and the prune that makes it safe.**
+  `backup.prune_backups` + `backup.backup_health` + `SchedulerService.schedule_backups/run_backup`
+  + `backup.auto_enabled` / `backup.keep`. `create_backup` existed and nothing scheduled it;
+  nothing pruned its directory either — **one gap, not two**, because an automatic backup with no
+  prune fills the owner's disk. **On by default**, unlike every other scheduled capability, since
+  retention *deletes* (a wrong default loses data) while a backup *preserves* (a wrong default
+  costs disk, and the prune bounds it at 7). Local only. `backup_health` reports the **age** of
+  the newest archive, not the file count — *a backup nobody verified is a belief, not a backup*,
+  and ten stale archives are not ten reasons to relax; "never made" and "40 days old" are
+  different findings. Encryption is **reported** (an unencrypted archive of the whole data root
+  is a fact the owner should see), and reads `null` rather than `false` with no archives. A prune
+  failure never fails a backup that succeeded. 22 pytest; three rules red-proven.
+
 - [x] ✅ **T-0.64 — the quickbar parser is reachable, and stays a preview.**
   `agents/core/routers/quickbar.py` (`POST /api/quickbar/resolve`, `GET /api/quickbar/help`,
   user-guarded) + `frontend/src/panels/quickbar.tsx`. `quickbar.py` had shipped a complete pure
