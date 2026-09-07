@@ -12,6 +12,7 @@ from typing import Callable, Optional
 import httpx
 
 from .base import ChannelAdapter
+from .group_policy import ANSWER, OBSERVE, GroupPolicy, gate_message
 from ..log_safe import log_safe
 
 logger = logging.getLogger("jarvis.channels.telegram")
@@ -19,12 +20,20 @@ logger = logging.getLogger("jarvis.channels.telegram")
 
 class TelegramChannel(ChannelAdapter):
     def __init__(self, token: str, handler: Optional[Callable] = None,
-                 allowed_user_ids: Optional[list[int]] = None):
+                 allowed_user_ids: Optional[list[int]] = None,
+                 group_policy: Optional[GroupPolicy] = None):
         super().__init__("telegram", handler)
         self.token = token
         self.api_base = f"https://api.telegram.org/bot{token}"
         self.client = httpx.AsyncClient(timeout=15.0)
         self.allowed_users = allowed_user_ids or []
+        # Hermes absorption 0.4: what to do with a message that arrives in a group.
+        # Default is fail-closed — answer only when mentioned or replied to.
+        self.group_policy = group_policy or GroupPolicy()
+        # The bot's own identity, learned from getMe at start; mention and reply
+        # detection need it, and without it a group message is never "addressed".
+        self._bot_id: Optional[int] = None
+        self._bot_username: Optional[str] = None
         self._offset = 0
         self._poll_task = None
         # Decision-inbox callback: on_callback(task_id, action, chat_id=..., user_id=...)
@@ -37,7 +46,14 @@ class TelegramChannel(ChannelAdapter):
         self._running = True
         me = await self._get_me()
         if me:
+            self._bot_id = me.get("id")
+            self._bot_username = me.get("username")
             logger.info(f"Telegram bot connected: {me.get('username', '?')}")
+        else:
+            logger.warning(
+                "Telegram getMe failed — the bot cannot recognise its own mentions, so "
+                "group messages will be dropped until it can"
+            )
         self._poll_task = __import__("asyncio").create_task(self._poll_loop())
         logger.info("Telegram channel started")
 
@@ -120,9 +136,31 @@ class TelegramChannel(ChannelAdapter):
                     # the orchestrator, echoed, or logged as message text.
                     if await self._maybe_pair_deeplink(text, uid, chat_id):
                         continue
+                    chat = msg.get("chat") or {}
+                    decision = gate_message(
+                        self.group_policy,
+                        chat_type=chat.get("type", "private"),
+                        chat_id=chat_id,
+                        thread_id=msg.get("message_thread_id"),
+                        text=text,
+                        entities=msg.get("entities") or (),
+                        reply_to_from_id=(
+                            ((msg.get("reply_to_message") or {}).get("from") or {}).get("id")
+                        ),
+                        bot_id=self._bot_id,
+                        bot_username=self._bot_username,
+                    )
+                    if decision.action == OBSERVE:
+                        await self.receive(
+                            decision.text, chat_id=chat_id, sender=str(uid), observe_only=True
+                        )
+                        continue
+                    if decision.action != ANSWER:
+                        logger.debug("Ignored group message (%s)", decision.reason)
+                        continue
                     # Pass the sender id so the gateway's H12.19 pairing gate can
                     # hold unknown senders for approval (no-op unless enabled).
-                    await self.receive(text, chat_id=chat_id, sender=str(uid))
+                    await self.receive(decision.text, chat_id=chat_id, sender=str(uid))
             except Exception as e:
                 logger.warning(f"Telegram poll error: {e}")
                 await __import__("asyncio").sleep(3)

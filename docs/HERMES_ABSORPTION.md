@@ -76,10 +76,25 @@ API, nu dintr-un schimb capturat → `docs/OWNER_TASKS.md` **P15**.
 `agents/core/agent.py:124-128` construiește blocul de skill-uri din `context["skills"]`, și **nimic
 din repo nu setează vreodată cheia aia**. Skill-urile sunt importate, semnate, pinuite — și invizibile.
 
+**Livrat 2026-09-07.** `SkillLoader.prompt_catalog(agent_id)` produce rândurile (mărginit la 20 × 120
+caractere; doar skill-urile pe care loader-ul le-ar executa — cele în carantină/sandbox nu sunt
+niciodată anunțate; cele cu agenți declarați, doar agenților lor) și `Orchestrator._prompt_context`
+le pune în context fără să mute contextul de intenție partajat. Setarea `llm.skills_in_prompt`
+(implicit pornită) îl stinge. Teste: `tests/test_skills_in_prompt.py` (10).
+
 ### 0.3 — Nu există compactare în interiorul turei
 `agents/core/agent_runtime.py:137` adaugă un mesaj de asistent plus un rezultat de unealtă pe apel,
 până la 32 de iterații, **fără să măsoare niciodată lista care crește**. Compactarea există
 (`context_compressor.py`) dar rulează între ture, nu în timpul lor. La iterația 32 se pierde muncă.
+
+**Livrat 2026-09-07.** Fiecare tură după prima verifică `estimate_messages` față de un buget
+(`llm.tool_loop_context_tokens`; 0 = 75 % din fereastra modelului minus rezerva de output, prag
+minim 2.048). Rezultatele de unealtă mai vechi se pliază în plicuri de ≤512 bytes (`TOOL RESULT
+COMPACTED`, cu head/tail) — niciodată șterse, niciodată reordonate, ca fiecare rezultat să răspundă
+în continuare apelului care l-a produs — ultimele 2 iterații se pliază ultimele, iar un transcript
+care tot nu încape oprește bucla cu un motiv numit și un eveniment
+`tool_context_compacted{status=exhausted}`, nu cu o eroare de provider. Teste:
+`tests/test_tool_loop_compaction.py` (5).
 
 ### 0.4 — Nicio poartă pe mesajele din grup
 Vocabularul de gating al Nervei e o singură listă plată `allowed_user_ids`
@@ -88,15 +103,41 @@ chat/topic, observe mode — zero apariții în repo. Un bot Nerva pus într-un 
 mesaj al fiecărui membru permis**, și fiecare mesaj din cameră devine context contaminat pe care
 agentul raționează și acționează. E o graniță de autorizare, nu o comoditate.
 
+**Livrat 2026-09-07.** `channels/group_policy.py` (`GroupPolicy`, `gate_message`), aplicat de
+poll-loop-ul Telegram după allowlist-ul de utilizatori: DM-urile trec; într-un grup botul răspunde
+doar la `@mențiune`, `/cmd@bot`, reply la el însuși sau `text_mention` (mențiunea e ștearsă înainte
+ca modelul s-o vadă); `TELEGRAM_ALLOWED_CHAT_IDS` restrânge camerele (sau un singur topic
+`chat:thread`); `TELEGRAM_GROUP_REQUIRE_MENTION=0` relaxează cerința; `TELEGRAM_GROUP_OBSERVE=1`
+înregistrează mesajele neadresate drept context fără să răspundă — un mesaj observat nu ia lease
+de tură, nu consumă bugetul de rate-limit al răspunsurilor și nu primește niciodată un mesaj de
+pairing. Tipurile de chat necunoscute și un bot care nu și-a putut afla identitatea (getMe eșuat)
+eșuează închis. Teste: `tests/test_telegram_group_gate.py` (21). *Nedovedit într-un grup Telegram
+real* → `docs/OWNER_TASKS.md` **P16**.
+
 ### 0.5 — Fără lease pe tură
 `agents/core/orchestrator.py:1109-1176` nu ține niciun lock. Un al doilea mesaj Telegram în timpul
 unei ture pornește o tură **concurentă** pe aceeași cheie de sesiune — risc de corupere a
 transcriptului, nu doar de confuzie.
 
+**Livrat 2026-09-07.** `Orchestrator.turn_lease(session_key)`: `channel_handler` și cele două
+endpoint-uri directe de chat web iau lease-ul sesiunii înainte de tură; al doilea mesaj pe aceeași
+sesiune își așteaptă rândul, un mesaj pe altă sesiune nu așteaptă deloc, o așteptare peste 180 s
+primește `TURN_BUSY_REPLY` în loc să pornească, lease-ul e reintrant în contextul async al turei (un
+pas de workflow care apelează înapoi îl moștenește; un context străin nu), iar tabela e mărginită.
+Teste: `tests/test_turn_lease.py` (8).
+
 ### 0.6 — Configurație moartă în registrul canonic
 `general.cloud_llm_agents` din `agents/_system/agents.yaml` **nu e citit de niciun rând de cod**.
 Rutarea reală trăiește în `hybrid_router.py:381`. Orice cititor — om sau agent — ar crede rezonabil
 că acea cheie controlează rutarea.
+
+**Livrat 2026-09-07 — și era mai mult decât o cheie.** Tot blocul `general:` (timezone, wake words,
+backend și endpoint-uri LLM, mod de plugin cloud, bridge WhatsApp) și blocul `rules:` erau copiate în
+`JarvisConfig` și niciodată consultate; `rules.promotion_criteria` chiar contrazicea butonul real
+(`bench.<id>.threshold`). Ambele au dispărut — casa reală a fiecărui concept e numită în comentariul
+din capul fișierului — `NERVA.md` descrie acum rutarea care există (`hybrid_router.py` +
+`llm_policy` per agent), iar `tests/test_agents_yaml_dead_config.py` (4) ține fiecare cheie de
+top-level consumată.
 
 ---
 

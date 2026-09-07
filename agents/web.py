@@ -25,13 +25,14 @@ from agents.core.channels.email import EmailChannel
 from agents.core.channels.gateway import Gateway
 from agents.core.channels.slack import SlackChannel
 from agents.core.channels.telegram import TelegramChannel
+from agents.core.channels.group_policy import GroupPolicy
 from agents.core.channels.voice import VoiceChannel
 from agents.core.channels.web import WebChannel
 from agents.core.config import JarvisConfig
 from agents.core.errors import E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED, JarvisError
 from agents.core.log import log_error, setup_logging
 from agents.core.log_safe import log_safe
-from agents.core.orchestrator import Orchestrator
+from agents.core.orchestrator import TURN_BUSY_REPLY, Orchestrator
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 from agents.core.security.guardrails import SecurityBlockError
 # Pure response/format helpers live in core.web_helpers (CLN-3 shared kernel) so
@@ -378,6 +379,7 @@ async def lifespan(application: FastAPI):
         telegram_ch = TelegramChannel(
             token=tg_token, handler=gateway.route,
             allowed_user_ids=_telegram_allowed_user_ids(),
+            group_policy=GroupPolicy.from_env(os.environ),
         )
         await orch.register_channel(telegram_ch)
         logger.info("Telegram channel wired with bot token")
@@ -901,7 +903,10 @@ async def chat(req: ChatRequest):
             prefix = notes.context_for(getattr(orch, "session_id", "web"))
             if prefix:
                 message = prefix + message
-        reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None)
+        async with orch.turn_lease() as acquired:
+            if not acquired:
+                return ChatResponse(reply=TURN_BUSY_REPLY)
+            reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None)
         return ChatResponse(reply=reply)
     except Exception:
         # Constant reply — exception text in the client body is an
@@ -927,9 +932,13 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override):
 
     async def runner():
         try:
-            full = await orch.handle_input_stream(
-                message, channel="web", on_token=on_token, agent_override=agent_override,
-            )
+            async with orch.turn_lease() as acquired:
+                if not acquired:
+                    await queue.put(("end", TURN_BUSY_REPLY))
+                    return
+                full = await orch.handle_input_stream(
+                    message, channel="web", on_token=on_token, agent_override=agent_override,
+                )
             await queue.put(("end", full))
         except asyncio.CancelledError:
             raise  # client disconnected → propagate so the turn actually stops

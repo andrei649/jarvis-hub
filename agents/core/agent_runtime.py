@@ -13,7 +13,9 @@ from contextlib import suppress
 from functools import partial
 from typing import Any
 
+from .context_compressor import window_for
 from .iteration_budget import IterationBudget
+from .llm.tokenizer import estimate_messages
 from .llm.tool_protocol import MAX_PARSED_TOOL_CALLS, ToolCall, ToolSpec
 from .tool_rpc import ToolRPCServer
 
@@ -24,6 +26,17 @@ GapSink = Callable[[dict[str, str]], Any]
 
 _APPROVAL_REPLY = "I paused the tool loop because this action requires approval."
 _DEADLINE_REPLY = "I stopped the tool loop because it reached the safety deadline."
+_CONTEXT_REPLY = "I stopped the tool loop because its context exceeded the safety budget."
+# Hermes absorption 0.3 — in-turn compaction. The loop appends an assistant message and one
+# tool result per call for up to 32 iterations and never measured the growing list; at the
+# end the work was lost to a context overflow nobody had counted. The budget defaults to a
+# fraction of the model's window minus the output reserve, older tool results are folded
+# into bounded envelopes first, and a transcript that still does not fit stops the loop with
+# a named reason instead of a provider error.
+_MIN_CONTEXT_BUDGET = 2_048
+_CONTEXT_WINDOW_FRACTION = 0.75
+_COMPACTED_NOTICE = "TOOL RESULT COMPACTED"
+_TRUNCATED_NOTICE = "TOOL RESULT TRUNCATED"
 _DEFAULT_ITERATIONS = 8
 _MAX_ITERATIONS = 32
 _MAX_TOOL_CALLS_PER_TURN = MAX_PARSED_TOOL_CALLS - 1
@@ -69,8 +82,14 @@ class AgentToolRuntime:
         tool_timeout_seconds: float = 30.0,
         max_wall_seconds: float = 120.0,
         gap_callback: GapSink | None = None,
+        context_budget_tokens: Callable[[], int] = lambda: 0,
+        compaction_keep_recent: int = 2,
+        compacted_result_bytes: int = 512,
     ) -> None:
         self._server = server
+        self._context_budget_tokens = context_budget_tokens
+        self._compaction_keep_recent = _safe_int(compaction_keep_recent, default=2, minimum=0)
+        self._compacted_result_bytes = _safe_int(compacted_result_bytes, default=512, minimum=64)
         self._enabled = enabled
         self._registry_enabled = registry_enabled
         self._capability_snapshot = capability_snapshot
@@ -175,8 +194,18 @@ class AgentToolRuntime:
         ]
         limit = self._iteration_limit()
         budget = IterationBudget(limit)
+        compacted: set[int] = set()
 
         while budget.consume():
+            if len(messages) > 2 and not await self._compact_context(
+                messages,
+                compacted,
+                model=model,
+                max_tokens=max_tokens,
+                agent_id=agent_id,
+                event_sink=event_sink,
+            ):
+                return _CONTEXT_REPLY
             turn = await backend.generate_tool_turn(
                 model=model,
                 messages=messages,
@@ -227,6 +256,102 @@ class AgentToolRuntime:
         return (
             f"I stopped the tool loop after {limit} model turns because it reached "
             "the safety limit."
+        )
+
+    def _context_budget(self, model: str, max_tokens: int) -> int:
+        """Tokens the transcript may occupy before the next model turn."""
+        try:
+            configured = _safe_int(self._context_budget_tokens(), default=0, minimum=0)
+        except Exception:
+            logger.warning("tool loop context budget setting failed closed to auto")
+            configured = 0
+        if configured > 0:
+            return max(_MIN_CONTEXT_BUDGET, configured)
+        reserve = max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else 0
+        return max(_MIN_CONTEXT_BUDGET, int(window_for(model) * _CONTEXT_WINDOW_FRACTION) - reserve)
+
+    async def _compact_context(
+        self,
+        messages: list[dict[str, Any]],
+        compacted: set[int],
+        *,
+        model: str,
+        max_tokens: int,
+        agent_id: str,
+        event_sink: ToolEventSink | None,
+    ) -> bool:
+        """Fold older tool results into bounded envelopes until the transcript fits.
+
+        Messages are never dropped or reordered — every ``tool`` result keeps answering the
+        assistant call that made it, which is what every provider validates — only their
+        content shrinks. The most recent ``compaction_keep_recent`` iterations are folded last.
+        Returns False when the transcript still exceeds the budget with everything folded.
+        """
+        budget = self._context_budget(model, max_tokens)
+        before = estimate_messages(messages)
+        if before <= budget:
+            return True
+        assistant_positions = [
+            index for index, message in enumerate(messages) if message.get("role") == "assistant"
+        ]
+        keep = self._compaction_keep_recent
+        protected_from = (
+            assistant_positions[-keep]
+            if keep and len(assistant_positions) >= keep
+            else len(messages)
+        )
+        candidates = [
+            index
+            for index, message in enumerate(messages)
+            if message.get("role") == "tool" and index not in compacted
+        ]
+        used = before
+        folded = 0
+        for positions in (
+            [index for index in candidates if index < protected_from],
+            [index for index in candidates if index >= protected_from],
+        ):
+            for index in positions:
+                if used <= budget:
+                    break
+                compacted.add(index)
+                message = messages[index]
+                content = message.get("content")
+                encoded = content if isinstance(content, str) else json.dumps(content, default=str)
+                if len(encoded.encode("utf-8")) <= self._compacted_result_bytes:
+                    continue
+                messages[index] = {**message, "content": self._compacted_content(encoded)}
+                folded += 1
+                used = estimate_messages(messages)
+        exhausted = used > budget
+        await self._emit(
+            event_sink,
+            {
+                "event": "tool_context_compacted",
+                "agent_id": _bounded_identity(agent_id),
+                "status": "exhausted" if exhausted else "compacted",
+                "compacted": folded,
+                "tokens_before": before,
+                "tokens_after": used,
+                "budget": budget,
+            },
+        )
+        return not exhausted
+
+    def _compacted_content(self, encoded: str) -> str:
+        try:
+            parsed = json.loads(encoded)
+        except ValueError:
+            parsed = None
+        result = parsed if isinstance(parsed, dict) else {}
+        tool = result.get("tool")
+        return _bounded_result_envelope(
+            encoded,
+            tool_name=tool if isinstance(tool, str) else "",
+            ok=result.get("ok") is True,
+            reason=result.get("reason"),
+            max_bytes=self._compacted_result_bytes,
+            notice=_COMPACTED_NOTICE,
         )
 
     async def _execute_turn_calls(
@@ -586,6 +711,7 @@ def _bounded_result_envelope(
     ok: bool,
     reason: Any,
     max_bytes: int,
+    notice: str = _TRUNCATED_NOTICE,
 ) -> str:
     """Return a complete JSON truncation envelope within ``max_bytes``."""
     raw = encoded.encode("utf-8")
@@ -593,7 +719,7 @@ def _bounded_result_envelope(
         "ok": ok,
         "tool": _bounded_identity(tool_name),
         "truncated": True,
-        "notice": "TOOL RESULT TRUNCATED",
+        "notice": notice,
         "original_bytes": len(raw),
     }
     if not ok and isinstance(reason, str):

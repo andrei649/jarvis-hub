@@ -105,7 +105,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/llm_control.py` + orchestrator chat control | Detect LM Studio/Ollama requests, enforce identity/permission/contract/kernel/audit before mutation, and narrate the real result | `detect_llm_control`, `authorize_local_model_lifecycle`, `run_llm_control`, `_run_llm_control` |
 | `agents/core/llm/tool_protocol.py` | Provider-neutral tool-turn values and the single fail-closed parse boundary every provider call crosses | `ToolSpec`, `ToolCall`, `ToolTurn`, `parse_openai_tool_calls` |
 | `agents/core/llm/tool_dialects.py` | Translate the runtime's OpenAI-shaped tool dialect into each provider's own and back (Anthropic blocks, Gemini declarations/parts + thought signatures + schema projection, Ollama `/api/chat`); reshapes only, never validates | `anthropic_messages`, `anthropic_tool_calls`, `gemini_contents`, `gemini_function_declarations`, `gemini_schema`, `gemini_tool_calls`, `ollama_messages`, `ollama_tool_calls`, `normalize_finish_reason` |
-| `agents/core/agent_runtime.py` | Bounded model-directed tool loop over the governed ToolRPC allowlist; `can_run` fails closed on setting, backend `supports_tools` and allowlist | `AgentToolRuntime.can_run/run` |
+| `agents/core/agent_runtime.py` | Bounded model-directed tool loop over the governed ToolRPC allowlist; `can_run` fails closed on setting, backend `supports_tools` and allowlist; in-turn compaction folds older tool results into bounded envelopes against a per-model context budget (`llm.tool_loop_context_tokens`) and stops with a named reason when the transcript cannot fit | `AgentToolRuntime.can_run/run`, `_compact_context`, `_context_budget` |
 | `agents/core/llm/anthropic.py` | Claude API backend (text + tool turns) | `ClaudeBackend` |
 | `agents/core/llm/gemini.py` | Gemini API backend (text + tool turns) | `GeminiBackend` |
 | `agents/core/llm/gemini_cache.py` | Gemini context cache | `ContextCache`, `create_or_extend` |
@@ -186,6 +186,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/channels/web.py` | SSE streaming channel | `WebChannel` |
 | `agents/core/channels/voice.py` | Voice channel — wraps `VoicePipeline` (server-side mic) | `VoiceChannel` |
 | `agents/core/channels/telegram.py` | Telegram bot | `TelegramChannel`, `send_card`, `on_callback` |
+| `agents/core/channels/group_policy.py` | Group-chat gate applied by the Telegram poll loop after the user allowlist: DMs pass; in a room only an `@mention`, `/cmd@bot`, reply-to-bot or `text_mention` is answered (mention stripped), `TELEGRAM_ALLOWED_CHAT_IDS` / `chat:thread` restricts rooms, `TELEGRAM_GROUP_REQUIRE_MENTION` relaxes, `TELEGRAM_GROUP_OBSERVE` records unaddressed messages as context without answering; fails closed on unknown chat types and an unknown bot identity | `GroupPolicy.from_env`, `gate_message`, `GateDecision` |
 | `agents/core/channels/discord.py` | Discord bot | `DiscordChannel` |
 | `agents/core/channels/email.py` | SMTP + IMAP | `EmailChannel` |
 | `agents/core/channels/slack.py` | Slack bot | `SlackChannel` |

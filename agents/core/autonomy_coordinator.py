@@ -711,6 +711,7 @@ class AutonomyCoordinator:
             capability_snapshot=lambda: capability_registry.snapshot(self._orch),
             max_iterations=lambda: _get_setting("llm.tool_loop_max_iterations", 8),
             gap_callback=acquisition.capture_gap,
+            context_budget_tokens=lambda: _get_setting("llm.tool_loop_context_tokens", 0),
         )
         bind_external_orchestrator_attribute(self._orch, "tool_rpc", server)
         bind_external_orchestrator_attribute(self._orch, "agent_tool_runtime", runtime)

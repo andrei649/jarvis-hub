@@ -159,10 +159,13 @@ memory_logs/                 # Sessions, checkpoints, learning records
 
 **To add Claude API as cloud fallback:**
 - Get API key from https://console.anthropic.com
-- Add key to `agents/core/plugins/cloud_llm.py` (look for `anthropic_api_key`)
-- Configure `cloud_llm_agents` list in `agents.yaml` (agents that can use cloud)
-- Agents already set: jarvis, athena, stark, vision, veronica
-- Frigga has `cloud_fallback: false` (hard rule, never uses cloud)
+- Set `ANTHROPIC_API_KEY` (or a rotation pool in `ANTHROPIC_API_KEYS`) in the environment; Gemini
+  works the same way through `GEMINI_API_KEY`
+- Which agents may use a cloud model is code plus the registry, not a list: `LOCAL_ONLY_AGENTS`
+  (frigga, ultron, howard, hestia — never cloud), `CLOUD_ONLY_AGENTS` (athena) and `CLAUDE_AGENTS`
+  (vision, steve) in `agents/core/llm/hybrid_router.py`, then the per-agent `llm_policy` key in
+  `agents/_system/agents.yaml`; every other agent routes `auto`. (A `general.cloud_llm_agents`
+  list used to sit in `agents.yaml`; nothing read it, and it was removed 2026-09-07.)
 
 ---
 
@@ -203,7 +206,7 @@ curl.exe http://127.0.0.1:8080/status
 <!-- project-status:jarvis-stats:start -->
 - 18 active agents; registry-derived
 - 465 HTTP routes; parity-snapshot-derived
-- Tests: backend **8,829** · frontend **1,031** · mobile **135**
+- Tests: backend **8,877** · frontend **1,031** · mobile **135**
 - Version: **v1.0.0** · source commit `2628df24fceb`
 - Backlog ledger: 288 done · 13 open or blocked of 301 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
 - H23 roll-up: 28/30 done, 1 blocked, 1 open; release gates: A1, A3, A4, A6

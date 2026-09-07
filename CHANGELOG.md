@@ -30,6 +30,37 @@ chat model, on exactly the path designed for heavy work.
 - Tests: `tests/test_cloud_tool_turns.py` (39). **Not proven against a live provider** —
   `docs/OWNER_TASKS.md` P15.
 
+The rest of wave 0 — the other things Nerva believed it did:
+
+- **The model is told which skills exist (0.2).** `Agent.build_prompt` rendered an "Available
+  skills" block from `context["skills"]` since the beginning and nothing set the key.
+  `SkillLoader.prompt_catalog(agent_id)` is the producer — bounded, only skills the loader would
+  execute (quarantined and sandboxed ones are never advertised), agent-scoped — and
+  `Orchestrator._prompt_context` wires it without mutating the shared intent context;
+  `llm.skills_in_prompt` turns it off. `tests/test_skills_in_prompt.py` (10).
+- **The tool loop measures the transcript it grows (0.3).** A per-turn budget
+  (`llm.tool_loop_context_tokens`, 0 = 75 % of the model window minus the output reserve) folds
+  older tool results into ≤512-byte `TOOL RESULT COMPACTED` envelopes — never dropped or
+  reordered, so provider pairing validation holds — and a transcript that still does not fit
+  stops the loop with a named reply and a `tool_context_compacted{status=exhausted}` event.
+  `tests/test_tool_loop_compaction.py` (5).
+- **Being in a room is not being addressed (0.4).** `channels/group_policy.py` gates Telegram
+  group traffic after the user allowlist: mention / `/cmd@bot` / reply / `text_mention` to
+  answer (mention stripped), `TELEGRAM_ALLOWED_CHAT_IDS` (or `chat:thread`),
+  `TELEGRAM_GROUP_REQUIRE_MENTION`, `TELEGRAM_GROUP_OBSERVE` (record as context, never answer,
+  no lease, no rate budget, no pairing reply). Fails closed on unknown chat types and on a bot
+  that could not learn its identity. `tests/test_telegram_group_gate.py` (21); not proven in a
+  live group — `docs/OWNER_TASKS.md` P16.
+- **One turn at a time per session (0.5).** `Orchestrator.turn_lease()` around `channel_handler`
+  and the direct web chat endpoints: same session waits, other sessions do not, a wait past
+  180 s answers `TURN_BUSY_REPLY`, re-entrant within a turn, bounded table.
+  `tests/test_turn_lease.py` (8).
+- **No config nothing reads (0.6).** The whole `general:` block and the `rules:` block of
+  `agents/_system/agents.yaml` were copied into `JarvisConfig` and never consulted; both are
+  gone, their concepts' real homes are named in the header comment, `NERVA.md` describes the
+  routing that exists, and `tests/test_agents_yaml_dead_config.py` (4) keeps every top-level
+  key consumed. New settings: `llm.tool_loop_context_tokens`, `llm.skills_in_prompt`.
+
 ### Wave 2026-09-06 — 17 builder slices: operator hands, live rails, activation, program contracts
 
 Seventeen file-partitioned slices landed as one commit (`214bc5eb`, run `opus-integration`,

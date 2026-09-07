@@ -525,7 +525,8 @@ H23.23 decision, and it touches none of the deferred work.
 
 **Reuse as-is (config, not engineering):** CDX-12 hardened profile (`JARVIS_HARDENED=1`) · CDX-11
 plugin least-privilege (grant nothing) · in-memory graph + vector fallbacks (no Neo4j, no Qdrant) ·
-existing OpenAI-compatible cloud routing in `hybrid_router.py` + the `cloud_llm_agents` allowlist.
+existing OpenAI-compatible cloud routing in `hybrid_router.py` (the `cloud_llm_agents` allowlist
+this note also named was found to have no reader and was removed 2026-09-07 — HA-0.6).
 
 **The one real code gap — ✅ CLOSED:** `agents/core/memory/seed_graph.py` `SEED_FACTS` hardcodes
 Andrei/Alexandra/Max/Raiffeisen/Cosmina de Sus/BMW E93 and `MemoryManager.__init__` seeded them
@@ -1191,14 +1192,46 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   governed loop over Ollama). **Not proven against a live Claude, Gemini, OpenRouter or Ollama
   server** — the dialects are built from each provider's documented contract, not a captured
   exchange → [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P15**.
-- [ ] **HA-0.2 — the model does not know skills exist** (`context["skills"]` is never set).
-- [ ] **HA-0.3 — no in-turn compaction** in the tool loop (`agent_runtime.py`, 32 iterations, never
-  measured).
-- [ ] **HA-0.4 — no gate on group messages** (one flat `allowed_user_ids`; no mention gating, no
-  per-chat allowlist, no observe mode).
-- [ ] **HA-0.5 — no per-turn lease** (`orchestrator.py`; a second Telegram message starts a
-  concurrent turn on the same session key).
-- [ ] **HA-0.6 — dead config in the canonical registry** (`general.cloud_llm_agents` has zero readers).
+- [x] ✅ **HA-0.2 — the model is told which skills exist.** `Agent.build_prompt` rendered an
+  "Available skills" block from `context["skills"]` since the beginning and nothing set the key.
+  `SkillLoader.prompt_catalog(agent_id)` is the producer (bounded to 20 rows × 120 chars, only
+  skills the loader would actually execute — quarantined/sandboxed ones are never advertised,
+  agent-scoped ones only to their agents) and `Orchestrator._prompt_context` wires it without
+  mutating the shared intent context; `llm.skills_in_prompt` (default on) turns it off. Tests:
+  `tests/test_skills_in_prompt.py` (10).
+- [x] ✅ **HA-0.3 — the tool loop measures the transcript it grows.** Every turn after the first
+  checks `estimate_messages` against a budget (`llm.tool_loop_context_tokens`; 0 = 75 % of the
+  model's window from `context_compressor.window_for` minus the output reserve, floor 2,048).
+  Older tool results fold into ≤512-byte envelopes (`TOOL RESULT COMPACTED`, head/tail preview)
+  — never dropped, never reordered, so every result still answers the call that made it — the
+  most recent 2 iterations fold last, and a transcript that still does not fit stops the loop
+  with a named reply and a `tool_context_compacted{status=exhausted}` event instead of a
+  provider overflow. The 75 % fraction is a judgment, not a measurement. Tests:
+  `tests/test_tool_loop_compaction.py` (5).
+- [x] ✅ **HA-0.4 — being in a room is not being addressed.** `channels/group_policy.py`
+  (`GroupPolicy`, `gate_message`) is applied by the Telegram poll loop after the user allowlist:
+  DMs pass; in a group/supergroup/channel the bot answers only an `@mention`, a `/cmd@bot`, a
+  reply to itself or a `text_mention` of itself (the mention is stripped before the model sees
+  it), `TELEGRAM_ALLOWED_CHAT_IDS` restricts rooms (or one `chat:thread` topic),
+  `TELEGRAM_GROUP_REQUIRE_MENTION=0` relaxes the requirement per owner, `TELEGRAM_GROUP_OBSERVE=1`
+  records unaddressed messages as context without answering — an observed message takes no
+  turn lease, spends no reply rate budget and never earns a pairing reply. Unknown chat types
+  and a bot that could not learn its own identity (getMe failed) fail closed. Tests:
+  `tests/test_telegram_group_gate.py` (21). **Not proven in a live Telegram group** →
+  [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P16**.
+- [x] ✅ **HA-0.5 — one turn at a time per session.** `Orchestrator.turn_lease(session_key)`:
+  `channel_handler` and the two direct web chat endpoints take the session's lease before a
+  turn; a second message on the same session waits its turn, a message on another session does
+  not wait, a wait past 180 s is answered `TURN_BUSY_REPLY` rather than started, the lease is
+  re-entrant within a turn's async context (a workflow step calling back in inherits it, a
+  foreign context does not), and the table is bounded. Tests: `tests/test_turn_lease.py` (8).
+- [x] ✅ **HA-0.6 — the registry carries no config that nothing reads.** The whole `general:`
+  block (not just `cloud_llm_agents`: timezone, wake words, LLM backend/endpoints, plugin mode,
+  WhatsApp bridge) and the `rules:` block were copied into `JarvisConfig` and never consulted;
+  `rules.promotion_criteria` even disagreed with the real knob (`bench.<id>.threshold`). Both are
+  gone — each concept's real home is named in the file's header comment — `NERVA.md`'s setup
+  step now describes the routing that exists (`hybrid_router.py` + per-agent `llm_policy`), and
+  `tests/test_agents_yaml_dead_config.py` (4) keeps every top-level key consumed.
 - [ ] **HA-1 … HA-4** — operator surface (`nerva` CLI, `kernel explain`, chat slash plane), user
   cron with blueprints, the model's hands (`search_files`, `session_search`, session kernels,
   `image_generate`), depth (adapter descriptor, MCP trust tiers, HUD mode, plugin SDK) — sequenced in

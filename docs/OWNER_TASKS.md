@@ -375,8 +375,9 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15** (2026-09-07) is the first packet from the Hermes absorption: the tool loop on
-> each cloud provider and on Ollama, built from documented contracts and never sent to a real one.
+> hardware. **P15** and **P16** (2026-09-07) are the first packets from the Hermes absorption: the
+> tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
+> to a real one, and the Telegram group gate, never exercised in a real group.
 > If you flip a row to ✅ and its proof still depends on something only you can run, it
 > belongs here — that rule is written into
 > [`docs/prompts/BACKLOG_DRIVER.md`](prompts/BACKLOG_DRIVER.md) so an unattended session applies it.
@@ -645,6 +646,21 @@ built on your Windows box:
       their API); on Claude, parallel tool calls must come back as one user turn of `tool_result`
       blocks (the API rejects them split). If a provider 400s on the request shape, the failing field
       is the finding — file it against `agents/core/llm/tool_dialects.py`, do not disable the loop.
+
+- [ ] **P16 — The bot in a real group** *(covers `HA-0.4`)*
+      Every group-gating decision was exercised against a fake Telegram transport; no real
+      supergroup has ever carried a message through it. Add the bot to a group you control with
+      privacy mode **off** (so it sees unaddressed messages at all), leave the env defaults
+      (`TELEGRAM_GROUP_REQUIRE_MENTION=1`, `TELEGRAM_GROUP_OBSERVE=0`), and check five things:
+      a plain message from an allowed member gets **no** reply; `@<bot> status` gets one, and the
+      transcript shows `status`, not the mention; a reply to one of the bot's own messages gets
+      one; `/status@<bot>` works; and with `TELEGRAM_ALLOWED_CHAT_IDS` set to a *different* chat
+      id, even an @mention in this group is ignored. Then set `TELEGRAM_GROUP_OBSERVE=1`, restart,
+      send three unaddressed messages and one @mention: the three appear in the session
+      transcript as user turns with no bot reply, the mention is answered, and the gateway's
+      rate counter for `telegram` moved by one, not four. If the bot answers an unaddressed
+      message, check the hub log for the getMe warning first — without its own username it
+      cannot recognise a mention, and the fail-closed path is to drop, never to answer.
 
 ## Parking lot (decisions, no rush)
 
