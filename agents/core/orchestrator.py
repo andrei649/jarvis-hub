@@ -40,6 +40,7 @@ from .action_origin import (
     reset_action_origin,
 )
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
+from .commands import Principal, build_default_registry
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
@@ -211,6 +212,24 @@ TURN_BUSY_REPLY = (
 _held_turn_leases: contextvars.ContextVar = contextvars.ContextVar(
     "nerva_held_turn_leases", default=frozenset()
 )
+# Hermes absorption, wave 1 — who is speaking in this turn (channel, sender, owner?),
+# established by the channel or the web endpoint and read by the slash-command plane.
+_turn_principal: contextvars.ContextVar = contextvars.ContextVar(
+    "nerva_turn_principal", default=None
+)
+
+
+def bind_turn_principal(principal: Principal):
+    return _turn_principal.set(principal)
+
+
+def reset_turn_principal(token) -> None:
+    _turn_principal.reset(token)
+
+
+def current_principal() -> Principal:
+    """The principal bound to this turn; nobody in particular when none was bound."""
+    return _turn_principal.get() or Principal()
 _active_session: contextvars.ContextVar = contextvars.ContextVar(
     "jarvis_active_session", default=_SESSION_UNSET
 )
@@ -426,6 +445,7 @@ class Orchestrator:
         self._channel_sessions: dict[str, str] = {}
         self._turn_leases: dict[str, asyncio.Lock] = {}
         self._turn_lease_max_wait: float = _TURN_LEASE_MAX_WAIT_SECONDS
+        self.commands = build_default_registry()
         self._last_channel: str = "unknown"
         self._settings_watcher_task: Optional[asyncio.Task] = None
         # ── Autonomy / Proactive Cortex (H6.1–H6.6) ──
@@ -1125,6 +1145,9 @@ class Orchestrator:
         # Hermes absorption 0.4: an observed group message becomes context, never an answer.
         observe_only = bool(kwargs.pop("observe_only", False))
         origin_token = bind_action_origin(action_origin)
+        principal_token = bind_turn_principal(
+            self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"))
+        )
         # DRA-08: one description of *who is talking to us*, built from the
         # identity metadata the adapters already put on the wire (telegram
         # chat_id/sender, email sender, slack_channel, matrix room_id, teams
@@ -1197,7 +1220,33 @@ class Orchestrator:
                 await self.channel_manager.send(decision.target.channel, response, **kwargs)
             return response
         finally:
+            reset_turn_principal(principal_token)
             reset_action_origin(origin_token)
+
+    def _channel_principal(self, channel: str, sender, chat_id) -> Principal:
+        """The owner test for a channel turn: Telegram's owner allowlist or owner chat; else nobody."""
+        sender_text = None if sender is None else str(sender)
+        admin = False
+        if channel == "telegram":
+            adapter = (getattr(self, "channels", None) or {}).get("telegram")
+            allowed = {str(uid) for uid in (getattr(adapter, "allowed_users", None) or [])}
+            owner_chat = str(self.get_setting("autonomy.owner_chat_id", "") or "").strip()
+            admin = bool(
+                (sender_text is not None and sender_text in allowed)
+                or (owner_chat and chat_id is not None and str(chat_id) == owner_chat)
+            )
+        return Principal(channel=channel, sender=sender_text, admin=admin)
+
+    async def _dispatch_command(self, text: str):
+        """Answer a slash command from the registry, or None when *text* is not one."""
+        registry = getattr(self, "commands", None)
+        if registry is None:
+            return None
+        try:
+            return await registry.dispatch(text, orch=self, principal=current_principal())
+        except Exception:
+            logger.warning("slash command dispatch failed closed", exc_info=True)
+            return None
 
     async def _channel_turn(self, text: str, channel: str, *, observe_only: bool) -> Optional[str]:
         """One inbound channel message → one turn, under the session's lease."""
@@ -1260,6 +1309,20 @@ class Orchestrator:
         finally:
             _held_turn_leases.reset(token)
             lock.release()
+
+    @staticmethod
+    def _command_cognition(outcome) -> dict:
+        return {
+            "scoring": [],
+            "decision": {
+                "source": "command",
+                "confidence": 1.0,
+                "agents_selected": ["commands"],
+                "alternatives": [],
+                "timing": {"classify": 0, "route": 0, "total": 0},
+            },
+            "trace": [{"step": "slash_command", "duration_ms": 0, "result": f"/{outcome.name}:{outcome.status}"}],
+        }
 
     def _resolve_session(self, session_id: Optional[str]) -> str:
         """BUG-5: bind the active session into the per-request async context.
@@ -1344,6 +1407,12 @@ class Orchestrator:
         self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+
+        outcome = await self._dispatch_command(text)
+        if outcome is not None:
+            await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
+            self.last_cognition = self._command_cognition(outcome)
+            return outcome.reply
 
         skill_cmd = self.skills.parse_command(text)
         if skill_cmd:
@@ -1494,6 +1563,16 @@ class Orchestrator:
         self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+
+        outcome = await self._dispatch_command(text)
+        if outcome is not None:
+            await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
+            if on_token:
+                emitted = on_token(outcome.reply)
+                if inspect.isawaitable(emitted):
+                    await emitted
+            self.last_cognition = self._command_cognition(outcome)
+            return outcome.reply
 
         skill_cmd = self.skills.parse_command(text)
         if skill_cmd:

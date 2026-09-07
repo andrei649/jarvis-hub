@@ -32,7 +32,12 @@ from agents.core.config import JarvisConfig
 from agents.core.errors import E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED, JarvisError
 from agents.core.log import log_error, setup_logging
 from agents.core.log_safe import log_safe
-from agents.core.orchestrator import TURN_BUSY_REPLY, Orchestrator
+from agents.core.orchestrator import (
+    TURN_BUSY_REPLY,
+    Orchestrator,
+    bind_turn_principal,
+    reset_turn_principal,
+)
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 from agents.core.security.guardrails import SecurityBlockError
 # Pure response/format helpers live in core.web_helpers (CLN-3 shared kernel) so
@@ -902,8 +907,23 @@ async def hud_v2(path: str = ""):
 
 # ── Chat ─────────────────────────────────────────────────────────
 
+def _web_principal(request: Request):
+    """Who is chatting through the HTTP door.
+
+    The owner iff an admin credential was presented — or, exactly as `_admin_guard`
+    decides for the admin routes, a direct-localhost origin while no admin credential is
+    configured at all (the fresh-box posture). Anything else is a user.
+    """
+    from agents.core.commands import Principal
+
+    admin = _admin_credential_ok(request.headers.get("x-admin-token", ""))
+    if not admin and not _admin_configured():
+        admin = _real_client_host(request) in _LOCALHOSTS
+    return Principal(channel="web", sender=None, admin=admin)
+
+
 @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(_user_guard)])
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
     if not orch:
         return ChatResponse(reply="Jarvis not initialized.")
     try:
@@ -914,10 +934,14 @@ async def chat(req: ChatRequest):
             prefix = notes.context_for(getattr(orch, "session_id", "web"))
             if prefix:
                 message = prefix + message
-        async with _turn_lease(orch) as acquired:
-            if not acquired:
-                return ChatResponse(reply=TURN_BUSY_REPLY)
-            reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None)
+        principal_token = bind_turn_principal(_web_principal(request))
+        try:
+            async with _turn_lease(orch) as acquired:
+                if not acquired:
+                    return ChatResponse(reply=TURN_BUSY_REPLY)
+                reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None)
+        finally:
+            reset_turn_principal(principal_token)
         return ChatResponse(reply=reply)
     except Exception:
         # Constant reply — exception text in the client body is an
@@ -926,7 +950,7 @@ async def chat(req: ChatRequest):
         return ChatResponse(reply="Internal error.")
 
 
-async def _chat_event_stream(orch, message: str, agent: str, agent_override):
+async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -942,6 +966,9 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override):
         await queue.put(("token", token))
 
     async def runner():
+        # The principal is bound inside the task: a ContextVar set on the endpoint would
+        # not reliably reach a generator Starlette drives later.
+        principal_token = bind_turn_principal(principal) if principal is not None else None
         try:
             async with _turn_lease(orch) as acquired:
                 if not acquired:
@@ -959,6 +986,9 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override):
             # so exception text here would leak internals the same way the
             # non-stream path used to.
             await queue.put(("error", ""))
+        finally:
+            if principal_token is not None:
+                reset_turn_principal(principal_token)
 
     task = asyncio.create_task(runner())
     try:
@@ -988,7 +1018,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override):
 
 
 @app.post("/chat/stream", dependencies=[Depends(_user_guard)])
-async def chat_stream(req: ChatRequest):
+async def chat_stream(req: ChatRequest, request: Request):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
 
@@ -1003,7 +1033,7 @@ async def chat_stream(req: ChatRequest):
         if prefix:
             message = prefix + message
     return StreamingResponse(
-        _chat_event_stream(orch, message, req.agent, agent_override),
+        _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request)),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

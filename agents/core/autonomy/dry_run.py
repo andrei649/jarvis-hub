@@ -58,6 +58,23 @@ def _is_irreversible(kind: str, title: str) -> bool:
     return any(tok in blob if "_" in tok else tok in words for tok in _IRREVERSIBLE_TOKENS)
 
 
+def _tier_of(raw) -> int:
+    """The task's declared tier, or the fail-closed default when it declares none.
+
+    ``int(t.get("risk_tier", 3) or 3)`` used to sit here: a READ_ONLY tier is ``0``,
+    ``0 or 3`` is ``3``, so every read previewed as money-grade and "approval required" —
+    the inverse of the GOV-038 intent it was written to serve. Only *absent* or
+    unparseable tiers fall back to 3 now.
+    """
+    if raw is None or isinstance(raw, bool):
+        return 3
+    try:
+        tier = int(raw)
+    except (TypeError, ValueError):
+        return 3
+    return tier if 0 <= tier <= 3 else 3
+
+
 def preview_task(task: Union[dict, object], *, autonomy_level: str | None = None) -> dict:
     """Return a non-executing preview of what *task* would do.
 
@@ -69,7 +86,7 @@ def preview_task(task: Union[dict, object], *, autonomy_level: str | None = None
     kind = str(t.get("kind", ""))
     title = str(t.get("title", ""))
     payload = t.get("payload") or {}
-    tier = int(t.get("risk_tier", 3) or 3)
+    tier = _tier_of(t.get("risk_tier"))
 
     target = (payload.get("target") or payload.get("url") or payload.get("to")
               or payload.get("recipient") or "")

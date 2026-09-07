@@ -375,9 +375,10 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15** and **P16** (2026-09-07) are the first packets from the Hermes absorption: the
+> hardware. **P15**–**P17** (2026-09-07) are the first packets from the Hermes absorption: the
 > tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
-> to a real one, and the Telegram group gate, never exercised in a real group.
+> to a real one; the Telegram group gate, never exercised in a real group; and the `nerva`
+> command plus the chat slash commands, never pointed at a running hub.
 > If you flip a row to ✅ and its proof still depends on something only you can run, it
 > belongs here — that rule is written into
 > [`docs/prompts/BACKLOG_DRIVER.md`](prompts/BACKLOG_DRIVER.md) so an unattended session applies it.
@@ -661,6 +662,20 @@ built on your Windows box:
       rate counter for `telegram` moved by one, not four. If the bot answers an unaddressed
       message, check the hub log for the getMe warning first — without its own username it
       cannot recognise a mention, and the fail-closed path is to drop, never to answer.
+
+- [ ] **P17 — The `nerva` command against a running hub, and a slash command on a live channel**
+      *(covers `HA-1A`, `HA-1B`)*
+      Every online verb was exercised against a recording fake; no request has reached a real
+      hub. With the hub up on the box: `python scripts/nerva.py status` (no token) must print
+      version, backend and channels; `python scripts/nerva.py approvals list` without
+      `JARVIS_ADMIN_TOKEN` must exit 4 and name the token, and with it must list the same items the
+      HUD's Decision Inbox shows; `estop engage` then `estop status` then `estop resume` must
+      round-trip and the HUD's e-stop chip must follow; `config set llm.skills_in_prompt off`
+      must show in /admin within 30 s without a restart; `kernel explain payment --payload
+      '{"amount": 120}'` must say QUEUE. Then, on Telegram from the owner account: `/status`
+      answers, `/pause` engages the e-stop (the HUD chip turns red), `/resume` lifts it, and from
+      a non-owner account `/pause` is refused in words and the e-stop does not move. If a verb
+      400s or 422s, the request shape is the finding — file it against `agents/cli/nerva.py`.
 
 ## Parking lot (decisions, no rush)
 

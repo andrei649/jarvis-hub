@@ -98,6 +98,31 @@ Changes nothing; one named reason per row. Required rows (`FAIL` → exit 1): `p
 (`no_local_runtime`), `readyz` (`server_not_running` / `readyz_status:503`), `smoke`
 (`skipped` unless `--smoke`). Paste the `--json` output into a bug report.
 
+## The `nerva` command
+
+One command for the whole product, for a terminal, an SSH session or a script:
+
+```bash
+python scripts/nerva.py doctor                 # the check-up above, same reasons
+python scripts/nerva.py status                 # backend, model, agents, channels, e-stop
+python scripts/nerva.py config list llm        # settings, secrets masked (--reveal shows them)
+python scripts/nerva.py config set llm.tool_loop_enabled on   # validated; the hub reloads in ≤30 s
+python scripts/nerva.py approvals list         # the approval queue (needs JARVIS_ADMIN_TOKEN)
+python scripts/nerva.py approvals accept 7
+python scripts/nerva.py kernel explain payment --payload '{"amount": 120}'   # replay the gates, execute nothing
+python scripts/nerva.py estop engage --reason "guests over"
+python scripts/nerva.py chat "what's on today?"
+eval "$(python scripts/nerva.py completion bash)"
+```
+
+Online verbs talk to the running hub at `NERVA_HUB_URL` (default `http://127.0.0.1:8080`) with
+the same credentials the HUD uses — `JARVIS_ADMIN_TOKEN` for owner verbs, `JARVIS_USER_TOKEN`
+for the rest (`python -m agents.core.security.token_store issue admin` mints one). Offline
+verbs (`doctor`, `config`, `logs`, `kernel explain`) read the same data root as the hub
+(`JARVIS_HOME`) and never need it running. Exit codes: 0 ok · 1 the verb failed · 3 no hub
+reachable · 4 a credential is required. In chat, `/help`, `/status`, `/sessions`, and for the
+owner `/pause`, `/stop`, `/resume`, work on every channel.
+
 ## After the install
 
 - Start: `./start.sh` / `START.bat` → `http://127.0.0.1:8080/v2`.

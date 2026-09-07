@@ -1232,10 +1232,36 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   gone — each concept's real home is named in the file's header comment — `NERVA.md`'s setup
   step now describes the routing that exists (`hybrid_router.py` + per-agent `llm_policy`), and
   `tests/test_agents_yaml_dead_config.py` (4) keeps every top-level key consumed.
-- [ ] **HA-1 … HA-4** — operator surface (`nerva` CLI, `kernel explain`, chat slash plane), user
-  cron with blueprints, the model's hands (`search_files`, `session_search`, session kernels,
-  `image_generate`), depth (adapter descriptor, MCP trust tiers, HUD mode, plugin SDK) — sequenced in
-  [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+- [x] ✅ **HA-1A — the `nerva` command.** `agents/cli/` (`python scripts/nerva.py …` or
+  `python -m agents.cli …`): `doctor` · `status` · `config list|get|set|check` · `approvals
+  list|accept|reject|defer|edit` · `kernel explain` · `logs` · `estop status|engage|resume` ·
+  `sessions` · `chat` · `completion bash|zsh`. Online verbs speak to the running hub over the
+  same admin/user-guarded routes the HUD uses (`x-admin-token` / `x-user-token` from
+  `JARVIS_ADMIN_TOKEN` / `JARVIS_USER_TOKEN`, hub at `NERVA_HUB_URL` or `JARVIS_HOST:JARVIS_PORT`),
+  so a verb can do exactly what the HUD can do and nothing more; offline verbs read the same data
+  root (`doctor`, `config` on `settings_db` with schema validation and secret masking, `logs`,
+  `kernel explain`). Exit codes name the failure (3 no hub, 4 credential needed). `kernel explain`
+  is the read-only simulator the plan asked for: it replays the real gates — e-stop sentinel,
+  mediation registry, policy tier, irreversibility, autonomy mode, approval floor — from this
+  box's data root and says plainly that the running hub's live policy can only tighten it. Fixing
+  it surfaced a real defect: `preview_task` read `int(t.get("risk_tier", 3) or 3)`, so a
+  READ_ONLY tier of 0 previewed as money-grade and approval-required (regression test in
+  `tests/test_h12_5_autonomy_dryrun.py`). Tests: `tests/test_nerva_cli.py` (27). **Not proven
+  against a running hub** → [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P17**. Deferred from
+  the ledger row on purpose: `nerva send <channel>` needs a send route that does not exist, and
+  adding one trips four snapshot gates plus the HUD caller gate — it lands with the HUD wiring.
+- [x] ✅ **HA-1B — the chat slash-command plane.** `agents/core/commands.py`: one registry with
+  access tiers, dispatched by the orchestrator before skills and the model on every
+  conversational surface — `/help`, `/status`, `/sessions` (user), `/pause`, `/stop`, `/resume`
+  (owner). The turn carries a principal: Telegram's owner allowlist or owner chat, or an admin
+  token on the web door; a guest asking for an owner command is told so, never silently ignored
+  and never obeyed. `/stop` is honest that in-flight work finishes (Nerva has no kill for a
+  running step yet). Unknown `/foo` gets a hint, not the model. Tests:
+  `tests/test_slash_commands.py` (12). Follow-up: `GET /api/commands` + quickbar listing (a new
+  route needs a HUD caller in the same change).
+- [ ] **HA-2 … HA-4** — user cron with blueprints, the model's hands (`search_files`,
+  `session_search`, session kernels, `image_generate`), depth (adapter descriptor, MCP trust
+  tiers, HUD mode, plugin SDK) — sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the

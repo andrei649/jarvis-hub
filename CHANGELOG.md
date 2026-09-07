@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-07 — Hermes absorption, wave 1: the `nerva` command and the slash-command plane
+
+- **`nerva` — one command for the whole product** (`agents/cli/`, `python scripts/nerva.py …`
+  or `python -m agents.cli …`). A headless or SSH install could not be configured, diagnosed or
+  recovered; now `doctor`, `status`, `config list|get|set|check`, `approvals
+  list|accept|reject|defer|edit`, `kernel explain`, `logs`, `estop status|engage|resume`,
+  `sessions`, `chat` and `completion bash|zsh`. Online verbs call the same admin/user-guarded
+  routes the HUD calls with the same credentials, so they inherit the kernel and the approval
+  queue; offline verbs read the same data root. `config set` validates against the declared
+  schema and masks secrets on read; exit codes name the failure (3 no hub, 4 credential needed).
+- **`kernel explain`** replays the real gates for an action without executing it — e-stop
+  sentinel, mediation registry, policy tier, irreversibility, autonomy mode, approval floor —
+  and says the running hub can only tighten the answer. Building it exposed a defect in
+  `preview_task`: a READ_ONLY tier of 0 was falsy in `int(t.get("risk_tier", 3) or 3)` and
+  previewed as money-grade; only an absent or unparseable tier falls back to 3 now.
+- **Chat slash commands** (`agents/core/commands.py`): `/help`, `/status`, `/sessions` for anyone
+  the channel admitted; `/pause`, `/stop`, `/resume` for the owner only. The orchestrator
+  dispatches them before skills and the model on every surface; the turn carries a principal
+  (Telegram owner allowlist / owner chat, or an admin token on the web door); a guest asking for
+  an owner command is told so. `/stop` says that in-flight work still finishes.
+- Tests: `tests/test_nerva_cli.py` (27), `tests/test_slash_commands.py` (12), plus the
+  `preview_task` regression. Not proven against a running hub or a live channel —
+  `docs/OWNER_TASKS.md` P17.
+
 ### Wave 2026-09-07 — Hermes absorption, wave 0.1: tools are alive on every backend
 
 The absorption plan ([`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md), ledger in

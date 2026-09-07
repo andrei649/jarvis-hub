@@ -158,6 +158,23 @@ Deblochează ~26 de rânduri din ledger.
   acces per comandă. `/stop`, `/status`, `/pause`, `/sessions` primele. Azi butoanele din decision
   inbox merg pe Telegram, dar nu poți întreba ce rulează, nu poți opri, nu poți ridica e-stop-ul.
 
+**Livrat 2026-09-07 (parțial, cu restul numit).** `agents/cli/` — comanda `nerva`
+(`python scripts/nerva.py …`): `doctor`, `status`, `config list|get|set|check`, `approvals
+list|accept|reject|defer|edit`, `kernel explain`, `logs`, `estop`, `sessions`, `chat`,
+`completion bash|zsh`. Verbele online vorbesc cu hub-ul pe aceleași rute admin/user-guarded pe care
+le folosește HUD-ul, cu aceleași credențiale — deci moștenesc kernelul și coada de aprobare; cele
+offline citesc același data root. `kernel explain` rejoacă porțile reale (e-stop, registrul de
+mediere, tier-ul de politică, ireversibilitatea, modul de autonomie, pragul de aprobare) fără să
+execute nimic și spune că hub-ul viu poate doar să strângă verdictul. Construindu-l a ieșit la
+iveală un defect real în `preview_task` (tier 0 = READ_ONLY era falsy și devenea 3). Planul de
+comenzi slash: `agents/core/commands.py` — `/help`, `/status`, `/sessions` (user), `/pause`,
+`/stop`, `/resume` (owner), dispecerizate de orchestrator înaintea skill-urilor și a modelului pe
+orice suprafață; tura poartă un principal (allowlist-ul/chat-ul owner-ului pe Telegram, token admin
+pe web). **Rămâne:** `nerva send <canal>` (nu există rută de trimitere; una nouă trece prin patru
+porți de snapshot + poarta de caller HUD) și `GET /api/commands` + listarea în quickbar. Teste:
+`tests/test_nerva_cli.py` (27), `tests/test_slash_commands.py` (12). *Nedovedit pe un hub viu* →
+`docs/OWNER_TASKS.md` **P17**.
+
 ## Valul 2 — joburi programate de utilizator
 
 **Cea mai mare lipsă, identificată independent în trei clustere** (web, automation, docs-features).
