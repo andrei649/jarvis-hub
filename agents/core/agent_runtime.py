@@ -8,7 +8,7 @@ import json
 import logging
 import math
 import re
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from contextlib import suppress
 from functools import partial
 from typing import Any
@@ -27,6 +27,22 @@ GapSink = Callable[[dict[str, str]], Any]
 _APPROVAL_REPLY = "I paused the tool loop because this action requires approval."
 _DEADLINE_REPLY = "I stopped the tool loop because it reached the safety deadline."
 _CONTEXT_REPLY = "I stopped the tool loop because its context exceeded the safety budget."
+_REPEAT_REPLY = "I stopped the tool loop because it kept repeating the same tool call."
+# Hermes absorption 3a — a model that calls the same tool with the same arguments again and
+# again is looping, not working; the iteration limit would end it eventually, but only after
+# burning every turn and telling the model nothing. The third identical call is refused with
+# the reason (the model can change course); a fourth ends the turn with a named reply.
+_DEFAULT_REPEAT_LIMIT = 3
+_REPEATED_NOTICE = (
+    "This exact call (same tool, same arguments) was already made {repeats} times this turn "
+    "and was not run again: repeating it will not produce a different answer. Change the "
+    "arguments, use another tool, or answer with what you have."
+)
+# The same tool failing again and again with different arguments is the other loop: the
+# model keeps guessing at a path or a query that will not resolve. Five consecutive
+# failures of one tool end the turn with a named reply; a success resets the streak.
+_FAILURE_REPLY = "I stopped the tool loop because the same tool kept failing."
+_DEFAULT_FAILURE_LIMIT = 5
 # Hermes absorption 0.3 — in-turn compaction. The loop appends an assistant message and one
 # tool result per call for up to 32 iterations and never measured the growing list; at the
 # end the work was lost to a context overflow nobody had counted. The budget defaults to a
@@ -85,8 +101,12 @@ class AgentToolRuntime:
         context_budget_tokens: Callable[[], int] = lambda: 0,
         compaction_keep_recent: int = 2,
         compacted_result_bytes: int = 512,
+        repeat_limit: int = _DEFAULT_REPEAT_LIMIT,
+        failure_limit: int = _DEFAULT_FAILURE_LIMIT,
     ) -> None:
         self._server = server
+        self._repeat_limit = _safe_int(repeat_limit, default=_DEFAULT_REPEAT_LIMIT, minimum=0)
+        self._failure_limit = _safe_int(failure_limit, default=_DEFAULT_FAILURE_LIMIT, minimum=0)
         self._context_budget_tokens = context_budget_tokens
         self._compaction_keep_recent = _safe_int(compaction_keep_recent, default=2, minimum=0)
         self._compacted_result_bytes = _safe_int(compacted_result_bytes, default=512, minimum=64)
@@ -195,6 +215,8 @@ class AgentToolRuntime:
         limit = self._iteration_limit()
         budget = IterationBudget(limit)
         compacted: set[int] = set()
+        seen_calls: dict[tuple[str, str], int] = {}
+        failure_streaks: dict[str, int] = {}
 
         while budget.consume():
             if len(messages) > 2 and not await self._compact_context(
@@ -220,6 +242,17 @@ class AgentToolRuntime:
             # fan-out plus one representative overflow call so both scheduling
             # and the next-turn context stay O(configured cap), not O(provider N).
             bounded_calls = turn.tool_calls[: self._max_tool_calls_per_turn + 1]
+            repeated, looping = self._note_repeats(bounded_calls, seen_calls)
+            if looping is not None:
+                await self._emit(
+                    event_sink,
+                    {
+                        **self._event(looping, agent_id, "tool_loop_repeated", "repeated_call"),
+                        "repeats": seen_calls[_call_key(looping)],
+                        "limit": self._repeat_limit,
+                    },
+                )
+                return _REPEAT_REPLY
             messages.append(
                 {
                     "role": "assistant",
@@ -232,6 +265,7 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 gated_tools=gated_tools,
                 event_sink=event_sink,
+                repeated=repeated,
             )
             for call, (_result, content) in zip(bounded_calls, observations, strict=True):
                 messages.append(
@@ -243,6 +277,20 @@ class AgentToolRuntime:
                 )
             if any(result.get("reason") == "approval_required" for result, _ in observations):
                 return _APPROVAL_REPLY
+            failing = self._note_failures(bounded_calls, observations, failure_streaks)
+            if failing is not None:
+                call, result = failing
+                await self._emit(
+                    event_sink,
+                    {
+                        **self._event(
+                            call, agent_id, "tool_loop_failing", _failure_reason(result),
+                        ),
+                        "failures": failure_streaks[call.name],
+                        "limit": self._failure_limit,
+                    },
+                )
+                return _FAILURE_REPLY
 
         await self._emit(
             event_sink,
@@ -354,6 +402,49 @@ class AgentToolRuntime:
             notice=_COMPACTED_NOTICE,
         )
 
+    def _note_repeats(
+        self,
+        calls: tuple[ToolCall, ...],
+        seen: dict[tuple[str, str], int],
+    ) -> tuple[dict[str, int], ToolCall | None]:
+        """Count identical (tool, arguments) calls across the turn.
+
+        Returns the calls that just reached the limit (refused with a notice, keyed by
+        call id) and the first call past it, which ends the loop. ``repeat_limit=0``
+        disables the detector.
+        """
+        limit = self._repeat_limit
+        repeated: dict[str, int] = {}
+        if limit <= 0:
+            return repeated, None
+        for call in calls:
+            key = _call_key(call)
+            count = seen.get(key, 0) + 1
+            seen[key] = count
+            if count > limit:
+                return repeated, call
+            if count == limit:
+                repeated[call.id] = count
+        return repeated, None
+
+    def _note_failures(
+        self,
+        calls: tuple[ToolCall, ...],
+        observations: list[tuple[dict[str, Any], str]],
+        streaks: dict[str, int],
+    ) -> tuple[ToolCall, dict[str, Any]] | None:
+        """Track consecutive failures per tool across the turn; the call that reaches the
+        limit ends the loop. ``failure_limit=0`` disables the breaker."""
+        limit = self._failure_limit
+        for call, (result, _content) in zip(calls, observations, strict=True):
+            if not _is_failed_result(result):
+                streaks[call.name] = 0
+                continue
+            streaks[call.name] = streaks.get(call.name, 0) + 1
+            if limit > 0 and streaks[call.name] >= limit:
+                return call, result
+        return None
+
     async def _execute_turn_calls(
         self,
         calls: tuple[ToolCall, ...],
@@ -361,7 +452,9 @@ class AgentToolRuntime:
         agent_id: str,
         gated_tools: dict[str, bool],
         event_sink: ToolEventSink | None,
+        repeated: Mapping[str, int] | None = None,
     ) -> list[tuple[dict[str, Any], str]]:
+        repeated = repeated or {}
         for call in calls:
             await self._emit(
                 event_sink,
@@ -380,6 +473,7 @@ class AgentToolRuntime:
                 approval_state=approval_state,
                 agent_id=agent_id,
                 event_sink=event_sink,
+                repeats=repeated.get(call.id, 0),
             )
             for index, call in enumerate(calls)
         ]
@@ -473,6 +567,7 @@ class AgentToolRuntime:
         approval_state: dict[str, bool],
         agent_id: str,
         event_sink: ToolEventSink | None,
+        repeats: int = 0,
     ) -> tuple[dict[str, Any], str]:
         if overflow:
             return await self._local_failure(
@@ -494,6 +589,14 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 reason="bad_tool_arguments",
                 event_sink=event_sink,
+            )
+        if repeats:
+            return await self._local_failure(
+                call,
+                agent_id=agent_id,
+                reason="repeated_call",
+                event_sink=event_sink,
+                extra={"repeats": repeats, "notice": _REPEATED_NOTICE.format(repeats=repeats)},
             )
 
         if gated:
@@ -564,8 +667,9 @@ class AgentToolRuntime:
         agent_id: str,
         reason: str,
         event_sink: ToolEventSink | None,
+        extra: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], str]:
-        result = {"ok": False, "reason": reason, "tool": call.name}
+        result = {"ok": False, "reason": reason, "tool": call.name, **(extra or {})}
         prepared, content = self._prepare_result(result, call.name)
         await self._emit_result(event_sink, call, agent_id, prepared)
         return prepared, content
@@ -698,6 +802,39 @@ class AgentToolRuntime:
         self._stragglers.discard(task)
         with suppress(BaseException):
             task.exception()
+
+
+def _is_failed_result(result: Mapping[str, Any]) -> bool:
+    """A refusal by the server (``ok`` not true) or by the handler itself — an inline tool's
+    own ``{"ok": false, "reason": ...}`` arrives wrapped under ``result``."""
+    if result.get("ok") is not True:
+        return True
+    inner = result.get("result")
+    return isinstance(inner, dict) and inner.get("ok") is False
+
+
+def _failure_reason(result: Mapping[str, Any]) -> str:
+    """The named reason of a failed result — the server's, or the handler's own."""
+    reason = result.get("reason")
+    if not isinstance(reason, str):
+        inner = result.get("result")
+        reason = inner.get("reason") if isinstance(inner, dict) else None
+    return reason if isinstance(reason, str) and reason else "failed"
+
+
+def _call_key(call: ToolCall) -> tuple[str, str]:
+    """Identity of a call for the repeat detector: the tool plus its arguments in
+    canonical JSON (key order does not make a different call)."""
+    if isinstance(call.arguments, dict):
+        try:
+            encoded = json.dumps(
+                call.arguments, sort_keys=True, default=str, separators=(",", ":"),
+            )
+        except (TypeError, ValueError):
+            encoded = str(call.raw_arguments)
+    else:
+        encoded = str(call.raw_arguments)
+    return (str(call.name), encoded)
 
 
 def _non_json(tool_name: str) -> dict[str, Any]:

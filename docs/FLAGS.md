@@ -142,8 +142,10 @@ SSO IdPs, adult; secret file roots) and any `never` row always deny.
 
 **OFF:** `register_file_tools` is a no-op — **no file tool exists on the ToolRPC
 allowlist at all**.
-**ON:** `file_read` / `file_list` are ungated *inside* `JARVIS_FILE_ROOTS` (no `..`,
-no symlink escape, secret-looking names refused, bytes/entries bounded);
+**ON:** `file_read` / `file_list` / `file_search` are ungated *inside* `JARVIS_FILE_ROOTS`
+(no `..`, no symlink escape, secret-looking names refused, bytes/entries/matches bounded;
+`file_search` is a *literal* content search — no regex, no ripgrep — that reports every cap
+it hit);
 `file_write` / `file_delete` are **gated** ask-tier ToolRPC tasks
 (`toolrpc.file_write`, `toolrpc.file_delete`) that snapshot the previous bytes before
 touching the file, cross the kernel as `file.write`, and are reversible through
@@ -346,7 +348,7 @@ targets outside `data_root()` are refused by name; a misspelled value stays off
 | `JARVIS_TERMINAL_TARGETS` | off (checked in the `terminal_run` tool handler) | Arms the gated `terminal_run` ToolRPC tool: post-approval shell commands on named targets through the audit-chained policy plane, docker transport only (`environments/execution.py`) | Approved commands actually execute in the containment sandbox; **ssh** still refuses (`ssh_transport_not_implemented`), and the local host is available only with `JARVIS_TERMINAL_LOCAL_HOST` + `JARVIS_ACTION_KERNEL` + a durable approval (row below) | Unset + restart: the tool refuses `terminal_targets_disabled`; policy plane and audit chain stay inert |
 
 | `JARVIS_PERMISSION_LEDGER` | off (`permission_ledger.py`) | Consent ledger enforces: first contact with an app/site/device/file-root/terminal-target answers `ask`; widening is the `permission.grant` approval task | More approval cards early on; `never` rows and the default-deny list always deny | Unset + restart: `check()` allows legacy callers again, ledger inert |
-| `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore | The model loop can read your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
+| `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
 | `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout) | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
 | `JARVIS_BROWSER_ALLOW_PRIVATE_URLS` | off (`browser_transport.py`) | `PinnedResolver` in `lan` mode; the driver route layer admits RFC1918/loopback literals | Governed browsing can reach house devices. Honest limit: `BrowserPolicy.domain_allowed` still runs `check_ssrf` in public mode, so end-to-end LAN browsing needs a `BrowserPolicy` lan mode too | Unset + restart: unpinned hosts fail at name resolution |
 | `JARVIS_COMPANY_MODE` | off (`autonomy/company_supervisor.py`) | Arms the work-run loop: one owner-approved goal worked across turns/reboots, ticked one governed step at a time | Sustained autonomous *sequencing*; authority is unchanged — every action still enters the approval queue, budgets (steps/seconds/deadline/interrupts) are hard, and only the judge can mark a run succeeded | Unset: every tick answers `disabled`; run rows remain as a record and are purged by a forget |

@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-07 — Hermes absorption, wave 3a: the model's hands
+
+- **`file_search`** (`agents/core/file_tools.py`, behind the same `JARVIS_FILE_TOOLS` flag).
+  The model could read and list files but not *find* anything without walking the workspace
+  file by file. A literal content search with `file_read`'s exact containment (roots, no
+  symlink followed, secret-looking names skipped and counted, binaries and over-cap files
+  skipped) and every bound reported: matches, matches per file, files visited, seconds. No
+  regex and no ripgrep — a pathological pattern has no time bound in Python's `re`, and a
+  binary dependency would not survive a fresh Windows/macOS install.
+- **`session_search`** (`agents/core/memory/session_search.py`). Keyword search over the
+  session snapshots in the data root: all keywords in one turn, most relevant then newest
+  first, bounded snippets, caps reported. A turn the injection scanner flags is redacted and
+  raises the turn's recall taint, exactly as `search_memory` does.
+- **Loop breakers in the tool loop** (`agents/core/agent_runtime.py`). The third identical
+  call (same tool, same arguments) is refused with a notice that says why; a fourth ends the
+  turn with a named reply and a `tool_loop_repeated` event. The fifth consecutive failure of
+  one tool ends the turn likewise (`tool_loop_failing`). Both limits are per runtime; `0`
+  disables.
+- Tests: `tests/test_file_search.py` (14), `tests/test_session_search.py` (11),
+  `tests/test_tool_loop_repeats.py` (9). Not proven with a live model choosing the tools —
+  `docs/OWNER_TASKS.md` P19.
+
 ### Wave 2026-09-07 — Hermes absorption, wave 2a: the owner's own scheduled jobs
 
 - **Owner-scheduled jobs** (`agents/core/autonomy/jobs.py`). Nerva parsed "every weekday at

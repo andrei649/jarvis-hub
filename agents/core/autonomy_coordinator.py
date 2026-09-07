@@ -684,7 +684,13 @@ class AutonomyCoordinator:
             },
             capability_id="tool:time",
         )
-        # 1.1.0 operator wave — governed file read/list/write/delete. Default-off:
+        # Hermes absorption 3a — the model may search what was actually said. Read-only,
+        # inside the data root, bounded, and every hit is scanned for injection before it
+        # reaches the model. Who may ask is the tool profile's decision (3b), not the tool's.
+        from .memory.session_search import register_session_search
+
+        register_session_search(server)
+        # 1.1.0 operator wave — governed file read/list/search/write/delete. Default-off:
         # register_file_tools returns [] and touches nothing unless JARVIS_FILE_TOOLS
         # is set. The two mutating tools are gated, so they can only run from an
         # owner-approved durable task, and each write crosses the Action Kernel with

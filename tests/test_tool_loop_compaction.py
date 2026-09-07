@@ -39,8 +39,8 @@ class _Backend:
                     ToolCall(
                         id=f"call-{len(self.calls)}",
                         name="blob",
-                        raw_arguments='{"n":1}',
-                        arguments={"n": 1},
+                        raw_arguments=json.dumps({"n": len(self.calls)}),
+                        arguments={"n": len(self.calls)},
                     ),
                 ),
                 finish_reason="tool_calls",

@@ -101,7 +101,7 @@ def _server(tools, *, queue=None, kernel=None, trusted=True):
         execution_context_check=ctx_check,
     )
     names = register_file_tools(server, tools, enabled=True)
-    assert names == ["file_read", "file_list", "file_write", "file_delete"]
+    assert names == ["file_read", "file_list", "file_search", "file_write", "file_delete"]
     return server, token
 
 
@@ -376,9 +376,9 @@ def test_register_is_noop_when_flag_off(tools, monkeypatch):
     assert register_file_tools(server, tools) == []
     assert server.tools() == []
     monkeypatch.setenv("JARVIS_FILE_TOOLS", "1")
-    assert len(register_file_tools(server, tools)) == 4
+    assert len(register_file_tools(server, tools)) == 5
     assert [t["name"] for t in server.tools()] == [
-        "file_delete", "file_list", "file_read", "file_write",
+        "file_delete", "file_list", "file_read", "file_search", "file_write",
     ]
 
 

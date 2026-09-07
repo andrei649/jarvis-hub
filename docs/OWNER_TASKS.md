@@ -375,11 +375,12 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15**–**P18** (2026-09-07) are the first packets from the Hermes absorption: the
+> hardware. **P15**–**P19** (2026-09-07) are the first packets from the Hermes absorption: the
 > tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
 > to a real one; the Telegram group gate, never exercised in a real group; the `nerva`
-> command plus the chat slash commands, never pointed at a running hub; and the owner's
-> scheduled jobs, never fired on a wall clock.
+> command plus the chat slash commands, never pointed at a running hub; the owner's
+> scheduled jobs, never fired on a wall clock; and the model's hands (`file_search`,
+> `session_search`, the loop breakers), never driven by a model choosing to use them.
 > If you flip a row to ✅ and its proof still depends on something only you can run, it
 > belongs here — that rule is written into
 > [`docs/prompts/BACKLOG_DRIVER.md`](prompts/BACKLOG_DRIVER.md) so an unattended session applies it.
@@ -695,6 +696,23 @@ built on your Windows box:
       `E_JOB_PAUSED` line, not three, and `nerva jobs resume <id>` must put it back. Delete the
       test jobs afterwards. If a weekday job fires on the wrong day, that is the cron→APScheduler
       day-of-week translation — file it against `jobs.cron_kwargs`.
+
+- [ ] **P19 — The model's hands on a live loop** *(covers `HA-3a`)*
+      `file_search`, `session_search` and the two loop breakers are proven against fakes and
+      scripted backends, never against a model choosing to call them. With the tool loop on
+      (`llm.tool_loop_enabled`), `JARVIS_FILE_TOOLS=1` and a workspace under `JARVIS_FILE_ROOTS`
+      holding a few real documents: first drop a `.env` into the workspace containing a phrase
+      you know is in exactly one other file, then ask in chat "which file mentions <that
+      phrase>". The tool feed must show one `file_search` call, the answer must name that file
+      and line, and the `.env` must not appear anywhere. Then "what did I tell you about <a
+      thing from an older conversation>": one `session_search` call, and the reply must quote
+      the earlier turn's words. Then ask for something the workspace does not contain and
+      watch the feed on a local model: the third identical search must come back
+      `repeated_call` with the notice, and if the model keeps going the turn must end with
+      "kept repeating the same tool call", not with the 8-turn safety limit. If the model never
+      picks the tools at all, that is a prompt-catalogue finding (`HA-0.2`), not a tool one.
+      Windows: the search skips symlinks and secret names by the same rules but only Linux ran
+      the tests — confirm once on a real workspace there.
 
 ## Parking lot (decisions, no rush)
 

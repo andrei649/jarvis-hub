@@ -1292,9 +1292,33 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   day-of-week (0 = Sunday) straight to APScheduler (0 = Monday), so every `cron:` heartbeat
   with a weekday field fires one day late — fix with `jobs.cron_kwargs`; quiet-hours and the
   interrupt budget for job deliveries (today a job delivers directly, like the digest).
-- [ ] **HA-3 … HA-4** — the model's hands (`search_files`, `session_search`, session kernels,
-  `image_generate`), depth (adapter descriptor, MCP trust tiers, HUD mode, plugin SDK) —
-  sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+- [x] ✅ **HA-3a — the model's hands.** `file_search` (`agents/core/file_tools.py`, same
+  `JARVIS_FILE_TOOLS` flag): a literal content search with exactly `file_read`'s containment —
+  the roots, no symlink followed, secret-looking names skipped and counted, binaries and
+  over-cap files skipped — and every bound reported (`truncated` + `stopped_by`: matches,
+  matches per file, files, seconds). No regex and no ripgrep on purpose: Python's `re` has no
+  time bound, so one pathological pattern from the model would pin the host CPU and block the
+  loop, and `rg` would make the tool depend on a binary a fresh Windows/macOS install lacks.
+  `session_search` (`agents/core/memory/session_search.py`, registered beside `echo`/`time`):
+  keywords (all in one turn) over the session snapshots in the data root, most relevant then
+  newest first, bounded snippets; a turn the injection scanner flags is redacted as
+  `search_memory` redacts a hit and raises the turn's recall taint, so an action proposed after
+  reading it is queued, never auto-run. In the loop (`agent_runtime.py`): the third identical
+  call (same tool, same arguments) is refused with the reason, a fourth ends the turn with a
+  named reply and a `tool_loop_repeated` event; the fifth consecutive failure of one tool ends
+  it likewise (`tool_loop_failing`). Tests: `tests/test_file_search.py` (14),
+  `tests/test_session_search.py` (11), `tests/test_tool_loop_repeats.py` (9). **Not proven with
+  a live model choosing the tools** → [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P19**.
+  Named and not done: document-format extraction for `file_read`; duplicate-result stubs and
+  per-tool caps in the loop; automation demotion, lineage dedupe and admission records for
+  transcript hits; session-persistent code kernels and `image_generate` (both need backends
+  that do not exist yet).
+- [ ] **HA-3b — tool profiles.** Every agent on every surface is offered the whole allowlist;
+  least privilege means an inbound-channel turn should not even *see* `desktop_run`. Profile
+  key (agent × surface × principal), resolved before the tools are offered, snapshot-tested
+  the way `route_auth` is.
+- [ ] **HA-4** — depth (adapter descriptor, MCP trust tiers, HUD mode, plugin SDK) — sequenced
+  in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the

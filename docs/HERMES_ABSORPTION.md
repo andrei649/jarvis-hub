@@ -213,6 +213,30 @@ pe zile lucrătoare trag cu o zi întârziere (BACKLOG HA-2c). Teste: `tests/tes
   fiecare apel, deci orice analiză reimportă bibliotecile și rederivează starea de fiecare dată.
 - `image_generate` — azi există cadrul complet de guvernanță în jurul unei prize goale.
 
+**Livrat 2026-09-07 (3a — mâinile modelului).** `file_search` în `agents/core/file_tools.py` —
+căutare *literală* de conținut sub exact regulile lui `file_read` (rădăcinile `JARVIS_FILE_ROOTS`,
+niciun symlink urmat, numele secrete sărite și numărate, binarele și fișierele peste plafonul de
+bytes sărite), cu fiecare limită raportată (`truncated` + `stopped_by`: potriviri, potriviri per
+fișier, fișiere vizitate, secunde). Fără regex și fără ripgrep, cu motiv: `re` din Python nu are
+limită de timp, deci un pattern patologic venit de la model ar bloca CPU-ul gazdei și bucla; iar
+`rg` ar face unealta dependentă de un binar pe care o instalare proaspătă de Windows/macOS nu îl
+are. Extracția din PDF/docx pentru `file_read` rămâne de făcut. `session_search`
+(`agents/core/memory/session_search.py`) — cuvinte-cheie (toate în aceeași replică) peste
+snapshot-urile de sesiune din data root, cele mai relevante și apoi cele mai noi întâi, fragmente
+mărginite, limite raportate; o replică marcată de scanerul de injecție e redactată ca la
+`search_memory` și ridică taint-ul de recall al turei, deci o acțiune propusă după citirea ei intră
+în coada de aprobare, nu pe auto. Nu se citește peste granița unui data space (decizie de
+guvernanță, nu de căutare); demotarea surselor automate, dedupe pe lineage și admission records ca
+la `recall_admission` rămân de făcut. În bucla de unelte (`agent_runtime.py`): al treilea apel
+identic (aceeași unealtă, aceleași argumente) e refuzat cu motivul, al patrulea încheie tura cu un
+răspuns numit și un eveniment; a cincea eșuare consecutivă a aceleiași unelte încheie tura la fel.
+Rămân: stub-urile pentru rezultate identice și plafoanele per unealtă. Kernelele de cod
+persistente și `image_generate` sunt amânate — au nevoie de backend-uri care nu există încă. Teste:
+`tests/test_file_search.py` (14), `tests/test_session_search.py` (11),
+`tests/test_tool_loop_repeats.py` (9). *Nedovedit cu un model viu care alege uneltele* →
+`docs/OWNER_TASKS.md` **P19**. Urmează 3b: profilurile de unelte (agent × suprafață × principal)
+— azi fiecare agent, pe fiecare suprafață, vede întreaga listă.
+
 ## Valul 4 — adâncime
 
 Descriptor de adaptor + split-ul clasei de bază pe canale (redare, chunking, media, streaming,

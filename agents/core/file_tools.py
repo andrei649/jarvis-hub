@@ -1,11 +1,16 @@
 """file_tools.py — governed file tools reachable from the model loop (H20.R1).
 
-Productivity work is mostly files, so the model-directed tool loop gets four
+Productivity work is mostly files, so the model-directed tool loop gets five
 tools that are *governed by construction*:
 
-  * ``file_read`` / ``file_list`` — ungated, but only inside the owner's
-    :class:`FileScope` (resolved roots, no ``..`` traversal, no symlink escape,
-    no secret-looking names) and bounded in bytes/entries.
+  * ``file_read`` / ``file_list`` / ``file_search`` — ungated, but only inside
+    the owner's :class:`FileScope` (resolved roots, no ``..`` traversal, no
+    symlink escape, no secret-looking names) and bounded in bytes / entries /
+    matches. ``file_search`` (Hermes absorption 3a) is a *literal* search on
+    purpose: a regex has no time bound in Python's ``re``, so one pathological
+    pattern from the model would pin the host CPU and block the tool loop, and
+    ripgrep would make the tool depend on a binary a fresh Windows or macOS
+    install does not have. A literal scan is linear by construction.
   * ``file_write`` / ``file_delete`` — gated ToolRPC tools (``gated=True``,
     ``trusted_execution=True``): a call from the sandbox never writes inline;
     it enqueues an ask-tier ``toolrpc.file_write`` task after ``tool.rpc`` kernel
@@ -42,6 +47,7 @@ longer matches its reference and restore refuses.
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import hashlib
 import json
 import logging
@@ -72,6 +78,18 @@ DEFAULT_MAX_BYTES = 2_000_000
 MAX_PATH_CHARS = 4096
 MAX_LIST_ENTRIES = 2000
 DEFAULT_LIST_ENTRIES = 500
+# file_search bounds. Each is a ceiling the result reports hitting (``truncated``
+# plus ``stopped_by``) rather than a silent edge of the workspace.
+MAX_PATTERN_CHARS = 512
+MAX_GLOB_CHARS = 128
+MAX_SEARCH_MATCHES = 500
+DEFAULT_SEARCH_MATCHES = 50
+MAX_MATCHES_PER_FILE = 20
+MAX_SEARCH_FILES = 5000
+MAX_SEARCH_SECONDS = 10.0
+MATCH_LINE_CHARS = 8192
+SNIPPET_CHARS = 200
+_BINARY_PROBE_BYTES = 8192
 
 # Names that are secrets by convention. A file whose *name* matches is refused
 # for every operation, even inside the roots (the roots are a workspace, not a
@@ -534,6 +552,123 @@ class FileTools:
         self._record("file.list", str(target), ok=result.get("ok") is True)
         return result
 
+    async def search_files(self, args: Mapping[str, Any]) -> dict:
+        """Find lines containing *pattern* under *path* (a directory, or one file).
+
+        A literal, linear scan with the read tools' containment and nothing more: it
+        never follows a symlink, skips every secret-looking name (counted as
+        ``hidden``), reads only regular files under the byte cap, skips binaries (a
+        NUL in the first 8 KiB), matches each line on its first 8 KiB and returns a
+        bounded snippet rather than the line. Matches, matches per file, files visited
+        and wall-clock seconds are all capped; a search that hit a cap says
+        ``truncated`` and names the cap in ``stopped_by`` instead of pretending the
+        workspace ended there.
+        """
+        try:
+            clean = _preflight_search(dict(args))
+        except ToolRPCValidationError as exc:
+            return {"ok": False, "reason": exc.reason}
+        raw_path = clean.get("path")
+        if raw_path is None:
+            raw_path = str(self.scope.roots[0])
+        try:
+            target = self.scope.resolve(raw_path)
+        except FileScopeError as exc:
+            return {"ok": False, "reason": exc.reason}
+        pattern = clean["pattern"]
+        case_sensitive = bool(clean.get("case_sensitive", False))
+        whole_word = bool(clean.get("whole_word", False))
+        glob = clean.get("glob")
+        limit = _bounded_int(
+            clean.get("max_matches"), DEFAULT_SEARCH_MATCHES,
+            minimum=1, maximum=MAX_SEARCH_MATCHES,
+        )
+        needle = pattern if case_sensitive else pattern.lower()
+        root = self.scope.root_for(target) or target
+        deadline = time.monotonic() + MAX_SEARCH_SECONDS
+
+        def _search() -> dict:
+            if not target.exists():
+                return {"ok": False, "reason": "not_found"}
+            if not (target.is_file() or target.is_dir()):
+                return {"ok": False, "reason": "not_a_file"}
+            matches: list[dict] = []
+            counts = {
+                "files_scanned": 0, "files_matched": 0, "files_capped": 0, "hidden": 0,
+                "binary": 0, "large": 0, "symlink": 0,
+            }
+            stopped_by: str | None = None
+            for file, size in _walk_files(target, root, counts):
+                if time.monotonic() > deadline:
+                    stopped_by = "deadline"
+                    break
+                if counts["files_scanned"] >= MAX_SEARCH_FILES:
+                    stopped_by = "max_files"
+                    break
+                if glob is not None and not fnmatch.fnmatchcase(file.name, glob):
+                    continue
+                if size > self.max_bytes:
+                    counts["large"] += 1
+                    continue
+                with file.open("rb") as handle:
+                    probe = handle.read(_BINARY_PROBE_BYTES)
+                    if b"\x00" in probe:
+                        counts["binary"] += 1
+                        continue
+                    data = probe + handle.read(max(0, self.max_bytes - len(probe)))
+                counts["files_scanned"] += 1
+                per_file = 0
+                for lineno, line in enumerate(data.decode("utf-8", errors="replace").splitlines(), 1):
+                    hay = line[:MATCH_LINE_CHARS]
+                    index = _find_literal(hay if case_sensitive else hay.lower(), needle, whole_word)
+                    if index < 0:
+                        continue
+                    if per_file >= MAX_MATCHES_PER_FILE:
+                        counts["files_capped"] += 1
+                        break
+                    per_file += 1
+                    matches.append({
+                        "path": str(file),
+                        "line": lineno,
+                        "text": _snippet(hay, index, len(needle)),
+                    })
+                    if len(matches) >= limit:
+                        stopped_by = "max_matches"
+                        break
+                if per_file:
+                    counts["files_matched"] += 1
+                if stopped_by is not None:
+                    break
+            return {
+                "ok": True,
+                "path": str(target),
+                "pattern": pattern,
+                "case_sensitive": case_sensitive,
+                "whole_word": whole_word,
+                "glob": glob,
+                "matches": matches,
+                "files_scanned": counts["files_scanned"],
+                "files_matched": counts["files_matched"],
+                "files_capped": counts["files_capped"],
+                "hidden": counts["hidden"],
+                "skipped": {
+                    "binary": counts["binary"], "large": counts["large"],
+                    "symlink": counts["symlink"],
+                },
+                "truncated": stopped_by is not None,
+                "stopped_by": stopped_by,
+            }
+
+        try:
+            result = await asyncio.to_thread(_search)
+        except OSError as exc:
+            return {"ok": False, "reason": "io_error", "detail": exc.__class__.__name__}
+        self._record(
+            "file.search", f"{target}: {pattern[:120]}", ok=result.get("ok") is True,
+            matches=len(result.get("matches") or ()),
+        )
+        return result
+
     # ── gated (reversible by construction) ───────────────────────────────────
 
     async def write_file(self, args: Mapping[str, Any], *, approved: bool = False) -> dict:
@@ -703,7 +838,7 @@ class FileTools:
         def _bound(args: dict) -> Mapping:
             clean = dict(shape(args))
             path = clean.get("path")
-            if path is None and name == "file_list":
+            if path is None and name in ("file_list", "file_search"):
                 return clean
             try:
                 self.scope.resolve(path)
@@ -725,6 +860,83 @@ class FileTools:
                 self._audit.log({"event": action, "why": why, **meta})
         except Exception:
             logger.debug("file tools audit sink failed", exc_info=True)
+
+
+def _walk_files(target: Path, root: Path, counts: dict[str, int]):
+    """Yield ``(path, size)`` for every regular file under *target* the read tools
+    would show: symlinks are never followed (counted), secret-looking names and
+    directories are pruned (counted as hidden), everything else is visited in
+    sorted order so a search is deterministic."""
+    if target.is_file():
+        yield target, target.stat().st_size
+        return
+    for dirpath, dirnames, filenames in os.walk(target, topdown=True, followlinks=False):
+        here = Path(dirpath)
+        try:
+            relative = here.relative_to(root).parts
+        except ValueError:
+            relative = ()
+        kept: list[str] = []
+        for name in sorted(dirnames):
+            if os.path.islink(here / name):
+                counts["symlink"] += 1
+            elif _has_secret_part((*relative, name)):
+                counts["hidden"] += 1
+            else:
+                kept.append(name)
+        dirnames[:] = kept
+        for name in sorted(filenames):
+            if looks_secret_name(name):
+                counts["hidden"] += 1
+                continue
+            child = here / name
+            try:
+                info = child.lstat()
+            except OSError:
+                continue
+            if stat.S_ISLNK(info.st_mode):
+                counts["symlink"] += 1
+                continue
+            if not stat.S_ISREG(info.st_mode):
+                continue
+            yield child, int(info.st_size)
+
+
+def _is_word_char(char: str) -> bool:
+    return bool(char) and (char.isalnum() or char == "_")
+
+
+def _find_literal(hay: str, needle: str, whole_word: bool) -> int:
+    """First index of *needle* in *hay* (already case-folded by the caller), or -1;
+    with *whole_word* only where neither neighbour is a word character."""
+    start = 0
+    while True:
+        index = hay.find(needle, start)
+        if index < 0 or not whole_word:
+            return index
+        before = hay[index - 1] if index > 0 else ""
+        end = index + len(needle)
+        after = hay[end] if end < len(hay) else ""
+        if not _is_word_char(before) and not _is_word_char(after):
+            return index
+        start = index + 1
+
+
+def _snippet(line: str, index: int, width: int) -> str:
+    """At most ``SNIPPET_CHARS`` of *line* around the match, with ellipses where cut."""
+    if len(line) <= SNIPPET_CHARS:
+        return line
+    index = max(0, min(index, len(line)))
+    half = max(0, (SNIPPET_CHARS - min(width, SNIPPET_CHARS)) // 2)
+    start = max(0, index - half)
+    end = min(len(line), start + SNIPPET_CHARS)
+    start = max(0, end - SNIPPET_CHARS)
+    out = line[start:end]
+    if start > 0:
+        out = "…" + out
+    if end < len(line):
+        out = out + "…"
+    return out
 
 
 def restore_snapshot(ref: object, *, tools: FileTools | None = None) -> bool:
@@ -769,6 +981,38 @@ def _preflight_list(args: dict) -> Mapping:
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise ToolRPCValidationError("bad_max_entries")
         clean["max_entries"] = min(value, MAX_LIST_ENTRIES)
+    return clean
+
+
+def _preflight_search(args: dict) -> Mapping:
+    pattern = args.get("pattern")
+    if (
+        not isinstance(pattern, str) or not pattern or len(pattern) > MAX_PATTERN_CHARS
+        or "\x00" in pattern
+    ):
+        raise ToolRPCValidationError("bad_pattern")
+    clean: dict[str, Any] = {"pattern": pattern}
+    path = _path_arg(args, required=False)
+    if path is not None:
+        clean["path"] = path
+    for flag in ("case_sensitive", "whole_word"):
+        if flag in args:
+            if not isinstance(args[flag], bool):
+                raise ToolRPCValidationError("bad_flag")
+            clean[flag] = args[flag]
+    if "glob" in args:
+        glob = args["glob"]
+        if (
+            not isinstance(glob, str) or not glob or len(glob) > MAX_GLOB_CHARS
+            or "\x00" in glob or "/" in glob or "\\" in glob
+        ):
+            raise ToolRPCValidationError("bad_glob")
+        clean["glob"] = glob
+    if "max_matches" in args:
+        value = args["max_matches"]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ToolRPCValidationError("bad_max_matches")
+        clean["max_matches"] = min(value, MAX_SEARCH_MATCHES)
     return clean
 
 
@@ -817,6 +1061,30 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
         "preflight": _preflight_list,
+    },
+    "file_search": {
+        "description": (
+            "Search file contents inside the owner's file roots for a literal phrase "
+            "(not a regex; case-insensitive unless case_sensitive). Returns bounded "
+            "snippets with path and line; says when a cap stopped the search."
+        ),
+        "gated": False,
+        "trusted_execution": False,
+        "capability_id": "tool:file_search",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "minLength": 1, "maxLength": MAX_PATTERN_CHARS},
+                "path": _PATH_SCHEMA,
+                "glob": {"type": "string", "minLength": 1, "maxLength": MAX_GLOB_CHARS},
+                "case_sensitive": {"type": "boolean"},
+                "whole_word": {"type": "boolean"},
+                "max_matches": {"type": "integer", "minimum": 1, "maximum": MAX_SEARCH_MATCHES},
+            },
+            "required": ["pattern"],
+            "additionalProperties": False,
+        },
+        "preflight": _preflight_search,
     },
     "file_write": {
         "description": (
@@ -870,7 +1138,7 @@ def register_file_tools(
     *,
     enabled: bool | None = None,
 ) -> list[str]:
-    """Register the four file tools on a ToolRPC server. Default-off: returns
+    """Register the five file tools on a ToolRPC server. Default-off: returns
     ``[]`` without touching the server unless ``JARVIS_FILE_TOOLS`` is on (or
     ``enabled=True`` is passed explicitly)."""
     on = file_tools_enabled() if enabled is None else bool(enabled)
@@ -884,6 +1152,9 @@ def register_file_tools(
     async def _list(args: dict) -> dict:
         return await instance.list_dir(args)
 
+    async def _search(args: dict) -> dict:
+        return await instance.search_files(args)
+
     async def _write(args: dict) -> dict:
         # Reached only through ToolRPCServer.execute after durable approval
         # (gated tools never run inline from handle()).
@@ -893,7 +1164,8 @@ def register_file_tools(
         return await instance.delete_file(args, approved=True)
 
     handlers = {
-        "file_read": _read, "file_list": _list, "file_write": _write, "file_delete": _delete,
+        "file_read": _read, "file_list": _list, "file_search": _search,
+        "file_write": _write, "file_delete": _delete,
     }
     registered: list[str] = []
     for name, spec in FILE_TOOL_SPECS.items():

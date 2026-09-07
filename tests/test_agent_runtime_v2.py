@@ -796,10 +796,13 @@ async def test_iteration_setting_is_clamped_to_one_through_thirty_two(configured
 
     server.register_tool("echo", echo)
     backend = _RepeatingBackend(_call())
+    # The clamp is about turn count; the identical-call breaker (Hermes absorption 3a)
+    # would end this loop first, so it is switched off here on purpose.
     runtime = AgentToolRuntime(
         server,
         enabled=lambda: True,
         max_iterations=lambda: configured,
+        repeat_limit=0,
     )
 
     answer = await _run(runtime, backend)
@@ -1874,6 +1877,27 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
                 "additionalProperties": False,
             },
             "capability_id": "tool:osint_enrich",
+        },
+        {
+            "name": "session_search",
+            "gated": False,
+            "description": (
+                "Search the owner's past conversations (session transcripts) for keywords; "
+                "every keyword must appear in one turn. Returns bounded snippets, most "
+                "relevant and newest first, and says when a cap stopped the search."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "minLength": 1, "maxLength": 256},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "session_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                    "role": {"type": "string", "enum": ["user", "assistant"]},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            "capability_id": "tool:session_search",
         },
         {
             "name": "terminal_run",
