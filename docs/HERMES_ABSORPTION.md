@@ -292,8 +292,27 @@ cu configul serverului și primit de `POST /api/admin/mcp` (un tier necunoscut e
 orice scriere). Un config salvat înainte să existe tiere se încarcă ca `full` **cu avertisment**,
 nu rupe instalarea owner-ului la upgrade. Scriitorul WorldView al Nervei e fixat pe `full` (trece
 deja prin gate-ul de plugin și kernel). Teste: `tests/test_mcp_trust.py` (10). *Nedovedit pe un
-server MCP real* → **P21**. Rămân în 4c: streaming prin editări, renderere Slack/Discord,
-include/exclude per server, `ntfy`, HUD mode, SDK-ul de plugin-uri.
+server MCP real* → **P21**.
+
+**Livrat 2026-09-07 (4c — răspunsul scris pe loc; un server nu înseamnă toate uneltele lui).**
+Pe un chat, o tăcere lungă și un crash arată la fel. `TelegramDraft` (`channels/telegram.py`):
+primul token trimite mesajul, următoarele îl editează sub bugetul de editări al Telegram-ului (o
+editare la 1,2 s, doar când textul vizibil s-a schimbat, cu un cursor cât crește), `finish()`
+redă textul final exact cum l-ar reda `send()` — primul chunk se așază în mesajul editat, restul
+urmează ca mesaje noi; fiecare pas e best effort și nu aruncă niciodată în tură (o editare
+eșuată e un cadru sărit, o editare finală eșuată devine o trimitere nouă, markup-ul refuzat e
+reîncercat ca text simplu). `Orchestrator.channel_handler` deschide un draft doar pe un canal al
+cărui descriptor spune că poate edita, doar când router-ul ar livra către sursa aceea și niciodată
+pentru un mesaj observat; draftul nu trimite nimic până la primul token, deci o tură tăcută nu
+lasă niciun placeholder; `channels.streaming_replies` (implicit pornit) îl oprește. MCP:
+`tools_allow` / `tools_deny` (glob-uri pe numele uneltei) per server — aplicate la `tools/list`
+(o unealtă ascunsă nu e oferită niciodată) și din nou la apel (`tool_filtered`), deny-ul câștigă
+întotdeauna, un filtru malformat îngustează la nimic; persistate cu configul, primite și validate
+de `POST /api/admin/mcp`. Tot aici, HA-2c: heartbeat-ul de zi lucrătoare trage în ziua lucrătoare
+(traducerea day-of-week din motorul de joburi). Teste: `tests/test_telegram_streaming.py` (10),
+`tests/test_mcp_tool_filters.py` (4), `tests/test_heartbeat_cron_dow.py` (2). *Nedovedit pe un
+Telegram real* → **P22**. Rămân în 4d: renderere și streaming Slack/Discord, `ntfy`, ore de
+liniște pentru joburi, HUD mode, SDK-ul de plugin-uri.
 
 ---
 

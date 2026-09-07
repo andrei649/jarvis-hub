@@ -71,6 +71,26 @@
 - Tests: `tests/test_mcp_trust.py` (10). Not proven against a real MCP server —
   `docs/OWNER_TASKS.md` P21.
 
+### Wave 2026-09-07 — Hermes absorption, wave 4c: replies written in place, MCP tool filters, the weekday heartbeat
+
+- **Streaming replies on Telegram** (`agents/core/channels/telegram.py`,
+  `Orchestrator.channel_handler`). The first token sends the message, later tokens edit it
+  under Telegram's edit budget, the final text is rendered exactly as `send()` renders it,
+  overflow follows as new messages; every step is best effort and never raises into the
+  turn. Opened only on a channel whose descriptor says it can edit and only when the router
+  would deliver; a silent turn leaves no placeholder. `channels.streaming_replies` (default
+  on) turns it off.
+- **Per-server MCP tool include / exclude** (`tools_allow` / `tools_deny` glob patterns):
+  applied at `tools/list` and again at call time, a deny always wins, persisted with the
+  config and taken by the add route.
+- **The weekday heartbeat fires on the weekday** (BACKLOG HA-2c): `HeartbeatScheduler`
+  passed cron's Sunday-based day-of-week straight to APScheduler's Monday-based one; it now
+  uses the jobs engine's translation, and an unusable cron skips that heartbeat with a
+  warning instead of raising.
+- Tests: `tests/test_telegram_streaming.py` (10), `tests/test_mcp_tool_filters.py` (4),
+  `tests/test_heartbeat_cron_dow.py` (2). Not proven on a real Telegram —
+  `docs/OWNER_TASKS.md` P22.
+
 ### Wave 2026-09-07 — Hermes absorption, wave 2a: the owner's own scheduled jobs
 
 - **Owner-scheduled jobs** (`agents/core/autonomy/jobs.py`). Nerva parsed "every weekday at

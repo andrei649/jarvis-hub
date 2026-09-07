@@ -215,12 +215,19 @@ def _dow_for_apscheduler(field: str) -> str:
             step = f"/{step}"
         if "-" in token:
             a, b = token.split("-", 1)
-            out.append(f"{_DOW_NAMES[int(a)]}-{_DOW_NAMES[int(b)]}{step}")
+            out.append(f"{_dow_name(a)}-{_dow_name(b)}{step}")
         elif token.isdigit():
-            out.append(f"{_DOW_NAMES[int(token)]}{step}")
+            out.append(f"{_dow_name(token)}{step}")
         else:
             out.append(token + step)
     return ",".join(out)
+
+
+def _dow_name(token: str) -> str:
+    text = token.strip()
+    if not text.isdigit() or not 0 <= int(text) <= 7:
+        raise ValueError(f"day-of-week must be 0-7 or a name, not {token!r}")
+    return _DOW_NAMES[int(text)]
 
 
 def cron_kwargs(cron: str) -> dict[str, str]:

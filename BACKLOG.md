@@ -1288,10 +1288,14 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   admin routes with the backend's own refusal words, and lists a job's attempts. The seven
   `/api/jobs` routes left the parity gate's punch list (10 again) and the bundle was rebuilt.
   Tests: `frontend/src/panels/jobs.test.tsx` (4).
-- [ ] **HA-2c — follow-ups the engine surfaced:** `HeartbeatScheduler.start` passes cron's
-  day-of-week (0 = Sunday) straight to APScheduler (0 = Monday), so every `cron:` heartbeat
-  with a weekday field fires one day late — fix with `jobs.cron_kwargs`; quiet-hours and the
-  interrupt budget for job deliveries (today a job delivers directly, like the digest).
+- [x] ✅ **HA-2c — the weekday heartbeat fires on the weekday.** `HeartbeatScheduler.start`
+  passed cron's day-of-week (0 = Sunday) straight to APScheduler (0 = Monday), so every
+  `cron:` heartbeat with a weekday field fired one day late; it now goes through
+  `jobs.cron_kwargs`, the one translation, and a cron the translator refuses (a day-of-week
+  digit outside 0–7 used to be an `IndexError`) skips that heartbeat with a warning instead
+  of taking the scheduler down. Tests: `tests/test_heartbeat_cron_dow.py` (2). Still open
+  from the same finding: quiet hours and the interrupt budget for job deliveries (today a
+  job delivers directly, like the digest).
 - [x] ✅ **HA-3a — the model's hands.** `file_search` (`agents/core/file_tools.py`, same
   `JARVIS_FILE_TOOLS` flag): a literal content search with exactly `file_read`'s containment —
   the roots, no symlink followed, secret-looking names skipped and counted, binaries and
@@ -1372,10 +1376,27 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   kernel. `schema.gen.ts` regenerated. Tests: `tests/test_mcp_trust.py` (10). **Not proven
   against a real MCP server** → P21. Named and not done: per-server tool include / exclude,
   `destructiveHint`-aware approval tiers, a vetted default-disabled catalogue.
-- [ ] **HA-4c** — the rest of the depth wave: streaming edits on chat surfaces (the descriptor
-  now says which can), Slack `mrkdwn` / Discord renderers, per-server MCP tool include /
-  exclude, an `ntfy` push channel for approvals away from the HUD, HUD mode on desktop, the
-  plugin SDK — sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+- [x] ✅ **HA-4c — a chat reply written in place; attaching a server is not attaching every
+  tool.** On a chat surface a long silence and a crash look the same. `TelegramDraft`
+  (`channels/telegram.py`): the first token sends the message, later tokens edit it under
+  Telegram's edit budget (one edit per 1.2 s, only when the visible text changed, a cursor
+  mark while it grows), `finish()` renders the final text exactly as `send()` would — the
+  first chunk settles in the edited message, overflow follows as new messages; every step is
+  best effort and never raises into the turn (a failed edit is a skipped frame, a failed final
+  edit becomes a fresh send, rejected markup is retried as plain). `Orchestrator.channel_handler`
+  opens a draft only on a channel whose descriptor says it can edit, only when the router
+  would deliver to that source, and never for an observed message; the draft sends nothing
+  until the first token, so a silent turn leaves no placeholder; `channels.streaming_replies`
+  (default on) turns it off. MCP: `tools_allow` / `tools_deny` glob patterns per server —
+  applied at `tools/list` (a hidden tool is never offered) and again at call time
+  (`tool_filtered`), a deny always wins, a malformed filter narrows to nothing; persisted with
+  the config, taken and validated by `POST /api/admin/mcp`, shown in the list;
+  `schema.gen.ts` regenerated. Tests: `tests/test_telegram_streaming.py` (10),
+  `tests/test_mcp_tool_filters.py` (4). **Not proven on a real Telegram** → P22.
+- [ ] **HA-4d** — the rest of the depth wave: Slack `mrkdwn` / Discord renderers and streaming
+  on those surfaces, an `ntfy` push channel for approvals away from the HUD, quiet hours for
+  job deliveries, HUD mode on desktop, the plugin SDK — sequenced in
+  [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the

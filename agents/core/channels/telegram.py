@@ -7,6 +7,7 @@ Uses the PermissionGate to enforce domain restrictions.
 """
 
 import logging
+import time
 from typing import Callable, Optional
 
 import httpx
@@ -20,6 +21,119 @@ from ..log_safe import log_safe
 logger = logging.getLogger("jarvis.channels.telegram")
 
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+#: Seconds between two edits of a streaming draft — Telegram's per-message edit budget is
+#: about one a second; going faster earns a 429 and a frozen message.
+STREAM_EDIT_INTERVAL = 1.2
+_STREAM_CURSOR = " ▍"
+
+
+class TelegramDraft:
+    """One reply written in place as the model produces it (Hermes absorption 4c).
+
+    On a chat surface a long silence and a crash look the same. The first token sends the
+    message; later tokens edit it, at most one edit per :data:`STREAM_EDIT_INTERVAL` and
+    only when the visible text changed; ``finish()`` renders the final text exactly as
+    ``send()`` would — the first chunk lands in the edited message, further chunks follow
+    as new messages. Every step is best effort and never raises into the turn: a failed
+    edit is a skipped frame, a failed final edit becomes a fresh send, markup Telegram
+    rejects is retried as plain text. ``finish()`` is True only when the final text was
+    delivered.
+    """
+
+    def __init__(self, channel: "TelegramChannel", chat_id, *, interval: float | None = None,
+                 clock: Callable[[], float] = time.monotonic) -> None:
+        self._channel = channel
+        self._chat_id = chat_id
+        self._interval = STREAM_EDIT_INTERVAL if interval is None else float(interval)
+        self._clock = clock
+        self._text = ""
+        self._message_id: Optional[int] = None
+        self._last_edit = 0.0
+        self._last_shown = ""
+        self._cap = channel.descriptor.max_message_length or TELEGRAM_MAX_MESSAGE_LENGTH
+        self.finished = False
+
+    @property
+    def started(self) -> bool:
+        return self._message_id is not None
+
+    @property
+    def text(self) -> str:
+        return self._text
+
+    async def push(self, token) -> None:
+        """Append *token*; show progress when the edit budget allows. Never raises."""
+        if self.finished:
+            return
+        self._text += str(token or "")
+        if not self._text.strip():
+            return
+        try:
+            now = self._clock()
+            if self._message_id is None:
+                self._message_id = await self._channel._send_message(
+                    self._chat_id, self._preview(), plain=to_plain(self._preview_source()),
+                )
+                self._last_edit = now
+                self._last_shown = self._preview()
+                return
+            if now - self._last_edit < self._interval:
+                return
+            shown = self._preview()
+            if shown == self._last_shown:
+                return
+            if await self._channel._edit_message(
+                self._chat_id, self._message_id, shown, plain=to_plain(self._preview_source()),
+            ):
+                self._last_shown = shown
+            self._last_edit = now
+        except Exception:
+            logger.debug("Telegram draft frame skipped", exc_info=True)
+
+    def _preview_source(self) -> str:
+        budget = self._cap - len(_STREAM_CURSOR) - 1
+        source = self._text
+        if len(source) > budget:
+            source = source[:budget] + "…"
+        return source + _STREAM_CURSOR
+
+    def _preview(self) -> str:
+        return to_telegram_html(self._preview_source())
+
+    async def finish(self, final_text: Optional[str] = None) -> bool:
+        """Deliver the final text: edit the streamed message, then send any overflow."""
+        if self.finished:
+            return False
+        self.finished = True
+        text = self._text if final_text is None else str(final_text or "")
+        if not text.strip():
+            return False
+        if self._message_id is None:
+            return await self._channel.send(text, chat_id=self._chat_id)
+        pieces = chunk(text, self._cap)
+        try:
+            ok = await self._channel._edit_message(
+                self._chat_id, self._message_id, to_telegram_html(pieces[0]), plain=to_plain(pieces[0]),
+            )
+        except Exception:
+            ok = False
+        if not ok:
+            ok = await self._channel._send_chunk(self._chat_id, pieces[0])
+        for piece in pieces[1:]:
+            if not await self._channel._send_chunk(self._chat_id, piece):
+                return False
+        return ok
+
+
+def _message_id_of(resp) -> int:
+    """The message id Telegram returned, or 0 when the body did not carry one."""
+    try:
+        payload = resp.json()
+    except Exception:
+        return 0
+    result = payload.get("result") if isinstance(payload, dict) else None
+    value = result.get("message_id") if isinstance(result, dict) else None
+    return int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 class TelegramChannel(ChannelAdapter):
@@ -96,21 +210,48 @@ class TelegramChannel(ChannelAdapter):
 
     async def _send_chunk(self, cid, piece: str) -> bool:
         try:
+            return await self._send_message(cid, to_telegram_html(piece), plain=to_plain(piece)) is not None
+        except Exception as e:
+            logger.error(f"Telegram send error: {e}")
+            return False
+
+    async def _send_message(self, cid, html_text: str, *, plain: str) -> Optional[int]:
+        """POST one message as HTML, as plain text if Telegram rejects the markup (400).
+        Returns the new message id (or 0 when Telegram did not say), raises on failure."""
+        resp = await self.client.post(
+            f"{self.api_base}/sendMessage",
+            json={"chat_id": cid, "text": html_text, "parse_mode": "HTML"},
+        )
+        if resp.status_code == 400:
+            logger.info("Telegram rejected the markup; resending the chunk as plain text")
             resp = await self.client.post(
-                f"{self.api_base}/sendMessage",
-                json={"chat_id": cid, "text": to_telegram_html(piece), "parse_mode": "HTML"},
+                f"{self.api_base}/sendMessage", json={"chat_id": cid, "text": plain},
             )
+        resp.raise_for_status()
+        return _message_id_of(resp)
+
+    async def _edit_message(self, cid, message_id, html_text: str, *, plain: str) -> bool:
+        """Edit a message in place, HTML first and plain on a 400. False on any failure."""
+        try:
+            body = {"chat_id": cid, "message_id": message_id, "text": html_text, "parse_mode": "HTML"}
+            resp = await self.client.post(f"{self.api_base}/editMessageText", json=body)
             if resp.status_code == 400:
-                logger.info("Telegram rejected the markup; resending the chunk as plain text")
                 resp = await self.client.post(
-                    f"{self.api_base}/sendMessage",
-                    json={"chat_id": cid, "text": to_plain(piece)},
+                    f"{self.api_base}/editMessageText",
+                    json={"chat_id": cid, "message_id": message_id, "text": plain},
                 )
             resp.raise_for_status()
             return True
         except Exception as e:
-            logger.error(f"Telegram send error: {e}")
+            logger.debug(f"Telegram edit failed: {e}")
             return False
+
+    def begin_stream(self, chat_id=None, **kwargs) -> Optional[TelegramDraft]:
+        """A draft for a reply that will be written in place; None without a chat."""
+        cid = chat_id or kwargs.get("chat_id")
+        if not cid:
+            return None
+        return TelegramDraft(self, cid)
 
     async def send_card(self, chat_id: int, card: dict) -> bool:
         """Send a decision-inbox card (text + inline keyboard) built by inbox.py."""

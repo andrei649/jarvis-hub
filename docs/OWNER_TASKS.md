@@ -375,14 +375,14 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15**–**P21** (2026-09-07) are the first packets from the Hermes absorption: the
+> hardware. **P15**–**P22** (2026-09-07) are the first packets from the Hermes absorption: the
 > tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
 > to a real one; the Telegram group gate, never exercised in a real group; the `nerva`
 > command plus the chat slash commands, never pointed at a running hub; the owner's
 > scheduled jobs, never fired on a wall clock; the model's hands (`file_search`,
 > `session_search`, the loop breakers), never driven by a model choosing to use them; the
-> Telegram renderer, never shown to the real API; and the MCP trust tier, never held against a
-> real server's annotations.
+> Telegram renderer and the reply that grows in place, never shown to the real API; and the
+> MCP trust tier, never held against a real server's annotations.
 > If you flip a row to ✅ and its proof still depends on something only you can run, it
 > belongs here — that rule is written into
 > [`docs/prompts/BACKLOG_DRIVER.md`](prompts/BACKLOG_DRIVER.md) so an unattended session applies it.
@@ -744,6 +744,18 @@ built on your Windows box:
       Nerva's — the tier trusts the hint only in the narrowing direction, so that is a finding
       to file upstream. Restart the hub once: a server saved *before* this release must log
       "no trust tier … treated as full" exactly once and keep working.
+
+- [ ] **P22 — A reply that grows in place on a real Telegram** *(covers `HA-4c`)*
+      The draft is proven against a fake client and a fake clock. From the owner's account
+      ask for something that takes the model twenty seconds or more: one message must appear
+      within a second or two and grow in place with a `▍` cursor, never faster than about one
+      edit a second, then settle into the finished reply with formatting and no cursor; if it
+      is long, the rest must follow as separate messages in order. Then ask again with
+      `channels.streaming_replies` off (`nerva config set channels.streaming_replies false`):
+      the reply must arrive whole, once. If Telegram answers 429 during the stream, the frames
+      are skipped and the final text still lands — if it does not, file it against
+      `TelegramDraft.finish`. A placeholder that appears for a turn that answers nothing is a
+      finding against `Orchestrator._begin_channel_draft`.
 
 ## Parking lot (decisions, no rush)
 

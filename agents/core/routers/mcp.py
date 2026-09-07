@@ -66,6 +66,8 @@ async def admin_mcp_list():
             # whether the server itself declared it read-only (the only claim a read-only
             # tier honours).
             "trust": _trust_of(srv),
+            "tools_allow": _patterns_of(srv, "tools_allow"),
+            "tools_deny": _patterns_of(srv, "tools_deny"),
             "tools_count": len(srv.tools),
             "tools": [
                 {
@@ -84,6 +86,11 @@ def _trust_of(srv) -> Optional[str]:
     return trust if isinstance(trust, str) else None
 
 
+def _patterns_of(srv, attr: str) -> Optional[list]:
+    value = getattr(srv, attr, None)
+    return list(value) if isinstance(value, (list, tuple)) else None
+
+
 class MCPServerConfig(BaseModel):
     name: str
     transport: str = "stdio"
@@ -92,6 +99,10 @@ class MCPServerConfig(BaseModel):
     #: Trust tier: ``read-only`` (default — only tools the server marks ``readOnlyHint``
     #: may be called) or ``full``.
     trust: str = "read-only"
+    #: Glob patterns on tool names: ``tools_allow`` (None = every tool) and ``tools_deny``
+    #: (a deny always wins). Attaching a server is not attaching every one of its tools.
+    tools_allow: Optional[list[str]] = None
+    tools_deny: Optional[list[str]] = None
 
 
 @router.post("/api/admin/mcp", dependencies=[Depends(admin_guard)])
@@ -117,6 +128,12 @@ async def admin_mcp_add(req: MCPServerConfig):
             {"error": "invalid_trust", "trust": req.trust, "supported": list(TRUST_TIERS)},
             status_code=400,
         )
+    for field in ("tools_allow", "tools_deny"):
+        patterns = getattr(req, field, None)
+        if patterns is not None and (
+            not isinstance(patterns, list) or not all(isinstance(p, str) and p.strip() for p in patterns)
+        ):
+            return JSONResponse({"error": "invalid_tool_filter", "field": field}, status_code=400)
     if req.name in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{req.name}' already exists"}, status_code=409)
     srv = MCPServer(
@@ -129,6 +146,8 @@ async def admin_mcp_add(req: MCPServerConfig):
         command=req.command,
         url=req.url,
         trust=trust,
+        tools_allow=getattr(req, "tools_allow", None),
+        tools_deny=getattr(req, "tools_deny", None),
     )
     orch.mcp.servers[srv.name] = srv
     # Persist to settings DB

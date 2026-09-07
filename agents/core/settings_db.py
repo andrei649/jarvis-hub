@@ -203,6 +203,7 @@ DEFAULTS: list[dict[str, Any]] = [
     # channels
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
+    dict(category="channels",key="streaming_replies", value=True,                 label="Write chat replies in place as they are produced (channels that can edit a message)", kind="toggle"),
     # plugins (one per plugin, enabled toggle)
     dict(category="plugins", key="weather",          value=True,                  label="Weather",            kind="toggle"),
     dict(category="plugins", key="news",             value=True,                  label="News",               kind="toggle"),

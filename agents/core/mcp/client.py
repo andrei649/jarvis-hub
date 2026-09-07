@@ -17,6 +17,7 @@ inheriting a credential would otherwise break silently.
 """
 
 import asyncio
+import fnmatch
 import json
 import logging
 import os
@@ -73,6 +74,24 @@ _TRUST_ALIASES = {
 def normalize_trust(raw: object) -> str | None:
     """Canonical trust tier for *raw*, or None when it names no tier."""
     return _TRUST_ALIASES.get(str(raw or "").strip().lower())
+
+
+MAX_TOOL_PATTERNS = 64
+MAX_TOOL_PATTERN_CHARS = 128
+
+
+def _clean_tool_patterns(raw: object) -> list[str] | None:
+    """A bounded list of non-empty string patterns; None stays None (no filter); anything
+    else that is not a list narrows to nothing rather than to everything."""
+    if raw is None:
+        return None
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out = [
+        item.strip() for item in raw
+        if isinstance(item, str) and item.strip() and len(item) <= MAX_TOOL_PATTERN_CHARS
+    ]
+    return out[:MAX_TOOL_PATTERNS]
 
 #: Variables a stdio MCP subprocess may inherit under the baseline: process
 #: plumbing (path, home, locale, temp, terminal), platform essentials
@@ -227,6 +246,8 @@ class MCPServer:
         headers: dict[str, str] | None = None,
         http_transport_factory: Callable[..., StreamableHttpTransport] | None = None,
         trust: str = TRUST_READ_ONLY,
+        tools_allow: list[str] | None = None,
+        tools_deny: list[str] | None = None,
     ):
         """
         ``transport`` is normalised (``"HTTP"`` → ``streamable-http``); an unknown
@@ -240,6 +261,12 @@ class MCPServer:
         if normalized_trust is None:
             raise ValueError(f"unknown MCP trust tier: {trust!r}")
         self.trust = normalized_trust
+        # Hermes absorption 4c — attaching a server is not attaching every one of its
+        # tools: glob patterns on the tool name; ``tools_allow`` None = all, a deny always
+        # wins. Applied at tools/list (hidden tools are never offered) and again at call
+        # time, so a name the model or a caller remembers cannot go around the filter.
+        self.tools_allow: list[str] | None = _clean_tool_patterns(tools_allow)
+        self.tools_deny: list[str] = _clean_tool_patterns(tools_deny) or []
         self.name = name
         self.transport = normalize_transport(transport)
         self.command = command
@@ -375,19 +402,37 @@ class MCPServer:
     async def _list_tools(self):
         resp = await self._send({"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 2})
         if resp and "result" in resp:
+            hidden = 0
             for t in resp["result"].get("tools", []):
-                self.tools.append(MCPTool(
+                tool = MCPTool(
                     name=t.get("name", "unknown"),
                     description=t.get("description", ""),
                     input_schema=t.get("inputSchema", {}),
                     server=self.name,
                     annotations=t.get("annotations"),
-                ))
+                )
+                if not self.tool_visible(tool.name):
+                    hidden += 1
+                    continue
+                self.tools.append(tool)
+            if hidden:
+                logger.info("MCP server %s: %d tool(s) hidden by the owner's filter", self.name, hidden)
+
+    def tool_visible(self, name: str) -> bool:
+        """Does the owner's include / exclude filter let *name* through?"""
+        text = str(name or "")
+        if any(fnmatch.fnmatchcase(text, pattern) for pattern in self.tools_deny):
+            return False
+        if self.tools_allow is None:
+            return True
+        return any(fnmatch.fnmatchcase(text, pattern) for pattern in self.tools_allow)
 
     async def call_tool(self, name: str, arguments: dict = None) -> Any:
         arguments = arguments or {}
         if not isinstance(arguments, dict):
             return {"error": "bad_args", "tool": name, "server": self.name}
+        if not self.tool_visible(name):
+            return {"error": "tool_filtered", "tool": name, "server": self.name}
         denied = self._trust_denial(name)
         if denied is not None:
             return denied
@@ -578,6 +623,8 @@ class MCPManager:
                 "url": srv.url,
                 "cwd": srv.cwd,
                 "trust": srv.trust,
+                "tools_allow": srv.tools_allow,
+                "tools_deny": srv.tools_deny,
             }
             for srv in self.servers.values()
         ]
@@ -614,5 +661,7 @@ class MCPManager:
                 cwd=cfg.get("cwd"),
                 headers=headers if isinstance(headers, dict) else None,
                 trust=trust,
+                tools_allow=cfg.get("tools_allow"),
+                tools_deny=cfg.get("tools_deny"),
             )
             self.servers[srv.name] = srv

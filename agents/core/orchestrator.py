@@ -1186,6 +1186,11 @@ class Orchestrator:
             # isolation (H1.2) generalised to email and the webhook channels.
             # A turn with no identity at all (voice; web through the gateway with no
             # client_id) has nothing to isolate *by*, so it stays on the shared session.
+            # Hermes absorption 4c: on a channel that can edit a sent message the reply is
+            # written in place as it is produced. The draft exists only when the router
+            # would deliver to this source at all, and it sends nothing until the first
+            # token, so a silent turn leaves no placeholder behind.
+            draft = None if observe_only else self._begin_channel_draft(channel, source, kwargs)
             cross_channel = self.get_setting("memory.cross_channel_sessions", False)
             if not cross_channel and (source.thread_id or source.sender or source.client_id):
                 key = build_session_key(source)
@@ -1215,14 +1220,20 @@ class Orchestrator:
                 token = _active_session.set(self._channel_sessions[key])
                 try:
                     response = await self._channel_turn(
-                        text, channel, observe_only=observe_only
+                        text, channel, observe_only=observe_only, draft=draft
                     )
                 finally:
                     _active_session.reset(token)
             else:
-                response = await self._channel_turn(text, channel, observe_only=observe_only)
+                response = await self._channel_turn(
+                    text, channel, observe_only=observe_only, draft=draft
+                )
             if observe_only:
                 return None
+            if draft is not None and draft.started:
+                # The words are already on the channel; the final edit settles them.
+                await draft.finish(response)
+                return response
 
             # DRA-08: whether to reply is the router's call (empty/silent/local-only
             # turns are dropped here instead of being pushed at the transport).
@@ -1261,7 +1272,9 @@ class Orchestrator:
             logger.warning("slash command dispatch failed closed", exc_info=True)
             return None
 
-    async def _channel_turn(self, text: str, channel: str, *, observe_only: bool) -> Optional[str]:
+    async def _channel_turn(
+        self, text: str, channel: str, *, observe_only: bool, draft=None,
+    ) -> Optional[str]:
         """One inbound channel message → one turn, under the session's lease."""
         if observe_only:
             await self.memory.add_turn(self.session_id, "user", text, channel=channel)
@@ -1269,7 +1282,30 @@ class Orchestrator:
         async with self.turn_lease() as acquired:
             if not acquired:
                 return TURN_BUSY_REPLY
+            if draft is not None:
+                return await self.handle_input_stream(text, channel, on_token=draft.push)
             return await self.handle_input(text, channel)
+
+    def _begin_channel_draft(self, channel: str, source, kwargs: dict):
+        """A streaming draft for this turn, or None when the channel cannot edit, the
+        owner turned streaming off, or the router would not deliver to this source."""
+        try:
+            if self.get_setting("channels.streaming_replies", True) is not True:
+                return None
+            adapter = self.channels.get(channel)
+        except Exception:
+            return None
+        begin = getattr(adapter, "begin_stream", None)
+        descriptor = getattr(adapter, "descriptor", None)
+        if begin is None or not getattr(descriptor, "supports_edit", False):
+            return None
+        try:
+            if not self._delivery_router.resolve(source, text="probe").send:
+                return None
+            return begin(chat_id=kwargs.get("chat_id"))
+        except Exception:
+            logger.debug("channel draft unavailable; replying whole", exc_info=True)
+            return None
 
     def _lease_key(self, session_key: Optional[str]) -> str:
         """Mirror `_resolve_session`'s order so the lease names the session the turn will use."""

@@ -9415,6 +9415,10 @@ export interface components {
              * @default read-only
              */
             trust: string;
+            /** Tools Allow */
+            tools_allow?: string[] | null;
+            /** Tools Deny */
+            tools_deny?: string[] | null;
         };
         /** MapBody */
         MapBody: {
