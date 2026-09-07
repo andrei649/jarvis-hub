@@ -341,8 +341,20 @@ rezultate duplicate: un rezultat reușit identic byte cu byte cu unul deja în t
 bytes) e înlocuit cu o referință — „la fel ca apelul N" — ca modelul să nu plătească payload-ul
 de două ori, cu un eveniment `tool_result_deduplicated`; rezultatele de eroare nu sunt niciodată
 înlocuite. Cu 3a (apeluri identice, serii de eșecuri) rândul „loop guardrails" din registru e
-livrat integral. Teste: `tests/test_tool_loop_guardrails.py` (4). Rămân în 4g: streaming prin
-editări pe Slack/Discord, `ntfy`, HUD mode, SDK-ul de plugin-uri.
+livrat integral. Teste: `tests/test_tool_loop_guardrails.py` (4).
+
+**Livrat 2026-09-07 (4g — un push pe telefonul owner-ului fără bot și fără cont).**
+`channels/ntfy.py`: un singur POST HTTP către un server ntfy pe care îl numește owner-ul
+(`NTFY_URL` nu are implicit — self-hosted rămâne în LAN), topic `NTFY_TOPIC`, token opțional
+`NTFY_TOKEN`, titlu `NTFY_TITLE`; textul simplu, împărțit la plafonul de 4.096, titlul și
+prioritatea (1–5) ca antete. **Doar ieșire, cu intenție:** pe ntfy topicul e identitatea, deci
+nimic din ce sosește pe el nu poate deveni tură, comandă sau pairing, iar topicul nu e logat
+niciodată. Legat de `web.py` când ambele variabile sunt setate (o valoare malformată e refuzată
+cu avertisment, niciodată legată pe jumătate), permis pe contractul `channel.send` al
+managerului, atins de router-ul de escaladare și de joburi (`"channel": "ntfy"`) ca orice
+adaptor înregistrat. Teste: `tests/test_ntfy_channel.py` (8). *Nedovedit pe un server ntfy
+real* → **P23**. Rămân în 4h: streaming prin editări pe Slack/Discord, HUD mode, SDK-ul de
+plugin-uri.
 
 ---
 

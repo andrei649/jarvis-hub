@@ -375,14 +375,15 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15**–**P22** (2026-09-07) are the first packets from the Hermes absorption: the
+> hardware. **P15**–**P23** (2026-09-07) are the first packets from the Hermes absorption: the
 > tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
 > to a real one; the Telegram group gate, never exercised in a real group; the `nerva`
 > command plus the chat slash commands, never pointed at a running hub; the owner's
 > scheduled jobs, never fired on a wall clock; the model's hands (`file_search`,
 > `session_search`, the loop breakers), never driven by a model choosing to use them; the
-> Telegram renderer and the reply that grows in place, never shown to the real API; and the
-> MCP trust tier, never held against a real server's annotations.
+> Telegram renderer and the reply that grows in place, never shown to the real API; the MCP
+> trust tier, never held against a real server's annotations; and the ntfy push, never sent
+> to a real server.
 > If you flip a row to ✅ and its proof still depends on something only you can run, it
 > belongs here — that rule is written into
 > [`docs/prompts/BACKLOG_DRIVER.md`](prompts/BACKLOG_DRIVER.md) so an unattended session applies it.
@@ -764,6 +765,17 @@ built on your Windows box:
       are skipped and the final text still lands — if it does not, file it against
       `TelegramDraft.finish`. A placeholder that appears for a turn that answers nothing is a
       finding against `Orchestrator._begin_channel_draft`.
+
+- [ ] **P23 — A buzz on the phone through a real ntfy server** *(covers `HA-4g`)*
+      The channel is proven against a fake client. Install the ntfy app, subscribe to a topic
+      you make up (treat it like a password), set `NTFY_URL` (your own server, or
+      `https://ntfy.sh`) and `NTFY_TOPIC`, restart: the log must say "ntfy channel wired" and
+      never print the topic. Arm `nerva jobs create --blueprint reminder --param
+      "message=hello from nerva" --when "every 5 minutes"` with `"channel": "ntfy"` in the
+      action: the phone must buzz within six minutes with the title `Nerva`. Then trigger an
+      escalation (a task that needs you while the HUD is closed): it must arrive on the phone
+      too. A message with `**bold**` must arrive as plain words. If the server needs a token,
+      set `NTFY_TOKEN` and repeat; a 403 in the log with the token set is a server finding.
 
 ## Parking lot (decisions, no rush)
 

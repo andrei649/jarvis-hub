@@ -1419,9 +1419,20 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   with a `tool_result_deduplicated` event; error results are never stubbed, each fresh failure
   is seen verbatim. Tests: `tests/test_tool_loop_guardrails.py` (4). The named remainder of the
   loop-guardrail row is now delivered (3a: identical calls, failure streaks; 4f: caps, stubs).
-- [ ] **HA-4g** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
-  now say they can), an `ntfy` push channel for approvals away from the HUD, HUD mode on
-  desktop, the plugin SDK — sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+- [x] ✅ **HA-4g — a push to the owner's phone with no bot and no account.**
+  `channels/ntfy.py`: one HTTP POST to an ntfy server the owner names (`NTFY_URL` has no
+  default — self-hosted keeps it on the LAN), topic `NTFY_TOPIC`, optional bearer `NTFY_TOKEN`,
+  title `NTFY_TITLE`; the plain-text rendering, chunked at ntfy's 4,096 cap, title and
+  priority (1–5, clamped) as headers. **Outbound only, on purpose:** on ntfy the topic is the
+  identity, so nothing that arrives on one can become a turn, a command or a pairing, and the
+  topic is never logged. Wired by `web.py` when both variables are set (a malformed value is
+  refused with a warning, never half-wired), allowed on the manager's `channel.send` contract,
+  reached by the escalation router and by jobs (`"channel": "ntfy"`) like any registered
+  adapter. Tests: `tests/test_ntfy_channel.py` (8). **Not proven against a real ntfy server**
+  → P23.
+- [ ] **HA-4h** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
+  now say they can), HUD mode on desktop, the plugin SDK — sequenced in
+  [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the

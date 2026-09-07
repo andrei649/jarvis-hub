@@ -118,6 +118,17 @@
   are never stubbed.
 - Tests: `tests/test_tool_loop_guardrails.py` (4).
 
+### Wave 2026-09-07 — Hermes absorption, wave 4g: the ntfy channel
+
+- **A push to the owner's phone with no bot and no account** (`agents/core/channels/ntfy.py`).
+  `NTFY_URL` + `NTFY_TOPIC` (optional `NTFY_TOKEN`, `NTFY_TITLE`) wire an outbound-only
+  channel: one POST per chunk, plain text, title and priority as headers. The topic is the
+  identity on ntfy, so nothing inbound is ever read and the topic is never logged. Reached
+  by escalations and by jobs (`"channel": "ntfy"`); every send crosses the manager's
+  `channel.send` contract.
+- Tests: `tests/test_ntfy_channel.py` (8). Not proven against a real ntfy server —
+  `docs/OWNER_TASKS.md` P23.
+
 ### Wave 2026-09-07 — Hermes absorption, wave 2a: the owner's own scheduled jobs
 
 - **Owner-scheduled jobs** (`agents/core/autonomy/jobs.py`). Nerva parsed "every weekday at

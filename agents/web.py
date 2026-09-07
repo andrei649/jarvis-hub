@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from agents.core.channels.discord import DiscordChannel
 from agents.core.channels.email import EmailChannel
 from agents.core.channels.gateway import Gateway
+from agents.core.channels.ntfy import NtfyChannel
 from agents.core.channels.slack import SlackChannel
 from agents.core.channels.telegram import TelegramChannel
 from agents.core.channels.group_policy import GroupPolicy
@@ -407,6 +408,14 @@ async def lifespan(application: FastAPI):
         discord_ch = DiscordChannel(token=discord_token, handler=gateway.route)
         await orch.register_channel(discord_ch)
         logger.info("Discord channel wired")
+
+    # ntfy (Hermes absorption 4g): a push to the owner's phone with no bot and no account.
+    # Outbound only — nothing that arrives on a topic can become a turn. The topic is the
+    # identity on ntfy, so it is never logged.
+    ntfy_ch = NtfyChannel.from_env(os.environ)
+    if ntfy_ch is not None:
+        await orch.register_channel(ntfy_ch)
+        logger.info("ntfy channel wired")
 
     smtp_host = os.environ.get("SMTP_HOST", "")
     imap_host = os.environ.get("IMAP_HOST", "")
