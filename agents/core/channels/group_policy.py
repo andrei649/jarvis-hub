@@ -19,6 +19,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from ..env_config import is_recognized_bool, truthy
+
 PRIVATE_CHAT_TYPES = frozenset({"private"})
 GROUP_CHAT_TYPES = frozenset({"group", "supergroup", "channel"})
 
@@ -26,17 +28,12 @@ ANSWER = "answer"
 OBSERVE = "observe"
 DROP = "drop"
 
-_TRUE = frozenset({"1", "true", "yes", "on"})
-_FALSE = frozenset({"0", "false", "no", "off"})
-
 
 def _flag(raw: str | None, *, default: bool) -> bool:
-    value = (raw or "").strip().lower()
-    if value in _TRUE:
-        return True
-    if value in _FALSE:
-        return False
-    return default
+    """One boolean convention in the tree (`env_config`); an unrecognised spelling keeps the default."""
+    if raw is None or not is_recognized_bool(raw):
+        return default
+    return truthy(raw, default)
 
 
 def _csv(raw: str | None) -> list[str]:

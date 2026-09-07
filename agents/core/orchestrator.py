@@ -1216,7 +1216,7 @@ class Orchestrator:
         existing = _active_session.get()
         if existing is not _SESSION_UNSET and existing is not None:
             return str(existing)
-        return str(self._session_id_default)
+        return str(getattr(self, "_session_id_default", None))
 
     @asynccontextmanager
     async def turn_lease(self, session_key: Optional[str] = None):

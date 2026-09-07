@@ -279,6 +279,17 @@ orch: Orchestrator = None
 gateway: Gateway = None
 
 
+@asynccontextmanager
+async def _turn_lease(orchestrator):
+    """The session's turn lease (Hermes absorption 0.5) — a no-op for a stand-in without one."""
+    lease = getattr(orchestrator, "turn_lease", None)
+    if lease is None:
+        yield True
+        return
+    async with lease() as acquired:
+        yield acquired
+
+
 def _telegram_allowed_user_ids() -> list[int]:
     """Owner Telegram user ids from TELEGRAM_ALLOWED_USER_IDS (comma-separated).
 
@@ -903,7 +914,7 @@ async def chat(req: ChatRequest):
             prefix = notes.context_for(getattr(orch, "session_id", "web"))
             if prefix:
                 message = prefix + message
-        async with orch.turn_lease() as acquired:
+        async with _turn_lease(orch) as acquired:
             if not acquired:
                 return ChatResponse(reply=TURN_BUSY_REPLY)
             reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None)
@@ -932,7 +943,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override):
 
     async def runner():
         try:
-            async with orch.turn_lease() as acquired:
+            async with _turn_lease(orch) as acquired:
                 if not acquired:
                     await queue.put(("end", TURN_BUSY_REPLY))
                     return
