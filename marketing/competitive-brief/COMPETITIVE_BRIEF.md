@@ -128,7 +128,11 @@ Legend: ✅ yes · ◐ partial/qualified · ❌ no. *The three bold rows are our
   **local-first** system."* (Bee is cloud; Omi is passive; OpenClaw is ungoverned.)
 - **Don't dunk on OpenClaw's users** — they wanted the right thing. Reference the security crisis as
   a *dated, sourced* cautionary tale, never as FUD.
-- **Don't publish a stat that isn't in `BACKLOG.md` / `DESIGN_BRIEF.md` §5.** Stale numbers on a
+- **Don't publish a stat that isn't in `BACKLOG.md` / `DESIGN_BRIEF.md` §5, and don't present a
+  capability as working while it sits on the "Production-verification checklist" in
+  [`docs/OWNER_TASKS.md`](../../docs/OWNER_TASKS.md).** Since 2026-09-07 a ✅ in the backlog means
+  *delivered*, not *proven on real hardware* — the checklist is where that difference is recorded.
+  Stale numbers on a
   comparison graphic are a brand bug.
 
 ---

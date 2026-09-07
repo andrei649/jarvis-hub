@@ -95,5 +95,8 @@ Re-run this audit at: every public launch milestone, any agent-count/test-count 
 taglines), and quarterly for the competitive claims. The numeric-drift check is the highest-value
 recurring item — it's bitten twice now (docs in the June reconciliation, taglines here).
 
-> Source of truth for all counts: [`BACKLOG.md`](../../BACKLOG.md). Brand foundations:
+> Source of truth for all counts: [`BACKLOG.md`](../../BACKLOG.md) — with the 2026-09-07 caveat that
+> a ✅ there means *delivered*, not *proven*; capability claims need
+> [`docs/OWNER_TASKS.md`](../../docs/OWNER_TASKS.md) → "Production-verification checklist" too.
+> Brand foundations:
 > [`docs/BRAND_BOOK.md`](../../docs/BRAND_BOOK.md).

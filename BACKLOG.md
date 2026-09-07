@@ -29,9 +29,15 @@
 > "not proven against X" sentence still has it, and the consolidated list of what has never run
 > against real hardware or a real credential is
 > [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → "Production-verification checklist". Read that
-> before quoting a ✅ from this file as evidence in a external claim (marketing, the Hermes S1–S8
-> bar, a competitive brief) — `MOONSHOT.md` §5's "no stat outside `BACKLOG.md`" rule now means
-> *no stat outside `BACKLOG.md` **and** that checklist*. Rows that already existed elsewhere in this file were
+> before quoting a ✅ from this file as evidence in an external claim (marketing, the Hermes S1–S8
+> bar, a competitive brief). The **marketing honesty discipline** — "don't publish a stat that isn't
+> in `BACKLOG.md`", stated in [`marketing/competitive-brief/COMPETITIVE_BRIEF.md`](marketing/competitive-brief/COMPETITIVE_BRIEF.md)
+> §6 and echoed in [`marketing/README.md`](marketing/README.md),
+> [`marketing/proof/competitor-comparison.md`](marketing/proof/competitor-comparison.md),
+> [`marketing/proof/seo-landing.md`](marketing/proof/seo-landing.md) and
+> [`docs/marketing/DESIGN_BRIEF.md`](docs/marketing/DESIGN_BRIEF.md) — now reads *in `BACKLOG.md`
+> **and** clear of that checklist*, and those five files say so themselves rather than relying on a
+> reader finding this paragraph. Rows that already existed elsewhere in this file were
 > updated **in place** (T-0.63, T-0.66, H10.5, H10.30, H12.21, H12.22, H12.25, H20.R1, H30.8,
 > DRA-06, DRA-22, DRA-25, DRA-27, SEC-B4, SEC-B5, CDX-7, the phone-LAN row); the rows below are the
 > ones this wave created. Flags → [`docs/FLAGS.md`](docs/FLAGS.md) · owner steps →

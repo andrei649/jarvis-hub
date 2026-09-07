@@ -204,7 +204,9 @@ def test_live_backlog_a4_reads_open_and_every_row_is_bucketed():
 
     What is still worth pinning, and is what the test was really protecting, is that no
     row falls out of the arithmetic: every H19 row is counted, and repo-wide the four
-    buckets still sum to the total. The parser's support for 🔨 is unchanged and is
+    buckets still sum to the total. It deliberately does NOT pin those rows to the `done`
+    bucket — see the comment at the assertion — because a row that comes back from a real
+    production run and is honestly re-opened must not turn CI red. The parser's support for 🔨 is unchanged and is
     covered by `test_horizon_rollups_count_delivered_rows_as_their_own_bucket` above, on a
     fixture — so a future row that needs the third state still parses, it is simply no
     longer the convention (see `docs/prompts/BACKLOG_DRIVER.md`).
@@ -217,8 +219,12 @@ def test_live_backlog_a4_reads_open_and_every_row_is_bucketed():
     h19_rows = sum(1 for line in backlog.splitlines() if line.startswith("| H19."))
     assert h19["total"] == h19_rows
     assert h19["delivered"] == h19_rows - h19["done"] - h19["open"] - h19["blocked"]
-    # the WorldView rows are all delivered-and-now-done; none may go missing
-    assert h19["done"] == h19_rows
+    # Deliberately NOT `assert h19["done"] == h19_rows`. Pinning the WorldView rows to the
+    # done bucket would make an honest re-open a CI failure — and under a verify-in-
+    # production regime a row coming back ⬜ or 🔴 after a real run is the system working,
+    # not a regression. A test that goes red on honesty teaches the cheapest way to green,
+    # which here would be flipping the row back to ✅. What is worth pinning is that no row
+    # falls out of the arithmetic, which is the line above and the repo-wide sum below.
     assert sum(row["total"] for row in rollups.values()) == sum(
         row["done"] + row["delivered"] + row["blocked"] + row["open"] for row in rollups.values()
     )
@@ -328,10 +334,12 @@ def test_generated_snippets_include_all_counts_and_open_gates():
         "Runtime proof pending: H19 — 2 done · 33 delivered (runtime proof pending) · 0 open"
         in snippets["jarvis-stats"]
     )
-    assert (
-        "H23 roll-up: 23/28 done, 0 delivered (runtime proof pending), 0 blocked, 5 open"
-        in (snippets["jarvis-stats"])
-    )
+    # The H23 roll-up here has delivered=0, and since 2026-09-07 a zero is SUPPRESSED
+    # rather than printed: "0 delivered (runtime proof pending)" reads as a claim that
+    # nothing is awaiting proof, which the production-verification checklist contradicts.
+    # The global ledger above still shows 33, because that one is a real count.
+    assert "H23 roll-up: 23/28 done, 0 blocked, 5 open" in snippets["jarvis-stats"]
+    assert "0 delivered (runtime proof pending)" not in snippets["jarvis-stats"]
 
 
 def test_json_test_count_parser_accepts_vitest_and_jest_key_order():
@@ -536,3 +544,57 @@ def test_latest_ci_commit_feature_branch_at_main_tip_does_not_step_back():
         status_sync.latest_ci_commit(env={}, runner=lambda args: outputs[tuple(args)])
         == "current123"
     )
+
+
+def _snippet_status(*, delivered: int):
+    """Minimal status dict whose only interesting variable is the delivered bucket."""
+    return {
+        "version": "1.0.0",
+        "tests": {"backend": 8788, "frontend": 1031, "mobile": 135},
+        "routes": 465,
+        "active_agents": 18,
+        "horizons": {
+            "H23": {"total": 30, "done": 28 - delivered, "delivered": delivered,
+                    "blocked": 1, "open": 1},
+        },
+        "horizon_totals": {"done": 288 - delivered, "delivered": delivered,
+                           "open_or_blocked": 13, "total": 301},
+        "latest_ci_commit": "185c94e390731d75",
+        "open_release_gates": [{"id": "A1", "name": "Manual", "status": "⬜"}],
+    }
+
+
+def test_generated_snippets_never_publish_a_zero_runtime_proof_claim():
+    """A zero here is not a measurement — it is a claim, and after 2026-09-07 a false one.
+
+    The marker change removed every 🔨 row from BACKLOG.md, so the `delivered` bucket is
+    structurally pinned at 0. Printing "0 delivered (runtime proof pending)" then stops
+    reading as a count and starts reading as "nothing is awaiting runtime proof" — on the
+    repo's front page (README.md), in NERVA.md and in GO_LIVE_PLAN.md, directly
+    contradicting `docs/OWNER_TASKS.md` → "Production-verification checklist", which exists
+    because a large number of ✅ rows have never run against real hardware.
+
+    `horizon_summary` already omitted the zero case; `generated_snippets` did not, which is
+    how the two surfaces came to disagree.
+    """
+    snippets = status_sync.generated_snippets(_snippet_status(delivered=0))
+    joined = "\n".join(snippets.values())
+    assert "delivered (runtime proof pending)" not in joined
+    assert "0 delivered" not in joined
+    # and the reader is sent somewhere true instead of being told a comforting zero
+    for key in ("readme-status", "go-live-header", "jarvis-stats"):
+        assert "Production-verification checklist" in snippets[key], key
+
+
+def test_generated_snippets_still_report_a_real_delivered_count():
+    """The zero-suppression must not silence a genuine third-state count.
+
+    If a future row legitimately needs the delivered bucket (the parser still supports 🔨),
+    every surface has to say so — otherwise suppressing the zero would have traded one
+    silent misreport for another.
+    """
+    snippets = status_sync.generated_snippets(_snippet_status(delivered=7))
+    assert "7 delivered (runtime proof pending)" in snippets["readme-status"]
+    assert "7 delivered (runtime proof pending)" in snippets["go-live-header"]
+    assert "7 delivered (runtime proof pending)" in snippets["jarvis-stats"]   # H23 roll-up
+    assert "Runtime proof pending: H23" in snippets["jarvis-stats"]
