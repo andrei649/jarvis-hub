@@ -647,8 +647,18 @@ squash-merged once present on `main`; no item by itself completes a runtime epic
   integrator reviews, in order E6 #860 (squash commit `f62d8b5`) → E9-authority #861 (`9b7ac88`) →
   E9-totals #864 (`568de94`), each an agent role distinct from the original builder, each recording an
   explicit GO/HOLD bound to that real merge commit on `main`; the owner's yes authorizes the reviews
-  and is explicitly *not* dependency acceptance. Results: E6 #860 — pending · E9 #861 — pending ·
-  E9-totals #864 — pending.
+  and is explicitly *not* dependency acceptance. **Results (2026-09-07, reviewer distinct from
+  every original builder — [`docs/nerva2/attestations/2026-09-07-post-merge-reviews.md`](docs/nerva2/attestations/2026-09-07-post-merge-reviews.md)):
+  E6 #860 — GO · E9 #861 — GO · E9-totals #864 — GO.** Each claim was re-verified
+  *behaviourally* against the code as it stands (the mutation and the assertion are the
+  reviewer's own, not the builder's test agreeing with itself), and each probe carries a control
+  that comes out the other way — the E9-totals probe had to be rewritten once because its first
+  version was refused by an unrelated guard and would have produced a GO that proved nothing.
+  **One out-of-scope finding:** `BenchmarkRun.to_dict` leaked a mutated ceiling — the exact defect
+  #860/#861 exist to prevent, in a sibling type neither touched, defined in `benchmark.py` where a
+  reviewer grepping only #861's module would never see it. It does not change the #861 verdict.
+  Fixed in this PR (`tests/test_e9_benchmark_run_ceiling.py`) by the same agent, so that fix is
+  **explicitly not covered** by the attestation and needs its own review.
 - 🟡 Landed-not-yet-accepted governance wave (2026-08-14…16) — SEC-B8 external-skill approval
   hardening (#911, merged `790a725`) and the external exact-head acceptance-state core (#916,
   merged `519dca0`) are on `main` with terminal-green exact-head CI, but **each carries a recorded
@@ -657,8 +667,10 @@ squash-merged once present on `main`; no item by itself completes a runtime epic
   only "GO — no content blockers", not the required R3 PASS. **Owner decision 2026-09-01:** #911
   **RETAINED** on `main` (no revert); the read-only "SEC-B8 Post-Merge Security Reviewer" audit (an
   agent reviewer distinct from the #911 builder, bound to merge `790a725`) is commissioned as the durable
-  attestation — **PASS/HOLD: pending** (a PASS closes #905; a HOLD authorizes one bounded corrective
-  successor PR, never a revert); #911 is not governance-complete until that PASS is recorded. #916
+  attestation — **PASS recorded 2026-09-07** ([`docs/nerva2/attestations/2026-09-07-post-merge-reviews.md`](docs/nerva2/attestations/2026-09-07-post-merge-reviews.md)):
+  the approval root derives from the **data root**, the module contains **no reference to the
+  candidate tree at all** (the separation is structural, not a check that could be bypassed), and
+  the loader consumes that external store. **This closes #905**; #911 is governance-complete. #916
   **RETAINED** on `main`; its attestation is the existing exact-head reviewer receipt
   ([PR #916 comment 5308830474](https://github.com/andrei649/jarvis-hub/pull/916#issuecomment-5308830474),
   head `a2438d8`) — no new review is commissioned. The B7 candidate/corrective pair #912/#918 is

@@ -170,6 +170,24 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **Four post-merge attestations, and the finding one of them turned up.** E6 #860, E9 #861,
+  E9-totals #864 and SEC-B8 #911 have been merged on `main` with their ledger rows reading
+  *pending* since the owner commissioned read-only reviews on 2026-09-01. All four are now
+  recorded — **GO / GO / GO / PASS** — in `docs/nerva2/attestations/2026-09-07-post-merge-reviews.md`,
+  by a reviewer distinct from every original builder. Each claim was re-verified *behaviourally*
+  against the code as it stands, with the **mutation and the assertion written by the reviewer**
+  rather than by reading the builders' tests and agreeing with them, and each probe carries a
+  **control that must come out the other way**: the E9-totals probe was refused by an unrelated
+  guard on its first attempt and would have produced a GO that proved nothing. The SEC-B8 PASS
+  **closes #905**.
+  **One out-of-scope finding.** Extending the #861 check past the boundary of its own claim showed
+  `BenchmarkRun.to_dict` **leaking a mutated authority ceiling** — the exact defect #860 and #861
+  exist to prevent, in a sibling type neither touched, and defined in `benchmark.py` where a
+  reviewer grepping only #861's module would never see it. It matters more there than on a report:
+  a run is **persisted**, so a widened ceiling outlives the process that widened it and is read
+  back as what the run always claimed. It does not change the #861 verdict — #861 did what it said
+  — and it is fixed here, by the same agent, which is why the attestation says in as many words
+  that **the fix is not covered by it** and needs its own review. 8 pytest for the fix.
 - **A drift gate for the contracts nobody declared.** `test_interface_contract_drift.py`
   snapshots the *declared* contracts — dataclasses, pydantic models, enums — and cannot see the
   ones that matter most for a fleet of parallel agents, because a subagent's answer is a **plain

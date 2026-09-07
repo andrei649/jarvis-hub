@@ -950,6 +950,21 @@ class BenchmarkRun:
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["summary"] = self.summary
+        # The same emission-time ceiling `RegressionReport.to_dict` re-asserts
+        # (#861) and the E6 payloads re-assert (#860). `asdict` returns whatever
+        # the in-memory object currently holds, so a post-construction mutation
+        # through `object.__setattr__` — the threat model both of those PRs exist
+        # to answer — would otherwise travel straight through.
+        #
+        # It matters more here than on a report: a BenchmarkRun is PERSISTED. A
+        # widened ceiling on a report dies with the process; one on a stored run
+        # outlives whatever widened it, and is read back later as though it were
+        # what the run always claimed.
+        payload["authority"] = "evaluation_only"
+        payload["can_change_routing"] = False
+        payload["can_authorize"] = False
+        payload["can_execute"] = False
+        payload["can_mark_complete"] = False
         return payload
 
     def to_json(self) -> str:
