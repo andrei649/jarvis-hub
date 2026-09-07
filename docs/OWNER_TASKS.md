@@ -375,7 +375,9 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. If you flip a row to ✅ and its proof still depends on something only you can run, it
+> hardware. **P15** (2026-09-07) is the first packet from the Hermes absorption: the tool loop on
+> each cloud provider and on Ollama, built from documented contracts and never sent to a real one.
+> If you flip a row to ✅ and its proof still depends on something only you can run, it
 > belongs here — that rule is written into
 > [`docs/prompts/BACKLOG_DRIVER.md`](prompts/BACKLOG_DRIVER.md) so an unattended session applies it.
 >
@@ -623,6 +625,26 @@ built on your Windows box:
       [`docs/nerva2/attestations/`](nerva2/attestations/)). Nothing about production use closes
       them; only a review does. They are listed here so the count of ✅ rows with an outstanding
       obligation is honest, not to imply you must run something.
+
+- [ ] **P15 — Tools on a cloud model, once per provider** *(covers `HA-0.1`, the first wave of the
+      Hermes absorption)*
+      Until 2026-09-07 an agent routed to Claude, Gemini, OpenRouter or local Ollama had no tools at
+      all; the four backends now translate the tool loop into each provider's dialect, but every
+      translation was built from the provider's documented contract and exercised only against fakes —
+      no request in `tests/test_cloud_tool_turns.py` ever left the container. Set
+      `llm.tool_loop_enabled` to true, keep at least one governed tool registered (the default
+      `echo`/file tools suffice), then for **each** provider you hold a key for, ask an agent that
+      routes there (`athena` is cloud-only; `/model <id>` hot-swaps OpenRouter; a `LOCAL_ONLY_AGENTS`
+      member on an Ollama-only box covers Ollama) to *use a tool* — "list the files in the workspace
+      root" is enough. Confirm three things per provider: `tool_requested` → `tool_result` events
+      appear in the audit chain for that turn; the model's second turn *sees* the result (it quotes
+      it, not guesses); and a malformed call, if you can provoke one, ends as `bad_tool_arguments`
+      rather than an exception in the log. Two provider-specific checks: on Gemini a thinking model
+      must complete a two-step tool exchange without a 400 about a missing thought signature (the
+      signature is remembered per call id and echoed — this is the part most likely to drift with
+      their API); on Claude, parallel tool calls must come back as one user turn of `tool_result`
+      blocks (the API rejects them split). If a provider 400s on the request shape, the failing field
+      is the finding — file it against `agents/core/llm/tool_dialects.py`, do not disable the loop.
 
 ## Parking lot (decisions, no rush)
 

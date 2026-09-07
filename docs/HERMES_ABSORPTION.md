@@ -60,6 +60,18 @@ model de chat. Local, funcționează doar prin LM Studio; nici măcar Ollama nu.
 Fix: declararea corectă a capabilității per backend + traducerea schemei de unelte în dialectul
 fiecărui provider. Kernelul rămâne pe drum — uneltele se aprind, guvernanța nu se stinge.
 
+**Livrat 2026-09-07 (PR #1042).** `agents/core/llm/tool_dialects.py` traduce dialectul unic al
+runtime-ului (forma OpenAI) în dialectul fiecărui provider și înapoi — blocuri `tool_use`/`tool_result`
+la Claude, `functionDeclarations` pe subsetul OpenAPI acceptat + părți `functionCall`/`functionResponse`
+cu thought signatures purtate între ture la Gemini, `/api/chat` cu argumente-obiect la Ollama;
+OpenRouter vorbește nativ. `ClaudeBackend`, `GeminiBackend`, `OpenRouterBackend`, `OllamaBackend`
+declară `supports_tools = True`; `VLMBackend` rămâne `False` deliberat. **Fiecare apel de la provider
+trece tot prin `parse_openai_tool_calls`** — granița unică fail-closed — deci un `input` malformat de la
+Claude ajunge în runtime ca `bad_tool_arguments`, exact ca unul de la LM Studio. Teste:
+`tests/test_cloud_tool_turns.py` (39), inclusiv bucla guvernată cap-coadă peste Ollama.
+*Nedovedit pe un provider live* — dialectele sunt construite din contractul documentat al fiecărui
+API, nu dintr-un schimb capturat → `docs/OWNER_TASKS.md` **P15**.
+
 ### 0.2 — Modelul nu știe că există skill-uri
 `agents/core/agent.py:124-128` construiește blocul de skill-uri din `context["skills"]`, și **nimic
 din repo nu setează vreodată cheia aia**. Skill-urile sunt importate, semnate, pinuite — și invizibile.

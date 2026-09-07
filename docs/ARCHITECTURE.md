@@ -97,14 +97,17 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
-| `agents/core/llm/base.py` | Abstract backend + LMStudio + Ollama | `LLMBackend`, `LMStudioBackend`, `OllamaBackend`, `strip_thinking`, `ThinkingStreamFilter` |
+| `agents/core/llm/base.py` | Abstract backend + LMStudio + Ollama (both tool-capable) | `LLMBackend`, `LMStudioBackend`, `OllamaBackend`, `strip_thinking`, `ThinkingStreamFilter` |
 | `agents/core/llm/router.py` | Auto-detect LMStudio → Ollama | `LLMRouter.detect` |
 | `agents/core/llm/hybrid_router.py` | Multi-tier routing engine | `HybridRouter.select_backend`, `is_heavy_request`, `LOCAL_ONLY_AGENTS`, `CLAUDE_AGENTS`, `DEEP_THINK_AGENTS` |
 | `agents/core/llm/lmstudio_control.py` | Start LM Studio server + load/unload models via `lms` CLI (no-shell, probed); refreshes live router; `enabled` kill-switch makes mutating ops no-ops | `LMStudioController.start_server/load_model/unload_model/status/set_enabled` |
 | `agents/core/llm/ollama_control.py` | Start Ollama via fixed no-shell argv; load/pin and unload via localhost `keep_alive`; validate/probe/refresh with injectable I/O | `OllamaController.start_server/load_model/unload_model/status` |
 | `agents/core/llm_control.py` + orchestrator chat control | Detect LM Studio/Ollama requests, enforce identity/permission/contract/kernel/audit before mutation, and narrate the real result | `detect_llm_control`, `authorize_local_model_lifecycle`, `run_llm_control`, `_run_llm_control` |
-| `agents/core/llm/anthropic.py` | Claude API backend | `ClaudeBackend` |
-| `agents/core/llm/gemini.py` | Gemini API backend | `GeminiBackend` |
+| `agents/core/llm/tool_protocol.py` | Provider-neutral tool-turn values and the single fail-closed parse boundary every provider call crosses | `ToolSpec`, `ToolCall`, `ToolTurn`, `parse_openai_tool_calls` |
+| `agents/core/llm/tool_dialects.py` | Translate the runtime's OpenAI-shaped tool dialect into each provider's own and back (Anthropic blocks, Gemini declarations/parts + thought signatures + schema projection, Ollama `/api/chat`); reshapes only, never validates | `anthropic_messages`, `anthropic_tool_calls`, `gemini_contents`, `gemini_function_declarations`, `gemini_schema`, `gemini_tool_calls`, `ollama_messages`, `ollama_tool_calls`, `normalize_finish_reason` |
+| `agents/core/agent_runtime.py` | Bounded model-directed tool loop over the governed ToolRPC allowlist; `can_run` fails closed on setting, backend `supports_tools` and allowlist | `AgentToolRuntime.can_run/run` |
+| `agents/core/llm/anthropic.py` | Claude API backend (text + tool turns) | `ClaudeBackend` |
+| `agents/core/llm/gemini.py` | Gemini API backend (text + tool turns) | `GeminiBackend` |
 | `agents/core/llm/gemini_cache.py` | Gemini context cache | `ContextCache`, `create_or_extend` |
 | `agents/core/llm/tokenizer.py` | Token estimation | `estimate_tokens`, `estimate_messages` |
 | `agents/core/llm/cost_estimator.py` | Monthly cost estimation | `estimate_monthly` |

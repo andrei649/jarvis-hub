@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-07 — Hermes absorption, wave 0.1: tools are alive on every backend
+
+The absorption plan ([`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md), ledger in
+[`docs/research/2026-09-07-hermes-absorption-ledger.json`](docs/research/2026-09-07-hermes-absorption-ledger.json))
+opens with a defect, not a feature. `supports_tools = True` existed exactly once, on
+`LMStudioBackend`, and `AgentToolRuntime.can_run()` fails closed on that flag — so an agent routed
+to Claude, Gemini, OpenRouter or local Ollama silently lost every governed tool and answered as a
+chat model, on exactly the path designed for heavy work.
+
+- **`agents/core/llm/tool_dialects.py`** (new) translates the runtime's one OpenAI-shaped dialect
+  into each provider's own and back: Messages-API `tool_use` / `tool_result` blocks (system lifted,
+  parallel results merged into one user turn, ids the API would refuse replaced consistently on both
+  sides); Gemini `functionDeclarations` projected onto the OpenAPI subset the API accepts
+  (`additionalProperties`, `$schema`, `oneOf`, `const`, unknown formats folded or dropped;
+  argument-free tools omit `parameters`), `functionCall` / `functionResponse` parts with thought
+  signatures remembered per call id and echoed on replay, and no `cachedContent` on a tool turn
+  because the API refuses tools beside a cache; Ollama `/api/chat` with object arguments and
+  `tool_name` on results. Provider stop reasons map onto the shared vocabulary.
+- `ClaudeBackend`, `GeminiBackend`, `OpenRouterBackend` and `OllamaBackend` declare
+  `supports_tools = True` and implement `generate_tool_turn`; `VLMBackend` stays `False` on purpose.
+  Every provider call still crosses `parse_openai_tool_calls`, the single fail-closed boundary, so a
+  malformed Claude `input` or Gemini `args` reaches the runtime as `bad_tool_arguments` exactly as a
+  malformed LM Studio call does. A provider failure returns a degraded `ToolTurn`; nothing raises
+  into the loop. Auth-pool failover (H12.20) is shared with `generate` through one
+  `_post_messages` on Claude and the existing rotation on Gemini.
+- Tests: `tests/test_cloud_tool_turns.py` (39). **Not proven against a live provider** —
+  `docs/OWNER_TASKS.md` P15.
+
 ### Wave 2026-09-06 — 17 builder slices: operator hands, live rails, activation, program contracts
 
 Seventeen file-partitioned slices landed as one commit (`214bc5eb`, run `opus-integration`,

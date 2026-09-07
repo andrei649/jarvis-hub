@@ -315,6 +315,10 @@ def build_vision_messages(prompt: str, images=None, system: str = "",
 class VLMBackend(LLMBackend):
     """OpenAI-vision-compatible VLM backend (host server is the deployment seam)."""
 
+    # Deliberate: a vision backend answers grounding questions, it never drives the
+    # tool loop — the operator decides what to do with what it saw.
+    supports_tools = False
+
     def __init__(self, base_url: str = DEFAULT_VLM_BASE, api_key: str = "",
                  client=None, max_image_dim: int = 1024) -> None:
         self.base_url = base_url

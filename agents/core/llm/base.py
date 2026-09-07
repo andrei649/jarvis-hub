@@ -14,6 +14,7 @@ import httpx
 
 from .egress import llm_async_client
 from .repetition_guard import is_repetition_dominated
+from .tool_dialects import ollama_messages, ollama_tool_calls
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
 
 logger = logging.getLogger("jarvis.llm.base")
@@ -629,6 +630,10 @@ class LMStudioBackend(LLMBackend):
 class OllamaBackend(LLMBackend):
     """Ollama local server."""
 
+    # Ollama calls tools over /api/chat with object arguments and no ids; the
+    # translation lives in tool_dialects (Hermes absorption, wave 0.1).
+    supports_tools = True
+
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
         # H23.12: short connect / long read so a down server fails fast (no hang).
@@ -685,6 +690,47 @@ class OllamaBackend(LLMBackend):
             return answer
         except Exception as e:
             return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
+
+    async def generate_tool_turn(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSpec],
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+    ) -> ToolTurn:
+        """One tool-enabled turn over /api/chat; calls cross `parse_openai_tool_calls`."""
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": ollama_messages(messages),
+            "stream": False,
+            "options": {
+                "num_predict": max_tokens if not is_auto_max_tokens(max_tokens) else -1,
+                "temperature": temperature,
+            },
+        }
+        if tools:
+            payload["tools"] = [tool.as_openai() for tool in tools]
+        try:
+            resp = await self.client.post("/api/chat", json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            message = data.get("message") or {}
+            raw_calls = message.get("tool_calls")
+            tool_calls = (
+                parse_openai_tool_calls(ollama_tool_calls(raw_calls)) if raw_calls else ()
+            )
+            content = strip_thinking(message.get("content", "") or "")
+            finish = data.get("done_reason")
+            if not content and not tool_calls and finish == "length":
+                logger.warning(
+                    "Ollama truncated at num_predict before an answer (model=%s)", model
+                )
+            return ToolTurn(content=content, tool_calls=tool_calls, finish_reason=finish)
+        except Exception as e:
+            return ToolTurn(
+                content=local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
+            )
 
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",

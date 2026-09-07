@@ -1167,6 +1167,44 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
 
 ## 🥊 Nerva vs Hermes Agent — honest gap analysis (2026-07-25)
 
+### Hermes absorption — 2026-09-07 (PR #1042, branch `claude/repo-architecture-analysis-n90bwm`)
+
+> **Owner directive 2026-09-07:** *"vreau ca tot să fie în nerva — ce avem superior, păstrăm; ce nu
+> avem, copiem; ce e sub hermes, facem update."* The whole `v2026.8.31` inventory (8,199 entries) was
+> reduced to **697 capability decisions** — 114 keep / 258 update / 218 copy / 107 skip — in
+> [`docs/research/2026-09-07-hermes-absorption-ledger.json`](docs/research/2026-09-07-hermes-absorption-ledger.json);
+> the wave plan is [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md). One rule governs every
+> copy: **a privileged effect lands behind the Action Kernel, never beside it.** Wave 0 is not
+> Hermes parity — it is the set of things Nerva *believed* it did and did not.
+
+- [x] ✅ **HA-0.1 — tools are alive on every backend that actually runs.** `supports_tools = True`
+  existed exactly once (`LMStudioBackend`), and `AgentToolRuntime.can_run()` fails closed on it — so
+  the moment an agent routed to Claude, Gemini, OpenRouter or even local Ollama, the model silently
+  lost every governed tool and became a chat model. New `agents/core/llm/tool_dialects.py` translates
+  the runtime's one OpenAI-shaped dialect into each provider's own and back (Messages-API
+  `tool_use`/`tool_result` blocks; Gemini `functionDeclarations` on the OpenAPI subset it accepts,
+  `functionCall`/`functionResponse` parts with thought signatures carried across turns; Ollama
+  `/api/chat` object arguments and `tool_name`), and every provider call still crosses
+  `parse_openai_tool_calls`, the single fail-closed boundary, before the kernel sees it. `VLMBackend`
+  stays `False` on purpose. Tests: `tests/test_cloud_tool_turns.py` (39; request shape, parsing,
+  malformed calls fail closed, failure returns a degraded turn, auth-pool failover, an end-to-end
+  governed loop over Ollama). **Not proven against a live Claude, Gemini, OpenRouter or Ollama
+  server** — the dialects are built from each provider's documented contract, not a captured
+  exchange → [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P15**.
+- [ ] **HA-0.2 — the model does not know skills exist** (`context["skills"]` is never set).
+- [ ] **HA-0.3 — no in-turn compaction** in the tool loop (`agent_runtime.py`, 32 iterations, never
+  measured).
+- [ ] **HA-0.4 — no gate on group messages** (one flat `allowed_user_ids`; no mention gating, no
+  per-chat allowlist, no observe mode).
+- [ ] **HA-0.5 — no per-turn lease** (`orchestrator.py`; a second Telegram message starts a
+  concurrent turn on the same session key).
+- [ ] **HA-0.6 — dead config in the canonical registry** (`general.cloud_llm_agents` has zero readers).
+- [ ] **HA-1 … HA-4** — operator surface (`nerva` CLI, `kernel explain`, chat slash plane), user
+  cron with blueprints, the model's hands (`search_files`, `session_search`, session kernels,
+  `image_generate`), depth (adapter descriptor, MCP trust tiers, HUD mode, plugin SDK) — sequenced in
+  [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+
+
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the
 verified/partial/aspirational split in `NERVA_VISION.md` now matches what actually ships, so the
 vision doc stops reading as a status report for capabilities that are still seeds.

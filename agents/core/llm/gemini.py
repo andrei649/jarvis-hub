@@ -10,7 +10,7 @@ import json
 import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Awaitable, Callable, Iterator
+from typing import Any, Awaitable, Callable, Iterator
 
 import httpx
 
@@ -19,6 +19,16 @@ from .base import LLMBackend, _emit, cloud_cap
 from .egress import llm_async_client
 from .gemini_context import CachedContentRejected, GeminiRequestBinding
 from .provider_errors import GEMINI_DEGRADED_REPLY, log_provider_failure
+from .tool_dialects import (
+    GEMINI_FINISH_REASONS,
+    gemini_contents,
+    gemini_function_declarations,
+    gemini_text,
+    gemini_tool_calls,
+    normalize_finish_reason,
+    remember_thought_signatures,
+)
+from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
 
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
@@ -27,6 +37,10 @@ logger = logging.getLogger("jarvis.llm.gemini")
 
 
 class GeminiBackend(LLMBackend):
+    # Tool calls travel as functionCall / functionResponse parts; the translation lives
+    # in tool_dialects (Hermes absorption, wave 0.1).
+    supports_tools = True
+
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash", auth_pool=None):
         self.api_key = api_key
         self.model = model
@@ -36,6 +50,10 @@ class GeminiBackend(LLMBackend):
             f"gemini_request_binding_{id(self)}",
             default=None,
         )
+        # Thinking models sign the function calls they make and refuse a replayed call
+        # without its signature. The runtime's OpenAI-shaped history has nowhere to carry
+        # it, so it is kept here, keyed by call id, bounded, for the life of the backend.
+        self._thought_signatures: dict[str, str] = {}
 
     def acquire_lease(self) -> AuthLease:
         """Capture the credential used by one request attempt."""
@@ -235,6 +253,98 @@ class GeminiBackend(LLMBackend):
                 )
                 return GEMINI_DEGRADED_REPLY
         return GEMINI_DEGRADED_REPLY
+
+    def _build_tool_payload(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSpec],
+        max_tokens: int,
+        temperature: float,
+    ) -> dict[str, Any]:
+        system, contents = gemini_contents(messages, thought_signatures=self._thought_signatures)
+        payload: dict[str, Any] = {
+            "contents": contents,
+            "generationConfig": {
+                "maxOutputTokens": cloud_cap(max_tokens),
+                "temperature": temperature,
+            },
+        }
+        if system:
+            payload["systemInstruction"] = {"parts": [{"text": system}]}
+        declarations = gemini_function_declarations(tools)
+        if declarations:
+            payload["tools"] = [{"functionDeclarations": declarations}]
+            payload["toolConfig"] = {"functionCallingConfig": {"mode": "AUTO"}}
+        return payload
+
+    def _tool_turn_from_response(self, data: Any) -> ToolTurn:
+        candidates = data.get("candidates") if isinstance(data, dict) else None
+        if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], dict):
+            feedback = data.get("promptFeedback") if isinstance(data, dict) else None
+            blocked = isinstance(feedback, dict) and bool(feedback.get("blockReason"))
+            return ToolTurn(content="", finish_reason="content_filter" if blocked else None)
+        candidate = candidates[0]
+        content = candidate.get("content")
+        parts = content.get("parts") if isinstance(content, dict) else None
+        raw_calls, signatures = gemini_tool_calls(parts)
+        remember_thought_signatures(self._thought_signatures, signatures)
+        return ToolTurn(
+            content=self._finalize_cloud(gemini_text(parts)),
+            tool_calls=parse_openai_tool_calls(raw_calls),
+            finish_reason=normalize_finish_reason(
+                GEMINI_FINISH_REASONS, candidate.get("finishReason")
+            ),
+        )
+
+    async def generate_tool_turn(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSpec],
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+    ) -> ToolTurn:
+        """One tool-enabled turn; every functionCall part crosses `parse_openai_tool_calls`.
+
+        A tool turn never binds cached content: the API refuses `tools` and
+        `systemInstruction` next to `cachedContent`, so the bound cache (if any) is dropped
+        for this request only and the auth lease is kept.
+        """
+        actual_model = model if model and "/" not in model else self.model
+        try:
+            binding = self._capture_binding().without_cache()
+        except Exception as exc:
+            log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc)
+            return ToolTurn(content=GEMINI_DEGRADED_REPLY)
+        payload = self._build_tool_payload(messages, tools, max_tokens, temperature)
+
+        attempts = max(1, self.auth_pool.size if self.auth_pool is not None else 1)
+        for attempt in range(attempts):
+            try:
+                response = await self.client.post(
+                    self._build_url(actual_model),
+                    headers={"x-goog-api-key": binding.lease.api_key},
+                    json=payload,
+                )
+                response.raise_for_status()
+                turn = self._tool_turn_from_response(response.json())
+                self._report_success(binding)
+                return turn
+            except httpx.HTTPStatusError as exc:
+                log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc)
+                next_binding = self._rotate_after_failure(
+                    binding,
+                    exc,
+                    attempt=attempt,
+                    attempts=attempts,
+                )
+                if next_binding is None:
+                    return ToolTurn(content=GEMINI_DEGRADED_REPLY)
+                binding = next_binding
+            except Exception as exc:
+                log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc)
+                return ToolTurn(content=GEMINI_DEGRADED_REPLY)
+        return ToolTurn(content=GEMINI_DEGRADED_REPLY)
 
     async def _stream_once(
         self,
