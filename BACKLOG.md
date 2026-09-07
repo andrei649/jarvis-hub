@@ -1280,8 +1280,14 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   `tests/test_owner_jobs.py` (22), `tests/test_jobs_routes.py` (4), plus CLI and chat rows.
   **Not proven on a running hub** (a real APScheduler firing at the wall-clock time, a real
   Telegram delivery) → [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P18**.
-- [ ] **HA-2b — the HUD Jobs panel** under Autonomy & Agents, wired to `/api/jobs` (the seven
-  routes sit on the parity gate's punch list until then), with the bundle rebuilt.
+- [x] ✅ **HA-2b — the HUD Jobs panel.** `frontend/src/panels/jobs.tsx` under Autonomy & Agents,
+  next to the NL-scheduling preview: lists every job with state, schedule and last outcome,
+  warns in amber when the scheduler is not running (a job list under a green chip while nothing
+  can fire would be a lie about the future), shows a self-paused job's `paused_reason` verbatim,
+  arms a blueprint with the owner's parameters, runs / pauses / resumes / deletes through the
+  admin routes with the backend's own refusal words, and lists a job's attempts. The seven
+  `/api/jobs` routes left the parity gate's punch list (10 again) and the bundle was rebuilt.
+  Tests: `frontend/src/panels/jobs.test.tsx` (4).
 - [ ] **HA-2c — follow-ups the engine surfaced:** `HeartbeatScheduler.start` passes cron's
   day-of-week (0 = Sunday) straight to APScheduler (0 = Monday), so every `cron:` heartbeat
   with a weekday field fires one day late — fix with `jobs.cron_kwargs`; quiet-hours and the

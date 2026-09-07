@@ -12,9 +12,10 @@
   the e-stop pauses every job; one firing per five minutes at most; 50 jobs, 200 runs each.
   cron's Sunday-based day-of-week is translated to APScheduler's Monday-based names.
 - Surface: `/api/jobs` (admin; list, blueprints, create, get, runs, pause, resume, run,
-  delete — route snapshots reseeded), `nerva jobs …`, and `/jobs` + `/remind <when> | <message>`
-  in chat. The HUD panel is the next commit; until then the routes sit on the parity gate's
-  punch list by name.
+  delete — route snapshots reseeded), `nerva jobs …`, `/jobs` + `/remind <when> | <message>`
+  in chat, and the **Jobs panel** in the HUD under Autonomy & Agents (list with state and
+  last outcome, an amber warning when the scheduler is down, blueprint arming, run / pause /
+  resume / delete with the backend's refusal words, attempts per job); bundle rebuilt.
 - Found on the way: `HeartbeatScheduler.start` passes cron's day-of-week field straight to
   APScheduler, so a weekday heartbeat fires a day late (BACKLOG HA-2c).
 - Tests: `tests/test_owner_jobs.py` (22), `tests/test_jobs_routes.py` (4), CLI and chat rows.

@@ -185,7 +185,7 @@ owner-ul să-și armeze propriul job. Cu galerie de blueprint-uri tipizate (brie
 de mail important, watch de preț) ca să nu ceară sintaxă cron. E singura capabilitate unde stiva de
 guvernanță nu e overhead, ci chiar produsul.
 
-**Livrat 2026-09-07 (motorul; panoul HUD urmează).** `agents/core/autonomy/jobs.py` — `JobStore`
+**Livrat 2026-09-07 (motorul și panoul HUD).** `agents/core/autonomy/jobs.py` — `JobStore`
 (SQLite) + `JobRunner` pe APScheduler-ul existent; patru acțiuni: `remind` (mesaj fix, fără
 model), `ask` (întrebare către un agent prin `Orchestrator.process`, cu un **notepad** păstrat între
 rulări ca jobul zilnic să raporteze ce s-a schimbat), `brief` (briefingul pe ora owner-ului), `task`
@@ -194,7 +194,10 @@ task; un job nu poate ocoli coada). Fiecare încercare e o rulare înregistrată
 consecutive pun jobul pe pauză singur și ridică **un** incident; e-stop-ul pune toate joburile pe
 pauză; prag de frecvență o dată la cinci minute. Cinci blueprint-uri (`morning_brief`,
 `evening_retro`, `reminder`, `ask_agent`, `inbox_watch`). Suprafață: `/api/jobs` (admin),
-`nerva jobs …`, `/jobs` și `/remind <când> | <mesaj>` în chat. Găsit pe drum: `HeartbeatScheduler`
+`nerva jobs …`, `/jobs` și `/remind <când> | <mesaj>` în chat, plus panoul **Jobs** din HUD (Autonomy
+& Agents: listă cu stare și ultimul rezultat, avertisment când scheduler-ul nu rulează, armare din
+blueprint, run/pause/resume/delete cu motivele de refuz ale backend-ului, încercările per job). Găsit
+pe drum: `HeartbeatScheduler`
 pasează câmpul day-of-week din cron (0 = duminică) direct la APScheduler (0 = luni) — heartbeat-urile
 pe zile lucrătoare trag cu o zi întârziere (BACKLOG HA-2c). Teste: `tests/test_owner_jobs.py` (22),
 `tests/test_jobs_routes.py` (4). *Nedovedit pe un hub viu* → `docs/OWNER_TASKS.md` **P18**.

@@ -41,6 +41,11 @@ def _runner():
     return getattr(orch, "jobs", None) if orch is not None else None
 
 
+def _refused(reason: str) -> JSONResponse:
+    """422 in the routers' agreed shape (`error`), plus the list form the first callers read."""
+    return JSONResponse({"error": reason, "errors": [reason]}, status_code=422)
+
+
 def _unavailable() -> JSONResponse:
     return JSONResponse({"error": "owner jobs are not available on this hub"}, status_code=503)
 
@@ -74,14 +79,11 @@ async def jobs_create(body: JobCreateBody):
             schedule_text = body.schedule_text or schedule_text
         else:
             if not body.name or not body.schedule_text or body.action is None:
-                return JSONResponse(
-                    {"errors": ["name, schedule_text and action are required (or a blueprint)"]},
-                    status_code=422,
-                )
+                return _refused("name, schedule_text and action are required (or a blueprint)")
             name, schedule_text, action = body.name, body.schedule_text, body.action
         job = runner.create(name=name, schedule_text=schedule_text, action=action, blueprint=body.blueprint)
     except ValueError as exc:
-        return JSONResponse({"errors": [str(exc)]}, status_code=422)
+        return _refused(str(exc))
     return nocache_json({"ok": True, "job": job.as_dict()}, status_code=201)
 
 

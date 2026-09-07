@@ -110,6 +110,7 @@ def test_bad_requests_are_422_with_reasons(hub):
     client, _orch, _tg = hub
     r = client.post("/api/jobs", json={"name": "x"}, headers=ADMIN)
     assert r.status_code == 422 and "required" in r.json()["errors"][0]
+    assert r.json()["error"].startswith("name, schedule_text and action")  # the routers' shape too
     r = client.post("/api/jobs", json={"name": "x", "schedule_text": "every minute", "action": {"type": "remind", "message": "m"}}, headers=ADMIN)
     assert r.status_code == 422 and "five minutes" in r.json()["errors"][0]
     r = client.post("/api/jobs", json={"blueprint": "nope"}, headers=ADMIN)

@@ -177,12 +177,12 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
-17 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
+10 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
 `UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`; it held 79 before this wave, and
-`tests/test_doc_reference_integrity.py` keeps this number honest). Seven of the 17 are the
-owner-jobs routes under `/api/jobs` added 2026-09-07 (Hermes absorption, wave 2a): the engine,
-the `nerva jobs` verbs and the chat commands shipped first, and the HUD panel that calls them is
-wave 2b on the same branch — those seven leave the list when it lands. Of the 61 at the start of the
+`tests/test_doc_reference_integrity.py` keeps this number honest). The owner-jobs routes under
+`/api/jobs` added 2026-09-07 (Hermes absorption, wave 2) were on this list for one commit — the
+engine, the `nerva jobs` verbs and the chat commands shipped first — and left it when the Jobs
+panel under Autonomy & Agents wired all of them. Of the 61 at the start of the
 reachability sprint, 49 left because a panel now genuinely calls them and 1 was never uncalled at
 all (`agents/web/*.html` was missing from the gate's client globs, so `brain.html` fetching
 `/api/brain/summary` did not count). The 11 that remain are each annotated on their entry with why:
