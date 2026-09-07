@@ -997,7 +997,7 @@ class _DisabledRuntime:
     def __init__(self):
         self.backends = []
 
-    def can_run(self, backend):
+    def can_run(self, backend, agent_id=None):
         self.backends.append(backend)
         return False
 
@@ -1322,7 +1322,7 @@ async def test_agent_generate_response_tool_mode_emits_only_final_answer_and_awa
         def __init__(self):
             self.calls = []
 
-        def can_run(self, backend):
+        def can_run(self, backend, agent_id=None):
             return True
 
         async def run(self, **kwargs):
@@ -1369,7 +1369,7 @@ async def test_agent_generate_response_tool_mode_does_not_emit_blank_final_answe
     runtime_response,
 ):
     class _EnabledRuntime:
-        def can_run(self, backend):
+        def can_run(self, backend, agent_id=None):
             return True
 
         async def run(self, **kwargs):
@@ -1665,7 +1665,7 @@ async def test_streamed_orchestrator_replaces_blank_tool_answer_once_and_awaits_
     runtime_response,
 ):
     class _BlankRuntime:
-        def can_run(self, backend):
+        def can_run(self, backend, agent_id=None):
             return True
 
         async def run(self, **kwargs):

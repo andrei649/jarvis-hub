@@ -1313,10 +1313,28 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   per-tool caps in the loop; automation demotion, lineage dedupe and admission records for
   transcript hits; session-persistent code kernels and `image_generate` (both need backends
   that do not exist yet).
-- [ ] **HA-3b — tool profiles.** Every agent on every surface is offered the whole allowlist;
-  least privilege means an inbound-channel turn should not even *see* `desktop_run`. Profile
-  key (agent × surface × principal), resolved before the tools are offered, snapshot-tested
-  the way `route_auth` is.
+- [x] ✅ **HA-3b — tool profiles: least privilege at the moment of offering.** Every agent on
+  every surface was offered the whole allowlist — a Telegram guest's turn, a heartbeat's turn
+  and the owner's HUD turn saw the same list, `desktop_run` included; mediation happened only
+  at execution, and a guest could still make the model propose a gated action that lands as a
+  card in the owner's inbox. `agents/core/tool_profiles.py` resolves a profile before the
+  tools are offered, keyed by agent × surface × principal: the surface from the channel the
+  turn's principal was bound with (`web`/`voice` → operator; any external channel, or an
+  `inbound` action origin → inbound; no principal → internal), the principal from it (owner /
+  guest / system). Default postures: the owner at the HUD gets everything; a guest at the HUD
+  or the voice loop, the owner on an inbound channel, and every unattended turn get the
+  ungated tools only (`llm.inbound_actuation` / `llm.internal_actuation` widen the last two
+  to the gated ones, each proposal still approval-bound); a guest on an inbound channel gets
+  `llm.guest_tools` (default `echo`, `time`) and never a gated tool. A per-agent `tools:`
+  list in `agents.yaml` (names or globs) narrows the posture and never widens it. A call to a
+  withheld tool is `tool_not_allowed` before it reaches the server; `can_run` says no when a
+  turn is offered nothing, so the agent answers on the plain path; a `tool_profile` event
+  names the surface, the principal and what was withheld. The resolved sets over the live
+  registry are pinned in `tests/_snapshots/tool_profiles.json` the way `route_auth.json` pins
+  route guards, with a test that no posture but operator/owner offers actuation by default.
+  Fails closed: an unreadable setting, an unknown surface or a resolver error offers nothing.
+  Tests: `tests/test_tool_profiles.py` (26). Proven against the coordinator's real
+  registry; **not proven with a live guest on a live channel** → P19.
 - [ ] **HA-4** — depth (adapter descriptor, MCP trust tiers, HUD mode, plugin SDK) — sequenced
   in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 

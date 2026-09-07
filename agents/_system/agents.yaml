@@ -21,6 +21,9 @@ jarvis:
 #     `CLAUDE_AGENTS` in `agents/core/llm/hybrid_router.py`, then the per-agent `llm_policy`
 #     key below; cloud credentials are ANTHROPIC_API_KEY / GEMINI_API_KEY in the environment.
 # `tests/test_agents_yaml_dead_config.py` keeps this file free of unread keys.
+# Optional per-agent `tools:` — names or glob patterns the model loop may offer that agent
+# (e.g. `tools: [file_*, session_search]`); it narrows the surface posture and never widens
+# it (`agents/core/tool_profiles.py`). Absent = whatever the posture allows.
 
 agents:
   jarvis:

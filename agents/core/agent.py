@@ -168,7 +168,7 @@ class Agent:
     ) -> str:
         """Generate through the optional tool loop or the legacy backend path."""
         runtime = self.tool_runtime
-        if runtime is not None and runtime.can_run(backend):
+        if runtime is not None and runtime.can_run(backend, agent_id=self.id):
             response = await runtime.run(
                 agent_id=self.id,
                 backend=backend,

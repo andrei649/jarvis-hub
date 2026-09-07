@@ -24,6 +24,22 @@
   `tests/test_tool_loop_repeats.py` (9). Not proven with a live model choosing the tools —
   `docs/OWNER_TASKS.md` P19.
 
+### Wave 2026-09-07 — Hermes absorption, wave 3b: tool profiles
+
+- **Least privilege at the moment of offering** (`agents/core/tool_profiles.py`). Every agent
+  on every surface was offered the whole ToolRPC allowlist; mediation happened only at
+  execution. A profile keyed by agent × surface × principal now decides what the model even
+  sees: the owner at the HUD keeps everything; a guest at the HUD or the voice loop, the owner
+  on an inbound channel and every unattended turn (heartbeats, jobs, workflows) get the
+  ungated tools only — `llm.inbound_actuation` / `llm.internal_actuation` widen those to the
+  gated, approval-bound ones; a guest on an inbound channel gets `llm.guest_tools` (default
+  `echo`, `time`) and never a gated tool. A per-agent `tools:` list in `agents.yaml` narrows
+  the posture and never widens it. A withheld tool is `tool_not_allowed` before the server;
+  a turn offered nothing never enters the loop; a `tool_profile` event names the surface, the
+  principal and what was withheld. The resolved sets over the live registry are pinned in
+  `tests/_snapshots/tool_profiles.json` (`python tests/test_tool_profiles.py --update`).
+- Tests: `tests/test_tool_profiles.py` (26).
+
 ### Wave 2026-09-07 — Hermes absorption, wave 2a: the owner's own scheduled jobs
 
 - **Owner-scheduled jobs** (`agents/core/autonomy/jobs.py`). Nerva parsed "every weekday at

@@ -23,6 +23,9 @@ logger = logging.getLogger("jarvis.agent_runtime")
 
 ToolEventSink = Callable[[dict[str, Any]], Any]
 GapSink = Callable[[dict[str, str]], Any]
+# (agent_id, tool metadata rows) -> (rows to offer, a decision object with surface /
+# principal / withheld for the event feed). See agents/core/tool_profiles.py.
+ToolProfileHook = Callable[[str, list[dict[str, Any]]], tuple[Any, Any]]
 
 _APPROVAL_REPLY = "I paused the tool loop because this action requires approval."
 _DEADLINE_REPLY = "I stopped the tool loop because it reached the safety deadline."
@@ -43,6 +46,11 @@ _REPEATED_NOTICE = (
 # failures of one tool end the turn with a named reply; a success resets the streak.
 _FAILURE_REPLY = "I stopped the tool loop because the same tool kept failing."
 _DEFAULT_FAILURE_LIMIT = 5
+# Hermes absorption 3b — the profile (agent × surface × principal) decides what is offered
+# before the model sees a tool list; a turn the profile leaves with nothing never enters the
+# loop (``can_run`` says no and the agent answers on the plain path).
+_NO_TOOLS_REPLY = "I can't use tools on this surface."
+_EVENT_WITHHELD_NAMES = 32
 # Hermes absorption 0.3 — in-turn compaction. The loop appends an assistant message and one
 # tool result per call for up to 32 iterations and never measured the growing list; at the
 # end the work was lost to a context overflow nobody had counted. The budget defaults to a
@@ -103,8 +111,10 @@ class AgentToolRuntime:
         compacted_result_bytes: int = 512,
         repeat_limit: int = _DEFAULT_REPEAT_LIMIT,
         failure_limit: int = _DEFAULT_FAILURE_LIMIT,
+        tool_profile: ToolProfileHook | None = None,
     ) -> None:
         self._server = server
+        self._tool_profile = tool_profile
         self._repeat_limit = _safe_int(repeat_limit, default=_DEFAULT_REPEAT_LIMIT, minimum=0)
         self._failure_limit = _safe_int(failure_limit, default=_DEFAULT_FAILURE_LIMIT, minimum=0)
         self._context_budget_tokens = context_budget_tokens
@@ -126,19 +136,39 @@ class AgentToolRuntime:
         self._blocked_event_sinks: dict[int, asyncio.Task[Any]] = {}
         self._event_lock = asyncio.Lock()
 
-    def can_run(self, backend: Any) -> bool:
-        """Fail closed unless the setting, backend, and allowlist are all live."""
+    def can_run(self, backend: Any, agent_id: str | None = None) -> bool:
+        """Fail closed unless the setting, backend, and allowlist are all live — and, when
+        the caller names the agent, unless this turn's profile offers it at least one tool."""
         try:
             self._prune_stragglers()
-            return bool(
+            live = bool(
                 not self._stragglers
                 and self._enabled()
                 and getattr(backend, "supports_tools", False)
                 and self._server.tools()
             )
+            if not live:
+                return False
+            if agent_id is None or self._tool_profile is None:
+                return True
+            offered, _decision = self._profiled(agent_id, self._server.tools())
+            return bool(offered)
         except Exception:
             logger.warning("agent tool runtime capability check failed closed")
             return False
+
+    def _profiled(
+        self, agent_id: str, metadata: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], Any]:
+        """Apply the turn's tool profile; a resolver failure offers nothing."""
+        if self._tool_profile is None:
+            return metadata, None
+        try:
+            offered, decision = self._tool_profile(agent_id, metadata)
+        except Exception:
+            logger.warning("tool profile resolution failed closed", exc_info=True)
+            return [], None
+        return [dict(tool) for tool in offered], decision
 
     async def run(
         self,
@@ -199,6 +229,24 @@ class AgentToolRuntime:
                         }
                     )
                 return _NO_CAPABILITY_REPLY
+        metadata, decision = self._profiled(agent_id, metadata)
+        if decision is not None:
+            await self._emit(
+                event_sink,
+                {
+                    "event": "tool_profile",
+                    "agent_id": _bounded_identity(agent_id),
+                    "surface": _bounded_identity(getattr(decision, "surface", "")),
+                    "principal": _bounded_identity(getattr(decision, "principal", "")),
+                    "offered": len(metadata),
+                    "withheld": [
+                        _bounded_identity(name)
+                        for name in tuple(getattr(decision, "withheld", ()))[:_EVENT_WITHHELD_NAMES]
+                    ],
+                },
+            )
+        if not metadata:
+            return _NO_TOOLS_REPLY
         tools = [
             ToolSpec(
                 name=tool["name"],
@@ -985,4 +1033,4 @@ def _is_explicit_capability_goal(prompt: Any) -> bool:
     return bool(_CAPABILITY_TERM_RE.search(candidate) and _CAPABILITY_ACTION_RE.search(candidate))
 
 
-__all__ = ["AgentToolRuntime", "GapSink", "ToolEventSink"]
+__all__ = ["AgentToolRuntime", "GapSink", "ToolEventSink", "ToolProfileHook"]

@@ -234,8 +234,27 @@ Rămân: stub-urile pentru rezultate identice și plafoanele per unealtă. Kerne
 persistente și `image_generate` sunt amânate — au nevoie de backend-uri care nu există încă. Teste:
 `tests/test_file_search.py` (14), `tests/test_session_search.py` (11),
 `tests/test_tool_loop_repeats.py` (9). *Nedovedit cu un model viu care alege uneltele* →
-`docs/OWNER_TASKS.md` **P19**. Urmează 3b: profilurile de unelte (agent × suprafață × principal)
-— azi fiecare agent, pe fiecare suprafață, vede întreaga listă.
+`docs/OWNER_TASKS.md` **P19**.
+
+**Livrat 2026-09-07 (3b — profilurile de unelte).** `agents/core/tool_profiles.py` — privilegiu
+minim *în momentul oferirii*, nu doar al execuției: fiecare agent, pe fiecare suprafață, vedea
+întreaga listă (inclusiv `desktop_run`), iar un musafir pe Telegram putea face modelul să propună o
+acțiune gated care ajungea card în inbox-ul owner-ului. Profilul e rezolvat înainte ca modelul să
+vadă lista, cu cheia agent × suprafață × principal: suprafața din canalul cu care s-a legat
+principalul turei (`web`/`voice` → operator; orice canal extern sau o origine `inbound` → inbound;
+fără principal → internal), principalul din același loc (owner / guest / system). Posturi implicite:
+owner-ul la HUD primește tot; un musafir la HUD sau pe voce, owner-ul pe un canal inbound și orice
+tură fără om (heartbeat, job, workflow) primesc doar uneltele ne-gated (`llm.inbound_actuation` /
+`llm.internal_actuation` le lărgesc la cele gated, fiecare propunere rămânând sub aprobare); un
+musafir pe canal inbound primește `llm.guest_tools` (implicit `echo`, `time`) și niciodată o
+unealtă gated. `tools:` per agent în `agents.yaml` (nume sau glob-uri) îngustează postura și nu o
+lărgește niciodată. Un apel la o unealtă reținută e `tool_not_allowed` înainte de server; o tură
+căreia nu i se oferă nimic nu intră în buclă; un eveniment `tool_profile` spune suprafața,
+principalul și ce s-a reținut. Seturile rezolvate peste registrul viu sunt fixate în
+`tests/_snapshots/tool_profiles.json` ca `route_auth.json` pentru rute, cu un test că nicio postură
+în afară de operator/owner nu oferă actuare implicit. Teste: `tests/test_tool_profiles.py` (26).
+Dovedit pe registrul real al coordonatorului; *nedovedit cu un musafir viu pe un canal viu* →
+**P19**.
 
 ## Valul 4 — adâncime
 

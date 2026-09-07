@@ -712,7 +712,11 @@ built on your Windows box:
       "kept repeating the same tool call", not with the 8-turn safety limit. If the model never
       picks the tools at all, that is a prompt-catalogue finding (`HA-0.2`), not a tool one.
       Windows: the search skips symlinks and secret names by the same rules but only Linux ran
-      the tests — confirm once on a real workspace there.
+      the tests — confirm once on a real workspace there. Last, the profile (`HA-3b`): from a
+      Telegram account that is *not* on the owner allowlist, ask the same "which file mentions
+      …" question — the tool feed must show a `tool_profile` event with `inbound / guest` and
+      `file_search` among the withheld names, and the reply must not contain the file's words;
+      the same question from the owner's Telegram account must search.
 
 ## Parking lot (decisions, no rush)
 
