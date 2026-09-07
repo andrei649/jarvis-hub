@@ -59,11 +59,23 @@ MAX_FAILURES = 3
 MAX_FIRES_PER_DAY = 288  # one firing per five minutes, at most
 ACTION_TYPES = ("remind", "ask", "brief", "task")
 _ACTION_KEYS = {
-    "remind": {"type", "message", "channel"},
-    "ask": {"type", "prompt", "agent", "deliver"},
-    "brief": {"type", "kind"},
+    "remind": {"type", "message", "channel", "urgent"},
+    "ask": {"type", "prompt", "agent", "deliver", "urgent"},
+    "brief": {"type", "kind", "urgent"},
     "task": {"type", "kind", "title", "payload", "risk_tier"},
 }
+# Quiet hours (Hermes absorption 4e): a job's message that would land in the owner's
+# night is held and delivered when the night ends; an ``urgent`` one may still go, but it
+# spends the same daily interrupt budget every other night-time push spends (MOONSHOT §5:
+# at most a handful of urgent pushes a day). Held messages are bounded per job — the
+# newest are kept — and the flush runs every few minutes on the same scheduler.
+MAX_HELD_PER_JOB = 20
+HELD_FLUSH_MINUTES = 5
+HELD_FLUSH_JOB_ID = "jobs-held-flush"
+QUIET_START_SETTING = "ambient.quiet_hours_start"
+QUIET_END_SETTING = "ambient.quiet_hours_end"
+DEFAULT_QUIET_START = 22
+DEFAULT_QUIET_END = 7
 _CRON_RE = re.compile(r"^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*$")
 _DOW_NAMES = ("sun", "mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
@@ -119,6 +131,23 @@ class Job:
             "notepad": self.notepad,
             "paused_reason": self.paused_reason,
             "runnable": self.runnable,
+        }
+
+
+@dataclass(frozen=True)
+class HeldDelivery:
+    """A job's message waiting for the owner's quiet hours to end."""
+
+    id: int
+    job_id: str
+    text: str
+    channel: str | None
+    created_at: str
+
+    def as_dict(self) -> dict:
+        return {
+            "id": self.id, "job_id": self.job_id, "channel": self.channel,
+            "created_at": self.created_at, "chars": len(self.text),
         }
 
 
@@ -267,6 +296,8 @@ def validate_action(action: Any) -> list[str]:
         elif len(value) > MAX_TEXT:
             errors.append(f"action.{key} is longer than {MAX_TEXT} characters")
 
+    if "urgent" in action and not isinstance(action["urgent"], bool):
+        errors.append("action.urgent must be true or false")
     if kind == "remind":
         _text("message", required=True)
         _text("channel", required=False)
@@ -417,6 +448,12 @@ class JobStore:
                 )"""
             )
             self._conn.execute("CREATE INDEX IF NOT EXISTS job_runs_job ON job_runs(job_id, id)")
+            self._conn.execute(
+                """CREATE TABLE IF NOT EXISTS job_held (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL,
+                    text TEXT NOT NULL, channel TEXT, created_at TEXT NOT NULL
+                )"""
+            )
             self._conn.commit()
 
     def close(self) -> None:
@@ -566,6 +603,42 @@ class JobStore:
             self._conn.commit()
         return JobRun(run_id, str(job_id), started_at, finished_at, status, summary, error)
 
+    # held deliveries (quiet hours) ---------------------------------------
+
+    def hold(self, job_id: str, text: str, channel: str | None) -> int:
+        """Keep *text* for delivery after quiet hours; the newest MAX_HELD_PER_JOB stay."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "INSERT INTO job_held (job_id, text, channel, created_at) VALUES (?, ?, ?, ?)",
+                (str(job_id), str(text or "")[:MAX_TEXT], channel, utc_now()),
+            )
+            held_id = int(cursor.lastrowid)
+            self._conn.execute(
+                """DELETE FROM job_held WHERE job_id = ? AND id NOT IN (
+                       SELECT id FROM job_held WHERE job_id = ? ORDER BY id DESC LIMIT ?)""",
+                (str(job_id), str(job_id), MAX_HELD_PER_JOB),
+            )
+            self._conn.commit()
+        return held_id
+
+    def held(self, limit: int = 100) -> list[HeldDelivery]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM job_held ORDER BY id ASC LIMIT ?", (max(1, int(limit)),)
+            ).fetchall()
+        return [HeldDelivery(int(r["id"]), r["job_id"], r["text"], r["channel"], r["created_at"]) for r in rows]
+
+    def held_count(self) -> int:
+        with self._lock:
+            row = self._conn.execute("SELECT COUNT(*) AS n FROM job_held").fetchone()
+        return int(row["n"]) if row else 0
+
+    def release(self, held_id: int) -> bool:
+        with self._lock:
+            cursor = self._conn.execute("DELETE FROM job_held WHERE id = ?", (int(held_id),))
+            self._conn.commit()
+        return cursor.rowcount > 0
+
     def runs(self, job_id: str, limit: int = 20) -> list[JobRun]:
         limit = max(1, min(int(limit), MAX_RUNS_KEPT))
         with self._lock:
@@ -592,11 +665,14 @@ class JobRunner:
         orch: Any,
         scheduler: Callable[[], Any],
         now: Callable[[], float] = time.time,
+        quiet: Callable[[], bool] | None = None,
     ) -> None:
         self.store = store
         self._orch = orch
         self._scheduler = scheduler
         self._now = now
+        # Test seam; production reads the ambient quiet-hours window per call.
+        self._quiet = quiet
 
     # scheduler --------------------------------------------------------------
 
@@ -631,7 +707,23 @@ class JobRunner:
         for job in self.store.list():
             if job.runnable and self.register(job):
                 registered += 1
+        self.register_flush()
         return registered
+
+    def register_flush(self) -> bool:
+        """The periodic pass that delivers held messages once quiet hours end."""
+        sched = self._scheduler()
+        if sched is None:
+            return False
+        sched.add_job(
+            self.flush_held,
+            "interval",
+            minutes=HELD_FLUSH_MINUTES,
+            id=HELD_FLUSH_JOB_ID,
+            replace_existing=True,
+            misfire_grace_time=300,
+        )
+        return True
 
     def registered_ids(self) -> list[str]:
         sched = self._scheduler()
@@ -652,6 +744,8 @@ class JobRunner:
             "jobs": len(jobs),
             "runnable": sum(1 for job in jobs if job.runnable),
             "paused": sum(1 for job in jobs if job.paused_reason),
+            "held": self.store.held_count(),
+            "quiet_hours": self.quiet_hours(),
         }
 
     # lifecycle --------------------------------------------------------------
@@ -759,12 +853,15 @@ class JobRunner:
     async def _execute(self, job: Job) -> tuple[str, str | None]:
         action = job.action
         kind = action.get("type")
+        urgent = action.get("urgent") is True
         if kind == "remind":
-            delivered = await self._deliver(str(action.get("message", "")), action.get("channel"))
+            delivered = await self._deliver(
+                str(action.get("message", "")), action.get("channel"), job=job, urgent=urgent,
+            )
             return f"reminder {delivered}", None
         if kind == "brief":
             text = await self._brief(str(action.get("kind", "morning")))
-            delivered = await self._deliver(text, None)
+            delivered = await self._deliver(text, None, job=job, urgent=urgent)
             return f"{action.get('kind')} brief {delivered}", None
         if kind == "ask":
             return await self._ask(job, action)
@@ -788,7 +885,7 @@ class JobRunner:
             raise RuntimeError("the agent returned no answer (no model backend, or a degraded reply)")
         summary = reply[:MAX_TEXT]
         if action.get("deliver", True):
-            delivered = await self._deliver(reply, None)
+            delivered = await self._deliver(reply, None, job=job, urgent=action.get("urgent") is True)
             summary = f"[{delivered}] {summary}"[:MAX_TEXT]
         return summary, reply[:MAX_NOTEPAD]
 
@@ -817,8 +914,82 @@ class JobRunner:
         )
         return f"queued task #{task_id} for the autonomy policy to decide"
 
-    async def _deliver(self, text: str, channel: str | None) -> str:
-        """Send *text* to the owner; returns a summary fragment, raises when it cannot."""
+    # quiet hours ------------------------------------------------------------
+
+    def quiet_hours(self) -> bool:
+        """True while a job's message should wait rather than wake the owner."""
+        if self._quiet is not None:
+            try:
+                return bool(self._quiet())
+            except Exception:
+                return False
+        from .schedule_runtime import is_night
+
+        get_setting = getattr(self._orch, "get_setting", None)
+
+        def _hour(key: str, default: int) -> int:
+            try:
+                value = get_setting(key, default) if callable(get_setting) else default
+                return int(value) % 24
+            except (TypeError, ValueError):
+                return default
+
+        return is_night(
+            time.localtime(self._now()).tm_hour,
+            start=_hour(QUIET_START_SETTING, DEFAULT_QUIET_START),
+            end=_hour(QUIET_END_SETTING, DEFAULT_QUIET_END),
+        )
+
+    def _spend_interrupt(self, job: Job) -> bool:
+        """One unit of the owner's daily interrupt budget, or False when there is none left
+        (or no budget at all — an urgent push with nothing to account for it waits)."""
+        autonomy = getattr(self._orch, "autonomy", None)
+        budget = getattr(autonomy, "budget", None)
+        consume = getattr(budget, "consume", None)
+        if not callable(consume):
+            return False
+        try:
+            return bool(consume(delivery_id=f"job-{job.id}-{int(self._now())}", channel_class="job"))
+        except Exception:
+            logger.warning("job interrupt budget could not be consulted; holding", exc_info=True)
+            return False
+
+    async def flush_held(self) -> int:
+        """Deliver held messages once quiet hours are over. Returns how many went out;
+        the first refusal stops the pass so nothing is delivered out of order."""
+        if self.quiet_hours():
+            return 0
+        delivered = 0
+        for item in self.store.held():
+            try:
+                fragment = await self._send(item.text, item.channel)
+            except Exception as exc:
+                logger.warning("held job message could not be delivered: %s", exc)
+                break
+            self.store.release(item.id)
+            now = utc_now()
+            self.store.record_run(
+                item.job_id, started_at=now, finished_at=now, status=STATUS_OK,
+                summary=f"{fragment} from hold (held since {item.created_at})",
+            )
+            delivered += 1
+        return delivered
+
+    async def _deliver(self, text: str, channel: str | None, *, job: Job | None = None,
+                       urgent: bool = False) -> str:
+        """Send *text* to the owner, or hold it through quiet hours; returns a summary
+        fragment, raises when it cannot send."""
+        if job is not None and self.quiet_hours():
+            if urgent and self._spend_interrupt(job):
+                fragment = await self._send(text, channel)
+                return f"{fragment} (urgent, during quiet hours)"
+            self.store.hold(job.id, text, channel)
+            if urgent:
+                return "held until quiet hours end (interrupt budget spent)"
+            return "held until quiet hours end"
+        return await self._send(text, channel)
+
+    async def _send(self, text: str, channel: str | None) -> str:
         import os
 
         channel = (channel or "telegram").strip().lower()

@@ -697,7 +697,13 @@ built on your Windows box:
       `paused_reason` starting with "3 consecutive failures", `problems.jsonl` must carry one
       `E_JOB_PAUSED` line, not three, and `nerva jobs resume <id>` must put it back. Delete the
       test jobs afterwards. If a weekday job fires on the wrong day, that is the cron→APScheduler
-      day-of-week translation — file it against `jobs.cron_kwargs`.
+      day-of-week translation — file it against `jobs.cron_kwargs`. Then the night (`HA-4e`):
+      arm a reminder for a time inside your quiet hours (`ambient.quiet_hours_start` / `_end`,
+      default 22–07) — nothing must arrive at that hour, `nerva jobs list` must say "1 held for
+      quiet hours", and within five minutes after the window ends the message must arrive with a
+      run that says "from hold (held since …)". Arm the same reminder with `"urgent": true` in
+      the action: it must arrive at night and `GET /api/autonomy/status` must show one less
+      interrupt in the day's budget; with the budget at zero it must be held like the rest.
 
 - [ ] **P19 — The model's hands on a live loop** *(covers `HA-3a`)*
       `file_search`, `session_search` and the two loop breakers are proven against fakes and

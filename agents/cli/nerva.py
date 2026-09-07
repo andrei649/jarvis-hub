@@ -529,6 +529,8 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(
             f"scheduler {'alive' if scheduler.get('alive') else 'NOT RUNNING'} — "
             f"{scheduler.get('runnable', 0)} runnable, {scheduler.get('paused', 0)} paused"
+            + (f", {scheduler['held']} held for quiet hours" if scheduler.get("held") else "")
+            + (" — quiet hours now" if scheduler.get("quiet_hours") else "")
         )
         for job in reply.get("jobs") or []:
             state = "paused" if job.get("paused_reason") else ("on" if job.get("enabled") else "off")

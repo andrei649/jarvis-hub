@@ -207,7 +207,11 @@ def no_estop(monkeypatch):
 
 def _runner(store, orch, scheduler=None):
     scheduler = scheduler or _Scheduler()
-    return JobRunner(store, orch=orch, scheduler=lambda: scheduler, now=lambda: 1000.0), scheduler
+    # Delivery, not quiet hours, is what these tests are about (tests/test_job_quiet_hours.py
+    # covers the night); the frozen clock would otherwise read as 00:16 and hold everything.
+    runner = JobRunner(store, orch=orch, scheduler=lambda: scheduler, now=lambda: 1000.0,
+                       quiet=lambda: False)
+    return runner, scheduler
 
 
 @pytest.mark.asyncio
@@ -224,7 +228,10 @@ async def test_a_reminder_is_delivered_and_recorded(store, no_estop):
     after = store.get(job.id)
     assert after.last_status == "ok" and after.consecutive_failures == 0 and after.last_run_at
     assert [r.status for r in store.runs(job.id)] == ["ok"]
-    assert runner.snapshot() == {"alive": True, "registered": [job.id], "jobs": 1, "runnable": 1, "paused": 0}
+    assert runner.snapshot() == {
+        "alive": True, "registered": [job.id], "jobs": 1, "runnable": 1, "paused": 0,
+        "held": 0, "quiet_hours": False,
+    }
 
 
 @pytest.mark.asyncio
@@ -358,8 +365,10 @@ def test_register_all_puts_only_runnable_jobs_on_the_scheduler(store):
     a = store.create(name="a", schedule_text="every day at 9", action=REMIND)
     b = store.create(name="b", schedule_text="every day at 10", action=REMIND)
     store.pause(b.id, "x")
-    assert runner.register_all() == 1 and list(scheduler.jobs) == [f"job-{a.id}"]
-    assert runner.delete(a.id) is True and scheduler.jobs == {}
+    assert runner.register_all() == 1
+    assert [j for j in scheduler.jobs if j.startswith("job-")] == [f"job-{a.id}"]
+    assert runner.delete(a.id) is True
+    assert [j for j in scheduler.jobs if j.startswith("job-")] == []   # the flush pass stays
     assert runner.snapshot()["alive"] is True
 
 

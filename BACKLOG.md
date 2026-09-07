@@ -1293,9 +1293,8 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   `cron:` heartbeat with a weekday field fired one day late; it now goes through
   `jobs.cron_kwargs`, the one translation, and a cron the translator refuses (a day-of-week
   digit outside 0–7 used to be an `IndexError`) skips that heartbeat with a warning instead
-  of taking the scheduler down. Tests: `tests/test_heartbeat_cron_dow.py` (2). Still open
-  from the same finding: quiet hours and the interrupt budget for job deliveries (today a
-  job delivers directly, like the digest).
+  of taking the scheduler down. Tests: `tests/test_heartbeat_cron_dow.py` (2). The other
+  half of the finding — quiet hours and the interrupt budget for job deliveries — is HA-4e.
 - [x] ✅ **HA-3a — the model's hands.** `file_search` (`agents/core/file_tools.py`, same
   `JARVIS_FILE_TOOLS` flag): a literal content search with exactly `file_read`'s containment —
   the roots, no symlink followed, secret-looking names skipped and counted, binaries and
@@ -1400,10 +1399,21 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   `markdown` × 2,000, and both send rendered, chunked text in order (the Discord reply path
   too). Tests: `tests/test_channel_render_slack_discord.py` (5). Not proven on a real Slack or
   Discord — the P20 procedure applies to whichever the owner uses.
-- [ ] **HA-4e** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
-  now say they can), an `ntfy` push channel for approvals away from the HUD, quiet hours for
-  job deliveries, HUD mode on desktop, the plugin SDK — sequenced in
-  [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+- [x] ✅ **HA-4e — a job does not wake the owner.** A job delivered straight to Telegram at
+  whatever hour it fired. Now a message that would land in the owner's night (the ambient
+  quiet-hours window, `ambient.quiet_hours_start` / `_end`, default 22–07) is **held** in the
+  jobs store (`job_held`, the newest 20 per job) and delivered by a flush pass that runs every
+  five minutes on the same scheduler once the night ends — in order, the first refusal stops
+  the pass so nothing is lost or reordered, every delivery from hold is a recorded run naming
+  when it was held. An action marked `urgent: true` may still go at night, but it spends the
+  same daily interrupt budget every other night-time push spends (`autonomy.interrupt_budget`,
+  MOONSHOT §5) and waits when there is none left — or none at all. Daytime delivery is
+  unchanged and costs no budget. `GET /api/jobs` and `nerva jobs list` show what is held and
+  whether it is quiet hours now (the HUD panel does not yet). Tests:
+  `tests/test_job_quiet_hours.py` (9). Not proven on a wall clock — P18 gained the night case.
+- [ ] **HA-4f** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
+  now say they can), an `ntfy` push channel for approvals away from the HUD, HUD mode on
+  desktop, the plugin SDK — sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the

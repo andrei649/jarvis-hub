@@ -99,6 +99,16 @@
   2,000; Slack chunks at 40,000. Both adapters declare their descriptor and send in order.
 - Tests: `tests/test_channel_render_slack_discord.py` (5).
 
+### Wave 2026-09-07 — Hermes absorption, wave 4e: a job does not wake the owner
+
+- **Quiet hours for job deliveries** (`agents/core/autonomy/jobs.py`). A job's message that
+  would land in the owner's night (the ambient quiet-hours window) is held and delivered by
+  a flush pass once the night ends — in order, nothing lost, every delivery from hold a
+  recorded run. An `urgent: true` action may still go at night but spends the daily
+  interrupt budget, and waits when there is none. Daytime delivery is unchanged. The jobs
+  snapshot and `nerva jobs list` show what is held and whether it is quiet hours now.
+- Tests: `tests/test_job_quiet_hours.py` (9).
+
 ### Wave 2026-09-07 — Hermes absorption, wave 2a: the owner's own scheduled jobs
 
 - **Owner-scheduled jobs** (`agents/core/autonomy/jobs.py`). Nerva parsed "every weekday at

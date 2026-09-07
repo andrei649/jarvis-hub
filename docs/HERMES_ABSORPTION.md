@@ -319,8 +319,21 @@ Telegram real* → **P22**.
 identitate `markdown` pentru Discord, care redă singur Markdown; `SlackChannel` declară
 `slack_mrkdwn` × 40.000, `DiscordChannel` `markdown` × 2.000, și ambele trimit text redat și
 împărțit, în ordine (și calea de răspuns Discord). Teste:
-`tests/test_channel_render_slack_discord.py` (5). Rămân în 4e: streaming prin editări pe
-Slack/Discord, `ntfy`, ore de liniște pentru joburi, HUD mode, SDK-ul de plugin-uri.
+`tests/test_channel_render_slack_discord.py` (5).
+
+**Livrat 2026-09-07 (4e — un job nu trezește owner-ul).** Un job livra direct pe Telegram la
+orice oră trăgea. Acum un mesaj care ar ateriza în noaptea owner-ului (fereastra de liniște
+ambientală, `ambient.quiet_hours_start` / `_end`, implicit 22–07) e **reținut** în store-ul de
+joburi (`job_held`, cele mai noi 20 per job) și livrat de o trecere de flush care rulează la
+cinci minute pe același scheduler odată ce noaptea se termină — în ordine, primul refuz oprește
+trecerea ca nimic să nu se piardă sau să se inverseze, fiecare livrare din reținere e un run
+înregistrat care spune de când era reținut. O acțiune marcată `urgent: true` poate pleca și
+noaptea, dar consumă același buget zilnic de întreruperi ca orice altă notificare nocturnă
+(`autonomy.interrupt_budget`, MOONSHOT §5) și așteaptă când nu mai e — sau nu există deloc.
+Livrarea de zi e neschimbată și nu costă buget. `GET /api/jobs` și `nerva jobs list` arată ce e
+reținut și dacă e ora de liniște (panoul HUD încă nu). Teste: `tests/test_job_quiet_hours.py`
+(9). *Nedovedit pe ceasul de perete* → P18 a primit cazul de noapte. Rămân în 4f: streaming
+prin editări pe Slack/Discord, `ntfy`, HUD mode, SDK-ul de plugin-uri.
 
 ---
 
