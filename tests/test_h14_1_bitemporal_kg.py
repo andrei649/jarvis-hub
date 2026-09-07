@@ -96,3 +96,22 @@ def test_endpoints():
         assert any(f["object"] == "Cluj" for f in asof.json()["facts"])
         hist = c.get("/api/kg/facts/history", params={"subject": "tkg"})
         assert hist.status_code == 200 and len(hist.json()["history"]) == 1
+
+
+def test_nerva_e2_1_epistemic_status_on_every_observation():
+    """E2.1 (owner-decided 2026-09-01). Three ways of knowing fail differently,
+    so a silent default of "observed" would relabel every inference and every
+    simulation as evidence. The checks live in `tests/_nerva_e2_1_checks.py` and
+    are invoked here to stay count-neutral for the wave's accounting."""
+    from tests._nerva_e2_1_checks import run_e2_1_checks
+
+    assert run_e2_1_checks() >= 9
+
+
+def test_nerva_e3_2_an_admission_reason_for_every_recall_decision():
+    """E3.2 (owner-decided 2026-09-01). A dropped hit is invisible by
+    construction — a missing memory, a stale one and a deliberately withheld one
+    all look identical — so every recall decision records why."""
+    from tests._nerva_e3_2_checks import run_e3_2_checks
+
+    assert run_e3_2_checks() >= 12

@@ -170,6 +170,26 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **Two Nerva-2.0 contracts that had no code now have some.** **E2.1** puts
+  `epistemic_status` on every `nerva.observation.v1` — `observed` / `inferred` / `simulated` — because
+  the three fail differently: an observation is wrong only if its source was, an inference is wrong if
+  any input *or* the reasoning was and chains of them compound both, and a simulation is never evidence
+  about the world whatever it looks like. It is a **required** field with no default, since a default
+  of `observed` would silently relabel every inference and every simulation as evidence — exactly at
+  the moments that is most dangerous (bulk imports, backfills, a projection written in a hurry). The
+  projection policy has to *declare* it, and it sits **inside the integrity hash**, because a status
+  changeable without breaking the hash would let a simulation be relabelled and still verify, which is
+  worse than no field at all. **E3.2** records why each recalled fact was let in or held back
+  (`agents/core/memory/recall_admission.py`, wired into `MemorySearchTool.search`). The question it
+  answers is not "why did Nerva say that" but **"why did it not use the thing I told it"** — a dropped
+  hit is invisible by construction, and a missing memory, a stale one and a deliberately withheld one
+  look identical. Closed vocabulary, no `rejected_other`: `admitted` is a reason rather than an
+  absence; taint and privacy stay **different** reasons ("this might attack you" vs "this is not yours
+  to see"); and `abstained` is **not** a rejection, because "we could not decide" and "we decided no"
+  call for different fixes and folding one into the other hides a broken check as a policy. The trail
+  carries a reference, never the recalled text. Both are `evaluation_only` — a record that could also
+  grant would be a second, quieter admission path, and the one nobody reviews because it looks like
+  logging. 21 checks; `docs/nerva2/ATLAS_E2_1.md`, `docs/nerva2/EPISODES_E3_2.md`.
 - **Nerva's own identity became a governed record (E4.1 / #1008).** Every other governed thing
   here is a *capability* — something Nerva may or may not do to the world. This is the one record
   about Nerva itself: name, purpose, values, stance on truthfulness, boundaries, traits, the roles

@@ -40,6 +40,14 @@ RecallFn = Callable[[str, int], list]
 PlannerFn = Callable[[str, list], dict]
 
 
+from agents.core.memory.recall_admission import (
+    RecallAdmission,
+    admit,
+    reject,
+    summarise,
+)
+
+
 def _sanitize_hit(hit: dict) -> dict:
     """CDX-7 follow-up: scan a retrieved hit and **redact** it if the injection
     scanner flags it. Retrieved memory is untrusted data — a stored string (or one
@@ -86,6 +94,25 @@ def _hit_tainted(hit) -> bool:
     return taint.is_untrusted_source(hit.get("source") or provenance_from_hit(hit).source)
 
 
+
+def _admission_for(hit) -> RecallAdmission:
+    """Which admission reason this hit's existing verdicts amount to.
+
+    Order matters and is not arbitrary: a hit that is BOTH tainted and redacted
+    is recorded as ``rejected_taint``, because taint is why it was withheld and
+    redaction is how. Recording the "how" would say what happened to the text
+    while leaving the reason — the part a person acts on — unstated.
+    """
+    if _hit_tainted(hit):
+        return reject(hit, "rejected_taint", "untrusted source or injection flag")
+    if isinstance(hit, dict) and hit.get("injection_flagged"):
+        # Flagged but not tainted: the text was redacted, and the hit itself is
+        # still used. `redacted` says so rather than the reason pretending it was
+        # withheld.
+        return admit(hit, redacted=True)
+    return admit(hit)
+
+
 class MemorySearchTool:
     """Wraps a recall function as the callable `search_memory` tool."""
 
@@ -117,8 +144,21 @@ class MemorySearchTool:
             # SEC-B5: the model is about to read untrusted recalled memory — same
             # turn-scoped escalation the prompt-string recall path raises.
             mark_turn_recall_tainted()
+
+        # E3.2 — record WHY each hit was let in or held back. Evaluation-only:
+        # this admits nothing that was not already admitted and blocks nothing
+        # that was not already blocked; it names the decision the rules above
+        # just made. Without it a redacted hit is invisible, and "why did Nerva
+        # not use the thing I told it" has no answer at all.
+        admissions = [_admission_for(h) for h in hits]
         self.calls.append({"query": query, "count": len(hits)})
-        return {"query": query, "hits": hits, "count": len(hits)}
+        return {
+            "query": query,
+            "hits": hits,
+            "count": len(hits),
+            "admissions": [a.as_dict() for a in admissions],
+            "admission_summary": summarise(admissions),
+        }
 
 
 def agentic_search(

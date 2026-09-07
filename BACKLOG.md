@@ -203,6 +203,22 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+- [ ] 🔨 **B3 / #731 criteria 5 + E3 #761 — E2.1 epistemic status, E3.2 recall admissions.**
+  `AtlasObservation.epistemic_status` ∈ {observed, inferred, simulated} + `agents/core/memory/recall_admission.py`.
+  **E2.1:** the three ways of knowing fail differently, so the field is **required with no default** —
+  a default of `observed` relabels every inference and simulation as evidence, precisely during bulk
+  imports and backfills. The projection policy must *declare* it, and it is **inside the integrity
+  hash** (a status changeable without breaking the hash lets a simulation be relabelled and still
+  verify — worse than no field). **E3.2:** every recall decision records a reason from a **closed**
+  vocabulary, because the question that needs answering is *"why did it not use the thing I told it"*
+  and a dropped hit is invisible by construction. No `rejected_other`; `admitted` is a reason not an
+  absence; taint ≠ privacy; **abstained ≠ rejected**. The trail carries a reference, never the recalled
+  text. Both `evaluation_only`: no floor moves. 21 checks (count-neutral, invoked from
+  `tests/test_h14_1_bitemporal_kg.py`); four rules red-proven. `docs/nerva2/ATLAS_E2_1.md`,
+  `docs/nerva2/EPISODES_E3_2.md`.
+  **🔨 not ✅:** delivered, not program-accepted — the E2/E3 gates need an attestation from a reviewer
+  distinct from the builder.
+
 - [ ] 🔨 **B3 / #731 — Identity Manifest (#1008), E4.1.** `agents/core/identity_manifest.py` +
   `docs/nerva2/IDENTITY_E4_1.md`. The one governed record about **Nerva itself** rather than about a
   capability. The argument for governing it: *a system that can silently rewrite what it says its
