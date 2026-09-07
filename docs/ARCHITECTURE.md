@@ -606,6 +606,18 @@ Key env vars loaded at startup:
 - **Orchestrator instantiation trick:** Avoid `Orchestrator(config)` in ordinary unit tests (heavy init). Use `Orchestrator.__new__(Orchestrator)` + manual attribute assignment, or mock the heavy dependencies. The capability readiness matrix is the deliberate exception: it boots a cached real orchestrator because it is testing registry truth, not a unit seam.
 - **Where new tests go:** `tests/test_<module_name>.py`. Use `conftest.py:make_app` for lightweight FastAPI apps with fallback routes.
 - **Run tests:** `pytest -q` from repo root.
+- **Browser lane (`frontend/e2e/`, Playwright):** opt-in (`npm run e2e`), never part of `npm test`.
+  It exists for the assertions jsdom cannot make — the Neural Mesh canvas painting real pixels,
+  grid reachability at real viewport sizes, and the service worker's Cache Storage
+  (`pwa.spec.ts`, the one file that opts back into `serviceWorkers: 'allow'`; the config blocks
+  them lane-wide and says why). Type-checked separately by `npm run typecheck:e2e` — the root
+  `tsconfig.json` has `include: ["src"]`, so nothing else parses these files.
+- **Footage lane:** `frontend/e2e/footage.spec.ts` records the `TEASER_PACK.md` §6 marketing shots
+  off the real HUD; run it via `node scripts/hud_footage.mjs` and see
+  `docs/marketing/FOOTAGE_RUNBOOK.md`. Gated twice — the `footage` Playwright project exists only
+  under `FOOTAGE=1`, and every other project carries `testIgnore: /footage\.spec\.ts$/` — so no
+  ordinary run records video. It gates nothing; it is a capture tool that asserts the shot list's
+  honesty rule (exactly two sources, `live` and `demo`, each proved in its own direction).
 
 ### Branch / PR workflow
 

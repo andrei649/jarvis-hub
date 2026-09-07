@@ -211,6 +211,37 @@ default: every new capability is off behind its own flag.
   exactly like a found secret, the most alarming possible message for a transient network error.
   It retries now (5 attempts, `--retry-all-errors`, a connect timeout). The pinned checksum is
   what makes retrying safe: a truncated or substituted download still fails, loudly, on the hash.
+- **The service worker is finally tested by a browser, and the shot list got a camera.**
+  `playwright.config.ts` has blocked service workers lane-wide since the webkit investigation, and
+  its comment ended with an explicit handoff: *"if a real PWA spec is ever added it should opt back
+  in with `test.use({ serviceWorkers: 'allow' })`."* `frontend/e2e/pwa.spec.ts` is that spec, and it
+  does exactly that — file-scoped, so the block stays global. It waits for the worker to reach
+  `activated`, **reloads** so the client is genuinely *controlled* (the state in which any of this
+  means anything), and then reads Cache Storage back. The assertion with teeth is that **no `/api/`
+  path is ever in it** — stated negatively *and* positively, so it cannot pass on an empty cache —
+  because `sw-v2.js` keeps personal data out by **omission**, and an omission is invisible in
+  review: one `respondWith` branch added a line too high would inherit every `/api/` path silently
+  and no unit test would notice, since Cache Storage only exists in a real browser. Red-proved by
+  adding that branch: `/api/payments`, `/api/kg/entities` and the rest came back in the diff — a
+  plaintext copy of personal data in a store `forget` cannot reach, which is the `PRIVACY.md`
+  erasure promise breaking quietly. Until now that rule was covered only by a regex over the
+  worker's source.
+  **And the footage half of T-0.52.** `frontend/e2e/footage.spec.ts` + `scripts/hud_footage.mjs`
+  record one 1920×1080 clip per shot in the `TEASER_PACK.md` §6 list, off the real running HUD.
+  The shot list's own reuse rule — *"never stage fake data for a shot. Demo mode is clearly badged;
+  use it, or use real data. The honesty is the marketing"* — is now **enforced rather than
+  written down**: there are exactly two sources, a third fails at collection naming both, and each
+  is asserted in its own direction (a demo clip must have the amber `DEMO DATA` banner *visible in
+  frame*; a live clip must not have it at all). The specs only navigate and wait — there is no seam
+  for feeding the HUD a prettier corpus, so a surface with nothing on it films as an empty state,
+  which is the product telling the truth about the machine it was filmed on. Two shots are
+  deliberately **absent** rather than faked: the WorldView globe (a separate surface with its own
+  server — a clip from this lane would be named `worldview.webm` and contain something that is not
+  WorldView) and the Telegram half of the governed-autonomy moment (a device recording).
+  [`docs/marketing/FOOTAGE_RUNBOOK.md`](docs/marketing/FOOTAGE_RUNBOOK.md) carries both, and the
+  lane is opt-in twice over — the `footage` project exists only under `FOOTAGE=1`, and every other
+  project ignores the file outright, so the PR lane and the nightly soak can never start recording
+  video. 4 + 5 Playwright.
 - **The backups now happen.** `create_backup` has existed for a long time and nothing ever
   called it on a schedule, and nothing ever pruned the directory it writes to — and those were
   one gap, not two: an automatic backup with no prune writes a full copy of the data root every
