@@ -1411,7 +1411,15 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   unchanged and costs no budget. `GET /api/jobs` and `nerva jobs list` show what is held and
   whether it is quiet hours now (the HUD panel does not yet). Tests:
   `tests/test_job_quiet_hours.py` (9). Not proven on a wall clock — P18 gained the night case.
-- [ ] **HA-4f** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
+- [x] ✅ **HA-4f — two more guardrails in the tool loop.** A per-tool cap: a tool called past
+  `llm.tool_loop_per_tool_cap` times in one turn (0 = off, the default) is refused as
+  `tool_cap_reached` with a notice that names the limit; and duplicate-result stubs: a
+  successful result byte-identical to one already in the transcript (≥ 512 bytes) is replaced
+  by a reference stub — "same as call N" — so the model does not pay for the payload twice,
+  with a `tool_result_deduplicated` event; error results are never stubbed, each fresh failure
+  is seen verbatim. Tests: `tests/test_tool_loop_guardrails.py` (4). The named remainder of the
+  loop-guardrail row is now delivered (3a: identical calls, failure streaks; 4f: caps, stubs).
+- [ ] **HA-4g** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
   now say they can), an `ntfy` push channel for approvals away from the HUD, HUD mode on
   desktop, the plugin SDK — sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 

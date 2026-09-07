@@ -733,6 +733,7 @@ class AutonomyCoordinator:
             max_iterations=lambda: _get_setting("llm.tool_loop_max_iterations", 8),
             gap_callback=acquisition.capture_gap,
             context_budget_tokens=lambda: _get_setting("llm.tool_loop_context_tokens", 0),
+            per_tool_limit=lambda: _get_setting("llm.tool_loop_per_tool_cap", 0),
             tool_profile=ToolProfileResolver(
                 settings=_get_setting,
                 agent_patterns=_agent_tool_patterns,

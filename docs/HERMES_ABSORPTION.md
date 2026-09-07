@@ -332,8 +332,17 @@ noaptea, dar consumă același buget zilnic de întreruperi ca orice altă notif
 (`autonomy.interrupt_budget`, MOONSHOT §5) și așteaptă când nu mai e — sau nu există deloc.
 Livrarea de zi e neschimbată și nu costă buget. `GET /api/jobs` și `nerva jobs list` arată ce e
 reținut și dacă e ora de liniște (panoul HUD încă nu). Teste: `tests/test_job_quiet_hours.py`
-(9). *Nedovedit pe ceasul de perete* → P18 a primit cazul de noapte. Rămân în 4f: streaming
-prin editări pe Slack/Discord, `ntfy`, HUD mode, SDK-ul de plugin-uri.
+(9). *Nedovedit pe ceasul de perete* → P18 a primit cazul de noapte.
+
+**Livrat 2026-09-07 (4f — încă două garduri în bucla de unelte).** Un plafon per unealtă: o
+unealtă apelată de mai mult de `llm.tool_loop_per_tool_cap` ori într-o tură (0 = oprit,
+implicit) e refuzată ca `tool_cap_reached` cu un mesaj care spune limita; și stub-uri pentru
+rezultate duplicate: un rezultat reușit identic byte cu byte cu unul deja în transcript (≥ 512
+bytes) e înlocuit cu o referință — „la fel ca apelul N" — ca modelul să nu plătească payload-ul
+de două ori, cu un eveniment `tool_result_deduplicated`; rezultatele de eroare nu sunt niciodată
+înlocuite. Cu 3a (apeluri identice, serii de eșecuri) rândul „loop guardrails" din registru e
+livrat integral. Teste: `tests/test_tool_loop_guardrails.py` (4). Rămân în 4g: streaming prin
+editări pe Slack/Discord, `ntfy`, HUD mode, SDK-ul de plugin-uri.
 
 ---
 

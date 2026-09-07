@@ -109,6 +109,15 @@
   snapshot and `nerva jobs list` show what is held and whether it is quiet hours now.
 - Tests: `tests/test_job_quiet_hours.py` (9).
 
+### Wave 2026-09-07 — Hermes absorption, wave 4f: per-tool caps and duplicate-result stubs
+
+- **Two more guardrails in the tool loop** (`agents/core/agent_runtime.py`). A tool called
+  past `llm.tool_loop_per_tool_cap` times in one turn (0 = off) is refused with a notice
+  naming the limit; a successful result byte-identical to one already in the transcript is
+  replaced by a "same as call N" stub, so the payload is not paid for twice. Error results
+  are never stubbed.
+- Tests: `tests/test_tool_loop_guardrails.py` (4).
+
 ### Wave 2026-09-07 — Hermes absorption, wave 2a: the owner's own scheduled jobs
 
 - **Owner-scheduled jobs** (`agents/core/autonomy/jobs.py`). Nerva parsed "every weekday at

@@ -52,7 +52,9 @@ def _server(payload_chars: int) -> ToolRPCServer:
     server = ToolRPCServer()
 
     async def blob(args):
-        return {"blob": "y" * payload_chars}
+        # Distinct per call: an identical payload would be replaced by a reference stub
+        # (Hermes absorption 4f) and there would be nothing left to fold.
+        return {"blob": "y" * payload_chars, "n": args.get("n")}
 
     server.register_tool(
         "blob",

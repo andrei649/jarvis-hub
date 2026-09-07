@@ -46,6 +46,20 @@ _REPEATED_NOTICE = (
 # failures of one tool end the turn with a named reply; a success resets the streak.
 _FAILURE_REPLY = "I stopped the tool loop because the same tool kept failing."
 _DEFAULT_FAILURE_LIMIT = 5
+# Hermes absorption 4f — two more guardrails from the same family. A per-tool cap ends a
+# turn that leans on one tool without end (0 = off, set from llm.tool_loop_per_tool_cap);
+# and a successful result byte-identical to one already in the transcript is replaced by a
+# reference stub, so the model is told "same as call N" instead of paying for the payload
+# twice. Error results are never stubbed: each fresh failure is seen verbatim.
+_DEFAULT_DUPLICATE_STUB_BYTES = 512
+_CAP_NOTICE = (
+    "This tool was already called {calls} times this turn, which is its limit ({limit}); "
+    "use another tool or answer with what you have."
+)
+_DUPLICATE_NOTICE = (
+    "This result is byte-identical to the result of call {call_id} earlier this turn and "
+    "was not repeated; refer to that result."
+)
 # Hermes absorption 3b — the profile (agent × surface × principal) decides what is offered
 # before the model sees a tool list; a turn the profile leaves with nothing never enters the
 # loop (``can_run`` says no and the agent answers on the plain path).
@@ -112,11 +126,17 @@ class AgentToolRuntime:
         repeat_limit: int = _DEFAULT_REPEAT_LIMIT,
         failure_limit: int = _DEFAULT_FAILURE_LIMIT,
         tool_profile: ToolProfileHook | None = None,
+        per_tool_limit: int | Callable[[], int] = 0,
+        duplicate_stub_bytes: int = _DEFAULT_DUPLICATE_STUB_BYTES,
     ) -> None:
         self._server = server
         self._tool_profile = tool_profile
         self._repeat_limit = _safe_int(repeat_limit, default=_DEFAULT_REPEAT_LIMIT, minimum=0)
         self._failure_limit = _safe_int(failure_limit, default=_DEFAULT_FAILURE_LIMIT, minimum=0)
+        self._per_tool_limit = per_tool_limit
+        self._duplicate_stub_bytes = _safe_int(
+            duplicate_stub_bytes, default=_DEFAULT_DUPLICATE_STUB_BYTES, minimum=64,
+        )
         self._context_budget_tokens = context_budget_tokens
         self._compaction_keep_recent = _safe_int(compaction_keep_recent, default=2, minimum=0)
         self._compacted_result_bytes = _safe_int(compacted_result_bytes, default=512, minimum=64)
@@ -265,6 +285,8 @@ class AgentToolRuntime:
         compacted: set[int] = set()
         seen_calls: dict[tuple[str, str], int] = {}
         failure_streaks: dict[str, int] = {}
+        tool_counts: dict[str, int] = {}
+        seen_results: dict[str, str] = {}
 
         while budget.consume():
             if len(messages) > 2 and not await self._compact_context(
@@ -301,6 +323,7 @@ class AgentToolRuntime:
                     },
                 )
                 return _REPEAT_REPLY
+            capped = self._note_tool_counts(bounded_calls, tool_counts)
             messages.append(
                 {
                     "role": "assistant",
@@ -314,8 +337,12 @@ class AgentToolRuntime:
                 gated_tools=gated_tools,
                 event_sink=event_sink,
                 repeated=repeated,
+                capped=capped,
             )
-            for call, (_result, content) in zip(bounded_calls, observations, strict=True):
+            for call, (result, content) in zip(bounded_calls, observations, strict=True):
+                content = await self._dedupe_result(
+                    call, result, content, seen_results, agent_id=agent_id, event_sink=event_sink,
+                )
                 messages.append(
                     {
                         "role": "tool",
@@ -475,6 +502,63 @@ class AgentToolRuntime:
                 repeated[call.id] = count
         return repeated, None
 
+    def _per_tool_cap(self) -> int:
+        limit = self._per_tool_limit
+        if callable(limit):
+            try:
+                limit = limit()
+            except Exception:
+                logger.warning("per-tool cap setting failed closed to off")
+                return 0
+        return _safe_int(limit, default=0, minimum=0)
+
+    def _note_tool_counts(
+        self, calls: tuple[ToolCall, ...], counts: dict[str, int],
+    ) -> dict[str, int]:
+        """Count calls per tool across the turn; the ids past the cap are refused."""
+        limit = self._per_tool_cap()
+        capped: dict[str, int] = {}
+        for call in calls:
+            count = counts.get(call.name, 0) + 1
+            counts[call.name] = count
+            if limit > 0 and count > limit:
+                capped[call.id] = count
+        return capped
+
+    async def _dedupe_result(
+        self,
+        call: ToolCall,
+        result: Mapping[str, Any],
+        content: str,
+        seen: dict[str, str],
+        *,
+        agent_id: str,
+        event_sink: ToolEventSink | None,
+    ) -> str:
+        """A successful result already in the transcript becomes a reference stub."""
+        if _is_failed_result(result) or len(content.encode("utf-8")) < self._duplicate_stub_bytes:
+            return content
+        prior = seen.get(content)
+        if prior is None:
+            seen[content] = call.id
+            return content
+        await self._emit(
+            event_sink,
+            {
+                **self._event(call, agent_id, "tool_result_deduplicated", "same_as"),
+                "same_as": _bounded_identity(prior),
+            },
+        )
+        return json.dumps(
+            {
+                "ok": True,
+                "tool": call.name,
+                "same_as": prior,
+                "notice": _DUPLICATE_NOTICE.format(call_id=prior),
+            },
+            ensure_ascii=False,
+        )
+
     def _note_failures(
         self,
         calls: tuple[ToolCall, ...],
@@ -501,8 +585,10 @@ class AgentToolRuntime:
         gated_tools: dict[str, bool],
         event_sink: ToolEventSink | None,
         repeated: Mapping[str, int] | None = None,
+        capped: Mapping[str, int] | None = None,
     ) -> list[tuple[dict[str, Any], str]]:
         repeated = repeated or {}
+        capped = capped or {}
         for call in calls:
             await self._emit(
                 event_sink,
@@ -522,6 +608,7 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 event_sink=event_sink,
                 repeats=repeated.get(call.id, 0),
+                capped_at=capped.get(call.id, 0),
             )
             for index, call in enumerate(calls)
         ]
@@ -616,6 +703,7 @@ class AgentToolRuntime:
         agent_id: str,
         event_sink: ToolEventSink | None,
         repeats: int = 0,
+        capped_at: int = 0,
     ) -> tuple[dict[str, Any], str]:
         if overflow:
             return await self._local_failure(
@@ -645,6 +733,19 @@ class AgentToolRuntime:
                 reason="repeated_call",
                 event_sink=event_sink,
                 extra={"repeats": repeats, "notice": _REPEATED_NOTICE.format(repeats=repeats)},
+            )
+        if capped_at:
+            limit = self._per_tool_cap()
+            return await self._local_failure(
+                call,
+                agent_id=agent_id,
+                reason="tool_cap_reached",
+                event_sink=event_sink,
+                extra={
+                    "calls": capped_at,
+                    "limit": limit,
+                    "notice": _CAP_NOTICE.format(calls=capped_at - 1, limit=limit),
+                },
             )
 
         if gated:
