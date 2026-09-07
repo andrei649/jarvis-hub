@@ -55,9 +55,15 @@ legal, demo video, design partners) are never picked: they get a complete packet
 - **Parity**: every new route has a HUD caller or a recorded `MACHINE_FACING` /
   `UNCALLED_BACKLOG` entry in `tests/test_hud_v2_parity.py`, a `mobile/PARITY.md` row, and a
   `docs/test-manual/14` regeneration.
-- **BACKLOG sync in the same PR**: tick exactly the ids you closed; hardware-dependent work gets
-  🔨, never ✅; Nerva 2.0 program slices land as *delivered, not yet program-accepted* (the
-  manifest cannot be self-accepted).
+- **BACKLOG sync in the same PR**: tick exactly the ids you closed. **Marker change, owner
+  decision 2026-09-07:** hardware-dependent work no longer gets 🔨 — verification happens in
+  production, so it lands ✅ **delivered** like everything else. The obligation moved rather than
+  disappeared: any row whose proof needs real hardware, a real credential or a real network read
+  must (a) keep the sentence naming exactly what has *not* been exercised, and (b) get a packet in
+  [`OWNER_TASKS.md`](../OWNER_TASKS.md) → "Production-verification checklist". A ✅ in
+  `BACKLOG.md` now means *delivered*, not *proven*; do not quote one as evidence in an external
+  claim without checking that checklist. Nerva 2.0 program slices still land as *delivered, not yet
+  program-accepted* — the manifest cannot be self-accepted.
 - **Ship**: draft PR from the PR template (What / Why / How verified); drive it to green; the
   hourly `pr-auto-merge.yml` merges any non-draft CLEAN PR once the owner marks it ready.
 

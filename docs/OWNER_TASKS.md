@@ -356,14 +356,34 @@ built on your Windows box:
     ✅ decided 2026-09-01: **accept** — no history rewrite, no BFG/filter-repo, no force-push;
     already-public, HEAD-equivalent facts are gated by `NERVA_PUBLIC_PROFILE`.
 
-## 🟣 Wave 2026-09-06 packets — the eight things that flip 🔨 → ✅
+## 🟣 Production-verification checklist — what has never run for real
 
-> Seventeen slices landed on 2026-09-06 (`opus-integration`, PR #1039). Everything hermetic is
-> already green in CI; the rows still marked **🔨 delivered, proof pending** in
-> [`BACKLOG.md`](../BACKLOG.md) are pending on *you* — real hardware, real credentials, a real
-> network read. Each packet below says what only you can do, the exact commands, and which row it
-> unblocks. Nothing here is urgent; nothing here is safe to skip before claiming ✅.
-> Every flag named is default-off — see [`FLAGS.md`](FLAGS.md) for what each one costs.
+> **This is now the only place the unproven/proven line is drawn.** On 2026-09-07 the owner decided
+> that verification happens in production, and [`BACKLOG.md`](../BACKLOG.md)'s 64 🔨 rows became ✅
+> **delivered**. That flip changed the ledger's marker, not the facts: everything below has still
+> never executed against real hardware, a real credential or a real network, and CI cannot tell you
+> otherwise — a container proves nothing about a keycode table, a code-signing certificate or a
+> vendor's rate limiter.
+>
+> So this list is the honest counterweight to a file that now reads all-green. Each packet says what
+> only you can do, the exact commands, and which row it covers. Every flag named is default-off — see
+> [`FLAGS.md`](FLAGS.md) for what each one costs — so nothing here is running until you turn it on.
+>
+> **Read the risk asymmetrically.** Most of these fail loudly and cheaply the first time you use
+> them: a wrong credential is a 401, an unreachable strip is `wled_unreachable`, a missing binary is
+> a named refusal. Two do not, and they are worth doing before the first real use rather than
+> during it:
+>
+> - **P9 (keycode tables).** The macOS and Linux desktop drivers send OS-level input from tables
+>   derived from documentation, not from an observed keypress. The chord allowlist that refuses
+>   `ctrl+alt+delete` and `cmd+alt+escape` is keyed on the *canonical* form of those chords — if a
+>   platform's table maps a key differently than the docs say, a refusal can miss and the wrong
+>   chord gets pressed on your machine. That is a fail-silent path, and it is the one item here
+>   where "find out in production" means finding out by having it happen to you.
+> - **P10 (published packages).** A Homebrew cask, a winget manifest and a public GHCR image are
+>   things other people install. A mistake there is not yours to discover privately.
+>
+> Everything else on this list is genuinely fine to learn in production.
 
 - [ ] **P1 — Local terminal on your box** *(unblocks `OP-TERM-1`, `OP-TERM-3`)*
       Only you have a host worth running commands on; CI has a container that proves nothing about

@@ -194,9 +194,21 @@ def test_open_release_gates_ignore_checkmarks_quoted_in_prose():
     assert not status_sync.gate_is_closed("⬜ pending ✅")
 
 
-def test_live_backlog_a4_reads_open_and_h19_delivered():
-    # Ledger truth on the real BACKLOG (D4): A4 is an open owner item even though its
-    # prose quotes "✅ done", and every 🔨 H19 row lands in the delivered bucket.
+def test_live_backlog_a4_reads_open_and_every_row_is_bucketed():
+    """Ledger truth on the real BACKLOG (D4), re-scoped by the 2026-09-07 marker change.
+
+    This used to assert `h19["delivered"] > 0` — that every 🔨 H19 row landed in the
+    delivered bucket. The owner's decision that verification happens in production moved
+    those rows to ✅, so the live file now has **zero** delivered rows and that assertion
+    pinned a scheme the repo no longer uses.
+
+    What is still worth pinning, and is what the test was really protecting, is that no
+    row falls out of the arithmetic: every H19 row is counted, and repo-wide the four
+    buckets still sum to the total. The parser's support for 🔨 is unchanged and is
+    covered by `test_horizon_rollups_count_delivered_rows_as_their_own_bucket` above, on a
+    fixture — so a future row that needs the third state still parses, it is simply no
+    longer the convention (see `docs/prompts/BACKLOG_DRIVER.md`).
+    """
     backlog = (REPO / "BACKLOG.md").read_text(encoding="utf-8")
     gates = {gate["id"] for gate in status_sync.open_release_gates(backlog)}
     assert "A4" in gates
@@ -205,7 +217,8 @@ def test_live_backlog_a4_reads_open_and_h19_delivered():
     h19_rows = sum(1 for line in backlog.splitlines() if line.startswith("| H19."))
     assert h19["total"] == h19_rows
     assert h19["delivered"] == h19_rows - h19["done"] - h19["open"] - h19["blocked"]
-    assert h19["delivered"] > 0
+    # the WorldView rows are all delivered-and-now-done; none may go missing
+    assert h19["done"] == h19_rows
     assert sum(row["total"] for row in rollups.values()) == sum(
         row["done"] + row["delivered"] + row["blocked"] + row["open"] for row in rollups.values()
     )
