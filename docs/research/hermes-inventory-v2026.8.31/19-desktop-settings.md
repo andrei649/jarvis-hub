@@ -262,7 +262,7 @@ the CLI `hermes config` commands, and the backend meaning/defaults of each confi
 - **Inputs / options:** See the sub-entries below (main picker, defaults row, auxiliary rows, MoA section).
 - **Outputs / side effects:** `POST` model assignment endpoints; `PUT /api/config`; `invalidateHermesConfig(scopeProfile)` after every refresh.
 - **Config / env:** `agent.reasoning_effort`, `agent.service_tier`; the assignment endpoints write the profile's model config.
-- **Edge cases / guards:** While `loading && !mainModel`, `ModelSettingsSkeleton` (`:44-83`) mirrors the real DOM. Any error is shown as `text-destructive` text under the picker row. Deep link `?tab=config:model&aux=<task>` scrolls+flashes an auxiliary row (via `useDeepLinkHighlight`, `elementId: 'aux-task-<task>'`, ready when the task is one of the eight known ones).
+- **Edge cases / guards:** While `loading && !mainModel`, `ModelSettingsSkeleton` (`:44-83`) mirrors the real DOM — the catalog also declares the plain loading label **"Loading model configuration..."** (`i18n: settings.model.loading`, `apps/desktop/src/i18n/en.ts:1084`, `apps/desktop/src/i18n/types.ts:942`), which has NO render site in v2026.8.31 because the page renders the skeleton instead: a catalog-only / latent string. Any error is shown as `text-destructive` text under the picker row. Deep link `?tab=config:model&aux=<task>` scrolls+flashes an auxiliary row (via `useDeepLinkHighlight`, `elementId: 'aux-task-<task>'`, ready when the task is one of the eight known ones).
 - **Rebuild notes:** Epoch-guarded async + a single refresh that repopulates every sub-widget. Better: stream catalog updates instead of a four-request fan-out.
 
 ### Default model picker (Provider + Model + Apply)  `id: desktop-settings.model-main-picker`
@@ -273,7 +273,7 @@ the CLI `hermes config` commands, and the backend meaning/defaults of each confi
 - **Inputs / options:** Provider select (placeholder `Provider`, `i18n: settings.model.provider`); Model select (placeholder `Model`, `i18n: settings.model.model`); `Apply` button (`i18n: common.apply`), which shows a spinner and the text `Applying...` (`i18n: settings.model.applying`) while in flight and is disabled unless both halves are chosen.
 - **Outputs / side effects:** Writes the profile's main model assignment; updates live UI stores.
 - **Config / env:** Provider `api_url` is passed through as `base_url` when the provider row declares one.
-- **Edge cases / guards:** `isProviderReady(p)` (`:95-97`) = row exists and (`authenticated !== false` OR it reports ≥1 model). An unready provider swaps the model select for a setup affordance — see the next two entries.
+- **Edge cases / guards:** The catalog carries the off-catalog warning fragment **"isn't in this provider's model list — calls may fall back to a backup."** (`i18n: settings.model.notInCatalog`, `apps/desktop/src/i18n/en.ts:1102`) — meant to be appended after the selected model id when it is absent from the provider's model list; in v2026.8.31 no component reads `m.notInCatalog` (the picker instead keeps the value selectable via `withActive`), so it is a catalog-only / latent string. `isProviderReady(p)` (`:95-97`) = row exists and (`authenticated !== false` OR it reports ≥1 model). An unready provider swaps the model select for a setup affordance — see the next two entries.
 - **Rebuild notes:** Always keep the currently-saved value selectable even when it's off-catalog. Better: show price/context-window next to each model.
 
 ### Inline API-key activation for an unconfigured provider  `id: desktop-settings.model-inline-api-key`
@@ -404,7 +404,7 @@ the CLI `hermes config` commands, and the backend meaning/defaults of each confi
 - **Where:** Settings → Model → `Fallback Models` row body. `apps/desktop/src/app/settings/fallback-models-field.tsx`.
 - **What it does:** Adds, edits, reorders and removes `{provider, model}` fallback entries with real provider/model catalogs.
 - **How it works:** See the dedicated entry in section 12 (`desktop-settings.fallback-editor`).
-- **Inputs / options:** See that entry.
+- **Inputs / options:** See that entry. With zero rows the editor renders a single caption line instead of any control: **"No fallback models — the default model is used unless it fails."** (`i18n: settings.model.fallbackEmpty`, `apps/desktop/src/i18n/en.ts:1101`, rendered at `apps/desktop/src/app/settings/fallback-models-field.tsx:116` as `{rows.length === 0 && <p class="text-xs text-muted-foreground">{m.fallbackEmpty}</p>}`).
 - **Outputs / side effects:** Calls the field's `onChange` with the new array.
 - **Config / env:** `fallback_providers`
 - **Edge cases / guards:** See that entry.

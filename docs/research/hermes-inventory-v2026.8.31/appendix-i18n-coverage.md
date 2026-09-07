@@ -4,8 +4,8 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 
 | Catalog | Strings | Covered |
 |---|---:|---:|
-| desktop_en | 2354 | 2282 (96%) |
-| gateway_locale_en | 367 | 356 (97%) |
+| desktop_en | 2354 | 2354 (100%) |
+| gateway_locale_en | 367 | 367 (100%) |
 | tui_content | 137 | 137 (100%) |
 | web_en | 656 | 656 (100%) |
 | web_live | 1205 | 1205 (100%) |
@@ -101,7 +101,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `boot.failure.signInIncompleteMessage` | The login window closed before authentication finished. | gapfill-desktop-a-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `boot.failure.signInFailed` | Sign-in failed | web-shell, web-c, gapfill-desktop-a-r0 |
 | `desktop_en` | `boot.failure.signInToRemoteGateway` | Sign in to remote gateway | gapfill-desktop-a-r0, gapfill-desktop-main-r0 |
-| `desktop_en` | `boot.failure.identityProvider` | your identity provider | gapfill-desktop-a-r0, gapfill-desktop-main-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `boot.failure.identityProvider` | your identity provider | gapfill-desktop-a-r0, gapfill-desktop-main-r0, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `notifications.region` | Notifications | cli-b, cli-e, gw-core |
 | `desktop_en` | `notifications.hide` | Hide | cli-a, cli-b, cli-c |
 | `desktop_en` | `notifications.show` | Show | cli-a, cli-b, cli-c |
@@ -149,8 +149,8 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `notifications.native.rejectAction` | Reject | cli-a, cli-b, cli-c |
 | `desktop_en` | `notifications.native.inputTitle` | Input needed | gapfill-desktop-b-r0, gapfill-desktop-settings-0-r0 |
 | `desktop_en` | `notifications.native.inputBody` | Hermes is waiting for your response. | gapfill-desktop-b-r0 |
-| `desktop_en` | `notifications.native.turnDoneTitle` | Hermes finished | desktop-b, gapfill-desktop-a-r0 |
-| `desktop_en` | `notifications.native.turnDoneBody` |  | **MISSING** |
+| `desktop_en` | `notifications.native.turnDoneTitle` | Hermes finished | desktop-b, zz-placeholder-templates, gapfill-desktop-a-r0 |
+| `desktop_en` | `notifications.native.turnDoneBody` |  | zz-placeholder-templates |
 | `desktop_en` | `notifications.native.turnErrorTitle` | Turn failed | platform-telegram, desktop-b, tui |
 | `desktop_en` | `notifications.native.backgroundDoneTitle` | Background task finished | gw-core, gapfill-desktop-settings-0-r0 |
 | `desktop_en` | `notifications.native.backgroundFailedTitle` | Background task failed | cli-f, gw-core, acp-mcp-dev |
@@ -309,15 +309,15 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `settings.searchPlaceholder.about` | About Hermes Desktop | gapfill-desktop-settings-0-r0 |
 | `desktop_en` | `settings.searchPlaceholder.config` | Search settings... | gapfill-desktop-settings-0-r0 |
 | `desktop_en` | `settings.searchPlaceholder.gateway` | Gateway connection... | gw-core, desktop-main, desktop-a |
-| `desktop_en` | `settings.searchPlaceholder.keys` | Search API keys... | gapfill-desktop-settings-0-r0 |
+| `desktop_en` | `settings.searchPlaceholder.keys` | Search API keys... | gapfill-desktop-settings-0-r0, gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.searchPlaceholder.mcp` | Search MCP servers... | gapfill-desktop-settings-0-r0 |
-| `desktop_en` | `settings.searchPlaceholder.sessions` | Search archived sessions... | gapfill-desktop-settings-0-r0 |
+| `desktop_en` | `settings.searchPlaceholder.sessions` | Search archived sessions... | gapfill-desktop-settings-0-r0, gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.appearance.title` | Appearance | cli-c, web-shell, desktop-main |
 | `desktop_en` | `settings.appearance.intro` | Desktop-only. Mode is brightness; theme is palette and chat chrome. | delta-27-31 |
 | `desktop_en` | `settings.appearance.colorMode` | Color Mode | desktop-a, desktop-settings |
 | `desktop_en` | `settings.appearance.colorModeDesc` | Pick a fixed mode or let Hermes follow your system setting. | desktop-a |
-| `desktop_en` | `settings.appearance.toolViewTitle` | Tool Call Display | desktop-settings, gapfill-desktop-settings-0-r0 |
-| `desktop_en` | `settings.appearance.toolViewDesc` | Product hides raw tool payloads; Technical shows full input/output. | desktop-settings, gapfill-desktop-settings-0-r0 |
+| `desktop_en` | `settings.appearance.toolViewTitle` | Tool Call Display | desktop-settings, gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.toolViewDesc` | Product hides raw tool payloads; Technical shows full input/output. | desktop-settings, gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.appearance.reasoningCollapsedTitle` | Collapse thinking by default | desktop-settings, gapfill-desktop-settings-0-r0 |
 | `desktop_en` | `settings.appearance.reasoningCollapsedDesc` | Keep streamed reasoning available without expanding it until you open it. | gapfill-desktop-settings-0-r0 |
 | `desktop_en` | `settings.appearance.uiScaleTitle` | UI Scale | desktop-main, desktop-settings |
@@ -349,56 +349,56 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `settings.appearance.translucencyScopeTitle` | Area | cli-a, cli-b, cli-d |
 | `desktop_en` | `settings.appearance.translucencyScope.window` | Whole window | desktop-a, desktop-settings, gapfill-desktop-settings-0-r0 |
 | `desktop_en` | `settings.appearance.translucencyScope.sidebar` | Sidebar only | web-shell, gapfill-desktop-b-1-r0, gapfill-desktop-settings-0-r0 |
-| `desktop_en` | `settings.appearance.backdropTitle` | Chat Backdrop | desktop-settings, gapfill-desktop-settings-0-r0 |
-| `desktop_en` | `settings.appearance.backdropDesc` | The faint statue image behind the conversation. | desktop-settings |
+| `desktop_en` | `settings.appearance.backdropTitle` | Chat Backdrop | desktop-settings, gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.backdropDesc` | The faint statue image behind the conversation. | desktop-settings, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.appearance.introSplashTitle` | Intro Splash | desktop-settings, delta-27-31, gapfill-desktop-settings-0-r0 |
 | `desktop_en` | `settings.appearance.introSplashDesc` | The wordmark and prompt shown on an empty chat. | desktop-settings, delta-27-31 |
 | `desktop_en` | `settings.appearance.reactionsTitle` | Message Reactions | platform-telegram, platforms-b, desktop-b |
-| `desktop_en` | `settings.appearance.reactionsDesc` | iMessage-style emoji tapbacks — react to messages, and Hermes can react to yours. | **MISSING** |
+| `desktop_en` | `settings.appearance.reactionsDesc` | iMessage-style emoji tapbacks — react to messages, and Hermes can react to yours. | gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.appearance.tipsTitle` | In-App Tips | delta-27-31, gapfill-desktop-settings-0-r0 |
 | `desktop_en` | `settings.appearance.toursTitle` | Guided Tours | delta-27-31, gapfill-desktop-settings-0-r0 |
 | `desktop_en` | `settings.appearance.toursDesc` | Let Hermes walk you through the app, dimming the screen and spotlighting each step. | delta-27-31 |
-| `desktop_en` | `settings.appearance.composerPopoutTitle` | Floating Composer | desktop-b, gapfill-desktop-settings-0-r0 |
-| `desktop_en` | `settings.appearance.composerPopoutDesc` | Allow dragging the composer out of its dock. Turn this off to keep it locked at the bottom. | **MISSING** |
-| `desktop_en` | `settings.appearance.vibeHeartsTitle` | Vibe Hearts | gapfill-desktop-settings-0-r0 |
-| `desktop_en` | `settings.appearance.embedsTitle` | Inline Embeds | desktop-settings, gapfill-desktop-settings-0-r0 |
+| `desktop_en` | `settings.appearance.composerPopoutTitle` | Floating Composer | desktop-b, gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.composerPopoutDesc` | Allow dragging the composer out of its dock. Turn this off to keep it locked at the bottom. | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.vibeHeartsTitle` | Vibe Hearts | gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.embedsTitle` | Inline Embeds | desktop-settings, gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.appearance.embedsAsk` | Ask | cli-a, cli-b, cli-d |
 | `desktop_en` | `settings.appearance.embedsAlways` | Always | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.appearance.embedsOff` | Off | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.appearance.product` | Product | cli-a, cli-b, cli-d |
-| `desktop_en` | `settings.appearance.productDesc` | Human-friendly tool activity with concise summaries. | gapfill-desktop-settings-0-r0 |
+| `desktop_en` | `settings.appearance.productDesc` | Human-friendly tool activity with concise summaries. | gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.appearance.technical` | Technical | desktop-a, desktop-settings, config-a |
-| `desktop_en` | `settings.appearance.technicalDesc` | Include raw tool args/results and low-level details. | gapfill-desktop-settings-0-r0 |
+| `desktop_en` | `settings.appearance.technicalDesc` | Include raw tool args/results and low-level details. | gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.appearance.themeTitle` | Theme | cli-a, cli-d, cli-f |
 | `desktop_en` | `settings.appearance.themeDesc` | Desktop palettes only. The selected mode is applied on top. | desktop-a, desktop-settings |
-| `desktop_en` | `settings.appearance.installTitle` | Install from VS Code | **MISSING** |
-| `desktop_en` | `settings.appearance.installPlaceholder` | publisher.extension | **MISSING** |
+| `desktop_en` | `settings.appearance.installTitle` | Install from VS Code | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.installPlaceholder` | publisher.extension | gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.appearance.installButton` | Install | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.appearance.installing` | Installing… | cli-b, cli-d, cli-e |
-| `desktop_en` | `settings.appearance.installError` | Could not install that theme. | **MISSING** |
-| `desktop_en` | `settings.appearance.removeTheme` | Remove theme | **MISSING** |
+| `desktop_en` | `settings.appearance.installError` | Could not install that theme. | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.removeTheme` | Remove theme | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.appearance.importedBadge` | Imported | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.appearance.pet.title` | Pet | cli-a, cli-d, cli-e |
 | `desktop_en` | `settings.appearance.pet.on` | On | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.appearance.pet.off` | Off | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.appearance.pet.scaleTitle` | Size | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.appearance.pet.scaleDesc` | Resize the floating mascot. Applies everywhere instantly. | **MISSING** |
-| `desktop_en` | `settings.appearance.pet.roamTitle` | Roam | docs-features, gapfill-desktop-settings-0-r0 |
-| `desktop_en` | `settings.appearance.pet.roamDesc` | Let the pet wander the window on its own while idle. | **MISSING** |
-| `desktop_en` | `settings.appearance.pet.chooseTitle` | Choose a pet | **MISSING** |
-| `desktop_en` | `settings.appearance.pet.chooseDesc` | Picking one installs it (if needed) and makes it active. | **MISSING** |
-| `desktop_en` | `settings.appearance.pet.searchPlaceholder` | Search pets… | desktop-a, gapfill-desktop-settings-0-r0 |
-| `desktop_en` | `settings.appearance.pet.unreachable` | Couldn't reach the petdex gallery. Check your connection and reopen this page. | **MISSING** |
+| `desktop_en` | `settings.appearance.pet.scaleDesc` | Resize the floating mascot. Applies everywhere instantly. | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.pet.roamTitle` | Roam | docs-features, gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.pet.roamDesc` | Let the pet wander the window on its own while idle. | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.pet.chooseTitle` | Choose a pet | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.pet.chooseDesc` | Picking one installs it (if needed) and makes it active. | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.pet.searchPlaceholder` | Search pets… | desktop-a, gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.pet.unreachable` | Couldn't reach the petdex gallery. Check your connection and reopen this page. | gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.appearance.pet.installedTag` | installed | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.appearance.pet.generatedTag` | Generated | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.appearance.pet.deleteBody` | This permanently deletes the pet — it can't be reinstalled. | **MISSING** |
+| `desktop_en` | `settings.appearance.pet.deleteBody` | This permanently deletes the pet — it can't be reinstalled. | gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.appearance.pet.deleteConfirm` | Delete | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.appearance.pet.renameTitle` | Rename pet | cli-e, desktop-main, agent-core-b |
-| `desktop_en` | `settings.appearance.pet.renamePlaceholder` | Name your pet | desktop-b |
+| `desktop_en` | `settings.appearance.pet.renamePlaceholder` | Name your pet | desktop-b, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.appearance.pet.renameSave` | Save | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.appearance.pet.noneAvailable` | No pets available to turn on right now. | **MISSING** |
-| `desktop_en` | `settings.appearance.pet.turnOnFailed` | Could not turn the pet on. | desktop-a |
-| `desktop_en` | `settings.appearance.pet.turnOffFailed` | Could not turn the pet off. | desktop-a |
+| `desktop_en` | `settings.appearance.pet.noneAvailable` | No pets available to turn on right now. | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.pet.turnOnFailed` | Could not turn the pet on. | desktop-a, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.appearance.pet.turnOffFailed` | Could not turn the pet off. | desktop-a, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.about.heading` | Hermes Desktop | cli-d, cli-e, cli-f |
 | `desktop_en` | `settings.about.versionUnavailable` | Version unavailable | gapfill-desktop-main-r0 |
 | `desktop_en` | `settings.about.bundleOutOfSync` | App build out of date | desktop-main, gapfill-desktop-main-r0 |
@@ -408,7 +408,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `settings.about.checking` | Checking… | cli-b, cli-d, cli-e |
 | `desktop_en` | `settings.about.seeWhatsNew` | See what's new | gapfill-desktop-main-r0 |
 | `desktop_en` | `settings.about.updateNow` | Update now | web-shell, web-c, desktop-main |
-| `desktop_en` | `settings.about.releaseNotes` | Release notes | desktop-a, skills-core, docs-rest |
+| `desktop_en` | `settings.about.releaseNotes` | Release notes | desktop-a, skills-core, acp-mcp-dev |
 | `desktop_en` | `settings.about.onLatest` | You're on the latest version. | web-c, gapfill-desktop-main-r0 |
 | `desktop_en` | `settings.about.installing` | An update is currently installing. | gapfill-desktop-main-r0 |
 | `desktop_en` | `settings.about.cantUpdate` | This build can't update itself from inside the app. | gapfill-desktop-main-r0 |
@@ -427,90 +427,90 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `settings.config.searchPlaceholder` | Search… | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.config.noResults` | No results found | desktop-settings |
 | `desktop_en` | `settings.config.systemDefault` | System default | desktop-settings, security |
-| `desktop_en` | `settings.config.loading` | Loading Hermes configuration... | **MISSING** |
+| `desktop_en` | `settings.config.loading` | Loading Hermes configuration... | gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.config.emptyTitle` | Nothing to configure | desktop-settings, tui, docs-features |
 | `desktop_en` | `settings.config.emptyDesc` | This section has no adjustable settings. | desktop-settings |
-| `desktop_en` | `settings.config.failedLoad` | Settings failed to load | desktop-settings, gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.config.autosaveFailed` | Autosave failed | desktop-settings, gapfill-desktop-settings-0-r0 |
+| `desktop_en` | `settings.config.failedLoad` | Settings failed to load | desktop-settings, gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.config.autosaveFailed` | Autosave failed | desktop-settings, gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.config.imported` | Config imported | web-shell, web-c, desktop-settings |
 | `desktop_en` | `settings.config.invalidJson` | Invalid config JSON | desktop-settings |
-| `desktop_en` | `settings.config.keepAwakeTitle` | Keep computer awake | desktop-main |
-| `desktop_en` | `settings.config.keepAwakeDesc` | Stop this machine from sleeping so long or overnight runs keep going. The display can still dim. | **MISSING** |
-| `desktop_en` | `settings.config.disableF12Title` | Disable F12 DevTools | **MISSING** |
-| `desktop_en` | `settings.config.disableF12Desc` | Block F12 from opening Developer Tools. Ctrl+Shift+I (or Cmd+Opt+I on Mac) still works. | **MISSING** |
+| `desktop_en` | `settings.config.keepAwakeTitle` | Keep computer awake | desktop-main, gapfill-desktop-settings-1-r0, gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.config.keepAwakeDesc` | Stop this machine from sleeping so long or overnight runs keep going. The display can still dim. | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.config.disableF12Title` | Disable F12 DevTools | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.config.disableF12Desc` | Block F12 from opening Developer Tools. Ctrl+Shift+I (or Cmd+Opt+I on Mac) still works. | gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.config.attachmentSizeTitle` | Max preview / image load size | desktop-settings |
 | `desktop_en` | `settings.config.attachmentSizeUnit` | MB | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.config.attachmentSizeLabel` | Max preview / image load size in megabytes | desktop-settings |
 | `desktop_en` | `settings.quickEntry.enabledTitle` | Quick Entry | desktop-main, desktop-a, desktop-b |
-| `desktop_en` | `settings.quickEntry.shortcutTitle` | Quick Entry shortcut | desktop-main |
-| `desktop_en` | `settings.quickEntry.shortcutDesc` | Needs at least one modifier, e.g. CommandOrControl+Shift+Space. | **MISSING** |
-| `desktop_en` | `settings.quickEntry.active` | Shortcut is active. | **MISSING** |
-| `desktop_en` | `settings.quickEntry.takenBy` | Another app already uses this shortcut — pick a different one. | **MISSING** |
-| `desktop_en` | `settings.quickEntry.invalidShortcut` | Not a valid shortcut. Include at least one modifier key. | **MISSING** |
-| `desktop_en` | `settings.credentials.pasteKey` | Paste key | **MISSING** |
+| `desktop_en` | `settings.quickEntry.shortcutTitle` | Quick Entry shortcut | desktop-main, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.quickEntry.shortcutDesc` | Needs at least one modifier, e.g. CommandOrControl+Shift+Space. | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.quickEntry.active` | Shortcut is active. | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.quickEntry.takenBy` | Another app already uses this shortcut — pick a different one. | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.quickEntry.invalidShortcut` | Not a valid shortcut. Include at least one modifier key. | gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.credentials.pasteKey` | Paste key | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.credentials.optional` | Optional | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.credentials.enterValueFirst` | Enter a value first. | gapfill-desktop-a-r0 |
-| `desktop_en` | `settings.credentials.couldNotSave` | Could not save credential. | gapfill-desktop-a-r0 |
+| `desktop_en` | `settings.credentials.enterValueFirst` | Enter a value first. | gapfill-desktop-a-r0, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.credentials.couldNotSave` | Could not save credential. | gapfill-desktop-a-r0, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.credentials.remove` | Remove | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.credentials.getKey` | Get a key | web-b, docs-features, gapfill-desktop-a-r0 |
 | `desktop_en` | `settings.credentials.saving` | Saving | cli-a, cli-b, cli-e |
 | `desktop_en` | `settings.envActions.actions` | Actions | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.envActions.manageInKeys` | Manage in API Keys | **MISSING** |
+| `desktop_en` | `settings.envActions.manageInKeys` | Manage in API Keys | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.envActions.docs` | Docs | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.envActions.hideValue` | Hide value | web-shell, web-c |
-| `desktop_en` | `settings.envActions.revealValue` | Reveal value | desktop-b |
+| `desktop_en` | `settings.envActions.hideValue` | Hide value | web-shell, web-c, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.envActions.revealValue` | Reveal value | desktop-b, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.envActions.replace` | Replace | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.envActions.set` | Set | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.envActions.clear` | Clear | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.connections.title` | Registered gateways | desktop-main, desktop-settings, gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.intro` | Manage this device and every Hermes gateway it can reach through remote, SSH, or Cloud connections. | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.launchModeTitle` | At startup, return to Sessions on the last-used gateway | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.launchModeDesc` | When off, Sessions opens on the Primary gateway. | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.searchPlaceholder` | Search gateways… | gapfill-desktop-settings-0-r0, gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.noSearchResults` | No gateways match your search. | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.loadFailed` | Could not load connections | gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.title` | Registered gateways | desktop-main, desktop-settings, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.connections.intro` | Manage this device and every Hermes gateway it can reach through remote, SSH, or Cloud connections. | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.launchModeTitle` | At startup, return to Sessions on the last-used gateway | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.launchModeDesc` | When off, Sessions opens on the Primary gateway. | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.searchPlaceholder` | Search gateways… | gapfill-desktop-settings-0-r0, gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.noSearchResults` | No gateways match your search. | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.loadFailed` | Could not load connections | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.connections.currentPill` | Current | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.connections.primaryPill` | Primary | cli-a, cli-c, cli-d |
-| `desktop_en` | `settings.connections.managedPill` | App-managed | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.addConnection` | Add connection | gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.managedPill` | App-managed | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.addConnection` | Add connection | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.connections.editConnection` | Edit | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.connections.removeConnection` | Remove | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.connections.removeConfirmTitle` | Remove this connection? | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.makePrimary` | Make primary | desktop-main, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.removeConfirmTitle` | Remove this connection? | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.makePrimary` | Make primary | desktop-main, gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.connections.testConnection` | Test | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.connections.testOk` | Reachable | cli-a, cli-b, cli-d |
-| `desktop_en` | `settings.connections.testFailed` | Connection test failed | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.saveFailed` | Could not save the connection | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.removeFailed` | Could not remove the connection | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.updateAll` | Update all instances | desktop-main, gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.updateAllRunning` | Updating all instances… | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.updateAllDone` | Updates dispatched | platform-telegram, gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.updateAllFailed` | Update fan-out failed | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.updateSkippedCloud` | Managed by Hermes Cloud | desktop-main, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.testFailed` | Connection test failed | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.saveFailed` | Could not save the connection | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.removeFailed` | Could not remove the connection | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.updateAll` | Update all instances | desktop-main, gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.updateAllRunning` | Updating all instances… | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.updateAllDone` | Updates dispatched | platform-telegram, gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.updateAllFailed` | Update fan-out failed | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.updateSkippedCloud` | Managed by Hermes Cloud | desktop-main, gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.connections.kindLocal` | Local | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.connections.kindRemote` | Remote gateway | cli-c, desktop-main, desktop-a |
 | `desktop_en` | `settings.connections.kindCloud` | Hermes Cloud | gw-core, desktop-main, desktop-a |
 | `desktop_en` | `settings.connections.kindSsh` | SSH | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.connections.kindLocalDesc` | The Hermes runtime managed by this app. | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.kindRemoteDesc` | A Hermes gateway reachable over HTTP(S) — LAN, Tailscale, or the internet. | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.kindCloudDesc` | A hosted instance discovered through your Hermes Cloud account. | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.kindSshDesc` | A Hermes install reached over SSH. | gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.kindLocalDesc` | The Hermes runtime managed by this app. | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.kindRemoteDesc` | A Hermes gateway reachable over HTTP(S) — LAN, Tailscale, or the internet. | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.kindCloudDesc` | A hosted instance discovered through your Hermes Cloud account. | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.kindSshDesc` | A Hermes install reached over SSH. | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.connections.labelTitle` | Name | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.connections.labelDesc` | Required. Shown everywhere this instance appears; must be unique (e.g. “Homelab”, “Work laptop”). | gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.labelDesc` | Required. Shown everywhere this instance appears; must be unique (e.g. “Homelab”, “Work laptop”). | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.connections.labelPlaceholder` | Homelab | cli-c, desktop-main, automation |
 | `desktop_en` | `settings.connections.urlTitle` | Gateway URL | platforms-b, web-a, web-c |
 | `desktop_en` | `settings.connections.sshHostTitle` | SSH host | cli-b, cli-d, desktop-main |
-| `desktop_en` | `settings.connections.headersTitle` | Extra gateway headers | gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.headersTitle` | Extra gateway headers | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.connections.headerValuePlaceholder` | Value | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.connections.headerValueSaved` | Saved — leave blank to keep | web-b, desktop-b, gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.headerAdd` | Add header | gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.headerValueSaved` | Saved — leave blank to keep | web-b, desktop-b, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.connections.headerAdd` | Add header | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.connections.headerRemove` | Remove | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.connections.duplicateLocal` | This app already manages a local connection — there can only be one. | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.localAddHint` | Local is unavailable: the managed local connection already exists (there is only ever one). | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.connections.save` | Save connection | desktop-main, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.duplicateLocal` | This app already manages a local connection — there can only be one. | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.localAddHint` | Local is unavailable: the managed local connection already exists (there is only ever one). | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.save` | Save connection | desktop-main, gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.connections.saving` | Saving… | cli-a, cli-b, cli-e |
 | `desktop_en` | `settings.connections.cancel` | Cancel | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.connections.empty` | No connections registered yet. | gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.connections.empty` | No connections registered yet. | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.managedUpdates.title` | Managed updates | desktop-main, desktop-settings, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.managedUpdates.sshConnection` | Desktop-managed SSH install | desktop-main, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.managedUpdates.update` | Update | cli-a, cli-b, cli-c |
@@ -540,7 +540,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `settings.gateway.cloudSignedIn` | Signed in to Hermes Cloud | gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.cloudNeedsSignIn` | Sign in to Hermes Cloud to discover the agents on your account. | gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.cloudSignedInDesc` | You are signed in. Pick an agent below; the session refreshes automatically. | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.gateway.cloudAgentsTitle` | Your agents | docs-features, gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.gateway.cloudAgentsTitle` | Your agents | docs-features, gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.cloudOrgPickerTitle` | Choose an organization | gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.cloudOrgSelect` | Select | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.gateway.cloudOrgChange` | Change org | gapfill-desktop-settings-2-r0 |
@@ -570,10 +570,10 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `settings.gateway.authSignedInOauth` | This gateway uses OAuth. You are signed in; the session refreshes automatically. | gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.authNeedsPassword` | This gateway uses a username and password. Sign in to authorize this desktop app. | gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.tokenTitle` | Session token | cli-f, gw-slash, platforms-b |
-| `desktop_en` | `settings.gateway.tokenDesc` | The dashboard session token used for REST and WebSocket access. Leave blank to keep the saved token. | gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.gateway.tokenDesc` | The dashboard session token used for REST and WebSocket access. Leave blank to keep the saved token. | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.savedToken` | saved | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.gateway.pasteSessionToken` | Paste session token | gapfill-desktop-a-r0, gapfill-desktop-main-r0, gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.gateway.plainTextConfirmTitle` | Store the gateway token in plain text? | gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.gateway.pasteSessionToken` | Paste session token | gapfill-desktop-a-r0, gapfill-desktop-main-r0, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `settings.gateway.plainTextConfirmTitle` | Store the gateway token in plain text? | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.plainTextConfirmAction` | Save as plain text | gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.plainTextStoredTitle` | Token stored in plain text | gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.keychainEncryptionTitle` | Encrypt saved secrets with the OS keychain | desktop-main, gapfill-desktop-settings-2-r0 |
@@ -589,7 +589,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `settings.gateway.incompleteToken` | Enter a remote URL and session token before switching to remote. | gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.incompleteSignInTest` | Enter a remote URL and sign in before testing. | gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.incompleteTokenTest` | Enter a remote URL and session token before testing. | gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.gateway.enterUrlFirst` | Enter a remote URL first. | gapfill-desktop-settings-2-r0 |
+| `desktop_en` | `settings.gateway.enterUrlFirst` | Enter a remote URL first. | gapfill-desktop-settings-1-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.restartingTitle` | Gateway connection restarting | gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.savedTitle` | Gateway settings saved | gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.restartingMessage` | Hermes Desktop will reconnect using the saved settings — the shell stays open. | gapfill-desktop-settings-2-r0 |
@@ -629,9 +629,9 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `settings.gateway.sshErrTimeout` | SSH connection timed out. The host may be unreachable or asleep. | gapfill-desktop-a-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.sshErrUpdateRequired` | Update Hermes on the remote host before connecting with Desktop SSH. | gapfill-desktop-a-r0, gapfill-desktop-settings-2-r0 |
 | `desktop_en` | `settings.gateway.sshErrUnknown` | SSH connection failed. | cli-b, gapfill-desktop-a-r0, gapfill-desktop-settings-2-r0 |
-| `desktop_en` | `settings.keys.loading` | Loading API keys and credentials... | **MISSING** |
-| `desktop_en` | `settings.keys.failedLoad` | API keys failed to load | **MISSING** |
-| `desktop_en` | `settings.keys.empty` | Nothing configured in this category yet. | **MISSING** |
+| `desktop_en` | `settings.keys.loading` | Loading API keys and credentials... | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.keys.failedLoad` | API keys failed to load | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.keys.empty` | Nothing configured in this category yet. | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.search.placeholder` | Search all settings… | desktop-a, desktop-settings, gapfill-desktop-settings-0-r0 |
 | `desktop_en` | `settings.search.pill` | Search | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.profileScope.appliesTo` | Applies to | cli-a, cli-b, cli-c |
@@ -688,17 +688,17 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `settings.mcp.deepLinkTitle` | Add MCP server? | cli-b, web-b, web-c |
 | `desktop_en` | `settings.mcp.deepLinkConfirm` | Add server | cli-b, cli-f, web-shell |
 | `desktop_en` | `settings.mcp.deepLinkNameInvalid` | Names use 1-64 letters, digits, dots, dashes, or underscores. | desktop-b |
-| `desktop_en` | `settings.mcp.deepLinkErrorTitle` | MCP install link rejected | desktop-b |
-| `desktop_en` | `settings.mcp.deepLinkErrorName` | The link\u2019s server name is missing or invalid. | **MISSING** |
-| `desktop_en` | `settings.mcp.deepLinkErrorConfig` | The link\u2019s config is not valid base64-encoded JSON. | **MISSING** |
-| `desktop_en` | `settings.mcp.deepLinkErrorShape` | The config must be a JSON object with a string `url` or `command` field. | desktop-b |
-| `desktop_en` | `settings.mcp.deepLinkErrorUrl` | Only http:// and https:// server URLs are allowed. | desktop-b |
-| `desktop_en` | `settings.mcp.deepLinkErrorTooLarge` | The config payload exceeds the 32KB limit. | desktop-b |
+| `desktop_en` | `settings.mcp.deepLinkErrorTitle` | MCP install link rejected | desktop-b, gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.mcp.deepLinkErrorName` | The link\u2019s server name is missing or invalid. | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.mcp.deepLinkErrorConfig` | The link\u2019s config is not valid base64-encoded JSON. | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.mcp.deepLinkErrorShape` | The config must be a JSON object with a string `url` or `command` field. | desktop-b, gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.mcp.deepLinkErrorUrl` | Only http:// and https:// server URLs are allowed. | desktop-b, gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.mcp.deepLinkErrorTooLarge` | The config payload exceeds the 32KB limit. | desktop-b, gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.mcp.importButton` | Import | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.mcp.importPlaceholder` | Paste an mcp.json snippet, npx/docker command, claude mcp add line, URL, or Cursor link… | desktop-b |
 | `desktop_en` | `settings.mcp.importNoMatch` | No server config recognized in the pasted text. | desktop-b |
 | `desktop_en` | `settings.mcp.importConfirm` | Add to mcp.json | desktop-b |
-| `desktop_en` | `settings.model.loading` | Loading model configuration... | **MISSING** |
+| `desktop_en` | `settings.model.loading` | Loading model configuration... | desktop-settings, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `settings.model.appliesDesc` | Applies to new sessions. Use the model picker in the composer to hot-swap the active chat. | desktop-settings |
 | `desktop_en` | `settings.model.provider` | Provider | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.model.model` | Model | cli-a, cli-b, cli-c |
@@ -715,95 +715,95 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `settings.model.autoUseMain` | auto · use main model | web-a, desktop-settings |
 | `desktop_en` | `settings.model.providerDefault` | (provider default) | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.model.fallbackAdd` | Add fallback | cli-a |
-| `desktop_en` | `settings.model.fallbackEmpty` | No fallback models — the default model is used unless it fails. | **MISSING** |
-| `desktop_en` | `settings.model.notInCatalog` | isn't in this provider's model list — calls may fall back to a backup. | **MISSING** |
-| `desktop_en` | `settings.providers.connectAccount` | Connect an account | optional |
-| `desktop_en` | `settings.providers.haveApiKey` | Have an API key instead? | **MISSING** |
+| `desktop_en` | `settings.model.fallbackEmpty` | No fallback models — the default model is used unless it fails. | desktop-settings |
+| `desktop_en` | `settings.model.notInCatalog` | isn't in this provider's model list — calls may fall back to a backup. | desktop-settings |
+| `desktop_en` | `settings.providers.connectAccount` | Connect an account | optional, gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.providers.haveApiKey` | Have an API key instead? | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.providers.connected` | Connected | cli-b, cli-d, cli-e |
 | `desktop_en` | `settings.providers.collapse` | Collapse | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.providers.connectAnother` | Connect another provider | **MISSING** |
+| `desktop_en` | `settings.providers.connectAnother` | Connect another provider | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.providers.otherProviders` | Other providers | platforms-a, desktop-settings, media |
 | `desktop_en` | `settings.providers.disconnect` | Disconnect | cli-a, cli-d, gw-slash |
-| `desktop_en` | `settings.providers.disconnectInTerminal` | Disconnect (runs the removal command in the terminal) | **MISSING** |
-| `desktop_en` | `settings.providers.removedTitle` | Account removed | **MISSING** |
-| `desktop_en` | `settings.providers.noProviderKeys` | No provider API keys available. | **MISSING** |
-| `desktop_en` | `settings.providers.searchKeys` | Search providers… | tools, media |
-| `desktop_en` | `settings.providers.noKeysMatch` | No providers match your search. | **MISSING** |
-| `desktop_en` | `settings.providers.localEndpoint.title` | Local / custom endpoint | docs-rest, gapfill-desktop-a-r0 |
-| `desktop_en` | `settings.providers.localEndpoint.description` | Point Hermes at any OpenAI-compatible endpoint (Zyphra, vLLM, llama.cpp, Ollama, etc). | **MISSING** |
-| `desktop_en` | `settings.providers.loading` | Loading providers... | **MISSING** |
-| `desktop_en` | `settings.sessions.loading` | Loading archived sessions… | **MISSING** |
+| `desktop_en` | `settings.providers.disconnectInTerminal` | Disconnect (runs the removal command in the terminal) | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.providers.removedTitle` | Account removed | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.providers.noProviderKeys` | No provider API keys available. | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.providers.searchKeys` | Search providers… | tools, media, gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.providers.noKeysMatch` | No providers match your search. | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.providers.localEndpoint.title` | Local / custom endpoint | docs-rest, gapfill-desktop-a-r0, gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.providers.localEndpoint.description` | Point Hermes at any OpenAI-compatible endpoint (Zyphra, vLLM, llama.cpp, Ollama, etc). | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.providers.loading` | Loading providers... | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.sessions.loading` | Loading archived sessions… | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.sessions.archivedTitle` | Archived sessions | cli-f, web-shell, web-a |
-| `desktop_en` | `settings.sessions.emptyArchivedTitle` | Nothing archived | cli-f |
-| `desktop_en` | `settings.sessions.emptyArchivedDesc` | Archive a chat to hide it here. | **MISSING** |
-| `desktop_en` | `settings.sessions.unarchive` | Unarchive | cli-f, memory |
-| `desktop_en` | `settings.sessions.deletePermanently` | Delete permanently | **MISSING** |
+| `desktop_en` | `settings.sessions.emptyArchivedTitle` | Nothing archived | cli-f, gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.sessions.emptyArchivedDesc` | Archive a chat to hide it here. | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.sessions.unarchive` | Unarchive | cli-f, memory, gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.sessions.deletePermanently` | Delete permanently | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.sessions.restored` | Restored | cli-a, cli-c, cli-d |
-| `desktop_en` | `settings.sessions.autoArchiveTitle` | Auto-archive stale chats | **MISSING** |
+| `desktop_en` | `settings.sessions.autoArchiveTitle` | Auto-archive stale chats | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.sessions.autoArchiveDaysLabel` | Archive after | cli-e, config-b, skills-core |
-| `desktop_en` | `settings.sessions.autoArchiveDaysUnit` | days of inactivity | **MISSING** |
-| `desktop_en` | `settings.sessions.autoArchiveFailed` | Could not update auto-archive | **MISSING** |
+| `desktop_en` | `settings.sessions.autoArchiveDaysUnit` | days of inactivity | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.sessions.autoArchiveFailed` | Could not update auto-archive | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.sessions.defaultDirTitle` | Default project directory | web-shell, desktop-main, desktop-settings |
-| `desktop_en` | `settings.sessions.defaultDirUpdated` | Default project directory updated — start a new chat (Ctrl/⌘+N) for it to take effect | **MISSING** |
+| `desktop_en` | `settings.sessions.defaultDirUpdated` | Default project directory updated — start a new chat (Ctrl/⌘+N) for it to take effect | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.sessions.change` | Change | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.sessions.choose` | Choose | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.sessions.clear` | Clear | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.sessions.notSet` | Not set | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.sessions.failedLoad` | Could not load archived sessions | **MISSING** |
-| `desktop_en` | `settings.sessions.unarchiveFailed` | Unarchive failed | **MISSING** |
+| `desktop_en` | `settings.sessions.failedLoad` | Could not load archived sessions | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.sessions.unarchiveFailed` | Unarchive failed | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.sessions.deleteFailed` | Delete failed | cli-d, cli-f, web-shell |
-| `desktop_en` | `settings.sessions.updateDirFailed` | Could not update default directory | **MISSING** |
-| `desktop_en` | `settings.sessions.clearDirFailed` | Could not clear default directory | **MISSING** |
-| `desktop_en` | `settings.toolsets.loadingConfig` | Loading configuration | **MISSING** |
-| `desktop_en` | `settings.toolsets.savedTitle` | Credential saved | cli-b |
-| `desktop_en` | `settings.toolsets.removedTitle` | Credential removed | web-c |
+| `desktop_en` | `settings.sessions.updateDirFailed` | Could not update default directory | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.sessions.clearDirFailed` | Could not clear default directory | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.toolsets.loadingConfig` | Loading configuration | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.toolsets.savedTitle` | Credential saved | cli-b, gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.toolsets.removedTitle` | Credential removed | web-c, gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.toolsets.set` | Set | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.toolsets.notSet` | Not set | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.toolsets.selectedTitle` | Provider selected | cli-b, cli-d, platform-telegram |
-| `desktop_en` | `settings.toolsets.failedLoad` | Tool configuration failed to load | **MISSING** |
-| `desktop_en` | `settings.toolsets.noProviderOptions` | This toolset has no provider options — enable it and it works with your current setup. | **MISSING** |
-| `desktop_en` | `settings.toolsets.noProviders` | No providers are available for this toolset right now. | **MISSING** |
+| `desktop_en` | `settings.toolsets.failedLoad` | Tool configuration failed to load | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.toolsets.noProviderOptions` | This toolset has no provider options — enable it and it works with your current setup. | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.toolsets.noProviders` | No providers are available for this toolset right now. | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.toolsets.ready` | Ready | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.toolsets.needsSignIn` | Needs sign-in | **MISSING** |
+| `desktop_en` | `settings.toolsets.needsSignIn` | Needs sign-in | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.toolsets.needsSetup` | Setup required | web-b, tui, docs-features |
 | `desktop_en` | `settings.toolsets.activeBackend` | Active | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.toolsets.activeBackendHint` | This is your active backend | **MISSING** |
-| `desktop_en` | `settings.toolsets.useBackend` | Use this backend | **MISSING** |
-| `desktop_en` | `settings.toolsets.nousIncluded` | Included with a Nous subscription — sign in to Nous Portal to activate. | **MISSING** |
-| `desktop_en` | `settings.toolsets.nousAuthNeededTitle` | Sign in to Nous Portal | **MISSING** |
+| `desktop_en` | `settings.toolsets.activeBackendHint` | This is your active backend | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.toolsets.useBackend` | Use this backend | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.toolsets.nousIncluded` | Included with a Nous subscription — sign in to Nous Portal to activate. | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.toolsets.nousAuthNeededTitle` | Sign in to Nous Portal | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.toolsets.nousAuthSignIn` | Sign in | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.toolsets.nousAuthDoneTitle` | Nous Portal connected | **MISSING** |
-| `desktop_en` | `settings.toolsets.nousAuthDoneMessage` | Your subscription backends are now active. | **MISSING** |
-| `desktop_en` | `settings.toolsets.nousAuthFailed` | Nous Portal sign-in did not complete | **MISSING** |
+| `desktop_en` | `settings.toolsets.nousAuthDoneTitle` | Nous Portal connected | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.toolsets.nousAuthDoneMessage` | Your subscription backends are now active. | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.toolsets.nousAuthFailed` | Nous Portal sign-in did not complete | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.toolsets.noApiKeyRequired` | No API key required. | cli-b, web-b, env-vars |
-| `desktop_en` | `settings.toolsets.postSetupInstalledHint` | Installed. Re-run setup only if something is broken. | **MISSING** |
+| `desktop_en` | `settings.toolsets.postSetupInstalledHint` | Installed. Re-run setup only if something is broken. | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.toolsets.postSetupRun` | Run setup | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.toolsets.postSetupRerun` | Re-run setup | cli-b, platform-telegram |
+| `desktop_en` | `settings.toolsets.postSetupRerun` | Re-run setup | cli-b, platform-telegram, gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.toolsets.postSetupInstalled` | Installed | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.toolsets.postSetupRunning` | Installing… | cli-b, cli-d, cli-e |
 | `desktop_en` | `settings.toolsets.postSetupStarting` | Starting… | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.toolsets.postSetupCompleteTitle` | Setup complete | cli-b, cli-e, platforms-b |
-| `desktop_en` | `settings.toolsets.postSetupErrorTitle` | Setup finished with errors | web-b |
+| `desktop_en` | `settings.toolsets.postSetupErrorTitle` | Setup finished with errors | web-b, gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.toolsets.webCapabilityUnset` | not set | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.toolsets.webUseForSearch` | Use for Search | **MISSING** |
-| `desktop_en` | `settings.toolsets.webUseForExtract` | Use for Extract | **MISSING** |
+| `desktop_en` | `settings.toolsets.webUseForSearch` | Use for Search | gapfill-desktop-settings-3-r0 |
+| `desktop_en` | `settings.toolsets.webUseForExtract` | Use for Extract | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.toolsets.webUsedForSearch` | Search backend | web-b, desktop-b, config-b |
 | `desktop_en` | `settings.toolsets.webUsedForExtract` | Extract backend | web-b, config-b, optional |
-| `desktop_en` | `settings.toolsets.loadingModels` | Loading model catalog... | **MISSING** |
+| `desktop_en` | `settings.toolsets.loadingModels` | Loading model catalog... | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.toolsets.modelSectionTitle` | Model | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.toolsets.modelInUse` | In use | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.toolsets.modelDefault` | default | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.toolsets.modelInactiveHint` | Select this backend first to change its model. | **MISSING** |
+| `desktop_en` | `settings.toolsets.modelInactiveHint` | Select this backend first to change its model. | gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `settings.toolsets.modelSelectedTitle` | Model selected | gw-slash, platform-telegram, platforms-a |
 | `desktop_en` | `settings.toolsets.terminalBackend.sectionTitle` | Execution backend | desktop-settings, config-a, skills-core |
-| `desktop_en` | `settings.toolsets.terminalBackend.loading` | Checking execution backends… | **MISSING** |
-| `desktop_en` | `settings.toolsets.terminalBackend.failedLoad` | Could not load terminal backends | **MISSING** |
+| `desktop_en` | `settings.toolsets.terminalBackend.loading` | Checking execution backends… | gapfill-desktop-settings-3-r0, gapfill-desktop-settings-4-r0 |
+| `desktop_en` | `settings.toolsets.terminalBackend.failedLoad` | Could not load terminal backends | gapfill-desktop-settings-3-r0, gapfill-desktop-settings-4-r0 |
 | `desktop_en` | `settings.toolsets.terminalBackend.ready` | Ready | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.toolsets.terminalBackend.needsSetup` | Needs setup | cli-e, web-b, web-c |
 | `desktop_en` | `settings.toolsets.terminalBackend.unavailable` | Unavailable | cli-a, cli-b, cli-c |
 | `desktop_en` | `settings.toolsets.terminalBackend.inUse` | In use | cli-a, cli-b, cli-c |
-| `desktop_en` | `settings.toolsets.terminalBackend.selectedTitle` | Backend selected | **MISSING** |
-| `desktop_en` | `settings.toolsets.terminalBackend.needsSetupHint` | You can select this backend now — commands will fail until setup is complete. | **MISSING** |
+| `desktop_en` | `settings.toolsets.terminalBackend.selectedTitle` | Backend selected | gapfill-desktop-settings-3-r0, gapfill-desktop-settings-4-r0 |
+| `desktop_en` | `settings.toolsets.terminalBackend.needsSetupHint` | You can select this backend now — commands will fail until setup is complete. | gapfill-desktop-settings-3-r0, gapfill-desktop-settings-4-r0 |
 | `desktop_en` | `settings.toolsets.browserRealProfile.label` | Use My Real Browser Profile | desktop-settings, media, docs-features |
 | `desktop_en` | `settings.toolsets.browserRealProfile.enabledTitle` | Real-profile browsing on | desktop-settings, docs-features, delta-27-31 |
 | `desktop_en` | `settings.toolsets.browserRealProfile.enabledMessage` | New sessions will browse with a snapshot of your default browser profile. | desktop-settings, delta-27-31 |
@@ -941,9 +941,9 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `commandCenter.changeTheme` | Change theme | desktop-a, gapfill-desktop-b-r0 |
 | `desktop_en` | `commandCenter.changeColorMode` | Change color mode… | desktop-a |
 | `desktop_en` | `commandCenter.pets.title` | Pets | cli-d, cli-e, platforms-a |
-| `desktop_en` | `commandCenter.pets.placeholder` | Search pets… | desktop-a |
-| `desktop_en` | `commandCenter.pets.loading` | Loading petdex gallery… | desktop-a |
-| `desktop_en` | `commandCenter.pets.error` | Could not reach the petdex gallery. | desktop-a |
+| `desktop_en` | `commandCenter.pets.placeholder` | Search pets… | desktop-a, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `commandCenter.pets.loading` | Loading petdex gallery… | desktop-a, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `commandCenter.pets.error` | Could not reach the petdex gallery. | desktop-a, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `commandCenter.pets.staleBackend` | Restart Hermes to use pets — the backend predates this feature. | desktop-a |
 | `desktop_en` | `commandCenter.pets.empty` | No matching pets. | desktop-a |
 | `desktop_en` | `commandCenter.pets.turnOff` | Turn off | cli-a, gw-slash, gw-core |
@@ -951,8 +951,8 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `commandCenter.pets.installed` | Installed | cli-a, cli-b, cli-c |
 | `desktop_en` | `commandCenter.pets.generatedTag` | Generated | cli-a, cli-b, cli-c |
 | `desktop_en` | `commandCenter.pets.adoptFailed` | Could not adopt that pet. | desktop-a |
-| `desktop_en` | `commandCenter.pets.noneAvailable` | No pets available — pick one below to install. | desktop-a |
-| `desktop_en` | `commandCenter.generatePet.title` | Generate a pet | desktop-a, desktop-b |
+| `desktop_en` | `commandCenter.pets.noneAvailable` | No pets available — pick one below to install. | desktop-a, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `commandCenter.generatePet.title` | Generate a pet | desktop-a, desktop-b, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `commandCenter.generatePet.placeholder` | Describe a pet to generate… | desktop-b |
 | `desktop_en` | `commandCenter.generatePet.promptHint` | Type a description, then press Enter to draft four looks. | desktop-b |
 | `desktop_en` | `commandCenter.generatePet.readyHint` | Press Enter to draft four looks from your description. | desktop-b |
@@ -966,7 +966,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `commandCenter.generatePet.hatched` | It hatched! | desktop-b |
 | `desktop_en` | `commandCenter.generatePet.hatchComposing` | Piecing it together… | desktop-b |
 | `desktop_en` | `commandCenter.generatePet.hatchSaving` | Almost there… | desktop-a, desktop-b |
-| `desktop_en` | `commandCenter.generatePet.namePlaceholder` | Name your pet | desktop-b |
+| `desktop_en` | `commandCenter.generatePet.namePlaceholder` | Name your pet | desktop-b, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `commandCenter.generatePet.staleBackend` | Update Hermes to generate pets. | desktop-b |
 | `desktop_en` | `commandCenter.generatePet.backgroundHint` | You can close this — Hermes will notify you when it’s done. | desktop-b |
 | `desktop_en` | `commandCenter.generatePet.slowProviderHint` | This can take several minutes | desktop-b |
@@ -977,12 +977,12 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `commandCenter.generatePet.referenceImageInvalid` | Could not read that reference image. Try a PNG, JPG, WebP, or GIF. | desktop-b |
 | `desktop_en` | `commandCenter.generatePet.adopt` | Adopt | cli-a, cli-e, cli-f |
 | `desktop_en` | `commandCenter.generatePet.startOver` | Start over | desktop-b, env-vars, skills-core |
-| `desktop_en` | `commandCenter.installTheme.title` | Install theme… | desktop-main, desktop-a |
-| `desktop_en` | `commandCenter.installTheme.pageTitle` | Install theme | desktop-main, desktop-a |
-| `desktop_en` | `commandCenter.installTheme.placeholder` | Search the VS Code Marketplace... | desktop-a |
-| `desktop_en` | `commandCenter.installTheme.loading` | Searching the Marketplace... | desktop-a |
-| `desktop_en` | `commandCenter.installTheme.error` | Could not reach the Marketplace. | desktop-a |
-| `desktop_en` | `commandCenter.installTheme.empty` | No matching themes. | desktop-a, desktop-b |
+| `desktop_en` | `commandCenter.installTheme.title` | Install theme… | desktop-main, desktop-a, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `commandCenter.installTheme.pageTitle` | Install theme | desktop-main, desktop-a, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `commandCenter.installTheme.placeholder` | Search the VS Code Marketplace... | desktop-a, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `commandCenter.installTheme.loading` | Searching the Marketplace... | desktop-a, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `commandCenter.installTheme.error` | Could not reach the Marketplace. | desktop-a, gapfill-desktop-settings-1-r0 |
+| `desktop_en` | `commandCenter.installTheme.empty` | No matching themes. | desktop-a, desktop-b, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `commandCenter.installTheme.install` | Install | cli-a, cli-b, cli-c |
 | `desktop_en` | `commandCenter.installTheme.installing` | Installing... | cli-b, cli-d, cli-e |
 | `desktop_en` | `commandCenter.installTheme.installed` | Installed | cli-a, cli-b, cli-c |
@@ -1099,7 +1099,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `messaging.saveChanges` | Save changes | platforms-a, web-b, desktop-b |
 | `desktop_en` | `messaging.saved` | Saved | cli-a, cli-b, cli-c |
 | `desktop_en` | `messaging.replaceValue` | Replace current value | web-shell, web-c, desktop-b |
-| `desktop_en` | `messaging.openDocs` | Open docs | web-c, desktop-b, gapfill-web-c-r0 |
+| `desktop_en` | `messaging.openDocs` | Open docs | web-c, desktop-b, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `messaging.restartToApply` | This change takes effect after a gateway restart. | desktop-b |
 | `desktop_en` | `messaging.restartToReconnect` | New credentials take effect after a gateway restart. | desktop-b |
 | `desktop_en` | `messaging.approve` | Approve | cli-a, cli-b, cli-c |
@@ -1210,7 +1210,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `profiles.allProfiles` | All profiles | cli-b, cli-d, cli-f |
 | `desktop_en` | `profiles.showAllProfiles` | Show all profiles | desktop-b |
 | `desktop_en` | `profiles.manageProfiles` | Manage profiles… | cli-f, desktop-b |
-| `desktop_en` | `profiles.connectGateway` | Manage gateways… | desktop-b |
+| `desktop_en` | `profiles.connectGateway` | Manage gateways… | desktop-b, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `profiles.fleet.allOnGateway` | All profiles on this gateway | desktop-b |
 | `desktop_en` | `profiles.remoteOverride.menuItem` | Connect to a remote host… | desktop-b, gapfill-desktop-b-0-r0 |
 | `desktop_en` | `profiles.remoteOverride.description` | Sessions in this profile will run on the remote Hermes you point it at, instead of this computer. | desktop-b |
@@ -1326,20 +1326,20 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `cron.scheduleLabels.custom` | Custom | cli-a, cli-b, cli-c |
 | `desktop_en` | `cron.scheduleHints.daily` | Every day at 9:00 AM | desktop-b, gapfill-desktop-b-0-r0 |
 | `desktop_en` | `cron.scheduleHints.weekdays` | Monday through Friday at 9:00 AM | desktop-b |
-| `desktop_en` | `cron.scheduleHints.weekly` | Every Monday at 9:00 AM | desktop-b, docs-rest |
+| `desktop_en` | `cron.scheduleHints.weekly` | Every Monday at 9:00 AM | desktop-b, docs-rest, gapfill-desktop-b-r2 |
 | `desktop_en` | `cron.scheduleHints.monthly` | The first day of each month at 9:00 AM | desktop-b |
-| `desktop_en` | `cron.scheduleHints.hourly` | At the top of every hour | desktop-b |
+| `desktop_en` | `cron.scheduleHints.hourly` | At the top of every hour | desktop-b, gapfill-desktop-b-r2 |
 | `desktop_en` | `cron.scheduleHints.every-15-minutes` | Every 15 minutes | desktop-main, desktop-b, gapfill-desktop-b-0-r0 |
-| `desktop_en` | `cron.scheduleHints.custom` | Cron syntax or natural language | desktop-b |
-| `desktop_en` | `cron.days.0` | Sunday | web-b, automation, docs-features |
+| `desktop_en` | `cron.scheduleHints.custom` | Cron syntax or natural language | desktop-b, gapfill-desktop-b-r2 |
+| `desktop_en` | `cron.days.0` | Sunday | web-b, desktop-b, automation |
 | `desktop_en` | `cron.days.1` | Monday | cli-c, cli-e, web-b |
-| `desktop_en` | `cron.days.2` | Tuesday | automation |
-| `desktop_en` | `cron.days.3` | Wednesday | automation, docs-features |
-| `desktop_en` | `cron.days.4` | Thursday | automation |
+| `desktop_en` | `cron.days.2` | Tuesday | desktop-b, automation, gapfill-desktop-b-r2 |
+| `desktop_en` | `cron.days.3` | Wednesday | desktop-b, automation, docs-features |
+| `desktop_en` | `cron.days.4` | Thursday | desktop-b, automation, gapfill-desktop-b-r2 |
 | `desktop_en` | `cron.days.5` | Friday | web-b, desktop-b, automation |
-| `desktop_en` | `cron.days.6` | Saturday | web-b, automation, docs-features |
-| `desktop_en` | `cron.days.7` | Sunday | web-b, automation, docs-features |
-| `desktop_en` | `cron.topOfHour` | At the top of every hour | desktop-b |
+| `desktop_en` | `cron.days.6` | Saturday | web-b, desktop-b, automation |
+| `desktop_en` | `cron.days.7` | Sunday | web-b, desktop-b, automation |
+| `desktop_en` | `cron.topOfHour` | At the top of every hour | desktop-b, gapfill-desktop-b-r2 |
 | `desktop_en` | `cron.newCron` | New cron | gw-slash, web-shell, web-b |
 | `desktop_en` | `cron.emptyDescSearch` | Try a broader search query. | desktop-b |
 | `desktop_en` | `cron.emptyTitleNew` | No scheduled jobs yet | desktop-b |
@@ -1357,7 +1357,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `cron.resumeTitle` | Resume | cli-a, cli-b, cli-c |
 | `desktop_en` | `cron.pauseTitle` | Pause | cli-a, cli-b, cli-c |
 | `desktop_en` | `cron.triggerNow` | Trigger now | web-shell, web-b, desktop-b |
-| `desktop_en` | `cron.edit` | Edit cron | web-b, desktop-b |
+| `desktop_en` | `cron.edit` | Edit cron | web-b, desktop-b, gapfill-desktop-b-r2 |
 | `desktop_en` | `cron.deleteTitle` | Delete cron job? | web-shell, web-b, desktop-b |
 | `desktop_en` | `cron.deleteDescPrefix` | This will remove  | web-b, web-c, desktop-b |
 | `desktop_en` | `cron.deleteDescSuffix` |  permanently. It will stop firing immediately. | desktop-b |
@@ -1373,7 +1373,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `cron.failedTrigger` | Failed to trigger cron job | desktop-b |
 | `desktop_en` | `cron.failedDelete` | Failed to delete cron job | desktop-b |
 | `desktop_en` | `cron.failedSave` | Failed to save cron job | desktop-b |
-| `desktop_en` | `cron.editTitle` | Edit cron job | desktop-b |
+| `desktop_en` | `cron.editTitle` | Edit cron job | desktop-b, gapfill-desktop-b-r2 |
 | `desktop_en` | `cron.createTitle` | New cron job | web-shell, web-b, desktop-b |
 | `desktop_en` | `cron.editDesc` | Update the schedule, prompt, or delivery target. Changes apply on next run. | desktop-b |
 | `desktop_en` | `cron.createDesc` | Schedule a prompt to run automatically. Use cron syntax or a natural phrase like "every 15 minutes". | desktop-b |
@@ -1386,8 +1386,8 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `cron.deliverNeedsHomeChannel` | set a home channel first | web-shell, web-b, desktop-b |
 | `desktop_en` | `cron.modelLabel` | Model | cli-a, cli-b, cli-c |
 | `desktop_en` | `cron.modelDefault` | Default (global model) | desktop-b |
-| `desktop_en` | `cron.customScheduleLabel` | Custom schedule | desktop-b |
-| `desktop_en` | `cron.customPlaceholder` | 0 9 * * * or weekdays at 9am | desktop-b |
+| `desktop_en` | `cron.customScheduleLabel` | Custom schedule | desktop-b, gapfill-desktop-b-r2 |
+| `desktop_en` | `cron.customPlaceholder` | 0 9 * * * or weekdays at 9am | desktop-b, gapfill-desktop-b-r2 |
 | `desktop_en` | `cron.customHint` | Cron expression, or phrases like "every hour" or "weekdays at 9am". | desktop-b |
 | `desktop_en` | `cron.optional` | Optional | cli-a, cli-b, cli-c |
 | `desktop_en` | `cron.promptRequired` | Prompt is required. | gw-slash, desktop-b, docs-features |
@@ -1418,7 +1418,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `artifacts.tabImages` | Images | cli-a, cli-b, cli-e |
 | `desktop_en` | `artifacts.tabFiles` | Files | cli-a, cli-b, cli-c |
 | `desktop_en` | `artifacts.tabLinks` | Links | cli-a, cli-b, cli-c |
-| `desktop_en` | `artifacts.noArtifactsTitle` | No artifacts found | desktop-b |
+| `desktop_en` | `artifacts.noArtifactsTitle` | No artifacts found | desktop-b, gapfill-desktop-b-r1 |
 | `desktop_en` | `artifacts.noArtifactsDesc` | Generated images and file outputs will appear here as sessions produce them. | desktop-b |
 | `desktop_en` | `artifacts.failedLoad` | Artifacts failed to load | desktop-b |
 | `desktop_en` | `artifacts.openFailed` | Open failed | desktop-b |
@@ -1462,18 +1462,18 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `sidebar.pinned` | Pinned | cli-a, cli-b, cli-c |
 | `desktop_en` | `sidebar.sessions` | Sessions | cli-a, cli-b, cli-c |
 | `desktop_en` | `sidebar.cronJobs` | Cron jobs | cli-b, cli-c, cli-d |
-| `desktop_en` | `sidebar.groupAriaGrouped` | Show sessions as a single list | desktop-b, gapfill-desktop-b-0-r0 |
-| `desktop_en` | `sidebar.groupAriaUngrouped` | Group sessions by workspace | desktop-b, gapfill-desktop-b-0-r0 |
+| `desktop_en` | `sidebar.groupAriaGrouped` | Show sessions as a single list | desktop-b, gapfill-desktop-b-0-r0, gapfill-desktop-b-r1 |
+| `desktop_en` | `sidebar.groupAriaUngrouped` | Group sessions by workspace | desktop-b, gapfill-desktop-b-0-r0, gapfill-desktop-b-r1 |
 | `desktop_en` | `sidebar.showProjects` | Show projects | desktop-b, gapfill-desktop-b-0-r0 |
-| `desktop_en` | `sidebar.showSessions` | Show sessions | desktop-b, gapfill-desktop-b-0-r0 |
-| `desktop_en` | `sidebar.groupTitleGrouped` | Ungroup sessions | desktop-b, gapfill-desktop-b-0-r0 |
-| `desktop_en` | `sidebar.groupTitleUngrouped` | Group by workspace | desktop-b, gapfill-desktop-b-0-r0 |
-| `desktop_en` | `sidebar.allPinned` | Everything here is pinned. Unpin a chat to show it in recents. | desktop-b |
+| `desktop_en` | `sidebar.showSessions` | Show sessions | desktop-b, gapfill-desktop-b-0-r0, gapfill-desktop-b-r1 |
+| `desktop_en` | `sidebar.groupTitleGrouped` | Ungroup sessions | desktop-b, gapfill-desktop-b-0-r0, gapfill-desktop-b-r1 |
+| `desktop_en` | `sidebar.groupTitleUngrouped` | Group by workspace | desktop-b, gapfill-desktop-b-0-r0, gapfill-desktop-b-r1 |
+| `desktop_en` | `sidebar.allPinned` | Everything here is pinned. Unpin a chat to show it in recents. | desktop-b, gapfill-desktop-b-r1 |
 | `desktop_en` | `sidebar.shiftClickHint` | Shift-click a chat to pin | desktop-b |
 | `desktop_en` | `sidebar.noWorkspace` | No workspace | desktop-a, skills-core, agent-core-a |
 | `desktop_en` | `sidebar.projectEmpty` | No sessions yet | web-shell, web-a, desktop-a |
 | `desktop_en` | `sidebar.noSessions` | No sessions yet | web-shell, web-a, desktop-a |
-| `desktop_en` | `sidebar.noFilterMatches` | No sessions match these filters | desktop-b |
+| `desktop_en` | `sidebar.noFilterMatches` | No sessions match these filters | desktop-b, gapfill-desktop-b-r1 |
 | `desktop_en` | `sidebar.projects.sectionLabel` | Projects | cli-a, cli-c, cli-d |
 | `desktop_en` | `sidebar.projects.home` | Home | cli-a, cli-b, cli-c |
 | `desktop_en` | `sidebar.projects.newButton` | New project | cli-c, cli-d, desktop-b |
@@ -1638,7 +1638,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `composer.speakingResponse` | Speaking response | desktop-b |
 | `desktop_en` | `composer.readingAloud` | Reading aloud | desktop-b |
 | `desktop_en` | `composer.themeSuggestions` | Desktop theme suggestions | desktop-b, gapfill-desktop-b-1-r0 |
-| `desktop_en` | `composer.noMatchingThemes` | No matching themes. | desktop-a, desktop-b |
+| `desktop_en` | `composer.noMatchingThemes` | No matching themes. | desktop-a, desktop-b, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `composer.themeTryPre` | Try  | cli-a, cli-b, cli-c |
 | `desktop_en` | `composer.themeTryPost` | . | desktop-b |
 | `desktop_en` | `composer.attachLabel` | Attach | cli-a, cli-b, cli-c |
@@ -1726,7 +1726,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `updates.stages.pydeps` | Finishing up… | desktop-a, gapfill-desktop-a-r0, gapfill-desktop-main-r0 |
 | `desktop_en` | `updates.stages.update` | Updating Hermes… | cli-f, web-shell, desktop-main |
 | `desktop_en` | `updates.stages.rebuild` | Rebuilding the desktop app… | desktop-a |
-| `desktop_en` | `updates.stages.restart` | Restarting Hermes… | desktop-a, desktop-b, docs-features |
+| `desktop_en` | `updates.stages.restart` | Restarting Hermes… | desktop-a, desktop-b, acp-mcp-dev |
 | `desktop_en` | `updates.stages.done` | Update complete | desktop-a, docs-rest |
 | `desktop_en` | `updates.stages.manual` | Update from your terminal | desktop-a |
 | `desktop_en` | `updates.stages.guiSkew` | Update the desktop app | desktop-main, desktop-a |
@@ -1855,7 +1855,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `onboarding.replaceCurrent` | Replace current value | web-shell, web-c, desktop-b |
 | `desktop_en` | `onboarding.pasteApiKey` | Paste API key | desktop-settings, gapfill-desktop-a-r0 |
 | `desktop_en` | `onboarding.localApiKeyPlaceholder` | API key (optional — only if your endpoint requires one) | gapfill-desktop-a-r0 |
-| `desktop_en` | `onboarding.couldNotSave` | Could not save credential. | gapfill-desktop-a-r0 |
+| `desktop_en` | `onboarding.couldNotSave` | Could not save credential. | gapfill-desktop-a-r0, gapfill-desktop-settings-1-r0 |
 | `desktop_en` | `onboarding.connecting` | Connecting | cli-a, cli-d, cli-e |
 | `desktop_en` | `onboarding.update` | Update | cli-a, cli-b, cli-c |
 | `desktop_en` | `onboarding.flowSubtitles.pkce` | Opens your browser to sign in, then continues here | gapfill-desktop-a-r0 |
@@ -1961,7 +1961,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `shell.statusbar.toggleApprovalMode` | Approvals | cli-a, cli-b, cli-d |
 | `desktop_en` | `shell.statusbar.toggleBackendVersion` | Backend version | desktop-a, gapfill-desktop-a-r0 |
 | `desktop_en` | `shell.statusbar.toggleCommandCenter` | Command Center | desktop-main, desktop-a, desktop-b |
-| `desktop_en` | `shell.statusbar.toggleContextUsage` | Context meter | desktop-a, acp-mcp-dev |
+| `desktop_en` | `shell.statusbar.toggleContextUsage` | Context meter | desktop-a, acp-mcp-dev, zz-placeholder-templates |
 | `desktop_en` | `shell.statusbar.toggleRunningTimer` | Turn timer | desktop-a, gapfill-desktop-b-r0 |
 | `desktop_en` | `shell.statusbar.toggleSessionTimer` | Session timer | desktop-a |
 | `desktop_en` | `shell.statusbar.toggleTerminal` | Terminal | cli-a, cli-b, cli-c |
@@ -2306,7 +2306,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `desktop_en` | `desktop.branchFailed` | Branch failed | cli-a, tui, gapfill-desktop-b-1-r0 |
 | `desktop_en` | `desktop.deleteFailed` | Delete failed | cli-d, cli-f, web-shell |
 | `desktop_en` | `desktop.archived` | Archived | cli-a, cli-b, cli-c |
-| `desktop_en` | `desktop.archiveFailed` | Archive failed | desktop-b |
+| `desktop_en` | `desktop.archiveFailed` | Archive failed | desktop-b, gapfill-desktop-settings-3-r0 |
 | `desktop_en` | `desktop.cwdChangeFailed` | Working directory change failed | gapfill-desktop-b-1-r0 |
 | `desktop_en` | `desktop.cwdStagedTitle` | Working directory staged | gapfill-desktop-b-1-r0 |
 | `desktop_en` | `desktop.cwdStagedMessage` | Restart the desktop backend to apply cwd changes to this active session. | gapfill-desktop-b-1-r0 |
@@ -2514,9 +2514,9 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `gateway_locale_en` | `gateway.kanban.wake.review_detail` | Review feedback: {reason} Inspect the existing card and its current review run; return work to the same implementation t | gapfill-gw-core-r0 |
 | `gateway_locale_en` | `gateway.kanban.wake.guidance` | This is an automatic task-status notification, not a request to decompose the task again. Inspect the current board befo | gapfill-gw-core-r0 |
 | `gateway_locale_en` | `gateway.personality.none_configured` | No personalities configured in `{path}/config.yaml` | gw-slash |
-| `gateway_locale_en` | `gateway.personality.header` | 🎭 **Available Personalities**  | gw-slash, agent-core-a |
+| `gateway_locale_en` | `gateway.personality.header` | 🎭 **Available Personalities**  | gw-slash, agent-core-a, zz-placeholder-templates |
 | `gateway_locale_en` | `gateway.personality.none_option` | • `none` — (no personality overlay) | gw-slash |
-| `gateway_locale_en` | `gateway.personality.item` | • `{name}` — {preview} | **MISSING** |
+| `gateway_locale_en` | `gateway.personality.item` | • `{name}` — {preview} | zz-placeholder-templates |
 | `gateway_locale_en` | `gateway.personality.usage` |  Usage: `/personality <name>` | gw-slash |
 | `gateway_locale_en` | `gateway.personality.save_failed` | ⚠️ Failed to save personality change: {error} | gw-slash |
 | `gateway_locale_en` | `gateway.personality.cleared` | 🎭 Personality cleared — using base agent behavior. _(takes effect on next message)_ | gw-slash |
@@ -2559,8 +2559,8 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `gateway_locale_en` | `gateway.reload_skills.total` |  📚 {count} skill(s) available | gw-slash, platforms-a |
 | `gateway_locale_en` | `gateway.reload_skills.added_header` | ➕ **Added Skills:** | gw-slash |
 | `gateway_locale_en` | `gateway.reload_skills.removed_header` | ➖ **Removed Skills:** | cli-b, gw-slash, platforms-a |
-| `gateway_locale_en` | `gateway.reload_skills.item_with_desc` |     - {name}: {desc} | **MISSING** |
-| `gateway_locale_en` | `gateway.reload_skills.item_no_desc` |     - {name} | **MISSING** |
+| `gateway_locale_en` | `gateway.reload_skills.item_with_desc` |     - {name}: {desc} | zz-placeholder-templates |
+| `gateway_locale_en` | `gateway.reload_skills.item_no_desc` |     - {name} | zz-placeholder-templates |
 | `gateway_locale_en` | `gateway.reload_skills.failed` | ❌ Skills reload failed: {error} | gw-slash |
 | `gateway_locale_en` | `gateway.reset.header_default` | ✨ Session reset! Starting fresh. | gw-slash |
 | `gateway_locale_en` | `gateway.reset.header_new` | ✨ New session started! | gw-slash, tui, config-a |
@@ -2580,9 +2580,9 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `gateway_locale_en` | `gateway.resume.blocked_not_owner` | ⚠️ /resume blocked: '**{name}**' belongs to a different user or chat. You can only resume sessions from this chat. | gw-slash |
 | `gateway_locale_en` | `gateway.resume.no_named_sessions` | No named sessions found. Use `/title My Session` to name your current session, then `/resume My Session` to return to it | gw-slash |
 | `gateway_locale_en` | `gateway.resume.list_header` | 📋 **Named Sessions**  | gw-slash, media |
-| `gateway_locale_en` | `gateway.resume.list_item` | • **{title}**{preview_part} | **MISSING** |
-| `gateway_locale_en` | `gateway.resume.list_item_numbered` | {index}. **{title}**{preview_part} | **MISSING** |
-| `gateway_locale_en` | `gateway.resume.list_preview_suffix` |  — _{preview}_ | **MISSING** |
+| `gateway_locale_en` | `gateway.resume.list_item` | • **{title}**{preview_part} | zz-placeholder-templates |
+| `gateway_locale_en` | `gateway.resume.list_item_numbered` | {index}. **{title}**{preview_part} | zz-placeholder-templates |
+| `gateway_locale_en` | `gateway.resume.list_preview_suffix` |  — _{preview}_ | zz-placeholder-templates |
 | `gateway_locale_en` | `gateway.resume.list_footer` |  Usage: `/resume <session name>` | gw-slash |
 | `gateway_locale_en` | `gateway.resume.list_footer_numbered` |  Usage: `/resume <session name>` or `/resume <number>` (e.g. `/resume 1` for the most recent) | gw-slash |
 | `gateway_locale_en` | `gateway.resume.list_failed` | Could not list sessions: {error} | gw-slash |
@@ -2601,7 +2601,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `gateway_locale_en` | `gateway.rollback.kept_user_edits` | ↷ Kept your hand-edits: {files} Use /rollback <N> --all to restore those too. | gw-slash |
 | `gateway_locale_en` | `gateway.rollback.kept_oversize` | ↷ Kept (too large for checkpoints, no stored copy to revert to): {files} | gw-slash |
 | `gateway_locale_en` | `gateway.rollback.failed_deletes` | ⚠️ Could not remove (left in place): {files} | gw-slash |
-| `gateway_locale_en` | `gateway.rollback.restore_failed` | ❌ {error} | **MISSING** |
+| `gateway_locale_en` | `gateway.rollback.restore_failed` | ❌ {error} | zz-placeholder-templates |
 | `gateway_locale_en` | `gateway.diff.not_enabled` | Checkpoints are not enabled, so there's no session baseline. Enable in config.yaml: ``` checkpoints:   enabled: true ``` | gw-slash |
 | `gateway_locale_en` | `gateway.diff.no_changes` | No changes. | cli-a, cli-b, cli-d |
 | `gateway_locale_en` | `gateway.diff.failed` | {error} | gw-slash |
@@ -2611,7 +2611,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `gateway_locale_en` | `gateway.context.model` | Model: `{model}` | cli-a, cli-b, cli-c |
 | `gateway_locale_en` | `gateway.context.window` | Window: {total} tokens | gw-slash, agent-core-a |
 | `gateway_locale_en` | `gateway.context.in_use` | In use: {used} / {total} ({pct}%) | cli-a, cli-b, cli-c |
-| `gateway_locale_en` | `gateway.context.bar` | {bar} | **MISSING** |
+| `gateway_locale_en` | `gateway.context.bar` | {bar} | zz-placeholder-templates |
 | `gateway_locale_en` | `gateway.context.headroom` | Headroom to limit: {headroom} tokens | gw-slash |
 | `gateway_locale_en` | `gateway.context.threshold` | Auto-compresses at: {threshold} ({threshold_pct}%) — {to_go} to go | gw-slash |
 | `gateway_locale_en` | `gateway.context.over_threshold` | ⚠️ **Over auto-compression threshold ({threshold}, {threshold_pct}%)** | gw-slash |
@@ -2649,7 +2649,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `gateway_locale_en` | `gateway.stop.stopped` | ⚡ Stopped. You can continue this session. | gw-slash, gw-core |
 | `gateway_locale_en` | `gateway.stop.no_active` | No active task to stop. | gw-slash |
 | `gateway_locale_en` | `gateway.title.db_unavailable` | Session database not available. | gw-slash, platform-telegram |
-| `gateway_locale_en` | `gateway.title.warn_prefix` | ⚠️ {error} | **MISSING** |
+| `gateway_locale_en` | `gateway.title.warn_prefix` | ⚠️ {error} | zz-placeholder-templates |
 | `gateway_locale_en` | `gateway.title.empty_after_clean` | ⚠️ Title is empty after cleanup. Please use printable characters. | gw-slash |
 | `gateway_locale_en` | `gateway.title.set_to` | ✏️ Session title set: **{title}** | gw-slash, tui |
 | `gateway_locale_en` | `gateway.title.not_found` | Session not found in database. | gw-slash |
@@ -2718,7 +2718,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `gateway_locale_en` | `gateway.voice.status_mode` | Voice mode: {label} | cli-a, cli-b, gw-slash |
 | `gateway_locale_en` | `gateway.voice.status_channel` | Voice channel: #{channel} | gw-slash, gw-core, platforms-a |
 | `gateway_locale_en` | `gateway.voice.status_participants` | Participants: {count} | gw-slash, gw-core, platforms-a |
-| `gateway_locale_en` | `gateway.voice.status_member` |   - {name}{status} | **MISSING** |
+| `gateway_locale_en` | `gateway.voice.status_member` |   - {name}{status} | zz-placeholder-templates |
 | `gateway_locale_en` | `gateway.voice.speaking` |  (speaking) | gw-slash, gw-core, platforms-a |
 | `gateway_locale_en` | `gateway.voice.enabled_short` | Voice mode enabled. | gw-slash, tui, config-a |
 | `gateway_locale_en` | `gateway.voice.disabled_short` | Voice mode disabled. | gw-slash, tui |
@@ -2732,7 +2732,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `gateway_locale_en` | `gateway.shared.session_db_unavailable` | Session database not available. | gw-slash, platform-telegram |
 | `gateway_locale_en` | `gateway.shared.session_db_unavailable_prefix` | Session database not available | gw-slash, platform-telegram |
 | `gateway_locale_en` | `gateway.shared.session_not_found` | Session not found in database. | gw-slash |
-| `gateway_locale_en` | `gateway.shared.warn_passthrough` | ⚠️ {error} | **MISSING** |
+| `gateway_locale_en` | `gateway.shared.warn_passthrough` | ⚠️ {error} | zz-placeholder-templates |
 | `tui_content` | `charms` | still cooking… | tui |
 | `tui_content` | `charms` | polishing edges… | tui |
 | `tui_content` | `charms` | asking the void nicely… | tui |
@@ -2906,7 +2906,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `web_en` | `common.removed` | removed | cli-a, cli-b, cli-c |
 | `web_en` | `common.failedToToggle` | Failed to toggle | web-shell, web-b, tui |
 | `web_en` | `common.failedToRemove` | Failed to remove | cli-a, cli-c, web-shell |
-| `web_en` | `common.failedToReveal` | Failed to reveal | web-shell, web-c |
+| `web_en` | `common.failedToReveal` | Failed to reveal | web-shell, web-c, gapfill-desktop-settings-3-r0 |
 | `web_en` | `common.collapse` | Collapse | cli-a, cli-b, cli-c |
 | `web_en` | `common.expand` | Expand | cli-a, cli-b, cli-c |
 | `web_en` | `common.general` | General | cli-e, gw-core, platform-telegram |
@@ -3258,7 +3258,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `web_en` | `env.confirmClearTitle` | Clear this key? | web-shell, web-c |
 | `web_en` | `env.description` | Manage API keys and secrets stored in | web-shell, web-c |
 | `web_en` | `env.hideAdvanced` | Hide Advanced | web-shell, web-c, gapfill-web-c-r0 |
-| `web_en` | `env.showAdvanced` | Show Advanced | web-shell, web-c |
+| `web_en` | `env.showAdvanced` | Show Advanced | web-shell, web-c, gapfill-desktop-settings-1-r0 |
 | `web_en` | `env.showLess` | Show less | web-shell, web-c |
 | `web_en` | `env.showMore` | Show more | platforms-a, web-shell, web-c |
 | `web_en` | `env.llmProviders` | LLM Providers | web-shell, web-c, env-vars |
@@ -3270,7 +3270,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `web_en` | `env.enterValue` | Enter value... | web-shell, web-c |
 | `web_en` | `env.replaceCurrentValue` | Replace current value ({preview}) | web-shell, web-c, desktop-b |
 | `web_en` | `env.showValue` | Show real value | web-shell, web-c |
-| `web_en` | `env.hideValue` | Hide value | web-shell, web-c |
+| `web_en` | `env.hideValue` | Hide value | web-shell, web-c, gapfill-desktop-settings-1-r0 |
 | `web_en` | `env.customTitle` | Custom Keys | web-shell, web-c, delta-27-31 |
 | `web_en` | `env.customHint` | Arbitrary environment variables stored in your .env that Hermes doesn't recognise. Use these to inject env vars for skil | web-shell, web-c |
 | `web_en` | `env.customConfigured` | {count} custom key{s} set | web-shell, web-c |
@@ -3598,7 +3598,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `web_live` | `web_live.channels.button.enable_yuanbao_` | Enable Yuanbao (元宝) | web-c |
 | `web_live` | `web_live.channels.button.enable_api_server` | Enable API server | web-c, env-vars |
 | `web_live` | `web_live.channels.button.enable_webhooks` | Enable Webhooks | web-c, desktop-b, env-vars |
-| `web_live` | `web_live.channels.button.enable_a2a` | Enable A2A | platforms-b, web-c |
+| `web_live` | `web_live.channels.button.enable_a2a` | Enable A2A | platforms-b, web-c, acp-mcp-dev |
 | `web_live` | `web_live.channels.button.enable_buzz` | Enable Buzz | web-c |
 | `web_live` | `web_live.channels.button.enable_imessage_via_photon` | Enable iMessage via Photon | web-c |
 | `web_live` | `web_live.channels.button.enable_irc` | Enable IRC | web-c |
@@ -3653,7 +3653,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `web_live` | `web_live.channels.tab.enable_yuanbao_` | Enable Yuanbao (元宝) | web-c |
 | `web_live` | `web_live.channels.tab.enable_api_server` | Enable API server | web-c, env-vars |
 | `web_live` | `web_live.channels.tab.enable_webhooks` | Enable Webhooks | web-c, desktop-b, env-vars |
-| `web_live` | `web_live.channels.tab.enable_a2a` | Enable A2A | platforms-b, web-c |
+| `web_live` | `web_live.channels.tab.enable_a2a` | Enable A2A | platforms-b, web-c, acp-mcp-dev |
 | `web_live` | `web_live.channels.tab.enable_buzz` | Enable Buzz | web-c |
 | `web_live` | `web_live.channels.tab.enable_imessage_via_photon` | Enable iMessage via Photon | web-c |
 | `web_live` | `web_live.channels.tab.enable_irc` | Enable IRC | web-c |
@@ -3741,7 +3741,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `web_live` | `web_live.config.button.auxiliary_115` | Auxiliary 115 | web-c, config-b |
 | `web_live` | `web_live.config.button.bedrock_8` | Bedrock 8 | web-c, config-b |
 | `web_live` | `web_live.config.button.curator_10` | Curator 10 | web-c, config-b |
-| `web_live` | `web_live.config.button.database_3` | Database 3 | web-c, config-b |
+| `web_live` | `web_live.config.button.database_3` | Database 3 | web-c, config-b, acp-mcp-dev |
 | `web_live` | `web_live.config.button.desktop_11` | Desktop 11 | web-c, config-b |
 | `web_live` | `web_live.config.button.gateway_22` | Gateway 22 | web-c, config-b |
 | `web_live` | `web_live.config.button.kanban_16` | Kanban 16 | web-shell, web-c, config-b |
@@ -4022,7 +4022,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `web_live` | `web_live.env.label.wecom_home_channel` | WECOM_HOME_CHANNEL | cli-b, gw-core, platforms-b |
 | `web_live` | `web_live.env.label.wecom_allowed_users` | WECOM_ALLOWED_USERS | cli-b, gw-core, platforms-b |
 | `web_live` | `web_live.env.label.a2a_allow_all_users` | A2A_ALLOW_ALL_USERS | platforms-b, web-c, env-vars |
-| `web_live` | `web_live.env.label.a2a_home_channel` | A2A_HOME_CHANNEL | platforms-b, web-c |
+| `web_live` | `web_live.env.label.a2a_home_channel` | A2A_HOME_CHANNEL | platforms-b, web-c, acp-mcp-dev |
 | `web_live` | `web_live.env.label.whatsapp_allow_all_users` | WHATSAPP_ALLOW_ALL_USERS | gw-core, platforms-a, web-c |
 | `web_live` | `web_live.env.label.whatsapp_home_channel` | WHATSAPP_HOME_CHANNEL | cli-b, gw-core, platforms-a |
 | `web_live` | `web_live.env.label.whatsapp_home_channel_name` | WHATSAPP_HOME_CHANNEL_NAME | gw-core, platforms-a, web-c |
@@ -4102,11 +4102,11 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `web_live` | `web_live.files.button._pki` | .pki | web-a, gapfill-web-a-r0 |
 | `web_live` | `web_live.files.button.open_pki` | Open .pki | web-a, gapfill-web-a-r0 |
 | `web_live` | `web_live.files.button.delete_pki` | Delete .pki | web-a, gapfill-web-a-r0 |
-| `web_live` | `web_live.files.button._rustup` | .rustup | cli-b, web-a, docs-features |
+| `web_live` | `web_live.files.button._rustup` | .rustup | cli-b, web-a, acp-mcp-dev |
 | `web_live` | `web_live.files.button.open_rustup` | Open .rustup | web-a, gapfill-web-a-r0 |
 | `web_live` | `web_live.files.button.delete_rustup` | Delete .rustup | web-a, gapfill-web-a-r0 |
 | `web_live` | `web_live.files.button._ssh` | .ssh | cli-a, cli-b, cli-c |
-| `web_live` | `web_live.files.button.open_ssh` | Open .ssh | web-a, gapfill-web-a-r0 |
+| `web_live` | `web_live.files.button.open_ssh` | Open .ssh | web-a, gapfill-desktop-settings-4-r0, gapfill-web-a-r0 |
 | `web_live` | `web_live.files.button.delete_ssh` | Delete .ssh | web-a, gapfill-web-a-r0 |
 | `web_live` | `web_live.files.button._bashrc` | .bashrc | cli-d, cli-f, web-a |
 | `web_live` | `web_live.files.button.download_bashrc` | Download .bashrc | web-a, gapfill-web-a-r0 |
@@ -4648,7 +4648,7 @@ Generated mechanically by `check_strings.py` logic: a string is covered when its
 | `web_live` | `web_live.system.button.restore_path` | Restore path | web-c, agent-core-a |
 | `web_live` | `web_live.system.button.generate_share_link` | Generate share link | web-c |
 | `web_live` | `web_live.system.button.prune` | Prune | cli-a, cli-c, cli-d |
-| `web_live` | `web_live.system.button.new_hook` | NEW HOOK | web-c, config-a, docs-rest |
+| `web_live` | `web_live.system.button.new_hook` | NEW HOOK | web-c, config-a, acp-mcp-dev |
 | `web_live` | `web_live.system.link.chat` | CHAT | cli-a, cli-b, cli-c |
 | `web_live` | `web_live.system.link.sessions` | SESSIONS | cli-a, cli-b, cli-c |
 | `web_live` | `web_live.system.link.files` | FILES | cli-a, cli-b, cli-c |

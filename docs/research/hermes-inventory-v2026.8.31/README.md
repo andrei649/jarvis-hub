@@ -1,52 +1,58 @@
 # Hermes Agent v2026.8.31 — exhaustive feature & UI inventory (reverse-engineering reference)
 
-> Generated 2026-09-05/06 from a live install of `NousResearch/hermes-agent` at tag `v2026.8.31` (package `hermes-agent` 0.21.0, MIT). Evidence and method below. Total entries: **8038** across 47 sections.
+> Generated 2026-09-05/06 from a live install of `NousResearch/hermes-agent` at tag `v2026.8.31` (package `hermes-agent` 0.21.0, MIT). Evidence and method below. Total entries: **8199** across 53 sections.
 
 ## Ce este documentul acesta
 
-Un inventar exhaustiv al **Hermes Agent v2026.8.31** (pachet `hermes-agent` 0.21.0, NousResearch, licență MIT),
-făcut pe o instalare **reală** — nu pe baza documentației upstream. Scopul: fiecare comandă, fiecare buton,
-fiecare setare și fiecare cuvânt din interfață să fie aici, explicat suficient de precis încât să poată fi
-reimplementat pornind doar de la acest text.
+Un inventar exhaustiv al Hermes Agent v2026.8.31 — fiecare comandă, buton, setare, unealtă și string
+din interfață — scris la o adâncime din care fiecare funcție poate fi reimplementată. Fiecare intrare
+răspunde la nouă întrebări fixe: unde o vede utilizatorul, ce face, cum funcționează (fișier:linie),
+ce intrări acceptă, ce efecte are, ce chei de config/env o guvernează, ce cazuri-limită are și cum
+s-ar rescrie mai bine.
 
-Fiecare intrare are aceeași structură: **unde se vede** (comanda exactă, pagina → secțiunea → eticheta,
-citată literal, cu cheia i18n când există), **ce face**, **cum funcționează** (fișier:linie, algoritm, ce
-scrie pe disc, ce protocol vorbește), **toate** intrările și opțiunile, efectele secundare, cheile de
-configurare și variabilele de mediu care o guvernează, limitele și cazurile-limită, plus **note de
-reconstrucție**: specificația minimă de reimplementare și o observație despre ce ar face o versiune mai bună.
+**8.253 de intrări în 53 de fișiere de secțiune, 17 MB.** Sursa: o instalare vie a tag-ului `v2026.8.31`
+(pachetul `hermes-agent` 0.21.0, licență MIT), nu documentația upstream.
 
-## Harta lui Hermes, pe scurt
+## Cum a fost verificat că nu lipsește nimic
 
-Hermes e un agent cu apel de unelte care se expune prin șase suprafețe peste același nucleu:
+Cerința a fost „niciun cuvânt din frontend să nu lipsească". Ca să nu rămână o promisiune, am extras
+mecanic **toate cele 4.719 string-uri vizibile** din produs — 2.354 din aplicația desktop, 656 din
+dashboard-ul web, 137 din TUI, 367 din gateway (Telegram și celelalte platforme) și 1.205 etichete
+citite direct din browser cu Playwright pe dashboard-ul care rula — apoi un verificator
+(`check_strings.py`) a căutat fiecare string în inventar, fie după cheia i18n, fie după textul
+normalizat. String-urile negăsite au fost trimise unor agenți de completare, iar bucla s-a repetat
+până la epuizare.
 
-1. **CLI** — 73 de comenzi de nivel întâi (434 de ecrane de ajutor cu tot cu subcomenzi), de la `hermes chat`
-   până la `hermes kanban swarm`. Include un REPL interactiv cu propriile comenzi slash.
-2. **Gateway de mesagerie** — botul din Telegram, Discord, Slack, WhatsApp, Matrix, Feishu și încă ~15
-   platforme. 57 de handlere de comenzi slash, politici de acces, împerechere prin cod, aprobări în chat.
-3. **Dashboard web** — SPA React pe portul 9119 (`hermes dashboard`), 19 pagini plus Swagger, peste 260 de
-   rute FastAPI în spate.
-4. **Aplicație desktop** — Electron, cu HUD flotant, paletă de comenzi, panouri de terminal și fișiere,
-   ~90 de fișiere doar de setări; vorbește cu backend-ul prin JSON-RPC peste WebSocket.
-5. **TUI** — interfață în terminal peste `tui_gateway`, cu propriile suprapuneri și scurtături.
-6. **API-uri de protocol** — endpoint-uri compatibile OpenAI (`/v1/chat/completions`, `/v1/responses`),
-   un API de rulări (`/v1/runs`) cu dirijare și oprire, server MCP, server ACP, camere găzduite între instanțe.
+**Rezultat final: 4.719 din 4.719 acoperite (100%).** Anexa `appendix-i18n-coverage.md` arată,
+string cu string, în ce secțiune se află fiecare.
 
-Nucleul comun: 83 de unelte grupate în 59 de toolset-uri, 785 de chei de configurare, peste 1.000 de variabile
-de mediu, 58 de skill-uri incluse (în 13 categorii) plus 137 opționale (23 de categorii), 65 de servere MCP
-în catalog, 40 de furnizori de modele, 22 de adaptoare de platformă, interfață tradusă în 17 limbi,
-plus subsisteme de automatizare (cron cu monitorizare de sursă, bucle, heartbeat, obiective, kanban cu roiuri
-de agenți).
+## Ce s-a descoperit pe parcurs
 
-## Cum a fost verificat
+Inventarul a găsit și lucruri pe care documentația upstream nu le spune:
 
-Instalare reală din tag-ul `v2026.8.31`, dashboard pornit și interogat, arborele de ajutor CLI extras prin
-execuție, registrul de unelte extras prin introspecție Python, interfața web parcursă cu un browser real.
-Ce nu s-a putut executa (gateway cu token real de Telegram, apeluri către modele, aplicația Electron fără
-ecran) e documentat din sursă și marcat ca atare în tabelul de dovezi de mai jos.
+- **Un bug reproductibil:** `plugins/platforms/sms/adapter.py` folosește `re.sub` de nouă ori fără să
+  importe `re`. Orice `hermes send` sau job cron cu `deliver=sms` din afara procesului gateway
+  eșuează cu `name 're' is not defined`. Reprodus în venv-ul instalat.
+- **Setări declarate dar moarte:** `display.copy_shortcut` nu e citită nicăieri; `human_delay.*` are
+  câmpuri în schema dashboard-ului dar implementarea citește alte variabile de mediu, cu alt
+  vocabular; `bedrock.discovery.*` e expusă în interfață dar niciun cod nu o consultă.
+- **Divergențe între documentație și cod:** politica implicită de pairing la Yuanbao (`open` în
+  documentație vs `pairing` în cod), catalogul de skill-uri care listează un skill inexistent,
+  `hermes lsp which` care nu rezolvă aliasurile, `hermes status --all` care e parsat dar niciodată
+  citit.
+- **Valori implicite care diverg** între `DEFAULT_CONFIG` și fallback-ul de la locul citirii
+  (`approvals.mode`, `security.website_blocklist.enabled`, `voice.barge_in_threshold_multiplier`) —
+  inofensiv cu un config complet, dar cu comportament diferit pe unul parțial.
 
-**Un cuvânt despre onestitate:** unde codul contrazice documentația upstream, sau unde o setare există dar
-nu e citită de nimeni, inventarul o spune explicit. Sunt câteva zeci de astfel de constatări — de exemplu
-chei de configurare declarate și expuse în interfață care nu au niciun cititor în v2026.8.31.
+Fiecare astfel de constatare e marcată în secțiunea ei ca anomalie, cu dovada în cod.
+
+## Ce nu a putut fi testat viu
+
+Onest, ca să știi ce e verificat și ce e citit din sursă: gateway-ul nu a fost pornit cu un token
+Telegram real, nu s-au făcut apeluri la modele (fără chei API), aplicația Electron nu a putut rula
+(fără display) și TUI-ul refuză să pornească fără terminal interactiv. Suprafețele acelea sunt
+documentate din sursă, cu fișier și linie, nu din capturi de ecran. Dashboard-ul web, CLI-ul,
+registrul de unelte și configurația **au** fost exercitate viu.
 
 ## Coverage matrix
 
@@ -69,8 +75,8 @@ chei de configurare declarate și expuse în interfață care nu au niciun citit
 | 15 | [web-c](15-web-c.md) | Web dashboard — Channels, Webhooks, Pairing, Profiles, Config, Keys/Env, System, Docs, Login | 141 | 325 KB |
 | 16 | [desktop-main](16-desktop-main.md) | Desktop app — Electron main process, backend lifecycle, remote/SSH backends, updates, deep links, SDK/plugins | 202 | 354 KB |
 | 17 | [desktop-a](17-desktop-a.md) | Desktop app — HUD, command palette, command center, shell chrome, sidebars, overlays | 120 | 222 KB |
-| 18 | [desktop-b](18-desktop-b.md) | Desktop app — Chat, sessions, messaging, agents, artifacts, gateway, cron, webhooks, profiles, skills, starmap, learning, pets, hooks, contrib | 173 | 387 KB |
-| 19 | [desktop-settings](19-desktop-settings.md) | Desktop app — Settings (every panel, every field) | 107 | 121 KB |
+| 18 | [desktop-b](18-desktop-b.md) | Desktop app — Chat, sessions, messaging, agents, artifacts, gateway, cron, webhooks, profiles, skills, starmap, learning, pets, hooks, contrib | 173 | 388 KB |
+| 19 | [desktop-settings](19-desktop-settings.md) | Desktop app — Settings (every panel, every field) | 107 | 122 KB |
 | 20 | [tui](20-tui.md) | TUI (`ui-tui`) + `tui_gateway` | 475 | 496 KB |
 | 21 | [config-a](21-config-a.md) | Configuration keys A — General, Agent, Terminal, Display, Delegation, Memory, Compression, Security, Browser, Voice, Text-to-Speech, Speech-to-Text, Logging | 243 | 380 KB |
 | 22 | [config-b](22-config-b.md) | Configuration keys B — platform, auxiliary, gateway & ops sections, hidden keys, and the config.yaml machinery | 196 | 327 KB |
@@ -85,27 +91,33 @@ chei de configurare declarate și expuse în interfață care nu au niciun citit
 | 31 | [automation](31-automation.md) | Automation — cron, loops, heartbeat, goals, kanban, projects, worktrees, hosted rooms, runs API, peers, webhooks, send | 153 | 297 KB |
 | 32 | [security](32-security.md) | Security — approvals, yolo/safe mode, egress firewall, secrets, pairing, managed scope, audits, dashboard auth, TLS | 139 | 336 KB |
 | 33 | [media](33-media.md) | Media & Environment Stack — browser, computer use, vision, image/video generation, TTS/STT, wake word, voice mode, document extraction, code-execution kernels, desktop UI tools | 216 | 363 KB |
-| 34 | [acp-mcp-dev](34-acp-mcp-dev.md) | Protocol surfaces — ACP, MCP, OpenAI-compatible API, A2A, LSP, proxy, plugin/hook developer API | 118 | 166 KB |
+| 34 | [acp-mcp-dev](34-acp-mcp-dev.md) | Protocol surfaces — ACP, MCP, OpenAI-compatible API, A2A, LSP, proxy, plugin/hook developer API | 214 | 339 KB |
 | 35 | [docs-features](35-docs-features.md) | Feature Docs Cross-Check — `website/docs/user-guide/features/*` | 821 | 1511 KB |
 | 36 | [docs-rest](36-docs-rest.md) | Remaining Documentation Cross-Check — Getting Started, Guides, Integrations, Developer Guide, User-Guide Top Level, Reference Misc | 208 | 677 KB |
 | 37 | [delta-27-31](37-delta-27-31.md) | Delta v2026.8.27 → v2026.8.31 — everything that changed | 135 | 236 KB |
-| 38 | [gapfill-desktop-a-r0](38-gapfill-desktop-a-r0.md) | Gap-fill (round 0, area "desktop-a") — boot-failure recovery overlay, toast/notification stack, Send diagnostics | 27 | 116 KB |
-| 39 | [gapfill-desktop-b-0-r0](39-gapfill-desktop-b-0-r0.md) | Gap-fill — Desktop app: profile remote-override store, session status/unread, sidebar grouping, projects & worktrees, orphan profile strings | 10 | 41 KB |
-| 40 | [gapfill-desktop-b-1-r0](40-gapfill-desktop-b-1-r0.md) | Gap-fill — Desktop app: session/prompt action feedback, image + export flows, shared UI primitives (round 0, area desktop-b-1) | 21 | 64 KB |
-| 41 | [gapfill-desktop-b-r0](41-gapfill-desktop-b-r0.md) | Gap-fill — Desktop app (area desktop-b, round 0) | 6 | 29 KB |
-| 42 | [gapfill-desktop-main-r0](42-gapfill-desktop-main-r0.md) | Gap-fill — Desktop self-update: version-skew toasts and the Settings → About updates card | 10 | 55 KB |
-| 43 | [gapfill-desktop-settings-0-r0](43-gapfill-desktop-settings-0-r0.md) | Gap-fill — Hermes Desktop Settings: Language, Appearance rows, Notifications, Plugins (round 0, area `desktop-settings-0`) | 16 | 61 KB |
-| 44 | [gapfill-desktop-settings-2-r0](44-gapfill-desktop-settings-2-r0.md) | Gap-fill — Hermes Desktop Settings → Gateways: connection modes, Hermes Cloud, connections registry, managed updates (round 0, area `desktop-settings-2`) | 27 | 78 KB |
-| 45 | [gapfill-gw-core-r0](45-gapfill-gw-core-r0.md) | Gap-fill: Gateway core — kanban wake-notification message composer | 3 | 16 KB |
-| 46 | [gapfill-web-a-r0](46-gapfill-web-a-r0.md) | Gap-fill (round 0, area web-a): Files page row identity, accessible-name templates and the default browsable root | 2 | 14 KB |
-| 47 | [gapfill-web-c-r0](47-gapfill-web-c-r0.md) | Gap-fill: Web dashboard "Keys" page — composed accessible names (round 0, area web-c) | 2 | 16 KB |
+| 38 | [zz-placeholder-templates](38-zz-placeholder-templates.md) | Pure-placeholder i18n templates (12 strings with no literal words) | 7 | 7 KB |
+| 39 | [gapfill-desktop-a-r0](39-gapfill-desktop-a-r0.md) | Gap-fill (round 0, area "desktop-a") — boot-failure recovery overlay, toast/notification stack, Send diagnostics | 27 | 116 KB |
+| 40 | [gapfill-desktop-b-0-r0](40-gapfill-desktop-b-0-r0.md) | Gap-fill — Desktop app: profile remote-override store, session status/unread, sidebar grouping, projects & worktrees, orphan profile strings | 10 | 41 KB |
+| 41 | [gapfill-desktop-b-1-r0](41-gapfill-desktop-b-1-r0.md) | Gap-fill — Desktop app: session/prompt action feedback, image + export flows, shared UI primitives (round 0, area desktop-b-1) | 21 | 64 KB |
+| 42 | [gapfill-desktop-b-r0](42-gapfill-desktop-b-r0.md) | Gap-fill — Desktop app (area desktop-b, round 0) | 6 | 29 KB |
+| 43 | [gapfill-desktop-b-r1](43-gapfill-desktop-b-r1.md) | Gap-fill — Desktop app: Artifacts pager range strip + one orphaned sidebar key (round 1, area desktop-b) | 2 | 12 KB |
+| 44 | [gapfill-desktop-b-r2](44-gapfill-desktop-b-r2.md) | Desktop app — gap-fill round 2 (cron weekday names, orphaned profile string) | 1 | 7 KB |
+| 45 | [gapfill-desktop-main-r0](45-gapfill-desktop-main-r0.md) | Gap-fill — Desktop self-update: version-skew toasts and the Settings → About updates card | 10 | 55 KB |
+| 46 | [gapfill-desktop-settings-0-r0](46-gapfill-desktop-settings-0-r0.md) | Gap-fill — Hermes Desktop Settings: Language, Appearance rows, Notifications, Plugins (round 0, area `desktop-settings-0`) | 16 | 61 KB |
+| 47 | [gapfill-desktop-settings-1-r0](47-gapfill-desktop-settings-1-r0.md) | Gap-fill — Desktop Settings: Appearance rows, the Pet section, Advanced device prefs, Quick Entry, credential fields and the Connections registry | 35 | 105 KB |
+| 48 | [gapfill-desktop-settings-2-r0](48-gapfill-desktop-settings-2-r0.md) | Gap-fill — Hermes Desktop Settings → Gateways: connection modes, Hermes Cloud, connections registry, managed updates (round 0, area `desktop-settings-2`) | 27 | 78 KB |
+| 49 | [gapfill-desktop-settings-3-r0](49-gapfill-desktop-settings-3-r0.md) | Gap-fill — Desktop Settings, area 3 (Tools & Keys, Providers, Archived Chats, Toolset/Execution-backend panels, MCP deep-link validator) | 19 | 63 KB |
+| 50 | [gapfill-desktop-settings-4-r0](50-gapfill-desktop-settings-4-r0.md) | Gap-fill — Desktop Settings 4: Execution backend picker (Capabilities → terminal toolset) | 1 | 14 KB |
+| 51 | [gapfill-gw-core-r0](51-gapfill-gw-core-r0.md) | Gap-fill: Gateway core — kanban wake-notification message composer | 3 | 16 KB |
+| 52 | [gapfill-web-a-r0](52-gapfill-web-a-r0.md) | Gap-fill (round 0, area web-a): Files page row identity, accessible-name templates and the default browsable root | 2 | 14 KB |
+| 53 | [gapfill-web-c-r0](53-gapfill-web-c-r0.md) | Gap-fill: Web dashboard "Keys" page — composed accessible names (round 0, area web-c) | 2 | 16 KB |
 
 ### UI-string coverage (mechanical)
 
 | Catalog | Strings | Covered |
 |---|---:|---:|
-| desktop_en | 2354 | 2282 (96%) |
-| gateway_locale_en | 367 | 356 (97%) |
+| desktop_en | 2354 | 2354 (100%) |
+| gateway_locale_en | 367 | 367 (100%) |
 | tui_content | 137 | 137 (100%) |
 | web_en | 656 | 656 (100%) |
 | web_live | 1205 | 1205 (100%) |
@@ -6981,6 +6993,102 @@ Full per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).
 - `DELETE /v1/responses/{response_id}` — `acp-mcp-dev.api-delete-response`
 - `GET /v1/models` — `acp-mcp-dev.api-models`
 - `GET /api/model/options` — Hermes provider/model inventory — `acp-mcp-dev.api-model-options`
+- A2A plugin (inbound platform + outbound tools) — `acp-mcp-dev.a2a-plugin`
+- A2A Agent Card endpoint — `acp-mcp-dev.a2a-agent-card`
+- A2A `GET /` and `GET /health` — `acp-mcp-dev.a2a-health`
+- A2A `GET /metrics` — `acp-mcp-dev.a2a-metrics`
+- A2A JSON-RPC endpoint `POST /` — `acp-mcp-dev.a2a-jsonrpc`
+- A2A method: `SendMessage` (`message/send`) — `acp-mcp-dev.a2a-send-message`
+- A2A method: `SendStreamingMessage` (`message/stream`) — `acp-mcp-dev.a2a-send-streaming`
+- A2A method: `GetTask` (`tasks/get`) — `acp-mcp-dev.a2a-get-task`
+- A2A method: `ListTasks` (`tasks/list`) — `acp-mcp-dev.a2a-list-tasks`
+- A2A method: `CancelTask` (`tasks/cancel`) — `acp-mcp-dev.a2a-cancel-task`
+- A2A method: `SubscribeToTask` (`tasks/subscribe`) — `acp-mcp-dev.a2a-subscribe-task`
+- A2A method: `CreateTaskPushNotificationConfig` — `acp-mcp-dev.a2a-push-create`
+- A2A method: `GetTaskPushNotificationConfig` — `acp-mcp-dev.a2a-push-get`
+- A2A method: `ListTaskPushNotificationConfigs` — `acp-mcp-dev.a2a-push-list`
+- A2A method: `DeleteTaskPushNotificationConfig` — `acp-mcp-dev.a2a-push-delete`
+- A2A authentication and identity — `acp-mcp-dev.a2a-auth`
+- A2A bind-host safety — `acp-mcp-dev.a2a-bind`
+- A2A trusted-peer allow-list — `acp-mcp-dev.a2a-trusted-peers`
+- A2A inbound prompt-injection filtering and framing — `acp-mcp-dev.a2a-inbound-filter`
+- A2A outbound credential redaction — `acp-mcp-dev.a2a-outbound-redaction`
+- A2A rate limiting — `acp-mcp-dev.a2a-rate-limit`
+- A2A anti-loop turn cap — `acp-mcp-dev.a2a-turn-cap`
+- A2A audit log — `acp-mcp-dev.a2a-audit`
+- A2A conversation persistence — `acp-mcp-dev.a2a-conversations`
+- A2A configuration and environment reference — `acp-mcp-dev.a2a-env`
+- A2A peer registry (`a2a_agents:`) — `acp-mcp-dev.a2a-agents-config`
+- Tool: `a2a_discover` — `acp-mcp-dev.a2a-tool-discover`
+- Tool: `a2a_call` — `acp-mcp-dev.a2a-tool-call`
+- Tool: `a2a_list` — `acp-mcp-dev.a2a-tool-list`
+- Tool: `a2a_history` — `acp-mcp-dev.a2a-tool-history`
+- Tool: `a2a_orchestrate` — `acp-mcp-dev.a2a-tool-orchestrate`
+- LSP semantic diagnostics on `write_file` / `patch` — `acp-mcp-dev.lsp-diagnostics`
+- `hermes lsp` — command group — `acp-mcp-dev.lsp-root`
+- `hermes lsp status` — `acp-mcp-dev.lsp-status`
+- `hermes lsp list` — `acp-mcp-dev.lsp-list`
+- `hermes lsp install` — `acp-mcp-dev.lsp-install`
+- `hermes lsp install-all` — `acp-mcp-dev.lsp-install-all`
+- `hermes lsp restart` — `acp-mcp-dev.lsp-restart`
+- `hermes lsp which` — `acp-mcp-dev.lsp-which`
+- LSP server registry (27 servers) — `acp-mcp-dev.lsp-registry`
+- LSP install recipes — `acp-mcp-dev.lsp-install-recipes`
+- LSP service configuration — `acp-mcp-dev.lsp-config`
+- LSP service lifecycle and singleton — `acp-mcp-dev.lsp-service`
+- `hermes proxy` — command group — `acp-mcp-dev.proxy-root`
+- `hermes proxy start` — `acp-mcp-dev.proxy-start`
+- `hermes proxy status` — `acp-mcp-dev.proxy-status`
+- `hermes proxy providers` — `acp-mcp-dev.proxy-providers`
+- Proxy HTTP server (`/v1/{tail}` + `/health`) — `acp-mcp-dev.proxy-server`
+- Proxy upstream adapter contract — `acp-mcp-dev.proxy-adapter-api`
+- Proxy adapter: Nous Portal (`--provider nous`) — `acp-mcp-dev.proxy-adapter-nous`
+- Proxy adapter: xAI Grok OAuth (`--provider xai`) — `acp-mcp-dev.proxy-adapter-xai`
+- `plugin.yaml` manifest v1 — `acp-mcp-dev.plugin-manifest-v1`
+- `plugin.yaml` manifest v2 (additive) — `acp-mcp-dev.plugin-manifest-v2`
+- Native plugin compatibility contract — `acp-mcp-dev.plugin-compat-contract`
+- `register(ctx)` entry point — `acp-mcp-dev.plugin-register`
+- `ctx.register_tool()` — `acp-mcp-dev.ctx-register-tool`
+- `ctx.register_hook()` — `acp-mcp-dev.ctx-register-hook`
+- The 37 plugin hook points — `acp-mcp-dev.plugin-hooks-list`
+- `pre_llm_call` context injection — `acp-mcp-dev.plugin-context-injection`
+- `ctx.register_middleware()` — `acp-mcp-dev.ctx-register-middleware`
+- The `PluginContext` registration surface — `acp-mcp-dev.plugin-context-api`
+- `ctx.dispatch_tool()` — `acp-mcp-dev.ctx-dispatch-tool`
+- `ctx.register_command()` — in-session slash commands — `acp-mcp-dev.ctx-register-command`
+- `ctx.register_cli_command()` — `acp-mcp-dev.ctx-register-cli-command`
+- `ctx.register_skill()` — plugin-bundled skills — `acp-mcp-dev.ctx-register-skill`
+- `ctx.register_platform_handler()` / `register_slack_action_handler()` — `acp-mcp-dev.ctx-platform-handlers`
+- Plugin capability model and consent — `acp-mcp-dev.plugin-capabilities`
+- Plugin packs (`hermes-pack.yaml`) — `acp-mcp-dev.plugin-packs`
+- Portable Agent Plugins v1 packages — `acp-mcp-dev.portable-agent-plugins`
+- Plugin durable storage (`plugins/plugin_storage.py`) — `acp-mcp-dev.plugin-storage`
+- Plugin concurrency helpers (`plugins/plugin_utils.py`) — `acp-mcp-dev.plugin-utils`
+- Lazy optional Python dependencies (`tools.lazy_deps.ensure`) — `acp-mcp-dev.plugin-lazy-deps`
+- `hermes plugins doctor` — the validation contract — `acp-mcp-dev.plugin-doctor-contract`
+- Desktop plugin SDK — contribution areas — `acp-mcp-dev.desktop-plugin-sdk`
+- Web dashboard plugin manifest — `acp-mcp-dev.dashboard-plugin-manifest`
+- Where each pluggable interface lives (the routing table) — `acp-mcp-dev.plugin-interface-map`
+- Distributing a plugin via pip — `acp-mcp-dev.plugin-pip-distribution`
+- Distributing a plugin for NixOS — `acp-mcp-dev.plugin-nix-distribution`
+- Shell hooks — configuration schema — `acp-mcp-dev.shell-hooks-schema`
+- Shell hooks — JSON wire protocol — `acp-mcp-dev.shell-hooks-protocol`
+- Shell-hook first-use consent allowlist — `acp-mcp-dev.shell-hooks-consent`
+- Gateway event hooks (`HOOK.yaml` + `handler.py`) — `acp-mcp-dev.gateway-event-hooks`
+- Nix flake outputs — `acp-mcp-dev.nix-flake`
+- NixOS / Home-Manager module options — `acp-mcp-dev.nix-module-options`
+- Docker image and entrypoint chain — `acp-mcp-dev.docker-image`
+- `docker-compose.yml` — `acp-mcp-dev.docker-compose`
+- `docker-compose.windows.yml` — `acp-mcp-dev.docker-compose-windows`
+- Native extension: `fts5_cjk` SQLite tokenizer — `acp-mcp-dev.native-fts5-cjk`
+- `hermes completion` — shell completion generation — `acp-mcp-dev.completion`
+- MCP config reload — `acp-mcp-dev.mcp-reload`
+- MCP stdio OSV malware preflight — `acp-mcp-dev.mcp-osv-preflight`
+- MCP lazy server connect — `acp-mcp-dev.mcp-lazy-connect`
+- ACP packaging and console scripts — `acp-mcp-dev.acp-packaging`
+- MCP OAuth manager (`tools/mcp_oauth_manager.py`) — `acp-mcp-dev.mcp-oauth-manager`
+- MCP input-schema normalization — `acp-mcp-dev.mcp-schema-normalize`
+- MCP content-block rendering and media caching — `acp-mcp-dev.mcp-content-blocks`
 
 ### 35 · Feature Docs Cross-Check — `website/docs/user-guide/features/*`
 
@@ -8155,7 +8263,17 @@ Full per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).
 - Bounded auto-restart for no-mux SSH tunnel flaps — `delta-27-31.desktop-ssh-tunnel-restart`
 - Codex compression summary streams fail over in 60 s — `delta-27-31.codex-summary-failover`
 
-### 38 · Gap-fill (round 0, area "desktop-a") — boot-failure recovery overlay, toast/notification stack, Send diagnostics
+### 38 · Pure-placeholder i18n templates (12 strings with no literal words)
+
+- Gateway list-item template for `/personality` — `zz.gateway-personality-item`
+- Gateway list-item templates for `/reload-skills` — `zz.gateway-reload-skills-items`
+- Gateway list-item templates for `/resume` — `zz.gateway-resume-items`
+- Gateway error passthrough templates — `zz.gateway-error-passthrough`
+- Gateway context meter bar — `zz.gateway-context-bar`
+- Gateway voice roster line — `zz.gateway-voice-status-member`
+- Desktop turn-finished notification body — `zz.desktop-turn-done-body`
+
+### 39 · Gap-fill (round 0, area "desktop-a") — boot-failure recovery overlay, toast/notification stack, Send diagnostics
 
 - Boot-failure recovery overlay — `gapfill-desktop-a-r0.boot-failure-overlay`
 - Boot-failure overlay — embedded "Gateway settings" recovery view — `gapfill-desktop-a-r0.boot-failure-connect-view`
@@ -8185,7 +8303,7 @@ Full per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).
 - App crash screen (React error boundary) — `gapfill-desktop-a-r0.error-boundary`
 - SearchField — "Clear search" button — `gapfill-desktop-a-r0.search-field`
 
-### 39 · Gap-fill — Desktop app: profile remote-override store, session status/unread, sidebar grouping, projects & worktrees, orphan profile strings
+### 40 · Gap-fill — Desktop app: profile remote-override store, session status/unread, sidebar grouping, projects & worktrees, orphan profile strings
 
 - Per-profile remote-override store (`store/profile-remote-override`) — `gapfill-desktop-b-0-r0.remote-override-store`
 - Session status dot (`SessionStatusDot`) — `gapfill-desktop-b-0-r0.session-status-dot`
@@ -8198,7 +8316,7 @@ Full per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).
 - “Clone from default” option (create-profile dialog) — `gapfill-desktop-b-0-r0.profiles-clone-from-default`
 - “Copy setup” — profile setup/wrapper command — `gapfill-desktop-b-0-r0.profiles-copy-setup`
 
-### 40 · Gap-fill — Desktop app: session/prompt action feedback, image + export flows, shared UI primitives (round 0, area desktop-b-1)
+### 41 · Gap-fill — Desktop app: session/prompt action feedback, image + export flows, shared UI primitives (round 0, area desktop-b-1)
 
 - Session date-group dividers — "Earlier today" / "Earlier this week" / "Earlier this month" — `gapfill-desktop-b-1-r0.date-dividers-pointer`
 - Shared Pagination primitive (Prev / page numbers / Next) — `gapfill-desktop-b-1-r0.shared-pagination`
@@ -8222,7 +8340,7 @@ Full per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).
 - Composer image attach (paste / drop / pick) — failures — `gapfill-desktop-b-1-r0.composer-image-attach`
 - `/handoff` (desktop) — hand this chat to a messaging platform — `gapfill-desktop-b-1-r0.slash-handoff`
 
-### 41 · Gap-fill — Desktop app (area desktop-b, round 0)
+### 42 · Gap-fill — Desktop app (area desktop-b, round 0)
 
 - Composer microphone recorder (`useMicRecorder`) — `gapfill-desktop-b-r0.mic-recorder`
 - Composer push-to-talk recorder (`useVoiceRecorder`) — `gapfill-desktop-b-r0.voice-recorder`
@@ -8231,7 +8349,16 @@ Full per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).
 - Profile export bundle (“Export…” → “Export profile…”) — `gapfill-desktop-b-r0.profile-export-flow`
 - Profile import bundle (“Import profile…”) — `gapfill-desktop-b-r0.profile-import-flow`
 
-### 42 · Gap-fill — Desktop self-update: version-skew toasts and the Settings → About updates card
+### 43 · Gap-fill — Desktop app: Artifacts pager range strip + one orphaned sidebar key (round 1, area desktop-b)
+
+- Artifacts pagination — range strip and item nouns (“0” / “{start}-{end} of {total}” / “images” / “links” / “files” / “items”) — `gapfill-desktop-b-r1.artifacts-range-strip`
+- Chat sidebar — “No workspace” group label (orphaned i18n key) — `gapfill-desktop-b-r1.sidebar-no-workspace`
+
+### 44 · Desktop app — gap-fill round 2 (cron weekday names, orphaned profile string)
+
+- Cron schedule summary — weekday names (“Every Wednesday at 9:00 AM”) — `gapfill-desktop-b-r2.cron-day-names`
+
+### 45 · Gap-fill — Desktop self-update: version-skew toasts and the Settings → About updates card
 
 - Update-ready toast ("Update ready" / "See what's new") — `gapfill-desktop-main.update-ready-toast`
 - Backend-out-of-date (contract skew) toast — `gapfill-desktop-main.backend-contract-skew-toast`
@@ -8244,7 +8371,7 @@ Full per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).
 - Staged install progress screen ("Setting up Hermes Agent") — `gapfill-desktop-main.install-overlay-progress`
 - "Update everything" fan-out result toasts — `gapfill-desktop-main.update-everything-toasts`
 
-### 43 · Gap-fill — Hermes Desktop Settings: Language, Appearance rows, Notifications, Plugins (round 0, area `desktop-settings-0`)
+### 46 · Gap-fill — Hermes Desktop Settings: Language, Appearance rows, Notifications, Plugins (round 0, area `desktop-settings-0`)
 
 - Language switcher (globe button + language list) — `gapfill-desktop-settings-0-r0.language-switcher`
 - Settings → Appearance → "Language" row — `gapfill-desktop-settings-0-r0.appearance-language-row`
@@ -8263,7 +8390,45 @@ Full per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).
 - "Install plugin" modal (install-from-repo flow) — `gapfill-desktop-settings-0-r0.plugin-install-modal`
 - Settings per-tab search placeholder catalog (`settings.searchPlaceholder.*`) — `gapfill-desktop-settings-0-r0.settings-search-placeholder-catalog`
 
-### 44 · Gap-fill — Hermes Desktop Settings → Gateways: connection modes, Hermes Cloud, connections registry, managed updates (round 0, area `desktop-settings-2`)
+### 47 · Gap-fill — Desktop Settings: Appearance rows, the Pet section, Advanced device prefs, Quick Entry, credential fields and the Connections registry
+
+- Chat Backdrop — `gapfill-desktop-settings-1.appearance-backdrop`
+- Message Reactions (Appearance switch) — `gapfill-desktop-settings-1.appearance-reactions`
+- Floating Composer (composer pop-out gestures) — `gapfill-desktop-settings-1.appearance-composer-popout`
+- Vibe Hearts — `gapfill-desktop-settings-1.appearance-vibe-hearts`
+- Inline Embeds — `gapfill-desktop-settings-1.appearance-embeds`
+- Tool Call Display (Product / Technical) — `gapfill-desktop-settings-1.appearance-tool-view`
+- Install from VS Code (theme importer copy) — `gapfill-desktop-settings-1.appearance-install-theme-copy`
+- Remove theme (imported palettes) — `gapfill-desktop-settings-1.appearance-remove-theme`
+- Pet — "Choose a pet" gallery picker — `gapfill-desktop-settings-1.pet-choose`
+- Pet — Size (scale slider) — `gapfill-desktop-settings-1.pet-scale`
+- Pet — Roam — `gapfill-desktop-settings-1.pet-roam`
+- Pet — delete confirmation — `gapfill-desktop-settings-1.pet-delete-confirm`
+- Pet — nothing available to turn on — `gapfill-desktop-settings-1.pet-none-available`
+- Pet — gallery unreachable — `gapfill-desktop-settings-1.pet-gallery-unreachable`
+- Keep computer awake — `gapfill-desktop-settings-1.config-keep-awake`
+- Disable F12 DevTools — `gapfill-desktop-settings-1.config-disable-f12`
+- Hermes configuration loading state — `gapfill-desktop-settings-1.config-loading`
+- Quick Entry shortcut field and its status line — `gapfill-desktop-settings-1.quick-entry-shortcut`
+- Credential value field (Paste key) — `gapfill-desktop-settings-1.credential-field`
+- Credential save guards (empty value, save failure) — `gapfill-desktop-settings-1.credential-save-guards`
+- Env var actions menu — "Manage in API Keys" — `gapfill-desktop-settings-1.env-actions-manage-keys`
+- Registered gateways (connections registry section) — `gapfill-desktop-settings-1.connections-section`
+- Gateway search box — `gapfill-desktop-settings-1.connections-search`
+- Connections registry load failure — `gapfill-desktop-settings-1.connections-load-failed`
+- Connection row — pills and identity — `gapfill-desktop-settings-1.connection-row-pills`
+- Connection row actions — Test / Make primary / Edit / Remove — `gapfill-desktop-settings-1.connection-row-actions`
+- Add connection — `gapfill-desktop-settings-1.connections-add`
+- Connection editor — kind picker and kind descriptions — `gapfill-desktop-settings-1.connection-editor-kind`
+- Connection editor — Name field — `gapfill-desktop-settings-1.connection-editor-label`
+- Connection editor — address fields (Gateway URL / SSH host / auth) — `gapfill-desktop-settings-1.connection-editor-address`
+- Connection editor — Extra gateway headers — `gapfill-desktop-settings-1.connection-editor-headers`
+- Connection editor — Save / Cancel and save failure — `gapfill-desktop-settings-1.connection-editor-save`
+- Remove this connection? — `gapfill-desktop-settings-1.connection-remove-confirm`
+- Update all instances (fan-out button) — `gapfill-desktop-settings-1.connections-update-all`
+- Startup launch mode (last-used vs Primary gateway) — `gapfill-desktop-settings-1.connections-launch-mode`
+
+### 48 · Gap-fill — Hermes Desktop Settings → Gateways: connection modes, Hermes Cloud, connections registry, managed updates (round 0, area `desktop-settings-2`)
 
 - Settings → Gateways page (`GatewaySettings`) — `gapfill-desktop-settings-2-r0.gateway-page`
 - Environment-override banner — `gapfill-desktop-settings-2-r0.gateway-env-override`
@@ -8293,18 +8458,44 @@ Full per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).
 - Per-connection "Update" button and its states — `gapfill-desktop-settings-2-r0.managed-update-run`
 - Managed-update receipt and per-profile restore lines — `gapfill-desktop-settings-2-r0.managed-update-receipt`
 
-### 45 · Gap-fill: Gateway core — kanban wake-notification message composer
+### 49 · Gap-fill — Desktop Settings, area 3 (Tools & Keys, Providers, Archived Chats, Toolset/Execution-backend panels, MCP deep-link validator)
+
+- Settings → Tools & Keys page (`KeysSettings`) — `gapfill-desktop-settings-3-r0.keys-page`
+- Credential catalog fetch (`useEnvCredentials` load lifecycle) — `gapfill-desktop-settings-3-r0.env-credentials-load`
+- `hermes://mcp/install` deep-link validator (`parseMcpInstallDeepLink`) — `gapfill-desktop-settings-3-r0.mcp-deeplink-parser`
+- Settings → Providers page frame (`ProvidersSettings`) — `gapfill-desktop-settings-3-r0.providers-page`
+- Providers → Accounts: "Connect an account" picker — `gapfill-desktop-settings-3-r0.providers-oauth-picker`
+- Providers → Accounts: connected-provider row and disconnect — `gapfill-desktop-settings-3-r0.providers-connected-row`
+- Providers → API keys tab (search + empty states) — `gapfill-desktop-settings-3-r0.providers-keys-tab`
+- Providers → "Local / custom endpoint" row — `gapfill-desktop-settings-3-r0.providers-local-endpoint`
+- Settings → Archived Chats page (`SessionsSettings`) — `gapfill-desktop-settings-3-r0.sessions-page`
+- Archived Chats → per-row actions ("Unarchive" / "Delete permanently") — `gapfill-desktop-settings-3-r0.sessions-row-actions`
+- Archived Chats → "Auto-archive stale chats" — `gapfill-desktop-settings-3-r0.sessions-auto-archive`
+- Archived Chats → "Default project directory" — `gapfill-desktop-settings-3-r0.sessions-default-dir`
+- Toolset config panel (`ToolsetConfigPanel`) — `gapfill-desktop-settings-3-r0.toolset-config-panel`
+- Toolset provider row (status pills + "Use this backend") — `gapfill-desktop-settings-3-r0.toolset-provider-row`
+- Toolset panel → Nous Portal sign-in gate — `gapfill-desktop-settings-3-r0.toolset-nous-portal`
+- Toolset panel → web capability assignment ("Use for Search" / "Use for Extract") — `gapfill-desktop-settings-3-r0.toolset-web-capabilities`
+- Toolset panel → post-setup install runner — `gapfill-desktop-settings-3-r0.toolset-post-setup`
+- Toolset panel → per-backend model catalog picker — `gapfill-desktop-settings-3-r0.toolset-model-catalog`
+- Settings → Execution backend panel (`TerminalBackendPanel`) — `gapfill-desktop-settings-3-r0.terminal-backend-panel`
+
+### 50 · Gap-fill — Desktop Settings 4: Execution backend picker (Capabilities → terminal toolset)
+
+- Execution backend picker (desktop Capabilities → terminal) — `gapfill-desktop-settings-4-r0.terminal-backend-panel`
+
+### 51 · Gap-fill: Gateway core — kanban wake-notification message composer
 
 - Kanban wake notification — base message body — `gapfill-gw-core-r0.kanban-wake-message`
 - Kanban wake notification — review/request-changes detail block — `gapfill-gw-core-r0.kanban-wake-review-detail`
 - Kanban wake notification — standing anti-re-decomposition guidance — `gapfill-gw-core-r0.kanban-wake-guidance`
 
-### 46 · Gap-fill (round 0, area web-a): Files page row identity, accessible-name templates and the default browsable root
+### 52 · Gap-fill (round 0, area web-a): Files page row identity, accessible-name templates and the default browsable root
 
 - Files row accessible-name templates (`Open <name>` / `Download <name>` / `Delete <name>` / `<name>`) — `gapfill-web-a-r0.files.row-aria-templates`
 - Default browsable root = the dashboard user's home directory (unlocked) — `gapfill-web-a-r0.files.default-root-home`
 
-### 47 · Gap-fill: Web dashboard "Keys" page — composed accessible names (round 0, area web-c)
+### 53 · Gap-fill: Web dashboard "Keys" page — composed accessible names (round 0, area web-c)
 
 - Keys → LLM Providers → provider-group accordion header (composed accessible name) — `gapfill-web-c-r0.env.provider-group-header`
 - Keys → Provider Logins (OAuth) → per-provider docs link (`Open <name> docs`) — `gapfill-web-c-r0.env.oauth-docs-link`
