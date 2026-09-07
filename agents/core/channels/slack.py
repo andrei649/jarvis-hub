@@ -75,7 +75,25 @@ class SlackChannel(ChannelAdapter):
             logger.error(f"Slack send error: {e}")
             return False
 
-    async def receive_event(self, text: str, channel: str, **kwargs):
-        if self.handler:
-            return await self.handler(text, channel="slack", slack_channel=channel, **kwargs)
-        return None
+    async def receive_event(self, text: str, channel: str, user: str = "", **kwargs):
+        """Route one inbound Slack event through the handler.
+
+        ``user`` is the Slack member id from the event payload; it is threaded as
+        ``sender`` so the gateway's pairing gate can hold a stranger. An event that
+        names no user is dropped rather than routed anonymously: with no identity
+        there is nothing for pairing to hold, and a front door that routes the
+        unidentifiable is not a door. (Hermes absorption 5b)
+        """
+        if not self.handler:
+            return None
+        sender = str(user or "").strip()
+        if not sender:
+            logger.warning("Slack event without a user id dropped (unpairable)")
+            return None
+        # An adapter that forwards the raw event kwargs may carry its own ``sender``;
+        # the member id from the payload is the identity pairing holds, so it wins
+        # rather than colliding with the handler's keyword. Adapters never raise.
+        kwargs.pop("sender", None)
+        return await self.handler(
+            text, channel="slack", slack_channel=channel, sender=sender, **kwargs
+        )

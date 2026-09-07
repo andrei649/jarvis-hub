@@ -258,8 +258,12 @@ def test_the_web_principal_mirrors_the_admin_guard(monkeypatch):
     monkeypatch.setattr(web, "_admin_configured", lambda: False)
     assert web._web_principal(_request()).admin is True
     assert web._web_principal(_request(host="10.0.0.9")).admin is False
-    # … but not through an untrusted proxy, which the admin guard also refuses.
-    monkeypatch.setattr(web, "TRUSTED_PROXY", False)
+    # … but not through an untrusted proxy, which the admin guard also refuses
+    # (Hermes absorption 5b: "untrusted" = the peer is outside JARVIS_TRUSTED_PROXIES).
+    monkeypatch.delenv("JARVIS_TRUSTED_PROXIES", raising=False)
+    monkeypatch.delenv("JARVIS_TRUSTED_PROXY", raising=False)
+    assert web._web_principal(_request(headers={"x-forwarded-for": "127.0.0.1"})).admin is False
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "10.0.0.1/32")
     assert web._web_principal(_request(headers={"x-forwarded-for": "127.0.0.1"})).admin is False
     principal = web._web_principal(_request())
     assert principal.channel == "web" and principal.sender is None

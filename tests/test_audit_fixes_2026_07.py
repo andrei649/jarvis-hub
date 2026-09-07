@@ -54,14 +54,19 @@ def _fake_request(headers: dict, peer: str):
 
 def test_client_ip_ignores_spoofed_xff_without_trusted_proxy(monkeypatch):
     import agents.web as web
-    monkeypatch.setattr(web, "TRUSTED_PROXY", False, raising=False)
+    monkeypatch.delenv("JARVIS_TRUSTED_PROXIES", raising=False)
+    monkeypatch.delenv("JARVIS_TRUSTED_PROXY", raising=False)
     req = _fake_request({"X-Forwarded-For": "127.0.0.1"}, peer="203.0.113.9")
     # Must fall back to the unspoofable socket peer, not the forged header.
+    assert web._client_ip(req) == "203.0.113.9"
+    # Hermes absorption 5b: a configured list trusts ONLY the peers inside it — the
+    # same forged header from a peer outside the list still resolves to the peer.
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "10.0.0.1/32")
     assert web._client_ip(req) == "203.0.113.9"
 
 
 def test_client_ip_honors_xff_when_proxy_trusted(monkeypatch):
     import agents.web as web
-    monkeypatch.setattr(web, "TRUSTED_PROXY", True, raising=False)
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "10.0.0.1/32")
     req = _fake_request({"X-Forwarded-For": "198.51.100.7, 10.0.0.1"}, peer="10.0.0.1")
     assert web._client_ip(req) == "198.51.100.7"

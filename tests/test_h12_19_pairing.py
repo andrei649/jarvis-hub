@@ -1,8 +1,10 @@
-"""H12.19: Inbound sender pairing / approval — opt-in, held-not-run, anti-abuse.
+"""H12.19: Inbound sender pairing / approval — held-not-run, anti-abuse.
 
 Unknown senders on a channel are held for owner approval (or self-pair with a
 code) instead of being silently dropped or reaching the handler. The human-sender
-mirror of the H16.2 A2A peer allowlist. Off by default → behavior unchanged.
+mirror of the H16.2 A2A peer allowlist. On by default since Hermes absorption 5b
+(``tests/test_default_deny_front_door.py``); the "disabled" cases here set
+``JARVIS_CHANNEL_PAIRING=0`` explicitly.
 """
 import sys
 from pathlib import Path
@@ -29,11 +31,11 @@ def enabled(monkeypatch):
     monkeypatch.setenv("JARVIS_CHANNEL_PAIRING", "1")
 
 
-# ── store: opt-in gate ────────────────────────────────────────────
+# ── store: the gate, switched off explicitly ──────────────────────
 
 def test_disabled_allows_everyone(reg, monkeypatch):
-    monkeypatch.delenv("JARVIS_CHANNEL_PAIRING", raising=False)
-    assert reg.is_allowed("telegram", "999") is True          # unchanged behavior
+    monkeypatch.setenv("JARVIS_CHANNEL_PAIRING", "0")
+    assert reg.is_allowed("telegram", "999") is True          # off means open
     assert reg.status("telegram", "999") == UNKNOWN
 
 
@@ -181,7 +183,7 @@ def _client(monkeypatch, tmp_path):
 
 def test_request_endpoint_gated_on_enabled(monkeypatch, tmp_path):
     client, _ = _client(monkeypatch, tmp_path)
-    monkeypatch.delenv("JARVIS_CHANNEL_PAIRING", raising=False)
+    monkeypatch.setenv("JARVIS_CHANNEL_PAIRING", "0")
     body = {"channel": "telegram", "sender_id": "999"}
     assert client.post("/api/channels/pairing/request", json=body).status_code == 404
 

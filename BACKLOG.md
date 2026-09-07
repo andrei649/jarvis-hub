@@ -1474,6 +1474,37 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   configured backend only, since they run unattended. An inbound guest still sees only `echo` /
   `time`. Tests: `tests/test_tool_result_taint.py` (20), `tests/test_web_tools.py` (22), `tests/test_cdx7_rag_tool_scan.py` (+21), `tests/test_web_tools_wiring.py` (5), `tests/test_websearch.py` (+4), `tests/test_plugin_honesty.py` (+1). **Not proven against a real search
   backend or a live model choosing the tools** → P24.
+- [x] ✅ **HA-5b — the front door refuses by default.** Three doors, one seam. **Pairing is ON
+  unless switched off** (`JARVIS_CHANNEL_PAIRING`, `agents/core/channels/pairing.py`): a stranger who
+  finds the bot is held until the owner pairs them (HUD card or the 60-second deeplink), where
+  before an empty `TELEGRAM_ALLOWED_USER_IDS` admitted anyone; `JARVIS_CHANNEL_PAIRING=0` still
+  turns it off, and then a new boot guard (`boot_guards.assert_guarded_channels`) refuses to start a
+  chat channel whose token is set but nothing guards it — an allowlist with at least one id, pairing,
+  or the explicit `JARVIS_CHANNEL_OPEN=1` acknowledgement, printed as a `[SECURITY]` line; the
+  refusal names the channel and the three remedies, never the token; the guard runs again from
+  the lifespan once `.env` is loaded (`assert_front_door`), since the early pass runs before it
+  and the documented install puts the tokens there; the webhook map and the IMAP inbox are
+  front doors too, Slack is outbound-only today, the email sender is the bare `From` address
+  (forgeable without DMARC — held like a stranger, never authenticated). An allowlisted owner
+  passes the gate without a pairing record, so an upgrade with `TELEGRAM_ALLOWED_USER_IDS` set
+  keeps its owner. Discord threads its sender so pairing can hold a Discord stranger too (it
+  could not before); `/status` channel rows carry `held_senders` — a count of holds, never a
+  word of what was said; pairing-code guesses are budgeted store-wide so rotating ids cannot
+  brute-force a code. **Reverse-proxy trust is a bounded CIDR
+  allowlist** (`agents/core/proxy_trust.py`, `JARVIS_TRUSTED_PROXIES`): `X-Forwarded-For` is
+  walked right-to-left past trusted hops (an all-trusted chain yields the hop the proxy saw,
+  never a typed leftmost value), every hop must parse as an address, and headers are honoured
+  only from a peer inside the list — the old `JARVIS_TRUSTED_PROXY=1` switch let any LAN host
+  spoof loopback into the localhost auth bypass and the throttle; it now means loopback only,
+  with a deprecation warning; a malformed list refuses boot naming the variable, and an entry
+  wider than /24 (v6: /64) is warned about by position, because an entry must be the proxy's
+  own address, never a range that also contains clients. **A Host-header guard** (`agents/core/host_policy.py`, one
+  middleware ahead of the rate limiter) answers 400 to any Host that is not a loopback name, an IP
+  literal, the bind or server address, or an entry of `JARVIS_ALLOWED_HOSTS` — the page on
+  `evil.example` whose name was rebound to the box's address gets nothing; `/healthz` / `/readyz`
+  / `/metrics` stay probe-safe; a `*` in the list refuses boot. No WebSocket route exists today; a future one must call
+  `host_accepted` itself, since the HTTP middleware would not cover it. Tests: `tests/test_default_deny_front_door.py` (44), `tests/test_trusted_proxies.py` (15), `tests/test_host_header_guard.py` (23), `tests/test_o26_f6_boot_guards.py` (+6), plus the rewritten proxy cases in `tests/test_admin_guard_hf7.py`, `tests/test_rate_limit_hf2.py`, `tests/test_audit_fixes_2026_07.py`. **Breaking default on upgrade, packeted
+  for the owner** → P25.
 - [ ] **HA-4i** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
   now say they can), HUD mode on desktop, the plugin SDK, `nerva send` + `GET /api/commands`,
   session-persistent code kernels and `image_generate` (both need backends that do not exist
@@ -1561,7 +1592,8 @@ vision doc stops reading as a status report for capabilities that are still seed
 - [x] ✅ **GAP-2d — SEC-B3 Telegram owner binding.** **Owner-binding half done** — the approval sink
   now checks owner chat id **and** user id and fails closed with neither configured, and
   `TELEGRAM_ALLOWED_USER_IDS` is parsed so the channel guards are reachable at all (they were
-  unreachable no-ops). *Still open:* channel pairing ON by default, which is the defaults lane.
+  unreachable no-ops). *Closed 2026-09-07 (HA-5b):* channel pairing is ON by default, with a boot
+  guard behind it.
 - [x] ✅ **GAP-3 — register the escaping action kinds.** **DONE** — `channel.reply` and `skill.install`
   are registered KERNEL in `ACTION_REGISTRY` + `tests/_snapshots/action_auth.json`, enumerated in
   `known_broker_action_kinds()` (from their own KIND constants, so the matrix discovers them), carry

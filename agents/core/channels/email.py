@@ -18,6 +18,20 @@ from .base import ChannelAdapter
 logger = logging.getLogger("jarvis.channels.email")
 
 
+def _sender_address(raw_from: object) -> str:
+    """The bare, lower-cased address in a ``From`` header — the identity pairing keys on.
+
+    A display name or a comment must never become the sender: ``"Owner" <x@y>`` and
+    ``x@y`` are the same person. The residual stays named: the header itself is forgeable
+    unless the IMAP provider enforces DMARC, so a paired address means "held like a
+    stranger until approved", not "authenticated" (Hermes absorption 5b).
+    """
+    from email.utils import parseaddr
+
+    address = parseaddr(str(raw_from or ""))[1].strip().lower()
+    return address if "@" in address else ""
+
+
 class EmailChannel(ChannelAdapter):
     def __init__(self, handler=None, smtp_config: dict = None, imap_config: dict = None):
         super().__init__("email", handler)
@@ -108,7 +122,7 @@ class EmailChannel(ChannelAdapter):
                     status, msg_data = mail.fetch(num, "(RFC822)")
                     if status == "OK":
                         raw = email.message_from_bytes(msg_data[0][1])
-                        sender = raw.get("From", "")
+                        sender = _sender_address(raw.get("From", ""))
                         subject = raw.get("Subject", "")
                         body = ""
                         if raw.is_multipart():

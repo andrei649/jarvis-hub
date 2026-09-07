@@ -44,6 +44,13 @@ class Gateway:
             "last_activity": time.time(),
             "message_count": 0,
             "error_count": 0,
+            # Held-by-pairing count (Hermes absorption 5b). A number only: it tells the
+            # owner "someone is knocking" on /status without the gateway ever keeping
+            # who knocked — the pairing store owns identities, this owns a tally. It
+            # counts *holds*, not people: one stranger writing twice is 2, and a
+            # silent drop (blocked sender, observe-only group message, gate error) is
+            # counted too. The pairing store's pending count is the people figure.
+            "held_senders": 0,
             "status": "active",
             **(metadata or {}),
         }
@@ -92,6 +99,9 @@ class Gateway:
             if not decision.get("allowed", True):
                 logger.info("Gateway: held unpaired sender on '%s' (status=%s)",
                             log_safe(channel), decision.get('status'))
+                # Count the hold, not the message: message_count stays what reached
+                # the handler, and the sender identity is never stored here.
+                self._channels[channel]["held_senders"] += 1
                 return None if observe_only else (decision.get("message") or None)
 
         self._channels[channel]["message_count"] += 1
@@ -139,6 +149,7 @@ class Gateway:
             "channels": list(self._channels.keys()),
             "total_messages": sum(c["message_count"] for c in self._channels.values()),
             "total_errors": sum(c["error_count"] for c in self._channels.values()),
+            "total_held": sum(c.get("held_senders", 0) for c in self._channels.values()),
             "active_channels": sum(1 for c in self._channels.values() if c["status"] == "active"),
         }
 

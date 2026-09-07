@@ -407,6 +407,37 @@ unealtă, rezultatele untrusted împachetate ca date; rămâne numit flag-ul unt
 dobândite (`promotion.py`). Teste: `tests/test_tool_result_taint.py` (20), `tests/test_web_tools.py` (22), `tests/test_cdx7_rag_tool_scan.py` (+21), `tests/test_web_tools_wiring.py` (5), `tests/test_websearch.py` (+4), `tests/test_plugin_honesty.py` (+1).
 *Nedovedit pe un backend de căutare real și cu un model live care alege uneltele* → **P24**.
 
+**Livrat 2026-09-07 (5b — ușa din față refuză implicit).** Trei uși, o singură cusătură.
+**Pairing-ul e pornit dacă nu-l oprești** (`JARVIS_CHANNEL_PAIRING`): un străin care găsește
+bot-ul e reținut până când owner-ul îl împerechează (cardul din HUD sau deeplink-ul de 60 de
+secunde), acolo unde un `TELEGRAM_ALLOWED_USER_IDS` gol lăsa pe oricine să intre;
+`JARVIS_CHANNEL_PAIRING=0` îl oprește în continuare, dar atunci un guard nou de boot
+(`assert_guarded_channels`) refuză să pornească un canal de chat cu token și fără nicio pază — un
+allowlist cu cel puțin un id, pairing-ul, sau recunoașterea explicită `JARVIS_CHANNEL_OPEN=1`
+(tipărită ca linie `[SECURITY]`); refuzul numește canalul și cele trei remedii, niciodată
+token-ul; guard-ul rulează din nou din lifespan după ce `.env` e încărcat (`assert_front_door`),
+pentru că trecerea timpurie rulează înaintea lui și instalarea documentată pune token-urile
+acolo; harta de webhook-uri și inbox-ul IMAP sunt și ele uși din față, Slack e doar outbound
+azi, iar expeditorul de email e adresa goală din `From` (falsificabilă fără DMARC — reținut ca
+un străin, niciodată autentificat). Un owner din allowlist trece de poartă fără înregistrare de
+pairing, deci un upgrade cu `TELEGRAM_ALLOWED_USER_IDS` setat își păstrează owner-ul. Discord
+își trece de acum expeditorul mai departe, deci pairing-ul poate reține și un străin de pe
+Discord (nu putea), iar rândurile de canal din `/status` poartă `held_senders` — un număr de
+rețineri, niciodată un cuvânt din ce s-a spus. **Încrederea în reverse proxy e un allowlist mărginit de CIDR-uri**
+(`JARVIS_TRUSTED_PROXIES`): `X-Forwarded-For` e parcurs de la dreapta la stânga peste hop-urile
+de încredere și onorat doar de la un peer din listă — vechiul comutator `JARVIS_TRUSTED_PROXY=1`
+lăsa orice gazdă din LAN să se dea drept loopback și să treacă de bypass-ul de autentificare
+localhost și de throttle; acum înseamnă doar loopback, cu un avertisment de depreciere; o listă
+malformată refuză boot-ul numind variabila. **Un guard pe antetul Host** (`host_policy.py`, un
+middleware înaintea limitatorului de rată) răspunde 400 oricărui Host care nu e un nume de
+loopback, un literal IP, adresa de bind sau a serverului, ori o intrare din
+`JARVIS_ALLOWED_HOSTS` — pagina de pe `evil.example` al cărei nume a fost re-legat la adresa
+cutiei nu primește nimic; `/healthz` / `/readyz` / `/metrics` rămân sigure pentru probe; un `*`
+în listă refuză boot-ul. Nu există azi nicio rută WebSocket; una viitoare trebuie să apeleze singură `host_accepted`, pentru
+că middleware-ul HTTP n-ar acoperi-o.
+Teste: `tests/test_default_deny_front_door.py` (44), `tests/test_trusted_proxies.py` (15), `tests/test_host_header_guard.py` (23), `tests/test_o26_f6_boot_guards.py` (+6), plus the rewritten proxy cases in `tests/test_admin_guard_hf7.py`, `tests/test_rate_limit_hf2.py`, `tests/test_audit_fixes_2026_07.py`. *Implicit care se schimbă la upgrade, cu pachet pentru owner* →
+**P25**.
+
 ---
 
 ## Ce nu se schimbă

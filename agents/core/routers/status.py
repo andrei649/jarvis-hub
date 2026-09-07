@@ -13,7 +13,7 @@ import sys
 
 from fastapi import APIRouter
 
-from agents.core.app_state import get_orch
+from agents.core.app_state import get_gateway, get_orch
 from agents.core.llm.local_model_inventory import project_llm_status
 from agents.core.web_helpers import nocache_json
 
@@ -31,6 +31,7 @@ def _channel_rows(orch):
     manager = getattr(orch, "channel_manager", None)
     channels = getattr(manager, "channels", None) or getattr(orch, "channels", None) or {}
     running = set(getattr(orch, "running_channels", []) or [])
+    gateway = get_gateway()
     rows = []
     for channel_id, channel in channels.items():
         is_running = bool(
@@ -42,8 +43,21 @@ def _channel_rows(orch):
             "id": str(channel_id),
             "running": is_running,
             "ready": is_running or channel_id in {"web", "voice"},
+            # Hermes absorption 5b: how many times pairing held a stranger on this
+            # channel — a tally, never an identity (the pairing store owns those).
+            "held_senders": _held_count(gateway, str(channel_id)),
         })
     return rows
+
+
+def _held_count(gateway, channel_id: str) -> int:
+    if gateway is None:
+        return 0
+    try:
+        info = gateway.get_channel_info(channel_id) or {}
+        return max(0, int(info.get("held_senders", 0) or 0))
+    except Exception:
+        return 0
 
 
 # ── Status (HUD-compatible) ──────────────────────────────────────

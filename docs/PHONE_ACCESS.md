@@ -16,11 +16,16 @@
 Two consequences worth knowing before you start:
 
 - Behind a reverse proxy the guards **fail closed**: when forwarding headers are
-  present and `JARVIS_TRUSTED_PROXY` is unset, the client is treated as non-localhost,
-  so the localhost exemption never applies and the token is required. Set
-  `JARVIS_TRUSTED_PROXY=1` **only** for a proxy you control that populates
-  `X-Forwarded-For`; then its first hop is used as the client address (for the
-  localhost gate and for rate limiting).
+  present and the peer is not a listed proxy, the client is treated as non-localhost,
+  so the localhost exemption never applies and the token is required. List the proxies
+  you run in `JARVIS_TRUSTED_PROXIES` (networks or addresses, e.g. `127.0.0.1/32` for a
+  same-box Caddy); only then is `X-Forwarded-For` believed, walked right-to-left past the
+  listed hops, for the localhost gate and for rate limiting. The old `JARVIS_TRUSTED_PROXY=1`
+  now means *loopback only* and warns once.
+- The `Host` header is checked on every request (DNS-rebinding defence): loopback names, IP
+  literals such as `192.168.1.20:8000`, the bind address and `JARVIS_ALLOWED_HOSTS` entries
+  pass; a Tailscale or Caddy name must be listed there (`JARVIS_ALLOWED_HOSTS=nerva.<tailnet>.ts.net`),
+  anything else is `400`.
 - Unauthenticated network clients are rate-limited (`JARVIS_RATE_LIMIT`, 120/min per
   IP); a wrong-token attempt counts, so token guessing is throttled.
 

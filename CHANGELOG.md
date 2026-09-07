@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-07 — Hermes absorption, wave 5b: the front door refuses by default
+
+> **Breaking default on upgrade.** An existing Telegram install with a bot token, no
+> `TELEGRAM_ALLOWED_USER_IDS` and no `JARVIS_CHANNEL_PAIRING` setting used to answer
+> anyone; after this update it **holds unknown senders — the owner included — until they are
+> paired**. Before restarting: put your own id in `TELEGRAM_ALLOWED_USER_IDS`, or pair yourself
+> from the HUD Pairing card / the `t.me/<bot>?start=<token>` deeplink right after. A Discord
+> token with pairing switched off now refuses to boot unless `JARVIS_CHANNEL_OPEN=1` is
+> acknowledged. `docs/OWNER_TASKS.md` P25 has the exact steps.
+
+- **Pairing ON by default** (`agents/core/channels/pairing.py`, `agents/core/boot_guards.py`).
+  `pairing_enabled()` is `env_flag("JARVIS_CHANNEL_PAIRING", True)`; `JARVIS_CHANNEL_PAIRING=0`
+  turns it off, and a typo in either flag refuses boot like the other posture flags. A new boot
+  guard, `assert_guarded_channels`, refuses to start a chat channel whose token is set but nothing
+  guards it (an allowlist with at least one id, pairing, or the explicit acknowledgement
+  `JARVIS_CHANNEL_OPEN=1`, which prints a `[SECURITY]` line); the refusal names the channel and
+  the remedies, never the token. The guard runs again from the lifespan once `.env` is loaded
+  (`assert_front_door`, together with the two list parse checks), because the early pass runs
+  before `.env` and the documented install puts the tokens there. The webhook map and the IMAP
+  inbox count as front doors; Slack is outbound-only today; the email sender is the bare
+  address parsed from `From` (forgeable without DMARC — held like a stranger, never treated as
+  authenticated). An allowlisted owner passes the gate without a pairing record, so an upgrade
+  with `TELEGRAM_ALLOWED_USER_IDS` set keeps its owner reachable. Discord threads `sender` so
+  pairing can hold a Discord stranger; `/status` channel rows carry `held_senders` (a count of
+  holds, never a word of what was said); pairing-code guesses are budgeted store-wide.
+- **Reverse-proxy trust is a CIDR allowlist** (`agents/core/proxy_trust.py`). `JARVIS_TRUSTED_PROXIES`
+  (comma-separated networks or addresses; `*`, `/0` and more than 64 entries refused) replaces the
+  bare `JARVIS_TRUSTED_PROXY=1` switch, which let any LAN host that could set `X-Forwarded-For:
+  127.0.0.1` ride the localhost auth bypass and dodge the throttle. Forwarding headers are honoured
+  only from a peer inside the list; the chain is walked right-to-left past trusted hops (an
+  all-trusted chain yields the hop the proxy saw, never a typed leftmost value; every hop must
+  parse as an address); an untrusted peer with forwarding headers still fails closed for the
+  localhost gate and is bucketed by its socket address for the rate limiter. An entry must be
+  the proxy's own address: one wider than /24 (v6: /64) is warned about by position. The legacy flag now means "loopback only" and warns
+  once. A malformed list refuses boot naming the variable, never the value.
+- **Host-header guard** (`agents/core/host_policy.py`, a middleware ahead of the rate limiter).
+  DNS rebinding turns a page on the attacker's domain into a same-origin client of the local API;
+  the `Host` header carries the attacker's name and nothing legitimate ever does. Accepted: loopback
+  names, IP literals (a LAN install reached by its address keeps working with no configuration),
+  the bind and the server address, and `JARVIS_ALLOWED_HOSTS` entries (`nerva.<tailnet>.ts.net`,
+  a Caddy name). Everything else is `400 host not allowed` with the header never echoed;
+  `/healthz`, `/readyz`, `/metrics` are exempt; `*` and wildcards in the list refuse boot.
+  No WebSocket route exists today; a future one must call `host_accepted` itself, since the HTTP middleware would not cover it.
+- Tests: `tests/test_default_deny_front_door.py` (44), `tests/test_trusted_proxies.py` (15), `tests/test_host_header_guard.py` (23), `tests/test_o26_f6_boot_guards.py` (+6), plus the rewritten proxy cases in `tests/test_admin_guard_hf7.py`, `tests/test_rate_limit_hf2.py`, `tests/test_audit_fixes_2026_07.py`. Not proven on the RTX box against a real proxy or a second Telegram
+  account — `docs/OWNER_TASKS.md` P25.
+
 ### Wave 2026-09-07 — Hermes absorption, wave 5a: what the model reads is data
 
 - **Untrusted tool results are fenced and taint the turn** (`agents/core/agent_runtime.py`,

@@ -40,15 +40,21 @@ async def test_admin_guard_fails_closed_behind_proxy(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_trusted_proxy_uses_forwarded_client_ip(monkeypatch):
-    """With JARVIS_TRUSTED_PROXY on, the localhost gate reads the real client IP
-    from X-Forwarded-For instead of failing closed (HF-7 opt-in)."""
+    """With the proxy's address inside JARVIS_TRUSTED_PROXIES, the localhost gate
+    reads the real client IP from X-Forwarded-For instead of failing closed (HF-7
+    opt-in, now a CIDR allowlist — Hermes absorption 5b). A peer outside the list
+    gets no such trust even with the list configured."""
     monkeypatch.setattr(web, "ADMIN_TOKEN", "")
-    monkeypatch.setattr(web, "TRUSTED_PROXY", True)
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "10.0.0.1/32")
     # Trusted proxy forwards a localhost client → allowed.
     await web._admin_guard(_FakeReq({"x-forwarded-for": "127.0.0.1"}, host="10.0.0.1"))
     # Trusted proxy forwards a remote client → still denied.
     with pytest.raises(HTTPException) as ei:
         await web._admin_guard(_FakeReq({"x-forwarded-for": "9.9.9.9"}, host="10.0.0.1"))
+    assert ei.value.status_code == 403
+    # A peer outside the list forwarding "localhost" → denied (the header is not evidence).
+    with pytest.raises(HTTPException) as ei:
+        await web._admin_guard(_FakeReq({"x-forwarded-for": "127.0.0.1"}, host="10.0.0.2"))
     assert ei.value.status_code == 403
 
 

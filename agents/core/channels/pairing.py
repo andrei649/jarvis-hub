@@ -5,8 +5,11 @@ Today an unknown sender on a chat channel is silently dropped against a static
 ``allowed_users`` list. This adds a *governed pairing flow* — the human-sender
 mirror of the H16.2 A2A peer allowlist:
 
-* **Opt-in.** Off unless ``channels.pairing_enabled`` (env ``JARVIS_CHANNEL_PAIRING``).
-  Disabled → ``is_allowed`` returns True for everyone, so behavior is unchanged.
+* **On by default (Hermes absorption 5b).** A stranger who finds the bot is held
+  until the owner pairs them. ``JARVIS_CHANNEL_PAIRING=0`` switches the gate off and
+  ``is_allowed`` then returns True for everyone — at which point the boot guard
+  (``boot_guards.assert_guarded_channels``) demands a per-channel allowlist or an
+  explicit ``JARVIS_CHANNEL_OPEN=1`` acknowledgement before a chat bot may start.
 * **Known senders pass.** An approved ``(channel, sender_id)`` is allowed through
   immediately.
 * **Unknown senders are held, not run.** First contact from an unknown sender
@@ -22,8 +25,15 @@ mirror of the H16.2 A2A peer allowlist:
   where people give up — and it is safe because the token is **one-use**, expires
   in minutes, is compared in constant time, and is never logged. A link that could
   pair twice would pair whoever saw the screen after the owner did.
-* **Anti-abuse.** Pairing attempts are rate-limited per ``(channel, sender)`` and
-  the pending list is bounded, so an unknown sender can't flood the inbox.
+* **The owner's own ids pass.** A channel allowlist (``TELEGRAM_ALLOWED_USER_IDS``)
+  names the owner; those senders are allowed without a pairing record, so an
+  install that upgrades with an allowlist is not locked out of its own bot. The
+  boot guard treats the allowlist as an equivalent guard, and this is what makes
+  that true at runtime. (Hermes absorption 5b)
+* **Anti-abuse.** Pairing attempts are rate-limited per ``(channel, sender)``, the
+  pending list is bounded, and wrong pairing-code guesses are throttled *globally*
+  — sender ids on a webhook or an HTTP request are attacker-chosen, so a
+  per-sender bucket alone never binds on a code brute-force. (Hermes absorption 5b)
 
 File-backed (JSON under ``memory_logs/sender_pairing.json``), pure-Python,
 offline-testable.
@@ -31,7 +41,9 @@ offline-testable.
 
 from __future__ import annotations
 
+import os
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Optional
 
@@ -49,6 +61,11 @@ UNKNOWN = "unknown"
 _MAX_PENDING = 200          # bound the pending inbox (anti-flood)
 _ATTEMPT_WINDOW = 600.0     # rate-limit window for pairing attempts (10 min)
 _MAX_ATTEMPTS = 5           # attempts allowed per (channel, sender) per window
+# Wrong pairing-code guesses tolerated store-wide per window, whatever the sender id
+# says. The per-sender bucket is keyed on an id the caller chooses, so on its own it
+# never binds; this one does. A code is meant for one or two devices in the next few
+# minutes, so the bound can be small. (Hermes absorption 5b)
+_MAX_CODE_GUESSES_PER_WINDOW = 10
 
 # Deeplink tokens. Short by design: the link is meant to be tapped in the next
 # minute, on a phone the owner is holding. A longer window buys nothing and keeps
@@ -60,14 +77,89 @@ _MAX_DEEPLINKS = 20         # bound outstanding links; minting a new one is chea
 _DEEPLINK_BYTES = 24
 
 
-def pairing_enabled() -> bool:
-    """Pairing is an inbound gate — off unless explicitly enabled.
+#: The inbound pairing gate. Default-on: unset means "hold strangers".
+PAIRING_ENV = "JARVIS_CHANNEL_PAIRING"
+#: The operator's written acknowledgement that a chat bot answers any sender.
+CHANNEL_OPEN_ENV = "JARVIS_CHANNEL_OPEN"
 
-    Mirrors ``a2a_enabled``: the network/channel surface is closed by default so
-    a fresh single-user deployment keeps its current ``allowed_users`` behavior.
+
+def pairing_enabled() -> bool:
+    """Pairing is an inbound gate — on unless explicitly switched off (Hermes absorption 5b).
+
+    Default-deny: a stranger who finds the bot is held until the owner pairs them
+    from the HUD or with a deeplink. A fresh install therefore answers nobody it does
+    not know, which is the only posture a front door reachable from a public chat
+    network can safely ship with. ``JARVIS_CHANNEL_PAIRING=0`` turns the gate off,
+    and then ``boot_guards.assert_guarded_channels`` demands a per-channel allowlist
+    or an explicit ``JARVIS_CHANNEL_OPEN=1`` acknowledgement before a bot may start,
+    so switching pairing off can never quietly open the bot to everyone. Unset,
+    empty and unrecognized spellings resolve to *on* (``env_flag`` semantics); the
+    parse-critical boot guard refuses a typo outright rather than guessing.
     """
     from agents.core.env_config import env_flag
-    return env_flag("JARVIS_CHANNEL_PAIRING")
+    return env_flag(PAIRING_ENV, True)
+
+
+def channel_open_acknowledged() -> bool:
+    """True when the operator has written down that an open bot is intended.
+
+    Off unless explicitly set: this is the acknowledgement, never a default. It is
+    read only by the boot guard, which prints a ``[SECURITY]`` line when honouring
+    it; the pairing gate itself never consults it. (Hermes absorption 5b)
+    """
+    from agents.core.env_config import env_flag
+    return env_flag(CHANNEL_OPEN_ENV)
+
+
+#: Channels that carry a per-channel allowlist of the owner's own sender ids, and the
+#: env var that holds it. Read by the runtime gate and by the boot guard, so the two
+#: cannot disagree about which channels have one. (Hermes absorption 5b)
+CHANNEL_ALLOWLIST_ENVS: dict[str, str] = {"telegram": "TELEGRAM_ALLOWED_USER_IDS"}
+
+
+def parse_sender_allowlist(raw: object) -> tuple[str, ...]:
+    """The usable ids in a comma-separated allowlist, as strings (Hermes absorption 5b).
+
+    The same tiny parse the web app applies: integers only, blanks and non-numeric
+    entries dropped, so a typo in one id narrows the list rather than widening it or
+    taking the bot down. Ids come back as the canonical string of the integer, which
+    is what channels thread as ``sender``. Only ids leave here, never a value that
+    was not one.
+    """
+    ids: list[str] = []
+    for part in str(raw or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.append(str(int(part)))
+        except ValueError:
+            continue
+    return tuple(ids)
+
+
+def allowlisted_sender_ids(
+    channel: str, environ: "Mapping[str, str] | None" = None,
+) -> frozenset[str]:
+    """The owner's own ids for *channel*, or an empty set when it has no allowlist."""
+    env_name = CHANNEL_ALLOWLIST_ENVS.get(str(channel or ""))
+    if env_name is None:
+        return frozenset()
+    env = os.environ if environ is None else environ
+    return frozenset(parse_sender_allowlist(env.get(env_name)))
+
+
+def sender_allowlisted(
+    channel: str, sender_id: str, environ: "Mapping[str, str] | None" = None,
+) -> bool:
+    """True when the channel's allowlist names this sender (Hermes absorption 5b).
+
+    The allowlist is the owner's own ids, written down by the operator; it composes
+    with pairing rather than being overridden by it, so an owner who set it before
+    pairing became the default is still able to reach their own bot. It never widens
+    anything by itself: an unset or empty allowlist names nobody.
+    """
+    return str(sender_id) in allowlisted_sender_ids(channel, environ)
 
 
 def _key(channel: str, sender_id: str) -> str:
@@ -92,6 +184,10 @@ class SenderPairing(JsonStore):
         self._code = raw.get("code") or None
         self._attempts = raw.get("attempts", {})
         self._deeplinks = raw.get("deeplinks", {})
+        # Wrong-code guesses store-wide, in memory only: a restart clears it, and a
+        # restart is not something a guesser can cause. Persisting would add a write
+        # per guess — exactly the load a flood is trying to create.
+        self._code_guesses: list[float] = []
 
     # ── pairing code (optional self-service) ──────────────────────────────────
 
@@ -117,8 +213,14 @@ class SenderPairing(JsonStore):
         return rec["status"] if rec else UNKNOWN
 
     def is_allowed(self, channel: str, sender_id: str) -> bool:
-        """Gate used by channels/gateway. When pairing is disabled, allow all."""
+        """Gate used by channels/gateway. When pairing is disabled, allow all.
+
+        The channel's allowlist (the owner's own ids) passes too, without a pairing
+        record — see ``sender_allowlisted``. (Hermes absorption 5b)
+        """
         if not pairing_enabled():
+            return True
+        if sender_allowlisted(channel, sender_id):
             return True
         return self.status(channel, sender_id) == ALLOWED
 
@@ -180,6 +282,15 @@ class SenderPairing(JsonStore):
                 self._save()
             return {"status": "rate_limited", "allowed": False}
 
+        # A presented code is checked against a store-wide guess budget first: the
+        # per-sender bucket above is keyed on an id the caller chose, so it would let
+        # a guesser rotate ids and try the code five times per fresh id forever. Once
+        # the budget is spent, code checks stop for the window and the sender is held
+        # like anyone else — the owner can still approve them by hand.
+        if code and self._code and self._code_guess_budget_spent():
+            with self._lock:
+                self._save()
+            return {"status": "rate_limited", "allowed": False}
         # A correct code is self-service approval (no owner tap needed).
         if self._code_matches(code):
             self._set(channel, sender_id, ALLOWED, name)
@@ -194,6 +305,21 @@ class SenderPairing(JsonStore):
         with self._lock:
             self._save()
         return {"status": PENDING, "allowed": False}
+
+    def _code_guess_budget_spent(self) -> bool:
+        """Record one code guess; True when the store-wide window is already full.
+
+        Every presented code counts, right or wrong: deciding *after* the compare
+        would tell a guesser something about the compare. (Hermes absorption 5b)
+        """
+        now = time.time()
+        fresh = [t for t in self._code_guesses if now - t < _ATTEMPT_WINDOW]
+        if len(fresh) >= _MAX_CODE_GUESSES_PER_WINDOW:
+            self._code_guesses = fresh
+            return True
+        fresh.append(now)
+        self._code_guesses = fresh
+        return False
 
     def _evict_if_full(self) -> None:
         pend = [(k, r) for k, r in self._senders.items() if r.get("status") == PENDING]
@@ -367,11 +493,14 @@ class SenderPairing(JsonStore):
                      name: str = "") -> dict:
         """Resolve an inbound message into an allow/hold decision for the gateway.
 
-        Disabled or a known-allowed sender → ``allowed=True`` (route normally).
-        Otherwise record the attempt and return a friendly hold message.
+        Disabled, an allowlisted sender (the owner's own id, see
+        ``sender_allowlisted``) or a known-allowed sender → ``allowed=True`` (route
+        normally). Otherwise record the attempt and return a friendly hold message.
         """
         if not pairing_enabled() or self.status(channel, sender_id) == ALLOWED:
             return {"allowed": True, "status": ALLOWED if sender_id else UNKNOWN}
+        if sender_id and sender_allowlisted(channel, sender_id):
+            return {"allowed": True, "status": ALLOWED, "allowlisted": True}
         result = self.request(channel, sender_id, code=code, name=name)
         if result["allowed"]:
             return result

@@ -58,19 +58,34 @@ class DiscordChannel(ChannelAdapter):
 
         @self._client.event
         async def on_message(message):
-            if message.author == self._client.user:
-                return
-            if self.handler:
-                response = await self.handler(message.content, channel="discord")
-                if response:
-                    for piece in render_outbound(str(response), self.descriptor):
-                        await message.channel.send(piece)
+            await self._handle_message(message)
 
         self._running = True
         # discord.py 2.x: Client.loop is the MISSING sentinel until start() runs,
         # so `self._client.loop.create_task` raises AttributeError. Schedule on the
         # running loop instead, and keep the task so stop() can cancel it.
         self._start_task = asyncio.create_task(self._client.start(self.token))
+
+    async def _handle_message(self, message) -> None:
+        """Route one inbound Discord message through the handler.
+
+        Lives outside the ``on_message`` closure so the inbound path can be driven
+        without a live client. The sender is threaded as ``message.author.id`` — the
+        stable Discord identity, unlike the display name — so the gateway's pairing
+        gate can hold a stranger; before this the handler saw no sender at all and
+        pairing could never apply to Discord. Nothing else about the author is
+        observed or logged. (Hermes absorption 5b)
+        """
+        if self._client is not None and message.author == self._client.user:
+            return
+        if not self.handler:
+            return
+        response = await self.handler(
+            message.content, channel="discord", sender=str(message.author.id)
+        )
+        if response:
+            for piece in render_outbound(str(response), self.descriptor):
+                await message.channel.send(piece)
 
     async def stop(self):
         self._running = False

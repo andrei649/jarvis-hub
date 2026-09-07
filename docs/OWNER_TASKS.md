@@ -375,7 +375,7 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15**–**P24** (2026-09-07) are the first packets from the Hermes absorption: the
+> hardware. **P15**–**P25** (2026-09-07) are the first packets from the Hermes absorption: the
 > tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
 > to a real one; the Telegram group gate, never exercised in a real group; the `nerva`
 > command plus the chat slash commands, never pointed at a running hub; the owner's
@@ -804,6 +804,26 @@ built on your Windows box:
       tool must answer `url_refused` and the ledger must show the attempt as blocked. Tell me
       which of the three held, and if the local model ever repeats the `<<UNTRUSTED` fence in its
       own words (that decides whether the fence stays four lines or shrinks to two).
+
+- [ ] **P25 — The front door after the update: pair yourself, then prove a stranger is held**
+      *(covers `HA-5b`; contains a default that changes on upgrade)*
+      **Before you restart** with this update: put your own Telegram id in
+      `TELEGRAM_ALLOWED_USER_IDS` (`.env`) — an allowlisted id passes the gate with no pairing
+      record — or plan to pair yourself right after: pairing is now on by default, so the bot
+      holds *everyone* it does not know, you included. If you have a
+      Discord token and no wish to pair, either set `JARVIS_CHANNEL_OPEN=1` (the bot answers
+      anyone, and the boot log says so) or remove the token; otherwise the box refuses to start
+      and the message names the remedies. **Then prove it:** from a second Telegram account send
+      the bot a message — expect "held for approval" and a card in the HUD Pairing panel, never an
+      answer; `GET /status` → `channels` must show `held_senders: 1` on the telegram row and no
+      text of the message anywhere. Approve it from the card, send again, expect
+      an answer. **When you put Caddy or Tailscale in front:** replace `JARVIS_TRUSTED_PROXY=1`
+      with `JARVIS_TRUSTED_PROXIES=127.0.0.1/32` for a same-box Caddy (the proxy's own network
+      otherwise) and list the public name in `JARVIS_ALLOWED_HOSTS=nerva.<tailnet>.ts.net`; a
+      wrong entry refuses to boot and names the variable, it never silently opens anything. From
+      another LAN machine, `curl -H 'Host: evil.example' http://<box-ip>:8000/api/status` must
+      answer 400, and the same request with the box's IP as Host must not. Tell me which of the
+      four held, and whether the pairing-on default cost you anything you did not expect.
 
 ## Parking lot (decisions, no rush)
 
