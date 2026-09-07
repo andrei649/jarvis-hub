@@ -1,0 +1,1202 @@
+[
+{
+"key": "approval.dangerous_header",
+"text": "⚠️  DANGEROUS COMMAND: {description}"
+},
+{
+"key": "approval.choose_long",
+"text": "      [o]nce  |  [s]ession  |  [a]lways  |  [d]eny"
+},
+{
+"key": "approval.choose_short",
+"text": "      [o]nce  |  [s]ession  |  [d]eny"
+},
+{
+"key": "approval.prompt_long",
+"text": "      Choice [o/s/a/D]: "
+},
+{
+"key": "approval.prompt_short",
+"text": "      Choice [o/s/D]: "
+},
+{
+"key": "approval.choose_smart_deny",
+"text": "      [o]nce  |  [d]eny"
+},
+{
+"key": "approval.prompt_smart_deny",
+"text": "      Choice [o/D]: "
+},
+{
+"key": "approval.smart_deny_once_inputs",
+"text": "o,once"
+},
+{
+"key": "approval.smart_deny_deny_inputs",
+"text": "d,deny"
+},
+{
+"key": "approval.timeout",
+"text": "      ⏱ Timeout - denying command"
+},
+{
+"key": "approval.allowed_once",
+"text": "      ✓ Allowed once"
+},
+{
+"key": "approval.allowed_session",
+"text": "      ✓ Allowed for this session"
+},
+{
+"key": "approval.allowed_always",
+"text": "      ✓ Added to permanent allowlist"
+},
+{
+"key": "approval.denied",
+"text": "      ✗ Denied"
+},
+{
+"key": "approval.cancelled",
+"text": "      ✗ Cancelled"
+},
+{
+"key": "approval.blocklist_message",
+"text": "This command is on the unconditional blocklist and cannot be approved."
+},
+{
+"key": "gateway.approval_expired",
+"text": "⚠️ Approval expired (agent is no longer waiting). Ask the agent to try again."
+},
+{
+"key": "gateway.draining",
+"text": "⏳ Draining {count} active agent(s) before restart..."
+},
+{
+"key": "gateway.goal_cleared",
+"text": "✓ Goal cleared."
+},
+{
+"key": "gateway.no_active_goal",
+"text": "No active goal."
+},
+{
+"key": "gateway.config_read_failed",
+"text": "⚠️ Could not read config.yaml: {error}"
+},
+{
+"key": "gateway.config_save_failed",
+"text": "⚠️ Could not save config: {error}"
+},
+{
+"key": "gateway.model.error_prefix",
+"text": "Error: {error}"
+},
+{
+"key": "gateway.model.switched",
+"text": "Model switched to `{model}`"
+},
+{
+"key": "gateway.model.provider_label",
+"text": "Provider: {provider}"
+},
+{
+"key": "gateway.model.context_label",
+"text": "Context: {tokens} tokens"
+},
+{
+"key": "gateway.model.max_output_label",
+"text": "Max output: {tokens} tokens"
+},
+{
+"key": "gateway.model.cost_label",
+"text": "Cost: {cost}"
+},
+{
+"key": "gateway.model.capabilities_label",
+"text": "Capabilities: {capabilities}"
+},
+{
+"key": "gateway.model.prompt_caching_enabled",
+"text": "Prompt caching: enabled"
+},
+{
+"key": "gateway.model.warning_prefix",
+"text": "Warning: {warning}"
+},
+{
+"key": "gateway.model.saved_global",
+"text": "Saved to config.yaml (`--global`)"
+},
+{
+"key": "gateway.model.session_only_hint",
+"text": "_(session only — add `--global` to persist)_"
+},
+{
+"key": "gateway.model.current_label",
+"text": "Current: `{model}` on {provider}"
+},
+{
+"key": "gateway.model.current_tag",
+"text": " (current)"
+},
+{
+"key": "gateway.model.more_models_suffix",
+"text": " (+{count} more)"
+},
+{
+"key": "gateway.model.usage_switch_model",
+"text": "`/model <name>` — switch model"
+},
+{
+"key": "gateway.model.usage_switch_provider",
+"text": "`/model <name> --provider <slug>` — switch provider"
+},
+{
+"key": "gateway.model.usage_persist",
+"text": "`/model <name> --global` — persist"
+},
+{
+"key": "gateway.agents.header",
+"text": "🤖 **Active Agents & Tasks**"
+},
+{
+"key": "gateway.agents.active_agents",
+"text": "**Active agents:** {count}"
+},
+{
+"key": "gateway.agents.this_chat",
+"text": " · this chat"
+},
+{
+"key": "gateway.agents.more",
+"text": "... and {count} more"
+},
+{
+"key": "gateway.agents.running_processes",
+"text": "**Running background processes:** {count}"
+},
+{
+"key": "gateway.agents.async_jobs",
+"text": "**Gateway async jobs:** {count}"
+},
+{
+"key": "gateway.agents.background_delegations",
+"text": "**Background delegations:** {count}"
+},
+{
+"key": "gateway.agents.none",
+"text": "No active agents or running tasks."
+},
+{
+"key": "gateway.agents.state_starting",
+"text": "starting"
+},
+{
+"key": "gateway.agents.state_running",
+"text": "running"
+},
+{
+"key": "gateway.approve.no_pending",
+"text": "No pending command to approve."
+},
+{
+"key": "gateway.approve.once_singular",
+"text": "✅ Command approved. The agent is resuming..."
+},
+{
+"key": "gateway.approve.once_plural",
+"text": "✅ Commands approved ({count} commands). The agent is resuming..."
+},
+{
+"key": "gateway.approve.session_singular",
+"text": "✅ Command approved (pattern approved for this session). The agent is resuming..."
+},
+{
+"key": "gateway.approve.session_plural",
+"text": "✅ Commands approved (pattern approved for this session) ({count} commands). The agent is resuming..."
+},
+{
+"key": "gateway.approve.always_singular",
+"text": "✅ Command approved (pattern approved permanently). The agent is resuming..."
+},
+{
+"key": "gateway.approve.always_plural",
+"text": "✅ Commands approved (pattern approved permanently) ({count} commands). The agent is resuming..."
+},
+{
+"key": "gateway.background.usage",
+"text": "Usage: /bg <prompt>\nExample: /bg Summarize the top HN stories today\n\nRuns the prompt in a separate session. You can keep chatting — the result will appear here when done."
+},
+{
+"key": "gateway.background.started",
+"text": "🔄 Background task started: \"{preview}\"\nTask ID: {task_id}\nYou can keep chatting — results will appear when done."
+},
+{
+"key": "gateway.btw.usage",
+"text": "Usage: /btw <question>\nExample: /btw which file was that error in?\n\nAnswers a quick side question about this conversation without interrupting it. For an independent background task, use /bg <prompt>."
+},
+{
+"key": "gateway.btw.no_history",
+"text": "No conversation yet — send your question as a normal message instead."
+},
+{
+"key": "gateway.btw.no_provider",
+"text": "❌ Cannot answer side question: no provider credentials configured."
+},
+{
+"key": "gateway.btw.started",
+"text": "💬 Side question: \"{preview}\"\nAnswering from a snapshot of this conversation — the current work continues."
+},
+{
+"key": "gateway.btw.answer",
+"text": "💬 /btw: \"{preview}\"\n\n{answer}"
+},
+{
+"key": "gateway.btw.failed",
+"text": "❌ /btw failed: \"{preview}\"\n{error}"
+},
+{
+"key": "gateway.branch.db_unavailable",
+"text": "Session database not available."
+},
+{
+"key": "gateway.branch.no_conversation",
+"text": "No conversation to branch — send a message first."
+},
+{
+"key": "gateway.branch.create_failed",
+"text": "Failed to create branch: {error}"
+},
+{
+"key": "gateway.branch.switch_failed",
+"text": "Branch created but failed to switch to it."
+},
+{
+"key": "gateway.branch.branched_one",
+"text": "⑂ Branched to **{title}** ({count} message copied)\nOriginal: `{parent}`\nBranch: `{new}`\nUse `/resume` to switch back to the original."
+},
+{
+"key": "gateway.branch.branched_many",
+"text": "⑂ Branched to **{title}** ({count} messages copied)\nOriginal: `{parent}`\nBranch: `{new}`\nUse `/resume` to switch back to the original."
+},
+{
+"key": "gateway.commands.usage",
+"text": "Usage: `/commands [page]`"
+},
+{
+"key": "gateway.commands.skill_header",
+"text": "⚡ **Skill Commands**:"
+},
+{
+"key": "gateway.commands.default_desc",
+"text": "Skill command"
+},
+{
+"key": "gateway.commands.none",
+"text": "No commands available."
+},
+{
+"key": "gateway.commands.header",
+"text": "📚 **Commands** ({total} total, page {page}/{total_pages})"
+},
+{
+"key": "gateway.commands.nav_prev",
+"text": "`/commands {page}` ← prev"
+},
+{
+"key": "gateway.commands.nav_next",
+"text": "next → `/commands {page}`"
+},
+{
+"key": "gateway.commands.out_of_range",
+"text": "_(Requested page {requested} was out of range, showing page {page}.)_"
+},
+{
+"key": "gateway.compress.not_enough",
+"text": "Not enough conversation to compress (need at least 4 messages)."
+},
+{
+"key": "gateway.compress.no_provider",
+"text": "No provider configured -- cannot compress."
+},
+{
+"key": "gateway.compress.nothing_to_do",
+"text": "Nothing to compress yet (the transcript is still all protected context)."
+},
+{
+"key": "gateway.compress.aggressive_unsupported",
+"text": "--aggressive is not supported; use '/compress here [N]' to keep only recent exchanges, or /undo to drop turns."
+},
+{
+"key": "gateway.compress.focus_line",
+"text": "Focus: \"{topic}\""
+},
+{
+"key": "gateway.compress.summary_failed",
+"text": "⚠️ Summary generation failed ({error}). {count} historical message(s) were removed and replaced with a placeholder; earlier context is no longer recoverable. Consider checking your auxiliary.compression model configuration."
+},
+{
+"key": "gateway.compress.aborted",
+"text": "⚠️ Compression aborted ({error}). No messages were dropped — conversation is unchanged. Run /compress to retry, /reset for a clean session, or check your auxiliary.compression model configuration."
+},
+{
+"key": "gateway.compress.aux_failed",
+"text": "ℹ️ Configured compression model `{model}` failed ({error}). Recovered using your main model — context is intact — but you may want to check `auxiliary.compression.model` in config.yaml."
+},
+{
+"key": "gateway.compress.turnhold_deferred",
+"text": "ℹ️ Context compression deferred — summary still streaming. Continuing without compression this turn."
+},
+{
+"key": "gateway.compress.failed",
+"text": "Compression failed: {error}"
+},
+{
+"key": "gateway.debug.upload_failed",
+"text": "✗ Failed to upload debug report: {error}"
+},
+{
+"key": "gateway.debug.header",
+"text": "**Debug report uploaded:**"
+},
+{
+"key": "gateway.debug.auto_delete",
+"text": "⏱ Pastes will auto-delete in 6 hours."
+},
+{
+"key": "gateway.debug.full_logs_hint",
+"text": "For full log uploads, use `hermes debug share` from the CLI."
+},
+{
+"key": "gateway.debug.share_hint",
+"text": "Share these links with the Hermes team for support."
+},
+{
+"key": "gateway.deny.stale",
+"text": "❌ Command denied (approval was stale)."
+},
+{
+"key": "gateway.deny.no_pending",
+"text": "No pending command to deny."
+},
+{
+"key": "gateway.deny.denied_singular",
+"text": "❌ Command denied."
+},
+{
+"key": "gateway.deny.denied_plural",
+"text": "❌ Commands denied ({count} commands)."
+},
+{
+"key": "gateway.deny.denied_reason_singular",
+"text": "❌ Command denied. Reason relayed to the agent: \"{reason}\""
+},
+{
+"key": "gateway.deny.denied_reason_plural",
+"text": "❌ Commands denied ({count} commands). Reason relayed to the agent: \"{reason}\""
+},
+{
+"key": "gateway.fast.not_supported",
+"text": "⚡ /fast is only available for OpenAI models that support Priority Processing."
+},
+{
+"key": "gateway.fast.status",
+"text": "⚡ Priority Processing\n\nCurrent mode: `{mode}`\n\n_Usage:_ `/fast <normal|fast|status>`"
+},
+{
+"key": "gateway.fast.unknown_arg",
+"text": "⚠️ Unknown argument: `{arg}`\n\n**Valid options:** normal, fast, status"
+},
+{
+"key": "gateway.fast.saved",
+"text": "⚡ ✓ Priority Processing: **{label}** (saved to config)\n_(takes effect on next message)_"
+},
+{
+"key": "gateway.fast.session_only",
+"text": "⚡ ✓ Priority Processing: **{label}** (this session only)"
+},
+{
+"key": "gateway.fast.label_fast",
+"text": "FAST"
+},
+{
+"key": "gateway.fast.label_normal",
+"text": "NORMAL"
+},
+{
+"key": "gateway.fast.status_fast",
+"text": "fast"
+},
+{
+"key": "gateway.fast.status_normal",
+"text": "normal"
+},
+{
+"key": "gateway.fast.picker_title",
+"text": "⚡ **Priority Processing**\n\nCurrent mode: `{mode}`\n\nPick an option:"
+},
+{
+"key": "gateway.fast.choice_fast",
+"text": "fast — Priority Processing on"
+},
+{
+"key": "gateway.fast.choice_normal",
+"text": "normal — standard processing"
+},
+{
+"key": "gateway.footer.status",
+"text": "📎 Runtime footer: **{state}**\nFields: `{fields}`\nPlatform: `{platform}`"
+},
+{
+"key": "gateway.footer.usage",
+"text": "Usage: `/footer [on|off|status]`"
+},
+{
+"key": "gateway.footer.saved",
+"text": "📎 Runtime footer: **{state}**{example}\n_(saved globally — takes effect on next message)_"
+},
+{
+"key": "gateway.footer.example_line",
+"text": "\nExample: `{preview}`"
+},
+{
+"key": "gateway.footer.state_on",
+"text": "ON"
+},
+{
+"key": "gateway.footer.state_off",
+"text": "OFF"
+},
+{
+"key": "gateway.goal.unavailable",
+"text": "Goals unavailable on this session."
+},
+{
+"key": "gateway.goal.no_goal_set",
+"text": "No goal set."
+},
+{
+"key": "gateway.goal.paused",
+"text": "⏸ Goal paused: {goal}"
+},
+{
+"key": "gateway.goal.no_resume",
+"text": "No goal to resume."
+},
+{
+"key": "gateway.goal.resumed",
+"text": "▶ Goal resumed: {goal}\nContinuing now — I'll take the next step right away."
+},
+{
+"key": "gateway.goal.invalid",
+"text": "Invalid goal: {error}"
+},
+{
+"key": "gateway.goal.set",
+"text": "⊙ Goal set ({budget}-turn budget): {goal}\nI'll keep working until the goal is done, you pause/clear it, or the budget is exhausted.\nControls: /goal status · /goal pause · /goal resume · /goal clear"
+},
+{
+"key": "gateway.help.header",
+"text": "📖 **Hermes Commands**\n"
+},
+{
+"key": "gateway.help.skill_header",
+"text": "\n⚡ **Skill Commands** ({count} active):"
+},
+{
+"key": "gateway.help.more_use_commands",
+"text": "\n... and {count} more. Use `/commands` for the full paginated list."
+},
+{
+"key": "gateway.insights.invalid_days",
+"text": "Invalid --days value: {value}"
+},
+{
+"key": "gateway.insights.error",
+"text": "Error generating insights: {error}"
+},
+{
+"key": "gateway.kanban.error_prefix",
+"text": "⚠ kanban error: {error}"
+},
+{
+"key": "gateway.kanban.subscribed_suffix",
+"text": "(subscribed — you'll be notified when {task_id} completes or blocks)"
+},
+{
+"key": "gateway.kanban.truncated_suffix",
+"text": "… (truncated; use `hermes kanban …` in your terminal for full output)"
+},
+{
+"key": "gateway.kanban.no_output",
+"text": "(no output)"
+},
+{
+"key": "gateway.kanban.wake.completed",
+"text": "completed"
+},
+{
+"key": "gateway.kanban.wake.gave_up",
+"text": "gave up (retries exhausted)"
+},
+{
+"key": "gateway.kanban.wake.crashed",
+"text": "crashed (worker exited); dispatcher will retry"
+},
+{
+"key": "gateway.kanban.wake.timed_out",
+"text": "timed out; dispatcher will retry"
+},
+{
+"key": "gateway.kanban.wake.blocked",
+"text": "blocked; needs attention"
+},
+{
+"key": "gateway.kanban.wake.review_requested",
+"text": "handed off for review; the implementation is done"
+},
+{
+"key": "gateway.kanban.wake.changes_requested",
+"text": "review requested changes (BLOCK); implementation is not approved"
+},
+{
+"key": "gateway.kanban.wake.block_loop_detected",
+"text": "routed to triage after repeated blocks; needs a decision"
+},
+{
+"key": "gateway.kanban.wake.status_default",
+"text": "status changed"
+},
+{
+"key": "gateway.kanban.wake.status_joiner",
+"text": ", "
+},
+{
+"key": "gateway.kanban.wake.message",
+"text": "[kanban] Task {task_id} {status}.\nTitle: {title}\nAssignee: @{assignee}\nBoard: {board}\n\nCheck the result or decide the next step."
+},
+{
+"key": "gateway.kanban.wake.handoff",
+"text": "Result: {summary}"
+},
+{
+"key": "gateway.kanban.wake.review_detail",
+"text": "Review feedback: {reason}\nInspect the existing card and its current review run; return work to the same implementation task. Do not treat this BLOCK as approval and do not create a duplicate task."
+},
+{
+"key": "gateway.kanban.wake.guidance",
+"text": "This is an automatic task-status notification, not a request to decompose the task again. Inspect the current board before creating follow-up tasks; do not recreate tasks or graphs that already exist."
+},
+{
+"key": "gateway.personality.none_configured",
+"text": "No personalities configured in `{path}/config.yaml`"
+},
+{
+"key": "gateway.personality.header",
+"text": "🎭 **Available Personalities**\n"
+},
+{
+"key": "gateway.personality.none_option",
+"text": "• `none` — (no personality overlay)"
+},
+{
+"key": "gateway.personality.item",
+"text": "• `{name}` — {preview}"
+},
+{
+"key": "gateway.personality.usage",
+"text": "\nUsage: `/personality <name>`"
+},
+{
+"key": "gateway.personality.save_failed",
+"text": "⚠️ Failed to save personality change: {error}"
+},
+{
+"key": "gateway.personality.cleared",
+"text": "🎭 Personality cleared — using base agent behavior.\n_(takes effect on next message)_"
+},
+{
+"key": "gateway.personality.set_to",
+"text": "🎭 Personality set to **{name}**\n_(takes effect on next message)_"
+},
+{
+"key": "gateway.personality.unknown",
+"text": "Unknown personality: `{name}`\n\nAvailable: {available}"
+},
+{
+"key": "gateway.profile.header",
+"text": "👤 **Profile:** `{profile}`"
+},
+{
+"key": "gateway.profile.home",
+"text": "📂 **Home:** `{home}`"
+},
+{
+"key": "gateway.reasoning.level_default",
+"text": "medium (default)"
+},
+{
+"key": "gateway.reasoning.level_disabled",
+"text": "none (disabled)"
+},
+{
+"key": "gateway.reasoning.scope_session",
+"text": "session override"
+},
+{
+"key": "gateway.reasoning.scope_global",
+"text": "global config"
+},
+{
+"key": "gateway.reasoning.status",
+"text": "🧠 **Reasoning Settings**\n\n**Effort:** `{level}`\n**Scope:** {scope}\n**Display:** {display}\n\n_Usage:_ `/reasoning <none|minimal|low|medium|high|xhigh|max|ultra|reset|show|hide> [--global]`"
+},
+{
+"key": "gateway.reasoning.display_on",
+"text": "on ✓"
+},
+{
+"key": "gateway.reasoning.display_off",
+"text": "off"
+},
+{
+"key": "gateway.reasoning.display_set_on",
+"text": "🧠 ✓ Reasoning display: **ON**\nModel thinking will be shown before each response on **{platform}**."
+},
+{
+"key": "gateway.reasoning.display_set_off",
+"text": "🧠 ✓ Reasoning display: **OFF** for **{platform}**"
+},
+{
+"key": "gateway.reasoning.reset_global_unsupported",
+"text": "⚠️ `/reasoning reset --global` is not supported. Use `/reasoning <level> --global` to change the global default."
+},
+{
+"key": "gateway.reasoning.reset_done",
+"text": "🧠 ✓ Session reasoning override cleared; falling back to global config."
+},
+{
+"key": "gateway.reasoning.unknown_arg",
+"text": "⚠️ Unknown argument: `{arg}`\n\n**Valid levels:** none, minimal, low, medium, high, xhigh, max, ultra\n**Display:** show, hide\n**Persist:** add `--global` to save beyond this session"
+},
+{
+"key": "gateway.reasoning.picker_title",
+"text": "🧠 **Reasoning Settings**\n\n**Effort:** `{level}`\n**Scope:** {scope}\n**Display:** {display}\n\nPick an option:"
+},
+{
+"key": "gateway.reasoning.choice_none",
+"text": "none — disable reasoning"
+},
+{
+"key": "gateway.reasoning.choice_reset",
+"text": "reset — clear session override"
+},
+{
+"key": "gateway.reasoning.choice_show",
+"text": "show reasoning in replies"
+},
+{
+"key": "gateway.reasoning.choice_hide",
+"text": "hide reasoning from replies"
+},
+{
+"key": "gateway.reasoning.set_global",
+"text": "🧠 ✓ Reasoning effort set to `{effort}` (saved to config)\n_(takes effect on next message)_"
+},
+{
+"key": "gateway.reasoning.set_global_save_failed",
+"text": "🧠 ✓ Reasoning effort set to `{effort}` (session only — config save failed)\n_(takes effect on next message)_"
+},
+{
+"key": "gateway.reasoning.set_session",
+"text": "🧠 ✓ Reasoning effort set to `{effort}` (session only — add `--global` to persist)\n_(takes effect on next message)_"
+},
+{
+"key": "gateway.reload_mcp.cancelled",
+"text": "🟡 /reload-mcp cancelled. MCP tools unchanged."
+},
+{
+"key": "gateway.reload_mcp.always_followup",
+"text": "ℹ️ Future `/reload-mcp` calls will run without confirmation. Re-enable via `approvals.mcp_reload_confirm: true` in config.yaml."
+},
+{
+"key": "gateway.reload_mcp.confirm_prompt",
+"text": "⚠️ **Confirm /reload-mcp**\n\nReloading MCP servers rebuilds the tool set for this session and **invalidates the provider prompt cache** — the next message will re-send full input tokens.  On long-context or high-reasoning models this can be expensive.\n\nChoose:\n• **Approve Once** — reload now\n• **Always Approve** — reload now and silence this prompt permanently\n• **Cancel** — leave MCP tools unchanged\n\n_Text fallback: reply `/approve`, `/always`, or `/cancel`._"
+},
+{
+"key": "gateway.reload_mcp.header",
+"text": "🔄 **MCP Servers Reloaded**\n"
+},
+{
+"key": "gateway.reload_mcp.reconnected",
+"text": "♻️ Reconnected: {names}"
+},
+{
+"key": "gateway.reload_mcp.added",
+"text": "➕ Added: {names}"
+},
+{
+"key": "gateway.reload_mcp.removed",
+"text": "➖ Removed: {names}"
+},
+{
+"key": "gateway.reload_mcp.none_connected",
+"text": "No MCP servers connected."
+},
+{
+"key": "gateway.reload_mcp.tools_available",
+"text": "\n🔧 {tools} tool(s) available from {servers} server(s)"
+},
+{
+"key": "gateway.reload_mcp.failed",
+"text": "❌ MCP reload failed: {error}"
+},
+{
+"key": "gateway.reload_skills.header",
+"text": "🔄 **Skills Reloaded**\n"
+},
+{
+"key": "gateway.reload_skills.no_new",
+"text": "No new skills detected."
+},
+{
+"key": "gateway.reload_skills.total",
+"text": "\n📚 {count} skill(s) available"
+},
+{
+"key": "gateway.reload_skills.added_header",
+"text": "➕ **Added Skills:**"
+},
+{
+"key": "gateway.reload_skills.removed_header",
+"text": "➖ **Removed Skills:**"
+},
+{
+"key": "gateway.reload_skills.item_with_desc",
+"text": "    - {name}: {desc}"
+},
+{
+"key": "gateway.reload_skills.item_no_desc",
+"text": "    - {name}"
+},
+{
+"key": "gateway.reload_skills.failed",
+"text": "❌ Skills reload failed: {error}"
+},
+{
+"key": "gateway.reset.header_default",
+"text": "✨ Session reset! Starting fresh."
+},
+{
+"key": "gateway.reset.header_new",
+"text": "✨ New session started!"
+},
+{
+"key": "gateway.reset.header_titled",
+"text": "✨ New session started: {title}"
+},
+{
+"key": "gateway.reset.title_rejected",
+"text": "\n⚠️ Title rejected: {error}"
+},
+{
+"key": "gateway.reset.title_error_untitled",
+"text": "\n⚠️ {error} — session started untitled."
+},
+{
+"key": "gateway.reset.title_empty_untitled",
+"text": "\n⚠️ Title is empty after cleanup — session started untitled."
+},
+{
+"key": "gateway.reset.tip",
+"text": "\n✦ Tip: {tip}"
+},
+{
+"key": "gateway.restart.in_progress",
+"text": "⏳ Gateway restart already in progress..."
+},
+{
+"key": "gateway.restart.restarting",
+"text": "♻ Restarting gateway. If you aren't notified within 60 seconds, restart from the console with `hermes gateway restart`."
+},
+{
+"key": "gateway.resume.db_unavailable",
+"text": "Session database not available."
+},
+{
+"key": "gateway.resume.parse_error",
+"text": "⚠️ Could not parse `/resume` arguments: {error}.\nUse quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
+},
+{
+"key": "gateway.resume.matrix_no_named_sessions",
+"text": "No named sessions found for this Matrix room.\nUse `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
+},
+{
+"key": "gateway.resume.matrix_blocked_no_origin",
+"text": "⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries."
+},
+{
+"key": "gateway.resume.matrix_blocked_other_room",
+"text": "⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here."
+},
+{
+"key": "gateway.resume.matrix_cross_room_success",
+"text": "⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**.\nFuture messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}"
+},
+{
+"key": "gateway.resume.blocked_not_owner",
+"text": "⚠️ /resume blocked: '**{name}**' belongs to a different user or chat. You can only resume sessions from this chat."
+},
+{
+"key": "gateway.resume.no_named_sessions",
+"text": "No named sessions found.\nUse `/title My Session` to name your current session, then `/resume My Session` to return to it later."
+},
+{
+"key": "gateway.resume.list_header",
+"text": "📋 **Named Sessions**\n"
+},
+{
+"key": "gateway.resume.list_item",
+"text": "• **{title}**{preview_part}"
+},
+{
+"key": "gateway.resume.list_item_numbered",
+"text": "{index}. **{title}**{preview_part}"
+},
+{
+"key": "gateway.resume.list_preview_suffix",
+"text": " — _{preview}_"
+},
+{
+"key": "gateway.resume.list_footer",
+"text": "\nUsage: `/resume <session name>`"
+},
+{
+"key": "gateway.resume.list_footer_numbered",
+"text": "\nUsage: `/resume <session name>` or `/resume <number>` (e.g. `/resume 1` for the most recent)"
+},
+{
+"key": "gateway.resume.list_failed",
+"text": "Could not list sessions: {error}"
+},
+{
+"key": "gateway.resume.out_of_range",
+"text": "Resume index {index} is out of range.\nUse `/resume` with no arguments to see available sessions."
+},
+{
+"key": "gateway.resume.not_found",
+"text": "No session found matching '**{name}**'.\nUse `/resume` with no arguments to see available sessions."
+},
+{
+"key": "gateway.resume.already_on",
+"text": "📌 Already on session **{name}**."
+},
+{
+"key": "gateway.resume.switch_failed",
+"text": "Failed to switch session."
+},
+{
+"key": "gateway.resume.resumed_one",
+"text": "↻ Resumed session **{title}** ({count} message). Conversation restored."
+},
+{
+"key": "gateway.resume.resumed_many",
+"text": "↻ Resumed session **{title}** ({count} messages). Conversation restored."
+},
+{
+"key": "gateway.resume.resumed_no_count",
+"text": "↻ Resumed session **{title}**. Conversation restored."
+},
+{
+"key": "gateway.retry.no_previous",
+"text": "No previous message to retry."
+},
+{
+"key": "gateway.rollback.not_enabled",
+"text": "Checkpoints are not enabled.\nEnable in config.yaml:\n```\ncheckpoints:\n  enabled: true\n```"
+},
+{
+"key": "gateway.rollback.none_found",
+"text": "No checkpoints found for {cwd}"
+},
+{
+"key": "gateway.rollback.invalid_number",
+"text": "Invalid checkpoint number. Use 1-{max}."
+},
+{
+"key": "gateway.rollback.restored",
+"text": "✅ Restored to checkpoint {hash}: {reason}\nA pre-rollback snapshot was saved automatically."
+},
+{
+"key": "gateway.rollback.kept_user_edits",
+"text": "↷ Kept your hand-edits: {files}\nUse /rollback <N> --all to restore those too."
+},
+{
+"key": "gateway.rollback.kept_oversize",
+"text": "↷ Kept (too large for checkpoints, no stored copy to revert to): {files}"
+},
+{
+"key": "gateway.rollback.failed_deletes",
+"text": "⚠️ Could not remove (left in place): {files}"
+},
+{
+"key": "gateway.rollback.restore_failed",
+"text": "❌ {error}"
+},
+{
+"key": "gateway.diff.not_enabled",
+"text": "Checkpoints are not enabled, so there's no session baseline.\nEnable in config.yaml:\n```\ncheckpoints:\n  enabled: true\n```\nPlain /diff still works — it uses git directly."
+},
+{
+"key": "gateway.diff.no_changes",
+"text": "No changes."
+},
+{
+"key": "gateway.diff.failed",
+"text": "{error}"
+},
+{
+"key": "gateway.set_home.save_failed",
+"text": "Failed to save home channel: {error}"
+},
+{
+"key": "gateway.set_home.success",
+"text": "✅ Home channel set to **{name}** (ID: {chat_id}).\nCron jobs and cross-platform messages will be delivered here."
+},
+{
+"key": "gateway.context.header",
+"text": "🧠 **Context Window**"
+},
+{
+"key": "gateway.context.model",
+"text": "Model: `{model}`"
+},
+{
+"key": "gateway.context.window",
+"text": "Window: {total} tokens"
+},
+{
+"key": "gateway.context.in_use",
+"text": "In use: {used} / {total} ({pct}%)"
+},
+{
+"key": "gateway.context.bar",
+"text": "{bar}"
+},
+{
+"key": "gateway.context.headroom",
+"text": "Headroom to limit: {headroom} tokens"
+},
+{
+"key": "gateway.context.threshold",
+"text": "Auto-compresses at: {threshold} ({threshold_pct}%) — {to_go} to go"
+},
+{
+"key": "gateway.context.over_threshold",
+"text": "⚠️ **Over auto-compression threshold ({threshold}, {threshold_pct}%)**"
+},
+{
+"key": "gateway.context.compressions",
+"text": "Compressions this session: {count}"
+},
+{
+"key": "gateway.context.last_savings",
+"text": "Last compression freed: {savings}% of context"
+},
+{
+"key": "gateway.context.totals_header",
+"text": "Session totals (cumulative across {calls} API calls)"
+},
+{
+"key": "gateway.context.totals_line",
+"text": "Input {input} · Output {output} · Reasoning {reasoning}"
+},
+{
+"key": "gateway.context.total_billed",
+"text": "Total billed: {total}"
+},
+{
+"key": "gateway.context.throughput_note",
+"text": "_Throughput, not context size — each call re-sends the window above._"
+},
+{
+"key": "gateway.context.estimated",
+"text": "Estimated context: ~{count} tokens across {messages} messages"
+},
+{
+"key": "gateway.context.detail_after_first",
+"text": "_(Full compression and throughput stats available after the first agent response)_"
+},
+{
+"key": "gateway.context.no_data",
+"text": "No context data available yet. Send a message to start a session."
+},
+{
+"key": "gateway.status.header",
+"text": "📊 **Hermes Gateway Status**"
+},
+{
+"key": "gateway.status.matrix_scope_header",
+"text": "**Matrix scope:**"
+},
+{
+"key": "gateway.status.matrix_scope_room",
+"text": "  room: {room}"
+},
+{
+"key": "gateway.status.matrix_scope_room_id",
+"text": "  room_id: {room_id}"
+},
+{
+"key": "gateway.status.matrix_scope_thread",
+"text": "  thread_id: {thread_id}"
+},
+{
+"key": "gateway.status.matrix_scope_mode",
+"text": "  session_scope: {scope}"
+},
+{
+"key": "gateway.status.matrix_scope_key",
+"text": "  session_key: {session_key}"
+},
+{
+"key": "gateway.status.session_id",
+"text": "**Session ID:** `{session_id}`"
+},
+{
+"key": "gateway.status.title",
+"text": "**Title:** {title}"
+},
+{
+"key": "gateway.status.created",
+"text": "**Created:** {timestamp}"
+},
+{
+"key": "gateway.status.last_activity",
+"text": "**Last Activity:** {timestamp}"
+},
+{
+"key": "gateway.status.model",
+"text": "**Model:** `{model}`"
+},
+{
+"key": "gateway.status.model_provider",
+"text": "**Model:** `{model}` ({provider})"
+},
+{
+"key": "gateway.status.context",
+"text": "**Context:** {used} / {total} ({pct}%)"
+},
+{
+"key": "gateway.status.context_used",
+"text": "**Context:** ~{used} tokens"
+},
+{
+"key": "gateway.status.tokens",
+"text": "**Lifetime tokens billed:** {tokens} _(not your current context size; use `/context`)_"
+},
+{
+"key": "gateway.status.agent_running",
+"text": "**Agent Running:** {state}"
+},
+{
+"key": "gateway.status.state_yes",
+"text": "Yes ⚡"
+},
+{
+"key": "gateway.status.state_no",
+"text": "No"
+},
+{
+"key": "gateway.status.queued",
+"text": "**Queued follow-ups:** {count}"
+},
+{
+"key": "gateway.status.platforms",
+"text": "**Connected Platforms:** {platforms}"
+},
+{
+"key": "gateway.stop.stopped_pending",
+"text": "⚡ Stopped. The agent hadn't started yet — you can continue this session."
+},
+{
+"key": "gateway.stop.stopped",
+"text": "⚡ Stopped. You can continue this session."
+},
+{
+"key": "gateway.stop.no_active",
+"text": "No active task to stop."
+},
+{
+"key": "gateway.title.db_unavailable",
+"text": "Session database not available."
+},
+{
+"key": "gateway.title.warn_prefix",
+"text": "⚠️ {error}"
+},
+{
+"key": "gateway.title.empty_after_clean",
+"text": "⚠️ Title is empty after cleanup. Please use printable characters."
+},
+{
+"key": "gateway.title.set_to",
+"text": "✏️ Session title set: **{title}**"
+},
+{
+"key": "gateway.title.not_found",
+"text": "Session not found in database."
+},
+{
+"key": "gateway.title.current_with_title",
+"text": "📌 Session: `{session_id}`\nTitle: **{title}**"
+},
+{
+"key": "gateway.title.current_no_title",
+"text": "📌 Session: `{session_id}`\nNo title set. Usage: `/title My Session Name`"
+},
+{
+"key": "gateway.topic.not_telegram_dm",
+"text": "The /topic command is only available in Telegram private chats."
+},
+{
+"key": "gateway.topic.no_session_db",
+"text": "Session database not available."
+},
+{
+"key": "gateway.topic.unauthorized",
+"text": "You are not authorized to use /topic on this bot."
+},
+{
+"key": "gateway.topic.restore_needs_topic",
+"text": "To restore a session, first create or open a Telegram topic, then send /topic <session-id> inside that topic. To create a new topic, open All Messages and send any message there."
+},
+{
+"key": "gateway.topic.topics_disabled",
+"text": "Telegram topics are not enabled for this bot yet.\n\nHow to enable them:\n1. Open @BotFather.\n2. Choose your bot.\n3. Open Bot Settings → Threads Settings.\n4. Turn on Threaded Mode and make sure users are allowed to create new threads.\n\nThen send /topic again."
+},
+{
+"key": "gateway.topic.topics_user_disallowed",
+"text": "Telegram topics are enabled, but users are not allowed to create topics.\n\nOpen @BotFather → choose your bot → Bot Settings → Threads Settings, then turn off 'Disallow users to create new threads'.\n\nThen send /topic again."
+},
+{
+"key": "gateway.topic.enable_failed",
+"text": "Failed to enable Telegram topic mode: {error}"
+},
+{
+"key": "gateway.topic.bound_status",
+"text": "This topic is linked to:\nSession: {label}\nID: {session_id}\n\nUse /new to replace this topic with a fresh session.\nFor parallel work, open All Messages and send a message there to create another topic."
+},
+{
+"key": "gateway.topic.thread_ready",
+"text": "Telegram multi-session topics are enabled.\n\nThis topic will be used as an independent Hermes session. Use /new to replace this topic's current session. For parallel work, open All Messages and send a message there to create another topic."
+},
+{
+"key": "gateway.topic.untitled_session",
+"text": "Untitled session"
+},
+{
+"key": "gateway.undo.nothing",
+"text": "Nothing to undo."
+}
+]

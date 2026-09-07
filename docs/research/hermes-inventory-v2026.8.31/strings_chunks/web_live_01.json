@@ -1,0 +1,1502 @@
+[
+{
+"key": "web_live.cron.button.en",
+"text": "EN",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.switch_language",
+"text": "Switch language",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.create",
+"text": "CREATE",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.jobs",
+"text": "Jobs",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.blueprints",
+"text": "Blueprints",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.all_profiles",
+"text": "All profiles",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.chat",
+"text": "CHAT",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.sessions",
+"text": "SESSIONS",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.files",
+"text": "FILES",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.models",
+"text": "MODELS",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.logs",
+"text": "LOGS",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.cron",
+"text": "CRON",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.skills",
+"text": "SKILLS",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.plugins",
+"text": "PLUGINS",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.mcp",
+"text": "MCP",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.channels",
+"text": "CHANNELS",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.pairing",
+"text": "PAIRING",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.profiles",
+"text": "PROFILES",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.config",
+"text": "CONFIG",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.keys",
+"text": "KEYS",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.system",
+"text": "SYSTEM",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.kanban",
+"text": "KANBAN",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.status_overview",
+"text": "Status overview",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.link.nous_research",
+"text": "Nous Research",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.tab.jobs",
+"text": "Jobs",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.tab.blueprints",
+"text": "Blueprints",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.tab.all_profiles",
+"text": "All profiles",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.heading.cron",
+"text": "Cron",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.heading.scheduled_jobs_0_",
+"text": "Scheduled Jobs (0)",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.label.profile",
+"text": "PROFILE",
+"page": "/cron"
+},
+{
+"key": "web_live.env.button.open_navigation",
+"text": "Open navigation",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.close_navigation",
+"text": "Close navigation",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.collapse",
+"text": "Collapse",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.update_hermes",
+"text": "Update Hermes",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.switch_theme",
+"text": "Switch theme",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.en",
+"text": "EN",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.switch_language",
+"text": "Switch language",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.oauth",
+"text": "OAUTH",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.providers",
+"text": "PROVIDERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.tools",
+"text": "TOOLS",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.gateway",
+"text": "GATEWAY",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.settings",
+"text": "SETTINGS",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.custom_keys",
+"text": "CUSTOM KEYS",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.hide_advanced",
+"text": "Hide Advanced",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.refresh",
+"text": "Refresh",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.copy",
+"text": "Copy",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.login",
+"text": "LOGIN",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.nous_portal_1_key",
+"text": "Nous Portal 1 key",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.anthropic_3_keys",
+"text": "Anthropic 3 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.dashscope_qwen_get_key_4_keys",
+"text": "DashScope (Qwen) Get key 4 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.deepseek_get_key_2_keys",
+"text": "DeepSeek Get key 2 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.gemini_get_key_3_keys",
+"text": "Gemini Get key 3 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.glm_z_ai_get_key_4_keys",
+"text": "GLM / Z.AI Get key 4 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.hugging_face_get_key_2_keys",
+"text": "Hugging Face Get key 2 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.kimi_moonshot_get_key_4_keys",
+"text": "Kimi / Moonshot Get key 4 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.minimax_get_key_2_keys",
+"text": "MiniMax Get key 2 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.minimax_china_get_key_2_keys",
+"text": "MiniMax (China) Get key 2 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.opencode_go_get_key_2_keys",
+"text": "OpenCode Go Get key 2 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.opencode_zen_get_key_2_keys",
+"text": "OpenCode Zen Get key 2 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.openrouter_get_key_1_key",
+"text": "OpenRouter Get key 1 key",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.xiaomi_mimo_get_key_2_keys",
+"text": "Xiaomi MiMo Get key 2 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.upstage_solar_get_key_2_keys",
+"text": "Upstage Solar Get key 2 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.other_get_key_59_keys",
+"text": "Other Get key 59 keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.show_less",
+"text": "Show less",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.set",
+"text": "Set",
+"page": "/env"
+},
+{
+"key": "web_live.env.button.add",
+"text": "Add",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.chat",
+"text": "CHAT",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.sessions",
+"text": "SESSIONS",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.files",
+"text": "FILES",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.models",
+"text": "MODELS",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.logs",
+"text": "LOGS",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.cron",
+"text": "CRON",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.skills",
+"text": "SKILLS",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.plugins",
+"text": "PLUGINS",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.mcp",
+"text": "MCP",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.channels",
+"text": "CHANNELS",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.pairing",
+"text": "PAIRING",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.profiles",
+"text": "PROFILES",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.config",
+"text": "CONFIG",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.keys",
+"text": "KEYS",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.system",
+"text": "SYSTEM",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.kanban",
+"text": "KANBAN",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.status_overview",
+"text": "Status overview",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.nous_research",
+"text": "Nous Research",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.open_nous_portal_docs",
+"text": "Open Nous Portal docs",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.open_chatgpt_or_codex_subscription_docs",
+"text": "Open ChatGPT or Codex Subscription docs",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.open_qwen_via_qwen_cli_docs",
+"text": "Open Qwen (via Qwen CLI) docs",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.open_minimax_oauth_docs",
+"text": "Open MiniMax (OAuth) docs",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.open_xai_grok_oauth_supergrok_premium_docs",
+"text": "Open xAI Grok OAuth (SuperGrok / Premium+) docs",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.open_github_copilot_acp_docs",
+"text": "Open GitHub Copilot (ACP) docs",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.open_anthropic_api_key_docs",
+"text": "Open Anthropic API Key docs",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.open_anthropic_oauth_required_extra_usage_credits_",
+"text": "Open Anthropic OAuth: Required Extra Usage Credits to Use Subscription docs",
+"page": "/env"
+},
+{
+"key": "web_live.env.link.get_key",
+"text": "Get key",
+"page": "/env"
+},
+{
+"key": "web_live.env.input.variable_name",
+"text": "Variable name",
+"page": "/env"
+},
+{
+"key": "web_live.env.input.e_g_my_service_api_key",
+"text": "e.g. MY_SERVICE_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.heading.keys",
+"text": "Keys",
+"page": "/env"
+},
+{
+"key": "web_live.env.heading.provider_logins_oauth_",
+"text": "PROVIDER LOGINS (OAUTH)",
+"page": "/env"
+},
+{
+"key": "web_live.env.heading.llm_providers",
+"text": "LLM PROVIDERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.heading.gateway",
+"text": "GATEWAY",
+"page": "/env"
+},
+{
+"key": "web_live.env.heading.config",
+"text": "CONFIG",
+"page": "/env"
+},
+{
+"key": "web_live.env.heading.custom_keys",
+"text": "CUSTOM KEYS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.exa_api_key",
+"text": "EXA_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.parallel_api_key",
+"text": "PARALLEL_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.firecrawl_api_key",
+"text": "FIRECRAWL_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.firecrawl_api_url",
+"text": "FIRECRAWL_API_URL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.firecrawl_gateway_url",
+"text": "FIRECRAWL_GATEWAY_URL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.tool_gateway_domain",
+"text": "TOOL_GATEWAY_DOMAIN",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.tool_gateway_scheme",
+"text": "TOOL_GATEWAY_SCHEME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.tool_gateway_user_token",
+"text": "TOOL_GATEWAY_USER_TOKEN",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.keenable_api_key",
+"text": "KEENABLE_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.searxng_url",
+"text": "SEARXNG_URL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.brave_search_api_key",
+"text": "BRAVE_SEARCH_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.browserbase_api_key",
+"text": "BROWSERBASE_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.browserbase_project_id",
+"text": "BROWSERBASE_PROJECT_ID",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.browser_use_api_key",
+"text": "BROWSER_USE_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.firecrawl_browser_ttl",
+"text": "FIRECRAWL_BROWSER_TTL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.agent_browser_engine",
+"text": "AGENT_BROWSER_ENGINE",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.camofox_url",
+"text": "CAMOFOX_URL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.camofox_api_key",
+"text": "CAMOFOX_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.fal_key",
+"text": "FAL_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.krea_api_key",
+"text": "KREA_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.voice_tools_openai_key",
+"text": "VOICE_TOOLS_OPENAI_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.elevenlabs_api_key",
+"text": "ELEVENLABS_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.mistral_api_key",
+"text": "MISTRAL_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.porcupine_access_key",
+"text": "PORCUPINE_ACCESS_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.github_token",
+"text": "GITHUB_TOKEN",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.honcho_api_key",
+"text": "HONCHO_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.honcho_base_url",
+"text": "HONCHO_BASE_URL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.hindsight_api_key",
+"text": "HINDSIGHT_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.hindsight_api_url",
+"text": "HINDSIGHT_API_URL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.supermemory_api_key",
+"text": "SUPERMEMORY_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.mem0_api_key",
+"text": "MEM0_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.retaindb_api_key",
+"text": "RETAINDB_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.retaindb_base_url",
+"text": "RETAINDB_BASE_URL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.brv_api_key",
+"text": "BRV_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.openviking_api_key",
+"text": "OPENVIKING_API_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.openviking_endpoint",
+"text": "OPENVIKING_ENDPOINT",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.hermes_langfuse_public_key",
+"text": "HERMES_LANGFUSE_PUBLIC_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.hermes_langfuse_secret_key",
+"text": "HERMES_LANGFUSE_SECRET_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.hermes_langfuse_base_url",
+"text": "HERMES_LANGFUSE_BASE_URL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.telegram_proxy",
+"text": "TELEGRAM_PROXY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.discord_reply_to_mode",
+"text": "DISCORD_REPLY_TO_MODE",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.mattermost_require_mention",
+"text": "MATTERMOST_REQUIRE_MENTION",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.mattermost_free_response_channels",
+"text": "MATTERMOST_FREE_RESPONSE_CHANNELS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.matrix_require_mention",
+"text": "MATRIX_REQUIRE_MENTION",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.matrix_free_response_rooms",
+"text": "MATRIX_FREE_RESPONSE_ROOMS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.matrix_auto_thread",
+"text": "MATRIX_AUTO_THREAD",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.matrix_dm_auto_thread",
+"text": "MATRIX_DM_AUTO_THREAD",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.bluebubbles_allow_all_users",
+"text": "BLUEBUBBLES_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.qq_allow_all_users",
+"text": "QQ_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.qqbot_home_channel",
+"text": "QQBOT_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.qqbot_home_channel_name",
+"text": "QQBOT_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.gateway_allow_all_users",
+"text": "GATEWAY_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.gateway_proxy_url",
+"text": "GATEWAY_PROXY_URL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.gateway_proxy_key",
+"text": "GATEWAY_PROXY_KEY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.irc_allow_all_users",
+"text": "IRC_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.irc_home_channel",
+"text": "IRC_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.teams_allow_all_users",
+"text": "TEAMS_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.teams_home_channel",
+"text": "TEAMS_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.teams_home_channel_name",
+"text": "TEAMS_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.discord_allow_all_users",
+"text": "DISCORD_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.discord_home_channel",
+"text": "DISCORD_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.discord_home_channel_name",
+"text": "DISCORD_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.mattermost_allow_all_users",
+"text": "MATTERMOST_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.mattermost_home_channel",
+"text": "MATTERMOST_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.mattermost_reply_mode",
+"text": "MATTERMOST_REPLY_MODE",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.mattermost_allowed_channels",
+"text": "MATTERMOST_ALLOWED_CHANNELS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.ntfy_allow_all_users",
+"text": "NTFY_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.ntfy_home_channel",
+"text": "NTFY_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.ntfy_home_channel_name",
+"text": "NTFY_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.sms_allowed_users",
+"text": "SMS_ALLOWED_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.sms_home_channel",
+"text": "SMS_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.google_chat_home_channel",
+"text": "GOOGLE_CHAT_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.feishu_allow_all_users",
+"text": "FEISHU_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.feishu_home_channel",
+"text": "FEISHU_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.feishu_home_channel_name",
+"text": "FEISHU_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.telegram_allow_all_users",
+"text": "TELEGRAM_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.telegram_home_channel",
+"text": "TELEGRAM_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.telegram_home_channel_name",
+"text": "TELEGRAM_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.dingtalk_home_channel",
+"text": "DINGTALK_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.dingtalk_home_channel_name",
+"text": "DINGTALK_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.wecom_websocket_url",
+"text": "WECOM_WEBSOCKET_URL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.wecom_home_channel",
+"text": "WECOM_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.wecom_allowed_users",
+"text": "WECOM_ALLOWED_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.a2a_allow_all_users",
+"text": "A2A_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.a2a_home_channel",
+"text": "A2A_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.whatsapp_allow_all_users",
+"text": "WHATSAPP_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.whatsapp_home_channel",
+"text": "WHATSAPP_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.whatsapp_home_channel_name",
+"text": "WHATSAPP_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.matrix_allow_all_users",
+"text": "MATRIX_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.matrix_home_channel",
+"text": "MATRIX_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.matrix_home_channel_name",
+"text": "MATRIX_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.email_home_address",
+"text": "EMAIL_HOME_ADDRESS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.photon_allow_all_users",
+"text": "PHOTON_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.photon_require_mention",
+"text": "PHOTON_REQUIRE_MENTION",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.photon_home_channel",
+"text": "PHOTON_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.photon_home_channel_name",
+"text": "PHOTON_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.slack_allow_all_users",
+"text": "SLACK_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.slack_home_channel",
+"text": "SLACK_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.slack_home_channel_name",
+"text": "SLACK_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.slack_thread_require_mention",
+"text": "SLACK_THREAD_REQUIRE_MENTION",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.line_allow_all_users",
+"text": "LINE_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.line_home_channel",
+"text": "LINE_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.buzz_home_channel",
+"text": "BUZZ_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.buzz_allow_all_users",
+"text": "BUZZ_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.simplex_allow_all_users",
+"text": "SIMPLEX_ALLOW_ALL_USERS",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.simplex_home_channel",
+"text": "SIMPLEX_HOME_CHANNEL",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.simplex_home_channel_name",
+"text": "SIMPLEX_HOME_CHANNEL_NAME",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.hermes_simplex_text_batch_delay",
+"text": "HERMES_SIMPLEX_TEXT_BATCH_DELAY",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.sudo_password",
+"text": "SUDO_PASSWORD",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.hermes_prefill_messages_file",
+"text": "HERMES_PREFILL_MESSAGES_FILE",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.hermes_ephemeral_system_prompt",
+"text": "HERMES_EPHEMERAL_SYSTEM_PROMPT",
+"page": "/env"
+},
+{
+"key": "web_live.env.label.add_a_custom_key",
+"text": "ADD A CUSTOM KEY",
+"page": "/env"
+},
+{
+"key": "web_live.files.button.open_navigation",
+"text": "Open navigation",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.close_navigation",
+"text": "Close navigation",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.collapse",
+"text": "Collapse",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.update_hermes",
+"text": "Update Hermes",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.switch_theme",
+"text": "Switch theme",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.en",
+"text": "EN",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.switch_language",
+"text": "Switch language",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.refresh_files",
+"text": "Refresh files",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.go",
+"text": "GO",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.upload",
+"text": "UPLOAD",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.create",
+"text": "CREATE",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.drop_files_here_root_choose_files",
+"text": "DROP FILES HERE /root CHOOSE FILES",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.upload_files",
+"text": "Upload files",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._aws",
+"text": ".aws",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_aws",
+"text": "Open .aws",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_aws",
+"text": "Delete .aws",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._bun",
+"text": ".bun",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_bun",
+"text": "Open .bun",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_bun",
+"text": "Delete .bun",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._cache",
+"text": ".cache",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_cache",
+"text": "Open .cache",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_cache",
+"text": "Delete .cache",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._cargo",
+"text": ".cargo",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_cargo",
+"text": "Open .cargo",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_cargo",
+"text": "Delete .cargo",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._ccr",
+"text": ".ccr",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_ccr",
+"text": "Open .ccr",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_ccr",
+"text": "Delete .ccr",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._claude",
+"text": ".claude",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_claude",
+"text": "Open .claude",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_claude",
+"text": "Delete .claude",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._config",
+"text": ".config",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_config",
+"text": "Open .config",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_config",
+"text": "Delete .config",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._gradle",
+"text": ".gradle",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_gradle",
+"text": "Open .gradle",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_gradle",
+"text": "Delete .gradle",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._launchpadlib",
+"text": ".launchpadlib",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_launchpadlib",
+"text": "Open .launchpadlib",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_launchpadlib",
+"text": "Delete .launchpadlib",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._local",
+"text": ".local",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_local",
+"text": "Open .local",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_local",
+"text": "Delete .local",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._npm",
+"text": ".npm",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_npm",
+"text": "Open .npm",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_npm",
+"text": "Delete .npm",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._pki",
+"text": ".pki",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_pki",
+"text": "Open .pki",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_pki",
+"text": "Delete .pki",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._rustup",
+"text": ".rustup",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_rustup",
+"text": "Open .rustup",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_rustup",
+"text": "Delete .rustup",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._ssh",
+"text": ".ssh",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.open_ssh",
+"text": "Open .ssh",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_ssh",
+"text": "Delete .ssh",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._bashrc",
+"text": ".bashrc",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.download_bashrc",
+"text": "Download .bashrc",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_bashrc",
+"text": "Delete .bashrc",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._boto",
+"text": ".boto",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.download_boto",
+"text": "Download .boto",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_boto",
+"text": "Delete .boto",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._claude_json",
+"text": ".claude.json",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.download_claude_json",
+"text": "Download .claude.json",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_claude_json",
+"text": "Delete .claude.json",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._gitconfig",
+"text": ".gitconfig",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.download_gitconfig",
+"text": "Download .gitconfig",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_gitconfig",
+"text": "Delete .gitconfig",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._profile",
+"text": ".profile",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.download_profile",
+"text": "Download .profile",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_profile",
+"text": "Delete .profile",
+"page": "/files"
+},
+{
+"key": "web_live.files.button._wget_hsts",
+"text": ".wget-hsts",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.download_wget_hsts",
+"text": "Download .wget-hsts",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_wget_hsts",
+"text": "Delete .wget-hsts",
+"page": "/files"
+}
+]

@@ -1,0 +1,72 @@
+[
+ {
+  "file": "desktop_en_00.json",
+  "catalog": "desktop_en",
+  "count": 300
+ },
+ {
+  "file": "desktop_en_01.json",
+  "catalog": "desktop_en",
+  "count": 300
+ },
+ {
+  "file": "desktop_en_02.json",
+  "catalog": "desktop_en",
+  "count": 300
+ },
+ {
+  "file": "desktop_en_03.json",
+  "catalog": "desktop_en",
+  "count": 300
+ },
+ {
+  "file": "desktop_en_04.json",
+  "catalog": "desktop_en",
+  "count": 300
+ },
+ {
+  "file": "desktop_en_05.json",
+  "catalog": "desktop_en",
+  "count": 300
+ },
+ {
+  "file": "desktop_en_06.json",
+  "catalog": "desktop_en",
+  "count": 300
+ },
+ {
+  "file": "desktop_en_07.json",
+  "catalog": "desktop_en",
+  "count": 254
+ },
+ {
+  "file": "web_en_00.json",
+  "catalog": "web_en",
+  "count": 300
+ },
+ {
+  "file": "web_en_01.json",
+  "catalog": "web_en",
+  "count": 300
+ },
+ {
+  "file": "web_en_02.json",
+  "catalog": "web_en",
+  "count": 56
+ },
+ {
+  "file": "tui_content_00.json",
+  "catalog": "tui_content",
+  "count": 137
+ },
+ {
+  "file": "gateway_locale_en_00.json",
+  "catalog": "gateway_locale_en",
+  "count": 300
+ },
+ {
+  "file": "gateway_locale_en_01.json",
+  "catalog": "gateway_locale_en",
+  "count": 67
+ }
+]

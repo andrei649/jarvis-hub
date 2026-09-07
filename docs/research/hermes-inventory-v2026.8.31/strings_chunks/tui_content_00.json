@@ -1,0 +1,550 @@
+[
+{
+"key": "charms",
+"text": "still cooking…"
+},
+{
+"key": "charms",
+"text": "polishing edges…"
+},
+{
+"key": "charms",
+"text": "asking the void nicely…"
+},
+{
+"key": "faces",
+"text": "(｡•́︿•̀｡)"
+},
+{
+"key": "faces",
+"text": "(◔_◔)"
+},
+{
+"key": "faces",
+"text": "(¬‿¬)"
+},
+{
+"key": "faces",
+"text": "( •_•)>⌐■-■"
+},
+{
+"key": "faces",
+"text": "(⌐■_■)"
+},
+{
+"key": "faces",
+"text": "◉_◉"
+},
+{
+"key": "faces",
+"text": "(°ロ°)"
+},
+{
+"key": "faces",
+"text": "( ˘⌣˘)♡"
+},
+{
+"key": "faces",
+"text": "ヽ(>∀<☆)☆"
+},
+{
+"key": "faces",
+"text": "٩(๑❛ᴗ❛๑)۶"
+},
+{
+"key": "faces",
+"text": "(⊙_⊙)"
+},
+{
+"key": "faces",
+"text": "(¬_¬)"
+},
+{
+"key": "faces",
+"text": "( ͡° ͜ʖ ͡°)"
+},
+{
+"key": "faces",
+"text": "ಠ_ಠ"
+},
+{
+"key": "fortunes",
+"text": "you are one clean refactor away from clarity"
+},
+{
+"key": "fortunes",
+"text": "a tiny rename today prevents a huge bug tomorrow"
+},
+{
+"key": "fortunes",
+"text": "your next commit message will be immaculate"
+},
+{
+"key": "fortunes",
+"text": "the edge case you are ignoring is already solved in your head"
+},
+{
+"key": "fortunes",
+"text": "minimal diff, maximal calm"
+},
+{
+"key": "fortunes",
+"text": "today favors bold deletions over new abstractions"
+},
+{
+"key": "fortunes",
+"text": "the right helper is already in your codebase"
+},
+{
+"key": "fortunes",
+"text": "you will ship before overthinking catches up"
+},
+{
+"key": "fortunes",
+"text": "tests are about to save your future self"
+},
+{
+"key": "fortunes",
+"text": "your instincts are correctly suspicious of that one branch"
+},
+{
+"key": "fortunes",
+"text": "legendary drop: one-line fix, first try"
+},
+{
+"key": "fortunes",
+"text": "legendary drop: every flaky test passes cleanly"
+},
+{
+"key": "fortunes",
+"text": "legendary drop: your diff teaches by itself"
+},
+{
+"key": "fortunes",
+"text": " : "
+},
+{
+"key": "fortunes",
+"text": "anon"
+},
+{
+"key": "hotkeys",
+"text": "../lib/platform.js"
+},
+{
+"key": "hotkeys",
+"text": "Cmd"
+},
+{
+"key": "hotkeys",
+"text": "Ctrl"
+},
+{
+"key": "hotkeys",
+"text": "Cmd"
+},
+{
+"key": "hotkeys",
+"text": "Alt"
+},
+{
+"key": "hotkeys",
+"text": "Cmd+C"
+},
+{
+"key": "hotkeys",
+"text": "copy selection"
+},
+{
+"key": "hotkeys",
+"text": "Ctrl+C"
+},
+{
+"key": "hotkeys",
+"text": "clear draft / interrupt / exit"
+},
+{
+"key": "hotkeys",
+"text": "Cmd+C"
+},
+{
+"key": "hotkeys",
+"text": "copy selection when forwarded by the terminal"
+},
+{
+"key": "hotkeys",
+"text": "Ctrl+C"
+},
+{
+"key": "hotkeys",
+"text": "copy selection / clear draft / interrupt / exit"
+},
+{
+"key": "hotkeys",
+"text": "Ctrl+C"
+},
+{
+"key": "hotkeys",
+"text": "copy selection / clear draft / interrupt / exit"
+},
+{
+"key": "hotkeys",
+"text": "+D"
+},
+{
+"key": "hotkeys",
+"text": "exit"
+},
+{
+"key": "hotkeys",
+"text": "+G / Alt+G"
+},
+{
+"key": "hotkeys",
+"text": "open $EDITOR (Alt+G fallback for VSCode/Cursor)"
+},
+{
+"key": "hotkeys",
+"text": "+L"
+},
+{
+"key": "hotkeys",
+"text": "redraw / repaint"
+},
+{
+"key": "hotkeys",
+"text": "+V / /paste"
+},
+{
+"key": "hotkeys",
+"text": "paste text; /paste attaches clipboard image"
+},
+{
+"key": "hotkeys",
+"text": "Esc Esc"
+},
+{
+"key": "hotkeys",
+"text": "discard draft (recall with ↑)"
+},
+{
+"key": "hotkeys",
+"text": "Tab"
+},
+{
+"key": "hotkeys",
+"text": "apply completion"
+},
+{
+"key": "hotkeys",
+"text": "↑/↓"
+},
+{
+"key": "hotkeys",
+"text": "completions / queue edit / history"
+},
+{
+"key": "hotkeys",
+"text": "Ctrl+X"
+},
+{
+"key": "hotkeys",
+"text": "open live session switcher (deletes queued message while editing)"
+},
+{
+"key": "hotkeys",
+"text": "Ctrl+O"
+},
+{
+"key": "hotkeys",
+"text": "open model picker (keeps your draft; applies to next turn mid-stream)"
+},
+{
+"key": "hotkeys",
+"text": "+A/E"
+},
+{
+"key": "hotkeys",
+"text": "home / end of line"
+},
+{
+"key": "hotkeys",
+"text": "+Z / "
+},
+{
+"key": "hotkeys",
+"text": "+Y"
+},
+{
+"key": "hotkeys",
+"text": "undo / redo input edits"
+},
+{
+"key": "hotkeys",
+"text": "+W"
+},
+{
+"key": "hotkeys",
+"text": "delete word"
+},
+{
+"key": "hotkeys",
+"text": "+U/K"
+},
+{
+"key": "hotkeys",
+"text": "kill to line start / end (repeat across lines)"
+},
+{
+"key": "hotkeys",
+"text": "+←/→"
+},
+{
+"key": "hotkeys",
+"text": "jump word"
+},
+{
+"key": "hotkeys",
+"text": "Home/End"
+},
+{
+"key": "hotkeys",
+"text": "start / end of line"
+},
+{
+"key": "hotkeys",
+"text": "Shift+Enter / Alt+Enter"
+},
+{
+"key": "hotkeys",
+"text": "insert newline"
+},
+{
+"key": "hotkeys",
+"text": "\\\\+Enter"
+},
+{
+"key": "hotkeys",
+"text": "multi-line continuation (fallback)"
+},
+{
+"key": "hotkeys",
+"text": "!<cmd>"
+},
+{
+"key": "hotkeys",
+"text": "run a shell command (e.g. !ls, !git status)"
+},
+{
+"key": "hotkeys",
+"text": "{!<cmd>}"
+},
+{
+"key": "hotkeys",
+"text": "branch is {!git branch --show-current}"
+},
+{
+"key": "placeholders",
+"text": "../lib/text.js"
+},
+{
+"key": "placeholders",
+"text": "Ask me anything…"
+},
+{
+"key": "placeholders",
+"text": "explain this codebase"
+},
+{
+"key": "placeholders",
+"text": "write a test for…"
+},
+{
+"key": "placeholders",
+"text": "refactor the auth module"
+},
+{
+"key": "placeholders",
+"text": "/help"
+},
+{
+"key": "placeholders",
+"text": "fix the lint errors"
+},
+{
+"key": "placeholders",
+"text": "how does the config loader work?"
+},
+{
+"key": "setup",
+"text": "../types.js"
+},
+{
+"key": "setup",
+"text": "Setup Required"
+},
+{
+"key": "setup",
+"text": "Hermes needs a model provider before the TUI can start a session."
+},
+{
+"key": "setup",
+"text": "/model"
+},
+{
+"key": "setup",
+"text": "configure provider + model in-place"
+},
+{
+"key": "setup",
+"text": "/setup"
+},
+{
+"key": "setup",
+"text": "run full first-time setup wizard in-place"
+},
+{
+"key": "setup",
+"text": "Ctrl+C"
+},
+{
+"key": "setup",
+"text": "hermes setup"
+},
+{
+"key": "setup",
+"text": "Actions"
+},
+{
+"key": "verbs",
+"text": "browsing"
+},
+{
+"key": "verbs",
+"text": "asking"
+},
+{
+"key": "verbs",
+"text": "creating"
+},
+{
+"key": "verbs",
+"text": "delegating"
+},
+{
+"key": "verbs",
+"text": "deleting"
+},
+{
+"key": "verbs",
+"text": "executing"
+},
+{
+"key": "verbs",
+"text": "generating"
+},
+{
+"key": "verbs",
+"text": "listing"
+},
+{
+"key": "verbs",
+"text": "remembering"
+},
+{
+"key": "verbs",
+"text": "patching"
+},
+{
+"key": "verbs",
+"text": "reading"
+},
+{
+"key": "verbs",
+"text": "running"
+},
+{
+"key": "verbs",
+"text": "searching"
+},
+{
+"key": "verbs",
+"text": "searching"
+},
+{
+"key": "verbs",
+"text": "terminal"
+},
+{
+"key": "verbs",
+"text": "extracting"
+},
+{
+"key": "verbs",
+"text": "searching"
+},
+{
+"key": "verbs",
+"text": "writing"
+},
+{
+"key": "verbs",
+"text": "pondering"
+},
+{
+"key": "verbs",
+"text": "contemplating"
+},
+{
+"key": "verbs",
+"text": "musing"
+},
+{
+"key": "verbs",
+"text": "cogitating"
+},
+{
+"key": "verbs",
+"text": "ruminating"
+},
+{
+"key": "verbs",
+"text": "deliberating"
+},
+{
+"key": "verbs",
+"text": "mulling"
+},
+{
+"key": "verbs",
+"text": "reflecting"
+},
+{
+"key": "verbs",
+"text": "processing"
+},
+{
+"key": "verbs",
+"text": "reasoning"
+},
+{
+"key": "verbs",
+"text": "analyzing"
+},
+{
+"key": "verbs",
+"text": "computing"
+},
+{
+"key": "verbs",
+"text": "synthesizing"
+},
+{
+"key": "verbs",
+"text": "formulating"
+},
+{
+"key": "verbs",
+"text": "brainstorming"
+}
+]

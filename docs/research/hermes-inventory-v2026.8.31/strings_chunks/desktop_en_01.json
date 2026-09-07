@@ -1,0 +1,1202 @@
+[
+{
+"key": "settings.appearance.title",
+"text": "Appearance"
+},
+{
+"key": "settings.appearance.intro",
+"text": "Desktop-only. Mode is brightness; theme is palette and chat chrome."
+},
+{
+"key": "settings.appearance.colorMode",
+"text": "Color Mode"
+},
+{
+"key": "settings.appearance.colorModeDesc",
+"text": "Pick a fixed mode or let Hermes follow your system setting."
+},
+{
+"key": "settings.appearance.toolViewTitle",
+"text": "Tool Call Display"
+},
+{
+"key": "settings.appearance.toolViewDesc",
+"text": "Product hides raw tool payloads; Technical shows full input/output."
+},
+{
+"key": "settings.appearance.reasoningCollapsedTitle",
+"text": "Collapse thinking by default"
+},
+{
+"key": "settings.appearance.reasoningCollapsedDesc",
+"text": "Keep streamed reasoning available without expanding it until you open it."
+},
+{
+"key": "settings.appearance.uiScaleTitle",
+"text": "UI Scale"
+},
+{
+"key": "settings.appearance.sessionDensityTitle",
+"text": "Session List Density"
+},
+{
+"key": "settings.appearance.sessionDensityDesc",
+"text": "Choose how much context appears beneath session titles in the sidebar."
+},
+{
+"key": "settings.appearance.sessionDensityCompact",
+"text": "Compact"
+},
+{
+"key": "settings.appearance.sessionDensityComfortable",
+"text": "Comfortable"
+},
+{
+"key": "settings.appearance.sessionDensityDetailed",
+"text": "Detailed"
+},
+{
+"key": "settings.appearance.tabStripTitle",
+"text": "Tab Strip"
+},
+{
+"key": "settings.appearance.tabStripDesc",
+"text": "Show tabs above a zone. Auto hides them when a zone holds a single pane."
+},
+{
+"key": "settings.appearance.tabStripAuto",
+"text": "Auto"
+},
+{
+"key": "settings.appearance.tabStripAlways",
+"text": "Always"
+},
+{
+"key": "settings.appearance.tabStripNever",
+"text": "Never"
+},
+{
+"key": "settings.appearance.terminalFontTitle",
+"text": "Terminal Font"
+},
+{
+"key": "settings.appearance.terminalFontPlaceholder",
+"text": "MesloLGS NF or a CSS font stack"
+},
+{
+"key": "settings.appearance.terminalFontPreview",
+"text": "Glyph preview"
+},
+{
+"key": "settings.appearance.terminalFontReset",
+"text": "Use default"
+},
+{
+"key": "settings.appearance.translucencyTitle",
+"text": "Window Translucency"
+},
+{
+"key": "settings.appearance.translucencyDesc",
+"text": "See your desktop through the whole window, text and all. Tuned separately for light and dark."
+},
+{
+"key": "settings.appearance.translucencyModeClear",
+"text": "Clear"
+},
+{
+"key": "settings.appearance.translucencyModeGlass",
+"text": "Glass"
+},
+{
+"key": "settings.appearance.translucencyTintTitle",
+"text": "Tint"
+},
+{
+"key": "settings.appearance.translucencyFadeTitle",
+"text": "Fade"
+},
+{
+"key": "settings.appearance.translucencyFrostTitle",
+"text": "Frost"
+},
+{
+"key": "settings.appearance.translucencyFrost.under-window",
+"text": "Deep"
+},
+{
+"key": "settings.appearance.translucencyFrost.popover",
+"text": "Soft"
+},
+{
+"key": "settings.appearance.translucencyFrost.titlebar",
+"text": "Bright"
+},
+{
+"key": "settings.appearance.translucencyFrost.header",
+"text": "Glare"
+},
+{
+"key": "settings.appearance.translucencyScopeTitle",
+"text": "Area"
+},
+{
+"key": "settings.appearance.translucencyScope.window",
+"text": "Whole window"
+},
+{
+"key": "settings.appearance.translucencyScope.sidebar",
+"text": "Sidebar only"
+},
+{
+"key": "settings.appearance.backdropTitle",
+"text": "Chat Backdrop"
+},
+{
+"key": "settings.appearance.backdropDesc",
+"text": "The faint statue image behind the conversation."
+},
+{
+"key": "settings.appearance.introSplashTitle",
+"text": "Intro Splash"
+},
+{
+"key": "settings.appearance.introSplashDesc",
+"text": "The wordmark and prompt shown on an empty chat."
+},
+{
+"key": "settings.appearance.reactionsTitle",
+"text": "Message Reactions"
+},
+{
+"key": "settings.appearance.reactionsDesc",
+"text": "iMessage-style emoji tapbacks — react to messages, and Hermes can react to yours."
+},
+{
+"key": "settings.appearance.tipsTitle",
+"text": "In-App Tips"
+},
+{
+"key": "settings.appearance.toursTitle",
+"text": "Guided Tours"
+},
+{
+"key": "settings.appearance.toursDesc",
+"text": "Let Hermes walk you through the app, dimming the screen and spotlighting each step."
+},
+{
+"key": "settings.appearance.composerPopoutTitle",
+"text": "Floating Composer"
+},
+{
+"key": "settings.appearance.composerPopoutDesc",
+"text": "Allow dragging the composer out of its dock. Turn this off to keep it locked at the bottom."
+},
+{
+"key": "settings.appearance.vibeHeartsTitle",
+"text": "Vibe Hearts"
+},
+{
+"key": "settings.appearance.embedsTitle",
+"text": "Inline Embeds"
+},
+{
+"key": "settings.appearance.embedsAsk",
+"text": "Ask"
+},
+{
+"key": "settings.appearance.embedsAlways",
+"text": "Always"
+},
+{
+"key": "settings.appearance.embedsOff",
+"text": "Off"
+},
+{
+"key": "settings.appearance.product",
+"text": "Product"
+},
+{
+"key": "settings.appearance.productDesc",
+"text": "Human-friendly tool activity with concise summaries."
+},
+{
+"key": "settings.appearance.technical",
+"text": "Technical"
+},
+{
+"key": "settings.appearance.technicalDesc",
+"text": "Include raw tool args/results and low-level details."
+},
+{
+"key": "settings.appearance.themeTitle",
+"text": "Theme"
+},
+{
+"key": "settings.appearance.themeDesc",
+"text": "Desktop palettes only. The selected mode is applied on top."
+},
+{
+"key": "settings.appearance.installTitle",
+"text": "Install from VS Code"
+},
+{
+"key": "settings.appearance.installPlaceholder",
+"text": "publisher.extension"
+},
+{
+"key": "settings.appearance.installButton",
+"text": "Install"
+},
+{
+"key": "settings.appearance.installing",
+"text": "Installing…"
+},
+{
+"key": "settings.appearance.installError",
+"text": "Could not install that theme."
+},
+{
+"key": "settings.appearance.removeTheme",
+"text": "Remove theme"
+},
+{
+"key": "settings.appearance.importedBadge",
+"text": "Imported"
+},
+{
+"key": "settings.appearance.pet.title",
+"text": "Pet"
+},
+{
+"key": "settings.appearance.pet.on",
+"text": "On"
+},
+{
+"key": "settings.appearance.pet.off",
+"text": "Off"
+},
+{
+"key": "settings.appearance.pet.scaleTitle",
+"text": "Size"
+},
+{
+"key": "settings.appearance.pet.scaleDesc",
+"text": "Resize the floating mascot. Applies everywhere instantly."
+},
+{
+"key": "settings.appearance.pet.roamTitle",
+"text": "Roam"
+},
+{
+"key": "settings.appearance.pet.roamDesc",
+"text": "Let the pet wander the window on its own while idle."
+},
+{
+"key": "settings.appearance.pet.chooseTitle",
+"text": "Choose a pet"
+},
+{
+"key": "settings.appearance.pet.chooseDesc",
+"text": "Picking one installs it (if needed) and makes it active."
+},
+{
+"key": "settings.appearance.pet.searchPlaceholder",
+"text": "Search pets…"
+},
+{
+"key": "settings.appearance.pet.unreachable",
+"text": "Couldn't reach the petdex gallery. Check your connection and reopen this page."
+},
+{
+"key": "settings.appearance.pet.installedTag",
+"text": "installed"
+},
+{
+"key": "settings.appearance.pet.generatedTag",
+"text": "Generated"
+},
+{
+"key": "settings.appearance.pet.deleteBody",
+"text": "This permanently deletes the pet — it can't be reinstalled."
+},
+{
+"key": "settings.appearance.pet.deleteConfirm",
+"text": "Delete"
+},
+{
+"key": "settings.appearance.pet.renameTitle",
+"text": "Rename pet"
+},
+{
+"key": "settings.appearance.pet.renamePlaceholder",
+"text": "Name your pet"
+},
+{
+"key": "settings.appearance.pet.renameSave",
+"text": "Save"
+},
+{
+"key": "settings.appearance.pet.noneAvailable",
+"text": "No pets available to turn on right now."
+},
+{
+"key": "settings.appearance.pet.turnOnFailed",
+"text": "Could not turn the pet on."
+},
+{
+"key": "settings.appearance.pet.turnOffFailed",
+"text": "Could not turn the pet off."
+},
+{
+"key": "settings.about.heading",
+"text": "Hermes Desktop"
+},
+{
+"key": "settings.about.versionUnavailable",
+"text": "Version unavailable"
+},
+{
+"key": "settings.about.bundleOutOfSync",
+"text": "App build out of date"
+},
+{
+"key": "settings.about.bundleOutOfSyncAction",
+"text": "Get the installer"
+},
+{
+"key": "settings.about.updates",
+"text": "Updates"
+},
+{
+"key": "settings.about.checkNow",
+"text": "Check now"
+},
+{
+"key": "settings.about.checking",
+"text": "Checking…"
+},
+{
+"key": "settings.about.seeWhatsNew",
+"text": "See what's new"
+},
+{
+"key": "settings.about.updateNow",
+"text": "Update now"
+},
+{
+"key": "settings.about.releaseNotes",
+"text": "Release notes"
+},
+{
+"key": "settings.about.onLatest",
+"text": "You're on the latest version."
+},
+{
+"key": "settings.about.installing",
+"text": "An update is currently installing."
+},
+{
+"key": "settings.about.cantUpdate",
+"text": "This build can't update itself from inside the app."
+},
+{
+"key": "settings.about.cantReach",
+"text": "We couldn't reach the update server."
+},
+{
+"key": "settings.about.tapCheck",
+"text": "Tap \"Check now\" to look for updates."
+},
+{
+"key": "settings.about.updateReadyUnknown",
+"text": "A new update is ready."
+},
+{
+"key": "settings.about.justNowSuffix",
+"text": " · just now"
+},
+{
+"key": "settings.about.automaticUpdates",
+"text": "Automatic updates"
+},
+{
+"key": "settings.about.never",
+"text": "never"
+},
+{
+"key": "settings.about.justNow",
+"text": "just now"
+},
+{
+"key": "settings.config.none",
+"text": "None"
+},
+{
+"key": "settings.config.noneParen",
+"text": "(none)"
+},
+{
+"key": "settings.config.builtinOnly",
+"text": "Built-in only"
+},
+{
+"key": "settings.config.notSet",
+"text": "Not set"
+},
+{
+"key": "settings.config.commaSeparated",
+"text": "comma-separated values"
+},
+{
+"key": "settings.config.searchPlaceholder",
+"text": "Search…"
+},
+{
+"key": "settings.config.noResults",
+"text": "No results found"
+},
+{
+"key": "settings.config.systemDefault",
+"text": "System default"
+},
+{
+"key": "settings.config.loading",
+"text": "Loading Hermes configuration..."
+},
+{
+"key": "settings.config.emptyTitle",
+"text": "Nothing to configure"
+},
+{
+"key": "settings.config.emptyDesc",
+"text": "This section has no adjustable settings."
+},
+{
+"key": "settings.config.failedLoad",
+"text": "Settings failed to load"
+},
+{
+"key": "settings.config.autosaveFailed",
+"text": "Autosave failed"
+},
+{
+"key": "settings.config.imported",
+"text": "Config imported"
+},
+{
+"key": "settings.config.invalidJson",
+"text": "Invalid config JSON"
+},
+{
+"key": "settings.config.keepAwakeTitle",
+"text": "Keep computer awake"
+},
+{
+"key": "settings.config.keepAwakeDesc",
+"text": "Stop this machine from sleeping so long or overnight runs keep going. The display can still dim."
+},
+{
+"key": "settings.config.disableF12Title",
+"text": "Disable F12 DevTools"
+},
+{
+"key": "settings.config.disableF12Desc",
+"text": "Block F12 from opening Developer Tools. Ctrl+Shift+I (or Cmd+Opt+I on Mac) still works."
+},
+{
+"key": "settings.config.attachmentSizeTitle",
+"text": "Max preview / image load size"
+},
+{
+"key": "settings.config.attachmentSizeUnit",
+"text": "MB"
+},
+{
+"key": "settings.config.attachmentSizeLabel",
+"text": "Max preview / image load size in megabytes"
+},
+{
+"key": "settings.quickEntry.enabledTitle",
+"text": "Quick Entry"
+},
+{
+"key": "settings.quickEntry.shortcutTitle",
+"text": "Quick Entry shortcut"
+},
+{
+"key": "settings.quickEntry.shortcutDesc",
+"text": "Needs at least one modifier, e.g. CommandOrControl+Shift+Space."
+},
+{
+"key": "settings.quickEntry.active",
+"text": "Shortcut is active."
+},
+{
+"key": "settings.quickEntry.takenBy",
+"text": "Another app already uses this shortcut — pick a different one."
+},
+{
+"key": "settings.quickEntry.invalidShortcut",
+"text": "Not a valid shortcut. Include at least one modifier key."
+},
+{
+"key": "settings.credentials.pasteKey",
+"text": "Paste key"
+},
+{
+"key": "settings.credentials.optional",
+"text": "Optional"
+},
+{
+"key": "settings.credentials.enterValueFirst",
+"text": "Enter a value first."
+},
+{
+"key": "settings.credentials.couldNotSave",
+"text": "Could not save credential."
+},
+{
+"key": "settings.credentials.remove",
+"text": "Remove"
+},
+{
+"key": "settings.credentials.getKey",
+"text": "Get a key"
+},
+{
+"key": "settings.credentials.saving",
+"text": "Saving"
+},
+{
+"key": "settings.envActions.actions",
+"text": "Actions"
+},
+{
+"key": "settings.envActions.manageInKeys",
+"text": "Manage in API Keys"
+},
+{
+"key": "settings.envActions.docs",
+"text": "Docs"
+},
+{
+"key": "settings.envActions.hideValue",
+"text": "Hide value"
+},
+{
+"key": "settings.envActions.revealValue",
+"text": "Reveal value"
+},
+{
+"key": "settings.envActions.replace",
+"text": "Replace"
+},
+{
+"key": "settings.envActions.set",
+"text": "Set"
+},
+{
+"key": "settings.envActions.clear",
+"text": "Clear"
+},
+{
+"key": "settings.connections.title",
+"text": "Registered gateways"
+},
+{
+"key": "settings.connections.intro",
+"text": "Manage this device and every Hermes gateway it can reach through remote, SSH, or Cloud connections."
+},
+{
+"key": "settings.connections.launchModeTitle",
+"text": "At startup, return to Sessions on the last-used gateway"
+},
+{
+"key": "settings.connections.launchModeDesc",
+"text": "When off, Sessions opens on the Primary gateway."
+},
+{
+"key": "settings.connections.searchPlaceholder",
+"text": "Search gateways…"
+},
+{
+"key": "settings.connections.noSearchResults",
+"text": "No gateways match your search."
+},
+{
+"key": "settings.connections.loadFailed",
+"text": "Could not load connections"
+},
+{
+"key": "settings.connections.currentPill",
+"text": "Current"
+},
+{
+"key": "settings.connections.primaryPill",
+"text": "Primary"
+},
+{
+"key": "settings.connections.managedPill",
+"text": "App-managed"
+},
+{
+"key": "settings.connections.addConnection",
+"text": "Add connection"
+},
+{
+"key": "settings.connections.editConnection",
+"text": "Edit"
+},
+{
+"key": "settings.connections.removeConnection",
+"text": "Remove"
+},
+{
+"key": "settings.connections.removeConfirmTitle",
+"text": "Remove this connection?"
+},
+{
+"key": "settings.connections.makePrimary",
+"text": "Make primary"
+},
+{
+"key": "settings.connections.testConnection",
+"text": "Test"
+},
+{
+"key": "settings.connections.testOk",
+"text": "Reachable"
+},
+{
+"key": "settings.connections.testFailed",
+"text": "Connection test failed"
+},
+{
+"key": "settings.connections.saveFailed",
+"text": "Could not save the connection"
+},
+{
+"key": "settings.connections.removeFailed",
+"text": "Could not remove the connection"
+},
+{
+"key": "settings.connections.updateAll",
+"text": "Update all instances"
+},
+{
+"key": "settings.connections.updateAllRunning",
+"text": "Updating all instances…"
+},
+{
+"key": "settings.connections.updateAllDone",
+"text": "Updates dispatched"
+},
+{
+"key": "settings.connections.updateAllFailed",
+"text": "Update fan-out failed"
+},
+{
+"key": "settings.connections.updateSkippedCloud",
+"text": "Managed by Hermes Cloud"
+},
+{
+"key": "settings.connections.kindLocal",
+"text": "Local"
+},
+{
+"key": "settings.connections.kindRemote",
+"text": "Remote gateway"
+},
+{
+"key": "settings.connections.kindCloud",
+"text": "Hermes Cloud"
+},
+{
+"key": "settings.connections.kindSsh",
+"text": "SSH"
+},
+{
+"key": "settings.connections.kindLocalDesc",
+"text": "The Hermes runtime managed by this app."
+},
+{
+"key": "settings.connections.kindRemoteDesc",
+"text": "A Hermes gateway reachable over HTTP(S) — LAN, Tailscale, or the internet."
+},
+{
+"key": "settings.connections.kindCloudDesc",
+"text": "A hosted instance discovered through your Hermes Cloud account."
+},
+{
+"key": "settings.connections.kindSshDesc",
+"text": "A Hermes install reached over SSH."
+},
+{
+"key": "settings.connections.labelTitle",
+"text": "Name"
+},
+{
+"key": "settings.connections.labelDesc",
+"text": "Required. Shown everywhere this instance appears; must be unique (e.g. “Homelab”, “Work laptop”)."
+},
+{
+"key": "settings.connections.labelPlaceholder",
+"text": "Homelab"
+},
+{
+"key": "settings.connections.urlTitle",
+"text": "Gateway URL"
+},
+{
+"key": "settings.connections.sshHostTitle",
+"text": "SSH host"
+},
+{
+"key": "settings.connections.headersTitle",
+"text": "Extra gateway headers"
+},
+{
+"key": "settings.connections.headerValuePlaceholder",
+"text": "Value"
+},
+{
+"key": "settings.connections.headerValueSaved",
+"text": "Saved — leave blank to keep"
+},
+{
+"key": "settings.connections.headerAdd",
+"text": "Add header"
+},
+{
+"key": "settings.connections.headerRemove",
+"text": "Remove"
+},
+{
+"key": "settings.connections.duplicateLocal",
+"text": "This app already manages a local connection — there can only be one."
+},
+{
+"key": "settings.connections.localAddHint",
+"text": "Local is unavailable: the managed local connection already exists (there is only ever one)."
+},
+{
+"key": "settings.connections.save",
+"text": "Save connection"
+},
+{
+"key": "settings.connections.saving",
+"text": "Saving…"
+},
+{
+"key": "settings.connections.cancel",
+"text": "Cancel"
+},
+{
+"key": "settings.connections.empty",
+"text": "No connections registered yet."
+},
+{
+"key": "settings.managedUpdates.title",
+"text": "Managed updates"
+},
+{
+"key": "settings.managedUpdates.sshConnection",
+"text": "Desktop-managed SSH install"
+},
+{
+"key": "settings.managedUpdates.update",
+"text": "Update"
+},
+{
+"key": "settings.managedUpdates.updating",
+"text": "Updating…"
+},
+{
+"key": "settings.managedUpdates.progress",
+"text": "Draining sessions, updating the remote install, and restoring profiles…"
+},
+{
+"key": "settings.managedUpdates.updated",
+"text": "Updated"
+},
+{
+"key": "settings.managedUpdates.partial",
+"text": "Updated — restore failed"
+},
+{
+"key": "settings.managedUpdates.refused",
+"text": "Refused"
+},
+{
+"key": "settings.managedUpdates.failed",
+"text": "Update failed"
+},
+{
+"key": "settings.managedUpdates.alreadyRunning",
+"text": "Update already in progress"
+},
+{
+"key": "settings.gateway.loading",
+"text": "Loading gateway settings..."
+},
+{
+"key": "settings.gateway.unavailableTitle",
+"text": "Gateway settings unavailable"
+},
+{
+"key": "settings.gateway.unavailableDesc",
+"text": "The desktop IPC bridge does not expose gateway settings."
+},
+{
+"key": "settings.gateway.title",
+"text": "Gateway Connection"
+},
+{
+"key": "settings.gateway.envOverride",
+"text": "env override"
+},
+{
+"key": "settings.gateway.envOverrideTitle",
+"text": "Environment variables are controlling this desktop session."
+},
+{
+"key": "settings.gateway.modeTitle",
+"text": "Connection mode"
+},
+{
+"key": "settings.gateway.localTitle",
+"text": "Local gateway"
+},
+{
+"key": "settings.gateway.localDesc",
+"text": "Start a private Hermes backend on localhost. This is the default and works offline."
+},
+{
+"key": "settings.gateway.remoteTitle",
+"text": "Remote gateway"
+},
+{
+"key": "settings.gateway.remoteDesc",
+"text": "Connect this desktop shell to a remote Hermes backend."
+},
+{
+"key": "settings.gateway.remoteAuthHint",
+"text": "Hosted gateways use OAuth or a username and password; self-hosted ones may use a session token."
+},
+{
+"key": "settings.gateway.cloudTitle",
+"text": "Hermes Cloud"
+},
+{
+"key": "settings.gateway.cloudDesc",
+"text": "Sign in once to Hermes Cloud and pick from the agents on your account — no URL to paste."
+},
+{
+"key": "settings.gateway.cloudSignInTitle",
+"text": "Hermes Cloud"
+},
+{
+"key": "settings.gateway.cloudSignIn",
+"text": "Sign in to Hermes Cloud"
+},
+{
+"key": "settings.gateway.cloudSignedIn",
+"text": "Signed in to Hermes Cloud"
+},
+{
+"key": "settings.gateway.cloudNeedsSignIn",
+"text": "Sign in to Hermes Cloud to discover the agents on your account."
+},
+{
+"key": "settings.gateway.cloudSignedInDesc",
+"text": "You are signed in. Pick an agent below; the session refreshes automatically."
+},
+{
+"key": "settings.gateway.cloudAgentsTitle",
+"text": "Your agents"
+},
+{
+"key": "settings.gateway.cloudOrgPickerTitle",
+"text": "Choose an organization"
+},
+{
+"key": "settings.gateway.cloudOrgSelect",
+"text": "Select"
+},
+{
+"key": "settings.gateway.cloudOrgChange",
+"text": "Change org"
+},
+{
+"key": "settings.gateway.cloudLoadingAgents",
+"text": "Loading your agents…"
+},
+{
+"key": "settings.gateway.cloudNoAgents.before",
+"text": "No agents found on this account. Create one in the "
+},
+{
+"key": "settings.gateway.cloudNoAgents.linkText",
+"text": "Nous portal"
+},
+{
+"key": "settings.gateway.cloudNoAgents.after",
+"text": ", then refresh."
+},
+{
+"key": "settings.gateway.cloudRefresh",
+"text": "Refresh"
+},
+{
+"key": "settings.gateway.cloudConnect",
+"text": "Connect"
+},
+{
+"key": "settings.gateway.cloudConnecting",
+"text": "Connecting…"
+},
+{
+"key": "settings.gateway.cloudDiscoverFailed",
+"text": "Could not load your Hermes Cloud agents"
+},
+{
+"key": "settings.gateway.cloudConnectFailed",
+"text": "Could not connect to that agent"
+},
+{
+"key": "settings.gateway.cloudSignInFailed",
+"text": "Hermes Cloud sign-in failed"
+},
+{
+"key": "settings.gateway.cloudSignedOutTitle",
+"text": "Signed out of Hermes Cloud"
+},
+{
+"key": "settings.gateway.cloudSignedOutMessage",
+"text": "Cleared the Hermes Cloud session."
+},
+{
+"key": "settings.gateway.cloudConnectedTitle",
+"text": "Connected"
+},
+{
+"key": "settings.gateway.cloudConnectedPill",
+"text": "Connected"
+},
+{
+"key": "settings.gateway.cloudAgentProvisioning",
+"text": "Provisioning…"
+},
+{
+"key": "settings.gateway.remoteUrlTitle",
+"text": "Remote URL"
+},
+{
+"key": "settings.gateway.remoteUrlDesc",
+"text": "Base URL for the remote dashboard backend. Path prefixes are supported, for example /hermes."
+},
+{
+"key": "settings.gateway.probing",
+"text": "Checking how this gateway authenticates…"
+},
+{
+"key": "settings.gateway.probeError",
+"text": "Could not reach this gateway yet. Check the URL — the auth method will appear once it responds."
+},
+{
+"key": "settings.gateway.signedIn",
+"text": "Signed in"
+},
+{
+"key": "settings.gateway.signIn",
+"text": "Sign in"
+},
+{
+"key": "settings.gateway.signOut",
+"text": "Sign out"
+},
+{
+"key": "settings.gateway.authTitle",
+"text": "Authentication"
+},
+{
+"key": "settings.gateway.authSignedInOauth",
+"text": "This gateway uses OAuth. You are signed in; the session refreshes automatically."
+},
+{
+"key": "settings.gateway.authNeedsPassword",
+"text": "This gateway uses a username and password. Sign in to authorize this desktop app."
+},
+{
+"key": "settings.gateway.tokenTitle",
+"text": "Session token"
+},
+{
+"key": "settings.gateway.tokenDesc",
+"text": "The dashboard session token used for REST and WebSocket access. Leave blank to keep the saved token."
+},
+{
+"key": "settings.gateway.savedToken",
+"text": "saved"
+},
+{
+"key": "settings.gateway.pasteSessionToken",
+"text": "Paste session token"
+},
+{
+"key": "settings.gateway.plainTextConfirmTitle",
+"text": "Store the gateway token in plain text?"
+},
+{
+"key": "settings.gateway.plainTextConfirmAction",
+"text": "Save as plain text"
+},
+{
+"key": "settings.gateway.plainTextStoredTitle",
+"text": "Token stored in plain text"
+},
+{
+"key": "settings.gateway.keychainEncryptionTitle",
+"text": "Encrypt saved secrets with the OS keychain"
+},
+{
+"key": "settings.gateway.keychainEncryptionFailed",
+"text": "Could not change secret encryption"
+},
+{
+"key": "settings.gateway.testRemote",
+"text": "Test remote"
+},
+{
+"key": "settings.gateway.saveForRestart",
+"text": "Save for next restart"
+},
+{
+"key": "settings.gateway.saveAndReconnect",
+"text": "Save and reconnect"
+},
+{
+"key": "settings.gateway.diagnostics",
+"text": "Diagnostics"
+},
+{
+"key": "settings.gateway.diagnosticsDesc",
+"text": "Reveal desktop.log in your file manager — useful when the gateway fails to start."
+},
+{
+"key": "settings.gateway.openLogs",
+"text": "Open logs"
+},
+{
+"key": "settings.gateway.incompleteTitle",
+"text": "Remote gateway incomplete"
+},
+{
+"key": "settings.gateway.incompleteSignIn",
+"text": "Enter a remote URL and sign in before switching to remote."
+},
+{
+"key": "settings.gateway.incompleteToken",
+"text": "Enter a remote URL and session token before switching to remote."
+},
+{
+"key": "settings.gateway.incompleteSignInTest",
+"text": "Enter a remote URL and sign in before testing."
+},
+{
+"key": "settings.gateway.incompleteTokenTest",
+"text": "Enter a remote URL and session token before testing."
+},
+{
+"key": "settings.gateway.enterUrlFirst",
+"text": "Enter a remote URL first."
+},
+{
+"key": "settings.gateway.restartingTitle",
+"text": "Gateway connection restarting"
+},
+{
+"key": "settings.gateway.savedTitle",
+"text": "Gateway settings saved"
+},
+{
+"key": "settings.gateway.restartingMessage",
+"text": "Hermes Desktop will reconnect using the saved settings — the shell stays open."
+},
+{
+"key": "settings.gateway.savedMessage",
+"text": "Saved for the next restart."
+},
+{
+"key": "settings.gateway.reachableTitle",
+"text": "Remote gateway reachable"
+},
+{
+"key": "settings.gateway.signedOutTitle",
+"text": "Signed out"
+},
+{
+"key": "settings.gateway.signedOutMessage",
+"text": "Cleared the remote gateway session."
+},
+{
+"key": "settings.gateway.failedLoad",
+"text": "Gateway settings failed to load"
+},
+{
+"key": "settings.gateway.signInFailed",
+"text": "Sign-in failed"
+},
+{
+"key": "settings.gateway.signOutFailed",
+"text": "Sign-out failed"
+},
+{
+"key": "settings.gateway.testFailed",
+"text": "Remote gateway test failed"
+},
+{
+"key": "settings.gateway.applyFailed",
+"text": "Could not apply gateway settings"
+},
+{
+"key": "settings.gateway.saveFailed",
+"text": "Could not save gateway settings"
+},
+{
+"key": "settings.gateway.sshTitle",
+"text": "Connect via SSH"
+},
+{
+"key": "settings.gateway.sshTrustHint",
+"text": "The first presented host key is trusted and pinned; later changes fail closed."
+},
+{
+"key": "settings.gateway.sshHostTitle",
+"text": "Host"
+},
+{
+"key": "settings.gateway.sshHostDesc",
+"text": "user@host, or a Host alias from ~/.ssh/config."
+},
+{
+"key": "settings.gateway.sshHostPick",
+"text": "Select a host…"
+},
+{
+"key": "settings.gateway.sshHostPickTitle",
+"text": "Host"
+},
+{
+"key": "settings.gateway.sshHostPickDesc",
+"text": "A Host alias from ~/.ssh/config, or Custom to type one."
+},
+{
+"key": "settings.gateway.sshHostCustom",
+"text": "Custom (enter manually)…"
+},
+{
+"key": "settings.gateway.sshUserTitle",
+"text": "User"
+}
+]

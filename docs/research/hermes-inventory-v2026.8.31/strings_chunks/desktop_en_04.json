@@ -1,0 +1,1202 @@
+[
+{
+"key": "profiles.remoteOverride.menuItem",
+"text": "Connect to a remote host…"
+},
+{
+"key": "profiles.remoteOverride.description",
+"text": "Sessions in this profile will run on the remote Hermes you point it at, instead of this computer."
+},
+{
+"key": "profiles.remoteOverride.urlLabel",
+"text": "Remote address"
+},
+{
+"key": "profiles.remoteOverride.urlPlaceholder",
+"text": "https://hermes.example.com"
+},
+{
+"key": "profiles.remoteOverride.urlInvalid",
+"text": "Enter a full address starting with http:// or https://"
+},
+{
+"key": "profiles.remoteOverride.tokenLabel",
+"text": "Access token"
+},
+{
+"key": "profiles.remoteOverride.tokenPlaceholder",
+"text": "Paste the remote session token"
+},
+{
+"key": "profiles.remoteOverride.tokenSavedHint",
+"text": "A token is already saved. Leave blank to keep it."
+},
+{
+"key": "profiles.remoteOverride.confirmTitle",
+"text": "Connect this profile to a remote host?"
+},
+{
+"key": "profiles.remoteOverride.confirmBack",
+"text": "Back"
+},
+{
+"key": "profiles.remoteOverride.connect",
+"text": "Connect"
+},
+{
+"key": "profiles.remoteOverride.connecting",
+"text": "Connecting…"
+},
+{
+"key": "profiles.remoteOverride.disconnect",
+"text": "Remove remote connection"
+},
+{
+"key": "profiles.remoteOverride.savedTitle",
+"text": "Profile connected"
+},
+{
+"key": "profiles.remoteOverride.removedTitle",
+"text": "Remote connection removed"
+},
+{
+"key": "profiles.remoteOverride.removeFailed",
+"text": "Could not remove the remote connection"
+},
+{
+"key": "profiles.remoteOverride.authFailedTitle",
+"text": "Remote host rejected the saved token"
+},
+{
+"key": "profiles.remoteOverride.updateToken",
+"text": "Enter new token…"
+},
+{
+"key": "profiles.actions",
+"text": "Actions"
+},
+{
+"key": "profiles.color",
+"text": "Color…"
+},
+{
+"key": "profiles.colorFor",
+"text": "Color"
+},
+{
+"key": "profiles.autoColor",
+"text": "Auto"
+},
+{
+"key": "profiles.noProfiles",
+"text": "No profiles yet."
+},
+{
+"key": "profiles.selectPrompt",
+"text": "Select a profile to view its details."
+},
+{
+"key": "profiles.refresh",
+"text": "Refresh profiles"
+},
+{
+"key": "profiles.refreshing",
+"text": "Refreshing profiles"
+},
+{
+"key": "profiles.default",
+"text": "default"
+},
+{
+"key": "profiles.env",
+"text": "env"
+},
+{
+"key": "profiles.defaultBadge",
+"text": "Default"
+},
+{
+"key": "profiles.rename",
+"text": "Rename"
+},
+{
+"key": "profiles.renameMenu",
+"text": "Rename…"
+},
+{
+"key": "profiles.exportMenu",
+"text": "Export…"
+},
+{
+"key": "profiles.editSoul",
+"text": "Edit SOUL.md…"
+},
+{
+"key": "profiles.copySetup",
+"text": "Copy setup"
+},
+{
+"key": "profiles.copying",
+"text": "Copying..."
+},
+{
+"key": "profiles.modelLabel",
+"text": "Model"
+},
+{
+"key": "profiles.skillsLabel",
+"text": "Skills"
+},
+{
+"key": "profiles.notSet",
+"text": "Not set"
+},
+{
+"key": "profiles.soulDesc",
+"text": "The system prompt and persona instructions baked into this profile."
+},
+{
+"key": "profiles.soulOptional",
+"text": "optional"
+},
+{
+"key": "profiles.soulPlaceholderCloned",
+"text": "cloned"
+},
+{
+"key": "profiles.soulPlaceholderEmpty",
+"text": "empty"
+},
+{
+"key": "profiles.unsavedChanges",
+"text": "Unsaved changes"
+},
+{
+"key": "profiles.loadingSoul",
+"text": "Loading SOUL.md..."
+},
+{
+"key": "profiles.emptySoul",
+"text": "Empty SOUL.md — start writing the persona..."
+},
+{
+"key": "profiles.saving",
+"text": "Saving..."
+},
+{
+"key": "profiles.saveSoul",
+"text": "Save SOUL.md"
+},
+{
+"key": "profiles.deleteTitle",
+"text": "Delete profile?"
+},
+{
+"key": "profiles.deleteDescPrefix",
+"text": "This will delete "
+},
+{
+"key": "profiles.deleteDescMid",
+"text": " and remove its "
+},
+{
+"key": "profiles.deleteDescSuffix",
+"text": " directory. This cannot be undone."
+},
+{
+"key": "profiles.deleting",
+"text": "Deleting..."
+},
+{
+"key": "profiles.createDesc",
+"text": "Profiles are independent Hermes environments: separate config, skills, and SOUL.md."
+},
+{
+"key": "profiles.nameLabel",
+"text": "Name"
+},
+{
+"key": "profiles.cloneFrom",
+"text": "Clone from"
+},
+{
+"key": "profiles.cloneFromNone",
+"text": "None (blank)"
+},
+{
+"key": "profiles.cloneFromDesc",
+"text": "Copies config, skills, and SOUL.md from the selected source profile."
+},
+{
+"key": "profiles.cloneFromDefault",
+"text": "Clone from default"
+},
+{
+"key": "profiles.cloneFromDefaultDesc",
+"text": "Copy config, skills, and SOUL.md from your default profile."
+},
+{
+"key": "profiles.nameRequired",
+"text": "Name is required."
+},
+{
+"key": "profiles.creating",
+"text": "Creating..."
+},
+{
+"key": "profiles.createAction",
+"text": "Create profile"
+},
+{
+"key": "profiles.renameTitle",
+"text": "Rename profile"
+},
+{
+"key": "profiles.renameDescPrefix",
+"text": "Renaming updates the profile directory and any wrapper scripts in "
+},
+{
+"key": "profiles.renameDescSuffix",
+"text": "."
+},
+{
+"key": "profiles.displayNameTitle",
+"text": "Name this agent"
+},
+{
+"key": "profiles.displayNameDesc",
+"text": "Sets a display name shown across the app. The internal profile ID stays \"default\"."
+},
+{
+"key": "profiles.displayNameLabel",
+"text": "Display name"
+},
+{
+"key": "profiles.newNameLabel",
+"text": "New name"
+},
+{
+"key": "profiles.renaming",
+"text": "Renaming..."
+},
+{
+"key": "profiles.created",
+"text": "Profile created"
+},
+{
+"key": "profiles.renamed",
+"text": "Profile renamed"
+},
+{
+"key": "profiles.deleted",
+"text": "Profile deleted"
+},
+{
+"key": "profiles.setupCopied",
+"text": "Setup command copied"
+},
+{
+"key": "profiles.soulSaved",
+"text": "SOUL.md saved"
+},
+{
+"key": "profiles.failedLoad",
+"text": "Failed to load profiles"
+},
+{
+"key": "profiles.failedDelete",
+"text": "Failed to delete profile"
+},
+{
+"key": "profiles.failedCopy",
+"text": "Failed to copy setup command"
+},
+{
+"key": "profiles.failedLoadSoul",
+"text": "Failed to load SOUL.md"
+},
+{
+"key": "profiles.failedSaveSoul",
+"text": "Failed to save SOUL.md"
+},
+{
+"key": "profiles.failedCreate",
+"text": "Failed to create profile"
+},
+{
+"key": "profiles.failedRename",
+"text": "Failed to rename profile"
+},
+{
+"key": "cron.close",
+"text": "Close cron"
+},
+{
+"key": "cron.title",
+"text": "Scheduled jobs"
+},
+{
+"key": "cron.modelImpact.title",
+"text": "Scheduled jobs need review"
+},
+{
+"key": "cron.modelImpact.review",
+"text": "Review scheduled jobs"
+},
+{
+"key": "cron.modelImpact.saveFailed",
+"text": "Hermes did not save that model change."
+},
+{
+"key": "cron.modelImpact.confirmTitle",
+"text": "Model Selection Warning"
+},
+{
+"key": "cron.modelImpact.confirmDetail",
+"text": "Confirm only if you accept this trade-off."
+},
+{
+"key": "cron.modelImpact.confirmAction",
+"text": "Confirm"
+},
+{
+"key": "cron.modelImpact.declined",
+"text": "Model change cancelled — you declined the data-training tier warning."
+},
+{
+"key": "cron.search",
+"text": "Search cron jobs..."
+},
+{
+"key": "cron.loading",
+"text": "Loading cron jobs..."
+},
+{
+"key": "cron.states.enabled",
+"text": "enabled"
+},
+{
+"key": "cron.states.scheduled",
+"text": "scheduled"
+},
+{
+"key": "cron.states.running",
+"text": "running"
+},
+{
+"key": "cron.states.paused",
+"text": "paused"
+},
+{
+"key": "cron.states.disabled",
+"text": "disabled"
+},
+{
+"key": "cron.states.error",
+"text": "error"
+},
+{
+"key": "cron.states.completed",
+"text": "completed"
+},
+{
+"key": "cron.deliveryLabels.local",
+"text": "This desktop"
+},
+{
+"key": "cron.deliveryLabels.telegram",
+"text": "Telegram"
+},
+{
+"key": "cron.deliveryLabels.discord",
+"text": "Discord"
+},
+{
+"key": "cron.deliveryLabels.slack",
+"text": "Slack"
+},
+{
+"key": "cron.deliveryLabels.email",
+"text": "Email"
+},
+{
+"key": "cron.scheduleLabels.daily",
+"text": "Daily"
+},
+{
+"key": "cron.scheduleLabels.weekdays",
+"text": "Weekdays"
+},
+{
+"key": "cron.scheduleLabels.weekly",
+"text": "Weekly"
+},
+{
+"key": "cron.scheduleLabels.monthly",
+"text": "Monthly"
+},
+{
+"key": "cron.scheduleLabels.hourly",
+"text": "Hourly"
+},
+{
+"key": "cron.scheduleLabels.every-15-minutes",
+"text": "Every 15 minutes"
+},
+{
+"key": "cron.scheduleLabels.custom",
+"text": "Custom"
+},
+{
+"key": "cron.scheduleHints.daily",
+"text": "Every day at 9:00 AM"
+},
+{
+"key": "cron.scheduleHints.weekdays",
+"text": "Monday through Friday at 9:00 AM"
+},
+{
+"key": "cron.scheduleHints.weekly",
+"text": "Every Monday at 9:00 AM"
+},
+{
+"key": "cron.scheduleHints.monthly",
+"text": "The first day of each month at 9:00 AM"
+},
+{
+"key": "cron.scheduleHints.hourly",
+"text": "At the top of every hour"
+},
+{
+"key": "cron.scheduleHints.every-15-minutes",
+"text": "Every 15 minutes"
+},
+{
+"key": "cron.scheduleHints.custom",
+"text": "Cron syntax or natural language"
+},
+{
+"key": "cron.days.0",
+"text": "Sunday"
+},
+{
+"key": "cron.days.1",
+"text": "Monday"
+},
+{
+"key": "cron.days.2",
+"text": "Tuesday"
+},
+{
+"key": "cron.days.3",
+"text": "Wednesday"
+},
+{
+"key": "cron.days.4",
+"text": "Thursday"
+},
+{
+"key": "cron.days.5",
+"text": "Friday"
+},
+{
+"key": "cron.days.6",
+"text": "Saturday"
+},
+{
+"key": "cron.days.7",
+"text": "Sunday"
+},
+{
+"key": "cron.topOfHour",
+"text": "At the top of every hour"
+},
+{
+"key": "cron.newCron",
+"text": "New cron"
+},
+{
+"key": "cron.emptyDescSearch",
+"text": "Try a broader search query."
+},
+{
+"key": "cron.emptyTitleNew",
+"text": "No scheduled jobs yet"
+},
+{
+"key": "cron.emptyTitleSearch",
+"text": "No matches"
+},
+{
+"key": "cron.last",
+"text": "Last:"
+},
+{
+"key": "cron.next",
+"text": "Next:"
+},
+{
+"key": "cron.noRuns",
+"text": "No runs yet"
+},
+{
+"key": "cron.manage",
+"text": "Manage"
+},
+{
+"key": "cron.showRuns",
+"text": "Show runs"
+},
+{
+"key": "cron.hideRuns",
+"text": "Hide runs"
+},
+{
+"key": "cron.runHistory",
+"text": "Run history"
+},
+{
+"key": "cron.actionsTitle",
+"text": "Cron job actions"
+},
+{
+"key": "cron.resume",
+"text": "Resume cron"
+},
+{
+"key": "cron.pause",
+"text": "Pause cron"
+},
+{
+"key": "cron.resumeTitle",
+"text": "Resume"
+},
+{
+"key": "cron.pauseTitle",
+"text": "Pause"
+},
+{
+"key": "cron.triggerNow",
+"text": "Trigger now"
+},
+{
+"key": "cron.edit",
+"text": "Edit cron"
+},
+{
+"key": "cron.deleteTitle",
+"text": "Delete cron job?"
+},
+{
+"key": "cron.deleteDescPrefix",
+"text": "This will remove "
+},
+{
+"key": "cron.deleteDescSuffix",
+"text": " permanently. It will stop firing immediately."
+},
+{
+"key": "cron.deleting",
+"text": "Deleting..."
+},
+{
+"key": "cron.resumed",
+"text": "Cron resumed"
+},
+{
+"key": "cron.paused",
+"text": "Cron paused"
+},
+{
+"key": "cron.triggered",
+"text": "Cron triggered"
+},
+{
+"key": "cron.deleted",
+"text": "Cron deleted"
+},
+{
+"key": "cron.created",
+"text": "Cron created"
+},
+{
+"key": "cron.updated",
+"text": "Cron updated"
+},
+{
+"key": "cron.failedLoad",
+"text": "Failed to load cron jobs"
+},
+{
+"key": "cron.failedUpdate",
+"text": "Failed to update cron job"
+},
+{
+"key": "cron.failedTrigger",
+"text": "Failed to trigger cron job"
+},
+{
+"key": "cron.failedDelete",
+"text": "Failed to delete cron job"
+},
+{
+"key": "cron.failedSave",
+"text": "Failed to save cron job"
+},
+{
+"key": "cron.editTitle",
+"text": "Edit cron job"
+},
+{
+"key": "cron.createTitle",
+"text": "New cron job"
+},
+{
+"key": "cron.editDesc",
+"text": "Update the schedule, prompt, or delivery target. Changes apply on next run."
+},
+{
+"key": "cron.createDesc",
+"text": "Schedule a prompt to run automatically. Use cron syntax or a natural phrase like \"every 15 minutes\"."
+},
+{
+"key": "cron.nameLabel",
+"text": "Name"
+},
+{
+"key": "cron.namePlaceholder",
+"text": "Morning briefing"
+},
+{
+"key": "cron.promptLabel",
+"text": "Prompt"
+},
+{
+"key": "cron.promptPlaceholder",
+"text": "Summarize my unread Slack threads and email me the top 5..."
+},
+{
+"key": "cron.frequencyLabel",
+"text": "Frequency"
+},
+{
+"key": "cron.deliverLabel",
+"text": "Deliver to"
+},
+{
+"key": "cron.deliverNeedsHomeChannel",
+"text": "set a home channel first"
+},
+{
+"key": "cron.modelLabel",
+"text": "Model"
+},
+{
+"key": "cron.modelDefault",
+"text": "Default (global model)"
+},
+{
+"key": "cron.customScheduleLabel",
+"text": "Custom schedule"
+},
+{
+"key": "cron.customPlaceholder",
+"text": "0 9 * * * or weekdays at 9am"
+},
+{
+"key": "cron.customHint",
+"text": "Cron expression, or phrases like \"every hour\" or \"weekdays at 9am\"."
+},
+{
+"key": "cron.optional",
+"text": "Optional"
+},
+{
+"key": "cron.promptRequired",
+"text": "Prompt is required."
+},
+{
+"key": "cron.promptScheduleRequired",
+"text": "Prompt and schedule are required."
+},
+{
+"key": "cron.scheduleRequired",
+"text": "Schedule is required."
+},
+{
+"key": "cron.scriptOnlyEditHint",
+"text": "Script-only job (no AI prompt). Job id:"
+},
+{
+"key": "cron.saveChanges",
+"text": "Save changes"
+},
+{
+"key": "cron.createAction",
+"text": "Create cron"
+},
+{
+"key": "cron.tabs.jobs",
+"text": "Jobs"
+},
+{
+"key": "cron.tabs.blueprints",
+"text": "Blueprints"
+},
+{
+"key": "cron.blueprints.tab",
+"text": "Blueprints"
+},
+{
+"key": "cron.blueprints.startFrom",
+"text": "Start from"
+},
+{
+"key": "cron.blueprints.custom",
+"text": "Custom"
+},
+{
+"key": "cron.blueprints.subtitle",
+"text": "Ready-made automations"
+},
+{
+"key": "cron.blueprints.dialogDesc",
+"text": "Fill in the details and schedule it."
+},
+{
+"key": "cron.blueprints.scheduleIt",
+"text": "Schedule it"
+},
+{
+"key": "cron.blueprints.scheduling",
+"text": "Scheduling..."
+},
+{
+"key": "cron.blueprints.scheduled",
+"text": "Blueprint scheduled"
+},
+{
+"key": "cron.blueprints.loading",
+"text": "Loading blueprints..."
+},
+{
+"key": "cron.blueprints.failedLoad",
+"text": "Failed to load blueprints"
+},
+{
+"key": "cron.blueprints.emptyTitle",
+"text": "No blueprints available"
+},
+{
+"key": "cron.blueprints.emptyDesc",
+"text": "No automation blueprints are available on this backend."
+},
+{
+"key": "artifacts.search",
+"text": "Search artifacts..."
+},
+{
+"key": "artifacts.refresh",
+"text": "Refresh artifacts"
+},
+{
+"key": "artifacts.refreshing",
+"text": "Refreshing artifacts"
+},
+{
+"key": "artifacts.indexing",
+"text": "Indexing recent session artifacts"
+},
+{
+"key": "artifacts.tabAll",
+"text": "All"
+},
+{
+"key": "artifacts.tabImages",
+"text": "Images"
+},
+{
+"key": "artifacts.tabFiles",
+"text": "Files"
+},
+{
+"key": "artifacts.tabLinks",
+"text": "Links"
+},
+{
+"key": "artifacts.noArtifactsTitle",
+"text": "No artifacts found"
+},
+{
+"key": "artifacts.noArtifactsDesc",
+"text": "Generated images and file outputs will appear here as sessions produce them."
+},
+{
+"key": "artifacts.failedLoad",
+"text": "Artifacts failed to load"
+},
+{
+"key": "artifacts.openFailed",
+"text": "Open failed"
+},
+{
+"key": "artifacts.itemsImage",
+"text": "images"
+},
+{
+"key": "artifacts.itemsLink",
+"text": "links"
+},
+{
+"key": "artifacts.itemsFile",
+"text": "files"
+},
+{
+"key": "artifacts.itemsGeneric",
+"text": "items"
+},
+{
+"key": "artifacts.zero",
+"text": "0"
+},
+{
+"key": "artifacts.colTitleLink",
+"text": "Link title"
+},
+{
+"key": "artifacts.colTitleFile",
+"text": "Name"
+},
+{
+"key": "artifacts.colTitleDefault",
+"text": "Title / name"
+},
+{
+"key": "artifacts.colLocationLink",
+"text": "URL"
+},
+{
+"key": "artifacts.colLocationFile",
+"text": "Path"
+},
+{
+"key": "artifacts.colLocationDefault",
+"text": "Location"
+},
+{
+"key": "artifacts.colSession",
+"text": "Session"
+},
+{
+"key": "artifacts.kindImage",
+"text": "image"
+},
+{
+"key": "artifacts.kindFile",
+"text": "file"
+},
+{
+"key": "artifacts.kindLink",
+"text": "link"
+},
+{
+"key": "artifacts.chat",
+"text": "Chat"
+},
+{
+"key": "artifacts.copyUrl",
+"text": "Copy URL"
+},
+{
+"key": "artifacts.copyPath",
+"text": "Copy path"
+},
+{
+"key": "artifactCard.open",
+"text": "Open"
+},
+{
+"key": "artifactPreview.olderVersion",
+"text": "Older version"
+},
+{
+"key": "artifactPreview.newerVersion",
+"text": "Newer version"
+},
+{
+"key": "artifactPreview.latest",
+"text": "Latest"
+},
+{
+"key": "artifactPreview.copyContent",
+"text": "Copy content"
+},
+{
+"key": "artifactPreview.download",
+"text": "Download"
+},
+{
+"key": "artifactPreview.openInBrowser",
+"text": "Open in browser"
+},
+{
+"key": "artifactPreview.openInBrowserFailed",
+"text": "Could not open in browser"
+},
+{
+"key": "artifactPreview.missingTitle",
+"text": "Artifact unavailable"
+},
+{
+"key": "artifactPreview.missingBody",
+"text": "This artifact is no longer in the local registry."
+},
+{
+"key": "sidebar.nav.new-session",
+"text": "New session"
+},
+{
+"key": "sidebar.nav.skills",
+"text": "Capabilities"
+},
+{
+"key": "sidebar.nav.messaging",
+"text": "Messaging"
+},
+{
+"key": "sidebar.nav.artifacts",
+"text": "Artifacts"
+},
+{
+"key": "sidebar.nav.cron",
+"text": "Scheduled jobs"
+},
+{
+"key": "sidebar.searchAria",
+"text": "Search sessions"
+},
+{
+"key": "sidebar.searchPlaceholder",
+"text": "Search sessions…"
+},
+{
+"key": "sidebar.clearSearch",
+"text": "Clear search"
+},
+{
+"key": "sidebar.results",
+"text": "Results"
+},
+{
+"key": "sidebar.pinned",
+"text": "Pinned"
+},
+{
+"key": "sidebar.sessions",
+"text": "Sessions"
+},
+{
+"key": "sidebar.cronJobs",
+"text": "Cron jobs"
+},
+{
+"key": "sidebar.groupAriaGrouped",
+"text": "Show sessions as a single list"
+},
+{
+"key": "sidebar.groupAriaUngrouped",
+"text": "Group sessions by workspace"
+},
+{
+"key": "sidebar.showProjects",
+"text": "Show projects"
+},
+{
+"key": "sidebar.showSessions",
+"text": "Show sessions"
+},
+{
+"key": "sidebar.groupTitleGrouped",
+"text": "Ungroup sessions"
+},
+{
+"key": "sidebar.groupTitleUngrouped",
+"text": "Group by workspace"
+},
+{
+"key": "sidebar.allPinned",
+"text": "Everything here is pinned. Unpin a chat to show it in recents."
+},
+{
+"key": "sidebar.shiftClickHint",
+"text": "Shift-click a chat to pin"
+},
+{
+"key": "sidebar.noWorkspace",
+"text": "No workspace"
+},
+{
+"key": "sidebar.projectEmpty",
+"text": "No sessions yet"
+},
+{
+"key": "sidebar.noSessions",
+"text": "No sessions yet"
+},
+{
+"key": "sidebar.noFilterMatches",
+"text": "No sessions match these filters"
+},
+{
+"key": "sidebar.projects.sectionLabel",
+"text": "Projects"
+},
+{
+"key": "sidebar.projects.home",
+"text": "Home"
+},
+{
+"key": "sidebar.projects.newButton",
+"text": "New project"
+},
+{
+"key": "sidebar.projects.createTitle",
+"text": "New project"
+},
+{
+"key": "sidebar.projects.createDesc",
+"text": "Name a workspace and add one or more folders."
+},
+{
+"key": "sidebar.projects.renameTitle",
+"text": "Rename project"
+},
+{
+"key": "sidebar.projects.addFolderTitle",
+"text": "Add folder"
+},
+{
+"key": "sidebar.projects.namePlaceholder",
+"text": "e.g. Skunkworks"
+},
+{
+"key": "sidebar.projects.foldersLabel",
+"text": "Folders"
+},
+{
+"key": "sidebar.projects.ideaLabel",
+"text": "Idea"
+},
+{
+"key": "sidebar.projects.ideaPlaceholder",
+"text": "What's this project about? (saved to IDEA.md)"
+},
+{
+"key": "sidebar.projects.ideaGenerate",
+"text": "Generate idea"
+},
+{
+"key": "sidebar.projects.ideaGenerating",
+"text": "Generating…"
+},
+{
+"key": "sidebar.projects.ideaShuffle",
+"text": "Shuffle templates"
+},
+{
+"key": "sidebar.projects.noFolders",
+"text": "No folders added yet."
+},
+{
+"key": "sidebar.projects.addFolder",
+"text": "Add folder"
+},
+{
+"key": "sidebar.projects.primaryBadge",
+"text": "primary"
+},
+{
+"key": "sidebar.projects.removeFolder",
+"text": "Remove"
+},
+{
+"key": "sidebar.projects.create",
+"text": "Create"
+},
+{
+"key": "sidebar.projects.menu",
+"text": "Actions"
+},
+{
+"key": "sidebar.projects.menuRename",
+"text": "Rename…"
+},
+{
+"key": "sidebar.projects.menuAppearance",
+"text": "Appearance"
+},
+{
+"key": "sidebar.projects.noColor",
+"text": "No color"
+},
+{
+"key": "sidebar.projects.menuAddFolder",
+"text": "Add folder"
+},
+{
+"key": "sidebar.projects.menuSetActive",
+"text": "Set active"
+},
+{
+"key": "sidebar.projects.menuDelete",
+"text": "Delete"
+},
+{
+"key": "sidebar.projects.moveToProject",
+"text": "Move to project"
+},
+{
+"key": "sidebar.projects.moveFailed",
+"text": "Could not move session"
+},
+{
+"key": "sidebar.projects.moveNoFolder",
+"text": "That project has no folder to move into"
+},
+{
+"key": "sidebar.projects.moveNoProjects",
+"text": "No other projects"
+},
+{
+"key": "sidebar.projects.reveal",
+"text": "Reveal in folder"
+},
+{
+"key": "sidebar.projects.copyPath",
+"text": "Copy path"
+},
+{
+"key": "sidebar.projects.removeFromSidebar",
+"text": "Hide from sidebar"
+},
+{
+"key": "sidebar.projects.createFailed",
+"text": "Could not create project"
+},
+{
+"key": "sidebar.projects.deleteConfirm",
+"text": "This removes the saved project from Hermes. Files, git repos, and worktrees stay untouched."
+},
+{
+"key": "sidebar.projects.startWork",
+"text": "New worktree"
+},
+{
+"key": "sidebar.projects.newWorktreeTitle",
+"text": "New worktree"
+},
+{
+"key": "sidebar.projects.newWorktreeDesc",
+"text": "Name the branch for this worktree."
+}
+]

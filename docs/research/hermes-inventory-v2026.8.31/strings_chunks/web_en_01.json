@@ -1,0 +1,1202 @@
+[
+{
+"key": "pluginsPage.enableRuntime",
+"text": "Enable"
+},
+{
+"key": "pluginsPage.forceReinstall",
+"text": "Force reinstall (delete existing folder first)"
+},
+{
+"key": "pluginsPage.identifierLabel",
+"text": "Git URL or owner/repo"
+},
+{
+"key": "pluginsPage.inactive",
+"text": "inactive"
+},
+{
+"key": "pluginsPage.installBtn",
+"text": "Install"
+},
+{
+"key": "pluginsPage.installHeading",
+"text": "Install from GitHub / Git URL"
+},
+{
+"key": "pluginsPage.installHint",
+"text": "Use owner/repo shorthand or a full https:// or git@ clone URL. For a plugin in a subdirectory, append the path: owner/repo/path/to/plugin (or <url>#path/to/plugin)."
+},
+{
+"key": "pluginsPage.memoryProviderLabel",
+"text": "Memory provider"
+},
+{
+"key": "pluginsPage.missingEnvWarn",
+"text": "Set these in Keys before the plugin can run:"
+},
+{
+"key": "pluginsPage.noDashboardTab",
+"text": "No dashboard tab"
+},
+{
+"key": "pluginsPage.openTab",
+"text": "Open"
+},
+{
+"key": "pluginsPage.orphanHeading",
+"text": "Dashboard-only extensions (no agent plugin.yaml match)"
+},
+{
+"key": "pluginsPage.pluginListHeading",
+"text": "Installed plugins"
+},
+{
+"key": "pluginsPage.providerDefaults",
+"text": "built-in / default"
+},
+{
+"key": "pluginsPage.providersHeading",
+"text": "Runtime provider plugins"
+},
+{
+"key": "pluginsPage.refreshDashboard",
+"text": "Rescan dashboard extensions"
+},
+{
+"key": "pluginsPage.removeConfirm",
+"text": "Remove this plugin from ~/.hermes/plugins/?"
+},
+{
+"key": "pluginsPage.removeHint",
+"text": "Only user-installed plugins under ~/.hermes/plugins can be removed."
+},
+{
+"key": "pluginsPage.rescanHeading",
+"text": "SPA plugin registry"
+},
+{
+"key": "pluginsPage.rescanHint",
+"text": "Rescan after adding files on disk so the dashboard sidebar picks up new manifests."
+},
+{
+"key": "pluginsPage.runtimeHeading",
+"text": "Gateway runtime (YAML plugins)"
+},
+{
+"key": "pluginsPage.saveProviders",
+"text": "Save provider settings"
+},
+{
+"key": "pluginsPage.savedProviders",
+"text": "Provider settings saved."
+},
+{
+"key": "pluginsPage.sourceBadge",
+"text": "Source"
+},
+{
+"key": "pluginsPage.authRequired",
+"text": "Auth required"
+},
+{
+"key": "pluginsPage.authRequiredHint",
+"text": "Run this command to authenticate:"
+},
+{
+"key": "pluginsPage.updateGit",
+"text": "Git pull"
+},
+{
+"key": "pluginsPage.versionBadge",
+"text": "Version"
+},
+{
+"key": "pluginsPage.showInSidebar",
+"text": "Show in sidebar"
+},
+{
+"key": "pluginsPage.hideFromSidebar",
+"text": "Hide from sidebar"
+},
+{
+"key": "skills.title",
+"text": "Skills"
+},
+{
+"key": "skills.searchPlaceholder",
+"text": "Search skills and toolsets..."
+},
+{
+"key": "skills.enabledOf",
+"text": "{enabled}/{total} enabled"
+},
+{
+"key": "skills.all",
+"text": "All"
+},
+{
+"key": "skills.categories",
+"text": "Categories"
+},
+{
+"key": "skills.filters",
+"text": "Filters"
+},
+{
+"key": "skills.noSkills",
+"text": "No skills found. Skills are loaded from ~/.hermes/skills/"
+},
+{
+"key": "skills.noSkillsMatch",
+"text": "No skills match your search or filter."
+},
+{
+"key": "skills.skillCount",
+"text": "{count} skill{s}"
+},
+{
+"key": "skills.resultCount",
+"text": "{count} result{s}"
+},
+{
+"key": "skills.noDescription",
+"text": "No description available."
+},
+{
+"key": "skills.toolsets",
+"text": "Toolsets"
+},
+{
+"key": "skills.toolsetLabel",
+"text": "{name} toolset"
+},
+{
+"key": "skills.noToolsetsMatch",
+"text": "No toolsets match the search."
+},
+{
+"key": "skills.setupNeeded",
+"text": "Setup needed"
+},
+{
+"key": "skills.disabledForCli",
+"text": "Disabled for CLI"
+},
+{
+"key": "skills.more",
+"text": "+{count} more"
+},
+{
+"key": "skills.profileSelector",
+"text": "Profile"
+},
+{
+"key": "skills.currentProfile",
+"text": "current ({name})"
+},
+{
+"key": "config.configPath",
+"text": "~/.hermes/config.yaml"
+},
+{
+"key": "config.filters",
+"text": "Filters"
+},
+{
+"key": "config.sections",
+"text": "Sections"
+},
+{
+"key": "config.exportConfig",
+"text": "Export config as JSON"
+},
+{
+"key": "config.importConfig",
+"text": "Import config from JSON"
+},
+{
+"key": "config.resetDefaults",
+"text": "Reset to defaults"
+},
+{
+"key": "config.resetScopeTooltip",
+"text": "Reset {scope} to defaults"
+},
+{
+"key": "config.confirmResetScope",
+"text": "Reset all {scope} settings to their defaults? This only updates the form — changes aren't written to config.yaml until you press Save."
+},
+{
+"key": "config.resetScopeToast",
+"text": "{scope} reset to defaults — review and Save to persist"
+},
+{
+"key": "config.rawYaml",
+"text": "Raw YAML Configuration"
+},
+{
+"key": "config.searchResults",
+"text": "Search Results"
+},
+{
+"key": "config.fields",
+"text": "field{s}"
+},
+{
+"key": "config.noFieldsMatch",
+"text": "No fields match \"{query}\""
+},
+{
+"key": "config.configSaved",
+"text": "Configuration saved"
+},
+{
+"key": "config.yamlConfigSaved",
+"text": "YAML config saved"
+},
+{
+"key": "config.failedToSave",
+"text": "Failed to save"
+},
+{
+"key": "config.failedToSaveYaml",
+"text": "Failed to save YAML"
+},
+{
+"key": "config.failedToLoadRaw",
+"text": "Failed to load raw config"
+},
+{
+"key": "config.configImported",
+"text": "Config imported — review and save"
+},
+{
+"key": "config.invalidJson",
+"text": "Invalid JSON file"
+},
+{
+"key": "config.categories.general",
+"text": "General"
+},
+{
+"key": "config.categories.agent",
+"text": "Agent"
+},
+{
+"key": "config.categories.terminal",
+"text": "Terminal"
+},
+{
+"key": "config.categories.display",
+"text": "Display"
+},
+{
+"key": "config.categories.delegation",
+"text": "Delegation"
+},
+{
+"key": "config.categories.memory",
+"text": "Memory"
+},
+{
+"key": "config.categories.compression",
+"text": "Compression"
+},
+{
+"key": "config.categories.security",
+"text": "Security"
+},
+{
+"key": "config.categories.browser",
+"text": "Browser"
+},
+{
+"key": "config.categories.voice",
+"text": "Voice"
+},
+{
+"key": "config.categories.tts",
+"text": "Text-to-Speech"
+},
+{
+"key": "config.categories.stt",
+"text": "Speech-to-Text"
+},
+{
+"key": "config.categories.logging",
+"text": "Logging"
+},
+{
+"key": "config.categories.discord",
+"text": "Discord"
+},
+{
+"key": "config.categories.auxiliary",
+"text": "Auxiliary"
+},
+{
+"key": "env.changesNote",
+"text": "Changes are saved to disk immediately. Active sessions pick up new keys automatically."
+},
+{
+"key": "env.confirmClearTitle",
+"text": "Clear this key?"
+},
+{
+"key": "env.description",
+"text": "Manage API keys and secrets stored in"
+},
+{
+"key": "env.hideAdvanced",
+"text": "Hide Advanced"
+},
+{
+"key": "env.showAdvanced",
+"text": "Show Advanced"
+},
+{
+"key": "env.showLess",
+"text": "Show less"
+},
+{
+"key": "env.showMore",
+"text": "Show more"
+},
+{
+"key": "env.llmProviders",
+"text": "LLM Providers"
+},
+{
+"key": "env.providersConfigured",
+"text": "{configured} of {total} providers configured"
+},
+{
+"key": "env.getKey",
+"text": "Get key"
+},
+{
+"key": "env.notConfigured",
+"text": "{count} not configured"
+},
+{
+"key": "env.notSet",
+"text": "Not set"
+},
+{
+"key": "env.keysCount",
+"text": "{count} key{s}"
+},
+{
+"key": "env.enterValue",
+"text": "Enter value..."
+},
+{
+"key": "env.replaceCurrentValue",
+"text": "Replace current value ({preview})"
+},
+{
+"key": "env.showValue",
+"text": "Show real value"
+},
+{
+"key": "env.hideValue",
+"text": "Hide value"
+},
+{
+"key": "env.customTitle",
+"text": "Custom Keys"
+},
+{
+"key": "env.customHint",
+"text": "Arbitrary environment variables stored in your .env that Hermes doesn't recognise. Use these to inject env vars for skills, MCP servers, or your own tooling."
+},
+{
+"key": "env.customConfigured",
+"text": "{count} custom key{s} set"
+},
+{
+"key": "env.addCustomKey",
+"text": "Add a custom key"
+},
+{
+"key": "env.customKeyName",
+"text": "Variable name"
+},
+{
+"key": "env.customKeyNamePlaceholder",
+"text": "e.g. MY_SERVICE_API_KEY"
+},
+{
+"key": "env.add",
+"text": "Add"
+},
+{
+"key": "env.invalidKeyName",
+"text": "Use letters, numbers and underscores only (must start with a letter or underscore)."
+},
+{
+"key": "oauth.title",
+"text": "Provider Logins (OAuth)"
+},
+{
+"key": "oauth.providerLogins",
+"text": "Provider Logins (OAuth)"
+},
+{
+"key": "oauth.connected",
+"text": "Connected"
+},
+{
+"key": "oauth.expired",
+"text": "Expired"
+},
+{
+"key": "oauth.notConnected",
+"text": "Not connected. Use Login when available, or run {command} in a terminal."
+},
+{
+"key": "oauth.runInTerminal",
+"text": "in a terminal."
+},
+{
+"key": "oauth.noProviders",
+"text": "No OAuth-capable providers detected."
+},
+{
+"key": "oauth.login",
+"text": "Login"
+},
+{
+"key": "oauth.disconnect",
+"text": "Disconnect"
+},
+{
+"key": "oauth.managedExternally",
+"text": "Managed externally"
+},
+{
+"key": "oauth.copied",
+"text": "Copied ✓"
+},
+{
+"key": "oauth.copyCode",
+"text": "Copy code"
+},
+{
+"key": "oauth.copyFailed",
+"text": "Could not copy automatically. Select the code and copy it manually."
+},
+{
+"key": "oauth.cli",
+"text": "Copy"
+},
+{
+"key": "oauth.copyCliCommand",
+"text": "Copy CLI command (for external / fallback)"
+},
+{
+"key": "oauth.connect",
+"text": "Connect"
+},
+{
+"key": "oauth.sessionExpires",
+"text": "Session expires in {time}"
+},
+{
+"key": "oauth.initiatingLogin",
+"text": "Initiating login flow…"
+},
+{
+"key": "oauth.exchangingCode",
+"text": "Exchanging code for tokens…"
+},
+{
+"key": "oauth.connectedClosing",
+"text": "Connected! Closing…"
+},
+{
+"key": "oauth.loginFailed",
+"text": "Login failed."
+},
+{
+"key": "oauth.sessionExpired",
+"text": "Session expired. Click Retry to start a new login."
+},
+{
+"key": "oauth.reOpenAuth",
+"text": "Re-open auth page"
+},
+{
+"key": "oauth.reOpenVerification",
+"text": "Re-open verification page"
+},
+{
+"key": "oauth.submitCode",
+"text": "Submit code"
+},
+{
+"key": "oauth.pasteCode",
+"text": "Paste authorization code (with #state suffix is fine)"
+},
+{
+"key": "oauth.waitingAuth",
+"text": "Waiting for you to authorize in the browser…"
+},
+{
+"key": "oauth.enterCodePrompt",
+"text": "A new tab opened. Enter this code if prompted:"
+},
+{
+"key": "oauth.pkceStep1",
+"text": "A new tab opened to claude.ai. Sign in and click Authorize."
+},
+{
+"key": "oauth.pkceStep2",
+"text": "Copy the authorization code shown after authorizing."
+},
+{
+"key": "oauth.pkceStep3",
+"text": "Paste it below and submit."
+},
+{
+"key": "oauth.flowLabels.pkce",
+"text": "Browser login (PKCE)"
+},
+{
+"key": "oauth.flowLabels.device_code",
+"text": "Device code"
+},
+{
+"key": "oauth.flowLabels.external",
+"text": "External CLI"
+},
+{
+"key": "oauth.expiresIn",
+"text": "expires in {time}"
+},
+{
+"key": "language.switchTo",
+"text": "Switch language"
+},
+{
+"key": "theme.title",
+"text": "Theme"
+},
+{
+"key": "theme.switchTheme",
+"text": "Switch theme"
+},
+{
+"key": "theme.fontTitle",
+"text": "Font"
+},
+{
+"key": "theme.fontDefault",
+"text": "Theme default"
+},
+{
+"key": "theme.fontDefaultHint",
+"text": "Use the active theme's font"
+},
+{
+"key": "theme.fontSans",
+"text": "Sans"
+},
+{
+"key": "theme.fontSerif",
+"text": "Serif"
+},
+{
+"key": "theme.fontMono",
+"text": "Mono"
+},
+{
+"key": "achievements.hero.kicker",
+"text": "Agentic Gamerscore"
+},
+{
+"key": "achievements.hero.title",
+"text": "Hermes Achievements"
+},
+{
+"key": "achievements.actions.rescan",
+"text": "Rescan"
+},
+{
+"key": "achievements.stats.unlocked",
+"text": "Unlocked"
+},
+{
+"key": "achievements.stats.unlocked_hint",
+"text": "earned badges"
+},
+{
+"key": "achievements.stats.discovered",
+"text": "Discovered"
+},
+{
+"key": "achievements.stats.discovered_hint",
+"text": "known, not earned yet"
+},
+{
+"key": "achievements.stats.secrets",
+"text": "Secrets"
+},
+{
+"key": "achievements.stats.secrets_hint",
+"text": "hidden until first signal"
+},
+{
+"key": "achievements.stats.highest_tier",
+"text": "Highest tier"
+},
+{
+"key": "achievements.stats.highest_tier_hint",
+"text": "Copper → Silver → Gold → Diamond → Olympian"
+},
+{
+"key": "achievements.stats.latest",
+"text": "Latest"
+},
+{
+"key": "achievements.stats.latest_hint_empty",
+"text": "run Hermes more"
+},
+{
+"key": "achievements.stats.none_yet",
+"text": "None yet"
+},
+{
+"key": "achievements.state.unlocked",
+"text": "Unlocked"
+},
+{
+"key": "achievements.state.discovered",
+"text": "Discovered"
+},
+{
+"key": "achievements.state.secret",
+"text": "Secret"
+},
+{
+"key": "achievements.tier.target",
+"text": "Target {tier}"
+},
+{
+"key": "achievements.tier.hidden",
+"text": "Hidden"
+},
+{
+"key": "achievements.tier.complete",
+"text": "Complete"
+},
+{
+"key": "achievements.tier.objective",
+"text": "Objective"
+},
+{
+"key": "achievements.progress.hidden",
+"text": "hidden"
+},
+{
+"key": "achievements.scan.building_headline",
+"text": "Building achievement profile…"
+},
+{
+"key": "achievements.scan.starting_headline",
+"text": "Starting achievement scan…"
+},
+{
+"key": "achievements.guide.tiers_header",
+"text": "Tiers"
+},
+{
+"key": "achievements.guide.secret_header",
+"text": "Secret achievements"
+},
+{
+"key": "achievements.guide.scan_status_header",
+"text": "Scan status"
+},
+{
+"key": "achievements.guide.what_scanned_header",
+"text": "What is scanned"
+},
+{
+"key": "achievements.card.share_title",
+"text": "Share this achievement"
+},
+{
+"key": "achievements.card.share_label",
+"text": "Share {name}"
+},
+{
+"key": "achievements.card.share_text",
+"text": "Share"
+},
+{
+"key": "achievements.card.how_to_reveal",
+"text": "How to reveal"
+},
+{
+"key": "achievements.card.what_counts",
+"text": "What counts"
+},
+{
+"key": "achievements.card.evidence_label",
+"text": "Evidence"
+},
+{
+"key": "achievements.card.evidence_session_fallback",
+"text": "session"
+},
+{
+"key": "achievements.card.no_evidence",
+"text": "No evidence yet"
+},
+{
+"key": "achievements.latest.header",
+"text": "Recent unlocks"
+},
+{
+"key": "achievements.empty.no_secrets_header",
+"text": "No hidden secrets left in this scan."
+},
+{
+"key": "achievements.filters.all_categories",
+"text": "All"
+},
+{
+"key": "achievements.filters.visibility_all",
+"text": "all"
+},
+{
+"key": "achievements.filters.visibility_unlocked",
+"text": "unlocked"
+},
+{
+"key": "achievements.filters.visibility_discovered",
+"text": "discovered"
+},
+{
+"key": "achievements.filters.visibility_secret",
+"text": "secret"
+},
+{
+"key": "achievements.share.dialog_label",
+"text": "Share achievement"
+},
+{
+"key": "achievements.share.header",
+"text": "Share: {name}"
+},
+{
+"key": "achievements.share.close",
+"text": "Close"
+},
+{
+"key": "achievements.share.rendering",
+"text": "Rendering…"
+},
+{
+"key": "achievements.share.card_alt",
+"text": "{name} share card"
+},
+{
+"key": "achievements.share.error_generic",
+"text": "Something went wrong."
+},
+{
+"key": "achievements.share.x_title",
+"text": "Opens X with a pre-filled post"
+},
+{
+"key": "achievements.share.x_button",
+"text": "Share on X"
+},
+{
+"key": "achievements.share.copy_title",
+"text": "Copy the image to paste into your post"
+},
+{
+"key": "achievements.share.copy_button",
+"text": "Copy image"
+},
+{
+"key": "achievements.share.copied",
+"text": "Copied ✓"
+},
+{
+"key": "achievements.share.download_button",
+"text": "Download PNG"
+},
+{
+"key": "achievements.share.tweet_text",
+"text": "Just unlocked {tier_part}\\\"{name}\\\" in Hermes Agent ☤"
+},
+{
+"key": "kanban.loading",
+"text": "Loading Kanban board…"
+},
+{
+"key": "kanban.loadFailed",
+"text": "Failed to load Kanban board: "
+},
+{
+"key": "kanban.board",
+"text": "Board"
+},
+{
+"key": "kanban.newBoard",
+"text": "+ New board"
+},
+{
+"key": "kanban.newBoardTitle",
+"text": "New board"
+},
+{
+"key": "kanban.slug",
+"text": "Slug"
+},
+{
+"key": "kanban.slugHint",
+"text": "— lowercase, hyphens, e.g. atm10-server"
+},
+{
+"key": "kanban.displayName",
+"text": "Display name"
+},
+{
+"key": "kanban.displayNameHint",
+"text": "(optional)"
+},
+{
+"key": "kanban.description",
+"text": "Description"
+},
+{
+"key": "kanban.descriptionHint",
+"text": "(optional)"
+},
+{
+"key": "kanban.icon",
+"text": "Icon"
+},
+{
+"key": "kanban.iconHint",
+"text": "(single character or emoji)"
+},
+{
+"key": "kanban.switchAfterCreate",
+"text": "Switch to this board after creating it"
+},
+{
+"key": "kanban.cancel",
+"text": "Cancel"
+},
+{
+"key": "kanban.creating",
+"text": "Creating…"
+},
+{
+"key": "kanban.createBoard",
+"text": "Create board"
+},
+{
+"key": "kanban.search",
+"text": "Search"
+},
+{
+"key": "kanban.filterCards",
+"text": "Filter cards…"
+},
+{
+"key": "kanban.tenant",
+"text": "Tenant"
+},
+{
+"key": "kanban.allTenants",
+"text": "All tenants"
+},
+{
+"key": "kanban.assignee",
+"text": "Assignee"
+},
+{
+"key": "kanban.allProfiles",
+"text": "All profiles"
+},
+{
+"key": "kanban.showArchived",
+"text": "Show archived"
+},
+{
+"key": "kanban.lanesByProfile",
+"text": "Lanes by profile"
+},
+{
+"key": "kanban.nudgeDispatcher",
+"text": "Nudge dispatcher"
+},
+{
+"key": "kanban.refresh",
+"text": "Refresh"
+},
+{
+"key": "kanban.selected",
+"text": "selected"
+},
+{
+"key": "kanban.complete",
+"text": "Complete"
+},
+{
+"key": "kanban.archive",
+"text": "Archive"
+},
+{
+"key": "kanban.apply",
+"text": "Apply"
+},
+{
+"key": "kanban.clear",
+"text": "Clear"
+},
+{
+"key": "kanban.createTask",
+"text": "Create task in this column"
+},
+{
+"key": "kanban.noTasks",
+"text": "— no tasks —"
+},
+{
+"key": "kanban.unassigned",
+"text": "unassigned"
+},
+{
+"key": "kanban.needsAssignee",
+"text": "Needs assignee"
+},
+{
+"key": "kanban.untitled",
+"text": "(untitled)"
+},
+{
+"key": "kanban.loadingDetail",
+"text": "Loading…"
+},
+{
+"key": "kanban.addComment",
+"text": "Add a comment… (Enter to submit)"
+},
+{
+"key": "kanban.comment",
+"text": "Comment"
+},
+{
+"key": "kanban.status",
+"text": "Status"
+},
+{
+"key": "kanban.workspace",
+"text": "Workspace"
+},
+{
+"key": "kanban.skills",
+"text": "Skills"
+},
+{
+"key": "kanban.createdBy",
+"text": "Created by"
+},
+{
+"key": "kanban.result",
+"text": "Result"
+},
+{
+"key": "kanban.comments",
+"text": "Comments"
+},
+{
+"key": "kanban.events",
+"text": "Events"
+},
+{
+"key": "kanban.runHistory",
+"text": "Run history"
+},
+{
+"key": "kanban.workerLog",
+"text": "Worker log"
+},
+{
+"key": "kanban.loadingLog",
+"text": "Loading log…"
+},
+{
+"key": "kanban.noDescription",
+"text": "— no description —"
+},
+{
+"key": "kanban.noComments",
+"text": "— no comments —"
+},
+{
+"key": "kanban.edit",
+"text": "edit"
+},
+{
+"key": "kanban.save",
+"text": "Save"
+},
+{
+"key": "kanban.dependencies",
+"text": "Dependencies"
+},
+{
+"key": "kanban.parents",
+"text": "Parents:"
+},
+{
+"key": "kanban.children",
+"text": "Children:"
+},
+{
+"key": "kanban.none",
+"text": "none"
+},
+{
+"key": "kanban.addParent",
+"text": "— add parent —"
+},
+{
+"key": "kanban.addChild",
+"text": "— add child —"
+},
+{
+"key": "kanban.removeDependency",
+"text": "Remove dependency"
+},
+{
+"key": "kanban.block",
+"text": "Block"
+},
+{
+"key": "kanban.unblock",
+"text": "Unblock"
+},
+{
+"key": "kanban.notifyHomeChannels",
+"text": "Notify home channels"
+},
+{
+"key": "kanban.diagnostics",
+"text": "Diagnostics"
+},
+{
+"key": "kanban.hide",
+"text": "Hide"
+},
+{
+"key": "kanban.show",
+"text": "Show"
+},
+{
+"key": "kanban.attention",
+"text": "Attention"
+},
+{
+"key": "kanban.tasksNeedAttention",
+"text": "tasks need attention"
+},
+{
+"key": "kanban.taskNeedsAttention",
+"text": "1 task needs attention"
+},
+{
+"key": "kanban.diagnostic",
+"text": "diagnostic"
+},
+{
+"key": "kanban.open",
+"text": "Open"
+},
+{
+"key": "kanban.close",
+"text": "Close (Esc)"
+},
+{
+"key": "kanban.reassignTo",
+"text": "Reassign to:"
+},
+{
+"key": "kanban.copied",
+"text": "Copied"
+},
+{
+"key": "kanban.copyCommand",
+"text": "Copy command to clipboard"
+},
+{
+"key": "kanban.reclaim",
+"text": "Reclaim"
+},
+{
+"key": "kanban.reassign",
+"text": "Reassign"
+},
+{
+"key": "kanban.renderingError",
+"text": "Kanban tab hit a rendering error"
+},
+{
+"key": "kanban.reloadView",
+"text": "Reload view"
+},
+{
+"key": "kanban.markDone",
+"text": "Mark {n} task(s) as done?"
+},
+{
+"key": "kanban.markArchived",
+"text": "Archive {n} task(s)?"
+},
+{
+"key": "kanban.warning",
+"text": "Warning"
+},
+{
+"key": "kanban.phantomIds",
+"text": "Phantom ids:"
+},
+{
+"key": "kanban.active",
+"text": "active"
+},
+{
+"key": "kanban.ended",
+"text": "ended"
+},
+{
+"key": "kanban.noProfile",
+"text": "(no profile)"
+},
+{
+"key": "kanban.showAllAttempts",
+"text": "Show all attempts"
+},
+{
+"key": "kanban.sendingUpdates",
+"text": "Sending updates to"
+},
+{
+"key": "kanban.sendNotifications",
+"text": "Send completed / blocked / gave_up notifications to"
+},
+{
+"key": "kanban.archiveBoardTitle",
+"text": "Archive this board"
+}
+]

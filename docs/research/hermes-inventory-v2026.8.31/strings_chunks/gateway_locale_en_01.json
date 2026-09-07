@@ -1,0 +1,270 @@
+[
+{
+"key": "gateway.undo.removed",
+"text": "↩️ Undid {turns} turn(s) ({count} message(s)).\nBacked up to: \"{preview}\"\nCopy/edit the text above and send it to re-prompt from here."
+},
+{
+"key": "gateway.undo.invalid_count",
+"text": "Invalid count \"{arg}\" — use /undo or /undo N."
+},
+{
+"key": "gateway.update.platform_not_messaging",
+"text": "✗ /update is only available from messaging platforms. Run `hermes update` from the terminal."
+},
+{
+"key": "gateway.update.not_git_repo",
+"text": "✗ Not a git repository — cannot update."
+},
+{
+"key": "gateway.update.hermes_cmd_not_found",
+"text": "✗ Could not locate the `hermes` command. Hermes is running, but the update command could not find the executable on PATH or via the current Python interpreter. Try running `hermes update` manually in your terminal."
+},
+{
+"key": "gateway.update.start_failed",
+"text": "✗ Failed to start update: {error}"
+},
+{
+"key": "gateway.update.starting",
+"text": "⚕ Starting Hermes update… I'll stream progress here."
+},
+{
+"key": "gateway.usage.rate_limits",
+"text": "⏱️ **Rate Limits:** {state}"
+},
+{
+"key": "gateway.usage.header_session",
+"text": "📊 **Session Token Usage**"
+},
+{
+"key": "gateway.usage.label_model",
+"text": "Model: `{model}`"
+},
+{
+"key": "gateway.usage.label_input_tokens",
+"text": "Input tokens: {count}"
+},
+{
+"key": "gateway.usage.label_cache_read",
+"text": "Cache read tokens: {count}"
+},
+{
+"key": "gateway.usage.label_cache_write",
+"text": "Cache write tokens: {count}"
+},
+{
+"key": "gateway.usage.label_output_tokens",
+"text": "Output tokens: {count}"
+},
+{
+"key": "gateway.usage.label_total",
+"text": "Total: {count}"
+},
+{
+"key": "gateway.usage.label_api_calls",
+"text": "API calls: {count}"
+},
+{
+"key": "gateway.usage.label_cost",
+"text": "Cost: {prefix}${amount}"
+},
+{
+"key": "gateway.usage.label_cost_included",
+"text": "Cost: included"
+},
+{
+"key": "gateway.usage.label_context",
+"text": "Context: {used} / {total} ({pct}%)"
+},
+{
+"key": "gateway.usage.label_compressions",
+"text": "Compressions: {count}"
+},
+{
+"key": "gateway.usage.breakdown_header",
+"text": "🧩 **Context breakdown** _(estimated)_"
+},
+{
+"key": "gateway.usage.breakdown_line",
+"text": "• {label}: ~{count} ({pct}%)"
+},
+{
+"key": "gateway.usage.breakdown_cat_system_prompt",
+"text": "System prompt"
+},
+{
+"key": "gateway.usage.breakdown_cat_tool_definitions",
+"text": "Tool definitions"
+},
+{
+"key": "gateway.usage.breakdown_cat_rules",
+"text": "Rules"
+},
+{
+"key": "gateway.usage.breakdown_cat_skills",
+"text": "Skills"
+},
+{
+"key": "gateway.usage.breakdown_cat_mcp",
+"text": "MCP"
+},
+{
+"key": "gateway.usage.breakdown_cat_subagent_definitions",
+"text": "Subagent definitions"
+},
+{
+"key": "gateway.usage.breakdown_cat_memory",
+"text": "Memory"
+},
+{
+"key": "gateway.usage.breakdown_cat_conversation",
+"text": "Conversation"
+},
+{
+"key": "gateway.usage.header_session_info",
+"text": "📊 **Session Info**"
+},
+{
+"key": "gateway.usage.label_messages",
+"text": "Messages: {count}"
+},
+{
+"key": "gateway.usage.label_estimated_context",
+"text": "Estimated context: ~{count} tokens"
+},
+{
+"key": "gateway.usage.detailed_after_first",
+"text": "_(Detailed usage available after the first agent response)_"
+},
+{
+"key": "gateway.usage.no_data",
+"text": "No usage data available for this session."
+},
+{
+"key": "gateway.usage.unknown_subcommand",
+"text": "Unknown /usage subcommand: `{args}`. Try `/usage` or `/usage reset [--force]`."
+},
+{
+"key": "gateway.usage.reset_wrong_provider",
+"text": "Banked usage resets are only available on the openai-codex provider. Switch with `/model` first."
+},
+{
+"key": "gateway.credits.not_logged_in",
+"text": "Not logged into Nous Portal. Log in to see your credit balance and top up."
+},
+{
+"key": "gateway.verbose.not_enabled",
+"text": "The `/verbose` command is not enabled for messaging platforms.\n\nEnable it in `config.yaml`:\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
+},
+{
+"key": "gateway.verbose.mode_off",
+"text": "⚙️ Tool progress: **OFF** — no tool activity shown."
+},
+{
+"key": "gateway.verbose.mode_new",
+"text": "⚙️ Tool progress: **NEW** — shown when tool changes (preview length: `display.tool_preview_length`, default 40)."
+},
+{
+"key": "gateway.verbose.mode_all",
+"text": "⚙️ Tool progress: **ALL** — every tool call shown (preview length: `display.tool_preview_length`, default 40)."
+},
+{
+"key": "gateway.verbose.mode_verbose",
+"text": "⚙️ Tool progress: **VERBOSE** — every tool call with full arguments."
+},
+{
+"key": "gateway.verbose.mode_log",
+"text": "⚙️ Tool progress: **LOG** — silent in chat; tool calls written to ~/.hermes/logs/tool_calls.log."
+},
+{
+"key": "gateway.verbose.saved_suffix",
+"text": "_(saved for **{platform}** — takes effect on next message)_"
+},
+{
+"key": "gateway.verbose.save_failed",
+"text": "_(could not save to config: {error})_"
+},
+{
+"key": "gateway.voice.enabled_voice_only",
+"text": "Voice mode enabled.\nI'll reply with voice when you send voice messages.\nUse /voice tts to get voice replies for all messages."
+},
+{
+"key": "gateway.voice.disabled_text",
+"text": "Voice mode disabled. Text-only replies."
+},
+{
+"key": "gateway.voice.tts_enabled",
+"text": "Auto-TTS enabled.\nAll replies will include a voice message."
+},
+{
+"key": "gateway.voice.status_mode",
+"text": "Voice mode: {label}"
+},
+{
+"key": "gateway.voice.status_channel",
+"text": "Voice channel: #{channel}"
+},
+{
+"key": "gateway.voice.status_participants",
+"text": "Participants: {count}"
+},
+{
+"key": "gateway.voice.status_member",
+"text": "  - {name}{status}"
+},
+{
+"key": "gateway.voice.speaking",
+"text": " (speaking)"
+},
+{
+"key": "gateway.voice.enabled_short",
+"text": "Voice mode enabled."
+},
+{
+"key": "gateway.voice.disabled_short",
+"text": "Voice mode disabled."
+},
+{
+"key": "gateway.voice.label_off",
+"text": "Off (text only)"
+},
+{
+"key": "gateway.voice.label_voice_only",
+"text": "On (voice reply to voice messages)"
+},
+{
+"key": "gateway.voice.label_all",
+"text": "TTS (voice reply to all messages)"
+},
+{
+"key": "gateway.voice.help",
+"text": "{toggle}\n\n**How /voice works**\n• `/voice on` — voice reply when you send a voice message\n• `/voice tts` — voice reply to *every* message\n• `/voice off` — back to text-only replies\n• `/voice status` — show the current mode\n• `/voice` (no argument) — quick toggle between on and off{channels}"
+},
+{
+"key": "gateway.voice.help_channels",
+"text": "\n\n**Live voice channels (Discord)**\n• Join a voice channel first, then `/voice channel` — I'll join, listen, and speak my replies\n• `/voice leave` — disconnect from the voice channel"
+},
+{
+"key": "gateway.yolo.disabled",
+"text": "⚠️ YOLO mode **OFF** for this session — dangerous commands will require approval."
+},
+{
+"key": "gateway.yolo.enabled",
+"text": "⚡ YOLO mode **ON** for this session — all commands auto-approved. Use with caution."
+},
+{
+"key": "gateway.shared.session_db_unavailable",
+"text": "Session database not available."
+},
+{
+"key": "gateway.shared.session_db_unavailable_prefix",
+"text": "Session database not available"
+},
+{
+"key": "gateway.shared.session_not_found",
+"text": "Session not found in database."
+},
+{
+"key": "gateway.shared.warn_passthrough",
+"text": "⚠️ {error}"
+}
+]

@@ -1,79 +1,211 @@
 #!/usr/bin/env python3
-"""Assemble hermes_inv/sections/*.md into docs/research/hermes-inventory-v2026.8.31/ (README index + per-shard files + i18n coverage appendix)."""
-import json, re, glob, os, sys, datetime
+"""Assemble the Hermes inventory: numbered sections, README index, coverage appendix.
+
+Reads ``sections/*.md`` (one file per surface shard, plus the gap-fill passes)
+and writes the published document into the given output directory:
+
+* ``NN-<shard>.md`` — the sections in reading order;
+* ``README.md`` — summary, coverage matrix, evidence table, full table of contents;
+* ``appendix-i18n-coverage.md`` — every UI string mapped to the section covering it.
+
+The coverage check here is the strict one: a string must be found within a
+single section, never across a file boundary.
+
+This is the generator, so it needs the working layout it was built from
+(``sections/`` + ``strings_chunks/``); it ships with the document as the
+record of how the document was produced. To re-verify the published
+directory instead, run ``check_strings.py --all``, which reads the numbered
+section files beside it. Usage::
+
+    assemble.py <output-dir>
+"""
+
+import glob
+import json
+import os
+import re
+import sys
+
 INV = os.path.dirname(os.path.abspath(__file__))
-OUT = sys.argv[1]
-os.makedirs(OUT, exist_ok=True)
-ORDER = ['cli-a','cli-b','cli-c','cli-d','cli-e','cli-f','gw-slash','gw-core','platform-telegram','platforms-a','platforms-b',
-         'web-shell','web-a','web-b','web-c','desktop-main','desktop-a','desktop-b','desktop-settings','tui',
-         'config-a','config-b','env-vars','tools','skills-core','optional','providers','agent-core-a','agent-core-b','memory',
-         'automation','security','media','acp-mcp-dev','docs-features','docs-rest','delta-27-31']
-files = {os.path.basename(p)[:-3]: p for p in glob.glob(INV + '/sections/*.md')}
-gap = sorted(k for k in files if k.startswith('gapfill-'))
-other = sorted(k for k in files if k not in ORDER and k not in gap)
-seq = [k for k in ORDER if k in files] + other + gap
-def title_of(p):
-    for line in open(p, encoding='utf-8'):
-        if line.startswith('# '): return line[2:].strip()
-    return os.path.basename(p)
-def entries_of(p):
-    return re.findall(r'^### (.+?)\s+`id: ([^`]+)`', open(p, encoding='utf-8').read(), re.M)
-# copy sections
-matrix = []; toc = []
-for i, k in enumerate(seq, 1):
-    src = files[k]; dst = f'{OUT}/{i:02d}-{k}.md'
-    body = open(src, encoding='utf-8').read()
-    open(dst, 'w', encoding='utf-8').write(body if body.endswith('\n') else body + '\n')
-    ents = entries_of(src)
-    matrix.append((i, k, title_of(src), len(ents), os.path.getsize(src)))
-    toc.append((i, k, title_of(src), [(n, eid) for n, eid in ents]))
-# i18n coverage appendix
-def norm(s):
-    s = re.sub(r'\{\{?[^}]*\}\}?', ' ', s); s = re.sub(r'<[^<>\n]{1,80}>', ' ', s); s = s.lower()
-    s = re.sub(r'[^a-z0-9\u00c0-\u024f\u0400-\u04ff\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af ]+', ' ', s)
-    return re.sub(r'\s+', ' ', s).strip()
-sec_norm = {}; sec_raw = {}
-for k in seq:
-    t = open(files[k], encoding='utf-8').read(); sec_raw[k] = t; sec_norm[k] = norm(t)
-def where(key, text):
-    n = norm(text); hits = []
-    for k in seq:
-        if key and key in sec_raw[k]: hits.append(k); continue
-        if n and len(n) >= 4 and n in sec_norm[k]: hits.append(k); continue
-        if n and len(n) < 4 and re.search(r'(^| )' + re.escape(n) + r'( |$)', sec_norm[k]): hits.append(k)
-    return hits
-cov_lines = []; totals = {}
-for cp in sorted(glob.glob(INV + '/strings_chunks/*_[0-9][0-9].json')):
-    cat = re.sub(r'_\d+\.json$', '', os.path.basename(cp))
-    for it in json.load(open(cp, encoding='utf-8')):
-        txt = it['text'] if isinstance(it['text'], str) else json.dumps(it['text'], ensure_ascii=False)
-        hits = where(it['key'], txt)
-        t = totals.setdefault(cat, [0, 0]); t[0] += 1; t[1] += bool(hits)
-        safe = txt.replace('|', '\\|').replace(chr(10), ' ')[:120]
-        cover = ', '.join(hits[:3]) if hits else '**MISSING**'
-        cov_lines.append('| `' + cat + '` | `' + it['key'] + '` | ' + safe + ' | ' + cover + ' |')
-with open(f'{OUT}/appendix-i18n-coverage.md', 'w', encoding='utf-8') as f:
-    f.write('# Appendix — every UI string mapped to the inventory section that covers it\n\n')
-    f.write('Generated mechanically by `check_strings.py` logic: a string is covered when its i18n key appears in a section, or its normalised text appears (substring ≥4 chars / whole word <4).\n\n')
-    f.write('| Catalog | Strings | Covered |\n|---|---:|---:|\n')
-    for c, (n, cv) in totals.items(): f.write(f'| {c} | {n} | {cv} ({cv*100//max(n,1)}%) |\n')
-    f.write('\n| Catalog | Key | Text | Covered by |\n|---|---|---|---|\n' + '\n'.join(cov_lines) + '\n')
-# README index
-summary = open(INV + '/summary_ro.md', encoding='utf-8').read() if os.path.exists(INV + '/summary_ro.md') else '_(summary pending)_\n'
-live = open(INV + '/live_tests.md', encoding='utf-8').read() if os.path.exists(INV + '/live_tests.md') else ''
-with open(f'{OUT}/README.md', 'w', encoding='utf-8') as f:
-    f.write('# Hermes Agent v2026.8.31 — exhaustive feature & UI inventory (reverse-engineering reference)\n\n')
-    f.write(f'> Generated 2026-09-05/06 from a live install of `NousResearch/hermes-agent` at tag `v2026.8.31` (package `hermes-agent` 0.21.0, MIT). Evidence and method below. Total entries: **{sum(m[3] for m in matrix)}** across {len(matrix)} sections.\n\n')
-    f.write(summary + '\n')
-    f.write('## Coverage matrix\n\n| # | Section | Title | Entries | Size |\n|---:|---|---|---:|---:|\n')
-    for i, k, t, n, sz in matrix: f.write(f'| {i} | [{k}]({i:02d}-{k}.md) | {t} | {n} | {sz//1024} KB |\n')
-    f.write('\n### UI-string coverage (mechanical)\n\n| Catalog | Strings | Covered |\n|---|---:|---:|\n')
-    for c, (n, cv) in totals.items(): f.write(f'| {c} | {n} | {cv} ({cv*100//max(n,1)}%) |\n')
-    f.write('\nFull per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).\n\n')
-    f.write(live + '\n')
-    f.write('## Table of contents (every entry)\n\n')
-    for i, k, t, ents in toc:
-        f.write(f'### {i:02d} · {t}\n\n')
-        for n, eid in ents: f.write(f'- {n} — `{eid}`\n')
-        f.write('\n')
-print(json.dumps({'sections': len(seq), 'entries': sum(m[3] for m in matrix), 'totals': totals}, indent=1))
+
+# Reading order: CLI, messaging, web, desktop, TUI, configuration, capabilities,
+# agent core, protocol surfaces, docs cross-check, upstream delta.
+ORDER = [
+    "cli-a",
+    "cli-b",
+    "cli-c",
+    "cli-d",
+    "cli-e",
+    "cli-f",
+    "gw-slash",
+    "gw-core",
+    "platform-telegram",
+    "platforms-a",
+    "platforms-b",
+    "web-shell",
+    "web-a",
+    "web-b",
+    "web-c",
+    "desktop-main",
+    "desktop-a",
+    "desktop-b",
+    "desktop-settings",
+    "tui",
+    "config-a",
+    "config-b",
+    "env-vars",
+    "tools",
+    "skills-core",
+    "optional",
+    "providers",
+    "agent-core-a",
+    "agent-core-b",
+    "memory",
+    "automation",
+    "security",
+    "media",
+    "acp-mcp-dev",
+    "docs-features",
+    "docs-rest",
+    "delta-27-31",
+]
+
+_WORDLIKE = r"[^a-z0-9À-ɏЀ-ӿ一-鿿぀-ヿ가-힯 ]+"
+
+
+def norm(text):
+    text = re.sub(r"\{\{?[^}]*\}\}?", " ", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(_WORDLIKE, " ", text.lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def read(path):
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def title_of(path):
+    for line in read(path).splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return os.path.basename(path)
+
+
+def entries_of(path):
+    return re.findall(r"^### (.+?)\s+`id: ([^`]+)`", read(path), re.M)
+
+
+def main(out):
+    os.makedirs(out, exist_ok=True)
+    files = {os.path.basename(p)[:-3]: p for p in glob.glob(os.path.join(INV, "sections", "*.md"))}
+    gap = sorted(k for k in files if k.startswith("gapfill-"))
+    rest = sorted(k for k in files if k not in ORDER and k not in gap)
+    seq = [k for k in ORDER if k in files] + rest + gap
+
+    matrix, toc = [], []
+    for i, key in enumerate(seq, 1):
+        src = files[key]
+        body = read(src)
+        with open(os.path.join(out, f"{i:02d}-{key}.md"), "w", encoding="utf-8") as handle:
+            handle.write(body if body.endswith("\n") else body + "\n")
+        found = entries_of(src)
+        matrix.append((i, key, title_of(src), len(found), os.path.getsize(src)))
+        toc.append((i, key, title_of(src), found))
+
+    sec_raw = {k: read(files[k]) for k in seq}
+    sec_norm = {k: norm(v) for k, v in sec_raw.items()}
+
+    def covers(section, key, needle):
+        if key and key in sec_raw[section]:
+            return True
+        if not needle:
+            return False
+        if len(needle) >= 4:
+            return needle in sec_norm[section]
+        return bool(re.search(r"(^| )" + re.escape(needle) + r"( |$)", sec_norm[section]))
+
+    def covering(key, text):
+        needle = norm(text)
+        return [k for k in seq if covers(k, key, needle)]
+
+    rows, totals = [], {}
+    for path in sorted(glob.glob(os.path.join(INV, "strings_chunks", "*_[0-9][0-9].json"))):
+        catalog = re.sub(r"_\d+\.json$", "", os.path.basename(path))
+        with open(path, encoding="utf-8") as handle:
+            chunk = json.load(handle)
+        for item in chunk:
+            text = item["text"]
+            if not isinstance(text, str):
+                text = json.dumps(text, ensure_ascii=False)
+            hits = covering(item["key"], text)
+            tally = totals.setdefault(catalog, [0, 0])
+            tally[0] += 1
+            tally[1] += bool(hits)
+            safe = text.replace("|", "\\|").replace("\n", " ")[:120]
+            cover = ", ".join(hits[:3]) if hits else "**MISSING**"
+            rows.append(f"| `{catalog}` | `{item['key']}` | {safe} | {cover} |")
+
+    with open(os.path.join(out, "appendix-i18n-coverage.md"), "w", encoding="utf-8") as handle:
+        handle.write("# Appendix — every UI string mapped to the section that covers it\n\n")
+        handle.write(
+            "Generated by `assemble.py`: a string is covered when its i18n key appears in a "
+            "section, or its normalised text appears there (substring for 4+ characters, whole "
+            "word below that). Matching is per section — never across file boundaries.\n\n"
+        )
+        handle.write("| Catalog | Strings | Covered |\n|---|---:|---:|\n")
+        for catalog, (n, cov) in totals.items():
+            handle.write(f"| {catalog} | {n} | {cov} ({cov * 100 // max(n, 1)}%) |\n")
+        handle.write("\n| Catalog | Key | Text | Covered by |\n|---|---|---|---|\n")
+        handle.write("\n".join(rows) + "\n")
+
+    summary_path = os.path.join(INV, "summary_ro.md")
+    summary = read(summary_path) if os.path.exists(summary_path) else "_(summary pending)_\n"
+    live_path = os.path.join(INV, "live_tests.md")
+    live = read(live_path) if os.path.exists(live_path) else ""
+
+    with open(os.path.join(out, "README.md"), "w", encoding="utf-8") as handle:
+        handle.write(
+            "# Hermes Agent v2026.8.31 — exhaustive feature & UI inventory "
+            "(reverse-engineering reference)\n\n"
+        )
+        handle.write(
+            "> Generated 2026-09-05/06 from a live install of `NousResearch/hermes-agent` at tag "
+            "`v2026.8.31` (package `hermes-agent` 0.21.0, MIT). Evidence and method below. "
+            f"Total entries: **{sum(m[3] for m in matrix)}** across {len(matrix)} sections.\n\n"
+        )
+        handle.write(summary + "\n")
+        handle.write("## Coverage matrix\n\n| # | Section | Title | Entries | Size |\n")
+        handle.write("|---:|---|---|---:|---:|\n")
+        for i, key, title, n, size in matrix:
+            handle.write(
+                f"| {i} | [{key}]({i:02d}-{key}.md) | {title} | {n} | {size // 1024} KB |\n"
+            )
+        handle.write("\n### UI-string coverage (mechanical)\n\n| Catalog | Strings | Covered |\n")
+        handle.write("|---|---:|---:|\n")
+        for catalog, (n, cov) in totals.items():
+            handle.write(f"| {catalog} | {n} | {cov} ({cov * 100 // max(n, 1)}%) |\n")
+        handle.write(
+            "\nFull per-string mapping: [appendix-i18n-coverage.md](appendix-i18n-coverage.md).\n\n"
+        )
+        handle.write(live + "\n")
+        handle.write("## Table of contents (every entry)\n\n")
+        for i, _key, title, found in toc:
+            handle.write(f"### {i:02d} · {title}\n\n")
+            for name, entry_id in found:
+                handle.write(f"- {name} — `{entry_id}`\n")
+            handle.write("\n")
+
+    print(
+        json.dumps(
+            {"sections": len(seq), "entries": sum(m[3] for m in matrix), "totals": totals}, indent=1
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(2)
+    sys.exit(main(sys.argv[1]))
