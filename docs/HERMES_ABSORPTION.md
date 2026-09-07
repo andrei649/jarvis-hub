@@ -1,0 +1,144 @@
+# Hermes → Nerva — planul de absorbție
+
+> **Directiva owner-ului, 2026-09-07:** *„vreau ca tot să fie în nerva — ce avem superior, păstrăm;
+> ce nu avem, copiem; ce e sub hermes, facem update."*
+>
+> Sursa: [`docs/research/hermes-inventory-v2026.8.31/`](research/hermes-inventory-v2026.8.31/README.md)
+> — 8.199 intrări, 53 de secțiuni, 17 MB, la adâncime de reimplementare.
+> Ledgerul complet, mașină-lizibil: [`research/2026-09-07-hermes-absorption-ledger.json`](research/2026-09-07-hermes-absorption-ledger.json).
+
+## Cum a fost făcut
+
+20 de agenți, câte unul pe cluster de secțiuni. Fiecare a citit inventarul **și** a căutat în repo-ul
+viu ce există de fapt — fiecare rând citează o cale din Nerva sau scrie `none`. Intrările brute au
+fost rulate la nivel de **capabilitate** (un lucru pe care un om îl poate face), cu raportul de
+comprimare notat per cluster, ca reducerea să fie vizibilă, nu tăcută.
+
+**8.189 intrări brute → 697 capabilități.**
+
+| | | | |
+|---|---|---|---|
+| **superior** 80 | **parity** 55 | **partial** 343 | **missing** 219 |
+| **keep** 114 | **skip** 107 | **update** 258 | **copy** 218 |
+
+Efort: 255×S · 289×M · 117×L · 36×XL.
+
+## Regula de adaptare — singura non-negociabilă
+
+> **Orice lucru copiat care produce un efect privilegiat aterizează ÎN SPATELE Action Kernel-ului,
+> nu lângă el.**
+
+Suntem în urmă pe suprafață și înainte pe guvernanță. Dacă absorbim cele 83 de unelte ale lui Hermes
+fără kernel, ajungem la paritate pe funcții și **pierdem singura axă pe care conducem**. O funcție
+portată care ocolește kernelul e o regresie chiar dacă merge.
+
+`skip` e o decizie de primă clasă — dar motivul trebuie să fie despre produs, niciodată despre efort.
+Cele 107 skip-uri sunt dominate de suprafață care nu servește utilizatorul Nerva: platforme de chat
+regionale (DingTalk, Feishu, LINE, IRC), shell-ul Electron și pet-ul de desktop, runtime-uri de agent
+deținute de vendor, deploy Nix, portalul de credite.
+
+---
+
+## Valul 0 — găuri funcționale, nu goluri de funcții
+
+**Astea nu sunt lucruri pe care Hermes le are și noi nu. Sunt lucruri despre care Nerva crede că le
+face și nu le face.** Se rezolvă primele, pentru că restul absorbției se sprijină pe ele.
+
+### 0.1 — Uneltele sunt moarte pe drumul care rulează de fapt ⛔
+
+`supports_tools = True` apare **exact o dată** în tot repo-ul: pe `LMStudioBackend`
+(`agents/core/llm/base.py:443`). `ClaudeBackend`, `GeminiBackend`, `OpenRouterBackend`,
+`VLMBackend` **și `OllamaBackend`** moștenesc `False` din ABC (`base.py:292`).
+
+`agents/core/agent_runtime.py:97` închide tot runtime-ul de unelte pe flagul ăsta — *fail closed*.
+
+Consecința: **în clipa în care un agent rutează spre cloud — exact drumul proiectat pentru munca grea,
+și exact ce a spus owner-ul că e necesar fiindcă local nu duce contextul — modelul pierde complet
+accesul la unelte.** Nu citește un fișier, nu caută, nu declanșează o acțiune guvernată. Devine un
+model de chat. Local, funcționează doar prin LM Studio; nici măcar Ollama nu.
+
+Fix: declararea corectă a capabilității per backend + traducerea schemei de unelte în dialectul
+fiecărui provider. Kernelul rămâne pe drum — uneltele se aprind, guvernanța nu se stinge.
+
+### 0.2 — Modelul nu știe că există skill-uri
+`agents/core/agent.py:124-128` construiește blocul de skill-uri din `context["skills"]`, și **nimic
+din repo nu setează vreodată cheia aia**. Skill-urile sunt importate, semnate, pinuite — și invizibile.
+
+### 0.3 — Nu există compactare în interiorul turei
+`agents/core/agent_runtime.py:137` adaugă un mesaj de asistent plus un rezultat de unealtă pe apel,
+până la 32 de iterații, **fără să măsoare niciodată lista care crește**. Compactarea există
+(`context_compressor.py`) dar rulează între ture, nu în timpul lor. La iterația 32 se pierde muncă.
+
+### 0.4 — Nicio poartă pe mesajele din grup
+Vocabularul de gating al Nervei e o singură listă plată `allowed_user_ids`
+(`agents/core/channels/telegram.py:26`). `require_mention`, detecția de mențiune, allowlist per
+chat/topic, observe mode — zero apariții în repo. Un bot Nerva pus într-un grup **răspunde la fiecare
+mesaj al fiecărui membru permis**, și fiecare mesaj din cameră devine context contaminat pe care
+agentul raționează și acționează. E o graniță de autorizare, nu o comoditate.
+
+### 0.5 — Fără lease pe tură
+`agents/core/orchestrator.py:1109-1176` nu ține niciun lock. Un al doilea mesaj Telegram în timpul
+unei ture pornește o tură **concurentă** pe aceeași cheie de sesiune — risc de corupere a
+transcriptului, nu doar de confuzie.
+
+### 0.6 — Configurație moartă în registrul canonic
+`general.cloud_llm_agents` din `agents/_system/agents.yaml` **nu e citit de niciun rând de cod**.
+Rutarea reală trăiește în `hybrid_router.py:381`. Orice cititor — om sau agent — ar crede rezonabil
+că acea cheie controlează rutarea.
+
+---
+
+## Valul 1 — suprafața de operator
+
+Deblochează ~26 de rânduri din ledger.
+
+- **Comanda unificată `nerva`** — azi Nerva are 83 de routere HTTP și un kernel guvernat în spatele
+  unui tab de browser pe 127.0.0.1, iar terminalul oferă `serve.py`, un Makefile cu 3 ținte și ~35 de
+  scripturi argparse fără legătură. **O instalare headless sau pe SSH nu poate fi configurată,
+  diagnosticată sau recuperată.** Fiecare verb care mută ceva apelează același serviciu in-process pe
+  care îl apelează routerele HTTP, deci moștenește medierea prin kernel gratuit.
+  Primele verbe: `doctor`, `kernel explain`, `config`, `approvals`.
+- **`kernel explain`** (echivalentul `approvals test` din Hermes) — un simulator read-only care
+  rejoacă porțile reale și tipărește traseul. Diferențiatorul Nervei e guvernanța, și azi e
+  **invizibilă până se declanșează**.
+- **Planul de comenzi slash în chat** — un registru comun servind chat, quickbar și HUD, cu tiere de
+  acces per comandă. `/stop`, `/status`, `/pause`, `/sessions` primele. Azi butoanele din decision
+  inbox merg pe Telegram, dar nu poți întreba ce rulează, nu poți opri, nu poți ridica e-stop-ul.
+
+## Valul 2 — joburi programate de utilizator
+
+**Cea mai mare lipsă, identificată independent în trei clustere** (web, automation, docs-features).
+
+Nerva parsează deja „în fiecare zi lucrătoare la 7" într-o expresie cron — **și o aruncă**. Are toate
+piesele (tiere de aprobare, buget de întreruperi, kill switch, lanț de audit) și niciun loc în care
+owner-ul să-și armeze propriul job. Cu galerie de blueprint-uri tipizate (brief de dimineață, monitor
+de mail important, watch de preț) ca să nu ceară sintaxă cron. E singura capabilitate unde stiva de
+guvernanță nu e overhead, ci chiar produsul.
+
+## Valul 3 — mâinile modelului
+
+- `search_files` — căutare de conținut peste fișiere (ripgrep). Azi modelul are `file_read` și
+  `file_list`, deci singura cale spre a găsi ceva e să listeze și să citească fișier cu fișier —
+  arzând exact bugetul de context care e deja problema.
+- `session_search` — modelul să-și caute propriile conversații trecute. Avem recall bogat peste
+  fapte *derivate*, zero peste ce s-a spus.
+- **Kernele de cod persistente pe sesiune** — `sandbox.py` pornește un run nou cu `mkdtemp` nou la
+  fiecare apel, deci orice analiză reimportă bibliotecile și rederivează starea de fiecare dată.
+- `image_generate` — azi există cadrul complet de guvernanță în jurul unei prize goale.
+
+## Valul 4 — adâncime
+
+Descriptor de adaptor + split-ul clasei de bază pe canale (redare, chunking, media, streaming,
+threads sunt toate blocate pe faptul că un canal n-are cum să declare ce poate); tiere de încredere
+pe MCP cu `readOnlyHint` fail-closed; HUD mode pe desktop (fereastră fără chrome, always-on-top);
+SDK de plugin-uri; hub de skill-uri.
+
+---
+
+## Ce nu se schimbă
+
+Cele 80 de capabilități `superior` și 114 `keep` — memorie, aprobare/siguranță, audit, casă, plus
+onestitatea de status (DEMO/OFFLINE/EMPTY/LIVE, EGRESS, %-local, care n-au analog la Hermes) și
+lanțul de aprovizionare semnat pentru skill-uri, față de „lipește un URL de Git" la ei.
+**Absorbția nu are voie să le erodeze.** Un val care aduce paritate de suprafață și taie o linie de
+guvernanță a eșuat, chiar dacă bifează rânduri.
