@@ -112,6 +112,9 @@ python scripts/nerva.py approvals accept 7
 python scripts/nerva.py kernel explain payment --payload '{"amount": 120}'   # replay the gates, execute nothing
 python scripts/nerva.py estop engage --reason "guests over"
 python scripts/nerva.py chat "what's on today?"
+python scripts/nerva.py jobs blueprints       # one-tap jobs: brief, reminder, ask an agent, inbox watch
+python scripts/nerva.py jobs create --blueprint reminder --param "message=stand up" --when "every weekday at 9"
+python scripts/nerva.py jobs list             # and whether the scheduler is alive
 eval "$(python scripts/nerva.py completion bash)"
 ```
 
@@ -120,8 +123,8 @@ the same credentials the HUD uses — `JARVIS_ADMIN_TOKEN` for owner verbs, `JAR
 for the rest (`python -m agents.core.security.token_store issue admin` mints one). Offline
 verbs (`doctor`, `config`, `logs`, `kernel explain`) read the same data root as the hub
 (`JARVIS_HOME`) and never need it running. Exit codes: 0 ok · 1 the verb failed · 3 no hub
-reachable · 4 a credential is required. In chat, `/help`, `/status`, `/sessions`, and for the
-owner `/pause`, `/stop`, `/resume`, work on every channel.
+reachable · 4 a credential is required. In chat, `/help`, `/status`, `/sessions`, `/jobs`, and
+for the owner `/pause`, `/stop`, `/resume` and `/remind <when> | <message>`, work on every channel.
 
 ## After the install
 

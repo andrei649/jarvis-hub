@@ -375,10 +375,11 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15**–**P17** (2026-09-07) are the first packets from the Hermes absorption: the
+> hardware. **P15**–**P18** (2026-09-07) are the first packets from the Hermes absorption: the
 > tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
-> to a real one; the Telegram group gate, never exercised in a real group; and the `nerva`
-> command plus the chat slash commands, never pointed at a running hub.
+> to a real one; the Telegram group gate, never exercised in a real group; the `nerva`
+> command plus the chat slash commands, never pointed at a running hub; and the owner's
+> scheduled jobs, never fired on a wall clock.
 > If you flip a row to ✅ and its proof still depends on something only you can run, it
 > belongs here — that rule is written into
 > [`docs/prompts/BACKLOG_DRIVER.md`](prompts/BACKLOG_DRIVER.md) so an unattended session applies it.
@@ -676,6 +677,24 @@ built on your Windows box:
       answers, `/pause` engages the e-stop (the HUD chip turns red), `/resume` lifts it, and from
       a non-owner account `/pause` is refused in words and the e-stop does not move. If a verb
       400s or 422s, the request shape is the finding — file it against `agents/cli/nerva.py`.
+
+- [ ] **P18 — A job that fires on the wall clock** *(covers `HA-2a`)*
+      Every firing in the tests is forced (`run` now) against a fake scheduler and a fake
+      Telegram; no job has fired at its own time on a running hub. With the hub up and
+      `autonomy.owner_chat_id` set: `nerva jobs create --blueprint reminder --param
+      "message=this is the job" --when "every 5 minutes"` (the floor), then wait — within six
+      minutes the message must arrive on Telegram, `nerva jobs runs <id>` must show an `ok` run
+      with "delivered to telegram", and `nerva jobs list` must say the scheduler is alive.
+      Then `nerva estop engage`: the next firing must be recorded as `skipped` ("emergency stop
+      engaged") and nothing must arrive; `nerva estop resume` and the one after must arrive
+      again. Then arm `--blueprint ask_agent --param "prompt=say the time and one word"
+      --param agent=friday --when "every 5 minutes"`: the second run's reply should reference
+      the first (the notepad is in the prompt). Finally break delivery on purpose (`nerva config
+      set autonomy.owner_chat_id ""`, restart): after three firings the job must show
+      `paused_reason` starting with "3 consecutive failures", `problems.jsonl` must carry one
+      `E_JOB_PAUSED` line, not three, and `nerva jobs resume <id>` must put it back. Delete the
+      test jobs afterwards. If a weekday job fires on the wrong day, that is the cron→APScheduler
+      day-of-week translation — file it against `jobs.cron_kwargs`.
 
 ## Parking lot (decisions, no rush)
 

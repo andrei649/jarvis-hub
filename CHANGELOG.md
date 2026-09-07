@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-07 — Hermes absorption, wave 2a: the owner's own scheduled jobs
+
+- **Owner-scheduled jobs** (`agents/core/autonomy/jobs.py`). Nerva parsed "every weekday at
+  7" into cron and threw the result away; now the owner arms a job — a `remind`er (no model),
+  an `ask` to one agent with a notepad kept between runs, the `brief` on their own time, or a
+  governed `task` that still crosses the autonomy queue — from a blueprint or from parts.
+  Every attempt is recorded; three consecutive failures pause the job and raise one incident;
+  the e-stop pauses every job; one firing per five minutes at most; 50 jobs, 200 runs each.
+  cron's Sunday-based day-of-week is translated to APScheduler's Monday-based names.
+- Surface: `/api/jobs` (admin; list, blueprints, create, get, runs, pause, resume, run,
+  delete — route snapshots reseeded), `nerva jobs …`, and `/jobs` + `/remind <when> | <message>`
+  in chat. The HUD panel is the next commit; until then the routes sit on the parity gate's
+  punch list by name.
+- Found on the way: `HeartbeatScheduler.start` passes cron's day-of-week field straight to
+  APScheduler, so a weekday heartbeat fires a day late (BACKLOG HA-2c).
+- Tests: `tests/test_owner_jobs.py` (22), `tests/test_jobs_routes.py` (4), CLI and chat rows.
+  Not proven on a running hub — `docs/OWNER_TASKS.md` P18.
+
 ### Wave 2026-09-07 — Hermes absorption, wave 1: the `nerva` command and the slash-command plane
 
 - **`nerva` — one command for the whole product** (`agents/cli/`, `python scripts/nerva.py …`

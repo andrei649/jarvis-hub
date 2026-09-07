@@ -1144,6 +1144,10 @@ from agents.core.routers.wyoming import router as _wyoming_router  # noqa: E402
 app.include_router(_wyoming_router)
 app.include_router(_onboarding_router)
 app.include_router(_feedback_router)
+# Owner-scheduled jobs (Hermes absorption, wave 2): every route carries admin_guard itself.
+from agents.core.routers.jobs import router as _jobs_router  # noqa: E402
+
+app.include_router(_jobs_router)
 # These preserve each route's original per-route deps (gating lives on the routes
 # themselves, not the include), so behavior is unchanged.
 from agents.core.routers.a2a import router as _a2a_router  # noqa: E402

@@ -84,7 +84,7 @@ def temp_settings(tmp_path, monkeypatch):
 def test_the_command_tree_is_discoverable_and_complete():
     tree = command_tree(build_parser())
     assert set(tree) == {
-        "doctor", "status", "config", "approvals", "kernel", "logs", "estop", "sessions", "chat", "completion",
+        "doctor", "status", "config", "approvals", "kernel", "logs", "estop", "jobs", "sessions", "chat", "completion",
     }
     assert tree["config"] == ["check", "get", "list", "set"]
     assert tree["approvals"] == ["accept", "defer", "edit", "list", "reject"]
@@ -422,3 +422,59 @@ def test_the_wrapper_script_exists_and_points_at_the_package():
     wrapper = Path(__file__).resolve().parent.parent / "scripts" / "nerva.py"
     assert wrapper.exists()
     assert "from agents.cli.nerva import main" in wrapper.read_text(encoding="utf-8")
+
+
+# ── jobs ─────────────────────────────────────────────────────────────────────
+
+JOB = {
+    "id": "abc123abc123", "name": "Reminder", "schedule_text": "every day at 10", "cron": "0 10 * * *",
+    "enabled": True, "paused_reason": None, "last_status": "ok", "last_run_at": "2026-09-07T10:00:00+00:00",
+}
+
+
+def test_jobs_verbs_ride_the_admin_routes():
+    hub = _FakeHub(
+        {
+            "GET /api/jobs": {"jobs": [JOB], "scheduler": {"alive": True, "runnable": 1, "paused": 0}},
+            "GET /api/jobs/blueprints": {"blueprints": [{"id": "reminder", "title": "Reminder", "description": "d", "schedule_text": "every day at 9:00", "params": ["schedule_text", "message"]}]},
+            "POST /api/jobs": lambda body: {"ok": True, "job": {**JOB, "name": body.get("name") or "Reminder"}},
+            "GET /api/jobs/abc123abc123/runs": {"runs": [{"started_at": "t", "status": "ok", "summary": "reminder delivered to telegram"}]},
+            "POST /api/jobs/abc123abc123/pause": lambda body: {"ok": True, "job": {**JOB, "paused_reason": body.get("reason", "paused")}},
+            "POST /api/jobs/abc123abc123/resume": {"ok": True, "job": JOB},
+            "POST /api/jobs/abc123abc123/run": {"ok": True, "run": {"status": "ok", "summary": "reminder delivered to telegram"}, "job": JOB},
+            "DELETE /api/jobs/abc123abc123": {"ok": True},
+        }
+    )
+    code, out, _err, hub = _run(["jobs", "list"], hub)
+    assert code == EXIT_OK and "scheduler alive" in out and "abc123abc123  on     every day at 10" in out
+
+    code, out, _err, hub = _run(["jobs", "blueprints"], hub)
+    assert code == EXIT_OK and "reminder" in out and "params: schedule_text, message" in out
+
+    code, out, _err, hub = _run(["jobs", "create", "--blueprint", "reminder", "--param", "message=water", "--when", "every day at 10"], hub)
+    assert code == EXIT_OK and "armed abc123abc123" in out
+    assert hub.calls[-1] == ("POST", "/api/jobs", {"blueprint": "reminder", "params": {"message": "water"}, "schedule_text": "every day at 10"})
+
+    code, out, _err, hub = _run(["jobs", "create", "--name", "n", "--when", "every day at 9", "--action", '{"type":"remind","message":"m"}'], hub)
+    assert code == EXIT_OK and hub.calls[-1][2]["action"] == {"type": "remind", "message": "m"}
+
+    code, _out, err, hub = _run(["jobs", "create", "--name", "n"], hub)
+    assert code == EXIT_USAGE and "--action" in err
+    code, _out, err, hub = _run(["jobs", "create", "--blueprint", "reminder", "--param", "nonsense"], hub)
+    assert code == EXIT_USAGE and "KEY=VALUE" in err
+
+    code, out, _err, hub = _run(["jobs", "runs", "abc123abc123"], hub)
+    assert code == EXIT_OK and "ok      reminder delivered" in out
+    code, out, _err, hub = _run(["jobs", "pause", "abc123abc123", "--reason", "holiday"], hub)
+    assert code == EXIT_OK and "is paused" in out and hub.calls[-1][2] == {"reason": "holiday"}
+    code, out, _err, hub = _run(["jobs", "resume", "abc123abc123"], hub)
+    assert code == EXIT_OK and "is runnable" in out
+    code, out, _err, hub = _run(["jobs", "run", "abc123abc123"], hub)
+    assert code == EXIT_OK and "ok: reminder delivered" in out
+    code, out, _err, hub = _run(["jobs", "delete", "abc123abc123"], hub)
+    assert code == EXIT_OK and "deleted abc123abc123" in out and hub.calls[-1][0] == "DELETE"
+
+
+def test_jobs_is_in_the_tree_and_the_completion():
+    assert command_tree()["jobs"] == ["blueprints", "create", "delete", "list", "pause", "resume", "run", "runs"]
+    assert "jobs) COMPREPLY" in completion_script("bash")

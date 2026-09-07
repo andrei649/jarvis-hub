@@ -10,6 +10,7 @@ so the route test does not re-test compute_north_star.
 
 import json
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -81,6 +82,12 @@ def client(monkeypatch, tmp_path):
     app.include_router(report.router)
     app.dependency_overrides[user_guard] = lambda: None
     state = {"orch": _orch(tmp_path), "kernel": _Kernel()}
+    # The report's fingerprint covers `generated_at` (second precision), so two builds that
+    # straddle a second boundary differ — which the export-then-read comparison below did
+    # under a loaded parallel run. Freeze the report's clock at the fixture's own "now" so
+    # the task timestamps above stay inside the day window and every build is identical.
+    frozen = time.time()
+    monkeypatch.setattr(dr, "time", SimpleNamespace(time=lambda: frozen))
     monkeypatch.setattr(report, "get_orch", lambda: state["orch"])
     monkeypatch.setattr(_component, "get_orch", lambda: state["orch"])
     monkeypatch.setattr(

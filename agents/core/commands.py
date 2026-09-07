@@ -199,6 +199,43 @@ def _resume(ctx: CommandContext) -> str:
     return "Emergency stop lifted; autonomous work resumes on the next tick." if estop.disengage() else "The emergency stop was not engaged."
 
 
+def _jobs(ctx: CommandContext) -> str:
+    runner = getattr(ctx.orch, "jobs", None)
+    if runner is None:
+        return "Scheduled jobs are not available on this hub."
+    jobs = runner.store.list()
+    if not jobs:
+        return "No scheduled jobs. The owner can arm one with /remind <when> | <message>."
+    lines = []
+    for job in jobs:
+        state = "paused" if job.paused_reason else ("on" if job.enabled else "off")
+        last = f"last {job.last_status} {job.last_run_at}" if job.last_status else "never ran"
+        lines.append(f"{job.id} · {state} · {job.schedule_text} · {job.name} ({last})")
+    alive = runner.scheduler_alive()
+    lines.append("scheduler: alive" if alive else "scheduler: NOT RUNNING — nothing will fire")
+    return "\n".join(lines)
+
+
+def _remind(ctx: CommandContext) -> str:
+    runner = getattr(ctx.orch, "jobs", None)
+    if runner is None:
+        return "Scheduled jobs are not available on this hub."
+    when, sep, message = ctx.args.partition("|")
+    when, message = when.strip(), message.strip()
+    if not sep or not when or not message:
+        return "Usage: /remind <when> | <message> — e.g. /remind every weekday at 7 | stand-up in 15 minutes"
+    try:
+        job = runner.create(
+            name=message[:60],
+            schedule_text=when,
+            action={"type": "remind", "message": message},
+            blueprint="reminder",
+        )
+    except ValueError as exc:
+        return f"Could not arm that: {exc}"
+    return f"Armed {job.id}: {job.schedule_text} ({job.cron}) — {message}. /jobs lists it; the HUD or `nerva jobs` can pause or delete it."
+
+
 def build_default_registry() -> CommandRegistry:
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
@@ -207,4 +244,6 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("pause", "engage the emergency stop", _pause, tier=ADMIN, usage="[reason]"))
     registry.register(SlashCommand("stop", "same as /pause — in-flight work still finishes", _pause, tier=ADMIN, usage="[reason]"))
     registry.register(SlashCommand("resume", "lift the emergency stop", _resume, tier=ADMIN))
+    registry.register(SlashCommand("jobs", "your scheduled jobs and whether the scheduler is alive", _jobs))
+    registry.register(SlashCommand("remind", "arm a reminder: /remind <when> | <message>", _remind, tier=ADMIN, usage="<when> | <message>"))
     return registry

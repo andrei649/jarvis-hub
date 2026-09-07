@@ -381,6 +381,19 @@ class Orchestrator:
             max_memory_mb=int(_gv("security", "sandbox_memory", 256)),
         )
         self.heartbeat_scheduler = HeartbeatScheduler(agents_dir=str(Path(__file__).resolve().parent.parent.parent / "agents"))
+        # Owner-scheduled jobs (Hermes absorption, wave 2). The runner rides the heartbeat
+        # scheduler, which starts in start_channels; jobs are registered there too.
+        try:
+            from .autonomy.jobs import JobRunner, JobStore
+
+            self.jobs = JobRunner(
+                JobStore(),
+                orch=self,
+                scheduler=lambda: getattr(self.heartbeat_scheduler, "scheduler", None),
+            )
+        except Exception:
+            logger.warning("owner jobs store unavailable — jobs disabled", exc_info=True)
+            self.jobs = None
         self._scheduler = SchedulerService(self)  # CLN-2: owns the cron/interval job wiring
         self._autonomy = AutonomyCoordinator(self)  # CLN-2: owns autonomy wiring + worker loop
         self.security: Optional[GuardrailsEngine] = None

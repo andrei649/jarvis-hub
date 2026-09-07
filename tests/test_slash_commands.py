@@ -230,9 +230,9 @@ async def test_a_command_never_reaches_the_model_and_a_message_still_does():
 
 def test_the_default_registry_names_the_first_wave():
     assert {c.name for c in build_default_registry().visible(OWNER)} == {
-        "help", "status", "sessions", "pause", "stop", "resume",
+        "help", "status", "sessions", "pause", "stop", "resume", "jobs", "remind",
     }
-    assert {c.name for c in build_default_registry().visible(GUEST)} == {"help", "status", "sessions"}
+    assert {c.name for c in build_default_registry().visible(GUEST)} == {"help", "status", "sessions", "jobs"}
     assert commands_module.USER == "user"
 
 
@@ -263,3 +263,60 @@ def test_the_web_principal_mirrors_the_admin_guard(monkeypatch):
     assert web._web_principal(_request(headers={"x-forwarded-for": "127.0.0.1"})).admin is False
     principal = web._web_principal(_request())
     assert principal.channel == "web" and principal.sender is None
+
+
+# ── /jobs and /remind ────────────────────────────────────────────────────────
+
+
+class _Runner:
+    def __init__(self, jobs=(), alive=True, error=None):
+        self._jobs = list(jobs)
+        self._alive = alive
+        self._error = error
+        self.store = SimpleNamespace(list=lambda: list(self._jobs))
+        self.created = []
+
+    def scheduler_alive(self):
+        return self._alive
+
+    def create(self, **kwargs):
+        if self._error:
+            raise ValueError(self._error)
+        self.created.append(kwargs)
+        job = SimpleNamespace(id="job1", schedule_text=kwargs["schedule_text"], cron="0 7 * * 1-5", name=kwargs["name"])
+        return job
+
+
+@pytest.mark.asyncio
+async def test_jobs_lists_the_owners_jobs_and_the_scheduler_state():
+    job = SimpleNamespace(id="j1", paused_reason=None, enabled=True, schedule_text="every day at 9", name="water", last_status="ok", last_run_at="t")
+    orch = _orch()
+    orch.jobs = _Runner([job], alive=False)
+    outcome = await build_default_registry().dispatch("/jobs", orch=orch, principal=GUEST)
+    assert "j1 · on · every day at 9 · water (last ok t)" in outcome.reply
+    assert "NOT RUNNING" in outcome.reply
+    orch.jobs = _Runner([])
+    assert "No scheduled jobs" in (await build_default_registry().dispatch("/jobs", orch=orch, principal=GUEST)).reply
+    orch.jobs = None
+    assert "not available" in (await build_default_registry().dispatch("/jobs", orch=orch, principal=GUEST)).reply
+
+
+@pytest.mark.asyncio
+async def test_remind_arms_a_reminder_for_the_owner_only():
+    orch = _orch()
+    orch.jobs = _Runner()
+    registry = build_default_registry()
+    refused = await registry.dispatch("/remind every weekday at 7 | stand-up", orch=orch, principal=GUEST)
+    assert refused.status == "refused" and orch.jobs.created == []
+
+    armed = await registry.dispatch("/remind every weekday at 7 | stand-up in 15", orch=orch, principal=OWNER)
+    assert armed.status == "answered" and "Armed job1" in armed.reply and "0 7 * * 1-5" in armed.reply
+    assert orch.jobs.created == [
+        {"name": "stand-up in 15", "schedule_text": "every weekday at 7", "action": {"type": "remind", "message": "stand-up in 15"}, "blueprint": "reminder"}
+    ]
+
+    usage = await registry.dispatch("/remind every day at 9", orch=orch, principal=OWNER)
+    assert usage.reply.startswith("Usage: /remind")
+    orch.jobs = _Runner(error="that fires ~1440× a day")
+    bad = await registry.dispatch("/remind every minute | x", orch=orch, principal=OWNER)
+    assert "Could not arm that" in bad.reply and "1440" in bad.reply

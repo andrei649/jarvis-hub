@@ -114,6 +114,32 @@ def build_parser() -> argparse.ArgumentParser:
     engage.add_argument("--reason", default="")
     estop_verbs.add_parser("resume", help="lift the emergency stop (admin)")
 
+    jobs = verbs.add_parser("jobs", help="your scheduled jobs (admin)")
+    jobs_verbs = jobs.add_subparsers(dest="action", required=True, metavar="action")
+    jobs_list = jobs_verbs.add_parser("list", help="every job and whether the scheduler is alive")
+    jobs_list.add_argument("--json", action="store_true")
+    jobs_verbs.add_parser("blueprints", help="one-tap job templates")
+    jobs_create = jobs_verbs.add_parser("create", help="arm a job from a blueprint or from parts")
+    jobs_create.add_argument("--blueprint", help="blueprint id (see `nerva jobs blueprints`)")
+    jobs_create.add_argument("--param", action="append", default=[], metavar="KEY=VALUE", help="blueprint parameter")
+    jobs_create.add_argument("--name")
+    jobs_create.add_argument("--when", help="plain words ('every weekday at 7') or a five-field cron")
+    # dest differs from the subparser's own `action` dest, which an option default would clobber.
+    jobs_create.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
+    jobs_create.add_argument("--json", action="store_true")
+    for name, help_text in (
+        ("pause", "stop a job from firing"),
+        ("resume", "let a paused job fire again"),
+        ("run", "fire a job now, even if paused"),
+        ("delete", "remove a job and its history"),
+        ("runs", "the last attempts of a job"),
+    ):
+        sub = jobs_verbs.add_parser(name, help=help_text)
+        sub.add_argument("job_id")
+        sub.add_argument("--json", action="store_true")
+        if name == "pause":
+            sub.add_argument("--reason", default="")
+
     sessions = verbs.add_parser("sessions", help="recent conversation sessions")
     sessions.add_argument("--json", action="store_true")
 
@@ -482,6 +508,97 @@ def cmd_estop(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def _params(pairs: list[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for pair in pairs:
+        key, sep, value = pair.partition("=")
+        if not sep or not key.strip():
+            raise ValueError(f"--param takes KEY=VALUE, got {pair!r}")
+        out[key.strip()] = value
+    return out
+
+
+def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
+    client = ctx.client()
+    if ns.action == "list":
+        reply = client.get("/api/jobs") or {}
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        scheduler = reply.get("scheduler") or {}
+        ctx.say(
+            f"scheduler {'alive' if scheduler.get('alive') else 'NOT RUNNING'} — "
+            f"{scheduler.get('runnable', 0)} runnable, {scheduler.get('paused', 0)} paused"
+        )
+        for job in reply.get("jobs") or []:
+            state = "paused" if job.get("paused_reason") else ("on" if job.get("enabled") else "off")
+            last = f"{job.get('last_status')} {job.get('last_run_at') or ''}".strip() if job.get("last_status") else "never ran"
+            ctx.say(f"{job.get('id')}  {state:6s} {job.get('schedule_text', ''):28s} {job.get('name', '')}  [{last}]")
+        if not reply.get("jobs"):
+            ctx.say("no jobs — `nerva jobs blueprints` shows what you can arm in one line")
+        return EXIT_OK
+    if ns.action == "blueprints":
+        for blueprint in (client.get("/api/jobs/blueprints") or {}).get("blueprints") or []:
+            ctx.say(f"{blueprint['id']:14s} {blueprint['title']} — {blueprint['description']}")
+            ctx.say(f"{'':14s} default: {blueprint['schedule_text']}; params: {', '.join(blueprint.get('params') or [])}")
+        return EXIT_OK
+    if ns.action == "create":
+        body: dict[str, Any] = {}
+        try:
+            if ns.blueprint:
+                body["blueprint"] = ns.blueprint
+                params = _params(ns.param)
+                if params:
+                    body["params"] = params
+            else:
+                if not (ns.name and ns.when and ns.action_json):
+                    ctx.err.write("without --blueprint, --name, --when and --action are all required\n")
+                    return EXIT_USAGE
+                body["action"] = json.loads(ns.action_json)
+            if ns.name:
+                body["name"] = ns.name
+            if ns.when:
+                body["schedule_text"] = ns.when
+        except ValueError as exc:
+            ctx.err.write(f"{exc}\n")
+            return EXIT_USAGE
+        reply = client.post("/api/jobs", body) or {}
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        job = reply.get("job") or {}
+        ctx.say(f"armed {job.get('id')}  {job.get('schedule_text')} ({job.get('cron')})  {job.get('name')}")
+        return EXIT_OK
+    if ns.action == "runs":
+        reply = client.get(f"/api/jobs/{ns.job_id}/runs") or {}
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        runs = reply.get("runs") or []
+        if not runs:
+            ctx.say("no runs yet")
+        for run in runs:
+            ctx.say(f"{run.get('started_at')}  {run.get('status'):7s} {run.get('summary', '')[:100]}")
+        return EXIT_OK
+    if ns.action == "delete":
+        reply = client.request("DELETE", f"/api/jobs/{ns.job_id}") or {}
+        ctx.say(f"deleted {ns.job_id}" if reply.get("ok") else f"{ns.job_id}: {reply}")
+        return EXIT_OK
+    body = {"reason": ns.reason} if ns.action == "pause" and ns.reason else {}
+    reply = client.post(f"/api/jobs/{ns.job_id}/{ns.action}", body) or {}
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    job = reply.get("job") or {}
+    if ns.action == "run":
+        run = reply.get("run") or {}
+        ctx.say(f"{run.get('status')}: {run.get('summary', '')}")
+        return EXIT_OK if run.get("status") == "ok" else EXIT_FAILED
+    state = "paused" if job.get("paused_reason") else "runnable"
+    ctx.say(f"{ns.job_id} is {state}")
+    return EXIT_OK
+
+
 def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
     reply = ctx.client().get("/sessions")
     sessions = (reply or {}).get("sessions") or []
@@ -566,6 +683,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "kernel": cmd_kernel,
     "logs": cmd_logs,
     "estop": cmd_estop,
+    "jobs": cmd_jobs,
     "sessions": cmd_sessions,
     "chat": cmd_chat,
     "completion": cmd_completion,

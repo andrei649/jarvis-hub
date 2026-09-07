@@ -1259,9 +1259,36 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   running step yet). Unknown `/foo` gets a hint, not the model. Tests:
   `tests/test_slash_commands.py` (12). Follow-up: `GET /api/commands` + quickbar listing (a new
   route needs a HUD caller in the same change).
-- [ ] **HA-2 … HA-4** — user cron with blueprints, the model's hands (`search_files`,
-  `session_search`, session kernels, `image_generate`), depth (adapter descriptor, MCP trust
-  tiers, HUD mode, plugin SDK) — sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+- [x] ✅ **HA-2a — owner-scheduled jobs, the engine.** Nerva parsed "every weekday at 7" into
+  cron (`nl_schedule.py`) and threw the result away — its only caller was a preview route.
+  `agents/core/autonomy/jobs.py`: a `JobStore` (SQLite + WAL, 50 jobs, 200 runs each, every
+  text capped) and a `JobRunner` on the existing APScheduler; four actions — `remind` (a fixed
+  message, no model), `ask` (a prompt to one agent through `Orchestrator.process`, with a
+  **notepad** the job keeps between runs so a daily job reports what changed), `brief` (the
+  morning brief / evening retro on the owner's own time), `task` (enqueued through the autonomy
+  queue with `origin=job:<id>`, where the policy decides act / notify / ask exactly as for any
+  other task — a job can never go around the queue). Every attempt is a recorded run; three
+  consecutive failures pause the job itself and raise **one** incident (`E_JOB_PAUSED` in
+  `problems.jsonl`) instead of paging at 03:00 forever; the e-stop pauses every job; frequency
+  floor once per five minutes; cron day-of-week is translated to APScheduler's Monday-based
+  names (the heartbeat scheduler passes cron's Sunday-based field straight through — a latent
+  off-by-one-day for every weekday heartbeat, noted below as a follow-up). Five blueprints
+  (`morning_brief`, `evening_retro`, `reminder`, `ask_agent`, `inbox_watch`). Surface: admin
+  routes under `/api/jobs` (list · blueprints · create · get · runs · pause · resume · run ·
+  delete; snapshots reseeded), `nerva jobs list|blueprints|create|pause|resume|run|delete|runs`,
+  and in chat `/jobs` (anyone) and `/remind <when> | <message>` (owner). Tests:
+  `tests/test_owner_jobs.py` (22), `tests/test_jobs_routes.py` (4), plus CLI and chat rows.
+  **Not proven on a running hub** (a real APScheduler firing at the wall-clock time, a real
+  Telegram delivery) → [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) **P18**.
+- [ ] **HA-2b — the HUD Jobs panel** under Autonomy & Agents, wired to `/api/jobs` (the seven
+  routes sit on the parity gate's punch list until then), with the bundle rebuilt.
+- [ ] **HA-2c — follow-ups the engine surfaced:** `HeartbeatScheduler.start` passes cron's
+  day-of-week (0 = Sunday) straight to APScheduler (0 = Monday), so every `cron:` heartbeat
+  with a weekday field fires one day late — fix with `jobs.cron_kwargs`; quiet-hours and the
+  interrupt budget for job deliveries (today a job delivers directly, like the digest).
+- [ ] **HA-3 … HA-4** — the model's hands (`search_files`, `session_search`, session kernels,
+  `image_generate`), depth (adapter descriptor, MCP trust tiers, HUD mode, plugin SDK) —
+  sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the
