@@ -203,6 +203,19 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+- [x] ✅ **T-0.64 — the quickbar parser is reachable, and stays a preview.**
+  `agents/core/routers/quickbar.py` (`POST /api/quickbar/resolve`, `GET /api/quickbar/help`,
+  user-guarded) + `frontend/src/panels/quickbar.tsx`. `quickbar.py` had shipped a complete pure
+  parser since 0.64 with **no route and no consumer** — code that looks alive and is not. Both
+  routes are **read-only by design**: a command bar is the most tempting place to put a shortcut
+  past the rules, so the route returns a *plan* and performs nothing, and the panel acts on none
+  of it. A `summon` plan **names** an agent; sending is the chat path. `unresolved` is its own
+  amber state with the backend's reason verbatim (a bar that fell back to the default agent would
+  do the wrong thing *confidently*); a query's `route_hint` is labelled a **guess**. **No history
+  route** — a server-side quickbar history is a keystroke log of everything typed into a floating
+  bar, the most sensitive store for the least reason — so recall is per-browser localStorage and
+  degrades to a working bar when storage is blocked. 15 pytest + 11 vitest.
+
 - [ ] 🔨 **B3 / #731 criteria 5 + E3 #761 — E2.1 epistemic status, E3.2 recall admissions.**
   `AtlasObservation.epistemic_status` ∈ {observed, inferred, simulated} + `agents/core/memory/recall_admission.py`.
   **E2.1:** the three ways of knowing fail differently, so the field is **required with no default** —

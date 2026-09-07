@@ -170,6 +170,23 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **The quickbar parser became reachable — and stayed a preview.** `agents/core/quickbar.py`
+  has shipped a complete, pure command service since 0.64 with **no route and no consumer**:
+  a parser nobody could reach, which is code that looks alive and is not. It now has
+  `POST /api/quickbar/resolve` and `GET /api/quickbar/help` (both user-guarded) and a HUD
+  panel in the Autonomy cluster. Both routes are **read-only, and that is the design rather
+  than an omission**: a command bar is the most tempting place in a product to put a shortcut
+  past the rules — one keystroke, one line, and something happens — so the route returns a
+  *plan* and performs nothing, and the panel renders the plan and acts on none of it. A
+  `summon` plan **names** an agent; sending is the chat path with the governance the chat path
+  has. `unresolved` gets its own amber state with the backend's reason verbatim, because a bar
+  that quietly fell back to "ask the default agent" whenever it did not understand you would do
+  the wrong thing *confidently*, which is worse than saying it did not understand. A query's
+  `route_hint` is labelled a **guess**, since routing is decided on submit. And there is
+  **no history route**: a server-side quickbar history is a keystroke log of everything the
+  owner typed into a floating bar — the most sensitive store in the product, for the least
+  reason — so recall lives in the browser, per viewer, and a browser that blocks storage
+  leaves the bar working. 15 pytest + 11 vitest.
 - **Two Nerva-2.0 contracts that had no code now have some.** **E2.1** puts
   `epistemic_status` on every `nerva.observation.v1` — `observed` / `inferred` / `simulated` — because
   the three fail differently: an observation is wrong only if its source was, an inference is wrong if

@@ -123,6 +123,9 @@ RULES = [
     # Console → Autonomy & Agents (CompanyRoomPanel), beside the decision inbox whose
     # approvals every run depends on.
     ("/api/company/", "autonomy"),
+    # 0.64 quickbar: a resolve-only preview, rendered in the same cluster as the
+    # company room. It never executes a plan — see agents/core/routers/quickbar.py.
+    ("/api/quickbar/", "autonomy"),
     ("/api/reflection", "autonomy"),
     ("/api/schedule/parse", "autonomy"),
     ("/api/transcripts", "autonomy"),
