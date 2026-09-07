@@ -242,6 +242,28 @@ default: every new capability is off behind its own flag.
   lane is opt-in twice over — the `footage` project exists only under `FOOTAGE=1`, and every other
   project ignores the file outright, so the PR lane and the nightly soak can never start recording
   video. 4 + 5 Playwright.
+- **The capture inbox reached the phone, and the export got a door (T-0.26).** `PassiveCapture`
+  has had an `export()` since 0.26 and no route to serve it, and the whole H12.7 promise —
+  *inspectable and forgettable* — was reachable only from the owner HUD. Now `GET
+  /api/capture/export` (user-guarded, read-only) serves the same envelope, and a native **Capture**
+  tab inspects records, forgets one, clears the inbox and writes the export to a file. The route
+  adds no exposure: the records are the ones `/api/capture` already returns, already redacted at
+  ingest, because raw content is never stored. An **unknown surface is a 422, not an empty
+  export** — `?surface=clipboad` and `?surface=clipboard` produce identical files on an empty
+  inbox, and in a saved file a typo must never be able to read as an all-clear.
+  **What the phone deliberately cannot do is arm it.** `POST /api/capture/surfaces` and
+  `/api/capture/ingest` are user-guarded and perfectly reachable; they are absent by decision.
+  Enabling a surface arms an ambient recorder on a machine you are not sitting at, so a lost or
+  borrowed handset must not become a way to start recording someone else's desk — while deleting
+  is safe in the direction that matters, since the worst case is losing a record you wanted rather
+  than gaining one nobody consented to. The rest of the screen is the same discipline: the master
+  switch and the per-surface opt-ins stay **unflattened** (a surface on with capture off records
+  nothing, and says so in its own words instead of rendering as "capturing"), a failed fetch reads
+  as *unknown* rather than "off" — the most reassuring possible lie on a privacy surface — a record
+  with no id is dropped rather than shown with a delete button that cannot work, and a
+  `forgotten: false` is reported as a no-op instead of quietly removing the row. Export filenames
+  are UTC-stamped and scope-named, so a filtered export cannot later be mistaken for a complete
+  one. 4 pytest + 25 mobile.
 - **The backups now happen.** `create_backup` has existed for a long time and nothing ever
   called it on a schedule, and nothing ever pruned the directory it writes to — and those were
   one gap, not two: an automatic backup with no prune writes a full copy of the data root every

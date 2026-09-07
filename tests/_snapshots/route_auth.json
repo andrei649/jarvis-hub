@@ -67,6 +67,7 @@
  "GET /api/canvas": "user",
  "GET /api/capabilities": "user",
  "GET /api/capture": "user",
+ "GET /api/capture/export": "user",
  "GET /api/capture/status": "user",
  "GET /api/channels/inbox": "user",
  "GET /api/channels/inbox/status": "user",

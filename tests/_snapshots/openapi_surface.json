@@ -67,6 +67,7 @@
   "GET /api/canvas": "canvas_list_api_canvas_get",
   "GET /api/capabilities": "capabilities_api_capabilities_get",
   "GET /api/capture": "capture_list_api_capture_get",
+  "GET /api/capture/export": "capture_export_api_capture_export_get",
   "GET /api/capture/status": "capture_status_api_capture_status_get",
   "GET /api/channels/inbox": "channels_inbox_list_api_channels_inbox_get",
   "GET /api/channels/inbox/status": "channels_inbox_status_api_channels_inbox_status_get",
