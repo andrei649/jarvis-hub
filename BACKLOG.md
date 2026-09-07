@@ -648,6 +648,16 @@ vision doc stops reading as a status report for capabilities that are still seed
 
 
 > Full analysis + evidence: [`docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md`](docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md).
+> **Hermes side re-grounded again 2026-09-06 at `v2026.8.31` (package 0.21.0) by an exhaustive
+> live inventory:** [`docs/research/hermes-inventory-v2026.8.31/`](docs/research/hermes-inventory-v2026.8.31/README.md)
+> — 8.2k entries over 53 sections (73 CLI commands / 434 help screens, 57 gateway slash handlers,
+> 22 platform adapters, 83 tools in 59 toolsets, 785 config keys, 1,390 env vars, 20 dashboard
+> pages, the Electron app, the TUI, 40 model providers, 58 bundled + 137 optional skills, 65
+> optional MCPs), every entry at rebuild depth with `path:line`. Completeness is machine-checked:
+> all 4,719 shipped UI strings map to an entry ([`appendix-i18n-coverage.md`](docs/research/hermes-inventory-v2026.8.31/appendix-i18n-coverage.md),
+> re-runnable via the `check_strings.py` + `assemble.py` kept beside it). Use this — not the July
+> notes — as the factual base for any Nerva-vs-Hermes claim, GAP-4's head-to-head, and the S1–S8
+> criteria in `NERVA_VISION.md`.
 > Hermes side re-grounded live (repo + releases + docs, 2026-07-25): **v0.19.0** (07-20), 220.1k★,
 > releases every ~2–3 weeks; it now ships **real desktop computer-use** (`cua-driver`, mac/win/linux,
 > a11y + screenshots, per-action approval), real browser automation (local CDP + Browserbase +

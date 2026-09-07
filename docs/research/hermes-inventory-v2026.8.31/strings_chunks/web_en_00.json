@@ -1,0 +1,1202 @@
+[
+{
+"key": "common.save",
+"text": "Save"
+},
+{
+"key": "common.saving",
+"text": "Saving..."
+},
+{
+"key": "common.cancel",
+"text": "Cancel"
+},
+{
+"key": "common.close",
+"text": "Close"
+},
+{
+"key": "common.confirm",
+"text": "Confirm"
+},
+{
+"key": "common.delete",
+"text": "Delete"
+},
+{
+"key": "common.refresh",
+"text": "Refresh"
+},
+{
+"key": "common.retry",
+"text": "Retry"
+},
+{
+"key": "common.search",
+"text": "Search..."
+},
+{
+"key": "common.loading",
+"text": "Loading..."
+},
+{
+"key": "common.create",
+"text": "Create"
+},
+{
+"key": "common.creating",
+"text": "Creating..."
+},
+{
+"key": "common.set",
+"text": "Set"
+},
+{
+"key": "common.replace",
+"text": "Replace"
+},
+{
+"key": "common.clear",
+"text": "Clear"
+},
+{
+"key": "common.live",
+"text": "Live"
+},
+{
+"key": "common.off",
+"text": "Off"
+},
+{
+"key": "common.enabled",
+"text": "enabled"
+},
+{
+"key": "common.disabled",
+"text": "disabled"
+},
+{
+"key": "common.active",
+"text": "active"
+},
+{
+"key": "common.inactive",
+"text": "inactive"
+},
+{
+"key": "common.unknown",
+"text": "unknown"
+},
+{
+"key": "common.untitled",
+"text": "Untitled"
+},
+{
+"key": "common.none",
+"text": "None"
+},
+{
+"key": "common.form",
+"text": "Form"
+},
+{
+"key": "common.noResults",
+"text": "No results"
+},
+{
+"key": "common.of",
+"text": "of"
+},
+{
+"key": "common.page",
+"text": "Page"
+},
+{
+"key": "common.msgs",
+"text": "msgs"
+},
+{
+"key": "common.tools",
+"text": "tools"
+},
+{
+"key": "common.match",
+"text": "match"
+},
+{
+"key": "common.other",
+"text": "Other"
+},
+{
+"key": "common.configured",
+"text": "configured"
+},
+{
+"key": "common.removed",
+"text": "removed"
+},
+{
+"key": "common.failedToToggle",
+"text": "Failed to toggle"
+},
+{
+"key": "common.failedToRemove",
+"text": "Failed to remove"
+},
+{
+"key": "common.failedToReveal",
+"text": "Failed to reveal"
+},
+{
+"key": "common.collapse",
+"text": "Collapse"
+},
+{
+"key": "common.expand",
+"text": "Expand"
+},
+{
+"key": "common.general",
+"text": "General"
+},
+{
+"key": "common.messaging",
+"text": "Messaging"
+},
+{
+"key": "common.gateway",
+"text": "Gateway"
+},
+{
+"key": "app.brand",
+"text": "Hermes Agent"
+},
+{
+"key": "app.brandShort",
+"text": "HA"
+},
+{
+"key": "app.closeNavigation",
+"text": "Close navigation"
+},
+{
+"key": "app.closeModelTools",
+"text": "Close model and tools"
+},
+{
+"key": "app.footer.org",
+"text": "Nous Research"
+},
+{
+"key": "app.activeSessionsLabel",
+"text": "Active Sessions:"
+},
+{
+"key": "app.gatewayStatusLabel",
+"text": "Gateway Status:"
+},
+{
+"key": "app.gatewayStrip.failed",
+"text": "Start failed"
+},
+{
+"key": "app.gatewayStrip.off",
+"text": "Off"
+},
+{
+"key": "app.gatewayStrip.running",
+"text": "Running"
+},
+{
+"key": "app.gatewayStrip.starting",
+"text": "Starting"
+},
+{
+"key": "app.gatewayStrip.stopped",
+"text": "Stopped"
+},
+{
+"key": "app.nav.analytics",
+"text": "Analytics"
+},
+{
+"key": "app.nav.chat",
+"text": "Chat"
+},
+{
+"key": "app.nav.config",
+"text": "Config"
+},
+{
+"key": "app.nav.cron",
+"text": "Cron"
+},
+{
+"key": "app.nav.documentation",
+"text": "Documentation"
+},
+{
+"key": "app.nav.keys",
+"text": "Keys"
+},
+{
+"key": "app.nav.logs",
+"text": "Logs"
+},
+{
+"key": "app.nav.models",
+"text": "Models"
+},
+{
+"key": "app.nav.profiles",
+"text": "Profiles"
+},
+{
+"key": "app.nav.plugins",
+"text": "Plugins"
+},
+{
+"key": "app.nav.sessions",
+"text": "Sessions"
+},
+{
+"key": "app.nav.skills",
+"text": "Skills"
+},
+{
+"key": "app.modelToolsSheetSubtitle",
+"text": "& tools"
+},
+{
+"key": "app.modelToolsSheetTitle",
+"text": "Model"
+},
+{
+"key": "app.navigation",
+"text": "Navigation"
+},
+{
+"key": "app.openDocumentation",
+"text": "Open documentation in a new tab"
+},
+{
+"key": "app.openNavigation",
+"text": "Open navigation"
+},
+{
+"key": "app.pluginNavSection",
+"text": "Plugins"
+},
+{
+"key": "app.sessionsActiveCount",
+"text": "{count} active"
+},
+{
+"key": "app.statusOverview",
+"text": "Status overview"
+},
+{
+"key": "app.system",
+"text": "System"
+},
+{
+"key": "app.webUi",
+"text": "Web UI"
+},
+{
+"key": "app.managingProfile",
+"text": "Managing profile"
+},
+{
+"key": "app.currentProfileOption",
+"text": "this dashboard ({name})"
+},
+{
+"key": "app.memoryElevatedBanner",
+"text": "Your agent is running low on memory."
+},
+{
+"key": "app.dismiss",
+"text": "Dismiss"
+},
+{
+"key": "status.actionFailed",
+"text": "Action failed"
+},
+{
+"key": "status.actionFinished",
+"text": "Finished"
+},
+{
+"key": "status.actions",
+"text": "Actions"
+},
+{
+"key": "status.agent",
+"text": "Agent"
+},
+{
+"key": "status.activeSessions",
+"text": "Active Sessions"
+},
+{
+"key": "status.connected",
+"text": "Connected"
+},
+{
+"key": "status.connectedPlatforms",
+"text": "Connected Platforms"
+},
+{
+"key": "status.disabled",
+"text": "Disabled"
+},
+{
+"key": "status.disconnected",
+"text": "Disconnected"
+},
+{
+"key": "status.error",
+"text": "Error"
+},
+{
+"key": "status.failed",
+"text": "Failed"
+},
+{
+"key": "status.gateway",
+"text": "Gateway"
+},
+{
+"key": "status.gatewayFailedToStart",
+"text": "Gateway failed to start"
+},
+{
+"key": "status.lastUpdate",
+"text": "Last update"
+},
+{
+"key": "status.noneRunning",
+"text": "None"
+},
+{
+"key": "status.notRunning",
+"text": "Not running"
+},
+{
+"key": "status.pid",
+"text": "PID"
+},
+{
+"key": "status.platformDisconnected",
+"text": "disconnected"
+},
+{
+"key": "status.platformError",
+"text": "error"
+},
+{
+"key": "status.recentSessions",
+"text": "Recent Sessions"
+},
+{
+"key": "status.restartGateway",
+"text": "Restart Gateway"
+},
+{
+"key": "status.restartGatewayConfirmTitle",
+"text": "Restart gateway?"
+},
+{
+"key": "status.restartingGateway",
+"text": "Restarting gateway…"
+},
+{
+"key": "status.running",
+"text": "Running"
+},
+{
+"key": "status.runningRemote",
+"text": "Running (remote)"
+},
+{
+"key": "status.startFailed",
+"text": "Start failed"
+},
+{
+"key": "status.starting",
+"text": "Starting"
+},
+{
+"key": "status.startedInBackground",
+"text": "Started in background — check logs for progress"
+},
+{
+"key": "status.stopped",
+"text": "Stopped"
+},
+{
+"key": "status.updateHermes",
+"text": "Update Hermes"
+},
+{
+"key": "status.updateHermesConfirmNow",
+"text": "Update now"
+},
+{
+"key": "status.updateHermesConfirmTitle",
+"text": "Update Hermes?"
+},
+{
+"key": "status.updatingHermes",
+"text": "Updating Hermes…"
+},
+{
+"key": "status.waitingForOutput",
+"text": "Waiting for output…"
+},
+{
+"key": "sessions.title",
+"text": "Sessions"
+},
+{
+"key": "sessions.history",
+"text": "History"
+},
+{
+"key": "sessions.overview",
+"text": "Overview"
+},
+{
+"key": "sessions.filterChats",
+"text": "Chats"
+},
+{
+"key": "sessions.filterAutomation",
+"text": "Automation"
+},
+{
+"key": "sessions.filterAll",
+"text": "All"
+},
+{
+"key": "sessions.sourceFilter",
+"text": "Session source"
+},
+{
+"key": "sessions.anySource",
+"text": "Any source"
+},
+{
+"key": "sessions.searchPlaceholder",
+"text": "Search message content..."
+},
+{
+"key": "sessions.noSessions",
+"text": "No sessions yet"
+},
+{
+"key": "sessions.noSessionsInFilter",
+"text": "No sessions in this filter"
+},
+{
+"key": "sessions.noMatch",
+"text": "No sessions match your search"
+},
+{
+"key": "sessions.startConversation",
+"text": "Start a conversation to see it here"
+},
+{
+"key": "sessions.noMessages",
+"text": "No messages"
+},
+{
+"key": "sessions.untitledSession",
+"text": "Untitled session"
+},
+{
+"key": "sessions.deleteSession",
+"text": "Delete session"
+},
+{
+"key": "sessions.confirmDeleteTitle",
+"text": "Delete session?"
+},
+{
+"key": "sessions.sessionDeleted",
+"text": "Session deleted"
+},
+{
+"key": "sessions.failedToDelete",
+"text": "Failed to delete session"
+},
+{
+"key": "sessions.deleteEmpty",
+"text": "Delete empty"
+},
+{
+"key": "sessions.deleteEmptyConfirmTitle",
+"text": "Delete empty sessions?"
+},
+{
+"key": "sessions.emptySessionsDeleted",
+"text": "{count} empty sessions deleted"
+},
+{
+"key": "sessions.failedToDeleteEmpty",
+"text": "Failed to delete empty sessions"
+},
+{
+"key": "sessions.selectSession",
+"text": "Select session"
+},
+{
+"key": "sessions.selectAllOnPage",
+"text": "Select all on this page"
+},
+{
+"key": "sessions.clearSelection",
+"text": "Clear selection"
+},
+{
+"key": "sessions.selectedCount",
+"text": "{count} selected"
+},
+{
+"key": "sessions.deleteSelected",
+"text": "Delete {count}"
+},
+{
+"key": "sessions.deleteSelectedConfirmTitle",
+"text": "Delete {count} sessions?"
+},
+{
+"key": "sessions.selectedSessionsDeleted",
+"text": "{count} sessions deleted"
+},
+{
+"key": "sessions.failedToDeleteSelected",
+"text": "Failed to delete selected sessions"
+},
+{
+"key": "sessions.resumeInChat",
+"text": "Resume in Chat"
+},
+{
+"key": "sessions.newChat",
+"text": "New chat"
+},
+{
+"key": "sessions.previousPage",
+"text": "Previous page"
+},
+{
+"key": "sessions.nextPage",
+"text": "Next page"
+},
+{
+"key": "sessions.roles.user",
+"text": "User"
+},
+{
+"key": "sessions.roles.assistant",
+"text": "Assistant"
+},
+{
+"key": "sessions.roles.system",
+"text": "System"
+},
+{
+"key": "sessions.roles.tool",
+"text": "Tool"
+},
+{
+"key": "analytics.period",
+"text": "Period:"
+},
+{
+"key": "analytics.totalTokens",
+"text": "Total Tokens"
+},
+{
+"key": "analytics.totalSessions",
+"text": "Total Sessions"
+},
+{
+"key": "analytics.apiCalls",
+"text": "API Calls"
+},
+{
+"key": "analytics.dailyTokenUsage",
+"text": "Daily Token Usage"
+},
+{
+"key": "analytics.dailyBreakdown",
+"text": "Daily Breakdown"
+},
+{
+"key": "analytics.perModelBreakdown",
+"text": "Per-Model Breakdown"
+},
+{
+"key": "analytics.topSkills",
+"text": "Top Skills"
+},
+{
+"key": "analytics.skill",
+"text": "Skill"
+},
+{
+"key": "analytics.loads",
+"text": "Agent Loaded"
+},
+{
+"key": "analytics.edits",
+"text": "Agent Managed"
+},
+{
+"key": "analytics.lastUsed",
+"text": "Last Used"
+},
+{
+"key": "analytics.input",
+"text": "Input"
+},
+{
+"key": "analytics.output",
+"text": "Output"
+},
+{
+"key": "analytics.total",
+"text": "Total"
+},
+{
+"key": "analytics.noUsageData",
+"text": "No usage data for this period"
+},
+{
+"key": "analytics.startSession",
+"text": "Start a session to see analytics here"
+},
+{
+"key": "analytics.date",
+"text": "Date"
+},
+{
+"key": "analytics.model",
+"text": "Model"
+},
+{
+"key": "analytics.tokens",
+"text": "Tokens"
+},
+{
+"key": "analytics.perDayAvg",
+"text": "/day avg"
+},
+{
+"key": "analytics.acrossModels",
+"text": "across {count} models"
+},
+{
+"key": "analytics.inOut",
+"text": "{input} in / {output} out"
+},
+{
+"key": "models.modelsUsed",
+"text": "Models Used"
+},
+{
+"key": "models.estimatedCost",
+"text": "Est. Cost"
+},
+{
+"key": "models.tokens",
+"text": "tokens"
+},
+{
+"key": "models.sessions",
+"text": "sessions"
+},
+{
+"key": "models.avgPerSession",
+"text": "avg/session"
+},
+{
+"key": "models.apiCalls",
+"text": "API calls"
+},
+{
+"key": "models.toolCalls",
+"text": "tool calls"
+},
+{
+"key": "models.noModelsData",
+"text": "No model usage data for this period"
+},
+{
+"key": "models.startSession",
+"text": "Start a session to see model data here"
+},
+{
+"key": "logs.title",
+"text": "Logs"
+},
+{
+"key": "logs.autoRefresh",
+"text": "Auto-refresh"
+},
+{
+"key": "logs.file",
+"text": "File"
+},
+{
+"key": "logs.level",
+"text": "Level"
+},
+{
+"key": "logs.component",
+"text": "Component"
+},
+{
+"key": "logs.lines",
+"text": "Lines"
+},
+{
+"key": "logs.noLogLines",
+"text": "No log lines found"
+},
+{
+"key": "cron.confirmDeleteTitle",
+"text": "Delete scheduled job?"
+},
+{
+"key": "cron.newJob",
+"text": "New Cron Job"
+},
+{
+"key": "cron.nameOptional",
+"text": "Name (optional)"
+},
+{
+"key": "cron.namePlaceholder",
+"text": "e.g. Daily summary"
+},
+{
+"key": "cron.prompt",
+"text": "Prompt"
+},
+{
+"key": "cron.promptPlaceholder",
+"text": "What should the agent do on each run?"
+},
+{
+"key": "cron.schedule",
+"text": "Schedule (cron expression)"
+},
+{
+"key": "cron.schedulePlaceholder",
+"text": "0 9 * * *"
+},
+{
+"key": "cron.scheduleMode",
+"text": "Schedule"
+},
+{
+"key": "cron.scheduleModes.interval",
+"text": "Every interval"
+},
+{
+"key": "cron.scheduleModes.daily",
+"text": "Daily"
+},
+{
+"key": "cron.scheduleModes.weekly",
+"text": "Weekly"
+},
+{
+"key": "cron.scheduleModes.monthly",
+"text": "Monthly"
+},
+{
+"key": "cron.scheduleModes.once",
+"text": "Once"
+},
+{
+"key": "cron.scheduleModes.custom",
+"text": "Custom (cron expression)"
+},
+{
+"key": "cron.scheduleModes.intervalEvery",
+"text": "Every"
+},
+{
+"key": "cron.scheduleModes.intervalUnit",
+"text": "Unit"
+},
+{
+"key": "cron.scheduleModes.unitMinutes",
+"text": "minutes"
+},
+{
+"key": "cron.scheduleModes.unitHours",
+"text": "hours"
+},
+{
+"key": "cron.scheduleModes.unitDays",
+"text": "days"
+},
+{
+"key": "cron.scheduleModes.timeOfDay",
+"text": "Time of day"
+},
+{
+"key": "cron.scheduleModes.weekdays",
+"text": "Days of week"
+},
+{
+"key": "cron.scheduleModes.dayOfMonth",
+"text": "Day of month"
+},
+{
+"key": "cron.scheduleModes.onceAt",
+"text": "Run at"
+},
+{
+"key": "cron.scheduleModes.customLabel",
+"text": "Cron expression"
+},
+{
+"key": "cron.scheduleModes.customPlaceholder",
+"text": "0 9 * * *"
+},
+{
+"key": "cron.scheduleModes.preview",
+"text": "Sends as"
+},
+{
+"key": "cron.scheduleModes.previewEmpty",
+"text": "(incomplete)"
+},
+{
+"key": "cron.scheduleDescribe.none",
+"text": "—"
+},
+{
+"key": "cron.scheduleDescribe.everyMinutes",
+"text": "Every {n} min"
+},
+{
+"key": "cron.scheduleDescribe.everyHours",
+"text": "Every {n} h"
+},
+{
+"key": "cron.scheduleDescribe.everyDays",
+"text": "Every {n} d"
+},
+{
+"key": "cron.scheduleDescribe.dailyAt",
+"text": "Daily at {time}"
+},
+{
+"key": "cron.scheduleDescribe.weeklyAt",
+"text": "Weekly on {days} at {time}"
+},
+{
+"key": "cron.scheduleDescribe.monthlyAt",
+"text": "Monthly on the {day} at {time}"
+},
+{
+"key": "cron.scheduleDescribe.onceAt",
+"text": "Once at {time}"
+},
+{
+"key": "cron.deliverTo",
+"text": "Deliver to"
+},
+{
+"key": "cron.scheduledJobs",
+"text": "Scheduled Jobs"
+},
+{
+"key": "cron.noJobs",
+"text": "No cron jobs configured. Create one above."
+},
+{
+"key": "cron.last",
+"text": "Last"
+},
+{
+"key": "cron.next",
+"text": "Next"
+},
+{
+"key": "cron.pause",
+"text": "Pause"
+},
+{
+"key": "cron.resume",
+"text": "Resume"
+},
+{
+"key": "cron.triggerNow",
+"text": "Trigger now"
+},
+{
+"key": "cron.delivery.local",
+"text": "Local"
+},
+{
+"key": "cron.delivery.telegram",
+"text": "Telegram"
+},
+{
+"key": "cron.delivery.discord",
+"text": "Discord"
+},
+{
+"key": "cron.delivery.slack",
+"text": "Slack"
+},
+{
+"key": "cron.delivery.email",
+"text": "Email"
+},
+{
+"key": "cron.delivery.needsHomeChannel",
+"text": "set a home channel first"
+},
+{
+"key": "profiles.newProfile",
+"text": "New Profile"
+},
+{
+"key": "profiles.name",
+"text": "Name"
+},
+{
+"key": "profiles.namePlaceholder",
+"text": "e.g. coder, writer, etc."
+},
+{
+"key": "profiles.nameRequired",
+"text": "Name is required"
+},
+{
+"key": "profiles.invalidName",
+"text": "Invalid profile name"
+},
+{
+"key": "profiles.cloneFrom",
+"text": "Clone config from"
+},
+{
+"key": "profiles.cloneFromNone",
+"text": "None (blank)"
+},
+{
+"key": "profiles.allProfiles",
+"text": "Profiles"
+},
+{
+"key": "profiles.noProfiles",
+"text": "No profiles found."
+},
+{
+"key": "profiles.defaultBadge",
+"text": "default"
+},
+{
+"key": "profiles.hasEnv",
+"text": "env"
+},
+{
+"key": "profiles.model",
+"text": "Model"
+},
+{
+"key": "profiles.skills",
+"text": "Skills"
+},
+{
+"key": "profiles.rename",
+"text": "Rename"
+},
+{
+"key": "profiles.editSoul",
+"text": "Edit SOUL.md"
+},
+{
+"key": "profiles.soulSection",
+"text": "SOUL.md (personality / system prompt)"
+},
+{
+"key": "profiles.soulPlaceholder",
+"text": "# How this agent should behave…"
+},
+{
+"key": "profiles.saveSoul",
+"text": "Save SOUL"
+},
+{
+"key": "profiles.soulSaved",
+"text": "SOUL.md saved"
+},
+{
+"key": "profiles.openInTerminal",
+"text": "Copy CLI command"
+},
+{
+"key": "profiles.commandCopied",
+"text": "Copied to clipboard"
+},
+{
+"key": "profiles.copyFailed",
+"text": "Could not copy"
+},
+{
+"key": "profiles.confirmDeleteTitle",
+"text": "Delete profile?"
+},
+{
+"key": "profiles.created",
+"text": "Created"
+},
+{
+"key": "profiles.deleted",
+"text": "Deleted"
+},
+{
+"key": "profiles.renamed",
+"text": "Renamed"
+},
+{
+"key": "profiles.activeProfile",
+"text": "Active profile"
+},
+{
+"key": "profiles.activeBadge",
+"text": "active"
+},
+{
+"key": "profiles.setActive",
+"text": "Set as active"
+},
+{
+"key": "profiles.activeSet",
+"text": "Active profile set"
+},
+{
+"key": "profiles.gatewayRunning",
+"text": "Gateway running"
+},
+{
+"key": "profiles.gatewayStopped",
+"text": "Gateway stopped"
+},
+{
+"key": "profiles.aliasBadge",
+"text": "alias"
+},
+{
+"key": "profiles.description",
+"text": "Description"
+},
+{
+"key": "profiles.noDescription",
+"text": "No description"
+},
+{
+"key": "profiles.editDescription",
+"text": "Edit description"
+},
+{
+"key": "profiles.descriptionSaved",
+"text": "Description saved"
+},
+{
+"key": "profiles.reviewBadge",
+"text": "review"
+},
+{
+"key": "profiles.autoGenerate",
+"text": "Auto-generate"
+},
+{
+"key": "profiles.generating",
+"text": "Generating…"
+},
+{
+"key": "profiles.describeFailed",
+"text": "Could not generate description"
+},
+{
+"key": "profiles.distribution",
+"text": "Distribution"
+},
+{
+"key": "profiles.advancedOptions",
+"text": "Advanced options"
+},
+{
+"key": "profiles.cloneAll",
+"text": "Clone everything (memories, sessions, skills, state)"
+},
+{
+"key": "profiles.noSkillsOption",
+"text": "Don't seed bundled skills"
+},
+{
+"key": "profiles.descriptionOptional",
+"text": "Description (optional)"
+},
+{
+"key": "profiles.modelOptional",
+"text": "Model (optional)"
+},
+{
+"key": "profiles.modelInherit",
+"text": "Inherit from clone / default"
+},
+{
+"key": "profiles.modelLoading",
+"text": "Loading models…"
+},
+{
+"key": "profiles.modelNone",
+"text": "No authenticated providers — set a key first"
+},
+{
+"key": "profiles.editModel",
+"text": "Change model"
+},
+{
+"key": "profiles.modelSaved",
+"text": "Model updated"
+},
+{
+"key": "profiles.modelSelect",
+"text": "Select a model"
+},
+{
+"key": "profiles.actions",
+"text": "Actions"
+},
+{
+"key": "pluginsPage.contextEngineLabel",
+"text": "Context engine"
+},
+{
+"key": "pluginsPage.dashboardSlots",
+"text": "Dashboard slots"
+},
+{
+"key": "pluginsPage.disableRuntime",
+"text": "Disable"
+},
+{
+"key": "pluginsPage.enableAfterInstall",
+"text": "Enable after install"
+}
+]

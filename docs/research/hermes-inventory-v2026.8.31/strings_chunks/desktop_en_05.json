@@ -1,0 +1,1202 @@
+[
+{
+"key": "sidebar.projects.branchPlaceholder",
+"text": "e.g. my-feature"
+},
+{
+"key": "sidebar.projects.baseBranchPlaceholder",
+"text": "Search branches…"
+},
+{
+"key": "sidebar.projects.baseBranchNone",
+"text": "No branches found"
+},
+{
+"key": "sidebar.projects.startWorkFailed",
+"text": "Could not create worktree"
+},
+{
+"key": "sidebar.projects.worktreeProjectLabel",
+"text": "Project"
+},
+{
+"key": "sidebar.projects.worktreeProjectPlaceholder",
+"text": "Search projects…"
+},
+{
+"key": "sidebar.projects.worktreeProjectNone",
+"text": "No projects with a folder"
+},
+{
+"key": "sidebar.projects.convertBranch",
+"text": "Convert a branch…"
+},
+{
+"key": "sidebar.projects.convertBranchTitle",
+"text": "Convert a branch"
+},
+{
+"key": "sidebar.projects.convertBranchDesc",
+"text": "Open checked-out branches, or create a worktree for a free branch."
+},
+{
+"key": "sidebar.projects.convertBranchPlaceholder",
+"text": "Search branches…"
+},
+{
+"key": "sidebar.projects.convertBranchInstead",
+"text": "Convert an existing branch"
+},
+{
+"key": "sidebar.projects.branchOpenExisting",
+"text": "open"
+},
+{
+"key": "sidebar.projects.branchSwitchHome",
+"text": "switch home"
+},
+{
+"key": "sidebar.projects.branchCreateWorktree",
+"text": "new worktree"
+},
+{
+"key": "sidebar.projects.branchTrackRemote",
+"text": "track remote"
+},
+{
+"key": "sidebar.projects.branchesLoading",
+"text": "Loading branches…"
+},
+{
+"key": "sidebar.projects.noBranches",
+"text": "No branches found"
+},
+{
+"key": "sidebar.projects.removeWorktree",
+"text": "Remove worktree"
+},
+{
+"key": "sidebar.projects.removeWorktreeFailed",
+"text": "Could not remove worktree (uncommitted changes?)"
+},
+{
+"key": "sidebar.projects.forceRemove",
+"text": "Force remove"
+},
+{
+"key": "sidebar.projects.back",
+"text": "All projects"
+},
+{
+"key": "sidebar.loading",
+"text": "Loading…"
+},
+{
+"key": "sidebar.loadMore",
+"text": "Load more"
+},
+{
+"key": "sidebar.row.pin",
+"text": "Pin"
+},
+{
+"key": "sidebar.row.unpin",
+"text": "Unpin"
+},
+{
+"key": "sidebar.row.markUnread",
+"text": "Mark as unread"
+},
+{
+"key": "sidebar.row.markRead",
+"text": "Mark as read"
+},
+{
+"key": "sidebar.row.unreadFailed",
+"text": "Could not update unread state"
+},
+{
+"key": "sidebar.row.copyId",
+"text": "Copy ID"
+},
+{
+"key": "sidebar.row.export",
+"text": "Export"
+},
+{
+"key": "sidebar.row.branchFrom",
+"text": "Branch"
+},
+{
+"key": "sidebar.row.rename",
+"text": "Rename…"
+},
+{
+"key": "sidebar.row.archive",
+"text": "Archive"
+},
+{
+"key": "sidebar.row.newWindow",
+"text": "New window"
+},
+{
+"key": "sidebar.row.openInTerminal",
+"text": "Open in terminal"
+},
+{
+"key": "sidebar.row.hideTabBar",
+"text": "Hide tab bar"
+},
+{
+"key": "sidebar.row.openInNewTab",
+"text": "Open in new tab"
+},
+{
+"key": "sidebar.row.openInSplit",
+"text": "Open in split"
+},
+{
+"key": "sidebar.row.copyIdFailed",
+"text": "Could not copy session ID"
+},
+{
+"key": "sidebar.row.sessionActions",
+"text": "Session actions"
+},
+{
+"key": "sidebar.row.sessionRunning",
+"text": "Session running"
+},
+{
+"key": "sidebar.row.needsInput",
+"text": "Needs your input"
+},
+{
+"key": "sidebar.row.waitingForAnswer",
+"text": "Waiting for your answer"
+},
+{
+"key": "sidebar.row.finishedUnread",
+"text": "Finished — unread"
+},
+{
+"key": "sidebar.row.backgroundRunning",
+"text": "Background task running"
+},
+{
+"key": "sidebar.row.draftSession",
+"text": "Draft — nothing sent yet"
+},
+{
+"key": "sidebar.row.renamed",
+"text": "Renamed"
+},
+{
+"key": "sidebar.row.renameFailed",
+"text": "Rename failed"
+},
+{
+"key": "sidebar.row.renameTitle",
+"text": "Rename session"
+},
+{
+"key": "sidebar.row.renameDesc",
+"text": "Leave empty to clear."
+},
+{
+"key": "sidebar.row.untitledPlaceholder",
+"text": "Untitled session"
+},
+{
+"key": "sidebar.row.deleteTitle",
+"text": "Delete session?"
+},
+{
+"key": "sidebar.row.deleting",
+"text": "Deleting…"
+},
+{
+"key": "sidebar.row.deleted",
+"text": "Session deleted"
+},
+{
+"key": "sidebar.row.todoProgress",
+"text": "Tasks completed"
+},
+{
+"key": "sidebar.row.ageNow",
+"text": "now"
+},
+{
+"key": "sidebar.row.ageDay",
+"text": "d"
+},
+{
+"key": "sidebar.row.ageHour",
+"text": "h"
+},
+{
+"key": "sidebar.row.ageMin",
+"text": "m"
+},
+{
+"key": "sidebar.dateDivider.today",
+"text": "Earlier today"
+},
+{
+"key": "sidebar.dateDivider.yesterday",
+"text": "Yesterday"
+},
+{
+"key": "sidebar.dateDivider.thisWeek",
+"text": "Earlier this week"
+},
+{
+"key": "sidebar.dateDivider.lastWeek",
+"text": "Last week"
+},
+{
+"key": "sidebar.dateDivider.thisMonth",
+"text": "Earlier this month"
+},
+{
+"key": "sidebar.statusDivider.working",
+"text": "Working"
+},
+{
+"key": "sidebar.statusDivider.done",
+"text": "Done"
+},
+{
+"key": "sidebar.markAllRead",
+"text": "Mark all as read"
+},
+{
+"key": "composer.message",
+"text": "Message"
+},
+{
+"key": "composer.placeholderStarting",
+"text": "Starting Hermes..."
+},
+{
+"key": "composer.placeholderReconnecting",
+"text": "Reconnecting to Hermes…"
+},
+{
+"key": "composer.placeholderFollowUp",
+"text": "Send follow-up"
+},
+{
+"key": "composer.startVoice",
+"text": "Start voice conversation"
+},
+{
+"key": "composer.openDirective",
+"text": "Open"
+},
+{
+"key": "composer.queueMessage",
+"text": "Queue message"
+},
+{
+"key": "composer.steer",
+"text": "Steer the current run"
+},
+{
+"key": "composer.stop",
+"text": "Stop"
+},
+{
+"key": "composer.send",
+"text": "Send"
+},
+{
+"key": "composer.speaking",
+"text": "Speaking"
+},
+{
+"key": "composer.transcribing",
+"text": "Transcribing"
+},
+{
+"key": "composer.thinking",
+"text": "Thinking"
+},
+{
+"key": "composer.muted",
+"text": "Muted"
+},
+{
+"key": "composer.listening",
+"text": "Listening"
+},
+{
+"key": "composer.muteMic",
+"text": "Mute microphone"
+},
+{
+"key": "composer.unmuteMic",
+"text": "Unmute microphone"
+},
+{
+"key": "composer.stopListening",
+"text": "Stop listening and send"
+},
+{
+"key": "composer.stopShort",
+"text": "Stop"
+},
+{
+"key": "composer.endConversation",
+"text": "End voice conversation"
+},
+{
+"key": "composer.endShort",
+"text": "End"
+},
+{
+"key": "composer.stopDictation",
+"text": "Stop dictation"
+},
+{
+"key": "composer.transcribingDictation",
+"text": "Transcribing dictation"
+},
+{
+"key": "composer.voiceControls",
+"text": "Voice"
+},
+{
+"key": "composer.voiceDictation",
+"text": "Voice dictation"
+},
+{
+"key": "composer.speakReplies",
+"text": "Read replies aloud"
+},
+{
+"key": "composer.stopSpeakingReplies",
+"text": "Stop reading replies aloud"
+},
+{
+"key": "composer.lookupLoading",
+"text": "Looking up…"
+},
+{
+"key": "composer.lookupNoMatches",
+"text": "No matches."
+},
+{
+"key": "composer.lookupTry",
+"text": "Try"
+},
+{
+"key": "composer.lookupOr",
+"text": "or"
+},
+{
+"key": "composer.commonCommands",
+"text": "Common commands"
+},
+{
+"key": "composer.hotkeys",
+"text": "Hotkeys"
+},
+{
+"key": "composer.helpFooter",
+"text": "opens the full panel · backspace dismisses"
+},
+{
+"key": "composer.attachUrlTitle",
+"text": "Attach a URL"
+},
+{
+"key": "composer.attachUrlDesc",
+"text": "Hermes will fetch the page and include it as context for this turn."
+},
+{
+"key": "composer.urlPlaceholder",
+"text": "https://example.com/post"
+},
+{
+"key": "composer.urlHintPre",
+"text": "Include the full URL, e.g. "
+},
+{
+"key": "composer.attach",
+"text": "Attach"
+},
+{
+"key": "composer.attachmentOnly",
+"text": "Attachment-only turn"
+},
+{
+"key": "composer.emptyTurn",
+"text": "Empty turn"
+},
+{
+"key": "composer.editingInComposer",
+"text": "Editing in composer"
+},
+{
+"key": "composer.editingQueuedInComposer",
+"text": "Editing queued turn in composer"
+},
+{
+"key": "composer.queueEdit",
+"text": "Edit"
+},
+{
+"key": "composer.queueSendNext",
+"text": "Next"
+},
+{
+"key": "composer.queueSteer",
+"text": "Steer — redirect the live turn now"
+},
+{
+"key": "composer.queueSend",
+"text": "Send"
+},
+{
+"key": "composer.queueDelete",
+"text": "Delete"
+},
+{
+"key": "composer.queueResume",
+"text": "Resume"
+},
+{
+"key": "composer.queueResumeTip",
+"text": "Paused by Stop — resume sending the queued turns"
+},
+{
+"key": "composer.queueStuckTitle",
+"text": "Queued message not sent"
+},
+{
+"key": "composer.queueStuckBody",
+"text": "A queued turn kept failing to send. It is still in the queue — try sending it again."
+},
+{
+"key": "composer.previewUnavailable",
+"text": "Preview unavailable"
+},
+{
+"key": "composer.dictating",
+"text": "Dictating"
+},
+{
+"key": "composer.preparingAudio",
+"text": "Preparing audio"
+},
+{
+"key": "composer.speakingResponse",
+"text": "Speaking response"
+},
+{
+"key": "composer.readingAloud",
+"text": "Reading aloud"
+},
+{
+"key": "composer.themeSuggestions",
+"text": "Desktop theme suggestions"
+},
+{
+"key": "composer.noMatchingThemes",
+"text": "No matching themes."
+},
+{
+"key": "composer.themeTryPre",
+"text": "Try "
+},
+{
+"key": "composer.themeTryPost",
+"text": "."
+},
+{
+"key": "composer.attachLabel",
+"text": "Attach"
+},
+{
+"key": "composer.files",
+"text": "Files…"
+},
+{
+"key": "composer.folder",
+"text": "Folder…"
+},
+{
+"key": "composer.images",
+"text": "Images…"
+},
+{
+"key": "composer.pasteImage",
+"text": "Paste image"
+},
+{
+"key": "composer.url",
+"text": "URL…"
+},
+{
+"key": "composer.promptSnippets",
+"text": "Prompt snippets…"
+},
+{
+"key": "composer.tipPre",
+"text": "Tip: type "
+},
+{
+"key": "composer.tipPost",
+"text": " to reference files inline."
+},
+{
+"key": "composer.snippetsTitle",
+"text": "Prompt snippets"
+},
+{
+"key": "composer.snippetsDesc",
+"text": "Pick a starter prompt to drop into the composer."
+},
+{
+"key": "composer.dropFiles",
+"text": "Drop files to attach"
+},
+{
+"key": "composer.dropSession",
+"text": "Drop to link this chat"
+},
+{
+"key": "composer.mcpSuggestions.cancelTip",
+"text": "Click to cancel"
+},
+{
+"key": "composer.mcpSuggestions.addedTip",
+"text": "Connected — its tools are ready in this chat"
+},
+{
+"key": "composer.skillSuggestions.doneTip",
+"text": "The skill loads when you send"
+},
+{
+"key": "composer.githubSuggestions.label",
+"text": "Set up GitHub"
+},
+{
+"key": "composer.githubSuggestions.tip",
+"text": "GitHub works through the gh CLI skills here — click to connect your account"
+},
+{
+"key": "composer.githubSuggestions.done",
+"text": "Added /github-auth"
+},
+{
+"key": "composer.githubSuggestions.doneTip",
+"text": "Send the message and the agent walks you through GitHub sign-in"
+},
+{
+"key": "composer.repairSuggestions.workingTip",
+"text": "Click to cancel"
+},
+{
+"key": "composer.repairSuggestions.doneTip",
+"text": "Fresh credentials are live in this chat"
+},
+{
+"key": "composer.cronSuggestions.label",
+"text": "Schedule this"
+},
+{
+"key": "composer.cronSuggestions.prefix",
+"text": "Set this up as a scheduled job:"
+},
+{
+"key": "composer.cronSuggestions.done",
+"text": "Marked for scheduling"
+},
+{
+"key": "composer.cronSuggestions.doneTip",
+"text": "Send it and the agent creates the job"
+},
+{
+"key": "composer.snippets.codeReview.label",
+"text": "Code review"
+},
+{
+"key": "composer.snippets.codeReview.description",
+"text": "Audit the current change for regressions, dropped edge cases, and missing tests."
+},
+{
+"key": "composer.snippets.codeReview.text",
+"text": "Please review this for bugs, regressions, and missing tests."
+},
+{
+"key": "composer.snippets.implementationPlan.label",
+"text": "Implementation plan"
+},
+{
+"key": "composer.snippets.implementationPlan.description",
+"text": "Outline an approach before touching code so the diff stays focused."
+},
+{
+"key": "composer.snippets.implementationPlan.text",
+"text": "Please make a concise implementation plan before changing code."
+},
+{
+"key": "composer.snippets.explainThis.label",
+"text": "Explain this"
+},
+{
+"key": "composer.snippets.explainThis.description",
+"text": "Walk through how the selected code works and link to the key files."
+},
+{
+"key": "composer.snippets.explainThis.text",
+"text": "Please explain how this works and point me to the key files."
+},
+{
+"key": "statusStack.agents",
+"text": "Agents"
+},
+{
+"key": "statusStack.goalActive",
+"text": "Goal active"
+},
+{
+"key": "statusStack.goalDone",
+"text": "Goal done"
+},
+{
+"key": "statusStack.goalPaused",
+"text": "Goal paused"
+},
+{
+"key": "statusStack.goalWaiting",
+"text": "Goal waiting"
+},
+{
+"key": "statusStack.running",
+"text": "Running"
+},
+{
+"key": "statusStack.stop",
+"text": "Stop"
+},
+{
+"key": "statusStack.dismiss",
+"text": "Dismiss"
+},
+{
+"key": "statusStack.coding.title",
+"text": "Working tree"
+},
+{
+"key": "statusStack.coding.noBranch",
+"text": "No branch"
+},
+{
+"key": "statusStack.coding.detached",
+"text": "detached"
+},
+{
+"key": "statusStack.coding.clean",
+"text": "Clean"
+},
+{
+"key": "statusStack.coding.review",
+"text": "Review"
+},
+{
+"key": "statusStack.coding.close",
+"text": "Close"
+},
+{
+"key": "statusStack.coding.openChanges",
+"text": "Open changes"
+},
+{
+"key": "statusStack.coding.openFile",
+"text": "Open file"
+},
+{
+"key": "statusStack.coding.stage",
+"text": "Stage"
+},
+{
+"key": "statusStack.coding.unstage",
+"text": "Unstage"
+},
+{
+"key": "statusStack.coding.stageAll",
+"text": "Stage all"
+},
+{
+"key": "statusStack.coding.viewAsTree",
+"text": "View as tree"
+},
+{
+"key": "statusStack.coding.viewAsList",
+"text": "View as list"
+},
+{
+"key": "statusStack.coding.revert",
+"text": "Revert"
+},
+{
+"key": "statusStack.coding.revertAll",
+"text": "Revert all"
+},
+{
+"key": "statusStack.coding.revertConfirm",
+"text": "Discard changes to this file and restore it to the committed state? This cannot be undone."
+},
+{
+"key": "statusStack.coding.revertAllConfirm",
+"text": "Discard every change and restore files to the committed state? This cannot be undone."
+},
+{
+"key": "statusStack.coding.staged",
+"text": "Staged"
+},
+{
+"key": "statusStack.coding.noChanges",
+"text": "No changes"
+},
+{
+"key": "statusStack.coding.notRepo",
+"text": "Not a git repository"
+},
+{
+"key": "statusStack.coding.noDiff",
+"text": "No diff to show"
+},
+{
+"key": "statusStack.coding.scopeUncommitted",
+"text": "Uncommitted"
+},
+{
+"key": "statusStack.coding.scopeBranch",
+"text": "Branch"
+},
+{
+"key": "statusStack.coding.scopeLastTurn",
+"text": "Last turn"
+},
+{
+"key": "statusStack.coding.commit",
+"text": "Commit"
+},
+{
+"key": "statusStack.coding.commitAndPush",
+"text": "Commit & Push"
+},
+{
+"key": "statusStack.coding.generateCommitMessage",
+"text": "Generate commit message"
+},
+{
+"key": "statusStack.coding.stopGenerating",
+"text": "Stop generating"
+},
+{
+"key": "statusStack.coding.createPr",
+"text": "Create PR"
+},
+{
+"key": "statusStack.coding.openPr",
+"text": "Open PR"
+},
+{
+"key": "statusStack.coding.ghMissing",
+"text": "Install the GitHub CLI (gh) and sign in to open PRs"
+},
+{
+"key": "statusStack.coding.agentShip",
+"text": "Ask Hermes to open PR"
+},
+{
+"key": "statusStack.coding.agentShipUnavailable",
+"text": "The chat that owns these changes isn't on screen."
+},
+{
+"key": "statusStack.coding.newBranch",
+"text": "New branch"
+},
+{
+"key": "statusStack.coding.worktrees",
+"text": "Worktrees"
+},
+{
+"key": "updates.stages.idle",
+"text": "Getting ready…"
+},
+{
+"key": "updates.stages.prepare",
+"text": "Getting ready…"
+},
+{
+"key": "updates.stages.fetch",
+"text": "Downloading…"
+},
+{
+"key": "updates.stages.pull",
+"text": "Almost there…"
+},
+{
+"key": "updates.stages.pydeps",
+"text": "Finishing up…"
+},
+{
+"key": "updates.stages.update",
+"text": "Updating Hermes…"
+},
+{
+"key": "updates.stages.rebuild",
+"text": "Rebuilding the desktop app…"
+},
+{
+"key": "updates.stages.restart",
+"text": "Restarting Hermes…"
+},
+{
+"key": "updates.stages.done",
+"text": "Update complete"
+},
+{
+"key": "updates.stages.manual",
+"text": "Update from your terminal"
+},
+{
+"key": "updates.stages.guiSkew",
+"text": "Update the desktop app"
+},
+{
+"key": "updates.stages.error",
+"text": "Update paused"
+},
+{
+"key": "updates.checking",
+"text": "Looking for updates…"
+},
+{
+"key": "updates.checkFailedTitle",
+"text": "Couldn’t check for updates"
+},
+{
+"key": "updates.tryAgain",
+"text": "Try again"
+},
+{
+"key": "updates.notAvailableTitle",
+"text": "Update not available"
+},
+{
+"key": "updates.unsupportedMessage",
+"text": "This version of Hermes can’t update itself from inside the app."
+},
+{
+"key": "updates.connectionRetry",
+"text": "Check your connection and try again."
+},
+{
+"key": "updates.latestBody",
+"text": "You’re running the latest version."
+},
+{
+"key": "updates.latestBodyBackend",
+"text": "The backend is running the latest version."
+},
+{
+"key": "updates.allSetTitle",
+"text": "You’re all set"
+},
+{
+"key": "updates.availableTitle",
+"text": "New update available"
+},
+{
+"key": "updates.availableBody",
+"text": "A new version of Hermes is ready to install."
+},
+{
+"key": "updates.availableTitleBackend",
+"text": "Backend update available"
+},
+{
+"key": "updates.availableBodyBackend",
+"text": "A newer version of the connected Hermes backend is ready to install."
+},
+{
+"key": "updates.availableBodyNoChangelog",
+"text": "A newer version is ready. Release notes aren’t available for this install type."
+},
+{
+"key": "updates.updateNow",
+"text": "Update now"
+},
+{
+"key": "updates.maybeLater",
+"text": "Maybe later"
+},
+{
+"key": "updates.manualTitle",
+"text": "Update from your terminal"
+},
+{
+"key": "updates.manualBody",
+"text": "You installed Hermes from the command line, so updates run there too. Paste this into your terminal:"
+},
+{
+"key": "updates.manualPickedUp",
+"text": "Hermes will pick up the new version next time you launch it."
+},
+{
+"key": "updates.guiSkewTitle",
+"text": "Update the desktop app"
+},
+{
+"key": "updates.copy",
+"text": "Copy"
+},
+{
+"key": "updates.copied",
+"text": "Copied"
+},
+{
+"key": "updates.done",
+"text": "Done"
+},
+{
+"key": "updates.applyingClose",
+"text": "This window will close while the update runs, then Hermes reopens on its own."
+},
+{
+"key": "updates.errorTitle",
+"text": "Update didn’t finish"
+},
+{
+"key": "updates.errorBody",
+"text": "No worries — nothing was lost. You can try again now."
+},
+{
+"key": "updates.blockerTitle",
+"text": "Close local previews to update Hermes?"
+},
+{
+"key": "updates.foreignBlockerTitle",
+"text": "Close other processes to update Hermes"
+},
+{
+"key": "updates.closePreviewsAndUpdate",
+"text": "Close previews and update"
+},
+{
+"key": "updates.closePreviewsAndCheckAgain",
+"text": "Close previews and check again"
+},
+{
+"key": "updates.localPreview",
+"text": "Local preview"
+},
+{
+"key": "updates.technicalDetails",
+"text": "Technical details"
+},
+{
+"key": "updates.notNow",
+"text": "Not now"
+},
+{
+"key": "updates.clientAlsoBehindTitle",
+"text": "Desktop app is behind"
+},
+{
+"key": "updates.clientAlsoBehindAction",
+"text": "Update desktop app"
+},
+{
+"key": "updates.everythingDispatched",
+"text": "Update dispatched"
+},
+{
+"key": "updates.everythingSkipped",
+"text": "Skipped"
+},
+{
+"key": "updates.everythingRowFailed",
+"text": "Update failed"
+},
+{
+"key": "updates.everythingFanoutFailedTitle",
+"text": "Couldn’t update other instances"
+},
+{
+"key": "updates.applyStatus.preparing",
+"text": "Updating backend…"
+},
+{
+"key": "updates.applyStatus.pulling",
+"text": "Backend updating…"
+},
+{
+"key": "updates.applyStatus.restarting",
+"text": "Backend restarting to load the update…"
+},
+{
+"key": "updates.applyStatus.notAvailable",
+"text": "Update not available for this backend."
+},
+{
+"key": "updates.applyStatus.failed",
+"text": "Backend update failed."
+},
+{
+"key": "updates.applyStatus.noReturn",
+"text": "Backend didn’t come back online. The update may not have completed — check the backend host."
+},
+{
+"key": "install.stageStates.pending",
+"text": "Pending"
+},
+{
+"key": "install.stageStates.running",
+"text": "Installing"
+},
+{
+"key": "install.stageStates.succeeded",
+"text": "Done"
+},
+{
+"key": "install.stageStates.skipped",
+"text": "Skipped"
+},
+{
+"key": "install.stageStates.failed",
+"text": "Failed"
+},
+{
+"key": "install.oneTimeTitle",
+"text": "Hermes needs a one-time install"
+},
+{
+"key": "install.installCommand",
+"text": "Install command"
+},
+{
+"key": "install.copyCommand",
+"text": "Copy command"
+},
+{
+"key": "install.viewDocs",
+"text": "View install docs"
+},
+{
+"key": "install.installTo",
+"text": "Will install to"
+},
+{
+"key": "install.retryAfterRun",
+"text": "I’ve run it -- retry"
+},
+{
+"key": "install.setupChoiceTitle",
+"text": "Set up Hermes Desktop"
+},
+{
+"key": "install.connectExistingTitle",
+"text": "Connect to existing Hermes"
+},
+{
+"key": "install.connectExistingShort",
+"text": "Connect existing"
+},
+{
+"key": "install.connectExistingDesc",
+"text": "Use a remote backend with a session token or browser sign-in. No local install will start."
+},
+{
+"key": "install.installLocalTitle",
+"text": "Install Hermes locally"
+},
+{
+"key": "install.installLocalDesc",
+"text": "Download Hermes, create its Python environment, and run the backend on this computer."
+},
+{
+"key": "install.localStartUnavailable",
+"text": "Local installation could not start. Restart Hermes Desktop and try again."
+},
+{
+"key": "install.remoteSetupTitle",
+"text": "Connect to existing Hermes"
+},
+{
+"key": "install.remoteSetupDesc",
+"text": "Enter your gateway URL. Hermes Desktop will detect whether it needs a token or browser sign-in."
+},
+{
+"key": "install.remoteUrlTitle",
+"text": "Gateway URL"
+},
+{
+"key": "install.remoteUrlDesc",
+"text": "Use the base URL of the Hermes gateway, including https:// when remote."
+},
+{
+"key": "install.remoteUrlPlaceholder",
+"text": "https://gateway.example.com/hermes"
+},
+{
+"key": "install.probing",
+"text": "Detecting gateway authentication..."
+},
+{
+"key": "install.probeError",
+"text": "Could not reach that Hermes gateway."
+},
+{
+"key": "install.identityProvider",
+"text": "your identity provider"
+},
+{
+"key": "install.authTitle",
+"text": "Authentication"
+},
+{
+"key": "install.authSignedIn",
+"text": "Browser sign-in completed."
+},
+{
+"key": "install.connected",
+"text": "Connected"
+},
+{
+"key": "install.signIn",
+"text": "Sign in"
+},
+{
+"key": "install.enterUrlFirst",
+"text": "Enter a gateway URL first."
+},
+{
+"key": "install.signInIncomplete",
+"text": "The sign-in window closed before authentication completed."
+},
+{
+"key": "install.tokenTitle",
+"text": "Session token"
+},
+{
+"key": "install.tokenDesc",
+"text": "Paste the session token from the remote gateway .env file."
+},
+{
+"key": "install.pasteSessionToken",
+"text": "Paste session token"
+},
+{
+"key": "install.incompleteSignInTest",
+"text": "Sign in before testing this OAuth-gated gateway."
+}
+]

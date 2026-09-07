@@ -1,0 +1,1202 @@
+[
+{
+"key": "common.apply",
+"text": "Apply"
+},
+{
+"key": "common.back",
+"text": "Back"
+},
+{
+"key": "common.save",
+"text": "Save"
+},
+{
+"key": "common.saving",
+"text": "Saving…"
+},
+{
+"key": "common.cancel",
+"text": "Cancel"
+},
+{
+"key": "common.change",
+"text": "Change"
+},
+{
+"key": "common.choose",
+"text": "Choose"
+},
+{
+"key": "common.clear",
+"text": "Clear"
+},
+{
+"key": "common.close",
+"text": "Close"
+},
+{
+"key": "common.collapse",
+"text": "Collapse"
+},
+{
+"key": "common.confirm",
+"text": "Confirm"
+},
+{
+"key": "common.connect",
+"text": "Connect"
+},
+{
+"key": "common.connecting",
+"text": "Connecting"
+},
+{
+"key": "common.continue",
+"text": "Continue"
+},
+{
+"key": "common.copied",
+"text": "Copied"
+},
+{
+"key": "common.copy",
+"text": "Copy"
+},
+{
+"key": "common.copyFailed",
+"text": "Copy failed"
+},
+{
+"key": "common.delete",
+"text": "Delete"
+},
+{
+"key": "common.docs",
+"text": "Docs"
+},
+{
+"key": "common.done",
+"text": "Done"
+},
+{
+"key": "common.error",
+"text": "Error"
+},
+{
+"key": "common.expand",
+"text": "Expand"
+},
+{
+"key": "common.failed",
+"text": "Failed"
+},
+{
+"key": "common.formatJson",
+"text": "Format JSON"
+},
+{
+"key": "common.free",
+"text": "Free"
+},
+{
+"key": "common.loading",
+"text": "Loading…"
+},
+{
+"key": "common.notSet",
+"text": "Not set"
+},
+{
+"key": "common.refresh",
+"text": "Refresh"
+},
+{
+"key": "common.remove",
+"text": "Remove"
+},
+{
+"key": "common.replace",
+"text": "Replace"
+},
+{
+"key": "common.retry",
+"text": "Retry"
+},
+{
+"key": "common.run",
+"text": "Run"
+},
+{
+"key": "common.send",
+"text": "Send"
+},
+{
+"key": "common.set",
+"text": "Set"
+},
+{
+"key": "common.skip",
+"text": "Skip"
+},
+{
+"key": "common.update",
+"text": "Update"
+},
+{
+"key": "common.on",
+"text": "On"
+},
+{
+"key": "common.off",
+"text": "Off"
+},
+{
+"key": "fileMenu.revealFinder",
+"text": "Reveal in Finder"
+},
+{
+"key": "fileMenu.revealExplorer",
+"text": "Reveal in File Explorer"
+},
+{
+"key": "fileMenu.revealFileManager",
+"text": "Open containing folder"
+},
+{
+"key": "fileMenu.revealInSidebar",
+"text": "Reveal in filetree"
+},
+{
+"key": "fileMenu.copyPath",
+"text": "Copy path"
+},
+{
+"key": "fileMenu.copyRelativePath",
+"text": "Copy relative path"
+},
+{
+"key": "fileMenu.download",
+"text": "Download"
+},
+{
+"key": "fileMenu.downloadSaved",
+"text": "Saved"
+},
+{
+"key": "fileMenu.downloadFailed",
+"text": "Download failed"
+},
+{
+"key": "fileMenu.rename",
+"text": "Rename…"
+},
+{
+"key": "fileMenu.delete",
+"text": "Delete"
+},
+{
+"key": "fileMenu.renameTitle",
+"text": "Rename"
+},
+{
+"key": "fileMenu.renameLabel",
+"text": "New name"
+},
+{
+"key": "fileMenu.deleteBody",
+"text": "It will be moved to the Trash — you can restore it from there."
+},
+{
+"key": "fileMenu.pathCopied",
+"text": "Path copied"
+},
+{
+"key": "boot.ready",
+"text": "Hermes Desktop is ready"
+},
+{
+"key": "boot.steps.connectingGateway",
+"text": "Connecting live desktop gateway"
+},
+{
+"key": "boot.steps.loadingSettings",
+"text": "Loading Hermes settings"
+},
+{
+"key": "boot.steps.loadingSessions",
+"text": "Loading recent sessions"
+},
+{
+"key": "boot.steps.retryingRemoteBackend",
+"text": "Reconnecting to the remote Hermes backend…"
+},
+{
+"key": "boot.steps.startingDesktopConnection",
+"text": "Starting desktop connection"
+},
+{
+"key": "boot.steps.startingHermesDesktop",
+"text": "Starting Hermes Desktop…"
+},
+{
+"key": "boot.errors.backgroundExited",
+"text": "Hermes background process exited."
+},
+{
+"key": "boot.errors.backgroundExitedDuringStartup",
+"text": "Hermes background process exited during startup."
+},
+{
+"key": "boot.errors.backendStopped",
+"text": "Backend stopped"
+},
+{
+"key": "boot.errors.desktopBootFailed",
+"text": "Desktop boot failed"
+},
+{
+"key": "boot.errors.gatewayConnectionLost",
+"text": "Lost connection to the gateway"
+},
+{
+"key": "boot.errors.gatewaySignInRequired",
+"text": "Gateway sign-in required"
+},
+{
+"key": "boot.errors.ipcBridgeUnavailable",
+"text": "Desktop IPC bridge is unavailable."
+},
+{
+"key": "boot.failure.title",
+"text": "Hermes couldn't start"
+},
+{
+"key": "boot.failure.remoteTitle",
+"text": "Remote gateway sign-in required"
+},
+{
+"key": "boot.failure.retry",
+"text": "Retry"
+},
+{
+"key": "boot.failure.repairInstall",
+"text": "Repair install"
+},
+{
+"key": "boot.failure.useLocalGateway",
+"text": "Use local gateway"
+},
+{
+"key": "boot.failure.gatewaySettings",
+"text": "Gateway settings"
+},
+{
+"key": "boot.failure.back",
+"text": "Back"
+},
+{
+"key": "boot.failure.openLogs",
+"text": "Open logs"
+},
+{
+"key": "boot.failure.repairHint",
+"text": "Repair re-runs the installer and can take a few minutes on a fresh machine."
+},
+{
+"key": "boot.failure.signOutAndSignIn",
+"text": "Sign out & sign in"
+},
+{
+"key": "boot.failure.remoteFailureHint",
+"text": "Check the gateway URL and sign-in under Gateway settings, or switch to the local gateway."
+},
+{
+"key": "boot.failure.cloudDownTitle",
+"text": "Nous Cloud agent is down"
+},
+{
+"key": "boot.failure.cloudDownCheckPortal",
+"text": "Check Portal status"
+},
+{
+"key": "boot.failure.cloudDownDiscord",
+"text": "Get help on Discord"
+},
+{
+"key": "boot.failure.hideRecentLogs",
+"text": "Hide recent logs"
+},
+{
+"key": "boot.failure.showRecentLogs",
+"text": "Show recent logs"
+},
+{
+"key": "boot.failure.signedInTitle",
+"text": "Signed in"
+},
+{
+"key": "boot.failure.signedInMessage",
+"text": "Reconnecting to the remote gateway…"
+},
+{
+"key": "boot.failure.signInIncompleteTitle",
+"text": "Sign-in incomplete"
+},
+{
+"key": "boot.failure.signInIncompleteMessage",
+"text": "The login window closed before authentication finished."
+},
+{
+"key": "boot.failure.signInFailed",
+"text": "Sign-in failed"
+},
+{
+"key": "boot.failure.signInToRemoteGateway",
+"text": "Sign in to remote gateway"
+},
+{
+"key": "boot.failure.identityProvider",
+"text": "your identity provider"
+},
+{
+"key": "notifications.region",
+"text": "Notifications"
+},
+{
+"key": "notifications.hide",
+"text": "Hide"
+},
+{
+"key": "notifications.show",
+"text": "Show"
+},
+{
+"key": "notifications.clearAll",
+"text": "Clear all"
+},
+{
+"key": "notifications.dismiss",
+"text": "Dismiss notification"
+},
+{
+"key": "notifications.details",
+"text": "Details"
+},
+{
+"key": "notifications.copyDetail",
+"text": "Copy detail"
+},
+{
+"key": "notifications.copyDetailFailed",
+"text": "Could not copy notification detail"
+},
+{
+"key": "notifications.backendOutOfDateTitle",
+"text": "Backend out of date"
+},
+{
+"key": "notifications.installMethodUnsupportedTitle",
+"text": "Unsupported install method"
+},
+{
+"key": "notifications.updateHermes",
+"text": "Update Hermes"
+},
+{
+"key": "notifications.updateReadyTitle",
+"text": "Update ready"
+},
+{
+"key": "notifications.updateReadyMessageUnknown",
+"text": "A new update is available."
+},
+{
+"key": "notifications.seeWhatsNew",
+"text": "See what's new"
+},
+{
+"key": "notifications.mcp.needsAuthTitle",
+"text": "MCP server needs re-authentication"
+},
+{
+"key": "notifications.mcp.errorTitle",
+"text": "MCP server unreachable"
+},
+{
+"key": "notifications.mcp.signIn",
+"text": "Sign in"
+},
+{
+"key": "notifications.mcp.view",
+"text": "View"
+},
+{
+"key": "notifications.errors.elevenLabsNeedsKey",
+"text": "ElevenLabs STT needs ELEVENLABS_API_KEY."
+},
+{
+"key": "notifications.errors.elevenLabsRejectedKey",
+"text": "ElevenLabs rejected the API key (401)."
+},
+{
+"key": "notifications.errors.diskFull",
+"text": "Disk full — free some space, then try again."
+},
+{
+"key": "notifications.errors.gatewayAuthFailed",
+"text": "Gateway authentication failed — check your API_SERVER_KEY."
+},
+{
+"key": "notifications.errors.microphonePermission",
+"text": "Microphone permission was denied."
+},
+{
+"key": "notifications.errors.openaiRejectedApiKey",
+"text": "OpenAI rejected the API key."
+},
+{
+"key": "notifications.errors.openaiTtsNeedsKey",
+"text": "OpenAI TTS needs VOICE_TOOLS_OPENAI_KEY or OPENAI_API_KEY."
+},
+{
+"key": "notifications.voice.configureSpeechToText",
+"text": "Configure speech-to-text to use voice mode."
+},
+{
+"key": "notifications.voice.couldNotStartSession",
+"text": "Could not start voice session"
+},
+{
+"key": "notifications.voice.microphoneAccessDenied",
+"text": "Microphone access denied."
+},
+{
+"key": "notifications.voice.microphoneConstraintsUnsupported",
+"text": "Microphone constraints are not supported by this device."
+},
+{
+"key": "notifications.voice.microphoneFailed",
+"text": "Microphone failed"
+},
+{
+"key": "notifications.voice.microphoneInUse",
+"text": "Microphone is already in use by another app."
+},
+{
+"key": "notifications.voice.microphonePermissionDenied",
+"text": "Microphone permission was denied."
+},
+{
+"key": "notifications.voice.microphoneStartFailed",
+"text": "Could not start microphone recording."
+},
+{
+"key": "notifications.voice.microphoneUnsupported",
+"text": "This runtime does not support microphone recording."
+},
+{
+"key": "notifications.voice.noMicrophone",
+"text": "No microphone was found."
+},
+{
+"key": "notifications.voice.noSpeechDetected",
+"text": "No speech detected"
+},
+{
+"key": "notifications.voice.playbackFailed",
+"text": "Voice playback failed"
+},
+{
+"key": "notifications.voice.recordingFailed",
+"text": "Voice recording failed"
+},
+{
+"key": "notifications.voice.transcriptionFailed",
+"text": "Voice transcription failed"
+},
+{
+"key": "notifications.voice.transcriptionUnavailable",
+"text": "Voice transcription is not available yet."
+},
+{
+"key": "notifications.voice.tryRecordingAgain",
+"text": "Try recording again."
+},
+{
+"key": "notifications.voice.unavailable",
+"text": "Voice unavailable"
+},
+{
+"key": "notifications.native.approvalTitle",
+"text": "Approval needed"
+},
+{
+"key": "notifications.native.approveAction",
+"text": "Approve"
+},
+{
+"key": "notifications.native.rejectAction",
+"text": "Reject"
+},
+{
+"key": "notifications.native.inputTitle",
+"text": "Input needed"
+},
+{
+"key": "notifications.native.inputBody",
+"text": "Hermes is waiting for your response."
+},
+{
+"key": "notifications.native.turnDoneTitle",
+"text": "Hermes finished"
+},
+{
+"key": "notifications.native.turnDoneBody",
+"text": ""
+},
+{
+"key": "notifications.native.turnErrorTitle",
+"text": "Turn failed"
+},
+{
+"key": "notifications.native.backgroundDoneTitle",
+"text": "Background task finished"
+},
+{
+"key": "notifications.native.backgroundFailedTitle",
+"text": "Background task failed"
+},
+{
+"key": "notifications.native.creditsTitle",
+"text": "Credits"
+},
+{
+"key": "billingBlock.titleNous",
+"text": "Out of Nous credits"
+},
+{
+"key": "billingBlock.fallbackMessage",
+"text": "Your account is out of credits. Add credits to keep going."
+},
+{
+"key": "billingBlock.openBilling",
+"text": "Open billing"
+},
+{
+"key": "billingBlock.addCredits",
+"text": "Add credits"
+},
+{
+"key": "billingBlock.dismiss",
+"text": "Dismiss"
+},
+{
+"key": "sendDiagnostics.title",
+"text": "Send diagnostics to Nous"
+},
+{
+"key": "sendDiagnostics.upload",
+"text": "Upload"
+},
+{
+"key": "sendDiagnostics.uploading",
+"text": "Uploading…"
+},
+{
+"key": "sendDiagnostics.cancel",
+"text": "Cancel"
+},
+{
+"key": "sendDiagnostics.close",
+"text": "Close"
+},
+{
+"key": "sendDiagnostics.copyLink",
+"text": "Copy link"
+},
+{
+"key": "sendDiagnostics.doneTitle",
+"text": "Diagnostics sent"
+},
+{
+"key": "sendDiagnostics.failedTitle",
+"text": "Upload failed"
+},
+{
+"key": "sendDiagnostics.handoffLead",
+"text": "Pick up the discussion in:"
+},
+{
+"key": "sendDiagnostics.links.github",
+"text": "GitHub Issues"
+},
+{
+"key": "sendDiagnostics.links.portal",
+"text": "Nous Portal Support"
+},
+{
+"key": "sendDiagnostics.links.discord",
+"text": "Discord"
+},
+{
+"key": "titlebar.hideSidebar",
+"text": "Hide sidebar"
+},
+{
+"key": "titlebar.showSidebar",
+"text": "Show sidebar"
+},
+{
+"key": "titlebar.search",
+"text": "Search"
+},
+{
+"key": "titlebar.searchTitle",
+"text": "Search sessions, views, and actions"
+},
+{
+"key": "titlebar.swapSidebarSides",
+"text": "Swap sidebar sides"
+},
+{
+"key": "titlebar.hideRightSidebar",
+"text": "Hide right sidebar"
+},
+{
+"key": "titlebar.showRightSidebar",
+"text": "Show right sidebar"
+},
+{
+"key": "titlebar.muteHaptics",
+"text": "Mute haptics"
+},
+{
+"key": "titlebar.unmuteHaptics",
+"text": "Unmute haptics"
+},
+{
+"key": "titlebar.openSettings",
+"text": "Open settings"
+},
+{
+"key": "titlebar.openStarmap",
+"text": "Open memory graph"
+},
+{
+"key": "titlebar.enterHud",
+"text": "HUD mode"
+},
+{
+"key": "titlebar.exitHud",
+"text": "Exit HUD mode"
+},
+{
+"key": "titlebar.resetHudLayout",
+"text": "Reset HUD size and position"
+},
+{
+"key": "titlebar.layoutEditor",
+"text": "Layout editor"
+},
+{
+"key": "keybinds.title",
+"text": "Keyboard shortcuts"
+},
+{
+"key": "keybinds.search",
+"text": "Search shortcuts…"
+},
+{
+"key": "keybinds.rebind",
+"text": "Rebind"
+},
+{
+"key": "keybinds.reset",
+"text": "Reset to default"
+},
+{
+"key": "keybinds.resetAll",
+"text": "Reset all"
+},
+{
+"key": "keybinds.pressKey",
+"text": "Press a key…"
+},
+{
+"key": "keybinds.set",
+"text": "set"
+},
+{
+"key": "keybinds.categories.composer",
+"text": "Composer"
+},
+{
+"key": "keybinds.categories.profiles",
+"text": "Profiles"
+},
+{
+"key": "keybinds.categories.session",
+"text": "Session"
+},
+{
+"key": "keybinds.categories.navigation",
+"text": "Navigation"
+},
+{
+"key": "keybinds.categories.view",
+"text": "View"
+},
+{
+"key": "findInPage.next",
+"text": "Next match"
+},
+{
+"key": "findInPage.previous",
+"text": "Previous match"
+},
+{
+"key": "language.label",
+"text": "Language"
+},
+{
+"key": "language.description",
+"text": "Choose the language for the desktop interface."
+},
+{
+"key": "language.saving",
+"text": "Saving language…"
+},
+{
+"key": "language.saveError",
+"text": "Language update failed"
+},
+{
+"key": "language.switchTo",
+"text": "Switch language"
+},
+{
+"key": "language.searchPlaceholder",
+"text": "Search languages…"
+},
+{
+"key": "language.noResults",
+"text": "No languages found"
+},
+{
+"key": "settings.closeSettings",
+"text": "Close settings"
+},
+{
+"key": "settings.exportConfig",
+"text": "Export config"
+},
+{
+"key": "settings.importConfig",
+"text": "Import config"
+},
+{
+"key": "settings.resetToDefaults",
+"text": "Reset to defaults"
+},
+{
+"key": "settings.resetConfirm",
+"text": "Reset all settings to Hermes defaults?"
+},
+{
+"key": "settings.exportFailed",
+"text": "Export failed"
+},
+{
+"key": "settings.resetFailed",
+"text": "Reset failed"
+},
+{
+"key": "settings.nav.providers",
+"text": "Providers"
+},
+{
+"key": "settings.nav.providerAccounts",
+"text": "Accounts"
+},
+{
+"key": "settings.nav.providerApiKeys",
+"text": "API keys"
+},
+{
+"key": "settings.nav.providerCustomEndpoints",
+"text": "Custom Endpoints"
+},
+{
+"key": "settings.nav.gateway",
+"text": "Gateways"
+},
+{
+"key": "settings.nav.apiKeys",
+"text": "Tools & Keys"
+},
+{
+"key": "settings.nav.keybinds",
+"text": "Keyboard Shortcuts"
+},
+{
+"key": "settings.nav.keysTools",
+"text": "Tools"
+},
+{
+"key": "settings.nav.keysSettings",
+"text": "Settings"
+},
+{
+"key": "settings.nav.mcp",
+"text": "MCP"
+},
+{
+"key": "settings.nav.archivedChats",
+"text": "Archived Chats"
+},
+{
+"key": "settings.nav.about",
+"text": "About"
+},
+{
+"key": "settings.nav.billing",
+"text": "Billing"
+},
+{
+"key": "settings.nav.notifications",
+"text": "Notifications"
+},
+{
+"key": "settings.nav.plugins",
+"text": "Plugins"
+},
+{
+"key": "settings.plugins.title",
+"text": "Desktop plugins"
+},
+{
+"key": "settings.plugins.blurb",
+"text": "Bundled or dropped into the desktop-plugins folder. Disable to unload live."
+},
+{
+"key": "settings.plugins.openFolder",
+"text": "Open plugins folder"
+},
+{
+"key": "settings.plugins.rescan",
+"text": "Rescan"
+},
+{
+"key": "settings.plugins.reveal",
+"text": "Reveal in file manager"
+},
+{
+"key": "settings.plugins.enable",
+"text": "Enable"
+},
+{
+"key": "settings.plugins.disable",
+"text": "Disable"
+},
+{
+"key": "settings.plugins.failed",
+"text": "failed"
+},
+{
+"key": "settings.plugins.empty",
+"text": "No desktop plugins installed yet."
+},
+{
+"key": "settings.plugins.agent.title",
+"text": "Agent plugins"
+},
+{
+"key": "settings.plugins.agent.appliesTo",
+"text": "Applies to:"
+},
+{
+"key": "settings.plugins.agent.empty",
+"text": "No agent plugins installed yet."
+},
+{
+"key": "settings.plugins.agent.loadFailed",
+"text": "Could not load agent plugins"
+},
+{
+"key": "settings.plugins.agent.portable",
+"text": "portable"
+},
+{
+"key": "settings.plugins.agent.search",
+"text": "Search plugins…"
+},
+{
+"key": "settings.plugins.agent.noMatches",
+"text": "No plugins match your search."
+},
+{
+"key": "settings.plugins.agent.updateBackendToManage",
+"text": "Update the Hermes backend to manage this plugin from Desktop."
+},
+{
+"key": "settings.plugins.installModal.title",
+"text": "Install plugin"
+},
+{
+"key": "settings.plugins.installModal.description",
+"text": "Review what this repository contains before installing anything."
+},
+{
+"key": "settings.plugins.installModal.repoLabel",
+"text": "Repository"
+},
+{
+"key": "settings.plugins.installModal.includesHeading",
+"text": "This package includes"
+},
+{
+"key": "settings.plugins.installModal.agentLabel",
+"text": "Agent plugin"
+},
+{
+"key": "settings.plugins.installModal.desktopLabel",
+"text": "Desktop UI"
+},
+{
+"key": "settings.plugins.installModal.desktopTarget",
+"text": "Installs into this app's local desktop-plugins folder"
+},
+{
+"key": "settings.plugins.installModal.desktopOnlyNote",
+"text": "Desktop-only packages do not install a backend agent plugin."
+},
+{
+"key": "settings.plugins.installModal.insecureWarning",
+"text": "This URL uses an insecure or local scheme. Prefer https:// or git@ for production installs."
+},
+{
+"key": "settings.plugins.installModal.securityHeading",
+"text": "Before you install"
+},
+{
+"key": "settings.plugins.installModal.sourceHeading",
+"text": "Source code"
+},
+{
+"key": "settings.plugins.installModal.viewRepository",
+"text": "View repository"
+},
+{
+"key": "settings.plugins.installModal.viewPluginFiles",
+"text": "View plugin files"
+},
+{
+"key": "settings.plugins.installModal.gitCloneLabel",
+"text": "Git clone URL"
+},
+{
+"key": "settings.plugins.installModal.enableAgent",
+"text": "Enable agent plugin after install"
+},
+{
+"key": "settings.plugins.installModal.forceReinstall",
+"text": "Force reinstall (replace if already installed)"
+},
+{
+"key": "settings.plugins.installModal.install",
+"text": "Install"
+},
+{
+"key": "settings.plugins.installModal.installing",
+"text": "Installing…"
+},
+{
+"key": "settings.plugins.installModal.probing",
+"text": "Inspecting repository…"
+},
+{
+"key": "settings.plugins.installModal.probeUnavailable",
+"text": "Plugin inspection is unavailable in this environment."
+},
+{
+"key": "settings.plugins.installModal.desktopUnavailable",
+"text": "Desktop plugin install is unavailable in this environment."
+},
+{
+"key": "settings.plugins.installModal.selectComponent",
+"text": "Select at least one component to install."
+},
+{
+"key": "settings.plugins.installModal.agentFailed",
+"text": "Agent plugin install failed"
+},
+{
+"key": "settings.plugins.installModal.desktopFailed",
+"text": "Desktop plugin install failed"
+},
+{
+"key": "settings.notifications.title",
+"text": "Notifications"
+},
+{
+"key": "settings.notifications.intro",
+"text": "OS notifications (not in-app toasts). Per device."
+},
+{
+"key": "settings.notifications.enableAll",
+"text": "Enable notifications"
+},
+{
+"key": "settings.notifications.enableAllDesc",
+"text": "Off silences every notification below."
+},
+{
+"key": "settings.notifications.focusedHint",
+"text": "Completion alerts only fire while Hermes is in the background."
+},
+{
+"key": "settings.notifications.kinds.approval.label",
+"text": "Approval needed"
+},
+{
+"key": "settings.notifications.kinds.approval.description",
+"text": "A command is waiting for you to approve or reject it."
+},
+{
+"key": "settings.notifications.kinds.input.label",
+"text": "Input needed"
+},
+{
+"key": "settings.notifications.kinds.input.description",
+"text": "Hermes asked a question or needs a password or secret."
+},
+{
+"key": "settings.notifications.kinds.turnDone.label",
+"text": "Response ready"
+},
+{
+"key": "settings.notifications.kinds.turnDone.description",
+"text": "A turn finished while Hermes was in the background."
+},
+{
+"key": "settings.notifications.kinds.turnError.label",
+"text": "Turn failed"
+},
+{
+"key": "settings.notifications.kinds.turnError.description",
+"text": "Background turn errors."
+},
+{
+"key": "settings.notifications.kinds.backgroundDone.label",
+"text": "Background task finished"
+},
+{
+"key": "settings.notifications.kinds.backgroundDone.description",
+"text": "A backgrounded terminal command completed."
+},
+{
+"key": "settings.notifications.kinds.credits.label",
+"text": "Credit alerts"
+},
+{
+"key": "settings.notifications.kinds.credits.description",
+"text": "Credit access is paused or restored."
+},
+{
+"key": "settings.notifications.kinds.plugin.label",
+"text": "Plugin notifications"
+},
+{
+"key": "settings.notifications.kinds.plugin.description",
+"text": "A desktop plugin sent a notification while Hermes was in the background."
+},
+{
+"key": "settings.notifications.test",
+"text": "Send test notification"
+},
+{
+"key": "settings.notifications.testTitle",
+"text": "Hermes"
+},
+{
+"key": "settings.notifications.testBody",
+"text": "Notifications are working."
+},
+{
+"key": "settings.notifications.testSent",
+"text": "Test sent. If nothing appears, check your OS notification permissions and Focus/Do Not Disturb."
+},
+{
+"key": "settings.notifications.testUnsupported",
+"text": "This system does not support native notifications."
+},
+{
+"key": "settings.notifications.completionSoundTitle",
+"text": "Completion Sound"
+},
+{
+"key": "settings.notifications.completionSoundDesc",
+"text": "Plays when an agent turn finishes. Pick a preset and preview it here."
+},
+{
+"key": "settings.notifications.completionSoundPreview",
+"text": "Preview"
+},
+{
+"key": "settings.sections.model",
+"text": "Model"
+},
+{
+"key": "settings.sections.chat",
+"text": "Chat"
+},
+{
+"key": "settings.sections.appearance",
+"text": "Appearance"
+},
+{
+"key": "settings.sections.workspace",
+"text": "Workspace"
+},
+{
+"key": "settings.sections.safety",
+"text": "Safety"
+},
+{
+"key": "settings.sections.memory",
+"text": "Memory & Context"
+},
+{
+"key": "settings.sections.voice",
+"text": "Voice"
+},
+{
+"key": "settings.sections.advanced",
+"text": "Advanced"
+},
+{
+"key": "settings.searchPlaceholder.about",
+"text": "About Hermes Desktop"
+},
+{
+"key": "settings.searchPlaceholder.config",
+"text": "Search settings..."
+},
+{
+"key": "settings.searchPlaceholder.gateway",
+"text": "Gateway connection..."
+},
+{
+"key": "settings.searchPlaceholder.keys",
+"text": "Search API keys..."
+},
+{
+"key": "settings.searchPlaceholder.mcp",
+"text": "Search MCP servers..."
+},
+{
+"key": "settings.searchPlaceholder.sessions",
+"text": "Search archived sessions..."
+}
+]

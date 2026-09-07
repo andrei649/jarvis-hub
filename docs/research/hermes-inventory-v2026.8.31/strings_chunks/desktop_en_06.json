@@ -1,0 +1,1202 @@
+[
+{
+"key": "install.incompleteTokenTest",
+"text": "Enter a session token before testing this gateway."
+},
+{
+"key": "install.testConnection",
+"text": "Test connection"
+},
+{
+"key": "install.applyRemote",
+"text": "Apply and reconnect"
+},
+{
+"key": "install.backToSetup",
+"text": "Back"
+},
+{
+"key": "install.failedTitle",
+"text": "Installation failed"
+},
+{
+"key": "install.settingUpTitle",
+"text": "Setting up Hermes Agent"
+},
+{
+"key": "install.finishingTitle",
+"text": "Finishing up"
+},
+{
+"key": "install.fetchingManifest",
+"text": "Fetching installer manifest..."
+},
+{
+"key": "install.error",
+"text": "Error"
+},
+{
+"key": "install.hideOutput",
+"text": "Hide installer output"
+},
+{
+"key": "install.showOutput",
+"text": "Show installer output"
+},
+{
+"key": "install.noOutput",
+"text": "No output yet."
+},
+{
+"key": "install.cancelling",
+"text": "Cancelling..."
+},
+{
+"key": "install.cancelInstall",
+"text": "Cancel install"
+},
+{
+"key": "install.transcriptSaved",
+"text": "Full transcript saved to"
+},
+{
+"key": "install.copiedOutput",
+"text": "Copied!"
+},
+{
+"key": "install.copyOutput",
+"text": "Copy output"
+},
+{
+"key": "install.reloadRetry",
+"text": "Reload and retry"
+},
+{
+"key": "onboarding.headerTitle",
+"text": "Let's get you setup with Hermes Agent"
+},
+{
+"key": "onboarding.headerDesc",
+"text": "Connect a model provider to start chatting. Most options take one click."
+},
+{
+"key": "onboarding.preparingInstall",
+"text": "Hermes is finishing install. This usually takes under a minute on first run."
+},
+{
+"key": "onboarding.starting",
+"text": "Starting Hermes…"
+},
+{
+"key": "onboarding.lookingUpProviders",
+"text": "Looking up providers..."
+},
+{
+"key": "onboarding.collapse",
+"text": "Collapse"
+},
+{
+"key": "onboarding.otherProviders",
+"text": "Other providers"
+},
+{
+"key": "onboarding.haveApiKey",
+"text": "I have an API key"
+},
+{
+"key": "onboarding.chooseLater",
+"text": "I'll choose a provider later"
+},
+{
+"key": "onboarding.recommended",
+"text": "Recommended"
+},
+{
+"key": "onboarding.connected",
+"text": "Connected"
+},
+{
+"key": "onboarding.featuredPitch",
+"text": "One subscription, 300+ frontier models — the recommended way to run Hermes"
+},
+{
+"key": "onboarding.fireworksPitch",
+"text": "Direct model API — Fireworks-hosted frontier models"
+},
+{
+"key": "onboarding.openRouterPitch",
+"text": "One key, hundreds of models — a solid default"
+},
+{
+"key": "onboarding.apiKeyOptions.fireworks.short",
+"text": "direct model API"
+},
+{
+"key": "onboarding.apiKeyOptions.fireworks.description",
+"text": "Direct access to models hosted by Fireworks AI."
+},
+{
+"key": "onboarding.apiKeyOptions.openrouter.short",
+"text": "one key, many models"
+},
+{
+"key": "onboarding.apiKeyOptions.openrouter.description",
+"text": "Hosts hundreds of models behind a single key. Good default for new installs."
+},
+{
+"key": "onboarding.apiKeyOptions.local.short",
+"text": "self-hosted"
+},
+{
+"key": "onboarding.apiKeyOptions.local.description",
+"text": "Point Hermes at a local or self-hosted OpenAI-compatible endpoint (vLLM, llama.cpp, Ollama, etc)."
+},
+{
+"key": "onboarding.backToSignIn",
+"text": "Back to sign in"
+},
+{
+"key": "onboarding.getKey",
+"text": "Get a key"
+},
+{
+"key": "onboarding.replaceCurrent",
+"text": "Replace current value"
+},
+{
+"key": "onboarding.pasteApiKey",
+"text": "Paste API key"
+},
+{
+"key": "onboarding.localApiKeyPlaceholder",
+"text": "API key (optional — only if your endpoint requires one)"
+},
+{
+"key": "onboarding.couldNotSave",
+"text": "Could not save credential."
+},
+{
+"key": "onboarding.connecting",
+"text": "Connecting"
+},
+{
+"key": "onboarding.update",
+"text": "Update"
+},
+{
+"key": "onboarding.flowSubtitles.pkce",
+"text": "Opens your browser to sign in, then continues here"
+},
+{
+"key": "onboarding.flowSubtitles.device_code",
+"text": "Opens a verification page in your browser — Hermes connects automatically"
+},
+{
+"key": "onboarding.flowSubtitles.external",
+"text": "Sign in once in your terminal, then come back to chat"
+},
+{
+"key": "onboarding.signInFailed",
+"text": "Sign-in failed. Try again."
+},
+{
+"key": "onboarding.pickDifferentProvider",
+"text": "Pick a different provider"
+},
+{
+"key": "onboarding.authorizeThere",
+"text": "Authorize Hermes there."
+},
+{
+"key": "onboarding.copyAuthCode",
+"text": "Copy the authorization code and paste it below."
+},
+{
+"key": "onboarding.pasteAuthCode",
+"text": "Paste authorization code"
+},
+{
+"key": "onboarding.reopenAuthPage",
+"text": "Re-open authorization page"
+},
+{
+"key": "onboarding.reopenSignInPage",
+"text": "Re-open sign-in page"
+},
+{
+"key": "onboarding.waitingAuthorize",
+"text": "Waiting for you to authorize..."
+},
+{
+"key": "onboarding.signedIn",
+"text": "I've signed in"
+},
+{
+"key": "onboarding.reopenVerification",
+"text": "Re-open verification page"
+},
+{
+"key": "onboarding.copy",
+"text": "Copy"
+},
+{
+"key": "onboarding.defaultModel",
+"text": "Default model"
+},
+{
+"key": "onboarding.freeTier",
+"text": "Free tier"
+},
+{
+"key": "onboarding.pro",
+"text": "Pro"
+},
+{
+"key": "onboarding.free",
+"text": "Free"
+},
+{
+"key": "onboarding.change",
+"text": "Change"
+},
+{
+"key": "onboarding.startChatting",
+"text": "Begin"
+},
+{
+"key": "modelPicker.title",
+"text": "Switch model"
+},
+{
+"key": "modelPicker.current",
+"text": "current:"
+},
+{
+"key": "modelPicker.unknown",
+"text": "(unknown)"
+},
+{
+"key": "modelPicker.search",
+"text": "Filter providers and models..."
+},
+{
+"key": "modelPicker.noModels",
+"text": "No models found."
+},
+{
+"key": "modelPicker.addProvider",
+"text": "Add provider"
+},
+{
+"key": "modelPicker.loadFailed",
+"text": "Could not load models"
+},
+{
+"key": "modelPicker.noAuthenticatedProviders",
+"text": "No authenticated providers."
+},
+{
+"key": "modelPicker.pro",
+"text": "Pro"
+},
+{
+"key": "modelPicker.proNeedsSubscription",
+"text": "Pro models need a paid Nous subscription."
+},
+{
+"key": "modelPicker.free",
+"text": "Free"
+},
+{
+"key": "modelPicker.freeTier",
+"text": "Free tier"
+},
+{
+"key": "modelPicker.priceTitle",
+"text": "Input / Output price per million tokens"
+},
+{
+"key": "modelPicker.wasPrice",
+"text": "was"
+},
+{
+"key": "modelVisibility.title",
+"text": "Models"
+},
+{
+"key": "modelVisibility.search",
+"text": "Search models"
+},
+{
+"key": "modelVisibility.noAuthenticatedProviders",
+"text": "No authenticated providers."
+},
+{
+"key": "modelVisibility.addProvider",
+"text": "Add provider…"
+},
+{
+"key": "shell.windowControls",
+"text": "Window controls"
+},
+{
+"key": "shell.paneControls",
+"text": "Pane controls"
+},
+{
+"key": "shell.appControls",
+"text": "App controls"
+},
+{
+"key": "shell.modelMenu.search",
+"text": "Search models"
+},
+{
+"key": "shell.modelMenu.noModels",
+"text": "No models found"
+},
+{
+"key": "shell.modelMenu.editModels",
+"text": "Edit models…"
+},
+{
+"key": "shell.modelMenu.refreshModels",
+"text": "Refresh models"
+},
+{
+"key": "shell.modelMenu.fast",
+"text": "Fast"
+},
+{
+"key": "shell.modelOptions.noOptions",
+"text": "No options for this model"
+},
+{
+"key": "shell.modelOptions.options",
+"text": "Options"
+},
+{
+"key": "shell.modelOptions.thinking",
+"text": "Thinking"
+},
+{
+"key": "shell.modelOptions.fast",
+"text": "Fast"
+},
+{
+"key": "shell.modelOptions.effort",
+"text": "Effort"
+},
+{
+"key": "shell.modelOptions.minimal",
+"text": "Minimal"
+},
+{
+"key": "shell.modelOptions.low",
+"text": "Low"
+},
+{
+"key": "shell.modelOptions.medium",
+"text": "Medium"
+},
+{
+"key": "shell.modelOptions.high",
+"text": "High"
+},
+{
+"key": "shell.modelOptions.xhigh",
+"text": "Extra High"
+},
+{
+"key": "shell.modelOptions.max",
+"text": "Max"
+},
+{
+"key": "shell.modelOptions.ultra",
+"text": "Ultra"
+},
+{
+"key": "shell.modelOptions.updateFailed",
+"text": "Model option update failed"
+},
+{
+"key": "shell.modelOptions.fastFailed",
+"text": "Fast mode update failed"
+},
+{
+"key": "shell.gatewayMenu.gateway",
+"text": "Gateway"
+},
+{
+"key": "shell.gatewayMenu.connected",
+"text": "Connected"
+},
+{
+"key": "shell.gatewayMenu.connecting",
+"text": "Connecting"
+},
+{
+"key": "shell.gatewayMenu.offline",
+"text": "Offline"
+},
+{
+"key": "shell.gatewayMenu.inferenceReady",
+"text": "Inference ready"
+},
+{
+"key": "shell.gatewayMenu.inferenceNotReady",
+"text": "Inference not ready"
+},
+{
+"key": "shell.gatewayMenu.checkingInference",
+"text": "Checking inference"
+},
+{
+"key": "shell.gatewayMenu.disconnected",
+"text": "Disconnected"
+},
+{
+"key": "shell.gatewayMenu.reconnectGateway",
+"text": "Reconnect gateway"
+},
+{
+"key": "shell.gatewayMenu.openSystem",
+"text": "Open system panel"
+},
+{
+"key": "shell.gatewayMenu.recentActivity",
+"text": "Recent activity"
+},
+{
+"key": "shell.gatewayMenu.viewAllLogs",
+"text": "View all logs →"
+},
+{
+"key": "shell.gatewayMenu.messagingPlatforms",
+"text": "Messaging platforms"
+},
+{
+"key": "shell.approvalMode.title",
+"text": "Approval mode"
+},
+{
+"key": "shell.approvalMode.manual",
+"text": "Manual"
+},
+{
+"key": "shell.approvalMode.manualDescription",
+"text": "Ask before actions that require approval"
+},
+{
+"key": "shell.approvalMode.smart",
+"text": "Smart"
+},
+{
+"key": "shell.approvalMode.smartDescription",
+"text": "Automatically assess actions and ask when needed"
+},
+{
+"key": "shell.approvalMode.off",
+"text": "Off"
+},
+{
+"key": "shell.approvalMode.offDescription",
+"text": "Run without approval prompts"
+},
+{
+"key": "shell.statusbar.unknown",
+"text": "unknown"
+},
+{
+"key": "shell.statusbar.restart",
+"text": "restart"
+},
+{
+"key": "shell.statusbar.update",
+"text": "update"
+},
+{
+"key": "shell.statusbar.updateInProgress",
+"text": "Update in progress"
+},
+{
+"key": "shell.statusbar.closeCommandCenter",
+"text": "Close Command Center"
+},
+{
+"key": "shell.statusbar.openCommandCenter",
+"text": "Open Command Center"
+},
+{
+"key": "shell.statusbar.showTerminal",
+"text": "Show terminal"
+},
+{
+"key": "shell.statusbar.hideTerminal",
+"text": "Hide terminal"
+},
+{
+"key": "shell.statusbar.gateway",
+"text": "Gateway"
+},
+{
+"key": "shell.statusbar.gatewayReady",
+"text": "ready"
+},
+{
+"key": "shell.statusbar.gatewayNeedsSetup",
+"text": "needs setup"
+},
+{
+"key": "shell.statusbar.gatewayUnavailable",
+"text": "inference unavailable"
+},
+{
+"key": "shell.statusbar.gatewayChecking",
+"text": "checking"
+},
+{
+"key": "shell.statusbar.gatewayConnecting",
+"text": "connecting"
+},
+{
+"key": "shell.statusbar.gatewayOffline",
+"text": "offline"
+},
+{
+"key": "shell.statusbar.gatewayRestarting",
+"text": "restarting…"
+},
+{
+"key": "shell.statusbar.gatewayTitle",
+"text": "Gateway"
+},
+{
+"key": "shell.statusbar.customizeTitle",
+"text": "Show in status bar"
+},
+{
+"key": "shell.statusbar.hideStatusbar",
+"text": "Hide status bar"
+},
+{
+"key": "shell.statusbar.resetStatusbar",
+"text": "Reset to defaults"
+},
+{
+"key": "shell.statusbar.toggleApprovalMode",
+"text": "Approvals"
+},
+{
+"key": "shell.statusbar.toggleBackendVersion",
+"text": "Backend version"
+},
+{
+"key": "shell.statusbar.toggleCommandCenter",
+"text": "Command Center"
+},
+{
+"key": "shell.statusbar.toggleContextUsage",
+"text": "Context meter"
+},
+{
+"key": "shell.statusbar.toggleRunningTimer",
+"text": "Turn timer"
+},
+{
+"key": "shell.statusbar.toggleSessionTimer",
+"text": "Session timer"
+},
+{
+"key": "shell.statusbar.toggleTerminal",
+"text": "Terminal"
+},
+{
+"key": "shell.statusbar.toggleVersion",
+"text": "Version & updates"
+},
+{
+"key": "shell.statusbar.toggleWorkspace",
+"text": "Workspace"
+},
+{
+"key": "shell.statusbar.agents",
+"text": "Agents"
+},
+{
+"key": "shell.statusbar.closeAgents",
+"text": "Close agents"
+},
+{
+"key": "shell.statusbar.openAgents",
+"text": "Open agents"
+},
+{
+"key": "shell.statusbar.cron",
+"text": "Cron"
+},
+{
+"key": "shell.statusbar.openCron",
+"text": "Open cron jobs"
+},
+{
+"key": "shell.statusbar.webhooks",
+"text": "Webhooks"
+},
+{
+"key": "shell.statusbar.openWebhooks",
+"text": "Open webhooks"
+},
+{
+"key": "shell.statusbar.starmap",
+"text": "Memory Graph"
+},
+{
+"key": "shell.statusbar.openStarmap",
+"text": "Open memory graph"
+},
+{
+"key": "shell.statusbar.turnRunning",
+"text": "Running"
+},
+{
+"key": "shell.statusbar.contextUsage",
+"text": "Context usage"
+},
+{
+"key": "shell.statusbar.contextUsagePanel.categories.conversation",
+"text": "Conversation"
+},
+{
+"key": "shell.statusbar.contextUsagePanel.categories.mcp",
+"text": "MCP"
+},
+{
+"key": "shell.statusbar.contextUsagePanel.categories.memory",
+"text": "Memory"
+},
+{
+"key": "shell.statusbar.contextUsagePanel.categories.rules",
+"text": "Rules"
+},
+{
+"key": "shell.statusbar.contextUsagePanel.categories.skills",
+"text": "Skills"
+},
+{
+"key": "shell.statusbar.contextUsagePanel.categories.subagent_definitions",
+"text": "Subagent definitions"
+},
+{
+"key": "shell.statusbar.contextUsagePanel.categories.system_prompt",
+"text": "System prompt"
+},
+{
+"key": "shell.statusbar.contextUsagePanel.categories.tool_definitions",
+"text": "Tool definitions"
+},
+{
+"key": "shell.statusbar.contextUsagePanel.empty",
+"text": "No context data yet"
+},
+{
+"key": "shell.statusbar.contextUsagePanel.loading",
+"text": "Loading breakdown…"
+},
+{
+"key": "shell.statusbar.contextUsagePanel.title",
+"text": "Context Usage"
+},
+{
+"key": "shell.statusbar.session",
+"text": "Session"
+},
+{
+"key": "shell.statusbar.yoloOn",
+"text": "YOLO on — auto-approving dangerous commands. Shift+click toggles globally."
+},
+{
+"key": "shell.statusbar.yoloOff",
+"text": "YOLO off. Shift+click toggles globally."
+},
+{
+"key": "shell.statusbar.modelNone",
+"text": "none"
+},
+{
+"key": "shell.statusbar.noModel",
+"text": "no model"
+},
+{
+"key": "shell.statusbar.switchModel",
+"text": "Switch model"
+},
+{
+"key": "shell.statusbar.openModelPicker",
+"text": "Open model picker"
+},
+{
+"key": "shell.statusbar.modelPinned",
+"text": "pinned by you; new chats use this instead of the Settings default"
+},
+{
+"key": "rightSidebar.aria",
+"text": "Right sidebar"
+},
+{
+"key": "rightSidebar.panelsAria",
+"text": "Right sidebar panels"
+},
+{
+"key": "rightSidebar.files",
+"text": "File system"
+},
+{
+"key": "rightSidebar.terminal",
+"text": "Terminal"
+},
+{
+"key": "rightSidebar.noFolderSelected",
+"text": "No folder selected"
+},
+{
+"key": "rightSidebar.changeCwdTitle",
+"text": "Change working directory"
+},
+{
+"key": "rightSidebar.remotePickerTitle",
+"text": "Choose remote folder"
+},
+{
+"key": "rightSidebar.remotePickerDescription",
+"text": "Browse folders on the connected backend."
+},
+{
+"key": "rightSidebar.remotePickerSelect",
+"text": "Select folder"
+},
+{
+"key": "rightSidebar.openFolder",
+"text": "Open folder"
+},
+{
+"key": "rightSidebar.refreshTree",
+"text": "Refresh tree"
+},
+{
+"key": "rightSidebar.collapseAll",
+"text": "Collapse all folders"
+},
+{
+"key": "rightSidebar.previewUnavailable",
+"text": "Preview unavailable"
+},
+{
+"key": "rightSidebar.noProjectTitle",
+"text": "No project"
+},
+{
+"key": "rightSidebar.noProjectBody",
+"text": "Open a project to browse its files and review changes."
+},
+{
+"key": "rightSidebar.noProjectOpen",
+"text": "No project open"
+},
+{
+"key": "rightSidebar.noDiffs",
+"text": "No diffs"
+},
+{
+"key": "rightSidebar.unreadableTitle",
+"text": "Unreadable"
+},
+{
+"key": "rightSidebar.emptyTitle",
+"text": "Empty"
+},
+{
+"key": "rightSidebar.emptyBody",
+"text": "This folder is empty."
+},
+{
+"key": "rightSidebar.treeErrorTitle",
+"text": "Tree error"
+},
+{
+"key": "rightSidebar.treeErrorBody",
+"text": "The file tree hit an error rendering this folder."
+},
+{
+"key": "rightSidebar.tryAgain",
+"text": "Try again"
+},
+{
+"key": "rightSidebar.loadingTree",
+"text": "Loading file tree"
+},
+{
+"key": "rightSidebar.loadingFiles",
+"text": "Loading files"
+},
+{
+"key": "rightSidebar.terminalHide",
+"text": "Hide terminal"
+},
+{
+"key": "rightSidebar.terminalsAria",
+"text": "Terminals"
+},
+{
+"key": "rightSidebar.terminalNew",
+"text": "New terminal"
+},
+{
+"key": "rightSidebar.terminalCloseOthers",
+"text": "Close others"
+},
+{
+"key": "rightSidebar.terminalCloseAll",
+"text": "Close all"
+},
+{
+"key": "rightSidebar.addToChat",
+"text": "Add to chat"
+},
+{
+"key": "preview.tab",
+"text": "Preview"
+},
+{
+"key": "preview.closePane",
+"text": "Close preview pane"
+},
+{
+"key": "preview.loading",
+"text": "Loading preview"
+},
+{
+"key": "preview.unavailable",
+"text": "Preview unavailable"
+},
+{
+"key": "preview.opening",
+"text": "Opening..."
+},
+{
+"key": "preview.hide",
+"text": "Hide"
+},
+{
+"key": "preview.openPreview",
+"text": "Open preview"
+},
+{
+"key": "preview.openInBrowser",
+"text": "Open in browser"
+},
+{
+"key": "preview.openInExternal",
+"text": "Open in external"
+},
+{
+"key": "preview.popIn",
+"text": "Pop in"
+},
+{
+"key": "preview.popOut",
+"text": "Pop out"
+},
+{
+"key": "preview.linkHint",
+"text": "⌘/Ctrl-click for preview pane"
+},
+{
+"key": "preview.sourceLineTitle",
+"text": "Click to select · shift-click to extend · drag to composer"
+},
+{
+"key": "preview.source",
+"text": "SOURCE"
+},
+{
+"key": "preview.renderedPreview",
+"text": "PREVIEW"
+},
+{
+"key": "preview.diff",
+"text": "DIFF"
+},
+{
+"key": "preview.unknownSize",
+"text": "unknown size"
+},
+{
+"key": "preview.binaryTitle",
+"text": "This looks like a binary file"
+},
+{
+"key": "preview.largeTitle",
+"text": "This file is large"
+},
+{
+"key": "preview.previewAnyway",
+"text": "Preview anyway"
+},
+{
+"key": "preview.truncated",
+"text": "Showing first 512 KB."
+},
+{
+"key": "preview.noInlineTitle",
+"text": "No inline preview"
+},
+{
+"key": "preview.edit",
+"text": "Edit"
+},
+{
+"key": "preview.editing",
+"text": "Editing"
+},
+{
+"key": "preview.unsavedChanges",
+"text": "Unsaved changes"
+},
+{
+"key": "preview.diskChangedTitle",
+"text": "File changed on disk"
+},
+{
+"key": "preview.overwrite",
+"text": "Overwrite"
+},
+{
+"key": "preview.discardReload",
+"text": "Discard & reload"
+},
+{
+"key": "preview.console.deselect",
+"text": "Deselect entry"
+},
+{
+"key": "preview.console.select",
+"text": "Select entry"
+},
+{
+"key": "preview.console.copyFailed",
+"text": "Could not copy console output"
+},
+{
+"key": "preview.console.copyEntry",
+"text": "Copy this entry"
+},
+{
+"key": "preview.console.sendEntry",
+"text": "Send this entry to chat"
+},
+{
+"key": "preview.console.resize",
+"text": "Resize preview console"
+},
+{
+"key": "preview.console.title",
+"text": "Preview Console"
+},
+{
+"key": "preview.console.sendToChat",
+"text": "Send to chat"
+},
+{
+"key": "preview.console.copySelected",
+"text": "Copy selected to clipboard"
+},
+{
+"key": "preview.console.copyAll",
+"text": "Copy all to clipboard"
+},
+{
+"key": "preview.console.copy",
+"text": "Copy"
+},
+{
+"key": "preview.console.clear",
+"text": "Clear"
+},
+{
+"key": "preview.console.empty",
+"text": "No console messages yet."
+},
+{
+"key": "preview.console.promptHeader",
+"text": "Preview console:"
+},
+{
+"key": "preview.console.sentTitle",
+"text": "Sent to chat"
+},
+{
+"key": "preview.web.appFailedToBoot",
+"text": "Preview app failed to boot"
+},
+{
+"key": "preview.web.serverNotFound",
+"text": "Server not found"
+},
+{
+"key": "preview.web.failedToLoad",
+"text": "Preview failed to load"
+},
+{
+"key": "preview.web.tryAgain",
+"text": "Try again"
+},
+{
+"key": "preview.web.restarting",
+"text": "Hermes is restarting..."
+},
+{
+"key": "preview.web.askRestart",
+"text": "Ask Hermes to restart the server"
+},
+{
+"key": "preview.web.restartingTitle",
+"text": "Restarting preview server"
+},
+{
+"key": "preview.web.restartingMessage",
+"text": "Hermes is working in the background. Watch the preview console for progress."
+},
+{
+"key": "preview.web.restartFailed",
+"text": "Server restart failed"
+},
+{
+"key": "preview.web.hideConsole",
+"text": "Hide preview console"
+},
+{
+"key": "preview.web.showConsole",
+"text": "Show preview console"
+},
+{
+"key": "preview.web.hideDevTools",
+"text": "Hide preview DevTools"
+},
+{
+"key": "preview.web.openDevTools",
+"text": "Open preview DevTools"
+},
+{
+"key": "preview.web.goBack",
+"text": "Back"
+},
+{
+"key": "preview.web.goForward",
+"text": "Forward"
+},
+{
+"key": "preview.web.reload",
+"text": "Reload page"
+},
+{
+"key": "preview.web.address",
+"text": "Address"
+},
+{
+"key": "preview.web.addressPlaceholder",
+"text": "Enter address"
+},
+{
+"key": "preview.web.blankPageBody",
+"text": "Type an address above to browse, or ask Hermes to open a page."
+},
+{
+"key": "preview.web.unknownError",
+"text": "unknown error"
+},
+{
+"key": "preview.web.restartedTitle",
+"text": "Preview server restarted"
+},
+{
+"key": "preview.web.reloadingNow",
+"text": "Reloading the preview now."
+},
+{
+"key": "preview.web.restartFailedTitle",
+"text": "Preview restart failed"
+},
+{
+"key": "preview.web.restartFailedMessage",
+"text": "Hermes could not restart the server."
+},
+{
+"key": "preview.web.workspaceReloading",
+"text": "Workspace changed, reloading preview"
+},
+{
+"key": "preview.web.unreachableDescription",
+"text": "The preview page could not be reached."
+},
+{
+"key": "preview.web.fallbackTitle",
+"text": "Preview"
+},
+{
+"key": "zones.showTabStrip",
+"text": "Show tabs"
+},
+{
+"key": "zones.hideTabStrip",
+"text": "Hide tabs"
+},
+{
+"key": "zones.lastTabKeptTitle",
+"text": "Last tab stays"
+},
+{
+"key": "zones.lastTabKeptBody",
+"text": "This zone needs at least one visible tab. Show another tab first, or collapse the whole sidebar."
+},
+{
+"key": "zones.minimize",
+"text": "Minimize"
+},
+{
+"key": "zones.restore",
+"text": "Restore"
+},
+{
+"key": "zones.closeRunningTitle",
+"text": "Close running tab?"
+},
+{
+"key": "zones.closeRunningConfirm",
+"text": "Close tab"
+},
+{
+"key": "zones.reload",
+"text": "Reload"
+},
+{
+"key": "zones.closeOthers",
+"text": "Close others"
+},
+{
+"key": "zones.closeToRight",
+"text": "Close to the right"
+},
+{
+"key": "zones.closeAll",
+"text": "Close all"
+},
+{
+"key": "zones.newSessionTab",
+"text": "New session tab"
+},
+{
+"key": "zones.newTab",
+"text": "New tab"
+}
+]

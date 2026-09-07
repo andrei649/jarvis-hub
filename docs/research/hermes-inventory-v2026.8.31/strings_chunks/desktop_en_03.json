@@ -1,0 +1,1202 @@
+[
+{
+"key": "starmap.importedBadge",
+"text": "imported map"
+},
+{
+"key": "starmap.resetToMine",
+"text": "Back to my map"
+},
+{
+"key": "agents.close",
+"text": "Close agents"
+},
+{
+"key": "agents.title",
+"text": "Spawn tree"
+},
+{
+"key": "agents.subtitle",
+"text": "Live subagent activity for the current turn."
+},
+{
+"key": "agents.emptyTitle",
+"text": "No live subagents"
+},
+{
+"key": "agents.emptyDesc",
+"text": "When a turn delegates work, child agents stream their progress here."
+},
+{
+"key": "agents.running",
+"text": "Running"
+},
+{
+"key": "agents.failed",
+"text": "Failed"
+},
+{
+"key": "agents.done",
+"text": "Done"
+},
+{
+"key": "agents.streaming",
+"text": "Streaming"
+},
+{
+"key": "agents.files",
+"text": "Files"
+},
+{
+"key": "agents.ageNow",
+"text": "now"
+},
+{
+"key": "commandCenter.close",
+"text": "Close command center"
+},
+{
+"key": "commandCenter.paletteTitle",
+"text": "Command palette"
+},
+{
+"key": "commandCenter.back",
+"text": "Back"
+},
+{
+"key": "commandCenter.searchPlaceholder",
+"text": "Search sessions, views, and actions"
+},
+{
+"key": "commandCenter.goTo",
+"text": "Go to"
+},
+{
+"key": "commandCenter.goToSession",
+"text": "Go to session"
+},
+{
+"key": "commandCenter.branches",
+"text": "Branches"
+},
+{
+"key": "commandCenter.projects",
+"text": "Projects"
+},
+{
+"key": "commandCenter.openFolder",
+"text": "Open folder as project…"
+},
+{
+"key": "commandCenter.commands",
+"text": "Commands"
+},
+{
+"key": "commandCenter.commandCenter",
+"text": "Command Center"
+},
+{
+"key": "commandCenter.appearance",
+"text": "Appearance"
+},
+{
+"key": "commandCenter.settings",
+"text": "Settings"
+},
+{
+"key": "commandCenter.changeTheme",
+"text": "Change theme"
+},
+{
+"key": "commandCenter.changeColorMode",
+"text": "Change color mode…"
+},
+{
+"key": "commandCenter.pets.title",
+"text": "Pets"
+},
+{
+"key": "commandCenter.pets.placeholder",
+"text": "Search pets…"
+},
+{
+"key": "commandCenter.pets.loading",
+"text": "Loading petdex gallery…"
+},
+{
+"key": "commandCenter.pets.error",
+"text": "Could not reach the petdex gallery."
+},
+{
+"key": "commandCenter.pets.staleBackend",
+"text": "Restart Hermes to use pets — the backend predates this feature."
+},
+{
+"key": "commandCenter.pets.empty",
+"text": "No matching pets."
+},
+{
+"key": "commandCenter.pets.turnOff",
+"text": "Turn off"
+},
+{
+"key": "commandCenter.pets.turnOn",
+"text": "Turn on"
+},
+{
+"key": "commandCenter.pets.installed",
+"text": "Installed"
+},
+{
+"key": "commandCenter.pets.generatedTag",
+"text": "Generated"
+},
+{
+"key": "commandCenter.pets.adoptFailed",
+"text": "Could not adopt that pet."
+},
+{
+"key": "commandCenter.pets.noneAvailable",
+"text": "No pets available — pick one below to install."
+},
+{
+"key": "commandCenter.generatePet.title",
+"text": "Generate a pet"
+},
+{
+"key": "commandCenter.generatePet.placeholder",
+"text": "Describe a pet to generate…"
+},
+{
+"key": "commandCenter.generatePet.promptHint",
+"text": "Type a description, then press Enter to draft four looks."
+},
+{
+"key": "commandCenter.generatePet.readyHint",
+"text": "Press Enter to draft four looks from your description."
+},
+{
+"key": "commandCenter.generatePet.generate",
+"text": "Generate"
+},
+{
+"key": "commandCenter.generatePet.generating",
+"text": "Generating…"
+},
+{
+"key": "commandCenter.generatePet.retry",
+"text": "Retry"
+},
+{
+"key": "commandCenter.generatePet.hatch",
+"text": "Hatch"
+},
+{
+"key": "commandCenter.generatePet.spawning",
+"text": "Spawning…"
+},
+{
+"key": "commandCenter.generatePet.hatching",
+"text": "Hatching your pet…"
+},
+{
+"key": "commandCenter.generatePet.hatchingSub",
+"text": "Bringing it to life…"
+},
+{
+"key": "commandCenter.generatePet.hatched",
+"text": "It hatched!"
+},
+{
+"key": "commandCenter.generatePet.hatchComposing",
+"text": "Piecing it together…"
+},
+{
+"key": "commandCenter.generatePet.hatchSaving",
+"text": "Almost there…"
+},
+{
+"key": "commandCenter.generatePet.namePlaceholder",
+"text": "Name your pet"
+},
+{
+"key": "commandCenter.generatePet.staleBackend",
+"text": "Update Hermes to generate pets."
+},
+{
+"key": "commandCenter.generatePet.backgroundHint",
+"text": "You can close this — Hermes will notify you when it’s done."
+},
+{
+"key": "commandCenter.generatePet.slowProviderHint",
+"text": "This can take several minutes"
+},
+{
+"key": "commandCenter.generatePet.remix",
+"text": "Remix"
+},
+{
+"key": "commandCenter.generatePet.remixConfirmTitle",
+"text": "Remix this look?"
+},
+{
+"key": "commandCenter.generatePet.genericError",
+"text": "Generation failed — try again or pick a suggestion."
+},
+{
+"key": "commandCenter.generatePet.referenceImageTooLarge",
+"text": "Reference image is too large. Use one under 16 MB."
+},
+{
+"key": "commandCenter.generatePet.referenceImageInvalid",
+"text": "Could not read that reference image. Try a PNG, JPG, WebP, or GIF."
+},
+{
+"key": "commandCenter.generatePet.adopt",
+"text": "Adopt"
+},
+{
+"key": "commandCenter.generatePet.startOver",
+"text": "Start over"
+},
+{
+"key": "commandCenter.installTheme.title",
+"text": "Install theme…"
+},
+{
+"key": "commandCenter.installTheme.pageTitle",
+"text": "Install theme"
+},
+{
+"key": "commandCenter.installTheme.placeholder",
+"text": "Search the VS Code Marketplace..."
+},
+{
+"key": "commandCenter.installTheme.loading",
+"text": "Searching the Marketplace..."
+},
+{
+"key": "commandCenter.installTheme.error",
+"text": "Could not reach the Marketplace."
+},
+{
+"key": "commandCenter.installTheme.empty",
+"text": "No matching themes."
+},
+{
+"key": "commandCenter.installTheme.install",
+"text": "Install"
+},
+{
+"key": "commandCenter.installTheme.installing",
+"text": "Installing..."
+},
+{
+"key": "commandCenter.installTheme.installed",
+"text": "Installed"
+},
+{
+"key": "commandCenter.settingsFields",
+"text": "Settings fields"
+},
+{
+"key": "commandCenter.mcpServers",
+"text": "MCP servers"
+},
+{
+"key": "commandCenter.archivedChats",
+"text": "Archived chats"
+},
+{
+"key": "commandCenter.sectionDescriptions.maintenance",
+"text": "Diagnostics, backups, curator, and memory data"
+},
+{
+"key": "commandCenter.sectionDescriptions.sessions",
+"text": "Search and manage sessions"
+},
+{
+"key": "commandCenter.sectionDescriptions.system",
+"text": "Status, logs, and system actions"
+},
+{
+"key": "commandCenter.sectionDescriptions.usage",
+"text": "Token, cost, and skill activity over time"
+},
+{
+"key": "commandCenter.providerNavigate",
+"text": "Navigate"
+},
+{
+"key": "commandCenter.providerSessions",
+"text": "Sessions"
+},
+{
+"key": "commandCenter.refresh",
+"text": "Refresh"
+},
+{
+"key": "commandCenter.refreshing",
+"text": "Refreshing..."
+},
+{
+"key": "commandCenter.noResults",
+"text": "No matching results found."
+},
+{
+"key": "commandCenter.pinSession",
+"text": "Pin session"
+},
+{
+"key": "commandCenter.unpinSession",
+"text": "Unpin session"
+},
+{
+"key": "commandCenter.exportSession",
+"text": "Export session"
+},
+{
+"key": "commandCenter.deleteSession",
+"text": "Delete session"
+},
+{
+"key": "commandCenter.noSessions",
+"text": "No sessions yet."
+},
+{
+"key": "commandCenter.gatewayRunning",
+"text": "Messaging gateway running"
+},
+{
+"key": "commandCenter.gatewayStopped",
+"text": "Messaging gateway stopped"
+},
+{
+"key": "commandCenter.restartGateway",
+"text": "Restart gateway"
+},
+{
+"key": "commandCenter.openBrowser",
+"text": "Open browser"
+},
+{
+"key": "commandCenter.gatewayRestartFailed",
+"text": "Gateway restart failed."
+},
+{
+"key": "commandCenter.updateHermes",
+"text": "Update Hermes"
+},
+{
+"key": "commandCenter.reloadWindow",
+"text": "Reload window"
+},
+{
+"key": "commandCenter.actionRunning",
+"text": "running"
+},
+{
+"key": "commandCenter.actionDone",
+"text": "done"
+},
+{
+"key": "commandCenter.actionFailed",
+"text": "failed"
+},
+{
+"key": "commandCenter.actionStartedWaiting",
+"text": "Action started, waiting for status..."
+},
+{
+"key": "commandCenter.loadingStatus",
+"text": "Loading status..."
+},
+{
+"key": "commandCenter.recentLogs",
+"text": "Recent logs"
+},
+{
+"key": "commandCenter.noLogs",
+"text": "No logs loaded yet."
+},
+{
+"key": "commandCenter.statSessions",
+"text": "Sessions"
+},
+{
+"key": "commandCenter.statApiCalls",
+"text": "API calls"
+},
+{
+"key": "commandCenter.statTokens",
+"text": "Tokens in/out"
+},
+{
+"key": "commandCenter.statCost",
+"text": "Est. cost"
+},
+{
+"key": "commandCenter.loadingUsage",
+"text": "Loading usage..."
+},
+{
+"key": "commandCenter.retry",
+"text": "Retry"
+},
+{
+"key": "commandCenter.dailyTokens",
+"text": "Daily tokens"
+},
+{
+"key": "commandCenter.input",
+"text": "input"
+},
+{
+"key": "commandCenter.output",
+"text": "output"
+},
+{
+"key": "commandCenter.noDailyActivity",
+"text": "No daily activity."
+},
+{
+"key": "commandCenter.topModels",
+"text": "Top models"
+},
+{
+"key": "commandCenter.noModelUsage",
+"text": "No model usage yet."
+},
+{
+"key": "commandCenter.topSkills",
+"text": "Top skills"
+},
+{
+"key": "commandCenter.noSkillActivity",
+"text": "No skill activity yet."
+},
+{
+"key": "commandCenter.logFile",
+"text": "Log file"
+},
+{
+"key": "commandCenter.logLevel",
+"text": "Level"
+},
+{
+"key": "commandCenter.logSearchPlaceholder",
+"text": "Filter log lines..."
+},
+{
+"key": "commandCenter.maintenance.runOps",
+"text": "Diagnostics"
+},
+{
+"key": "commandCenter.maintenance.doctor",
+"text": "Run doctor"
+},
+{
+"key": "commandCenter.maintenance.doctorDesc",
+"text": "Health-check the install, config, and providers"
+},
+{
+"key": "commandCenter.maintenance.securityAudit",
+"text": "Security audit"
+},
+{
+"key": "commandCenter.maintenance.securityAuditDesc",
+"text": "Scan config and skills for risky settings"
+},
+{
+"key": "commandCenter.maintenance.backup",
+"text": "Create backup"
+},
+{
+"key": "commandCenter.maintenance.backupDesc",
+"text": "Zip config, memories, skills, and sessions"
+},
+{
+"key": "commandCenter.maintenance.debugShare",
+"text": "Debug share"
+},
+{
+"key": "commandCenter.maintenance.debugShareDesc",
+"text": "Upload a redacted report + logs, get shareable links (auto-deletes in 6h)"
+},
+{
+"key": "commandCenter.maintenance.debugShareRunning",
+"text": "Uploading debug report..."
+},
+{
+"key": "commandCenter.maintenance.debugShareLinks",
+"text": "Share links"
+},
+{
+"key": "commandCenter.maintenance.debugShareFailed",
+"text": "Debug share failed"
+},
+{
+"key": "commandCenter.maintenance.copyLink",
+"text": "Copy link"
+},
+{
+"key": "commandCenter.maintenance.linkCopied",
+"text": "Link copied"
+},
+{
+"key": "commandCenter.maintenance.curator",
+"text": "Skill curator"
+},
+{
+"key": "commandCenter.maintenance.curatorDesc",
+"text": "Background review that archives stale agent-created skills"
+},
+{
+"key": "commandCenter.maintenance.curatorPaused",
+"text": "Paused"
+},
+{
+"key": "commandCenter.maintenance.curatorActive",
+"text": "Active"
+},
+{
+"key": "commandCenter.maintenance.curatorDisabled",
+"text": "Disabled"
+},
+{
+"key": "commandCenter.maintenance.curatorNeverRan",
+"text": "Never ran"
+},
+{
+"key": "commandCenter.maintenance.pause",
+"text": "Pause"
+},
+{
+"key": "commandCenter.maintenance.resume",
+"text": "Resume"
+},
+{
+"key": "commandCenter.maintenance.runNow",
+"text": "Run now"
+},
+{
+"key": "commandCenter.maintenance.memoryData",
+"text": "Memory data"
+},
+{
+"key": "commandCenter.maintenance.memoryDataDesc",
+"text": "Built-in memory files injected into every session"
+},
+{
+"key": "commandCenter.maintenance.builtinMemory",
+"text": "built-in"
+},
+{
+"key": "commandCenter.maintenance.memoryFile",
+"text": "Agent memory (MEMORY.md)"
+},
+{
+"key": "commandCenter.maintenance.userFile",
+"text": "User profile (USER.md)"
+},
+{
+"key": "commandCenter.maintenance.empty",
+"text": "empty"
+},
+{
+"key": "commandCenter.maintenance.resetMemory",
+"text": "Reset memory"
+},
+{
+"key": "commandCenter.maintenance.resetUser",
+"text": "Reset profile"
+},
+{
+"key": "commandCenter.maintenance.resetAll",
+"text": "Reset both"
+},
+{
+"key": "commandCenter.maintenance.resetFailed",
+"text": "Memory reset failed"
+},
+{
+"key": "commandCenter.maintenance.running",
+"text": "Running..."
+},
+{
+"key": "commandCenter.maintenance.viewLog",
+"text": "Action log"
+},
+{
+"key": "messaging.search",
+"text": "Search messaging..."
+},
+{
+"key": "messaging.loading",
+"text": "Loading messaging platforms..."
+},
+{
+"key": "messaging.loadFailed",
+"text": "Messaging platforms failed to load"
+},
+{
+"key": "messaging.states.connected",
+"text": "Connected"
+},
+{
+"key": "messaging.states.connecting",
+"text": "Connecting"
+},
+{
+"key": "messaging.states.disabled",
+"text": "Disabled"
+},
+{
+"key": "messaging.states.fatal",
+"text": "Error"
+},
+{
+"key": "messaging.states.gateway_stopped",
+"text": "Messaging gateway stopped"
+},
+{
+"key": "messaging.states.not_configured",
+"text": "Needs setup"
+},
+{
+"key": "messaging.states.pending_restart",
+"text": "Restart needed"
+},
+{
+"key": "messaging.states.retrying",
+"text": "Retrying"
+},
+{
+"key": "messaging.states.startup_failed",
+"text": "Startup failed"
+},
+{
+"key": "messaging.unknown",
+"text": "Unknown"
+},
+{
+"key": "messaging.hintPendingRestart",
+"text": "Restart the gateway from the status bar to apply this change."
+},
+{
+"key": "messaging.hintGatewayStopped",
+"text": "Start the gateway from the status bar to connect."
+},
+{
+"key": "messaging.credentialsSet",
+"text": "Credentials set"
+},
+{
+"key": "messaging.needsSetup",
+"text": "Needs setup"
+},
+{
+"key": "messaging.gatewayStopped",
+"text": "Messaging gateway stopped"
+},
+{
+"key": "messaging.getCredentials",
+"text": "Get your credentials"
+},
+{
+"key": "messaging.openSetupGuide",
+"text": "Open setup guide"
+},
+{
+"key": "messaging.required",
+"text": "Required"
+},
+{
+"key": "messaging.recommended",
+"text": "Recommended"
+},
+{
+"key": "messaging.noTokenNeeded",
+"text": "This platform does not need a token here. Use the setup guide above, then enable it below."
+},
+{
+"key": "messaging.enabled",
+"text": "Enabled"
+},
+{
+"key": "messaging.disabled",
+"text": "Disabled"
+},
+{
+"key": "messaging.unsavedChanges",
+"text": "Unsaved changes"
+},
+{
+"key": "messaging.saving",
+"text": "Saving..."
+},
+{
+"key": "messaging.saveChanges",
+"text": "Save changes"
+},
+{
+"key": "messaging.saved",
+"text": "Saved"
+},
+{
+"key": "messaging.replaceValue",
+"text": "Replace current value"
+},
+{
+"key": "messaging.openDocs",
+"text": "Open docs"
+},
+{
+"key": "messaging.restartToApply",
+"text": "This change takes effect after a gateway restart."
+},
+{
+"key": "messaging.restartToReconnect",
+"text": "New credentials take effect after a gateway restart."
+},
+{
+"key": "messaging.approve",
+"text": "Approve"
+},
+{
+"key": "messaging.approving",
+"text": "Approving..."
+},
+{
+"key": "messaging.revoke",
+"text": "Revoke"
+},
+{
+"key": "messaging.revoking",
+"text": "Revoking..."
+},
+{
+"key": "messaging.revokeTitle",
+"text": "Revoke access"
+},
+{
+"key": "messaging.approvedHint",
+"text": "They are recognized automatically on their next message."
+},
+{
+"key": "messaging.pairingLockedOut",
+"text": "Too many failed approvals — this platform is locked out. Try again later."
+},
+{
+"key": "messaging.fieldCopy.TELEGRAM_BOT_TOKEN.label",
+"text": "Bot token"
+},
+{
+"key": "messaging.fieldCopy.TELEGRAM_BOT_TOKEN.help",
+"text": "Create a bot with @BotFather, then paste the token it gives you."
+},
+{
+"key": "messaging.fieldCopy.TELEGRAM_BOT_TOKEN.placeholder",
+"text": "Paste Telegram bot token"
+},
+{
+"key": "messaging.fieldCopy.TELEGRAM_ALLOWED_USERS.label",
+"text": "Allowed Telegram user IDs"
+},
+{
+"key": "messaging.fieldCopy.TELEGRAM_ALLOWED_USERS.help",
+"text": "Recommended. Comma-separated numeric IDs from @userinfobot. Without this, anyone can DM your bot."
+},
+{
+"key": "messaging.fieldCopy.DISCORD_BOT_TOKEN.label",
+"text": "Bot token"
+},
+{
+"key": "messaging.fieldCopy.DISCORD_BOT_TOKEN.help",
+"text": "Create an application in the Discord Developer Portal, add a bot, then paste its token."
+},
+{
+"key": "messaging.fieldCopy.DISCORD_ALLOWED_USERS.label",
+"text": "Allowed Discord user IDs"
+},
+{
+"key": "messaging.fieldCopy.DISCORD_ALLOWED_USERS.help",
+"text": "Recommended. Comma-separated Discord user IDs."
+},
+{
+"key": "messaging.fieldCopy.DISCORD_ALLOW_ALL_USERS.label",
+"text": "Allow all Discord users"
+},
+{
+"key": "messaging.fieldCopy.DISCORD_ALLOW_ALL_USERS.help",
+"text": "Development only. When true, anyone can DM the bot without an allowlist."
+},
+{
+"key": "messaging.fieldCopy.DISCORD_HOME_CHANNEL.label",
+"text": "Home channel ID"
+},
+{
+"key": "messaging.fieldCopy.DISCORD_HOME_CHANNEL.help",
+"text": "Channel where the bot sends proactive messages (cron output, reminders)."
+},
+{
+"key": "messaging.fieldCopy.DISCORD_HOME_CHANNEL_NAME.label",
+"text": "Home channel name"
+},
+{
+"key": "messaging.fieldCopy.DISCORD_HOME_CHANNEL_NAME.help",
+"text": "Display name for the home channel in logs and status output."
+},
+{
+"key": "messaging.fieldCopy.BLUEBUBBLES_ALLOW_ALL_USERS.label",
+"text": "Allow all iMessage users"
+},
+{
+"key": "messaging.fieldCopy.BLUEBUBBLES_ALLOW_ALL_USERS.help",
+"text": "When true, skip the BlueBubbles allowlist."
+},
+{
+"key": "messaging.fieldCopy.SLACK_BOT_TOKEN.label",
+"text": "Slack bot token"
+},
+{
+"key": "messaging.fieldCopy.SLACK_BOT_TOKEN.help",
+"text": "Use the bot token from OAuth & Permissions after installing your Slack app."
+},
+{
+"key": "messaging.fieldCopy.SLACK_BOT_TOKEN.placeholder",
+"text": "Paste Slack bot token"
+},
+{
+"key": "messaging.fieldCopy.SLACK_APP_TOKEN.label",
+"text": "Slack app token"
+},
+{
+"key": "messaging.fieldCopy.SLACK_APP_TOKEN.help",
+"text": "Use the app-level token required for Socket Mode."
+},
+{
+"key": "messaging.fieldCopy.SLACK_APP_TOKEN.placeholder",
+"text": "Paste Slack app token"
+},
+{
+"key": "messaging.fieldCopy.MATTERMOST_ALLOWED_USERS.label",
+"text": "Allowed user IDs"
+},
+{
+"key": "messaging.fieldCopy.MATTERMOST_ALLOWED_USERS.help",
+"text": "Recommended. Comma-separated Mattermost user IDs."
+},
+{
+"key": "messaging.fieldCopy.MATRIX_ALLOWED_USERS.label",
+"text": "Allowed Matrix user IDs"
+},
+{
+"key": "messaging.fieldCopy.MATRIX_ALLOWED_USERS.help",
+"text": "Recommended. Comma-separated user IDs in @user:server format."
+},
+{
+"key": "messaging.fieldCopy.SIGNAL_HTTP_URL.label",
+"text": "Signal bridge URL"
+},
+{
+"key": "messaging.fieldCopy.SIGNAL_HTTP_URL.placeholder",
+"text": "http://127.0.0.1:8080"
+},
+{
+"key": "messaging.fieldCopy.SIGNAL_HTTP_URL.help",
+"text": "URL of a running signal-cli REST bridge."
+},
+{
+"key": "messaging.fieldCopy.WHATSAPP_ENABLED.label",
+"text": "Enable WhatsApp bridge"
+},
+{
+"key": "messaging.fieldCopy.WHATSAPP_ENABLED.help",
+"text": "Set automatically by the toggle below. Leave alone unless you know you need it."
+},
+{
+"key": "messaging.fieldCopy.WHATSAPP_ALLOWED_USERS.label",
+"text": "Allowed WhatsApp users"
+},
+{
+"key": "messaging.fieldCopy.WHATSAPP_ALLOWED_USERS.help",
+"text": "Recommended. Comma-separated phone numbers or WhatsApp IDs."
+},
+{
+"key": "webhooks.search",
+"text": "Search webhooks..."
+},
+{
+"key": "webhooks.loading",
+"text": "Loading webhooks..."
+},
+{
+"key": "webhooks.loadFailed",
+"text": "Webhooks failed to load"
+},
+{
+"key": "webhooks.hint",
+"text": "Subscription changes hot-reload once the receiver is running. Disabled subscriptions reject incoming events."
+},
+{
+"key": "webhooks.empty",
+"text": "No webhook subscriptions yet."
+},
+{
+"key": "webhooks.disabledTitle",
+"text": "Webhook receiver disabled"
+},
+{
+"key": "webhooks.enable",
+"text": "Enable webhooks"
+},
+{
+"key": "webhooks.enabling",
+"text": "Enabling..."
+},
+{
+"key": "webhooks.enableRow",
+"text": "Enable"
+},
+{
+"key": "webhooks.disableRow",
+"text": "Disable"
+},
+{
+"key": "webhooks.delete",
+"text": "Delete"
+},
+{
+"key": "webhooks.deleting",
+"text": "Deleting..."
+},
+{
+"key": "webhooks.deleted",
+"text": "Webhook deleted"
+},
+{
+"key": "webhooks.deleteTitle",
+"text": "Delete webhook"
+},
+{
+"key": "webhooks.deleteDescPrefix",
+"text": "This will permanently remove "
+},
+{
+"key": "webhooks.deleteDescSuffix",
+"text": ". This cannot be undone."
+},
+{
+"key": "webhooks.newSubscription",
+"text": "New subscription"
+},
+{
+"key": "webhooks.restarting",
+"text": "Gateway restarting..."
+},
+{
+"key": "webhooks.restartNeeded",
+"text": "Webhooks are enabled, but the gateway still needs a restart before the receiver can come online."
+},
+{
+"key": "webhooks.restartGateway",
+"text": "Restart gateway"
+},
+{
+"key": "webhooks.restartingGateway",
+"text": "Restarting..."
+},
+{
+"key": "webhooks.enabledRestarting",
+"text": "Webhooks enabled; gateway restarting..."
+},
+{
+"key": "webhooks.all",
+"text": "(all)"
+},
+{
+"key": "webhooks.deliverOnly",
+"text": "deliver only"
+},
+{
+"key": "webhooks.createdTitle",
+"text": "Subscription created"
+},
+{
+"key": "webhooks.createdSecretHint",
+"text": "Copy the secret now — it is only shown once."
+},
+{
+"key": "webhooks.webhookUrl",
+"text": "Webhook URL"
+},
+{
+"key": "webhooks.secretOnce",
+"text": "Secret (shown once)"
+},
+{
+"key": "webhooks.done",
+"text": "Done"
+},
+{
+"key": "webhooks.fieldName",
+"text": "Name"
+},
+{
+"key": "webhooks.fieldNamePlaceholder",
+"text": "e.g. github-push"
+},
+{
+"key": "webhooks.fieldDescription",
+"text": "Description"
+},
+{
+"key": "webhooks.fieldDescriptionPlaceholder",
+"text": "What this webhook does (optional)"
+},
+{
+"key": "webhooks.fieldEvents",
+"text": "Events"
+},
+{
+"key": "webhooks.fieldEventsPlaceholder",
+"text": "comma-separated, leave empty for all"
+},
+{
+"key": "webhooks.fieldSkills",
+"text": "Skills"
+},
+{
+"key": "webhooks.fieldSkillsPlaceholder",
+"text": "comma-separated skill names (optional)"
+},
+{
+"key": "webhooks.fieldDeliver",
+"text": "Deliver to"
+},
+{
+"key": "webhooks.fieldDeliverOnly",
+"text": "Deliver payload only"
+},
+{
+"key": "webhooks.fieldPrompt",
+"text": "Prompt"
+},
+{
+"key": "webhooks.fieldPromptPlaceholder",
+"text": "Instructions for the agent when this webhook fires (optional)"
+},
+{
+"key": "webhooks.nameRequired",
+"text": "Name required"
+},
+{
+"key": "webhooks.create",
+"text": "Create"
+},
+{
+"key": "webhooks.creating",
+"text": "Creating..."
+},
+{
+"key": "webhooks.created",
+"text": "Created"
+},
+{
+"key": "webhooks.copy",
+"text": "Copy"
+},
+{
+"key": "webhooks.deliverOptions.log",
+"text": "Log"
+},
+{
+"key": "webhooks.deliverOptions.telegram",
+"text": "Telegram"
+},
+{
+"key": "webhooks.deliverOptions.discord",
+"text": "Discord"
+},
+{
+"key": "webhooks.deliverOptions.slack",
+"text": "Slack"
+},
+{
+"key": "webhooks.deliverOptions.email",
+"text": "Email"
+},
+{
+"key": "webhooks.deliverOptions.github_comment",
+"text": "GitHub comment"
+},
+{
+"key": "profiles.close",
+"text": "Close profiles"
+},
+{
+"key": "profiles.nameHint",
+"text": "Lowercase letters, digits, hyphens, and underscores. Must start with a letter or digit."
+},
+{
+"key": "profiles.title",
+"text": "Profiles"
+},
+{
+"key": "profiles.search",
+"text": "Search profiles..."
+},
+{
+"key": "profiles.loading",
+"text": "Loading profiles..."
+},
+{
+"key": "profiles.newProfile",
+"text": "New profile"
+},
+{
+"key": "profiles.importProfile",
+"text": "Import profile…"
+},
+{
+"key": "profiles.exportProfile",
+"text": "Export profile…"
+},
+{
+"key": "profiles.imported",
+"text": "Profile imported"
+},
+{
+"key": "profiles.exported",
+"text": "Profile exported"
+},
+{
+"key": "profiles.failedImport",
+"text": "Failed to import profile"
+},
+{
+"key": "profiles.failedExport",
+"text": "Failed to export profile"
+},
+{
+"key": "profiles.allProfiles",
+"text": "All profiles"
+},
+{
+"key": "profiles.showAllProfiles",
+"text": "Show all profiles"
+},
+{
+"key": "profiles.manageProfiles",
+"text": "Manage profiles…"
+},
+{
+"key": "profiles.connectGateway",
+"text": "Manage gateways…"
+},
+{
+"key": "profiles.fleet.allOnGateway",
+"text": "All profiles on this gateway"
+}
+]

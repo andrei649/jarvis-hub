@@ -1,0 +1,1502 @@
+[
+{
+"key": "web_live.files.button._zshrc",
+"text": ".zshrc",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.download_zshrc",
+"text": "Download .zshrc",
+"page": "/files"
+},
+{
+"key": "web_live.files.button.delete_zshrc",
+"text": "Delete .zshrc",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.chat",
+"text": "CHAT",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.sessions",
+"text": "SESSIONS",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.files",
+"text": "FILES",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.models",
+"text": "MODELS",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.logs",
+"text": "LOGS",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.cron",
+"text": "CRON",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.skills",
+"text": "SKILLS",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.plugins",
+"text": "PLUGINS",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.mcp",
+"text": "MCP",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.channels",
+"text": "CHANNELS",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.pairing",
+"text": "PAIRING",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.profiles",
+"text": "PROFILES",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.config",
+"text": "CONFIG",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.keys",
+"text": "KEYS",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.system",
+"text": "SYSTEM",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.kanban",
+"text": "KANBAN",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.status_overview",
+"text": "Status overview",
+"page": "/files"
+},
+{
+"key": "web_live.files.link.nous_research",
+"text": "Nous Research",
+"page": "/files"
+},
+{
+"key": "web_live.files.input.path",
+"text": "Path",
+"page": "/files"
+},
+{
+"key": "web_live.files.heading.files",
+"text": "Files",
+"page": "/files"
+},
+{
+"key": "web_live.login.link.dashboard_authentication_documentation",
+"text": "dashboard authentication documentation",
+"page": "/login"
+},
+{
+"key": "web_live.login.heading.sign_in_unavailable",
+"text": "SIGN-IN UNAVAILABLE",
+"page": "/login"
+},
+{
+"key": "web_live.logs.button.open_navigation",
+"text": "Open navigation",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.close_navigation",
+"text": "Close navigation",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.collapse",
+"text": "Collapse",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.update_hermes",
+"text": "Update Hermes",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.switch_theme",
+"text": "Switch theme",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.en",
+"text": "EN",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.switch_language",
+"text": "Switch language",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.refresh",
+"text": "Refresh",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.agent",
+"text": "AGENT",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.errors",
+"text": "ERRORS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.gateway",
+"text": "GATEWAY",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.all",
+"text": "ALL",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.debug",
+"text": "DEBUG",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.info",
+"text": "INFO",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.warning",
+"text": "WARNING",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.error",
+"text": "ERROR",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.tools",
+"text": "TOOLS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.cli",
+"text": "CLI",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.button.cron",
+"text": "CRON",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.chat",
+"text": "CHAT",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.sessions",
+"text": "SESSIONS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.files",
+"text": "FILES",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.models",
+"text": "MODELS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.logs",
+"text": "LOGS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.cron",
+"text": "CRON",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.skills",
+"text": "SKILLS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.plugins",
+"text": "PLUGINS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.mcp",
+"text": "MCP",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.channels",
+"text": "CHANNELS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.pairing",
+"text": "PAIRING",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.profiles",
+"text": "PROFILES",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.config",
+"text": "CONFIG",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.keys",
+"text": "KEYS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.system",
+"text": "SYSTEM",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.kanban",
+"text": "KANBAN",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.status_overview",
+"text": "Status overview",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.link.nous_research",
+"text": "Nous Research",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.tab.agent",
+"text": "AGENT",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.tab.errors",
+"text": "ERRORS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.tab.gateway",
+"text": "GATEWAY",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.tab.all",
+"text": "ALL",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.tab.debug",
+"text": "DEBUG",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.tab.info",
+"text": "INFO",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.tab.warning",
+"text": "WARNING",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.tab.error",
+"text": "ERROR",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.tab.tools",
+"text": "TOOLS",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.tab.cli",
+"text": "CLI",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.tab.cron",
+"text": "CRON",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.heading.logs",
+"text": "Logs",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.heading.agent_log",
+"text": "AGENT.LOG",
+"page": "/logs"
+},
+{
+"key": "web_live.logs.label.auto_refresh",
+"text": "AUTO-REFRESH",
+"page": "/logs"
+},
+{
+"key": "web_live.mcp.button.open_navigation",
+"text": "Open navigation",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.button.close_navigation",
+"text": "Close navigation",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.button.collapse",
+"text": "Collapse",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.button.update_hermes",
+"text": "Update Hermes",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.button.switch_theme",
+"text": "Switch theme",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.button.en",
+"text": "EN",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.button.switch_language",
+"text": "Switch language",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.button.add_server",
+"text": "ADD SERVER",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.button.install",
+"text": "INSTALL",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.chat",
+"text": "CHAT",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.sessions",
+"text": "SESSIONS",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.files",
+"text": "FILES",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.models",
+"text": "MODELS",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.logs",
+"text": "LOGS",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.cron",
+"text": "CRON",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.skills",
+"text": "SKILLS",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.plugins",
+"text": "PLUGINS",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.mcp",
+"text": "MCP",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.channels",
+"text": "CHANNELS",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.pairing",
+"text": "PAIRING",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.profiles",
+"text": "PROFILES",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.config",
+"text": "CONFIG",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.keys",
+"text": "KEYS",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.system",
+"text": "SYSTEM",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.kanban",
+"text": "KANBAN",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.status_overview",
+"text": "Status overview",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.nous_research",
+"text": "Nous Research",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.source_",
+"text": "source ↗",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.link.https_github_com_cybersamuraix_hermes_n8n_mcp_git",
+"text": "https://github.com/CyberSamuraiX/hermes-n8n-mcp.git",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.heading.mcp",
+"text": "MCP",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.heading.your_mcp_servers_0_",
+"text": "Your MCP servers (0)",
+"page": "/mcp"
+},
+{
+"key": "web_live.mcp.heading.catalog_65_",
+"text": "Catalog (65)",
+"page": "/mcp"
+},
+{
+"key": "web_live.models.button.open_navigation",
+"text": "Open navigation",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.close_navigation",
+"text": "Close navigation",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.collapse",
+"text": "Collapse",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.update_hermes",
+"text": "Update Hermes",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.switch_theme",
+"text": "Switch theme",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.en",
+"text": "EN",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.switch_language",
+"text": "Switch language",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.7d",
+"text": "7D",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.30d",
+"text": "30D",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.90d",
+"text": "90D",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.refresh",
+"text": "Refresh",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.change",
+"text": "CHANGE",
+"page": "/models"
+},
+{
+"key": "web_live.models.button.configure",
+"text": "CONFIGURE",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.chat",
+"text": "CHAT",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.sessions",
+"text": "SESSIONS",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.files",
+"text": "FILES",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.models",
+"text": "MODELS",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.logs",
+"text": "LOGS",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.cron",
+"text": "CRON",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.skills",
+"text": "SKILLS",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.plugins",
+"text": "PLUGINS",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.mcp",
+"text": "MCP",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.channels",
+"text": "CHANNELS",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.pairing",
+"text": "PAIRING",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.profiles",
+"text": "PROFILES",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.config",
+"text": "CONFIG",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.keys",
+"text": "KEYS",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.system",
+"text": "SYSTEM",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.kanban",
+"text": "KANBAN",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.status_overview",
+"text": "Status overview",
+"page": "/models"
+},
+{
+"key": "web_live.models.link.nous_research",
+"text": "Nous Research",
+"page": "/models"
+},
+{
+"key": "web_live.models.heading.models",
+"text": "Models",
+"page": "/models"
+},
+{
+"key": "web_live.models.heading.model_settings",
+"text": "MODEL SETTINGS",
+"page": "/models"
+},
+{
+"key": "web_live.pairing.button.open_navigation",
+"text": "Open navigation",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.button.close_navigation",
+"text": "Close navigation",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.button.collapse",
+"text": "Collapse",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.button.update_hermes",
+"text": "Update Hermes",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.button.switch_theme",
+"text": "Switch theme",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.button.en",
+"text": "EN",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.button.switch_language",
+"text": "Switch language",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.button.clear_pending",
+"text": "CLEAR PENDING",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.chat",
+"text": "CHAT",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.sessions",
+"text": "SESSIONS",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.files",
+"text": "FILES",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.models",
+"text": "MODELS",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.logs",
+"text": "LOGS",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.cron",
+"text": "CRON",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.skills",
+"text": "SKILLS",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.plugins",
+"text": "PLUGINS",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.mcp",
+"text": "MCP",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.channels",
+"text": "CHANNELS",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.pairing",
+"text": "PAIRING",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.profiles",
+"text": "PROFILES",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.config",
+"text": "CONFIG",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.keys",
+"text": "KEYS",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.system",
+"text": "SYSTEM",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.kanban",
+"text": "KANBAN",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.status_overview",
+"text": "Status overview",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.link.nous_research",
+"text": "Nous Research",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.heading.pairing",
+"text": "Pairing",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.heading.pending_requests_0_",
+"text": "Pending requests (0)",
+"page": "/pairing"
+},
+{
+"key": "web_live.pairing.heading.approved_users_0_",
+"text": "Approved users (0)",
+"page": "/pairing"
+},
+{
+"key": "web_live.plugins.button.open_navigation",
+"text": "Open navigation",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.close_navigation",
+"text": "Close navigation",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.collapse",
+"text": "Collapse",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.update_hermes",
+"text": "Update Hermes",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.switch_theme",
+"text": "Switch theme",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.en",
+"text": "EN",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.switch_language",
+"text": "Switch language",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.rescan_dashboard_extensions",
+"text": "Rescan dashboard extensions",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button._built_in_default_",
+"text": "(built-in / default)",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.save_memory_provider",
+"text": "SAVE MEMORY PROVIDER",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.compressor",
+"text": "compressor",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.save_context_engine",
+"text": "SAVE CONTEXT ENGINE",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.install",
+"text": "INSTALL",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.enable",
+"text": "Enable",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.button.copy",
+"text": "Copy",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.chat",
+"text": "CHAT",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.sessions",
+"text": "SESSIONS",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.files",
+"text": "FILES",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.models",
+"text": "MODELS",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.logs",
+"text": "LOGS",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.cron",
+"text": "CRON",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.skills",
+"text": "SKILLS",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.plugins",
+"text": "PLUGINS",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.mcp",
+"text": "MCP",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.channels",
+"text": "CHANNELS",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.pairing",
+"text": "PAIRING",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.profiles",
+"text": "PROFILES",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.config",
+"text": "CONFIG",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.keys",
+"text": "KEYS",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.system",
+"text": "SYSTEM",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.kanban",
+"text": "KANBAN",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.status_overview",
+"text": "Status overview",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.nous_research",
+"text": "Nous Research",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.link.open",
+"text": "Open",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.input.owner_repo_owner_repo_subdir_or_https_",
+"text": "owner/repo, owner/repo/subdir, or https://...",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.tab._built_in_default_",
+"text": "(built-in / default)",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.tab.compressor",
+"text": "compressor",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.heading.plugins",
+"text": "Plugins",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.heading.runtime_provider_plugins",
+"text": "RUNTIME PROVIDER PLUGINS",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.heading.install_from_github_git_url",
+"text": "INSTALL FROM GITHUB / GIT URL",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.heading.installed_plugins",
+"text": "INSTALLED PLUGINS",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.heading.dashboard_only_extensions_no_agent_plugin_yaml_mat",
+"text": "DASHBOARD-ONLY EXTENSIONS (NO AGENT PLUGIN.YAML MATCH)",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.label.memory_provider",
+"text": "MEMORY PROVIDER",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.label.context_engine",
+"text": "CONTEXT ENGINE",
+"page": "/plugins"
+},
+{
+"key": "web_live.plugins.label.git_url_or_owner_repo",
+"text": "GIT URL OR OWNER/REPO",
+"page": "/plugins"
+},
+{
+"key": "web_live.profiles.button.open_navigation",
+"text": "Open navigation",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.close_navigation",
+"text": "Close navigation",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.collapse",
+"text": "Collapse",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.update_hermes",
+"text": "Update Hermes",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.switch_theme",
+"text": "Switch theme",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.en",
+"text": "EN",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.switch_language",
+"text": "Switch language",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.build",
+"text": "BUILD",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.create",
+"text": "CREATE",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.button.actions",
+"text": "Actions",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.chat",
+"text": "CHAT",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.sessions",
+"text": "SESSIONS",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.files",
+"text": "FILES",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.models",
+"text": "MODELS",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.logs",
+"text": "LOGS",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.cron",
+"text": "CRON",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.skills",
+"text": "SKILLS",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.plugins",
+"text": "PLUGINS",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.mcp",
+"text": "MCP",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.channels",
+"text": "CHANNELS",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.pairing",
+"text": "PAIRING",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.profiles",
+"text": "PROFILES",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.config",
+"text": "CONFIG",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.keys",
+"text": "KEYS",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.system",
+"text": "SYSTEM",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.kanban",
+"text": "KANBAN",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.status_overview",
+"text": "Status overview",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.link.nous_research",
+"text": "Nous Research",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.heading.profiles",
+"text": "Profiles",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.heading.profiles_1_",
+"text": "Profiles (1)",
+"page": "/profiles"
+},
+{
+"key": "web_live.profiles.new.button.open_navigation",
+"text": "Open navigation",
+"page": "/profiles/new"
+},
+{
+"key": "web_live.profiles.new.button.close_navigation",
+"text": "Close navigation",
+"page": "/profiles/new"
+},
+{
+"key": "web_live.profiles.new.button.collapse",
+"text": "Collapse",
+"page": "/profiles/new"
+},
+{
+"key": "web_live.profiles.new.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/profiles/new"
+},
+{
+"key": "web_live.profiles.new.button.update_hermes",
+"text": "Update Hermes",
+"page": "/profiles/new"
+},
+{
+"key": "web_live.profiles.new.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/profiles/new"
+},
+{
+"key": "web_live.profiles.new.button.switch_theme",
+"text": "Switch theme",
+"page": "/profiles/new"
+},
+{
+"key": "web_live.profiles.new.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/profiles/new"
+},
+{
+"key": "web_live.profiles.new.button.en",
+"text": "EN",
+"page": "/profiles/new"
+}
+]

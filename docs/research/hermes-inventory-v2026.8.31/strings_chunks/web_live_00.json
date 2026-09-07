@@ -1,0 +1,1502 @@
+[
+{
+"key": "web_live.analytics.button.open_navigation",
+"text": "Open navigation",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.button.close_navigation",
+"text": "Close navigation",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.button.collapse",
+"text": "Collapse",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.button.update_hermes",
+"text": "Update Hermes",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.button.switch_theme",
+"text": "Switch theme",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.button.en",
+"text": "EN",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.button.switch_language",
+"text": "Switch language",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.chat",
+"text": "CHAT",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.sessions",
+"text": "SESSIONS",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.files",
+"text": "FILES",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.models",
+"text": "MODELS",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.logs",
+"text": "LOGS",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.cron",
+"text": "CRON",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.skills",
+"text": "SKILLS",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.plugins",
+"text": "PLUGINS",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.mcp",
+"text": "MCP",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.channels",
+"text": "CHANNELS",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.pairing",
+"text": "PAIRING",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.profiles",
+"text": "PROFILES",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.config",
+"text": "CONFIG",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.keys",
+"text": "KEYS",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.system",
+"text": "SYSTEM",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.kanban",
+"text": "KANBAN",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.status_overview",
+"text": "Status overview",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.link.nous_research",
+"text": "Nous Research",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.heading.analytics",
+"text": "Analytics",
+"page": "/analytics"
+},
+{
+"key": "web_live.analytics.heading.token_analytics_hidden",
+"text": "TOKEN ANALYTICS HIDDEN",
+"page": "/analytics"
+},
+{
+"key": "web_live.channels.button.open_navigation",
+"text": "Open navigation",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.close_navigation",
+"text": "Close navigation",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.collapse",
+"text": "Collapse",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.update_hermes",
+"text": "Update Hermes",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.switch_theme",
+"text": "Switch theme",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.en",
+"text": "EN",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.switch_language",
+"text": "Switch language",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_telegram",
+"text": "Enable Telegram",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.test",
+"text": "Test",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.create_with_qr",
+"text": "CREATE WITH QR",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.manual_setup",
+"text": "MANUAL SETUP",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_discord",
+"text": "Enable Discord",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.configure",
+"text": "CONFIGURE",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_slack",
+"text": "Enable Slack",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_mattermost",
+"text": "Enable Mattermost",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_matrix",
+"text": "Enable Matrix",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_whatsapp",
+"text": "Enable WhatsApp",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.pair_with_qr",
+"text": "PAIR WITH QR",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.bot",
+"text": "Bot",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.self_chat",
+"text": "Self-chat",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_signal",
+"text": "Enable Signal",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_bluebubbles_imessage_",
+"text": "Enable BlueBubbles (iMessage)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_home_assistant",
+"text": "Enable Home Assistant",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_email",
+"text": "Enable Email",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_sms_twilio_",
+"text": "Enable SMS (Twilio)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_dingtalk",
+"text": "Enable DingTalk",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_feishu_lark",
+"text": "Enable Feishu / Lark",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_google_chat",
+"text": "Enable Google Chat",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_wecom_group_bot_",
+"text": "Enable WeCom (group bot)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_wecom_app_",
+"text": "Enable WeCom (app)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_weixin_wechat_personal_",
+"text": "Enable Weixin / WeChat (Personal)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_qq_bot",
+"text": "Enable QQ Bot",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_yuanbao_",
+"text": "Enable Yuanbao (元宝)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_api_server",
+"text": "Enable API server",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_webhooks",
+"text": "Enable Webhooks",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_a2a",
+"text": "Enable A2A",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_buzz",
+"text": "Enable Buzz",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_imessage_via_photon",
+"text": "Enable iMessage via Photon",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_irc",
+"text": "Enable IRC",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_line",
+"text": "Enable LINE",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_microsoft_graph_webhook",
+"text": "Enable Microsoft Graph Webhook",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_microsoft_teams",
+"text": "Enable Microsoft Teams",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_ntfy",
+"text": "Enable ntfy",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_raft",
+"text": "Enable Raft",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_relay_experimental_",
+"text": "Enable Relay (experimental)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_simplex_chat",
+"text": "Enable SimpleX Chat",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.button.enable_whatsapp_cloud_api",
+"text": "Enable WhatsApp Cloud API",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.chat",
+"text": "CHAT",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.sessions",
+"text": "SESSIONS",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.files",
+"text": "FILES",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.models",
+"text": "MODELS",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.logs",
+"text": "LOGS",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.cron",
+"text": "CRON",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.skills",
+"text": "SKILLS",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.plugins",
+"text": "PLUGINS",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.mcp",
+"text": "MCP",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.channels",
+"text": "CHANNELS",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.pairing",
+"text": "PAIRING",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.profiles",
+"text": "PROFILES",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.config",
+"text": "CONFIG",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.keys",
+"text": "KEYS",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.system",
+"text": "SYSTEM",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.kanban",
+"text": "KANBAN",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.status_overview",
+"text": "Status overview",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.link.nous_research",
+"text": "Nous Research",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_telegram",
+"text": "Enable Telegram",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_discord",
+"text": "Enable Discord",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_slack",
+"text": "Enable Slack",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_mattermost",
+"text": "Enable Mattermost",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_matrix",
+"text": "Enable Matrix",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_whatsapp",
+"text": "Enable WhatsApp",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_signal",
+"text": "Enable Signal",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_bluebubbles_imessage_",
+"text": "Enable BlueBubbles (iMessage)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_home_assistant",
+"text": "Enable Home Assistant",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_email",
+"text": "Enable Email",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_sms_twilio_",
+"text": "Enable SMS (Twilio)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_dingtalk",
+"text": "Enable DingTalk",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_feishu_lark",
+"text": "Enable Feishu / Lark",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_google_chat",
+"text": "Enable Google Chat",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_wecom_group_bot_",
+"text": "Enable WeCom (group bot)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_wecom_app_",
+"text": "Enable WeCom (app)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_weixin_wechat_personal_",
+"text": "Enable Weixin / WeChat (Personal)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_qq_bot",
+"text": "Enable QQ Bot",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_yuanbao_",
+"text": "Enable Yuanbao (元宝)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_api_server",
+"text": "Enable API server",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_webhooks",
+"text": "Enable Webhooks",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_a2a",
+"text": "Enable A2A",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_buzz",
+"text": "Enable Buzz",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_imessage_via_photon",
+"text": "Enable iMessage via Photon",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_irc",
+"text": "Enable IRC",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_line",
+"text": "Enable LINE",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_microsoft_graph_webhook",
+"text": "Enable Microsoft Graph Webhook",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_microsoft_teams",
+"text": "Enable Microsoft Teams",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_ntfy",
+"text": "Enable ntfy",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_raft",
+"text": "Enable Raft",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_relay_experimental_",
+"text": "Enable Relay (experimental)",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_simplex_chat",
+"text": "Enable SimpleX Chat",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.tab.enable_whatsapp_cloud_api",
+"text": "Enable WhatsApp Cloud API",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.heading.channels",
+"text": "Channels",
+"page": "/channels"
+},
+{
+"key": "web_live.channels.label.allowed_whatsapp_numbers",
+"text": "ALLOWED WHATSAPP NUMBERS",
+"page": "/channels"
+},
+{
+"key": "web_live.chat.button.open_navigation",
+"text": "Open navigation",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.close_navigation",
+"text": "Close navigation",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.collapse",
+"text": "Collapse",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.update_hermes",
+"text": "Update Hermes",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.switch_theme",
+"text": "Switch theme",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.en",
+"text": "EN",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.switch_language",
+"text": "Switch language",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.copy_last_response",
+"text": "copy last response",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.copy_last_assistant_response",
+"text": "Copy last assistant response",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.copy_last_assistant_response_as_raw_markdown",
+"text": "Copy last assistant response as raw markdown",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.collapse_chat_side_panel",
+"text": "Collapse chat side panel",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.collapse_side_panel",
+"text": "Collapse side panel",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.switch_model",
+"text": "switch model",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.refresh",
+"text": "Refresh",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.button.new_chat",
+"text": "New chat",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.chat",
+"text": "CHAT",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.sessions",
+"text": "SESSIONS",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.files",
+"text": "FILES",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.models",
+"text": "MODELS",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.logs",
+"text": "LOGS",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.cron",
+"text": "CRON",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.skills",
+"text": "SKILLS",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.plugins",
+"text": "PLUGINS",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.mcp",
+"text": "MCP",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.channels",
+"text": "CHANNELS",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.pairing",
+"text": "PAIRING",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.profiles",
+"text": "PROFILES",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.config",
+"text": "CONFIG",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.keys",
+"text": "KEYS",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.system",
+"text": "SYSTEM",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.kanban",
+"text": "KANBAN",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.status_overview",
+"text": "Status overview",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.link.nous_research",
+"text": "Nous Research",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.input.terminal_input",
+"text": "Terminal input",
+"page": "/chat"
+},
+{
+"key": "web_live.chat.heading.chat",
+"text": "Chat",
+"page": "/chat"
+},
+{
+"key": "web_live.config.button.open_navigation",
+"text": "Open navigation",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.close_navigation",
+"text": "Close navigation",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.collapse",
+"text": "Collapse",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.update_hermes",
+"text": "Update Hermes",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.switch_theme",
+"text": "Switch theme",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.en",
+"text": "EN",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.switch_language",
+"text": "Switch language",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.export_config_as_json",
+"text": "Export config as JSON",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.import_config_from_json",
+"text": "Import config from JSON",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.reset_general_to_defaults",
+"text": "Reset General to defaults",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.yaml",
+"text": "YAML",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.save",
+"text": "SAVE",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.general_25",
+"text": "General 25",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.agent_102",
+"text": "Agent 102",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.terminal_31",
+"text": "Terminal 31",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.display_87",
+"text": "Display 87",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.delegation_15",
+"text": "Delegation 15",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.memory_6",
+"text": "Memory 6",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.compression_32",
+"text": "Compression 32",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.security_31",
+"text": "Security 31",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.browser_25",
+"text": "Browser 25",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.voice_14",
+"text": "Voice 14",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.text_to_speech_30",
+"text": "Text-to-Speech 30",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.speech_to_text_26",
+"text": "Speech-to-Text 26",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.logging_3",
+"text": "Logging 3",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.discord_37",
+"text": "Discord 37",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.auxiliary_115",
+"text": "Auxiliary 115",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.bedrock_8",
+"text": "Bedrock 8",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.curator_10",
+"text": "Curator 10",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.database_3",
+"text": "Database 3",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.desktop_11",
+"text": "Desktop 11",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.gateway_22",
+"text": "Gateway 22",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.kanban_16",
+"text": "Kanban 16",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.loops_4",
+"text": "Loops 4",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.lsp_5",
+"text": "Lsp 5",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.matrix_3",
+"text": "Matrix 3",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.mattermost_3",
+"text": "Mattermost 3",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.moa_10",
+"text": "Moa 10",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.model_catalog_3",
+"text": "Model_catalog 3",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.monitoring_11",
+"text": "Monitoring 11",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.openrouter_3",
+"text": "Openrouter 3",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.proxy_5",
+"text": "Proxy 5",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.secrets_15",
+"text": "Secrets 15",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.sessions_13",
+"text": "Sessions 13",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.slack_6",
+"text": "Slack 6",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.streaming_6",
+"text": "Streaming 6",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.tool_loop_guardrails_10",
+"text": "Tool_loop_guardrails 10",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.tool_output_3",
+"text": "Tool_output 3",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.tools_6",
+"text": "Tools 6",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.vertex_2",
+"text": "Vertex 2",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.wake_word_14",
+"text": "Wake_word 14",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.web_9",
+"text": "Web 9",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.x_search_4",
+"text": "X_search 4",
+"page": "/config"
+},
+{
+"key": "web_live.config.button.stash",
+"text": "stash",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.chat",
+"text": "CHAT",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.sessions",
+"text": "SESSIONS",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.files",
+"text": "FILES",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.models",
+"text": "MODELS",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.logs",
+"text": "LOGS",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.cron",
+"text": "CRON",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.skills",
+"text": "SKILLS",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.plugins",
+"text": "PLUGINS",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.mcp",
+"text": "MCP",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.channels",
+"text": "CHANNELS",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.webhooks",
+"text": "WEBHOOKS",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.pairing",
+"text": "PAIRING",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.profiles",
+"text": "PROFILES",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.config",
+"text": "CONFIG",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.keys",
+"text": "KEYS",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.system",
+"text": "SYSTEM",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.documentation",
+"text": "DOCUMENTATION",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.kanban",
+"text": "KANBAN",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.achievements",
+"text": "ACHIEVEMENTS",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.gateway_status_off_active_sessions_0",
+"text": "Gateway Status: Off Active Sessions: 0",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.status_overview",
+"text": "Status overview",
+"page": "/config"
+},
+{
+"key": "web_live.config.link.nous_research",
+"text": "Nous Research",
+"page": "/config"
+},
+{
+"key": "web_live.config.input.search_",
+"text": "Search...",
+"page": "/config"
+},
+{
+"key": "web_live.config.input.comma_separated_values",
+"text": "comma-separated values",
+"page": "/config"
+},
+{
+"key": "web_live.config.tab.stash",
+"text": "stash",
+"page": "/config"
+},
+{
+"key": "web_live.config.heading.config",
+"text": "Config",
+"page": "/config"
+},
+{
+"key": "web_live.config.heading.general",
+"text": "GENERAL",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.model",
+"text": "MODEL",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.model_context_length",
+"text": "MODEL CONTEXT LENGTH",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.fallback_providers",
+"text": "FALLBACK PROVIDERS",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.toolsets",
+"text": "TOOLSETS",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.max_concurrent_sessions",
+"text": "MAX CONCURRENT SESSIONS",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.max_live_sessions",
+"text": "MAX LIVE SESSIONS",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.terminal_continue",
+"text": "TERMINAL CONTINUE",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.context_file_max_chars",
+"text": "CONTEXT FILE MAX CHARS",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.file_read_max_chars",
+"text": "FILE READ MAX CHARS",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.mcp_discovery_timeout",
+"text": "MCP DISCOVERY TIMEOUT",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.mcp_single_query_discovery_timeout",
+"text": "MCP SINGLE QUERY DISCOVERY TIMEOUT",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.prefill_messages_file",
+"text": "PREFILL MESSAGES FILE",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.timezone",
+"text": "TIMEZONE",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.command_allowlist",
+"text": "COMMAND ALLOWLIST",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.hooks_auto_accept",
+"text": "HOOKS AUTO ACCEPT",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.live_probe_timeout",
+"text": "LIVE PROBE TIMEOUT",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.pre_update_backup",
+"text": "PRE UPDATE BACKUP",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.backup_keep",
+"text": "BACKUP KEEP",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.non_interactive_local_changes",
+"text": "NON INTERACTIVE LOCAL CHANGES",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.auto_switch_parked_branch",
+"text": "AUTO SWITCH PARKED BRANCH",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.parked_branch_strategy",
+"text": "PARKED BRANCH STRATEGY",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.refresh_cua_driver",
+"text": "REFRESH CUA DRIVER",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.paste_collapse_threshold",
+"text": "PASTE COLLAPSE THRESHOLD",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.paste_collapse_threshold_fallback",
+"text": "PASTE COLLAPSE THRESHOLD FALLBACK",
+"page": "/config"
+},
+{
+"key": "web_live.config.label.paste_collapse_char_threshold",
+"text": "PASTE COLLAPSE CHAR THRESHOLD",
+"page": "/config"
+},
+{
+"key": "web_live.cron.button.open_navigation",
+"text": "Open navigation",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.close_navigation",
+"text": "Close navigation",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.collapse",
+"text": "Collapse",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.restart_gateway",
+"text": "Restart Gateway",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.update_hermes",
+"text": "Update Hermes",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.hermes_teal",
+"text": "HERMES TEAL",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.switch_theme",
+"text": "Switch theme",
+"page": "/cron"
+},
+{
+"key": "web_live.cron.button.switch_theme_hermes_teal",
+"text": "Switch theme: Hermes Teal",
+"page": "/cron"
+}
+]

@@ -1,0 +1,1202 @@
+[
+{
+"key": "settings.gateway.sshUserDesc",
+"text": "Blank = ~/.ssh/config or your current user."
+},
+{
+"key": "settings.gateway.sshUserPlaceholder",
+"text": "from ~/.ssh/config"
+},
+{
+"key": "settings.gateway.sshPortTitle",
+"text": "Port"
+},
+{
+"key": "settings.gateway.sshPortDesc",
+"text": "Blank = 22 or the ~/.ssh/config port."
+},
+{
+"key": "settings.gateway.sshKeyTitle",
+"text": "Identity file"
+},
+{
+"key": "settings.gateway.sshKeyDesc",
+"text": "Private key path. Blank = ssh-agent or ~/.ssh/config."
+},
+{
+"key": "settings.gateway.sshHermesPathTitle",
+"text": "Hermes path (optional)"
+},
+{
+"key": "settings.gateway.sshHermesPathDesc",
+"text": "Full path to the remote hermes binary. Blank = auto-detect."
+},
+{
+"key": "settings.gateway.sshHermesPathPlaceholder",
+"text": "auto-detect"
+},
+{
+"key": "settings.gateway.sshTestConnection",
+"text": "Test SSH"
+},
+{
+"key": "settings.gateway.sshConnect",
+"text": "Connect"
+},
+{
+"key": "settings.gateway.sshButtonsHint",
+"text": "Save applies on the next launch. Connect reconnects now."
+},
+{
+"key": "settings.gateway.sshIncompleteHost",
+"text": "Enter an SSH host before connecting."
+},
+{
+"key": "settings.gateway.sshErrUnreachable",
+"text": "Could not reach that host over SSH. Check the host, port, and your network."
+},
+{
+"key": "settings.gateway.sshErrTimeout",
+"text": "SSH connection timed out. The host may be unreachable or asleep."
+},
+{
+"key": "settings.gateway.sshErrUpdateRequired",
+"text": "Update Hermes on the remote host before connecting with Desktop SSH."
+},
+{
+"key": "settings.gateway.sshErrUnknown",
+"text": "SSH connection failed."
+},
+{
+"key": "settings.keys.loading",
+"text": "Loading API keys and credentials..."
+},
+{
+"key": "settings.keys.failedLoad",
+"text": "API keys failed to load"
+},
+{
+"key": "settings.keys.empty",
+"text": "Nothing configured in this category yet."
+},
+{
+"key": "settings.search.placeholder",
+"text": "Search all settings…"
+},
+{
+"key": "settings.search.pill",
+"text": "Search"
+},
+{
+"key": "settings.profileScope.appliesTo",
+"text": "Applies to"
+},
+{
+"key": "settings.mcp.loading",
+"text": "Loading MCP servers..."
+},
+{
+"key": "settings.mcp.failedLoad",
+"text": "MCP config failed to load"
+},
+{
+"key": "settings.mcp.nameRequiredTitle",
+"text": "Name required"
+},
+{
+"key": "settings.mcp.nameRequiredMessage",
+"text": "Give this MCP server a config key."
+},
+{
+"key": "settings.mcp.objectRequired",
+"text": "Server config must be a JSON object"
+},
+{
+"key": "settings.mcp.invalidJson",
+"text": "Invalid MCP JSON"
+},
+{
+"key": "settings.mcp.saveFailed",
+"text": "Save failed"
+},
+{
+"key": "settings.mcp.removeFailed",
+"text": "Remove failed"
+},
+{
+"key": "settings.mcp.gatewayUnavailableTitle",
+"text": "Gateway unavailable"
+},
+{
+"key": "settings.mcp.gatewayUnavailableMessage",
+"text": "Reconnect the gateway before reloading MCP."
+},
+{
+"key": "settings.mcp.reloadedTitle",
+"text": "MCP tools reloaded"
+},
+{
+"key": "settings.mcp.reloadedMessage",
+"text": "New tool schemas apply to fresh turns."
+},
+{
+"key": "settings.mcp.reloadFailed",
+"text": "MCP reload failed"
+},
+{
+"key": "settings.mcp.savedTitle",
+"text": "MCP server saved"
+},
+{
+"key": "settings.mcp.newServer",
+"text": "New server"
+},
+{
+"key": "settings.mcp.reload",
+"text": "Reload MCP"
+},
+{
+"key": "settings.mcp.reloading",
+"text": "Reloading..."
+},
+{
+"key": "settings.mcp.emptyTitle",
+"text": "No MCP servers"
+},
+{
+"key": "settings.mcp.emptyDesc",
+"text": "Add a stdio or HTTP server to expose MCP tools."
+},
+{
+"key": "settings.mcp.disabled",
+"text": "disabled"
+},
+{
+"key": "settings.mcp.editServer",
+"text": "Edit server"
+},
+{
+"key": "settings.mcp.name",
+"text": "Name"
+},
+{
+"key": "settings.mcp.serverJson",
+"text": "Server JSON"
+},
+{
+"key": "settings.mcp.remove",
+"text": "Remove"
+},
+{
+"key": "settings.mcp.saveServer",
+"text": "Save server"
+},
+{
+"key": "settings.mcp.test",
+"text": "Test connection"
+},
+{
+"key": "settings.mcp.testing",
+"text": "Testing..."
+},
+{
+"key": "settings.mcp.testFailed",
+"text": "Connection failed"
+},
+{
+"key": "settings.mcp.tabServers",
+"text": "Servers"
+},
+{
+"key": "settings.mcp.tabCatalog",
+"text": "Catalog"
+},
+{
+"key": "settings.mcp.catalogLoading",
+"text": "Loading MCP catalog..."
+},
+{
+"key": "settings.mcp.catalogLoadFailed",
+"text": "MCP catalog failed to load"
+},
+{
+"key": "settings.mcp.catalogEmpty",
+"text": "No catalog entries available."
+},
+{
+"key": "settings.mcp.catalogInstalled",
+"text": "Installed"
+},
+{
+"key": "settings.mcp.catalogEnabled",
+"text": "Enabled"
+},
+{
+"key": "settings.mcp.catalogNeedsInstall",
+"text": "Needs build"
+},
+{
+"key": "settings.mcp.catalogInstall",
+"text": "Install"
+},
+{
+"key": "settings.mcp.catalogInstalling",
+"text": "Installing..."
+},
+{
+"key": "settings.mcp.catalogEnvRequired",
+"text": "Fill in the required values before installing."
+},
+{
+"key": "settings.mcp.unusedPill",
+"text": "unused"
+},
+{
+"key": "settings.mcp.statusConnecting",
+"text": "Connecting…"
+},
+{
+"key": "settings.mcp.statusNeedsAuth",
+"text": "Needs authentication"
+},
+{
+"key": "settings.mcp.statusError",
+"text": "Error"
+},
+{
+"key": "settings.mcp.statusOff",
+"text": "Off"
+},
+{
+"key": "settings.mcp.allServers",
+"text": "All servers"
+},
+{
+"key": "settings.mcp.authenticatedTitle",
+"text": "Authenticated"
+},
+{
+"key": "settings.mcp.waitingForBrowser",
+"text": "Waiting for browser…"
+},
+{
+"key": "settings.mcp.authenticate",
+"text": "Authenticate"
+},
+{
+"key": "settings.mcp.unsavedConnect",
+"text": "Unsaved — save mcp.json to connect."
+},
+{
+"key": "settings.mcp.noOutput",
+"text": "No output yet."
+},
+{
+"key": "settings.mcp.deepLinkTitle",
+"text": "Add MCP server?"
+},
+{
+"key": "settings.mcp.deepLinkConfirm",
+"text": "Add server"
+},
+{
+"key": "settings.mcp.deepLinkNameInvalid",
+"text": "Names use 1-64 letters, digits, dots, dashes, or underscores."
+},
+{
+"key": "settings.mcp.deepLinkErrorTitle",
+"text": "MCP install link rejected"
+},
+{
+"key": "settings.mcp.deepLinkErrorName",
+"text": "The link\\u2019s server name is missing or invalid."
+},
+{
+"key": "settings.mcp.deepLinkErrorConfig",
+"text": "The link\\u2019s config is not valid base64-encoded JSON."
+},
+{
+"key": "settings.mcp.deepLinkErrorShape",
+"text": "The config must be a JSON object with a string `url` or `command` field."
+},
+{
+"key": "settings.mcp.deepLinkErrorUrl",
+"text": "Only http:// and https:// server URLs are allowed."
+},
+{
+"key": "settings.mcp.deepLinkErrorTooLarge",
+"text": "The config payload exceeds the 32KB limit."
+},
+{
+"key": "settings.mcp.importButton",
+"text": "Import"
+},
+{
+"key": "settings.mcp.importPlaceholder",
+"text": "Paste an mcp.json snippet, npx/docker command, claude mcp add line, URL, or Cursor link…"
+},
+{
+"key": "settings.mcp.importNoMatch",
+"text": "No server config recognized in the pasted text."
+},
+{
+"key": "settings.mcp.importConfirm",
+"text": "Add to mcp.json"
+},
+{
+"key": "settings.model.loading",
+"text": "Loading model configuration..."
+},
+{
+"key": "settings.model.appliesDesc",
+"text": "Applies to new sessions. Use the model picker in the composer to hot-swap the active chat."
+},
+{
+"key": "settings.model.provider",
+"text": "Provider"
+},
+{
+"key": "settings.model.model",
+"text": "Model"
+},
+{
+"key": "settings.model.applying",
+"text": "Applying..."
+},
+{
+"key": "settings.model.defaultsLabel",
+"text": "Defaults"
+},
+{
+"key": "settings.model.reasoning",
+"text": "Reasoning"
+},
+{
+"key": "settings.model.reasoningOff",
+"text": "Off"
+},
+{
+"key": "settings.model.defaultsFailed",
+"text": "Failed to save model defaults"
+},
+{
+"key": "settings.model.auxiliaryTitle",
+"text": "Auxiliary models"
+},
+{
+"key": "settings.model.resetAllToMain",
+"text": "Reset all to main"
+},
+{
+"key": "settings.model.auxiliaryDesc",
+"text": "Helper tasks run on the main model by default. Assign a dedicated model to any task to override."
+},
+{
+"key": "settings.model.setToMain",
+"text": "Set to main"
+},
+{
+"key": "settings.model.change",
+"text": "Change"
+},
+{
+"key": "settings.model.autoUseMain",
+"text": "auto · use main model"
+},
+{
+"key": "settings.model.providerDefault",
+"text": "(provider default)"
+},
+{
+"key": "settings.model.fallbackAdd",
+"text": "Add fallback"
+},
+{
+"key": "settings.model.fallbackEmpty",
+"text": "No fallback models — the default model is used unless it fails."
+},
+{
+"key": "settings.model.notInCatalog",
+"text": "isn't in this provider's model list — calls may fall back to a backup."
+},
+{
+"key": "settings.providers.connectAccount",
+"text": "Connect an account"
+},
+{
+"key": "settings.providers.haveApiKey",
+"text": "Have an API key instead?"
+},
+{
+"key": "settings.providers.connected",
+"text": "Connected"
+},
+{
+"key": "settings.providers.collapse",
+"text": "Collapse"
+},
+{
+"key": "settings.providers.connectAnother",
+"text": "Connect another provider"
+},
+{
+"key": "settings.providers.otherProviders",
+"text": "Other providers"
+},
+{
+"key": "settings.providers.disconnect",
+"text": "Disconnect"
+},
+{
+"key": "settings.providers.disconnectInTerminal",
+"text": "Disconnect (runs the removal command in the terminal)"
+},
+{
+"key": "settings.providers.removedTitle",
+"text": "Account removed"
+},
+{
+"key": "settings.providers.noProviderKeys",
+"text": "No provider API keys available."
+},
+{
+"key": "settings.providers.searchKeys",
+"text": "Search providers…"
+},
+{
+"key": "settings.providers.noKeysMatch",
+"text": "No providers match your search."
+},
+{
+"key": "settings.providers.localEndpoint.title",
+"text": "Local / custom endpoint"
+},
+{
+"key": "settings.providers.localEndpoint.description",
+"text": "Point Hermes at any OpenAI-compatible endpoint (Zyphra, vLLM, llama.cpp, Ollama, etc)."
+},
+{
+"key": "settings.providers.loading",
+"text": "Loading providers..."
+},
+{
+"key": "settings.sessions.loading",
+"text": "Loading archived sessions…"
+},
+{
+"key": "settings.sessions.archivedTitle",
+"text": "Archived sessions"
+},
+{
+"key": "settings.sessions.emptyArchivedTitle",
+"text": "Nothing archived"
+},
+{
+"key": "settings.sessions.emptyArchivedDesc",
+"text": "Archive a chat to hide it here."
+},
+{
+"key": "settings.sessions.unarchive",
+"text": "Unarchive"
+},
+{
+"key": "settings.sessions.deletePermanently",
+"text": "Delete permanently"
+},
+{
+"key": "settings.sessions.restored",
+"text": "Restored"
+},
+{
+"key": "settings.sessions.autoArchiveTitle",
+"text": "Auto-archive stale chats"
+},
+{
+"key": "settings.sessions.autoArchiveDaysLabel",
+"text": "Archive after"
+},
+{
+"key": "settings.sessions.autoArchiveDaysUnit",
+"text": "days of inactivity"
+},
+{
+"key": "settings.sessions.autoArchiveFailed",
+"text": "Could not update auto-archive"
+},
+{
+"key": "settings.sessions.defaultDirTitle",
+"text": "Default project directory"
+},
+{
+"key": "settings.sessions.defaultDirUpdated",
+"text": "Default project directory updated — start a new chat (Ctrl/⌘+N) for it to take effect"
+},
+{
+"key": "settings.sessions.change",
+"text": "Change"
+},
+{
+"key": "settings.sessions.choose",
+"text": "Choose"
+},
+{
+"key": "settings.sessions.clear",
+"text": "Clear"
+},
+{
+"key": "settings.sessions.notSet",
+"text": "Not set"
+},
+{
+"key": "settings.sessions.failedLoad",
+"text": "Could not load archived sessions"
+},
+{
+"key": "settings.sessions.unarchiveFailed",
+"text": "Unarchive failed"
+},
+{
+"key": "settings.sessions.deleteFailed",
+"text": "Delete failed"
+},
+{
+"key": "settings.sessions.updateDirFailed",
+"text": "Could not update default directory"
+},
+{
+"key": "settings.sessions.clearDirFailed",
+"text": "Could not clear default directory"
+},
+{
+"key": "settings.toolsets.loadingConfig",
+"text": "Loading configuration"
+},
+{
+"key": "settings.toolsets.savedTitle",
+"text": "Credential saved"
+},
+{
+"key": "settings.toolsets.removedTitle",
+"text": "Credential removed"
+},
+{
+"key": "settings.toolsets.set",
+"text": "Set"
+},
+{
+"key": "settings.toolsets.notSet",
+"text": "Not set"
+},
+{
+"key": "settings.toolsets.selectedTitle",
+"text": "Provider selected"
+},
+{
+"key": "settings.toolsets.failedLoad",
+"text": "Tool configuration failed to load"
+},
+{
+"key": "settings.toolsets.noProviderOptions",
+"text": "This toolset has no provider options — enable it and it works with your current setup."
+},
+{
+"key": "settings.toolsets.noProviders",
+"text": "No providers are available for this toolset right now."
+},
+{
+"key": "settings.toolsets.ready",
+"text": "Ready"
+},
+{
+"key": "settings.toolsets.needsSignIn",
+"text": "Needs sign-in"
+},
+{
+"key": "settings.toolsets.needsSetup",
+"text": "Setup required"
+},
+{
+"key": "settings.toolsets.activeBackend",
+"text": "Active"
+},
+{
+"key": "settings.toolsets.activeBackendHint",
+"text": "This is your active backend"
+},
+{
+"key": "settings.toolsets.useBackend",
+"text": "Use this backend"
+},
+{
+"key": "settings.toolsets.nousIncluded",
+"text": "Included with a Nous subscription — sign in to Nous Portal to activate."
+},
+{
+"key": "settings.toolsets.nousAuthNeededTitle",
+"text": "Sign in to Nous Portal"
+},
+{
+"key": "settings.toolsets.nousAuthSignIn",
+"text": "Sign in"
+},
+{
+"key": "settings.toolsets.nousAuthDoneTitle",
+"text": "Nous Portal connected"
+},
+{
+"key": "settings.toolsets.nousAuthDoneMessage",
+"text": "Your subscription backends are now active."
+},
+{
+"key": "settings.toolsets.nousAuthFailed",
+"text": "Nous Portal sign-in did not complete"
+},
+{
+"key": "settings.toolsets.noApiKeyRequired",
+"text": "No API key required."
+},
+{
+"key": "settings.toolsets.postSetupInstalledHint",
+"text": "Installed. Re-run setup only if something is broken."
+},
+{
+"key": "settings.toolsets.postSetupRun",
+"text": "Run setup"
+},
+{
+"key": "settings.toolsets.postSetupRerun",
+"text": "Re-run setup"
+},
+{
+"key": "settings.toolsets.postSetupInstalled",
+"text": "Installed"
+},
+{
+"key": "settings.toolsets.postSetupRunning",
+"text": "Installing…"
+},
+{
+"key": "settings.toolsets.postSetupStarting",
+"text": "Starting…"
+},
+{
+"key": "settings.toolsets.postSetupCompleteTitle",
+"text": "Setup complete"
+},
+{
+"key": "settings.toolsets.postSetupErrorTitle",
+"text": "Setup finished with errors"
+},
+{
+"key": "settings.toolsets.webCapabilityUnset",
+"text": "not set"
+},
+{
+"key": "settings.toolsets.webUseForSearch",
+"text": "Use for Search"
+},
+{
+"key": "settings.toolsets.webUseForExtract",
+"text": "Use for Extract"
+},
+{
+"key": "settings.toolsets.webUsedForSearch",
+"text": "Search backend"
+},
+{
+"key": "settings.toolsets.webUsedForExtract",
+"text": "Extract backend"
+},
+{
+"key": "settings.toolsets.loadingModels",
+"text": "Loading model catalog..."
+},
+{
+"key": "settings.toolsets.modelSectionTitle",
+"text": "Model"
+},
+{
+"key": "settings.toolsets.modelInUse",
+"text": "In use"
+},
+{
+"key": "settings.toolsets.modelDefault",
+"text": "default"
+},
+{
+"key": "settings.toolsets.modelInactiveHint",
+"text": "Select this backend first to change its model."
+},
+{
+"key": "settings.toolsets.modelSelectedTitle",
+"text": "Model selected"
+},
+{
+"key": "settings.toolsets.terminalBackend.sectionTitle",
+"text": "Execution backend"
+},
+{
+"key": "settings.toolsets.terminalBackend.loading",
+"text": "Checking execution backends…"
+},
+{
+"key": "settings.toolsets.terminalBackend.failedLoad",
+"text": "Could not load terminal backends"
+},
+{
+"key": "settings.toolsets.terminalBackend.ready",
+"text": "Ready"
+},
+{
+"key": "settings.toolsets.terminalBackend.needsSetup",
+"text": "Needs setup"
+},
+{
+"key": "settings.toolsets.terminalBackend.unavailable",
+"text": "Unavailable"
+},
+{
+"key": "settings.toolsets.terminalBackend.inUse",
+"text": "In use"
+},
+{
+"key": "settings.toolsets.terminalBackend.selectedTitle",
+"text": "Backend selected"
+},
+{
+"key": "settings.toolsets.terminalBackend.needsSetupHint",
+"text": "You can select this backend now — commands will fail until setup is complete."
+},
+{
+"key": "settings.toolsets.browserRealProfile.label",
+"text": "Use My Real Browser Profile"
+},
+{
+"key": "settings.toolsets.browserRealProfile.enabledTitle",
+"text": "Real-profile browsing on"
+},
+{
+"key": "settings.toolsets.browserRealProfile.enabledMessage",
+"text": "New sessions will browse with a snapshot of your default browser profile."
+},
+{
+"key": "settings.toolsets.browserRealProfile.disabledTitle",
+"text": "Real-profile browsing off"
+},
+{
+"key": "settings.toolsets.browserRealProfile.disabledMessage",
+"text": "The profile snapshot will be deleted; new sessions use a clean browser."
+},
+{
+"key": "settings.toolsets.browserRealProfile.failedSave",
+"text": "Could not save the real-profile setting"
+},
+{
+"key": "skills.tabSkills",
+"text": "Skills"
+},
+{
+"key": "skills.tabToolsets",
+"text": "Tools"
+},
+{
+"key": "skills.configuringProfile",
+"text": "Configuring:"
+},
+{
+"key": "skills.tabMcp",
+"text": "MCP"
+},
+{
+"key": "skills.all",
+"text": "All"
+},
+{
+"key": "skills.searchSkills",
+"text": "Search skills..."
+},
+{
+"key": "skills.searchToolsets",
+"text": "Search tools..."
+},
+{
+"key": "skills.refresh",
+"text": "Refresh skills"
+},
+{
+"key": "skills.refreshing",
+"text": "Refreshing skills"
+},
+{
+"key": "skills.loading",
+"text": "Loading capabilities..."
+},
+{
+"key": "skills.noSkillsTitle",
+"text": "No skills found"
+},
+{
+"key": "skills.noSkillsDesc",
+"text": "Try a broader search or different category."
+},
+{
+"key": "skills.noToolsetsTitle",
+"text": "No toolsets found"
+},
+{
+"key": "skills.noToolsetsDesc",
+"text": "Try a broader search query."
+},
+{
+"key": "skills.noDescription",
+"text": "No description."
+},
+{
+"key": "skills.configured",
+"text": "Configured"
+},
+{
+"key": "skills.needsKeys",
+"text": "Needs keys"
+},
+{
+"key": "skills.visionModelLink",
+"text": "Choose vision model in Settings → Models"
+},
+{
+"key": "skills.skillsLoadFailed",
+"text": "Skills failed to load"
+},
+{
+"key": "skills.toolsetsRefreshFailed",
+"text": "Toolsets failed to refresh"
+},
+{
+"key": "skills.skillEnabled",
+"text": "Skill enabled"
+},
+{
+"key": "skills.skillDisabled",
+"text": "Skill disabled"
+},
+{
+"key": "skills.toolsetEnabled",
+"text": "Toolset enabled"
+},
+{
+"key": "skills.toolsetDisabled",
+"text": "Toolset disabled"
+},
+{
+"key": "skills.sortMostUsed",
+"text": "Most used"
+},
+{
+"key": "skills.sortAlpha",
+"text": "A–Z"
+},
+{
+"key": "skills.sortMostUsedDesc",
+"text": "↓ Most used"
+},
+{
+"key": "skills.sortLeastUsedAsc",
+"text": "↑ Least used"
+},
+{
+"key": "skills.enableAll",
+"text": "Enable all"
+},
+{
+"key": "skills.disableAll",
+"text": "Disable all"
+},
+{
+"key": "skills.disableUnused",
+"text": "Disable unused"
+},
+{
+"key": "skills.bulkNoChange",
+"text": "Nothing to change."
+},
+{
+"key": "skills.provenance.agent",
+"text": "Learned"
+},
+{
+"key": "skills.provenance.bundled",
+"text": "Built-in"
+},
+{
+"key": "skills.provenance.hub",
+"text": "Hub"
+},
+{
+"key": "skills.changesApplyNewSessions",
+"text": "Changes apply to new sessions."
+},
+{
+"key": "skills.skillUpdated",
+"text": "Skill updated"
+},
+{
+"key": "skills.edit",
+"text": "Edit"
+},
+{
+"key": "skills.archive",
+"text": "Archive"
+},
+{
+"key": "skills.skillArchivedTitle",
+"text": "Skill archived"
+},
+{
+"key": "skills.skillArchivedMessage",
+"text": "Restorable via hermes curator restore."
+},
+{
+"key": "skills.hub.searchPlaceholder",
+"text": "Search the skill hub"
+},
+{
+"key": "skills.hub.search",
+"text": "Search"
+},
+{
+"key": "skills.hub.searching",
+"text": "Searching..."
+},
+{
+"key": "skills.hub.connectingHubs",
+"text": "Connecting to skill hubs..."
+},
+{
+"key": "skills.hub.connectedHubs",
+"text": "Connected hubs:"
+},
+{
+"key": "skills.hub.featured",
+"text": "Featured skills"
+},
+{
+"key": "skills.hub.noResults",
+"text": "No matching skills found in the hub."
+},
+{
+"key": "skills.hub.installed",
+"text": "Installed"
+},
+{
+"key": "skills.hub.install",
+"text": "Install"
+},
+{
+"key": "skills.hub.installing",
+"text": "Installing..."
+},
+{
+"key": "skills.hub.uninstall",
+"text": "Uninstall"
+},
+{
+"key": "skills.hub.uninstalling",
+"text": "Uninstalling..."
+},
+{
+"key": "skills.hub.updateAll",
+"text": "Update installed"
+},
+{
+"key": "skills.hub.updating",
+"text": "Updating..."
+},
+{
+"key": "skills.hub.preview",
+"text": "Preview"
+},
+{
+"key": "skills.hub.scan",
+"text": "Scan"
+},
+{
+"key": "skills.hub.scanning",
+"text": "Scanning..."
+},
+{
+"key": "skills.hub.close",
+"text": "Close"
+},
+{
+"key": "skills.hub.files",
+"text": "Files"
+},
+{
+"key": "skills.hub.noReadme",
+"text": "This skill has no SKILL.md preview."
+},
+{
+"key": "skills.hub.trust.builtin",
+"text": "builtin"
+},
+{
+"key": "skills.hub.trust.trusted",
+"text": "trusted"
+},
+{
+"key": "skills.hub.trust.community",
+"text": "community"
+},
+{
+"key": "skills.hub.verdictSafe",
+"text": "Safe"
+},
+{
+"key": "skills.hub.verdictCaution",
+"text": "Caution"
+},
+{
+"key": "skills.hub.verdictDangerous",
+"text": "Dangerous"
+},
+{
+"key": "skills.hub.policyAllow",
+"text": "Install allowed"
+},
+{
+"key": "skills.hub.policyAsk",
+"text": "Review before installing"
+},
+{
+"key": "skills.hub.policyBlock",
+"text": "Install blocked by policy"
+},
+{
+"key": "skills.hub.noFindings",
+"text": "No security findings."
+},
+{
+"key": "skills.hub.updateStarted",
+"text": "Updating installed skills..."
+},
+{
+"key": "skills.hub.actionFailed",
+"text": "Skill action failed"
+},
+{
+"key": "skills.hub.actionLog",
+"text": "Action log"
+},
+{
+"key": "skills.hub.pickerTitle",
+"text": "Skills Hub"
+},
+{
+"key": "skills.hub.pickerBrowse",
+"text": "Browse the full hub"
+},
+{
+"key": "skills.hub.pickerHide",
+"text": "Hide the hub browser"
+},
+{
+"key": "skills.hub.pickerHint",
+"text": "Hit \"+ Add to this Agent\" on any skill — it installs and appears in the list above."
+},
+{
+"key": "skills.hub.loadFailed",
+"text": "Skill hub failed to load"
+},
+{
+"key": "skills.hub.previewFailed",
+"text": "Skill preview failed"
+},
+{
+"key": "skills.hub.scanFailed",
+"text": "Security scan failed"
+},
+{
+"key": "skills.hub.searchFailed",
+"text": "Hub search failed"
+},
+{
+"key": "starmap.title",
+"text": "Memory Graph"
+},
+{
+"key": "starmap.close",
+"text": "Close memory graph"
+},
+{
+"key": "starmap.refresh",
+"text": "Refresh"
+},
+{
+"key": "starmap.memory",
+"text": "Memory"
+},
+{
+"key": "starmap.filterAll",
+"text": "All"
+},
+{
+"key": "starmap.filterUsed",
+"text": "Used"
+},
+{
+"key": "starmap.filterLearned",
+"text": "Learned"
+},
+{
+"key": "starmap.viewGraph",
+"text": "Graph"
+},
+{
+"key": "starmap.loadFailed",
+"text": "Could not load memory graph"
+},
+{
+"key": "starmap.loading",
+"text": "Loading…"
+},
+{
+"key": "starmap.emptyTitle",
+"text": "Nothing learned yet"
+},
+{
+"key": "starmap.emptyDesc",
+"text": "As Hermes builds skills and memories for your work, they appear here."
+},
+{
+"key": "starmap.share",
+"text": "Share map"
+},
+{
+"key": "starmap.shareTitle",
+"text": "Import / export map"
+},
+{
+"key": "starmap.sharePlaceholder",
+"text": "Paste a map code…"
+},
+{
+"key": "starmap.copy",
+"text": "Copy map code"
+},
+{
+"key": "starmap.copied",
+"text": "Copied!"
+},
+{
+"key": "starmap.importMap",
+"text": "Import a map"
+},
+{
+"key": "starmap.importBtn",
+"text": "Load"
+},
+{
+"key": "starmap.importEmpty",
+"text": "Paste a map code to load it."
+}
+]

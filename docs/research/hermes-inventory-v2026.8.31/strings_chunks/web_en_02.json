@@ -1,0 +1,226 @@
+[
+{
+"key": "kanban.boardSwitcherHint",
+"text": "Boards let you separate unrelated streams of work"
+},
+{
+"key": "kanban.taskCreatedWarning",
+"text": "Task created, but: "
+},
+{
+"key": "kanban.moveFailed",
+"text": "Move failed: "
+},
+{
+"key": "kanban.bulkFailed",
+"text": "Bulk: "
+},
+{
+"key": "kanban.completionBlockedHallucination",
+"text": "⚠ Completion blocked — phantom card ids"
+},
+{
+"key": "kanban.suspectedHallucinatedReferences",
+"text": "⚠ Prose referenced phantom card ids"
+},
+{
+"key": "kanban.pickProfileFirst",
+"text": "Pick a profile first."
+},
+{
+"key": "kanban.unblockedMessage",
+"text": "Unblocked {id}. Task is ready for the next tick."
+},
+{
+"key": "kanban.unblockFailed",
+"text": "Unblock failed: "
+},
+{
+"key": "kanban.reclaimedMessage",
+"text": "Reclaimed {id}. Task is back to ready."
+},
+{
+"key": "kanban.reclaimFailed",
+"text": "Reclaim failed: "
+},
+{
+"key": "kanban.reassignedMessage",
+"text": "Reassigned {id} to {profile}."
+},
+{
+"key": "kanban.reassignFailed",
+"text": "Reassign failed: "
+},
+{
+"key": "kanban.selectForBulk",
+"text": "Select for bulk actions"
+},
+{
+"key": "kanban.clickToEdit",
+"text": "Click to edit"
+},
+{
+"key": "kanban.clickToEditAssignee",
+"text": "Click to edit assignee"
+},
+{
+"key": "kanban.emptyAssignee",
+"text": "(empty = unassign)"
+},
+{
+"key": "kanban.columnLabels.triage",
+"text": "Triage"
+},
+{
+"key": "kanban.columnLabels.todo",
+"text": "Todo"
+},
+{
+"key": "kanban.columnLabels.scheduled",
+"text": "Scheduled"
+},
+{
+"key": "kanban.columnLabels.ready",
+"text": "Ready"
+},
+{
+"key": "kanban.columnLabels.running",
+"text": "In Progress"
+},
+{
+"key": "kanban.columnLabels.blocked",
+"text": "Blocked"
+},
+{
+"key": "kanban.columnLabels.done",
+"text": "Done"
+},
+{
+"key": "kanban.columnLabels.archived",
+"text": "Archived"
+},
+{
+"key": "kanban.columnHelp.triage",
+"text": "Raw ideas — a specifier will flesh out the spec"
+},
+{
+"key": "kanban.columnHelp.todo",
+"text": "Waiting on dependencies or unassigned"
+},
+{
+"key": "kanban.columnHelp.scheduled",
+"text": "Waiting on a known time delay or scheduled follow-up"
+},
+{
+"key": "kanban.columnHelp.ready",
+"text": "Dependencies satisfied; assign a profile to dispatch"
+},
+{
+"key": "kanban.columnHelp.running",
+"text": "Claimed by a worker — in-flight"
+},
+{
+"key": "kanban.columnHelp.blocked",
+"text": "Worker asked for human input"
+},
+{
+"key": "kanban.columnHelp.done",
+"text": "Completed"
+},
+{
+"key": "kanban.columnHelp.archived",
+"text": "Archived"
+},
+{
+"key": "kanban.triagePlaceholder",
+"text": "Rough idea — AI will spec it…"
+},
+{
+"key": "kanban.taskTitlePlaceholder",
+"text": "New task title…"
+},
+{
+"key": "kanban.specifier",
+"text": "specifier"
+},
+{
+"key": "kanban.assigneePlaceholder",
+"text": "assignee"
+},
+{
+"key": "kanban.priority",
+"text": "Priority"
+},
+{
+"key": "kanban.noParent",
+"text": "— no parent —"
+},
+{
+"key": "kanban.workspacePathDir",
+"text": "workspace path (required, e.g. ~/projects/my-app)"
+},
+{
+"key": "kanban.logTruncated",
+"text": "(showing last 100 KB — full log at "
+},
+{
+"key": "kanban.logAt",
+"text": ")"
+},
+{
+"key": "kanban.newTaskTitle",
+"text": "New task — {column}"
+},
+{
+"key": "kanban.taskTitleLabel",
+"text": "Title"
+},
+{
+"key": "kanban.assigneeLabel",
+"text": "Assignee"
+},
+{
+"key": "kanban.assigneeLabelHint",
+"text": "(blank = dispatcher picks)"
+},
+{
+"key": "kanban.skillsLabel",
+"text": "Skills"
+},
+{
+"key": "kanban.skillsLabelHint",
+"text": "(optional, comma-separated)"
+},
+{
+"key": "kanban.parentLabel",
+"text": "Parent task"
+},
+{
+"key": "kanban.parentLabelHint",
+"text": "(child stays blocked until the parent is done)"
+},
+{
+"key": "kanban.create",
+"text": "Create"
+},
+{
+"key": "kanban.boardSettings",
+"text": "Settings"
+},
+{
+"key": "kanban.boardSettingsTitleFor",
+"text": "Board settings — {name}"
+},
+{
+"key": "kanban.saving",
+"text": "Saving…"
+},
+{
+"key": "kanban.trash.confirmTitle",
+"text": "Delete task?"
+},
+{
+"key": "kanban.trash.confirmManyTitle",
+"text": "Delete {n} tasks?"
+}
+]

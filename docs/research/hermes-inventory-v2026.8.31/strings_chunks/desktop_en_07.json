@@ -1,0 +1,1018 @@
+[
+{
+"key": "zones.pluginDisabledBody",
+"text": "Re-enable it in Settings → Plugins to bring the pane back."
+},
+{
+"key": "zones.editTitle",
+"text": "Layouts"
+},
+{
+"key": "zones.editHint",
+"text": "Pick a layout, or drag panes between zones."
+},
+{
+"key": "zones.reset",
+"text": "Reset"
+},
+{
+"key": "zones.templates",
+"text": "Templates"
+},
+{
+"key": "zones.custom",
+"text": "Custom"
+},
+{
+"key": "zones.newGridLayout",
+"text": "New grid layout"
+},
+{
+"key": "zones.saveCurrentAs",
+"text": "Save current arrangement as a template"
+},
+{
+"key": "zones.nameLayoutPlaceholder",
+"text": "Name this layout…"
+},
+{
+"key": "zones.zoneEditorTitle",
+"text": "Zone editor"
+},
+{
+"key": "zones.editorHintPre",
+"text": "click to split · "
+},
+{
+"key": "zones.editorHintPost",
+"text": " flips the line · drag across zones to merge · drag shared edges to resize"
+},
+{
+"key": "zones.templateColumns",
+"text": "Columns"
+},
+{
+"key": "zones.templateRows",
+"text": "Rows"
+},
+{
+"key": "zones.templateGrid",
+"text": "Grid"
+},
+{
+"key": "zones.templatePriority",
+"text": "Priority"
+},
+{
+"key": "zones.saveApply",
+"text": "Save & apply"
+},
+{
+"key": "zones.notExpressible",
+"text": "this arrangement interlocks (pinwheel) — not expressible as nested splits yet"
+},
+{
+"key": "contextMenu.link.openInApp",
+"text": "Open in in-app browser"
+},
+{
+"key": "contextMenu.link.openExternal",
+"text": "Open in external browser"
+},
+{
+"key": "contextMenu.link.copyUrl",
+"text": "Copy URL"
+},
+{
+"key": "contextMenu.link.copyResolvedUrl",
+"text": "Copy resolved URL"
+},
+{
+"key": "contextMenu.image.copyImage",
+"text": "Copy image"
+},
+{
+"key": "contextMenu.image.copyImageAddress",
+"text": "Copy image address"
+},
+{
+"key": "contextMenu.image.saveImageAs",
+"text": "Save image as…"
+},
+{
+"key": "contextMenu.edit.cut",
+"text": "Cut"
+},
+{
+"key": "contextMenu.edit.paste",
+"text": "Paste"
+},
+{
+"key": "contextMenu.edit.selectAll",
+"text": "Select all"
+},
+{
+"key": "contextMenu.edit.addToDictionary",
+"text": "Add to dictionary"
+},
+{
+"key": "contextMenu.page.copyPageUrl",
+"text": "Copy page URL"
+},
+{
+"key": "contextMenu.page.inspectElement",
+"text": "Inspect element"
+},
+{
+"key": "assistant.thread.loadingSession",
+"text": "Loading session"
+},
+{
+"key": "assistant.thread.showEarlier",
+"text": "Show earlier messages"
+},
+{
+"key": "assistant.thread.loadingResponse",
+"text": "Hermes is loading a response"
+},
+{
+"key": "assistant.thread.thinking",
+"text": "Thinking"
+},
+{
+"key": "assistant.thread.thought",
+"text": "Thought"
+},
+{
+"key": "assistant.thread.thoughtBriefly",
+"text": "Thought briefly"
+},
+{
+"key": "assistant.thread.copy",
+"text": "Copy"
+},
+{
+"key": "assistant.thread.refresh",
+"text": "Refresh"
+},
+{
+"key": "assistant.thread.moreActions",
+"text": "More actions"
+},
+{
+"key": "assistant.thread.branchNewChat",
+"text": "Branch in new chat"
+},
+{
+"key": "assistant.thread.react",
+"text": "React"
+},
+{
+"key": "assistant.thread.dismissError",
+"text": "Dismiss error"
+},
+{
+"key": "assistant.thread.errorLayers.auth",
+"text": "Authentication error"
+},
+{
+"key": "assistant.thread.errorLayers.billing",
+"text": "Out of credits"
+},
+{
+"key": "assistant.thread.errorLayers.disk",
+"text": "Disk full"
+},
+{
+"key": "assistant.thread.errorLayers.endpoint",
+"text": "Custom endpoint error"
+},
+{
+"key": "assistant.thread.errorLayers.gateway",
+"text": "Gateway error"
+},
+{
+"key": "assistant.thread.errorLayers.generic",
+"text": "Turn failed"
+},
+{
+"key": "assistant.thread.errorLayers.provider",
+"text": "Provider error"
+},
+{
+"key": "assistant.thread.errorLayers.runtime",
+"text": "Local runtime error"
+},
+{
+"key": "assistant.thread.errorLayers.streaming",
+"text": "Streaming connection error"
+},
+{
+"key": "assistant.thread.errorRetry",
+"text": "Retry"
+},
+{
+"key": "assistant.thread.errorSwitchProvider",
+"text": "Switch provider"
+},
+{
+"key": "assistant.thread.errorOpenLogs",
+"text": "Open logs"
+},
+{
+"key": "assistant.thread.errorOpenLogsFailed",
+"text": "Could not open the logs folder"
+},
+{
+"key": "assistant.thread.errorOpenDesktopLogs",
+"text": "Open Desktop logs"
+},
+{
+"key": "assistant.thread.errorCopyDiagnostics",
+"text": "Copy error details"
+},
+{
+"key": "assistant.thread.errorSendDiagnostics",
+"text": "Send diagnostics"
+},
+{
+"key": "assistant.thread.reviewChanges",
+"text": "Review"
+},
+{
+"key": "assistant.thread.readAloudFailed",
+"text": "Read aloud failed"
+},
+{
+"key": "assistant.thread.preparingAudio",
+"text": "Preparing audio..."
+},
+{
+"key": "assistant.thread.stopReading",
+"text": "Stop reading"
+},
+{
+"key": "assistant.thread.readAloud",
+"text": "Read aloud"
+},
+{
+"key": "assistant.thread.editMessage",
+"text": "Edit message"
+},
+{
+"key": "assistant.thread.expandMessage",
+"text": "Expand message"
+},
+{
+"key": "assistant.thread.scrollToBottom",
+"text": "Scroll to bottom"
+},
+{
+"key": "assistant.thread.stop",
+"text": "Stop"
+},
+{
+"key": "assistant.thread.restorePrevious",
+"text": "Restore previous checkpoint"
+},
+{
+"key": "assistant.thread.restoreCheckpoint",
+"text": "Restore checkpoint"
+},
+{
+"key": "assistant.thread.restoreFromHere",
+"text": "Restore checkpoint — rerun from this prompt"
+},
+{
+"key": "assistant.thread.restoreTitle",
+"text": "Restore to this checkpoint?"
+},
+{
+"key": "assistant.thread.restoreConfirm",
+"text": "Restore & rerun"
+},
+{
+"key": "assistant.thread.restoreNext",
+"text": "Restore next checkpoint"
+},
+{
+"key": "assistant.thread.goForward",
+"text": "Go forward"
+},
+{
+"key": "assistant.thread.sendEdited",
+"text": "Send edited message"
+},
+{
+"key": "assistant.thread.attachingFile",
+"text": "Attaching…"
+},
+{
+"key": "assistant.approval.gatewayDisconnected",
+"text": "Hermes gateway is not connected"
+},
+{
+"key": "assistant.approval.sendFailed",
+"text": "Could not send approval response"
+},
+{
+"key": "assistant.approval.run",
+"text": "Run"
+},
+{
+"key": "assistant.approval.command",
+"text": "Command"
+},
+{
+"key": "assistant.approval.moreOptions",
+"text": "More approval options"
+},
+{
+"key": "assistant.approval.allowSession",
+"text": "Allow this session"
+},
+{
+"key": "assistant.approval.alwaysAllowMenu",
+"text": "Always allow…"
+},
+{
+"key": "assistant.approval.jumpToApproval",
+"text": "Approval needed"
+},
+{
+"key": "assistant.approval.reject",
+"text": "Reject"
+},
+{
+"key": "assistant.approval.alwaysTitle",
+"text": "Always allow this command?"
+},
+{
+"key": "assistant.approval.alwaysAllow",
+"text": "Always allow"
+},
+{
+"key": "assistant.clarify.notReady",
+"text": "Clarify request is not ready yet"
+},
+{
+"key": "assistant.clarify.gatewayDisconnected",
+"text": "Hermes gateway is not connected"
+},
+{
+"key": "assistant.clarify.sendFailed",
+"text": "Could not send clarify response"
+},
+{
+"key": "assistant.clarify.loadingQuestion",
+"text": "Loading question…"
+},
+{
+"key": "assistant.clarify.other",
+"text": "Other (type your answer)"
+},
+{
+"key": "assistant.clarify.placeholder",
+"text": "Type your answer…"
+},
+{
+"key": "assistant.clarify.skip",
+"text": "Skip"
+},
+{
+"key": "assistant.clarify.skipped",
+"text": "Skipped"
+},
+{
+"key": "assistant.clarify.continueLabel",
+"text": "Continue"
+},
+{
+"key": "assistant.clarify.confirmAndContinueLabel",
+"text": "Confirm and continue"
+},
+{
+"key": "assistant.clarify.answeredBadge",
+"text": "Answered"
+},
+{
+"key": "assistant.clarify.lateAnswerTip",
+"text": "Draft this answer as a follow-up message"
+},
+{
+"key": "assistant.clarify.lateAnswerHint",
+"text": "This prompt is no longer waiting. Pick an option to draft it as a follow-up message."
+},
+{
+"key": "assistant.mcpSetup.installAction",
+"text": "Install"
+},
+{
+"key": "assistant.mcpSetup.enableAction",
+"text": "Enable"
+},
+{
+"key": "assistant.mcpSetup.authorizeAction",
+"text": "Authorize"
+},
+{
+"key": "assistant.mcpSetup.decline",
+"text": "Not now"
+},
+{
+"key": "assistant.mcpSetup.declined",
+"text": "Declined"
+},
+{
+"key": "assistant.mcpSetup.unanswered",
+"text": "No response"
+},
+{
+"key": "assistant.mcpSetup.catalogSource",
+"text": "From the Nous-approved catalog"
+},
+{
+"key": "assistant.mcpSetup.envRequired",
+"text": "Fill in the required credentials first"
+},
+{
+"key": "assistant.mcpSetup.sendFailed",
+"text": "Could not send MCP setup response"
+},
+{
+"key": "assistant.mcpSetup.reloadFailed",
+"text": "Server saved, but reloading MCP tools failed — they load next session"
+},
+{
+"key": "assistant.mcpSetup.gatewayDisconnected",
+"text": "Hermes gateway is not connected"
+},
+{
+"key": "assistant.tool.copyCode",
+"text": "Copy code"
+},
+{
+"key": "assistant.tool.renderingImage",
+"text": "Rendering image"
+},
+{
+"key": "assistant.tool.copyOutput",
+"text": "Copy output"
+},
+{
+"key": "assistant.tool.copyCommand",
+"text": "Copy command"
+},
+{
+"key": "assistant.tool.copyContent",
+"text": "Copy content"
+},
+{
+"key": "assistant.tool.copyUrl",
+"text": "Copy URL"
+},
+{
+"key": "assistant.tool.copyResults",
+"text": "Copy results"
+},
+{
+"key": "assistant.tool.copyQuery",
+"text": "Copy query"
+},
+{
+"key": "assistant.tool.copyFile",
+"text": "Copy file"
+},
+{
+"key": "assistant.tool.copyPath",
+"text": "Copy path"
+},
+{
+"key": "assistant.tool.outputAlt",
+"text": "Tool output"
+},
+{
+"key": "assistant.tool.rawResponse",
+"text": "Raw response"
+},
+{
+"key": "assistant.tool.copyActivity",
+"text": "Copy activity"
+},
+{
+"key": "assistant.tool.recoveredOne",
+"text": "Recovered after 1 failed step"
+},
+{
+"key": "assistant.tool.failedOne",
+"text": "1 step failed"
+},
+{
+"key": "assistant.tool.statusRunning",
+"text": "Running"
+},
+{
+"key": "assistant.tool.statusError",
+"text": "Error"
+},
+{
+"key": "assistant.tool.statusRecovered",
+"text": "Recovered"
+},
+{
+"key": "assistant.tool.statusDone",
+"text": "Done"
+},
+{
+"key": "assistant.tool.memoryWriteNoted",
+"text": "Memory write noted"
+},
+{
+"key": "assistant.tool.actions.read",
+"text": "Read"
+},
+{
+"key": "assistant.tool.actions.reading",
+"text": "Reading"
+},
+{
+"key": "assistant.tool.actions.opened",
+"text": "Opened"
+},
+{
+"key": "assistant.tool.actions.opening",
+"text": "Opening"
+},
+{
+"key": "assistant.tool.actions.failedToOpen",
+"text": "Failed to open"
+},
+{
+"key": "assistant.tool.actions.searched",
+"text": "Searched"
+},
+{
+"key": "assistant.tool.actions.searching",
+"text": "Searching"
+},
+{
+"key": "assistant.tool.actions.ran",
+"text": "Ran"
+},
+{
+"key": "assistant.tool.actions.running",
+"text": "Running"
+},
+{
+"key": "assistant.tool.actions.ranCode",
+"text": "Ran code"
+},
+{
+"key": "assistant.tool.actions.runningCode",
+"text": "Scripting"
+},
+{
+"key": "assistant.tool.prefixes.browser",
+"text": "Browser"
+},
+{
+"key": "assistant.tool.prefixes.web",
+"text": "Web"
+},
+{
+"key": "assistant.tool.titles.browser_snapshot.done",
+"text": "Captured page snapshot"
+},
+{
+"key": "assistant.tool.titles.browser_snapshot.pending",
+"text": "Capturing page snapshot"
+},
+{
+"key": "assistant.tool.titles.browser_snapshot.pendingAction",
+"text": "Capturing"
+},
+{
+"key": "assistant.tool.titles.browser_take_screenshot.done",
+"text": "Captured screenshot"
+},
+{
+"key": "assistant.tool.titles.browser_take_screenshot.pending",
+"text": "Capturing screenshot"
+},
+{
+"key": "assistant.tool.titles.browser_take_screenshot.pendingAction",
+"text": "Capturing"
+},
+{
+"key": "assistant.tool.titles.session_search_recall.done",
+"text": "Searched session history"
+},
+{
+"key": "assistant.tool.titles.session_search_recall.pending",
+"text": "Searching session history"
+},
+{
+"key": "assistant.tool.titles.session_search_recall.pendingAction",
+"text": "Searching"
+},
+{
+"key": "prompts.gatewayDisconnected",
+"text": "Hermes gateway is not connected"
+},
+{
+"key": "prompts.sudoSendFailed",
+"text": "Could not send sudo password"
+},
+{
+"key": "prompts.secretSendFailed",
+"text": "Could not send secret"
+},
+{
+"key": "prompts.sudoTitle",
+"text": "Administrator password"
+},
+{
+"key": "prompts.sudoDesc",
+"text": "Hermes needs your sudo password to run a privileged command. It is sent only to your local agent."
+},
+{
+"key": "prompts.sudoPlaceholder",
+"text": "sudo password"
+},
+{
+"key": "prompts.secretTitle",
+"text": "Secret required"
+},
+{
+"key": "prompts.secretDesc",
+"text": "Hermes needs a credential to continue."
+},
+{
+"key": "prompts.secretPlaceholder",
+"text": "secret value"
+},
+{
+"key": "desktop.audioReadFailed",
+"text": "Could not read recorded audio"
+},
+{
+"key": "desktop.sessionUnavailable",
+"text": "Session unavailable"
+},
+{
+"key": "desktop.createSessionFailed",
+"text": "Could not create a new session"
+},
+{
+"key": "desktop.promptFailed",
+"text": "Prompt failed"
+},
+{
+"key": "desktop.providerCredentialRequired",
+"text": "Add a provider credential before sending your first message."
+},
+{
+"key": "desktop.emptySlashCommand",
+"text": "empty slash command"
+},
+{
+"key": "desktop.desktopCommands",
+"text": "Desktop commands"
+},
+{
+"key": "desktop.yoloArmed",
+"text": "YOLO armed for this chat"
+},
+{
+"key": "desktop.yoloOff",
+"text": "YOLO off"
+},
+{
+"key": "desktop.yoloTitle",
+"text": "YOLO"
+},
+{
+"key": "desktop.yoloToggleFailed",
+"text": "Could not toggle YOLO"
+},
+{
+"key": "desktop.unknownProfile",
+"text": "Unknown profile"
+},
+{
+"key": "desktop.setProfileFailed",
+"text": "Failed to set profile"
+},
+{
+"key": "desktop.sttDisabled",
+"text": "Speech-to-text is disabled in settings."
+},
+{
+"key": "desktop.stopFailed",
+"text": "Stop failed"
+},
+{
+"key": "desktop.regenerateFailed",
+"text": "Regenerate failed"
+},
+{
+"key": "desktop.editFailed",
+"text": "Edit failed"
+},
+{
+"key": "desktop.editTurnUnavailable",
+"text": "This turn is no longer in server history (it may have been compressed away)."
+},
+{
+"key": "desktop.resumeFailed",
+"text": "Resume failed"
+},
+{
+"key": "desktop.readOnlyTranscriptTitle",
+"text": "Opened read-only"
+},
+{
+"key": "desktop.readOnlyTranscriptSendBlocked",
+"text": "This chat is open as a read-only transcript — sending is disabled."
+},
+{
+"key": "desktop.resumeStrandedTitle",
+"text": "Couldn't load this session"
+},
+{
+"key": "desktop.resumeRetry",
+"text": "Retry"
+},
+{
+"key": "desktop.nothingToBranch",
+"text": "Nothing to branch"
+},
+{
+"key": "desktop.branchNeedsChat",
+"text": "Start or resume a chat before branching."
+},
+{
+"key": "desktop.sessionBusy",
+"text": "Session busy"
+},
+{
+"key": "desktop.branchStopCurrent",
+"text": "Stop the current turn before branching this chat."
+},
+{
+"key": "desktop.branchNoText",
+"text": "This message has no text to branch from."
+},
+{
+"key": "desktop.branchFailed",
+"text": "Branch failed"
+},
+{
+"key": "desktop.deleteFailed",
+"text": "Delete failed"
+},
+{
+"key": "desktop.archived",
+"text": "Archived"
+},
+{
+"key": "desktop.archiveFailed",
+"text": "Archive failed"
+},
+{
+"key": "desktop.cwdChangeFailed",
+"text": "Working directory change failed"
+},
+{
+"key": "desktop.cwdStagedTitle",
+"text": "Working directory staged"
+},
+{
+"key": "desktop.cwdStagedMessage",
+"text": "Restart the desktop backend to apply cwd changes to this active session."
+},
+{
+"key": "desktop.modelSwitchFailed",
+"text": "Model switch failed"
+},
+{
+"key": "desktop.sessionExported",
+"text": "Session exported"
+},
+{
+"key": "desktop.sessionExportFailed",
+"text": "Could not export session"
+},
+{
+"key": "desktop.imageSaved",
+"text": "Image saved"
+},
+{
+"key": "desktop.downloadStarted",
+"text": "Download started"
+},
+{
+"key": "desktop.restartToUseSaveImage",
+"text": "Restart Hermes Desktop to use Save Image."
+},
+{
+"key": "desktop.restartToSaveImages",
+"text": "Restart Hermes Desktop to save images"
+},
+{
+"key": "desktop.imageDownloadFailed",
+"text": "Image download failed"
+},
+{
+"key": "desktop.openImage",
+"text": "Open image"
+},
+{
+"key": "desktop.downloadImage",
+"text": "Download image"
+},
+{
+"key": "desktop.savingImage",
+"text": "Saving image"
+},
+{
+"key": "desktop.imagePreviewFailed",
+"text": "Image preview failed"
+},
+{
+"key": "desktop.imageAttach",
+"text": "Image attach"
+},
+{
+"key": "desktop.imageWriteFailed",
+"text": "Failed to write image to disk."
+},
+{
+"key": "desktop.imageAttachFailed",
+"text": "Image attach failed"
+},
+{
+"key": "desktop.attachImages",
+"text": "Attach images"
+},
+{
+"key": "desktop.clipboard",
+"text": "Clipboard"
+},
+{
+"key": "desktop.noClipboardImage",
+"text": "No image found in clipboard"
+},
+{
+"key": "desktop.clipboardPasteFailed",
+"text": "Clipboard paste failed"
+},
+{
+"key": "desktop.dropFiles",
+"text": "Drop files"
+},
+{
+"key": "desktop.handoff.pickPlatform",
+"text": "Choose a destination"
+},
+{
+"key": "desktop.handoff.timedOut",
+"text": "Timed out waiting for the gateway. Is `hermes gateway` running?"
+},
+{
+"key": "tips.close",
+"text": "Don't show this tip again"
+},
+{
+"key": "tips.items.new-session.title",
+"text": "Start fresh"
+},
+{
+"key": "tips.items.new-session.text",
+"text": "A new chat gets its own context, terminal and working directory."
+},
+{
+"key": "tips.items.skills.title",
+"text": "Teach it once"
+},
+{
+"key": "tips.items.skills.text",
+"text": "Skills are folders of instructions Hermes loads when the work calls for them."
+},
+{
+"key": "tips.items.messaging.title",
+"text": "Hermes away from your desk"
+},
+{
+"key": "tips.items.messaging.text",
+"text": "Connect Telegram, Discord, Slack and more — same agent, same memory."
+},
+{
+"key": "tips.items.artifacts.title",
+"text": "Everything Hermes made"
+},
+{
+"key": "tips.items.artifacts.text",
+"text": "Images, files and links from every session, indexed in one place."
+},
+{
+"key": "tips.items.cron.title",
+"text": "Work that runs itself"
+},
+{
+"key": "tips.items.cron.text",
+"text": "Schedule a prompt hourly, nightly, or on a cron expression."
+},
+{
+"key": "tips.items.command-palette.title",
+"text": "One box for everything"
+},
+{
+"key": "tips.items.command-palette.text",
+"text": "Sessions, settings, skills and commands all answer to the palette."
+},
+{
+"key": "tips.items.profiles.title",
+"text": "Profiles are separate"
+},
+{
+"key": "tips.items.profiles.text",
+"text": "Each one is its own Hermes — own keys, own memory, own sessions."
+},
+{
+"key": "tips.items.composer-mentions.title",
+"text": "Attach and command"
+},
+{
+"key": "tips.items.composer-mentions.text",
+"text": "Type @ to bring a file into the conversation, / to run a command."
+},
+{
+"key": "tips.items.model-switch.title",
+"text": "Switch models mid-thread"
+},
+{
+"key": "tips.items.model-switch.text",
+"text": "The model name is a button. Change it whenever the work changes shape."
+},
+{
+"key": "tips.items.right-pane.title",
+"text": "The working pane"
+},
+{
+"key": "tips.items.right-pane.text",
+"text": "Files, terminal, review and the in-app browser share the right side."
+},
+{
+"key": "errors.genericFailure",
+"text": "Something went wrong"
+},
+{
+"key": "errors.boundaryTitle",
+"text": "Something broke in the interface"
+},
+{
+"key": "errors.boundaryDesc",
+"text": "The view hit an unexpected error. Your chats and settings are safe."
+},
+{
+"key": "errors.reloadWindow",
+"text": "Reload window"
+},
+{
+"key": "errors.openLogs",
+"text": "Open logs"
+},
+{
+"key": "ui.search.clear",
+"text": "Clear search"
+},
+{
+"key": "ui.pagination.label",
+"text": "pagination"
+},
+{
+"key": "ui.pagination.previous",
+"text": "Prev"
+},
+{
+"key": "ui.pagination.previousAria",
+"text": "Go to previous page"
+},
+{
+"key": "ui.pagination.next",
+"text": "Next"
+},
+{
+"key": "ui.pagination.nextAria",
+"text": "Go to next page"
+},
+{
+"key": "ui.sidebar.title",
+"text": "Sidebar"
+},
+{
+"key": "ui.sidebar.description",
+"text": "Displays the mobile sidebar."
+}
+]
