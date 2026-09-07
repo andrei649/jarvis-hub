@@ -88,8 +88,8 @@ def test_unmanifested_client_is_unrestricted(monkeypatch):
 
 
 def test_full_plugin_is_unrestricted(monkeypatch):
-    # No built-in plugin is FULL today; assert the policy branch is permissive by
-    # constructing a client whose manifest we temporarily set to FULL.
+    # The page reader (webread, HA-5a) is the one built-in FULL manifest; assert the
+    # policy branch on its own by temporarily setting an unrelated manifest to FULL.
     import agents.core.plugin_gate as pg
     from dataclasses import replace
     monkeypatch.setenv("JARVIS_STRICT_EGRESS", "1")
@@ -161,6 +161,8 @@ def test_real_for_plugin_names_match_a_manifest():
         "whatsapp-bridge", "apple-health", "homebridge", "worldview",
         # SEC-5b: string-literal for_plugin ids living under agents/core/plugins.
         "balance", "analytics", "websearch", "n8n",
+        # Hermes absorption 5a: the page reader dials under its own identity.
+        "webread",
     }
     found = set()
     for f in plugins_dir.glob("*.py"):

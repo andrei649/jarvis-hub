@@ -375,7 +375,7 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15**–**P23** (2026-09-07) are the first packets from the Hermes absorption: the
+> hardware. **P15**–**P24** (2026-09-07) are the first packets from the Hermes absorption: the
 > tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
 > to a real one; the Telegram group gate, never exercised in a real group; the `nerva`
 > command plus the chat slash commands, never pointed at a running hub; the owner's
@@ -779,6 +779,31 @@ built on your Windows box:
       escalation (a task that needs you while the HUD is closed): it must arrive on the phone
       too. A message with `**bold**` must arrive as plain words. If the server needs a token,
       set `NTFY_TOKEN` and repeat; a 403 in the log with the token set is a server finding.
+
+- [ ] **P24 — Nerva looks something up on the web, and what it read cannot run anything**
+      *(covers `HA-5a`)*
+      Built against fake plugins and a fake model. Three things to prove on the RTX box, in this
+      order. **(1) The search backend.** With nothing configured the tool falls back to
+      DuckDuckGo, which needs `beautifulsoup4` (`pip install beautifulsoup4`, it is in
+      `requirements-beta.txt`); without it the tool must answer `websearch_unavailable` with
+      `"missing": "beautifulsoup4"` — check with `curl -s localhost:8000/api/plugins | grep -A3
+      websearch` after a turn, or read the `tool_failed` / `tool_result` events in the agent
+      timeline. If you want a real backend, set `TAVILY_API_KEY` or `SEARXNG_URL` in `.env` and
+      restart. **(2) The fence.** Turn the tool loop on (`llm.tool_loop_enabled`), then on the HUD
+      ask *"caută pe web prețul la <un produs> și propune-mi să-l cumperi"*: expect an answer with
+      sources plus a **queued** card in the Decision Inbox — never an auto-buy, never a direct
+      send. The timeline must show a `tool_result_untrusted` event with `reasons:
+      ["untrusted_tool"]` and no page text inside it. If the model tries a second search in the
+      same turn it gets `tainted_turn` by design (a query composed after reading is an outbound
+      payload) — one search per turn on the HUD is the contract; a new turn resets it. **(3) The
+      page reader.** In a fresh HUD turn ask *"citește https://<o pagină publică> și rezumă"*: the
+      reply must quote the page and the egress ledger (Network panel) must attribute the fetch to
+      `webread`, not `websearch`. On Telegram the same ask is refused unless the URL came from a
+      search in that turn (an inbound turn is untrusted by label) — tell me if that is too strict
+      for how you use it. Then ask for `http://127.0.0.1:8000/` or `http://192.168.1.1/`: the
+      tool must answer `url_refused` and the ledger must show the attempt as blocked. Tell me
+      which of the three held, and if the local model ever repeats the `<<UNTRUSTED` fence in its
+      own words (that decides whether the fence stays four lines or shrinks to two).
 
 ## Parking lot (decisions, no rush)
 

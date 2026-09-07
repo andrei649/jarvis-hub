@@ -1439,6 +1439,41 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   declared dependency — that stays the owner's call (P19 says how to check). Tests:
   `tests/test_file_read_documents.py` (5). Named and not done: `file_search` over document
   text (it would read every document in full on every search).
+- [x] ✅ **HA-5a — what the model reads is data; `web_search` / `web_extract` / `search_memory`
+  reach the model.** A tool result used to be spliced into the tool message as-is, with no fence
+  and no taint, while recalled memory had both. Now the loop (`agents/core/agent_runtime.py`)
+  fences a result as `<<UNTRUSTED source=<tool>>> … <<END UNTRUSTED>>` — the JSON verbatim, never
+  datamarked, four lines so a small local model does not echo it — and raises the turn's recall
+  taint when the tool is declared `untrusted_output`, when the injection scanner flags the
+  content, or when the handler itself says `tainted: true`; so a plan built from a web page lands
+  in the Decision Inbox instead of running. The mark is raised from the loop's own context and
+  carried into the context that awaits `run()` — and `Orchestrator._call_agents_parallel`
+  carries it once more across its agent gather, so the turn that parses handoffs and actions
+  sees it. Escalate-only: a trusted, clean result is byte-identical to before, a tool's own
+  refusal is never fenced, a "same as call N" stub is keyed on the raw bytes, a fenced result
+  that is later compacted is folded on its payload and fenced again, a payload spelling the
+  fence's own markers is flagged, and the `tool_result_untrusted` event carries reasons and flag
+  names, never content. Three ungated tools join the allowlist: `web_search`
+  (`agents/core/web_tools.py` over the SSRF-pinned `WebSearchPlugin` — Tavily, SearXNG or
+  keyless DuckDuckGo; "unavailable" named honestly with the missing package; every row tainted;
+  refused with `secret_in_query` when the query carries a stored secret and with `tainted_turn`
+  once the turn has read untrusted content, since the query is then a payload the model composed
+  after reading), `web_extract` (one public page, `max_chars` 256–20,000 and 40 KB, streamed
+  with a 2 MB read cap and a text-only content-type allowlist, a 15-minute per-server cache that
+  never caches a refusal; `secret_in_url` refused before any fetch; in a turn whose origin is
+  untrusted only URLs `web_search` returned may be read — a search engine cannot mint a URL
+  carrying the owner's data; dialing through a new `webread` egress identity, the first
+  FULL-network manifest, `PROCESSED` like the search it pairs with, guarded by per-hop SSRF
+  pinning, the kernel's `plugin.egress` hook, the circuit breaker and the egress ledger) and
+  `search_memory` (`agents/core/memory/rag_tool.py`: the hardened agentic-RAG tool over
+  `orch.memory.recall`; fused hits flattened, the body shipped once and capped at 600 chars,
+  metadata forwarded through an allowlist so a redaction cannot be defeated, `tainted` computed
+  per result). `osint_enrich` is declared untrusted too (dormant until a gated result is ever fed
+  back to the model). The research / search / monitor / scan / lookup / check task kinds tested a
+  plugin method that never existed and were a permanent `noop`; they now search — with a
+  configured backend only, since they run unattended. An inbound guest still sees only `echo` /
+  `time`. Tests: `tests/test_tool_result_taint.py` (20), `tests/test_web_tools.py` (22), `tests/test_cdx7_rag_tool_scan.py` (+21), `tests/test_web_tools_wiring.py` (5), `tests/test_websearch.py` (+4), `tests/test_plugin_honesty.py` (+1). **Not proven against a real search
+  backend or a live model choosing the tools** → P24.
 - [ ] **HA-4i** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
   now say they can), HUD mode on desktop, the plugin SDK, `nerva send` + `GET /api/commands`,
   session-persistent code kernels and `image_generate` (both need backends that do not exist

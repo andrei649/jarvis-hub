@@ -180,8 +180,8 @@ async def test_websearch_fetch_page_uses_its_pinned_plugin_client(monkeypatch):
         )
     )
     plugin = ws.WebSearchPlugin()
-    plugin._client = __import__("core.http_client", fromlist=["PluginHTTPClient"]).PluginHTTPClient(
-        "websearch",
+    plugin._reader = __import__("core.http_client", fromlist=["PluginHTTPClient"]).PluginHTTPClient(
+        "webread",
         resolver=lambda _host, *, mode: (["93.184.216.34"], None),
         transport_factory=lambda _target: transport,
     )
@@ -209,8 +209,8 @@ async def test_websearch_fetch_page_uses_its_pinned_plugin_client(monkeypatch):
 
 async def test_websearch_unsafe_dns_answer_creates_no_direct_or_pinned_transport(monkeypatch):
     plugin = ws.WebSearchPlugin()
-    plugin._client = __import__("core.http_client", fromlist=["PluginHTTPClient"]).PluginHTTPClient(
-        "websearch",
+    plugin._reader = __import__("core.http_client", fromlist=["PluginHTTPClient"]).PluginHTTPClient(
+        "webread",
         resolver=lambda _host, *, mode: (["127.0.0.1"], None),
         transport_factory=lambda _target: pytest.fail("unsafe DNS must not open transport"),
     )
@@ -231,5 +231,5 @@ async def test_websearch_unsafe_dns_answer_creates_no_direct_or_pinned_transport
 
     assert await plugin.fetch_page("https://docs.example.test/page") is None
     assert direct_creations == []
-    assert plugin._client._pinned_clients == {}
+    assert plugin._reader._pinned_clients == {}
     await plugin.close()

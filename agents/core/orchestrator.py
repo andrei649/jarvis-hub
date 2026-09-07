@@ -36,6 +36,7 @@ from .autonomy_coordinator import AutonomyCoordinator
 from .action_origin import (
     bind_action_origin,
     bind_turn_action_origin,
+    current_action_origin,
     origin_for_channel,
     reset_action_origin,
 )
@@ -64,6 +65,8 @@ from .bench import LatencyBenchmark
 from .plugin_gate import PermissionGate
 from .security import GuardrailsEngine, bind_guardrails
 from .security.audit import AuditLogger
+from .security.recall_taint import mark_turn_recall_tainted
+from .security.taint import is_untrusted_source
 from .security.types import RedactionMode, SecurityEvent, SecurityEventType
 from .env_config import env_flag, truthy
 from .log import log_error
@@ -2649,7 +2652,7 @@ class Orchestrator:
         agent_timeout = self._agent_call_timeout()  # CDX-6: tunable, not a hard-coded 120s
         runtime_block = self._runtime_state_block() + self._language_block() + self._data_grounding_block(plugin_data or {})
 
-        async def _run_agent(agent_id: str) -> tuple[str, str, float]:
+        async def _run_agent(agent_id: str) -> tuple[str, str, float, str]:
             enriched_text = await self._build_agent_turn_text(
                 agent_id,
                 text,
@@ -2663,11 +2666,14 @@ class Orchestrator:
                     self.agents[agent_id].process(enriched_text, context),
                     timeout=agent_timeout,
                 )
-                return agent_id, resp, self.agents[agent_id].last_latency
+                # The origin as this task saw it once the agent returned: the tool loop
+                # carries a recall taint into the context that awaits it, which is this
+                # task, not the turn's (Hermes absorption 5a).
+                return agent_id, resp, self.agents[agent_id].last_latency, current_action_origin()
             except asyncio.TimeoutError:
                 self.agents[agent_id]._record_failure("timeout")
                 log_error(logger, E_LLM_TIMEOUT, timeout=int(agent_timeout))
-                return agent_id, f"[{agent_id} timeout]", 0.0
+                return agent_id, f"[{agent_id} timeout]", 0.0, current_action_origin()
             except Exception as e:
                 self.agents[agent_id]._record_failure(str(e))
                 log_error(logger, E_INTERNAL_UNEXPECTED, component=f"agent:{agent_id}", detail=str(e))
@@ -2680,8 +2686,8 @@ class Orchestrator:
                         "No language model is loaded yet. Start LM Studio (or Ollama) "
                         "and load a model, then try again — or enable DEMO mode in the "
                         "HUD to preview the interface."
-                    ), 0.0
-                return agent_id, f"[{agent_id} error: {e}]", 0.0
+                    ), 0.0, current_action_origin()
+                return agent_id, f"[{agent_id} error: {e}]", 0.0, current_action_origin()
 
         valid_ids = [aid for aid in agent_ids if aid in self.agents]
         for aid in agent_ids:
@@ -2690,6 +2696,13 @@ class Orchestrator:
 
         coros = [_run_agent(aid) for aid in valid_ids]
         results_list = await asyncio.gather(*coros)
+        # Hermes absorption 5a: each agent ran in its own gather task with a copied
+        # context, so a recall taint the tool loop raised there (a fenced web page, a
+        # tainted memory hit) died with that task. Carry it into this turn's context —
+        # escalate-only, an inbound label keeps its own name — before the reply is parsed
+        # for handoffs and actions, which is where the kernel reads the origin.
+        if any(is_untrusted_source(origin) for _aid, _resp, _lat, origin in results_list):
+            mark_turn_recall_tainted()
 
         results = {}
         self._last_latencies = {}
@@ -2710,7 +2723,7 @@ class Orchestrator:
         # per-agent loop. This is the non-streaming half (Telegram, Discord, voice,
         # /chat, MCP, rooms, webhooks, eval, workflows).
         self._last_routes = {}
-        for agent_id, resp, latency in results_list:
+        for agent_id, resp, latency, _origin in results_list:
             results[agent_id] = resp
             self._last_latencies[agent_id] = latency
             route = self._route_for_agent(agent_id, text)

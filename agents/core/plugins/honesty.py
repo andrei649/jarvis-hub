@@ -22,6 +22,9 @@ _KEYLESS: frozenset[str] = frozenset({
     "news",
     "stock-quotes",
     "analytics",
+    # Hermes absorption 5a: the page reader is an egress identity of the search
+    # plugin; it needs no key (only the optional HTML parser, which the tool names).
+    "webread",
 })
 
 # Manifest plugin id → the config an owner must supply to move it from mock → live.
@@ -57,6 +60,8 @@ def live_plugin_for(orch, plugin_id: str):
     live_plugins = getattr(orch, "plugins", {}) or {}
     aliases = {
         "whatsapp-bridge": "whatsapp",
+        # the page reader dials under its own manifest but lives on the search plugin
+        "webread": "websearch",
     }
     return live_plugins.get(plugin_id) or live_plugins.get(aliases.get(plugin_id, ""))
 

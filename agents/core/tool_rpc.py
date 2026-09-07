@@ -117,8 +117,16 @@ class ToolRPCServer:
         capability_id: str | None = None,
         preflight: Preflight | None = None,
         trusted_execution: bool = False,
+        untrusted_output: bool = False,
     ) -> "ToolRPCServer":
-        """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval."""
+        """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
+
+        ``untrusted_output=True`` declares that what the handler returns is content
+        from outside the box (a web page, a search result, an OSINT lookup). The tool
+        loop fences such a result as DATA before the model reads it and raises the
+        turn's recall taint so an action built from it queues for approval
+        (Hermes absorption 5a). The declaration is per tool, never per call.
+        """
         if trusted_execution and not gated:
             raise ValueError("trusted execution is only valid for gated tools")
         if capability_id is not None:
@@ -149,6 +157,7 @@ class ToolRPCServer:
             "capability_id": capability_id,
             "preflight": preflight,
             "trusted_execution": bool(trusted_execution),
+            "untrusted_output": bool(untrusted_output),
             "active_tasks": set(),
         }
         return self
@@ -192,6 +201,10 @@ class ToolRPCServer:
             }
             if spec.get("capability_id"):
                 row["capability_id"] = spec["capability_id"]
+            if spec.get("untrusted_output"):
+                # Only when declared: rows of trusted tools stay byte-identical, so the
+                # tool-profile snapshot and the pinned allowlists do not move.
+                row["untrusted_output"] = True
             tools.append(row)
         return tools
 

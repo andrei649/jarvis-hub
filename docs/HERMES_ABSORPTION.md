@@ -365,6 +365,48 @@ nu e dependență declarată — rămâne decizia owner-ului. Teste: `tests/test
 (5). Rămân în 4i: streaming prin editări pe Slack/Discord, HUD mode, SDK-ul de plugin-uri,
 `nerva send` + `GET /api/commands`, kernelele de cod persistente și `image_generate`.
 
+**Livrat 2026-09-07 (5a — ce citește modelul e date, nu instrucțiuni).** Rezultatul unei unelte
+intra în transcript așa cum venea, fără gard și fără taint, în timp ce memoria recuperată le avea
+pe amândouă. Acum bucla de unelte (`agent_runtime.py`) îngrădește rezultatul ca
+`<<UNTRUSTED source=<unealtă>>> … <<END UNTRUSTED>>` — JSON-ul neatins, fără datamark, patru
+linii ca un model local mic să nu-l repete — și ridică taint-ul de recall al turei când unealta e
+declarată `untrusted_output` la înregistrare, când scanner-ul de injecție marchează conținutul,
+sau când handler-ul spune singur `tainted: true` (rulează într-un task copil, deci marcajul lui de
+context nu ajunge în tură). Marcajul e ridicat din contextul buclei, purtat în contextul care
+așteaptă `run()` și încă o dată de `Orchestrator._call_agents_parallel` peste gather-ul de agenți,
+ca tura care parsează handoff-urile și acțiunile să-l vadă. Doar escaladare: un rezultat curat de
+la o unealtă de încredere e identic byte cu byte, refuzul propriu al unei unelte nu e îngrădit,
+stub-ul „same as call N" se calculează pe bytes-ii bruți, un rezultat îngrădit pe care compactarea
+îl pliază e îngrădit din nou, un payload care scrie chiar marcajele gardului e semnalat, iar
+evenimentul `tool_result_untrusted` poartă motive și numele flag-urilor, niciodată conținut. Trei
+unelte ungated intră pe allowlist: `web_search` și `web_extract` (`web_tools.py`, peste
+`WebSearchPlugin` cu SSRF pinning — Tavily, SearXNG sau DuckDuckGo fără cheie; „indisponibil" e
+numit cu pachetul care lipsește, nu deghizat în „nimic găsit"; `max_chars` 256–20.000 și cel mult
+40 KB, pagina citită în flux cu plafon de 2 MB și doar tipuri de conținut text, cache de 15 minute
+per server care nu ține niciodată un refuz; două garduri în fața straturilor de egress, pentru că
+acelea decid *unde* pleacă o cerere, nu *ce duce*: un URL sau o interogare care poartă un secret
+cunoscut de broker e refuzat înainte să plece (`secret_in_url` / `secret_in_query`), într-o tură
+cu origine untrusted `web_extract` citește doar URL-uri întoarse de `web_search` — un motor de
+căutare nu poate fabrica un URL cu datele owner-ului, un model care tocmai a citit o pagină poate
+— iar odată ce tura a citit conținut untrusted `web_search` refuză o nouă interogare din același
+motiv (`tainted_turn`; canalul mai slab, deci pe eticheta mai îngustă: o tură inbound își
+păstrează prima căutare); paginile se citesc printr-o identitate de egress nouă, `webread` —
+primul manifest FULL din repo, pentru că niciun allowlist nu poate descrie „web-ul public", cu
+scop `PROCESSED` ca și căutarea pe care o însoțește; ce rămâne de pază: rezoluția SSRF și
+pinning-ul IP pe fiecare hop, hook-ul `plugin.egress` al kernelului, circuit breaker-ul și
+registrul de egress, plus bucla de unelte oprită implicit) și `search_memory` (`rag_tool.py`,
+unealta agentic-RAG deja întărită, peste `orch.memory.recall`: hit-urile fuzionate aplatizate,
+corpul trimis o singură dată și plafonat la 600 de caractere, metadatele trecute printr-un
+allowlist ca o redactare să nu poată fi ocolită, `tainted` calculat per rezultat). `osint_enrich`
+e declarat și el untrusted (inert până când un rezultat gated ajunge vreodată înapoi la model).
+Task-urile de research / search / monitor / scan / lookup / check testau o metodă pe care
+plugin-ul n-a avut-o niciodată și erau un `noop` permanent — acum caută, doar peste un backend
+configurat, pentru că rulează fără nimeni în tură. Un guest inbound vede în continuare doar
+`echo` / `time`. Rânduri din ledger închise: căutarea și citirea web-ului, `search_memory` ca
+unealtă, rezultatele untrusted împachetate ca date; rămâne numit flag-ul untrusted pe uneltele
+dobândite (`promotion.py`). Teste: `tests/test_tool_result_taint.py` (20), `tests/test_web_tools.py` (22), `tests/test_cdx7_rag_tool_scan.py` (+21), `tests/test_web_tools_wiring.py` (5), `tests/test_websearch.py` (+4), `tests/test_plugin_honesty.py` (+1).
+*Nedovedit pe un backend de căutare real și cu un model live care alege uneltele* → **P24**.
+
 ---
 
 ## Ce nu se schimbă

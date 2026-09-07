@@ -45,8 +45,9 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     out = await rh.run_reality(cases, promote=False)
     results = {item["capability_id"]: item["passed"] for item in out["results"]}
 
-    # 75 since DRA-05 added the osint_enrich plugin manifest.
-    assert len(cases) == len(records) == 75
+    # 75 since DRA-05 added the osint_enrich plugin manifest; 76 since HA-5a added the
+    # webread page-reader manifest.
+    assert len(cases) == len(records) == 76
     assert {capability_id for capability_id, passed in results.items() if not passed} == {
         capability_id for capability_id, record in records.items() if record.state == cr.SEAM
     }

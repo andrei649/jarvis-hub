@@ -2,6 +2,69 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-07 — Hermes absorption, wave 5a: what the model reads is data
+
+- **Untrusted tool results are fenced and taint the turn** (`agents/core/agent_runtime.py`,
+  `agents/core/security/quarantine.py`, `agents/core/tool_rpc.py`). The tool loop is an ingress
+  like recall, but a tool result was spliced into the transcript as-is. `register_tool(...,
+  untrusted_output=True)` declares that a tool returns content from outside the box; the loop then
+  fences the result as `<<UNTRUSTED source=<tool>>> … <<END UNTRUSTED>>` (JSON verbatim — no
+  datamarking, the model must still parse it) and raises the turn's recall taint, so an action
+  built from it queues for approval. The same happens for any tool when the injection scanner
+  flags the content, and when a handler declares `tainted: true` in its result (the handler runs
+  in a child task, so its own context mark cannot reach the turn). The mark is raised from the
+  loop's own context, carried into the context that awaits `run()`, and carried once more by
+  `Orchestrator._call_agents_parallel` across its agent gather, so the turn that parses handoffs
+  and actions sees it. Escalate-only: a trusted, clean result is byte-identical to before; a
+  tool's own refusal (`ok: false`) is never fenced; duplicate-result stubs (HA-4f) are keyed on
+  the raw bytes; a fenced result that compaction folds is fenced again; a payload spelling the
+  fence's own markers is flagged; the `tool_result_untrusted` event carries reasons and flag
+  names, never content. The registry-planning projection keeps the declaration.
+- **`web_search` / `web_extract`** (`agents/core/web_tools.py`, new). Two ungated,
+  `untrusted_output` ToolRPC tools over the existing `WebSearchPlugin`: search (Tavily, SearXNG or
+  the keyless DuckDuckGo fallback; the missing `beautifulsoup4` is named as
+  `websearch_unavailable`, never an empty "nothing found") and one-page extraction
+  (`max_chars` 256–20,000 and at most 40 KB, a 15-minute per-server cache of 64 pages that never
+  caches a refusal; SSRF refusal, egress refusal, fetch failure and a non-text answer are all
+  `url_refused`). `fetch_page` now streams the body with a 2 MB read cap and a text-only
+  content-type allowlist, so a hostile page cannot buffer the box. Two fences sit in front of
+  the egress layers, because those bound *where* a request goes and not *what it carries*: a
+  URL or a query carrying a value the secret broker knows is refused before it leaves
+  (`secret_in_url` / `secret_in_query`); in a turn whose action origin is untrusted `web_extract`
+  reads only URLs `web_search` returned on this server (`tainted_turn` — a search engine cannot
+  mint a URL carrying the owner's data, a model that just read a page can); and once the turn
+  has read untrusted content `web_search` refuses a further query for the same reason (the
+  weaker channel, so gated on the narrower label: an inbound turn still gets its first search).
+  Page reads dial through a dedicated `webread` egress identity (`agents/core/plugin_gate.py`):
+  the first FULL-network manifest in the repo, because no allowlist can describe "the public
+  web"; scope `PROCESSED` like the search it pairs with (a read whose request carries the URL
+  and nothing else — `TRANSMITTED` stays reserved for the external-write surfaces the
+  least-privilege profile fences). What still governs every fetch is per-hop SSRF resolution
+  and IP pinning, the kernel's `plugin.egress` mediation (e-stop), the circuit breaker and the
+  egress ledger, and the tool loop itself stays default-off. The HUD resolves `webread` through
+  the search plugin (keyless, live). The tool-profile snapshot widens on purpose:
+  operator/owner, operator/guest, inbound/owner and internal/system see the three new read
+  tools; inbound/guest still sees `echo` and `time` only.
+- **`search_memory` on the allowlist** (`agents/core/memory/rag_tool.py`). The hardened
+  agentic-RAG tool (redaction of injection-flagged hits, per-hit taint verdict) is registered as
+  an ungated ToolRPC tool over `orch.memory.recall`; fused hits are flattened (the body shipped
+  once, capped at 600 chars and scanned in full before the cut; metadata forwarded through an
+  allowlist so a redaction cannot be defeated by the same body riding under `metadata`), the
+  result carries `tainted`, and the loop fences and marks the turn only when it is true — the
+  owner's own clean memory reads like before. Both `text` and `name` are scanned; a redaction
+  blanks them inside `metadata` / `properties` too.
+- **The research task kind works.** `AutonomyCoordinator.build_executor._research` tested
+  `hasattr(ws, "handle")`, a method the plugin never had, so every research / search / monitor /
+  scan / lookup / check task was a permanent `noop`. It now calls `search` and returns the tainted
+  rows — only over a configured backend (`TAVILY_API_KEY` / `SEARXNG_URL`): a task auto-runs
+  under policy with nobody in the turn, so the keyless fallback stays with the interactive tool,
+  where the owner asked and the tool loop is opt-in. `osint_enrich` is declared `untrusted_output`
+  as its description always promised (dormant until a gated result is ever fed back to the model).
+- Small hardening on the way: `PluginHTTPClient.close()` evicts only the registered instance;
+  the search backends' error logs carry the exception type, never the query.
+- Tests: `tests/test_tool_result_taint.py` (20), `tests/test_web_tools.py` (22), `tests/test_cdx7_rag_tool_scan.py` (+21), `tests/test_web_tools_wiring.py` (5), `tests/test_websearch.py` (+4), `tests/test_plugin_honesty.py` (+1). Not proven against a real search backend or with a live model choosing the
+  tools — `docs/OWNER_TASKS.md` P24.
+
 ### Wave 2026-09-07 — Hermes absorption, wave 3a: the model's hands
 
 - **`file_search`** (`agents/core/file_tools.py`, behind the same `JARVIS_FILE_TOOLS` flag).

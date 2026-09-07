@@ -84,6 +84,7 @@
   "plugin:system-control": "wired",
   "plugin:telegram": "wired",
   "plugin:weather": "wired",
+  "plugin:webread": "wired",
   "plugin:websearch": "wired",
   "plugin:whatsapp-bridge": "wired",
   "plugin:worldview": "wired",
