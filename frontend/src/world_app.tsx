@@ -4,6 +4,20 @@ import { V2 } from './data';
 import { Icon, ICONS } from './ui';
 import { WorldIntelligenceMode } from './modes_world';
 
+/* The bottom-left WORLD button's geometry, and the strip the mode rail gives up for it.
+   Exported so the reservation can be proved as arithmetic: jsdom performs no layout, so
+   an overlap assertion there would compare two zero-sized rectangles and pass whatever
+   the CSS said. What IS checkable, and is what actually prevents the overlap, is that
+   the reserved strip is at least as tall as the button plus both its insets. */
+export const WORLD_BUTTON_INSET = 16;
+/* Pinned rather than measured, and the button is given this height explicitly: a
+   reservation computed from a height the CSS is free to change is not a reservation.
+   30px is `.tool-btn`'s own box at this font size (10px text, 7px padding, 1px border),
+   and the label is the literal string "WORLD" — not translated, so it cannot wrap and
+   grow past what is reserved. */
+export const WORLD_BUTTON_HEIGHT = 30;
+export const RAIL_RESERVED_PX = WORLD_BUTTON_INSET * 2 + WORLD_BUTTON_HEIGHT;
+
 function WorldAwareApp() {
   const [open, setOpen] = useState(() => {
     try { return window.location.hash === '#world' || /[?&]world=1/.test(window.location.search); } catch { return false; }
@@ -24,12 +38,28 @@ function WorldAwareApp() {
 
   return (
     <>
+      {/* The WORLD button is `position: fixed` in the bottom-left corner, and the mode
+          rail is a column of 46px buttons down that same left edge (styles.css `.rail`).
+          On a 1440x900 laptop the rail's sixteen buttons reach the bottom of the
+          viewport, so the button was painting ON TOP of the last one or two rail
+          entries — `comms` and `admin` — and taking their clicks. A fixed element cannot
+          be laid out around; the only fix that actually frees the pixels is to RESERVE
+          them, so the rail is given a bottom pad at least as tall as the button's own
+          footprint and the button sits inside that reserved strip.
+
+          Injected here rather than added to styles.css because the strip exists only
+          because THIS entry point renders that button: a HUD built without it should not
+          carry a gap for a control it does not have. Scoped to `.rail` — `ia` is a
+          `const 'rail'` in app.tsx, so the tabs layout is unreachable today; if it ever
+          becomes reachable this reservation has to grow a `.tabs` case, and the test
+          pins the arithmetic rather than the selector so that stays a visible decision. */}
+      <style>{`.rail { padding-bottom: ${RAIL_RESERVED_PX}px; }`}</style>
       <App />
       <button
         className="tool-btn"
         onClick={() => setOpen(true)}
         title="World Intelligence (W)"
-        style={{ position: 'fixed', left: 16, bottom: 16, zIndex: 60, borderColor: 'var(--accent-dim)', color: 'var(--accent-light)' }}
+        style={{ position: 'fixed', left: WORLD_BUTTON_INSET, bottom: WORLD_BUTTON_INSET, zIndex: 60, height: WORLD_BUTTON_HEIGHT, borderColor: 'var(--accent-dim)', color: 'var(--accent-light)' }}
       >
         <Icon d={ICONS.globe} size={13}/> WORLD
       </button>

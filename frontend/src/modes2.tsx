@@ -282,7 +282,13 @@ function ObserveMode({ t }){
           <SubH style={{marginTop:16}}>RESILIENCE</SubH>
           <div className="cap-row"><div className="cn">Network guard</div><span className="cap-tag allow">{_obs(O.resilience.ssrf_blocked)}</span></div>
           <div className="cap-row"><div className="cn">Errors · 24h</div><span className="cap-tag allow">{_obs(O.resilience.errors_24h)}</span></div>
-          <div className="cap-row"><div className="cn">PII redactions</div><span className="cap-tag gated">{_obs(O.resilience.redactions)}</span></div>
+          {/* DRA-47 residual — the counter behind this number is `guardrails.stats().redactions`,
+              which increments once per redaction EVENT across every scanner: secrets and PII
+              together. Labelling it "PII redactions" attributed a mixed total to one category,
+              which is a smaller number claiming to be a different one. The label now says what
+              is counted; `title` says what it is not (an all-time total — it is process-lifetime
+              and resets on restart, as the payload's own note records). */}
+          <div className="cap-row"><div className="cn" title="redaction events since this process started — secrets and PII together; resets on restart">Redactions · secrets + PII</div><span className="cap-tag gated">{_obs(O.resilience.redactions)}</span></div>
           <div className="cap-row"><div className="cn">Escalations</div><span className="cap-tag scoped">{_obs(O.quality.escalations)}</span></div>
         </div>
       </div>

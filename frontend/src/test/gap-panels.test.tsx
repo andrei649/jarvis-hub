@@ -212,7 +212,10 @@ describe('SandboxPanel — code execution is live', () => {
     await waitFor(() => {
       const post = fn.mock.calls.find((c) => String(c[0]).includes('/sandbox/execute') && c[1]?.method === 'POST');
       expect(post).toBeTruthy();
-      expect(JSON.parse(post[1].body)).toEqual({ code: 'print(1)', language: 'python' });
+      // DRA-08 — `tools` joined the body. The route's own default is False, so the
+      // unticked path is the same run it always was; the checkbox is what makes the
+      // governed ToolRPC pipeline reachable at all.
+      expect(JSON.parse(post[1].body)).toEqual({ code: 'print(1)', language: 'python', tools: false });
       expect(screen.getByText(/hello from the sandbox/)).toBeTruthy();
     });
   });

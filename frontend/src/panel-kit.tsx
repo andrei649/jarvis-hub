@@ -98,6 +98,38 @@ export const act = (p, body, then?, onErr?) => apiPost(p, body)
 export const actA = (p, body, then, onErr?) => apiPost(p, body, { admin: true })
   .then(then || (() => {}))
   .catch((err) => { if (onErr) onErr(err); });
+/* DRA-52 / DRA-36 / DRA-38 residual, call-site half. `failMutation` now reads the error
+   body and attaches it to the thrown error, so the backend's OWN refusal reason is finally
+   reachable — but every call site still rendered `refused · 400` or, worse,
+   `err.message`, which is the string "POST /api/x -> 400". A status code tells you that
+   something was refused; it never tells you WHY, and a caller left guessing writes a
+   plausible-looking cause of its own, which is the fabrication this HUD exists to remove.
+
+   The backend speaks THREE refusal dialects and all three are its own words, so all three
+   are read: `{"error": …}` is the routers' agreed shape (`error_json`,
+   `component_unavailable`); `{"ok": false, "reason": …}` is what the component layer
+   returns and the router passes through with a status (sub-agent spawn/steer/stop, media
+   actions); `detail` is FastAPI's validation shape, which can be a list of objects —
+   stringified rather than dropped, because an unreadable real reason still beats an
+   invented readable one. Then the caller's own fallback, then the bare status.
+
+   `err.message` is deliberately NOT in the chain: it is a restatement of the request
+   line, and printing it as a reason is how "POST /api/subagents/spawn -> 429" ended up in
+   front of operators as the explanation of why their spawn was refused. */
+export function refusalReason(err: any, fallback = ''): string {
+  const body = err && err.body;
+  if (body && typeof body === 'object') {
+    for (const key of ['error', 'reason'] as const) {
+      const v = (body as any)[key];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    const d = (body as any).detail;
+    if (typeof d === 'string' && d.trim()) return d.trim();
+    if (d != null) { try { return JSON.stringify(d); } catch { /* fall through */ } }
+  }
+  if (fallback) return fallback;
+  return err && err.status ? String(err.status) : 'error';
+}
 export const inpS = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11 };
 export const taS = { width: '100%', minHeight: 64, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono };
 export const Json = ({ v, max = 220 }) => (v == null ? null

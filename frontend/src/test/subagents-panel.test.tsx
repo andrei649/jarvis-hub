@@ -89,7 +89,11 @@ describe('SubAgentsPanel — the H20.6 spawn register is reachable', () => {
     fireEvent.click(screen.getByTitle(/spawn/));
 
     // apiPost rejects on the 429 — this line only renders because spawn() passes an onErr.
-    await waitFor(() => expect(screen.getByText(/refused · POST \/api\/subagents\/spawn -> 429/)).toBeTruthy());
+    // DRA-52 residual: it used to print `err.message`, i.e. the request line
+    // "POST /api/subagents/spawn -> 429", as the *reason* the spawn was refused. The
+    // backend said `concurrency_cap`; that is what an operator needs and now what they get.
+    await waitFor(() => expect(screen.getByText(/refused · concurrency_cap/)).toBeTruthy());
+    expect(screen.queryByText(/-> 429/)).toBeNull();
     // and the button comes back, rather than staying stuck "running"
     expect(screen.getByTitle(/spawn/).disabled).toBe(false);
   });

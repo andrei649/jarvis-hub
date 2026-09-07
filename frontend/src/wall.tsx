@@ -251,9 +251,15 @@ export function BriefingWall({
   // `sources.agents === false` could still drive WORKING, work-driven energy, firing
   // regions and a cabinet badge while the cards correctly said the roster was unavailable.
   const evidenceAgents = agentEvidence ? list : [];
-  // There is no live decisions endpoint yet: `decisions` is seeded in demo and otherwise
-  // stays []. Rendering 0 would assert "nothing is pending" on no evidence at all.
-  const decisionEvidence = !!demo && Array.isArray(decisions) && decisions.length > 0;
+  /* Decisions now have a live feed: the loader reads the admin-guarded
+     `/autonomy/approvals` and sets `sources.decisions` ONLY when it answered. That flag,
+     not the array, is the evidence — an admin-less install gets a 401, and an empty list
+     derived from a refusal must never render as "0 pending", which is an all-clear nobody
+     measured. When the feed DID answer, zero is a real, reportable zero; the demo corpus
+     keeps its old rule (seeded, and only when non-empty). */
+  const decisionsLive = !!(sources && sources.decisions === true);
+  const decisionEvidence = decisionsLive
+    || (!!demo && Array.isArray(decisions) && decisions.length > 0);
   const evidenceTasks = taskEvidence && Array.isArray(tasks) ? tasks : [];
   const running = runningTasks(evidenceTasks);
   const waiting = evidenceTasks.length - running.length;
@@ -282,7 +288,7 @@ export function BriefingWall({
   const provCloud = trustEvidence ? 'live' : null;
   const provCal = provOf(src.calendar === true, Array.isArray(calendar) && calendar.length > 0);
   const provHb = provOf(src.heartbeat === true, Array.isArray(heartbeat) && heartbeat.length > 0);
-  const provDecisions = decisionEvidence ? 'seeded' : null;   // no live decision feed exists
+  const provDecisions = provOf(decisionsLive, Array.isArray(decisions) && decisions.length > 0);
   // %-local provenance comes from App, which knows whether it measured, proved strict-local,
   // or fell back to the demo sample — it must not be inferred from `demo` alone.
   // Three-way, preserved end to end: a strict-local 100% is DERIVED from a governance
@@ -312,6 +318,8 @@ export function BriefingWall({
     { k: 'text-to-speech', v: caps ? (caps.tts ? 'ready' : 'not installed') : null, tone: caps && caps.tts ? 'live' : 'off' },
     { k: 'strict-local', v: trustEvidence && trust ? (trust.strict_local ? 'enforced' : 'off') : null, tone: trust && trust.strict_local ? 'live' : 'off' },
     { k: 'task feed', v: sources ? (sources.tasks ? 'live' : 'no data') : null, tone: sources && sources.tasks ? 'live' : 'off' },
+    // 'no data' rather than 'none pending': this row reports whether the FEED answered.
+    { k: 'approvals feed', v: sources ? (decisionsLive ? 'live' : 'no data') : null, tone: decisionsLive ? 'live' : 'off' },
   ];
 
   return (
@@ -363,7 +371,7 @@ export function BriefingWall({
 
         <div className="wl-col wl-right">
           <Card title="ATTENTION" stamp={cardStamp([provDecisions, provCal, provHb], 'live')}>
-            <Cell label="DECISIONS PENDING" value={decisionEvidence ? decisions.length : null} prov={provDecisions} why="no live decision feed — the HUD has no backend source for this yet" />
+            <Cell label="DECISIONS PENDING" value={decisionEvidence ? (Array.isArray(decisions) ? decisions.length : 0) : null} prov={provDecisions} why="the approvals feed is admin-guarded and did not answer — this is unknown, not zero" />
             <Cell label="UPCOMING EVENTS" value={Array.isArray(calendar) && calendar.length ? calendar.length : null} prov={provCal} why="calendar not connected" />
             <Cell label="HEARTBEATS" value={Array.isArray(heartbeat) && heartbeat.length ? heartbeat.length : null} prov={provHb} why="no heartbeat entries" />
           </Card>

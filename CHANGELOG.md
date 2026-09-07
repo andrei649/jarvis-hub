@@ -264,6 +264,52 @@ default: every new capability is off behind its own flag.
   `forgotten: false` is reported as a no-op instead of quietly removing the row. Export filenames
   are UTC-stamped and scope-named, so a filtered export cannot later be mistaken for a complete
   one. 4 pytest + 25 mobile.
+- **Seven places the HUD said something it could not back.** They all lived inside shared files, so
+  they shipped together; the shape of the mistake is the same in all seven — a surface with a true
+  thing available that rendered a convenient one instead.
+  **The network monitor could print `local-only ✓` above twelve model calls.** Its headline came
+  from `clean`, which is derived from `local_only_violations` — and model traffic can never be in
+  that list, because LLM backends have no manifest gate, so `llm:*` rows record what left and never
+  a block that did not happen. `model_egress_total` is now its own term, and the three states stay
+  distinct rather than collapsing into a boolean: a policy **violation** is a broken promise, model
+  egress is **permitted** and still not local-only, and clean is clean. A backend that does not
+  report the figure reads *unmeasured*, never 0.
+  **Refusals stopped explaining themselves with the request line.** `failMutation` had already been
+  taught to read the error body; the call sites were still printing `err.message`, which is the
+  string `POST /api/subagents/spawn -> 429` — shown to an operator as the reason their spawn was
+  refused. `refusalReason` reads the three dialects the backend actually speaks (`error`, the
+  component layer's `reason`, FastAPI's `detail`) and deliberately excludes `err.message`. That line
+  now reads `refused · concurrency_cap`.
+  **The governed sandbox pipeline got a caller.** DRA-08's `tools` flag existed on the route and on
+  no button. There is a **governed tools** checkbox now, disabled with the backend's own reason when
+  `/sandbox/status` says the runtime is not attached — a control guaranteed to answer 503 should not
+  be offered. The 422 says the pipeline is python-only (warned *before* the click), the 503 says the
+  run was **not** performed ungoverned as a fallback, and `tool_calls` / `timed_out` render only when
+  present: an absent count is a run that never entered the pipeline, and "0 tool calls" would read as
+  governed-and-idle.
+  **A tile counted secrets and PII and called the total PII.** `Redactions · secrets + PII` now,
+  with the process-lifetime caveat on the element rather than only in prose — a smaller number
+  wearing a different number's name is harder to spot than a missing one.
+  **The WORLD button stopped covering the Admin rail control.** Two independent test lanes had hit
+  the same overlay from opposite directions and both routed around it, because moving a `fixed`
+  element is a layout decision. It is made here the only way that actually frees the pixels —
+  **reserving** them: the rail gets a bottom pad at least as tall as the button's footprint, from
+  the same exported constants the button is pinned to, injected by the entry point that renders the
+  button so a HUD without it carries no gap for a control it does not have.
+  **The briefing wall stopped saying there is no decision feed.** There is one — `/autonomy/approvals`
+  — and it is admin-guarded, so it usually refuses. The wall keys on `sources.decisions`, set only
+  when the route actually answered, so a 401 leaves the cell *unknown* instead of rendering an empty
+  list as "0 pending": an all-clear nobody measured. A live approval maps to a card with the task's
+  own title verbatim and **one** action, `Dismiss`, which is the only thing pressing it does —
+  approving lives in the Decision Inbox, and a cockpit card offering "Approve" that merely dismissed
+  would be the worst lie available on that surface.
+  **And the demo roster finally covers the registry.** `argus`, `hestia` and `howard` are active in
+  `agents.yaml` and reached the roster with no seed metadata at all — no tier, no role, no dossier,
+  so opening one showed a blank card. Their rows are copied from the registry rather than invented,
+  and they keep the neutral fallback glyph, because that fallback is a deliberate design for a
+  registry agent without a hand-drawn mark and adding seed glyphs would quietly retire it.
+  23 vitest, six of them red-proved by mutation; two shipped tests updated to pin the new behaviour
+  (one of them had been pinning the request-line refusal text).
 - **The backups now happen.** `create_backup` has existed for a long time and nothing ever
   called it on a schedule, and nothing ever pruned the directory it writes to — and those were
   one gap, not two: an automatic backup with no prune writes a full copy of the data root every

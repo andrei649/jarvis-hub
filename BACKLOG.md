@@ -1019,7 +1019,8 @@ statusul per item se ține în tabelul §3 al planului, nu aici.
 > reaffirmed default-hide over the reference's always-on line, so showing it is an explicit,
 > persisted per-installation opt-in. Two unevidenced zeros are gone: `EXECUTING` gates on
 > `sources.agents` and `DECISIONS PENDING` on the absence of any live decision feed (there is no
-> endpoint yet — it renders `—` with that reason outside demo). The HUD motion preference is wired
+> endpoint yet — it renders `—` with that reason outside demo). *(The decision half was closed
+> 2026-09-07: the feed is `GET /autonomy/approvals` and the wall now keys on `sources.decisions`.)* The HUD motion preference is wired
 > end-to-end (app → cinema → orb/mesh/burst and the cockpit's inline orb), so the calm-motion claim
 > in `docs/VOICE.md` is now true instead of aspirational; unknown trust reads `MIC · UNKNOWN`.
 > Docs: the presence doc pointed ambient work at H23.x instead of H30.8; the phone claims are
@@ -1436,6 +1437,16 @@ absorbed them, not as independently shipped work.
   same code ungoverned), and otherwise the governed runtime runs it and returns today's five keys plus
   `tool_calls` and `timed_out`. `/sandbox/status` gained an additive `tool_rpc: {available, tools}` block.
   The default path is byte-identical and a regression test pins that.
+  **Phase 3's console half landed 2026-09-07 — the flag finally has a caller.** `tools` existed on the
+  route and on no button, which is a governed pipeline nobody could reach. `SandboxPanel` now carries a
+  **governed tools** checkbox, disabled with the backend's own reason when `/sandbox/status` reports
+  `tool_rpc.available: false` — a control guaranteed to answer 503 should not be offered. Each refusal
+  gets its own words rather than a generic failure: the 422 says the pipeline is **python-only** (and the
+  panel warns *before* the click when shell is selected), and the 503 says the run was **not** performed
+  ungoverned as a fallback, which is the whole reason the route refuses instead of downgrading. The two
+  keys only a governed run returns — `tool_calls`, `timed_out` — render **only when they are present**:
+  an absent `tool_calls` is a run that never entered the pipeline, and a "0 tool calls" line would read as
+  governed-and-idle, a different and untrue claim (red-proved). Phase 6 is still the only part owed.
   ~~**Remaining — Phase 5 (gateway session keys) and Phase 6 (cron job store), deliberately not built.**~~
   *(Struck 2026-09-02 — stale: Phase 5 landed in #1000, see "PHASE 5 LANDED" above; the reasoning it
   carried — that consuming `SessionSource` / `build_session_key` / `DeliveryRouter` in
@@ -1797,8 +1808,17 @@ absorbed them, not as independently shipped work.
   **Residual (recorded, not closed):** the ledger is still in-memory and resets on restart (declared in
   the module docstring, which points at the security audit log as the durable record); the surface this
   row cites as evidence, `routers/admin.py:281-291`, still documents the endpoint as plugin-only; and
-  `NetworkMonitorPanel` still derives its headline from `local_only_violations` alone, so it can read
-  `local-only ✓` directly above an `llm:gemini · 12 ext` row.
+  ~~`NetworkMonitorPanel` still derives its headline from `local_only_violations` alone, so it can read
+  `local-only ✓` directly above an `llm:gemini · 12 ext` row.~~ **Closed 2026-09-07.** The headline now
+  takes `model_egress_total` as its own term, and the three states stay distinct rather than collapsing
+  into a boolean, because they mean different things to the person reading them: a policy **VIOLATION**
+  is a broken promise; **model egress is permitted**, expected on a cloud-routed install, and still not
+  "local-only"; **clean** is clean. A backend that does not report the figure reads *unmeasured*, never
+  0 — a missing measurement rendering as zero is the same false all-clear in a different place. The
+  admin route's docstring, which this row also cited as still saying "plugin-only", was corrected in the
+  same commit and now names what is *still* uninstrumented (cloud TTS, importer, frigate, home-assistant,
+  telegram) rather than overclaiming in the other direction. Red-proved by restoring the `clean`-only
+  headline: the twelve-model-call case went red.
 - [x] ✅ **DRA-24 — Cached-input token cost is unmodelled and hardcoded to zero, while Gemini context caching
   is live in production.** docs/research/2026-08-18-llm-pricing-verification.md:88-91 explicitly defers
   this: 'Cached-input pricing isn't tracked in the repo's schema — MODELS[model] only has input/output keys.
@@ -2358,10 +2378,12 @@ absorbed them, not as independently shipped work.
   (`ssrf.py:132, :154, :164`) — and `resolve_and_validate` runs on the happy path of every plugin
   request, so a flaky resolver inflates a number published as `ssrf.blocked_requests` with
   `available: true`. The reasons should be split, or the field renamed.
-  **Residual (recorded, not closed):** both counters are process-lifetime and reset on restart (stated in
-  the payload note rather than implied as all-time totals), and the guardrails counter counts redaction
-  *events* merging secrets and PII while `frontend/src/modes2.tsx` still labels its tile "PII
-  redactions".
+  **Residual (partly closed 2026-09-07):** both counters are process-lifetime and reset on restart (stated
+  in the payload note rather than implied as all-time totals) — that half stands. ~~and the guardrails
+  counter counts redaction *events* merging secrets and PII while `frontend/src/modes2.tsx` still labels
+  its tile "PII redactions".~~ The tile now reads **`Redactions · secrets + PII`**, with the
+  process-lifetime caveat on the element's own `title` rather than only in prose. The label was a smaller
+  number wearing a different number's name, which is a harder error to spot than a missing one.
 - [x] ✅ **DRA-48 — agents/_system/install.sh is a dead 'Installer not yet active — core Python modules are
   still WIP' stub shipping in a 1.0.0 repo.** agents/_system/install.sh is a 49-line echo-only script from
   the pre-rename 'Cabinet v0.1.0' era. It prints '⚠️ Installer not yet active — core Python modules are
@@ -2451,12 +2473,19 @@ absorbed them, not as independently shipped work.
   eats it — so a naive button would read as success on a refusal, which is exactly the swallowed-mutation
   class the `act`/`actA` comment block was written about. `act` gained the optional `onErr` argument
   `actA` already had (additive; every existing caller unaffected) and the row now shows the refusal.
-  **Residual (recorded, not closed):** the refusal shows as `refused · 400`, not the server's own
-  reason. `apiPost` throws *before* reading the body, so no call site anywhere can display why a
-  mutation was refused. Fixing it properly is ~4 lines in `frontend/src/api/client.ts` — read
-  `await res.json().catch(() => null)` in the `!res.ok` branch and attach it to the thrown error — which
-  would give every mutation in the HUD its real reason. Deliberately not done here: it changes shared
-  client infrastructure for all mutations, which is wider than this row.
+  ~~**Residual (recorded, not closed):** the refusal shows as `refused · 400`, not the server's own
+  reason. `apiPost` throws *before* reading the body…~~ **Closed 2026-09-07, both halves.** The client
+  half landed earlier — `failMutation` reads the error body and attaches it as `err.body`. The call-site
+  half is here: `refusalReason(err, fallback)` in `panel-kit.tsx` reads the **three** refusal dialects the
+  backend actually speaks — `{"error": …}` (the routers' agreed shape), `{"ok": false, "reason": …}` (what
+  the component layer returns and the router passes through with a status: sub-agent spawn/steer/stop,
+  media actions) and FastAPI's `detail` (stringified when it is a list of objects, because an unreadable
+  real reason still beats an invented readable one). `err.message` is deliberately **not** in the chain:
+  it is a restatement of the request line, and printing it as an explanation is how
+  `refused · POST /api/subagents/spawn -> 429` ended up in front of an operator as the reason their spawn
+  failed — it now reads `refused · concurrency_cap`. Applied at the sites that were printing `err.message`
+  (skill-package rollback, sub-agent spawn/steer/stop, sandbox execute); the shipped test that pinned the
+  old string was updated to pin the new one and to assert the request line is *absent*.
 - [x] ✅ **DRA-53 — notes_store.py — a 504-line block-tree document store with no adopter and no route.**
   agents/core/notes_store. *(evidence: `agents/core/notes_store.py:112-116,
   agents/core/routers/notes.py:3-10, agents/core/notes.py:1-8`)*
@@ -3419,16 +3448,27 @@ three times as much**, which is the more useful fact:
       `incomplete` entry per rule id with every node inside its `nodes[]`, so entry counts are mode
       counts. The artifact now reports `contrastIncompleteNodes` (order of 1,100–1,800 per lane, run-variable)
       beside `contrastIncompleteModes` (16); an earlier draft printed 16 and read as a node count.
-- [ ] 🟡 **The fixed WORLD toggle sits on top of two real rail controls.** `world_app.tsx` renders
+- [x] ✅ **The fixed WORLD toggle sits on top of two real rail controls.** `world_app.tsx` renders
       `button.tool-btn` (World Intelligence) at `position:fixed; left:16; bottom:16; zIndex:60`,
       over the bottom of the mode rail. Measured at 1440×900: it covers the **action point of the
       `Admin` rail button** (y 847.8–885.9 vs the overlay's 855–884), and it veils the `Admin` rail
       **label** enough that the painted-contrast lane had to bucket that run `excluded/occluded`
       rather than publish a ratio for it. Two independent lanes hit the same overlay from opposite
       directions, which is the argument that it is a product defect and not a test artifact: a
-      pointer user at 1440×900 cannot reliably hit the last rail button. Not fixed here —
-      `a11y-modes` routes around it with DOM activation and says so — because moving or reserving
-      space for that overlay is a layout decision, not a test decision.
+      pointer user at 1440×900 cannot reliably hit the last rail button.
+      **Fixed 2026-09-07 — the layout decision the two lanes were waiting for.** A `position: fixed`
+      element cannot be laid out around, so the only fix that actually frees those pixels is to
+      **reserve** them: `.rail` is given a bottom pad at least as tall as the button's own footprint
+      (`RAIL_RESERVED_PX = 2·inset + height`), and the button is pinned to the same three exported
+      constants so the two cannot drift apart in a later edit. The rule is injected by
+      `world_app.tsx` rather than added to `styles.css`, because the strip exists only because that
+      entry point renders the button — a HUD built without it should not carry a gap for a control it
+      does not have. The height is pinned rather than measured (a reservation computed from a height
+      the CSS may change is not a reservation); the label is the literal string `WORLD`, not
+      translated, so it cannot wrap past what is reserved. jsdom performs no layout, so the test pins
+      the **arithmetic** and the presence of the rule instead of comparing two zero-sized rectangles
+      and passing whatever the CSS said. The `a11y-modes` DOM-activation workaround can now be
+      revisited on its own merits.
 - [ ] 🟡 **The mode walk's settle helper can release before a surface finishes building.** It waits
       for `.workzone`'s descendant count to hold still (now 1600ms, was 450ms), which proves the
       DOM *stopped* changing and not that it *finished*. Reproduced: cockpit at 147 of 306 nodes,

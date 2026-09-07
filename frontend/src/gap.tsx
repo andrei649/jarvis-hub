@@ -34,7 +34,7 @@ import { QuickbarPanel } from './panels/quickbar';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
 import { PermissionsPanel } from './panels/permissions';
 
-import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, inpS, taS, Json } from './panel-kit';
+import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, refusalReason, inpS, taS, Json } from './panel-kit';
 
 function MediaOutcome({ value }) {
   if (!value) return null;
@@ -1382,7 +1382,7 @@ export function SubAgentsPanel() {
         setTask('');
         reload();
       },
-      (err) => { setPending(false); setNote(`refused · ${err?.message || 'spawn failed'}`); reload(); });
+      (err) => { setPending(false); setNote(`refused · ${refusalReason(err, 'spawn failed')}`); reload(); });
   };
   const sendSteer = (id) => {
     const msg = steerText.trim();
@@ -1397,7 +1397,7 @@ export function SubAgentsPanel() {
           : `refused · ${(r && r.reason) || 'steer failed'}`);
         setSteerFor(null); setSteerText(''); reload();
       },
-      (err) => { setNote(`refused · ${err?.message || 'steer failed'}`); reload(); });
+      (err) => { setNote(`refused · ${refusalReason(err, 'steer failed')}`); reload(); });
   };
   const stopSpawn = (id) => {
     setNote(null);
@@ -1408,7 +1408,7 @@ export function SubAgentsPanel() {
           : `refused · ${(r && r.reason) || 'stop failed'}`);
         reload();
       },
-      (err) => { setNote(`refused · ${err?.message || 'stop failed'}`); reload(); });
+      (err) => { setNote(`refused · ${refusalReason(err, 'stop failed')}`); reload(); });
   };
   return (
     <Card title="SUB-AGENTS" live={asLive(d)} sub={d ? `${stats.total ?? spawns.length} spawn(s)` : null} onReload={reload}>
@@ -1757,7 +1757,7 @@ export function MarketplacePanel() {
         <Tag c={s.review_status === 'approved' ? 'var(--green)' : s.review_status === 'rejected' ? 'var(--red)' : 'var(--amber)'}>{s.review_status || 'pending'}</Tag>
         {s.review_status !== 'approved' && <button className="tool-btn" title="approve skill" onClick={() => actA('/api/skills/marketplace/review', { name: s.name, status: 'approved' }, reload)}>✓</button>}
         {s.review_status !== 'rejected' && <button className="tool-btn" title="reject skill" onClick={() => actA('/api/skills/marketplace/review', { name: s.name, status: 'rejected' }, reload)}>✕</button>}
-        <button className="tool-btn" title="roll back to the previous package" onClick={() => actA(`/api/skills/marketplace/${encodeURIComponent(s.name)}/rollback`, {}, (r) => { setNote(`${s.name} · restored ${(r && r.restored_version) || '?'} ← ${(r && r.previous_version) || '?'}`); reload(); }, (err) => setNote(`refused · ${err?.message || 'rollback failed'}`))}>⟲</button>
+        <button className="tool-btn" title="roll back to the previous package" onClick={() => actA(`/api/skills/marketplace/${encodeURIComponent(s.name)}/rollback`, {}, (r) => { setNote(`${s.name} · restored ${(r && r.restored_version) || '?'} ← ${(r && r.previous_version) || '?'}`); reload(); }, (err) => setNote(`refused · ${refusalReason(err, 'rollback failed')}`))}>⟲</button>
       </span></Row>)}
     {note && <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>signed + moderated — ✓/✕ sets review status (anti-ClawHub, H12.12).
@@ -2074,29 +2074,73 @@ export function WorkflowBuilderPanel() {
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>generate → add to draft → save (admin) · the steps JSON is the editor of record for router/critic/loop/subflow configs (H10.7)</div>
   </Card>;
 }
+/* DRA-08 Phase 3, console half. `SandboxExecuteBody.tools` was added so the governed
+   ToolRPC runtime finally gets a production caller, and until now nothing could set it:
+   the flag existed on the route and on no button. The checkbox below is that caller.
+
+   Three refusals matter, and each gets its own words rather than a generic failure:
+     · 422 — the pipeline is python-only, so shell + tools is refused, not silently
+       downgraded to an ungoverned run;
+     · 503 — `orch.tool_rpc` is missing. The route deliberately does NOT fall back to
+       `execute_python` here, because a silent fallback would run the very same code
+       WITHOUT the governance the checkbox was ticked to get. The panel says that;
+     · 403 — the sandbox itself is DEV_MODE-gated, as before.
+   `/sandbox/status` carries an additive `tool_rpc: {available, tools}` block, so the
+   checkbox can be disabled with the backend's own reason instead of offering a control
+   that is guaranteed to 503. */
 export function SandboxPanel() {
   const { d: st, reload } = useApi('/sandbox/status');
   const [code, setCode] = useState('');
   const [lang, setLang] = useState('python');
+  const [tools, setTools] = useState(false);
   const [out, setOut] = useState(null);
+  const rpc = (st && st.tool_rpc) || null;
+  const rpcAvailable = !!(rpc && rpc.available);
   const run = () => {
     if (!code.trim()) return;
     setOut('running…');
-    apiPost('/sandbox/execute', { code, language: lang })
+    apiPost('/sandbox/execute', { code, language: lang, tools })
       .then(setOut)
-      .catch((err) => setOut(err?.status === 403 ? 'sandbox disabled — set DEV_MODE=1 on the server' : 'offline · ' + (err?.message || '')));
+      .catch((err) => setOut(
+        err?.status === 403 ? 'sandbox disabled — set DEV_MODE=1 on the server'
+          : err?.status === 422 ? 'refused · ' + refusalReason(err, 'tool_rpc_pipeline_python_only') + ' — the governed pipeline is python-only'
+          : err?.status === 503 ? 'refused · ' + refusalReason(err, 'tool_rpc unavailable') + ' — NOT run ungoverned as a fallback'
+          : 'offline · ' + refusalReason(err, err?.message || '')));
   };
   const insecure = st?.insecure_host_exec;
+  const shellWithTools = tools && lang !== 'python';
   return <Card title="SANDBOX" live={asLive(st)} sub={st ? (st.backend || st.active_backend || (st.docker ? 'docker' : 'subprocess')) : null} onReload={reload}>
     {insecure && <div style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>⚠ host-exec fallback active — code runs WITHOUT isolation</div>}
     <textarea value={code} onChange={(ev) => setCode(ev.target.value)} placeholder={lang === 'python' ? 'print("hello from the sandbox")' : 'echo hello'} style={taS} spellCheck={false} />
-    <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
       <select value={lang} onChange={(ev) => setLang(ev.target.value)} style={inpS}><option value="python">python</option><option value="shell">shell</option></select>
+      <label style={{ ...mono, fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, color: rpcAvailable ? 'var(--ink-2)' : 'var(--ink-3)' }}
+        title={rpcAvailable ? 'run through the governed ToolRPC pipeline (python only)' : 'the governed runtime is not attached on this server — the route would refuse with 503'}>
+        <input type="checkbox" checked={tools} disabled={!rpcAvailable} onChange={(ev) => setTools(ev.target.checked)} />
+        governed tools
+      </label>
       <button className="tool-btn" onClick={run}>execute</button>
     </div>
+    {shellWithTools && <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>shell + governed tools will be refused 422 — the pipeline is python-only</div>}
     {out != null && (typeof out === 'string' ? <div style={{ ...mono, fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>{out}</div>
-      : <Json v={(out.stdout || out.output || '') + (out.stderr ? '\n[stderr] ' + out.stderr : '') || out} />)}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>Docker-isolated execution, audited (DEV_MODE gate)</div>
+      : <>
+        <Json v={(out.stdout || out.output || '') + (out.stderr ? '\n[stderr] ' + out.stderr : '') || out} />
+        {/* Only rendered when the governed run actually reported them — an absent
+            `tool_calls` is not zero tool calls, it is a run that never went through
+            the pipeline, and a "0 tools" line would read as governed and idle. */}
+        {(out.tool_calls != null || out.timed_out != null) && (
+          <Row>
+            <span style={mono}>governed</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              {out.tool_calls != null && <Tag>{out.tool_calls} tool calls</Tag>}
+              {out.timed_out != null && <Tag c={out.timed_out ? 'var(--red)' : 'var(--green)'}>{out.timed_out ? 'timed out' : 'completed'}</Tag>}
+            </span>
+          </Row>
+        )}
+      </>)}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+      Docker-isolated execution, audited (DEV_MODE gate){rpc && !rpcAvailable ? ' · governed tools unavailable on this server' : ''}
+    </div>
   </Card>;
 }
 
@@ -2731,6 +2775,20 @@ export function ProjectsMode(_props: any) {
 // H23.16 — network monitor: reads the egress ledger (GET /api/admin/network/calls)
 // and proves LOCAL_ONLY plugins make zero outbound calls. `clean` is the headline:
 // green when no local-only plugin ever made an allowed external call.
+/* DRA-23 residual — the headline used to come from `clean` alone, which is derived from
+   `local_only_violations`: a LOCAL_ONLY agent that dialled out. Model traffic is not in
+   that list by construction — LLM backends have no manifest gate, so `llm:*` rows record
+   what left and can never record a block — and the panel therefore rendered `local-only ✓`
+   directly above an `llm:gemini · 12 ext` row. The word this panel exists to say was the
+   one thing it could get wrong.
+
+   So the headline now accounts for `model_egress_total` as its own term. The three states
+   are kept distinct rather than merged into a boolean, because they mean different things
+   to the person reading them: a policy VIOLATION is a broken promise; model egress is
+   permitted, expected on a cloud-routed install, and still not "local-only"; and clean is
+   clean. `model_egress_total` absent (an older backend) reads as unknown, never as zero —
+   `?? null` rather than `|| 0`, since a missing measurement that renders as 0 is the same
+   false all-clear in a different place. */
 export function NetworkMonitorPanel() {
   const { d, e, loading, reload } = useApi('/api/admin/network/calls', true, true);
   const plugins = (d && d.plugins) || {};
@@ -2738,14 +2796,23 @@ export function NetworkMonitorPanel() {
   const ext = d ? d.external_egress_total : 0;
   const violations = (d && d.local_only_violations) || [];
   const clean = d ? d.clean : true;
+  const model = d && d.model_egress_total != null ? Number(d.model_egress_total) : null;
+  const headline = !d ? null
+    : !clean ? 'VIOLATION'
+    : model == null ? 'no policy violations · model egress unmeasured'
+    : model > 0 ? `no policy violations · ${model} model calls left the box`
+    : 'local-only ✓';
   return (
-    <Card title="network monitor" live={asLive(d)} sub={d ? (clean ? 'local-only ✓' : 'VIOLATION') : null} onReload={reload}>
+    <Card title="network monitor" live={asLive(d)} sub={headline} onReload={reload}>
       <State e={e} loading={loading} n={names.length} />
       {d && (
         <Row>
           <span style={mono}>egress</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c={ext > 0 ? 'var(--amber)' : 'var(--green)'}>{ext} external</Tag>
+            <Tag c={model == null ? 'var(--ink-3)' : model > 0 ? 'var(--amber)' : 'var(--green)'}>
+              {model == null ? 'model —' : `${model} model`}
+            </Tag>
             <Tag c={clean ? 'var(--green)' : 'var(--red)'}>{clean ? 'clean' : 'violation'}</Tag>
           </span>
         </Row>
