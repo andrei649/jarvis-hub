@@ -311,8 +311,16 @@ lasă niciun placeholder; `channels.streaming_replies` (implicit pornit) îl opr
 de `POST /api/admin/mcp`. Tot aici, HA-2c: heartbeat-ul de zi lucrătoare trage în ziua lucrătoare
 (traducerea day-of-week din motorul de joburi). Teste: `tests/test_telegram_streaming.py` (10),
 `tests/test_mcp_tool_filters.py` (4), `tests/test_heartbeat_cron_dow.py` (2). *Nedovedit pe un
-Telegram real* → **P22**. Rămân în 4d: renderere și streaming Slack/Discord, `ntfy`, ore de
-liniște pentru joburi, HUD mode, SDK-ul de plugin-uri.
+Telegram real* → **P22**.
+
+**Livrat 2026-09-07 (4d — Slack și Discord primesc text pe care îl pot afișa).**
+`to_slack_mrkdwn` (doar marcaje echilibrate — `*bold*`, `_italic_`, `<url|text>`, titluri bold,
+`&amp; &lt; &gt;` escapate în proză și în cod, blocurile de cod păstrate) și renderer-ul
+identitate `markdown` pentru Discord, care redă singur Markdown; `SlackChannel` declară
+`slack_mrkdwn` × 40.000, `DiscordChannel` `markdown` × 2.000, și ambele trimit text redat și
+împărțit, în ordine (și calea de răspuns Discord). Teste:
+`tests/test_channel_render_slack_discord.py` (5). Rămân în 4e: streaming prin editări pe
+Slack/Discord, `ntfy`, ore de liniște pentru joburi, HUD mode, SDK-ul de plugin-uri.
 
 ---
 

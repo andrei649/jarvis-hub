@@ -1393,8 +1393,15 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   the config, taken and validated by `POST /api/admin/mcp`, shown in the list;
   `schema.gen.ts` regenerated. Tests: `tests/test_telegram_streaming.py` (10),
   `tests/test_mcp_tool_filters.py` (4). **Not proven on a real Telegram** → P22.
-- [ ] **HA-4d** — the rest of the depth wave: Slack `mrkdwn` / Discord renderers and streaming
-  on those surfaces, an `ntfy` push channel for approvals away from the HUD, quiet hours for
+- [x] ✅ **HA-4d — Slack and Discord get text they can display.** `to_slack_mrkdwn` (balanced
+  markers only — `*bold*`, `_italic_`, `<url|text>`, headings bold, `&amp; &lt; &gt;` escaped in
+  prose and code alike, fences kept) and the identity `markdown` renderer for Discord, which
+  renders Markdown itself; `SlackChannel` declares `slack_mrkdwn` × 40,000 and `DiscordChannel`
+  `markdown` × 2,000, and both send rendered, chunked text in order (the Discord reply path
+  too). Tests: `tests/test_channel_render_slack_discord.py` (5). Not proven on a real Slack or
+  Discord — the P20 procedure applies to whichever the owner uses.
+- [ ] **HA-4e** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
+  now say they can), an `ntfy` push channel for approvals away from the HUD, quiet hours for
   job deliveries, HUD mode on desktop, the plugin SDK — sequenced in
   [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 

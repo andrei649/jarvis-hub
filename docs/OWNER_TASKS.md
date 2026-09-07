@@ -730,7 +730,9 @@ built on your Windows box:
       asterisks and nothing missing. If a message shows raw `<b>` tags, Telegram rejected the
       HTML and the plain-text fallback did not fire — file it against
       `TelegramChannel._send_chunk`; if a message is missing, the chunker dropped it — file it
-      against `channels/render.py`.
+      against `channels/render.py`. If you use Slack or Discord, the same two asks apply
+      there (`HA-4d`): Slack must show `*bold*` as bold and `<url|text>` as a link, Discord
+      must split a long reply at 2,000 characters without cutting a code block.
 
 - [ ] **P21 — A real MCP server on a read-only tier** *(covers `HA-4b`)*
       The tier is proven against a scripted `tools/list`, never against a real server's

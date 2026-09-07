@@ -10,8 +10,13 @@ import logging
 from typing import Optional
 
 from .base import ChannelAdapter
+from .descriptor import DIALECT_MARKDOWN, ChannelDescriptor
+from .render import render_outbound
 
 logger = logging.getLogger("jarvis.channels.discord")
+
+#: Discord's cap on one message; it renders Markdown itself, so text is only chunked.
+DISCORD_MAX_MESSAGE_LENGTH = 2_000
 
 try:
     import discord
@@ -21,6 +26,14 @@ except ImportError:
 
 
 class DiscordChannel(ChannelAdapter):
+    descriptor = ChannelDescriptor(
+        dialect=DIALECT_MARKDOWN,
+        max_message_length=DISCORD_MAX_MESSAGE_LENGTH,
+        supports_edit=True,
+        supports_media=True,
+        supports_threads=True,
+    )
+
     def __init__(self, token: str = "", handler=None):
         super().__init__("discord", handler)
         self.token = token
@@ -50,7 +63,8 @@ class DiscordChannel(ChannelAdapter):
             if self.handler:
                 response = await self.handler(message.content, channel="discord")
                 if response:
-                    await message.channel.send(response)
+                    for piece in render_outbound(str(response), self.descriptor):
+                        await message.channel.send(piece)
 
         self._running = True
         # discord.py 2.x: Client.loop is the MISSING sentinel until start() runs,
@@ -73,6 +87,7 @@ class DiscordChannel(ChannelAdapter):
         if channel_id:
             channel = self._client.get_channel(int(channel_id))
             if channel:
-                await channel.send(message)
+                for piece in render_outbound(str(message or ""), self.descriptor):
+                    await channel.send(piece)
                 return True
         return False

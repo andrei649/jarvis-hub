@@ -91,6 +91,14 @@
   `tests/test_heartbeat_cron_dow.py` (2). Not proven on a real Telegram —
   `docs/OWNER_TASKS.md` P22.
 
+### Wave 2026-09-07 — Hermes absorption, wave 4d: Slack and Discord renderers
+
+- **Slack `mrkdwn` and Discord Markdown** (`agents/core/channels/render.py`, `slack.py`,
+  `discord.py`). Slack gets `*bold*` / `_italic_` / `<url|text>` with `& < >` escaped, from
+  balanced markers only; Discord renders Markdown itself and gets the source chunked at
+  2,000; Slack chunks at 40,000. Both adapters declare their descriptor and send in order.
+- Tests: `tests/test_channel_render_slack_discord.py` (5).
+
 ### Wave 2026-09-07 — Hermes absorption, wave 2a: the owner's own scheduled jobs
 
 - **Owner-scheduled jobs** (`agents/core/autonomy/jobs.py`). Nerva parsed "every weekday at

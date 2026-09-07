@@ -16,7 +16,12 @@ from dataclasses import dataclass
 
 DIALECT_PLAIN = "plain"
 DIALECT_TELEGRAM_HTML = "telegram_html"
-DIALECTS: tuple[str, ...] = (DIALECT_PLAIN, DIALECT_TELEGRAM_HTML)
+DIALECT_SLACK_MRKDWN = "slack_mrkdwn"
+#: CommonMark-ish markup the channel renders itself (Discord): passed through, only chunked.
+DIALECT_MARKDOWN = "markdown"
+DIALECTS: tuple[str, ...] = (
+    DIALECT_PLAIN, DIALECT_TELEGRAM_HTML, DIALECT_SLACK_MRKDWN, DIALECT_MARKDOWN,
+)
 
 
 @dataclass(frozen=True)
@@ -42,4 +47,7 @@ class ChannelDescriptor:
             raise ValueError("max_message_length must be an int of at least 16, or None")
 
 
-__all__ = ["DIALECTS", "DIALECT_PLAIN", "DIALECT_TELEGRAM_HTML", "ChannelDescriptor"]
+__all__ = [
+    "DIALECTS", "DIALECT_MARKDOWN", "DIALECT_PLAIN", "DIALECT_SLACK_MRKDWN",
+    "DIALECT_TELEGRAM_HTML", "ChannelDescriptor",
+]
