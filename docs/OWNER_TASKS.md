@@ -375,13 +375,14 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15**–**P20** (2026-09-07) are the first packets from the Hermes absorption: the
+> hardware. **P15**–**P21** (2026-09-07) are the first packets from the Hermes absorption: the
 > tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
 > to a real one; the Telegram group gate, never exercised in a real group; the `nerva`
 > command plus the chat slash commands, never pointed at a running hub; the owner's
 > scheduled jobs, never fired on a wall clock; the model's hands (`file_search`,
-> `session_search`, the loop breakers), never driven by a model choosing to use them; and the
-> Telegram renderer, never shown to the real API.
+> `session_search`, the loop breakers), never driven by a model choosing to use them; the
+> Telegram renderer, never shown to the real API; and the MCP trust tier, never held against a
+> real server's annotations.
 > If you flip a row to ✅ and its proof still depends on something only you can run, it
 > belongs here — that rule is written into
 > [`docs/prompts/BACKLOG_DRIVER.md`](prompts/BACKLOG_DRIVER.md) so an unattended session applies it.
@@ -730,6 +731,19 @@ built on your Windows box:
       HTML and the plain-text fallback did not fire — file it against
       `TelegramChannel._send_chunk`; if a message is missing, the chunker dropped it — file it
       against `channels/render.py`.
+
+- [ ] **P21 — A real MCP server on a read-only tier** *(covers `HA-4b`)*
+      The tier is proven against a scripted `tools/list`, never against a real server's
+      annotations. Add a stdio server that has both kinds of tool — the reference filesystem
+      server is the usual one — with `POST /api/admin/mcp` and no `trust` field, connect it, and
+      read `GET /api/admin/mcp`: the row must say `trust: read-only` and each tool must carry a
+      `read_only` flag that matches what the server advertises. Then call a read tool and a
+      write tool through whatever consumes `orch.mcp` on your box: the read must answer, the
+      write must come back `trust_denied` / `readOnlyHint_required` and nothing must change on
+      disk. If a write tool shows `read_only: true`, the server's annotations are wrong, not
+      Nerva's — the tier trusts the hint only in the narrowing direction, so that is a finding
+      to file upstream. Restart the hub once: a server saved *before* this release must log
+      "no trust tier … treated as full" exactly once and keep working.
 
 ## Parking lot (decisions, no rush)
 

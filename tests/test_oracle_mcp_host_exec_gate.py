@@ -179,7 +179,9 @@ async def test_mcp_call_tool_obeys_live_contract_before_send(monkeypatch):
     contract = _DenyContract()
     monkeypatch.setattr(mcp_client, "MCP_TOOL_CALL_CONTRACT", contract, raising=False)
     send_calls = []
-    srv = MCPServer("worldview", transport="stdio", command="python -m worldview.mcp")
+    # This test is about the call contract, which runs after the trust tier (Hermes
+    # absorption 4b); full trust keeps the tier out of the way.
+    srv = MCPServer("worldview", transport="stdio", command="python -m worldview.mcp", trust="full")
 
     async def fake_send(msg):
         send_calls.append(msg)
@@ -197,7 +199,9 @@ async def test_mcp_call_tool_obeys_live_contract_before_send(monkeypatch):
 @pytest.mark.asyncio
 async def test_mcp_call_tool_rejects_mixed_arg_keys_without_send():
     send_calls = []
-    srv = MCPServer("worldview", transport="stdio", command="python -m worldview.mcp")
+    # This test is about the call contract, which runs after the trust tier (Hermes
+    # absorption 4b); full trust keeps the tier out of the way.
+    srv = MCPServer("worldview", transport="stdio", command="python -m worldview.mcp", trust="full")
 
     async def fake_send(msg):
         send_calls.append(msg)

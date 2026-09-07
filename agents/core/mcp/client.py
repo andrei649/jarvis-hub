@@ -55,6 +55,25 @@ _SHELL_METACHARS = frozenset(";&|<>`\n\r")
 #: Owner flag: spawn stdio MCP servers with the allow-listed env baseline only.
 STDIO_ENV_BASELINE_FLAG = "JARVIS_MCP_STDIO_ENV_BASELINE"
 
+#: Trust tiers (Hermes absorption 4b). A server is *read-only* unless the owner says
+#: otherwise: only a tool whose ``annotations.readOnlyHint`` is true may be called on it;
+#: an unannotated, unlisted or mutating tool is refused by name before any request leaves.
+#: ``full`` lets every tool through to the contract and kernel checks that already govern
+#: it. The hint is the server's own claim, so it can only ever *narrow* what a tier allows.
+TRUST_READ_ONLY = "read-only"
+TRUST_FULL = "full"
+TRUST_TIERS: tuple[str, ...] = (TRUST_READ_ONLY, TRUST_FULL)
+_TRUST_ALIASES = {
+    "read-only": TRUST_READ_ONLY, "readonly": TRUST_READ_ONLY, "read_only": TRUST_READ_ONLY,
+    "ro": TRUST_READ_ONLY,
+    "full": TRUST_FULL, "read-write": TRUST_FULL, "rw": TRUST_FULL,
+}
+
+
+def normalize_trust(raw: object) -> str | None:
+    """Canonical trust tier for *raw*, or None when it names no tier."""
+    return _TRUST_ALIASES.get(str(raw or "").strip().lower())
+
 #: Variables a stdio MCP subprocess may inherit under the baseline: process
 #: plumbing (path, home, locale, temp, terminal), platform essentials
 #: (Windows system dirs, XDG dirs, display/session buses), interpreter and
@@ -169,11 +188,25 @@ def active_tool_call_contract() -> ContractTemplate:
 
 
 class MCPTool:
-    def __init__(self, name: str, description: str, input_schema: dict, server: str):
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        input_schema: dict,
+        server: str,
+        annotations: dict | None = None,
+    ):
         self.name = name
         self.description = description
         self.input_schema = input_schema
         self.server = server
+        #: The server's own claims about the tool (``readOnlyHint``, ``destructiveHint``, …).
+        self.annotations: dict = dict(annotations) if isinstance(annotations, dict) else {}
+
+    @property
+    def read_only(self) -> bool:
+        """True only when the server declared ``readOnlyHint: true`` — never assumed."""
+        return self.annotations.get("readOnlyHint") is True
 
     @property
     def qualified_name(self) -> str:
@@ -193,14 +226,20 @@ class MCPServer:
         env: dict[str, str] | None = None,
         headers: dict[str, str] | None = None,
         http_transport_factory: Callable[..., StreamableHttpTransport] | None = None,
+        trust: str = TRUST_READ_ONLY,
     ):
         """
         ``transport`` is normalised (``"HTTP"`` → ``streamable-http``); an unknown
         spelling is kept verbatim so ``connect()``/the contract refuse it by name.
         ``headers`` (HTTP only, e.g. a bearer token) live in memory — ``to_config``
         never persists them. ``http_transport_factory(url, headers, name=)`` is the
-        test seam for the Streamable HTTP transport.
+        test seam for the Streamable HTTP transport. ``trust`` is the owner's tier for
+        this server (:data:`TRUST_TIERS`; default read-only, fail closed).
         """
+        normalized_trust = normalize_trust(trust)
+        if normalized_trust is None:
+            raise ValueError(f"unknown MCP trust tier: {trust!r}")
+        self.trust = normalized_trust
         self.name = name
         self.transport = normalize_transport(transport)
         self.command = command
@@ -342,12 +381,16 @@ class MCPServer:
                     description=t.get("description", ""),
                     input_schema=t.get("inputSchema", {}),
                     server=self.name,
+                    annotations=t.get("annotations"),
                 ))
 
     async def call_tool(self, name: str, arguments: dict = None) -> Any:
         arguments = arguments or {}
         if not isinstance(arguments, dict):
             return {"error": "bad_args", "tool": name, "server": self.name}
+        denied = self._trust_denial(name)
+        if denied is not None:
+            return denied
         blocked = self._tool_call_blocked(name, arguments)
         if blocked is not None:
             return blocked
@@ -362,6 +405,21 @@ class MCPServer:
             # instruction the owner never sees (Hermes absorption 4a).
             return strip_invisible_deep(resp["result"])
         return resp
+
+    def _trust_denial(self, name: str) -> dict | None:
+        """On a read-only server only a tool the server itself marked read-only may run."""
+        if self.trust == TRUST_FULL:
+            return None
+        tool = next((t for t in self.tools if t.name == name), None)
+        if tool is not None and tool.read_only:
+            return None
+        return {
+            "error": "trust_denied",
+            "tool": name,
+            "server": self.name,
+            "trust": self.trust,
+            "reason": "unlisted_tool" if tool is None else "readOnlyHint_required",
+        }
 
     def _tool_call_blocked(self, name: str, arguments: dict) -> dict | None:
         arg_keys = list(arguments.keys())
@@ -519,6 +577,7 @@ class MCPManager:
                 "command": srv.command,
                 "url": srv.url,
                 "cwd": srv.cwd,
+                "trust": srv.trust,
             }
             for srv in self.servers.values()
         ]
@@ -528,6 +587,25 @@ class MCPManager:
         self.servers.clear()
         for cfg in configs:
             headers = cfg.get("headers")
+            raw_trust = cfg.get("trust")
+            trust = normalize_trust(raw_trust)
+            if trust is None:
+                if raw_trust is None:
+                    # A config saved before trust tiers existed: keep it working as it
+                    # did (every tool reachable) and say so, rather than break the
+                    # owner's setup on upgrade. New servers default to read-only.
+                    trust = TRUST_FULL
+                    logger.warning(
+                        "MCP server %s has no trust tier in its saved config; treated as "
+                        "full for compatibility — set it to read-only or full explicitly",
+                        cfg.get("name"),
+                    )
+                else:
+                    trust = TRUST_READ_ONLY
+                    logger.warning(
+                        "MCP server %s: unknown trust tier %r; treated as read-only",
+                        cfg.get("name"), raw_trust,
+                    )
             srv = MCPServer(
                 name=cfg["name"],
                 transport=cfg.get("transport", "stdio"),
@@ -535,5 +613,6 @@ class MCPManager:
                 url=cfg.get("url"),
                 cwd=cfg.get("cwd"),
                 headers=headers if isinstance(headers, dict) else None,
+                trust=trust,
             )
             self.servers[srv.name] = srv

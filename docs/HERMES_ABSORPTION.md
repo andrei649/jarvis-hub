@@ -278,8 +278,22 @@ mergea la primul din dicționar — acum e refuzat ca `ambiguous_tool` dacă nu 
 (`server/tool` sau `server=`); caracterele Unicode TAG (invizibile pe ecran, citibile de model)
 sunt eliminate din orice rezultat ToolRPC și din orice rezultat de apel MCP. Teste:
 `tests/test_channel_render.py` (15), `tests/test_mcp_hardening.py` (6). *Nedovedit pe un bot
-Telegram real* → `docs/OWNER_TASKS.md` **P20**. Rămân în 4b: streaming prin editări, renderere
-Slack/Discord, tierele de încredere MCP, `ntfy`, HUD mode, SDK-ul de plugin-uri.
+Telegram real* → `docs/OWNER_TASKS.md` **P20**.
+
+**Livrat 2026-09-07 (4b — tiere de încredere MCP, `readOnlyHint` fail-closed).** Orice unealtă
+listată de un server MCP putea fi apelată. `MCPServer.trust` e acum `read-only` (implicit pentru
+orice server adăugat de acum) sau `full`: pe un server read-only rulează doar o unealtă pe care
+serverul însuși a marcat-o `annotations.readOnlyHint: true` — o unealtă neadnotată, nelistată sau
+mutantă e refuzată ca `trust_denied` înainte ca vreo cerere să plece; un string `"true"` nu e o
+declarație. Indiciul e cuvântul serverului, deci poate doar îngusta un tier, niciodată lărgi;
+`full` predă fiecare apel verificărilor de contract și kernel care îl guvernează deja. Adnotările
+sunt captate din `tools/list` și arătate per unealtă în `GET /api/admin/mcp`; tier-ul e persistat
+cu configul serverului și primit de `POST /api/admin/mcp` (un tier necunoscut e 400 înainte de
+orice scriere). Un config salvat înainte să existe tiere se încarcă ca `full` **cu avertisment**,
+nu rupe instalarea owner-ului la upgrade. Scriitorul WorldView al Nervei e fixat pe `full` (trece
+deja prin gate-ul de plugin și kernel). Teste: `tests/test_mcp_trust.py` (10). *Nedovedit pe un
+server MCP real* → **P21**. Rămân în 4c: streaming prin editări, renderere Slack/Discord,
+include/exclude per server, `ntfy`, HUD mode, SDK-ul de plugin-uri.
 
 ---
 

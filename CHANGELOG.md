@@ -57,6 +57,20 @@
 - Tests: `tests/test_channel_render.py` (15), `tests/test_mcp_hardening.py` (6). Not proven
   against a real Telegram bot — `docs/OWNER_TASKS.md` P20.
 
+### Wave 2026-09-07 — Hermes absorption, wave 4b: MCP trust tiers
+
+- **`readOnlyHint` fail-closed** (`agents/core/mcp/client.py`, `agents/core/routers/mcp.py`).
+  Every tool an MCP server listed could be called. A server now carries a trust tier:
+  `read-only` (the default for every server added from now on) runs only a tool the server
+  itself marked `annotations.readOnlyHint: true` and refuses the rest as `trust_denied` before
+  any request leaves; `full` hands every call to the contract and kernel checks that already
+  govern it. Annotations are captured from `tools/list` and shown per tool in the admin list;
+  the tier is persisted and taken by the add route (an unknown tier is a 400). **Behaviour
+  change:** a server config saved before this release loads as `full` with a warning in the
+  log — set it explicitly. Nerva's own WorldView writer is pinned to `full` (kernel-gated).
+- Tests: `tests/test_mcp_trust.py` (10). Not proven against a real MCP server —
+  `docs/OWNER_TASKS.md` P21.
+
 ### Wave 2026-09-07 — Hermes absorption, wave 2a: the owner's own scheduled jobs
 
 - **Owner-scheduled jobs** (`agents/core/autonomy/jobs.py`). Nerva parsed "every weekday at

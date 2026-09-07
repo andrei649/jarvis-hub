@@ -525,6 +525,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jobs List */
+        get: operations["jobs_list_api_jobs_get"];
+        put?: never;
+        /** Jobs Create */
+        post: operations["jobs_create_api_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/blueprints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jobs Blueprints */
+        get: operations["jobs_blueprints_api_jobs_blueprints_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jobs Get */
+        get: operations["jobs_get_api_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        /** Jobs Delete */
+        delete: operations["jobs_delete_api_jobs__job_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jobs Runs */
+        get: operations["jobs_runs_api_jobs__job_id__runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Jobs Pause */
+        post: operations["jobs_pause_api_jobs__job_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Jobs Resume */
+        post: operations["jobs_resume_api_jobs__job_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Jobs Run */
+        post: operations["jobs_run_api_jobs__job_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/webhooks": {
         parameters: {
             query?: never;
@@ -782,6 +903,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/channels/pairing/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pairing Mint Link
+         * @description Mint a single-use pairing deeplink — the 60-second path.
+         *
+         *     Admin-guarded, because the token IS the credential: whoever holds it pairs.
+         *     It is returned exactly once and is never logged. The link is one-use and
+         *     expires in minutes, so a screenshot of it is worthless tomorrow.
+         *
+         *     Copying a code between two devices is where people give up, which is why this
+         *     exists; it is safe because the token can only ever pair one sender, once.
+         */
+        post: operations["pairing_mint_link_api_channels_pairing_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/pairing/link/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pairing Revoke Links
+         * @description Invalidate every outstanding pairing link at once.
+         *
+         *     The button for "I pasted that in the wrong window". Narrowing, so it needs no
+         *     approval — the same shape as revoking a permission.
+         */
+        post: operations["pairing_revoke_links_api_channels_pairing_link_revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quickbar/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quickbar Resolve
+         * @description What one typed line means. Returns a plan; performs nothing.
+         *
+         *     A POST rather than a GET because the line is user text that should not land
+         *     in a URL, a proxy log or a browser history — not because anything changes.
+         */
+        post: operations["quickbar_resolve_api_quickbar_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quickbar/help": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Quickbar Help
+         * @description The command menu, grounded in the destinations that actually exist.
+         *
+         *     Built from the same `_NAV` table the parser resolves against, so the menu
+         *     cannot advertise a destination a plan could never point at.
+         */
+        get: operations["quickbar_help_api_quickbar_help_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/canvas": {
         parameters: {
             query?: never;
@@ -1009,6 +1226,38 @@ export interface paths {
         put?: never;
         /** Capture Clear */
         post: operations["capture_clear_api_capture_clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/capture/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capture Export
+         * @description T-0.26 — the portable snapshot the phone (or anything else) takes off the box.
+         *
+         *     Read-only, and deliberately the *same* data `/api/capture` already returns: records
+         *     carry only already-redacted previews and metadata, because raw content is never
+         *     stored in the first place (redaction happens at ingest). So this route widens no
+         *     exposure — it packages what the inbox already shows into a self-describing envelope
+         *     (`version`, `exported_at`, the surface filter, the count, the opt-in state) that
+         *     still means something after it has been copied off the machine.
+         *
+         *     An unknown surface is a 422, not an empty export. The two are indistinguishable in
+         *     a saved file, and "you captured nothing from your clipboard" is a very different
+         *     claim from "you spelled clipboard wrong" — a typo must never be able to read as an
+         *     all-clear.
+         */
+        get: operations["capture_export_api_capture_export_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3469,6 +3718,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/subagents/{spawn_id}/steer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subagents Steer
+         * @description Steer a running sub-agent (company mode). The message is delivered to the
+         *     child's inbox with origin=user; it is guidance, never an approval — a queue
+         *     decision only ever comes from the inbox path (worker.apply_decision).
+         */
+        post: operations["subagents_steer_api_subagents__spawn_id__steer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subagents/{spawn_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subagents Stop
+         * @description Stop (cancel) a running sub-agent. Yields once so a child that unwinds
+         *     immediately reports `stopped` rather than the transient `stopping`.
+         */
+        post: operations["subagents_stop_api_subagents__spawn_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/autonomy/preview": {
         parameters: {
             query?: never;
@@ -4591,6 +4883,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory/consolidate/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Consolidate Preview
+         * @description DRA-27: the ``existing`` memories a consolidation plan should run against.
+         *
+         *     Answers the design question that kept ``/api/memory/consolidate`` unwired:
+         *     where ``existing`` comes from. It is fused recall over the live store, adapted
+         *     to the planner's ``{id, key, text}`` shape (``existing_from_hits``), scanned
+         *     like every other recall (CDX-7) and taint-scoped like one (SEC-B5).
+         *     ``available:false`` with a ``reason`` when there is no memory manager — an
+         *     empty list under a green chip would be the degenerate planner in disguise.
+         */
+        get: operations["memory_consolidate_preview_api_memory_consolidate_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/consolidate/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Consolidate Apply
+         * @description DRA-27: apply (or dry-run) a consolidation plan. Body ``{plan, existing, dry_run?}``.
+         *
+         *     Refuses a degenerate call with **422** and a machine-readable ``reason``:
+         *     ``existing: []`` (a plan against nothing), a missing/empty plan, an unknown
+         *     op, an UPDATE/DELETE whose target is not in ``existing``, an ADD/UPDATE with
+         *     no text. The plan is applied to a ``ListStore`` snapshot of ``existing`` (the
+         *     merged result comes back for inspection) and, unless ``dry_run``, written to
+         *     the live vector store with a per-op ``persisted`` / ``skipped`` report.
+         */
+        post: operations["memory_consolidate_apply_api_memory_consolidate_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/search": {
         parameters: {
             query?: never;
@@ -4601,6 +4947,9 @@ export interface paths {
         /**
          * Memory Search
          * @description Fused recall via RRF: vector similarity + knowledge-graph (H5.14 Task 4).
+         *
+         *     CDX-7: every hit is scanned and a flagged one redacted; SEC-B5: an untrusted
+         *     or flagged hit raises the scoped ``action_origin`` and the response says so.
          */
         get: operations["memory_search_api_memory_search_get"];
         put?: never;
@@ -4954,7 +5303,10 @@ export interface paths {
         };
         /**
          * Recall Memory
-         * @description Search memory store by query string.
+         * @description Search the structured memory store by query string.
+         *
+         *     CDX-7: an injection-flagged value is redacted; SEC-B5: such a row raises the
+         *     scoped ``action_origin`` and the response reports it.
          */
         get: operations["recall_memory_api_memory_recall_get"];
         put?: never;
@@ -5499,11 +5851,22 @@ export interface paths {
         };
         /**
          * Admin Network Calls
-         * @description H23.16 — network monitor: plugin egress ledger from the http_client choke point.
+         * @description H23.16 — network monitor: the egress ledger from the http_client choke point.
          *
          *     Returns per-plugin tallies (total/allowed/blocked/external) plus the most recent
          *     attempts, and `local_only_violations` — the proof that local-only plugins made zero
          *     outbound calls. Optional `plugin` filters to one; `limit` caps the recent list.
+         *
+         *     DRA-23 — no longer plugin-only, and this docstring said otherwise for a release.
+         *     Model traffic is recorded too, under `llm:<provider>` rows, and its share of the
+         *     external total is `model_egress_total`. That share can never appear in
+         *     `local_only_violations`: LLM backends have no manifest gate, so those rows record
+         *     what left and never a block that did not happen. A caller reading `clean` alone is
+         *     therefore reading a claim about PLUGIN policy, not about whether anything left the
+         *     machine — which is why the HUD's headline takes `model_egress_total` as its own term.
+         *     Still not instrumented at all (recorded so this docstring does not overclaim in the
+         *     other direction): cloud TTS in `voice/tts.py`, `skills/importer.py`,
+         *     `cameras/frigate.py`, `house/home_assistant.py` and `channels/telegram.py`.
          */
         get: operations["admin_network_calls_api_admin_network_calls_get"];
         put?: never;
@@ -8144,6 +8507,298 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/company/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Company Runs
+         * @description Every run, projected through the brief builder — no task payloads.
+         */
+        get: operations["company_runs_api_company_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/company/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Company Run
+         * @description One run in full: its steps, budget and verdicts.
+         */
+        get: operations["company_run_api_company_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/company/waiting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Company Waiting
+         * @description What every open run is waiting on, and for how long.
+         *
+         *     Ledger-only: the durable task ids are reported so the HUD can link to the
+         *     decision cards, but nothing here reads or changes a task. A read route that
+         *     quietly resolved asks would be a second approval path for the most powerful
+         *     thing in the product — the same reason there is no route that starts a run.
+         */
+        get: operations["company_waiting_api_company_waiting_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/company/runs/{run_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Company Run Stop
+         * @description Stop a run. Narrowing only, so it needs no approval — the same shape as
+         *     revoking a permission. A run that is already stopping settles to stopped.
+         */
+        post: operations["company_run_stop_api_company_runs__run_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operator/benchmark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operator Benchmark
+         * @description The stored S1 result, or an honest "never run".
+         */
+        get: operations["operator_benchmark_api_operator_benchmark_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operator/benchmark/pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operator Benchmark Pack
+         * @description The questions, as data — so a rate can be read against what it measured.
+         */
+        get: operations["operator_benchmark_pack_api_operator_benchmark_pack_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/host/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Host Probe
+         * @description What this host can honestly offer the computer operator, and why not.
+         */
+        get: operations["host_probe_api_host_probe_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/onboarding/model-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Model Plan
+         * @description Hardware → tier → model, Ollama presence, and the current pull job.
+         */
+        get: operations["model_plan_api_onboarding_model_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/onboarding/model-pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Model Pull
+         * @description Pull the recommended (or a named) model through the governed facade.
+         */
+        post: operations["model_pull_api_onboarding_model_pull_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Permissions Snapshot
+         * @description The consent ledger: grants, default-deny list, audit tail.
+         */
+        get: operations["permissions_snapshot_api_permissions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/permissions/{grant_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Permissions Revoke
+         * @description Narrow one grant. ``never`` rows are immutable (409); unknown ids are 404.
+         */
+        post: operations["permissions_revoke_api_permissions__grant_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/report/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Report Today
+         * @description The redacted "what Nerva did today" report. ``format=html`` returns the
+         *     self-contained card (no script, no external asset) for sharing.
+         */
+        get: operations["report_today_api_report_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/report/today/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Today Export
+         * @description Write today's report under the local reports directory. Body:
+         *     ``{"format": "json"|"html"}``. Refusals name their reason: a contract
+         *     violation is 400, a kernel DENY / QUEUE is 403 (``kernel_denied:…`` /
+         *     ``approval_required``), a failed write 500.
+         */
+        post: operations["report_today_export_api_report_today_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/report/receipt/{audit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Report Receipt
+         * @description One intent-log entry (``seq``) as a Proof-of-Action receipt: the card's
+         *     free text is scanner-redacted, the chain is verified, and ``verified`` is
+         *     False — visibly, not silently — when the link or the chain does not hold.
+         */
+        get: operations["report_receipt_api_report_receipt__audit_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin": {
         parameters: {
             query?: never;
@@ -8686,6 +9341,28 @@ export interface components {
             /** Zip Base64 */
             zip_base64: string;
         };
+        /** JobCreateBody */
+        JobCreateBody: {
+            /** Name */
+            name?: string | null;
+            /** Schedule Text */
+            schedule_text?: string | null;
+            /** Action */
+            action?: {
+                [key: string]: unknown;
+            } | null;
+            /** Blueprint */
+            blueprint?: string | null;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** JobPauseBody */
+        JobPauseBody: {
+            /** Reason */
+            reason?: string | null;
+        };
         /** LMLoad */
         LMLoad: {
             /** Model */
@@ -8733,6 +9410,11 @@ export interface components {
             command?: string | null;
             /** Url */
             url?: string | null;
+            /**
+             * Trust
+             * @default read-only
+             */
+            trust: string;
         };
         /** MapBody */
         MapBody: {
@@ -8768,6 +9450,11 @@ export interface components {
              * @default gpt-oss-20b
              */
             model: string;
+        };
+        /** ModelPullBody */
+        ModelPullBody: {
+            /** Model */
+            model?: string | null;
         };
         /** ModelSwapBody */
         ModelSwapBody: {
@@ -8897,6 +9584,16 @@ export interface components {
              */
             name: string;
         };
+        /** PairingLinkBody */
+        PairingLinkBody: {
+            /**
+             * Channel
+             * @default telegram
+             */
+            channel: string;
+            /** Bot Username */
+            bot_username?: string | null;
+        };
         /** PairingRequestBody */
         PairingRequestBody: {
             /** Channel */
@@ -9013,6 +9710,14 @@ export interface components {
         PublishSkillBody: {
             /** Name */
             name: string;
+        };
+        /** QuickbarBody */
+        QuickbarBody: {
+            /**
+             * Text
+             * @default
+             */
+            text: string;
         };
         /** RequestPaymentBody */
         RequestPaymentBody: {
@@ -9195,6 +9900,15 @@ export interface components {
              * @default
              */
             agent: string;
+            /** Output Schema */
+            output_schema?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** SubAgentSteerBody */
+        SubAgentSteerBody: {
+            /** Message */
+            message: string;
         };
         /** SyncPullBody */
         SyncPullBody: {
@@ -10131,6 +10845,271 @@ export interface operations {
             };
         };
     };
+    jobs_list_api_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    jobs_create_api_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobCreateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_blueprints_api_jobs_blueprints_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    jobs_get_api_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_delete_api_jobs__job_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_runs_api_jobs__job_id__runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_pause_api_jobs__job_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["JobPauseBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_resume_api_jobs__job_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_run_api_jobs__job_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_webhooks_api_webhooks_get: {
         parameters: {
             query?: never;
@@ -10599,6 +11578,112 @@ export interface operations {
             };
         };
     };
+    pairing_mint_link_api_channels_pairing_link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PairingLinkBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pairing_revoke_links_api_channels_pairing_link_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    quickbar_resolve_api_quickbar_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuickbarBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    quickbar_help_api_quickbar_help_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     canvas_list_api_canvas_get: {
         parameters: {
             query?: {
@@ -10974,6 +12059,37 @@ export interface operations {
         };
     };
     capture_clear_api_capture_clear_post: {
+        parameters: {
+            query?: {
+                surface?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_export_api_capture_export_get: {
         parameters: {
             query?: {
                 surface?: string | null;
@@ -14670,6 +15786,72 @@ export interface operations {
             };
         };
     };
+    subagents_steer_api_subagents__spawn_id__steer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spawn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubAgentSteerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subagents_stop_api_subagents__spawn_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spawn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     autonomy_preview_api_autonomy_preview_post: {
         parameters: {
             query?: never;
@@ -16198,6 +17380,58 @@ export interface operations {
         };
     };
     memory_consolidate_api_memory_consolidate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    memory_consolidate_preview_api_memory_consolidate_preview_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                top_k?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_consolidate_apply_api_memory_consolidate_apply_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -21196,6 +22430,377 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    company_runs_api_company_runs_get: {
+        parameters: {
+            query?: {
+                active_only?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_run_api_company_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_waiting_api_company_waiting_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_run_stop_api_company_runs__run_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operator_benchmark_api_operator_benchmark_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    operator_benchmark_pack_api_operator_benchmark_pack_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    host_probe_api_host_probe_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    model_plan_api_onboarding_model_plan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    model_pull_api_onboarding_model_pull_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelPullBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    permissions_snapshot_api_permissions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    permissions_revoke_api_permissions__grant_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_today_api_report_today_get: {
+        parameters: {
+            query?: {
+                format?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_today_export_api_report_today_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    report_receipt_api_report_receipt__audit_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                audit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

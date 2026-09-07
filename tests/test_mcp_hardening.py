@@ -110,7 +110,7 @@ async def test_tool_rpc_results_never_carry_invisible_text():
 @pytest.mark.asyncio
 async def test_mcp_call_results_never_carry_invisible_text(monkeypatch):
     srv = MCPServer("remote", transport="stdio", command="true")
-    srv.tools = [MCPTool("read", "", {"type": "object"}, "remote")]
+    srv.tools = [MCPTool("read", "", {"type": "object"}, "remote", annotations={"readOnlyHint": True})]
 
     async def fake_send(payload):
         return {"jsonrpc": "2.0", "id": 3, "result": {"content": [{"text": f"note{TAGS}"}]}}

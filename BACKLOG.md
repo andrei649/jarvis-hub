@@ -1356,11 +1356,26 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   screen, readable by the model) are stripped from every ToolRPC result and every MCP call
   result (`quarantine.strip_invisible_deep`). Tests: `tests/test_channel_render.py` (15),
   `tests/test_mcp_hardening.py` (6). **Not proven against a real Telegram bot** → P20.
-- [ ] **HA-4b** — the rest of the depth wave: streaming edits on chat surfaces (the descriptor
-  now says which can), Slack `mrkdwn` / Discord renderers, MCP trust tiers with `readOnlyHint`
-  fail-closed and per-server tool include / exclude, an `ntfy` push channel for approvals away
-  from the HUD, HUD mode on desktop, the plugin SDK — sequenced in
-  [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+- [x] ✅ **HA-4b — MCP trust tiers, `readOnlyHint` fail-closed.** Every tool an MCP server listed
+  could be called. `MCPServer.trust` is now `read-only` (default for every server added from
+  now on) or `full`: on a read-only server only a tool the server itself marked
+  `annotations.readOnlyHint: true` may run — an unannotated, unlisted or mutating tool is
+  refused as `trust_denied` (with `readOnlyHint_required` / `unlisted_tool`) before any request
+  leaves the box; a string `"true"` is not a claim. The hint is the server's own word, so it can
+  only narrow a tier, never widen it; `full` hands every call to the contract and kernel checks
+  that already govern it. Annotations are captured from `tools/list` and shown per tool in
+  `GET /api/admin/mcp` (`read_only`), the tier is persisted with the server config and taken by
+  `POST /api/admin/mcp` (`trust`, validated: an unknown tier is a 400 before anything is
+  written). A config saved before tiers existed loads as `full` **with a warning** rather than
+  breaking the owner's setup on upgrade; an unknown saved spelling loads as read-only. Nerva's
+  own WorldView writer is pinned to `full` — its calls already cross the plugin gate and the
+  kernel. `schema.gen.ts` regenerated. Tests: `tests/test_mcp_trust.py` (10). **Not proven
+  against a real MCP server** → P21. Named and not done: per-server tool include / exclude,
+  `destructiveHint`-aware approval tiers, a vetted default-disabled catalogue.
+- [ ] **HA-4c** — the rest of the depth wave: streaming edits on chat surfaces (the descriptor
+  now says which can), Slack `mrkdwn` / Discord renderers, per-server MCP tool include /
+  exclude, an `ntfy` push channel for approvals away from the HUD, HUD mode on desktop, the
+  plugin SDK — sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the

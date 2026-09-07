@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from agents.core.kernel import Action, Capability, Verdict, kernel_enabled
-from agents.core.mcp.client import MCPManager, MCPServer
+from agents.core.mcp.client import TRUST_FULL, MCPManager, MCPServer
 from agents.core.security.worldview_mcp import mint_capability
 
 WORLDVIEW_PLUGIN = "worldview"
@@ -203,6 +203,10 @@ class WorldViewMCPWriteClient:
                 command=_default_mcp_command(),
                 cwd=_default_mcp_cwd(),
                 env={"WORLDVIEW_MCP_SECRET": secret},
+                # Nerva's own WorldView writer: every call already crosses the plugin
+                # gate and the kernel above, so the tier that would refuse writes by
+                # hint is the wrong gate here.
+                trust=TRUST_FULL,
             )
             self.mcp.register(server)
         elif isinstance(server, MCPServer):
