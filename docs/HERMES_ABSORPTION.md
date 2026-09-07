@@ -353,8 +353,17 @@ niciodată. Legat de `web.py` când ambele variabile sunt setate (o valoare malf
 cu avertisment, niciodată legată pe jumătate), permis pe contractul `channel.send` al
 managerului, atins de router-ul de escaladare și de joburi (`"channel": "ntfy"`) ca orice
 adaptor înregistrat. Teste: `tests/test_ntfy_channel.py` (8). *Nedovedit pe un server ntfy
-real* → **P23**. Rămân în 4h: streaming prin editări pe Slack/Discord, HUD mode, SDK-ul de
-plugin-uri.
+real* → **P23**.
+
+**Livrat 2026-09-07 (4h — `file_read` citește un document).** Un `.pdf` / `.docx` din rădăcini
+venea înapoi ca o pagină de caractere de înlocuire. Acum e returnat ca text extras prin aceleași
+parsere opționale pe care le folosește indexatorul de documente locale (`pypdf`,
+`python-docx`), sub același plafon de bytes, cu `extracted` / `format` / `truncated` în rezultat;
+fără parser refuzul îl numește (`parser_missing`, ce pachet), un fișier pe care parserul nu-l
+poate citi e `extraction_failed`, iar `raw: true` returnează în continuare bytes. Niciun parser
+nu e dependență declarată — rămâne decizia owner-ului. Teste: `tests/test_file_read_documents.py`
+(5). Rămân în 4i: streaming prin editări pe Slack/Discord, HUD mode, SDK-ul de plugin-uri,
+`nerva send` + `GET /api/commands`, kernelele de cod persistente și `image_generate`.
 
 ---
 

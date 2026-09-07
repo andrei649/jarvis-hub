@@ -721,7 +721,10 @@ built on your Windows box:
       "kept repeating the same tool call", not with the 8-turn safety limit. If the model never
       picks the tools at all, that is a prompt-catalogue finding (`HA-0.2`), not a tool one.
       Windows: the search skips symlinks and secret names by the same rules but only Linux ran
-      the tests — confirm once on a real workspace there. Last, the profile (`HA-3b`): from a
+      the tests — confirm once on a real workspace there. Put a PDF in the workspace and ask
+      "what does <its name> say" (`HA-4h`): without `pypdf` installed the model must report
+      that the parser is missing, never a page of replacement characters; with
+      `pip install pypdf` it must quote the document's text. Last, the profile (`HA-3b`): from a
       Telegram account that is *not* on the owner allowlist, ask the same "which file mentions
       …" question — the tool feed must show a `tool_profile` event with `inbound / guest` and
       `file_search` among the withheld names, and the reply must not contain the file's words;

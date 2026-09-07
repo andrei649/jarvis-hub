@@ -63,6 +63,7 @@ from typing import Any
 from agents.core.automation_contracts import ContractTemplate, predicate
 from agents.core.env_config import env_flag, env_int, env_list
 from agents.core.environments import SECRET_ENV_SUBSTRINGS
+from agents.core.local_docs import DOC_EXTS, extract_text
 from agents.core.paths import data_path
 from agents.core.tool_rpc import ToolRPCValidationError
 
@@ -77,6 +78,12 @@ MAX_BYTES_ENV = "JARVIS_FILE_MAX_BYTES"
 DEFAULT_MAX_BYTES = 2_000_000
 MAX_PATH_CHARS = 4096
 MAX_LIST_ENTRIES = 2000
+# Hermes absorption 4h — a .pdf / .docx inside the roots is read as its text, through the
+# same optional parsers the local-docs indexer uses (pypdf, python-docx); without them the
+# refusal names the missing parser instead of handing the model a page of replacement
+# characters. ``raw=true`` still returns the bytes.
+DOCUMENT_SUFFIXES = frozenset(DOC_EXTS)
+_DOCUMENT_PARSERS = {".pdf": "pypdf", ".docx": "docx"}
 DEFAULT_LIST_ENTRIES = 500
 # file_search bounds. Each is a ceiling the result reports hitting (``truncated``
 # plus ``stopped_by``) rather than a silent edge of the workspace.
@@ -470,6 +477,7 @@ class FileTools:
         except FileScopeError as exc:
             return {"ok": False, "reason": exc.reason}
         limit = _bounded_int(args.get("max_bytes"), self.max_bytes, minimum=1, maximum=self.max_bytes)
+        raw = args.get("raw") is True
 
         def _read() -> dict:
             if not target.exists():
@@ -477,6 +485,8 @@ class FileTools:
             if not target.is_file():
                 return {"ok": False, "reason": "not_a_file"}
             size = target.stat().st_size
+            if not raw and target.suffix.lower() in DOCUMENT_SUFFIXES:
+                return _read_document(target, size, limit)
             with target.open("rb") as handle:
                 data = handle.read(limit)
             return {
@@ -862,6 +872,45 @@ class FileTools:
             logger.debug("file tools audit sink failed", exc_info=True)
 
 
+def _parser_available(suffix: str) -> bool:
+    import importlib.util
+
+    module = _DOCUMENT_PARSERS.get(suffix)
+    if module is None:
+        return False
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _read_document(target: Path, size: int, limit: int) -> dict:
+    """The text of a .pdf / .docx, bounded like any read; a named refusal otherwise."""
+    suffix = target.suffix.lower()
+    if not _parser_available(suffix):
+        return {
+            "ok": False,
+            "reason": "parser_missing",
+            "detail": f"reading {suffix} needs the {_DOCUMENT_PARSERS[suffix]} package; raw=true returns the bytes",
+        }
+    text = extract_text(target)
+    if text is None:
+        return {"ok": False, "reason": "extraction_failed", "detail": "the file could not be parsed"}
+    data = text.encode("utf-8")
+    shown = data[:limit]
+    return {
+        "ok": True,
+        "path": str(target),
+        "content": shown.decode("utf-8", errors="ignore"),
+        "bytes": len(shown),
+        "size": size,
+        "extracted": True,
+        "format": suffix.lstrip("."),
+        "truncated": len(data) > len(shown),
+        "sha256": hashlib.sha256(shown).hexdigest(),
+    }
+
+
 def _walk_files(target: Path, root: Path, counts: dict[str, int]):
     """Yield ``(path, size)`` for every regular file under *target* the read tools
     would show: symlinks are never followed (counted), secret-looking names and
@@ -962,12 +1011,16 @@ def _path_arg(args: Mapping[str, Any], *, required: bool) -> str | None:
 
 
 def _preflight_read(args: dict) -> Mapping:
-    clean = {"path": _path_arg(args, required=True)}
+    clean: dict[str, Any] = {"path": _path_arg(args, required=True)}
     if "max_bytes" in args:
         value = args["max_bytes"]
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise ToolRPCValidationError("bad_max_bytes")
         clean["max_bytes"] = value
+    if "raw" in args:
+        if not isinstance(args["raw"], bool):
+            raise ToolRPCValidationError("bad_flag")
+        clean["raw"] = args["raw"]
     return clean
 
 
@@ -1032,7 +1085,10 @@ _PATH_SCHEMA = {"type": "string", "maxLength": MAX_PATH_CHARS}
 
 FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
     "file_read": {
-        "description": "Read one UTF-8 file inside the owner's file roots (bounded bytes).",
+        "description": (
+            "Read one UTF-8 file inside the owner's file roots (bounded bytes); a .pdf or "
+            ".docx is returned as its extracted text (raw=true for the bytes)."
+        ),
         "gated": False,
         "trusted_execution": False,
         "capability_id": "tool:file_read",
@@ -1041,6 +1097,7 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             "properties": {
                 "path": _PATH_SCHEMA,
                 "max_bytes": {"type": "integer", "minimum": 1},
+                "raw": {"type": "boolean"},
             },
             "required": ["path"],
             "additionalProperties": False,

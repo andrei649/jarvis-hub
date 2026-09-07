@@ -145,7 +145,8 @@ allowlist at all**.
 **ON:** `file_read` / `file_list` / `file_search` are ungated *inside* `JARVIS_FILE_ROOTS`
 (no `..`, no symlink escape, secret-looking names refused, bytes/entries/matches bounded;
 `file_search` is a *literal* content search — no regex, no ripgrep — that reports every cap
-it hit);
+it hit; `file_read` returns a `.pdf`/`.docx` as extracted text when `pypdf`/`python-docx` is
+installed, and names the missing parser otherwise);
 `file_write` / `file_delete` are **gated** ask-tier ToolRPC tasks
 (`toolrpc.file_write`, `toolrpc.file_delete`) that snapshot the previous bytes before
 touching the file, cross the kernel as `file.write`, and are reversible through

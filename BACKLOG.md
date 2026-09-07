@@ -1430,9 +1430,19 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   reached by the escalation router and by jobs (`"channel": "ntfy"`) like any registered
   adapter. Tests: `tests/test_ntfy_channel.py` (8). **Not proven against a real ntfy server**
   → P23.
-- [ ] **HA-4h** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
-  now say they can), HUD mode on desktop, the plugin SDK — sequenced in
-  [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+- [x] ✅ **HA-4h — `file_read` reads a document.** A `.pdf` / `.docx` inside the roots used to
+  come back as a page of replacement characters. It is now returned as its extracted text
+  through the same optional parsers the local-docs indexer uses (`pypdf`, `python-docx`),
+  bounded by the same byte cap, with `extracted` / `format` / `truncated` in the result; without
+  the parser the refusal names it (`parser_missing`, which package), a file the parser cannot
+  read is `extraction_failed`, and `raw: true` still returns the bytes. Neither parser is a
+  declared dependency — that stays the owner's call (P19 says how to check). Tests:
+  `tests/test_file_read_documents.py` (5). Named and not done: `file_search` over document
+  text (it would read every document in full on every search).
+- [ ] **HA-4i** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
+  now say they can), HUD mode on desktop, the plugin SDK, `nerva send` + `GET /api/commands`,
+  session-persistent code kernels and `image_generate` (both need backends that do not exist
+  yet) — sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the

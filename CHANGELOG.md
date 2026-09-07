@@ -129,6 +129,14 @@
 - Tests: `tests/test_ntfy_channel.py` (8). Not proven against a real ntfy server —
   `docs/OWNER_TASKS.md` P23.
 
+### Wave 2026-09-07 — Hermes absorption, wave 4h: file_read reads a document
+
+- **`.pdf` / `.docx` as text** (`agents/core/file_tools.py`). A document inside the roots is
+  returned as its extracted text through the optional parsers the local-docs indexer already
+  uses, under the same byte cap; `parser_missing` names the package when it is absent,
+  `extraction_failed` a file that cannot be parsed, `raw: true` returns the bytes.
+- Tests: `tests/test_file_read_documents.py` (5).
+
 ### Wave 2026-09-07 — Hermes absorption, wave 2a: the owner's own scheduled jobs
 
 - **Owner-scheduled jobs** (`agents/core/autonomy/jobs.py`). Nerva parsed "every weekday at
