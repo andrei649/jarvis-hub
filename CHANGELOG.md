@@ -2,6 +2,537 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-06 — 17 builder slices: operator hands, live rails, activation, program contracts
+
+Seventeen file-partitioned slices landed as one commit (`214bc5eb`, run `opus-integration`,
+PR #1039), each with its own hermetic tests and its own red-proof, then registered by three
+integrators working on disjoint files. **Nothing here changes default behaviour**: every new
+capability is default-off behind its own flag ([`docs/FLAGS.md`](docs/FLAGS.md)), and every
+privileged effect still crosses the Action Kernel and the approval queue.
+
+- **A governed computer operator grew hands.** A consent ledger
+  (`agents/core/permission_ledger.py`, `JARVIS_PERMISSION_LEDGER`) holds per-app / per-site /
+  OS-input / file-root / terminal-target grants `{once, session, always, never}` over a curated
+  default-deny list, widened only through the new `permission.grant` approval task. Governed **file
+  tools** (`JARVIS_FILE_TOOLS`) read and list inside declared roots and write/delete only as
+  approved ask-tier ToolRPC tasks that snapshot the previous bytes first (kernel kind `file.write`,
+  rollback `restore`). A governed **local terminal** (`JARVIS_TERMINAL_LOCAL_HOST`) runs argv-only,
+  cwd-jailed commands behind a static HARDLINE denylist evaluated *before* authorize on every
+  backend — a hardline hit leaves no audit entry and never spawns — then target policy, a durable
+  approved task, the new `terminal.exec` contract, and a kernel GRANT. The **browser** got the
+  IP-pinned Chromium transport it needed to navigate at all (SEC-B4's browser leg): one validated IP
+  per host, `MAP * ~NOTFOUND` for everything else, redirect and subresource re-validation, a
+  throw-away profile per run, and accessibility-snapshot-first observation. **Visual grounding**
+  falls back to a proven-local VLM with pinned open-weight presets so a model's coordinate
+  convention is normalized before a click (`JARVIS_VLM_PRESET`).
+- **The live rails exist, and stay off.** `JARVIS_WRITEBACK_LIVE`, `JARVIS_SOCIAL_LIVE` and
+  `JARVIS_CALL_LIVE` arm the real Notion/GitHub/Calendar/Linear/Asana/Trello/Todoist/ClickUp/Sheets/M365
+  write, the X post, and the Twilio/Telnyx dial — each only after an approved ask-tier task, each
+  refusing `credential_not_configured` rather than sending an unauthenticated request. Approved
+  transcript `create_task` items now execute through `WriteBackBroker` instead of the LLM fallback.
+- **Activation is one step again.** `scripts/bootstrap.py` (stdlib-only, hash-pinned install, a
+  real install smoke, loopback-bound) sits behind thin `install.sh` / `INSTALL.bat` /
+  `install.ps1` wrappers and a `docker-compose.quickstart.yml`; `scripts/doctor.py` answers "why
+  isn't it working" with named reasons and an exit code. New docs: [`docs/INSTALL.md`](docs/INSTALL.md)
+  and [`docs/PHONE_ACCESS.md`](docs/PHONE_ACCESS.md) — the latter closes a long-standing gap where
+  the supported LAN path for a phone was documented nowhere. Model setup now tiers on real hardware
+  (NVIDIA → Apple Silicon → AMD) and can pull a recommended model through the kernel
+  (`model.pull`, `JARVIS_MODEL_PULL`, loopback-only, size-capped).
+- **Memory hygiene closed its sixth leg.** `GET /api/memory/consolidate/preview` finally answers
+  where `existing` comes from, `POST /api/memory/consolidate/apply` is the apply surface, and every
+  JSON recall hit is now injection-scanned, redacted when flagged, and carries provenance and a
+  `tainted` verdict. The HTTP recall routes bind turn origin on entry and reset **after the response
+  is built** — not the fail-open shape an earlier draft withdrew.
+- **MCP speaks Streamable HTTP** behind `JARVIS_MCP_HTTP_CLIENT` (the deprecated HTTP+SSE pair
+  stays refused *by name*, closing DRA-25's honesty finding), a reusable stdio loop plus
+  `scripts/nerva_mcp_stdio.py` bridges Claude Desktop / Cursor to a running hub without widening a
+  single gate, and `JARVIS_MCP_STDIO_ENV_BASELINE` stops stdio servers inheriting the hub's
+  credentials.
+- **House:** Hestia is wired onto the house modules (`observe()` / `propose()`, aggregate occupancy
+  only, proposals through the approval queue) and a strict-local WLED bridge mirrors the six orb
+  states — every write a kernel-mediated `house.control`, echo-verified, silent when unreachable.
+- **Chaos and program contracts:** an in-process failure-injection harness for the test lane
+  (`JARVIS_FAULT_INJECT`, refused under `JARVIS_HARDENED`, fenced to the data root),
+  `nerva.ledger.v1` cognitive-ledger records (record_only), the #731 Continuity Core evaluation
+  suite on the accepted E9.0 benchmark harness, an advisory-only Nerva program-manifest checker
+  reconciled to the post-#981 posture, and the first Tier A integration adoption pass (Playwright —
+  pass recorded, nothing adopted).
+- **New surfaces:** `GET /api/report/today` (a redacted, payload-free day report, `?format=html`),
+  `POST /api/report/today/export` (kernel kind `report.export`), `GET /api/report/receipt/{audit_id}`
+  (a chain-verified Proof-of-Action receipt), `GET /api/permissions` +
+  `POST /api/permissions/{id}/revoke`, `GET /api/onboarding/model-plan` +
+  `POST /api/onboarding/model-pull`, `GET /api/memory/consolidate/preview` +
+  `POST /api/memory/consolidate/apply`, and `POST /api/subagents/{id}/steer|stop` — with Console
+  panels for the day receipt, permissions, model setup and consolidation.
+- **Honest limits, recorded rather than glossed:** the browser transport, the local terminal, the
+  visual-grounding presets, the model pull, all three live rails, the native installers and the
+  stdio bridge are **delivered, not proven on real hardware/credentials** — they are marked 🔨 in
+  [`BACKLOG.md`](BACKLOG.md) and each has an owner packet with exact commands in
+  [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md). SEC-B5 stays 🟡 on one named residual
+  (`Orchestrator.process()` binds no turn origin — an approval-volume owner decision). T-0.63's
+  72h soak half remains an owner lane; the harness does not replace it.
+
+### Wave 2026-09-06 (part 2) — the operator is wired, and the company loop exists
+
+The seventeen slices above were isolated modules. This part registers them in the running
+system and adds the work-run chain the "24/7 company" goal needs. Still nothing changes by
+default: every new capability is off behind its own flag.
+
+- **The action plane went from 21 to 26 kinds.** `permission.grant`, `terminal.exec`,
+  `file.write`, `model.pull` and `report.export` are registered kernel-mediated, each with a
+  capability manifest carrying its real rollback contract, and each with a live exerciser in the
+  action-auth matrix — so "kernel-mediated" is proved against the production entry point rather
+  than asserted in a snapshot. The permission ledger's kernel hook now honours
+  `JARVIS_ACTION_KERNEL` like every other hook; it was the one consulted with the flag off.
+- **The operator's routes are mounted and its executors wired.** The four new routers are on the
+  app (all twelve routes user-guarded); `toolrpc.file_write` / `toolrpc.file_delete` joined the
+  trusted-execution kinds; `terminal_run` now crosses the kernel with a durable approval check
+  whose task id reaches it through a contextvar set by the executor — deliberately *not* through
+  the model-facing schema, so a model cannot forge an approval. The consent ledger is an
+  orchestrator binding and `permission.grant` executes only from the owner-approved task.
+- **Company mode (E5.0), default-off behind `JARVIS_COMPANY_MODE`.** A work run is one
+  owner-approved goal worked across turns, sessions and reboots. Four components, each able to do
+  exactly one thing: a durable **ledger** (`work_runs.py` — strict transitions, hard budgets for
+  steps/seconds/deadline/owner-interrupts, one open run per goal, a fingerprint per row, and a
+  refusal to open on a goal nobody approved); an evidence **verifier** (`work_verifier.py` — a
+  check with no probe is `unverifiable`, never `passed`; a broken probe is a failure, not a skip);
+  a goal **judge** (`work_judge.py` — fail-closed, scope a hard boundary, and an optional LLM
+  rubric that can only ever *withhold* a pass); and the **supervisor** (`company_supervisor.py` —
+  one tick one step, stop read before planning, a refusal recorded as a step that spends budget,
+  and no way to mark a run succeeded itself). 80 hermetic tests.
+  [`docs/nerva2/NIGHT_SHIFT_E5_0.md`](docs/nerva2/NIGHT_SHIFT_E5_0.md).
+- **Two HUD surfaces instead of two punch-list rows.** A Host Readiness panel over the
+  observe-only probe — tri-state permissions render as *unknown*, never as a guess, and each
+  refusal shows the backend's own hint — and steer/stop controls on running sub-agent rows, where
+  an undelivered steer reads as "recorded, not delivered" rather than as success.
+- **Two honesty corrections.** `nerva.work-run.v1` had been moved to `candidate` naming four E5.0
+  modules that did not exist; the claim, its manifest reference and its reconciliation row were
+  withdrawn, the tests that pinned the word now read the registry, and the status was re-raised
+  only once the modules shipped. Separately, the import dry-run guard compared a WAL database
+  byte-for-byte, which a checkpoint breaks under load; it now compares rows, with a test proving a
+  written row is still caught.
+- **Company mode is reachable, and its planner is clamped.** The planner is the one place a
+  model proposes rather than refuses, so scope is enforced at *proposal* time (a run never spends
+  a step on work the judge would reject), a repeat of work already done is refused, and a
+  proposer that crashes or answers junk proposes nothing — read as "out of ideas", not
+  "finished". The morning brief makes the unflattering facts the hardest to drop: the headline is
+  the verdict rather than the effort, an unauthorised step leads both its run and the whole brief,
+  and "nothing ran" never renders like "company mode is off". Three user-guarded routes and a
+  Console panel expose it — with **no way to start a run**, because a goal is approved in the
+  decision inbox like everything else, and a start button here would be a second, weaker approval
+  path. Stop is offered, since narrowing needs no approval.
+- **And it keeps going on its own.** `schedule_runtime.py` decides when a run advances, and
+  every rule in it is restraint rather than throughput: a terminal, stopping, blocked or
+  budget-spent run is never woken (an unreadable budget fails closed as spent), concurrency is
+  bounded so ten open goals are not ten simultaneous agents, and the night window is quiet hours
+  for *attention* only — the work continues, the interruption waits for morning. A failed tick is
+  reported but never retried there, because a second retry loop would multiply the supervisor's
+  failure budget behind its back.
+- **The operator grew the other two platforms.** `build_desktop_runtime` picked
+  `WindowsDesktopDriver` unconditionally — which is why the desktop operator only ever worked on
+  Windows. There is now a `desktop_drivers` package: a shared base holding the observe/act policy
+  and every bound (a mutation re-snapshots and matches by *exact* name immediately before acting, so
+  a stale handle cannot click something else; `requires_kernel` is inherited so an adapter cannot
+  omit it), a macOS adapter over the AX API, a Linux adapter over AT-SPI, and per-platform capture.
+  The factory chooses from the host probe's own verdict, so it can never disagree with the Host
+  Readiness panel, and it never downgrades silently: an undrivable host gets a named refusal and the
+  probe's hint, and the runtime binds an `UnavailableDriver` that refuses each step by name rather
+  than a null driver answering "deferred". Two refusals are deliberate rather than incidental —
+  Wayland input through `uinput`/`ydotool` is refused *by policy* (it works, and that is the problem:
+  it bypasses the compositor's consent model), and Wayland capture refuses X11 grabbers outright
+  because under Xwayland they return black frames rather than errors.
+- **Company mode got its front door.** Everything else in the chain refuses; the goal contract is
+  the one path that grants, so its job is to make an approval mean something specific. A draft must
+  name its title, scope, budget, deadline, stop conditions and — crucially — *how anyone would know
+  it was done*; an unlimited scope has to be declared rather than defaulted into by an empty field,
+  and a goal with no success check is refused up front rather than at 4am when the verifier
+  (correctly) will not pass it. Proposing crosses the kernel as the new `goal.approve` kind and
+  lands in the decision inbox; the approved goal is minted only from a **human** accept or edit, and
+  a payload fingerprint stops an edit between the card and the execution riding an approval that was
+  given for a different goal.
+- **The operator can now be measured, S1's way.** A twenty-task pack across desktop, browser,
+  terminal, files and vision, with `scripts/operator_bench.py` to run it and two read routes to
+  serve the result. Everything about it is shaped by how a benchmark usually lies: the report
+  carries **two columns**, so a hermetic pass can never be read as a live one (the headline always
+  says the word "hermetic", and each task names the live twin a person would run on their own
+  machine); **governance outranks correctness**, so a task that reached the right answer through an
+  ungoverned action fails, and one such action fails the whole pack at any rate; skipped tasks leave
+  the denominator rather than flattering the score; and a stored rate carries the fingerprint of the
+  questions it answered, so a changed pack reads as stale instead of being served as current. The
+  pack ships a negative control — a task expected to fail — because a governance rule with no
+  failing example is a rule nobody has tested.
+- **Activation is measured, and measured honestly.** Time to first governed action is the adoption
+  number S8 and GAP-0 both come down to, and it is the one most easily flattered — so the clock
+  starts at *install* rather than first launch (someone who installed on Monday and opened it on
+  Friday took five days, not ninety seconds), only an owner-**accepted** action counts (proposing
+  quickly and being rejected has activated nobody, and a policy auto-approval is not the owner
+  choosing to trust anything), the first recorded activation is immutable so a later faster action
+  cannot improve it, and a never-activated install reports *how long it has been waiting* rather
+  than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
+  of the install rather than of the trailing window.
+- **Four post-merge attestations, and the finding one of them turned up.** E6 #860, E9 #861,
+  E9-totals #864 and SEC-B8 #911 have been merged on `main` with their ledger rows reading
+  *pending* since the owner commissioned read-only reviews on 2026-09-01. All four are now
+  recorded — **GO / GO / GO / PASS** — in `docs/nerva2/attestations/2026-09-07-post-merge-reviews.md`,
+  by a reviewer distinct from every original builder. Each claim was re-verified *behaviourally*
+  against the code as it stands, with the **mutation and the assertion written by the reviewer**
+  rather than by reading the builders' tests and agreeing with them, and each probe carries a
+  **control that must come out the other way**: the E9-totals probe was refused by an unrelated
+  guard on its first attempt and would have produced a GO that proved nothing. The SEC-B8 PASS
+  **closes #905**.
+  **One out-of-scope finding.** Extending the #861 check past the boundary of its own claim showed
+  `BenchmarkRun.to_dict` **leaking a mutated authority ceiling** — the exact defect #860 and #861
+  exist to prevent, in a sibling type neither touched, and defined in `benchmark.py` where a
+  reviewer grepping only #861's module would never see it. It matters more there than on a report:
+  a run is **persisted**, so a widened ceiling outlives the process that widened it and is read
+  back as what the run always claimed. It does not change the #861 verdict — #861 did what it said
+  — and it is fixed here, by the same agent, which is why the attestation says in as many words
+  that **the fix is not covered by it** and needs its own review. 8 pytest for the fix.
+- **A drift gate for the contracts nobody declared.** `test_interface_contract_drift.py`
+  snapshots the *declared* contracts — dataclasses, pydantic models, enums — and cannot see the
+  ones that matter most for a fleet of parallel agents, because a subagent's answer is a **plain
+  dict built at runtime**. Nothing declares its keys, so nothing notices when they change, and
+  every caller reading `result["ok"]` breaks silently and at once.
+  `tests/test_subagent_shape_drift.py` is the runtime-capture half: that gate *introspects*, this
+  one **calls**. It drives the real `SubAgentManager` through each outcome and snapshots the key
+  set that actually came back. Writing it surfaced three faults in the capture itself, which is
+  the point of a gate that guards its own guard: `max_depth=0` and `max_concurrent=0` are both
+  **clamped by the constructor**, so two "refusals" were silently capturing the **success** shape
+  and would have baked the wrong keys in as the refusal's; a drift in the success shape made the
+  capture **crash** on a `KeyError` rather than report, turning one readable failure into twelve
+  fixture errors; and a guard that stopped firing made the concurrency capture **deadlock** —
+  a gate that hangs when the thing it guards breaks is a gate someone will disable. Each guard
+  is now reached the way production reaches it, the capture never raises, and the refusal
+  verification is itself a test, so a refusal that stopped refusing fails loudly instead of
+  quietly redefining the contract. 13 pytest.
+- **The secret-scan gate stopped failing on a network blip.** The gitleaks binary download in
+  `security.yml` had no retry, so a `Connection reset by peer` fetching a third-party release
+  tarball failed the whole gate **before a single line was scanned** — which reads on the PR
+  exactly like a found secret, the most alarming possible message for a transient network error.
+  It retries now (5 attempts, `--retry-all-errors`, a connect timeout). The pinned checksum is
+  what makes retrying safe: a truncated or substituted download still fails, loudly, on the hash.
+- **The service worker is finally tested by a browser, and the shot list got a camera.**
+  `playwright.config.ts` has blocked service workers lane-wide since the webkit investigation, and
+  its comment ended with an explicit handoff: *"if a real PWA spec is ever added it should opt back
+  in with `test.use({ serviceWorkers: 'allow' })`."* `frontend/e2e/pwa.spec.ts` is that spec, and it
+  does exactly that — file-scoped, so the block stays global. It waits for the worker to reach
+  `activated`, **reloads** so the client is genuinely *controlled* (the state in which any of this
+  means anything), and then reads Cache Storage back. The assertion with teeth is that **no `/api/`
+  path is ever in it** — stated negatively *and* positively, so it cannot pass on an empty cache —
+  because `sw-v2.js` keeps personal data out by **omission**, and an omission is invisible in
+  review: one `respondWith` branch added a line too high would inherit every `/api/` path silently
+  and no unit test would notice, since Cache Storage only exists in a real browser. Red-proved by
+  adding that branch: `/api/payments`, `/api/kg/entities` and the rest came back in the diff — a
+  plaintext copy of personal data in a store `forget` cannot reach, which is the `PRIVACY.md`
+  erasure promise breaking quietly. Until now that rule was covered only by a regex over the
+  worker's source.
+  **And the footage half of T-0.52.** `frontend/e2e/footage.spec.ts` + `scripts/hud_footage.mjs`
+  record one 1920×1080 clip per shot in the `TEASER_PACK.md` §6 list, off the real running HUD.
+  The shot list's own reuse rule — *"never stage fake data for a shot. Demo mode is clearly badged;
+  use it, or use real data. The honesty is the marketing"* — is now **enforced rather than
+  written down**: there are exactly two sources, a third fails at collection naming both, and each
+  is asserted in its own direction (a demo clip must have the amber `DEMO DATA` banner *visible in
+  frame*; a live clip must not have it at all). The specs only navigate and wait — there is no seam
+  for feeding the HUD a prettier corpus, so a surface with nothing on it films as an empty state,
+  which is the product telling the truth about the machine it was filmed on. Two shots are
+  deliberately **absent** rather than faked: the WorldView globe (a separate surface with its own
+  server — a clip from this lane would be named `worldview.webm` and contain something that is not
+  WorldView) and the Telegram half of the governed-autonomy moment (a device recording).
+  [`docs/marketing/FOOTAGE_RUNBOOK.md`](docs/marketing/FOOTAGE_RUNBOOK.md) carries both, and the
+  lane is opt-in twice over — the `footage` project exists only under `FOOTAGE=1`, and every other
+  project ignores the file outright, so the PR lane and the nightly soak can never start recording
+  video. 4 + 5 Playwright.
+- **The capture inbox reached the phone, and the export got a door (T-0.26).** `PassiveCapture`
+  has had an `export()` since 0.26 and no route to serve it, and the whole H12.7 promise —
+  *inspectable and forgettable* — was reachable only from the owner HUD. Now `GET
+  /api/capture/export` (user-guarded, read-only) serves the same envelope, and a native **Capture**
+  tab inspects records, forgets one, clears the inbox and writes the export to a file. The route
+  adds no exposure: the records are the ones `/api/capture` already returns, already redacted at
+  ingest, because raw content is never stored. An **unknown surface is a 422, not an empty
+  export** — `?surface=clipboad` and `?surface=clipboard` produce identical files on an empty
+  inbox, and in a saved file a typo must never be able to read as an all-clear.
+  **What the phone deliberately cannot do is arm it.** `POST /api/capture/surfaces` and
+  `/api/capture/ingest` are user-guarded and perfectly reachable; they are absent by decision.
+  Enabling a surface arms an ambient recorder on a machine you are not sitting at, so a lost or
+  borrowed handset must not become a way to start recording someone else's desk — while deleting
+  is safe in the direction that matters, since the worst case is losing a record you wanted rather
+  than gaining one nobody consented to. The rest of the screen is the same discipline: the master
+  switch and the per-surface opt-ins stay **unflattened** (a surface on with capture off records
+  nothing, and says so in its own words instead of rendering as "capturing"), a failed fetch reads
+  as *unknown* rather than "off" — the most reassuring possible lie on a privacy surface — a record
+  with no id is dropped rather than shown with a delete button that cannot work, and a
+  `forgotten: false` is reported as a no-op instead of quietly removing the row. Export filenames
+  are UTC-stamped and scope-named, so a filtered export cannot later be mistaken for a complete
+  one. 4 pytest + 25 mobile.
+- **Seven places the HUD said something it could not back.** They all lived inside shared files, so
+  they shipped together; the shape of the mistake is the same in all seven — a surface with a true
+  thing available that rendered a convenient one instead.
+  **The network monitor could print `local-only ✓` above twelve model calls.** Its headline came
+  from `clean`, which is derived from `local_only_violations` — and model traffic can never be in
+  that list, because LLM backends have no manifest gate, so `llm:*` rows record what left and never
+  a block that did not happen. `model_egress_total` is now its own term, and the three states stay
+  distinct rather than collapsing into a boolean: a policy **violation** is a broken promise, model
+  egress is **permitted** and still not local-only, and clean is clean. A backend that does not
+  report the figure reads *unmeasured*, never 0.
+  **Refusals stopped explaining themselves with the request line.** `failMutation` had already been
+  taught to read the error body; the call sites were still printing `err.message`, which is the
+  string `POST /api/subagents/spawn -> 429` — shown to an operator as the reason their spawn was
+  refused. `refusalReason` reads the three dialects the backend actually speaks (`error`, the
+  component layer's `reason`, FastAPI's `detail`) and deliberately excludes `err.message`. That line
+  now reads `refused · concurrency_cap`.
+  **The governed sandbox pipeline got a caller.** DRA-08's `tools` flag existed on the route and on
+  no button. There is a **governed tools** checkbox now, disabled with the backend's own reason when
+  `/sandbox/status` says the runtime is not attached — a control guaranteed to answer 503 should not
+  be offered. The 422 says the pipeline is python-only (warned *before* the click), the 503 says the
+  run was **not** performed ungoverned as a fallback, and `tool_calls` / `timed_out` render only when
+  present: an absent count is a run that never entered the pipeline, and "0 tool calls" would read as
+  governed-and-idle.
+  **A tile counted secrets and PII and called the total PII.** `Redactions · secrets + PII` now,
+  with the process-lifetime caveat on the element rather than only in prose — a smaller number
+  wearing a different number's name is harder to spot than a missing one.
+  **The WORLD button stopped covering the Admin rail control.** Two independent test lanes had hit
+  the same overlay from opposite directions and both routed around it, because moving a `fixed`
+  element is a layout decision. It is made here the only way that actually frees the pixels —
+  **reserving** them: the rail gets a bottom pad at least as tall as the button's footprint, from
+  the same exported constants the button is pinned to, injected by the entry point that renders the
+  button so a HUD without it carries no gap for a control it does not have.
+  **The briefing wall stopped saying there is no decision feed.** There is one — `/autonomy/approvals`
+  — and it is admin-guarded, so it usually refuses. The wall keys on `sources.decisions`, set only
+  when the route actually answered, so a 401 leaves the cell *unknown* instead of rendering an empty
+  list as "0 pending": an all-clear nobody measured. A live approval maps to a card with the task's
+  own title verbatim and **one** action, `Dismiss`, which is the only thing pressing it does —
+  approving lives in the Decision Inbox, and a cockpit card offering "Approve" that merely dismissed
+  would be the worst lie available on that surface.
+  **And the demo roster finally covers the registry.** `argus`, `hestia` and `howard` are active in
+  `agents.yaml` and reached the roster with no seed metadata at all — no tier, no role, no dossier,
+  so opening one showed a blank card. Their rows are copied from the registry rather than invented,
+  and they keep the neutral fallback glyph, because that fallback is a deliberate design for a
+  registry agent without a hand-drawn mark and adding seed glyphs would quietly retire it.
+  23 vitest, six of them red-proved by mutation; two shipped tests updated to pin the new behaviour
+  (one of them had been pinning the request-line refusal text).
+- **The backups now happen.** `create_backup` has existed for a long time and nothing ever
+  called it on a schedule, and nothing ever pruned the directory it writes to — and those were
+  one gap, not two: an automatic backup with no prune writes a full copy of the data root every
+  night forever, turning a safety feature into the thing that fills the owner's disk. So
+  `prune_backups` and a nightly `backup-nightly` job land together. It is **on by default**,
+  unlike every other scheduled capability here, because the failure directions are opposite:
+  `schedule_retention` *deletes*, so a wrong default loses data, while a backup *preserves*, so a
+  wrong default costs disk — and the prune bounds that at seven archives, a week of dailies. The
+  copy never leaves the machine. `backup_health()` exists because **a backup nobody verified is a
+  belief, not a backup**: it reports the **age** of the newest archive rather than whether the
+  directory has files in it, since one failing quietly for a month is worse than none at all —
+  the owner *believes* they have one — and ten stale archives are not ten reasons to relax. "No
+  backup has ever been made" and "the newest is 40 days old" are different findings, and neither
+  is an empty list. Encryption follows whatever the owner configured and is **reported**, because
+  an unencrypted local archive of the entire data root is a fact they should see rather than
+  infer — and with no archives it reads `null`, not `false`, since "your backups are unencrypted"
+  is a different and more alarming claim than "there are no backups". A prune failure never fails
+  the backup that just succeeded. 22 pytest.
+- **The quickbar parser became reachable — and stayed a preview.** `agents/core/quickbar.py`
+  has shipped a complete, pure command service since 0.64 with **no route and no consumer**:
+  a parser nobody could reach, which is code that looks alive and is not. It now has
+  `POST /api/quickbar/resolve` and `GET /api/quickbar/help` (both user-guarded) and a HUD
+  panel in the Autonomy cluster. Both routes are **read-only, and that is the design rather
+  than an omission**: a command bar is the most tempting place in a product to put a shortcut
+  past the rules — one keystroke, one line, and something happens — so the route returns a
+  *plan* and performs nothing, and the panel renders the plan and acts on none of it. A
+  `summon` plan **names** an agent; sending is the chat path with the governance the chat path
+  has. `unresolved` gets its own amber state with the backend's reason verbatim, because a bar
+  that quietly fell back to "ask the default agent" whenever it did not understand you would do
+  the wrong thing *confidently*, which is worse than saying it did not understand. A query's
+  `route_hint` is labelled a **guess**, since routing is decided on submit. And there is
+  **no history route**: a server-side quickbar history is a keystroke log of everything the
+  owner typed into a floating bar — the most sensitive store in the product, for the least
+  reason — so recall lives in the browser, per viewer, and a browser that blocks storage
+  leaves the bar working. 15 pytest + 11 vitest.
+- **Two Nerva-2.0 contracts that had no code now have some.** **E2.1** puts
+  `epistemic_status` on every `nerva.observation.v1` — `observed` / `inferred` / `simulated` — because
+  the three fail differently: an observation is wrong only if its source was, an inference is wrong if
+  any input *or* the reasoning was and chains of them compound both, and a simulation is never evidence
+  about the world whatever it looks like. It is a **required** field with no default, since a default
+  of `observed` would silently relabel every inference and every simulation as evidence — exactly at
+  the moments that is most dangerous (bulk imports, backfills, a projection written in a hurry). The
+  projection policy has to *declare* it, and it sits **inside the integrity hash**, because a status
+  changeable without breaking the hash would let a simulation be relabelled and still verify, which is
+  worse than no field at all. **E3.2** records why each recalled fact was let in or held back
+  (`agents/core/memory/recall_admission.py`, wired into `MemorySearchTool.search`). The question it
+  answers is not "why did Nerva say that" but **"why did it not use the thing I told it"** — a dropped
+  hit is invisible by construction, and a missing memory, a stale one and a deliberately withheld one
+  look identical. Closed vocabulary, no `rejected_other`: `admitted` is a reason rather than an
+  absence; taint and privacy stay **different** reasons ("this might attack you" vs "this is not yours
+  to see"); and `abstained` is **not** a rejection, because "we could not decide" and "we decided no"
+  call for different fixes and folding one into the other hides a broken check as a policy. The trail
+  carries a reference, never the recalled text. Both are `evaluation_only` — a record that could also
+  grant would be a second, quieter admission path, and the one nobody reviews because it looks like
+  logging. 21 checks; `docs/nerva2/ATLAS_E2_1.md`, `docs/nerva2/EPISODES_E3_2.md`.
+- **Nerva's own identity became a governed record (E4.1 / #1008).** Every other governed thing
+  here is a *capability* — something Nerva may or may not do to the world. This is the one record
+  about Nerva itself: name, purpose, values, stance on truthfulness, boundaries, traits, the roles
+  it holds toward the people it works with, and the commitments it has made. It needs governance
+  for a reason unrelated to capability: **a system that can silently rewrite what it says its
+  boundaries are has no boundaries — it has a *current opinion* about them**, and an opinion is not
+  something anyone can rely on. So `agents/core/identity_manifest.py` exists to make one sentence
+  true, E4.1 criterion 10: *no identity change becomes authoritative without a versioned proposal
+  and a human decision* — and that sentence ships as an executable test. `propose_change` writes an
+  ASK task into the same decision inbox as everything else and **changes nothing**; `apply_change`
+  refuses a machine decider (same `MACHINE_DECIDERS` set, spelled the same way, as the permission
+  ledger / goal contract / activation metric), refuses anything but a human accept or edit, refuses
+  a payload whose fingerprint no longer matches what it carries, and refuses a proposal built on a
+  superseded version. Versions are append-only, hash-chained and HMAC-signed — a chain does not
+  *prevent* an edit, it makes one **visible**, which is the guarantee that can actually be kept, and
+  `verify()` reports separately whether the store is signed at all because "verified" from an
+  unsigned store claims more than the data supports. **Rollback is a new version, never a
+  deletion**: deleting the versions rolled past would erase the fact that they were ever adopted,
+  which is exactly what someone quietly rewriting an identity would want. The one-time SOUL import
+  is idempotent and **records its own limitations** — an unmapped key, an unreadable line, a
+  required field the source lacked (which becomes an explicit `(not imported: …)` placeholder),
+  because a manifest that invented a purpose is worse than one admitting it has none yet. A forget
+  erases it; an export includes it, since its commitments are promises made *to* the owner.
+  Deliberately route-free: a surface for editing an identity would be a second path to the thing
+  that must only ever have one. 55 pytest, `docs/nerva2/IDENTITY_E4_1.md`.
+- **Three ways to install it, and a channel that cannot lie.** Package managers are the
+  cheapest distribution there is — `brew install --cask nerva` is a different product from
+  "clone the repo and read INSTALL.md", off the same build. Every tagged release now generates
+  a Homebrew cask, the three winget manifest documents and a `channel.json`
+  (`scripts/gen_package_manifests.py`), and publishes a multi-arch GHCR image from a `Dockerfile`
+  extracted from the quickstart compose. The design is entirely about the one thing that makes
+  packaging dangerous — a mistake is found on a *stranger's* machine, at install time, by someone
+  with no idea what went wrong. So: the **checksum comes from the build that just ran**, never a
+  committed template, and a missing one is a **refusal** rather than an empty string that renders
+  as a valid manifest and fails on download; a **prerelease is never promoted to `stable`**,
+  because promoting an rc on a loose regex is how a knowingly-unfinished build reaches everyone
+  who typed `brew upgrade`; a version that is not a version is **refused, not coerced**; and the
+  channel is **decided once** and passed downstream as a job output, since two jobs each working
+  out "is this a prerelease" is how a tag lands in both channels or in neither. The image keeps
+  the native install's posture exactly: `JARVIS_HOST=127.0.0.1`, no `EXPOSE`, the data root a
+  volume rather than a layer, hash-pinned dependencies, and **no credential as a build argument**
+  — a secret in an ARG is a secret in the image history. Publishing the tap and the winget PR are
+  owner gates (`docs/OWNER_TASKS.md` **P10**); the manifests those steps consume are produced
+  here. 51 pytest.
+- **A 24/7 run stops dying after twenty screenshots.** The context compressor had a token budget
+  but no *policy* — nothing that decided when to act or what to give up first — so a long run on a
+  local 32–128k window ran out of room and got truncated by the provider, which truncates the
+  **tail**: the half that says what is happening now. `ContextCompressor.compact` adds two tiers
+  over the model's own window: at **soft** (0.6) images are dropped, at **hard** (0.85) the older
+  turns are summarised. Images go first because a screenshot is worth thousands of tokens and
+  almost nothing after the turn it was taken in — the text describing what was seen survives it —
+  and a dropped image leaves a visible placeholder, since a turn with no image and no note cannot
+  be told apart from one that never had one. The **head is never summarised** (it is the session's
+  original ask, and losing it is how a run drifts into doing something adjacent to what was
+  requested) and neither is the tail. **Below soft the transcript comes back byte-identical**, not
+  "a cheap pass that usually no-ops". Windows are per model family with a *conservative* default,
+  because guessing high means the provider truncates instead of us. Every compaction emits a
+  `nerva.context-compaction.v1` lineage row (`parent_session_id`, `summary_sha256`) — a summary with
+  no provenance is a claim about a conversation nobody can check — and a failing sink never fails a
+  compaction. Two seams found while wiring it: the model window would have made the shipped
+  `memory.compression_max_tokens` setting silently **inert** (the tighter of the two bounds wins
+  now, so a window can only compact sooner, never later), and `compact` and `compress` disagreed on
+  the budget so a window-driven compaction did nothing (compaction targets the **soft** threshold,
+  not the edge of the window — compacting to the edge leaves the next turn back over it). 44 pytest.
+- **The operator can use a keyboard.** It could click a named button and set a field's text,
+  which is not enough to do work: there is no saving a file, submitting a form or moving
+  between fields without a key press, and no reading past the fold without scrolling. `key`,
+  `scroll` and `focus` join the driver vocabulary on all three platforms (AX/CGEvent on macOS,
+  AT-SPI on Linux; the Wayland refusals are unchanged, so a chord cannot become the one way to
+  sidestep the consent check every other mutation passes). **`key` is the only mutation with no
+  named element** — `Cmd+S` acts on whatever is frontmost, so the owner reading the card cannot
+  see from the step what it will touch — and everything about its design follows from that: a
+  finite **allowlist** in `desktop_drivers/keys.py`, **no keycode passthrough of any kind**, and
+  chords that quit / close / hide / minimise / switch apps or open the system launcher refused
+  **by policy with a reason**, because each makes every later step act on something the plan
+  never observed ("unsupported" invites someone to add support; a reason can be argued with).
+  `focus` is classified as a *mutation* although nothing visibly happens — it decides where the
+  next keystroke lands, and gating it as a read would gate the wrong half of "focus this field,
+  then type the password". Scrolling is bounded to 20 notches and an out-of-range amount is
+  **refused, not clamped**: a step that asked for 500 meant something different from one that
+  asked for 20. Two bugs found by the tests: the policy refusal table was keyed by its *human*
+  spelling and looked up against the canonical one, so `ctrl+alt+delete` and `cmd+alt+escape`
+  would have been pressed — exactly the synonym-shaped hole the canonicaliser exists to close,
+  now normalised at import with a guard that fails there rather than at 3am; and the new seams
+  first borrowed the host-probe's closed refusal vocabulary, which would have told the owner
+  their *machine* could not scroll when the truth was that nobody had written the code.
+  **Windows got the same three actions and the same allowlist** — a chord refused on one platform and
+  pressed on another would make the policy a per-platform accident rather than a decision — and a
+  parity test now pins the three vocabularies together, with `launch` named as the one deliberate
+  Windows-only exception so a second asymmetry cannot appear unnoticed. Its `{VK_LWIN}` translation was
+  corrected before shipping: that spelling presses *and releases* the Win key, so a naive modifier
+  prefix would have tapped Win and then sent a different chord than the card named. 87 pytest.
+- **Company mode stopped being nine parts that never met.** A ledger, a planner, a supervisor,
+  two graders, a reconciler and a scheduler all existed and were all tested, and no night of work
+  could ever happen because nothing built them into a loop — the specific kind of dishonesty where
+  the tests pass and the documentation is accurate. `agents/core/autonomy/company_runtime.py` is the
+  wiring, registered by `SchedulerService.schedule_company_mode` as a `company-mode-sweep` job
+  (`autonomy.company_tick_seconds`, floor 60s). **Off means nothing is constructed** — a supervisor
+  that exists is one something can call. **Clearing the flag stops work at the very next tick;
+  setting it needs a restart**: stopping should always be easy and starting always deliberate,
+  because a capability that can begin a night of autonomous work must not start because a config
+  file changed while nobody was looking. The planner is **the checklist the owner read on the
+  approval card** — `GoalDraft.plan` is new, validated against the goal's own scope when the card is
+  *built* rather than discovered mid-run, and inside the payload fingerprint so editing the plan
+  invalidates the approval exactly as editing the budget would. A goal approved with **no** plan
+  proposes **nothing** and goes straight to grading ("you approved a goal with no plan, so nothing
+  happened" beats a model improvising from a one-line title), and a goal that cannot be read yields
+  an **empty** plan, never an unrestricted one. A failing sweep is reported, never raised into the
+  timer. One real bug fell out: `snapshot()` spread the scheduler's config last, so its `enabled`
+  shadowed the runtime's own gate and a runtime with the flag cleared reported itself as enabled —
+  two different facts sharing one key, now named apart. 26 pytest.
+- **A browser click finally crosses the kernel.** `browser.step` is the 28th kernel kind.
+  The browser agent always had two gates — an egress allowlist navigation cannot escape and
+  an approval queue mutating steps must pass — but it was the one privileged surface that
+  never reached `kernel.authorize`, and that gap had teeth: the **kill switch** is honoured
+  by the kernel, so a halted install could still have clicked through an already-approved
+  plan; **taint escalation** lives in the kernel, and a plan assembled from a page the agent
+  just read is precisely the case that must be forced back to ASK, which the browser's own
+  approval object cannot know; and the **policy floor** (money caps, daily ceilings) is
+  applied by the kernel, while a browser is the easiest way to spend money without touching
+  the payments kind. `agents/core/browser_kernel.py` binds it in the same shape as
+  `desktop.step` — two surfaces meaning "one governed step on the owner's machine" should not
+  be two shapes. Two orderings are deliberate: the kernel is asked **before** an approval card
+  exists (a DENY must never reach the owner as a decision they cannot safely make — asking the
+  queue first teaches them their approvals do not mean anything), and the kernel is asked
+  about the **same payload the driver receives**, not a summary of it. Two bugs fell out:
+  `NullBrowserDriver.__getattr__` answered *any* attribute with a coroutine, so a
+  `requires_kernel` probe came back truthy and every offline driver would have demanded a
+  binding it does not have (the flag is now stated explicitly and read with `is True`); and
+  navigation's blanket "browser transport unavailable" now distinguishes **not configured**
+  (the owner never enabled the pinned transport — a config fix) from `browser_playwright`'s
+  *unavailable* (a configured one could not bind — a bug report), with an allowlisted
+  navigation reaching the driver once a transport is bound. 35 pytest + a live kernel
+  exerciser in the action-auth matrix.
+- **The night shift can hear you say yes.** A company-mode run that needs something
+  privileged queues a durable task and blocks — and until now that was where the story ended:
+  the task got approved in the morning and the run stayed blocked forever, because nothing
+  ever told it. `agents/core/autonomy/pending_requests.py` is the half that reads the answer.
+  It deliberately keeps **no pending-request table**: the ledger already holds the fact — a
+  queued step carrying its durable task id — and a second copy of one fact drifts into a run
+  blocked on an ask nobody can find, or an ask reconciled twice. The rules are each against a
+  specific way of faking an approval: **silence is never a yes** (an undecided task leaves the
+  run blocked, and no amount of waiting changes that); the decision is **re-read from the task
+  every time**, never cached; a **vanished task is not an approval** but a `lost` ask recorded
+  as a failed step, so the repeat-failure rule can end a run whose asks keep evaporating; a
+  rejection **is** an answer, so the run moves on to something else; reconciling is idempotent,
+  because a decision that applies twice unblocks a run twice; and a stop outranks an answer.
+  **Who decided is recorded and shown**: a run may legitimately be unblocked by a policy
+  auto-approval, which is exactly why the brief has to be able to say "5 of 9 were auto-approved"
+  rather than implying the owner reviewed nine things. A decision reconciles the waiting run
+  **the moment it lands** (an `AutonomyWorker` hook, flag-gated and unable to fail the decision),
+  and the scheduler reconciles before it lists runs so an overnight approval is eligible in that
+  same pass. New read-only `GET /api/company/waiting` says what each run is waiting on and for
+  how long — it never answers an ask, for the same reason there is no route that starts a run.
+  58 pytest + 4 vitest.
+- **Pairing became a tap.** Copying a code between two devices is where onboarding loses people, so
+  the owner can now mint a single-use Telegram deeplink from the HUD and tap it on their phone. The
+  convenience is only acceptable because the token behaves like a credential and is built that way:
+  one use ever (a link that paired twice would pair whoever saw the screen next), a five-minute TTL
+  so a screenshot in a chat log rots, wrong/spent/expired **indistinguishable** from outside because
+  telling them apart tells a guesser which it was, a token minted for one channel unusable on
+  another, at most twenty outstanding with the oldest dropped first, and a revoke button for "I
+  pasted that in the wrong window". The `/start` message carrying it is **swallowed** — it never
+  reaches the orchestrator, the transcript or a log line, including on the failure and exception
+  paths, because until it is spent it is live. Minting is admin-guarded and returns the value
+  exactly once; it is never readable back.
+- `permissions.db` and `work_runs.db` join the purge and export sets.
+
 ## [1.0.0] — 2026-09-02
 
 The 1.0 line: every feature horizon (H1–H23 + WorldView O19) delivered, the productionization

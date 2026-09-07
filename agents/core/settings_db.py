@@ -134,6 +134,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="hybrid_flash_max", value=1000000,                label="Cloud Flash routing threshold — above N input tokens escalates to Pro (0 = unlimited)", kind="number"),
     dict(category="llm",     key="tool_loop_enabled", value=False,                  label="Agent tool loop (experimental)", kind="toggle"),
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),
+    dict(category="llm",     key="model_pull_max_gb", value=20,                    label="Local model pull size cap (GB) — a governed Ollama pull whose layers exceed it is refused", kind="number"),
     # voice
     dict(category="voice",   key="stt_model_size",   value="medium",              label="STT model size",     kind="select",  opts=["tiny","base","small","medium","large"]),
     dict(category="voice",   key="stt_language",     value="ro",                  label="STT language",       kind="text"),
@@ -154,6 +155,22 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="memory",  key="compression_max_tokens", value=2000,            label="Context compression budget (tokens)", kind="number"),
     dict(category="memory",  key="compression_summarizer", value=False,           label="LLM summarizer for evicted context (strict-local only)", kind="toggle"),
     dict(category="memory",  key="compression_keep_first", value=0,               label="Protect first N turns from compression", kind="number"),
+    # Two-tier compaction. Fractions of the MODEL's own window rather than a
+    # token count, because 32k and 200k are different products and one number
+    # would be wrong for both. Only consulted on the compaction path
+    # (ContextCompressor.compact); the older token-budget path is unchanged.
+    dict(category="memory",  key="compaction_soft",  value=0.6,                   label="Compaction: drop images above this fraction of the model window", kind="slider"),
+    dict(category="memory",  key="compaction_hard",  value=0.85,                  label="Compaction: summarize older turns above this fraction", kind="slider"),
+    # 4 is the value the hot path has always used (ContextCompressor.keep_recent).
+    # Named here rather than borrowed from memory.context_window, which answers a
+    # different question — how many turns to FETCH, not how many to protect.
+    dict(category="memory",  key="compaction_protect_last", value=4,               label="Compaction: protect the last N turns from summarization", kind="number"),
+    # H12.15 — one local backup a night, pruned to a week. ON by default, unlike
+    # every other scheduled capability, because the failure directions differ:
+    # retention DELETES (a wrong default loses data) while a backup PRESERVES (a
+    # wrong default costs disk, and the prune bounds that).
+    dict(category="memory",  key="backup_auto_enabled", value=True,                label="Nightly local backup", kind="toggle"),
+    dict(category="memory",  key="backup_keep",     value=7,                     label="Backups to keep", kind="number"),
     dict(category="memory",  key="compression_summary_max_tokens", value=256,     label="Compression summary budget (tokens)", kind="number"),
     dict(category="memory",  key="persist",          value=True,                  label="Persist to disk",    kind="toggle"),
     # O26-P0.3 (F2): long-term recall was read via get_setting but never seeded,
@@ -251,6 +268,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="night_shift",     value=False,  label="Night shift enabled",  kind="toggle"),
     dict(category="autonomy", key="night_start",     value=23,     label="Night window start (h)", kind="number"),
     dict(category="autonomy", key="night_end",       value=6,      label="Night window end (h)", kind="number"),
+    dict(category="autonomy", key="max_subagent_spawns_per_boot", value=50, label="Max sub-agent spawns per boot (0 = unbounded)", kind="number"),
     dict(category="autonomy", key="priority_senders", value=["andrei"], label="Priority email senders", kind="tags"),
     dict(category="autonomy", key="finance_min_ron",  value=2000.0,   label="Minimum balance threshold (RON)", kind="number"),
     dict(category="autonomy", key="finance_min_eur",  value=400.0,    label="Minimum balance threshold (EUR)", kind="number"),

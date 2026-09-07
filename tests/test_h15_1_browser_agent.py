@@ -110,7 +110,7 @@ async def test_navigation_without_transport_refuses_before_url_parsing_or_driver
     assert result == {
         "action": "navigate",
         "status": "blocked",
-        "reason": "browser transport unavailable",
+        "reason": "browser transport not configured",
     }
     assert driver.calls == []
 
@@ -126,7 +126,7 @@ async def test_readonly_runs_without_approval():
     assert out["trace"] == [{
         "action": "navigate",
         "status": "blocked",
-        "reason": "browser transport unavailable",
+        "reason": "browser transport not configured",
     }]
     assert drv.calls == []
 

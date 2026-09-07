@@ -25,12 +25,15 @@ Design notes / honesty constraints (the review's whole point):
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 from datetime import datetime
 
 # Mirrors agents/core/autonomy/worker.py INTERRUPT_BUDGET_PER_DAY; imported lazily
 # in the budget branch so this module has no autonomy import at load time.
+logger = logging.getLogger("jarvis.north_star")
+
 _DAY_SECONDS = 86_400
 
 
@@ -174,6 +177,7 @@ def compute_north_star(
     fetch_limit: int = 100_000,
     night_window: tuple[int, int] = (23, 6),
     ambient_night_window: tuple[int, int] | None = None,
+    activation_state: dict | None = None,
 ) -> dict:
     """Compute the north-star + counter-metrics over the trailing `days` window.
 
@@ -343,6 +347,18 @@ def compute_north_star(
             cutoff=cutoff,
         )
 
+    if activation_state is None:
+        try:
+            from agents.core.first_action import activation_state as _activation_state
+
+            activation = _activation_state(now=now)
+        except Exception:
+            logger.debug("activation state unavailable", exc_info=True)
+            activation = {"installed": False, "activated": False, "seconds": None,
+                          "reason": "activation state unavailable"}
+    else:
+        activation = activation_state
+
     return {
         "period": "weekly",
         "days": days,
@@ -361,6 +377,12 @@ def compute_north_star(
             "window": list(night_window),  # [start, end] local hours, for transparency
         },
         "ambient_night_shift": ambient_night_shift,
+        # S8 / GAP-0 — time to first governed action. The adoption number, and
+        # unlike everything above it is a property of the INSTALL rather than of
+        # the trailing window: it does not change when the window slides, and a
+        # never-activated install reports how long it has been waiting rather than
+        # a blank. Injectable so the metric stays testable without a data root.
+        "activation": activation,
         "counter_metrics": counter_metrics,
         # V4 — MOONSHOT §6 guardrails: which counter-metrics are out of bounds (empty when
         # healthy or when a metric has no data yet). `guardrails_ok` is the merge-gate bit.

@@ -7,8 +7,10 @@ tool. This is the inverse of ``client.py`` (which consumes external MCP tools).
 
 Design goals:
   * **Transport-agnostic core** — ``handle()`` dispatches a JSON-RPC 2.0 message
-    (initialize / tools/list / tools/call). A stdio loop or the HTTP/SSE route
-    in web.py just feed messages in and write results out.
+    (initialize / tools/list / tools/call). The HTTP route in ``routers/mcp.py``
+    and the stdio loop below (``serve_stdio`` / ``run_stdio_loop``) just feed
+    messages in and write results out. ``scripts/nerva_mcp_stdio.py`` is the
+    stdio bridge a desktop MCP client launches to reach a running hub.
   * **Governed** — only allow-listed agents are exposed; calls route through the
     orchestrator (so guardrails + permission gate still apply). LAN-only by
     default (a deployment/bind concern surfaced in ``status()``).
@@ -17,7 +19,10 @@ Design goals:
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import sys
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
@@ -35,9 +40,16 @@ SERVER_NAME = "jarvis-hub"
 SERVER_VERSION = "1.0"
 
 # JSON-RPC error codes
+PARSE_ERROR = -32700
+INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
+
+#: One newline-delimited JSON-RPC frame may not exceed this (stdio transport).
+MAX_STDIO_LINE_BYTES = 4 * 1024 * 1024
+
+logger = logging.getLogger("jarvis.mcp.server")
 
 # Agent runner: ``async (agent_id, text) -> str``
 AgentRunner = Callable[[str, str], Awaitable[str]]
@@ -296,6 +308,34 @@ class JarvisMCPServer:
     def _err(msg_id, code: int, message: str) -> dict:
         return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
 
+    # ── stdio transport (H10.5) ──────────────────────────────────────────────
+
+    async def serve_stdio(
+        self,
+        reader: object | None = None,
+        writer: object | None = None,
+        *,
+        identity: object | None = None,
+        max_line_bytes: int = MAX_STDIO_LINE_BYTES,
+    ) -> int:
+        """Serve newline-delimited JSON-RPC over stdio until EOF; return frames handled.
+
+        ``reader``/``writer`` default to this process's stdin/stdout (see
+        ``open_stdio_streams``); tests pass an ``asyncio.StreamReader`` and any
+        object with ``write(bytes)`` + ``async drain()``. ``identity`` is the
+        transport-level credential handed to every ``tools/call`` — a stdio peer
+        is the local user who launched the process, so the caller decides what,
+        if anything, that is worth (``None`` = no verified identity: mutating
+        route tools refuse, agent lifecycle control refuses).
+        """
+        if reader is None or writer is None:
+            reader, writer = await open_stdio_streams(max_line_bytes=max_line_bytes)
+
+        async def _handle(message: dict) -> Optional[dict]:
+            return await self.handle(message, identity=identity)
+
+        return await run_stdio_loop(_handle, reader, writer, max_line_bytes=max_line_bytes)
+
     # ── introspection ────────────────────────────────────────────────────────
 
     def status(self) -> dict:
@@ -420,3 +460,145 @@ class JarvisMCPServer:
                 "controls": controls,
             })
         return inventory
+
+
+# ── stdio transport plumbing ─────────────────────────────────────────────────
+#
+# Newline-delimited JSON-RPC (the MCP stdio framing): one message — or one
+# batch array — per line, no embedded newlines, stdout carries nothing else.
+# Logging goes to stderr (the launcher script configures that), so a stray
+# log line can never corrupt the protocol stream.
+
+MessageHandler = Callable[[dict], Awaitable[Optional[dict]]]
+
+
+def _rpc_error(msg_id, code: int, message: str) -> dict:
+    return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
+
+
+def encode_stdio_frame(message: object) -> bytes:
+    """Serialise one response (or batch) as a single line — never multi-line."""
+    return (json.dumps(message, separators=(",", ":"), ensure_ascii=False, default=str) + "\n").encode("utf-8")
+
+
+async def _write_frame(writer, message: object) -> None:
+    writer.write(encode_stdio_frame(message))
+    drain = getattr(writer, "drain", None)
+    if drain is not None:
+        await drain()
+
+
+async def run_stdio_loop(
+    handler: MessageHandler,
+    reader,
+    writer,
+    *,
+    max_line_bytes: int = MAX_STDIO_LINE_BYTES,
+) -> int:
+    """Pump frames from *reader* through *handler* to *writer* until EOF.
+
+    * malformed JSON → ``-32700`` parse error (id ``null``), loop continues;
+    * a frame that is neither object nor array → ``-32600`` invalid request;
+    * a batch (JSON array) is dispatched item by item and answered as one array
+      (or nothing, when every item was a notification);
+    * a handler exception → ``-32603`` with the exception *type* only — never a
+      stack trace to an external client;
+    * an over-long line (beyond the reader limit / *max_line_bytes*) is refused
+      with ``-32600`` and the loop ends, because the framing cannot be resynced.
+
+    Returns the number of JSON-RPC messages dispatched to *handler*.
+    """
+    handled = 0
+    while True:
+        try:
+            raw = await reader.readline()
+        except (asyncio.LimitOverrunError, ValueError):
+            await _write_frame(writer, _rpc_error(None, INVALID_REQUEST, "frame too long"))
+            return handled
+        if not raw:
+            return handled
+        if len(raw) > max_line_bytes:
+            await _write_frame(writer, _rpc_error(None, INVALID_REQUEST, "frame too long"))
+            return handled
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            parsed = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            await _write_frame(writer, _rpc_error(None, PARSE_ERROR, "parse error"))
+            continue
+        is_batch = isinstance(parsed, list)
+        items = parsed if is_batch else [parsed]
+        if is_batch and not items:
+            await _write_frame(writer, _rpc_error(None, INVALID_REQUEST, "empty batch"))
+            continue
+        responses: list[dict] = []
+        for item in items:
+            if not isinstance(item, dict):
+                responses.append(_rpc_error(None, INVALID_REQUEST, "expected a JSON-RPC object"))
+                continue
+            handled += 1
+            try:
+                response = await handler(item)
+            except Exception as exc:  # never leak a stack trace to an external client
+                logger.warning("MCP stdio handler failed (type=%s)", type(exc).__name__)
+                response = _rpc_error(item.get("id"), INTERNAL_ERROR, f"internal error: {type(exc).__name__}")
+            if response is not None:
+                responses.append(response)
+        if is_batch:
+            if responses:
+                await _write_frame(writer, responses)
+        else:
+            for response in responses:
+                await _write_frame(writer, response)
+
+
+class _ThreadLineReader:
+    """``readline()`` off the event loop for a blocking binary stream (Windows console fallback)."""
+
+    def __init__(self, stream) -> None:
+        self._stream = stream
+
+    async def readline(self) -> bytes:
+        return await asyncio.to_thread(self._stream.readline)
+
+
+class _BlockingWriter:
+    """``write``/``drain`` over a blocking binary stream; ``drain`` flushes off-loop."""
+
+    def __init__(self, stream) -> None:
+        self._stream = stream
+
+    def write(self, data: bytes) -> None:
+        self._stream.write(data)
+
+    async def drain(self) -> None:
+        await asyncio.to_thread(self._stream.flush)
+
+
+async def open_stdio_streams(
+    *, max_line_bytes: int = MAX_STDIO_LINE_BYTES, stdin=None, stdout=None,
+) -> tuple[object, object]:
+    """Wrap this process's stdin/stdout as an async reader and writer.
+
+    Prefers the event loop's pipe transports (no threads); where the loop cannot
+    attach to the handle (Windows console, some launchers) it degrades to a
+    thread-backed reader and a blocking writer whose ``drain`` flushes off-loop,
+    so the protocol still works — just without loop-native backpressure.
+    """
+    stdin = sys.stdin.buffer if stdin is None else stdin
+    stdout = sys.stdout.buffer if stdout is None else stdout
+    loop = asyncio.get_running_loop()
+    try:
+        reader = asyncio.StreamReader(limit=max_line_bytes)
+        protocol = asyncio.StreamReaderProtocol(reader)
+        await loop.connect_read_pipe(lambda: protocol, stdin)
+        w_transport, w_protocol = await loop.connect_write_pipe(
+            asyncio.streams.FlowControlMixin, stdout,
+        )
+        writer = asyncio.StreamWriter(w_transport, w_protocol, None, loop)
+        return reader, writer
+    except (NotImplementedError, OSError, ValueError, AttributeError) as exc:
+        logger.info("stdio pipe transport unavailable (%s); using thread fallback", type(exc).__name__)
+        return _ThreadLineReader(stdin), _BlockingWriter(stdout)

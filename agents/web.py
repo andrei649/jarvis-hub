@@ -1112,6 +1112,12 @@ from agents.core.routers.ambient import router as _ambient_router  # noqa: E402
 from agents.core.routers.self_improvement import router as _self_improvement_router  # noqa: E402
 from agents.core.routers.house import router as _house_router  # noqa: E402
 from agents.core.routers.backup import router as _backup_router  # noqa: E402
+from agents.core.routers.company import router as _company_router  # noqa: E402
+from agents.core.routers.operator_bench import router as _operator_bench_router  # noqa: E402
+from agents.core.routers.host_probe import router as _host_probe_router  # noqa: E402
+from agents.core.routers.model_setup import router as _model_setup_router  # noqa: E402
+from agents.core.routers.permissions import router as _permissions_router  # noqa: E402
+from agents.core.routers.report import router as _report_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
@@ -1140,6 +1146,7 @@ from agents.core.routers.system_profiles import router as _system_profiles_route
 from agents.core.routers.support import router as _support_router  # noqa: E402
 from agents.core.routers.codeintel import router as _codeintel_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
+from agents.core.routers.quickbar import router as _quickbar_router  # noqa: E402
 from agents.core.routers.dashboard import router as _dashboard_router  # noqa: E402
 from agents.core.routers.agents_api import router as _agents_api_router  # noqa: E402
 from agents.core.routers.dashboard import dashboard  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.dashboard)
@@ -1171,6 +1178,7 @@ from agents.core.routers.worldview import router as _worldview_router  # noqa: E
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
+app.include_router(_quickbar_router)
 app.include_router(_canvas_router)
 app.include_router(_browser_router)
 app.include_router(_capture_router)
@@ -1237,6 +1245,12 @@ app.include_router(_acquisition_router)
 app.include_router(_ambient_router)
 app.include_router(_self_improvement_router)
 app.include_router(_backup_router)
+app.include_router(_company_router)
+app.include_router(_operator_bench_router)
+app.include_router(_host_probe_router)
+app.include_router(_model_setup_router)
+app.include_router(_permissions_router)
+app.include_router(_report_router)
 
 
 # /api/digest/run (+ DigestRunBody) and /api/schedule/parse extracted to routers/tools.py (CLN-3)

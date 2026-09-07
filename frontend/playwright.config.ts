@@ -20,6 +20,15 @@ const ENV_PREFIX = process.platform === 'win32'
   ? `set JARVIS_PORT=${PORT}&& set JARVIS_LOG_LEVEL=warning&& `
   : `JARVIS_PORT=${PORT} JARVIS_LOG_LEVEL=warning `;
 const BROWSER_MATRIX = process.env.E2E_BROWSER_MATRIX === '1';
+/* T-0.52 — the marketing-footage lane. `footage.spec.ts` records a .webm per shot in
+   TEASER_PACK.md §6; it gates nothing, costs minutes of wall clock and tens of MB of
+   artifacts, and is never wanted by `npm run e2e`, the PR lane or the nightly soak. So
+   it is opt-in twice over: the `footage` project exists only under FOOTAGE=1, and every
+   OTHER project ignores the file unconditionally (below) — a `testIgnore` rather than a
+   naming convention, so switching the flag on cannot make the ordinary lane start
+   recording video. Drive it through `node scripts/hud_footage.mjs`. */
+const FOOTAGE = process.env.FOOTAGE === '1';
+const FOOTAGE_SPEC = /footage\.spec\.ts$/;
 // e2e.yml now exposes this as a dispatch input, so pin what a non-integer means here
 // instead of leaving it to coercion. `Math.max(1, Number(x))` returns NaN for an
 // unparseable x and passes it straight to `repeatEach`; measured on @playwright/test
@@ -78,13 +87,33 @@ export default defineConfig({
        PWA spec is ever added it should opt back in with `test.use({ serviceWorkers: 'allow' })`. */
     serviceWorkers: 'block',
   },
-  projects: BROWSER_MATRIX ? [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
-    { name: 'mobile-chrome', use: { ...devices['Pixel 5'] } },
-  ] : [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+  projects: [
+    ...(BROWSER_MATRIX ? [
+      { name: 'chromium', testIgnore: FOOTAGE_SPEC, use: { ...devices['Desktop Chrome'] } },
+      { name: 'firefox', testIgnore: FOOTAGE_SPEC, use: { ...devices['Desktop Firefox'] } },
+      { name: 'webkit', testIgnore: FOOTAGE_SPEC, use: { ...devices['Desktop Safari'] } },
+      { name: 'mobile-chrome', testIgnore: FOOTAGE_SPEC, use: { ...devices['Pixel 5'] } },
+    ] : [
+      { name: 'chromium', testIgnore: FOOTAGE_SPEC, use: { ...devices['Desktop Chrome'] } },
+    ]),
+    // 1920x1080 because the output is footage, not a regression screenshot: the shot
+    // list feeds a README hero and social previews, and upscaling a 1280-wide capture
+    // shows. `repeatEach` is forced back to 1 — a soak knob meant for flake-hunting
+    // would otherwise silently record N copies of every clip and overwrite them all.
+    ...(FOOTAGE ? [{
+      name: 'footage',
+      testMatch: FOOTAGE_SPEC,
+      repeatEach: 1,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1920, height: 1080 },
+        video: { mode: 'on' as const, size: { width: 1920, height: 1080 } },
+        // The shots film the worker-less HUD, same as every other spec in this lane;
+        // pwa.spec.ts is the one file that opts back in. Stated rather than inherited
+        // so a future change to the global default cannot quietly alter the footage.
+        serviceWorkers: 'block' as const,
+      },
+    }] : []),
   ],
   // Boot the real backend from the repo root; /status flips ready once the
   // orchestrator + agents are loaded. Loopback bind → assert_safe_bind allows it.

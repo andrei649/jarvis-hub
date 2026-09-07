@@ -56,6 +56,7 @@ Order matters: each file assumes the previous ones.
 | `BACKLOG.md` | 176K | THE priority truth, and **73% of this tier on its own**. Do not load it whole for a quick task — read the header through "Status General" (~94K, itself large) or better, jump straight to the one section you're touching |
 | `NERVA_VISION.md` | 10.7K | The capability vision — six pillars, target architecture, capability registry, graduated autonomy, the Hermes superiority bar (S1–S8). Load for any strategy/roadmap/capability task |
 | `GO_LIVE_PLAN.md` | 6.5K | Features, marketing brief, v1.0 launch checklist |
+| `docs/NERVA_2_ROADMAP.md` | ~5K | The 1.1.0 … 2.0.0 milestone sequence with exit gates and the owner lane — load for any "what next / roadmap" task; the driver prompt is `docs/prompts/BACKLOG_DRIVER.md` |
 | `docs/2026-06-10-full-project-analysis.md` | 1.6K | Whole-repo audit snapshot: stats, debt, parity verdict (dated — provenance, not current truth) |
 | `docs/REVIEW_YEAR_ONE.md` | 5.0K | Candid year-one review: status, the 12 learnings, gap to a desirable product, next-90-days plan |
 

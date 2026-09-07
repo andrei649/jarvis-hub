@@ -245,6 +245,9 @@ class Orchestrator:
         self.channel_inbox = None
         self.oracle_bridge = None
         self.argus = None
+        self.permission_ledger = None
+        self.work_runs = None
+        self.company_runtime = None
 
         # ── optional components via the registry (A2: tames the god-object) ──
         from .component_registry import ComponentRegistry
@@ -2265,6 +2268,40 @@ class Orchestrator:
 
         return _summarize
 
+    def _compaction_model(self) -> str:
+        """The model whose window bounds this session's context.
+
+        The router's live choice when there is one, else the configured default.
+        Falling back to "" takes the conservative 32k default, which costs a
+        summarisation nobody needed rather than a truncation nobody saw.
+        """
+        router = getattr(self, "llm_router", None)
+        for attr in ("active_model", "current_model", "model"):
+            value = getattr(router, attr, None)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return str(self.get_setting("llm.default_model", "") or "")
+
+    def _compaction_policy(self):
+        """The two-tier policy from settings, refusing a nonsensical pair.
+
+        A soft threshold above the hard one would summarise before dropping
+        images — the expensive move before the cheap one, every time — so a bad
+        pair falls back to the defaults rather than being honoured.
+        """
+        from .context_compressor import CompactionPolicy
+
+        try:
+            return CompactionPolicy(
+                soft=float(self.get_setting("memory.compaction_soft", 0.6) or 0.6),
+                hard=float(self.get_setting("memory.compaction_hard", 0.85) or 0.85),
+                protect_head=int(self.get_setting("memory.compression_keep_first", 0) or 0),
+                protect_last_n=int(self.get_setting("memory.compaction_protect_last", 4) or 4),
+            )
+        except (TypeError, ValueError):
+            logger.warning("compaction thresholds are unusable; falling back to defaults")
+            return CompactionPolicy()
+
     async def _history_for_prompt(self, last_n: int) -> str:
         """Conversation history for a prompt, optionally token-budget compressed.
 
@@ -2302,7 +2339,18 @@ class Orchestrator:
         if cache is None:
             cache = self._ctx_summary_cache = {}
         prior = cache.get(self.session_id) if summarizer is not None else None
-        result = await compressor.compress(turns, prior=prior)
+        # The compaction path knows the model's own window, so a long run on a
+        # local 32k model is bounded by the thing that actually limits it rather
+        # than by a fixed token budget that is wrong for every model but one.
+        # Below the soft threshold it returns the turns untouched, so this is the
+        # same answer the token-budget path gave for every short session.
+        result = await compressor.compact(
+            turns,
+            model=self._compaction_model(),
+            policy=self._compaction_policy(),
+            session_id=str(self.session_id or ""),
+            prior=prior,
+        )
         if summarizer is not None and result["compressed"]:
             # Iterative merge state (bounded: one entry per live session key).
             cache[self.session_id] = {"summary": result["summary"],

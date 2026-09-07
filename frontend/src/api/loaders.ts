@@ -33,8 +33,32 @@ export interface JarvisData {
   calendar: any[];
   heartbeat: any[];
   tasks: any[];
+  decisions: any[];
   trust: { mic: string; strict_local: boolean; cloud_available?: boolean; claude_available?: boolean };
   sources: LiveSources;   // per-tile: did REAL data arrive in this load cycle?
+}
+
+/* A pending approval, projected into the shape the cockpit's decision cards read.
+   Nothing here is composed prose: `body` is the task's own title, and the second line
+   states the reversibility verdict the backend computed. The card gets exactly ONE
+   action, labelled `Dismiss`, because that is the only thing pressing it does — the
+   handler in app.tsx removes the card from this client's list. Approving or rejecting is
+   `POST /autonomy/tasks/{id}/decision`, which lives in the Decision Inbox; a cockpit card
+   offering "Approve" that merely dismissed would be the worst possible lie on this
+   surface, since the operator would believe they had decided something. */
+export function decisionCard(task: any): any {
+  const kind = String(task.kind || 'task');
+  const who = String(task.agent || kind).toUpperCase().slice(0, 18);
+  const reversible = task.reversible === true;
+  return {
+    id: task.id,
+    who,
+    kind: reversible ? 'signal' : 'alert',
+    kindLabel: reversible ? 'Needs approval · reversible' : 'Needs approval · irreversible',
+    body: String(task.title || kind),
+    actions: [{ l: 'Dismiss' }],
+    live: true,
+  };
 }
 
 const META: Record<string, { tier: string; role: string; name: string; model: string }> = {};
@@ -56,6 +80,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     calendar: demo ? (V2.CALENDAR as any[]) : [],
     heartbeat: demo ? (V2.HEARTBEAT as any[]) : [],
     tasks: [],
+    decisions: [],
     trust: { mic: 'on', strict_local: false },
     sources: { tasks: false, trust: false },
   };
@@ -146,7 +171,23 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     }
   } catch { /* keep [] */ }
 
-  // 7) trust signal — mic state + strict-local (visible governance, H12.10)
+  /* 7) pending approvals — the live decision feed the wall's provenance said did not
+     exist. `/autonomy/approvals` is ADMIN-guarded, so on a token-configured install with
+     no admin token it 401s; that is the common case and it is handled as absence, not as
+     emptiness. `sources.decisions` is set ONLY when the route actually answered, so the
+     wall can say `live` when there is a feed and stay silent when there is not — it must
+     never be able to render "0 pending" from a refusal, which would be an all-clear
+     nobody measured. Fail-closed in both directions: a non-array payload leaves the flag
+     false too. */
+  try {
+    const d = await apiGet<any>('/autonomy/approvals', { admin: true });
+    if (d && Array.isArray(d.pending)) {
+      out.decisions = d.pending.map(decisionCard);
+      out.sources.decisions = true;
+    }
+  } catch { /* keep [] and sources.decisions false — no evidence, not zero */ }
+
+  // 8) trust signal — mic state + strict-local (visible governance, H12.10)
   try {
     const d = await apiGet<any>('/api/trust/status');
     if (d && typeof d === 'object') {

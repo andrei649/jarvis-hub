@@ -95,12 +95,12 @@ async def test_empty_operator_plan_is_blocked_before_runtime_construction(monkey
 
 
 @pytest.mark.asyncio
-async def test_browser_operator_reality_reports_transport_unavailable_without_browser_startup():
+async def test_browser_operator_reality_reports_transport_not_configured_without_browser_startup():
     from agents.core.observability import operator_reality
 
     result = await operator_reality._probe_operator_browser_playwright_governed()
 
-    assert result["metadata"]["browser_transport"] == "unavailable"
+    assert result["metadata"]["browser_transport"] == "not_configured"
     assert result["metadata"]["browser_driver_calls"] == 0
 
 

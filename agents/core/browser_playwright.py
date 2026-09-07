@@ -3,6 +3,14 @@
 This module owns no policy. Inject :class:`PlaywrightBrowserDriver` into
 ``GovernedBrowser`` so its existing allowlist, SSRF, and approval gates remain the only
 path to browser actions. The host runtime is explicit and default-off.
+
+Navigation additionally needs a bound transport (:meth:`set_transport`, see
+:mod:`agents.core.browser_transport`): the resolver-validated IP is what Chromium
+dials, every request — redirects and subresources included — is re-validated at the
+route layer, the final URL is re-checked after ``goto``, and each run gets its own
+throw-away profile directory, never the owner's browser profile. Observation is
+accessibility-first: :meth:`observe_snapshot` returns a bounded, structured element
+list before any pixel is looked at.
 """
 
 from __future__ import annotations
@@ -11,13 +19,31 @@ import asyncio
 import base64
 import contextlib
 import json
+import logging
 import os
 import re
+import shutil
+import tempfile
+import time
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
+from agents.core.browser_transport import (
+    ALLOWED_SCHEMES,
+    BrowserTransportRefused,
+    PinnedResolver,
+    is_private_host_literal,
+)
+
+logger = logging.getLogger("jarvis.browser.playwright")
 
 SUPPORTED_BROWSERS = frozenset({"chromium", "firefox", "webkit"})
+PROFILE_PREFIX = "nerva-browser-"
+MAX_SNAPSHOT_ELEMENTS = 500
+_BLOCK_LOG_SIZE = 50
 
 
 class PlaywrightDriverError(RuntimeError):
@@ -38,6 +64,15 @@ class PlaywrightTransportUnavailable(PlaywrightDriverError):
 
 class PlaywrightOutputTooLarge(PlaywrightDriverError):
     """A browser observation exceeded its configured output budget."""
+
+
+class PlaywrightEgressBlocked(PlaywrightDriverError):
+    """The bound transport or the request layer refused a URL; ``reason`` is named."""
+
+    def __init__(self, reason: str, detail: str = "") -> None:
+        self.reason = str(reason)
+        self.detail = str(detail or "")
+        super().__init__(self.reason if not self.detail else f"{self.reason}: {self.detail}")
 
 
 class PlaywrightBrowserDriver:
@@ -61,6 +96,7 @@ class PlaywrightBrowserDriver:
         max_screenshot_bytes: int = 5_000_000,
         download_dir: str | Path | None = None,
         playwright_factory: Callable[[], Any] | None = None,
+        allow_private_urls: bool = False,
     ) -> None:
         if browser not in SUPPORTED_BROWSERS:
             raise ValueError(f"unsupported Playwright browser: {browser}")
@@ -83,8 +119,13 @@ class PlaywrightBrowserDriver:
         self.max_result_chars = int(max_result_chars)
         self.max_screenshot_bytes = int(max_screenshot_bytes)
         self.download_dir = Path(download_dir).expanduser() if download_dir else None
+        self.allow_private_urls = bool(allow_private_urls)
         self._factory = playwright_factory
         self._url_guard: Callable[[str], tuple[bool, str] | bool] | None = None
+        self._transport: PinnedResolver | None = None
+        self._launched_hosts: frozenset[str] = frozenset()
+        self._profile_dir: Path | None = None
+        self.blocked_requests: deque[dict] = deque(maxlen=_BLOCK_LOG_SIZE)
         self._start_lock = asyncio.Lock()
         self._playwright = None
         self._browser = None
@@ -100,13 +141,20 @@ class PlaywrightBrowserDriver:
             raise PlaywrightHostDisabled(
                 "Playwright host actuation is disabled; set JARVIS_PLAYWRIGHT_HOST=1"
             )
+        transport = kwargs.pop("transport", None)
         kwargs.setdefault("host_enabled", True)
         kwargs.setdefault("browser", os.getenv("JARVIS_PLAYWRIGHT_BROWSER", "chromium"))
         kwargs.setdefault("headless", env_flag("JARVIS_PLAYWRIGHT_HEADLESS", True))
+        kwargs.setdefault("allow_private_urls", env_flag("JARVIS_BROWSER_ALLOW_PRIVATE_URLS"))
         configured_downloads = os.getenv("JARVIS_PLAYWRIGHT_DOWNLOAD_DIR", "").strip()
         if configured_downloads:
             kwargs.setdefault("download_dir", configured_downloads)
-        return cls(**kwargs)
+        driver = cls(**kwargs)
+        if transport is None and driver.browser_name == "chromium":
+            transport = PinnedResolver(mode="lan" if driver.allow_private_urls else "public")
+        if transport is not None:
+            driver.set_transport(transport)
+        return driver
 
     async def __aenter__(self) -> PlaywrightBrowserDriver:
         await self._ensure_started()
@@ -122,6 +170,37 @@ class PlaywrightBrowserDriver:
         if self._page is not None:
             raise PlaywrightDriverError("url guard must be configured before browser startup")
         self._url_guard = guard
+
+    def set_transport(self, resolver: PinnedResolver) -> None:
+        """Bind the IP-pinning transport; navigation is refused until one is bound."""
+        if not callable(getattr(resolver, "pin", None)) or not callable(
+            getattr(resolver, "launch_args", None)
+        ):
+            raise ValueError("transport must expose pin() and launch_args()")
+        if self._page is not None:
+            raise PlaywrightDriverError("transport must be configured before browser startup")
+        try:
+            resolver.launch_args(self.browser_name)
+        except BrowserTransportRefused as exc:
+            raise PlaywrightTransportUnavailable(
+                f"browser transport unavailable: {exc.reason}"
+            ) from None
+        self._transport = resolver
+
+    @property
+    def transport_bound(self) -> bool:
+        """True once a pinning transport is bound (what ``GovernedBrowser`` may key on)."""
+        return self._transport is not None
+
+    @property
+    def profile_dir(self) -> Path | None:
+        """The per-run throw-away profile directory while the browser is up."""
+        return self._profile_dir
+
+    @property
+    def launched_hosts(self) -> frozenset[str]:
+        """Hosts the running browser can resolve (empty without a transport)."""
+        return self._launched_hosts
 
     def _runtime_factory(self):
         if self._factory is not None:
@@ -154,17 +233,27 @@ class PlaywrightBrowserDriver:
                 manager = self._runtime_factory()()
                 self._playwright = await manager.start()
                 browser_type = getattr(self._playwright, self.browser_name)
-                self._browser = await browser_type.launch(headless=self.headless)
-                self._context = await self._browser.new_context(
+                launch_args: list[str] = []
+                if self._transport is not None:
+                    launch_args = list(self._transport.launch_args(self.browser_name))
+                    self._launched_hosts = frozenset(self._transport.pinned_hosts())
+                # A fresh, dedicated profile per run: cookies, storage, and history
+                # never touch (or leak from) the owner's own browser profile.
+                self._profile_dir = Path(tempfile.mkdtemp(prefix=PROFILE_PREFIX))
+                self._context = await browser_type.launch_persistent_context(
+                    str(self._profile_dir),
+                    headless=self.headless,
+                    args=launch_args,
                     accept_downloads=True,
                     service_workers="block",
                 )
+                self._browser = getattr(self._context, "browser", None)
                 if self._url_guard is not None:
                     await self._context.route("**/*", self._route_request)
                 self._page = await self._context.new_page()
                 self._page.set_default_timeout(self.timeout_ms)
                 return self._page
-            except (PlaywrightHostDisabled, PlaywrightUnavailable):
+            except (PlaywrightHostDisabled, PlaywrightUnavailable, BrowserTransportRefused):
                 await self._close_resources()
                 raise
             except Exception:
@@ -174,20 +263,60 @@ class PlaywrightBrowserDriver:
                 ) from None
 
     async def _route_request(self, route) -> None:
-        """Apply the allowlist/SSRF guard to redirects and subresources too."""
-        allowed = False
+        """Re-validate every request (redirects and subresources too) before egress."""
+        url = str(route.request.url)
         try:
             # The guard runs check_ssrf → getaddrinfo (blocking DNS) and fires per
             # subresource; offload it so a slow resolver can't stall the event loop.
-            verdict = (await asyncio.to_thread(self._url_guard, str(route.request.url))
-                       if self._url_guard else False)
-            allowed = bool(verdict[0]) if isinstance(verdict, tuple) else bool(verdict)
+            allowed, reason = await asyncio.to_thread(self._egress_verdict, url)
         except Exception:
-            allowed = False
+            allowed, reason = False, "guard_error"
         if allowed:
             await route.continue_()
+            return
+        self._record_block(url, reason)
+        await route.abort("blockedbyclient")
+
+    def _egress_verdict(self, url: str, *, require_pinned: bool = True) -> tuple[bool, str]:
+        """Scheme allowlist → private-range denial → policy guard → pinned-host check.
+
+        Runs for the navigation target (``require_pinned=False``: the host is pinned
+        right after), every routed request, and the final URL after ``goto``.
+        Reasons are stable names so a block is inspectable.
+        """
+        try:
+            parsed = urlparse(url)
+            host = (parsed.hostname or "").lower().rstrip(".")
+        except ValueError:
+            return False, "invalid_url"
+        scheme = (parsed.scheme or "").lower()
+        if scheme not in ALLOWED_SCHEMES:
+            return False, f"unsupported_scheme:{scheme or 'none'}"
+        if not host:
+            return False, "no_hostname"
+        if not self.allow_private_urls and is_private_host_literal(host):
+            return False, "private_address_denied"
+        if self._url_guard is None:
+            return False, "no_url_guard"
+        verdict = self._url_guard(url)
+        if isinstance(verdict, tuple):
+            allowed, why = bool(verdict[0]), str(verdict[1] if len(verdict) > 1 else "")
         else:
-            await route.abort("blockedbyclient")
+            allowed, why = bool(verdict), ""
+        if not allowed:
+            return False, f"policy_denied:{why or 'refused'}"
+        if require_pinned and self._transport is not None and host not in self._launched_hosts:
+            return False, "host_not_pinned"
+        return True, ""
+
+    def _record_block(self, url: str, reason: str) -> None:
+        try:
+            host = (urlparse(url).hostname or "").lower()
+        except ValueError:
+            host = ""
+        # Host only — query strings can carry tokens, and a log is forever.
+        logger.info("browser egress blocked host=%s reason=%s", host or "?", reason)
+        self.blocked_requests.append({"host": host, "reason": reason, "ts": time.time()})
 
     async def close(self) -> None:
         """Idempotently release the fresh context, browser, and Playwright runtime."""
@@ -196,10 +325,13 @@ class PlaywrightBrowserDriver:
 
     async def _close_resources(self) -> None:
         context, browser, playwright = self._context, self._browser, self._playwright
+        profile_dir = self._profile_dir
         self._page = None
         self._context = None
         self._browser = None
         self._playwright = None
+        self._profile_dir = None
+        self._launched_hosts = frozenset()
         for resource, method_name in (
             (context, "close"),
             (browser, "close"),
@@ -209,6 +341,8 @@ class PlaywrightBrowserDriver:
                 continue
             with contextlib.suppress(Exception):
                 await getattr(resource, method_name)()
+        if profile_dir is not None and profile_dir.name.startswith(PROFILE_PREFIX):
+            await asyncio.to_thread(shutil.rmtree, profile_dir, True)
 
     async def navigate(self, *, url: str, wait_until: str = "domcontentloaded") -> dict:
         if not self.host_enabled:
@@ -219,16 +353,72 @@ class PlaywrightBrowserDriver:
             raise PlaywrightHostDisabled(
                 "Playwright host actuation requires a per-request URL guard"
             )
-        # Browser request interception happens after Playwright has already selected
-        # a network transport, so it is not an egress boundary. Do not start it.
-        raise PlaywrightTransportUnavailable("browser transport unavailable")
+        if self._transport is None:
+            # Request interception alone runs after Playwright has already picked a
+            # network transport, so it is not an egress boundary. Without a bound
+            # IP-pinning transport, do not start the browser at all.
+            raise PlaywrightTransportUnavailable("browser transport unavailable")
+        # Policy first, so a denied host is never even resolved (no DNS leak).
+        allowed, reason = await asyncio.to_thread(
+            self._egress_verdict, url, require_pinned=False
+        )
+        if not allowed:
+            self._record_block(url, reason)
+            raise PlaywrightEgressBlocked(reason)
+        try:
+            target = await self._transport.pin_async(url)
+        except BrowserTransportRefused as exc:
+            self._record_block(url, exc.reason)
+            raise PlaywrightEgressBlocked(exc.reason, exc.detail) from None
+        if self._page is not None and target.host not in self._launched_hosts:
+            # Chromium's resolver table is fixed at launch: a new host means a fresh
+            # browser (and a fresh profile) launched with the enlarged pin table.
+            await self.close()
         page = await self._ensure_started()
         response = await page.goto(url, wait_until=wait_until)
+        final_url = str(page.url)
+        allowed, reason = await asyncio.to_thread(self._egress_verdict, final_url)
+        if not allowed:
+            self._record_block(final_url, reason)
+            with contextlib.suppress(Exception):
+                await page.goto("about:blank")
+            raise PlaywrightEgressBlocked("final_url_rejected", reason)
         title = await page.title()
         return {
-            "url": self._bounded_text(str(page.url), 2_048),
+            "url": self._bounded_text(final_url, 2_048),
             "title": self._bounded_text(str(title), 512),
             "status": getattr(response, "status", None),
+            "pinned_ip": target.ip,
+        }
+
+    async def observe_snapshot(
+        self, *, max_chars: int | None = None, selector: str = "body"
+    ) -> dict:
+        """Accessibility-tree observation: the STRUCTURED_UI route before any pixel.
+
+        Uses Playwright's ``aria_snapshot`` (``boxes=True`` where the runtime
+        supports it, so elements carry a rect) bounded by ``max_chars`` (defaults to
+        ``max_extract_chars``) and :data:`MAX_SNAPSHOT_ELEMENTS`.
+        """
+        limit = self.max_extract_chars if max_chars is None else int(max_chars)
+        if limit <= 0:
+            raise ValueError("max_chars must be positive")
+        page = await self._ensure_started()
+        locator = page.locator(selector)
+        try:
+            raw = await locator.aria_snapshot(boxes=True)
+        except TypeError:
+            raw = await locator.aria_snapshot()
+        text = str(raw or "")
+        truncated = len(text) > limit
+        elements, elements_truncated = parse_aria_snapshot(text[:limit])
+        return {
+            "observation": "structured_ui",
+            "elements": elements,
+            "count": len(elements),
+            "truncated": truncated or elements_truncated,
+            "chars": min(len(text), limit),
+            "url": self._bounded_text(str(page.url), 2_048),
         }
 
     async def extract(self, *, selector: str = "body") -> dict:
@@ -352,3 +542,100 @@ class PlaywrightBrowserDriver:
             if not alternate.exists():
                 return alternate
         raise PlaywrightDriverError("no free download destination available")
+
+
+_ARIA_LINE = re.compile(
+    r'^(?P<role>[A-Za-z][A-Za-z0-9_-]*)'
+    r'(?:\s+"(?P<name>(?:[^"\\]|\\.)*)")?'
+    r'(?P<attrs>(?:\s*\[[^\]]*\])*)'
+    r'\s*(?::\s*(?P<inline>.*))?$'
+)
+_ARIA_ATTR = re.compile(r"\[([^\]]*)\]")
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+_RECT_KEYS = ("box", "rect", "bounds")
+
+
+def _parse_attrs(raw: str) -> dict[str, str | bool]:
+    attrs: dict[str, str | bool] = {}
+    for chunk in _ARIA_ATTR.findall(raw or ""):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        key, sep, value = chunk.partition("=")
+        attrs[key.strip()] = value.strip() if sep else True
+    return attrs
+
+
+def _rect_from_attrs(attrs: dict[str, str | bool]) -> dict[str, float] | None:
+    """Pop a bounding box out of ``attrs`` (``[box=x,y,w,h]`` or x/y/width/height)."""
+    for key in _RECT_KEYS:
+        value = attrs.get(key)
+        if isinstance(value, str):
+            numbers = [float(n) for n in _NUMBER.findall(value)]
+            if len(numbers) == 4:
+                attrs.pop(key)
+                return {"x": numbers[0], "y": numbers[1], "w": numbers[2], "h": numbers[3]}
+    try:
+        rect = {
+            "x": float(attrs["x"]), "y": float(attrs["y"]),
+            "w": float(attrs["width"]), "h": float(attrs["height"]),
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+    for key in ("x", "y", "width", "height"):
+        attrs.pop(key)
+    return rect
+
+
+def parse_aria_snapshot(
+    text: str, *, max_elements: int = MAX_SNAPSHOT_ELEMENTS
+) -> tuple[list[dict], bool]:
+    """Parse Playwright's YAML-ish aria snapshot into bounded element dicts.
+
+    Each line is ``- role "name" [attr=value] [ref=eN]:`` (children indented) or a
+    ``- text: ...`` leaf. Returns ``(elements, truncated)``; every element carries
+    ``ref`` (Playwright's when present, else a stable ``n<index>``), ``role``,
+    ``name``, ``depth``, ``rect`` (``None`` when the runtime emitted no box), and the
+    remaining bracket attributes. Unparseable lines are kept as ``role="unknown"``
+    so an observation never silently drops content.
+    """
+    elements: list[dict] = []
+    truncated = False
+    for line in str(text or "").splitlines():
+        if not line.strip():
+            continue
+        if len(elements) >= int(max_elements):
+            truncated = True
+            break
+        indent = len(line) - len(line.lstrip(" "))
+        body = line.strip()
+        if body.startswith("- "):
+            body = body[2:].strip()
+        elif body == "-":
+            continue
+        depth = indent // 2
+        index = len(elements)
+        element = {
+            "ref": f"n{index}", "role": "unknown", "name": body[:256],
+            "depth": depth, "rect": None, "attrs": {},
+        }
+        if body.startswith("text:"):
+            element.update(role="text", name=body[5:].strip()[:256])
+        else:
+            match = _ARIA_LINE.match(body)
+            if match:
+                attrs = _parse_attrs(match.group("attrs") or "")
+                name = match.group("name")
+                if name is None and match.group("inline"):
+                    name = match.group("inline").strip()
+                ref = attrs.pop("ref", None)
+                element.update(
+                    role=match.group("role").lower(),
+                    name=str(name or "").replace('\\"', '"')[:256],
+                    rect=_rect_from_attrs(attrs),
+                    attrs=attrs,
+                )
+                if isinstance(ref, str) and ref:
+                    element["ref"] = ref[:64]
+        elements.append(element)
+    return elements, truncated

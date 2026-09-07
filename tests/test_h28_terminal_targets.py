@@ -33,13 +33,31 @@ def _target(**overrides):
     return TerminalTarget(**values)
 
 
-def test_default_targets_are_named_conservative_backend_profiles():
+def test_default_targets_are_named_conservative_backend_profiles(monkeypatch):
+    monkeypatch.delenv("JARVIS_TERMINAL_LOCAL_HOST", raising=False)
     targets = {target.name: target for target in default_targets()}
 
-    assert set(targets) == {"bonobo-windows", "pi-house", "isolated-sandbox"}
+    assert set(targets) == {"local-host", "bonobo-windows", "pi-house", "isolated-sandbox"}
+    # The machine Nerva runs on: disabled by default, exec always approval-gated,
+    # and never file.write (the host filesystem is not a sandbox).
+    assert targets["local-host"].backend == "local"
+    assert targets["local-host"].enabled is False
+    assert targets["local-host"].approval_required == frozenset({"terminal.exec"})
+    assert targets["local-host"].capabilities == frozenset({
+        "terminal.read", "terminal.exec", "file.read"
+    })
+    assert "file.write" not in targets["local-host"].capabilities
+    assert targets["local-host"].allowed_agents == frozenset({"jarvis", "ultron"})
     assert targets["bonobo-windows"].backend == "local"
     assert targets["bonobo-windows"].enabled is False
     assert targets["pi-house"].backend == "ssh"
+    # The owner flag enables ONLY local-host, and never lifts its approval floor.
+    monkeypatch.setenv("JARVIS_TERMINAL_LOCAL_HOST", "1")
+    armed = {target.name: target for target in default_targets()}
+    assert armed["local-host"].enabled is True
+    assert armed["local-host"].approval_required == frozenset({"terminal.exec"})
+    assert armed["bonobo-windows"].enabled is False
+    assert armed["pi-house"].enabled is False
     assert targets["pi-house"].enabled is False
     assert targets["isolated-sandbox"].backend == "docker"
     assert targets["isolated-sandbox"].enabled is True

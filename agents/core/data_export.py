@@ -38,7 +38,16 @@ EXPORT_VERSION = 2
 
 # User-content DBs that belong to the owner and are safe to export. settings.db
 # (config + secret references) and anything else are intentionally excluded.
-EXPORT_DBS: tuple[str, ...] = ("notes.db", "missions.db", "autonomy.db", "analytics.db")
+EXPORT_DBS: tuple[str, ...] = (
+    "notes.db", "missions.db", "autonomy.db", "analytics.db",
+    # The consent ledger — what the owner allowed and when. The os_input restore
+    # tokens are NOT in here: they live in the SecretStore under
+    # permission.os_input.<grant_id> and travel with the secrets path.
+    "permissions.db",
+    # Company-mode work runs: goals, steps and verdicts. An export that omitted
+    # them would leave out what Nerva actually spent the owner's nights doing.
+    "work_runs.db",
+)
 
 # Live JSON content stores. The per-session free-text note lives in notes.json,
 # and canvas.json holds saved replies — so a DB-only export silently omitted the
@@ -46,7 +55,16 @@ EXPORT_DBS: tuple[str, ...] = ("notes.db", "missions.db", "autonomy.db", "analyt
 # the same owner content. (notes.db above is the block-tree document store; it
 # stopped being test-only when DRA-53 put it behind /api/notes/docs, and it was
 # already on EXPORT_DBS, so no allowlist change was needed for that adoption.)
-EXPORT_JSON: tuple[str, ...] = ("notes.json", "canvas.json")
+EXPORT_JSON: tuple[str, ...] = (
+    "notes.json",
+    "canvas.json",
+    # E4.1 — the identity manifest and its full version history. Not owner
+    # content in the usual sense: it is what Nerva says IT is. It is exported
+    # anyway because its `roles` and `commitments` are promises made TO the
+    # owner, and an export that omitted the commitments would omit the half of
+    # the record that is actually about them.
+    "identity/manifest.json",
+)
 
 # Raw Howard imports and every derived archive artifact. These are directories,
 # not a file allowlist: a new artifact below either root is exported by default.

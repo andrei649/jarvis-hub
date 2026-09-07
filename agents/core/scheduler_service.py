@@ -42,6 +42,8 @@ class SchedulerService:
         self.schedule_memory_maintenance()
         self.schedule_tech_scout()
         self.schedule_llm_backend_refresh()
+        self.schedule_company_mode()
+        self.schedule_backups()
 
     # ── scheduling (registration) ─────────────────────────────────
     def schedule_daily_digests(self):
@@ -205,6 +207,117 @@ class SchedulerService:
             logger.info("Scheduled tech scout: weekly Mon 09:30 (no-op unless autonomy.tech_scout_enabled)")
         except Exception:
             logger.warning("Failed to schedule tech scout", exc_info=True)
+
+    def schedule_backups(self):
+        """One local backup a night, pruned to a week. **On by default.**
+
+        Every other scheduled capability here is off until asked for, and this one
+        is not — because the failure directions are opposite. `schedule_retention`
+        *deletes*, so a wrong default loses data; a backup *preserves*, so a wrong
+        default costs disk. A product that holds someone's whole life and never
+        copies it has failed them in a way no flag protects against, and the copy
+        never leaves the machine: it lands in the data root's sibling backups
+        directory, exactly where `POST /api/admin/backup` already writes.
+
+        Bounded by construction. `prune_backups` keeps `backup.keep` archives
+        (7 by default), so this cannot grow without limit — which is the actual
+        reason an automatic backup would have been a bad idea before there was a
+        prune to pair it with.
+
+        Encryption follows whatever the owner configured (`$JARVIS_BACKUP_KEY`);
+        this never decides that for them, and `backup_health()` reports whether
+        the archives are encrypted rather than leaving it to be inferred.
+        """
+        from agents.core.env_config import env_flag
+
+        if env_flag("JARVIS_TESTING"):
+            return
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_backup, "cron", hour=3, minute=20,
+                          id="backup-nightly", replace_existing=True)
+            logger.info("Scheduled nightly backup 03:20 (disable with backup.auto_enabled=false)")
+        except Exception:
+            logger.warning("Failed to schedule the nightly backup", exc_info=True)
+
+    def run_backup(self) -> dict:
+        """Take one backup and prune. Never raises into the scheduler.
+
+        Returns the outcome so a caller (and the test) can read it. A failure is
+        logged at WARNING rather than swallowed: a backup that has been failing
+        quietly for a month is worse than none at all, because the owner believes
+        they have one.
+        """
+        from agents.core.backup import (
+            BACKUP_KEEP_DEFAULT,
+            create_backup,
+            prune_backups,
+        )
+
+        if not self._orch.get_setting("backup.auto_enabled", True):
+            return {"ok": False, "skipped": "backup.auto_enabled is off"}
+        try:
+            result = create_backup(label="nightly")
+        except Exception as exc:
+            logger.warning("nightly backup failed", exc_info=True)
+            return {"ok": False, "error": exc.__class__.__name__}
+        try:
+            keep = int(self._orch.get_setting("backup.keep", BACKUP_KEEP_DEFAULT))
+            removed = prune_backups(keep)
+        except Exception:
+            # A prune that failed must not fail the backup that just succeeded.
+            logger.warning("backup prune failed", exc_info=True)
+            removed = []
+        logger.info(
+            "nightly backup: %s (%s bytes), pruned %d",
+            result.get("archive"), result.get("bytes"), len(removed),
+        )
+        return {"ok": True, "archive": result.get("archive"),
+                "bytes": result.get("bytes"), "pruned": removed}
+
+    def schedule_company_mode(self):
+        """Drive company-mode work runs (E5.0). **Off by default.**
+
+        Nothing is registered unless ``JARVIS_COMPANY_MODE`` is set at boot. That
+        asymmetry is deliberate: clearing the flag stops work at the very next
+        tick (the runtime re-reads it each sweep), but *starting* a night of
+        autonomous work should never happen because a config file changed while
+        nobody was looking — it takes a restart, which is a person's decision.
+
+        The job itself only sequences. Every effect a run arranges still enters
+        the approval queue and crosses the Action Kernel, and opening a run still
+        requires an owner-approved goal decided in the inbox: there is no path
+        from this timer to an unapproved action.
+        """
+        from agents.core.env_config import env_flag
+
+        if env_flag("JARVIS_TESTING"):
+            return
+        if not env_flag("JARVIS_COMPANY_MODE"):
+            return
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            from agents.core.autonomy.company_runtime import build_company_runtime
+            from agents.core.orchestrator_bindings import (
+                bind_external_orchestrator_attribute,
+            )
+
+            runtime = build_company_runtime(self._orch)
+            if runtime is None:
+                # build_company_runtime already logged the named reason. Registering
+                # a job that can only no-op would report a working night shift.
+                return
+            bind_external_orchestrator_attribute(self._orch, "company_runtime", runtime)
+            interval = max(60, int(self._orch.get_setting("autonomy.company_tick_seconds", 300)))
+            sched.add_job(runtime.sweep, "interval", seconds=interval,
+                          id="company-mode-sweep", replace_existing=True)
+            logger.info("Scheduled company-mode sweep every %ss", interval)
+        except Exception:
+            logger.warning("Failed to schedule company mode", exc_info=True)
 
     def schedule_llm_backend_refresh(self):
         """Re-probe the local LLM backends every 5 minutes (H23 log finding).

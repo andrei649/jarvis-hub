@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, SkipValidation
 
 from agents.core.app_state import get_orch
+from agents.core.desktop_drivers import driver_for_host
 from agents.core.env_config import env_flag
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import error_json, nocache_json
@@ -174,12 +175,27 @@ def desktop_host_enabled() -> bool:
 
 
 def build_desktop_runtime(orch, *, authorizer=None):
-    """Bind a fresh dependency-lazy host driver to the live Action Kernel."""
-    from agents.core.desktop_host import WindowsDesktopDriver
+    """Bind the driver THIS host can actually run to the live Action Kernel.
+
+    The driver comes from ``desktop_drivers.driver_for_host``, which reads the
+    same host probe the Host Readiness panel does — so the operator can never be
+    driving a platform the panel says is unavailable, in either direction. On a
+    host with no usable driver it binds an ``UnavailableDriver`` that refuses each
+    step with the probe's own reason and hint.
+    """
+    from agents.core.desktop_drivers import UnavailableDriver
     from agents.core.desktop_operator import DesktopActionExecutor, GovernedDesktop
     from agents.core.kernel.binding import make_action_kernel
 
-    driver = WindowsDesktopDriver.from_env()
+    choice = driver_for_host()
+    # A host with no usable driver gets one that refuses every step by name —
+    # NOT a null driver that answers "deferred" and reads like pending work, and
+    # not an early return, because the posture flags are checked by the executor
+    # and the owner should read "the feature is off" before "your machine cannot
+    # do it": turning it on is their first step either way.
+    driver = choice.driver if choice.ok and choice.driver is not None else UnavailableDriver(
+        choice.reason, hint=choice.hint, platform=choice.platform
+    )
     executor = DesktopActionExecutor(
         driver,
         authorizer=authorizer if authorizer is not None else make_action_kernel(orch),

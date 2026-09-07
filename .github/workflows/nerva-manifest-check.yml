@@ -1,0 +1,67 @@
+name: Nerva Manifest Check
+
+# Advisory program-control check for docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json.
+# Post-de-gate posture (AGENTS.md, owner decision 2026-08-29): this runs after
+# merge on `main` and on a weekly schedule — it is NOT a pull-request gate.
+# Offline part (always): registry paths exist, statuses derive correctly, the
+# Markdown view is byte-identical to the JSON, CONTRACT_REGISTRY.json agrees.
+# Live part (schedule / dispatch only, advisory): `gh issue view` against every
+# referenced issue; the manifest file itself never claims live verification.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "docs/nerva2/**"
+      - "scripts/check_nerva_program_manifest.py"
+      - "tests/test_nerva_program_manifest_checker.py"
+      - ".github/workflows/nerva-manifest-check.yml"
+  schedule:
+    # Mondays 06:30 UTC — after the third-party drift sweep.
+    - cron: "30 6 * * 1"
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: nerva-manifest-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # Deterministic + offline. Fails the job on a dead registry path, a stale
+      # Markdown view, an inconsistent status derivation or a registry digest drift.
+      - name: Offline manifest check
+        run: python scripts/check_nerva_program_manifest.py
+
+      # Advisory: live issue-state verification through the preinstalled gh CLI.
+      # A mismatch is reported in the job summary; it never rewrites the manifest.
+      - name: Live issue verification (advisory)
+        if: github.event_name != 'push'
+        id: live
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/check_nerva_program_manifest.py --live --json > manifest-live.json || true
+          python scripts/check_nerva_program_manifest.py --live > manifest-live.txt || true
+
+      - name: Publish to job summary
+        if: always()
+        run: |
+          {
+            echo '## Nerva program manifest'
+            echo '```'
+            if [ -f manifest-live.txt ]; then cat manifest-live.txt; else python scripts/check_nerva_program_manifest.py || true; fi
+            echo '```'
+            echo '_Evidence-only. `live_issue_state` is `verified` only from a real gh run; the manifest file always keeps `live_issue_state_verified_by_checker=false`._'
+          } >> "$GITHUB_STEP_SUMMARY"

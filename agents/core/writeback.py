@@ -25,6 +25,16 @@ Mirrors the shipped governance pattern of TranscriptWatcher (H12.25) and
 PaymentBroker (H16.3): build → gate → approve → execute, with a deferred rail.
 Pure-Python and offline-testable; the enqueue sink, secret broker, and live
 client are all injected.
+
+Live rail (default-off): ``JARVIS_WRITEBACK_LIVE=1`` constructs the broker with
+:class:`HttpWriteBackClient` instead of the Null client. Unset, the broker is
+byte-identical to before (Null client, lazy upgrade only when an approved task
+resolves a real credential). The white-collar connector suite (0.66,
+``writeback_connectors``: Linear/Asana/Trello/Todoist/ClickUp/Sheets/M365) is
+wired through the same broker — ``request`` accepts connector targets, ``execute``
+builds their requests via ``build_connector_request`` — and approved
+``create_task`` / ``task.create`` tasks (H12.25 transcript watcher) are mapped
+onto a Todoist/Notion write instead of falling through to the LLM handler.
 """
 
 from __future__ import annotations
@@ -35,8 +45,10 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 from urllib.parse import urlparse
 
+from . import writeback_connectors as _wbc
 from .automation_contracts import ContractTemplate, predicate
 from .autonomy.dry_run import preview_task
+from .env_config import env_flag
 from .security.secret_broker import SecretBroker
 
 logger = logging.getLogger("jarvis.writeback")
@@ -64,6 +76,36 @@ _CREDENTIAL: dict[str, str] = {
     "github": "github_token",
     "google_calendar": "google_oauth_token",
 }
+
+# Live rail flag (default-off). Read at call time, never cached (env_config rule).
+LIVE_FLAG = "JARVIS_WRITEBACK_LIVE"
+
+
+def live_rail_enabled() -> bool:
+    """True only when the owner explicitly set ``JARVIS_WRITEBACK_LIVE``."""
+    return env_flag(LIVE_FLAG)
+
+
+# Kinds the H12.25 transcript watcher enqueues (``create_task``; ``task.create``
+# is the dotted spelling used by the one-PR plan) — mapped onto a connector write.
+TASK_CREATE_KINDS = frozenset({"create_task", "task.create"})
+
+
+def _lookup(target: str, action: str):
+    """Catalog spec for (target, action) from the H10.30 or the 0.66 connector catalog."""
+    key = ((target or "").lower(), (action or "").lower())
+    return _CATALOG.get(key) or _wbc.CATALOG.get(key)
+
+
+def _is_connector(target: str, action: str) -> bool:
+    key = ((target or "").lower(), (action or "").lower())
+    return key not in _CATALOG and key in _wbc.CATALOG
+
+
+def _credential_name(target: str) -> str:
+    target = (target or "").lower()
+    return _CREDENTIAL.get(target) or _wbc.credential_names(target).get("token", "")
+
 
 # Field hygiene: cap sizes so a write-back can't smuggle an oversized payload.
 _LIST_FIELDS = {"labels", "assignees", "attendees"}
@@ -148,6 +190,9 @@ def _human_target(target: str, fields: dict) -> str:
         return fields.get("title") or fields.get("page_id") or "notion"
     if target == "google_calendar":
         return fields.get("summary") or "calendar event"
+    for k in ("name", "content", "title", "subject", "spreadsheet_id"):
+        if fields.get(k):
+            return str(fields[k])[:80]
     return target or "external"
 
 
@@ -158,18 +203,26 @@ def _writeback_draft_contract_template() -> ContractTemplate:
         return isinstance(kind, str) and kind.startswith(_KIND_PREFIX)
 
     def system_action_allowed(view, now):
-        return (view.get("system"), view.get("action")) in _CATALOG
+        system, action = view.get("system"), view.get("action")
+        if not isinstance(system, str) or not isinstance(action, str):
+            return False
+        return _lookup(system, action) is not None
 
     def required_fields_present(view, now):
-        spec = _CATALOG.get((view.get("system"), view.get("action")))
+        system, action = view.get("system"), view.get("action")
+        if not isinstance(system, str) or not isinstance(action, str):
+            return False
+        spec = _lookup(system, action)
         fields = view.get("fields")
         if spec is None or not isinstance(fields, dict):
             return False
+        if _is_connector(system, action):
+            return not _wbc.missing_required(spec, fields)
         return all(_present(fields.get(k)) for k in spec.required)
 
     def credential_ref_matches(view, now):
         system = view.get("system")
-        cred_name = _CREDENTIAL.get(system, "")
+        cred_name = _credential_name(system) if isinstance(system, str) else ""
         expected = SecretBroker.reference(cred_name) if cred_name else ""
         return view.get("credential_ref") == expected
 
@@ -274,6 +327,24 @@ def build_request(target: str, action: str, fields: dict, credentials: dict) -> 
     raise ValueError(f"unsupported write-back: {target}.{action}")
 
 
+def build_any_request(target: str, action: str, fields: dict, credentials: dict) -> dict:
+    """Build the concrete HTTP request for either catalog, host-allowlist enforced.
+
+    H10.30 targets go through :func:`build_request` (``_ALLOWED_HOSTS``); 0.66
+    connectors through :func:`writeback_connectors.build_connector_request`
+    (``CONNECTOR_HOSTS``). Raises ``ValueError`` for unknown pairs or a URL that
+    escaped its allowlist — the live client never sends such a request.
+    """
+    if _is_connector(target, action):
+        spec = _wbc.build_connector_request((target or "").lower(), (action or "").lower(),
+                                            fields, credentials)
+        _assert_allowed_host(spec["url"], _wbc.CONNECTOR_HOSTS)
+        return spec
+    spec = build_request(target, action, fields, credentials)
+    _assert_allowed_host(spec["url"])   # SSRF guard before any request
+    return spec
+
+
 # ── write-back clients (the deferred live rail) ──────────────────────────────
 
 class NullWriteBackClient:
@@ -293,7 +364,7 @@ class NullWriteBackClient:
         # Honesty layer (Live-vs-Plumbing): a deferred write-back is a degraded
         # result — stamp it so the HUD/callers can badge it and name the fix.
         from .plugins.degradation import degraded
-        cred_name = _CREDENTIAL.get((target or "").lower(), "credential")
+        cred_name = _credential_name(target) or "credential"
         return degraded(
             {"status": "deferred", "target": target, "action": action,
              "note": "no live write-back client configured — host seam"},
@@ -315,14 +386,15 @@ class HttpWriteBackClient:
         self._http = http
 
     async def write(self, target: str, action: str, fields: dict, credentials: dict) -> dict:
-        spec = build_request(target, action, fields, credentials)
-        _assert_allowed_host(spec["url"])   # SSRF guard before any request
+        spec = build_any_request(target, action, fields, credentials)  # host-guarded
         http = self._http
         if http is None:  # pragma: no cover - real network path
             from .http_client import PluginHTTPClient
             http = PluginHTTPClient.for_plugin(f"writeback_{target}")
-        resp = await http.request(spec["method"], spec["url"],
-                                  headers=spec["headers"], json=spec["json"])
+        kwargs: dict = {"headers": spec.get("headers"), "json": spec.get("json")}
+        if spec.get("params"):
+            kwargs["params"] = spec["params"]   # Trello: credentials as query params
+        resp = await http.request(spec["method"], spec["url"], **kwargs)
         resp.raise_for_status()
         out: dict = {"status": "ok", "http_status": getattr(resp, "status_code", None)}
         try:
@@ -333,6 +405,61 @@ class HttpWriteBackClient:
         return out
 
 
+# ── H12.25: approved transcript action items → connector writes ──────────────
+
+_TASK_TEXT_CAP = 500
+
+
+def _is_task_create(kind, payload: dict) -> bool:
+    if isinstance(kind, str) and kind.lower() in TASK_CREATE_KINDS:
+        return True
+    # Kind-less callers (tests, older queues): the transcript watcher's payload shape.
+    return (payload.get("action") == "create_task" and "text" in payload
+            and "fields" not in payload)
+
+
+def map_task_create(payload: dict) -> dict:
+    """Map an H12.25 ``create_task`` payload onto a governed write-back payload.
+
+    ``{"system": "todoist"|"notion", "text": ..., "assignee": ..., "source": ...}``
+    becomes a Todoist ``create_task`` (connector suite) or a Notion
+    ``create_page`` (H10.30) with the credential *handle* the executor resolves
+    behind approval. Pure; unknown systems or empty text are refused with the
+    reason — nothing is guessed.
+    """
+    system = str(payload.get("system") or "").strip().lower()
+    text = str(payload.get("text") or "").strip()[:_TASK_TEXT_CAP]
+    assignee = str(payload.get("assignee") or "").strip()[:120]
+    source = str(payload.get("source") or "").strip()[:200]
+    if not text:
+        return {"ok": False, "reason": "missing_fields", "missing": ["text"]}
+    if system == "todoist":
+        target, action = "todoist", "create_task"
+        fields: dict = {"content": text}
+    elif system == "notion":
+        target, action = "notion", "create_page"
+        notes = [f"Assignee: {assignee}" if assignee else "",
+                 f"Source: {source}" if source else ""]
+        fields = {"title": text}
+        content = "\n".join(n for n in notes if n)
+        if content:
+            fields["content"] = content
+    else:
+        return {"ok": False, "reason": "unknown_task_system", "system": system}
+    spec = _lookup(target, action)
+    if _is_connector(target, action):
+        clean = _wbc.sanitize_fields(spec, fields)
+    else:
+        clean, _missing = _sanitize_fields(spec, fields)
+    cred_name = _credential_name(target)
+    return {"ok": True, "payload": {
+        "system": target, "action": action, "fields": clean,
+        "credential_ref": SecretBroker.reference(cred_name) if cred_name else "",
+        "source": source, "target": _human_target(target, clean),
+        "assignee": assignee, "mapped_from": "create_task",
+    }}
+
+
 # ── the broker ───────────────────────────────────────────────────────────────
 
 class WriteBackBroker:
@@ -341,7 +468,8 @@ class WriteBackBroker:
     KIND_PREFIX = _KIND_PREFIX
 
     def __init__(self, enqueue: Optional[Callable] = None, agent: str = "pepper",
-                 secret_broker=None, client=None, audit=None, kernel=None) -> None:
+                 secret_broker=None, client=None, audit=None, kernel=None,
+                 http=None) -> None:
         # enqueue(agent, kind, title, payload=, risk_tier=, autonomy_level=, origin=) -> id
         self._enqueue = enqueue
         self.agent = agent
@@ -349,6 +477,12 @@ class WriteBackBroker:
         # An explicitly injected client (tests, custom rails) is never replaced;
         # only the default NullWriteBackClient may lazily upgrade to the live rail.
         self._client_injected = client is not None
+        # Live rail behind the flag: JARVIS_WRITEBACK_LIVE=1 → the HTTP client
+        # (transport injectable via ``http`` for tests). Unset → Null client,
+        # byte-identical to the pre-flag behaviour.
+        self.live = client is None and live_rail_enabled()
+        if client is None and self.live:
+            client = HttpWriteBackClient(http=http)
         self._client = client or NullWriteBackClient()
         self._audit = audit
         self._kernel = kernel   # ORIZONT-24 K1: bound kernel.authorize (default-off)
@@ -357,7 +491,17 @@ class WriteBackBroker:
 
     @staticmethod
     def supports(target: str, action: str) -> bool:
-        return ((target or "").lower(), (action or "").lower()) in _CATALOG
+        return _lookup(target, action) is not None
+
+    def connector_targets(self) -> list[dict]:
+        """The 0.66 connector suite, exposed with the same shape as :meth:`targets`."""
+        return [
+            {"target": s.target, "action": s.action, "label": s.label,
+             "required": list(s.required), "optional": list(s.optional),
+             "kind": f"{self.KIND_PREFIX}{s.target}.{s.action}",
+             "credential": _wbc.credential_names(s.target).get("token", "")}
+            for s in _wbc.CATALOG.values()
+        ]
 
     def targets(self) -> list[dict]:
         return [
@@ -378,18 +522,23 @@ class WriteBackBroker:
         """
         target = (target or "").strip().lower()
         action = (action or "").strip().lower()
-        spec = _CATALOG.get((target, action))
+        spec = _lookup(target, action)
         if spec is None:
             return {"ok": False, "reason": "unknown_target_action",
-                    "supported": sorted(f"{t}.{a}" for (t, a) in _CATALOG)}
+                    "supported": sorted(f"{t}.{a}" for (t, a) in _CATALOG)
+                    + sorted(f"{t}.{a}" for (t, a) in _wbc.CATALOG)}
 
-        clean, missing = _sanitize_fields(spec, fields)
+        if _is_connector(target, action):
+            missing = _wbc.missing_required(spec, fields or {})
+            clean = _wbc.sanitize_fields(spec, fields or {})
+        else:
+            clean, missing = _sanitize_fields(spec, fields)
         if missing:
             return {"ok": False, "reason": "missing_fields", "missing": missing,
                     "required": list(spec.required)}
 
         kind = f"{self.KIND_PREFIX}{target}.{action}"
-        cred_name = _CREDENTIAL.get(target, "")
+        cred_name = _credential_name(target)
         cred_ref = SecretBroker.reference(cred_name) if cred_name else ""
         human = _human_target(target, clean)
         title = f"{spec.label}: {human}" if spec.label else f"{kind} → {human}"
@@ -401,6 +550,9 @@ class WriteBackBroker:
             "source": source,
             "target": human,         # readable target for preview / inbox card
         }
+        if _is_connector(target, action):
+            # Handles only (Trello carries a second slot) — never a value.
+            payload["credential_refs"] = _wbc.credential_refs(target)
         contract_payload = {
             **payload,
             "kind": kind,
@@ -452,16 +604,36 @@ class WriteBackBroker:
 
     async def execute(self, task) -> dict:
         payload = getattr(task, "payload", None) or {}
+        mapped_from = None
+        if _is_task_create(getattr(task, "kind", None), payload):
+            # H12.25: an APPROVED transcript action item → one connector write.
+            mapped = map_task_create(payload)
+            if not mapped.get("ok"):
+                return {"status": "failed", "reason": mapped.get("reason", "invalid_task"),
+                        "target": payload.get("system"), "action": "create_task"}
+            payload = mapped["payload"]
+            mapped_from = "create_task"
         target = payload.get("system") or payload.get("target")
         action = payload.get("action")
         fields = payload.get("fields") or {}
         if not self.supports(target, action):
             return {"status": "failed", "reason": "unknown_target_action",
                     "target": target, "action": action}
+        target = (target or "").lower()
+        action = (action or "").lower()
         # Credentials are resolved here — at action time, behind approval. The
         # worker only dispatches APPROVED tasks, so reaching this point means the
         # human (or policy) already approved the write.
-        credentials = self._resolve_credentials(payload)
+        credentials = self._resolve_credentials(payload, target)
+        if isinstance(self._client, HttpWriteBackClient) and not credentials.get("token"):
+            # Live rail armed but the owner never stored the credential: refuse
+            # with the exact missing secret rather than sending an unauthenticated
+            # request (honest degradation, nothing fabricated).
+            cred_name = _credential_name(target) or "credential"
+            self._record("writeback.refuse", "credential_not_configured", target=target)
+            return {"status": "failed", "reason": "credential_not_configured",
+                    "target": target, "action": action,
+                    "needs": [f"secret:{cred_name}"]}
         # Live-vs-Plumbing: the moment an approved task resolves a REAL owner
         # credential, the default Null client upgrades to the live HTTP rail —
         # no restart needed, still strictly behind the approval funnel (this
@@ -479,18 +651,30 @@ class WriteBackBroker:
             return {"status": "failed", "reason": "client_error",
                     "target": target, "action": action}
         self._record("writeback.execute", f"{target}.{action}", target=target)
-        return {"status": "ok", "target": target, "action": action, "writeback": result}
+        out = {"status": "ok", "target": target, "action": action, "writeback": result}
+        if mapped_from:
+            out["mapped_from"] = mapped_from
+        return out
 
     # ── internals ────────────────────────────────────────────────────────────
 
-    def _resolve_credentials(self, payload: dict) -> dict:
+    def _resolve_credentials(self, payload: dict, target: str = "") -> dict:
         ref = payload.get("credential_ref") or ""
         token = ""
         if ref and self._secrets is not None:
             out = self._secrets.inject(ref, approved=True)
             if not out.get("blocked"):
                 token = out.get("text", "")
-        return {"token": token}
+        creds = {"token": token}
+        if target and target not in _CREDENTIAL and _wbc.credential_names(target):
+            # Connector suite: the SecretBroker resolves every slot (Trello also
+            # needs ``api_key``); the draft's own ``credential_ref`` wins for ``token``.
+            resolved = _wbc.resolve_credentials(target, self._secrets)
+            for slot, value in resolved.items():
+                if slot == "token" and token:
+                    continue
+                creds[slot] = value
+        return creds
 
     def _record(self, action: str, why: str, **meta) -> None:
         if self._audit is None:

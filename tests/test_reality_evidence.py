@@ -204,13 +204,21 @@ async def test_persisted_green_run_cannot_resurrect_verified(tmp_path):
     RealityEvidenceLedger(tmp_path).record_run(run, cases)
     capability_registry.clear_verifications()  # the boot
     assert capability_registry._VERIFICATIONS == {}
-    # No production module consumes the ledger: nothing imports
-    # reality_evidence (its only entry points are the CLI and this suite),
-    # so the registry cannot be fed from disk even by accident.
+    # No production module CONSUMES the ledger: nothing imports
+    # reality_evidence and nothing constructs its ledger class, so the
+    # registry cannot be fed from disk even by accident.
+    #
+    # The grep matches import statements and the ledger class name rather than
+    # the bare substring: a module may legitimately *name* this lane as the
+    # provenance of a measurement it was handed (evidence_receipt.py labels an
+    # EvidenceValue "reality_evidence.totals"), and a label in a string cannot
+    # promote anything. An import or a ledger construction can, so those stay
+    # forbidden — which is the invariant this test exists to pin.
+    import re
     import subprocess  # noqa: S404 - test-only source grep, fixed argv
 
     grep = subprocess.run(  # noqa: S603,S607
-        ["grep", "-rl", "reality_evidence", "agents/"],
+        ["grep", "-rn", "-E", r"(^|\s)(import|from)\s+\S*reality_evidence|RealityEvidenceLedger", "agents/"],
         capture_output=True,
         text=True,
         check=False,
@@ -218,7 +226,8 @@ async def test_persisted_green_run_cannot_resurrect_verified(tmp_path):
     readers = [
         line
         for line in grep.stdout.splitlines()
-        if not line.endswith("reality_evidence.py") and not line.endswith(".pyc")
+        if not re.match(r"^agents/core/observability/reality_evidence\.py:", line)
+        and ".pyc" not in line.split(":", 1)[0]
     ]
     assert readers == []
 

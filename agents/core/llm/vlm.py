@@ -16,6 +16,12 @@ no backend means "not configured", and ``lmstudio`` without a pinned
 ``JARVIS_VLM_MODEL`` refuses rather than inventing a model name (the
 companion-eval precedent). ``generate_vision`` feeds the Howard pipeline;
 text-only ``generate`` keeps the LLMBackend contract.
+
+``JARVIS_VLM_PRESET`` (optional) names one of the pinned open grounders in
+``VLM_PRESETS`` so the screen locator knows which **coordinate convention** the
+model emits (OS-Atlas-style 0–1000 vs. UI-TARS-style absolute-on-resized) — a
+preset annotates and validates, it never substitutes for the ``JARVIS_VLM_MODEL``
+pin, because the served model name is the host's fact, not ours.
 """
 
 from __future__ import annotations
@@ -29,6 +35,12 @@ from urllib.parse import urlsplit
 
 
 from ..env_config import env_str
+from ..screen_grounding import (
+    CONVENTION_ABSOLUTE,
+    CONVENTION_ABSOLUTE_RESIZED,
+    CONVENTION_RELATIVE_1000,
+    CONVENTIONS,
+)
 from .base import LLMBackend, strip_thinking
 from .egress import llm_async_client
 
@@ -57,9 +69,14 @@ class VLMNotConfigured(RuntimeError):
 def _is_loopback_base(url: str) -> bool:
     """Best-effort loopback check for provenance labeling (never raises).
 
-    This is a boolean *label*, not a gate — the consent-scoped camera path
-    keeps its own strict fail-closed validator (cameras/vlm._local_endpoint),
-    which cannot be imported here without a package cycle.
+    ``_is_loopback_base`` is a *label*: it computes ``VLMConfig.is_local`` and
+    ``VLMBackend.is_local`` and never blocks anything itself. The **gate** is
+    enforced by the callers that hold screen bytes — ``routers/multimodal.py``
+    (``screen_reflex`` refuses a non-local config with 503 before generating)
+    and ``screen_locator.LocalVLMLocator`` (refuses ``local_vlm_not_proven_local``
+    before any bytes leave the process). The consent-scoped camera path keeps
+    its own strict fail-closed validator (``cameras/vlm._local_endpoint``), which
+    cannot be imported here without a package cycle.
     """
     try:
         host = (urlsplit(url).hostname or "").lower()
@@ -73,15 +90,102 @@ def _is_loopback_base(url: str) -> bool:
         return False
 
 
+# ── pinned local grounder presets ────────────────────────────────────────────
+#
+# Open grounders disagree on what a coordinate *means*: OS-Atlas / Qwen3-VL emit
+# 0–1000 relative coordinates, UI-TARS / Holo emit absolute pixels on the
+# *resized* image the model actually saw. Without a preset the locator can only
+# assume absolute-on-original and a relative grounder produces silent mis-clicks
+# in the top-left 1000×1000 corner. The table is the difference between a
+# working visual route and a plausible-looking wrong one. Conventions are the
+# names ``screen_grounding.normalize_coords`` understands.
+#
+# Honesty: these are pinned from the models' published inference notes, not
+# from an owner run — the per-preset convention is delivered-not-proven until a
+# real screenshot round-trips on hardware (🔨 in BACKLOG).
+
+# The convention names live in screen_grounding (the module that converts them):
+#   absolute         — pixels on the original screenshot
+#   absolute_resized — pixels on the resized model input (UI-TARS / Holo)
+#   relative_1000    — 0–1000 per axis (OS-Atlas / Qwen3-VL)
+#   relative_unit    — 0.0–1.0 per axis
+COORDINATE_CONVENTIONS: frozenset[str] = frozenset(CONVENTIONS)
+
+
+@dataclass(frozen=True)
+class VLMPreset:
+    """One pinned open grounder: its coordinate convention and a prompt hint."""
+
+    id: str
+    family: str
+    convention: str
+    size_gb: float
+    prompt_hint: str
+    license: str = "Apache-2.0"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.id, str) or not self.id.strip():
+            raise ValueError("preset id is required")
+        if self.convention not in COORDINATE_CONVENTIONS:
+            raise ValueError(f"unknown coordinate convention: {self.convention!r}")
+        if isinstance(self.size_gb, bool) or not isinstance(self.size_gb, (int, float)):
+            raise ValueError("size_gb must be a number")
+        if not self.size_gb > 0:
+            raise ValueError("size_gb must be positive")
+        if not isinstance(self.prompt_hint, str):
+            raise ValueError("prompt_hint must be text")
+
+
+_ABSOLUTE_HINT = (
+    "Answer with pixel coordinates of the image you were given, as `label at (x, y)`."
+)
+_RELATIVE_1000_HINT = (
+    "Answer with coordinates normalized to a 0-1000 range on each axis, "
+    "as `label at (x, y)`."
+)
+
+VLM_PRESETS: dict[str, VLMPreset] = {
+    preset.id: preset
+    for preset in (
+        VLMPreset("qwen3-vl-4b", "qwen3-vl", CONVENTION_RELATIVE_1000, 4.5, _RELATIVE_1000_HINT),
+        VLMPreset("qwen3-vl-8b", "qwen3-vl", CONVENTION_RELATIVE_1000, 8.9, _RELATIVE_1000_HINT),
+        VLMPreset("ui-tars-1.5-7b", "ui-tars", CONVENTION_ABSOLUTE_RESIZED, 8.3, _ABSOLUTE_HINT),
+        VLMPreset("holo-3.1-35b-a3b", "holo", CONVENTION_ABSOLUTE_RESIZED, 21.0, _ABSOLUTE_HINT),
+        VLMPreset("qwen3.8-27b", "qwen3-vl", CONVENTION_RELATIVE_1000, 16.5, _RELATIVE_1000_HINT),
+    )
+}
+
+
+def resolve_vlm_preset(name: str) -> VLMPreset:
+    """Look up a pinned preset by id; an unknown id is a config typo, not a guess."""
+    key = str(name or "").strip().lower()
+    preset = VLM_PRESETS.get(key)
+    if preset is None:
+        raise VLMNotConfigured("vlm_preset_unknown")
+    return preset
+
+
 @dataclass(frozen=True)
 class VLMConfig:
-    """Resolved VLM configuration (the only shape callers should consume)."""
+    """Resolved VLM configuration (the only shape callers should consume).
+
+    ``preset`` / ``convention`` annotate which grounder is served (from
+    ``JARVIS_VLM_PRESET``); with no preset the convention defaults to absolute
+    pixels on the original screenshot, the only convention the free-text
+    ``label at (x, y)`` contract ever promised.
+    """
 
     backend: str  # "lmstudio" | "custom"
     base_url: str
     model: str
     api_key: str
     is_local: bool
+    preset: str = ""
+    convention: str = CONVENTION_ABSOLUTE
+
+    def __post_init__(self) -> None:
+        if self.convention not in COORDINATE_CONVENTIONS:
+            raise ValueError(f"unknown coordinate convention: {self.convention!r}")
 
 
 def resolve_vlm_config(env=None) -> VLMConfig:
@@ -94,6 +198,9 @@ def resolve_vlm_config(env=None) -> VLMConfig:
     - ``vlm_model_unset`` — lmstudio selected but no JARVIS_VLM_MODEL pinned
       (a guessed model would make every downstream record meaningless).
     - ``vlm_url_unset`` — custom selected without JARVIS_VLM_URL.
+    - ``vlm_preset_unknown`` — JARVIS_VLM_PRESET names no pinned preset.
+    - ``vlm_model_unset`` — a preset is set but JARVIS_VLM_MODEL is not: the
+      preset annotates the convention, it never stands in for the model pin.
 
     Legacy compatibility: a bare JARVIS_VLM_URL with no backend selector keeps
     working as ``custom`` (with the historical qwen2-vl model default), so
@@ -109,17 +216,19 @@ def resolve_vlm_config(env=None) -> VLMConfig:
     url = _get("JARVIS_VLM_URL").strip()
     model = _get("JARVIS_VLM_MODEL").strip()
     api_key = _get("JARVIS_VLM_KEY")
-    if backend in {"", "off"}:
-        if backend == "" and url:
-            # Legacy path: URL-only configuration predates the selector.
-            return VLMConfig(
-                backend="custom",
-                base_url=url,
-                model=model or "qwen2-vl",
-                api_key=api_key,
-                is_local=_is_loopback_base(url),
-            )
+    preset_name = _get("JARVIS_VLM_PRESET").strip().lower()
+    if backend in {"", "off"} and not (backend == "" and url):
         raise VLMNotConfigured("vlm_disabled")
+    if backend not in {"", "lmstudio", "custom"}:
+        # An unknown selector is a config typo, not a reason to guess.
+        raise VLMNotConfigured("vlm_backend_unknown")
+    preset_fields: dict = {}
+    if preset_name:
+        preset = resolve_vlm_preset(preset_name)
+        if not model:
+            # A preset says which convention the model speaks; it is not a model.
+            raise VLMNotConfigured("vlm_model_unset")
+        preset_fields = {"preset": preset.id, "convention": preset.convention}
     if backend == "lmstudio":
         if not model:
             raise VLMNotConfigured("vlm_model_unset")
@@ -130,19 +239,19 @@ def resolve_vlm_config(env=None) -> VLMConfig:
             model=model,
             api_key=api_key,
             is_local=_is_loopback_base(base),
+            **preset_fields,
         )
-    if backend == "custom":
-        if not url:
-            raise VLMNotConfigured("vlm_url_unset")
-        return VLMConfig(
-            backend="custom",
-            base_url=url,
-            model=model or "qwen2-vl",
-            api_key=api_key,
-            is_local=_is_loopback_base(url),
-        )
-    # An unknown selector is a config typo, not a reason to guess.
-    raise VLMNotConfigured("vlm_backend_unknown")
+    # ``custom`` — explicit, or the legacy URL-only path that predates the selector.
+    if not url:
+        raise VLMNotConfigured("vlm_url_unset")
+    return VLMConfig(
+        backend="custom",
+        base_url=url,
+        model=model or "qwen2-vl",
+        api_key=api_key,
+        is_local=_is_loopback_base(url),
+        **preset_fields,
+    )
 
 
 def to_data_uri(image_bytes: bytes, mime: str = "image/png") -> str:

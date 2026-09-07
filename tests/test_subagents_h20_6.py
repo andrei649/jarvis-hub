@@ -64,3 +64,25 @@ async def test_runner_failure_is_captured():
 async def test_null_runner_echoes():
     out = await NullRunner()("hello", "s1", "sub")
     assert "hello" in out["output"] and out["session_id"] == "s1"
+
+
+@pytest.mark.asyncio
+async def test_spawn_budget_exhausted():
+    """co-subagent-steer: the total-spawn budget (autonomy.max_subagent_spawns_per_boot
+    in prod) refuses the N+1th spawn with a named reason — and never runs it."""
+    from agents.core.iteration_budget import IterationBudget
+
+    ran = []
+
+    async def runner(task, session_id, agent):
+        ran.append(task)
+        return {"output": task}
+
+    m = SubAgentManager(runner=runner, budget=IterationBudget(1), cost_probe=lambda: {},
+                        persist=False)
+    assert (await m.spawn("first"))["ok"] is True
+    out = await m.spawn("second")
+    assert out["ok"] is False and out["reason"] == "spawn_budget_exhausted"
+    assert out["used"] == 1 and out["max_total"] == 1
+    assert ran == ["first"]                       # the refused spawn never ran
+    assert m.stats()["budget"]["remaining"] == 0

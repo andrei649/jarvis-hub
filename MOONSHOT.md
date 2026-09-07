@@ -217,6 +217,7 @@ has an audit trail and future contributors understand *why*, not just *what*.
 | **MOONSHOT.md** | North star — *why we exist, where we're going, how we stay on track* |
 | [NERVA_VISION.md](NERVA_VISION.md) | The product & capability vision — *the Nerva brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, target architecture, capability registry, graduated autonomy, the Hermes superiority bar* |
 | [BACKLOG.md](BACKLOG.md) | The plan — *what's next, prioritized* |
+| [docs/NERVA_2_ROADMAP.md](docs/NERVA_2_ROADMAP.md) | The sequence — *1.1.0 … 2.0.0 milestones with exit gates, the owner lane, the Hermes bar; the autonomous developer runs [docs/prompts/BACKLOG_DRIVER.md](docs/prompts/BACKLOG_DRIVER.md)* |
 | [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) | The launch — *features, marketing, road to 1.0* |
 | [docs/VALUATION_AND_PRICING.md](docs/VALUATION_AND_PRICING.md) | The business — *value, pricing, unit economics* |
 | [NERVA.md](NERVA.md) | The architecture overview |

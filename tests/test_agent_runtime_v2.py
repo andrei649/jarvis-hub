@@ -1884,6 +1884,11 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
                 "properties": {
                     "target": {"type": "string", "maxLength": 64},
                     "command": {"type": "string", "maxLength": 4000},
+                    # 1.1.0: the local-host backend needs a working directory and a
+                    # bounded timeout. The durable approval id is NOT here on purpose —
+                    # it arrives out of band so a model cannot forge one.
+                    "cwd": {"type": "string", "maxLength": 1024},
+                    "timeout": {"type": "integer", "minimum": 1, "maximum": 600},
                 },
                 "required": ["target", "command"],
                 "additionalProperties": False,
@@ -2056,7 +2061,7 @@ async def test_desktop_tool_actuates_only_from_durable_human_approved_worker_tic
     from agents.core.autonomy.policy import AutonomyPolicy
     from agents.core.autonomy.queue import TaskQueue
     from agents.core.autonomy.worker import AutonomyWorker
-    from agents.core.desktop_host import WindowsDesktopDriver
+    from agents.core.desktop_drivers import DriverChoice
     from agents.core.kernel import Decision, Verdict
 
     class _Driver:
@@ -2095,10 +2100,13 @@ async def test_desktop_tool_actuates_only_from_durable_human_approved_worker_tic
     monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
     driver = _Driver()
     kernel = _Kernel()
+    # Inject at the seam that picks a driver per platform. This test is about the
+    # durable-approval rail, not about which OS is underneath.
+    from agents.core.routers import multimodal as _multimodal
+
     monkeypatch.setattr(
-        WindowsDesktopDriver,
-        "from_env",
-        classmethod(lambda cls: driver),
+        _multimodal, "driver_for_host",
+        lambda *a, **k: DriverChoice(True, "test", driver=driver),
     )
     monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda _orch: kernel)
 

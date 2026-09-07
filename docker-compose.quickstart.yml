@@ -1,0 +1,54 @@
+# docker-compose.quickstart.yml — Nerva in one container, loopback only.
+#
+#   docker compose -f docker-compose.quickstart.yml up --build
+#   → http://127.0.0.1:8080/v2   (the Command Center)
+#
+# This is the *quickstart* shape, not the full stack (`docker-compose.yml` adds
+# qdrant/neo4j/n8n and the headless coordinator). It keeps the same posture as the
+# native install (scripts/bootstrap.py):
+#
+#   * host networking + JARVIS_HOST=127.0.0.1: the app binds the host's loopback
+#     exactly like `./start.sh` does, so `boot_guards.assert_safe_bind` is satisfied
+#     without a token and without JARVIS_ALLOW_INSECURE_BIND, nothing is published
+#     on a LAN interface, and a model runtime on the host (Ollama :11434 / LM Studio
+#     :1234) is reachable at 127.0.0.1 — no `host.docker.internal` rewiring.
+#     Linux: works out of the box. Docker Desktop (macOS/Windows) 4.34+: enable
+#     "Enable host networking" in Settings → Resources → Network first.
+#   * the data root is a named volume (JARVIS_HOME=/data), never the image.
+#   * cloud keys are never baked in; put them (opt-in) in a local `.env` next to
+#     this file — `env_file` is optional and the file is not required to exist.
+#
+# A phone or second device is a separate, token-gated decision documented in
+# docs/PHONE_ACCESS.md (set JARVIS_USER_TOKEN there; do not change the bind here).
+services:
+  nerva:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.12-slim
+        WORKDIR /app
+        COPY requirements-beta.lock .
+        RUN pip install --no-cache-dir --require-hashes -r requirements-beta.lock
+        COPY . .
+        CMD ["python", "serve.py"]
+    network_mode: host
+    environment:
+      JARVIS_HOST: "127.0.0.1"
+      JARVIS_PORT: "8080"
+      JARVIS_HOME: /data
+      JARVIS_HUD: v2
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - nerva_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  nerva_data:

@@ -319,8 +319,14 @@ def test_status_sync_check_against_real_repo_is_clean():
     ):
         assert "E12" in by_id[contract_id]["unblocks"], contract_id
     for contract in contracts:
-        assert contract["status"] in {"proposed", "evolves_existing"}
+        # The checker owns the vocabulary; the one state this gate refuses outright is
+        # `accepted` — acceptance is the owner's, and the program may never self-assign it.
+        assert contract["status"] in {"proposed", "candidate", "evolves_existing"}, contract["id"]
         assert contract["unblocks"]
+        # A `candidate` claim must say what it is claiming and, like every other row,
+        # point only at files that exist: a status is earned by shipped code.
+        if contract["status"] == "candidate":
+            assert contract.get("candidate_note", "").strip(), contract["id"]
         for relative in contract["evidence_paths"]:
             assert (REPO / relative).is_file(), f"{contract['id']}: {relative}"
 

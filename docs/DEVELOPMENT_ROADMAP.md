@@ -177,7 +177,7 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
-11 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
+10 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
 `UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`; it held 79 before this wave, and
 `tests/test_doc_reference_integrity.py` keeps this number honest). Of the 61 at the start of the
 reachability sprint, 49 left because a panel now genuinely calls them and 1 was never uncalled at

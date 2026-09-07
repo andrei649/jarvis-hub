@@ -2187,6 +2187,138 @@ export async function fetchEstop(config: ServerConfig): Promise<EstopResponse> {
   };
 }
 
+// ── Ambient capture inbox (T-0.26) ────────────────────────────────
+
+/** The three surfaces the hub can capture from; anything else is not a surface. */
+export const CAPTURE_SURFACES = ['clipboard', 'browser', 'files'] as const;
+export type CaptureSurface = (typeof CAPTURE_SURFACES)[number];
+
+export type CaptureStatus = {
+  /** The master switch (JARVIS_PASSIVE_CAPTURE) on the hub box. */
+  enabled: boolean;
+  /** Per-surface opt-in. A surface can be on while `enabled` is false — that
+   *  combination captures nothing, and the UI must not render it as recording. */
+  surfaces: Record<CaptureSurface, boolean>;
+  records: number;
+};
+
+export type CaptureRecord = {
+  id: string;
+  surface: string;
+  source: string;
+  /** Already redacted on the hub, at ingest — raw content is never stored. */
+  preview: string;
+  redacted: boolean;
+  triples: number;
+  created_at: number | null;
+};
+
+export type CaptureExport = {
+  version: number;
+  exported_at: number | null;
+  surface: string | null;
+  count: number;
+  surfaces: Record<CaptureSurface, boolean>;
+  records: CaptureRecord[];
+};
+
+function captureSurfaceMap(value: unknown): Record<CaptureSurface, boolean> {
+  const raw = securityRecord(value);
+  const out = {} as Record<CaptureSurface, boolean>;
+  // Built from OUR constant, never from the response's keys: a hub that grew a
+  // fourth surface should not be able to make this client render a control for
+  // something it does not understand.
+  for (const surface of CAPTURE_SURFACES) out[surface] = securityBool(raw[surface]);
+  return out;
+}
+
+function normalizeCaptureRecord(value: unknown): CaptureRecord | null {
+  const raw = securityRecord(value);
+  const id = securityString(raw.id).slice(0, 64);
+  if (!id) return null;          // a record with no id cannot be forgotten → drop it
+  return {
+    id,
+    surface: securityString(raw.surface).slice(0, 32),
+    source: securityString(raw.source).slice(0, 200),
+    preview: securityString(raw.preview).slice(0, 500),
+    redacted: securityBool(raw.redacted),
+    triples: ambientCount(raw.triples, 10_000),
+    created_at: cameraTimestamp(raw.created_at),
+  };
+}
+
+function normalizeCaptureRecords(value: unknown): CaptureRecord[] {
+  return Array.isArray(value)
+    ? value.map(normalizeCaptureRecord).filter((r): r is CaptureRecord => r !== null).slice(0, 500)
+    : [];
+}
+
+export async function fetchCaptureStatus(config: ServerConfig): Promise<CaptureStatus> {
+  const raw = securityRecord(
+    await request<Record<string, unknown>>(config, 'GET', '/api/capture/status', undefined, { retries: 2 }),
+  );
+  return {
+    enabled: securityBool(raw.enabled),
+    surfaces: captureSurfaceMap(raw.surfaces),
+    records: ambientCount(raw.records, 100_000),
+  };
+}
+
+export async function fetchCaptureRecords(
+  config: ServerConfig,
+  surface?: CaptureSurface,
+): Promise<CaptureRecord[]> {
+  const query = surface ? `?surface=${encodeURIComponent(surface)}` : '';
+  const raw = securityRecord(
+    await request<Record<string, unknown>>(config, 'GET', `/api/capture${query}`, undefined, { retries: 2 }),
+  );
+  return normalizeCaptureRecords(raw.records);
+}
+
+/** Delete one captured record. Not retried: a DELETE that timed out may well have
+ *  landed, and re-sending it would report "not found" for work that succeeded. */
+export async function forgetCaptureRecord(
+  config: ServerConfig,
+  recId: string,
+): Promise<{ forgotten: boolean }> {
+  const raw = securityRecord(
+    await request<Record<string, unknown>>(config, 'DELETE', `/api/capture/${encodeURIComponent(recId)}`),
+  );
+  return { forgotten: securityBool(raw.forgotten) };
+}
+
+/** Clear the inbox, optionally one surface only. Same no-retry reasoning. */
+export async function clearCapture(
+  config: ServerConfig,
+  surface?: CaptureSurface,
+): Promise<{ removed: number }> {
+  const query = surface ? `?surface=${encodeURIComponent(surface)}` : '';
+  const raw = securityRecord(
+    await request<Record<string, unknown>>(config, 'POST', `/api/capture/clear${query}`),
+  );
+  return { removed: ambientCount(raw.removed, 100_000) };
+}
+
+/** The portable snapshot (T-0.26). Read-only; the same already-redacted records the
+ *  inbox shows, wrapped in an envelope that still means something off the machine. */
+export async function fetchCaptureExport(
+  config: ServerConfig,
+  surface?: CaptureSurface,
+): Promise<CaptureExport> {
+  const query = surface ? `?surface=${encodeURIComponent(surface)}` : '';
+  const raw = securityRecord(
+    await request<Record<string, unknown>>(config, 'GET', `/api/capture/export${query}`, undefined, { retries: 2 }),
+  );
+  return {
+    version: ambientCount(raw.version, 1_000),
+    exported_at: cameraTimestamp(raw.exported_at),
+    surface: typeof raw.surface === 'string' ? raw.surface.slice(0, 32) : null,
+    count: ambientCount(raw.count, 100_000),
+    surfaces: captureSurfaceMap(raw.surfaces),
+    records: normalizeCaptureRecords(raw.records),
+  };
+}
+
 // ── Agents ────────────────────────────────────────────────────────
 
 export type AgentInfo = {

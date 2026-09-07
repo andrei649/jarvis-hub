@@ -83,6 +83,13 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # action facade immediately before actuation. Null/manual offline drivers
     # keep their legacy direct path; a requires_kernel driver cannot use it.
     "desktop.step": Mediation.KERNEL,
+    # A mutating browser step is a governed step on the owner's machine, and it
+    # was the one that never crossed here: the allowlist stops it going somewhere
+    # it should not, and the approval queue stops it happening unasked, but only
+    # the kernel applies the kill switch, taint escalation and the policy floor.
+    # A plan assembled from a page the agent just read is precisely the case that
+    # has to be forced back to ASK, and the browser's own queue cannot know that.
+    "browser.step": Mediation.KERNEL,
     # ORIZONT 30 — every Home Assistant mutation crosses the unified facade.
     # Security control retains an owner-confirmation floor; recovery is separate
     # so a halt or policy change can refuse compensation honestly.
@@ -97,6 +104,29 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # PromotionProposal exists (make_skill_install_kernel_gate); even a kernel
     # GRANT cannot bypass the permanent owner-approval floor (GAP-3).
     "skill.install": Mediation.KERNEL,
+    # 1.1.0 operator wave — widening what Nerva may touch is itself a privileged
+    # act: the consent ledger crosses the kernel at request time and the grant is
+    # written only from the approved task's execution (never by the requester).
+    "permission.grant": Mediation.KERNEL,
+    # Governed host shell. The hardline denylist and TERMINAL_EXEC_CONTRACT run
+    # first; a durable accepted task is required before any process exists, and
+    # the irreversible tier keeps this at the approval QUEUE floor.
+    "terminal.exec": Mediation.KERNEL,
+    # A governed file write/delete crosses the kernel before the bytes move; the
+    # previous bytes are snapshotted so the rollback contract is real.
+    "file.write": Mediation.KERNEL,
+    # Pulling a local model is reversible (ollama rm) but spends disk and
+    # bandwidth on the owner's box, so it crosses the facade like any actuation.
+    "model.pull": Mediation.KERNEL,
+    # Writing the redacted day report to disk leaves the process, so the export
+    # crosses the kernel before the file is created; a QUEUE refuses it outright.
+    "report.export": Mediation.KERNEL,
+    # E5.0 company mode — approving a goal authorises a night of work, which is
+    # capability growth in the same sense as widening a permission. Each step the
+    # run later takes crosses the kernel again on its own; this hop is about the
+    # decision to spend the night at all, and a DENY refuses it before the
+    # decision inbox ever sees the card.
+    "goal.approve": Mediation.KERNEL,
 }
 
 

@@ -15,6 +15,13 @@ mirror of the H16.2 A2A peer allowlist:
   says reaches the orchestrator until approved.
 * **Optional pairing code.** The owner can set a rotating code; a sender that
   presents it is auto-approved (self-service) without an owner tap.
+* **Deeplink pairing (the 60-second path).** The owner mints a single-use,
+  short-lived token and opens ``https://t.me/<bot>?start=<token>`` on their phone;
+  Telegram delivers ``/start <token>`` and the first sender to redeem it is
+  approved. This is the activation lever — copying a code between two devices is
+  where people give up — and it is safe because the token is **one-use**, expires
+  in minutes, is compared in constant time, and is never logged. A link that could
+  pair twice would pair whoever saw the screen after the owner did.
 * **Anti-abuse.** Pairing attempts are rate-limited per ``(channel, sender)`` and
   the pending list is bounded, so an unknown sender can't flood the inbox.
 
@@ -43,6 +50,15 @@ _MAX_PENDING = 200          # bound the pending inbox (anti-flood)
 _ATTEMPT_WINDOW = 600.0     # rate-limit window for pairing attempts (10 min)
 _MAX_ATTEMPTS = 5           # attempts allowed per (channel, sender) per window
 
+# Deeplink tokens. Short by design: the link is meant to be tapped in the next
+# minute, on a phone the owner is holding. A longer window buys nothing and keeps
+# a working credential alive in a chat log or a screenshot.
+DEEPLINK_TTL_SECONDS = 300.0
+_MAX_DEEPLINKS = 20         # bound outstanding links; minting a new one is cheap
+# 32 bytes of urlsafe randomness. Telegram's `start` payload allows 64 chars, and
+# guessing this is not a threat model anyone needs to worry about.
+_DEEPLINK_BYTES = 24
+
 
 def pairing_enabled() -> bool:
     """Pairing is an inbound gate — off unless explicitly enabled.
@@ -65,13 +81,17 @@ class SenderPairing(JsonStore):
         super().__init__(path)
 
     def _serialize(self):
-        return {"senders": self._senders, "code": self._code, "attempts": self._attempts}
+        return {
+            "senders": self._senders, "code": self._code, "attempts": self._attempts,
+            "deeplinks": self._deeplinks,
+        }
 
     def _deserialize(self, raw) -> None:
         raw = raw if isinstance(raw, dict) else {}
         self._senders = raw.get("senders", {})
         self._code = raw.get("code") or None
         self._attempts = raw.get("attempts", {})
+        self._deeplinks = raw.get("deeplinks", {})
 
     # ── pairing code (optional self-service) ──────────────────────────────────
 
@@ -242,7 +262,104 @@ class SenderPairing(JsonStore):
         counts = {ALLOWED: 0, PENDING: 0, BLOCKED: 0}
         for r in self._senders.values():
             counts[r.get("status")] = counts.get(r.get("status"), 0) + 1
-        return {"enabled": pairing_enabled(), "has_code": self.has_code(), **counts}
+        return {"enabled": pairing_enabled(), "has_code": self.has_code(),
+                "deeplinks_outstanding": self.outstanding_deeplinks(), **counts}
+
+    # ── deeplink pairing (the 60-second path) ─────────────────────────────────
+
+    def mint_deeplink(
+        self, channel: str = "telegram", *, now: Optional[float] = None,
+        ttl: float = DEEPLINK_TTL_SECONDS,
+    ) -> dict:
+        """Mint one single-use pairing token. The caller builds the URL.
+
+        Returns ``{"token", "channel", "expires_at", "ttl"}``. The token is the
+        credential: it is returned exactly once, to an admin-guarded caller, and
+        the store keeps only what it needs to redeem it.
+        """
+        import secrets as _secrets
+
+        moment = time.time() if now is None else float(now)
+        token = _secrets.token_urlsafe(_DEEPLINK_BYTES)
+        with self._lock:
+            self._expire_deeplinks(moment)
+            if len(self._deeplinks) >= _MAX_DEEPLINKS:
+                # Drop the oldest rather than refusing: minting is the owner's
+                # deliberate act, and a full table is a stale table.
+                oldest = min(self._deeplinks, key=lambda k: self._deeplinks[k]["created_at"])
+                self._deeplinks.pop(oldest, None)
+            self._deeplinks[token] = {
+                "channel": str(channel or "telegram"),
+                "created_at": moment,
+                "expires_at": moment + max(1.0, float(ttl)),
+            }
+            self._save()
+        return {
+            "token": token,
+            "channel": channel,
+            "expires_at": moment + max(1.0, float(ttl)),
+            "ttl": max(1.0, float(ttl)),
+        }
+
+    def redeem_deeplink(
+        self, token: Optional[str], channel: str, sender_id: str, *,
+        name: str = "", now: Optional[float] = None,
+    ) -> dict:
+        """Spend a deeplink token and approve this sender. One use, ever.
+
+        The token is compared in constant time against each outstanding entry and
+        removed the moment it matches — before the sender is approved — so two
+        redemptions racing each other resolve to exactly one winner. A token for a
+        different channel is refused rather than honoured: a link minted for
+        Telegram must not pair a Discord account.
+        """
+        import hmac as _hmac
+
+        candidate = str(token or "").strip()
+        moment = time.time() if now is None else float(now)
+        if not candidate:
+            return {"ok": False, "reason": "no_token"}
+        with self._lock:
+            self._expire_deeplinks(moment)
+            matched = None
+            for stored in list(self._deeplinks):
+                if _hmac.compare_digest(stored, candidate):
+                    matched = stored
+                    break
+            if matched is None:
+                # Wrong, already spent, or expired all look the same from outside,
+                # on purpose: distinguishing them tells a guesser which it was.
+                return {"ok": False, "reason": "invalid_or_expired_token"}
+            entry = self._deeplinks.pop(matched)
+            self._save()
+        if entry.get("channel") and entry["channel"] != channel:
+            return {"ok": False, "reason": "wrong_channel"}
+        record = self.approve(channel, sender_id, name=name)
+        return {"ok": True, "status": ALLOWED, "channel": channel,
+                "sender_id": sender_id, "record": record}
+
+    def _expire_deeplinks(self, now: float) -> int:
+        """Drop expired tokens. Caller holds the lock."""
+        dead = [t for t, e in self._deeplinks.items() if float(e.get("expires_at", 0)) <= now]
+        for token in dead:
+            self._deeplinks.pop(token, None)
+        return len(dead)
+
+    def outstanding_deeplinks(self, *, now: Optional[float] = None) -> int:
+        """How many links are live. The tokens themselves are never returned."""
+        moment = time.time() if now is None else float(now)
+        return sum(
+            1 for e in self._deeplinks.values()
+            if float(e.get("expires_at", 0)) > moment
+        )
+
+    def revoke_deeplinks(self) -> int:
+        """Invalidate every outstanding link. Returns how many were dropped."""
+        with self._lock:
+            count = len(self._deeplinks)
+            self._deeplinks = {}
+            self._save()
+        return count
 
     # ── gateway helper ────────────────────────────────────────────────────────
 

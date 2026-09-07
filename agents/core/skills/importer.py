@@ -595,6 +595,23 @@ class SkillImporter:
 
         return imported
 
+    async def import_local_skill(
+        self, skill_dir: Path, source: str, *, dry_run: bool = False, overwrite: bool = False
+    ) -> dict:
+        """Copy one local ``SKILL.md`` (a Hermes/OpenClaw/Claude Code install) into
+        the skills tree, **quarantined** — see ``_import_local_skill`` below.
+
+        Returns ``{"slug", "status", "reason", ...}`` with ``status`` one of
+        ``imported`` / ``would_import`` (dry-run) / ``skipped`` (already present) /
+        ``rejected`` (unsafe name, unreadable, save refused). ``injection_flags``
+        lists ``quarantine.detect_injection`` hits for the owner's review card; a
+        hit does not block the import because the skill is quarantined either way.
+        A dry run touches nothing on disk.
+        """
+        return await _import_local_skill(
+            self, skill_dir, source, dry_run=dry_run, overwrite=overwrite
+        )
+
     def list_imported(self) -> list[dict]:
         imported = []
         if not self.skills_dir.exists():
@@ -613,3 +630,236 @@ class SkillImporter:
             if data.get("imported") or data.get("source") in ("hermes", "openclaw"):
                 imported.append(data)
         return imported
+
+
+# ── Local-install migration: `nerva import --from hermes|openclaw|claude-code` ──
+#
+# The importer above pulls *pinned* skills from GitHub. This section is the other
+# direction of the switching-cost problem: an owner who already runs Hermes Agent,
+# OpenClaw or Claude Code has a home directory full of skills, persona files,
+# memory notes and channel tokens. ``detect_sources`` finds those installs
+# (read-only, never follows symlinks) and ``SkillImporter.import_local_skill``
+# copies one SKILL.md into the skills tree **quarantined**: the loader's
+# ``PENDING_REVIEW`` marker means the skill is registered for review but never
+# exec'd in-process until the owner approves it (CDX-8). Persona / memory / token
+# handling lives in ``scripts/nerva_import.py`` — memory facts are tainted and
+# cross the ``kg.write`` kernel kind there; nothing here writes outside the
+# skills tree.
+
+MIGRATION_SOURCES: tuple[str, ...] = ("hermes", "openclaw", "claude-code")
+
+# Documented on-disk layouts (research: docs/research/2026-09-06-hermes-and-field-gap-matrix.md).
+# Globs are relative to the install root; a missing file simply yields nothing.
+_MIGRATION_LAYOUTS: dict[str, dict[str, tuple[str, ...]]] = {
+    "hermes": {
+        "root": (".hermes",),
+        "persona": ("SOUL.md", "memories/USER.md"),
+        "memory": ("memories/MEMORY.md",),
+        "tokens": (".env",),
+        "skills": ("skills",),
+    },
+    "openclaw": {
+        "root": (".openclaw",),
+        "persona": ("workspace/SOUL.md", "workspace/USER.md", "workspace/IDENTITY.md"),
+        "memory": ("workspace/MEMORY.md",),
+        "tokens": ("openclaw.json", ".env"),
+        "skills": ("skills", "workspace/skills"),
+    },
+    "claude-code": {
+        "root": (".claude",),
+        "persona": ("CLAUDE.md",),
+        "memory": ("projects/*/memory/MEMORY.md",),
+        "tokens": ("settings.json",),
+        "skills": ("skills",),
+    },
+}
+_MAX_SKILL_MD_BYTES = 256 * 1024
+_MAX_SKILL_SCAN_DEPTH = 3
+_MAX_SKILLS_PER_SOURCE = 500
+
+
+@dataclass(frozen=True)
+class DetectedSource:
+    """One detected foreign install: which files exist, grouped by what they become.
+
+    Paths are absolute and already vetted as regular files/directories (no symlinks,
+    no reparse points) — the CLI and the runner can trust them without re-checking.
+    """
+
+    source: str
+    root: Path
+    persona_files: tuple[Path, ...] = ()
+    memory_files: tuple[Path, ...] = ()
+    token_files: tuple[Path, ...] = ()
+    skill_dirs: tuple[Path, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.source not in MIGRATION_SOURCES:
+            raise ValueError(f"unknown migration source: {self.source!r}")
+        if not isinstance(self.root, Path):
+            raise TypeError("root must be a Path")
+        for group in (self.persona_files, self.memory_files, self.token_files, self.skill_dirs):
+            if not isinstance(group, tuple) or not all(isinstance(p, Path) for p in group):
+                raise TypeError("file groups must be tuples of Path")
+
+    @property
+    def empty(self) -> bool:
+        return not (self.persona_files or self.memory_files or self.token_files or self.skill_dirs)
+
+    def as_dict(self) -> dict:
+        return {
+            "source": self.source,
+            "root": str(self.root),
+            "persona_files": [str(p) for p in self.persona_files],
+            "memory_files": [str(p) for p in self.memory_files],
+            "token_files": [str(p) for p in self.token_files],
+            "skill_dirs": [str(p) for p in self.skill_dirs],
+        }
+
+
+def _is_plain_file(path: Path, max_bytes: int = _MAX_SKILL_MD_BYTES) -> bool:
+    try:
+        if path.is_symlink() or not path.is_file():
+            return False
+        return path.stat().st_size <= max_bytes
+    except OSError:
+        return False
+
+
+def _is_plain_dir(path: Path) -> bool:
+    try:
+        return path.is_dir() and not path.is_symlink()
+    except OSError:
+        return False
+
+
+def _glob_plain_files(root: Path, patterns: tuple[str, ...]) -> tuple[Path, ...]:
+    found: list[Path] = []
+    for pattern in patterns:
+        candidates = sorted(root.glob(pattern)) if "*" in pattern else [root / pattern]
+        for candidate in candidates:
+            if _is_plain_file(candidate) and candidate not in found:
+                found.append(candidate)
+    return tuple(found)
+
+
+def _scan_skill_dirs(skills_root: Path) -> tuple[Path, ...]:
+    """Directories holding a plain ``SKILL.md`` under *skills_root* (bounded walk)."""
+    if not _is_plain_dir(skills_root):
+        return ()
+    found: list[Path] = []
+    stack: list[tuple[Path, int]] = [(skills_root, 0)]
+    while stack and len(found) < _MAX_SKILLS_PER_SOURCE:
+        current, depth = stack.pop()
+        try:
+            children = sorted(current.iterdir(), reverse=True)
+        except OSError:
+            continue
+        for child in children:
+            if not _is_plain_dir(child) or child.name.startswith("."):
+                continue
+            if _is_plain_file(child / "SKILL.md"):
+                found.append(child)
+            elif depth + 1 < _MAX_SKILL_SCAN_DEPTH:
+                stack.append((child, depth + 1))
+    return tuple(sorted(found))
+
+
+def detect_sources(home: Optional[Path] = None, only: Optional[str] = None) -> list[DetectedSource]:
+    """Find Hermes / OpenClaw / Claude Code installs under *home* (default ``~``).
+
+    Read-only. Returns one :class:`DetectedSource` per install whose root directory
+    exists (possibly ``empty`` when nothing importable is inside). *only* narrows
+    to a single source name; an unknown name raises ``ValueError`` so a CLI typo
+    cannot silently detect nothing.
+    """
+    base = Path(home).expanduser() if home is not None else Path.home()
+    if only is not None and only not in MIGRATION_SOURCES:
+        raise ValueError(f"unknown migration source: {only!r}")
+    detected: list[DetectedSource] = []
+    for source in MIGRATION_SOURCES:
+        if only is not None and source != only:
+            continue
+        layout = _MIGRATION_LAYOUTS[source]
+        root = base / layout["root"][0]
+        if not _is_plain_dir(root):
+            continue
+        skill_dirs: list[Path] = []
+        for rel in layout["skills"]:
+            for skill_dir in _scan_skill_dirs(root / rel):
+                if skill_dir not in skill_dirs:
+                    skill_dirs.append(skill_dir)
+        detected.append(
+            DetectedSource(
+                source=source,
+                root=root,
+                persona_files=_glob_plain_files(root, layout["persona"]),
+                memory_files=_glob_plain_files(root, layout["memory"]),
+                token_files=_glob_plain_files(root, layout["tokens"]),
+                skill_dirs=tuple(skill_dirs),
+            )
+        )
+    return detected
+
+
+def _local_skill_result(slug: Optional[str], status: str, reason: str = "", **extra) -> dict:
+    result = {"slug": slug, "status": status, "reason": reason}
+    result.update(extra)
+    return result
+
+
+async def _import_local_skill(
+    importer: "SkillImporter", skill_dir: Path, source: str, *, dry_run: bool, overwrite: bool
+) -> dict:
+    if source not in MIGRATION_SOURCES:
+        return _local_skill_result(None, "rejected", "unknown_source")
+    skill_md = Path(skill_dir) / "SKILL.md"
+    if not _is_plain_file(skill_md):
+        return _local_skill_result(None, "rejected", "skill_md_missing_or_not_plain_file")
+    try:
+        raw = skill_md.read_bytes()
+        text = raw.decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return _local_skill_result(None, "rejected", "skill_md_unreadable")
+    frontmatter = SkillImporter._extract_frontmatter(text)
+    declared = frontmatter.get("name")
+    slug = _safe_slug(str(declared) if declared else Path(skill_dir).name)
+    if slug is None:
+        return _local_skill_result(None, "rejected", "unsafe_skill_name")
+
+    from ..security import quarantine
+
+    flags = quarantine.detect_injection(text)
+    digest = hashlib.sha256(raw).hexdigest()
+    target = importer.skills_dir / slug
+    if target.exists() and not overwrite:
+        return _local_skill_result(slug, "skipped", "exists", sha256=digest, injection_flags=flags)
+    if dry_run:
+        return _local_skill_result(
+            slug, "would_import", "", sha256=digest, injection_flags=flags, quarantined=True
+        )
+    saved = await importer._save_skill(
+        slug,
+        source,
+        skill_md_text=text,
+        skill_md_bytes=raw,
+        provenance={
+            "source_install": source,
+            "source_path": str(skill_md),
+            "content_sha256": digest,
+            "quarantined": True,
+        },
+    )
+    if not saved:
+        return _local_skill_result(slug, "rejected", "save_refused", sha256=digest)
+    # CDX-8 quarantine: registered for review, never exec'd until owner approval
+    # (``SkillLoader.approve_generated_skill``). A foreign install's skill is
+    # untrusted code by definition — flags or not.
+    (target / "PENDING_REVIEW").write_text(
+        f"source={source}\nimported_from={skill_md}\nsha256={digest}\n"
+        f"injection_flags={len(flags)}\n",
+        encoding="utf-8",
+    )
+    return _local_skill_result(
+        slug, "imported", "", sha256=digest, injection_flags=flags, quarantined=True
+    )

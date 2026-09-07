@@ -356,6 +356,198 @@ built on your Windows box:
     ✅ decided 2026-09-01: **accept** — no history rewrite, no BFG/filter-repo, no force-push;
     already-public, HEAD-equivalent facts are gated by `NERVA_PUBLIC_PROFILE`.
 
+## 🟣 Wave 2026-09-06 packets — the eight things that flip 🔨 → ✅
+
+> Seventeen slices landed on 2026-09-06 (`opus-integration`, PR #1039). Everything hermetic is
+> already green in CI; the rows still marked **🔨 delivered, proof pending** in
+> [`BACKLOG.md`](../BACKLOG.md) are pending on *you* — real hardware, real credentials, a real
+> network read. Each packet below says what only you can do, the exact commands, and which row it
+> unblocks. Nothing here is urgent; nothing here is safe to skip before claiming ✅.
+> Every flag named is default-off — see [`FLAGS.md`](FLAGS.md) for what each one costs.
+
+- [ ] **P1 — Local terminal on your box** *(unblocks `OP-TERM-1`, `OP-TERM-3`)*
+      Only you have a host worth running commands on; CI has a container that proves nothing about
+      process groups, PATH resolution under a scrubbed env, or the Windows Proactor loop.
+      ```bash
+      export JARVIS_TERMINAL_TARGETS=1 JARVIS_ACTION_KERNEL=1 JARVIS_TERMINAL_LOCAL_HOST=1
+      export JARVIS_TERMINAL_LOCAL_ROOTS="$HOME/work"      # optional; default is <data root>/workspace
+      # restart the hub, then from the HUD approve one terminal_run task for target `local-host`:
+      #   argv: git status
+      ```
+      **Confirm three things:** (a) the command ran and its output came back; (b) an audit entry
+      exists in `data_path('environments','target-audit.jsonl')`; (c) `rm -rf /` is refused
+      `hardline_denied` **with no audit entry and no spawn**. If you are on Windows, also run one
+      path-quoted command (e.g. `cmd /c dir "C:\Program Files"`) — `parse_argv` is posix-shlex with a
+      backslash tweak and unusual Windows quoting is the one thing the hermetic suite cannot settle.
+      *Blocked on:* the kernel registration + coordinator binding (integrator I1) landing first —
+      until then the backend refuses `kernel_unavailable` / `approval_check_unbound` even with the
+      flags on. That is honest, not a bug.
+
+- [ ] **P2 — Pinned browser transport against a real Chromium** *(unblocks the live half of `SEC-B4`)*
+      The resolver-rule semantics and `aria_snapshot(boxes=True)` are pinned from documentation, not
+      from a running browser.
+      ```bash
+      pip install playwright && python -m playwright install chromium
+      export JARVIS_PLAYWRIGHT_HOST=1
+      # run one governed navigate to an allowlisted public host
+      ```
+      **Confirm three things:** (a) the launch args contain
+      `--host-resolver-rules=MAP <host> <ip>, MAP * ~NOTFOUND`; (b) a redirect to an off-list host
+      lands in `driver.blocked_requests` with a named reason; (c) `observe_snapshot()` returns
+      elements with `rect` populated on Playwright ≥ 1.60 (`boxes=True`) or `rect=None` on older
+      runtimes — either is correct, we just need to know which. *No longer blocked:* the
+      `GovernedBrowser.run_step` navigate edit landed, so with `JARVIS_PLAYWRIGHT_HOST=1` an
+      allowlisted navigation now reaches the driver instead of refusing
+      `browser transport not configured`.
+
+- [ ] **P3 — Visual grounding with a real grounder** *(unblocks `OP-VISUAL`)*
+      Each preset's coordinate convention comes from published model notes. Only a real screenshot
+      round-trip proves it, and a wrong preset mis-clicks.
+      ```bash
+      export JARVIS_VLM_BACKEND=lmstudio JARVIS_VLM_MODEL=<served name>
+      export JARVIS_VLM_PRESET=<matching preset>
+      export JARVIS_DESKTOP_HOST=1 JARVIS_DESKTOP_ISOLATED=1     # isolated desktop box only
+      # POST a `locate` step for a control that is MISSING from the a11y tree
+      ```
+      Do it **twice** — once with a `relative_1000` preset (`qwen3-vl-8b`) and once with an
+      `absolute_resized` one (`ui-tars-1.5-7b`) — and report whether the returned `(x, y)` landed on
+      the control. If a server re-resizes internally (UI-TARS `smart_resize` to multiples of 28), the
+      offset shows up here and the fix is a per-model resize rule in the preset table.
+
+- [ ] **P4 — One real model pull on the RTX box** *(unblocks `MS-2`; the second half unblocks `MS-1`)*
+      ```bash
+      export JARVIS_MODEL_PULL=1 JARVIS_UNIFIED_ACTION_API=1 JARVIS_ACTION_KERNEL=1
+      # GET /api/onboarding/model-plan   → confirm the card and the 24gb+ rung
+      # POST /api/onboarding/model-pull  → approve, then: ollama list
+      ```
+      **Confirm:** (a) the plan reports the right rung; (b) the Ollama tag for that rung actually
+      resolves in the Ollama library — `gemma-4-31b-a4b` is the spec's name and was **not** verified
+      against a live registry; if it differs, that is a one-line `TIERS` edit; (c) the pull lands and
+      `ollama list` shows it. Installing the Ollama runtime itself stays your step — the code only
+      detects a loopback Ollama and otherwise reports `ollama_unreachable` with the URL.
+      *Optional, same lane —* on any Apple Silicon or ROCm machine:
+      ```bash
+      python -c "from agents.core import hardware; print(hardware.detect_gpu(force=True))"
+      ```
+      Confirm `kind=apple` / `kind=amd` with a plausible `vram_total_mb`, then `MS-1` flips to ✅.
+
+- [ ] **P5 — Arm the live rails, one at a time** *(unblocks `T-0.66`, `H10.30`, `H12.21`, `H12.22`, `H12.25`)*
+      Every one of these is a *real* external write, post or phone call — after your approval. Store
+      the credentials first; the brokers refuse `credential_not_configured` rather than sending an
+      unauthenticated request.
+      **In the SecretBroker:** `<target>_token` for linear / asana / trello / todoist / clickup /
+      gsheets / m365 (Trello additionally `trello_api_key`); `notion_api_key`, `github_token`,
+      `google_oauth_token` (H10.30); `x_api_token` (social); `twilio_auth_token` **or**
+      `telnyx_api_key` (calls).
+      **For calls, also:**
+      ```bash
+      export JARVIS_CALL_CONFIG='{"twilio": {"account_sid": "AC…", "from": "+1…"}}'   # or telnyx connection_id/from
+      export JARVIS_CALL_LIVE=1
+      ```
+      Otherwise the broker refuses `call_config_missing:<keys>` before spending an interrupt-budget
+      slot. **Decide per rail** whether to set `JARVIS_WRITEBACK_LIVE` / `JARVIS_SOCIAL_LIVE` /
+      `JARVIS_CALL_LIVE`; all three default off and every send still requires an approved ask-tier
+      task. *Note:* until the integrator registers `create_task` / `task.create` in the executor,
+      approved transcript tasks fall through to the LLM fallback instead of creating the item.
+
+- [ ] **P6 — MCP: connect Claude Desktop / Cursor, and (separately) let the hub call out**
+      *(unblocks the live half of `H10.5`; makes `DRA-25`'s transport reachable from the admin UI)*
+      **Client → Nerva** (no cloud hop, stdio only):
+      ```jsonc
+      // Claude Desktop config
+      {"mcpServers": {"nerva": {"command": "python",
+                                "args": ["<repo>/scripts/nerva_mcp_stdio.py"],
+                                "env": {"JARVIS_USER_TOKEN": "…"}}}}
+      ```
+      Prerequisite on the hub: `mcp.server_enabled=true`. The token goes in the client's `env`
+      block, **never** in argv. The bridge widens no hub gate. It has been tested against a fake hub
+      route, not a live process — your run is the proof, and the Windows console fallback in
+      `open_stdio_streams` is untested on Windows.
+      **Nerva → a remote MCP server** (this *is* an outbound cloud hop — opt in deliberately):
+      ```bash
+      export JARVIS_MCP_HTTP_CLIENT=1
+      # then configure {"transport": "streamable-http", "url": "https://…/mcp"}
+      ```
+      Waits on the integrator's `routers/mcp.py` admin-API edit; until then configure it through
+      `MCPManager.load_from_config`. Bearer headers are in memory only — re-supply them after a
+      restart.
+
+- [ ] **P7 — The hosted install one-liner needs a domain (and a public repo)**
+      *(unblocks `install-one-step-native`'s hosted path)*
+      `docs/INSTALL.md` and `README.md` currently document
+      `curl -fsSL https://raw.githubusercontent.com/andrei649/jarvis-hub/main/install.sh | bash`.
+      That URL only works once the GitHub repo is **public**. The nicer end state is a hosted
+      install domain — `install.nerva.<tld>` → the raw `install.sh` — which is DNS plus a redirect,
+      both yours. Until one of the two is true, the one-liner is documentation, not a path.
+      *Also unproven, and only you have the hardware:* `install.sh` / `INSTALL.bat` / `START.bat` /
+      `install.ps1` were syntax-checked and their Python was tested hermetically, but never executed
+      end-to-end on real Linux / macOS / Windows. Run each once on a clean box.
+      *And a small follow-up nobody owns yet:* `UPDATE.bat` still installs from the loose
+      `requirements-beta.txt` and runs the full pytest suite; replacing its steps 3–4 with
+      `!PY! scripts\\bootstrap.py --skip-smoke` reuses the venv and installs from the hash lock.
+
+- [ ] **P9 — The operator's keyboard, on each machine you own** *(unblocks the live half of
+      `OP-DESKTOP-KEYS` and `op-windows-backend`)*
+      `key`, `scroll` and `focus` are pinned against documentation and a fake adapter. The chord
+      allowlist and every refusal are settled by the hermetic suite; what it cannot settle is
+      whether a chord *arrives* — the keycode tables, `{VK_LWIN down}`, AT-SPI's
+      `generateKeyboardEvent` and CGEvent flags are all things a machine has to confirm.
+      ```bash
+      export JARVIS_DESKTOP_HOST=1 JARVIS_DESKTOP_ISOLATED=1 JARVIS_ACTION_KERNEL=1
+      export JARVIS_UNIFIED_ACTION_API=1
+      # restart the hub, open a scratch text editor, and approve these desktop_step tasks:
+      #   {"action": "focus",  "args": {"name": "<the text area's accessible name>"}}
+      #   {"action": "key",    "args": {"chord": "ctrl+a"}}       # cmd+a on macOS
+      #   {"action": "scroll", "args": {"name": "<a scrollable list>", "direction": "down"}}
+      ```
+      **Confirm four things:** (a) the chord actually took effect in the editor — not that the call
+      returned `ok`, which it will even if nothing arrived; (b) **no modifier is left held** —
+      immediately type a letter afterwards and check it is lowercase and unmodified, because a stuck
+      modifier is the failure mode that outlives the step and quietly corrupts everything the owner
+      types next; (c) `{"chord": "cmd+q"}` (or `alt+f4`) comes back `chord_refused_by_policy` and
+      your app is **still open**; (d) `{"direction": "down", "notches": 500}` comes back
+      `scroll_notches_out_of_range` and nothing scrolled. Do this on **each** OS you have — the
+      three keycode tables are independent, and a wrong entry sends a different key than the card
+      named, which is the one failure worse than sending none.
+      *Report back:* which OS, and for (a) exactly which chords arrived. If a chord silently does
+      nothing, that is a mapping bug worth a row, not something to work around.
+
+- [ ] **P10 — Publish the two package-manager channels** *(unblocks the live half of
+      `REL-CHANNELS`)*
+      The cask and the winget manifests are generated on every tagged release, from the
+      checksums that release actually produced, and attached to it (`dist/packaging/*`). What
+      only you can do is create the two places they get published to — both are free, and both
+      turn "clone the repo" into one command.
+      **Homebrew:** create a public repo named **`homebrew-nerva`** under your account. That name
+      is what makes `brew tap andrei649/nerva` work; any other name will not. Then, per release,
+      copy `nerva.rb` from the release assets into `Casks/nerva.rb` and push.
+      ```bash
+      brew tap andrei649/nerva && brew install --cask nerva
+      ```
+      **winget:** fork `microsoft/winget-pkgs`, copy the three
+      `Nerva.Nerva.*.yaml` files into
+      `manifests/n/Nerva/Nerva/<version>/`, and open a PR. First submission is reviewed by a
+      human and takes a few days; later ones are usually automatic.
+      **Confirm three things:** (a) `brew install --cask nerva` on a Mac you have not installed
+      on before ends at a working `./install.sh`; (b) the sha256 in the cask matches the release
+      asset — if it does not, **stop and report it**, because that means the generator and the
+      build disagree and every user would hit a corrupt-download error; (c) a **prerelease** tag
+      (`v1.1.1-rc1`) does **not** move the `stable` cask or the `:stable` image tag.
+      *Also needs:* GHCR publishing is on by default for the repo's own `GITHUB_TOKEN`, but the
+      package is **private** until you make it public once, in the repo's Packages settings.
+      Until then `docker pull ghcr.io/andrei649/nerva:stable` fails for everyone but you — which
+      is the single most likely reason a "it works for me" install report is wrong.
+
+- [ ] **P8 — The 72h soak, and the two chaos rows a simulation cannot close**
+      *(unblocks the remaining half of `T-0.63`)*
+      The failure-injection harness shipped and is green in CI; it **does not replace the soak**.
+      Dispatch `soak.yml` (`workflow_dispatch`, self-hosted `runner` label — see the soak item near
+      the top of this file, unchanged) and record the verdict.
+      *Optional, same box:* a manual pass of **CHA-013 / CHA-014** — a real volume fill and a real
+      data-root rename — upgrades those two manual-test rows beyond ⚠️. `disk_full` is simulated by
+      the harness and honest about it: it does not intercept `os.open`/`os.write`/`tempfile`, file
+      objects or sqlite connections opened before the fault.
+
 ## Parking lot (decisions, no rush)
 
 - [ ] **Is the web HUD a phone surface? — one decision, and it unblocks a nightly that has never

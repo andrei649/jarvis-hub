@@ -44,10 +44,15 @@ def _wire_driver(monkeypatch, driver, *, verdict=Verdict.GRANT, reason="allowed"
     orch = object()
     seen = []
 
+    # Inject at the seam that actually chooses a driver. These tests are about the
+    # route and the kernel binding, not about platform detection, and the runner is
+    # headless — so the factory would (correctly) refuse before any driver existed.
+    from agents.core.desktop_drivers import DriverChoice
+
     monkeypatch.setattr(
-        WindowsDesktopDriver,
-        "from_env",
-        classmethod(lambda cls: driver),
+        multimodal,
+        "driver_for_host",
+        lambda *a, **k: DriverChoice(True, "test", driver=driver),
     )
 
     def bind(live_orch):

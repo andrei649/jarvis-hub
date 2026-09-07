@@ -341,8 +341,27 @@ class TargetRegistry:
 
 
 def default_targets() -> tuple[TerminalTarget, ...]:
-    """Conservative named inventory; host/SSH transports remain disabled by default."""
+    """Conservative named inventory; host/SSH transports remain disabled by default.
+
+    ``local-host`` is the one row with an owner enable path: the same
+    ``JARVIS_TERMINAL_LOCAL_HOST`` flag that arms the transport also enables
+    the inventory row, so an unset flag leaves the inventory byte-identical.
+    """
+    from agents.core.env_config import env_flag
+
     return (
+        # The machine Nerva runs on. Disabled until the owner sets
+        # JARVIS_TERMINAL_LOCAL_HOST; even then every terminal.exec is
+        # approval-required and crosses the hardline screen, the terminal.exec
+        # contract and the Action Kernel before LocalHostTransport spawns.
+        TerminalTarget(
+            name="local-host",
+            backend="local",
+            enabled=env_flag("JARVIS_TERMINAL_LOCAL_HOST"),
+            allowed_agents=frozenset({"jarvis", "ultron"}),
+            capabilities=frozenset({"terminal.read", "terminal.exec", "file.read"}),
+            approval_required=frozenset({"terminal.exec"}),
+        ),
         TerminalTarget(
             name="bonobo-windows",
             backend="local",

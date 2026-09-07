@@ -21,7 +21,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # docstring); a marker going missing means an installer stopped creating that target and
 # the row in UNINSTALL_TARGETS is now dead weight (or the marker itself went stale).
 INSTALL_MARKERS = {
-    ".venv": ("install.sh", "python3 -m venv .venv"),
+    # install.sh / INSTALL.bat hand the venv step to scripts/bootstrap.py (ensure_venv),
+    # so the marker for .venv lives there.
+    ".venv": ("scripts/bootstrap.py", 'VENV_DIR = ".venv"'),
     "worldview/node_modules": ("install.sh", "cd worldview && npm install"),
     "worldview/.env": ("install.sh", "worldview/.env.example"),
     "worldview/backend-api/.env": ("install.sh", "worldview/backend-api/.env.example"),

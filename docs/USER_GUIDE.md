@@ -13,29 +13,44 @@
 
 ## 2. Install
 
-**Windows (no terminal needed):** double-click **`INSTALL.bat`** — it checks/installs
-Python + Git, fetches the code, builds the environment, installs everything, and runs the
-tests.
+One step per OS; every path ends with a passed install smoke and the **Command
+Center** open at `http://127.0.0.1:8080/v2`, bound to loopback only. Full detail,
+flags and troubleshooting-by-reason: [`INSTALL.md`](INSTALL.md).
 
-**Any OS (manual):**
+**Linux/macOS — one line:**
 ```bash
-python3 -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
-pip install -r requirements-beta.txt                  # one install — full feature set
-python -m pytest                                       # optional: confirm a green suite
+curl -fsSL https://raw.githubusercontent.com/andrei649/jarvis-hub/main/install.sh | bash
 ```
-*Linux/macOS shortcut:* `./install.sh` does the venv + install + tests in one step.
+(or `./install.sh` inside a checkout; `--no-start` installs without launching).
+
+**Windows (no terminal needed):** double-click **`INSTALL.bat`** — it checks Python
+3.12+, runs `scripts\bootstrap.py` (venv + hash-pinned deps + install smoke) and
+offers to start Nerva right away.
+
+**Docker:** `docker compose -f docker-compose.quickstart.yml up --build`.
+
+**Manual (any OS):**
+```bash
+python3 scripts/bootstrap.py        # refuses Python < 3.12 with a named reason
+python3 scripts/doctor.py           # check-up: one named reason per row, changes nothing
+```
+WorldView (4D OSINT) is an opt-in companion: `JARVIS_WORLDVIEW=1 ./install.sh`.
 
 ## 3. Start
 
-- **Windows:** double-click **`START.bat`**.
-- **Any OS:** `python serve.py` → **http://127.0.0.1:8080** (or `./start.sh`, which also
-  launches WorldView + the Signal Layer when present).
+- **Windows:** double-click **`START.bat`** (`START.bat doctor` runs the check-up).
+- **Any OS:** `./start.sh` (or `python serve.py`) → the Command Center opens at
+  **http://127.0.0.1:8080/v2** once `/readyz` answers (`--no-browser` to skip;
+  `--doctor` runs the check-up). WorldView / the Signal Layer start only with
+  `JARVIS_WORLDVIEW=1` / `JARVIS_SIGNAL_LAYER=1`.
 
 Key surfaces:
-- **HUD (cockpit):** http://127.0.0.1:8080/ — the V2 HUD (legacy at `/v1`).
+- **Command Center (V2 HUD):** http://127.0.0.1:8080/v2 (also at `/`; legacy at `/v1`).
 - **Admin panel:** http://127.0.0.1:8080/admin
 - **CLI REPL:** `python agents/run.py`
 - **Health:** `GET /healthz` (live), `GET /readyz` (ready).
+- **From a phone / second device:** not reachable by default, by design — the
+  token-gated LAN path is [`PHONE_ACCESS.md`](PHONE_ACCESS.md).
 
 ## 4. The cabinet
 
@@ -80,5 +95,6 @@ for what (optionally) leaves the machine, and [SECURITY.md](../SECURITY.md) /
 
 ## 9. Upgrading
 
-See [UPGRADE.md](UPGRADE.md) (Windows `UPDATE.bat`, or `git pull` + reinstall + restart;
-schema migrations apply automatically).
+See [UPGRADE.md](UPGRADE.md) (Windows `UPDATE.bat`, or `git pull` + `./install.sh
+--no-start` + restart; the venv is reused and schema migrations apply automatically).
+Uninstall: `./uninstall.sh --confirm` / `UNINSTALL.bat` — your data root is never touched.

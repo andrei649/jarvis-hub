@@ -317,6 +317,8 @@ async def _probe_operator_browser_playwright_governed() -> dict:
     runtime = _OperatorPlaywright(ledger=ledger, url_actions=url_actions)
     manager = _OperatorPlaywrightManager(runtime)
     policy = _MeasuredPolicy(["93.184.216.34"])
+    from agents.core.browser_agent import TRANSPORT_NOT_CONFIGURED as _TRANSPORT_NOT_CONFIGURED
+
     driver = PlaywrightBrowserDriver(
         host_enabled=True,
         playwright_factory=lambda: manager,
@@ -333,12 +335,12 @@ async def _probe_operator_browser_playwright_governed() -> dict:
     goto_calls = [call for call in runtime.page.calls if call[0] == "goto"]
     passed = (
         blocked.get("status") == "blocked"
-        and blocked.get("reason") == "browser transport unavailable"
+        and blocked.get("reason") == _TRANSPORT_NOT_CONFIGURED
         and manager.started == 0
         and goto_calls == []
     )
     result = ledger.result(passed, driver_call_count=0)
-    result["metadata"]["browser_transport"] = "unavailable"
+    result["metadata"]["browser_transport"] = "not_configured"
     result["metadata"]["browser_driver_calls"] = 0
     return result
 
@@ -407,6 +409,7 @@ async def _probe_operator_durable_desktop_actuation() -> dict:
     from agents.core.autonomy.queue import TaskQueue
     from agents.core.autonomy.worker import AutonomyWorker
     from agents.core.autonomy_coordinator import AutonomyCoordinator
+    from agents.core.desktop_drivers import DriverChoice as _DriverChoice
     from agents.core.desktop_host import WindowsDesktopDriver
     from agents.core.desktop_operator import DesktopActionExecutor
 
@@ -509,10 +512,12 @@ async def _probe_operator_durable_desktop_actuation() -> dict:
             }
             with (
                 patch.dict(os.environ, env),
-                patch.object(
-                    WindowsDesktopDriver,
-                    "from_env",
-                    classmethod(lambda cls, **_kwargs: driver),
+                # Inject at the factory seam, not at WindowsDesktopDriver: the
+                # runtime now picks a driver per platform, and this case is about
+                # the durable governance rail rather than platform detection.
+                patch(
+                    "agents.core.routers.multimodal.driver_for_host",
+                    lambda *a, **k: _DriverChoice(True, "test", driver=driver),
                 ),
                 patch.object(DesktopActionExecutor, "perform", _measured_perform),
                 patch("agents.core.desktop_host.subprocess.Popen", side_effect=_launch),

@@ -89,7 +89,11 @@ describe('SubAgentsPanel — the H20.6 spawn register is reachable', () => {
     fireEvent.click(screen.getByTitle(/spawn/));
 
     // apiPost rejects on the 429 — this line only renders because spawn() passes an onErr.
-    await waitFor(() => expect(screen.getByText(/refused · POST \/api\/subagents\/spawn -> 429/)).toBeTruthy());
+    // DRA-52 residual: it used to print `err.message`, i.e. the request line
+    // "POST /api/subagents/spawn -> 429", as the *reason* the spawn was refused. The
+    // backend said `concurrency_cap`; that is what an operator needs and now what they get.
+    await waitFor(() => expect(screen.getByText(/refused · concurrency_cap/)).toBeTruthy());
+    expect(screen.queryByText(/-> 429/)).toBeNull();
     // and the button comes back, rather than staying stuck "running"
     expect(screen.getByTitle(/spawn/).disabled).toBe(false);
   });
@@ -98,5 +102,84 @@ describe('SubAgentsPanel — the H20.6 spawn register is reachable', () => {
     mockApi(() => ok({}));
     render(<SubAgentsPanel />);
     await waitFor(() => expect(screen.getByText(/stays open until the sub-agent's turn finishes/)).toBeTruthy());
+  });
+
+  /* 1.1.0 — steer and stop. The backend answers 409 `not_running` for a finished spawn,
+     so the controls must not be offered on one; and `delivered:false` is an honest
+     partial (the record kept the message, the running turn never saw it) that must not
+     read as a plain success. */
+  it('offers steer and stop only on a running spawn', async () => {
+    mockApi(() => ok({}));
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('sub-jarvis-1')).toBeTruthy());
+    // sub-jarvis-2 is the only running row in LIST, so exactly one pair of controls
+    expect(screen.getAllByTitle(/send guidance/).length).toBe(1);
+    expect(screen.getAllByTitle(/cancel this running sub-agent/).length).toBe(1);
+  });
+
+  it('POSTs the steer message to the running spawn and reports delivery', async () => {
+    const fn = mockApi((url) => (String(url).includes('/steer')
+      ? ok({ ok: true, id: 'sub-jarvis-2', delivered: true, origin: 'user', pending: 1 })
+      : ok({})));
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('sub-jarvis-2')).toBeTruthy());
+
+    fireEvent.click(screen.getByTitle(/send guidance/));
+    fireEvent.change(screen.getByPlaceholderText(/guidance for sub-jarvis-2/), {
+      target: { value: 'prefer the changelog over the diff' },
+    });
+    fireEvent.click(screen.getByText('send'));
+
+    await waitFor(() => {
+      const call = fn.mock.calls.find((c) => String(c[0]) === '/api/subagents/sub-jarvis-2/steer');
+      expect(call).toBeTruthy();
+      expect(JSON.parse(call[1].body)).toEqual({ message: 'prefer the changelog over the diff' });
+    });
+    await waitFor(() => expect(screen.getByText(/steered sub-jarvis-2 · delivered/)).toBeTruthy());
+  });
+
+  it('renders an undelivered steer as recorded, not as delivered', async () => {
+    mockApi((url) => (String(url).includes('/steer')
+      ? ok({ ok: true, id: 'sub-jarvis-2', delivered: false, origin: 'user', pending: 0 })
+      : ok({})));
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('sub-jarvis-2')).toBeTruthy());
+
+    fireEvent.click(screen.getByTitle(/send guidance/));
+    fireEvent.change(screen.getByPlaceholderText(/guidance for sub-jarvis-2/), {
+      target: { value: 'slow down' },
+    });
+    fireEvent.click(screen.getByText('send'));
+
+    await waitFor(() => expect(
+      screen.getByText(/recorded, not delivered to the running turn/)).toBeTruthy());
+  });
+
+  it('POSTs the stop and reports the status the backend read back', async () => {
+    const fn = mockApi((url) => (String(url).includes('/stop')
+      ? ok({ ok: true, id: 'sub-jarvis-2', status: 'stopped' })
+      : ok({})));
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('sub-jarvis-2')).toBeTruthy());
+
+    fireEvent.click(screen.getByTitle(/cancel this running sub-agent/));
+
+    await waitFor(() => {
+      const call = fn.mock.calls.find((c) => String(c[0]) === '/api/subagents/sub-jarvis-2/stop');
+      expect(call).toBeTruthy();
+    });
+    await waitFor(() => expect(screen.getByText(/sub-jarvis-2 is stopped/)).toBeTruthy());
+  });
+
+  it('surfaces a 409 not_running refusal on stop instead of reading as success', async () => {
+    mockApi((url) => (String(url).includes('/stop')
+      ? Promise.resolve({ ok: false, status: 409, json: async () => ({ ok: false, reason: 'not_running' }) })
+      : ok({})));
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('sub-jarvis-2')).toBeTruthy());
+
+    fireEvent.click(screen.getByTitle(/cancel this running sub-agent/));
+    // apiPost rejects on the 409 — this only renders because stopSpawn passes an onErr.
+    await waitFor(() => expect(screen.getByText(/refused ·/)).toBeTruthy());
   });
 });

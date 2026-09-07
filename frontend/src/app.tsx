@@ -381,6 +381,15 @@ function App() {
         setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
         setServerUp(!!d.serverUp); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
         setSources(d.sources || { tasks: false, trust: false });
+        /* Live approvals REPLACE the list only when the feed actually answered.
+           `/autonomy/approvals` is admin-guarded, so on the common token-configured
+           install it refuses — and an unconditional set would then wipe the demo cards
+           and render an empty queue as "queue clear ✓", an all-clear derived from a 401.
+           The conditional is the fail-closed half of the same rule the loader applies:
+           absence of evidence never becomes evidence of absence. */
+        if (d.sources && d.sources.decisions === true) {
+          setDecisions((d.decisions || []).map((it, i) => ({ ...it, _id: 'live' + (it.id != null ? it.id : i) })));
+        }
         if (d.trust) setTrust(d.trust);
       },
       commitLocality: (nextLocality) => setLocality(nextLocality),

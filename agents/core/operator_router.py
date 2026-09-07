@@ -302,7 +302,7 @@ def _terminal_available() -> bool:
     return env_flag("JARVIS_TERMINAL_TARGETS")
 
 
-def _desktop_available() -> bool:
+def _desktop_flags_enabled() -> bool:
     # Mirrors routers.multimodal.desktop_host_enabled(). Duplicated rather than
     # imported to keep core/ from importing routers/; a test pins the two equal
     # so the copy cannot drift.
@@ -311,18 +311,73 @@ def _desktop_available() -> bool:
     return env_flag("JARVIS_DESKTOP_HOST") and env_flag("JARVIS_DESKTOP_ISOLATED")
 
 
+def _desktop_available() -> bool:
+    """The flag pair, then the OS-dispatching driver factory when it is installed.
+
+    ``desktop_drivers.factory.driver_available`` knows whether *this* host can
+    actually run a driver (platform, permissions, optional deps). Until that
+    package lands the flag pair is the whole gate, exactly as before; once it
+    exists its verdict is honoured, so the router never advertises a desktop
+    route the factory would refuse.
+    """
+    if not _desktop_flags_enabled():
+        return False
+    try:
+        from agents.core.desktop_drivers.factory import driver_available
+    except ImportError:
+        return True
+    try:
+        return bool(driver_available())
+    except Exception:
+        return False
+
+
+def _vlm_proven_local() -> bool:
+    """True only for a resolved, loopback-served VLM (the visual route's gate)."""
+    from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
+
+    try:
+        return resolve_vlm_config().is_local is True
+    except VLMNotConfigured:
+        return False
+    except Exception:
+        return False
+
+
+def _desktop_visual_available() -> bool:
+    """Visual grounding needs the desktop host AND a proven-local VLM.
+
+    Screen bytes must never leave the host, so a configured-but-remote VLM
+    makes the visual route unavailable rather than merely slower — the same
+    gate ``screen_locator.LocalVLMLocator`` enforces before sending anything.
+    """
+    return _desktop_available() and _vlm_proven_local()
+
+
+def _browser_available() -> bool:
+    from agents.core.env_config import env_flag
+
+    return env_flag("JARVIS_PLAYWRIGHT_HOST")
+
+
 def default_implementations(orch=None) -> list[OperatorImplementation]:
     """The governed operator surfaces this repository actually ships.
 
     ``availability`` is bound to each surface's REAL runtime gate, so a default
-    install (every flag off) honestly reports the terminal and desktop routes as
-    unavailable instead of advertising an operator it cannot run.
+    install (every flag off) honestly reports the terminal, desktop, browser and
+    visual routes as unavailable instead of advertising an operator it cannot run.
 
-    ``OperatorRoute.VISUAL`` is deliberately absent: no governed visual surface is
-    registered in the capability registry — the browser driver is still
-    `NullBrowserDriver` (docs/research/2026-07-18-live-vs-plumbing-capability-audit.md:55).
-    Registering a visual entry against an invented id would be fiction; leaving it
-    out keeps `allow_visual_fallback` meaningful for when a real driver lands.
+    ``OperatorRoute.VISUAL`` (``desktop_visual``) is the screen-grounding fallback
+    bound by ``screen_locator.LocalVLMLocator`` behind the desktop driver: it is
+    considered only when the caller passes ``allow_visual_fallback=True`` AND the
+    desktop host is enabled AND the VLM resolves to a loopback base. Its
+    capability is the existing ``action:desktop.step`` — a VLM-derived click is a
+    mutating desktop step carrying the screenshot hash, not a new kernel kind.
+
+    ``browser_run`` names the governed browser tool (``tool:browser_run``); the id
+    is published by the ToolRPC registration in ``autonomy_coordinator``, so until
+    that registration exists the router reports it ``capability_missing`` rather
+    than pretending a browser is reachable.
     """
     return [
         OperatorImplementation(
@@ -342,12 +397,28 @@ def default_implementations(orch=None) -> list[OperatorImplementation]:
             priority=10,
         ),
         OperatorImplementation(
+            id="browser_run",
+            route=OperatorRoute.STRUCTURED_UI,
+            capability_id="tool:browser_run",
+            matcher=lambda _goal, params: _params_allow(OperatorRoute.STRUCTURED_UI, params),
+            availability=_browser_available,
+            priority=5,
+        ),
+        OperatorImplementation(
             id="desktop_run",
             route=OperatorRoute.STRUCTURED_UI,
             capability_id="tool:desktop_run",
             matcher=lambda _goal, params: _params_allow(OperatorRoute.STRUCTURED_UI, params),
             availability=_desktop_available,
             priority=10,
+        ),
+        OperatorImplementation(
+            id="desktop_visual",
+            route=OperatorRoute.VISUAL,
+            capability_id="action:desktop.step",
+            matcher=lambda _goal, params: _params_allow(OperatorRoute.VISUAL, params),
+            availability=_desktop_visual_available,
+            priority=9,
         ),
     ]
 

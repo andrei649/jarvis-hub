@@ -26,8 +26,15 @@ import { SupportVoicePanel } from './panels/support-voice';
 import { AgentsArenaPanel } from './panels/agents-arena';
 import { MissionCanvasPanel } from './panels/mission-canvas';
 import { SkillsImportPanel } from './panels/skills-import';
+import { TodayReceiptPanel } from './panels/today-receipt';
+import { ModelSetupPanel } from './panels/model-setup';
+import { HostReadinessPanel } from './panels/host-readiness';
+import { CompanyRoomPanel } from './panels/company-room';
+import { QuickbarPanel } from './panels/quickbar';
+import { MemoryConsolidatePanel } from './panels/memory-consolidate';
+import { PermissionsPanel } from './panels/permissions';
 
-import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, inpS, taS, Json } from './panel-kit';
+import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, refusalReason, inpS, taS, Json } from './panel-kit';
 
 function MediaOutcome({ value }) {
   if (!value) return null;
@@ -632,7 +639,17 @@ export function PairingPanel() {
   const { d, e, loading, reload } = useApi('/api/channels/pairing', true, true);
   const senders = arr(d, 'senders');
   const [code, setCode] = useState('');
+  const [bot, setBot] = useState('');
+  const [link, setLink] = useState(null);
   const decide = (s, action) => actA('/api/channels/pairing/decide', { channel: s.channel, sender_id: s.sender_id || s.id, action }, reload);
+  /* The 60-second path: mint a one-use link and open it on the phone. The token is
+     a live credential until it is spent, so it is shown once, never re-fetched,
+     and cleared from the screen as soon as the owner revokes or mints again. */
+  const mintLink = () => actA('/api/channels/pairing/link',
+    { channel: 'telegram', bot_username: bot.trim() || null },
+    (r) => { setLink(r); reload(); });
+  const revokeLinks = () => actA('/api/channels/pairing/link/revoke', {},
+    () => { setLink(null); reload(); });
   return <Card title="SENDER PAIRING" live={asLive(d)} sub={d?.summary ? (d.summary.pending ?? senders.length) + ' pending' : senders.length} onReload={reload}>
     <State e={e} loading={loading} n={senders.length} />
     {senders.slice(0, 10).map((s, i) => <Row key={i}>
@@ -649,6 +666,20 @@ export function PairingPanel() {
       <input value={code} onChange={(ev) => setCode(ev.target.value)} placeholder="pairing code (empty = clear)" style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={() => actA('/api/channels/pairing/code', { code: code || null }, () => { setCode(''); reload(); })}>set code</button>
     </div>
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input value={bot} onChange={(ev) => setBot(ev.target.value)} placeholder="bot @username (for the link)" style={{ ...inpS, flex: 1 }} />
+      <button className="tool-btn" title="mint a one-use pairing link" onClick={mintLink}>pair a phone</button>
+      {(d?.summary?.deeplinks_outstanding ?? 0) > 0
+        && <button className="tool-btn" title="invalidate every outstanding link" onClick={revokeLinks}>revoke links</button>}
+    </div>
+    {link && <div style={{ ...mono, fontSize: 11, marginTop: 6, wordBreak: 'break-all' }}>
+      <div style={{ color: 'var(--green)' }}>{link.url || link.token}</div>
+      {/* Said plainly: a link that looks reusable gets treated as one. */}
+      <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 3 }}>
+        One use, then dead — whoever opens it first is the one paired. Expires in
+        {' '}{Math.round((link.ttl_seconds || 0) / 60)} min.
+      </div>
+    </div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>unknown senders are held until you decide (H12.19)</div>
   </Card>;
 }
@@ -1315,7 +1346,16 @@ export function SwarmPanel() {
    as that turn runs (minutes, for a long task); the button locks while it is in flight and
    the panel says why. Every cap refusal answers 429 and `apiPost` throws on 4xx, so the call
    passes an `onErr` — without it a refused spawn would silently read as a success, which is
-   the swallowed-mutation bug the note at the top of this file warns about. */
+   the swallowed-mutation bug the note at the top of this file warns about.
+
+   1.1.0 — steer and stop per running spawn (`POST /api/subagents/{id}/steer`, `/stop`).
+   Both are only offered while a row is `running`; the backend answers 409 `not_running`
+   otherwise and the row's controls are hidden rather than shown-and-refused. Steer is
+   guidance, never an approval — the panel says so, and a `delivered: false` reply (the
+   runner never opted into the steer kwarg) is rendered as "recorded, not delivered"
+   rather than as a success, because the message did reach the spawn record but not the
+   running turn. Stop reports the status the backend read back after yielding, so a child
+   that unwinds immediately shows `stopped` and one that does not shows `stopping`. */
 export function SubAgentsPanel() {
   const { d, e, loading, reload } = useApi('/api/subagents');  // user-guarded
   const spawns = arr(d, 'spawns');
@@ -1324,6 +1364,8 @@ export function SubAgentsPanel() {
   const [agent, setAgent] = useState('');
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState(null);
+  const [steerFor, setSteerFor] = useState(null);
+  const [steerText, setSteerText] = useState('');
   const atCap = stats.cap != null && (stats.active ?? 0) >= stats.cap;
   const statusColor = (s) => (s === 'done' ? 'var(--green)' : s === 'failed' ? 'var(--red)' : 'var(--amber)');
   const spawn = () => {
@@ -1340,7 +1382,33 @@ export function SubAgentsPanel() {
         setTask('');
         reload();
       },
-      (err) => { setPending(false); setNote(`refused · ${err?.message || 'spawn failed'}`); reload(); });
+      (err) => { setPending(false); setNote(`refused · ${refusalReason(err, 'spawn failed')}`); reload(); });
+  };
+  const sendSteer = (id) => {
+    const msg = steerText.trim();
+    if (!msg) return;
+    setNote(null);
+    act(`/api/subagents/${id}/steer`, { message: msg },
+      (r) => {
+        // `delivered: false` is an honest partial: the record kept the message but the
+        // running turn never saw it. Never render that as a plain success.
+        setNote(r && r.ok
+          ? (r.delivered ? `steered ${id} · delivered` : `steered ${id} · recorded, not delivered to the running turn`)
+          : `refused · ${(r && r.reason) || 'steer failed'}`);
+        setSteerFor(null); setSteerText(''); reload();
+      },
+      (err) => { setNote(`refused · ${refusalReason(err, 'steer failed')}`); reload(); });
+  };
+  const stopSpawn = (id) => {
+    setNote(null);
+    act(`/api/subagents/${id}/stop`, {},
+      (r) => {
+        setNote(r && r.ok
+          ? `stop requested · ${id} is ${String((r && r.status) || 'stopping')}`
+          : `refused · ${(r && r.reason) || 'stop failed'}`);
+        reload();
+      },
+      (err) => { setNote(`refused · ${refusalReason(err, 'stop failed')}`); reload(); });
   };
   return (
     <Card title="SUB-AGENTS" live={asLive(d)} sub={d ? `${stats.total ?? spawns.length} spawn(s)` : null} onReload={reload}>
@@ -1356,14 +1424,42 @@ export function SubAgentsPanel() {
             </span>
           </Row>
           {spawns.slice(0, 10).map((s, i) => (
-            <Row key={s.id || i}>
-              <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.id}</span>
-              <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{String(s.task || '').slice(0, 40)}</span>
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-                <Tag>{s.agent || 'sub'}</Tag>
-                <Tag c={statusColor(s.status)}>{s.status || '—'}</Tag>
-              </span>
-            </Row>
+            <React.Fragment key={s.id || i}>
+              <Row>
+                <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.id}</span>
+                <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{String(s.task || '').slice(0, 40)}</span>
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+                  <Tag>{s.agent || 'sub'}</Tag>
+                  <Tag c={statusColor(s.status)}>{s.status || '—'}</Tag>
+                  {s.status === 'running' && (
+                    <>
+                      <button
+                        className="tool-btn" title="send guidance to this running sub-agent"
+                        onClick={() => { setSteerFor(steerFor === s.id ? null : s.id); setSteerText(''); }}
+                      >steer</button>
+                      <button
+                        className="tool-btn" title="cancel this running sub-agent"
+                        onClick={() => stopSpawn(s.id)}
+                      >stop</button>
+                    </>
+                  )}
+                </span>
+              </Row>
+              {steerFor === s.id && (
+                <Row>
+                  <input
+                    style={{ ...inpS, flex: 1 }} autoFocus
+                    placeholder={`guidance for ${s.id} (not an approval)`}
+                    value={steerText} onChange={(ev) => setSteerText(ev.target.value)}
+                    onKeyDown={(ev) => { if (ev.key === 'Enter') sendSteer(s.id); }}
+                  />
+                  <button
+                    className="tool-btn" disabled={!steerText.trim()}
+                    onClick={() => sendSteer(s.id)}
+                  >send</button>
+                </Row>
+              )}
+            </React.Fragment>
           ))}
           <Row>
             <input
@@ -1385,6 +1481,8 @@ export function SubAgentsPanel() {
             Spawning is long-running, not fire-and-forget: the POST runs the sub-agent inline and
             the request stays open until the sub-agent&apos;s turn finishes. Cap, recursion-depth and
             budget refusals all answer 429 — the capacity row above says which limit is tight.
+            Steer is guidance to a running child, never an approval: a queue decision only ever
+            comes from the decision inbox. Steer and stop appear only while a spawn is running.
           </div>
         </>
       )}
@@ -1659,7 +1757,7 @@ export function MarketplacePanel() {
         <Tag c={s.review_status === 'approved' ? 'var(--green)' : s.review_status === 'rejected' ? 'var(--red)' : 'var(--amber)'}>{s.review_status || 'pending'}</Tag>
         {s.review_status !== 'approved' && <button className="tool-btn" title="approve skill" onClick={() => actA('/api/skills/marketplace/review', { name: s.name, status: 'approved' }, reload)}>✓</button>}
         {s.review_status !== 'rejected' && <button className="tool-btn" title="reject skill" onClick={() => actA('/api/skills/marketplace/review', { name: s.name, status: 'rejected' }, reload)}>✕</button>}
-        <button className="tool-btn" title="roll back to the previous package" onClick={() => actA(`/api/skills/marketplace/${encodeURIComponent(s.name)}/rollback`, {}, (r) => { setNote(`${s.name} · restored ${(r && r.restored_version) || '?'} ← ${(r && r.previous_version) || '?'}`); reload(); }, (err) => setNote(`refused · ${err?.message || 'rollback failed'}`))}>⟲</button>
+        <button className="tool-btn" title="roll back to the previous package" onClick={() => actA(`/api/skills/marketplace/${encodeURIComponent(s.name)}/rollback`, {}, (r) => { setNote(`${s.name} · restored ${(r && r.restored_version) || '?'} ← ${(r && r.previous_version) || '?'}`); reload(); }, (err) => setNote(`refused · ${refusalReason(err, 'rollback failed')}`))}>⟲</button>
       </span></Row>)}
     {note && <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>signed + moderated — ✓/✕ sets review status (anti-ClawHub, H12.12).
@@ -1976,29 +2074,73 @@ export function WorkflowBuilderPanel() {
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>generate → add to draft → save (admin) · the steps JSON is the editor of record for router/critic/loop/subflow configs (H10.7)</div>
   </Card>;
 }
+/* DRA-08 Phase 3, console half. `SandboxExecuteBody.tools` was added so the governed
+   ToolRPC runtime finally gets a production caller, and until now nothing could set it:
+   the flag existed on the route and on no button. The checkbox below is that caller.
+
+   Three refusals matter, and each gets its own words rather than a generic failure:
+     · 422 — the pipeline is python-only, so shell + tools is refused, not silently
+       downgraded to an ungoverned run;
+     · 503 — `orch.tool_rpc` is missing. The route deliberately does NOT fall back to
+       `execute_python` here, because a silent fallback would run the very same code
+       WITHOUT the governance the checkbox was ticked to get. The panel says that;
+     · 403 — the sandbox itself is DEV_MODE-gated, as before.
+   `/sandbox/status` carries an additive `tool_rpc: {available, tools}` block, so the
+   checkbox can be disabled with the backend's own reason instead of offering a control
+   that is guaranteed to 503. */
 export function SandboxPanel() {
   const { d: st, reload } = useApi('/sandbox/status');
   const [code, setCode] = useState('');
   const [lang, setLang] = useState('python');
+  const [tools, setTools] = useState(false);
   const [out, setOut] = useState(null);
+  const rpc = (st && st.tool_rpc) || null;
+  const rpcAvailable = !!(rpc && rpc.available);
   const run = () => {
     if (!code.trim()) return;
     setOut('running…');
-    apiPost('/sandbox/execute', { code, language: lang })
+    apiPost('/sandbox/execute', { code, language: lang, tools })
       .then(setOut)
-      .catch((err) => setOut(err?.status === 403 ? 'sandbox disabled — set DEV_MODE=1 on the server' : 'offline · ' + (err?.message || '')));
+      .catch((err) => setOut(
+        err?.status === 403 ? 'sandbox disabled — set DEV_MODE=1 on the server'
+          : err?.status === 422 ? 'refused · ' + refusalReason(err, 'tool_rpc_pipeline_python_only') + ' — the governed pipeline is python-only'
+          : err?.status === 503 ? 'refused · ' + refusalReason(err, 'tool_rpc unavailable') + ' — NOT run ungoverned as a fallback'
+          : 'offline · ' + refusalReason(err, err?.message || '')));
   };
   const insecure = st?.insecure_host_exec;
+  const shellWithTools = tools && lang !== 'python';
   return <Card title="SANDBOX" live={asLive(st)} sub={st ? (st.backend || st.active_backend || (st.docker ? 'docker' : 'subprocess')) : null} onReload={reload}>
     {insecure && <div style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>⚠ host-exec fallback active — code runs WITHOUT isolation</div>}
     <textarea value={code} onChange={(ev) => setCode(ev.target.value)} placeholder={lang === 'python' ? 'print("hello from the sandbox")' : 'echo hello'} style={taS} spellCheck={false} />
-    <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
       <select value={lang} onChange={(ev) => setLang(ev.target.value)} style={inpS}><option value="python">python</option><option value="shell">shell</option></select>
+      <label style={{ ...mono, fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, color: rpcAvailable ? 'var(--ink-2)' : 'var(--ink-3)' }}
+        title={rpcAvailable ? 'run through the governed ToolRPC pipeline (python only)' : 'the governed runtime is not attached on this server — the route would refuse with 503'}>
+        <input type="checkbox" checked={tools} disabled={!rpcAvailable} onChange={(ev) => setTools(ev.target.checked)} />
+        governed tools
+      </label>
       <button className="tool-btn" onClick={run}>execute</button>
     </div>
+    {shellWithTools && <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>shell + governed tools will be refused 422 — the pipeline is python-only</div>}
     {out != null && (typeof out === 'string' ? <div style={{ ...mono, fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>{out}</div>
-      : <Json v={(out.stdout || out.output || '') + (out.stderr ? '\n[stderr] ' + out.stderr : '') || out} />)}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>Docker-isolated execution, audited (DEV_MODE gate)</div>
+      : <>
+        <Json v={(out.stdout || out.output || '') + (out.stderr ? '\n[stderr] ' + out.stderr : '') || out} />
+        {/* Only rendered when the governed run actually reported them — an absent
+            `tool_calls` is not zero tool calls, it is a run that never went through
+            the pipeline, and a "0 tools" line would read as governed and idle. */}
+        {(out.tool_calls != null || out.timed_out != null) && (
+          <Row>
+            <span style={mono}>governed</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              {out.tool_calls != null && <Tag>{out.tool_calls} tool calls</Tag>}
+              {out.timed_out != null && <Tag c={out.timed_out ? 'var(--red)' : 'var(--green)'}>{out.timed_out ? 'timed out' : 'completed'}</Tag>}
+            </span>
+          </Row>
+        )}
+      </>)}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+      Docker-isolated execution, audited (DEV_MODE gate){rpc && !rpcAvailable ? ' · governed tools unavailable on this server' : ''}
+    </div>
   </Card>;
 }
 
@@ -2633,6 +2775,20 @@ export function ProjectsMode(_props: any) {
 // H23.16 — network monitor: reads the egress ledger (GET /api/admin/network/calls)
 // and proves LOCAL_ONLY plugins make zero outbound calls. `clean` is the headline:
 // green when no local-only plugin ever made an allowed external call.
+/* DRA-23 residual — the headline used to come from `clean` alone, which is derived from
+   `local_only_violations`: a LOCAL_ONLY agent that dialled out. Model traffic is not in
+   that list by construction — LLM backends have no manifest gate, so `llm:*` rows record
+   what left and can never record a block — and the panel therefore rendered `local-only ✓`
+   directly above an `llm:gemini · 12 ext` row. The word this panel exists to say was the
+   one thing it could get wrong.
+
+   So the headline now accounts for `model_egress_total` as its own term. The three states
+   are kept distinct rather than merged into a boolean, because they mean different things
+   to the person reading them: a policy VIOLATION is a broken promise; model egress is
+   permitted, expected on a cloud-routed install, and still not "local-only"; and clean is
+   clean. `model_egress_total` absent (an older backend) reads as unknown, never as zero —
+   `?? null` rather than `|| 0`, since a missing measurement that renders as 0 is the same
+   false all-clear in a different place. */
 export function NetworkMonitorPanel() {
   const { d, e, loading, reload } = useApi('/api/admin/network/calls', true, true);
   const plugins = (d && d.plugins) || {};
@@ -2640,14 +2796,23 @@ export function NetworkMonitorPanel() {
   const ext = d ? d.external_egress_total : 0;
   const violations = (d && d.local_only_violations) || [];
   const clean = d ? d.clean : true;
+  const model = d && d.model_egress_total != null ? Number(d.model_egress_total) : null;
+  const headline = !d ? null
+    : !clean ? 'VIOLATION'
+    : model == null ? 'no policy violations · model egress unmeasured'
+    : model > 0 ? `no policy violations · ${model} model calls left the box`
+    : 'local-only ✓';
   return (
-    <Card title="network monitor" live={asLive(d)} sub={d ? (clean ? 'local-only ✓' : 'VIOLATION') : null} onReload={reload}>
+    <Card title="network monitor" live={asLive(d)} sub={headline} onReload={reload}>
       <State e={e} loading={loading} n={names.length} />
       {d && (
         <Row>
           <span style={mono}>egress</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c={ext > 0 ? 'var(--amber)' : 'var(--green)'}>{ext} external</Tag>
+            <Tag c={model == null ? 'var(--ink-3)' : model > 0 ? 'var(--amber)' : 'var(--green)'}>
+              {model == null ? 'model —' : `${model} model`}
+            </Tag>
             <Tag c={clean ? 'var(--green)' : 'var(--red)'}>{clean ? 'clean' : 'violation'}</Tag>
           </span>
         </Row>
@@ -4480,14 +4645,14 @@ export function FirstRunGate({ onClose }) {
 }
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
-  ['Start', [CommandCenterPanel]],
+  ['Start', [CommandCenterPanel, TodayReceiptPanel, ModelSetupPanel]],
   ['Home', [PresenceInboxPanel, AmbientWatchPanel, HousePanel, CameraPanel]],
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, NoteDocsPanel, VaultPanel, KgPanel, MemoryWritePanel, MemoryHygienePanel, MemoryEvalPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
-  ['Trust', [SecuritySkillsMapPanel, PaymentsPanel, SignalGovernancePanel, TrustOpsPanel, KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, NoteDocsPanel, VaultPanel, KgPanel, MemoryWritePanel, MemoryHygienePanel, MemoryConsolidatePanel, MemoryEvalPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
+  ['Trust', [SecuritySkillsMapPanel, PaymentsPanel, SignalGovernancePanel, TrustOpsPanel, KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel, PermissionsPanel]],
   ['Interop', [OsintPanel, MarketplaceAdminPanel, SkillsImportPanel, WritebackDigestPanel, A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, CodeIntelPanel, CoachPanel, ReviewQualityPanel, AgentsArenaPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, CognitionPanel, SwarmPanel, SubAgentsPanel, SystemMapPanel]],
-  ['Build', [CreativePanel, DesktopAllowlistPanel, WorkflowTracesPanel, WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],
-  ['Autonomy & Agents', [AutonomyControlPanel, MissionCanvasPanel, DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
+  ['Build', [HostReadinessPanel, CreativePanel, DesktopAllowlistPanel, WorkflowTracesPanel, WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],
+  ['Autonomy & Agents', [CompanyRoomPanel, QuickbarPanel, AutonomyControlPanel, MissionCanvasPanel, DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [LlmRoutingPanel, SupportVoicePanel, BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, VlmDescribePanel, AuthProfilesPanel, SystemProfilePanel]],
 ];
 

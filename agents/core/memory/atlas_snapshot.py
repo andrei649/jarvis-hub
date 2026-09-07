@@ -18,6 +18,27 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Protocol
 
 PrivacyClass = Literal["public", "personal", "private_local", "restricted"]
+
+# E2.1 — how a fact came to be known. Three states, and the distinction matters
+# because they fail differently:
+#
+#   observed  — someone or something recorded it directly. Wrong only if the
+#               source was wrong.
+#   inferred  — Nerva worked it out from other facts. Wrong if any input was
+#               wrong, OR if the reasoning was, and a chain of inferences over
+#               inferences compounds both.
+#   simulated — produced by a model, a test, a what-if. Never evidence of
+#               anything about the world, whatever it looks like.
+#
+# The one that has to be a *decision* is `observed`, which is why it is not the
+# default for anything except a projection that explicitly declares it (see
+# LegacyProjectionPolicy). A field that silently defaults to "observed" would
+# quietly relabel every inference and every simulation as evidence — which is
+# exactly the mistake this field exists to make impossible.
+EPISTEMIC_STATUSES: tuple[str, ...] = ("observed", "inferred", "simulated")
+
+EpistemicStatus = str
+
 TemporalAxis = Literal["valid", "known"]
 ConfidenceStatus = Literal["measured", "unknown"]
 
@@ -112,6 +133,9 @@ class AtlasObservation:
     privacy_class: PrivacyClass
     lineage: AtlasDeletionLineage
     integrity_sha256: str
+    # E2.1. Required, not defaulted: see EPISTEMIC_STATUSES for why a default of
+    # "observed" would relabel every inference and simulation as evidence.
+    epistemic_status: EpistemicStatus
     schema: str = field(default="nerva.observation.v1", init=False)
 
     def __post_init__(self) -> None:
@@ -131,6 +155,7 @@ class AtlasObservation:
         if not isinstance(self.lineage, AtlasDeletionLineage):
             raise ValueError("Atlas observation lineage must be AtlasDeletionLineage")
         _validate_privacy_class(self.privacy_class)
+        _validate_epistemic_status(self.epistemic_status)
         _validate_time(self.valid_from, "valid_from")
         _validate_time(self.ingested_at, "ingested_at")
         if self.valid_to is not None:
@@ -316,10 +341,16 @@ class LegacyProjectionPolicy:
     default_confidence: AtlasConfidence = field(
         default_factory=lambda: AtlasConfidence("unknown")
     )
+    # A legacy bitemporal fact WAS recorded by something; that is what makes
+    # "observed" a defensible declaration here rather than a default. It is
+    # spelled out on the policy so a reader can see the claim being made, and so
+    # a caller projecting inferred facts can say so instead of inheriting it.
+    default_epistemic_status: EpistemicStatus = "observed"
 
     def __post_init__(self) -> None:
         _require_non_empty(self.source_id, "source_id")
         _validate_privacy_class(self.default_privacy_class)
+        _validate_epistemic_status(self.default_epistemic_status)
 
 
 PrivacyResolver = Callable[[Mapping[str, Any]], PrivacyClass]
@@ -380,6 +411,13 @@ class LegacyBiTemporalAdapter:
             source_record_id=source_record_id,
             derived_record_ids=(observation_id,),
         )
+        # A fact may carry its own status; otherwise the policy's declaration
+        # applies. Read from the fact rather than assumed, so a caller projecting
+        # inferred or simulated facts is not forced to relabel them as observed.
+        epistemic_status = str(
+            fact.get("epistemic_status") or self._policy.default_epistemic_status
+        )
+        _validate_epistemic_status(epistemic_status)
         material = {
             "observation_id": observation_id,
             "entity_id": entity_id,
@@ -394,6 +432,10 @@ class LegacyBiTemporalAdapter:
             "confidence": asdict(confidence),
             "privacy_class": privacy_class,
             "lineage": asdict(lineage),
+            # Inside the integrity material on purpose: a status that could be
+            # changed without breaking the hash would let a simulation be
+            # relabelled as an observation and still verify.
+            "epistemic_status": epistemic_status,
             "schema": "nerva.observation.v1",
         }
         return AtlasObservation(
@@ -411,6 +453,7 @@ class LegacyBiTemporalAdapter:
             privacy_class=privacy_class,
             lineage=lineage,
             integrity_sha256=_sha256(material),
+            epistemic_status=epistemic_status,
         )
 
 
@@ -589,6 +632,13 @@ def _validated_privacy_scope(
     for privacy_class in value:
         _validate_privacy_class(privacy_class)
     return tuple(sorted(value))
+
+
+def _validate_epistemic_status(value: Any) -> None:
+    if value not in EPISTEMIC_STATUSES:
+        raise ValueError(
+            f"epistemic_status must be one of {EPISTEMIC_STATUSES}, got {value!r}"
+        )
 
 
 def _validate_privacy_class(value: Any) -> None:

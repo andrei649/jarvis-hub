@@ -188,3 +188,78 @@ def test_write_export_writes_json_file(cap, on, tmp_path):
     loaded = _json.loads(dest.read_text(encoding="utf-8"))
     assert loaded["exported_at"] == 7.0 and loaded["count"] == 1
     assert "SECRET" not in _json.dumps(loaded)   # redacted before storage → safe export
+
+
+# ── 0.26 export route (the phone's half of "phone export") ────────────────────
+
+def test_export_route_returns_the_same_redacted_data_as_the_inbox(monkeypatch, tmp_path, on):
+    """The route must widen no exposure: byte-for-byte the records `/api/capture` shows."""
+    client = _client(monkeypatch, tmp_path)
+    client.post("/api/capture/surfaces", json={"surfaces": {"clipboard": True, "browser": True}})
+    client.post("/api/capture/ingest", json={"surface": "clipboard", "content": "note SECRET here"})
+    client.post("/api/capture/ingest", json={"surface": "browser", "content": "a normal page"})
+
+    inbox = client.get("/api/capture").json()["records"]
+    exp = client.get("/api/capture/export")
+    assert exp.status_code == 200
+    body = exp.json()
+
+    assert body["version"] == 1 and body["surface"] is None and body["count"] == 2
+    assert body["records"] == inbox            # the export IS the inbox, enveloped
+    assert isinstance(body["exported_at"], float)
+    assert body["surfaces"] == {"clipboard": True, "browser": True, "files": False}
+    # redaction happened at ingest, so nothing here can carry the secret
+    import json as _json
+    assert "SECRET" not in _json.dumps(body)
+
+
+def test_export_route_filters_by_surface(monkeypatch, tmp_path, on):
+    client = _client(monkeypatch, tmp_path)
+    client.post("/api/capture/surfaces", json={"surfaces": {"clipboard": True, "browser": True}})
+    client.post("/api/capture/ingest", json={"surface": "clipboard", "content": "clip one"})
+    client.post("/api/capture/ingest", json={"surface": "browser", "content": "browse one"})
+
+    body = client.get("/api/capture/export", params={"surface": "browser"}).json()
+    assert body["surface"] == "browser" and body["count"] == 1
+    assert body["records"][0]["surface"] == "browser"
+
+
+def test_export_route_refuses_an_unknown_surface_rather_than_returning_empty(
+    monkeypatch, tmp_path, on,
+):
+    """A typo must never be able to read as an all-clear.
+
+    `?surface=clipboad` and `?surface=clipboard` on an empty inbox produce identical
+    files: `count: 0, records: []`. In a saved export the difference is invisible, and
+    "you captured nothing" is a very different claim from "you spelled it wrong" — so
+    the unknown one is refused, and the refusal names the surfaces that do exist.
+    """
+    client = _client(monkeypatch, tmp_path)
+    client.post("/api/capture/surfaces", json={"surfaces": {"clipboard": True}})
+    client.post("/api/capture/ingest", json={"surface": "clipboard", "content": "clip one"})
+
+    bad = client.get("/api/capture/export", params={"surface": "clipboad"})
+    assert bad.status_code == 422
+    assert bad.json()["known_surfaces"] == list(SURFACES)
+    assert "clipboard" in bad.json()["error"]
+    # and the real spelling still works, so the refusal is about the name, not the data
+    assert client.get("/api/capture/export", params={"surface": "clipboard"}).json()["count"] == 1
+
+
+def test_export_route_is_honest_when_capture_is_off(monkeypatch, tmp_path):
+    """No master switch → nothing was ever captured, and the export says so plainly.
+
+    `enabled` is not in the export envelope by design (it is a *live* fact, and this
+    file outlives the moment it was written), so the empty export must not be read as
+    "capture is on and quiet". `/api/capture/status` is the route that answers that,
+    and the two are consistent here.
+    """
+    client = _client(monkeypatch, tmp_path)
+    client.post("/api/capture/surfaces", json={"surfaces": {"clipboard": True}})
+    client.post("/api/capture/ingest", json={"surface": "clipboard", "content": "clip one"})
+
+    body = client.get("/api/capture/export").json()
+    assert body["count"] == 0 and body["records"] == []
+    # the surface opt-in is still recorded — it was set, capture just never ran
+    assert body["surfaces"]["clipboard"] is True
+    assert client.get("/api/capture/status").json()["enabled"] is False

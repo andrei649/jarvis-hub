@@ -205,6 +205,7 @@ recount pass will keep re-surfacing them as separate open rows.
 
 ## Recount log
 
+- **2026-09-06 (roadmap recount, six readers over the whole file + code grep per row, merged and deduplicated):** 349 rows after removing 22 exact duplicates — **110 AI-EXEC · 101 OWNER-GATED · 69 DUPLICATE · 28 DECIDED-CLOSED · 33 UNCLEAR · 6 ONGOING · 2 RESCOPED**. Prose-vs-code corrections found and believed by code: the NERVA_PUBLIC_PROFILE boot-guard residual (BACKLOG :46-50) shipped in DRA-07; E2.0/E3.0 are ✅ so the "#782 waits for #781" line (:89-90) is stale; DRA-15 :1096-1097 claims MACHINE_FACING while the gate file restored both routes to UNCALLED_BACKLOG; DRA-19/21/30 residual clauses are already shipped (signals-governance panel, creative panel market brief, MAINTENANCE_RUNBOOK path); DRA-36/37 client half landed in `client.ts` (call sites still hide the body); T-0.65 is owner-gated (ScreenReflexPanel exists); T-0.39 is AI-EXEC (Stooq plugin unwired); the --ink-3 retirement is an owner palette call. The full inventory, its pick order and the resulting release sequence are in `docs/NERVA_2_ROADMAP.md`; the rows closed by the 1.1.0 PR are ticked in `BACKLOG.md` by that PR, never here.
 - **2026-09-01 (owner decision packet):** the bulk-approved owner decisions were recorded against the
   rows above (H23.23, AUD-0, GAP-0, SEC-B4/SEC-B6, B7-TASK-MEDIATION, GOVERNANCE-WAVE-HOLD,
   E1/E6/E9-AUTHORITY-CEILING, BUG-2b.2, TASK-3, E731-CONTINUITY-IDENTITY, ACTION-KERNEL-FLIP-CRITERIA,

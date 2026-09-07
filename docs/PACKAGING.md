@@ -3,6 +3,10 @@
 > How the repo becomes an installable app, and where a packaged install keeps
 > the owner's personal state. Build tooling: `packaging/nerva.spec` +
 > `scripts/build_exe.py` + `packaging/windows/install.ps1`.
+>
+> Installing **from source** is a different, one-step path — `install.sh` /
+> `INSTALL.bat` → `scripts/bootstrap.py`, with `scripts/doctor.py` as the check-up:
+> see [`INSTALL.md`](INSTALL.md). This page is only about the packaged executable.
 
 ## The two-folder model
 
@@ -48,11 +52,14 @@ Output: `dist/nerva/` — the whole folder is the app (`nerva[.exe]` +
 `_internal/`). Zip it, or on Windows run the installer:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1
+powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1 -Launch
 ```
 
-which copies it to `%LOCALAPPDATA%\Programs\Nerva` (no admin needed) and adds
-a Start Menu shortcut. Frontend note: the HUD ships pre-built (`agents/web/v2`
+which copies it to `%LOCALAPPDATA%\Programs\Nerva` (no admin needed), adds a
+Start Menu shortcut and — with `-Launch` — starts `nerva.exe` and opens the
+Command Center (`http://127.0.0.1:8080/v2`) once `/readyz` answers (`-NoBrowser`
+to skip the browser). The bind stays loopback; a phone or second device is the
+token-gated decision in [`PHONE_ACCESS.md`](PHONE_ACCESS.md). Frontend note: the HUD ships pre-built (`agents/web/v2`
 is committed), so no Node toolchain is needed at package time.
 
 ## What deliberately does NOT ship

@@ -280,11 +280,22 @@ async def admin_apm():
 
 @router.get("/api/admin/network/calls", dependencies=[Depends(admin_guard)])
 async def admin_network_calls(plugin: str = Query(None), limit: int = Query(100)):
-    """H23.16 — network monitor: plugin egress ledger from the http_client choke point.
+    """H23.16 — network monitor: the egress ledger from the http_client choke point.
 
     Returns per-plugin tallies (total/allowed/blocked/external) plus the most recent
     attempts, and `local_only_violations` — the proof that local-only plugins made zero
     outbound calls. Optional `plugin` filters to one; `limit` caps the recent list.
+
+    DRA-23 — no longer plugin-only, and this docstring said otherwise for a release.
+    Model traffic is recorded too, under `llm:<provider>` rows, and its share of the
+    external total is `model_egress_total`. That share can never appear in
+    `local_only_violations`: LLM backends have no manifest gate, so those rows record
+    what left and never a block that did not happen. A caller reading `clean` alone is
+    therefore reading a claim about PLUGIN policy, not about whether anything left the
+    machine — which is why the HUD's headline takes `model_egress_total` as its own term.
+    Still not instrumented at all (recorded so this docstring does not overclaim in the
+    other direction): cloud TTS in `voice/tts.py`, `skills/importer.py`,
+    `cameras/frigate.py`, `house/home_assistant.py` and `channels/telegram.py`.
     """
     from agents.core.observability.egress_monitor import EGRESS_MONITOR
     return nocache_json(EGRESS_MONITOR.snapshot(plugin=plugin, limit=limit))
