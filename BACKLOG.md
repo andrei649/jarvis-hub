@@ -1335,8 +1335,32 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   Fails closed: an unreadable setting, an unknown surface or a resolver error offers nothing.
   Tests: `tests/test_tool_profiles.py` (26). Proven against the coordinator's real
   registry; **not proven with a live guest on a live channel** → P19.
-- [ ] **HA-4** — depth (adapter descriptor, MCP trust tiers, HUD mode, plugin SDK) — sequenced
-  in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+- [x] ✅ **HA-4a — a channel says what it can show; Telegram replies that arrive.** The channel
+  contract was a four-method ABC with no capability information; Telegram was sent the model's
+  Markdown verbatim with `parse_mode=Markdown`, so an odd `*`, an unclosed fence or a reply over
+  4,096 characters was an HTTP 400, `send()` returned False and the owner saw nothing — the
+  failure was a log line. `channels/descriptor.py` (`ChannelDescriptor`: dialect, message cap,
+  edit / media / threads; the base adapter declares the honest minimum, Telegram declares
+  `telegram_html` × 4096) and `channels/render.py` (one renderer registry keyed by dialect with
+  one shared plain-text stripper; only *balanced* markers become markup, text is escaped before
+  any tag, chunking happens on the source at paragraph then line boundaries and never inside a
+  fenced block — a fence that spans chunks is closed and reopened — so every chunk renders as
+  valid markup on its own). `TelegramChannel.send` chunks, renders to HTML, and resends a chunk
+  Telegram still rejects (400) as plain text: the words always arrive, the formatting is best
+  effort; True only when every chunk was delivered in order. Decision cards are untouched.
+  Slack / Discord still send raw text (their dialects are the next renderers). Also in this
+  wave, two MCP client bugs with a security edge: `MCPManager.call_tool` dispatched a bare tool
+  name to whichever server came first in dict order, so a second server could silently redirect
+  an existing call — a name two servers offer is now refused as `ambiguous_tool` unless pinned
+  (`server/tool` or `server=`); and Unicode TAG characters (U+E0000–U+E007F, invisible on
+  screen, readable by the model) are stripped from every ToolRPC result and every MCP call
+  result (`quarantine.strip_invisible_deep`). Tests: `tests/test_channel_render.py` (15),
+  `tests/test_mcp_hardening.py` (6). **Not proven against a real Telegram bot** → P20.
+- [ ] **HA-4b** — the rest of the depth wave: streaming edits on chat surfaces (the descriptor
+  now says which can), Slack `mrkdwn` / Discord renderers, MCP trust tiers with `readOnlyHint`
+  fail-closed and per-server tool include / exclude, an `ntfy` push channel for approvals away
+  from the HUD, HUD mode on desktop, the plugin SDK — sequenced in
+  [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the

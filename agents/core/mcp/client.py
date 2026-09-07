@@ -45,6 +45,7 @@ from agents.core.mcp.http_transport import (
     transport_allowed,
     validate_mcp_url,
 )
+from agents.core.security.quarantine import strip_invisible_deep
 
 logger = logging.getLogger("jarvis.mcp")
 
@@ -173,6 +174,11 @@ class MCPTool:
         self.description = description
         self.input_schema = input_schema
         self.server = server
+
+    @property
+    def qualified_name(self) -> str:
+        """``server/tool`` — the name that stays unambiguous across servers."""
+        return f"{self.server}/{self.name}"
 
 
 class MCPServer:
@@ -352,7 +358,9 @@ class MCPServer:
             "id": 3,
         })
         if resp and "result" in resp:
-            return resp["result"]
+            # A remote server's text is untrusted: invisible TAG characters can carry an
+            # instruction the owner never sees (Hermes absorption 4a).
+            return strip_invisible_deep(resp["result"])
         return resp
 
     def _tool_call_blocked(self, name: str, arguments: dict) -> dict | None:
@@ -452,19 +460,51 @@ class MCPManager:
             tools.extend(srv.tools)
         return tools
 
-    def find_tool(self, name: str) -> MCPTool:
-        for srv in self.servers.values():
-            for t in srv.tools:
-                if t.name == name:
-                    return t
+    def _resolve(self, name: str, server: str | None) -> tuple[MCPServer | None, str, dict | None]:
+        """``(server, bare tool name, error)`` for *name*.
+
+        A ``server/tool`` name, or an explicit ``server=``, pins the server. A bare name is
+        accepted only when exactly one server offers it: dispatch used to pick whichever
+        server came first in dict order, so adding a second server could silently redirect
+        an existing call (Hermes absorption 4a).
+        """
+        bare = str(name or "")
+        if server is None and "/" in bare:
+            prefix, _, rest = bare.partition("/")
+            if prefix in self.servers and rest:
+                server, bare = prefix, rest
+        if server is not None:
+            srv = self.servers.get(server)
+            if srv is None:
+                return None, bare, {"error": "server_not_found", "tool": bare, "server": server}
+            if not any(t.name == bare for t in srv.tools):
+                return None, bare, {"error": f"Tool '{bare}' not found", "server": server}
+            return srv, bare, None
+        offering = [srv for srv in self.servers.values() if any(t.name == bare for t in srv.tools)]
+        if not offering:
+            return None, bare, {"error": f"Tool '{bare}' not found"}
+        if len(offering) > 1:
+            return None, bare, {
+                "error": "ambiguous_tool",
+                "tool": bare,
+                "servers": [srv.name for srv in offering],
+            }
+        return offering[0], bare, None
+
+    def find_tool(self, name: str, *, server: str | None = None) -> MCPTool:
+        srv, bare, error = self._resolve(name, server)
+        if error is not None or srv is None:
+            return None
+        for t in srv.tools:
+            if t.name == bare:
+                return t
         return None
 
-    async def call_tool(self, name: str, arguments: dict = None) -> Any:
-        for srv in self.servers.values():
-            for t in srv.tools:
-                if t.name == name:
-                    return await srv.call_tool(name, arguments)
-        return {"error": f"Tool '{name}' not found"}
+    async def call_tool(self, name: str, arguments: dict = None, *, server: str | None = None) -> Any:
+        srv, bare, error = self._resolve(name, server)
+        if error is not None or srv is None:
+            return error
+        return await srv.call_tool(bare, arguments)
 
     async def close_all(self):
         for srv in self.servers.values():

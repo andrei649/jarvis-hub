@@ -263,6 +263,24 @@ threads sunt toate blocate pe faptul că un canal n-are cum să declare ce poate
 pe MCP cu `readOnlyHint` fail-closed; HUD mode pe desktop (fereastră fără chrome, always-on-top);
 SDK de plugin-uri; hub de skill-uri.
 
+**Livrat 2026-09-07 (4a — un canal spune ce poate afișa).** `channels/descriptor.py`
+(`ChannelDescriptor`: dialect, plafon de mesaj, edit / media / threads; adaptorul de bază declară
+minimul onest, Telegram declară `telegram_html` × 4096) și `channels/render.py` (un singur registru
+de renderere pe dialect, cu un singur stripper de text simplu): doar marcajele *echilibrate* devin
+markup, textul e escapat înainte de orice tag, chunking-ul se face pe sursă la granițe de paragraf
+și apoi de linie și niciodată în interiorul unui bloc de cod — un bloc care ar traversa două
+chunk-uri e închis și redeschis — deci fiecare chunk se redă valid de unul singur.
+`TelegramChannel.send` împarte, redă în HTML și retrimite ca text simplu un chunk pe care Telegram
+îl refuză totuși (400): cuvintele ajung întotdeauna, formatarea e best effort. Până azi un `*`
+impar sau un răspuns peste 4.096 de caractere era un 400 și owner-ul nu vedea nimic. Tot în 4a,
+două bug-uri în clientul MCP cu muchie de securitate: un nume de unealtă oferit de două servere
+mergea la primul din dicționar — acum e refuzat ca `ambiguous_tool` dacă nu e fixat
+(`server/tool` sau `server=`); caracterele Unicode TAG (invizibile pe ecran, citibile de model)
+sunt eliminate din orice rezultat ToolRPC și din orice rezultat de apel MCP. Teste:
+`tests/test_channel_render.py` (15), `tests/test_mcp_hardening.py` (6). *Nedovedit pe un bot
+Telegram real* → `docs/OWNER_TASKS.md` **P20**. Rămân în 4b: streaming prin editări, renderere
+Slack/Discord, tierele de încredere MCP, `ntfy`, HUD mode, SDK-ul de plugin-uri.
+
 ---
 
 ## Ce nu se schimbă

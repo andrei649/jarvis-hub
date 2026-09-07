@@ -32,6 +32,7 @@ from copy import deepcopy
 from typing import Awaitable, Callable, Optional
 
 from .automation_contracts import ContractTemplate, predicate
+from .security.quarantine import strip_invisible_deep
 
 logger = logging.getLogger("jarvis.tool_rpc")
 
@@ -273,7 +274,10 @@ class ToolRPCServer:
             return {"ok": False, "reason": "tool_error", "tool": name}
 
         self._record("toolrpc.call", name, agent=effective_actor)
-        return {"ok": True, "tool": name, "result": self._scrub(result)}
+        # Invisible Unicode TAG characters never cross to the model or the sandbox: a
+        # tool result (an MCP bridge, a fetched page, a file) can carry instructions the
+        # owner cannot see on screen (Hermes absorption 4a).
+        return {"ok": True, "tool": name, "result": self._scrub(strip_invisible_deep(result))}
 
     async def run_pipeline(self, requests: "list[dict]") -> "list[dict]":
         """Run a sequence of tool calls (what a sandboxed script does), returning

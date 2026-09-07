@@ -12,13 +12,25 @@ from typing import Callable, Optional
 import httpx
 
 from .base import ChannelAdapter
+from .descriptor import DIALECT_TELEGRAM_HTML, ChannelDescriptor
 from .group_policy import ANSWER, OBSERVE, GroupPolicy, gate_message
+from .render import chunk, to_plain, to_telegram_html
 from ..log_safe import log_safe
 
 logger = logging.getLogger("jarvis.channels.telegram")
 
+TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+
 
 class TelegramChannel(ChannelAdapter):
+    descriptor = ChannelDescriptor(
+        dialect=DIALECT_TELEGRAM_HTML,
+        max_message_length=TELEGRAM_MAX_MESSAGE_LENGTH,
+        supports_edit=True,
+        supports_media=True,
+        supports_threads=True,
+    )
+
     def __init__(self, token: str, handler: Optional[Callable] = None,
                  allowed_user_ids: Optional[list[int]] = None,
                  group_policy: Optional[GroupPolicy] = None):
@@ -65,15 +77,35 @@ class TelegramChannel(ChannelAdapter):
         logger.info("Telegram channel stopped")
 
     async def send(self, message: str, chat_id: int = None, **kwargs) -> bool:
+        """Deliver *message* as one or more Telegram messages the owner will actually see.
+
+        The reply is chunked to Telegram's cap on the source and each chunk is rendered to
+        the HTML subset Telegram accepts, with only balanced markers turned into markup. If
+        Telegram still rejects a chunk's markup (HTTP 400), the same chunk is sent again as
+        plain text — the words always arrive; the formatting is best effort. Returns True
+        only when every chunk was delivered, in order.
+        """
         cid = chat_id or kwargs.get("chat_id")
         if not cid:
             logger.warning("No chat_id provided for Telegram send")
             return False
+        for piece in chunk(str(message or ""), self.descriptor.max_message_length):
+            if not await self._send_chunk(cid, piece):
+                return False
+        return True
+
+    async def _send_chunk(self, cid, piece: str) -> bool:
         try:
             resp = await self.client.post(
                 f"{self.api_base}/sendMessage",
-                json={"chat_id": cid, "text": message, "parse_mode": "Markdown"},
+                json={"chat_id": cid, "text": to_telegram_html(piece), "parse_mode": "HTML"},
             )
+            if resp.status_code == 400:
+                logger.info("Telegram rejected the markup; resending the chunk as plain text")
+                resp = await self.client.post(
+                    f"{self.api_base}/sendMessage",
+                    json={"chat_id": cid, "text": to_plain(piece)},
+                )
             resp.raise_for_status()
             return True
         except Exception as e:

@@ -60,6 +60,51 @@ def detect_injection(text: str) -> list[str]:
     return found
 
 
+# Unicode TAG characters (U+E0000–U+E007F) render as nothing and carry ASCII payloads —
+# the "invisible instruction" vector: a tool result can spell out a command the owner
+# never sees on screen and the model reads verbatim (Hermes absorption 4a).
+_INVISIBLE_TAGS_RE = re.compile("[\U000E0000-\U000E007F]")
+
+
+def strip_invisible(text: str) -> str:
+    """Remove Unicode TAG characters; visible text is unchanged."""
+    if not text:
+        return text
+    return _INVISIBLE_TAGS_RE.sub("", text)
+
+
+_STRIP_MAX_DEPTH = 64
+
+
+def strip_invisible_deep(obj: Any, *, _depth: int = 0, _active: set[int] | None = None) -> Any:
+    """:func:`strip_invisible` over every string inside a JSON-shaped value.
+
+    A cycle or a nesting deeper than 64 is returned as it is rather than recursed into —
+    the strict-JSON check downstream refuses such a value by name; this pass only cleans
+    what can be cleaned.
+    """
+    if isinstance(obj, str):
+        return strip_invisible(obj)
+    if not isinstance(obj, (dict, list, tuple)) or _depth > _STRIP_MAX_DEPTH:
+        return obj
+    active = _active if _active is not None else set()
+    marker = id(obj)
+    if marker in active:
+        return obj
+    active.add(marker)
+    try:
+        if isinstance(obj, dict):
+            return {
+                strip_invisible_deep(k, _depth=_depth + 1, _active=active):
+                    strip_invisible_deep(v, _depth=_depth + 1, _active=active)
+                for k, v in obj.items()
+            }
+        items = [strip_invisible_deep(v, _depth=_depth + 1, _active=active) for v in obj]
+        return items if isinstance(obj, list) else tuple(items)
+    finally:
+        active.discard(marker)
+
+
 def datamark(text: str, marker: str = "▁") -> str:
     """Interleave a marker between whitespace tokens (spotlighting).
 

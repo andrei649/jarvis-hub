@@ -375,12 +375,13 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15**–**P19** (2026-09-07) are the first packets from the Hermes absorption: the
+> hardware. **P15**–**P20** (2026-09-07) are the first packets from the Hermes absorption: the
 > tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
 > to a real one; the Telegram group gate, never exercised in a real group; the `nerva`
 > command plus the chat slash commands, never pointed at a running hub; the owner's
-> scheduled jobs, never fired on a wall clock; and the model's hands (`file_search`,
-> `session_search`, the loop breakers), never driven by a model choosing to use them.
+> scheduled jobs, never fired on a wall clock; the model's hands (`file_search`,
+> `session_search`, the loop breakers), never driven by a model choosing to use them; and the
+> Telegram renderer, never shown to the real API.
 > If you flip a row to ✅ and its proof still depends on something only you can run, it
 > belongs here — that rule is written into
 > [`docs/prompts/BACKLOG_DRIVER.md`](prompts/BACKLOG_DRIVER.md) so an unattended session applies it.
@@ -717,6 +718,18 @@ built on your Windows box:
       …" question — the tool feed must show a `tool_profile` event with `inbound / guest` and
       `file_search` among the withheld names, and the reply must not contain the file's words;
       the same question from the owner's Telegram account must search.
+
+- [ ] **P20 — A long, badly formatted reply on a real Telegram** *(covers `HA-4a`)*
+      The renderer and the chunker are proven against Telegram's documented HTML subset and a
+      fake client, never against the real API. From the owner's account ask for something long
+      and formatted — "write me a 6,000-character guide with headings, a code block and a
+      table" — and for something deliberately broken — "reply with exactly: 3 * 4 = 12 and
+      **unclosed". The first must arrive as two or more messages in order, headings bold, the
+      code block monospaced, nothing cut mid-code; the second must arrive with the literal
+      asterisks and nothing missing. If a message shows raw `<b>` tags, Telegram rejected the
+      HTML and the plain-text fallback did not fire — file it against
+      `TelegramChannel._send_chunk`; if a message is missing, the chunker dropped it — file it
+      against `channels/render.py`.
 
 ## Parking lot (decisions, no rush)
 

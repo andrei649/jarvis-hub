@@ -40,6 +40,23 @@
   `tests/_snapshots/tool_profiles.json` (`python tests/test_tool_profiles.py --update`).
 - Tests: `tests/test_tool_profiles.py` (26).
 
+### Wave 2026-09-07 — Hermes absorption, wave 4a: a channel says what it can show
+
+- **Channel descriptor + outbound rendering** (`agents/core/channels/descriptor.py`,
+  `agents/core/channels/render.py`). Telegram was sent the model's Markdown verbatim: an odd
+  `*`, an unclosed code fence or a reply over 4,096 characters was an HTTP 400 and the owner
+  saw nothing. A channel now declares its dialect and message cap; one renderer registry
+  turns only balanced markers into markup, escapes text before any tag, and chunks on the
+  source without ever splitting a code block open. `TelegramChannel.send` chunks, renders to
+  HTML and resends a chunk Telegram still rejects as plain text — the words always arrive.
+- **MCP client hardening** (`agents/core/mcp/client.py`, `agents/core/security/quarantine.py`).
+  A bare tool name two servers offer is refused as `ambiguous_tool` instead of going to
+  whichever server came first (`server/tool` or `server=` pins it). Unicode TAG characters —
+  invisible on screen, readable by the model — are stripped from every ToolRPC result and
+  every MCP call result.
+- Tests: `tests/test_channel_render.py` (15), `tests/test_mcp_hardening.py` (6). Not proven
+  against a real Telegram bot — `docs/OWNER_TASKS.md` P20.
+
 ### Wave 2026-09-07 — Hermes absorption, wave 2a: the owner's own scheduled jobs
 
 - **Owner-scheduled jobs** (`agents/core/autonomy/jobs.py`). Nerva parsed "every weekday at
