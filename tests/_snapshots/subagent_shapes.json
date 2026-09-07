@@ -1,0 +1,76 @@
+{
+  "record": [
+    "agent",
+    "blocked",
+    "cost",
+    "created_at",
+    "finished_at",
+    "id",
+    "output_schema",
+    "parent",
+    "result",
+    "session_id",
+    "status",
+    "steerable",
+    "steers",
+    "stop_reason",
+    "task"
+  ],
+  "spawn.concurrency_cap": [
+    "active",
+    "cap",
+    "ok",
+    "reason"
+  ],
+  "spawn.invalid_output_schema": [
+    "ok",
+    "reason"
+  ],
+  "spawn.ok": [
+    "cost",
+    "id",
+    "ok",
+    "result",
+    "session_id",
+    "status"
+  ],
+  "spawn.recursion_depth_cap": [
+    "depth",
+    "max_depth",
+    "ok",
+    "reason"
+  ],
+  "spawn.spawn_budget_exhausted": [
+    "max_total",
+    "ok",
+    "reason",
+    "used"
+  ],
+  "stats": [
+    "active",
+    "blocked",
+    "by_status",
+    "cap",
+    "cost_usd",
+    "max_depth",
+    "persist",
+    "steerable",
+    "total"
+  ],
+  "steer.unknown": [
+    "id",
+    "ok",
+    "reason"
+  ],
+  "stop.not_running": [
+    "id",
+    "ok",
+    "reason",
+    "status"
+  ],
+  "stop.unknown": [
+    "id",
+    "ok",
+    "reason"
+  ]
+}

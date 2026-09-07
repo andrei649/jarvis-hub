@@ -170,6 +170,23 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **A drift gate for the contracts nobody declared.** `test_interface_contract_drift.py`
+  snapshots the *declared* contracts — dataclasses, pydantic models, enums — and cannot see the
+  ones that matter most for a fleet of parallel agents, because a subagent's answer is a **plain
+  dict built at runtime**. Nothing declares its keys, so nothing notices when they change, and
+  every caller reading `result["ok"]` breaks silently and at once.
+  `tests/test_subagent_shape_drift.py` is the runtime-capture half: that gate *introspects*, this
+  one **calls**. It drives the real `SubAgentManager` through each outcome and snapshots the key
+  set that actually came back. Writing it surfaced three faults in the capture itself, which is
+  the point of a gate that guards its own guard: `max_depth=0` and `max_concurrent=0` are both
+  **clamped by the constructor**, so two "refusals" were silently capturing the **success** shape
+  and would have baked the wrong keys in as the refusal's; a drift in the success shape made the
+  capture **crash** on a `KeyError` rather than report, turning one readable failure into twelve
+  fixture errors; and a guard that stopped firing made the concurrency capture **deadlock** —
+  a gate that hangs when the thing it guards breaks is a gate someone will disable. Each guard
+  is now reached the way production reaches it, the capture never raises, and the refusal
+  verification is itself a test, so a refusal that stopped refusing fails loudly instead of
+  quietly redefining the contract. 13 pytest.
 - **The secret-scan gate stopped failing on a network blip.** The gitleaks binary download in
   `security.yml` had no retry, so a `Connection reset by peer` fetching a third-party release
   tarball failed the whole gate **before a single line was scanned** — which reads on the PR

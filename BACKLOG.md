@@ -203,6 +203,18 @@
   example is a rule nobody has tested. There is no route that *runs* the pack (a run is minutes,
   and its live half needs a real desktop in front of a real person). 38 pytest + 5 vitest.
 
+- [x] ✅ **V3 — the drift gate for contracts nobody declared (subagent return shapes).**
+  `tests/test_subagent_shape_drift.py` + `tests/_snapshots/subagent_shapes.json`. The existing
+  contract gate snapshots *declared* types and is blind to a subagent's answer, which is a **plain
+  dict built at runtime** — nothing declares its keys, so a rename breaks every caller at once and
+  no type checker sees it. That gate **introspects**; this one **calls**, driving the real
+  `SubAgentManager` through every outcome. Three faults in the capture itself surfaced while
+  writing it: `max_depth=0`/`max_concurrent=0` are **clamped by the constructor**, so two refusals
+  were capturing the **success** shape; a success-shape drift made the capture **crash** instead of
+  report (one failure → twelve fixture errors); and a guard that stopped firing made it **deadlock**.
+  Each guard is now reached as production reaches it, the capture never raises, and "every guard
+  still fires" is its own test. 13 pytest; three drifts red-proven with readable failures.
+
 - [x] ✅ **H12.15 — the automatic backup, and the prune that makes it safe.**
   `backup.prune_backups` + `backup.backup_health` + `SchedulerService.schedule_backups/run_backup`
   + `backup.auto_enabled` / `backup.keep`. `create_backup` existed and nothing scheduled it;
