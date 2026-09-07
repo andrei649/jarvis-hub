@@ -2,8 +2,8 @@
   "active_agents": 18,
   "horizon_totals": {
     "blocked": 1,
-    "delivered": 38,
-    "done": 250,
+    "delivered": 0,
+    "done": 288,
     "open": 12,
     "open_or_blocked": 13,
     "total": 301
@@ -11,8 +11,8 @@
   "horizons": {
     "H10": {
       "blocked": 0,
-      "delivered": 1,
-      "done": 29,
+      "delivered": 0,
+      "done": 30,
       "open": 0,
       "total": 30
     },
@@ -25,8 +25,8 @@
     },
     "H12": {
       "blocked": 0,
-      "delivered": 3,
-      "done": 21,
+      "delivered": 0,
+      "done": 24,
       "open": 2,
       "total": 26
     },
@@ -74,8 +74,8 @@
     },
     "H19": {
       "blocked": 0,
-      "delivered": 33,
-      "done": 2,
+      "delivered": 0,
+      "done": 35,
       "open": 0,
       "total": 35
     },
@@ -130,8 +130,8 @@
     },
     "H30": {
       "blocked": 0,
-      "delivered": 1,
-      "done": 7,
+      "delivered": 0,
+      "done": 8,
       "open": 0,
       "total": 8
     },
@@ -199,7 +199,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "c16d84e989ffd26ea941e02ae8ae49750d7dd8ca",
+  "latest_ci_commit": "185c94e390731d752ebc29662453804574c58e93",
   "open_release_gates": [
     {
       "id": "A1",
@@ -224,7 +224,7 @@
   ],
   "routes": 465,
   "tests": {
-    "backend": 8788,
+    "backend": 8790,
     "frontend": 1031,
     "mobile": 135
   },

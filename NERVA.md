@@ -203,14 +203,10 @@ curl.exe http://127.0.0.1:8080/status
 <!-- project-status:jarvis-stats:start -->
 - 18 active agents; registry-derived
 - 465 HTTP routes; parity-snapshot-derived
-- Tests: backend **8,788** · frontend **1,031** · mobile **135**
-- Version: **v1.0.0** · source commit `c16d84e989ff`
-- Backlog ledger: 250 done · 38 delivered (runtime proof pending) · 13 open or blocked of 301 horizon rows
-- Runtime proof pending: H10 — 29 done · 1 delivered (runtime proof pending) · 0 open
-- Runtime proof pending: H12 — 21 done · 3 delivered (runtime proof pending) · 2 open
-- Runtime proof pending: H19 — 2 done · 33 delivered (runtime proof pending) · 0 open
-- Runtime proof pending: H30 — 7 done · 1 delivered (runtime proof pending) · 0 open
-- H23 roll-up: 28/30 done, 0 delivered (runtime proof pending), 1 blocked, 1 open; release gates: A1, A3, A4, A6
+- Tests: backend **8,790** · frontend **1,031** · mobile **135**
+- Version: **v1.0.0** · source commit `185c94e39073`
+- Backlog ledger: 288 done · 13 open or blocked of 301 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
+- H23 roll-up: 28/30 done, 1 blocked, 1 open; release gates: A1, A3, A4, A6
 <!-- project-status:jarvis-stats:end -->
 
 ---

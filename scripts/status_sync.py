@@ -448,9 +448,28 @@ def generated_snippets(status: dict) -> dict[str, str]:
     )
     # The global figure: delivered rows are neither done nor open — they are shown on
     # their own and never inflate "open or blocked".
-    ledger = (
-        f"{totals['done']} done · {totals['delivered']} delivered (runtime proof pending) · "
+    #
+    # The zero case is omitted rather than printed, the same way `horizon_summary` above
+    # already does it. This is not cosmetic. After the 2026-09-07 marker change there are
+    # no 🔨 rows left in BACKLOG.md, so this bucket is structurally pinned at 0 — and
+    # "0 delivered (runtime proof pending)" then stops being a measurement and becomes a
+    # standing assertion, on the repo's front page, that NOTHING is awaiting runtime
+    # proof. That is false: `docs/OWNER_TASKS.md` → "Production-verification checklist"
+    # exists precisely because a large number of ✅ rows have never run against real
+    # hardware, a real credential or a real network. A generated surface must not publish
+    # a reassuring zero that the file next to it contradicts.
+    ledger_parts = [f"{totals['done']} done"]
+    if int(totals["delivered"]):
+        ledger_parts.append(f"{totals['delivered']} delivered (runtime proof pending)")
+    ledger_parts.append(
         f"{totals['open_or_blocked']} open or blocked of {totals['total']} horizon rows"
+    )
+    ledger = " · ".join(ledger_parts)
+    # ✅ means *delivered* since 2026-09-07, not *proven in CI*. The pointer travels with
+    # the number so a reader of the generated line cannot take "288 done" as "288 proven".
+    proof_pointer = (
+        "proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → "
+        "Production-verification checklist"
     )
     return {
         "badges": "\n".join(
@@ -463,7 +482,7 @@ def generated_snippets(status: dict) -> dict[str, str]:
         "readme-status": (
             f"Generated status: **v{status['version']}** · {matrix} · **{status['routes']}** routes · "
             f"**{status['active_agents']}** active agents · open release gates: **{gate_ids}** · "
-            f"backlog: **{ledger}** · "
+            f"backlog: **{ledger}** ({proof_pointer}) · "
             f"source commit `{commit}`. Full data: [`project-status.json`](project-status.json)."
         ),
         "jarvis-stats": "\n".join(
@@ -472,19 +491,22 @@ def generated_snippets(status: dict) -> dict[str, str]:
                 f"- {status['routes']} HTTP routes; parity-snapshot-derived",
                 f"- Tests: {matrix}",
                 f"- Version: **v{status['version']}** · source commit `{commit}`",
-                f"- Backlog ledger: {ledger}",
+                f"- Backlog ledger: {ledger} — {proof_pointer}",
                 *pending_lines,
                 (
                     f"- H23 roll-up: {h23['done']}/{h23['total']} done, "
-                    f"{h23['delivered']} delivered (runtime proof pending), "
-                    f"{h23['blocked']} blocked, {h23['open']} open; release gates: {gate_ids}"
+                    # same zero rule as the global ledger above
+                    + (f"{h23['delivered']} delivered (runtime proof pending), "
+                       if int(h23["delivered"]) else "")
+                    + f"{h23['blocked']} blocked, {h23['open']} open; release gates: {gate_ids}"
                 ),
             ]
         ),
         "go-live-header": (
             f"> Generated project status: **v{status['version']}** · {matrix} · "
             f"**{status['routes']}** routes · **{status['active_agents']}** active agents · "
-            f"open owner gates: **{gate_ids}** · backlog: **{ledger}** · commit `{commit}`."
+            f"open owner gates: **{gate_ids}** · backlog: **{ledger}** ({proof_pointer}) · "
+            f"commit `{commit}`."
         ),
     }
 

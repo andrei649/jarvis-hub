@@ -356,14 +356,44 @@ built on your Windows box:
     ✅ decided 2026-09-01: **accept** — no history rewrite, no BFG/filter-repo, no force-push;
     already-public, HEAD-equivalent facts are gated by `NERVA_PUBLIC_PROFILE`.
 
-## 🟣 Wave 2026-09-06 packets — the eight things that flip 🔨 → ✅
+## 🟣 Production-verification checklist — what has never run for real
 
-> Seventeen slices landed on 2026-09-06 (`opus-integration`, PR #1039). Everything hermetic is
-> already green in CI; the rows still marked **🔨 delivered, proof pending** in
-> [`BACKLOG.md`](../BACKLOG.md) are pending on *you* — real hardware, real credentials, a real
-> network read. Each packet below says what only you can do, the exact commands, and which row it
-> unblocks. Nothing here is urgent; nothing here is safe to skip before claiming ✅.
-> Every flag named is default-off — see [`FLAGS.md`](FLAGS.md) for what each one costs.
+> **This is where the unproven/proven line is drawn.** On 2026-09-07 the owner decided that
+> verification happens in production, and [`BACKLOG.md`](../BACKLOG.md)'s 64 🔨 rows became ✅
+> **delivered**. That flip changed the ledger's marker, not the facts: everything below has still
+> never executed against real hardware, a real credential or a real network, and CI cannot tell you
+> otherwise — a container proves nothing about a keycode table, a code-signing certificate or a
+> vendor's rate limiter.
+>
+> So this list is the honest counterweight to a file that now reads all-green. Each packet says what
+> only you can do, the exact commands, and which rows it covers. Every flag named is default-off — see
+> [`FLAGS.md`](FLAGS.md) for what each one costs — so nothing here is running until you turn it on.
+>
+> **What it covers, stated rather than implied.** P1–P10 came out of the 2026-09-06 wave and name
+> about 18 rows between them. That left roughly forty flipped rows with no entry at all — including
+> every one of the 33 WorldView `H19.x` rows, the WLED bridge and the container quickstart — so the
+> first version of this section claimed a completeness it did not have. P11–P14 close that gap:
+> **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
+> docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
+> hardware. If you flip a row to ✅ and its proof still depends on something only you can run, it
+> belongs here — that rule is written into
+> [`docs/prompts/BACKLOG_DRIVER.md`](prompts/BACKLOG_DRIVER.md) so an unattended session applies it.
+>
+> **Read the risk asymmetrically.** Most of these fail loudly and cheaply the first time you use
+> them: a wrong credential is a 401, an unreachable strip is `wled_unreachable`, a missing binary is
+> a named refusal. Two do not, and they are worth doing before the first real use rather than
+> during it:
+>
+> - **P9 (keycode tables).** The macOS and Linux desktop drivers send OS-level input from tables
+>   derived from documentation, not from an observed keypress. The chord allowlist that refuses
+>   `ctrl+alt+delete` and `cmd+alt+escape` is keyed on the *canonical* form of those chords — if a
+>   platform's table maps a key differently than the docs say, a refusal can miss and the wrong
+>   chord gets pressed on your machine. That is a fail-silent path, and it is the one item here
+>   where "find out in production" means finding out by having it happen to you.
+> - **P10 (published packages).** A Homebrew cask, a winget manifest and a public GHCR image are
+>   things other people install. A mistake there is not yours to discover privately.
+>
+> Everything else on this list is genuinely fine to learn in production.
 
 - [ ] **P1 — Local terminal on your box** *(unblocks `OP-TERM-1`, `OP-TERM-3`)*
       Only you have a host worth running commands on; CI has a container that proves nothing about
@@ -547,6 +577,52 @@ built on your Windows box:
       data-root rename — upgrades those two manual-test rows beyond ⚠️. `disk_full` is simulated by
       the harness and honest about it: it does not intercept `os.open`/`os.write`/`tempfile`, file
       objects or sqlite connections opened before the fault.
+
+- [ ] **P11 — WorldView against real feeds and real infrastructure**
+      *(covers the 33 `H19.1.1`–`H19.5.7` rows, the largest block the 2026-09-07 marker change
+      flipped, and the one this checklist previously did not mention at all)*
+      Every WorldView row is code-complete and offline-tested; none has ingested a real feed or
+      been run at the scale its acceptance criteria name. Two separable halves:
+      **(a) live sources** — each needs a credential only you can create: OpenSky (OAuth2 client
+      id/secret) for ADS-B, AISStream key for AIS, a Space-Track login for TLE, FAA-NOTAM auth for
+      the airspace layer. With those set, run the `worldview/` docker-compose so the ingest hop and
+      the local Kafka leg execute for real, and confirm the globe renders live points rather than
+      the fixture corpus.
+      **(b) scale** — WS1/WS5's numbers (KEDA at 50k msg/s, 10k concurrent WebSocket clients, a
+      multi-AZ DR game-day, 1M-point tiles) need cloud infrastructure and a budget. The owner
+      rescoped these on 2026-09-01 as *opportunistic, off the Nerva 1.x critical path*; that
+      rescope stands, and this packet exists so the rows stop being silently uncovered.
+      **What is at risk if neither runs:** nothing in production — WorldView is a separate product
+      behind its own compose file and is not reachable from the hub's default surface. This is the
+      one block on the list where "verify in production" costs nothing, because there is no
+      production to break yet.
+
+- [ ] **P12 — The light strip** *(covers `H30.8`)*
+      `WLEDBridge` has never addressed a real WLED controller — every test drives a fake transport.
+      Set `JARVIS_WLED_URL` to the strip's LAN address, restart the hub, and change the assistant
+      state (speak to it) so one `house.control` action crosses the kernel. Confirm three things:
+      the strip follows the orb's colour; unplugging it yields `wled_unreachable` rather than a
+      guess; and an unchanged scene sends nothing (the no-op path). Then pull the URL back out if
+      you do not want it armed.
+      *This packet exists because the preamble above uses `wled_unreachable` as its example of a
+      failure that is loud and cheap — which was true of the code and false of the coverage: the
+      row had no packet at all until now.*
+
+- [ ] **P13 — The container quickstart, actually run once** *(covers `docker-quickstart-loopback`)*
+      `docker-compose.quickstart.yml` has never been brought up. `docker compose -f
+      docker-compose.quickstart.yml up`, then open the HUD on the published loopback port and send
+      one message. It either works in one command or it does not; there is no partial credit, and
+      it is the first thing a new user runs.
+
+- [ ] **P14 — Program acceptance (a reviewer, not hardware)** *(covers `B2`, `B4`/`nerva.ledger.v1`,
+      `E1.3`, `E2.1`+`E3.2`, `E4.1`/#1008, the Continuity Core suite)*
+      **These are on this list for a different reason than everything above** — they need no
+      credential and no device. They are *delivered, not program-accepted*: the Nerva 2.0 manifest
+      cannot be self-accepted, so each needs an attestation from a reviewer who is not the builder
+      (the pattern used for the four attestations in
+      [`docs/nerva2/attestations/`](nerva2/attestations/)). Nothing about production use closes
+      them; only a review does. They are listed here so the count of ✅ rows with an outstanding
+      obligation is honest, not to imply you must run something.
 
 ## Parking lot (decisions, no rush)
 

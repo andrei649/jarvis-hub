@@ -106,6 +106,11 @@ Use these exact, conservative framings:
 - **Strict-local agents** (family, security, digital twin) — code-enforced to never reach the cloud.
 - Runs on a **consumer GPU** via LM Studio / Ollama.
 
+> Since 2026-09-07 a ✅ in `BACKLOG.md` means *delivered*, not *proven* — so a capability claim also
+> needs a check against [`../OWNER_TASKS.md`](../OWNER_TASKS.md) → "Production-verification
+> checklist", which lists what has never run against real hardware, a real credential or a real
+> network.
+>
 > If a number isn't on this list, don't put it on an asset without checking `BACKLOG.md` (the source
 > of truth) first. Stale stats on a launch graphic are a brand bug.
 

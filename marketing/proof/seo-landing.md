@@ -84,7 +84,9 @@ Yes — one-click `install.sh` / `INSTALL.bat`; it's open and inspectable, so yo
 
 - Every capability shown as "live" must be shipped, not owner-gated. Floating bar / screen reflex /
   connectors = "core built, host wiring pending," never "available now."
-- No proof-point number that isn't in `BACKLOG.md` / `DESIGN_BRIEF.md` §5.
+- No proof-point number that isn't in `BACKLOG.md` / `DESIGN_BRIEF.md` §5, and no capability
+  presented as working that sits on `docs/OWNER_TASKS.md` → "Production-verification checklist"
+  (a ✅ in the backlog has meant *delivered*, not *proven*, since 2026-09-07).
 - The hero image uses real HUD data or clearly badged demo mode — never a fabricated screenshot.
 - Keep the "no *shipping consumer* product, *local-first*" superlative form; don't upgrade it to
   "only one in the world."

@@ -30,7 +30,11 @@ inherits from [`../docs/BRAND_BOOK.md`](../docs/BRAND_BOOK.md).
 ## Three rules everyone using this suite follows
 
 1. **Numbers trace to the repo.** The approved proof points are `DESIGN_BRIEF.md` §5; the source of
-   truth for any count is [`BACKLOG.md`](../BACKLOG.md). A stale stat on an asset is a brand bug
+   truth for any count is [`BACKLOG.md`](../BACKLOG.md) **and** — since the 2026-09-07 marker
+   change, where a ✅ means *delivered* rather than *proven* — a check against
+   [`docs/OWNER_TASKS.md`](../docs/OWNER_TASKS.md) → "Production-verification checklist", which
+   lists what has never run against real hardware, a real credential or a real network.
+   A stale stat on an asset is a brand bug
    (it's bitten twice — see BRAND_REVIEW §7).
 2. **Honesty is the marketing.** Never stage fake data — use real or the clearly-badged demo mode.
    The product's pitch is that it doesn't lie; the marketing can't either.

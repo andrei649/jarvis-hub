@@ -5,7 +5,9 @@
 > [`docs/research/2026-06-25-getjarvis-competitive-gap.md`](../../docs/research/2026-06-25-getjarvis-competitive-gap.md),
 > [`docs/research/2026-06-02-personal-ai-competitors.md`](../../docs/research/2026-06-02-personal-ai-competitors.md) —
 > and the positioning in [`marketing/competitive-brief/COMPETITIVE_BRIEF.md`](../competitive-brief/COMPETITIVE_BRIEF.md).
-> **Honesty discipline applies** (brief §6): no stat that isn't in `BACKLOG.md`; owner/host-gated
+> **Honesty discipline applies** (brief §6): no stat that isn't in `BACKLOG.md` **and clear of**
+> [`docs/OWNER_TASKS.md`](../../docs/OWNER_TASKS.md) → "Production-verification checklist"
+> (since 2026-09-07 a ✅ there means *delivered*, not *proven*); owner/host-gated
 > capabilities are marked, never implied as live; we win on ownership + governance + cost, not on
 > out-capability-ing Google/Apple.
 > **Perishable** — the assistant market moves fast; re-verify dated claims quarterly before public use.
@@ -94,6 +96,10 @@ The three **bold** rows are ours alone — lead with them. (Table mirrors `COMPE
 2. Don't claim "only X in the world" — use the defensible "no *shipping consumer* product, *local-first*" form.
 3. Don't imply owner/host-gated capabilities are live. The floating bar, screen reflex, and connectors
    have **cores built, host wiring pending** — say exactly that.
-4. Don't publish a stat that isn't in `BACKLOG.md`. Stale numbers on a comparison graphic are a brand bug.
+4. Don't publish a stat that isn't in `BACKLOG.md`, **and don't publish a capability as working
+   if it is on the "Production-verification checklist" in `docs/OWNER_TASKS.md`** — since the
+   2026-09-07 marker change a ✅ in the backlog means *delivered*, not *proven on real hardware*.
+   Stale numbers on a comparison graphic are a brand bug; an unproven capability sold as proven
+   is a worse one.
 5. Reference OpenClaw's security crisis as a *dated, sourced* cautionary tale, never as FUD, and never
    dunk on its users — they wanted the right thing.

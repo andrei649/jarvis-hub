@@ -64,7 +64,7 @@ milestone on their own; they block the *proof* the next milestone needs.
 | Version | Theme | Exit gate | Status |
 |---|---|---|---|
 | **1.1.0** | **Hands, company, activation** — the one-PR delivery (§4) | full backend + frontend + mobile suites green; every new privileged kind in `action_auth.json`; every driver refuses honestly off-box; company mode default-off with a hermetic seven-night simulation green; `install_smoke` passes from the new bootstrap; BACKLOG synced | 🔨 this PR |
-| 1.2.0 | **Proven hands** — owner-hardware validation of the Windows/macOS/Linux drivers, browser transport and local terminal (🔨 → ✅ only from owner-live `nerva.evidence.v1` receipts); isolated operator session (dedicated browser profile, second Windows session); presence-gated *watch mode* with take-over; `credential.fill` kernel kind over the OS keychain; consent ledger completed (OS input persistence, MCP servers, HA devices); AUD-6 httpOnly tokens | 20-task operator benchmark scored on the owner box under kernel ON with zero ungoverned actions; every driver row ✅ with a receipt | ⬜ |
+| 1.2.0 | **Proven hands** — owner-hardware validation of the Windows/macOS/Linux drivers, browser transport and local terminal (the 2026-09-07 marker change made those rows ✅ **delivered**; this milestone is where they become **proven**, and only an owner-live `nerva.evidence.v1` receipt counts — a green CI run does not); isolated operator session (dedicated browser profile, second Windows session); presence-gated *watch mode* with take-over; `credential.fill` kernel kind over the OS keychain; consent ledger completed (OS input persistence, MCP servers, HA devices); AUD-6 httpOnly tokens | 20-task operator benchmark scored on the owner box under kernel ON with zero ungoverned actions; every driver row ✅ with a receipt | ⬜ |
 | 1.3.0 | **Night Shift E5.1** — company mode under `JARVIS_TASK_MEDIATION=enforce` (B7 evidence for #906); scheduled continuity live; HA WebSocket observer and physical-context-gated autonomy; MCP server exposure of the governed operator; record-then-replay v0 for recurring chores; T-0.21 pack catalog; browser wake word (H5.16); config dry-run (H10.28) | seven real nights of owner dogfood with `company.enabled` on: every "done" in the morning brief carries a receipt, zero unmediated privileged tasks, interrupt budget never exceeded | ⬜ |
 | 1.4.0 | **Fast adoption** — hosted one-line installer on the owner's domain; Telegram pairing default in the design-partner posture; package presence from the generated Homebrew/winget/GHCR manifests (signing is owner-gated); the public demo instance (H23.30 R3); T-0.49 approval-gated timeline; activation and D7 measured with ≥3 design partners; proof-of-action receipts as the share loop | activation_30m and D7 (≥1 accepted action) computed locally for ≥3 design partners from opt-in aggregate export; GAP-0 closed | ⬜ |
 | 1.5.0 | **Continuity and cognition** — E4.0 Howard preference model (`nerva.preference.v1`), identity manifest acceptance (#1008), E12.1 belief/metacognition fixtures, E7.0 scenario contract, Continuity Core suite nightly, H18.24/H18.25 mobile renderers (device), mobile parity ≤20 ⬜ | Continuity suite runs nightly on the E9.0 harness with a published held-out score; identity changes only through versioned proposals | ⬜ |
@@ -78,13 +78,15 @@ milestone's rows (PARTIAL before MISSING), then 1.0.1 defects, then DRA/SEC resi
 ## 4. The 1.1.0 delivery (this PR) — by theme
 
 Each line is one file-disjoint slice built by one builder, checked by an independent adversarial
-reviewer, with one fix round. Backlog ids in brackets are the rows the slice closes; hardware-
-dependent behaviour lands as 🔨. Anything that did not make it is listed honestly in §5.
+reviewer, with one fix round. Backlog ids in brackets are the rows the slice closes. Anything that
+did not make it is listed honestly in §5.
 
 > **Delivery marks added 2026-09-06** (integration of commit `214bc5eb`, run `opus-integration`,
 > PR #1039). A line carries **✅ landed** only when its module, its tests and its slice report are
-> all in the tree; **🔨 landed** when the code is in but the proof needs owner hardware,
-> credentials or a network read (owner packets: [`OWNER_TASKS.md`](OWNER_TASKS.md) §Wave 2026-09-06);
+> all in the tree — since the **2026-09-07 marker change** (owner: verification happens in
+> production) that includes work whose proof needs owner hardware, credentials or a network read,
+> which used to carry **🔨**; what those rows still owe is listed in
+> [`OWNER_TASKS.md`](OWNER_TASKS.md) → "Production-verification checklist";
 > **⬜** — no mark — when the slice **did not land in this wave**, whatever this section originally
 > promised. Three lines landed without an adjudicated slice report and are marked as such. Row-level
 > statuses live in [`BACKLOG.md`](../BACKLOG.md) §Wave 2026-09-06.
