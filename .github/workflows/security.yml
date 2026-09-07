@@ -45,7 +45,16 @@ jobs:
           set -euo pipefail
           VERSION=8.30.1
           SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
-          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          # --retry because this download is the one part of the secret-scan gate
+          # that depends on a third-party host being reachable at that instant. A
+          # `Connection reset by peer` here fails the gate before a single line is
+          # scanned, which reads on the PR exactly like a found secret — the most
+          # alarming possible message for a network blip. The checksum below is
+          # what makes retrying safe: a truncated or substituted download still
+          # fails, loudly, on the hash.
+          curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 20 \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
+            -o gitleaks.tar.gz
           echo "${SHA256}  gitleaks.tar.gz" | sha256sum -c -
           tar -xzf gitleaks.tar.gz gitleaks
           ./gitleaks version

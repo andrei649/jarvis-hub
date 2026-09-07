@@ -170,6 +170,12 @@ default: every new capability is off behind its own flag.
   cannot improve it, and a never-activated install reports *how long it has been waiting* rather
   than a blank. It surfaces as `activation` on the north-star, where it is deliberately a property
   of the install rather than of the trailing window.
+- **The secret-scan gate stopped failing on a network blip.** The gitleaks binary download in
+  `security.yml` had no retry, so a `Connection reset by peer` fetching a third-party release
+  tarball failed the whole gate **before a single line was scanned** — which reads on the PR
+  exactly like a found secret, the most alarming possible message for a transient network error.
+  It retries now (5 attempts, `--retry-all-errors`, a connect timeout). The pinned checksum is
+  what makes retrying safe: a truncated or substituted download still fails, loudly, on the hash.
 - **The backups now happen.** `create_backup` has existed for a long time and nothing ever
   called it on a schedule, and nothing ever pruned the directory it writes to — and those were
   one gap, not two: an automatic backup with no prune writes a full copy of the data root every
