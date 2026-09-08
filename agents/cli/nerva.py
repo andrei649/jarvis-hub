@@ -104,6 +104,13 @@ def build_parser() -> argparse.ArgumentParser:
     explain.add_argument("--tier", type=int, help="explicit risk tier 0-3 (else classified)")
     explain.add_argument("--json", action="store_true")
 
+    tools = verbs.add_parser("tools", help="what the tool loop just did (admin)")
+    tools.add_argument("-n", "--lines", type=int, default=20, help="how many events")
+    tools.add_argument("--agent", help="only this agent's events")
+    tools.add_argument("--untrusted", action="store_true",
+                       help="only the results that were fenced as untrusted data")
+    tools.add_argument("--json", action="store_true")
+
     logs = verbs.add_parser("logs", help="the last lines of the hub log (offline)")
     logs.add_argument("-n", "--lines", type=int, default=50)
 
@@ -336,6 +343,46 @@ def _payload(raw: str | None) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("--payload must be a JSON object")
     return value
+
+
+def cmd_tools(ns: argparse.Namespace, ctx: Context) -> int:
+    """The tool loop's recent trail — the surface the 5a fence writes to.
+
+    Every event the runtime emits used to be discarded (no sink was ever passed), so
+    "the model read a page and the turn was tainted" left no trace anywhere the owner
+    could look. This is that trace: bounded, in memory, tool names and reasons only.
+    """
+    client = ctx.client()
+    # argparse already supplies the default, so `or 20` would only ever swallow an
+    # explicit `-n 0` and quietly ask for twenty instead of the one the bound implies.
+    limit = max(1, min(int(ns.lines or 0), 500))
+    reply = client.get(f"/api/admin/tool-events?limit={limit}") or {}
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    events = reply.get("events") or []
+    if ns.agent:
+        events = [e for e in events if e.get("agent_id") == ns.agent]
+    if ns.untrusted:
+        events = [e for e in events if e.get("event") == "tool_result_untrusted"]
+    if not events:
+        ctx.say("no tool events yet — the tool loop is off, or nothing has used it")
+        return EXIT_OK
+    for event in events:
+        line = (f"{str(event.get('at', ''))[11:19]}  {event.get('agent_id', '?'):10s}  "
+                f"{str(event.get('event', '?')):24s}  {event.get('tool', '')}")
+        status = event.get("status")
+        if status and status not in ("ok", "requested", "running"):
+            line += f"  [{status}]"
+        reasons = event.get("reasons")
+        if reasons:
+            line += f"  reasons={','.join(str(r) for r in reasons)}"
+        ctx.say(line)
+    counts = reply.get("counts") or {}
+    fenced = counts.get("tool_result_untrusted", 0)
+    ctx.say(f"{len(events)} shown — since boot: {sum(counts.values())} events, "
+            f"{fenced} fenced as untrusted")
+    return EXIT_OK
 
 
 def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
@@ -683,6 +730,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "config": cmd_config,
     "approvals": cmd_approvals,
     "kernel": cmd_kernel,
+    "tools": cmd_tools,
     "logs": cmd_logs,
     "estop": cmd_estop,
     "jobs": cmd_jobs,

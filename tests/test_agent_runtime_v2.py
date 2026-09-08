@@ -1352,6 +1352,8 @@ async def test_agent_generate_response_tool_mode_emits_only_final_answer_and_awa
     assert answer == "final answer only"
     assert emitted == ["final answer only"]
     assert len(runtime.calls) == 1
+    from agents.core.observability.tool_events import TOOL_EVENTS
+
     assert runtime.calls[0] == {
         "agent_id": "jarvis",
         "backend": backend,
@@ -1360,6 +1362,8 @@ async def test_agent_generate_response_tool_mode_emits_only_final_answer_and_awa
         "system": "system",
         "max_tokens": 400,
         "temperature": 0.1,
+        # The loop used to be run with no sink, so every event it emitted was dropped.
+        "event_sink": TOOL_EVENTS.record,
     }
 
 

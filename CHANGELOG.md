@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-08 — what the off-box proof run found
+
+The wave-5 packets said "not proven on the RTX box". Most of them turned out not to need
+it: a real Qwen3-0.6B on CPU (llama.cpp, ~30 tok/s) driving the real tool loop over the
+real registry against live DuckDuckGo proved the fence, the taint, the SSRF refusals, the
+front-door guards and the timeout floor on a GPU-less container. Five things that run
+found are fixed here.
+
+- **`web_search` results are now readable.** The keyless DuckDuckGo backend hands back its
+  own redirector — `//duckduckgo.com/l/?uddg=…`, protocol-relative and scheme-less — which
+  `web_extract`'s preflight refused as `bad_args`. So the model could search and never open
+  what it found, and the tainted-turn rule ("only a URL `web_search` returned may be read")
+  allowed an empty set in practice. `_search_duckduckgo` now unwraps the target at the
+  parser: one hop only, http(s) with a host or nothing, and never double-decoded.
+- **The tool loop's trail has a destination** (`agents/core/observability/tool_events.py`,
+  `agents/core/routers/admin.py`, `nerva tools`). `AgentToolRuntime` emits a typed event per
+  step — including the 5a `tool_result_untrusted` that says a result was fenced and the turn
+  tainted — but `_emit` returns immediately with no sink and `Agent.generate_response`, the
+  only production caller of `run`, never passed one. Every event was built and dropped, and
+  the owner packet pointed at a timeline with nothing in it. Now a bounded, thread-safe ring
+  buffer (500 events, monotonic per-name tallies that survive eviction) receives them, read
+  back through `GET /api/admin/tool-events` (admin) and `nerva tools [--agent X]
+  [--untrusted]`. Each field is re-bounded on the way in — a nested value is stored as its
+  type name, never rendered — so a future emitter that forgets cannot leak a tool's
+  arguments into a surface the owner reads casually.
+- **The taint fence's granularity is stated and pinned.** It is per loop *iteration*, not per
+  call: two `web_search` calls the model emits in one assistant turn both run and neither
+  sees a tainted origin, because the batch is gathered concurrently and fenced afterwards.
+  Defensible — everything in one batch was composed before any untrusted byte arrived — but
+  the P24 packet claimed "one search per turn is the contract", which was false. The
+  behaviour is unchanged, now documented at both seams and pinned by a test.
+- **`JARVIS_CA_BUNDLE`** (`agents/core/http_client.py`). Every plugin client is built
+  `trust_env=False` and therefore verifies against certifi alone, so behind a TLS-inspecting
+  proxy or a private CA every outbound call failed, the search backend swallowed the error,
+  and `web_search` answered `count: 0` — indistinguishable from "nothing found". The
+  variable names the missing root (`SSL_CERT_FILE` is honoured as a second spelling). It can
+  only ADD: there is no value of either that turns verification off, and a path that does not
+  exist or a bundle that will not load degrades to the default store with a warning.
+- **`docs/OWNER_TASKS.md` P24 / P25 / P26 rewritten** to say, leg by leg, what was proven
+  off-box and what genuinely needs the owner's hardware, credential or judgement — including
+  the one gap the run could not close: llama.cpp's server returns a thinking model's output
+  inline as `<think>` in `content` rather than as `reasoning_content`, and on that shape the
+  wave-5c guard does not fire. P26 now asks for the one artefact that would close it
+  permanently: a raw captured stream from real LM Studio and real Ollama.
+- Tests: `tests/test_tool_event_trail.py` (8), `tests/test_websearch.py` (+5),
+  `tests/test_plugin_egress.py` (+5), `tests/test_nerva_cli.py` (+4),
+  `tests/test_tool_result_taint.py` (+1).
+
 ### Wave 2026-09-07 — Hermes absorption, wave 5c: the deep model finishes the hard question
 
 - **Reasoning-aware timeout floor** (`agents/core/orchestrator.py`, `agents/core/llm/moe_routing.py`,

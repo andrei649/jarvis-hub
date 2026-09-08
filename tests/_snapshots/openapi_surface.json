@@ -48,6 +48,7 @@
   "GET /api/admin/settings": "admin_get_all_api_admin_settings_get",
   "GET /api/admin/settings/{category}": "admin_get_category_api_admin_settings__category__get",
   "GET /api/admin/stats": "admin_stats_api_admin_stats_get",
+  "GET /api/admin/tool-events": "admin_tool_events_api_admin_tool_events_get",
   "GET /api/admin/widgets": "widgets_list_api_admin_widgets_get",
   "GET /api/agent-templates": "agent_templates_list_api_agent_templates_get",
   "GET /api/agents": "api_agents_api_agents_get",

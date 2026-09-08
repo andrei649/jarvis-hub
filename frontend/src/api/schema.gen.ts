@@ -5771,6 +5771,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/tool-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Tool Events
+         * @description The tool loop's recent trail: what each agent asked for, what came back, and
+         *     every time a result was fenced as untrusted data.
+         *
+         *     Admin-only and read-only. The rows carry tool names, call ids, statuses, machine
+         *     reasons and counts — never a tool's arguments and never its result, which is what
+         *     lets this be read casually. ``counts`` is monotonic since boot, so "did the fence
+         *     ever fire" is answerable even after the ring buffer has turned over.
+         */
+        get: operations["admin_tool_events_api_admin_tool_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/audit": {
         parameters: {
             query?: never;
@@ -18537,6 +18563,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_tool_events_api_admin_tool_events_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

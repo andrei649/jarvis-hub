@@ -48,6 +48,7 @@
   "GET /api/admin/settings",
   "GET /api/admin/settings/{category}",
   "GET /api/admin/stats",
+  "GET /api/admin/tool-events",
   "GET /api/admin/widgets",
   "GET /api/agent-templates",
   "GET /api/agents",

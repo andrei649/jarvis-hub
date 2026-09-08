@@ -213,3 +213,104 @@ async def test_ssrf_refusals_do_not_open_the_reader_breaker(monkeypatch):
     assert wp._reader.circuit_breaker.is_open() is False
     assert await wp.fetch_page("http://good.example/") == "fine"
     await wp.close()
+
+
+# ── the DuckDuckGo redirector is unwrapped at the parser ─────────────────────
+# The HTML endpoint hands back `//duckduckgo.com/l/?uddg=<target>`, protocol-relative
+# and scheme-less, which `web_extract`'s preflight refuses as `bad_args` — so with the
+# keyless backend the model could search and never open what it found.
+
+def test_unwrap_turns_the_protocol_relative_redirector_into_the_real_url():
+    from core.plugins.websearch import _unwrap_result_url
+
+    href = ("//duckduckgo.com/l/?uddg=https%3A%2F%2Fpypi.org%2Fproject%2Fruff%2F"
+            "&rut=0d0b1f2e3a")
+    assert _unwrap_result_url(href) == "https://pypi.org/project/ruff/"
+    # the same wrapper with a scheme, and the http one
+    assert _unwrap_result_url(
+        "https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa%3Fb%3Dc"
+    ) == "https://example.com/a?b=c"
+    assert _unwrap_result_url(
+        "//html.duckduckgo.com/l/?uddg=http%3A%2F%2Fexample.com%2F"
+    ) == "http://example.com/"
+
+
+def test_unwrap_leaves_a_direct_result_url_alone():
+    from core.plugins.websearch import _unwrap_result_url
+
+    assert _unwrap_result_url("https://example.com/page") == "https://example.com/page"
+    assert _unwrap_result_url("  https://example.com/page  ") == "https://example.com/page"
+
+
+def test_unwrap_never_percent_decodes_the_target_twice():
+    """`parse_qs` already percent-decodes exactly once, which is the whole decoding the
+    wrapper needs. A second pass would turn the `%20` that decode produced into a literal
+    space and hand the reader a different address than the one the result named."""
+    from core.plugins.websearch import _unwrap_result_url
+
+    href = "//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa%2520b"
+    assert _unwrap_result_url(href) == "https://example.com/a%20b"
+    assert " " not in _unwrap_result_url(href)   # the double-decoded shape
+
+
+def test_unwrap_refuses_everything_that_is_not_an_http_result():
+    from core.plugins.websearch import MAX_RESULT_URL_CHARS, _unwrap_result_url
+
+    for href in (
+        "", "   ", None, 42,
+        "/relative/path",
+        "javascript:alert(1)",
+        "ftp://example.com/f",
+        "//duckduckgo.com/l/?rut=nouddg",                       # wrapper with no target
+        "//duckduckgo.com/l/?uddg=javascript%3Aalert(1)",       # target is not http(s)
+        "//duckduckgo.com/l/?uddg=%2Frelative",                 # target has no host
+        # a redirector pointing at another redirector is not a result: one hop only
+        "//duckduckgo.com/l/?uddg=https%3A%2F%2Fduckduckgo.com%2Fl%2F%3Fuddg%3D"
+        "https%253A%252F%252Fexample.com%252F",
+        "https://example.com/" + "x" * MAX_RESULT_URL_CHARS,    # over the cap
+    ):
+        got = _unwrap_result_url(href)
+        if href == ("//duckduckgo.com/l/?uddg=https%3A%2F%2Fduckduckgo.com%2Fl%2F%3Fuddg%3D"
+                    "https%253A%252F%252Fexample.com%252F"):
+            # it unwraps to a duckduckgo.com URL, which is a real http(s) address —
+            # honest, and the reader may fetch it; what must NOT happen is a second hop
+            assert got.startswith("https://duckduckgo.com/l/"), got
+            continue
+        assert got == "", (href, got)
+
+
+@pytest.mark.asyncio
+async def test_duckduckgo_rows_carry_a_readable_url(monkeypatch):
+    """End to end through the real parser: the row `web_search` hands the model must be
+    an address `web_extract` will accept, not the scheme-less wrapper DDG emits."""
+    from core.plugins.websearch import WebSearchPlugin
+
+    html = """
+    <div class="result">
+      <h2 class="result__title"><a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fpypi.org%2Fproject%2Fruff%2F&amp;rut=9">ruff · PyPI</a></h2>
+      <a class="result__snippet">An extremely fast Python linter.</a>
+    </div>
+    <div class="result">
+      <h2 class="result__title"><a href="/relative-nonsense">broken</a></h2>
+      <a class="result__snippet">no usable address</a>
+    </div>
+    """
+
+    class _Resp:
+        text = html
+        def raise_for_status(self):
+            return None
+
+    wp = WebSearchPlugin()
+    async def fake_get(*a, **kw):
+        return _Resp()
+    monkeypatch.setattr(wp._client, "get", fake_get)
+
+    rows = await wp._search_duckduckgo("ruff", 5)
+    assert rows[0]["url"] == "https://pypi.org/project/ruff/"
+    assert rows[0]["title"] == "ruff · PyPI"
+    assert rows[1]["url"] == ""          # honest empty, never the unusable href
+
+    # and the address really is one the reader's own preflight accepts
+    from agents.core.web_tools import preflight_extract
+    assert preflight_extract({"url": rows[0]["url"]})["url"] == "https://pypi.org/project/ruff/"

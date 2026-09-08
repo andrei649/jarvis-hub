@@ -48,6 +48,7 @@
   "GET /api/admin/settings": "admin",
   "GET /api/admin/settings/{category}": "admin",
   "GET /api/admin/stats": "admin",
+  "GET /api/admin/tool-events": "admin",
   "GET /api/admin/widgets": "admin",
   "GET /api/agent-templates": "open",
   "GET /api/agents": "user",

@@ -471,6 +471,9 @@ MACHINE_FACING: dict[str, str] = {
     "/v2/sw-v2.js": "service-worker registration, fetched by the browser",
     "/api/oauth/auth-url": "OAuth dance, driven by the provider/browser",
     "/api/oauth/callback": "OAuth redirect target",
+    "/api/admin/tool-events":
+        "the tool loop's trail, read by `nerva tools` \u2014 the CLI is not in the client "
+        "globs above; the HUD renderer for it is the deferred inline-tool-trail slice",
     "/api/nodes": "node mesh peer registry",
     "/api/nodes/register": "node mesh peer registration",
     "/api/nodes/{node_id}": "node mesh peer",

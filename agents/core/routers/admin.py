@@ -201,6 +201,21 @@ def _redact_audit_details(details: object) -> object:
     return json.dumps(findings) if changed else details
 
 
+@router.get("/api/admin/tool-events", dependencies=[Depends(admin_guard)])
+async def admin_tool_events(limit: int = Query(100, ge=1, le=500)):
+    """The tool loop's recent trail: what each agent asked for, what came back, and
+    every time a result was fenced as untrusted data.
+
+    Admin-only and read-only. The rows carry tool names, call ids, statuses, machine
+    reasons and counts — never a tool's arguments and never its result, which is what
+    lets this be read casually. ``counts`` is monotonic since boot, so "did the fence
+    ever fire" is answerable even after the ring buffer has turned over.
+    """
+    from agents.core.observability.tool_events import TOOL_EVENTS
+
+    return nocache_json({"events": TOOL_EVENTS.snapshot(limit), "counts": TOOL_EVENTS.counts()})
+
+
 @router.get("/api/admin/audit", dependencies=[Depends(admin_guard)])
 async def admin_get_audit(page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200)):
     db = data_path("security/audit.db")
