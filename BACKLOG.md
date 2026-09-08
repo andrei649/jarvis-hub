@@ -1472,8 +1472,10 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   back to the model). The research / search / monitor / scan / lookup / check task kinds tested a
   plugin method that never existed and were a permanent `noop`; they now search — with a
   configured backend only, since they run unattended. An inbound guest still sees only `echo` /
-  `time`. Tests: `tests/test_tool_result_taint.py` (20), `tests/test_web_tools.py` (22), `tests/test_cdx7_rag_tool_scan.py` (+21), `tests/test_web_tools_wiring.py` (5), `tests/test_websearch.py` (+4), `tests/test_plugin_honesty.py` (+1). **Not proven against a real search
-  backend or a live model choosing the tools** → P24.
+  `time`. Tests: `tests/test_tool_result_taint.py` (20), `tests/test_web_tools.py` (22), `tests/test_cdx7_rag_tool_scan.py` (+21), `tests/test_web_tools_wiring.py` (5), `tests/test_websearch.py` (+4), `tests/test_plugin_honesty.py` (+1). **Proven off-box 2026-09-08** — a real
+  Qwen3-0.6B on CPU chose these tools through the real ToolRPC registry against live
+  DuckDuckGo, and the run found two defects (both fixed in HA-5d). What is still the
+  owner's — a Tavily/SearXNG credential, and a large model's tool discipline — is P24.
 - [x] ✅ **HA-5b — the front door refuses by default.** Three doors, one seam. **Pairing is ON
   unless switched off** (`JARVIS_CHANNEL_PAIRING`, `agents/core/channels/pairing.py`): a stranger who
   finds the bot is held until the owner pairs them (HUD card or the 60-second deeplink), where
@@ -1534,7 +1536,54 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   the 180 s turn-lease wait makes a second message on the same channel session, `/stop`
   included, answer busy until it ends; `nerva estop` and the API stay reachable. Named and not
   done: the continuation chain and the one empty retry (they change the tool-loop message
-  shape), admin slash commands ahead of the lease. Tests: `tests/test_reasoning_timeout.py` (16), `tests/test_thinking_exhausted_guard.py` (9), `tests/test_context_compaction_policy.py` (+15), `tests/test_tool_loop_compaction.py` (+1), `tests/test_o26_f2_settings_seed.py` (+2), `tests/test_agent_runtime_v2.py` (+1, the stream turn), `tests/test_llm_thinking_leak.py` (+1), the reasoning-only row of `tests/test_llm_tool_protocol.py` rewritten to the named reply. **Not proven on the RTX box** → P26.
+  shape), admin slash commands ahead of the lease. Tests: `tests/test_reasoning_timeout.py` (16), `tests/test_thinking_exhausted_guard.py` (9), `tests/test_context_compaction_policy.py` (+15), `tests/test_tool_loop_compaction.py` (+1), `tests/test_o26_f2_settings_seed.py` (+2), `tests/test_agent_runtime_v2.py` (+1, the stream turn), `tests/test_llm_thinking_leak.py` (+1), the reasoning-only row of `tests/test_llm_tool_protocol.py` rewritten to the named reply. **Partly proven off-box 2026-09-08**: the reasoning-aware
+  floor and the window table were exercised against a real reasoning model. The
+  thinking-exhausted guard was **not** — llama.cpp's OpenAI server returns a thinking model's
+  output inline as `<think>` inside `content`, never as `reasoning_content`, and on that shape
+  the guard does not fire; the only probe that made it fire manufactured the field the guard
+  reads, which is circular. P26 now asks for the one artefact that closes it: a raw captured
+  stream from real LM Studio and real Ollama.
+- [x] ✅ **HA-5d — five fixes the off-box proof run found** (PR #1044). A GPU-less container ran
+  the P24/P25/P26 packets end to end — a real Qwen3-0.6B on CPU (llama.cpp, ~30 tok/s,
+  `is_reasoning_model` true) driving the real `AgentToolRuntime` over the coordinator's real
+  ToolRPC registry and the real `WebSearchPlugin` against live DuckDuckGo, plus the real FastAPI
+  app under uvicorn for the front-door guards. Of the ~40 assertions those packets called
+  unproven, four depend on model *size*, one on a second machine, four on a credential, and the
+  rest on nothing but someone running them. Running them found: **(1)** `web_search` results were
+  unreadable — the keyless DuckDuckGo backend hands back its own redirector
+  (`//duckduckgo.com/l/?uddg=…`, protocol-relative and scheme-less) which `web_extract`'s
+  preflight refused as `bad_args`, so the model could search and never open what it found and the
+  tainted-turn rule allowed an empty set in practice; `_search_duckduckgo` now unwraps the target
+  at the parser, one hop only, http(s) with a host or nothing, never double-decoded. **(2)** The
+  tool loop's trail went nowhere — `_emit` returns immediately without a sink and
+  `Agent.generate_response`, the only production caller of `run`, never passed one, so every
+  event including the HA-5a `tool_result_untrusted` was built and dropped, and the owner packet
+  asked its reader to check a timeline with nothing in it; a bounded thread-safe ring buffer
+  (`agents/core/observability/tool_events.py`, 500 events, monotonic per-name tallies that
+  survive eviction) now receives them, read back through `GET /api/admin/tool-events` (admin) and
+  `nerva tools [--agent X] [--untrusted]`, every field re-bounded on the way in and a nested value
+  stored as its type name, never rendered. **(3)** The taint fence is per loop *iteration*, not
+  per call — two `web_search` calls in one assistant turn both run and neither sees a tainted
+  origin, because the batch is gathered concurrently and fenced afterwards; defensible (everything
+  in one batch was composed before any untrusted byte arrived) but P24 claimed "one search per
+  turn is the contract", which was false. Behaviour unchanged, documented at both seams, pinned by
+  a test, the record corrected. **(4)** `JARVIS_CA_BUNDLE` — every plugin client is built
+  `trust_env=False` and so verifies against certifi alone, so behind a TLS-inspecting proxy or a
+  private CA every outbound call failed, the search backend swallowed the error and `web_search`
+  answered `count: 0`, indistinguishable from "nothing found"; the variable names the missing root
+  (`SSL_CERT_FILE` honoured as a second spelling) and **can only add** — no value of either turns
+  verification off, and a path that does not exist or a bundle that will not load degrades to the
+  default store with a warning. **(5)** `docs/OWNER_TASKS.md` P24 / P25 / P26 rewritten leg by leg,
+  *proven off-box* or *yours*, including the one gap the run could not close honestly (HA-5c's
+  thinking-exhausted guard on a real serving layer). Tests: `tests/test_tool_event_trail.py` (8),
+  `tests/test_websearch.py` (+5), `tests/test_plugin_egress.py` (+5), `tests/test_nerva_cli.py`
+  (+4), `tests/test_tool_result_taint.py` (+1). Named and not done: the HUD renderer for the tool
+  trail (the deferred inline-tool-trail slice — the route's only client today is the `nerva` CLI,
+  declared `MACHINE_FACING` with that reason), and two defects the run found outside the agreed
+  five — `SenderPairing`, `canvas.json` and `action_approvals.json` are registered with
+  CWD-relative paths (`orchestrator.py:352`) so `$JARVIS_HOME` does not relocate them and pairing
+  state is written inside the git checkout, and the "runtime state is inside the checkout" warning
+  does not fire for them because `is_inside_repo()` only inspects `data_root()`.
 - [ ] **HA-4i** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
   now say they can), HUD mode on desktop, the plugin SDK, `nerva send` + `GET /api/commands`,
   session-persistent code kernels and `image_generate` (both need backends that do not exist
