@@ -405,7 +405,9 @@ configurat, pentru că rulează fără nimeni în tură. Un guest inbound vede �
 `echo` / `time`. Rânduri din ledger închise: căutarea și citirea web-ului, `search_memory` ca
 unealtă, rezultatele untrusted împachetate ca date; rămâne numit flag-ul untrusted pe uneltele
 dobândite (`promotion.py`). Teste: `tests/test_tool_result_taint.py` (20), `tests/test_web_tools.py` (22), `tests/test_cdx7_rag_tool_scan.py` (+21), `tests/test_web_tools_wiring.py` (5), `tests/test_websearch.py` (+4), `tests/test_plugin_honesty.py` (+1).
-*Nedovedit pe un backend de căutare real și cu un model live care alege uneltele* → **P24**.
+*Dovedit off-box 2026-09-08*: un Qwen3-0.6B real pe CPU a ales aceste unelte prin registrul
+ToolRPC real, peste DuckDuckGo live — rularea a scos două defecte, corectate în 5d. Ce rămâne
+al owner-ului (o cheie Tavily/SearXNG, disciplina de unelte a unui model mare) → **P24**.
 
 **Livrat 2026-09-07 (5b — ușa din față refuză implicit).** Trei uși, o singură cusătură.
 **Pairing-ul e pornit dacă nu-l oprești** (`JARVIS_CHANNEL_PAIRING`): un străin care găsește
@@ -468,7 +470,58 @@ aceeași condiție — numit. Costul declarat al pragului: o tură profundă mai
 așteptarea de 180 s a lease-ului de tură face ca un al doilea mesaj pe aceeași sesiune de canal,
 `/stop` inclus, să primească „ocupat" până se termină; `nerva estop` și API-ul rămân la îndemână.
 Numite și nefăcute: lanțul de continuare și reîncercarea pe răspuns gol (schimbă forma mesajelor
-buclei de unelte), comenzile slash de admin înaintea lease-ului. Teste: `tests/test_reasoning_timeout.py` (16), `tests/test_thinking_exhausted_guard.py` (9), `tests/test_context_compaction_policy.py` (+15), `tests/test_tool_loop_compaction.py` (+1), `tests/test_o26_f2_settings_seed.py` (+2), `tests/test_agent_runtime_v2.py` (+1, the stream turn), `tests/test_llm_thinking_leak.py` (+1), the reasoning-only row of `tests/test_llm_tool_protocol.py` rewritten to the named reply. *Nedovedit pe cutia RTX cu un model care gândește* → **P26**.
+buclei de unelte), comenzile slash de admin înaintea lease-ului. Teste: `tests/test_reasoning_timeout.py` (16), `tests/test_thinking_exhausted_guard.py` (9), `tests/test_context_compaction_policy.py` (+15), `tests/test_tool_loop_compaction.py` (+1), `tests/test_o26_f2_settings_seed.py` (+2), `tests/test_agent_runtime_v2.py` (+1, the stream turn), `tests/test_llm_thinking_leak.py` (+1), the reasoning-only row of `tests/test_llm_tool_protocol.py` rewritten to the named reply. *Parțial dovedit off-box 2026-09-08*: pragul conștient de raționament și tabelul de ferestre au
+fost exercitate cu un model de raționament real. Guard-ul de gândire epuizată **nu** a fost:
+serverul OpenAI al llama.cpp întoarce ieșirea unui model care gândește inline, ca `<think>` în
+`content`, niciodată ca `reasoning_content`, iar pe forma asta guard-ul nu se declanșează;
+singura probă care l-a făcut să se declanșeze fabrica exact câmpul pe care guard-ul îl citește,
+ceea ce e circular. **P26** cere acum artefactul care închide asta definitiv: un flux brut
+capturat din LM Studio real și din Ollama real.
+
+**Livrat 2026-09-08 (5d — cele cinci corecții pe care le-a găsit rularea de probă off-box).** Un
+container fără GPU a rulat pachetele P24/P25/P26 cap la cap: un Qwen3-0.6B real pe CPU (llama.cpp,
+~30 tok/s, `is_reasoning_model` adevărat) conducând `AgentToolRuntime`-ul real peste registrul
+ToolRPC real al coordonatorului și peste `WebSearchPlugin`-ul real, împotriva DuckDuckGo live, plus
+aplicația FastAPI reală sub uvicorn pentru gardurile ușii din față. Din cele ~40 de aserțiuni pe
+care pachetele le numeau nedovedite, patru depind de *mărimea* modelului, una de a doua mașină,
+patru de o credențială — restul, de nimic altceva decât de cineva care le rulează. Ce a ieșit:
+**(1)** rezultatele lui `web_search` erau necitibile — backend-ul DuckDuckGo fără cheie întoarce
+propriul redirector (`//duckduckgo.com/l/?uddg=…`, protocol-relativ și fără schemă), pe care
+preflight-ul lui `web_extract` îl refuza ca `bad_args`, deci modelul putea căuta și nu putea
+deschide niciodată ce a găsit, iar regula turei contaminate („doar un URL întors de `web_search`
+poate fi citit") permitea în practică o mulțime goală; `_search_duckduckgo` desface acum ținta la
+parser, un singur hop, http(s) cu host sau nimic, niciodată decodat de două ori. **(2)** Urma
+buclei de unelte nu ducea nicăieri — `_emit` se întoarce imediat fără sink, iar
+`Agent.generate_response`, singurul apelant de producție al lui `run`, nu pasa niciodată unul, deci
+fiecare eveniment, inclusiv `tool_result_untrusted` din 5a, era construit și aruncat, iar pachetul
+owner-ului îi cerea cititorului să verifice o cronologie care n-avea nimic în ea; un ring buffer
+mărginit și thread-safe (`agents/core/observability/tool_events.py`, 500 de evenimente, contoare
+monotone per nume care supraviețuiesc evicțiunii) le primește acum, citit înapoi prin
+`GET /api/admin/tool-events` (admin) și `nerva tools [--agent X] [--untrusted]`, cu fiecare câmp
+re-mărginit la intrare și o valoare imbricată stocată ca numele tipului ei, niciodată redată.
+**(3)** Gardul de contaminare e per *iterație* de buclă, nu per apel — două apeluri `web_search`
+emise în aceeași tură de asistent rulează amândouă și niciunul nu vede o origine contaminată,
+pentru că lotul e adunat concurent și împachetat după aceea; e apărabil (tot ce e într-un lot a
+fost compus înainte să sosească vreun octet necurat), dar P24 pretindea „o căutare per tură e
+contractul", ceea ce era fals. Comportament neschimbat, documentat la ambele cusături, fixat de un
+test, înregistrarea corectată. **(4)** `JARVIS_CA_BUNDLE` — fiecare client de plugin e construit
+`trust_env=False` și deci verifică doar față de certifi, așa că în spatele unui proxy care
+inspectează TLS sau al unui CA privat orice apel spre exterior eșua, backend-ul de căutare înghițea
+eroarea și `web_search` răspundea `count: 0`, imposibil de deosebit de „n-am găsit nimic";
+variabila numește rădăcina lipsă (`SSL_CERT_FILE` onorat ca a doua grafie) și **poate doar să
+adauge** — nicio valoare a vreuneia nu oprește verificarea, iar o cale inexistentă sau un bundle
+care nu se încarcă degradează la magazinul implicit, cu avertisment. **(5)** `docs/OWNER_TASKS.md`
+P24 / P25 / P26 rescrise picior cu picior, *dovedit off-box* sau *al tău*, inclusiv singura breșă
+pe care rularea n-a putut s-o închidă onest (guard-ul de gândire epuizată din 5c, pe un strat de
+servire real). Teste: `tests/test_tool_event_trail.py` (8), `tests/test_websearch.py` (+5),
+`tests/test_plugin_egress.py` (+5), `tests/test_nerva_cli.py` (+4),
+`tests/test_tool_result_taint.py` (+1). Numite și nefăcute: randarea urmei de unelte în HUD (felia
+amânată de inline tool trail — singurul client al rutei azi e CLI-ul `nerva`, declarat
+`MACHINE_FACING` cu motivul respectiv) și două defecte găsite în afara celor cinci convenite —
+`SenderPairing`, `canvas.json` și `action_approvals.json` sunt înregistrate cu căi relative la CWD
+(`orchestrator.py:352`), deci `$JARVIS_HOME` nu le mută și starea de pairing se scrie în interiorul
+checkout-ului git, iar avertismentul „starea de runtime e în checkout" nu se declanșează pentru
+ele, pentru că `is_inside_repo()` se uită doar la `data_root()`.
 
 ---
 
